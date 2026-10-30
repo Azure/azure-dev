@@ -63,8 +63,10 @@ module existingRegistryAccess 'acr-pull-role-assignment.bicep' = if (mode == 're
     principalId: projectPrincipalId
     assignmentName: accessOperationId
     ownershipDescription: empty(accessOperationId) ? '' : 'azd-foundry:${accessOperationId}'
-    roleDefinitionId: existingRegistry!.properties.roleAssignmentMode == 'AbacRepositoryPermissions'
-      ? repositoryReaderRoleId
+    roleDefinitionId: mode == 'reuse-connect'
+      ? (existingRegistry!.properties.roleAssignmentMode == 'AbacRepositoryPermissions'
+        ? repositoryReaderRoleId
+        : acrPullRoleId)
       : acrPullRoleId
   }
 }

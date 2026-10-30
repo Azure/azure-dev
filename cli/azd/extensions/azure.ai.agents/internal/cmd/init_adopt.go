@@ -807,6 +807,11 @@ func adoptedAgentNameConfig(
 	return strings.TrimSpace(name), "name", nil
 }
 
+type adoptedProjectPreflight struct {
+	replacedDeployment string
+	subscription       *azdext.AzureScope
+}
+
 // runInitFromAzureYaml adopts a sample's unified Foundry `azure.yaml` as the
 // project-root manifest (#8798). The sample's `azure.yaml` and referenced files are placed at
 // the project root via azd-core's native template adoption; the services it
@@ -893,6 +898,10 @@ func runInitFromAzureYaml(
 	if err != nil {
 		return err
 	}
+	subscription, err := planInitACRSubscription(ctx, azdClient, flags)
+	if err != nil {
+		return err
+	}
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 
 	envName := deriveEnvName(flags, targetDir)
@@ -912,7 +921,7 @@ func runInitFromAzureYaml(
 		promptOnly,
 		agentNameOverride,
 		TemplateTypeAzureYaml,
-		replacedDeployment,
+		adoptedProjectPreflight{replacedDeployment: replacedDeployment, subscription: subscription},
 	)
 }
 
@@ -943,7 +952,7 @@ func runInitFromAzdTemplate(
 
 	folderDisplay := folderDisplayForSubdir(targetDir)
 	envName := deriveEnvName(flags, targetDir)
-	replacedDeployment, err := scaffoldAzdTemplateProject(
+	plan, err := scaffoldAzdTemplateProject(
 		ctx,
 		azdClient,
 		httpClient,
@@ -987,7 +996,7 @@ func runInitFromAzdTemplate(
 		info.promptOnly(),
 		agentNameOverride,
 		TemplateTypeAzd,
-		replacedDeployment,
+		plan,
 	)
 }
 
@@ -999,16 +1008,16 @@ func scaffoldAzdTemplateProject(
 	templateSource string,
 	envName string,
 	flags *initFlags,
-) (string, error) {
-	replaced, err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource, flags)
+) (adoptedProjectPreflight, error) {
+	plan, err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource, flags)
 	if err != nil {
-		return "", err
+		return adoptedProjectPreflight{}, err
 	}
 	defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
 	if err := scaffoldProject(ctx, azdClient, targetDir, templateSource, envName); err != nil {
-		return "", err
+		return adoptedProjectPreflight{}, err
 	}
-	return replaced, nil
+	return plan, nil
 }
 
 type azdTemplateRepositoryParser func(context.Context, string) (*GitHubUrlInfo, error)
@@ -1020,7 +1029,7 @@ func preflightAzdTemplate(
 	httpClient *http.Client,
 	templateSource string,
 	flags *initFlags,
-) (string, error) {
+) (adoptedProjectPreflight, error) {
 	stagingDir, cleanup, err := stageAzdTemplateRepository(
 		ctx,
 		templateSource,
@@ -1032,24 +1041,32 @@ func preflightAzdTemplate(
 		},
 	)
 	if err != nil {
-		return "", err
+		return adoptedProjectPreflight{}, err
 	}
 	defer cleanup()
 
 	if err := validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource)); err != nil {
-		return "", err
+		return adoptedProjectPreflight{}, err
 	}
 	content, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
 	if err != nil {
-		return "", fmt.Errorf("read template registry configuration: %w", err)
+		return adoptedProjectPreflight{}, fmt.Errorf("read template registry configuration: %w", err)
 	}
 	if err := validateInitACRManifest(content, stagingDir, flags); err != nil {
-		return "", err
+		return adoptedProjectPreflight{}, err
 	}
 	if err := requireStagedPreviewFeatures(stagingDir); err != nil {
-		return "", err
+		return adoptedProjectPreflight{}, err
 	}
-	return preflightAdoptedDeploymentReplacement(ctx, azdClient, stagingDir, flags)
+	replaced, err := preflightAdoptedDeploymentReplacement(ctx, azdClient, stagingDir, flags)
+	if err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	subscription, err := planInitACRSubscription(ctx, azdClient, flags)
+	if err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	return adoptedProjectPreflight{replacedDeployment: replaced, subscription: subscription}, nil
 }
 
 func stageAzdTemplateRepository(
@@ -1285,9 +1302,29 @@ func finalizeAdoptedProject(
 	promptOnly bool,
 	agentNameOverride string,
 	templateType string,
-	replacedDeployment string,
+	plan adoptedProjectPreflight,
 ) error {
 	if err := validateInitModelSelectors(flags, true); err != nil {
+		return err
+	}
+	replacedDeployment := plan.replacedDeployment
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
+		var err error
+		env, err = createNewEnvironment(ctx, azdClient, envName)
+		if err != nil {
+			return err
+		}
+	}
+	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
+	if err != nil {
+		return err
+	}
+	if plan.subscription != nil {
+		azureContext.Scope.SubscriptionId = plan.subscription.SubscriptionId
+		azureContext.Scope.TenantId = plan.subscription.TenantId
+	}
+	if err := validateInitACRSubscription(flags.acrResourceID, azureContext.Scope.SubscriptionId); err != nil {
 		return err
 	}
 	// Defensive: the sample should already declare `infra.provider:
@@ -1303,25 +1340,6 @@ func finalizeAdoptedProject(
 		if err := applyAdoptedAgentNameOverride(ctx, azdClient, agentNameOverride); err != nil {
 			return err
 		}
-	}
-
-	// --- Interactive Azure context setup (subscription, Foundry project) ---
-	// The scaffolding created an environment; load it and run the same Foundry
-	// project selection flow as the generated-agent path so the user ends up
-	// with a provision-ready environment.
-	env := getExistingEnvironment(ctx, envName, azdClient)
-	if env == nil {
-		// Environment should exist after scaffoldProject; if not, create one.
-		var err error
-		env, err = createNewEnvironment(ctx, azdClient, envName)
-		if err != nil {
-			return err
-		}
-	}
-
-	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
-	if err != nil {
-		return err
 	}
 
 	// Apply deploy-mode configuration to the adopted agent

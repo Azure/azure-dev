@@ -75,6 +75,9 @@ func configureFoundryProject(
 	ensureProjectLocation := func() error {
 		return ensureNewProjectLocation(ctx, azdClient, azureContext, envName, noPrompt, allowedLocations)
 	}
+	if err := validateInitACRSubscription(acrResourceID, azureContext.Scope.SubscriptionId); err != nil {
+		return nil, err
+	}
 	if err := validateAcrConnectionInput(
 		acrConnection,
 		skipACR,
@@ -152,9 +155,9 @@ func configureFoundryProject(
 		// Preserve an adopted endpoint with complete Azure context.
 		result.AuthoringMode = projectAuthoringCurrent
 	} else if noPrompt || acrResourceID != "" {
-		newCred, err := ensureSubscription(
+		newCred, err := ensureInitACRSubscription(
 			ctx, azdClient, azureContext, envName,
-			"Select an Azure subscription to provision your agent and Foundry project resources.",
+			acrResourceID,
 		)
 		if err != nil {
 			return nil, err
@@ -281,6 +284,27 @@ func configureFoundryProject(
 	}
 
 	return result, nil
+}
+
+func ensureInitACRSubscription(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	envName, registryID string,
+) (azcore.TokenCredential, error) {
+	if registryID == "" {
+		return ensureSubscription(ctx, client, azureContext, envName, initACRSubscriptionMessage)
+	}
+	if err := validateInitACRSubscription(registryID, azureContext.Scope.SubscriptionId); err != nil {
+		return nil, err
+	}
+	if err := resolveSubscription(ctx, client, azureContext, initACRSubscriptionMessage); err != nil {
+		return nil, err
+	}
+	if err := validateInitACRSubscription(registryID, azureContext.Scope.SubscriptionId); err != nil {
+		return nil, err
+	}
+	return persistSubscription(ctx, client, azureContext, envName)
 }
 
 // ensureNewProjectLocation validates the project and effective model locations.

@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "6501290170364007424"
+      "templateHash": "13578901946266149732"
     }
   },
   "definitions": {
@@ -304,7 +304,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "344431204987967206"
+              "templateHash": "2185903551978668521"
             }
           },
           "definitions": {
@@ -1125,7 +1125,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.48.1.52935",
-                      "templateHash": "16429090280708265145"
+                      "templateHash": "15235048848214962716"
                     }
                   },
                   "parameters": {
@@ -1218,7 +1218,7 @@
                             "value": "[parameters('accessOperationId')]"
                           },
                           "ownershipDescription": "[if(empty(parameters('accessOperationId')), createObject('value', ''), createObject('value', format('azd-foundry:{0}', parameters('accessOperationId'))))]",
-                          "roleDefinitionId": "[if(equals(reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').roleAssignmentMode, 'AbacRepositoryPermissions'), createObject('value', variables('repositoryReaderRoleId')), createObject('value', variables('acrPullRoleId')))]"
+                          "roleDefinitionId": "[if(equals(parameters('mode'), 'reuse-connect'), if(equals(reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').roleAssignmentMode, 'AbacRepositoryPermissions'), createObject('value', variables('repositoryReaderRoleId')), createObject('value', variables('acrPullRoleId'))), createObject('value', variables('acrPullRoleId')))]"
                         },
                         "template": {
                           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
@@ -1313,12 +1313,8 @@
                   "acrName": {
                     "value": "[last(split(parameters('existingAcrResourceId'), '/'))]"
                   },
-                  "acrEndpoint": {
-                    "value": "[reference('externalRegistry').loginServer]"
-                  },
-                  "acrResourceId": {
-                    "value": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('existingAcrResourceId'), '/')[2], split(parameters('existingAcrResourceId'), '/')[4]), 'Microsoft.ContainerRegistry/registries', last(split(parameters('existingAcrResourceId'), '/')))]"
-                  },
+                  "acrEndpoint": "[if(and(parameters('includeAcr'), not(empty(parameters('existingAcrResourceId')))), createObject('value', reference('externalRegistry').loginServer), createObject('value', ''))]",
+                  "acrResourceId": "[if(and(parameters('includeAcr'), not(empty(parameters('existingAcrResourceId')))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('existingAcrResourceId'), '/')[2], split(parameters('existingAcrResourceId'), '/')[4]), 'Microsoft.ContainerRegistry/registries', last(split(parameters('existingAcrResourceId'), '/')))), createObject('value', ''))]",
                   "createAcrConnection": {
                     "value": true
                   }

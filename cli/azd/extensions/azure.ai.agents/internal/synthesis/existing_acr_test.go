@@ -214,7 +214,8 @@ func TestARMExistingRegistryShape(t *testing.T) {
 			Type       string `json:"type"`
 			Condition  string `json:"condition"`
 			Properties struct {
-				Template json.RawMessage `json:"template"`
+				Template   json.RawMessage `json:"template"`
+				Parameters map[string]any  `json:"parameters"`
 			} `json:"properties"`
 		} `json:"resources"`
 	}
@@ -252,6 +253,19 @@ func TestARMExistingRegistryShape(t *testing.T) {
 					", format('azd-acr-{0}', parameters('acrAccessOperationId')))]"
 			}
 			assert.Equal(t, expectedName, resource.Name)
+			if name == "existingAcrConnection" {
+				condition := "and(parameters('includeAcr'), not(empty(parameters('existingAcrResourceId'))))"
+				assert.Equal(t, "[if("+condition+", createObject('value', "+
+					"reference('externalRegistry').loginServer), createObject('value', ''))]",
+					resource.Properties.Parameters["acrEndpoint"])
+				assert.Equal(t, "[if("+condition+", createObject('value', "+
+					"extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', "+
+					"split(parameters('existingAcrResourceId'), '/')[2], "+
+					"split(parameters('existingAcrResourceId'), '/')[4]), "+
+					"'Microsoft.ContainerRegistry/registries', "+
+					"last(split(parameters('existingAcrResourceId'), '/')))), createObject('value', ''))]",
+					resource.Properties.Parameters["acrResourceId"])
+			}
 			found[name] = true
 		}
 	}
@@ -267,4 +281,52 @@ func TestARMExistingRegistrySelectsPullRoleByPermissionMode(t *testing.T) {
 	assert.Contains(t, body, "AbacRepositoryPermissions")
 	assert.Contains(t, body, "roleAssignmentMode")
 	assert.Contains(t, body, "2025-11-01")
+}
+
+func TestARMExistingRegistryRoleLookupIsLazy(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		read  func() ([]byte, error)
+		roles int
+	}{
+		{"greenfield", ARMTemplate, 1},
+		{"existing project", ExistingProjectARMTemplate, 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := tt.read()
+			require.NoError(t, err)
+			var template any
+			require.NoError(t, json.Unmarshal(raw, &template))
+			roles := 0
+			var inspect func(any)
+			inspect = func(value any) {
+				switch node := value.(type) {
+				case map[string]any:
+					if role, exists := node["roleDefinitionId"]; exists {
+						if parameter, ok := role.(map[string]any); ok {
+							role = parameter["value"]
+						}
+						if expression, ok := role.(string); ok && strings.Contains(expression, "roleAssignmentMode") {
+							roles++
+							assert.Equal(t, "[if(equals(parameters('mode'), 'reuse-connect'), "+
+								"if(equals(reference(resourceId('Microsoft.ContainerRegistry/registries', "+
+								"parameters('registryName')), '2025-11-01').roleAssignmentMode, "+
+								"'AbacRepositoryPermissions'), createObject('value', variables('repositoryReaderRoleId')), "+
+								"createObject('value', variables('acrPullRoleId'))), "+
+								"createObject('value', variables('acrPullRoleId')))]", expression)
+						}
+					}
+					for _, child := range node {
+						inspect(child)
+					}
+				case []any:
+					for _, child := range node {
+						inspect(child)
+					}
+				}
+			}
+			inspect(template)
+			assert.Equal(t, tt.roles, roles)
+		})
+	}
 }

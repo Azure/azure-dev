@@ -273,8 +273,8 @@ module existingAcrConnection 'foundry-project.bicep' = if (includeAcr && !empty(
     accountName: foundryAccount.name
     projectName: foundryAccount::project.name
     acrName: last(split(existingAcrResourceId, '/'))
-    acrEndpoint: externalRegistry!.properties.loginServer
-    acrResourceId: externalRegistry!.id
+    acrEndpoint: includeAcr && !empty(existingAcrResourceId) ? externalRegistry!.properties.loginServer : ''
+    acrResourceId: includeAcr && !empty(existingAcrResourceId) ? externalRegistry!.id : ''
     createAcrConnection: true
   }
   dependsOn: [

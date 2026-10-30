@@ -1346,6 +1346,12 @@ connection-selection flows keep their meanings. Repeated provisioning retains
 the deployed registry; switching an already provisioned project's registry is
 not supported.
 
+When adopting a template, init rejects an existing Foundry project endpoint
+before scaffolding. Interactive setup also checks the chosen subscription
+against the registry before creating project files or saving environment values.
+A successful preflight carries that subscription into setup without asking again.
+Headless setup with missing Azure context continues to defer configuration.
+
 Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
 be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside
 the Foundry resource group that `azd down` deletes. Cross-subscription registry

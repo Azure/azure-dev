@@ -338,3 +338,34 @@ func TestConfigureFoundryProjectPreservesExistingServiceWithAzureContext(
 	require.Nil(t, result.FoundryProject)
 	require.Equal(t, projectAuthoringCurrent, result.AuthoringMode)
 }
+
+func TestConfigureFoundryProjectValidatesACRBeforeSubscriptionWrites(t *testing.T) {
+	t.Parallel()
+	for _, subscription := range []string{"sub", "other"} {
+		t.Run(subscription, func(t *testing.T) {
+			t.Parallel()
+			environments := &testEnvironmentServiceServer{}
+			prompts := &initACRPromptServer{subscription: &azdext.Subscription{
+				Id: subscription, TenantId: "resource-tenant", UserTenantId: "user-tenant",
+			}}
+			client := newTestAzdClient(t, environments, &testWorkflowServiceServer{}, prompts)
+			azureContext := &azdext.AzureContext{Scope: &azdext.AzureScope{Location: "eastus2"}}
+
+			result, err := configureFoundryProject(
+				t.Context(), client, azureContext, "test", "", "", false,
+				false, false, false, []string{"eastus2"}, testInitACRID,
+			)
+			require.Equal(t, 1, prompts.calls)
+			if subscription == "other" {
+				require.ErrorContains(t, err, "same subscription")
+				require.Nil(t, result)
+				require.Empty(t, environments.setKeys)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, projectAuthoringNew, result.AuthoringMode)
+			require.Equal(t, "sub", environments.values["test"]["AZURE_SUBSCRIPTION_ID"])
+			require.Equal(t, "user-tenant", environments.values["test"]["AZURE_TENANT_ID"])
+		})
+	}
+}

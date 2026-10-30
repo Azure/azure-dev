@@ -1,0 +1,8 @@
+name: existing-project-acr-template
+services:
+  foundry:
+    $ref: ./foundry-project.yaml
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: source-agent

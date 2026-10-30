@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"maps"
 	"net/http"
@@ -18,6 +19,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const testInitACRID = "/subscriptions/sub/resourceGroups/registry-rg/providers/" +
@@ -171,6 +174,189 @@ func TestPreflightAzdTemplateRejectsUnsupportedACRBeforeScaffolding(t *testing.T
 	}
 }
 
+type initACRPromptServer struct {
+	azdext.UnimplementedPromptServiceServer
+	subscription *azdext.Subscription
+	err          error
+	calls        int
+}
+
+func (s *initACRPromptServer) PromptSubscription(
+	context.Context, *azdext.PromptSubscriptionRequest,
+) (*azdext.PromptSubscriptionResponse, error) {
+	s.calls++
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &azdext.PromptSubscriptionResponse{Subscription: s.subscription}, nil
+}
+
+func TestInitACRTemplateRejectsExistingProjectBeforeWrites(t *testing.T) {
+	for _, route := range []string{"azure.yaml", "repository"} {
+		for _, declaration := range []string{"inline", "reference"} {
+			t.Run(route+"/"+declaration, func(t *testing.T) {
+				root := t.TempDir()
+				t.Chdir(root)
+				templateDir := t.TempDir()
+				projectBody := "host: azure.ai.project\n" +
+					"endpoint: https://account.services.ai.azure.com/api/projects/project\n"
+				projectEntry := "    " + strings.ReplaceAll(strings.TrimSpace(projectBody), "\n", "\n    ")
+				if declaration == "reference" {
+					projectEntry = "    $ref: project.yaml"
+					require.NoError(t, os.WriteFile(
+						filepath.Join(templateDir, "project.yaml"), []byte(projectBody), 0o600,
+					))
+				}
+				content := []byte("name: test\nservices:\n  foundry:\n" + projectEntry +
+					"\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: agent\n")
+				require.NoError(t, os.WriteFile(filepath.Join(templateDir, "azure.yaml"), content, 0o600))
+				require.NoError(t, validateInitACRManifest(content, templateDir, &initFlags{}))
+				environments := &testEnvironmentServiceServer{}
+				workflow := &testWorkflowServiceServer{}
+				prompts := &initACRPromptServer{}
+				client := newTestAzdClient(t, environments, workflow, prompts)
+				flags := &initFlags{
+					acrResourceIDSet: true, acrResourceID: testInitACRID,
+					src: "project", templatePointer: filepath.Join(templateDir, "azure.yaml"),
+				}
+
+				var err error
+				if route == "azure.yaml" {
+					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, templateDir)
+				} else {
+					_, err = scaffoldAzdTemplateProject(
+						t.Context(), client, http.DefaultClient, "project", templateDir, "test", flags,
+					)
+				}
+				require.ErrorContains(t, err, "only supported for a new Foundry project")
+				require.Zero(t, workflow.runCalls)
+				require.Zero(t, prompts.calls)
+				require.Empty(t, environments.setKeys)
+				entries, err := os.ReadDir(root)
+				require.NoError(t, err)
+				require.Empty(t, entries)
+				after, err := os.ReadFile(filepath.Join(templateDir, "azure.yaml"))
+				require.NoError(t, err)
+				require.Equal(t, content, after)
+			})
+		}
+	}
+}
+
+func TestInitACRTemplateValidatesSubscriptionBeforeScaffolding(t *testing.T) {
+	for _, route := range []string{"azure.yaml", "repository"} {
+		for _, tt := range []struct {
+			name, subscription, wantError string
+			promptError                   error
+			noPrompt                      bool
+			wantPrompts, wantWorkflows    int
+		}{
+			{"different subscription", "other", "same subscription", nil, false, 1, 0},
+			{"cancelled", "", "subscription selection was cancelled",
+				status.Error(codes.Canceled, "cancelled"), false, 1, 0},
+			{"matching subscription", "SUB", "stopped at core init", nil, false, 1, 1},
+			{"deferred headless", "", "stopped at core init", nil, true, 0, 1},
+		} {
+			t.Run(route+"/"+tt.name, func(t *testing.T) {
+				root := t.TempDir()
+				t.Chdir(root)
+				templateDir := t.TempDir()
+				content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n" +
+					"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: agent\n")
+				require.NoError(t, os.WriteFile(filepath.Join(templateDir, "azure.yaml"), content, 0o600))
+				environments := &testEnvironmentServiceServer{}
+				workflow := &testWorkflowServiceServer{runErr: errors.New("stopped at core init")}
+				prompts := &initACRPromptServer{
+					subscription: &azdext.Subscription{
+						Id: tt.subscription, TenantId: "resource-tenant", UserTenantId: "user-tenant",
+					},
+					err: tt.promptError,
+				}
+				client := newTestAzdClient(t, environments, workflow, prompts)
+				flags := &initFlags{
+					acrResourceIDSet: true, acrResourceID: testInitACRID, noPrompt: tt.noPrompt,
+					src: "project", templatePointer: filepath.Join(templateDir, "azure.yaml"),
+				}
+
+				var err error
+				if route == "azure.yaml" {
+					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, templateDir)
+				} else {
+					_, err = scaffoldAzdTemplateProject(
+						t.Context(), client, http.DefaultClient, "project", templateDir, "test", flags,
+					)
+				}
+				require.ErrorContains(t, err, tt.wantError)
+				require.Equal(t, tt.wantWorkflows, workflow.runCalls)
+				require.Equal(t, tt.wantPrompts, prompts.calls)
+				require.Empty(t, environments.setKeys)
+				entries, err := os.ReadDir(root)
+				require.NoError(t, err)
+				require.Empty(t, entries)
+			})
+		}
+	}
+}
+
+func TestInitACRTemplateRetainsPlannedSubscriptionWithoutWrites(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	templateDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(templateDir, "azure.yaml"), []byte(
+		"name: test\nservices:\n  foundry:\n    host: azure.ai.project\n"+
+			"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: agent\n"), 0o600))
+	environments := &testEnvironmentServiceServer{}
+	workflow := &testWorkflowServiceServer{}
+	prompts := &initACRPromptServer{subscription: &azdext.Subscription{
+		Id: "sub", TenantId: "resource-tenant", UserTenantId: "user-tenant",
+	}}
+	client := newTestAzdClient(t, environments, workflow, prompts)
+
+	plan, err := preflightAzdTemplate(t.Context(), client, http.DefaultClient, templateDir, &initFlags{
+		acrResourceIDSet: true, acrResourceID: testInitACRID,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, plan.subscription)
+	require.Equal(t, "sub", plan.subscription.SubscriptionId)
+	require.Equal(t, "user-tenant", plan.subscription.TenantId)
+	require.Equal(t, 1, prompts.calls)
+	require.Zero(t, workflow.runCalls)
+	require.Empty(t, environments.setKeys)
+}
+
+func TestFinalizeAdoptedProjectUsesPlannedACRSubscription(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, wantError string
+		subscription    *azdext.AzureScope
+	}{
+		{"unplanned mismatch", "same subscription", nil},
+		{"planned subscription wins", "stopped after subscription preflight",
+			&azdext.AzureScope{SubscriptionId: "sub", TenantId: "user-tenant"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			environments := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"test": {Name: "test"}},
+				values:       map[string]map[string]string{"test": {"AZURE_SUBSCRIPTION_ID": "other"}},
+			}
+			address := newInvokeRemoteContextTestAzdServer(t,
+				&helpersProjectServer{err: errors.New("stopped after subscription preflight")}, environments,
+			)
+			client, err := azdext.NewAzdClient(azdext.WithAddress(address))
+			require.NoError(t, err)
+			t.Cleanup(func() { client.Close() })
+
+			err = finalizeAdoptedProject(t.Context(), &initFlags{
+				acrResourceIDSet: true, acrResourceID: testInitACRID,
+			}, client, "test", "", false, "", TemplateTypeAzureYaml,
+				adoptedProjectPreflight{subscription: tt.subscription})
+			require.ErrorContains(t, err, tt.wantError)
+			require.Empty(t, environments.setKeys)
+		})
+	}
+}
+
 type initACREnvironmentServer struct {
 	testEnvironmentServiceServer
 	binding []byte
@@ -188,6 +374,38 @@ func (s *initACREnvironmentServer) GetConfig(
 	context.Context, *azdext.GetConfigRequest,
 ) (*azdext.GetConfigResponse, error) {
 	return &azdext.GetConfigResponse{Found: s.binding != nil, Value: s.binding}, nil
+}
+
+func TestPlanInitACRSubscriptionUsesConfiguredSubscription(t *testing.T) {
+	for _, subscription := range []string{"SUB", "other"} {
+		t.Run(subscription, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0o600))
+			environments := &initACREnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					values: map[string]map[string]string{"test": {
+						"AZURE_SUBSCRIPTION_ID": subscription, "AZURE_TENANT_ID": "user-tenant",
+					}},
+				},
+			}
+			prompts := &initACRPromptServer{}
+			client := newTestAzdClient(t, environments, &testWorkflowServiceServer{}, prompts)
+			scope, err := planInitACRSubscription(t.Context(), client, &initFlags{
+				acrResourceIDSet: true, acrResourceID: testInitACRID,
+			})
+			if subscription == "other" {
+				require.ErrorContains(t, err, "same subscription")
+				require.Nil(t, scope)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, subscription, scope.SubscriptionId)
+				require.Equal(t, "user-tenant", scope.TenantId)
+			}
+			require.Zero(t, prompts.calls)
+			require.Empty(t, environments.setKeys)
+		})
+	}
 }
 
 func TestInitACRBindingPreflight(t *testing.T) {

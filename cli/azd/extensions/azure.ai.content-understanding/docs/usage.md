@@ -8,7 +8,8 @@ the separate [Microsoft Foundry provisioning guide](https://github.com/Azure/azu
 ## Connect to Microsoft Foundry and check setup
 
 You need a Microsoft Foundry resource endpoint and an identity with access to
-Content Understanding. LLM-based prebuilt analyzers and custom analyzers also
+Content Understanding, or a resource API key for data-plane commands.
+LLM-based prebuilt analyzers and custom analyzers also
 require supported language and embeddings model deployments plus Content
 Understanding defaults.
 
@@ -27,7 +28,8 @@ Endpoint-only use delegates tenant selection to azd authentication unless you
 configure a tenant or subscription. To select a tenant explicitly, set
 `AZURE_TENANT_ID` (`export AZURE_TENANT_ID="<tenant-id>"` in Bash or
 `$env:AZURE_TENANT_ID = "<tenant-id>"` in PowerShell). An endpoint and tenant ID
-do not replace `azd auth login` or supported noninteractive azd authentication.
+do not replace `azd auth login` or supported noninteractive azd authentication
+when using Entra ID.
 
 To persist a global CU user default without creating an azd project using
 `azd init`:
@@ -71,13 +73,45 @@ Use `azd env new dev` if the project does not yet have that environment.
 Explicit options and process inputs take precedence over saved settings; clear
 process overrides when switching resources.
 
-The extension only supports Microsoft Entra ID authentication through azd.
+Microsoft Entra ID through azd is the default authentication method.
 Use `azd auth login` or supported noninteractive azd authentication.
-API-key authentication and CU profile
-commands are not supported.
+CU profile commands are not supported.
 
-`CU_API_KEY` and saved API-key entries are rejected rather than used, even when
-empty. `CU_AUTH_MODE`, if set, must be `login`.
+For testing or automation, CU data-plane commands also accept a resource API
+key from the **process environment only**. Inject `CU_API_KEY` through a CI
+secret, or enter it without putting its value in shell history:
+
+```bash
+export CU_ENDPOINT="https://<resource-name>.services.ai.azure.com/"
+unset CU_AUTH_MODE
+read -r -s -p "CU resource API key: " CU_API_KEY
+printf '\n'
+export CU_API_KEY
+azd ai cu doctor
+# Remove the key to return to azd / Entra authentication.
+unset CU_API_KEY
+```
+
+In PowerShell, inject the secret as `$env:CU_API_KEY`; remove it with
+`Remove-Item Env:CU_API_KEY`. Key mode does not request an Entra token or resolve
+a tenant. It does not require azd sign-in, but commands still run through the
+azd extension host. `doctor` reports the selected authentication method without
+printing the key.
+
+An explicitly present empty or whitespace-containing `CU_API_KEY` is an error,
+not a request to fall back to Entra ID. Process `CU_AUTH_MODE=login` conflicts
+with a process key; unset one. `CU_AUTH_MODE`, if set, still accepts only
+`login`; no `key` mode value is needed. A saved environment's `login` value does
+not override a process key. A failed key request does not retry through Entra.
+
+Do not save keys with `azd env set`, `azd config`, or `azd ai cu config`.
+Persisted `CU_API_KEY` and API-key configuration entries are rejected, including
+empty entries. The CU config shortcut still supports only `CU_ENDPOINT`,
+`CU_DEFAULT_ANALYZER`, and `CU_API_VERSION`; there is no `--api-key` flag.
+The key is restricted to the configured CU endpoint. Same-resource analyzer
+copy without resource selectors works with a key; copy resource discovery
+and cross-resource copy require Entra ID. Infrastructure provisioning and
+postprovision setup also continue to use Entra ID, not `CU_API_KEY`.
 
 `doctor` shows human-readable checks for configuration, authentication, service
 access, and model defaults, with effective `CU_*` settings and their sources.
@@ -392,11 +426,12 @@ Invalid effective values fail instead of falling back to a lower-priority source
 Public-cloud resource endpoints must use HTTPS with a resource hostname under
 `services.ai.azure.com` or `cognitiveservices.azure.com`, on the default port or
 explicit port `443`. Arbitrary hosts, IP addresses, and other ports are rejected
-before service authentication to prevent sending access tokens to an untrusted server.
+before service authentication to prevent sending credentials to an untrusted server.
 This applies to endpoints supplied through flags, process variables, azd environments,
 user defaults, and Azure resource discovery.
 Explicitly empty command flags are rejected; empty process/environment values
-are treated as unset. `config set` rejects empty values; use `config unset` to
+are treated as unset, except that an explicitly present empty `CU_API_KEY` is
+rejected. `config set` rejects empty values; use `config unset` to
 remove a user default.
 
 `config get` and `config list` show only stored CU user defaults, not merged
@@ -410,6 +445,7 @@ from resource-level model defaults managed by `azd ai cu defaults`.
 Offline schema templates and validation remain independent of resource settings
 and user defaults; they use their existing explicit/API-version process inputs.
 
+The following tenant rules apply to Entra ID, not API-key authentication.
 When tenant selection is delegated to azd, `azd auth token` uses its normal
 resolution: the current project's subscription, process `AZURE_SUBSCRIPTION_ID`,
 then the signed-in identity's home tenant. Being inside a project can therefore
@@ -430,11 +466,32 @@ For guest or cross-tenant access, the signed-in identity must have access throug
 the appropriate tenant. A tenant ID does not grant resource permissions, and the
 extension does not infer a tenant from the endpoint.
 
-Use `azd ai cu env-var list` to inspect supported process inputs with sensitive
+### Environment-variable reference
+
+Use `azd ai cu env-var` or `azd ai cu env-var --help` to list **all** supported
+process variables, including unset variables, with descriptions, accepted
+values, defaults, scopes, and precedence. This help is offline and never reads
+or prints credential values.
+
+Use `azd ai cu env-var list` to inspect currently set supported process inputs with sensitive
 values redacted. It does not dump saved azd environment settings or unrelated
 variables. `CU_ON_EXISTS` supplies the analysis existing-result policy when
 `--on-existing` is absent. `FOUNDRY_ENDPOINT` remains an infrastructure output,
 not an alias for `CU_ENDPOINT` in service-command configuration.
+
+| Variable | Purpose and default |
+| --- | --- |
+| `CU_ENDPOINT` | CU HTTPS resource endpoint; required unless supplied by another configuration source. |
+| `CU_API_VERSION` | Service API version; defaults to `2025-11-01`. |
+| `CU_DEFAULT_ANALYZER` | Analysis default; `prebuilt-layout` when no override is configured. |
+| `CU_API_KEY` | Optional process-only resource key for CU data-plane requests; unset means Entra ID. Always redacted. |
+| `CU_AUTH_MODE` | Optional `login` selector; process `login` conflicts with process `CU_API_KEY`. |
+| `CU_ON_EXISTS` | Existing-result policy: `error` (default), `skip`, or `reanalyze`; `--on-existing` takes precedence. |
+| `CU_DISABLE_AUTO_CONFIG` | Skip automatic postprovision CU configuration, not model setup. `1`, `true`, `yes`, or `on` enable it, case-insensitively; other values disable it. Default: disabled. |
+| `AZD_ENVIRONMENT` | Project-environment selection; `--environment` takes precedence. |
+| `AZURE_TENANT_ID` | Entra user-access tenant; not looked up in API-key mode. |
+| `AZURE_SUBSCRIPTION_ID` | Azure resource scope and Entra tenant lookup. |
+| `AZURE_RESOURCE_GROUP` | Azure resource scope for discovery. |
 
 The azd extension SDK also reads these inherited process inputs. Corresponding
 explicit flags take precedence over the SDK environment defaults:

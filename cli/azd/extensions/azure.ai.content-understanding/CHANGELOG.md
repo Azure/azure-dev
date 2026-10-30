@@ -2,6 +2,13 @@
 
 ## 0.1.1-preview (Unreleased)
 
+- Support optional CU data-plane API-key authentication through process
+  `CU_API_KEY` only, without saving keys in azd configuration or requiring
+  azd sign-in. Keep Entra ID as the default and for provisioning and
+  cross-resource copy.
+- List all supported process environment variables, accepted values, defaults,
+  scopes, and precedence in `azd ai cu env-var` / `env-var --help`.
+  Keep `env-var list` for inspecting set values with secrets redacted.
 - Add interactive environment, region, resource-name prefix, and role-assignment
   prompts to infrastructure generation. Explicit inputs take precedence;
   `--no-prompt` and `--output json` skip the new wizard.

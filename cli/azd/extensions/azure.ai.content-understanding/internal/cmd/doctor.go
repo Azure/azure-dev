@@ -45,8 +45,8 @@ func newDoctorCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *cob
 	var fix bool
 	cmd := &cobra.Command{
 		Use: "doctor", Args: cobra.NoArgs,
-		Short: "Check azd context, Entra authentication, CU access, and generative readiness",
-		Long: "Resolve azd environment or projectless configuration, authenticate through azd, " +
+		Short: "Check CU configuration, authentication, access, and generative readiness",
+		Long: "Resolve azd environment or projectless configuration, authenticate through azd or process CU_API_KEY, " +
 			"and read CU service defaults. Show effective CU settings and their configuration sources.\n" +
 			"Show human-readable diagnostics by default; use --output json for a structured report.\n" +
 			"Missing generative mappings report incomplete readiness without failing the command; " +
@@ -121,7 +121,7 @@ func runDoctor(
 	missing := defaults.MissingRequirements(mapping)
 	result := doctorResult{
 		Ready: len(missing) == 0, Endpoint: analysis.RedactURL(session.endpoint), APIVersion: session.apiVersion,
-		Authentication: "Microsoft Entra ID", Profile: environment, Analyzer: analyzer,
+		Authentication: session.authentication, Profile: environment, Analyzer: analyzer,
 		Models: mapping, Missing: missing, Failures: []doctorFailure{}, Sources: session.sources,
 	}
 	if extCtx.OutputFormat == "json" || extCtx.OutputFormat == "none" {

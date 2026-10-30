@@ -74,4 +74,9 @@ For details on the external authentication protocol, see [cli/azd/docs/external-
 
 ## See Also
 
+The Content Understanding extension supports optional process-only
+`CU_API_KEY` authentication for data-plane commands; keys are not saved in azd
+configuration. See the [canonical extension reference](../../cli/azd/docs/environment-variables.md#azureaicontent-understanding)
+or run `azd ai cu env-var --help` for all supported process variables.
+
 For the full reference with implementation details, see [cli/azd/docs/environment-variables.md](../../cli/azd/docs/environment-variables.md).

@@ -409,6 +409,7 @@ func TestRuntimeConfigurationFailureRedaction(t *testing.T) {
 		return nil, status.Error(codes.Internal, "deployment must not be queried")
 	}})
 	t.Setenv("CU_API_KEY", "private-api-key")
+	t.Setenv("CU_AUTH_MODE", "login")
 	cmd := &cobra.Command{}
 	cmd.SetContext(t.Context())
 	var stdout, stderr bytes.Buffer
@@ -419,7 +420,7 @@ func TestRuntimeConfigurationFailureRedaction(t *testing.T) {
 	require.Nil(t, runtime)
 	local, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
-	assert.Equal(t, "unsupported_authentication", local.Code)
+	assert.Equal(t, "conflicting_arguments", local.Code)
 	assert.NotContains(t, err.Error()+stderr.String(), "private-api-key")
 	assert.NotContains(t, stderr.String(), "private-host-token")
 	assert.NotContains(t, stderr.String(), "explicit-tenant")

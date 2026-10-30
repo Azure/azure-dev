@@ -338,7 +338,7 @@ func TestDoctorActualProjectlessConfigurationErrorsNeverReachService(t *testing.
 		{"credential-bearing endpoint", "https://private-user:private-pass@configured.example?sig=private#private",
 			"tenant", "", "", "invalid_endpoint"},
 		{"invalid version", "https://configured.example", "tenant", "private", "", "unsupported_api_version"},
-		{"blocked key", "https://configured.example", "tenant", "", "private-key", "unsupported_authentication"},
+		{"blank key", "https://configured.example", "tenant", "", " ", "invalid_api_key"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			startHost(t, &deploymentServer{get: func(context.Context) (*azdext.GetDeploymentContextResponse, error) {

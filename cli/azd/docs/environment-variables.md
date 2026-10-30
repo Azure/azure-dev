@@ -229,6 +229,20 @@ Metadata requests are unauthenticated when no matching token is set.
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
 | `AGENT_DEFINITION_PATH` | Unsupported for AI agent runtime workflows. Non-empty values are rejected; put the definition on the `azure.ai.agent` service in `azure.yaml` or use its explicit root `$ref`. |
 
+### azure.ai.content-understanding
+
+The CU extension defaults to azd / Microsoft Entra ID authentication. Use
+`azd ai cu env-var --help` for all supported process inputs and
+`azd ai cu env-var list` to inspect set values with secrets redacted.
+
+| Variable | Description |
+| --- | --- |
+| `CU_API_KEY` | Optional process-only resource key for CU data-plane commands. Must be nonempty and contain no whitespace or controls. Conflicts with process `CU_AUTH_MODE=login`. Not accepted in saved azd configuration or environments, and never used for provisioning or cross-resource copy. Unset it to use Entra ID. |
+| `CU_AUTH_MODE` | Optional `login` selector for azd / Entra ID authentication. Without it, process `CU_API_KEY` selects key authentication if present; otherwise Entra ID is used. |
+
+For endpoint, analyzer, API-version, analysis-output, and provisioning inputs,
+see the [CU environment-variable reference](../extensions/azure.ai.content-understanding/docs/usage.md#environment-variable-reference).
+
 ### azure.ai.routines
 
 | Variable | Description |

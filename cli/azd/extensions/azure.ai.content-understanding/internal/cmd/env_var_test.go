@@ -72,7 +72,7 @@ func TestEnvironmentVariableDefinitionsCoverConfigurationInputs(t *testing.T) {
 	}
 }
 
-func TestEnvironmentVariableCommandRemainsOfflineWithRejectedRuntimeKey(t *testing.T) {
+func TestEnvironmentVariableCommandRemainsOfflineWithRuntimeKey(t *testing.T) {
 	f := newDefaultsFixture(t)
 	t.Setenv("AZD_SERVER", "")
 	t.Setenv("AZD_ACCESS_TOKEN", "private-host-token")
@@ -90,6 +90,35 @@ func TestEnvironmentVariableCommandRemainsOfflineWithRejectedRuntimeKey(t *testi
 	require.NoError(t, err)
 	assert.Empty(t, stdout)
 	assert.Empty(t, stderr)
+}
+
+func TestEnvironmentVariableHelpListsAllDefinitionsWithoutReadingValues(t *testing.T) {
+	t.Setenv("AZD_SERVER", "")
+	t.Setenv("AZD_ACCESS_TOKEN", "")
+	t.Setenv("CU_API_KEY", "private-resource-key")
+	t.Setenv("CU_ENDPOINT", "https://example.com?sig=private")
+	f := newDefaultsFixture(t)
+	var previous string
+	for _, args := range [][]string{{"env-var"}, {"env-var", "--help"}} {
+		stdout, stderr, err := f.execute(t.Context(), args...)
+		require.NoError(t, err)
+		assert.Empty(t, stderr)
+		assert.Contains(t, stdout, "Supported environment variables")
+		assert.NotContains(t, stdout, "private")
+		for _, spec := range environmentVariables {
+			assert.Contains(t, stdout, spec.Name)
+			assert.Contains(t, stdout, spec.Description)
+			assert.Contains(t, stdout, "Values: "+spec.Values)
+			assert.Contains(t, stdout, "Default: "+spec.Default)
+			assert.Contains(t, stdout, "Scope: "+spec.Scope)
+			assert.Contains(t, stdout, "Precedence: "+spec.Precedence)
+		}
+		if previous != "" {
+			assert.Equal(t, previous, stdout)
+		}
+		previous = stdout
+	}
+	assert.Zero(t, f.opens)
 }
 
 func TestEnvironmentVariableCancellationAndDiagnosticsOutputFailures(t *testing.T) {

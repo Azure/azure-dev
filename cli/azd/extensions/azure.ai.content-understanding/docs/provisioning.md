@@ -33,8 +33,11 @@ sign in through Azure Developer CLI:
 azd auth login
 ```
 
-Both the extension and `azd up` use azd authentication. Python, a CU profile,
-and API-key authentication are not required or used by the extension.
+Infrastructure commands, postprovision setup, and `azd up` use azd / Entra ID
+authentication. They do not use `CU_API_KEY`. Separate CU data-plane commands
+can optionally use a process-only resource key as described in the
+[usage guide](usage.md#connect-to-microsoft-foundry-and-check-setup).
+Python and a CU profile are not required.
 
 ## Azure permissions
 
@@ -47,7 +50,7 @@ data-plane access are separate.
 | Create a resource without assigning roles | Contributor on the selected subscription, or equivalent permissions to deploy the resource group, Foundry resource, project, and models. |
 | Create a resource and assign a data-plane role | Deployment permissions plus permission to create role assignments, such as Owner, or Contributor combined with Role Based Access Control Administrator or User Access Administrator. |
 | Deploy models to an existing resource | Permission for the subscription-scope deployment and the required model deployment actions on that resource. |
-| Call Content Understanding | Cognitive Services User on the Foundry resource, or equivalent data-plane permissions. Contributor alone does not grant this access. |
+| Call Content Understanding with Entra ID | Cognitive Services User on the Foundry resource, or equivalent data-plane permissions. Contributor alone does not grant this access. |
 
 Role assignment defaults to No. Interactive generation asks when neither role
 flag is supplied for a new resource. Pass `--assign-roles` to opt in when
@@ -61,7 +64,8 @@ identity access through the resource's **Access control (IAM)** page.
 `--assign-roles` is supported only for new resources and cannot be combined with
 `--foundry-endpoint`, including when explicitly set to `--assign-roles=false`.
 Omit that flag when targeting an existing resource.
-There is no API-key fallback.
+Provisioning and postprovision setup have no API-key fallback. Optional
+`CU_API_KEY` authentication applies only to separate CU data-plane commands.
 
 See [Azure built-in privileged roles](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/privileged)
 and [Cognitive Services User](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/ai-machine-learning#cognitive-services-user)

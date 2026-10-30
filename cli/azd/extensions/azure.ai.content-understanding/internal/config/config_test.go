@@ -217,17 +217,30 @@ func TestResolveModelDeployments(t *testing.T) {
 
 func TestRuntimeAuthentication(t *testing.T) {
 	for _, process := range []map[string]string{
-		{"CU_API_KEY": "private-value"}, {"CU_API_KEY": ""},
+		{"CU_API_KEY": ""}, {"CU_API_KEY": " "}, {"CU_API_KEY": "private-value\n"},
+		{"CU_API_KEY": "private value"}, {"CU_API_KEY": "\x00private-value"},
 		{"CU_AUTH_MODE": "key"}, {"CU_AUTH_MODE": "private-value"}, {"CU_AUTH_MODE": "LOGIN"},
 		{"CU_AUTH_MODE": "login", "CU_API_KEY": "private-value"},
 	} {
 		err := validateRuntime(process)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "API-key authentication is not enabled")
 		assert.NotContains(t, err.Error(), "private-value")
 	}
 	assert.NoError(t, validateRuntime(nil))
 	assert.NoError(t, validateRuntime(map[string]string{"CU_AUTH_MODE": "login"}))
+	assert.NoError(t, validateRuntime(map[string]string{"CU_API_KEY": "private-value"}))
+	assert.NoError(t, validateRuntime(map[string]string{"CU_API_KEY": "private-value", "CU_AUTH_MODE": ""}))
+}
+
+func TestResolveProcessKeyNeverSerializesSecret(t *testing.T) {
+	result, err := resolve(Options{Endpoint: "https://resource.services.ai.azure.com"},
+		map[string]string{"CU_API_KEY": "private-value"}, nil, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "private-value", result.APIKey)
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), "private-value")
+	assert.NotContains(t, string(encoded), "APIKey")
 }
 
 func TestProcessValues(t *testing.T) {

@@ -25,6 +25,7 @@ type Options struct {
 }
 
 type Resolved struct {
+	APIKey           string `json:"-"`
 	Environment      string
 	Endpoint         string
 	APIVersion       string
@@ -53,6 +54,9 @@ func resolve(
 	options Options, process, values map[string]string, section []byte, user map[string]json.RawMessage,
 ) (Resolved, error) {
 	var result Resolved
+	if err := validateRuntime(process); err != nil {
+		return result, err
+	}
 	settings := make(map[string]json.RawMessage)
 	if len(section) != 0 {
 		if err := json.Unmarshal(section, &settings); err != nil || settings == nil {
@@ -60,7 +64,7 @@ func resolve(
 		}
 	}
 	for key := range settings {
-		if strings.EqualFold(strings.ReplaceAll(key, "_", ""), "apiKey") {
+		if isAPIKeySetting(key) {
 			return result, persistedKey()
 		}
 	}
@@ -70,6 +74,7 @@ func resolve(
 	if mode := values["CU_AUTH_MODE"]; mode != "" && mode != "login" {
 		return result, unsupportedKey()
 	}
+	result.APIKey = process["CU_API_KEY"]
 	var err error
 	result.Sources = make(map[string]string)
 	setting := func(name, flag, flagName, fallback string) (string, error) {
@@ -155,8 +160,17 @@ func resolve(
 }
 
 func validateRuntime(process map[string]string) error {
-	if _, present := process["CU_API_KEY"]; present {
-		return unsupportedKey()
+	if key, present := process["CU_API_KEY"]; present {
+		if key == "" || strings.ContainsFunc(key, func(r rune) bool {
+			return unicode.IsSpace(r) || unicode.IsControl(r)
+		}) {
+			return invalid("invalid_api_key", "Process CU_API_KEY must be nonempty and contain no whitespace or controls.")
+		}
+		if process["CU_AUTH_MODE"] == "login" {
+			return invalid("conflicting_arguments",
+				"CU_API_KEY conflicts with CU_AUTH_MODE=login. Unset CU_API_KEY to use Entra ID, "+
+					"or unset CU_AUTH_MODE to use the process API key.")
+		}
 	}
 	if mode := process["CU_AUTH_MODE"]; mode != "" && mode != "login" {
 		return unsupportedKey()
@@ -179,11 +193,16 @@ func invalid(code, message string) error {
 
 func persistedKey() error {
 	return invalid("persisted_api_key",
-		"Remove plaintext CU_API_KEY and cu.apiKey from the selected azd environment; "+
-			"only Entra authentication is supported.")
+		"Remove persisted CU_API_KEY and API-key settings from azd configuration and environments; "+
+			"API keys are supported only through the process CU_API_KEY environment variable.")
+}
+
+func isAPIKeySetting(name string) bool {
+	normalized := strings.TrimPrefix(strings.ToLower(name), "cu_")
+	return strings.EqualFold(strings.ReplaceAll(normalized, "_", ""), "apiKey")
 }
 
 func unsupportedKey() error {
 	return invalid("unsupported_authentication",
-		"API-key authentication is not enabled. Remove CU_API_KEY and use CU_AUTH_MODE=login with azd auth login.")
+		"CU_AUTH_MODE, if set, must be login. To use an API key, unset CU_AUTH_MODE and set process CU_API_KEY.")
 }

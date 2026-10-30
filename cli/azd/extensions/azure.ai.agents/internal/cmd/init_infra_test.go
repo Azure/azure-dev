@@ -1595,6 +1595,18 @@ func TestResolveInfraEjectAcrMode(t *testing.T) {
 			"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "registry-conn",
 		}, want: infraEjectAcrAlreadyConnected},
 		{name: "skip", values: map[string]string{"AZD_AGENT_SKIP_ACR": "true"}, want: infraEjectAcrNone},
+		{name: "explicit create", values: map[string]string{
+			"AZD_FOUNDRY_ACR_MODE": " create ",
+		}, want: infraEjectAcrCreate},
+		{name: "explicit none", values: map[string]string{
+			"AZD_FOUNDRY_ACR_MODE": "none",
+		}, want: infraEjectAcrNone},
+		{name: "invalid mode", values: map[string]string{
+			"AZD_FOUNDRY_ACR_MODE": "invalid",
+		}, fail: true},
+		{name: "skip ignores unused mode", values: map[string]string{
+			"AZD_AGENT_SKIP_ACR": "true", "AZD_FOUNDRY_ACR_MODE": "invalid",
+		}, want: infraEjectAcrNone},
 		{name: "incomplete", values: map[string]string{
 			"AZURE_CONTAINER_REGISTRY_ENDPOINT": "registry.azurecr.io",
 		}, fail: true},
@@ -1610,7 +1622,9 @@ func TestResolveInfraEjectAcrMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			previous := maps.Clone(tt.values)
 			got, err := resolveInfraEjectAcrMode(params, tt.values)
+			require.Equal(t, previous, tt.values)
 			if tt.fail {
 				require.Error(t, err)
 				return

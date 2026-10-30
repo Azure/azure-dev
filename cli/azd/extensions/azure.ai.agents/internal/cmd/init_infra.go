@@ -17,6 +17,7 @@ import (
 	"strings"
 	"text/template"
 
+	"azureaiagent/internal/envkeys"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/inittelemetry"
 	projectPaths "azureaiagent/internal/pkg/paths"
@@ -80,13 +81,13 @@ type infraLayer struct {
 	effectiveProvider string
 }
 
-type infraEjectAcrMode string
+type infraEjectAcrMode = envkeys.AcrMode
 
 const (
-	infraEjectAcrNone             infraEjectAcrMode = "none"
-	infraEjectAcrCreate           infraEjectAcrMode = "create"
-	infraEjectAcrReuseConnect     infraEjectAcrMode = "reuse-connect"
-	infraEjectAcrAlreadyConnected infraEjectAcrMode = "already-connected"
+	infraEjectAcrNone             = envkeys.AcrNone
+	infraEjectAcrCreate           = envkeys.AcrCreate
+	infraEjectAcrReuseConnect     = envkeys.AcrReuseConnect
+	infraEjectAcrAlreadyConnected = envkeys.AcrAlreadyConnected
 )
 
 // validateStandaloneEjectArgs refuses init-driving inputs that the
@@ -589,9 +590,9 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 			return err
 		}
 		if provider == project.TerraformProviderName && acrMode == infraEjectAcrCreate &&
-			(strings.TrimSpace(values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]) != "" ||
-				strings.TrimSpace(values["AZURE_CONTAINER_REGISTRY_ENDPOINT"]) != "" ||
-				strings.TrimSpace(values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]) != "" ||
+			(strings.TrimSpace(values[envkeys.ContainerRegistryResourceID.Name()]) != "" ||
+				strings.TrimSpace(values[envkeys.ContainerRegistryEndpoint.Name()]) != "" ||
+				strings.TrimSpace(values[envkeys.ProjectAcrConnectionName.Name()]) != "" ||
 				strings.TrimSpace(values["AZD_FOUNDRY_RESOURCE_GROUP_ID"]) != "") {
 			return exterrors.Validation(
 				exterrors.CodeInvalidParameter,
@@ -724,14 +725,14 @@ func ejectExistingProjectBicep(
 			acrMode == infraEjectAcrAlreadyConnected) {
 		var err error
 		existingAcrEndpoint, err = normalizeContainerRegistryEndpoint(
-			environments[0]["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
+			environments[0][envkeys.ContainerRegistryEndpoint.Name()],
 		)
 		if err != nil {
 			return nil, err
 		}
 	}
 	acrPullAssigned := len(environments) > 0 && strings.EqualFold(
-		strings.TrimSpace(environments[0]["AZD_FOUNDRY_ACR_PULL_ASSIGNED"]), "true")
+		strings.TrimSpace(environments[0][envkeys.FoundryAcrPullAssigned.Name()]), "true")
 	written, err := writeExistingProjectBicepTemplates(
 		infraDir, artifactRoot, module, acrMode, acrPullAssigned)
 	if err != nil {
@@ -748,9 +749,9 @@ func ejectExistingProjectBicep(
 	} else if (acrMode == infraEjectAcrReuseConnect || acrMode == infraEjectAcrAlreadyConnected) &&
 		len(environments) > 0 {
 		params["existingAcrEndpoint"] = existingAcrEndpoint
-		params["existingAcrResourceId"] = environments[0]["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+		params["existingAcrResourceId"] = environments[0][envkeys.ContainerRegistryResourceID.Name()]
 		if acrMode == infraEjectAcrAlreadyConnected {
-			params["existingAcrConnectionName"] = environments[0]["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]
+			params["existingAcrConnectionName"] = environments[0][envkeys.ProjectAcrConnectionName.Name()]
 		}
 	}
 	paramsArtifact, err := writeParametersFile(infraDir, artifactRoot, module, false, params)
@@ -813,14 +814,14 @@ func ejectExistingProjectTerraform(
 			acrMode == infraEjectAcrAlreadyConnected) {
 		var err error
 		existingAcrEndpoint, err = normalizeContainerRegistryEndpoint(
-			environments[0]["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
+			environments[0][envkeys.ContainerRegistryEndpoint.Name()],
 		)
 		if err != nil {
 			return nil, err
 		}
 	}
 	acrPullAssigned := len(environments) > 0 && strings.EqualFold(
-		strings.TrimSpace(environments[0]["AZD_FOUNDRY_ACR_PULL_ASSIGNED"]), "true")
+		strings.TrimSpace(environments[0][envkeys.FoundryAcrPullAssigned.Name()]), "true")
 	written, err := writeExistingProjectTerraformTemplates(
 		infraDir, artifactRoot, acrMode, acrPullAssigned)
 	if err != nil {
@@ -2153,8 +2154,8 @@ func writeExistingProjectTfvarsFile(
 	}
 	if len(environments) > 0 {
 		doc["existing_acr_endpoint"] = existingAcrEndpoint
-		doc["existing_acr_resource_id"] = environments[0]["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
-		doc["existing_acr_connection_name"] = environments[0]["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]
+		doc["existing_acr_resource_id"] = environments[0][envkeys.ContainerRegistryResourceID.Name()]
+		doc["existing_acr_connection_name"] = environments[0][envkeys.ProjectAcrConnectionName.Name()]
 	}
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
@@ -2248,24 +2249,19 @@ func foundryResourceIDIdentity(resourceID string) (string, string) {
 
 func resolveInfraEjectAcrMode(params map[string]any, values map[string]string) (infraEjectAcrMode, error) {
 	includeAcr, _ := params["includeAcr"].(bool)
-	if !includeAcr || strings.EqualFold(strings.TrimSpace(values["AZD_AGENT_SKIP_ACR"]), "true") {
+	if !includeAcr || strings.EqualFold(strings.TrimSpace(values[envkeys.AgentSkipAcr.Name()]), "true") {
 		return infraEjectAcrNone, nil
 	}
-	mode := infraEjectAcrMode(strings.TrimSpace(values["AZD_FOUNDRY_ACR_MODE"]))
-	if mode != "" {
-		switch mode {
-		case infraEjectAcrNone, infraEjectAcrCreate, infraEjectAcrReuseConnect, infraEjectAcrAlreadyConnected:
-		default:
-			return "", exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				fmt.Sprintf("AZD_FOUNDRY_ACR_MODE has unsupported value %q", mode),
-				"re-run `azd ai agent init` to select the container registry behavior",
-			)
-		}
+	mode, err := envkeys.ParseAcrMode(strings.TrimSpace(values[envkeys.FoundryAcrMode.Name()]))
+	if err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter, err.Error(),
+			"re-run `azd ai agent init` to select the container registry behavior",
+		)
 	}
-	endpoint := strings.TrimSpace(values["AZURE_CONTAINER_REGISTRY_ENDPOINT"])
-	resourceID := strings.TrimSpace(values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
-	connection := strings.TrimSpace(values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"])
+	endpoint := strings.TrimSpace(values[envkeys.ContainerRegistryEndpoint.Name()])
+	resourceID := strings.TrimSpace(values[envkeys.ContainerRegistryResourceID.Name()])
+	connection := strings.TrimSpace(values[envkeys.ProjectAcrConnectionName.Name()])
 	if mode == infraEjectAcrReuseConnect || mode == infraEjectAcrAlreadyConnected {
 		if endpoint == "" || resourceID == "" {
 			return "", exterrors.Validation(

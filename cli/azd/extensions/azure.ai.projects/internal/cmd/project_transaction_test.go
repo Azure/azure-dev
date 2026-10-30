@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -756,12 +757,34 @@ func TestResolveProjectEjectAcrMode(t *testing.T) {
 			},
 			wantError: true,
 		},
+		{
+			name:   "trimmed explicit create",
+			params: map[string]any{"includeAcr": true},
+			values: map[string]string{"AZD_FOUNDRY_ACR_MODE": " create "},
+			want:   projectEjectAcrCreate,
+		},
+		{
+			name:   "explicit none",
+			params: map[string]any{"includeAcr": true},
+			values: map[string]string{"AZD_FOUNDRY_ACR_MODE": "none"},
+			want:   projectEjectAcrNone,
+		},
+		{
+			name:   "skip ignores unused mode",
+			params: map[string]any{"includeAcr": true},
+			values: map[string]string{
+				"AZD_AGENT_SKIP_ACR": "true", "AZD_FOUNDRY_ACR_MODE": "invalid",
+			},
+			want: projectEjectAcrNone,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			before := maps.Clone(test.values)
 			got, err := resolveProjectEjectAcrMode(test.params, test.values)
 			if test.wantError {
 				require.Error(t, err)
+				require.Equal(t, before, test.values)
 				return
 			}
 			require.NoError(t, err)

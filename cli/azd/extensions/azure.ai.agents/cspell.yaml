@@ -84,6 +84,7 @@ words:
   - dataagent
   - defaultyourvalue
   - envkey
+  - envkeys
   - exterrors
   - goyaml
   - helloworld

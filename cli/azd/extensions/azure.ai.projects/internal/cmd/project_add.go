@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"azure.ai.projects/internal/azure"
+	"azure.ai.projects/internal/envkeys"
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
@@ -1535,7 +1536,7 @@ func validateExistingEndpointAgentAcr(
 
 func hasPendingAcrProvision(values map[string]string) bool {
 	if values == nil ||
-		strings.TrimSpace(values["AZURE_CONTAINER_REGISTRY_ENDPOINT"]) != "" {
+		strings.TrimSpace(values[envkeys.ContainerRegistryEndpoint.Name()]) != "" {
 		return false
 	}
 	for reason := range strings.SplitSeq(values["AI_AGENT_PENDING_PROVISION"], ",") {

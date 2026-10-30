@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/envkeys"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -415,13 +416,14 @@ func resolveConversationID(
 //
 // Cross-repo dependency: changes to this variable name must be coordinated with
 // the template parameter mapping in main.parameters.json of the starter template.
+// Init records the user's deployment choice through the untyped environment helper.
 func setACREnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string, skipACR bool) error {
 	value := "false"
 	if skipACR {
 		value = "true"
 	}
 
-	if err := setEnvValue(ctx, azdClient, envName, "AZD_AGENT_SKIP_ACR", value); err != nil {
+	if err := setEnvValue(ctx, azdClient, envName, envkeys.AgentSkipAcr.Name(), value); err != nil {
 		if skipACR {
 			return fmt.Errorf("configuring ACR skip: %w", err)
 		}

@@ -30,6 +30,7 @@ import (
 	"unicode/utf8"
 
 	"azureaiagent/internal/cmd/nextstep"
+	"azureaiagent/internal/envkeys"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -2175,7 +2176,7 @@ func (p *AgentServiceTargetProvider) shouldSkipACRForEnvironment(ctx context.Con
 
 	resp, err := p.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: p.env.Name,
-		Key:     "AZD_AGENT_SKIP_ACR",
+		Key:     envkeys.AgentSkipAcr.Name(),
 	})
 	if err != nil || resp == nil {
 		return false

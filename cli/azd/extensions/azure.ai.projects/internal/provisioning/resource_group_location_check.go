@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/azure"
+	"azure.ai.projects/internal/envkeys"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -179,12 +180,12 @@ func (c *ResourceGroupLocationCheck) existingProjectCreatesResourceGroup(ctx con
 		return false
 	}
 	envName := current.GetEnvironment().GetName()
-	mode := envValueOrEmpty(ctx, c.azdClient.Environment(), envName, "AZD_FOUNDRY_ACR_MODE")
+	mode := envValueOrEmpty(ctx, c.azdClient.Environment(), envName, envkeys.FoundryAcrMode.Name())
 	if mode != "" {
-		return strings.EqualFold(mode, "create")
+		return strings.EqualFold(mode, string(envkeys.AcrCreate))
 	}
-	if envValueOrEmpty(ctx, c.azdClient.Environment(), envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT") != "" ||
-		envValueOrEmpty(ctx, c.azdClient.Environment(), envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID") != "" {
+	if envValueOrEmpty(ctx, c.azdClient.Environment(), envName, envkeys.ContainerRegistryEndpoint.Name()) != "" ||
+		envValueOrEmpty(ctx, c.azdClient.Environment(), envName, envkeys.ContainerRegistryResourceID.Name()) != "" {
 		return false
 	}
 

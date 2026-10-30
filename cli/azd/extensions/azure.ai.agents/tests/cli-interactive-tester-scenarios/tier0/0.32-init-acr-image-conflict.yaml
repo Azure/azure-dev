@@ -5,6 +5,7 @@ cwd: "~/working/azd-agents-acr-image-{instance}"
 tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
+  AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE: "false"
 pre:
   - run: "rm -rf ~/working/azd-agents-acr-image-{instance}"
     cwd: "~/working"

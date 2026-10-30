@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -67,6 +69,11 @@ func authorFoundryProject(
 			"an existing Foundry project target cannot be used in this mode",
 			"select an existing project or create a new one",
 		)
+	}
+	if acrResourceID != "" {
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
+		}
 	}
 	args := []string{
 		"ai",
@@ -147,12 +154,40 @@ func authorFoundryProjectPreservingEnvironment(
 	noPrompt bool,
 	acrResourceID string,
 ) error {
+	if acrResourceID != "" {
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
+		}
+	}
 	response, err := azdClient.Environment().GetValues(
 		ctx,
 		&azdext.GetEnvironmentRequest{Name: envName},
 	)
 	if err != nil {
 		return fmt.Errorf("reading new Foundry project environment: %w", err)
+	}
+	if !synthesis.ACRReuseEnabled() {
+		allValues := make(map[string]string, len(response.GetKeyValues()))
+		for _, entry := range response.GetKeyValues() {
+			allValues[entry.GetKey()] = entry.GetValue()
+		}
+		var raw []byte
+		for _, name := range []string{"azure.yaml", "azure.yml"} {
+			// #nosec G304 -- projectRoot is the selected project.
+			content, err := os.ReadFile(filepath.Join(projectRoot, name))
+			if err == nil {
+				raw = content
+				break
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("read project before registry authoring: %w", err)
+			}
+		}
+		if err := synthesis.RequireACRReuseForEnvironment(ctx, azdClient, envName, synthesis.Input{
+			RawAzureYAML: raw, ProjectRoot: projectRoot, Env: allValues,
+		}); err != nil {
+			return err
+		}
 	}
 
 	values := make(map[string]string, len(newProjectEnvironmentKeys))

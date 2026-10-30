@@ -898,6 +898,9 @@ func runInitFromAzureYaml(
 	if err != nil {
 		return err
 	}
+	if err := validateInitACRProject(ctx, azdClient, flags); err != nil {
+		return err
+	}
 	subscription, err := planInitACRSubscription(ctx, azdClient, flags)
 	if err != nil {
 		return err
@@ -1060,6 +1063,9 @@ func preflightAzdTemplate(
 	}
 	replaced, err := preflightAdoptedDeploymentReplacement(ctx, azdClient, stagingDir, flags)
 	if err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	if err := validateInitACRProject(ctx, azdClient, flags); err != nil {
 		return adoptedProjectPreflight{}, err
 	}
 	subscription, err := planInitACRSubscription(ctx, azdClient, flags)

@@ -94,6 +94,8 @@ Preview Feature Switches
     A2A init selection, wire version selection, and the 1.0 message default.
   AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
     Hosted agent memory snapshots.
+  AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true
+    External ACR reuse for new Foundry projects, including cleanup.
 
   All switches default to off. Only 1, t, T, true, TRUE, or True enable them.
   False, empty, and invalid values do not enable a switch.

@@ -18,6 +18,7 @@ import (
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -208,6 +209,7 @@ func TestResolveEnv_PromptsAndPersistsSubscriptionAndLocation(t *testing.T) {
 }
 
 func TestInitializeValidatesPromptedRegistrySubscriptionBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, layer := range []bool{false, true} {
 		for _, onDisk := range []bool{false, true} {
 			for _, canonical := range []bool{false, true} {
@@ -289,6 +291,7 @@ func TestInitializeValidatesPromptedRegistrySubscriptionBeforeWrites(t *testing.
 }
 
 func TestInitializeUsesPromptedLocationInSynthesis(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, layer := range []bool{false, true} {
 		for _, onDisk := range []bool{false, true} {
 			for _, blank := range []bool{false, true} {
@@ -675,7 +678,12 @@ func TestInitializeLeavesSplitConnectionEnvironmentToOwningExtension(t *testing.
 				}
 				project := &forbiddenProjectServer{}
 				client := newPromptOrderTestClient(t, project, env, prompt)
-				provider := &FoundryProvisioningProvider{azdClient: client}
+				provider := &FoundryProvisioningProvider{
+					azdClient: client,
+					bicepCliInstance: &stubCompiler{
+						buildResult: bicep.BuildResult{Compiled: minimalARMTemplate()},
+					},
+				}
 
 				require.NoError(t, provider.Initialize(t.Context(), projectPath,
 					&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
@@ -697,6 +705,7 @@ func TestInitializeLeavesSplitConnectionEnvironmentToOwningExtension(t *testing.
 }
 
 func TestInitializeExistingRegistry(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const subscription = "11111111-1111-1111-1111-111111111111"
 	for _, tt := range []struct {
 		name     string
@@ -859,6 +868,7 @@ func TestInitializeExistingRegistry(t *testing.T) {
 }
 
 func TestInitializeRegistryEnvironmentReadFailure(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, read := range []string{"current", "values"} {
 		t.Run(read, func(t *testing.T) {
 			root := t.TempDir()

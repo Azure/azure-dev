@@ -1668,6 +1668,7 @@ func (s *ejectEnvironmentServer) GetValue(
 }
 
 func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	t.Setenv("ENABLE_AGENT", "false")
 	const existingRegistryID = "/subscriptions/sub/resourceGroups/shared/" +
 		"providers/Microsoft.ContainerRegistry/registries/sharedregistry"
@@ -1783,6 +1784,7 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 }
 
 func TestEjectProjectInfraRecordedRegistryMode(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
 	for _, provider := range []string{"bicep", "terraform"} {
 		for _, mode := range []string{"create", "reuse-connect", "already-connected"} {

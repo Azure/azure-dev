@@ -112,6 +112,15 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 			return fmt.Errorf("read environment before registry selection: %w", err)
 		}
 	}
+	raw, err := readProjectACRManifest(root)
+	if err != nil {
+		return err
+	}
+	if err := synthesis.RequireACRReuseForEnvironment(ctx, a.client, envName, synthesis.Input{
+		RawAzureYAML: raw, ProjectRoot: root, Env: values,
+	}); err != nil {
+		return err
+	}
 	if envName != "" {
 		binding, err := readProjectACRBinding(ctx, a.client, envName)
 		if err != nil {
@@ -183,10 +192,6 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 	if !greenfield || (!a.flags.acrResourceIDSet && values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] == "" &&
 		a.flags.deployedBinding == nil) {
 		return nil
-	}
-	raw, err := readProjectACRManifest(root)
-	if err != nil {
-		return err
 	}
 	project := &resolvedProject{
 		Mode:             projectModeNew,

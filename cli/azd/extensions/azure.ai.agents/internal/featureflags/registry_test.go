@@ -12,7 +12,7 @@ import (
 
 func TestRegistryDeclarations(t *testing.T) {
 	features := All()
-	require.Equal(t, []Feature{ManagedHarness, Voice, LongRunning, A2A, MemorySnapshot}, features)
+	require.Equal(t, []Feature{ManagedHarness, Voice, LongRunning, A2A, MemorySnapshot, FoundryACRReuse}, features)
 	require.Equal(t,
 		[]string{
 			"agents.managed_harness", "agents.voice", "agents.long_running", "agents.a2a", "agents.memory_snapshot",
@@ -23,7 +23,7 @@ func TestRegistryDeclarations(t *testing.T) {
 	ids := map[string]bool{}
 	envVars := map[string]bool{}
 	for _, feature := range features {
-		require.True(t, strings.HasPrefix(feature.ID, "agents."), feature.ID)
+		require.True(t, strings.HasPrefix(feature.ID, "agents.") || feature.ID == "foundry.acr_reuse", feature.ID)
 		require.Equal(t,
 			"AZD_ALPHA_ENABLE_"+strings.ToUpper(strings.ReplaceAll(feature.ID, ".", "_")),
 			feature.EnvVar,

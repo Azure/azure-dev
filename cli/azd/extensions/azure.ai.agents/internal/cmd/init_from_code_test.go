@@ -18,6 +18,7 @@ import (
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -575,6 +576,7 @@ func (s *sourceInitACRAccountServer) LookupTenant(
 }
 
 func TestInitFromCodeValidatesACRBeforeSetupWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name                   string
 		subscription           string

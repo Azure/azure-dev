@@ -9,6 +9,7 @@ import (
 
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -79,16 +80,26 @@ func RequireAgentFeatures(
 }
 
 // prepareGatedOperation adopts and resolves the service, then
-// checks the preview for Package, Publish, and Deploy. Initialize,
-// GetTargetResource, and Endpoints stay outside the gate so read and
-// cleanup flows keep working.
+// checks previews for Package, Publish, and Deploy. ACR reuse also
+// requires its shared switch, independently of agent-kind previews.
 func (p *AgentServiceTargetProvider) prepareGatedOperation(
 	ctx context.Context, serviceConfig *azdext.ServiceConfig,
 ) error {
 	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
 		return err
 	}
-	return p.requirePreviewFeatures(ctx)
+	if err := p.requirePreviewFeatures(ctx); err != nil {
+		return err
+	}
+	if synthesis.ACRReuseEnabled() {
+		return nil
+	}
+	if err := p.loadProjectPath(ctx); err != nil {
+		return err
+	}
+	return synthesis.RequireACRReuseForProject(ctx, p.azdClient, &azdext.ProjectConfig{
+		Path: p.projectPath, Services: p.projectServices,
+	})
 }
 
 func (p *AgentServiceTargetProvider) requirePreviewFeatures(ctx context.Context) error {

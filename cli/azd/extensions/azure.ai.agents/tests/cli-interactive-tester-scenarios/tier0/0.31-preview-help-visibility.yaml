@@ -7,10 +7,11 @@ env:
   AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS: "false"
   AZD_ALPHA_ENABLE_AGENTS_VOICE: "false"
   AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING: "false"
+  AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE: "false"
 goals:
   - "Confirm the command exits with code 0 without a picker, login prompt, or project mutation."
   - "With no preview opt-ins, confirm init help does not list --voice, the --kind text names only 'hosted' and 'prompt', and there is no Voice Agents section or prompt-voice example."
-  - "With no preview opt-ins, confirm command-specific help does not name voice, prompt-voice, or long-running. Check init, add, delete, show, and endpoint show help, including the --acr-connection, --instructions, and --model usages. Root help must still list all three canonical switches and their scopes under Preview Feature Switches."
+  - "With no preview opt-ins, confirm command-specific help does not name voice, prompt-voice, or long-running. Check init, add, delete, show, and endpoint show help, including the --acr-connection, --instructions, and --model usages. Root help must still list all documented canonical switches and their scopes under Preview Feature Switches, including AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE."
   - "Run 'azd ai agent invoke --help'. Confirm it does not list --long-running or --no-wait and has no Long-running Invocations or Voice Agents section."
   - "Run 'azd ai agent --help'. Confirm the command list does not include invocations."
   - "Run 'azd ai agent invocations show --help'. Confirm it still exits with code 0 and shows the command help."

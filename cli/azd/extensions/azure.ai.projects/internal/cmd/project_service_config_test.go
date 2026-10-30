@@ -327,6 +327,12 @@ type recordingProjectEnvironmentServer struct {
 	failKey     string
 }
 
+func (s *recordingProjectEnvironmentServer) GetConfig(
+	context.Context, *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	return &azdext.GetConfigResponse{}, nil
+}
+
 func (s *recordingProjectEnvironmentServer) GetValues(
 	_ context.Context,
 	request *azdext.GetEnvironmentRequest,

@@ -9,6 +9,7 @@ cwd: "~/working/azd-agents-acr-existing-project-{instance}"
 tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
+  AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE: "true"
   AZURE_DEV_COLLECT_TELEMETRY: "no"
   AZD_SKIP_UPDATE_CHECK: "true"
   NO_COLOR: "1"

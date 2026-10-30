@@ -349,6 +349,18 @@ in any order, any time.
 | `tier0/0.32-init-adopt-cancel-replacement.yaml` | Cancelling the template replacement picker leaves no project files or environment |
 | `tier0/0.33-invoke-a2a-version-validation.yaml` | A2A preview help and gating, explicit file versions when enabled, unsupported/empty versions, and rejection on non-A2A protocols |
 | `tier0/0.35-init-acr-existing-project-template.yaml` | `init --acr-resource-id` rejects a template's referenced existing project endpoint before creating project files or an environment |
+| `tier0/0.36-init-acr-feature-disabled.yaml` | A valid reuse selector requires the shared switch, independently of Voice, before authentication or writes |
+| `tier0/0.37-acr-feature-help.yaml` | Default-off and enabled ACR selector/help discovery, with the canonical switch always listed at the root |
+| `tier0/0.38-eject-acr-feature-disabled.yaml` | Eject rejects an alias-free canonical reuse binding while disabled, without changing files or saved lifecycle state |
+
+ACR invalid-input scenarios `0.31` and `0.32` explicitly leave
+`AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=false` to check validation precedence.
+`0.34` and `0.35` enable the switch to retain the underlying scope/template
+validation checks. The new ACR scenarios are offline contracts only; they
+do not claim a live preview, provision, down, or Azure RBAC run. Go tests use
+injected boundaries for those lifecycle entrypoints. Generated Foundry
+infrastructure retains `microsoft.foundry`; manually switching to core Bicep
+is unsupported and is not a scenario coverage claim.
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP

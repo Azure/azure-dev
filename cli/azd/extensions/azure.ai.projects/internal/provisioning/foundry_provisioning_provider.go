@@ -89,6 +89,8 @@ type FoundryProvisioningProvider struct {
 	tenantID         string          // resolved lazily by ensureCredential; surfaced as AZURE_TENANT_ID
 	armTemplate      map[string]any  // embedded ARM JSON; nil when on-disk Bicep is configured
 	onDiskSource     *templateSource // non-nil after on-disk Bicep has been compiled and validated
+	deferEnvWrites   bool
+	pendingEnv       map[string]string
 
 	// brownfieldEndpoint is the existing project endpoint when the foundry
 	// service sets endpoint: (bring-your-own). The existing project is reused;
@@ -325,12 +327,12 @@ func (p *FoundryProvisioningProvider) Initialize(
 
 	onDisk := p.onDiskTemplatePresent()
 	p.greenfieldAcrResourceID = ""
-	if endpoint == "" {
-		if p.azdClient != nil {
-			if err := p.loadACRLifecycle(ctx); err != nil {
-				return err
-			}
+	if p.azdClient != nil {
+		if err := p.loadACRLifecycle(ctx); err != nil {
+			return err
 		}
+	}
+	if endpoint == "" {
 		// Validate greenfield config before any interactive prompts.
 		validationInput := synthesis.Input{
 			RawAzureYAML:    rawYAML,
@@ -340,6 +342,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 			PreserveVarRefs: true,
 			ProjectRoot:     projectRoot,
 			ACRBinding:      p.acrBinding,
+			ACRPending:      p.acrPending != nil,
 		}
 		validationResult, validationErr := synthesis.Synthesize(validationInput)
 		if validationErr != nil &&
@@ -384,7 +387,27 @@ func (p *FoundryProvisioningProvider) Initialize(
 			return nil
 		}
 	}
-	return p.initializeInfrastructure(ctx, rawYAML, projectRoot, svcName, endpoint, onDisk)
+	p.deferEnvWrites = onDisk && !synthesis.ACRReuseEnabled()
+	defer func() {
+		p.deferEnvWrites = false
+		p.pendingEnv = nil
+	}()
+	if err := p.initializeInfrastructure(ctx, rawYAML, projectRoot, svcName, endpoint, onDisk); err != nil {
+		return err
+	}
+	if p.deferEnvWrites {
+		// Validate parameters before saving prompted values.
+		if _, err := p.resolveTemplate(ctx, func(string) {}); err != nil {
+			return err
+		}
+		p.deferEnvWrites = false
+		for _, key := range slices.Sorted(maps.Keys(p.pendingEnv)) {
+			if err := p.setEnv(ctx, key, p.pendingEnv[key]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (p *FoundryProvisioningProvider) initializeInfrastructure(
@@ -409,6 +432,7 @@ func (p *FoundryProvisioningProvider) initializeInfrastructure(
 		ProjectRoot:       projectRoot,
 		ResourceGroupName: p.rgName,
 		ACRBinding:        p.acrBinding,
+		ACRPending:        p.acrPending != nil,
 	}
 	input.Env[envKeySubscriptionID] = p.subID
 	input.Env[envKeyLocation] = p.location
@@ -644,6 +668,9 @@ func (p *FoundryProvisioningProvider) inferExistingProjectAcrMode() string {
 }
 
 func foundrySynthesisError(serviceName string, err error) error {
+	if local, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return local
+	}
 	if errors.Is(err, synthesis.ErrServiceNotFound) {
 		return exterrors.Dependency(
 			exterrors.CodeProvisioningServiceNotFound,
@@ -1128,6 +1155,13 @@ func (p *FoundryProvisioningProvider) promptLocation(ctx context.Context) error 
 
 // setEnv persists a single key/value to the active azd environment.
 func (p *FoundryProvisioningProvider) setEnv(ctx context.Context, key, value string) error {
+	if p.deferEnvWrites {
+		if p.pendingEnv == nil {
+			p.pendingEnv = make(map[string]string)
+		}
+		p.pendingEnv[key] = value
+		return nil
+	}
 	if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: p.envName,
 		Key:     key,
@@ -1184,6 +1218,9 @@ func (p *FoundryProvisioningProvider) State(
 	ctx context.Context,
 	options *azdext.ProvisioningStateOptions,
 ) (*azdext.ProvisioningStateResult, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}
@@ -1229,6 +1266,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDeployResult, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}
@@ -1560,6 +1600,9 @@ func (p *FoundryProvisioningProvider) Preview(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}
@@ -1658,6 +1701,9 @@ func (p *FoundryProvisioningProvider) Destroy(
 	options *azdext.ProvisioningDestroyOptions,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDestroyResult, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if p.brownfieldEndpoint != "" {
 		if p.existingProjectReuseOnly {
 			progress("Existing Foundry project is not owned by azd; leaving it in place")
@@ -2166,6 +2212,9 @@ func invalidatedEnvKeysResult() *azdext.ProvisioningDestroyResult {
 func (p *FoundryProvisioningProvider) Parameters(
 	ctx context.Context,
 ) ([]*azdext.ProvisioningParameter, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if p.brownfieldEndpoint != "" {
 		return []*azdext.ProvisioningParameter{
 			{
@@ -2224,6 +2273,9 @@ func (p *FoundryProvisioningProvider) Parameters(
 func (p *FoundryProvisioningProvider) PlannedOutputs(
 	ctx context.Context,
 ) ([]*azdext.ProvisioningPlannedOutput, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}

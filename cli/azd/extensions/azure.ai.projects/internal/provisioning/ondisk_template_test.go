@@ -182,7 +182,7 @@ func TestLoadOnDiskTemplateAt_CustomPathAndModule(t *testing.T) {
 }
 
 func TestResolveTemplate_EjectedExistingRegistry(t *testing.T) {
-	t.Parallel()
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const key = "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"
 	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/sharedregistry"
 	result, err := synthesis.Synthesize(synthesis.Input{

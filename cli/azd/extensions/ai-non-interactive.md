@@ -25,7 +25,7 @@ no non-interactive equivalent is a bug.
 | `ai agent init` | Protocols | Repeatable `--protocol` | Uses the documented default protocol set. |
 | `ai agent init` | Existing model deployment or new model | `--model-deployment`, `--model`, and `--project-id` | Uses the supplied deployment/model; required unresolved model choices return guidance. |
 | `ai agent init` | Azure Container Registry connection | `--acr-connection` with `--project-id` or a persisted `AZURE_AI_PROJECT_ID`; persisted `AZURE_AI_PROJECT_ACR_CONNECTION_NAME`; or persisted `AZURE_CONTAINER_REGISTRY_ENDPOINT` / `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` | Reuses persisted state. With multiple remaining connections, selects the first connection alphabetically. With none, creates a registry during provisioning. |
-| `ai agent init` | Source-build registry for a new Foundry project | `--acr-resource-id` or persisted `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` | Creates a registry when source builds need one. An explicit selector is saved by project setup without a registry picker. |
+| `ai agent init` | Source-build registry for a new Foundry project | Enable `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true`, then use `--acr-resource-id` or persisted `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` | Creates a registry when source builds need one and no reuse intent exists. Reuse intent with the switch off fails without mutation; no registry picker is added. |
 | `ai agent init` | Application Insights | Foundry project service configuration | The current init flow delegates creation or reconciliation to the provisioning provider without prompting. |
 | `ai agent init` | Values referenced by `${NAME}` in `azure.yaml` | `azd env set NAME value` before running init, or existing azd environment values | Leaves unresolved optional references for explicit configuration and reports required missing values. |
 | `ai agent add` | Current project, Agent service key, and definition | Positional `<name>` and required `--file`; optional `--project` and `--source` | Accepts YAML or JSON definitions and writes a service-level root `$ref` to `--file`, relative to the directory containing `azure.yaml`. Runs without prompts or Azure authentication and rejects missing or multiple `azure.ai.project` services before writing. |
@@ -41,6 +41,57 @@ are not forwarded; `--help` remains available. Use the standalone
 [`azure.ai.evaluations` extension](./azure.ai.evaluations/README.md) for evaluations.
 
 ## `azure.ai.projects`
+
+### Shared existing-ACR preview switch
+
+The agents and projects extensions share one default-off process switch,
+`AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE`. Enable it before setup and in every CI
+job that provisions, previews, packages, publishes, deploys, ejects, recovers,
+or tears down an environment using the new external-registry capability:
+
+```sh
+export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true
+```
+
+```powershell
+$env:AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE = 'true'
+```
+
+For example, a GitHub Actions job can declare:
+
+```yaml
+env:
+  AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE: 'true'
+```
+
+The reader accepts only `strconv.ParseBool` true forms. Missing, empty, false,
+invalid, and whitespace-padded values leave it disabled; `on` does not enable
+it. It reads the current process, including host injection, not core alpha
+configuration or dotenv files directly. A host-injected value can override
+the parent shell value; see the [process source boundary](azure.ai.agents/docs/specs/preview-feature-flags.md#evaluator-source-boundary).
+
+With the switch off, valid reuse inputs fail with a structured
+`feature_not_enabled` compatibility error naming the switch. Pure local
+flag errors, including explicit empty values and conflicts, still win.
+No project files, environment/config values, saved context, or Azure resources
+are changed. This applies to pending environment selections, canonical reuse
+bindings with missing legacy aliases, and unfinished access cleanup. **Down,
+preview, recovery, and eject require re-enabling the switch**, even for an
+already deployed environment. Disabling it is not a cleanup action and does
+not transfer ownership or silently choose registry creation.
+
+Automatic registry creation and old existing-project connection, image, and
+code workflows remain available when there is no new reuse intent. A verified
+legacy azd-created registry ID alone is not reuse intent.
+
+Supported embedded and currently generated ejected Bicep use the
+`microsoft.foundry` provider. Retain that provider for mandatory enforcement,
+including preview and down. Manually switching the Foundry layer to core
+`infra.provider: bicep` is unsupported and outside this contract: core Bicep
+preview skips extension lifecycle hooks. Arbitrary direct external IaC
+execution is also outside the flag's enforcement contract.
+
+### Registry selection and ownership
 
 For a new Foundry project that builds hosted-agent images from source, pass
 `--acr-resource-id "<registry-arm-id>"` to `azd ai agent init`, or use

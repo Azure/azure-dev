@@ -75,6 +75,9 @@ type Input struct {
 
 	// ACRBinding contains deployment facts, never setup intent.
 	ACRBinding *ACRBinding
+
+	// ACRPending marks unfinished external registry access.
+	ACRPending bool
 }
 
 // Result bundles the bicep sources and the parameter values derived
@@ -199,6 +202,11 @@ func Synthesize(in Input) (*Result, error) {
 	if in.ServiceName == "" {
 		return nil, errors.New("synthesis: ServiceName is empty")
 	}
+	if in.ACRPending || in.ACRBinding != nil || in.Env[ACRBindingEnvKey] != "" {
+		if err := RequireACRReuseForInput(in); err != nil {
+			return nil, err
+		}
+	}
 
 	var root projectFile
 	if err := yaml.Unmarshal(in.RawAzureYAML, &root); err != nil {
@@ -241,8 +249,16 @@ func Synthesize(in Input) (*Result, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := RequireACRReuse(); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("synthesis: AZD_FOUNDRY_ACR_MODE has unsupported greenfield value %q", mode)
+	}
+	if in.ACRPending {
+		if err := RequireACRReuse(); err != nil {
+			return nil, err
+		}
 	}
 	if !includeAcr {
 		mode = "none"
@@ -393,6 +409,9 @@ func SynthesizeExistingProject(in Input) (*Result, error) {
 	}
 	if in.ServiceName == "" {
 		return nil, errors.New("synthesis: ServiceName is empty")
+	}
+	if err := RequireACRReuseForInput(in); err != nil {
+		return nil, err
 	}
 
 	var root projectFile

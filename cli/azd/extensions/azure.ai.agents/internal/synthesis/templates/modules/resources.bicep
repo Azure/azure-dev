@@ -114,6 +114,10 @@ var resourceToken = empty(resourceTokenSalt)
 var abbrs = loadJsonContent('../abbreviations.json')
 
 var foundryAccountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
+var byoFoundryAccountName = 'aks-${foundryAccountName}'
+var activeFoundryAccountName = agentHosting.enabled
+  ? byoFoundryAccountName
+  : foundryAccountName
 var storageAccountName = 'st${resourceToken}'
 var hostingIdentityName = '${foundryAccountName}-hosting-mi'
 var workloadIdentityName = '${foundryAccountName}-workload-mi'
@@ -186,7 +190,7 @@ var agentNetworkInjections = useByoNetwork
 
 var foundryAccountProperties = {
   allowProjectManagement: true
-  customSubDomainName: foundryAccountName
+  customSubDomainName: activeFoundryAccountName
   publicNetworkAccess: disablePublicDataPlaneAccess ? 'Disabled' : 'Enabled'
   disableLocalAuth: true
   networkAcls: {
@@ -240,7 +244,7 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = if (
 }
 
 resource byoFoundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview' = if (agentHosting.enabled) {
-  name: foundryAccountName
+  name: byoFoundryAccountName
   location: location
   tags: tags
   sku: {
@@ -304,10 +308,6 @@ resource byoFoundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-prev
   }
 }
 
-resource foundryAccountReference 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = {
-  name: foundryAccountName
-}
-
 // Managed-network isolation (managed egress only). Applies the chosen outbound
 // isolation mode to the Microsoft-managed VNet that hosts the agent runtime.
 // Only deployed when an explicit isolationMode is requested; otherwise the
@@ -316,8 +316,7 @@ resource foundryAccountReference 'Microsoft.CognitiveServices/accounts@2025-06-0
 // for the platform-managed stores used here those are managed by the platform.
 resource foundryManagedNetwork 'Microsoft.CognitiveServices/accounts/managednetworks@2025-10-01-preview' =
   if (useManagedNetwork && !empty(managedIsolationMode)) {
-    parent: foundryAccountReference
-    name: 'default'
+    name: '${activeFoundryAccountName}/default'
     properties: {
       managedNetwork: {
         isolationMode: managedIsolationMode
@@ -335,7 +334,7 @@ module acr 'acr.bicep' = if (includeAcr) {
     location: location
     tags: tags
     name: '${abbrs.containerRegistryRegistries}${resourceToken}'
-    foundryAccountName: foundryAccountName
+    foundryAccountName: activeFoundryAccountName
     foundryProjectName: foundryProjectName
     foundryProjectPrincipalId: agentHosting.enabled
       ? byoFoundryAccount::project!.identity.principalId
@@ -352,7 +351,7 @@ module acr 'acr.bicep' = if (includeAcr) {
 module privateEndpointDns 'private-endpoint-dns.bicep' = if (enableNetworkIsolation) {
   name: 'foundry-private-endpoint-dns'
   params: {
-    aiAccountName: foundryAccountName
+    aiAccountName: activeFoundryAccountName
     location: network!.outputs.vnetLocation
     vnetId: network!.outputs.vnetId
     peSubnetId: network!.outputs.peSubnetId
@@ -368,11 +367,11 @@ module privateEndpointDns 'private-endpoint-dns.bicep' = if (enableNetworkIsolat
 
 // Outputs
 
-output AZURE_AI_PROJECT_ID string = resourceId('Microsoft.CognitiveServices/accounts/projects', foundryAccountName, foundryProjectName)
-output AZURE_AI_ACCOUNT_NAME string = foundryAccountName
+output AZURE_AI_PROJECT_ID string = resourceId('Microsoft.CognitiveServices/accounts/projects', activeFoundryAccountName, foundryProjectName)
+output AZURE_AI_ACCOUNT_NAME string = activeFoundryAccountName
 output AZURE_AI_PROJECT_NAME string = foundryProjectName
-output AZURE_OPENAI_ENDPOINT string = 'https://${foundryAccountName}.openai.azure.com/'
-output FOUNDRY_PROJECT_ENDPOINT string = 'https://${foundryAccountName}.services.ai.azure.com/api/projects/${foundryProjectName}'
+output AZURE_OPENAI_ENDPOINT string = 'https://${activeFoundryAccountName}.openai.azure.com/'
+output FOUNDRY_PROJECT_ENDPOINT string = 'https://${activeFoundryAccountName}.services.ai.azure.com/api/projects/${foundryProjectName}'
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = includeAcr ? acr!.outputs.loginServer : ''
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = includeAcr ? acr!.outputs.resourceId : ''
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = includeAcr ? acr!.outputs.connectionName : ''

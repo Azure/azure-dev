@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "15071112474721892195"
+      "templateHash": "15703669366336284206"
     }
   },
   "definitions": {
@@ -330,7 +330,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "13004949719113969404"
+              "templateHash": "785231122286248583"
             }
           },
           "definitions": {
@@ -555,6 +555,8 @@
             "resourceToken": "[if(empty(parameters('resourceTokenSalt')), uniqueString(subscription().id, resourceGroup().id, parameters('location')), uniqueString(subscription().id, resourceGroup().id, parameters('location'), parameters('resourceTokenSalt')))]",
             "abbrs": "[variables('$fxv#0')]",
             "foundryAccountName": "[format('{0}{1}', variables('abbrs').cognitiveServicesAccounts, variables('resourceToken'))]",
+            "byoFoundryAccountName": "[format('aks-{0}', variables('foundryAccountName'))]",
+            "activeFoundryAccountName": "[if(parameters('agentHosting').enabled, variables('byoFoundryAccountName'), variables('foundryAccountName'))]",
             "storageAccountName": "[format('st{0}', variables('resourceToken'))]",
             "hostingIdentityName": "[format('{0}-hosting-mi', variables('foundryAccountName'))]",
             "workloadIdentityName": "[format('{0}-workload-mi', variables('foundryAccountName'))]",
@@ -565,7 +567,7 @@
             "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]",
             "foundryAccountProperties": {
               "allowProjectManagement": true,
-              "customSubDomainName": "[variables('foundryAccountName')]",
+              "customSubDomainName": "[variables('activeFoundryAccountName')]",
               "publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]",
               "disableLocalAuth": true,
               "networkAcls": {
@@ -625,7 +627,7 @@
               "condition": "[parameters('agentHosting').enabled]",
               "type": "Microsoft.CognitiveServices/accounts/deployments",
               "apiVersion": "2026-07-15-preview",
-              "name": "[format('{0}/{1}', variables('foundryAccountName'), parameters('deployments')[copyIndex()].name)]",
+              "name": "[format('{0}/{1}', variables('byoFoundryAccountName'), parameters('deployments')[copyIndex()].name)]",
               "properties": {
                 "model": "[parameters('deployments')[copyIndex()].model]"
               },
@@ -638,7 +640,7 @@
               "condition": "[parameters('agentHosting').enabled]",
               "type": "Microsoft.CognitiveServices/accounts/projects",
               "apiVersion": "2026-07-15-preview",
-              "name": "[format('{0}/{1}', variables('foundryAccountName'), parameters('foundryProjectName'))]",
+              "name": "[format('{0}/{1}', variables('byoFoundryAccountName'), parameters('foundryProjectName'))]",
               "location": "[parameters('location')]",
               "identity": {
                 "type": "SystemAssigned"
@@ -675,7 +677,7 @@
               "condition": "[parameters('agentHosting').enabled]",
               "type": "Microsoft.CognitiveServices/accounts",
               "apiVersion": "2026-07-15-preview",
-              "name": "[variables('foundryAccountName')]",
+              "name": "[variables('byoFoundryAccountName')]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
               "sku": {
@@ -694,17 +696,11 @@
                 "prerequisites"
               ]
             },
-            "foundryAccountReference": {
-              "existing": true,
-              "type": "Microsoft.CognitiveServices/accounts",
-              "apiVersion": "2025-06-01",
-              "name": "[variables('foundryAccountName')]"
-            },
             "foundryManagedNetwork": {
               "condition": "[and(variables('useManagedNetwork'), not(empty(parameters('managedIsolationMode'))))]",
               "type": "Microsoft.CognitiveServices/accounts/managedNetworks",
               "apiVersion": "2025-10-01-preview",
-              "name": "[format('{0}/{1}', variables('foundryAccountName'), 'default')]",
+              "name": "[format('{0}/default', variables('activeFoundryAccountName'))]",
               "properties": {
                 "managedNetwork": {
                   "isolationMode": "[parameters('managedIsolationMode')]"
@@ -1375,7 +1371,7 @@
                     "value": "[format('{0}{1}', variables('abbrs').containerRegistryRegistries, variables('resourceToken'))]"
                   },
                   "foundryAccountName": {
-                    "value": "[variables('foundryAccountName')]"
+                    "value": "[variables('activeFoundryAccountName')]"
                   },
                   "foundryProjectName": {
                     "value": "[parameters('foundryProjectName')]"
@@ -1567,7 +1563,7 @@
                 "mode": "Incremental",
                 "parameters": {
                   "aiAccountName": {
-                    "value": "[variables('foundryAccountName')]"
+                    "value": "[variables('activeFoundryAccountName')]"
                   },
                   "location": {
                     "value": "[reference('network').outputs.vnetLocation.value]"
@@ -1795,11 +1791,11 @@
           "outputs": {
             "AZURE_AI_PROJECT_ID": {
               "type": "string",
-              "value": "[resourceId('Microsoft.CognitiveServices/accounts/projects', variables('foundryAccountName'), parameters('foundryProjectName'))]"
+              "value": "[resourceId('Microsoft.CognitiveServices/accounts/projects', variables('activeFoundryAccountName'), parameters('foundryProjectName'))]"
             },
             "AZURE_AI_ACCOUNT_NAME": {
               "type": "string",
-              "value": "[variables('foundryAccountName')]"
+              "value": "[variables('activeFoundryAccountName')]"
             },
             "AZURE_AI_PROJECT_NAME": {
               "type": "string",
@@ -1807,11 +1803,11 @@
             },
             "AZURE_OPENAI_ENDPOINT": {
               "type": "string",
-              "value": "[format('https://{0}.openai.azure.com/', variables('foundryAccountName'))]"
+              "value": "[format('https://{0}.openai.azure.com/', variables('activeFoundryAccountName'))]"
             },
             "FOUNDRY_PROJECT_ENDPOINT": {
               "type": "string",
-              "value": "[format('https://{0}.services.ai.azure.com/api/projects/{1}', variables('foundryAccountName'), parameters('foundryProjectName'))]"
+              "value": "[format('https://{0}.services.ai.azure.com/api/projects/{1}', variables('activeFoundryAccountName'), parameters('foundryProjectName'))]"
             },
             "AZURE_CONTAINER_REGISTRY_ENDPOINT": {
               "type": "string",

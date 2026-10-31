@@ -645,7 +645,7 @@ overrides:
   - filename:
       - "extensions/azure.ai.{agents,projects}/internal/synthesis/hosting.go"
       - "extensions/azure.ai.projects/internal/provisioning/{aks_hosting,foundry_provisioning_provider}.go"
-      - "extensions/azure.ai.agents/internal/cmd/{init_infra,listen,preview_features}.go"
+      - "extensions/azure.ai.agents/internal/cmd/{init,init_infra,listen,preview_features}.go"
       - "extensions/azure.ai.agents/internal/featureflags/registry.go"
       - "extensions/azure.ai.agents/docs/specs/preview-feature-flags.md"
     words:

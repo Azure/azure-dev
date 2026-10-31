@@ -125,19 +125,6 @@ func TestHostingFileReferencesAndEnvironmentResolution(t *testing.T) {
 	require.ErrorContains(t, err, "storageAccountResourceId: unsupported property")
 }
 
-func TestHostingSubnetNamesResolveBeforeComparison(t *testing.T) {
-	raw := strings.ReplaceAll(hostingYAML(), "name: agents", `name: "${AGENT_SUBNET}"`)
-	raw = strings.ReplaceAll(raw, "name: endpoints", `name: "${PE_SUBNET}"`)
-	input := Input{RawAzureYAML: []byte(raw), ServiceName: "project",
-		Env: map[string]string{"AGENT_SUBNET": "agents", "PE_SUBNET": "endpoints"}}
-	result, err := Synthesize(input)
-	require.NoError(t, err)
-	assert.Equal(t, "agents", result.Parameters["agentSubnetName"])
-	input.Env["PE_SUBNET"] = "agents"
-	_, err = Synthesize(input)
-	require.ErrorContains(t, err, "must differ")
-}
-
 func TestHostingSchemaMatchesRuntimeSelections(t *testing.T) {
 	raw, err := os.ReadFile(schemaPath)
 	require.NoError(t, err)

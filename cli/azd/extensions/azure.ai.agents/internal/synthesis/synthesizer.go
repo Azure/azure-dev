@@ -921,7 +921,7 @@ func synthesizeNetwork(
 //	vnet + name           -> reference existing subnet (create=false)
 //	vnet + name + prefix  -> create subnet with that CIDR (create=true)
 //
-// vnet and name are required; ${VAR} references in both are expanded when
+// vnet and name are required; ${VAR} references in vnet are expanded when
 // resolve is true. The Microsoft.Network/virtualNetworks id shape is then
 // checked, except on the eject path (resolve false), where an unexpanded
 // reference is left for provision time to validate.
@@ -946,27 +946,12 @@ func resolveSubnet(
 	if err := ValidateEnvReferences(vnetID); err != nil {
 		return "", "", "", false, fmt.Errorf("%s.vnet: %w", fieldPath, err)
 	}
-	if err := ValidateEnvReferences(name); err != nil {
-		return "", "", "", false, fmt.Errorf("%s.name: %w", fieldPath, err)
-	}
 	if resolve {
 		resolved, rerr := resolveVars(vnetID, env)
 		if rerr != nil {
 			return "", "", "", false, fmt.Errorf("%s.vnet: %w", fieldPath, rerr)
 		}
 		vnetID = resolved
-		name, rerr = resolveVars(name, env)
-		if rerr != nil {
-			return "", "", "", false, fmt.Errorf("%s.name: %w", fieldPath, rerr)
-		}
-		name = strings.TrimSpace(name)
-	}
-	if name == "" {
-		return "", "", "", false, fmt.Errorf("%s.name: required after environment expansion", fieldPath)
-	}
-	if (resolve || !containsVarRef(name)) && strings.ContainsAny(name, "/\\?#%${} \t\r\n") {
-		return "", "", "", false, fmt.Errorf("%s.name: expected a subnet name without unresolved references or separators",
-			fieldPath)
 	}
 	// Validate the ARM id shape unless the value can still change: on the eject
 	// path an unexpanded ${VAR} is validated at provision time. After

@@ -263,3 +263,156 @@ func TestFindByMsaAppIDReturnsTypedErrorForMultipleMatches(t *testing.T) {
 		t.Fatalf("FindByMsaAppID error = %T, want *MultipleBotsForMsaAppIDError", err)
 	}
 }
+
+func TestFindByMsaAppIDCollapsesDuplicateRows(t *testing.T) {
+	t.Parallel()
+
+	row := func() *armbotservice.Bot {
+		return &armbotservice.Bot{
+			Etag: new("etag-1"),
+			ID:   new("/subscriptions/sub/resourceGroups/m365-rg/providers/Microsoft.BotService/botServices/published-bot"),
+			Name: new("published-bot"),
+			Properties: &armbotservice.BotProperties{
+				MsaAppID: new("client-id-123"),
+			},
+		}
+	}
+	c := &Client{
+		listBots: func(context.Context) ([]*armbotservice.Bot, error) {
+			return []*armbotservice.Bot{row(), row()}, nil
+		},
+	}
+
+	got, err := c.FindByMsaAppID(t.Context(), "CLIENT-ID-123")
+	if err != nil {
+		t.Fatalf("FindByMsaAppID returned error: %v", err)
+	}
+	if got == nil || got.Name != "published-bot" || got.ResourceGroup != "m365-rg" {
+		t.Fatalf("FindByMsaAppID = %+v, want published-bot in m365-rg", got)
+	}
+}
+
+func TestFindByMsaAppIDCollapsesResourceIDCaseAndWhitespace(t *testing.T) {
+	t.Parallel()
+
+	const id = "/subscriptions/sub/resourceGroups/m365-rg/providers/Microsoft.BotService/botServices/published-bot"
+	row := func(resourceID string) *armbotservice.Bot {
+		return &armbotservice.Bot{
+			ID:   new(resourceID),
+			Name: new("published-bot"),
+			Properties: &armbotservice.BotProperties{
+				MsaAppID: new("client-id-123"),
+			},
+		}
+	}
+	c := &Client{
+		listBots: func(context.Context) ([]*armbotservice.Bot, error) {
+			return []*armbotservice.Bot{
+				row(id),
+				row(strings.ToUpper(id)),
+				row(id + "  "),
+				row("\t" + id),
+			}, nil
+		},
+	}
+
+	got, err := c.FindByMsaAppID(t.Context(), "client-id-123")
+	if err != nil {
+		t.Fatalf("FindByMsaAppID returned error: %v", err)
+	}
+	if got == nil || got.Name != "published-bot" || got.ResourceGroup != "m365-rg" {
+		t.Fatalf("FindByMsaAppID = %+v, want published-bot in m365-rg", got)
+	}
+}
+
+func TestFindByMsaAppIDReturnsTypedErrorWhenRepeatedIDsStillConflict(t *testing.T) {
+	t.Parallel()
+
+	matchingBot := func(name string) *armbotservice.Bot {
+		return &armbotservice.Bot{
+			ID:   new("/subscriptions/sub/resourceGroups/m365-rg/providers/Microsoft.BotService/botServices/" + name),
+			Name: new(name),
+			Properties: &armbotservice.BotProperties{
+				MsaAppID: new("client-id-123"),
+			},
+		}
+	}
+	c := &Client{
+		listBots: func(context.Context) ([]*armbotservice.Bot, error) {
+			return []*armbotservice.Bot{
+				matchingBot("bot-one"),
+				matchingBot("bot-one"),
+				matchingBot("bot-two"),
+				matchingBot("bot-two"),
+			}, nil
+		},
+	}
+
+	_, err := c.FindByMsaAppID(t.Context(), "client-id-123")
+	_, ok := errors.AsType[*MultipleBotsForMsaAppIDError](err)
+	if !ok {
+		t.Fatalf("FindByMsaAppID error = %T, want *MultipleBotsForMsaAppIDError", err)
+	}
+}
+
+func TestFindByMsaAppIDIgnoresDuplicatesBoundToAnotherApp(t *testing.T) {
+	t.Parallel()
+
+	other := func() *armbotservice.Bot {
+		return &armbotservice.Bot{
+			ID:   new("/subscriptions/sub/resourceGroups/m365-rg/providers/Microsoft.BotService/botServices/other-bot"),
+			Name: new("other-bot"),
+			Properties: &armbotservice.BotProperties{
+				MsaAppID: new("other-client"),
+			},
+		}
+	}
+	match := &armbotservice.Bot{
+		ID:   new("/subscriptions/sub/resourceGroups/m365-rg/providers/Microsoft.BotService/botServices/published-bot"),
+		Name: new("published-bot"),
+		Properties: &armbotservice.BotProperties{
+			MsaAppID: new("client-id-123"),
+		},
+	}
+	c := &Client{
+		listBots: func(context.Context) ([]*armbotservice.Bot, error) {
+			return []*armbotservice.Bot{other(), other(), match, other()}, nil
+		},
+	}
+
+	got, err := c.FindByMsaAppID(t.Context(), "client-id-123")
+	if err != nil {
+		t.Fatalf("FindByMsaAppID returned error: %v", err)
+	}
+	if got == nil || got.Name != "published-bot" || got.ResourceGroup != "m365-rg" {
+		t.Fatalf("FindByMsaAppID = %+v, want published-bot in m365-rg", got)
+	}
+}
+
+func TestFindByMsaAppIDPreservesLookupGuards(t *testing.T) {
+	t.Parallel()
+
+	listErr := errors.New("boom")
+	c := &Client{
+		listBots: func(context.Context) ([]*armbotservice.Bot, error) {
+			return nil, listErr
+		},
+	}
+	_, err := c.FindByMsaAppID(t.Context(), "client-id-123")
+	if err == nil || !strings.Contains(err.Error(), "botservice: listing bots") || !errors.Is(err, listErr) {
+		t.Fatalf("FindByMsaAppID error = %v, want wrapped listing bots error", err)
+	}
+
+	for _, id := range []string{"", "   ", "\t"} {
+		got, err := c.FindByMsaAppID(t.Context(), id)
+		if got != nil || err != nil {
+			t.Fatalf("FindByMsaAppID(%q) = (%v, %v), want (nil, nil)", id, got, err)
+		}
+	}
+
+	c = &Client{}
+	got, err := c.FindByMsaAppID(t.Context(), "client-id-123")
+	if got != nil || err != nil {
+		t.Fatalf("FindByMsaAppID with nil listBots = (%v, %v), want (nil, nil)", got, err)
+	}
+}

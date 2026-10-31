@@ -203,8 +203,8 @@ jobs:
       - template: /eng/pipelines/templates/steps/cleanup-disk-space.yml
         parameters:
           Condition: succeededOrFailed()
+          # NuGet clears its temp cache; /tmp/.dotnet is shared runtime IPC.
           CleanNuGet: true
-          CleanDotNet: true
 
       - task: PowerShell@2
         inputs:

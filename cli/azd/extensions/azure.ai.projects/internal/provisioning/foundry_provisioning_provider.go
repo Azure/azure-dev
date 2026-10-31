@@ -309,7 +309,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	onDisk := p.onDiskTemplatePresent()
-	if endpoint == "" {
+	if !onDisk && endpoint == "" {
 		// Validate embedded config before any interactive prompts.
 		_, validationErr := synthesis.Synthesize(synthesis.Input{
 			RawAzureYAML:    rawYAML,
@@ -322,13 +322,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 		if validationErr != nil &&
 			!errors.Is(validationErr, synthesis.ErrEndpointBrownfield) {
 			return foundrySynthesisError(svcName, validationErr)
-		}
-	} else {
-		if _, err := synthesis.SynthesizeExistingProject(synthesis.Input{
-			RawAzureYAML: rawYAML, ServiceName: svcName, ProjectRoot: projectRoot,
-			Env: p.networkEnvMap(ctx), PreserveVarRefs: true,
-		}); err != nil {
-			return foundrySynthesisError(svcName, err)
 		}
 	}
 

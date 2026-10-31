@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +17,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -275,32 +272,5 @@ func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {
 			require.ErrorContains(t, p.prepareBYO(t.Context(), source), test.expected)
 			assert.Empty(t, fake.requests)
 		})
-	}
-}
-
-func TestBYOInitializeRejectsInvalidInputsBeforePromptsOrPersistence(t *testing.T) {
-	for _, onDisk := range []bool{false, true} {
-		root := t.TempDir()
-		config := "services:\n  project:\n    host: azure.ai.project\n" +
-			"    agentHosting: {clusterResourceId: " + offlineClusterID + ", storageAccountResourceId: ''}\n"
-		path := filepath.Join(root, "azure.yaml")
-		require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
-		if onDisk {
-			require.NoError(t, os.Mkdir(filepath.Join(root, "infra"), 0o750))
-			require.NoError(t, os.WriteFile(filepath.Join(root, "infra", "main.bicep"), []byte("// generated"), 0o600))
-		}
-		env := &resolveEnvStubEnvServer{envName: "test"}
-		prompt := &resolveEnvStubPromptServer{}
-		p := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
-		err := p.Initialize(t.Context(), root, &azdext.ProvisioningOptions{Provider: FoundryProviderName})
-		require.ErrorContains(t, err, "storageAccountResourceId: unsupported property")
-		assert.Empty(t, env.set)
-		assert.Zero(t, prompt.subscriptionN)
-		assert.Zero(t, prompt.locationN)
-		assert.Nil(t, p.credential)
-		//nolint:gosec // Test-owned azure.yaml under t.TempDir.
-		raw, err := os.ReadFile(path)
-		require.NoError(t, err)
-		assert.Equal(t, config, string(raw))
 	}
 }

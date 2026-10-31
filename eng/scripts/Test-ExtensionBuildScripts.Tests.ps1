@@ -21,6 +21,7 @@ BeforeDiscovery {
         'azure.appservice' = @('azureappservice/internal/version')
         'azure.coding-agent' = @('azurecodingagent/internal/cmd')
         'azure.logicappsstandard' = @('azurelogicappsstandard/internal/version')
+        'azure.springboot' = @('azure.springboot/internal/cmd')
         'microsoft.azd.ai.builder' = @(
             'github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/cmd'
         )

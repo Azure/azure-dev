@@ -1,0 +1,67 @@
+name: ext-azure-springboot-ci
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/azure.springboot/**"
+      - ".github/workflows/lint-ext-azure-springboot.yml"
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint-go.yml
+    with:
+      working-directory: cli/azd/extensions/azure.springboot
+  generation-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: cli/azd/extensions/azure.springboot
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: cli/azd/extensions/azure.springboot/go.mod
+          cache-dependency-path: cli/azd/extensions/azure.springboot/go.sum
+      - run: az bicep install --version v0.48.1
+      - run: go test -tags integration ./internal/spring -run 'TestGeneratedContainer|TestCompiledInfrastructure' -count=1 -timeout 15m
+  database-bootstrap:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: cli/azd/extensions/azure.springboot
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.13"
+      - run: python -m pip install -r internal/spring/template/.azd-spring/requirements.txt
+      - run: python -B internal/spring/database_bootstrap_test.py
+      - run: python -B internal/spring/database_privileges_test.py
+        env:
+          SPRING_TEST_POSTGRES_DSN: host=localhost port=5432 dbname=postgres user=postgres password=postgres

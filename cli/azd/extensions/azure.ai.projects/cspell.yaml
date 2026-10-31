@@ -1,4 +1,11 @@
 import: ../../.vscode/cspell.yaml
+overrides:
+  - filename: "internal/provisioning/aks_hosting.go"
+    words:
+      - kubeletidentity
+  - filename: "internal/provisioning/resource_group_location_check.go"
+    words:
+      - BYOAKS
 words:
   - alnum
   - exterrors

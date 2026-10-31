@@ -2237,6 +2237,57 @@ func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {
 	assert.Equal(t, "this is a file, not a dir", string(got))
 }
 
+func TestEjectInfra_BYOAKS(t *testing.T) {
+	const config = `name: byo-aks
+infra:
+  provider: microsoft.foundry
+services:
+  project:
+    host: azure.ai.project
+    agentHosting:
+      clusterResourceId: ${CLUSTER_ID}
+    network:
+      agentSubnet: {vnet: "${VNET_ID}", name: agents}
+      peSubnet: {vnet: "${VNET_ID}", name: endpoints}
+`
+	t.Run("Bicep preserves the provider and unresolved inputs", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWriteFile(t, filepath.Join(dir, "azure.yaml"), config)
+		withCapturedStdout(t, func() {
+			require.NoError(t, ejectInfra(dir, "bicep"))
+		})
+		raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json"))
+		require.NoError(t, err)
+		var parameters struct {
+			Parameters map[string]struct {
+				Value any `json:"value"`
+			} `json:"parameters"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &parameters))
+		hosting, ok := parameters.Parameters["agentHosting"].Value.(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "${CLUSTER_ID}", hosting["clusterResourceId"])
+		assert.Empty(t, hosting["storageAccountResourceId"])
+		assert.Equal(t, false, parameters.Parameters["includeAcr"].Value)
+		assert.NotContains(t, parameters.Parameters, "byoOnboarding")
+		require.FileExists(t, filepath.Join(dir, "infra", "modules", "byo-prerequisites.bicep"))
+		raw, err = os.ReadFile(filepath.Join(dir, "azure.yaml"))
+		require.NoError(t, err)
+		assert.Contains(t, string(raw), "provider: microsoft.foundry")
+	})
+	t.Run("Terraform fails before changing any files", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "azure.yaml")
+		mustWriteFile(t, path, config)
+		err := ejectInfra(dir, "terraform")
+		require.ErrorContains(t, err, "BYO AKS requires the microsoft.foundry provisioning provider")
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, config, string(raw))
+		require.NoDirExists(t, filepath.Join(dir, "infra"))
+	})
+}
+
 func TestEjectInfra_RefusesSymlinkedFoundryPath(t *testing.T) {
 	t.Parallel()
 	projectRoot := t.TempDir()

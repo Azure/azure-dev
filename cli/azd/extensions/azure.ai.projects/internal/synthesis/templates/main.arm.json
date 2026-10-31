@@ -5,8 +5,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.46.1.21595",
-      "templateHash": "15636754457042111674"
+      "version": "0.48.1.52935",
+      "templateHash": "15703669366336284206"
     }
   },
   "definitions": {
@@ -53,6 +53,27 @@
       },
       "metadata": {
         "description": "Shape of a single model deployment."
+      }
+    },
+    "agentHostingType": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "bool"
+        },
+        "hostingType": {
+          "type": "string",
+          "allowedValues": [
+            "",
+            "ManagedCluster"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "clusterResourceId": {
+          "type": "string"
+        }
       }
     }
   },
@@ -105,6 +126,32 @@
       "defaultValue": false,
       "metadata": {
         "description": "Include an Azure Container Registry. Set true when any agent uses docker:."
+      }
+    },
+    "agentHosting": {
+      "$ref": "#/definitions/agentHostingType",
+      "defaultValue": {
+        "enabled": false,
+        "hostingType": "",
+        "name": "",
+        "clusterResourceId": ""
+      },
+      "metadata": {
+        "description": "Existing AKS cluster hosting. Supporting resources are created automatically."
+      }
+    },
+    "kubeletObjectId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "AKS kubelet principal ID, resolved by microsoft.foundry for registry access."
+      }
+    },
+    "federatedIdentityRoleDefinitionId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Built-in federation-management role, resolved by microsoft.foundry."
       }
     },
     "enableNetworkIsolation": {
@@ -229,6 +276,15 @@
           "includeAcr": {
             "value": "[parameters('includeAcr')]"
           },
+          "agentHosting": {
+            "value": "[parameters('agentHosting')]"
+          },
+          "kubeletObjectId": {
+            "value": "[parameters('kubeletObjectId')]"
+          },
+          "federatedIdentityRoleDefinitionId": {
+            "value": "[parameters('federatedIdentityRoleDefinitionId')]"
+          },
           "enableNetworkIsolation": {
             "value": "[parameters('enableNetworkIsolation')]"
           },
@@ -273,8 +329,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.46.1.21595",
-              "templateHash": "3335809564156191875"
+              "version": "0.48.1.52935",
+              "templateHash": "785231122286248583"
             }
           },
           "definitions": {
@@ -322,6 +378,27 @@
               "metadata": {
                 "description": "Shape of a single model deployment."
               }
+            },
+            "agentHostingType": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "bool"
+                },
+                "hostingType": {
+                  "type": "string",
+                  "allowedValues": [
+                    "",
+                    "ManagedCluster"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "clusterResourceId": {
+                  "type": "string"
+                }
+              }
             }
           },
           "parameters": {
@@ -367,6 +444,23 @@
               "metadata": {
                 "description": "Include an Azure Container Registry. Set true when any agent uses docker:."
               }
+            },
+            "agentHosting": {
+              "$ref": "#/definitions/agentHostingType",
+              "defaultValue": {
+                "enabled": false,
+                "hostingType": "",
+                "name": "",
+                "clusterResourceId": ""
+              }
+            },
+            "kubeletObjectId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "federatedIdentityRoleDefinitionId": {
+              "type": "string",
+              "defaultValue": ""
             },
             "enableNetworkIsolation": {
               "type": "bool",
@@ -461,11 +555,29 @@
             "resourceToken": "[if(empty(parameters('resourceTokenSalt')), uniqueString(subscription().id, resourceGroup().id, parameters('location')), uniqueString(subscription().id, resourceGroup().id, parameters('location'), parameters('resourceTokenSalt')))]",
             "abbrs": "[variables('$fxv#0')]",
             "foundryAccountName": "[format('{0}{1}', variables('abbrs').cognitiveServicesAccounts, variables('resourceToken'))]",
+            "byoFoundryAccountName": "[format('aks-{0}', variables('foundryAccountName'))]",
+            "activeFoundryAccountName": "[if(parameters('agentHosting').enabled, variables('byoFoundryAccountName'), variables('foundryAccountName'))]",
+            "storageAccountName": "[format('st{0}', variables('resourceToken'))]",
+            "hostingIdentityName": "[format('{0}-hosting-mi', variables('foundryAccountName'))]",
+            "workloadIdentityName": "[format('{0}-workload-mi', variables('foundryAccountName'))]",
             "useByoNetwork": "[and(parameters('enableNetworkIsolation'), not(parameters('useManagedEgress')))]",
             "useManagedNetwork": "[and(parameters('enableNetworkIsolation'), parameters('useManagedEgress'))]",
             "disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]",
             "agentSubnetArmId": "[format('{0}/subnets/{1}', parameters('vnetId'), parameters('agentSubnetName'))]",
-            "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]"
+            "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]",
+            "foundryAccountProperties": {
+              "allowProjectManagement": true,
+              "customSubDomainName": "[variables('activeFoundryAccountName')]",
+              "publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]",
+              "disableLocalAuth": true,
+              "networkAcls": {
+                "defaultAction": "[if(variables('disablePublicDataPlaneAccess'), 'Deny', 'Allow')]",
+                "bypass": "[if(variables('disablePublicDataPlaneAccess'), 'AzureServices', null())]",
+                "virtualNetworkRules": [],
+                "ipRules": []
+              },
+              "networkInjections": "[variables('agentNetworkInjections')]"
+            }
           },
           "resources": {
             "foundryAccount::modelDeployments": {
@@ -475,6 +587,7 @@
                 "mode": "serial",
                 "batchSize": 1
               },
+              "condition": "[not(parameters('agentHosting').enabled)]",
               "type": "Microsoft.CognitiveServices/accounts/deployments",
               "apiVersion": "2025-06-01",
               "name": "[format('{0}/{1}', variables('foundryAccountName'), parameters('deployments')[copyIndex()].name)]",
@@ -487,6 +600,7 @@
               ]
             },
             "foundryAccount::project": {
+              "condition": "[not(parameters('agentHosting').enabled)]",
               "type": "Microsoft.CognitiveServices/accounts/projects",
               "apiVersion": "2025-06-01",
               "name": "[format('{0}/{1}', variables('foundryAccountName'), parameters('foundryProjectName'))]",
@@ -503,7 +617,45 @@
                 "foundryAccount::modelDeployments"
               ]
             },
+            "byoFoundryAccount::modelDeployments": {
+              "copy": {
+                "name": "byoFoundryAccount::modelDeployments",
+                "count": "[length(parameters('deployments'))]",
+                "mode": "serial",
+                "batchSize": 1
+              },
+              "condition": "[parameters('agentHosting').enabled]",
+              "type": "Microsoft.CognitiveServices/accounts/deployments",
+              "apiVersion": "2026-07-15-preview",
+              "name": "[format('{0}/{1}', variables('byoFoundryAccountName'), parameters('deployments')[copyIndex()].name)]",
+              "properties": {
+                "model": "[parameters('deployments')[copyIndex()].model]"
+              },
+              "sku": "[parameters('deployments')[copyIndex()].sku]",
+              "dependsOn": [
+                "byoFoundryAccount"
+              ]
+            },
+            "byoFoundryAccount::project": {
+              "condition": "[parameters('agentHosting').enabled]",
+              "type": "Microsoft.CognitiveServices/accounts/projects",
+              "apiVersion": "2026-07-15-preview",
+              "name": "[format('{0}/{1}', variables('byoFoundryAccountName'), parameters('foundryProjectName'))]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "description": "[format('{0} Project', parameters('foundryProjectName'))]",
+                "displayName": "[parameters('foundryProjectName')]"
+              },
+              "dependsOn": [
+                "byoFoundryAccount",
+                "byoFoundryAccount::modelDeployments"
+              ]
+            },
             "foundryAccount": {
+              "condition": "[not(parameters('agentHosting').enabled)]",
               "type": "Microsoft.CognitiveServices/accounts",
               "apiVersion": "2025-06-01",
               "name": "[variables('foundryAccountName')]",
@@ -516,36 +668,373 @@
               "identity": {
                 "type": "SystemAssigned"
               },
-              "properties": {
-                "allowProjectManagement": true,
-                "customSubDomainName": "[variables('foundryAccountName')]",
-                "publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]",
-                "disableLocalAuth": true,
-                "networkAcls": {
-                  "defaultAction": "[if(variables('disablePublicDataPlaneAccess'), 'Deny', 'Allow')]",
-                  "bypass": "[if(variables('disablePublicDataPlaneAccess'), 'AzureServices', null())]",
-                  "virtualNetworkRules": [],
-                  "ipRules": []
-                },
-                "networkInjections": "[variables('agentNetworkInjections')]"
-              },
+              "properties": "[variables('foundryAccountProperties')]",
               "dependsOn": [
                 "network"
+              ]
+            },
+            "byoFoundryAccount": {
+              "condition": "[parameters('agentHosting').enabled]",
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2026-07-15-preview",
+              "name": "[variables('byoFoundryAccountName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "S0"
+              },
+              "kind": "AIServices",
+              "identity": {
+                "type": "SystemAssigned, UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName')))]": {}
+                }
+              },
+              "properties": "[shallowMerge(createArray(variables('foundryAccountProperties'), createObject('agentHostingConfigurations', createArray(createObject('hostingType', 'ManagedCluster', 'name', 'default', 'clusterResourceId', parameters('agentHosting').clusterResourceId, 'hostingManagementIdentityResourceId', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName')), 'storageAccountResourceId', resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), 'workloadIdentityResourceId', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('workloadIdentityName')))))))]",
+              "dependsOn": [
+                "network",
+                "prerequisites"
               ]
             },
             "foundryManagedNetwork": {
               "condition": "[and(variables('useManagedNetwork'), not(empty(parameters('managedIsolationMode'))))]",
               "type": "Microsoft.CognitiveServices/accounts/managedNetworks",
               "apiVersion": "2025-10-01-preview",
-              "name": "[format('{0}/{1}', variables('foundryAccountName'), 'default')]",
+              "name": "[format('{0}/default', variables('activeFoundryAccountName'))]",
               "properties": {
                 "managedNetwork": {
                   "isolationMode": "[parameters('managedIsolationMode')]"
                 }
               },
               "dependsOn": [
+                "byoFoundryAccount",
                 "foundryAccount"
               ]
+            },
+            "prerequisites": {
+              "condition": "[parameters('agentHosting').enabled]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "byo-prerequisites",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[parameters('tags')]"
+                  },
+                  "clusterResourceId": {
+                    "value": "[parameters('agentHosting').clusterResourceId]"
+                  },
+                  "storageAccountName": {
+                    "value": "[variables('storageAccountName')]"
+                  },
+                  "hostingIdentityName": {
+                    "value": "[variables('hostingIdentityName')]"
+                  },
+                  "workloadIdentityName": {
+                    "value": "[variables('workloadIdentityName')]"
+                  },
+                  "federatedIdentityRoleDefinitionId": {
+                    "value": "[parameters('federatedIdentityRoleDefinitionId')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "5400303943902594065"
+                    }
+                  },
+                  "parameters": {
+                    "location": {
+                      "type": "string"
+                    },
+                    "tags": {
+                      "type": "object"
+                    },
+                    "clusterResourceId": {
+                      "type": "string"
+                    },
+                    "storageAccountName": {
+                      "type": "string"
+                    },
+                    "hostingIdentityName": {
+                      "type": "string"
+                    },
+                    "workloadIdentityName": {
+                      "type": "string"
+                    },
+                    "federatedIdentityRoleDefinitionId": {
+                      "type": "string"
+                    }
+                  },
+                  "variables": {
+                    "clusterParts": "[split(parameters('clusterResourceId'), '/')]",
+                    "storageZrsUnsupportedRegions": [
+                      "australiacentral",
+                      "australiacentral2",
+                      "australiasoutheast",
+                      "brazilsoutheast",
+                      "canadaeast",
+                      "francesouth",
+                      "germanynorth",
+                      "koreasouth",
+                      "northcentralus",
+                      "norwaywest",
+                      "southafricawest",
+                      "southindia",
+                      "swedensouth",
+                      "switzerlandwest",
+                      "taiwannorth",
+                      "taiwannorthwest",
+                      "uaecentral",
+                      "ukwest",
+                      "westcentralus",
+                      "westindia",
+                      "westus"
+                    ],
+                    "readerRoleId": "acdd72a7-3385-48ef-bd42-f606fba81ae7",
+                    "kubernetesExtensionContributorRoleId": "85cb6faf-e071-4c9b-8136-154b5a04f717",
+                    "blobContributorRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]"
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+                      "apiVersion": "2023-01-31",
+                      "name": "[parameters('hostingIdentityName')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[parameters('tags')]"
+                    },
+                    {
+                      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+                      "apiVersion": "2023-01-31",
+                      "name": "[parameters('workloadIdentityName')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[parameters('tags')]"
+                    },
+                    {
+                      "type": "Microsoft.Storage/storageAccounts",
+                      "apiVersion": "2023-05-01",
+                      "name": "[parameters('storageAccountName')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[parameters('tags')]",
+                      "kind": "StorageV2",
+                      "sku": {
+                        "name": "[if(contains(variables('storageZrsUnsupportedRegions'), toLower(parameters('location'))), 'Standard_LRS', 'Standard_ZRS')]"
+                      },
+                      "properties": {
+                        "accessTier": "Hot",
+                        "isHnsEnabled": false,
+                        "publicNetworkAccess": "Enabled",
+                        "networkAcls": {
+                          "defaultAction": "Allow"
+                        },
+                        "minimumTlsVersion": "TLS1_2",
+                        "supportsHttpsTrafficOnly": true,
+                        "allowBlobPublicAccess": false,
+                        "allowSharedKeyAccess": false
+                      }
+                    },
+                    {
+                      "copy": {
+                        "name": "clusterGrants",
+                        "count": "[length(createArray(variables('readerRoleId'), variables('kubernetesExtensionContributorRoleId')))]"
+                      },
+                      "type": "Microsoft.Resources/deployments",
+                      "apiVersion": "2025-04-01",
+                      "name": "[format('byo-cluster-{0}-{1}', uniqueString(resourceGroup().id, parameters('hostingIdentityName')), createArray(variables('readerRoleId'), variables('kubernetesExtensionContributorRoleId'))[copyIndex()])]",
+                      "subscriptionId": "[variables('clusterParts')[2]]",
+                      "resourceGroup": "[variables('clusterParts')[4]]",
+                      "properties": {
+                        "expressionEvaluationOptions": {
+                          "scope": "inner"
+                        },
+                        "mode": "Incremental",
+                        "parameters": {
+                          "resourceName": {
+                            "value": "[last(variables('clusterParts'))]"
+                          },
+                          "principalId": {
+                            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName')), '2023-01-31').principalId]"
+                          },
+                          "roleDefinitionId": {
+                            "value": "[subscriptionResourceId(variables('clusterParts')[2], 'Microsoft.Authorization/roleDefinitions', createArray(variables('readerRoleId'), variables('kubernetesExtensionContributorRoleId'))[copyIndex()])]"
+                          }
+                        },
+                        "template": {
+                          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                          "contentVersion": "1.0.0.0",
+                          "metadata": {
+                            "_generator": {
+                              "name": "bicep",
+                              "version": "0.48.1.52935",
+                              "templateHash": "9565368374017416886"
+                            }
+                          },
+                          "parameters": {
+                            "resourceName": {
+                              "type": "string"
+                            },
+                            "principalId": {
+                              "type": "string"
+                            },
+                            "roleDefinitionId": {
+                              "type": "string"
+                            }
+                          },
+                          "resources": [
+                            {
+                              "type": "Microsoft.Authorization/roleAssignments",
+                              "apiVersion": "2022-04-01",
+                              "scope": "[resourceId('Microsoft.ContainerService/managedClusters', parameters('resourceName'))]",
+                              "name": "[guid(resourceId('Microsoft.ContainerService/managedClusters', parameters('resourceName')), parameters('principalId'), parameters('roleDefinitionId'))]",
+                              "properties": {
+                                "principalId": "[parameters('principalId')]",
+                                "principalType": "ServicePrincipal",
+                                "roleDefinitionId": "[parameters('roleDefinitionId')]"
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName'))]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Resources/deployments",
+                      "apiVersion": "2025-04-01",
+                      "name": "byo-federation-access",
+                      "properties": {
+                        "expressionEvaluationOptions": {
+                          "scope": "inner"
+                        },
+                        "mode": "Incremental",
+                        "parameters": {
+                          "resourceName": {
+                            "value": "[parameters('workloadIdentityName')]"
+                          },
+                          "principalId": {
+                            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName')), '2023-01-31').principalId]"
+                          },
+                          "roleDefinitionId": {
+                            "value": "[parameters('federatedIdentityRoleDefinitionId')]"
+                          }
+                        },
+                        "template": {
+                          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                          "contentVersion": "1.0.0.0",
+                          "metadata": {
+                            "_generator": {
+                              "name": "bicep",
+                              "version": "0.48.1.52935",
+                              "templateHash": "1047566723091155563"
+                            }
+                          },
+                          "parameters": {
+                            "resourceName": {
+                              "type": "string"
+                            },
+                            "principalId": {
+                              "type": "string"
+                            },
+                            "roleDefinitionId": {
+                              "type": "string"
+                            }
+                          },
+                          "resources": [
+                            {
+                              "type": "Microsoft.Authorization/roleAssignments",
+                              "apiVersion": "2022-04-01",
+                              "scope": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('resourceName'))]",
+                              "name": "[guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('resourceName')), parameters('principalId'), parameters('roleDefinitionId'))]",
+                              "properties": {
+                                "principalId": "[parameters('principalId')]",
+                                "principalType": "ServicePrincipal",
+                                "roleDefinitionId": "[parameters('roleDefinitionId')]"
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName'))]",
+                        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName'))]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Resources/deployments",
+                      "apiVersion": "2025-04-01",
+                      "name": "byo-storage-access",
+                      "properties": {
+                        "expressionEvaluationOptions": {
+                          "scope": "inner"
+                        },
+                        "mode": "Incremental",
+                        "parameters": {
+                          "resourceName": {
+                            "value": "[parameters('storageAccountName')]"
+                          },
+                          "principalId": {
+                            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName')), '2023-01-31').principalId]"
+                          },
+                          "roleDefinitionId": {
+                            "value": "[variables('blobContributorRoleId')]"
+                          }
+                        },
+                        "template": {
+                          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                          "contentVersion": "1.0.0.0",
+                          "metadata": {
+                            "_generator": {
+                              "name": "bicep",
+                              "version": "0.48.1.52935",
+                              "templateHash": "8476384347606291870"
+                            }
+                          },
+                          "parameters": {
+                            "resourceName": {
+                              "type": "string"
+                            },
+                            "principalId": {
+                              "type": "string"
+                            },
+                            "roleDefinitionId": {
+                              "type": "string"
+                            }
+                          },
+                          "resources": [
+                            {
+                              "type": "Microsoft.Authorization/roleAssignments",
+                              "apiVersion": "2022-04-01",
+                              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('resourceName'))]",
+                              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('resourceName')), parameters('principalId'), parameters('roleDefinitionId'))]",
+                              "properties": {
+                                "principalId": "[parameters('principalId')]",
+                                "principalType": "ServicePrincipal",
+                                "roleDefinitionId": "[parameters('roleDefinitionId')]"
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+                        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName'))]"
+                      ]
+                    }
+                  ]
+                }
+              }
             },
             "network": {
               "condition": "[parameters('enableNetworkIsolation')]",
@@ -586,8 +1075,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.46.1.21595",
-                      "templateHash": "10967961645819739964"
+                      "version": "0.48.1.52935",
+                      "templateHash": "1675403609570962535"
                     }
                   },
                   "parameters": {
@@ -680,8 +1169,8 @@
                           "metadata": {
                             "_generator": {
                               "name": "bicep",
-                              "version": "0.46.1.21595",
-                              "templateHash": "10528013059105939935"
+                              "version": "0.48.1.52935",
+                              "templateHash": "13172875044587293551"
                             }
                           },
                           "parameters": {
@@ -765,8 +1254,8 @@
                           "metadata": {
                             "_generator": {
                               "name": "bicep",
-                              "version": "0.46.1.21595",
-                              "templateHash": "10528013059105939935"
+                              "version": "0.48.1.52935",
+                              "templateHash": "13172875044587293551"
                             }
                           },
                           "parameters": {
@@ -882,16 +1371,20 @@
                     "value": "[format('{0}{1}', variables('abbrs').containerRegistryRegistries, variables('resourceToken'))]"
                   },
                   "foundryAccountName": {
-                    "value": "[variables('foundryAccountName')]"
+                    "value": "[variables('activeFoundryAccountName')]"
                   },
                   "foundryProjectName": {
                     "value": "[parameters('foundryProjectName')]"
                   },
-                  "foundryProjectPrincipalId": {
-                    "value": "[reference('foundryAccount::project', '2025-06-01', 'full').identity.principalId]"
-                  },
+                  "foundryProjectPrincipalId": "[if(parameters('agentHosting').enabled, createObject('value', reference('byoFoundryAccount::project', '2026-07-15-preview', 'full').identity.principalId), createObject('value', reference('foundryAccount::project', '2025-06-01', 'full').identity.principalId))]",
                   "enableNetworkIsolation": {
                     "value": "[parameters('enableNetworkIsolation')]"
+                  },
+                  "byoAks": {
+                    "value": "[parameters('agentHosting').enabled]"
+                  },
+                  "kubeletObjectId": {
+                    "value": "[parameters('kubeletObjectId')]"
                   }
                 },
                 "template": {
@@ -900,8 +1393,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.46.1.21595",
-                      "templateHash": "16746221481092115316"
+                      "version": "0.48.1.52935",
+                      "templateHash": "4757893513251572043"
                     }
                   },
                   "parameters": {
@@ -950,6 +1443,17 @@
                       "metadata": {
                         "description": "When true, the registry disables public network access to stay inside the isolation boundary."
                       }
+                    },
+                    "byoAks": {
+                      "type": "bool",
+                      "defaultValue": false,
+                      "metadata": {
+                        "description": "Enable the standard registry for an existing AKS cluster with managed-identity image pulls."
+                      }
+                    },
+                    "kubeletObjectId": {
+                      "type": "string",
+                      "defaultValue": ""
                     }
                   },
                   "variables": {
@@ -992,7 +1496,7 @@
                       },
                       "properties": {
                         "adminUserEnabled": false,
-                        "publicNetworkAccess": "[if(parameters('enableNetworkIsolation'), 'Disabled', 'Enabled')]",
+                        "publicNetworkAccess": "[if(and(parameters('enableNetworkIsolation'), not(parameters('byoAks'))), 'Disabled', 'Enabled')]",
                         "zoneRedundancy": "Disabled"
                       }
                     },
@@ -1003,6 +1507,21 @@
                       "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), parameters('foundryProjectPrincipalId'), variables('acrPullRoleId'))]",
                       "properties": {
                         "principalId": "[parameters('foundryProjectPrincipalId')]",
+                        "principalType": "ServicePrincipal",
+                        "roleDefinitionId": "[variables('acrPullRoleId')]"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
+                      ]
+                    },
+                    {
+                      "condition": "[parameters('byoAks')]",
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]",
+                      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), parameters('kubeletObjectId'), variables('acrPullRoleId'))]",
+                      "properties": {
+                        "principalId": "[parameters('kubeletObjectId')]",
                         "principalType": "ServicePrincipal",
                         "roleDefinitionId": "[variables('acrPullRoleId')]"
                       },
@@ -1028,7 +1547,7 @@
                 }
               },
               "dependsOn": [
-                "foundryAccount",
+                "byoFoundryAccount::project",
                 "foundryAccount::project"
               ]
             },
@@ -1044,7 +1563,7 @@
                 "mode": "Incremental",
                 "parameters": {
                   "aiAccountName": {
-                    "value": "[variables('foundryAccountName')]"
+                    "value": "[variables('activeFoundryAccountName')]"
                   },
                   "location": {
                     "value": "[reference('network').outputs.vnetLocation.value]"
@@ -1071,8 +1590,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.46.1.21595",
-                      "templateHash": "2415286770463307805"
+                      "version": "0.48.1.52935",
+                      "templateHash": "12830623367111962862"
                     }
                   },
                   "parameters": {
@@ -1263,6 +1782,7 @@
                 }
               },
               "dependsOn": [
+                "byoFoundryAccount",
                 "foundryAccount",
                 "network"
               ]
@@ -1271,11 +1791,11 @@
           "outputs": {
             "AZURE_AI_PROJECT_ID": {
               "type": "string",
-              "value": "[resourceId('Microsoft.CognitiveServices/accounts/projects', variables('foundryAccountName'), parameters('foundryProjectName'))]"
+              "value": "[resourceId('Microsoft.CognitiveServices/accounts/projects', variables('activeFoundryAccountName'), parameters('foundryProjectName'))]"
             },
             "AZURE_AI_ACCOUNT_NAME": {
               "type": "string",
-              "value": "[variables('foundryAccountName')]"
+              "value": "[variables('activeFoundryAccountName')]"
             },
             "AZURE_AI_PROJECT_NAME": {
               "type": "string",
@@ -1283,11 +1803,11 @@
             },
             "AZURE_OPENAI_ENDPOINT": {
               "type": "string",
-              "value": "[format('https://{0}.openai.azure.com/', variables('foundryAccountName'))]"
+              "value": "[format('https://{0}.openai.azure.com/', variables('activeFoundryAccountName'))]"
             },
             "FOUNDRY_PROJECT_ENDPOINT": {
               "type": "string",
-              "value": "[format('https://{0}.services.ai.azure.com/api/projects/{1}', variables('foundryAccountName'), parameters('foundryProjectName'))]"
+              "value": "[format('https://{0}.services.ai.azure.com/api/projects/{1}', variables('activeFoundryAccountName'), parameters('foundryProjectName'))]"
             },
             "AZURE_CONTAINER_REGISTRY_ENDPOINT": {
               "type": "string",

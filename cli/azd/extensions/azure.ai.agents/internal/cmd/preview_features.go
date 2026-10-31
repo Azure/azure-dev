@@ -324,6 +324,28 @@ func removeHelpBlocks(text, joined string) string {
 	return text
 }
 
+func requireBYOAKSProjectFeature(config *azdext.ProjectConfig) error {
+	for _, service := range config.GetServices() {
+		if service.GetHost() != AiProjectHost {
+			continue
+		}
+		props := project.ServiceConfigProps(service)
+		if props.GetFields()["agentHosting"] == nil && props.GetFields()["$ref"] == nil {
+			continue
+		}
+		props, err := project.ResolveServiceConfigProps(service, config.GetPath())
+		if err != nil {
+			return err
+		}
+		if hosting := props.GetFields()["agentHosting"]; hosting != nil && hosting.AsInterface() != nil {
+			if err := featureflags.Require(featureflags.BYOAKS); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func requireProjectPreviewFeatures(config *azdext.ProjectConfig) error {
 	for _, service := range config.GetServices() {
 		if err := project.RequireAgentFeatures(service, config.GetPath()); err != nil {
@@ -346,7 +368,11 @@ func requireManifestPreviewFeatures(
 	if err != nil {
 		return err
 	}
-	return requireProjectPreviewFeatures(&azdext.ProjectConfig{Services: services, Path: projectRoot})
+	config := &azdext.ProjectConfig{Services: services, Path: projectRoot}
+	if err := requireBYOAKSProjectFeature(config); err != nil {
+		return err
+	}
+	return requireProjectPreviewFeatures(config)
 }
 
 func requireStagedPreviewFeatures(root string) error {

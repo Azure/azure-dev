@@ -5,6 +5,8 @@ package exterrors
 
 const CodeCancelled = "cancelled"
 
+const CodeFeatureNotEnabled = "feature_not_enabled"
+
 // Error codes commonly used for validation errors.
 //
 // These are paired with [Validation] when user input or configuration values

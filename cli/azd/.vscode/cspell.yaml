@@ -629,6 +629,27 @@ overrides:
   - filename: extensions/azure.ai.content-understanding/internal/testutil/tempdir.go
     words:
       - testutil
+  - filename: "extensions/azure.ai.projects/internal/onboarding/{network,resource_rules,resource_sdk,types}.go"
+    words:
+      - armcompute
+      - armnetwork
+      - Kata
+      - katagen
+      - kubelet
+      - kubeletidentity
+      - OSSKU
+  - filename: "extensions/azure.ai.projects/{README.md,internal/provisioning/aks_hosting.go}"
+    words:
+      - Kata
+      - kubelet
+  - filename:
+      - "extensions/azure.ai.{agents,projects}/internal/synthesis/hosting.go"
+      - "extensions/azure.ai.projects/internal/provisioning/{aks_hosting,foundry_provisioning_provider}.go"
+      - "extensions/azure.ai.agents/internal/cmd/{init,init_infra,listen,preview_features}.go"
+      - "extensions/azure.ai.agents/internal/featureflags/registry.go"
+      - "extensions/azure.ai.agents/docs/specs/preview-feature-flags.md"
+    words:
+      - BYOAKS
   - filename: pkg/update/msi_windows.go
     words:
       - norestart

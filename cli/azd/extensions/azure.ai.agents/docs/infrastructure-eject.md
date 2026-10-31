@@ -45,6 +45,8 @@ For a service that sets `endpoint:`, Bicep eject keeps the
 so ejected and embedded provisioning use the same resource graph. Terraform
 eject uses the built-in `terraform` provider.
 
+With `agentHosting.clusterResourceId`, Bicep eject also retains `microsoft.foundry`. The standard generated graph creates the default AKS supporting resources and grants, with a registry only when an Agent requires building a container image. The provider resolves the built-in federation role before deployment and reads the cluster's kubelet principal only when creating a registry. Terraform eject is rejected without modifying files. `azd down` uses the standard Foundry teardown path and deletes the target resource group and all resources inside it, including pre-existing resources. See [Existing AKS hosting](../../azure.ai.projects/README.md#existing-aks-hosting).
+
 ## Existing files
 
 Eject never overwrites generated-file collisions.
@@ -133,8 +135,8 @@ value.
 
 ## Limitations
 
-- Terraform eject does not support a service with a private `network:` block;
-  use Bicep for private networking.
+- Terraform eject does not support a service with a private `network:` block or `agentHosting:`;
+  use standard Bicep and `microsoft.foundry` for existing AKS hosting.
 - During migration from a legacy Foundry service, `network.mode`, `network.byo`,
   and `network.managed` are retired. Move the configuration to the current
   project `network.peSubnet` schema before running eject.

@@ -12,12 +12,13 @@ import (
 
 func TestRegistryDeclarations(t *testing.T) {
 	features := All()
-	require.Equal(t, []Feature{ManagedHarness, Voice, LongRunning, A2A, MemorySnapshot}, features)
+	require.Equal(t, []Feature{ManagedHarness, Voice, LongRunning, A2A, MemorySnapshot, BYOAKS}, features)
 	require.Equal(t,
 		[]string{
-			"agents.managed_harness", "agents.voice", "agents.long_running", "agents.a2a", "agents.memory_snapshot",
+			"agents.managed_harness", "agents.voice", "agents.long_running", "agents.a2a",
+			"agents.memory_snapshot", "agents.byo_aks",
 		},
-		[]string{ManagedHarness.ID, Voice.ID, LongRunning.ID, A2A.ID, MemorySnapshot.ID},
+		[]string{ManagedHarness.ID, Voice.ID, LongRunning.ID, A2A.ID, MemorySnapshot.ID, BYOAKS.ID},
 	)
 
 	ids := map[string]bool{}

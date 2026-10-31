@@ -30,6 +30,13 @@ type deploymentType = {
   }
 }
 
+type agentHostingType = {
+  enabled: bool
+  hostingType: 'ManagedCluster' | ''
+  name: string
+  clusterResourceId: string
+}
+
 // Parameters
 
 @description('Azure region for all resources.')
@@ -56,6 +63,20 @@ param deployments deploymentsType = []
 
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
+
+@description('Existing AKS cluster hosting. Supporting resources are created automatically.')
+param agentHosting agentHostingType = {
+  enabled: false
+  hostingType: ''
+  name: ''
+  clusterResourceId: ''
+}
+
+@description('AKS kubelet principal ID, resolved by microsoft.foundry for registry access.')
+param kubeletObjectId string = ''
+
+@description('Built-in federation-management role, resolved by microsoft.foundry.')
+param federatedIdentityRoleDefinitionId string = ''
 
 // Network isolation parameters (see modules/resources.bicep for semantics).
 // All default off so an absent network: block yields a public account.
@@ -114,6 +135,9 @@ module resources 'modules/resources.bicep' = {
     foundryProjectName: foundryProjectName
     deployments: deployments
     includeAcr: includeAcr
+    agentHosting: agentHosting
+    kubeletObjectId: kubeletObjectId
+    federatedIdentityRoleDefinitionId: federatedIdentityRoleDefinitionId
     enableNetworkIsolation: enableNetworkIsolation
     useManagedEgress: useManagedEgress
     vnetId: vnetId

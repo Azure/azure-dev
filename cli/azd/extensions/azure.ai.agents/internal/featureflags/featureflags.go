@@ -3,7 +3,7 @@
 
 // cspell:ignore featureflags
 
-// Package featureflags resolves agents extension preview opt-ins.
+// Package featureflags resolves agents extension preview switches.
 package featureflags
 
 import (
@@ -12,7 +12,7 @@ import (
 	"strconv"
 )
 
-// Feature declares one extension opt-in.
+// Feature declares one extension feature switch.
 type Feature struct {
 	// ID identifies the capability, not a user config key.
 	ID string
@@ -21,11 +21,13 @@ type Feature struct {
 	EnvVar string
 	// Description is an optional short summary for help.
 	Description string
+	// DefaultEnabled applies only when EnvVar is absent.
+	DefaultEnabled bool
 }
 
 // IsEnabled reports whether the feature is enabled in the current process environment.
-// It reads os.Getenv, so values the azd host already injected count.
-// Only true values accepted by strconv.ParseBool enable a feature.
+// It uses the declared default only when EnvVar is absent.
+// Explicit values, including those injected by the azd host, use strconv.ParseBool.
 // Invalid declarations return an error; invalid values leave the feature off.
 // IsEnabled does not load azd config or dotenv files from disk.
 func IsEnabled(feature Feature) (bool, error) {
@@ -33,6 +35,11 @@ func IsEnabled(feature Feature) (bool, error) {
 		return false, errors.New("featureflags.IsEnabled: feature ID and EnvVar must not be empty")
 	}
 
-	enabled, err := strconv.ParseBool(os.Getenv(feature.EnvVar))
+	value, present := os.LookupEnv(feature.EnvVar)
+	if !present {
+		return feature.DefaultEnabled, nil
+	}
+
+	enabled, err := strconv.ParseBool(value)
 	return err == nil && enabled, nil
 }

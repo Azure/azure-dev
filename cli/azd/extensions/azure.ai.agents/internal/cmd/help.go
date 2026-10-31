@@ -39,14 +39,15 @@ func agentHelpFooter() string {
   to the deployed agent.
 
 Preview Feature Switches:
-  We recommend setting these in your shell or CI before running azd:
+  We recommend setting overrides in your shell or CI before running azd:
 `)
 	for _, feature := range featureflags.All() {
 		fmt.Fprintf(&footer, "  %s=true\n    %s.\n", feature.EnvVar, feature.Description)
 	}
 	footer.WriteString(`
-  All switches default to off. Only 1, t, T, true, TRUE, or True enable them.
-  False, empty, and invalid values do not enable a switch.
+  All preview switches default to off.
+  When set, only 1, t, T, true, TRUE, or True enable a switch.
+  False, empty, and invalid values disable a switch.
   The extension reads these switches from its process environment, including
   values the azd host already injected from the selected environment.
   It does not query azd config or load environment files from disk itself.

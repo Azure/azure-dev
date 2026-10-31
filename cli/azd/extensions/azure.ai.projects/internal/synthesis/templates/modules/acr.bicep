@@ -31,6 +31,10 @@ param foundryProjectPrincipalId string
 @description('When true, the registry disables public network access to stay inside the isolation boundary.')
 param enableNetworkIsolation bool = false
 
+@description('Enable the standard registry for an existing AKS cluster with managed-identity image pulls.')
+param byoAks bool = false
+param kubeletObjectId string = ''
+
 // Variables
 
 // Built-in role definition ids. See: https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
@@ -53,11 +57,9 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
   properties: {
     adminUserEnabled: false
-    // Disable public access when network isolation is enabled so the registry
-    // stays inside the VNet boundary. Docker-backed agents in isolated projects
-    // must pull via the private endpoint; public access would leave a dependency
-    // outside the isolation perimeter and can break pulls in locked-down egress.
-    publicNetworkAccess: enableNetworkIsolation ? 'Disabled' : 'Enabled'
+    // BYO AKS uses public authenticated pulls; ordinary network isolation
+    // retains its disabled public endpoint.
+    publicNetworkAccess: enableNetworkIsolation && !byoAks ? 'Disabled' : 'Enabled'
     zoneRedundancy: 'Disabled'
   }
 }
@@ -69,6 +71,16 @@ resource foundryAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: registry
   properties: {
     principalId: foundryProjectPrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: acrPullRoleId
+  }
+}
+
+resource kubeletAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (byoAks) {
+  name: guid(registry.id, kubeletObjectId, acrPullRoleId)
+  scope: registry
+  properties: {
+    principalId: kubeletObjectId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRoleId
   }

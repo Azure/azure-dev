@@ -879,7 +879,14 @@ services:
 ```
 
 The `activity.publish` block is shared Microsoft 365 app publish metadata for
-Activity agents. When `digitalWorkerType` is `m365`, azd enforces tenant scope
+Activity agents. For simple Activity agents, the `appPackage.zip` automatically
+generated during `azd up` or `azd deploy` uses this metadata too, including
+`agentDisplayName` and `appVersion`. The display name falls back to the deployed
+agent name when unset. Automatic packages always use personal sideload scope,
+regardless of `activity.publish.publishScope`; use `azd ai agent publish` for
+shared or tenant distribution.
+
+When `digitalWorkerType` is `m365`, azd enforces tenant scope
 and sends `digital_worker_type: m365` when creating the agent. Omit
 `digitalWorkerType` for simple mode.
 After deployment, the service-returned Digital Worker type controls pack and

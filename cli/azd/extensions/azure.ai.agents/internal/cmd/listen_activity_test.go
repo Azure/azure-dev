@@ -4,13 +4,17 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -322,6 +326,158 @@ func TestWriteTeamsAppPackage_SkipsSharedAgentSourceDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "src", teamsAppPackageFile)); !os.IsNotExist(err) {
 		t.Errorf("Teams app package must not be written for a shared source directory")
+	}
+}
+
+func TestWriteTeamsAppPackageUsesPublishMetadata(t *testing.T) {
+	tests := []struct {
+		name        string
+		agentName   string
+		publish     map[string]any
+		fromFile    bool
+		override    bool
+		wantName    string
+		wantVersion string
+		wantMention bool
+	}{
+		{
+			name: "defaults to deployed agent name", agentName: "chief-of-staff",
+			wantName: "chief-of-staff", wantVersion: "1.0.0", wantMention: true,
+		},
+		{
+			name: "uses configured metadata", agentName: "chief-of-staff",
+			publish: map[string]any{
+				"agentDisplayName": " Chief of Staff ", "appVersion": "2.3.4",
+				"publishScope": "shared", "canRespondWithoutMention": false,
+				"shortDescription": "Your assistant", "developerName": "Contoso",
+			},
+			wantName: "Chief of Staff", wantVersion: "2.3.4",
+		},
+		{
+			name: "blank display name falls back to deployed name", agentName: "chief-of-staff",
+			publish:  map[string]any{"agentDisplayName": "  "},
+			wantName: "chief-of-staff", wantVersion: "1.0.0", wantMention: true,
+		},
+		{
+			name:     "empty names fall back to Agent",
+			wantName: "Agent", wantVersion: "1.0.0", wantMention: true,
+		},
+		{
+			name: "loads referenced definition", agentName: "chief-of-staff", fromFile: true,
+			publish:  map[string]any{"agentDisplayName": "Chief of Staff"},
+			wantName: "Chief of Staff", wantVersion: "1.0.0", wantMention: true,
+		},
+		{
+			name: "service metadata overrides referenced definition", agentName: "chief-of-staff",
+			fromFile: true, override: true,
+			publish:  map[string]any{"agentDisplayName": "Chief of Staff"},
+			wantName: "Service Display Name", wantVersion: "1.0.0", wantMention: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			values := map[string]any{
+				"kind": "hosted", "name": "chief-of-staff",
+				"protocols": []any{map[string]any{"protocol": "activity", "version": "2.0.0"}},
+			}
+			if tt.publish != nil {
+				values["activity"] = map[string]any{"publish": tt.publish}
+			}
+			if tt.fromFile {
+				definition, err := json.Marshal(values)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(root, "agent.json"), definition, 0o600))
+				values = map[string]any{"$ref": "./agent.json"}
+				if tt.override {
+					values["activity"] = map[string]any{
+						"publish": map[string]any{"agentDisplayName": "Service Display Name"},
+					}
+				}
+			}
+			svc := &azdext.ServiceConfig{
+				Name: "chief-of-staff", Host: AiAgentHost, RelativePath: ".",
+				AdditionalProperties: mustStruct(t, values),
+			}
+			proj := &azdext.ProjectConfig{Path: root, Services: map[string]*azdext.ServiceConfig{svc.Name: svc}}
+			const zipContent = "PK\x03\x04teams-package"
+			var sent agent_api.TeamsAppPackageRequest
+			calls := 0
+			originalTransport := recordproxy.Transport
+			recordproxy.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				require.Equal(t, "/api/projects/proj/agents/"+tt.agentName+"/microsoft365/zip", req.URL.Path)
+				require.NoError(t, json.NewDecoder(req.Body).Decode(&sent))
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": {"application/zip"}},
+					Body:       io.NopCloser(strings.NewReader(zipContent)),
+					Request:    req,
+				}, nil
+			})
+			t.Cleanup(func() { recordproxy.Transport = originalTransport })
+			client := agent_api.NewAgentClient("https://example.test/api/projects/proj", &fakeTokenCredential{})
+
+			path := writeTeamsAppPackage(t.Context(), client, proj, svc, tt.agentName, "sub", "rg", "bot")
+
+			require.Equal(t, values, svc.AdditionalProperties.AsMap())
+			require.Equal(t, 1, calls)
+			require.Equal(t, filepath.Join(root, teamsAppPackageFile), path)
+			require.Equal(t, tt.wantName, sent.AgentDisplayName)
+			require.Equal(t, tt.wantVersion, sent.AppVersion)
+			require.Equal(t, "Personal", sent.PublishScope)
+			require.False(t, sent.PublishAsAutopilot)
+			require.Equal(t, "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.BotService/botServices/bot",
+				sent.BotServiceArmID)
+			require.NotNil(t, sent.CanRespondWithoutMention)
+			require.Equal(t, tt.wantMention, *sent.CanRespondWithoutMention)
+			if tt.publish != nil && tt.publish["shortDescription"] != nil {
+				require.Equal(t, tt.publish["shortDescription"], sent.ShortDescription)
+				require.Equal(t, tt.publish["developerName"], sent.DeveloperName)
+			} else {
+				require.Equal(t, tt.wantName+" agent", sent.ShortDescription)
+			}
+			contents, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, zipContent, string(contents))
+			require.True(t, teamsAppPackageIsOwned(path, filepath.Join(root, teamsAppPackageMarkerFile)))
+		})
+	}
+}
+
+func TestWriteTeamsAppPackageSkipsInvalidConfiguration(t *testing.T) {
+	tests := []struct {
+		name   string
+		values map[string]any
+	}{
+		{
+			name:   "missing referenced definition",
+			values: map[string]any{"$ref": "./missing.yaml"},
+		},
+		{
+			name: "invalid publish metadata",
+			values: map[string]any{
+				"activity": map[string]any{
+					"publish": map[string]any{"agentDisplayName": true},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			svc := &azdext.ServiceConfig{
+				Name: "agent", RelativePath: ".", AdditionalProperties: mustStruct(t, tt.values),
+			}
+			proj := &azdext.ProjectConfig{Path: root}
+
+			path := writeTeamsAppPackage(t.Context(), nil, proj, svc, "agent", "sub", "rg", "bot")
+
+			require.Empty(t, path)
+			require.Equal(t, tt.values, svc.AdditionalProperties.AsMap())
+			require.NoFileExists(t, filepath.Join(root, teamsAppPackageFile))
+			require.NoFileExists(t, filepath.Join(root, teamsAppPackageMarkerFile))
+		})
 	}
 }
 

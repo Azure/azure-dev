@@ -61,7 +61,7 @@ param foundryProjectName string
 @description('Model deployments to provision on the Foundry account.')
 param deployments deploymentsType = []
 
-@description('Include the native Azure Container Registry. Required for docker: agents or BYO AKS.')
+@description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
 
 @description('Existing AKS cluster hosting. Supporting resources are created automatically.')

@@ -1717,7 +1717,7 @@ deployment.
 
 Foundry project services can be provisioned as network-secured, VNet-bound accounts by adding a `network:` block to the `host: azure.ai.project` service in `azure.yaml`. The `azure.ai.projects` extension owns that service and the `microsoft.foundry` provider; this extension still authors the block during agent init. See [Private networking for `host: azure.ai.project`](docs/private-networking.md) for the schema reference, BYO-image requirements, and VNet deployment cheatsheet.
 
-For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes the default Storage, separate managed identities, single native registry, required permissions, and lifecycle limitations. Foundry networking is optional and configured independently through `network:`. This mode does not accept supplied supporting resources or Terraform eject.
+For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes the default Storage, separate managed identities, required permissions, and lifecycle limitations. A native registry is created only when an Agent requires building a container image, following the standard Foundry rules. Foundry networking is optional through `network:`, but cannot be combined with an automatically created registry. This mode does not accept supplied supporting resources through `agentHosting` or Terraform eject.
 
 ## Local Development
 

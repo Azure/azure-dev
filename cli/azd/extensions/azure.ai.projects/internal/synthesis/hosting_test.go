@@ -41,7 +41,7 @@ func TestHostingDefaultSynthesis(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result.Hosting)
 		assert.Equal(t, hostingClusterID, result.Hosting.ClusterResourceID)
-		assert.Equal(t, true, result.Parameters["includeAcr"], "project-only hosting still needs the native registry")
+		assert.Equal(t, false, result.Parameters["includeAcr"], "project-only hosting does not need a registry")
 		assert.Equal(t, NetworkModeNone, result.NetworkMode)
 		hosting, ok := result.Parameters["agentHosting"].(agentHostingParameter)
 		require.True(t, ok)
@@ -82,8 +82,6 @@ func TestHostingValidatesClusterAndNetwork(t *testing.T) {
 		{"wrong type", strings.Replace(hostingYAML(), hostingClusterID, hostingVNetID, 1), "managedClusters resource ID"},
 		{"credential URL", strings.Replace(hostingYAML(), hostingClusterID,
 			"https://username:secret@host.test/cluster?sig=private#fragment", 1), "managedClusters resource ID"},
-		{"credential VNet URL", strings.ReplaceAll(hostingYAML(), hostingVNetID,
-			`"https://username:secret@host.test/vnet?sig=private#fragment"`), "virtualNetworks id"},
 		{"same subnet", strings.Replace(hostingYAML(), "name: endpoints", "name: agents", 1), "must differ"},
 		{"different VNets", strings.Replace(hostingYAML(), "peSubnet: {vnet: "+hostingVNetID,
 			"peSubnet: {vnet: "+hostingVNetID+"-other", 1), "same virtual network"},

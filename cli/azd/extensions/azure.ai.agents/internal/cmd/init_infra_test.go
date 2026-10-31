@@ -2268,7 +2268,7 @@ services:
 		require.True(t, ok)
 		assert.Equal(t, "${CLUSTER_ID}", hosting["clusterResourceId"])
 		assert.Empty(t, hosting["storageAccountResourceId"])
-		assert.Equal(t, true, parameters.Parameters["includeAcr"].Value)
+		assert.Equal(t, false, parameters.Parameters["includeAcr"].Value)
 		assert.NotContains(t, parameters.Parameters, "byoOnboarding")
 		require.FileExists(t, filepath.Join(dir, "infra", "modules", "byo-prerequisites.bicep"))
 		raw, err = os.ReadFile(filepath.Join(dir, "azure.yaml"))

@@ -51,8 +51,9 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 				"or disable agentHosting in the parameters file and template defaults")
 	}
 	includeAcr, ok := byoParameterValue(source, "includeAcr").(bool)
-	if !ok || !includeAcr {
-		return fmt.Errorf("BYO AKS requires includeAcr=true for the native azd-created Container Registry")
+	if !ok {
+		return exterrors.Validation(exterrors.CodeInvalidParameter,
+			"includeAcr must be a boolean", "set includeAcr to true or false")
 	}
 	if !hosting.Enabled || hosting.HostingType != "ManagedCluster" || hosting.Name != "default" ||
 		!strings.EqualFold(hosting.ClusterResourceID, p.synthResult.Hosting.ClusterResourceID) {
@@ -62,6 +63,9 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 	suppliedBindings := map[string]string{}
 	for name, parameter := range source.parameters {
 		if !strings.EqualFold(name, "kubeletObjectId") && !strings.EqualFold(name, "federatedIdentityRoleDefinitionId") {
+			continue
+		}
+		if !includeAcr && strings.EqualFold(name, "kubeletObjectId") {
 			continue
 		}
 		envelope, _ := parameter.(map[string]any)
@@ -76,7 +80,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
-	kubeletObjectID, federationRoleID, err := p.resolveBYOHostBindings(ctx, hosting.ClusterResourceID)
+	kubeletObjectID, federationRoleID, err := p.resolveBYOHostBindings(ctx, hosting.ClusterResourceID, includeAcr)
 	if err != nil {
 		return err
 	}
@@ -91,10 +95,13 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 				fmt.Sprintf("remove %s from the parameters file so microsoft.foundry can resolve it automatically", name))
 		}
 	}
-	hostBindings := parametersDeclaredByTemplate(map[string]any{
-		"kubeletObjectId":                   map[string]any{"value": kubeletObjectID},
+	hostBindings := map[string]any{
 		"federatedIdentityRoleDefinitionId": map[string]any{"value": federationRoleID},
-	}, source.armTemplate)
+	}
+	if includeAcr {
+		hostBindings["kubeletObjectId"] = map[string]any{"value": kubeletObjectID}
+	}
+	hostBindings = parametersDeclaredByTemplate(hostBindings, source.armTemplate)
 	for name := range suppliedBindings {
 		for binding := range hostBindings {
 			if strings.EqualFold(name, binding) {
@@ -132,28 +139,31 @@ func parseBYOResourceID(value, kind string) (*arm.ResourceID, error) {
 }
 
 func (p *FoundryProvisioningProvider) resolveBYOHostBindings(
-	ctx context.Context, clusterID string,
+	ctx context.Context, clusterID string, includeAcr bool,
 ) (string, string, error) {
 	id, err := parseBYOResourceID(clusterID, "Microsoft.ContainerService/managedClusters")
 	if err != nil {
 		return "", "", err
 	}
 	options := byoARMOptions(p.armClientOptions)
-	clusters, err := armcontainerservice.NewManagedClustersClient(id.SubscriptionID, p.credential, options)
-	if err != nil {
-		return "", "", fmt.Errorf("create AKS client: %w", err)
-	}
-	cluster, err := clusters.Get(ctx, id.ResourceGroupName, id.Name, nil)
-	if err != nil {
-		return "", "", fmt.Errorf("read AKS kubelet identity: %w", err)
-	}
-	if cluster.Properties == nil || cluster.Properties.IdentityProfile["kubeletidentity"] == nil ||
-		cluster.Properties.IdentityProfile["kubeletidentity"].ObjectID == nil {
-		return "", "", fmt.Errorf("BYO AKS requires a kubelet principal object ID for registry access")
-	}
-	kubeletObjectID := *cluster.Properties.IdentityProfile["kubeletidentity"].ObjectID
-	if _, err := uuid.Parse(kubeletObjectID); err != nil {
-		return "", "", fmt.Errorf("AKS kubelet principal object ID must be a GUID: %w", err)
+	var kubeletObjectID string
+	if includeAcr {
+		clusters, err := armcontainerservice.NewManagedClustersClient(id.SubscriptionID, p.credential, options)
+		if err != nil {
+			return "", "", fmt.Errorf("create AKS client: %w", err)
+		}
+		cluster, err := clusters.Get(ctx, id.ResourceGroupName, id.Name, nil)
+		if err != nil {
+			return "", "", fmt.Errorf("read AKS kubelet identity: %w", err)
+		}
+		if cluster.Properties == nil || cluster.Properties.IdentityProfile["kubeletidentity"] == nil ||
+			cluster.Properties.IdentityProfile["kubeletidentity"].ObjectID == nil {
+			return "", "", fmt.Errorf("BYO AKS requires a kubelet principal object ID for registry access")
+		}
+		kubeletObjectID = *cluster.Properties.IdentityProfile["kubeletidentity"].ObjectID
+		if _, err := uuid.Parse(kubeletObjectID); err != nil {
+			return "", "", fmt.Errorf("AKS kubelet principal object ID must be a GUID: %w", err)
+		}
 	}
 	const roleName = "Managed Identity Federated Identity Credential Contributor"
 	roles, err := armauthorization.NewRoleDefinitionsClient(p.credential, options)

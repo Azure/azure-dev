@@ -241,13 +241,9 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if hosting != nil {
-		includeAcr = true
-	}
-	if includeAcr && netMode != NetworkModeNone && hosting == nil {
+	if includeAcr && netMode != NetworkModeNone {
 		return nil, errors.New(
-			"synthesis: private networking does not support an auto-created Azure Container Registry; " +
-				"specify an image instead",
+			"synthesis: private networking does not support an auto-created Azure Container Registry; specify an image instead",
 		)
 	}
 
@@ -960,7 +956,7 @@ func resolveSubnet(
 	// provision that can only fail.
 	if (resolve || !containsVarRef(vnetID)) && !vnetIDPattern.MatchString(vnetID) {
 		return "", "", "", false, fmt.Errorf(
-			"%s.vnet: value is not a well-formed Microsoft.Network/virtualNetworks id", fieldPath)
+			"%s.vnet: %q is not a well-formed Microsoft.Network/virtualNetworks id", fieldPath, vnetID)
 	}
 	if prefix != "" {
 		if _, _, perr := net.ParseCIDR(prefix); perr != nil {

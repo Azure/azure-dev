@@ -87,12 +87,24 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 	}
 	require.NoError(f.t, json.NewDecoder(request.Body).Decode(&submitted))
 	f.template, f.parameters = submitted.Properties.Template, submitted.Properties.Parameters
+	acrParameter, ok := f.parameters["includeAcr"].(map[string]any)
+	require.True(f.t, ok)
+	includeAcr, ok := acrParameter["value"].(bool)
+	require.True(f.t, ok)
+	registryID, registryEndpoint, connectionName := "", "", ""
+	if includeAcr {
+		registryID, registryEndpoint, connectionName = offlineRegistryID, "crnative.azurecr.io", "crnative-conn"
+	}
 	if request.Method == http.MethodPost && request.URL.Path == path+"/whatIf" {
 		f.previews++
+		resourceID := offlineProjectID
+		if includeAcr {
+			resourceID = registryID
+		}
 		return f.response(request, 200, map[string]any{
 			"status": "Succeeded",
 			"properties": map[string]any{"changes": []any{map[string]any{
-				"resourceId": offlineRegistryID, "changeType": "Create",
+				"resourceId": resourceID, "changeType": "Create",
 			}}},
 		}), nil
 	}
@@ -111,9 +123,9 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 			"azurE_AI_PROJECT_ID":                  output(offlineProjectID),
 			"azurE_AI_PROJECT_NAME":                output("project"),
 			"foundrY_PROJECT_ENDPOINT":             output(offlineProjectEndpoint),
-			"azurE_CONTAINER_REGISTRY_RESOURCE_ID": output(offlineRegistryID),
-			"azurE_CONTAINER_REGISTRY_ENDPOINT":    output("crnative.azurecr.io"),
-			"azurE_AI_PROJECT_ACR_CONNECTION_NAME": output("crnative-conn"),
+			"azurE_CONTAINER_REGISTRY_RESOURCE_ID": output(registryID),
+			"azurE_CONTAINER_REGISTRY_ENDPOINT":    output(registryEndpoint),
+			"azurE_AI_PROJECT_ACR_CONNECTION_NAME": output(connectionName),
 			"azurE_RESOURCE_GROUP":                 output("target-rg"),
 			"azurE_FOUNDRY_RESOURCE_GROUP":         output("target-rg"),
 		},
@@ -152,9 +164,9 @@ func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
 	require.NotNil(t, result.Deployment)
 	for name, value := range map[string]string{
 		"AZURE_AI_PROJECT_ID": offlineProjectID, "FOUNDRY_PROJECT_ENDPOINT": offlineProjectEndpoint,
-		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": offlineRegistryID,
-		"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "crnative.azurecr.io",
-		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "crnative-conn",
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "",
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "",
+		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
 		"AZURE_TENANT_ID":                      "user-access-tenant",
 	} {
 		require.Contains(t, result.Deployment.Outputs, name)
@@ -162,14 +174,13 @@ func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
 	}
 	assert.Equal(t, 1, fake.writes)
 	assert.Equal(t, []string{
-		"GET " + offlineClusterID,
 		"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
 		"PUT /subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + p.deploymentName(),
 	}, fake.requests)
 	assert.Empty(t, server.set)
 	assert.Empty(t, compiler.buildCalls)
 	assert.Empty(t, compiler.buildParamCalls, "embedded provisioning must not invoke a Bicep naming probe")
-	assert.Contains(t, fake.parameters, "kubeletObjectId")
+	assert.NotContains(t, fake.parameters, "kubeletObjectId")
 	assert.Contains(t, fake.parameters, "federatedIdentityRoleDefinitionId")
 }
 
@@ -179,7 +190,7 @@ func TestBYOPreviewReturnsARMWhatIfChangesWithoutResourceWrites(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result.Preview)
 	require.Len(t, result.Preview.Changes, 1)
-	assert.Equal(t, offlineRegistryID, result.Preview.Changes[0].ResourceId)
+	assert.Equal(t, offlineProjectID, result.Preview.Changes[0].ResourceId)
 	assert.Equal(t, 1, fake.previews)
 	assert.Zero(t, fake.writes)
 	assert.Empty(t, p.virtualEnv)
@@ -194,7 +205,7 @@ func TestBYOFailedDeploymentCanBeRetried(t *testing.T) {
 	_, err = p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
 	assert.Equal(t, 2, fake.writes)
-	assert.Len(t, fake.requests, 6)
+	assert.Len(t, fake.requests, 4)
 	assert.Empty(t, p.virtualEnv)
 }
 
@@ -204,6 +215,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 	p.onDiskSource = &templateSource{
 		mode: templateModeBicep, armTemplate: p.armTemplate,
 		parameters: map[string]any{
+			"includeAcr":        map[string]any{"value": true},
 			"resourceTokenSalt": map[string]any{"value": "custom"},
 			"tags":              map[string]any{"value": map[string]string{"team": "test"}},
 		},
@@ -212,6 +224,8 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "2.0.0.0", fake.template["contentVersion"])
 	assert.Equal(t, map[string]any{"value": "custom"}, fake.parameters["resourceTokenSalt"])
+	assert.Equal(t, map[string]any{"value": true}, fake.parameters["includeAcr"])
+	assert.Contains(t, fake.parameters, "kubeletObjectId")
 	p.onDiskSource.parameters["resourceTokenSalt"] = map[string]any{"value": "updated"}
 	_, err = p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
@@ -247,7 +261,7 @@ func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
 	require.NoError(t, p.prepareBYO(t.Context(), source))
 	assert.NotContains(t, source.parameters, "kubeletObjectId")
 	assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
-	assert.Len(t, fake.requests, 2, "preparation only reads host bindings")
+	assert.Len(t, fake.requests, 1, "preparation only reads the federation role without a registry")
 }
 
 func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {
@@ -255,7 +269,6 @@ func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {
 		key, expected string
 		value         any
 	}{
-		{"includeAcr", "requires includeAcr=true", false},
 		{"agentHosting", `unknown field "storageAccountResourceId"`,
 			map[string]any{"enabled": true, "storageAccountResourceId": "supplied"}},
 		{"agentHosting", "conflict with azure.yaml", map[string]any{

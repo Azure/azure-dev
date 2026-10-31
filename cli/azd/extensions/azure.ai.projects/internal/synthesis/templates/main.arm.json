@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "127500344685359137"
+      "templateHash": "15071112474721892195"
     }
   },
   "definitions": {
@@ -125,7 +125,7 @@
       "type": "bool",
       "defaultValue": false,
       "metadata": {
-        "description": "Include the native Azure Container Registry. Required for docker: agents or BYO AKS."
+        "description": "Include an Azure Container Registry. Set true when any agent uses docker:."
       }
     },
     "agentHosting": {
@@ -330,7 +330,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "15752153406954660360"
+              "templateHash": "13004949719113969404"
             }
           },
           "definitions": {
@@ -442,7 +442,7 @@
               "type": "bool",
               "defaultValue": false,
               "metadata": {
-                "description": "Include the native Azure Container Registry. Required for docker: agents or BYO AKS."
+                "description": "Include an Azure Container Registry. Set true when any agent uses docker:."
               }
             },
             "agentHosting": {

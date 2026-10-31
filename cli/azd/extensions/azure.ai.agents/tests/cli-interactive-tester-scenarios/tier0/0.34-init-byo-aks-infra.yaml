@@ -36,6 +36,6 @@ goals:
   - "Confirm Terraform eject fails with a validation error saying BYO AKS requires microsoft.foundry. It must not authenticate, prompt, create an azd environment, generate infra files, or change azure.yaml."
   - "Compare azure.yaml to azure.yaml.original and confirm the bytes are unchanged and no infra directory exists."
   - "Run azd ai agent init --infra=bicep --no-prompt. Confirm local Bicep generation succeeds without authenticating or querying Azure."
-  - "Confirm azure.yaml retains microsoft.foundry, main.parameters.json preserves the cluster and VNet ${VAR} references, includeAcr is true, the three supporting-resource ID fields remain empty, and no explicit byoOnboarding parameter is authored."
+  - "Confirm azure.yaml retains microsoft.foundry, main.parameters.json preserves the cluster and VNet ${VAR} references, includeAcr is false because no Agent requires a container build, the three supporting-resource ID fields remain empty, and no explicit byoOnboarding parameter is authored."
   - "Confirm the generated modules include byo-prerequisites.bicep and a single native acr.bicep; prerequisites must not create another registry."
   - "Stop after local file verification. Do not run provision, deploy, invoke, down, kubectl, or any Azure command in this offline scenario."

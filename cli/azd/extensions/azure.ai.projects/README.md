@@ -152,25 +152,25 @@ User-authored on-disk Bicep templates can still declare their own role assignmen
 
 ### Existing AKS hosting
 
-This preview is **off by default**. Enable it in your shell or CI before using BYO AKS:
+This preview is **enabled by default**. To disable it in your shell or CI:
 
 ```bash
-export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
+export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=false
 ```
 
 In PowerShell:
 
 ```powershell
-$env:AZD_ALPHA_ENABLE_AGENTS_BYO_AKS = 'true'
+$env:AZD_ALPHA_ENABLE_AGENTS_BYO_AKS = 'false'
 ```
 
-The independent `agents.byo_aks` opt-in uses the process environment. Only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable it; missing, empty, false, and invalid values leave it off. `alpha.all`, other preview switches, and service `env:` entries do not enable BYO AKS. Values already injected into the process by the azd host count. No opt-in is required for Foundry projects without `agentHosting`.
+The independent `agents.byo_aks` switch uses the process environment. If the variable is absent, BYO AKS is enabled. When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable it; empty, false, and invalid values disable it. `alpha.all`, other preview switches, and service `env:` entries do not override this switch. Values already injected into the process by the azd host count. Foundry projects without `agentHosting` do not require this switch.
 
 The generated account, project and model deployment resources use API `2025-06-01` without AKS hosting. Only the BYO AKS path uses `2026-07-15-preview`; both paths return the same standard project, endpoint and registry outputs.
 
-The provider checks the opt-in before prompting or persisting environment values, including for on-disk Bicep. It also checks before authentication or AKS reads in provision and preview. Agents init/adoption, preprovision/predeploy, and infrastructure eject enforce the same opt-in. A disabled preview returns `feature_not_enabled` with the variable to set.
+The provider checks the switch before prompting or persisting environment values, including for on-disk Bicep. It also checks before authentication or AKS reads in provision and preview. Agents init/adoption, preprovision/predeploy, and infrastructure eject enforce the same switch. A disabled preview returns `feature_not_enabled` with the variable to set.
 
-Provision and preview inspect the effective `agentHosting` value after parameter merging, including template defaults when no value is supplied. Enabled hosting requires the opt-in and a matching `agentHosting.clusterResourceId` declaration in `azure.yaml`; removing the YAML declaration does not bypass validation. The hosting value must be a locally readable literal object, not an ARM expression. Invalid combinations are rejected before submitting ARM requests.
+Provision and preview inspect the effective `agentHosting` value after parameter merging, including template defaults when no value is supplied. Enabled hosting requires the switch to be enabled and a matching `agentHosting.clusterResourceId` declaration in `azure.yaml`; removing the YAML declaration does not bypass validation. The hosting value must be a locally readable literal object, not an ARM expression. Invalid combinations are rejected before submitting ARM requests.
 
 Set `agentHosting.clusterResourceId` on the `azure.ai.project` service to use an existing AKS cluster when creating a **new** Foundry account and project:
 
@@ -196,6 +196,8 @@ The default resource graph creates:
 - Hosting-management Reader and Kubernetes Extension Contributor roles on the existing cluster, federation-management permission on the workload identity, and workload Storage Blob Data Contributor permission on the storage account.
 
 The account receives a `ManagedCluster` / `default` hosting configuration. Its data-plane access follows the optional `network` configuration. **Storage and ACR use public authenticated endpoints**, so the cluster must be able to reach them. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. The deploying principal needs read access to the existing AKS cluster, built-in role definitions and target resource group, creation rights for the new resources, and role-assignment write rights at the cluster, workload identity, Storage and registry scopes. Configuring private networking additionally requires the corresponding network permissions.
+
+The deploying principal also needs `Microsoft.Resources/deployments/write` at the existing AKS resource-group scope. The cluster role grants are created through nested ARM deployments in that group, including when it differs from the Foundry target resource group.
 
 Only the existing cluster is selectable: supplied Storage accounts, hosting/workload identities, and registries are not supported. An existing `endpoint:` cannot receive hosting. `${VAR}` inputs resolve from the active azd environment; a cluster ID is not a Kubernetes context name.
 

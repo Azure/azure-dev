@@ -22,7 +22,11 @@ import (
 )
 
 func requireBYOAKSFeature() error {
-	enabled, err := strconv.ParseBool(os.Getenv(synthesis.BYOAKSEnvVar))
+	value, present := os.LookupEnv(synthesis.BYOAKSEnvVar)
+	if !present {
+		return nil
+	}
+	enabled, err := strconv.ParseBool(value)
 	if err == nil && enabled {
 		return nil
 	}

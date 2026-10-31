@@ -181,8 +181,8 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 					clusterGrantModules++
 					assert.Equal(t, "[format('byo-cluster-{0}-{1}', "+
 						"uniqueString(resourceGroup().id, parameters('hostingIdentityName')), "+
-						"createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', "+
-						"'85cb6faf-e071-4c9b-8136-154b5a04f717')[copyIndex()])]", value["name"])
+						"createArray(variables('readerRoleId'), "+
+						"variables('kubernetesExtensionContributorRoleId'))[copyIndex()])]", value["name"])
 				}
 			case "Microsoft.ContainerRegistry/registries":
 				registries++

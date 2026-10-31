@@ -41,9 +41,10 @@ var (
 	}
 	// BYOAKS controls existing-AKS onboarding and default supporting resources.
 	BYOAKS = Feature{
-		ID:          synthesis.BYOAKSFeatureID,
-		EnvVar:      synthesis.BYOAKSEnvVar,
-		Description: "Existing AKS hosting with default supporting resources",
+		ID:             synthesis.BYOAKSFeatureID,
+		EnvVar:         synthesis.BYOAKSEnvVar,
+		Description:    "Existing AKS hosting with default supporting resources",
+		DefaultEnabled: true,
 	}
 )
 

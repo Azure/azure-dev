@@ -59,10 +59,10 @@ func TestAgentHelp(t *testing.T) {
 					require.Contains(t, text, feature.EnvVar+"=true")
 					require.Contains(t, text, feature.Description+".")
 				}
-				require.Contains(t, text, "All switches default to off.")
-				require.Contains(t, text, "Only 1, t, T, true, TRUE, or True enable them.")
-				require.Contains(t, text, "False, empty, and invalid values do not enable a switch.")
-				require.Contains(t, text, "We recommend setting these in your shell or CI before running azd:")
+				require.Contains(t, text, "BYO AKS is enabled by default; other switches default to off.")
+				require.Contains(t, text, "When set, only 1, t, T, true, TRUE, or True enable a switch.")
+				require.Contains(t, text, "False, empty, and invalid values disable a switch.")
+				require.Contains(t, text, "We recommend setting overrides in your shell or CI before running azd:")
 				require.Contains(t, text, "The extension reads these switches from its process environment, including")
 				require.Contains(t, text,
 					"values the azd host already injected from the selected environment.")

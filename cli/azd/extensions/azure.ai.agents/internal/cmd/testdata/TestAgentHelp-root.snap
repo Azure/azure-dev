@@ -83,7 +83,7 @@ Environments & Environment Variables
   to the deployed agent.
 
 Preview Feature Switches
-  We recommend setting these in your shell or CI before running azd:
+  We recommend setting overrides in your shell or CI before running azd:
   AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
     Prompt agents that run on a Copilot harness.
   AZD_ALPHA_ENABLE_AGENTS_VOICE=true
@@ -97,8 +97,9 @@ Preview Feature Switches
   AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
     Existing AKS hosting with default supporting resources.
 
-  All switches default to off. Only 1, t, T, true, TRUE, or True enable them.
-  False, empty, and invalid values do not enable a switch.
+  BYO AKS is enabled by default; other switches default to off.
+  When set, only 1, t, T, true, TRUE, or True enable a switch.
+  False, empty, and invalid values disable a switch.
   The extension reads these switches from its process environment, including
   values the azd host already injected from the selected environment.
   It does not query azd config or load environment files from disk itself.

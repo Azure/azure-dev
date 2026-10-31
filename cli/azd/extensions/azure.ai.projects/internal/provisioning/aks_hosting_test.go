@@ -130,7 +130,8 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 
 func offlineBYOProvider(t *testing.T) (*FoundryProvisioningProvider, *byoARMFake) {
 	t.Helper()
-	t.Setenv(synthesis.BYOAKSEnvVar, "true")
+	t.Setenv(synthesis.BYOAKSEnvVar, "")
+	require.NoError(t, os.Unsetenv(synthesis.BYOAKSEnvVar))
 	result, err := synthesis.Synthesize(synthesis.Input{ServiceName: "project", RawAzureYAML: []byte(offlineBYOAzureYAML)})
 	require.NoError(t, err)
 	raw, err := synthesis.ARMTemplate()
@@ -328,7 +329,7 @@ func TestBYOFeatureProcessOptIn(t *testing.T) {
 			}
 			err := requireBYOAKSFeature()
 			switch value {
-			case "1", "t", "T", "true", "TRUE", "True":
+			case "", "1", "t", "T", "true", "TRUE", "True":
 				require.NoError(t, err)
 			default:
 				local, ok := errors.AsType[*azdext.LocalError](err)

@@ -1,8 +1,8 @@
 # Azure Developer CLI (azd) Agents Extension
 
-## Preview feature opt-ins
+## Preview feature switches
 
-Six capabilities are off by default. Each one is turned on separately.
+BYO AKS is enabled by default. The other five capabilities are off by default. Each switch is controlled independently.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
@@ -13,7 +13,7 @@ Six capabilities are off by default. Each one is turned on separately.
 | `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
 | `agents.byo_aks` | [Existing AKS hosting with default supporting resources](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
 
-Set the desired variable in your shell or CI before running azd:
+Override a switch in your shell or CI before running azd:
 
 ```bash
 export AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
@@ -30,8 +30,10 @@ In PowerShell, for example:
 $env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
 ```
 
-Only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature. False, empty,
-missing, and invalid values leave it off. The evaluator reads the current
+When a variable is absent, BYO AKS is enabled and the other features are off.
+When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature.
+False, empty, and invalid values disable it, including BYO AKS.
+The evaluator reads the current
 process environment without querying azd config or loading environment files.
 Values already injected by the azd host count; the selected azd environment
 can override the same key from the shell or CI.
@@ -66,7 +68,7 @@ authentication, including `$ref` definitions. Adoption reuses that directory.
 
 BYO AKS checks cover inline and referenced project configuration during init/adoption,
 preprovision/predeploy, and infrastructure eject. The Projects extension checks
-the same process opt-in before initializing the BYO AKS provider and before
+the same process switch before initializing the BYO AKS provider and before
 provision/preview authentication or AKS reads. Ordinary Foundry provisioning is unchanged.
 
 ### Enforcement limits
@@ -78,7 +80,7 @@ provision/preview authentication or AKS reads. Ordinary Foundry provisioning is 
 - Agent read and cleanup commands stay available with features off. This includes
   show, endpoint show, invocations show, follow, and cancel, delete, and down.
   BYO AKS provider initialization, including infrastructure state queries, requires
-  its opt-in. BYO AKS infrastructure uses the standard Foundry `azd down`
+  its switch to be enabled. BYO AKS infrastructure uses the standard Foundry `azd down`
   path, which deletes the target resource group and all resources inside it.
 - These checks do not govern requests from the evaluations or routines
   extensions.
@@ -1129,7 +1131,7 @@ Details:
 
 ## Voice agents (public preview)
 
-Voice initialization needs the `agents.voice` [opt-in](#preview-feature-opt-ins).
+Voice initialization needs the `agents.voice` [opt-in](#preview-feature-switches).
 Use the existing commands to discover options and create a managed prompt voice
 agent:
 

@@ -2239,7 +2239,8 @@ func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {
 }
 
 func TestEjectInfra_BYOAKS(t *testing.T) {
-	t.Setenv(featureflags.BYOAKS.EnvVar, "true")
+	t.Setenv(featureflags.BYOAKS.EnvVar, "")
+	require.NoError(t, os.Unsetenv(featureflags.BYOAKS.EnvVar))
 	const config = `name: byo-aks
 infra:
   provider: microsoft.foundry

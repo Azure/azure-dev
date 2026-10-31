@@ -53,7 +53,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Azure Functions | Stable |
 | Azure Kubernetes Service (AKS) | Beta |
 | Azure AI | Beta |
-| [Microsoft Foundry on existing AKS](../../cli/azd/extensions/azure.ai.projects/README.md#existing-aks-hosting) (default supporting resources) | In development (default off; explicit opt-in required) |
+| [Microsoft Foundry on existing AKS](../../cli/azd/extensions/azure.ai.projects/README.md#existing-aks-hosting) (default supporting resources) | In development (enabled by default) |
 
 ## Clients
 

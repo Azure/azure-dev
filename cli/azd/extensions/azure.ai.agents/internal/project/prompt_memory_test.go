@@ -8,11 +8,114 @@ import (
 	"errors"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
+
+func TestResolvePromptMemoryModels(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		bindings       string
+		chatModel      string
+		embeddingModel string
+		wantChat       string
+		wantEmbedding  string
+		wantSkipped    string
+	}{
+		{
+			name:          "reuse differently named live deployments",
+			bindings:      `{"authored-chat":"live-chat","authored-embedding":"live-embedding"}`,
+			wantChat:      "live-chat",
+			wantEmbedding: "live-embedding",
+		},
+		{
+			name:          "replacement deployments override the legacy default",
+			bindings:      `{"authored-chat":"replacement-chat","authored-embedding":"replacement-embedding"}`,
+			wantChat:      "replacement-chat",
+			wantEmbedding: "replacement-embedding",
+		},
+		{
+			name:        "skipped chat declaration",
+			bindings:    `{"authored-chat":"","authored-embedding":"live-embedding"}`,
+			wantSkipped: "authored-chat",
+		},
+		{
+			name:        "skipped embedding declaration",
+			bindings:    `{"authored-chat":"live-chat","authored-embedding":""}`,
+			wantSkipped: "authored-embedding",
+		},
+		{
+			name:           "environment references resolve through bindings",
+			bindings:       `{"authored-chat":"live-chat","authored-embedding":"live-embedding"}`,
+			chatModel:      "${MEMORY_CHAT}",
+			embeddingModel: "${MEMORY_EMBEDDING}",
+			wantChat:       "live-chat",
+			wantEmbedding:  "live-embedding",
+		},
+		{
+			name:          "unchanged deployment bindings",
+			bindings:      `{"authored-chat":"authored-chat","authored-embedding":"authored-embedding"}`,
+			wantChat:      "authored-chat",
+			wantEmbedding: "authored-embedding",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			agent, services := promptModelServices(t, "authored-chat", "authored-embedding")
+			memory := &agent_yaml.PromptMemory{
+				Store: "conversation-memory", ChatModel: "authored-chat", EmbeddingModel: "authored-embedding",
+			}
+			if tt.chatModel != "" {
+				memory.ChatModel = tt.chatModel
+			}
+			if tt.embeddingModel != "" {
+				memory.EmbeddingModel = tt.embeddingModel
+			}
+			g, fake, node := newMemoryTestGraph(memory)
+			env := map[string]string{
+				"AI_PROJECT_DEPLOYMENT_BINDINGS": tt.bindings,
+				"AI_PROJECT_DEPLOYMENTS":         "[]",
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "unrelated-default",
+				"MEMORY_CHAT":                    "authored-chat",
+				"MEMORY_EMBEDDING":               "authored-embedding",
+			}
+			err := resolvePromptMemoryModels(g.managed.Memory, agent, services, t.TempDir(), env)
+			if tt.wantSkipped != "" {
+				require.ErrorContains(t, err, "model deployment \""+tt.wantSkipped+"\" was skipped")
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, exterrors.CodeModelDeploymentNotFound, localErr.Code)
+				require.Nil(t, fake.request, "skipped models must fail before store creation")
+				return
+			}
+			require.NoError(t, err)
+			require.Same(t, memory, g.managed.Memory)
+			require.Equal(t, tt.wantChat, memory.ChatModel)
+			require.Equal(t, tt.wantEmbedding, memory.EmbeddingModel)
+			require.NoError(t, node.Validate())
+			require.NoError(t, node.Resolve(t.Context()))
+			require.NotNil(t, fake.request)
+			require.Equal(t, tt.wantChat, fake.request.Definition.ChatModel)
+			require.Equal(t, tt.wantEmbedding, fake.request.Definition.EmbeddingModel)
+		})
+	}
+}
+
+func TestResolvePromptMemoryModelsWithoutMemory(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, resolvePromptMemoryModels(nil, nil, nil, "", map[string]string{
+		"AI_PROJECT_DEPLOYMENT_BINDINGS": "{",
+	}))
+}
 
 // fakeMemoryStoreEnsurer records the request it was handed so tests can assert
 // what azd would send, without a live Foundry endpoint.

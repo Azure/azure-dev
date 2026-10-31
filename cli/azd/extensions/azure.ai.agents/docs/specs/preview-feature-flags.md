@@ -5,7 +5,7 @@
 ## Status and goal
 
 - **Component:** `cli/azd/extensions/azure.ai.agents`
-- **Scope:** Independent managed-harness, voice, long-running invocation, A2A version-selection, and BYO AKS switches. BYO AKS is enabled by default; the other switches default to off.
+- **Scope:** Independent managed-harness, voice, long-running invocation, A2A version-selection, and BYO AKS switches. All switches default to off.
 
 Keep preview opt-in decisions inside the Microsoft Foundry agents extension until the extension framework supports discovery and evaluation. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
 
@@ -51,7 +51,7 @@ func All() []Feature
 func Lookup(id string) (Feature, bool)
 ```
 
-`ID` is a capability identity, not a user-config contract. `EnvVar` is the process environment key to read, including a value the azd host has already injected. `Description` is optional for evaluation and supplies a short scope summary in help. `DefaultEnabled` applies only when the variable is absent; only BYO AKS declares it as `true`.
+`ID` is a capability identity, not a user-config contract. `EnvVar` is the process environment key to read, including a value the azd host has already injected. `Description` is optional for evaluation and supplies a short scope summary in help. `DefaultEnabled` applies only when the variable is absent; all declared features default to `false`.
 
 ```go
 if err := featureflags.Require(featureflags.Voice); err != nil {
@@ -81,7 +81,7 @@ Each ID starts with `agents.`. Its canonical key is `AZD_ALPHA_ENABLE_` plus the
 
 The BYO AKS identity and environment key are declared in the aligned synthesis copies. Agents uses the existing `Require` evaluator for project init/adoption. Project classification resolves inline and `$ref` configuration using the existing service resolver. A service `env:` entry does not control this switch.
 
-An absent variable enables BYO AKS project initialization and adoption, while an explicit value uses `strconv.ParseBool`. Disabled checks return the `feature_not_enabled` compatibility error and shell/CI suggestion. Foundry projects without `agentHosting` do not require this switch.
+An absent variable disables BYO AKS project initialization and adoption, while an explicit value uses `strconv.ParseBool`. Disabled checks return the `feature_not_enabled` compatibility error and shell/CI suggestion. Foundry projects without `agentHosting` do not require this switch.
 
 The Projects extension owns `microsoft.foundry`. Provider initialization, infrastructure state queries, provision, preview, lifecycle hooks, and Bicep eject do not check the BYO AKS switch. Provision and preview still validate effective hosting parameters and resolve required identity bindings. BYO AKS infrastructure uses the standard Foundry `azd down` path, including its confirmation, `--force` behavior, and target resource-group deletion.
 
@@ -126,7 +126,7 @@ $env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
 azd ai agent init --help
 ```
 
-BYO AKS is enabled when its variable is absent; all other features default to off. When a variable is explicitly set, only `strconv.ParseBool` true values enable a feature: `1`, `t`, `T`, `true`, `TRUE`, or `True`. False values (`0`, `f`, `F`, `false`, `FALSE`, `False`), empty values, and invalid values disable it without an error, including BYO AKS. Values such as `on`, `yes`, mixed-case `TrUe`, and whitespace-padded strings are invalid.
+All features are disabled when their variables are absent. When a variable is explicitly set, only `strconv.ParseBool` true values enable a feature: `1`, `t`, `T`, `true`, `TRUE`, or `True`. False values (`0`, `f`, `F`, `false`, `FALSE`, `False`), empty values, and invalid values disable it without an error, including BYO AKS. Values such as `on`, `yes`, mixed-case `TrUe`, and whitespace-padded strings are invalid.
 
 Each feature is independent. There is no global toggle, experimentation default, or cross-feature opt-in.
 
@@ -211,6 +211,6 @@ Root-command regressions cover parsed flags, local-validation precedence, indepe
 
 Remote-template regressions cover inline and `$ref` previews, rejection before Azure authentication, retained authentication when enabled, single-download adoption, and temporary-directory cleanup on failure.
 
-BYO AKS regressions cover default-on and boolean-value semantics and inline and referenced project configuration during init/adoption. Infrastructure tests cover Bicep eject, Terraform rejection without file changes, standard Project and registry outputs, and the ARM what-if path.
+BYO AKS regressions cover default-off and boolean-value semantics and inline and referenced project configuration during init/adoption. Infrastructure tests cover Bicep eject, Terraform rejection without file changes, standard Project and registry outputs, and the ARM what-if path.
 
 Run offline tests, the full agents module build, and scoped static checks with Go 1.26.4. Tier 0 scenarios cover switch discovery and enabled/disabled help. Scenario execution remains opt-in through the `foundry-extension-scenario-orchestrator` agent; no Azure scenarios are required for this integration.

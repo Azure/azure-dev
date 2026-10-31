@@ -7,7 +7,7 @@ Environment variables that configure Azure Developer CLI behavior. These can be 
 | Variable | Description |
 |---|---|
 | `AZD_ALPHA_ENABLE_<NAME>` | Enable a specific alpha feature |
-| `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Independent BYO AKS project init/adoption switch for the Agents extension, enabled when absent. Explicit false, empty, or invalid values disable init/adoption; global alpha switches do not override it. Infrastructure operations do not check it. See the [canonical reference](../../cli/azd/docs/environment-variables.md#azureaiagents). |
+| `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Independent BYO AKS project init/adoption switch for the Agents extension, disabled when absent. Explicit false, empty, or invalid values disable init/adoption; global alpha switches do not override it. Infrastructure operations do not check it. See the [canonical reference](../../cli/azd/docs/environment-variables.md#azureaiagents). |
 
 ## Configuration
 

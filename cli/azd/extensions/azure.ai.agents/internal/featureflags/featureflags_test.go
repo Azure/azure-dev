@@ -37,7 +37,6 @@ func TestIsEnabledWithoutDescription(t *testing.T) {
 	require.True(t, enabled)
 }
 
-// BYO AKS is the only exception to the default-off preview switches.
 func TestIsEnabledDefaultsOff(t *testing.T) {
 	for _, feature := range All() {
 		t.Run(feature.ID, func(t *testing.T) {
@@ -47,7 +46,7 @@ func TestIsEnabledDefaultsOff(t *testing.T) {
 			enabled, err := IsEnabled(feature)
 
 			require.NoError(t, err)
-			require.Equal(t, feature.ID == BYOAKS.ID, enabled)
+			require.False(t, enabled)
 			_, found := os.LookupEnv(feature.EnvVar)
 			require.False(t, found)
 		})

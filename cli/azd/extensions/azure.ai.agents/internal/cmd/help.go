@@ -45,7 +45,7 @@ Preview Feature Switches:
 		fmt.Fprintf(&footer, "  %s=true\n    %s.\n", feature.EnvVar, feature.Description)
 	}
 	footer.WriteString(`
-  BYO AKS is enabled by default; other switches default to off.
+  All preview switches default to off.
   When set, only 1, t, T, true, TRUE, or True enable a switch.
   False, empty, and invalid values disable a switch.
   The extension reads these switches from its process environment, including

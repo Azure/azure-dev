@@ -44,7 +44,7 @@ var (
 		ID:             synthesis.BYOAKSFeatureID,
 		EnvVar:         synthesis.BYOAKSEnvVar,
 		Description:    "Existing AKS project initialization and adoption",
-		DefaultEnabled: true,
+		DefaultEnabled: false,
 	}
 )
 

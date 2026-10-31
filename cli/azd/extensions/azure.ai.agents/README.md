@@ -2,7 +2,7 @@
 
 ## Preview feature switches
 
-BYO AKS is enabled by default. The other five capabilities are off by default. Each switch is controlled independently.
+All six preview capabilities are off by default. Each switch is controlled independently.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
@@ -30,7 +30,7 @@ In PowerShell, for example:
 $env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
 ```
 
-When a variable is absent, BYO AKS is enabled and the other features are off.
+When a variable is absent, its feature is off.
 When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature.
 False, empty, and invalid values disable it, including BYO AKS.
 The evaluator reads the current

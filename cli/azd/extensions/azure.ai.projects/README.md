@@ -152,19 +152,19 @@ User-authored on-disk Bicep templates can still declare their own role assignmen
 
 ### Existing AKS hosting
 
-The Agents init/adoption switch for this preview is **enabled by default**. To disable BYO AKS project initialization and adoption in your shell or CI:
+The Agents init/adoption switch for this preview is **disabled by default**. To enable BYO AKS project initialization and adoption in your shell or CI:
 
 ```bash
-export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=false
+export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
 ```
 
 In PowerShell:
 
 ```powershell
-$env:AZD_ALPHA_ENABLE_AGENTS_BYO_AKS = 'false'
+$env:AZD_ALPHA_ENABLE_AGENTS_BYO_AKS = 'true'
 ```
 
-The independent `agents.byo_aks` switch uses the process environment. If the variable is absent, BYO AKS project initialization and adoption are enabled. When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable them; empty, false, and invalid values disable them. `alpha.all`, other preview switches, and service `env:` entries do not override this switch. Values already injected into the process by the azd host count. Foundry projects without `agentHosting` do not require this switch.
+The independent `agents.byo_aks` switch uses the process environment. If the variable is absent, BYO AKS project initialization and adoption are disabled. When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable them; empty, false, and invalid values disable them. `alpha.all`, other preview switches, and service `env:` entries do not override this switch. Values already injected into the process by the azd host count. Foundry projects without `agentHosting` do not require this switch.
 
 The generated account, project and model deployment resources use API `2025-06-01` without AKS hosting. Only the BYO AKS path uses `2026-07-15-preview`; both paths return the same standard project, endpoint and registry outputs.
 

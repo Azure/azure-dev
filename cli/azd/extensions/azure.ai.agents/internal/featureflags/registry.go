@@ -39,11 +39,11 @@ var (
 		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT",
 		Description: "Hosted agent memory snapshots",
 	}
-	// BYOAKS controls existing-AKS onboarding and default supporting resources.
+	// BYOAKS controls existing-AKS project initialization and adoption.
 	BYOAKS = Feature{
 		ID:             synthesis.BYOAKSFeatureID,
 		EnvVar:         synthesis.BYOAKSEnvVar,
-		Description:    "Existing AKS hosting with default supporting resources",
+		Description:    "Existing AKS project initialization and adoption",
 		DefaultEnabled: true,
 	}
 )

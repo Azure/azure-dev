@@ -347,9 +347,6 @@ func requireBYOAKSProjectFeature(config *azdext.ProjectConfig) error {
 }
 
 func requireProjectPreviewFeatures(config *azdext.ProjectConfig) error {
-	if err := requireBYOAKSProjectFeature(config); err != nil {
-		return err
-	}
 	for _, service := range config.GetServices() {
 		if err := project.RequireAgentFeatures(service, config.GetPath()); err != nil {
 			return err
@@ -371,7 +368,11 @@ func requireManifestPreviewFeatures(
 	if err != nil {
 		return err
 	}
-	return requireProjectPreviewFeatures(&azdext.ProjectConfig{Services: services, Path: projectRoot})
+	config := &azdext.ProjectConfig{Services: services, Path: projectRoot}
+	if err := requireBYOAKSProjectFeature(config); err != nil {
+		return err
+	}
+	return requireProjectPreviewFeatures(config)
 }
 
 func requireStagedPreviewFeatures(root string) error {

@@ -94,7 +94,7 @@ Preview Feature Switches
   AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
     Hosted agent memory snapshots.
   AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
-    Existing AKS hosting with default supporting resources.
+    Existing AKS project initialization and adoption.
 
   BYO AKS is enabled by default; other switches default to off.
   When set, only 1, t, T, true, TRUE, or True enable a switch.

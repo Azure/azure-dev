@@ -11,7 +11,7 @@ BYO AKS is enabled by default. The other five capabilities are off by default. E
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 | `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
-| `agents.byo_aks` | [Existing AKS hosting with default supporting resources](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
+| `agents.byo_aks` | [Existing AKS project initialization and adoption](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
 
 Override a switch in your shell or CI before running azd:
 
@@ -66,10 +66,9 @@ capabilities, so templates are checked after staging and before adoption.
 Explicit remote `--template` inputs are staged and checked before Azure
 authentication, including `$ref` definitions. Adoption reuses that directory.
 
-BYO AKS checks cover inline and referenced project configuration during init/adoption,
-preprovision/predeploy, and infrastructure eject. The Projects extension checks
-the same process switch before initializing the BYO AKS provider and before
-provision/preview authentication or AKS reads. Ordinary Foundry provisioning is unchanged.
+BYO AKS checks cover inline and referenced project configuration during init/adoption.
+Foundry provider initialization, provision, preview, lifecycle hooks, and Bicep
+eject do not check the BYO AKS switch. Ordinary Foundry provisioning is unchanged.
 
 ### Enforcement limits
 
@@ -79,8 +78,8 @@ provision/preview authentication or AKS reads. Ordinary Foundry provisioning is 
   accept voice WebSocket endpoints.
 - Agent read and cleanup commands stay available with features off. This includes
   show, endpoint show, invocations show, follow, and cancel, delete, and down.
-  BYO AKS provider initialization, including infrastructure state queries, requires
-  its switch to be enabled. BYO AKS infrastructure uses the standard Foundry `azd down`
+  BYO AKS infrastructure operations do not require its switch to be enabled.
+  BYO AKS infrastructure uses the standard Foundry `azd down`
   path, which deletes the target resource group and all resources inside it.
 - These checks do not govern requests from the evaluations or routines
   extensions.

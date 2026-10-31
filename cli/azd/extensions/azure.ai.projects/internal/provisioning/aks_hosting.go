@@ -8,12 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
@@ -21,29 +18,8 @@ import (
 	"github.com/google/uuid"
 )
 
-func requireBYOAKSFeature() error {
-	value, present := os.LookupEnv(synthesis.BYOAKSEnvVar)
-	if !present {
-		return nil
-	}
-	enabled, err := strconv.ParseBool(value)
-	if err == nil && enabled {
-		return nil
-	}
-	return exterrors.Compatibility(
-		exterrors.CodeFeatureNotEnabled,
-		fmt.Sprintf("preview feature %q is disabled", synthesis.BYOAKSFeatureID),
-		fmt.Sprintf("enable by setting %s=true in your shell or CI before running azd", synthesis.BYOAKSEnvVar),
-	)
-}
-
 func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *templateSource) error {
 	configured := p.synthResult != nil && p.synthResult.Hosting != nil
-	if configured {
-		if err := requireBYOAKSFeature(); err != nil {
-			return err
-		}
-	}
 	value, err := byoHostingParameter(source)
 	if err != nil {
 		return err
@@ -68,9 +44,6 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 	if !configured {
 		if !hosting.Enabled {
 			return nil
-		}
-		if err := requireBYOAKSFeature(); err != nil {
-			return err
 		}
 		return exterrors.Validation(exterrors.CodeConflictingArguments,
 			"effective agentHosting deployment parameters enable BYO AKS without agentHosting in azure.yaml",

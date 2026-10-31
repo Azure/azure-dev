@@ -6,7 +6,6 @@ package provisioning
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -15,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -127,8 +125,6 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 
 func offlineBYOProvider(t *testing.T) (*FoundryProvisioningProvider, *byoARMFake) {
 	t.Helper()
-	t.Setenv(synthesis.BYOAKSEnvVar, "")
-	require.NoError(t, os.Unsetenv(synthesis.BYOAKSEnvVar))
 	result, err := synthesis.Synthesize(synthesis.Input{ServiceName: "project", RawAzureYAML: []byte(offlineBYOAzureYAML)})
 	require.NoError(t, err)
 	raw, err := synthesis.ARMTemplate()
@@ -228,7 +224,6 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 
 func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSReads(t *testing.T) {
 	p, fake := offlineBYOProvider(t)
-	t.Setenv(synthesis.BYOAKSEnvVar, "")
 	result, err := synthesis.Synthesize(synthesis.Input{ServiceName: "project",
 		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n")})
 	require.NoError(t, err)
@@ -307,108 +302,5 @@ func TestBYOInitializeRejectsInvalidInputsBeforePromptsOrPersistence(t *testing.
 		raw, err := os.ReadFile(path)
 		require.NoError(t, err)
 		assert.Equal(t, config, string(raw))
-	}
-}
-
-func TestBYOFeatureProcessOptIn(t *testing.T) {
-	t.Setenv("AZD_ALPHA_ENABLE_ALL", "true")
-	t.Setenv("AZD_ALPHA_ENABLE_AGENTS_VOICE", "true")
-	t.Setenv("AZD_FOUNDRY_EXT_ENABLE_AGENTS_BYO_AKS", "true")
-	for _, value := range []string{
-		"", "0", "false", "FALSE", "False", "f", "F", "invalid", "on", "yes", "TrUe", " true ",
-		"1", "t", "T", "true", "TRUE", "True",
-	} {
-		t.Run(value, func(t *testing.T) {
-			t.Setenv(synthesis.BYOAKSEnvVar, value)
-			if value == "" {
-				require.NoError(t, os.Unsetenv(synthesis.BYOAKSEnvVar))
-			}
-			err := requireBYOAKSFeature()
-			switch value {
-			case "", "1", "t", "T", "true", "TRUE", "True":
-				require.NoError(t, err)
-			default:
-				local, ok := errors.AsType[*azdext.LocalError](err)
-				require.True(t, ok, "%v", err)
-				assert.Equal(t, exterrors.CodeFeatureNotEnabled, local.Code)
-				assert.Equal(t, azdext.LocalErrorCategoryCompatibility, local.Category)
-				assert.Contains(t, local.Message, synthesis.BYOAKSFeatureID)
-				assert.Contains(t, local.Suggestion, synthesis.BYOAKSEnvVar+"=true in your shell or CI")
-			}
-		})
-	}
-}
-
-func TestBYOInitializeRequiresOptInBeforePromptsOrPersistence(t *testing.T) {
-	for _, onDisk := range []bool{false, true} {
-		for _, ref := range []bool{false, true} {
-			for _, value := range []string{"", "false", "invalid", "true"} {
-				name := map[bool]string{false: "embedded", true: "on-disk"}[onDisk] + "/" +
-					map[bool]string{false: "inline", true: "ref"}[ref] + "/" + value
-				t.Run(name, func(t *testing.T) {
-					t.Setenv(synthesis.BYOAKSEnvVar, value)
-					root := t.TempDir()
-					config := offlineBYOAzureYAML
-					if ref {
-						body := strings.TrimPrefix(config, "\nservices:\n  project:\n")
-						require.NoError(t, os.WriteFile(filepath.Join(root, "project.yaml"), []byte(body), 0o600))
-						config = "services:\n  project:\n    host: azure.ai.project\n    $ref: project.yaml\n"
-					}
-					path := filepath.Join(root, "azure.yaml")
-					require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
-					if onDisk {
-						require.NoError(t, os.Mkdir(filepath.Join(root, "infra"), 0o750))
-						require.NoError(t, os.WriteFile(
-							filepath.Join(root, "infra", "main.bicep"), []byte("// generated"), 0o600))
-					}
-					env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
-						envKeySubscriptionID: "target-sub", envKeyLocation: "westus",
-						synthesis.BYOAKSEnvVar: "true",
-					}}
-					prompt := &resolveEnvStubPromptServer{}
-					p := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
-					err := p.Initialize(t.Context(), root, &azdext.ProvisioningOptions{Provider: FoundryProviderName})
-					if value == "true" {
-						require.NoError(t, err)
-						require.NotNil(t, p.synthResult.Hosting)
-						assert.Equal(t, offlineClusterID, p.synthResult.Hosting.ClusterResourceID)
-					} else {
-						local, ok := errors.AsType[*azdext.LocalError](err)
-						require.True(t, ok, "%v", err)
-						assert.Equal(t, exterrors.CodeFeatureNotEnabled, local.Code)
-						assert.Empty(t, env.set)
-					}
-					assert.Zero(t, prompt.subscriptionN)
-					assert.Zero(t, prompt.locationN)
-					assert.Nil(t, p.credential)
-					//nolint:gosec // Test-owned azure.yaml under t.TempDir.
-					raw, err := os.ReadFile(path)
-					require.NoError(t, err)
-					assert.Equal(t, config, string(raw))
-				})
-			}
-		}
-	}
-}
-
-func TestBYODeployAndPreviewRejectDisabledFeatureBeforeAuthentication(t *testing.T) {
-	for _, operation := range []string{"deploy", "preview"} {
-		t.Run(operation, func(t *testing.T) {
-			p, fake := offlineBYOProvider(t)
-			t.Setenv(synthesis.BYOAKSEnvVar, "false")
-			p.credential = nil
-			var err error
-			if operation == "deploy" {
-				_, err = p.Deploy(t.Context(), func(string) {})
-			} else {
-				_, err = p.Preview(t.Context(), func(string) {})
-			}
-			local, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok, "%v", err)
-			assert.Equal(t, exterrors.CodeFeatureNotEnabled, local.Code)
-			assert.Nil(t, p.credential)
-			assert.Empty(t, fake.requests)
-			assert.Empty(t, p.virtualEnv)
-		})
 	}
 }

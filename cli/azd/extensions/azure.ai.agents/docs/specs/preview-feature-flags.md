@@ -73,17 +73,17 @@ if err := featureflags.Require(featureflags.Voice); err != nil {
 | `Voice` | `agents.voice` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` | Voice, prompt-voice, and hosted voice agents |
 | `LongRunning` | `agents.long_running` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations |
 | `A2A` | `agents.a2a` | `AZD_ALPHA_ENABLE_AGENTS_A2A` | A2A init selection, explicit wire versions, and the 1.0 message default |
-| `BYOAKS` | `agents.byo_aks` | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Existing AKS hosting with default supporting resources |
+| `BYOAKS` | `agents.byo_aks` | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Existing AKS project initialization and adoption |
 
 Each ID starts with `agents.`. Its canonical key is `AZD_ALPHA_ENABLE_` plus the ID in upper case with dots replaced by underscores. Registry tests enforce the identities, naming rule, unique IDs and keys, and nonempty descriptions. The evaluator reads the declared `EnvVar` rather than deriving a key at run time.
 
-### BYO AKS provisioning
+### BYO AKS initialization and adoption
 
-The BYO AKS identity and environment key are shared through the aligned synthesis copies. Agents uses the existing `Require` evaluator for project init/adoption, preprovision/predeploy, and infrastructure eject. Project classification resolves inline and `$ref` configuration using the existing service resolver. A service `env:` entry does not control this switch.
+The BYO AKS identity and environment key are declared in the aligned synthesis copies. Agents uses the existing `Require` evaluator for project init/adoption. Project classification resolves inline and `$ref` configuration using the existing service resolver. A service `env:` entry does not control this switch.
 
-The Projects extension owns `microsoft.foundry` and applies the same process-environment rule before initializing a BYO AKS provider, prompting, or persisting environment values: an absent variable enables BYO AKS, while an explicit value uses `strconv.ParseBool`. Provision and preview check again before AKS reads or authentication. Disabled checks return the same `feature_not_enabled` compatibility error and shell/CI suggestion. Foundry projects without `agentHosting` do not require this switch; the resource graph and standard provisioning outputs are unchanged.
+An absent variable enables BYO AKS project initialization and adoption, while an explicit value uses `strconv.ParseBool`. Disabled checks return the `feature_not_enabled` compatibility error and shell/CI suggestion. Foundry projects without `agentHosting` do not require this switch.
 
-Provider initialization, including infrastructure state queries, requires the BYO AKS switch to be enabled. BYO AKS infrastructure uses the standard Foundry `azd down` path, including its confirmation, `--force` behavior, and target resource-group deletion.
+The Projects extension owns `microsoft.foundry`. Provider initialization, infrastructure state queries, provision, preview, lifecycle hooks, and Bicep eject do not check the BYO AKS switch. Provision and preview still validate effective hosting parameters and resolve required identity bindings. BYO AKS infrastructure uses the standard Foundry `azd down` path, including its confirmation, `--force` behavior, and target resource-group deletion.
 
 ### A2A compatibility policy
 
@@ -188,7 +188,7 @@ Extension metadata and shell completion are built from the complete static tree.
 
 An explicit HTTP `--agent-endpoint` carries no kind or harness information. It remains unclassified, with no additional authenticated definition lookup, so managed-harness enforcement cannot cover that route. The deterministic long-running check applies to every endpoint before invocation, authentication, or conversation/session persistence. Text invoke does not accept voice WebSocket endpoints.
 
-Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. BYO AKS provider initialization requires its switch to be enabled; infrastructure teardown follows the standard Foundry `azd down` path and deletes the target resource group with all resources inside it. There is no state migration or persisted flag update. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim beyond the matching Projects BYO AKS gate.
+Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. BYO AKS infrastructure operations do not require its switch to be enabled; infrastructure teardown follows the standard Foundry `azd down` path and deletes the target resource group with all resources inside it. There is no state migration or persisted flag update. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
 
 ## Compatibility and future framework adoption
 
@@ -211,6 +211,6 @@ Root-command regressions cover parsed flags, local-validation precedence, indepe
 
 Remote-template regressions cover inline and `$ref` previews, rejection before Azure authentication, retained authentication when enabled, single-download adoption, and temporary-directory cleanup on failure.
 
-BYO AKS regressions cover default-on and boolean-value semantics, inline and referenced project configuration, refusal before prompts/authentication/environment writes when disabled, Bicep eject, and native Foundry behavior without a BYO AKS dependency. Enabled provider tests retain the standard Project and registry outputs and ARM what-if path.
+BYO AKS regressions cover default-on and boolean-value semantics and inline and referenced project configuration during init/adoption. Infrastructure tests cover Bicep eject, Terraform rejection without file changes, standard Project and registry outputs, and the ARM what-if path.
 
 Run offline tests, the full agents module build, and scoped static checks with Go 1.26.4. Tier 0 scenarios cover switch discovery and enabled/disabled help. Scenario execution remains opt-in through the `foundry-extension-scenario-orchestrator` agent; no Azure scenarios are required for this integration.

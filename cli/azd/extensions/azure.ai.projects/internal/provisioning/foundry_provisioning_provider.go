@@ -311,7 +311,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 	onDisk := p.onDiskTemplatePresent()
 	if endpoint == "" {
 		// Validate embedded config before any interactive prompts.
-		validation, validationErr := synthesis.Synthesize(synthesis.Input{
+		_, validationErr := synthesis.Synthesize(synthesis.Input{
 			RawAzureYAML:    rawYAML,
 			ServiceName:     svcName,
 			AcceptedHosts:   FoundryProvisioningServiceHosts,
@@ -322,11 +322,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 		if validationErr != nil &&
 			!errors.Is(validationErr, synthesis.ErrEndpointBrownfield) {
 			return foundrySynthesisError(svcName, validationErr)
-		}
-		if validation != nil && validation.Hosting != nil {
-			if err := requireBYOAKSFeature(); err != nil {
-				return err
-			}
 		}
 	} else {
 		if _, err := synthesis.SynthesizeExistingProject(synthesis.Input{

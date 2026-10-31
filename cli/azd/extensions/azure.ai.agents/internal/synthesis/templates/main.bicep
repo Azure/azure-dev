@@ -4,7 +4,7 @@
 // azure.yaml by internal/synthesis. This entry point creates a new Foundry
 // account and project; existing projects use the separate editable entry point.
 //
-// Subscription-scoped so a new resource group is part of the deployment. This
+// Subscription-scoped so the resource group is part of the deployment. This
 // keeps `azd provision --preview` side-effect free: the resource group shows
 // up as a previewed Create instead of being created up front to satisfy a
 // resource-group-scoped what-if.
@@ -42,13 +42,10 @@ type agentHostingType = {
 @description('Azure region for all resources.')
 param location string
 
-@description('Name of the resource group to deploy resources into.')
+@description('Name of the resource group to create and deploy resources into.')
 @minLength(1)
 @maxLength(90)
 param resourceGroupName string
-
-@description('Create or update the resource group. False when BYO AKS reuses an existing group.')
-param createResourceGroup bool = true
 
 @description('Tags applied to all resources.')
 param tags object = {}
@@ -122,7 +119,7 @@ param dnsZonesSubscription string = ''
 
 // Resources
 
-resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = if (createResourceGroup) {
+resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: resourceGroupName
   location: location
   tags: tags
@@ -130,7 +127,7 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = if (cre
 
 module resources 'modules/resources.bicep' = {
   name: 'foundry-resources'
-  scope: az.resourceGroup(resourceGroupName)
+  scope: resourceGroup
   params: {
     location: location
     tags: tags
@@ -154,7 +151,6 @@ module resources 'modules/resources.bicep' = {
     dnsZonesResourceGroup: dnsZonesResourceGroup
     dnsZonesSubscription: dnsZonesSubscription
   }
-  dependsOn: [resourceGroup]
 }
 
 // Outputs

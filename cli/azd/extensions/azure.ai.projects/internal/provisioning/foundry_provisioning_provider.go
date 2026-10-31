@@ -1096,9 +1096,6 @@ func (p *FoundryProvisioningProvider) promptLocation(ctx context.Context) error 
 
 // setEnv persists a single key/value to the active azd environment.
 func (p *FoundryProvisioningProvider) setEnv(ctx context.Context, key, value string) error {
-	if p.azdClient == nil {
-		return fmt.Errorf("persist %s: azd environment service is unavailable", key)
-	}
 	if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: p.envName,
 		Key:     key,
@@ -1106,10 +1103,6 @@ func (p *FoundryProvisioningProvider) setEnv(ctx context.Context, key, value str
 	}); err != nil {
 		return fmt.Errorf("persist %s to azd environment %q: %w", key, p.envName, err)
 	}
-	if p.virtualEnv == nil {
-		p.virtualEnv = map[string]string{}
-	}
-	p.virtualEnv[key] = value
 	return nil
 }
 
@@ -1247,6 +1240,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 			"azd-provision-template-source": new(src.mode.String()),
 		},
 	}
+
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1260,6 +1254,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 			return nil, err
 		}
 	}
+
 	name := p.deploymentName()
 	progress(fmt.Sprintf("Starting ARM deployment %q...", name))
 
@@ -1278,7 +1273,6 @@ func (p *FoundryProvisioningProvider) Deploy(
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
 	}
 
-	outputs := deploymentOutputs(resp.Properties)
 	progress("Foundry deployment complete")
 	if trackSupportingResourceGroup {
 		p.foundryRGOwnerID = resolveLayerResourceGroupOwnership(
@@ -1293,7 +1287,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
 			Parameters: armInputsToProto(src.parameters),
-			Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(outputs))),
+			Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties)))),
 		},
 	}, nil
 }
@@ -2433,24 +2427,24 @@ func resolveLayerResourceGroupOwnership(
 }
 
 func (p *FoundryProvisioningProvider) resourceGroupExists(ctx context.Context) (bool, error) {
-	_, found, err := p.lookupResourceGroupState(ctx, p.rgName)
+	_, found, err := p.lookupResourceGroupState(ctx)
 	return found, err
 }
 
 func (p *FoundryProvisioningProvider) lookupResourceGroupState(
-	ctx context.Context, resourceGroup string,
+	ctx context.Context,
 ) (map[string]*string, bool, error) {
 	if p.resourceGroupState != nil {
 		return p.resourceGroupState(ctx)
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, p.armClientOptions)
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
 	if err != nil {
 		return nil, false, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
 			fmt.Sprintf("create armresources client for resource-group existence check: %s", err),
 		)
 	}
-	resp, err := factory.NewResourceGroupsClient().Get(ctx, resourceGroup, nil)
+	resp, err := factory.NewResourceGroupsClient().Get(ctx, p.rgName, nil)
 	if err == nil {
 		return resp.Tags, true, nil
 	}
@@ -2466,7 +2460,7 @@ func (p *FoundryProvisioningProvider) persistCreatedResourceGroupOwnership(ctx c
 	if err := p.ensureCredential(recoveryCtx); err != nil {
 		return err
 	}
-	tags, found, err := p.lookupResourceGroupState(recoveryCtx, p.rgName)
+	tags, found, err := p.lookupResourceGroupState(recoveryCtx)
 	if err != nil {
 		return err
 	}

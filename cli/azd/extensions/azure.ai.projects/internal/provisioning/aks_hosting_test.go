@@ -82,9 +82,6 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 				"type": "BuiltInRole"},
 		}}}), nil
 	}
-	if request.Method == http.MethodGet && request.URL.Path == "/subscriptions/target-sub/resourcegroups/target-rg" {
-		return f.response(request, 200, map[string]any{"location": "eastus"}), nil
-	}
 	path := "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + f.provider.deploymentName()
 	require.NotNil(f.t, request.Body, "unexpected ARM request: %s %s", request.Method, request.URL.Path)
 	var submitted struct {
@@ -174,7 +171,6 @@ func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
 	assert.Equal(t, []string{
 		"GET " + offlineClusterID,
 		"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
-		"GET /subscriptions/target-sub/resourcegroups/target-rg",
 		"PUT /subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + p.deploymentName(),
 	}, fake.requests)
 	assert.Empty(t, server.set)
@@ -205,7 +201,7 @@ func TestBYOFailedDeploymentCanBeRetried(t *testing.T) {
 	_, err = p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
 	assert.Equal(t, 2, fake.writes)
-	assert.Len(t, fake.requests, 8)
+	assert.Len(t, fake.requests, 6)
 	assert.Empty(t, p.virtualEnv)
 }
 
@@ -259,7 +255,7 @@ func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
 	require.NoError(t, p.prepareBYO(t.Context(), source))
 	assert.NotContains(t, source.parameters, "kubeletObjectId")
 	assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
-	assert.Len(t, fake.requests, 3, "preparation only reads host bindings and the resource group")
+	assert.Len(t, fake.requests, 2, "preparation only reads host bindings")
 }
 
 func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {

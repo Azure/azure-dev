@@ -71,8 +71,8 @@ func NewResourceGroupLocationCheck(azdClient *azdext.AzdClient) *ResourceGroupLo
 // The check is best-effort: any inability to determine the situation (missing
 // environment values, auth failure, resource group not found, or an API error)
 // yields no results so that validation is never blocked by the check itself.
-// Only a definitive mismatch on a path that creates or updates the resource group
-// produces a blocking error result. BYO AKS reuses existing groups without updating them.
+// Only a definitive mismatch — the resource group exists in a different region —
+// produces a blocking error result.
 func (c *ResourceGroupLocationCheck) Validate(
 	ctx context.Context,
 	valCtx *azdext.ValidationContext,
@@ -83,8 +83,8 @@ func (c *ResourceGroupLocationCheck) Validate(
 	// The "provision" check type is dispatched for every project whenever this
 	// extension is installed, but the InvalidResourceGroupLocation conflict this
 	// check guards against is specific to the microsoft.foundry provisioning
-	// provider's resource-group creation/update paths. BYO AKS reuse is handled
-	// below. For any other provider (core Bicep,
+	// provider — it runs a subscription-scoped deployment that CREATES the
+	// resource group at AZURE_LOCATION. For any other provider (core Bicep,
 	// Terraform, or an unrelated project that merely has this extension
 	// installed) an existing resource group in a different region is perfectly
 	// valid, so running the check there would raise a false positive. Skip
@@ -161,12 +161,6 @@ func (c *ResourceGroupLocationCheck) Validate(
 		// Non-critical: a missing resource group (404), auth/tenant failure, or any
 		// other lookup error is treated as non-blocking so the check never blocks
 		// provisioning on its own inability to determine the situation.
-		return empty, nil
-	}
-
-	// BYO AKS preparation disables resource-group writes for existing groups
-	// and rejects templates that cannot honor that contract before deployment.
-	if c.isBYOAKSProject(ctx) {
 		return empty, nil
 	}
 
@@ -396,34 +390,6 @@ func (c *ResourceGroupLocationCheck) isBrownfieldFoundryProject(ctx context.Cont
 		env,
 	)
 	return err == nil && endpoint != ""
-}
-
-func (c *ResourceGroupLocationCheck) isBYOAKSProject(ctx context.Context) bool {
-	resp, err := c.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-	if err != nil || resp.GetProject() == nil {
-		return false
-	}
-	projectPath := resp.GetProject().GetPath()
-	rawYAML, _, err := readProjectFile(projectPath)
-	if err != nil {
-		return false
-	}
-	serviceName, err := findFoundryProjectService(rawYAML)
-	if err != nil {
-		return false
-	}
-	current, err := c.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || current.GetEnvironment().GetName() == "" {
-		return false
-	}
-	result, err := synthesis.Synthesize(synthesis.Input{
-		RawAzureYAML:  rawYAML,
-		ServiceName:   serviceName,
-		AcceptedHosts: FoundryProvisioningServiceHosts,
-		ProjectRoot:   projectPath,
-		Env:           readEnvironmentValues(ctx, c.azdClient.Environment(), current.GetEnvironment().GetName()),
-	})
-	return err == nil && result.Hosting != nil
 }
 
 // envValueOrEmpty returns the trimmed value of key in the named azd environment,

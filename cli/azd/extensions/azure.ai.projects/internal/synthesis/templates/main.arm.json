@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "13732612236221849572"
+      "templateHash": "127500344685359137"
     }
   },
   "definitions": {
@@ -89,14 +89,7 @@
       "minLength": 1,
       "maxLength": 90,
       "metadata": {
-        "description": "Name of the resource group to deploy resources into."
-      }
-    },
-    "createResourceGroup": {
-      "type": "bool",
-      "defaultValue": true,
-      "metadata": {
-        "description": "Create or update the resource group. False when BYO AKS reuses an existing group."
+        "description": "Name of the resource group to create and deploy resources into."
       }
     },
     "tags": {
@@ -248,7 +241,6 @@
   },
   "resources": {
     "resourceGroup": {
-      "condition": "[parameters('createResourceGroup')]",
       "type": "Microsoft.Resources/resourceGroups",
       "apiVersion": "2021-04-01",
       "name": "[parameters('resourceGroupName')]",

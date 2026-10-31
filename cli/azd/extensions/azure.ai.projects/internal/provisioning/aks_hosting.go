@@ -86,31 +86,6 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 		return fmt.Errorf("agentHosting deployment parameters conflict with azure.yaml; " +
 			"only clusterResourceId is configurable and azd creates its prerequisites")
 	}
-	resourceGroup, ok := byoParameterValue(source, "resourceGroupName").(string)
-	if !ok || strings.TrimSpace(resourceGroup) == "" {
-		return fmt.Errorf("effective resourceGroupName must be a nonempty string")
-	}
-	var requestedResourceGroupCreation *bool
-	var resourceGroupCreationParameter string
-	for name, parameter := range source.parameters {
-		if !strings.EqualFold(name, "createResourceGroup") {
-			continue
-		}
-		if requestedResourceGroupCreation != nil {
-			return exterrors.Validation(exterrors.CodeConflictingArguments,
-				"multiple createResourceGroup deployment parameters differ only by case",
-				"supply createResourceGroup only once using the template's parameter name")
-		}
-		envelope, _ := parameter.(map[string]any)
-		value, ok := envelope["value"].(bool)
-		if !ok {
-			return exterrors.Validation(exterrors.CodeInvalidParameter,
-				"createResourceGroup must be a boolean",
-				"set createResourceGroup to true or false in the parameters file, or omit it for automatic selection")
-		}
-		requestedResourceGroupCreation = new(value)
-		resourceGroupCreationParameter = name
-	}
 	suppliedBindings := map[string]string{}
 	for name, parameter := range source.parameters {
 		if !strings.EqualFold(name, "kubeletObjectId") && !strings.EqualFold(name, "federatedIdentityRoleDefinitionId") {
@@ -143,21 +118,6 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 				fmt.Sprintf("remove %s from the parameters file so microsoft.foundry can resolve it automatically", name))
 		}
 	}
-	_, resourceGroupExists, err := p.lookupResourceGroupState(ctx, resourceGroup)
-	if err != nil {
-		return err
-	}
-	if !resourceGroupExists && requestedResourceGroupCreation != nil && !*requestedResourceGroupCreation {
-		return exterrors.Validation(exterrors.CodeConflictingArguments,
-			fmt.Sprintf("createResourceGroup=false conflicts with missing resource group %q", resourceGroup),
-			"select an existing resource group, create it separately, or allow creation with createResourceGroup=true")
-	}
-	if resourceGroupExists && !supportsBYOResourceGroupReuse(source.armTemplate) {
-		return exterrors.Validation(exterrors.CodeInvalidParameter,
-			"the BYO AKS template cannot safely reuse the existing resource group",
-			"declare a createResourceGroup boolean parameter and guard the resource-group declaration with "+
-				"if (createResourceGroup), or re-eject the infrastructure templates")
-	}
 	hostBindings := parametersDeclaredByTemplate(map[string]any{
 		"kubeletObjectId":                   map[string]any{"value": kubeletObjectID},
 		"federatedIdentityRoleDefinitionId": map[string]any{"value": federationRoleID},
@@ -170,13 +130,6 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 		}
 	}
 	source.parameters = mergeParameters(source.parameters, hostBindings)
-	definitions, _ := source.armTemplate["parameters"].(map[string]any)
-	if _, declared := definitions["createResourceGroup"]; declared {
-		if requestedResourceGroupCreation != nil {
-			delete(source.parameters, resourceGroupCreationParameter)
-		}
-		source.parameters["createResourceGroup"] = map[string]any{"value": !resourceGroupExists}
-	}
 	return nil
 }
 
@@ -262,36 +215,6 @@ func (p *FoundryProvisioningProvider) resolveBYOHostBindings(
 		}
 	}
 	return "", "", fmt.Errorf("required built-in role %q is unavailable", roleName)
-}
-
-func supportsBYOResourceGroupReuse(template map[string]any) bool {
-	definitions, _ := template["parameters"].(map[string]any)
-	parameter, _ := definitions["createResourceGroup"].(map[string]any)
-	if parameter["type"] != "bool" {
-		return false
-	}
-	safeResource := func(value any) bool {
-		resource, ok := value.(map[string]any)
-		return ok && (resource["type"] != "Microsoft.Resources/resourceGroups" ||
-			resource["condition"] == "[parameters('createResourceGroup')]")
-	}
-	switch resources := template["resources"].(type) {
-	case map[string]any:
-		for _, resource := range resources {
-			if !safeResource(resource) {
-				return false
-			}
-		}
-	case []any:
-		for _, resource := range resources {
-			if !safeResource(resource) {
-				return false
-			}
-		}
-	default:
-		return false
-	}
-	return true
 }
 
 func byoHostingParameter(source *templateSource) (any, error) {

@@ -207,7 +207,7 @@ Only the existing cluster is selectable: supplied Storage accounts, hosting/work
 
 Embedded provisioning and Bicep eject are supported through `microsoft.foundry`; Terraform eject is rejected before changing files. On-disk Bicep templates and parameter files remain editable. Keep the AKS hosting, network and registry inputs consistent with the declared hosting configuration.
 
-BYO AKS reuses an existing target resource group without updating its location or tags. If the group does not exist and the parameters file explicitly sets `createResourceGroup=false`, provision and preview fail before deployment or ARM what-if rather than creating the group. Omit the parameter to select creation or reuse automatically.
+BYO AKS uses the standard Foundry resource-group creation/update behavior. The deployment applies the configured location and tags; an existing target resource group's location must match the deployment location.
 
 The provider supplies `kubeletObjectId` and `federatedIdentityRoleDefinitionId` when the template declares them. If a parameters file explicitly supplies either binding, its value must match the provider-resolved value, ignoring case. Empty or non-string values and conflicting bindings are rejected before deployment or ARM what-if. Omit these parameters to let the provider resolve them automatically; other parameters retain their normal user-supplied precedence.
 

@@ -6,6 +6,7 @@ package onboarding
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -140,6 +141,31 @@ func TestRoleAssignmentPermissionUsesConcreteOrExistingParentScope(t *testing.T)
 		assert.Equal(t, expected, report[0].Scope)
 		assert.Equal(t, 1, fake.count(expected+assignmentSuffix))
 	}
+	for _, allowed := range []bool{true, false} {
+		t.Run("known ancestor with unresolved resource/"+fmt.Sprint(allowed), func(t *testing.T) {
+			plan, facts := suppliedPlan(t), suppliedFacts()
+			plan.Grants = []PlannedGrant{{
+				CheckID: "G03", Target: Resource{Origin: "Storage in edited module", Missing: "runtime Storage name"},
+				AuthorityScope: testGroup, DeploymentScope: testGroup,
+			}}
+			fake := authorizationFake()
+			if !allowed {
+				fake.replies[strings.ToLower(testGroup+assignmentSuffix)] =
+					readReply{200, map[string]any{"value": []any{}}}
+			}
+			authorizer := NewAuthorizer(testCredential{}, fake.options()).(*scopedAuthorizer)
+			report := authorizer.checkP06(t.Context(), plan, facts, callerIdentity{objectID: testOperator}, nil)
+			require.Len(t, report, 1)
+			assert.Equal(t, testGroup, report[0].Scope)
+			if allowed {
+				assert.Equal(t, Pass, report[0].Status)
+			} else {
+				assert.Equal(t, Fail, report[0].Status)
+				require.Error(t, report.Err())
+			}
+			assert.Equal(t, 1, fake.count(testGroup+assignmentSuffix))
+		})
+	}
 	for _, field := range []string{"condition", "conditionVersion", "delegatedManagedIdentityResourceId"} {
 		t.Run(field, func(t *testing.T) {
 			plan, facts := suppliedPlan(t), suppliedFacts()
@@ -173,8 +199,11 @@ func TestSupportingOperationsKeepReferencesReadOnlyAndDefaultWrites(t *testing.T
 	assert.Contains(t, operations, operation{"P04", "Microsoft.Storage/storageAccounts/write", testStorage})
 	plan.Workload.ID = strings.Replace(testWorkload, "/target-rg/", "/other-rg/", 1)
 	plan.Hosting.Supplied = false
+	plan.Cluster.ID = testGroup + "/providers/Microsoft.ContainerService/managedClusters/cluster"
+	plan.Cluster.Parent = testGroup
 	operations, err = supportingOperations(plan, facts)
 	require.NoError(t, err)
+	assert.Contains(t, operations, operation{"P09", "Microsoft.Resources/deployments/write", testGroup})
 	for _, action := range []string{"write", "read", "operations/read"} {
 		assert.Contains(t, operations, operation{"P09", "Microsoft.Resources/deployments/" + action,
 			testSubscription + "/resourceGroups/other-rg"})

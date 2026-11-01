@@ -309,9 +309,9 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	onDisk := p.onDiskTemplatePresent()
-	if endpoint == "" {
+	if !onDisk && endpoint == "" {
 		// Validate embedded config before any interactive prompts.
-		validation, validationErr := synthesis.Synthesize(synthesis.Input{
+		_, validationErr := synthesis.Synthesize(synthesis.Input{
 			RawAzureYAML:    rawYAML,
 			ServiceName:     svcName,
 			AcceptedHosts:   FoundryProvisioningServiceHosts,
@@ -322,18 +322,6 @@ func (p *FoundryProvisioningProvider) Initialize(
 		if validationErr != nil &&
 			!errors.Is(validationErr, synthesis.ErrEndpointBrownfield) {
 			return foundrySynthesisError(svcName, validationErr)
-		}
-		if validation != nil && validation.Hosting != nil {
-			if err := requireBYOAKSFeature(); err != nil {
-				return err
-			}
-		}
-	} else {
-		if _, err := synthesis.SynthesizeExistingProject(synthesis.Input{
-			RawAzureYAML: rawYAML, ServiceName: svcName, ProjectRoot: projectRoot,
-			Env: p.networkEnvMap(ctx), PreserveVarRefs: true,
-		}); err != nil {
-			return foundrySynthesisError(svcName, err)
 		}
 	}
 
@@ -781,6 +769,13 @@ func foundryServiceEndpointAtRoot(
 		}
 		values = resolved
 	}
+	var node yaml.Node
+	if err := node.Encode(values); err != nil {
+		return "", err
+	}
+	if err := synthesis.ValidateAgentHostingInputs(node, svcName); err != nil {
+		return "", err
+	}
 	data, err := yaml.Marshal(values)
 	if err != nil {
 		return "", err
@@ -1096,9 +1091,6 @@ func (p *FoundryProvisioningProvider) promptLocation(ctx context.Context) error 
 
 // setEnv persists a single key/value to the active azd environment.
 func (p *FoundryProvisioningProvider) setEnv(ctx context.Context, key, value string) error {
-	if p.azdClient == nil {
-		return fmt.Errorf("persist %s: azd environment service is unavailable", key)
-	}
 	if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: p.envName,
 		Key:     key,
@@ -1106,10 +1098,6 @@ func (p *FoundryProvisioningProvider) setEnv(ctx context.Context, key, value str
 	}); err != nil {
 		return fmt.Errorf("persist %s to azd environment %q: %w", key, p.envName, err)
 	}
-	if p.virtualEnv == nil {
-		p.virtualEnv = map[string]string{}
-	}
-	p.virtualEnv[key] = value
 	return nil
 }
 
@@ -1247,6 +1235,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 			"azd-provision-template-source": new(src.mode.String()),
 		},
 	}
+
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1260,6 +1249,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 			return nil, err
 		}
 	}
+
 	name := p.deploymentName()
 	progress(fmt.Sprintf("Starting ARM deployment %q...", name))
 
@@ -1278,7 +1268,6 @@ func (p *FoundryProvisioningProvider) Deploy(
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
 	}
 
-	outputs := deploymentOutputs(resp.Properties)
 	progress("Foundry deployment complete")
 	if trackSupportingResourceGroup {
 		p.foundryRGOwnerID = resolveLayerResourceGroupOwnership(
@@ -1293,7 +1282,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
 			Parameters: armInputsToProto(src.parameters),
-			Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(outputs))),
+			Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties)))),
 		},
 	}, nil
 }

@@ -241,13 +241,9 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if hosting != nil {
-		includeAcr = true
-	}
-	if includeAcr && netMode != NetworkModeNone && hosting == nil {
+	if includeAcr && netMode != NetworkModeNone {
 		return nil, errors.New(
-			"synthesis: private networking does not support an auto-created Azure Container Registry; " +
-				"specify an image instead",
+			"synthesis: private networking does not support an auto-created Azure Container Registry; specify an image instead",
 		)
 	}
 
@@ -416,7 +412,7 @@ func loadProjectService(
 	}
 
 	var svc projectService
-	if err := validateAgentHostingInputs(node, serviceName); err != nil {
+	if err := ValidateAgentHostingInputs(node, serviceName); err != nil {
 		return svc, err
 	}
 	if err := node.Decode(&svc); err != nil {
@@ -924,7 +920,7 @@ func synthesizeNetwork(
 //	vnet + name           -> reference existing subnet (create=false)
 //	vnet + name + prefix  -> create subnet with that CIDR (create=true)
 //
-// vnet and name are required; ${VAR} references in both are expanded when
+// vnet and name are required; ${VAR} references in vnet are expanded when
 // resolve is true. The Microsoft.Network/virtualNetworks id shape is then
 // checked, except on the eject path (resolve false), where an unexpanded
 // reference is left for provision time to validate.
@@ -949,27 +945,12 @@ func resolveSubnet(
 	if err := ValidateEnvReferences(vnetID); err != nil {
 		return "", "", "", false, fmt.Errorf("%s.vnet: %w", fieldPath, err)
 	}
-	if err := ValidateEnvReferences(name); err != nil {
-		return "", "", "", false, fmt.Errorf("%s.name: %w", fieldPath, err)
-	}
 	if resolve {
 		resolved, rerr := resolveVars(vnetID, env)
 		if rerr != nil {
 			return "", "", "", false, fmt.Errorf("%s.vnet: %w", fieldPath, rerr)
 		}
 		vnetID = resolved
-		name, rerr = resolveVars(name, env)
-		if rerr != nil {
-			return "", "", "", false, fmt.Errorf("%s.name: %w", fieldPath, rerr)
-		}
-		name = strings.TrimSpace(name)
-	}
-	if name == "" {
-		return "", "", "", false, fmt.Errorf("%s.name: required after environment expansion", fieldPath)
-	}
-	if (resolve || !containsVarRef(name)) && strings.ContainsAny(name, "/\\?#%${} \t\r\n") {
-		return "", "", "", false, fmt.Errorf("%s.name: expected a subnet name without unresolved references or separators",
-			fieldPath)
 	}
 	// Validate the ARM id shape unless the value can still change: on the eject
 	// path an unexpanded ${VAR} is validated at provision time. After
@@ -978,7 +959,7 @@ func resolveSubnet(
 	// provision that can only fail.
 	if (resolve || !containsVarRef(vnetID)) && !vnetIDPattern.MatchString(vnetID) {
 		return "", "", "", false, fmt.Errorf(
-			"%s.vnet: value is not a well-formed Microsoft.Network/virtualNetworks id", fieldPath)
+			"%s.vnet: %q is not a well-formed Microsoft.Network/virtualNetworks id", fieldPath, vnetID)
 	}
 	if prefix != "" {
 		if _, _, perr := net.ParseCIDR(prefix); perr != nil {

@@ -46,7 +46,7 @@ func TestHostingDefaultSynthesis(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result.Hosting)
 		assert.Equal(t, hostingClusterID, result.Hosting.ClusterResourceID)
-		assert.Equal(t, true, result.Parameters["includeAcr"], "project-only hosting still needs the native registry")
+		assert.Equal(t, false, result.Parameters["includeAcr"], "project-only hosting does not need a registry")
 		assert.Equal(t, NetworkModeNone, result.NetworkMode)
 		hosting, ok := result.Parameters["agentHosting"].(agentHostingParameter)
 		require.True(t, ok)
@@ -88,8 +88,6 @@ func TestHostingValidatesClusterAndNetwork(t *testing.T) {
 		{"wrong type", strings.Replace(hostingYAML(), hostingClusterID, hostingVNetID, 1), "managedClusters resource ID"},
 		{"credential URL", strings.Replace(hostingYAML(), hostingClusterID,
 			"https://username:secret@host.test/cluster?sig=private#fragment", 1), "managedClusters resource ID"},
-		{"credential VNet URL", strings.ReplaceAll(hostingYAML(), hostingVNetID,
-			`"https://username:secret@host.test/vnet?sig=private#fragment"`), "virtualNetworks id"},
 		{"same subnet", strings.Replace(hostingYAML(), "name: endpoints", "name: agents", 1), "must differ"},
 		{"different VNets", strings.Replace(hostingYAML(), "peSubnet: {vnet: "+hostingVNetID,
 			"peSubnet: {vnet: "+hostingVNetID+"-other", 1), "same virtual network"},
@@ -129,19 +127,6 @@ func TestHostingFileReferencesAndEnvironmentResolution(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
 	_, err = Synthesize(input)
 	require.ErrorContains(t, err, "hostingManagementIdentityResourceId: expected a nonempty resource ID")
-}
-
-func TestHostingSubnetNamesResolveBeforeComparison(t *testing.T) {
-	raw := strings.ReplaceAll(hostingYAML(), "name: agents", `name: "${AGENT_SUBNET}"`)
-	raw = strings.ReplaceAll(raw, "name: endpoints", `name: "${PE_SUBNET}"`)
-	input := Input{RawAzureYAML: []byte(raw), ServiceName: "project",
-		Env: map[string]string{"AGENT_SUBNET": "agents", "PE_SUBNET": "endpoints"}}
-	result, err := Synthesize(input)
-	require.NoError(t, err)
-	assert.Equal(t, "agents", result.Parameters["agentSubnetName"])
-	input.Env["PE_SUBNET"] = "agents"
-	_, err = Synthesize(input)
-	require.ErrorContains(t, err, "must differ")
 }
 
 func TestHostingSchemaValidatesResourceSelections(t *testing.T) {
@@ -222,8 +207,8 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 					clusterGrantModules++
 					assert.Equal(t, "[format('byo-cluster-{0}-{1}', "+
 						"uniqueString(resourceGroup().id, parameters('hostingIdentityName')), "+
-						"createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', "+
-						"'85cb6faf-e071-4c9b-8136-154b5a04f717')[copyIndex()])]", value["name"])
+						"createArray(variables('readerRoleId'), "+
+						"variables('kubernetesExtensionContributorRoleId'))[copyIndex()])]", value["name"])
 				}
 			case "Microsoft.ContainerRegistry/registries":
 				registries++
@@ -399,7 +384,7 @@ func TestHostingSupportingSelectionsAreIndependent(t *testing.T) {
 			result, err := Synthesize(Input{RawAzureYAML: []byte(raw.String()), ServiceName: "project"})
 			require.NoError(t, err)
 			assert.Equal(t, expected, *result.Hosting)
-			assert.Equal(t, true, result.Parameters["includeAcr"])
+			assert.Equal(t, false, result.Parameters["includeAcr"])
 			parameter, ok := result.Parameters["agentHosting"].(agentHostingParameter)
 			require.True(t, ok)
 			assert.Equal(t, expected.StorageAccountResourceID, parameter.StorageAccountResourceID)

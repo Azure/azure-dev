@@ -352,10 +352,6 @@ func predeployHandler(
 		return nil, err
 	}
 
-	if err := requireBYOAKSProjectFeature(args.Project); err != nil {
-		return nil, err
-	}
-
 	if err := project.RequireAgentFeatures(svc, args.Project.GetPath()); err != nil {
 		return nil, err
 	}

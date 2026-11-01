@@ -1,8 +1,8 @@
 # Azure Developer CLI (azd) Agents Extension
 
-## Preview feature opt-ins
+## Preview feature switches
 
-Six capabilities are off by default. Each one is turned on separately.
+All six preview capabilities are off by default. Each switch is controlled independently.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
@@ -11,9 +11,9 @@ Six capabilities are off by default. Each one is turned on separately.
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 | `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
-| `agents.byo_aks` | [Existing AKS hosting with default or supplied supporting resources](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
+| `agents.byo_aks` | [Existing AKS project initialization and adoption](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
 
-Set the desired variable in your shell or CI before running azd:
+Override a switch in your shell or CI before running azd:
 
 ```bash
 export AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
@@ -30,8 +30,10 @@ In PowerShell, for example:
 $env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
 ```
 
-Only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature. False, empty,
-missing, and invalid values leave it off. The evaluator reads the current
+When a variable is absent, its feature is off.
+When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature.
+False, empty, and invalid values disable it, including BYO AKS.
+The evaluator reads the current
 process environment without querying azd config or loading environment files.
 Values already injected by the azd host count; the selected azd environment
 can override the same key from the shell or CI.
@@ -64,10 +66,9 @@ capabilities, so templates are checked after staging and before adoption.
 Explicit remote `--template` inputs are staged and checked before Azure
 authentication, including `$ref` definitions. Adoption reuses that directory.
 
-BYO AKS checks cover inline and referenced project configuration during init/adoption,
-preprovision/predeploy, and infrastructure eject. The Projects extension checks
-the same process opt-in before initializing the BYO AKS provider and before
-provision/preview authentication or AKS reads. Ordinary Foundry provisioning is unchanged.
+BYO AKS checks cover inline and referenced project configuration during init/adoption.
+Foundry provider initialization, provision, preview, lifecycle hooks, and Bicep
+eject do not check the BYO AKS switch. Ordinary Foundry provisioning is unchanged.
 
 ### Enforcement limits
 
@@ -77,8 +78,8 @@ provision/preview authentication or AKS reads. Ordinary Foundry provisioning is 
   accept voice WebSocket endpoints.
 - Agent read and cleanup commands stay available with features off. This includes
   show, endpoint show, invocations show, follow, and cancel, delete, and down.
-  BYO AKS provider initialization, including infrastructure state queries, requires
-  its opt-in. BYO AKS infrastructure uses the standard Foundry `azd down`
+  BYO AKS infrastructure operations do not require its switch to be enabled.
+  BYO AKS infrastructure uses the standard Foundry `azd down`
   path, which deletes the target resource group and all resources inside it.
 - These checks do not govern requests from the evaluations or routines
   extensions.
@@ -1129,7 +1130,7 @@ Details:
 
 ## Voice agents (public preview)
 
-Voice initialization needs the `agents.voice` [opt-in](#preview-feature-opt-ins).
+Voice initialization needs the `agents.voice` [opt-in](#preview-feature-switches).
 Use the existing commands to discover options and create a managed prompt voice
 agent:
 
@@ -1716,7 +1717,7 @@ deployment.
 
 Foundry project services can be provisioned as network-secured, VNet-bound accounts by adding a `network:` block to the `host: azure.ai.project` service in `azure.yaml`. The `azure.ai.projects` extension owns that service and the `microsoft.foundry` provider; this extension still authors the block during agent init. See [Private networking for `host: azure.ai.project`](docs/private-networking.md) for the schema reference, BYO-image requirements, and VNet deployment cheatsheet.
 
-For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. Storage and the two managed identities can each be supplied independently; omitted resources retain their default creation/update path. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes the input fields, read-only preflight, single native registry, required permissions, and teardown limitations. Foundry networking is optional and configured independently through `network:`. Supplied registries and Terraform eject are not supported.
+For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. Storage and the two managed identities can each be supplied independently; omitted resources retain their default creation/update path. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes the input fields, read-only preflight, required permissions, and teardown limitations. A native registry is created only when an Agent requires building a container image, following the standard Foundry rules. Foundry networking is optional through `network:`, but cannot be combined with an automatically created registry. Supplied registries and Terraform eject are not supported.
 
 ## Local Development
 

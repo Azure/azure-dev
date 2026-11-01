@@ -169,6 +169,7 @@ func suppliedProvider(t *testing.T, mask int) (*FoundryProvisioningProvider, *su
 	}}
 	inner, err := json.Marshal(map[string]any{"parameters": map[string]any{
 		"resourceToken": map[string]any{"value": "abcdefghijklm"},
+		"result":        map[string]any{"value": "abcdefghijklm"},
 	}})
 	require.NoError(t, err)
 	outer, err := json.Marshal(map[string]any{"parametersJson": string(inner)})
@@ -186,7 +187,7 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 			result, err := p.Deploy(t.Context(), func(message string) { progress.WriteString(message) })
 			require.NoError(t, err)
 			assert.Equal(t, 1, fake.base.writes)
-			assert.Equal(t, offlineRegistryID, result.Deployment.Outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"].Value)
+			assert.Equal(t, "", result.Deployment.Outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"].Value)
 			hosting := fake.base.parameters["agentHosting"].(map[string]any)["value"].(map[string]any)
 			for i, selection := range []struct{ name, id string }{
 				{"storageAccountResourceId", suppliedStorageID},
@@ -212,14 +213,17 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 					assert.NotContains(t, fake.base.parameters, identity.name)
 				}
 			}
-			if mask == 0 || mask == 7 {
+			if mask == 7 {
 				assert.Empty(t, compiler.buildParamCalls)
 			} else {
 				assert.Len(t, compiler.buildParamCalls, 1)
 			}
-			if mask != 0 {
-				assert.Contains(t, progress.String(), "S03")
-				assert.Contains(t, progress.String(), "P02 PASS")
+			assert.Contains(t, progress.String(), "S03")
+			assert.Contains(t, progress.String(), "P02 PASS")
+			if mask&2 == 0 {
+				assert.Contains(t, progress.String(), "P09 PASS ["+offlineClusterGroupID+"]")
+			} else {
+				assert.NotContains(t, progress.String(), "P09 PASS ["+offlineClusterGroupID+"]")
 			}
 			assert.Empty(t, p.virtualEnv)
 			for _, request := range fake.requests[:len(fake.requests)-1] {

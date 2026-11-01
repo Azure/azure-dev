@@ -31,7 +31,25 @@ func grantRequests(p Plan, hosting, workload Identity) []grantRequest {
 	}
 }
 
+// GrantCheckIDForRole classifies authored assignments using the existing required grant-role definitions.
+func GrantCheckIDForRole(roleID string) string {
+	for _, request := range grantRequests(Plan{}, Identity{}, Identity{}) {
+		if request.roleID != "" && strings.EqualFold(request.roleID, roleID) {
+			return request.checkID
+		}
+	}
+	return ""
+}
+
 func createsGrant(plan Plan, id string) bool {
+	if plan.Grants != nil {
+		for _, grant := range plan.Grants {
+			if grant.CheckID == id {
+				return true
+			}
+		}
+		return false
+	}
 	switch id {
 	case "G01":
 		return !plan.Hosting.Supplied

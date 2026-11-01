@@ -45,6 +45,8 @@ var storageZrsUnsupportedRegions = [
   'westindia'
   'westus'
 ]
+var readerRoleId = 'acdd72a7-3385-48ef-bd42-f606fba81ae7'
+var kubernetesExtensionContributorRoleId = '85cb6faf-e071-4c9b-8136-154b5a04f717'
 var blobContributorRoleId = subscriptionResourceId(
   storageParts[2], 'Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 )
@@ -81,8 +83,8 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = if (empty(stor
 
 module clusterGrants 'byo-role-assignment.bicep' = [
   for role in [
-    'acdd72a7-3385-48ef-bd42-f606fba81ae7'
-    '85cb6faf-e071-4c9b-8136-154b5a04f717'
+    readerRoleId
+    kubernetesExtensionContributorRoleId
   ]: if (empty(hostingIdentityResourceId)) {
     name: 'byo-cluster-${uniqueString(resourceGroup().id, hostingIdentityName)}-${role}'
     scope: resourceGroup(clusterParts[2], clusterParts[4])

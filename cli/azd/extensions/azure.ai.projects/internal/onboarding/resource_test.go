@@ -144,6 +144,42 @@ func resourceFake() *readFake {
 			},
 		}}
 	}
+	fake.replies[strings.ToLower(testCluster)] = readReply{200, map[string]any{
+		"id": testCluster, "location": "westus", "sku": map[string]any{"name": "Base"},
+		"identity": map[string]any{"type": "SystemAssigned"},
+		"properties": map[string]any{
+			"currentKubernetesVersion": "1.31.0", "provisioningState": "Succeeded",
+			"networkProfile": map[string]any{
+				"networkPlugin": "azure", "networkPluginMode": "overlay", "networkDataplane": "cilium",
+			},
+			"identityProfile":   map[string]any{"kubeletidentity": map[string]any{"objectId": testOperator}},
+			"oidcIssuerProfile": map[string]any{"enabled": true, "issuerURL": "https://issuer.example.test/"},
+			"securityProfile":   map[string]any{"workloadIdentity": map[string]any{"enabled": true}},
+		},
+	}}
+	fake.replies[strings.ToLower(testCluster+"/agentPools")] = readReply{200, map[string]any{"value": []any{
+		map[string]any{"id": testCluster + "/agentPools/system", "name": "system", "properties": map[string]any{
+			"mode": "System", "vmSize": "Standard_E4s_v5", "count": 1, "provisioningState": "Succeeded",
+		}},
+		map[string]any{"id": testCluster + "/agentPools/agents", "name": "agents", "properties": map[string]any{
+			"mode": "User", "osSKU": "AzureLinux", "vmSize": "Standard_D8as_v5", "count": 1,
+			"workloadRuntime": "KataVmIsolation", "nodeImageVersion": "AKSAzureLinux-V3katagen2-202608.14.0",
+			"nodeLabels":      map[string]any{"agents.ai.azure.com/sandbox-node": "true"},
+			"securityProfile": map[string]any{"sshAccess": "Disabled"}, "provisioningState": "Succeeded",
+		}},
+	}}}
+	var skus []any
+	for _, size := range []struct {
+		name, cpu string
+	}{{"Standard_E4s_v5", "4"}, {"Standard_D8as_v5", "8"}} {
+		skus = append(skus, map[string]any{
+			"name": size.name, "resourceType": "virtualMachines", "locations": []string{"westus"},
+			"capabilities": []any{map[string]any{"name": "vCPUs", "value": size.cpu},
+				map[string]any{"name": "MemoryGB", "value": "32"}},
+		})
+	}
+	fake.replies["/subscriptions/cluster-sub/providers/microsoft.compute/skus"] =
+		readReply{200, map[string]any{"value": skus}}
 	return fake
 }
 
@@ -209,11 +245,14 @@ func TestResourceCheckerReadsOnlySupportingResources(t *testing.T) {
 	for _, id := range []string{"S01", "S02", "S03"} {
 		assert.Equal(t, Pass, checkWithID(t, report, id).Status)
 	}
-	assert.Len(t, fake.requests, 5, "two subscription tenants and the three supporting resources")
+	for i := 1; i <= 11; i++ {
+		assert.Equal(t, Pass, checkWithID(t, report, fmt.Sprintf("A%02d", i)).Status)
+	}
+	assert.Len(t, fake.requests, 8, "two subscription tenants, three supporting resources, AKS, pools and SKUs")
+	assert.Equal(t, 1, fake.count(testCluster))
+	assert.Equal(t, 1, fake.count(testCluster+"/agentPools"))
 	for _, request := range fake.requests {
 		assert.Equal(t, http.MethodGet, request.method)
-		assert.NotEqual(t, strings.ToLower(testCluster), strings.ToLower(request.path))
-		assert.NotContains(t, request.path, "/agentPools")
 		assert.NotContains(t, request.path, "Microsoft.Network")
 	}
 }
@@ -249,6 +288,59 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 		{"unfinished supplied Storage", func(f *readFake) {
 			body := f.replies[strings.ToLower(testStorage)].body.(map[string]any)
 			body["properties"].(map[string]any)["provisioningState"] = "Updating"
+		}},
+		{"actual AKS version below 1.31 despite newer desired version", func(f *readFake) {
+			body := f.replies[strings.ToLower(testCluster)].body.(map[string]any)
+			properties := body["properties"].(map[string]any)
+			properties["currentKubernetesVersion"], properties["kubernetesVersion"] = "1.30.9", "1.33.0"
+		}},
+		{"Automatic rather than Base AKS", func(f *readFake) {
+			body := f.replies[strings.ToLower(testCluster)].body.(map[string]any)
+			body["sku"] = map[string]any{"name": "Automatic"}
+		}},
+		{"missing cluster managed identity", func(f *readFake) {
+			body := f.replies[strings.ToLower(testCluster)].body.(map[string]any)
+			delete(body, "identity")
+		}},
+		{"disabled workload identity", func(f *readFake) {
+			body := f.replies[strings.ToLower(testCluster)].body.(map[string]any)
+			body["properties"].(map[string]any)["securityProfile"] =
+				map[string]any{"workloadIdentity": map[string]any{"enabled": false}}
+		}},
+		{"available vCPU takes precedence over nominal vCPU", func(f *readFake) {
+			body := f.replies["/subscriptions/cluster-sub/providers/microsoft.compute/skus"].body.(map[string]any)
+			sku := body["value"].([]any)[1].(map[string]any)
+			sku["capabilities"] = append(sku["capabilities"].([]any),
+				map[string]any{"name": "vCPUsAvailable", "value": "7"})
+		}},
+		{"pool requirements cannot be combined across pools", func(f *readFake) {
+			body := f.replies[strings.ToLower(testCluster+"/agentPools")].body.(map[string]any)
+			pools := body["value"].([]any)
+			properties := pools[1].(map[string]any)["properties"].(map[string]any)
+			properties["nodeLabels"] = map[string]any{}
+			copy := map[string]any{}
+			for key, value := range properties {
+				copy[key] = value
+			}
+			copy["nodeLabels"] = map[string]any{"agents.ai.azure.com/sandbox-node": "true"}
+			copy["workloadRuntime"] = "OCIContainer"
+			body["value"] = append(pools, map[string]any{
+				"id": testCluster + "/agentPools/other", "name": "other", "properties": copy,
+			})
+		}},
+		{"outdated Kata node image", func(f *readFake) {
+			body := f.replies[strings.ToLower(testCluster+"/agentPools")].body.(map[string]any)
+			body["value"].([]any)[1].(map[string]any)["properties"].(map[string]any)["nodeImageVersion"] =
+				"AKSAzureLinux-V3katagen2-202608.13.0"
+		}},
+		{"enabled Agent pool SSH", func(f *readFake) {
+			body := f.replies[strings.ToLower(testCluster+"/agentPools")].body.(map[string]any)
+			body["value"].([]any)[1].(map[string]any)["properties"].(map[string]any)["securityProfile"] =
+				map[string]any{"sshAccess": "Enabled"}
+		}},
+		{"unfinished Agent pool ARM state", func(f *readFake) {
+			body := f.replies[strings.ToLower(testCluster+"/agentPools")].body.(map[string]any)
+			body["value"].([]any)[1].(map[string]any)["properties"].(map[string]any)["provisioningState"] = "Updating"
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

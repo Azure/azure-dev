@@ -16,14 +16,17 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 )
 
 type sdkResourceChecker struct {
-	credential azcore.TokenCredential
-	options    *arm.ClientOptions
-	identities *passReads[*armmsi.UserAssignedIdentitiesClient]
+	credential  azcore.TokenCredential
+	options     *arm.ClientOptions
+	readClients *resourceClients
 }
 
 // NewResourceChecker constructs read-only ARM adapters using an already resolved user-access-tenant credential.
@@ -38,6 +41,30 @@ func onboardingARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
 	}
 	local.DisableRPRegistration = true
 	return &local
+}
+
+func existingResourceID(raw, kind string) (*arm.ResourceID, error) {
+	if !validResourceIDSyntax(raw) {
+		return nil, fmt.Errorf("expected a complete %s resource ID without URL credentials or extra components", kind)
+	}
+	id, err := arm.ParseResourceID(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid resource ID: %w", err)
+	}
+	if raw != strings.TrimSpace(raw) || strings.ContainsAny(raw, "?#%\\") ||
+		id.SubscriptionID == "" || id.ResourceGroupName == "" || id.Name == "" ||
+		!strings.EqualFold(id.ResourceType.String(), kind) {
+		return nil, fmt.Errorf("expected a complete %s resource ID", kind)
+	}
+	parts := strings.Split(strings.TrimPrefix(raw, "/"), "/")
+	expected := 8
+	if strings.EqualFold(kind, "Microsoft.Network/virtualNetworks/subnets") {
+		expected = 10
+	}
+	if !strings.HasPrefix(raw, "/") || len(parts) != expected || slices.Contains(parts, "") {
+		return nil, fmt.Errorf("expected a complete %s resource ID without extra segments", kind)
+	}
+	return id, nil
 }
 
 func readFailure(id, scope, action string, err error) Check {
@@ -73,6 +100,9 @@ func resourceReadiness(scope, returnedID, state, action string) Check {
 func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan) (string, Report) {
 	report := Report{}
 	subscriptions := map[string]bool{}
+	for _, subscription := range plan.OwningSubscriptions {
+		subscriptions[strings.ToLower(subscription)] = true
+	}
 	if plan.SubscriptionID != "" && !strings.ContainsAny(plan.SubscriptionID, "/\\?#% ") {
 		subscriptions[strings.ToLower(plan.SubscriptionID)] = true
 	} else {
@@ -88,7 +118,13 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 		{plan.Hosting, "Microsoft.ManagedIdentity/userAssignedIdentities"},
 		{plan.Workload, "Microsoft.ManagedIdentity/userAssignedIdentities"},
 	} {
-		if !item.resource.Supplied && item.kind != "Microsoft.ContainerService/managedClusters" {
+		if item.resource.Missing != "" {
+			if parent, err := arm.ParseResourceID(item.resource.Parent); err == nil && parent.SubscriptionID != "" {
+				subscriptions[strings.ToLower(parent.SubscriptionID)] = true
+			} else {
+				report = append(report, SkippedCheck("I02", item.resource.diagnosticScope(),
+					"resource subscription owning tenant", item.resource.Missing))
+			}
 			continue
 		}
 		id, err := ParseID(item.resource.ID, item.kind)
@@ -100,6 +136,11 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 			continue
 		}
 		subscriptions[strings.ToLower(id.SubscriptionID)] = true
+	}
+	if network := plan.LegacyNetwork; network != nil && network.Enabled {
+		if network.DNSResourceGroup != "" && network.DNSSubscription != "" {
+			subscriptions[strings.ToLower(network.DNSSubscription)] = true
+		}
 	}
 	client, err := arm.NewClient("azure.ai.projects.onboarding", "v1.0.0", c.credential, c.options)
 	if err != nil {
@@ -162,18 +203,32 @@ func readSubscriptionTenant(ctx context.Context, client *arm.Client, subscriptio
 
 func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Report, error) {
 	local := *c
-	local.identities = &passReads[*armmsi.UserAssignedIdentitiesClient]{}
+	local.readClients = &resourceClients{}
 	c = &local
 	tenant, report := c.subscriptionTenants(ctx, plan)
+	report = append(slices.Clone(plan.SkippedChecks), report...)
 	facts := Facts{TenantID: tenant, Exists: map[string]bool{}}
 	var identities [2]Identity
 	var existence [3]*bool
 	var identityReports [2]Check
 	var storage *armstorage.Account
 	var storageReport Report
+	var cluster *armcontainerservice.ManagedCluster
+	var pools []*armcontainerservice.AgentPool
+	var skus []*armcompute.ResourceSKU
+	var clusterReport Report
+	var registryExists *bool
+	var registryReport Report
 	tasks := []func(){func() {
 		storage, existence[2], storageReport = c.readStorage(ctx, plan.Storage)
+	}, func() {
+		cluster, pools, skus, clusterReport = c.readCluster(ctx, plan.Cluster)
 	}}
+	if plan.Registry.ID != "" || plan.Registry.Missing != "" {
+		tasks = append(tasks, func() {
+			registryExists, registryReport = c.readRegistry(ctx, plan.Registry)
+		})
+	}
 	for i, resource := range []Resource{plan.Hosting, plan.Workload} {
 		tasks = append(tasks, func() {
 			identities[i], existence[i], identityReports[i] = c.readIdentity(ctx, resource, tenant)
@@ -185,10 +240,34 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 		if existence[i] != nil {
 			facts.Exists[strings.ToLower(resource.ID)] = *existence[i]
 		}
+		if registryExists != nil {
+			facts.Exists[strings.ToLower(plan.Registry.ID)] = *registryExists
+		}
 	}
 	report = append(report, identityReports[:]...)
 	report = append(report, storageReport...)
-	if plan.Storage.Supplied {
+	report = append(report, clusterReport...)
+	report = append(report, registryReport...)
+	if cluster != nil {
+		kubelet, checks := aksResourceChecks(*cluster, pools, skus)
+		facts.KubeletObjectID = kubelet
+		report = append(report, checks...)
+	} else {
+		for i := 1; i <= 11; i++ {
+			id := fmt.Sprintf("A%02d", i)
+			if plan.Cluster.Missing != "" {
+				report = append(report, SkippedCheck(id, plan.Cluster.diagnosticScope(),
+					"AKS prerequisite configuration", plan.Cluster.Missing))
+			} else {
+				report = append(report, resourceCheck(id, plan.Cluster.ID, "readable AKS metadata"))
+			}
+		}
+	}
+	if missing := plan.Storage.Missing + plan.Storage.LifecycleMissing; missing != "" {
+		for _, id := range []string{"S01", "S02"} {
+			report = append(report, SkippedCheck(id, plan.Storage.diagnosticScope(), "Storage configuration", missing))
+		}
+	} else if plan.Storage.Supplied {
 		if storage != nil {
 			report = append(report, storageResourceChecks(*storage)...)
 		} else {
@@ -202,16 +281,104 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 				NotApplicable, "Storage uses the default ARM creation/update path"))
 		}
 	}
-	report = append(report, storageNetworkChecks(plan, storage)...)
+	report = append(report, c.networkChecks(ctx, plan, cluster, pools, skus, storage)...)
 	if err := ctx.Err(); err != nil {
 		return facts, report, err
 	}
 	return facts, report, report.Err()
 }
 
+func (c *sdkResourceChecker) readCluster(
+	ctx context.Context, resource Resource,
+) (*armcontainerservice.ManagedCluster, []*armcontainerservice.AgentPool, []*armcompute.ResourceSKU, Report) {
+	if resource.Missing != "" {
+		return nil, nil, nil, Report{SkippedCheck("I02", resource.diagnosticScope(),
+			"AKS resource existence and identity", resource.Missing)}
+	}
+	id, err := existingResourceID(resource.ID, "Microsoft.ContainerService/managedClusters")
+	if err != nil {
+		return nil, nil, nil, Report{readFailure("I02", resource.ID, "complete managedClusters resource ID", err)}
+	}
+	client, err := armcontainerservice.NewManagedClustersClient(id.SubscriptionID, c.credential, c.options)
+	if err != nil {
+		return nil, nil, nil, Report{readFailure("I02", resource.ID, "managedClusters/read", err)}
+	}
+	response, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+	if err != nil {
+		return nil, nil, nil, Report{readFailure("I02", resource.ID,
+			"Microsoft.ContainerService/managedClusters/read", err)}
+	}
+	state := ""
+	if response.Properties != nil {
+		state = resourceValue(response.Properties.ProvisioningState)
+	}
+	report := Report{resourceReadiness(resource.ID, resourceValue(response.ID), state, "managedClusters/read")}
+	var pools []*armcontainerservice.AgentPool
+	var skus []*armcompute.ResourceSKU
+	var poolErr, skuErr error
+	parallelReads(func() {
+		pools, poolErr = c.readAgentPools(ctx, id)
+	}, func() {
+		skus, skuErr = c.readSKUs(ctx, id.SubscriptionID, resourceValue(response.Location))
+	})
+	if poolErr != nil {
+		report = append(report, readFailure("A10", resource.ID,
+			"Microsoft.ContainerService/managedClusters/agentPools/read", poolErr))
+	}
+	if skuErr != nil {
+		report = append(report, readFailure("A05", "/subscriptions/"+id.SubscriptionID,
+			"Microsoft.Compute/skus/read", skuErr))
+	}
+	return &response.ManagedCluster, pools, skus, report
+}
+
+func (c *sdkResourceChecker) readAgentPools(
+	ctx context.Context, id *arm.ResourceID,
+) ([]*armcontainerservice.AgentPool, error) {
+	client, err := armcontainerservice.NewAgentPoolsClient(id.SubscriptionID, c.credential, c.options)
+	if err != nil {
+		return nil, err
+	}
+	var pools []*armcontainerservice.AgentPool
+	pager := client.NewListPager(id.ResourceGroupName, id.Name, nil)
+	for pager.More() {
+		page, pageErr := pager.NextPage(ctx)
+		if pageErr != nil {
+			// Partial enumeration cannot establish the required pool configuration.
+			return nil, pageErr
+		}
+		pools = append(pools, page.Value...)
+	}
+	return pools, nil
+}
+
+func (c *sdkResourceChecker) readSKUs(
+	ctx context.Context, subscription, location string,
+) ([]*armcompute.ResourceSKU, error) {
+	client, err := armcompute.NewResourceSKUsClient(subscription, c.credential, c.options)
+	if err != nil {
+		return nil, err
+	}
+	filter := "location eq '" + strings.ReplaceAll(location, "'", "''") + "'"
+	pager := client.NewListPager(&armcompute.ResourceSKUsClientListOptions{Filter: &filter})
+	result := make([]*armcompute.ResourceSKU, 0)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, page.Value...)
+	}
+	return result, nil
+}
+
 func (c *sdkResourceChecker) readStorage(
 	ctx context.Context, resource Resource,
 ) (*armstorage.Account, *bool, Report) {
+	if resource.Missing != "" {
+		return nil, nil, Report{SkippedCheck("I02", resource.diagnosticScope(),
+			"Storage resource existence and identity", resource.Missing)}
+	}
 	id, err := ParseID(resource.ID, "Microsoft.Storage/storageAccounts")
 	if err != nil {
 		return nil, nil, Report{readFailure("I02", resource.ID, "valid Storage resource ID", err)}
@@ -222,6 +389,10 @@ func (c *sdkResourceChecker) readStorage(
 	}
 	response, err := client.GetProperties(ctx, id.ResourceGroupName, id.Name, nil)
 	if responseNotFound(err) && !resource.Supplied {
+		if resource.LifecycleMissing != "" {
+			return nil, new(false), Report{SkippedCheck("I02", resource.ID,
+				"Storage creation/reference existence", resource.LifecycleMissing)}
+		}
 		return nil, new(false), Report{resourceResult(resourceCheck("I03", resource.ID, "current default Storage existence"),
 			Pass, "default Storage does not exist; ARM will create it")}
 	}
@@ -246,6 +417,10 @@ func (c *sdkResourceChecker) readStorage(
 func (c *sdkResourceChecker) readIdentity(
 	ctx context.Context, resource Resource, tenant string,
 ) (Identity, *bool, Check) {
+	if resource.Missing != "" {
+		return Identity{}, nil, SkippedCheck("I02", resource.diagnosticScope(),
+			"managed identity existence and metadata", resource.Missing)
+	}
 	check := resourceCheck("I02", resource.ID,
 		"existing user-assigned identity with matching ID, principal, client and tenant")
 	id, err := ParseID(resource.ID, "Microsoft.ManagedIdentity/userAssignedIdentities")
@@ -253,7 +428,7 @@ func (c *sdkResourceChecker) readIdentity(
 		check.Status, check.Observed, check.Cause = Fail, "invalid identity resource ID", err
 		return Identity{}, nil, check
 	}
-	client, err := c.identities.get(strings.ToLower(id.SubscriptionID),
+	client, err := c.clients().identities.get(strings.ToLower(id.SubscriptionID),
 		func() (*armmsi.UserAssignedIdentitiesClient, error) {
 			return armmsi.NewUserAssignedIdentitiesClient(id.SubscriptionID, c.credential, c.options)
 		})
@@ -263,8 +438,13 @@ func (c *sdkResourceChecker) readIdentity(
 	}
 	response, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
 	if responseNotFound(err) && !resource.Supplied {
+		if resource.LifecycleMissing != "" {
+			return Identity{}, new(false), SkippedCheck("I02", resource.ID,
+				"managed identity creation/reference existence", resource.LifecycleMissing)
+		}
 		return Identity{}, new(false), resourceResult(check, Pass, "default identity does not exist; ARM will create it")
 	}
+
 	if err != nil {
 		return Identity{}, nil, readFailure("I02", resource.ID, "Microsoft.ManagedIdentity/userAssignedIdentities/read", err)
 	}
@@ -288,6 +468,32 @@ func (c *sdkResourceChecker) readIdentity(
 	}
 	return identity, new(true), resourceResult(check, Pass,
 		"existing identity metadata matches; no identity PUT or owner tag is planned")
+}
+
+func (c *sdkResourceChecker) readRegistry(ctx context.Context, resource Resource) (*bool, Report) {
+	if resource.Missing != "" {
+		return nil, Report{SkippedCheck("I02", resource.diagnosticScope(),
+			"native registry existence", resource.Missing)}
+	}
+	id, err := ParseID(resource.ID, "Microsoft.ContainerRegistry/registries")
+	if err != nil {
+		return nil, Report{readFailure("I02", resource.ID, "valid native registry ID", err)}
+	}
+	client, err := armresources.NewClient(id.SubscriptionID, c.credential, c.options)
+	if err != nil {
+		return nil, Report{readFailure("I02", resource.ID, "Microsoft.ContainerRegistry/registries/read", err)}
+	}
+	response, err := client.GetByID(ctx, resource.ID, "2023-07-01", nil)
+	if responseNotFound(err) && !resource.Supplied {
+		return new(false), nil
+	}
+	if err != nil {
+		return nil, Report{readFailure("I02", resource.ID, "Microsoft.ContainerRegistry/registries/read", err)}
+	}
+	check := resourceKnown(resourceCheck("I02", resource.ID, "exact native registry target"),
+		response.ID != nil, strings.EqualFold(resourceValue(response.ID), resource.ID),
+		"native registry exists; the ordinary ARM creation/update path is retained")
+	return new(true), Report{check}
 }
 
 func safeResourceEndpoint(raw string) string {

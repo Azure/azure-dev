@@ -136,19 +136,40 @@ func (a *scopedAuthorizer) checkP06(
 	ctx context.Context, plan Plan, facts Facts, caller callerIdentity, identityErr error,
 ) Report {
 	var report Report
-	scopes := []string{}
-	if createsGrant(plan, "G01") {
-		scopes = append(scopes, plan.Cluster.ID)
-	}
-	if createsGrant(plan, "G02") {
-		scopes = append(scopes, facts.scope(plan.Workload))
-	}
-	if createsGrant(plan, "G03") {
-		scopes = append(scopes, facts.scope(plan.Storage))
+	grants := plan.Grants
+	if grants == nil {
+		for _, entry := range []struct {
+			id       string
+			resource Resource
+		}{{"G01", plan.Cluster}, {"G02", plan.Workload}, {"G03", plan.Storage}} {
+			if createsGrant(plan, entry.id) {
+				grants = append(grants, PlannedGrant{CheckID: entry.id, Target: entry.resource})
+			}
+		}
 	}
 	seen := map[string]bool{}
-	for _, scope := range scopes {
+	for _, grant := range grants {
+		resource := grant.Target
+		missing := grant.Missing
+		if grant.AuthorityScope == "" {
+			missing += resource.Missing + resource.LifecycleMissing
+		}
+		if missing != "" {
+			report = append(report, SkippedCheck("P06", resource.diagnosticScope(),
+				"role-assignment authority for "+grant.CheckID, missing))
+			continue
+		}
+		scope := grant.AuthorityScope
+		if scope == "" {
+			scope = facts.scope(resource)
+		}
 		key := strings.ToLower(scope)
+		if scope == "" {
+			check := resourceCheck("P06", resource.ID, "unconditional operator "+roleAssignmentWrite+" for "+grant.CheckID)
+			check.Observed = "current resource existence is unverified; permission scope cannot be selected"
+			report = append(report, check)
+			continue
+		}
 		if seen[key] {
 			continue
 		}
@@ -170,4 +191,48 @@ func (a *scopedAuthorizer) checkP06(
 		report = append(report, check)
 	}
 	return report
+}
+
+func (a *scopedAuthorizer) checkP07(
+	ctx context.Context, plan Plan, facts Facts, caller callerIdentity, identityErr error,
+) Check {
+	resource := plan.Registry
+	if plan.RegistryGrantMissing != "" {
+		return SkippedCheck("P07", resource.diagnosticScope(), "native pull grant authority", plan.RegistryGrantMissing)
+	}
+	if plan.RegistryGrantPlanned != nil && !*plan.RegistryGrantPlanned {
+		return resourceResult(resourceCheck("P07", resource.diagnosticScope(), "native pull grant authority"),
+			NotApplicable, "the actual template creates no native registry pull role assignment")
+	}
+	if missing := resource.Missing + resource.LifecycleMissing; missing != "" {
+		return SkippedCheck("P07", resource.diagnosticScope(), "native kubelet pull grant authority", missing)
+	}
+	if plan.Cluster.Missing != "" {
+		return SkippedCheck("P07", resource.diagnosticScope(), "native kubelet pull grant authority",
+			"actual AKS kubelet metadata cannot be selected: "+plan.Cluster.Missing)
+	}
+	scope := facts.scope(resource)
+	check := resourceCheck("P07", scope, "operator "+roleAssignmentWrite+" for the native kubelet pull grant")
+	check.Missing = "readable operator " + roleAssignmentWrite
+	check.Remediation = "Ask the scope administrator to provide readable operator role assignments " +
+		"permitting the native registry pull assignment at this scope or an applicable ancestor."
+	if scope == "" {
+		check.Scope, check.Observed = resource.ID, "current registry existence is unverified"
+		return check
+	}
+	if facts.KubeletObjectID == "" {
+		check.Missing = "AKS kubelet object ID"
+		return check
+	}
+	if identityErr != nil || caller.objectID == "" {
+		check.Observed, check.Cause = "operator object ID is unavailable", identityErr
+		check.Missing = "operator object ID"
+		return check
+	}
+	check.Status, check.Observed, check.Cause = a.basicAction(ctx, scope, caller, roleAssignmentWrite, false)
+	if check.Status == Pass {
+		check.Observed += "; ARM authorizes the actual assignment"
+		check.Missing, check.Remediation = "", ""
+	}
+	return check
 }

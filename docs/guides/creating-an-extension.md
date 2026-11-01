@@ -53,8 +53,11 @@ Implement the required interfaces for your declared capabilities. See the extens
 
 For a provisioning-provider example that combines supplied references with independently
 created defaults, see [Foundry existing AKS hosting](../../cli/azd/extensions/azure.ai.projects/README.md#existing-aks-hosting).
-Its supporting-resource preflight is read-only and runs before deployment or ARM what-if;
-supplied-resource references do not imply protection from resource-group teardown.
+Its AKS, selected Agent-subnet, supporting-resource and authorization preflight is read-only
+and runs before deployment or ARM what-if, including when supporting resources use defaults.
+The default editable-template path identifies actual resources and scopes, warning and skipping
+only checks whose required plan information cannot be resolved. Supplied-resource references
+do not imply protection from resource-group teardown.
 
 If your Go extension creates role assignments, use the stable [`Account().GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) method with the target subscription ID and request types from `azdext` or `contracts/v1`. The host resolves the resource-tenant object ID and principal type without returning an access token. Pin the published azd SDK to v1.36.0 or later and set `requiredAzdVersion: ">=1.36.0"` before replacing an existing lookup. The equivalent beta API is deprecated.
 

@@ -14,10 +14,27 @@ import (
 func (a *scopedAuthorizer) suppliedIdentityChecks(ctx context.Context, plan Plan, facts Facts) Report {
 	var report Report
 	for _, grant := range grantRequests(plan, facts.HostingIdentity, facts.WorkloadIdentity) {
+		principal, target := plan.Hosting, plan.Cluster
+		switch grant.checkID {
+		case "G02":
+			target = plan.Workload
+		case "G03":
+			principal, target = plan.Workload, plan.Storage
+		}
+		if missing := principal.Missing + principal.LifecycleMissing; missing != "" {
+			report = append(report, SkippedCheck(grant.checkID, principal.diagnosticScope(),
+				"supplied identity grant requirements", missing))
+			continue
+		}
 		needed := grant.checkID == "G01" && plan.Hosting.Supplied ||
 			grant.checkID == "G02" && plan.Hosting.Supplied ||
 			grant.checkID == "G03" && plan.Workload.Supplied
 		if !needed {
+			continue
+		}
+		if missing := target.Missing + target.LifecycleMissing; missing != "" {
+			report = append(report, SkippedCheck(grant.checkID, target.diagnosticScope(),
+				"supplied identity access to its dependency", missing))
 			continue
 		}
 		check := resourceCheck(grant.checkID, grant.scope,

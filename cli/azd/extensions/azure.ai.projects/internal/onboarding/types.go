@@ -1,7 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package onboarding checks supplied AKS supporting resources without mutating Azure or persisting deployment state.
+// Package onboarding checks BYO AKS prerequisites, deployment permissions and supporting resources
+// without mutating Azure or persisting deployment state.
 package onboarding
 
 import (
@@ -21,6 +22,7 @@ const (
 	Fail          Status = "FAIL"
 	Unverified    Status = "UNVERIFIED"
 	NotApplicable Status = "NOT_APPLICABLE"
+	Skipped       Status = "SKIPPED"
 )
 
 // Check records a single requirement and its actionable evidence.
@@ -117,23 +119,64 @@ func RedactDiagnostic(message string) string {
 
 // Resource distinguishes an explicit reference from an ordinary ARM deployment target.
 type Resource struct {
-	ID       string
-	Parent   string
-	Supplied bool
+	ID               string
+	Parent           string
+	Supplied         bool
+	Origin           string
+	Missing          string
+	LifecycleMissing string
 }
 
-// Plan contains only this deployment's resolved supporting-resource selections.
+// SkippedCheck reports an unresolved template-plan dependency, not successful evidence.
+func SkippedCheck(id, scope, requirement, reason string) Check {
+	return Check{
+		ID: id, Scope: scope, Status: Skipped, Expected: requirement,
+		Observed: "check skipped: " + reason, Missing: reason,
+		Warning: "skipped " + requirement + ": " + reason,
+	}
+}
+
+func (r Resource) diagnosticScope() string {
+	if r.ID != "" {
+		return r.ID
+	}
+	return r.Origin
+}
+
+// PlannedGrant identifies an actual role-assignment creation in the compiled template.
+type PlannedGrant struct {
+	CheckID           string
+	Target            Resource
+	AuthorityScope    string
+	DeploymentScope   string
+	Missing           string
+	DeploymentMissing string
+}
+
+// Plan contains this deployment's resolved resource and standard-network selections.
 type Plan struct {
-	SubscriptionID string
-	ResourceGroup  string
-	Cluster        Resource
-	Storage        Resource
-	Hosting        Resource
-	Workload       Resource
+	SubscriptionID        string
+	ResourceGroup         string
+	ResourceGroupSupplied bool
+	TargetScopeMissing    string
+	LegacyNetwork         *LegacyNetwork
+	AgentSubnet           Resource
+	Operations            []operation
+	SkippedChecks         Report
+	OwningSubscriptions   []string
+	Grants                []PlannedGrant
+	Cluster               Resource
+	Storage               Resource
+	Hosting               Resource
+	Workload              Resource
+	Registry              Resource
+	RegistryGrantPlanned  *bool
+	RegistryGrantMissing  string
 }
 
 // Facts contains current read-only evidence; an absent Exists key means existence is unverified.
 type Facts struct {
+	KubeletObjectID  string
 	TenantID         string
 	HostingIdentity  Identity
 	WorkloadIdentity Identity
@@ -153,7 +196,10 @@ func (f Facts) scope(resource Resource) string {
 	if resource.Supplied || f.exists(resource) {
 		return resource.ID
 	}
-	return resource.Parent
+	if f.absent(resource) {
+		return resource.Parent
+	}
+	return ""
 }
 
 // Identity records distinct ARM, object, client and tenant identifiers.
@@ -164,7 +210,7 @@ type Identity struct {
 	TenantID    string
 }
 
-// ResourceChecker reads existing supporting resources without AKS/network readiness checks.
+// ResourceChecker performs read-only AKS, selected-network and supporting-resource checks.
 type ResourceChecker interface {
 	Check(context.Context, Plan) (Facts, Report, error)
 }

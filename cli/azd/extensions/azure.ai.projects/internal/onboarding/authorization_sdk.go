@@ -31,6 +31,23 @@ func NewAuthorizer(credential azcore.TokenCredential, options *arm.ClientOptions
 	return &scopedAuthorizer{credential: credential, options: onboardingARMOptions(options)}
 }
 
+// CheckClusterDeployment checks deployment-write permission in the AKS resource group without checking supporting resources.
+func CheckClusterDeployment(
+	ctx context.Context, clusterID string, credential azcore.TokenCredential, options *arm.ClientOptions,
+) (Report, error) {
+	cluster, err := ParseID(clusterID, "Microsoft.ContainerService/managedClusters")
+	if err != nil {
+		return nil, err
+	}
+	a := &scopedAuthorizer{credential: credential, options: onboardingARMOptions(options)}
+	a.reads = newAuthorizationEvidence(a.credential, a.options)
+	caller, tokenErr, identityErr := a.operatorIdentity(ctx)
+	report := a.checkOperations(ctx, []operation{
+		{"P09", "Microsoft.Resources/deployments/write", cluster.Parent.String()},
+	}, caller, tokenErr, identityErr)
+	return report, report.Err()
+}
+
 func supportingOperations(plan Plan, facts Facts) ([]operation, error) {
 	var operations []operation
 	add := func(id, action, scope string) {
@@ -43,6 +60,9 @@ func supportingOperations(plan Plan, facts Facts) ([]operation, error) {
 		}
 	}
 	for _, identity := range []Resource{plan.Hosting, plan.Workload} {
+		if identity.Missing != "" || identity.LifecycleMissing != "" {
+			continue
+		}
 		actions := []string{"write", "read", "assign/action"}
 		if identity.Supplied {
 			actions = []string{"read", "assign/action"}
@@ -51,10 +71,40 @@ func supportingOperations(plan Plan, facts Facts) ([]operation, error) {
 			add("P02", "Microsoft.ManagedIdentity/userAssignedIdentities/"+action, facts.scope(identity))
 		}
 	}
-	if !plan.Storage.Supplied {
+	if !plan.Storage.Supplied && plan.Storage.Missing == "" && plan.Storage.LifecycleMissing == "" {
 		add("P04", "Microsoft.Storage/storageAccounts/write", facts.scope(plan.Storage))
 	}
+	if plan.Registry.ID != "" && plan.Registry.Missing == "" && plan.Registry.LifecycleMissing == "" {
+		add("P05", "Microsoft.ContainerRegistry/registries/write", facts.scope(plan.Registry))
+	}
+	for _, op := range plan.Operations {
+		add(op.checkID, op.action, op.scope)
+	}
 	target := "/subscriptions/" + plan.SubscriptionID + "/resourceGroups/" + plan.ResourceGroup
+	if plan.Grants != nil {
+		for _, grant := range plan.Grants {
+			if grant.DeploymentMissing != "" || grant.DeploymentScope == "" {
+				continue
+			}
+			scope := grant.DeploymentScope
+			if plan.TargetScopeMissing != "" {
+				if grant.CheckID == "G01" {
+					add("P09", "Microsoft.Resources/deployments/write", scope)
+				}
+				continue
+			}
+			if strings.EqualFold(scope, target) {
+				if grant.CheckID == "G01" {
+					add("P09", "Microsoft.Resources/deployments/write", scope)
+				}
+				continue
+			}
+			for _, action := range []string{"write", "read", "operations/read"} {
+				add("P09", "Microsoft.Resources/deployments/"+action, scope)
+			}
+		}
+		return operations, nil
+	}
 	for _, item := range []struct {
 		resource Resource
 		checkID  string
@@ -64,12 +114,18 @@ func supportingOperations(plan Plan, facts Facts) ([]operation, error) {
 		if !createsGrant(plan, item.checkID) {
 			continue
 		}
+		if item.resource.Missing != "" || item.resource.LifecycleMissing != "" {
+			continue
+		}
 		id, err := arm.ParseResourceID(item.resource.ID)
 		if err != nil {
 			return nil, fmt.Errorf("resolve cross-resource-group deployment scope: %w", err)
 		}
 		scope := id.Parent.String()
 		if strings.EqualFold(scope, target) {
+			if item.checkID == "G01" {
+				add("P09", "Microsoft.Resources/deployments/write", scope)
+			}
 			continue
 		}
 		for _, action := range []string{"write", "read", "operations/read"} {
@@ -84,6 +140,27 @@ func (a *scopedAuthorizer) Check(ctx context.Context, p Plan, f Facts) (Report, 
 	local.reads = newAuthorizationEvidence(a.credential, a.options)
 	a = &local
 	report := a.suppliedIdentityChecks(ctx, p, f)
+	report = append(report, permissionPlanSkips(p)...)
+	caller, tokenErr, identityErr := a.operatorIdentity(ctx)
+	basicIdentityErr := identityErr
+	if tokenErr != nil {
+		basicIdentityErr = tokenErr
+	}
+	report = append(report, a.checkP06(ctx, p, f, caller, basicIdentityErr)...)
+	if p.Registry.ID != "" || p.Registry.Missing != "" {
+		report = append(report, a.checkP07(ctx, p, f, caller, basicIdentityErr))
+	}
+	operations, err := supportingOperations(p, f)
+	if err != nil {
+		return report, err
+	}
+	report = append(report, a.checkOperations(ctx, operations, caller, tokenErr, identityErr)...)
+	return report, report.Err()
+}
+
+func (a *scopedAuthorizer) operatorIdentity(
+	ctx context.Context,
+) (caller callerIdentity, tokenErr, identityErr error) {
 	audience := "https://management.azure.com/"
 	if a.options != nil {
 		if service, ok := a.options.Cloud.Services[cloud.ResourceManager]; ok && service.Audience != "" {
@@ -93,16 +170,13 @@ func (a *scopedAuthorizer) Check(ctx context.Context, p Plan, f Facts) (Report, 
 	token, tokenErr := a.credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{strings.TrimRight(audience, "/") + "/.default"},
 	})
-	caller, identityErr := identityFromToken(token.Token)
-	basicIdentityErr := identityErr
-	if tokenErr != nil {
-		basicIdentityErr = tokenErr
-	}
-	report = append(report, a.checkP06(ctx, p, f, caller, basicIdentityErr)...)
-	operations, err := supportingOperations(p, f)
-	if err != nil {
-		return report, err
-	}
+	caller, identityErr = identityFromToken(token.Token)
+	return caller, tokenErr, identityErr
+}
+
+func (a *scopedAuthorizer) checkOperations(
+	ctx context.Context, operations []operation, caller callerIdentity, tokenErr, identityErr error,
+) Report {
 	checks := make(Report, len(operations))
 	tasks := make([]func(), 0, len(operations))
 	for i, op := range operations {
@@ -114,6 +188,9 @@ func (a *scopedAuthorizer) Check(ctx context.Context, p Plan, f Facts) (Report, 
 					"and definitions permitting " + op.action + " at this scope or an applicable ancestor.",
 			}
 			switch {
+			case op.scope == "":
+				check.Observed = "current resource existence is unverified; concrete or existing parent scope is unknown"
+				check.Missing = "verified current resource existence and actual permission scope"
 			case tokenErr != nil:
 				check.Observed, check.Cause = "operator token evidence unavailable", tokenErr
 			case identityErr != nil:
@@ -129,8 +206,24 @@ func (a *scopedAuthorizer) Check(ctx context.Context, p Plan, f Facts) (Report, 
 		})
 	}
 	parallelReads(tasks...)
-	report = append(report, checks...)
-	return report, report.Err()
+	return checks
+}
+
+func permissionPlanSkips(plan Plan) Report {
+	var report Report
+	for _, resource := range []Resource{plan.Hosting, plan.Workload} {
+		if missing := resource.Missing + resource.LifecycleMissing; missing != "" {
+			report = append(report, SkippedCheck("P02", resource.diagnosticScope(),
+				"managed identity lifecycle/read/assign permissions", missing))
+		}
+	}
+	if missing := plan.Storage.Missing + plan.Storage.LifecycleMissing; missing != "" {
+		report = append(report, SkippedCheck("P04", plan.Storage.diagnosticScope(), "Storage creation permission", missing))
+	}
+	if missing := plan.Registry.Missing + plan.Registry.LifecycleMissing; missing != "" {
+		report = append(report, SkippedCheck("P05", plan.Registry.diagnosticScope(), "native registry creation", missing))
+	}
+	return report
 }
 
 func (e *authorizationEvidence) resolveGrantRole(

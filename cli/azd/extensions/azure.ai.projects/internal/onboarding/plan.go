@@ -22,6 +22,7 @@ type Input struct {
 	DefaultStorageID   string
 	DefaultHostingID   string
 	DefaultWorkloadID  string
+	DefaultRegistryID  string
 }
 
 // ParseID validates the exact ARM type and complete subscription/RG hierarchy.
@@ -34,8 +35,12 @@ func ParseID(value, resourceType string) (*arm.ResourceID, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s resource ID: %w", resourceType, err)
 	}
+	segments := 9
+	if strings.EqualFold(resourceType, "Microsoft.Network/virtualNetworks/subnets") {
+		segments = 11
+	}
 	if id.SubscriptionID == "" || id.ResourceGroupName == "" || id.Name == "" ||
-		!strings.EqualFold(id.ResourceType.String(), resourceType) || len(strings.Split(value, "/")) != 9 {
+		!strings.EqualFold(id.ResourceType.String(), resourceType) || len(strings.Split(value, "/")) != segments {
 		return nil, fmt.Errorf("expected a complete %s resource ID", resourceType)
 	}
 	return id, nil
@@ -63,7 +68,8 @@ func BuildPlan(in Input) (Plan, error) {
 	}
 	plan := Plan{
 		SubscriptionID: in.SubscriptionID, ResourceGroup: in.ResourceGroup,
-		Cluster: Resource{ID: in.ClusterID, Parent: cluster.Parent.String(), Supplied: true},
+		ResourceGroupSupplied: in.GroupExists,
+		Cluster:               Resource{ID: in.ClusterID, Parent: cluster.Parent.String(), Supplied: true},
 	}
 	for _, item := range []struct {
 		supplied, fallback, kind string
@@ -91,6 +97,16 @@ func BuildPlan(in Input) (Plan, error) {
 	}
 	if strings.EqualFold(plan.Hosting.ID, plan.Workload.ID) {
 		return Plan{}, fmt.Errorf("I03: hosting and workload identities must be distinct")
+	}
+	if in.DefaultRegistryID != "" {
+		id, err := ParseID(in.DefaultRegistryID, "Microsoft.ContainerRegistry/registries")
+		if err != nil {
+			return Plan{}, fmt.Errorf("P05: %w", err)
+		}
+		if !strings.EqualFold(id.Parent.String(), parent) {
+			return Plan{}, fmt.Errorf("P05: native registry differs from the deployment target")
+		}
+		plan.Registry = Resource{ID: in.DefaultRegistryID, Parent: ancestor}
 	}
 	return plan, nil
 }

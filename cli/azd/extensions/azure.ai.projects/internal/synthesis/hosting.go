@@ -14,7 +14,7 @@ import (
 // BYOAKSFeatureID identifies the existing-AKS hosting preview.
 const BYOAKSFeatureID = "agents.byo_aks"
 
-// BYOAKSEnvVar is the process-environment opt-in shared by Projects and Agents.
+// BYOAKSEnvVar is the process-environment switch for Agents project initialization and adoption.
 const BYOAKSEnvVar = "AZD_ALPHA_ENABLE_AGENTS_BYO_AKS"
 
 // AgentHostingInput selects the existing cluster and optional supporting resources.
@@ -35,7 +35,8 @@ type agentHostingParameter struct {
 	WorkloadIdentityResourceID          string `json:"workloadIdentityResourceId"`
 }
 
-func validateAgentHostingInputs(node yaml.Node, service string) error {
+// ValidateAgentHostingInputs checks hosting selections without synthesizing unrelated service inputs.
+func ValidateAgentHostingInputs(node yaml.Node, service string) error {
 	var fields map[string]yaml.Node
 	if err := node.Decode(&fields); err != nil {
 		return err
@@ -64,7 +65,12 @@ func validateAgentHostingInputs(node yaml.Node, service string) error {
 			return fmt.Errorf("services.%s.agentHosting.%s: expected a nonempty resource ID", service, name)
 		}
 	}
-	return nil
+	var input AgentHostingInput
+	if err := hosting.Decode(&input); err != nil {
+		return err
+	}
+	_, err := synthesizeAgentHosting(&input, service, nil, false)
+	return err
 }
 
 func synthesizeAgentHosting(

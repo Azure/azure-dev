@@ -581,31 +581,6 @@ func TestBYOAKSManifestFeatureGate(t *testing.T) {
 	}
 }
 
-func TestBYOAKSLifecycleRejectsBeforeHostCalls(t *testing.T) {
-	for _, event := range []string{"preprovision", "predeploy"} {
-		t.Run(event, func(t *testing.T) {
-			clearPreviewProcess(t)
-			props, err := structpb.NewStruct(map[string]any{
-				"agentHosting": map[string]any{"clusterResourceId": "aks"},
-			})
-			require.NoError(t, err)
-			config := &azdext.ProjectConfig{Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
-				"project": {Name: "project", Host: AiProjectHost, AdditionalProperties: props},
-			}}
-			client, env := startPreviewCommandServer(t, nil, config, nil)
-			if event == "preprovision" {
-				err = preprovisionHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: config})
-			} else {
-				_, err = predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: config})
-			}
-			local, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok, "%v", err)
-			require.Equal(t, exterrors.CodeFeatureNotEnabled, local.Code)
-			require.Zero(t, env.reads.Load())
-		})
-	}
-}
-
 func TestPreviewDefinitionGateNeedsNoHost(t *testing.T) {
 	clearPreviewProcess(t)
 	t.Setenv("AZD_SERVER", "127.0.0.1:1")

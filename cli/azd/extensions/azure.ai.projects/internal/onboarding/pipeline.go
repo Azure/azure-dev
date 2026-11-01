@@ -9,7 +9,7 @@ import (
 	"fmt"
 )
 
-// Pipeline collects read-only supporting-resource and permission evidence.
+// Pipeline collects read-only AKS, selected-network, resource and permission evidence.
 type Pipeline struct {
 	Resources ResourceChecker
 	Access    Authorizer

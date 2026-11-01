@@ -1199,12 +1199,12 @@ func TestGetResourceTypeDisplayNameForMachineLearningWorkspaces(t *testing.T) {
 	}{
 		{
 			name:         "AI Hub",
-			kind:         "hub",
+			kind:         "Hub",
 			expectedName: "AI Hub",
 		},
 		{
 			name:         "AI Project",
-			kind:         "project",
+			kind:         "Project",
 			expectedName: "AI Project",
 		},
 		{

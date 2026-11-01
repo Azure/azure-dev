@@ -172,7 +172,7 @@ Accounts use `cog-<resourceToken>` without AKS hosting and `aks-cog-<resourceTok
 
 Agents init/adoption checks inline and referenced project configuration. A disabled preview returns `feature_not_enabled` with the variable to set. Foundry provider initialization, provision, preview, lifecycle hooks, and Bicep eject do not check this switch.
 
-Provision and preview inspect the effective `agentHosting` value after parameter merging, including template defaults when no value is supplied. Enabled hosting requires a matching `agentHosting.clusterResourceId` declaration in `azure.yaml`; removing the YAML declaration does not bypass validation. The hosting value must be a locally readable literal object, not an ARM expression. Invalid combinations are rejected before submitting ARM requests.
+Provision and preview inspect the effective `agentHosting` value after parameter merging, including template defaults when no value is supplied. Enabled hosting requires matching cluster and supporting-resource selections in `azure.yaml`; removing the YAML declaration does not bypass validation. The hosting value must be a locally readable literal object, not an ARM expression. Locally checkable invalid combinations are rejected before authentication.
 
 Set `agentHosting.clusterResourceId` on the `azure.ai.project` service to use an existing AKS cluster when creating a **new** Foundry account and project:
 
@@ -199,19 +199,33 @@ The default resource graph creates:
 
 The account receives a `ManagedCluster` / `default` hosting configuration. Its data-plane access follows the optional `network` configuration. **Storage and any automatically created ACR use public authenticated endpoints**, so the cluster must be able to reach them. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. The deploying principal needs read access to the built-in role definitions and target resource group, creation rights for the new resources, and role-assignment write rights at the cluster, workload identity and Storage scopes. Creating an ACR additionally requires AKS read access and registry role-assignment write rights. Configuring private networking additionally requires the corresponding network permissions.
 
-The deploying principal also needs `Microsoft.Resources/deployments/write` at the existing AKS resource-group scope. The cluster role grants are created through nested ARM deployments in that group, including when it differs from the Foundry target resource group.
+When the hosting-management identity is omitted, the deploying principal also needs `Microsoft.Resources/deployments/write` at the existing AKS resource-group scope. The cluster role grants are created through nested ARM deployments in that group, including when it differs from the Foundry target resource group.
 
-Only the existing cluster is selectable through `agentHosting`: supplied Storage accounts, hosting/workload identities, and registries are not supported in that block. Agents using pre-built images retain their standard registry-connection and authentication requirements; azd does not automatically grant the cluster access to an external registry. An existing `endpoint:` cannot receive hosting. `${VAR}` inputs resolve from the active azd environment; a cluster ID is not a Kubernetes context name.
+Storage and the two identities can each be supplied independently using complete ARM resource IDs:
+
+```yaml
+agentHosting:
+  clusterResourceId: ${AKS_CLUSTER_ID}
+  storageAccountResourceId: ${STORAGE_ACCOUNT_ID}
+  hostingManagementIdentityResourceId: ${HOSTING_IDENTITY_ID}
+  workloadIdentityResourceId: ${WORKLOAD_IDENTITY_ID}
+```
+
+Omit any supporting-resource field to retain its default creation/update path. Empty or null Storage selections also retain the default; explicitly supplied identity selections must be nonempty. A supplied resource is referenced without a Storage or identity PUT, reconfiguration, or owner tag. Hosting-management and workload identities must be distinct. The Container Registry remains native and azd-created; a supplied registry is not supported. An existing `endpoint:` cannot receive hosting. `${VAR}` inputs resolve from the active azd environment, including in `$ref` service definitions; a cluster ID is not a Kubernetes context name.
+
+A supplied hosting-management identity needs Reader and Kubernetes Extension Contributor on the cluster. A supplied hosting-management identity and a supplied workload identity require an existing federation-management grant between them. A supplied workload identity and supplied Storage require an existing Storage Blob Data Contributor grant. ARM creates the federation or Storage grant when either corresponding resource selection is omitted; two explicit endpoints require existing grants. A supplied hosting-management identity skips the cluster-grant deployments. Cross-subscription grants use the selected workload or Storage resource's subscription and resource group.
+
+The provider reads supplied identities to resolve their principal IDs and resolves the federation role in the workload identity's subscription. This is deployment binding resolution, not a readiness, networking, or permission preflight. Supplied resources and their existing grants must already be configured for Foundry agent hosting.
 
 `azd provision --preview` resolves the host bindings and returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives the supporting resource names and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`. Registry outputs are empty when no registry is created.
 
-`azd down` uses the standard Foundry teardown path, including its confirmation and `--force` behavior. It deletes model deployments and the target resource group with all resources inside it, including pre-existing resources; cleanup is not limited to resources created by the ARM deployment. An existing AKS cluster or network in the target resource group is deleted along with the group. Resources in other resource groups are outside this group-deletion scope. Infrastructure layers retain the standard Foundry resource-group ownership checks.
+`azd down` uses the standard Foundry teardown path, including its confirmation and `--force` behavior. It deletes model deployments and the target resource group with all resources inside it, including pre-existing resources; cleanup is not limited to resources created by the ARM deployment. An existing AKS cluster, network, supplied Storage, or supplied identity in the target resource group is deleted along with the group. Resources in other resource groups are outside this group-deletion scope. Infrastructure layers retain the standard Foundry resource-group ownership checks.
 
-Embedded provisioning and Bicep eject are supported through `microsoft.foundry`; Terraform eject is rejected before changing files. On-disk Bicep templates and parameter files remain editable. Keep the AKS hosting, network and registry inputs consistent with the declared hosting configuration.
+Embedded provisioning and Bicep eject are supported through `microsoft.foundry`; Terraform eject is rejected before changing files. The all-default supporting-resource path retains editable on-disk Bicep templates and parameter files. Supplied-resource bindings require the standard deployment graph; supported deployment parameters remain configurable. Keep the AKS hosting, network and registry inputs consistent with the declared hosting configuration.
 
 BYO AKS uses the standard Foundry resource-group creation/update behavior. The deployment applies the configured location and tags; an existing target resource group's location must match the deployment location.
 
-The provider supplies `federatedIdentityRoleDefinitionId` when the template declares it, and `kubeletObjectId` when `includeAcr=true` and the template declares it. If a parameters file explicitly supplies a binding used by the provider, its value must match the provider-resolved value, ignoring case. Empty or non-string values and conflicting bindings are rejected before deployment or ARM what-if. Omit these parameters to let the provider resolve them automatically; other parameters retain their normal user-supplied precedence.
+The provider supplies `federatedIdentityRoleDefinitionId` and verified `hostingPrincipalId` / `workloadPrincipalId` bindings for supplied identities when the template declares them. It supplies `kubeletObjectId` when `includeAcr=true` and the template declares it. Explicit bindings used by the provider must be nonempty strings matching the resolved values, ignoring case. A principal binding without its corresponding supplied identity is rejected. Omit these parameters to let the provider resolve them automatically; other parameters retain their normal user-supplied precedence.
 
 ### Infrastructure layers
 

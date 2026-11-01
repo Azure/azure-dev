@@ -35,6 +35,9 @@ type agentHostingType = {
   hostingType: 'ManagedCluster' | ''
   name: string
   clusterResourceId: string
+  hostingManagementIdentityResourceId: string
+  storageAccountResourceId: string
+  workloadIdentityResourceId: string
 }
 
 // Parameters
@@ -64,12 +67,15 @@ param deployments deploymentsType = []
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
 
-@description('Existing AKS cluster hosting. Supporting resources are created automatically.')
+@description('Existing AKS hosting with independently optional Storage and managed identity references.')
 param agentHosting agentHostingType = {
   enabled: false
   hostingType: ''
   name: ''
   clusterResourceId: ''
+  hostingManagementIdentityResourceId: ''
+  storageAccountResourceId: ''
+  workloadIdentityResourceId: ''
 }
 
 @description('AKS kubelet principal ID, resolved by microsoft.foundry for registry access.')
@@ -77,6 +83,12 @@ param kubeletObjectId string = ''
 
 @description('Built-in federation-management role, resolved by microsoft.foundry.')
 param federatedIdentityRoleDefinitionId string = ''
+
+@description('Verified principal ID of the supplied hosting-management identity, resolved by microsoft.foundry.')
+param hostingPrincipalId string = ''
+
+@description('Verified principal ID of the supplied workload identity, resolved by microsoft.foundry.')
+param workloadPrincipalId string = ''
 
 // Network isolation parameters (see modules/resources.bicep for semantics).
 // All default off so an absent network: block yields a public account.
@@ -138,6 +150,8 @@ module resources 'modules/resources.bicep' = {
     agentHosting: agentHosting
     kubeletObjectId: kubeletObjectId
     federatedIdentityRoleDefinitionId: federatedIdentityRoleDefinitionId
+    hostingPrincipalId: hostingPrincipalId
+    workloadPrincipalId: workloadPrincipalId
     enableNetworkIsolation: enableNetworkIsolation
     useManagedEgress: useManagedEgress
     vnetId: vnetId

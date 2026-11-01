@@ -269,8 +269,8 @@ func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {
 		key, expected string
 		value         any
 	}{
-		{"agentHosting", `unknown field "storageAccountResourceId"`,
-			map[string]any{"enabled": true, "storageAccountResourceId": "supplied"}},
+		{"agentHosting", `unknown field "registryResourceId"`,
+			map[string]any{"enabled": true, "registryResourceId": "supplied"}},
 		{"agentHosting", "conflict with azure.yaml", map[string]any{
 			"enabled": true, "hostingType": "ManagedCluster", "name": "default",
 			"clusterResourceId": offlineClusterID + "-other",

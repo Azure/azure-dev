@@ -22,7 +22,7 @@
     },
     "agentHosting": {
       "type": "object",
-      "description": "Host agents on an existing AKS cluster when azd creates a new Foundry account. azd creates a storage account, separate hosting and workload managed identities, and its standard container registry. Network configuration is optional and independent of agentHosting.",
+      "description": "Host agents on an existing AKS cluster when azd creates a new Foundry account. Storage and the separate hosting and workload identities may each be supplied independently; omitted resources and the native container registry are created. Network configuration is optional and independent of agentHosting.",
       "additionalProperties": false,
       "required": ["clusterResourceId"],
       "properties": {
@@ -30,6 +30,20 @@
           "type": "string",
           "minLength": 1,
           "description": "Complete Microsoft.ContainerService/managedClusters ARM resource ID. Supports ${VAR} from the azd environment."
+        },
+        "storageAccountResourceId": {
+          "type": ["string", "null"],
+          "description": "Optional existing Storage account ARM resource ID. Omitted, empty or null uses the default account's ARM creation/update path. Supports ${VAR}."
+        },
+        "hostingManagementIdentityResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional existing hosting-management user-assigned identity ARM resource ID. Omit to create it. Supports ${VAR}."
+        },
+        "workloadIdentityResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional existing workload user-assigned identity ARM resource ID, distinct from the hosting identity. Omit to create it. Supports ${VAR}."
         }
       }
     },

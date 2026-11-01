@@ -103,7 +103,7 @@ func (e *BlockedError) Unwrap() []error {
 	return causes
 }
 
-var diagnosticURLPattern = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
+var diagnosticURLPattern = regexp.MustCompile(`(?i)https?://[^\s<>"]+`)
 
 // RedactDiagnostic removes URL credentials without discarding service error codes or safe endpoint paths.
 func RedactDiagnostic(message string) string {

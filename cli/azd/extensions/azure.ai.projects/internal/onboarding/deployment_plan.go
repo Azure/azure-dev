@@ -68,13 +68,7 @@ func WithDeploymentOperations(plan Plan, selected DeploymentSelection) (Plan, er
 		target += "/resourceGroups/" + plan.ResourceGroup
 	}
 	appendOperation := func(action, scope string) {
-		op := operation{"P03", action, scope}
-		if !slices.ContainsFunc(plan.Operations, func(existing operation) bool {
-			return existing.checkID == op.checkID && strings.EqualFold(existing.action, op.action) &&
-				strings.EqualFold(existing.scope, op.scope)
-		}) {
-			plan.Operations = append(plan.Operations, op)
-		}
+		plan.AddOperation("P03", action, scope)
 	}
 	appendOperation("Microsoft.Network/virtualNetworks/read", n.VNetID)
 	if n.CreateAgentSubnet || n.CreatePESubnet {

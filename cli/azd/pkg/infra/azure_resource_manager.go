@@ -397,7 +397,11 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 			return resourceTypeDisplayName, nil
 		}
 	} else if resourceType == azapi.AzureResourceTypeMachineLearningWorkspace {
-		resourceTypeDisplayName, err := rm.getMachineLearningWorkspaceResourceTypeDisplayName(ctx, subscriptionId, resourceId)
+		resourceTypeDisplayName, err := rm.getMachineLearningWorkspaceResourceTypeDisplayName(
+			ctx,
+			subscriptionId,
+			resourceId,
+		)
 
 		if err != nil {
 			return "", err

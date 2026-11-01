@@ -1193,7 +1193,8 @@ func TestGetResourceTypeDisplayNameForMachineLearningWorkspaces(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		kind         string
+		kind         any
+		omitKind     bool
 		expectedName string
 	}{
 		{
@@ -1209,6 +1210,16 @@ func TestGetResourceTypeDisplayNameForMachineLearningWorkspaces(t *testing.T) {
 		{
 			name:         "Machine Learning Workspace (unknown kind)",
 			kind:         "workspace",
+			expectedName: "Machine Learning Workspace",
+		},
+		{
+			name:         "Machine Learning Workspace (null kind)",
+			kind:         nil,
+			expectedName: "Machine Learning Workspace",
+		},
+		{
+			name:         "Machine Learning Workspace (omitted kind)",
+			omitKind:     true,
 			expectedName: "Machine Learning Workspace",
 		},
 	}
@@ -1236,7 +1247,9 @@ func TestGetResourceTypeDisplayNameForMachineLearningWorkspaces(t *testing.T) {
 					"name":     "test-workspace",
 					"type":     "Microsoft.MachineLearningServices/workspaces",
 					"location": "eastus2",
-					"kind":     tt.kind,
+				}
+				if !tt.omitKind {
+					response["kind"] = tt.kind
 				}
 
 				body, err := json.Marshal(response)

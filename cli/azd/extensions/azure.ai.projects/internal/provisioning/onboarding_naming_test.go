@@ -12,16 +12,15 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azure.ai.projects/internal/testutil"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBYOResourceTokenUsesActualBicepAndPreservesScopeAndSalt(t *testing.T) {
-	tool := os.Getenv("AZD_BICEP_TOOL_PATH")
-	if tool == "" {
-		t.Skip("set AZD_BICEP_TOOL_PATH to run the offline Bicep naming check")
-	}
+	tool := testutil.LookupBicep(t)
 	var tokens []string
 	for _, salt := range []string{"", "custom"} {
 		scope := byoNamingScope{

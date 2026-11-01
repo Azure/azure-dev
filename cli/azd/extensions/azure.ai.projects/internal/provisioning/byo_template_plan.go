@@ -137,11 +137,11 @@ func (r *templatePlanResolver) function(name string, args []string) any {
 }
 
 func (r *templatePlanResolver) environment(
-	template map[string]any, parameters map[string]func() any, scope planScope, path string,
+	template map[string]any, parameters map[string]func() any, scope planScope, path string, deployment any,
 ) *planEnvironment {
 	return &planEnvironment{
 		template: template, parameters: parameters, scope: scope, path: path,
-		deployment: r.provider.deploymentName(), function: r.function,
+		deployment: deployment, function: r.function,
 		variables: map[string]any{}, active: map[string]bool{}, resources: map[string]*planResource{},
 	}
 }
@@ -306,7 +306,7 @@ func (n *planResource) module() *planEnvironment {
 			}
 		}
 	}
-	n.child = n.resolver.environment(template, parameters, scope, n.path)
+	n.child = n.resolver.environment(template, parameters, scope, n.path, n.env.value(n.raw["name"]))
 	return n.child
 }
 
@@ -347,7 +347,7 @@ func (n *planResource) id() (string, string) {
 	return result, ""
 }
 
-func (n *planResource) reference() any {
+func (n *planResource) reference(full bool) any {
 	if n.resolver.references[n] {
 		return planUnknown{"cyclic local resource/module reference at " + n.path}
 	}
@@ -367,15 +367,23 @@ func (n *planResource) reference() any {
 		for key, output := range outputs {
 			result[key] = child.value(output)
 		}
-		return map[string]any{"outputs": result}
+		properties := map[string]any{"outputs": result}
+		if full {
+			return map[string]any{"properties": properties}
+		}
+		return properties
 	}
 	id, missing := n.id()
 	if missing != "" {
 		return planUnknown{missing}
 	}
+	properties := map[string]any{"principalId": planPrincipal{resourceID: id}}
+	if !full {
+		return properties
+	}
 	return map[string]any{
 		"id": id, "identity": map[string]any{"principalId": planPrincipal{resourceID: id}},
-		"properties": map[string]any{"principalId": planPrincipal{resourceID: id}},
+		"properties": properties,
 		"location":   planUnknown{"runtime resource location is not a local template value"},
 	}
 }
@@ -505,7 +513,7 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 		}
 	}
 	scope := resolver.scope(p.subID, "")
-	env := resolver.environment(source.armTemplate, parameters, scope, "compiled template")
+	env := resolver.environment(source.armTemplate, parameters, scope, "compiled template", p.deploymentName())
 	resolver.walk(env, "", 0)
 	plan := onboarding.Plan{SubscriptionID: p.subID, Grants: []onboarding.PlannedGrant{}}
 	resolver.owningSubscriptions[strings.ToLower(p.subID)] = true

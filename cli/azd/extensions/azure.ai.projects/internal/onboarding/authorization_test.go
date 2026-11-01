@@ -258,10 +258,17 @@ func TestEquivalentIdentityPermissionsPreserveActionsAndDataActions(t *testing.T
 
 func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 	grant := grantRequests(suppliedPlan(t), Identity{}, suppliedFacts().WorkloadIdentity)[3]
-	for _, state := range []string{"inherited", "conditional", "missing", "incomplete", "paged"} {
+	for _, state := range []string{
+		"inherited", "management group", "unrelated", "conditional", "missing", "incomplete", "paged",
+	} {
 		t.Run(state, func(t *testing.T) {
 			fake := authorizationFake()
 			scope := testGroup
+			if state == "management group" {
+				scope = "/providers/Microsoft.Management/managementGroups/parent"
+			} else if state == "unrelated" {
+				scope = testSubscription + "/resourceGroups/unrelated"
+			}
 			evidence := assignment(scope, "workload-principal", ownerRole)
 			page := map[string]any{"value": []any{evidence}}
 			switch state {
@@ -280,11 +287,11 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 			status, _, err := authorizer.identityGrantAllows(t.Context(), "target-sub", grant)
 			require.NoError(t, err)
 			switch state {
-			case "inherited", "paged":
+			case "inherited", "management group", "paged":
 				assert.Equal(t, Pass, status)
 			case "conditional", "incomplete":
 				assert.Equal(t, Unverified, status)
-			case "missing":
+			case "missing", "unrelated":
 				assert.Equal(t, Fail, status)
 			}
 		})

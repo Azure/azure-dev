@@ -51,9 +51,9 @@ func (e *authorizationEvidence) readAssignments(
 	return assignments, nil
 }
 
-// operatorAssignmentApplies consumes only assignments returned by the target's ARM scope query.
+// assignmentApplies consumes only assignments returned by the target's ARM scope query.
 // ARM establishes management-group ancestry; its resource IDs are not subscription path prefixes.
-func operatorAssignmentApplies(assignment *armauthorization.RoleAssignment, scope string) bool {
+func assignmentApplies(assignment *armauthorization.RoleAssignment, scope string) bool {
 	p := assignment.Properties
 	if scopeContains(authString(p.Scope), scope) {
 		return true
@@ -115,7 +115,7 @@ func (a *scopedAuthorizer) basicAction(
 		if authString(p.Scope) == "" || authString(p.RoleDefinitionID) == "" {
 			return Unverified, "operator assignment scope or role definition is unavailable", nil
 		}
-		if !operatorAssignmentApplies(assignment, scope) {
+		if !assignmentApplies(assignment, scope) {
 			continue
 		}
 		role, err := reads.roleDefinition(ctx, *p.RoleDefinitionID)

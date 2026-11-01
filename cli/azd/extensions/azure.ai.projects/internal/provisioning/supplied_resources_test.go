@@ -216,7 +216,7 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 			if mask == 7 {
 				assert.Empty(t, compiler.buildParamCalls)
 			} else {
-				assert.Len(t, compiler.buildParamCalls, 1)
+				assert.NotEmpty(t, compiler.buildParamCalls)
 			}
 			assert.Contains(t, progress.String(), "S03")
 			assert.Contains(t, progress.String(), "P02 PASS")

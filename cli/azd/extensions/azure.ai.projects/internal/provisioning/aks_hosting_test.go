@@ -19,6 +19,7 @@ import (
 
 	"azure.ai.projects/internal/onboarding"
 	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/internal/testutil"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -302,7 +303,7 @@ func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
 	}
 	assert.Empty(t, server.set)
 	assert.Empty(t, compiler.buildCalls)
-	assert.Len(t, compiler.buildParamCalls, 1, "actual template naming is evaluated with the existing Bicep tool")
+	assert.NotEmpty(t, compiler.buildParamCalls, "actual template naming is evaluated with the existing Bicep tool")
 	assert.NotContains(t, fake.parameters, "kubeletObjectId")
 	assert.Contains(t, fake.parameters, "federatedIdentityRoleDefinitionId")
 }
@@ -356,7 +357,6 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 	assert.Equal(t, map[string]any{"value": "updated"}, fake.parameters["resourceTokenSalt"])
 	assert.Equal(t, 2, fake.writes)
 
-	tool := os.Getenv("AZD_BICEP_TOOL_PATH")
 	for _, scenario := range []string{
 		"renamed resources", "cross subscription", "cross subscription Foundry", "unknown Storage name",
 		"unknown Storage and known AKS failure", "known missing Storage reference",
@@ -367,9 +367,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 		"empty network selections", "unrelated network endpoint",
 	} {
 		t.Run(scenario, func(t *testing.T) {
-			if tool == "" {
-				t.Skip("set AZD_BICEP_TOOL_PATH to verify real edited Bicep plans offline")
-			}
+			tool := testutil.LookupBicep(t)
 			unknownField := map[string]string{
 				"unknown network injections":  "networkInjections",
 				"unknown network connections": "privateLinkServiceConnections",

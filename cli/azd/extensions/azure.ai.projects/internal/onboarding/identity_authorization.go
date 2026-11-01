@@ -96,7 +96,7 @@ func (a *scopedAuthorizer) identityGrantAllows(
 			uncertain = true
 			continue
 		}
-		if !scopeContains(*p.Scope, grant.scope) {
+		if !assignmentApplies(assignment, grant.scope) {
 			continue
 		}
 		if authString(p.Condition) != "" || authString(p.ConditionVersion) != "" ||
@@ -118,7 +118,7 @@ func (a *scopedAuthorizer) identityGrantAllows(
 		}
 		permissions = append(permissions, role.Properties.Permissions...)
 		if roleCovers(permissions, required.Properties.Permissions) {
-			return Pass, "verified supplied-identity permission allow at an applicable resource/RG/subscription scope", nil
+			return Pass, "verified supplied-identity permission allow at an applicable scope", nil
 		}
 	}
 	if uncertain {

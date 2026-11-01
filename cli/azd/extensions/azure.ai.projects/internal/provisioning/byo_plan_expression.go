@@ -162,7 +162,7 @@ type planEnvironment struct {
 	parameters map[string]func() any
 	scope      planScope
 	path       string
-	deployment string
+	deployment any
 	resources  map[string]*planResource
 	variables  map[string]any
 	active     map[string]bool
@@ -494,10 +494,18 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 		}
 	}
 	if name == "reference" || name == "resourceinfo" {
+		full := name == "resourceinfo"
+		if name == "reference" && len(args) == 3 {
+			mode, ok := args[2].(string)
+			if !ok || !strings.EqualFold(mode, "Full") {
+				return planUnknown{"reference mode is not supported by the local plan adapter"}
+			}
+			full = true
+		}
 		if len(args) >= 1 {
 			if symbol, ok := args[0].(string); ok {
 				if resource := e.resources[symbol]; resource != nil {
-					return resource.reference()
+					return resource.reference(full)
 				}
 				if parsed, err := arm.ParseResourceID(symbol); err == nil && parsed.SubscriptionID != "" {
 					for _, resource := range e.resources {
@@ -505,7 +513,7 @@ func (e *planEnvironment) evaluate(expression planExpression, depth int) any {
 							continue
 						}
 						if id, missing := resource.id(); missing == "" && strings.EqualFold(id, symbol) {
-							return resource.reference()
+							return resource.reference(full)
 						}
 					}
 				}

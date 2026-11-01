@@ -402,8 +402,10 @@ func TestStorageRulesRetainSourceStandardsAndDefaults(t *testing.T) {
 		{"tier missing", "accessTier", "S01", nil, Unverified},
 		{"HTTPS missing uses true default", "supportsHttpsTrafficOnly", "S02", nil, Pass},
 		{"HTTPS disabled", "supportsHttpsTrafficOnly", "S02", false, Fail},
-		{"anonymous missing uses false default", "allowBlobPublicAccess", "S02", nil, Pass},
+		{"anonymous explicitly disabled", "allowBlobPublicAccess", "S02", false, Pass},
 		{"anonymous enabled", "allowBlobPublicAccess", "S02", true, Fail},
+		{"anonymous missing", "allowBlobPublicAccess", "S02", nil, Unverified},
+		{"anonymous null", "allowBlobPublicAccess", "S02", json.RawMessage("null"), Unverified},
 		{"Shared Key missing uses true default", "allowSharedKeyAccess", "S02", nil, Fail},
 		{"Shared Key enabled", "allowSharedKeyAccess", "S02", true, Fail},
 		{"TLS missing uses 1.0 default", "minimumTlsVersion", "S02", nil, Fail},
@@ -436,6 +438,60 @@ func TestStorageRulesRetainSourceStandardsAndDefaults(t *testing.T) {
 		report := storageResourceChecks(account)
 		require.NoError(t, report.Err(), "redundancy is a recommendation, not a blocking requirement")
 		assert.Equal(t, sku != "Standard_ZRS", report[0].Warning != "")
+	}
+}
+
+func TestStorageAnonymousAccessRequiresExplicitReadOnlyEvidence(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		anonymous any
+		property  string
+		value     any
+		status    Status
+		observed  string
+	}{
+		{"disabled", false, "", nil, Pass, "false"},
+		{"enabled", true, "", nil, Fail, "true"},
+		{"missing", nil, "", nil, Unverified, "unknown"},
+		{"null", json.RawMessage("null"), "", nil, Unverified, "unknown"},
+		{"missing with HTTP enabled", nil, "supportsHttpsTrafficOnly", false, Fail, "unknown"},
+		{"missing with Shared Key enabled", nil, "allowSharedKeyAccess", true, Fail, "unknown"},
+		{"missing with TLS 1.1", nil, "minimumTlsVersion", "TLS1_1", Fail, "unknown"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fake := resourceFake()
+			body := storageBody()
+			properties, ok := body["properties"].(map[string]any)
+			require.True(t, ok)
+			if test.anonymous == nil {
+				delete(properties, "allowBlobPublicAccess")
+			} else {
+				properties["allowBlobPublicAccess"] = test.anonymous
+			}
+			if test.property != "" {
+				properties[test.property] = test.value
+			}
+			fake.replies[strings.ToLower(testStorage)] = readReply{http.StatusOK, body}
+			_, report, err := NewResourceChecker(testCredential{}, fake.options()).Check(t.Context(), suppliedPlan(t))
+			if test.status == Pass {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			check := checkWithID(t, report, "S02")
+			assert.Equal(t, test.status, check.Status)
+			assert.Contains(t, check.Observed, "anonymous Blob="+test.observed)
+			var output strings.Builder
+			require.NoError(t, Report{check}.Write(&output))
+			assert.Contains(t, output.String(), "anonymous Blob="+test.observed)
+			if test.observed == "unknown" {
+				assert.NotContains(t, output.String(), "anonymous Blob=false")
+			}
+			assert.Positive(t, fake.count(testStorage))
+			for _, request := range fake.requests {
+				assert.Equal(t, http.MethodGet, request.method)
+			}
+		})
 	}
 }
 

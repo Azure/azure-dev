@@ -374,7 +374,8 @@ func aksResourceChecks(
 func storageResourceChecks(account armstorage.Account) Report {
 	scope := resourceValue(account.ID)
 	typeCheck := resourceCheck("S01", scope, "StorageV2; Hot tier; HNS explicitly disabled")
-	security := resourceCheck("S02", scope, "HTTPS only; TLS >= 1.2; Shared Key disabled; anonymous Blob disabled")
+	security := resourceCheck("S02", scope,
+		"HTTPS only; TLS >= 1.2; Shared Key disabled; anonymous Blob explicitly disabled")
 	p := account.Properties
 	if p == nil {
 		return Report{typeCheck, security}
@@ -406,15 +407,21 @@ func storageResourceChecks(account armstorage.Account) Report {
 			"This recommendation does not block provisioning or change the account."
 	}
 	// Accounts.GetProperties uses API 2024-01-01. Its documented defaults are:
-	// HTTPS=true (since 2019-04-01), minimum TLS=1.0, Shared Key=true, anonymous Blob=false.
+	// HTTPS=true (since 2019-04-01), minimum TLS=1.0, Shared Key=true.
+	// Anonymous Blob access requires explicit allowBlobPublicAccess=false evidence.
 	https := p.EnableHTTPSTrafficOnly == nil || *p.EnableHTTPSTrafficOnly
+	anonymousKnown := p.AllowBlobPublicAccess != nil
 	anonymous := resourceBool(p.AllowBlobPublicAccess)
+	anonymousObserved := "unknown"
+	if anonymousKnown {
+		anonymousObserved = strconv.FormatBool(anonymous)
+	}
 	shared := p.AllowSharedKeyAccess == nil || *p.AllowSharedKeyAccess
 	tls := resourceValue(p.MinimumTLSVersion)
 	tlsKnown := tls == "" || tls == "TLS1_0" || tls == "TLS1_1" || tls == "TLS1_2" || tls == "TLS1_3"
 	tlsValid := tls == "TLS1_2" || tls == "TLS1_3"
-	security = resourceKnown(security, tlsKnown, https && !anonymous && !shared && tlsValid,
-		fmt.Sprintf("HTTPS=%t; minimum TLS=%s; Shared Key=%t; anonymous Blob=%t", https, tls, shared, anonymous))
+	security = resourceKnown(security, tlsKnown && anonymousKnown, https && !anonymous && !shared && tlsValid,
+		fmt.Sprintf("HTTPS=%t; minimum TLS=%s; Shared Key=%t; anonymous Blob=%s", https, tls, shared, anonymousObserved))
 	if !https || anonymous || shared || tlsKnown && !tlsValid {
 		security = resourceResult(security, Fail, security.Observed)
 	}

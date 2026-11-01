@@ -24,8 +24,8 @@ import (
 )
 
 type mockResourceManager struct {
-	operations           []*armresources.DeploymentOperation
-	displayNameFn        func(context.Context, string, string, azapi.AzureResourceType) (string, error)
+	operations    []*armresources.DeploymentOperation
+	displayNameFn func(context.Context, string, string, azapi.AzureResourceType) (string, error)
 }
 
 func (mock *mockResourceManager) WalkDeploymentOperations(
@@ -164,7 +164,13 @@ func TestReportProgress(t *testing.T) {
 	assert.Len(t, mockContext.Console.Output(), outputLength)
 }
 
-func TestGetResourceTypeDisplayNameRetriesAfterLookupError(t *testing.T) {
+func TestReportProgressRetriesResourceTypeLookupAfterTransientError(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
+	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
+	deployment := NewSubscriptionDeployment(scope, "DEPLOYMENT_NAME")
+	mockAzDeploymentShow(t, *mockContext)
+
 	lookupCalls := 0
 	resourceManager := &mockResourceManager{
 		displayNameFn: func(
@@ -180,17 +186,32 @@ func TestGetResourceTypeDisplayNameRetriesAfterLookupError(t *testing.T) {
 
 			return "AI Hub", nil
 		},
+		operations: []*armresources.DeploymentOperation{{
+			ID: new("workspace-operation-id"),
+			Properties: &armresources.DeploymentOperationProperties{
+				ProvisioningOperation: to.Ptr(armresources.ProvisioningOperationCreate),
+				ProvisioningState:     to.Ptr(string(armresources.ProvisioningStateRunning)),
+				Timestamp:             new(time.Now().UTC()),
+				Duration:              new("PT1S"),
+				TargetResource: &armresources.TargetResource{
+					ResourceType: to.Ptr(string(azapi.AzureResourceTypeMachineLearningWorkspace)),
+					ID:           new("workspace-resource-id"),
+					ResourceName: new("workspace"),
+				},
+			},
+		}},
 	}
-	progressDisplay := NewProvisioningProgressDisplay(resourceManager, nil, nil)
-	resourceType := azapi.AzureResourceTypeMachineLearningWorkspace
+	progressDisplay := NewProvisioningProgressDisplay(resourceManager, mockContext.Console, deployment)
+	startTime := time.Now().Add(-time.Minute)
 
-	assert.Equal(t, "Machine Learning Workspace", progressDisplay.getResourceTypeDisplayName(
-		t.Context(), string(resourceType), "subscription-id", "resource-id"))
-	assert.Equal(t, "AI Hub", progressDisplay.getResourceTypeDisplayName(
-		t.Context(), string(resourceType), "subscription-id", "resource-id"))
-	assert.Equal(t, "AI Hub", progressDisplay.getResourceTypeDisplayName(
-		t.Context(), string(resourceType), "subscription-id", "resource-id"))
+	require.NoError(t, progressDisplay.ReportProgress(*mockContext.Context, &startTime))
+	resourceManager.operations[0].Properties.ProvisioningState =
+		to.Ptr(string(armresources.ProvisioningStateSucceeded))
+	resourceManager.operations[0].Properties.Timestamp = new(time.Now().UTC())
+	require.NoError(t, progressDisplay.ReportProgress(*mockContext.Context, &startTime))
+
 	assert.Equal(t, 2, lookupCalls)
+	assert.Equal(t, "AI Hub", progressDisplay.resourceDisplayNames["workspace-resource-id"])
 }
 
 type walkSkipAwareResourceManager struct {

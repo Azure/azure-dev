@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -926,12 +927,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		container.MustRegisterNamedSingleton(platformName, constructor)
 	}
 
-	container.MustRegisterSingleton(func() workflow.AzdCommandRunner {
+	container.MustRegisterSingleton(func(globalOptions *internal.GlobalCommandOptions) workflow.AzdCommandRunner {
 		return &workflowCmdAdapter{
 			newCommand: func() *cobra.Command {
 				return newRootCmdWithoutRegistration(container)
 			},
-			globalArgs: extractGlobalArgs(),
+			globalArgs:    extractGlobalArgs(),
+			globalOptions: globalOptions,
 		}
 	})
 	container.MustRegisterSingleton(workflow.NewRunner)
@@ -1063,8 +1065,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 // to avoid stale context or command state from previous executions.
 // See: https://github.com/Azure/azure-dev/issues/6530
 type workflowCmdAdapter struct {
-	newCommand func() *cobra.Command
-	globalArgs []string
+	newCommand    func() *cobra.Command
+	globalArgs    []string
+	globalOptions *internal.GlobalCommandOptions
 }
 
 // ExecuteContext implements workflow.AzdCommandRunner.
@@ -1073,13 +1076,29 @@ type workflowCmdAdapter struct {
 // Global flags from the original process invocation are appended to the step args
 // so that persistent flags (e.g., --trace-log-file) are properly parsed and visible
 // to telemetry middleware on the fresh command tree.
-func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) error {
+func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) (err error) {
 	// Cancel the child context when the step completes so that any event handlers
 	// registered during this step (e.g. by service target Initialize methods) are
 	// marked as expired and cleaned up on the next RaiseEvent call.
 	ctx = commandresult.EnsureFollowUpCommandOrder(ctx)
 	childCtx, cancel := context.WithCancel(middleware.WithChildAction(ctx))
 	defer cancel()
+
+	previousDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting workflow working directory: %w", err)
+	}
+	previousCwd := w.globalOptions.Cwd
+	defer func() {
+		// Successful init may intentionally change directories.
+		if err == nil {
+			return
+		}
+		w.globalOptions.Cwd = previousCwd
+		if restoreErr := os.Chdir(previousDir); restoreErr != nil {
+			err = errors.Join(err, fmt.Errorf("restoring workflow working directory: %w", restoreErr))
+		}
+	}()
 
 	rootCmd := w.newCommand()
 	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
@@ -1100,6 +1119,12 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 // -e/--environment (e.g. `azd: env set KEY VALUE -e env1`), and appending the parent's
 // --environment would override the step-level value. Environment propagation to workflow
 // steps is handled by the globalOptions DI fallback in the EnvFlag resolver instead.
+//
+// The "cwd" flag is also excluded: workflow steps that pass --cwd (for example agents
+// init authoring into a nested project folder) must win over the parent process -C/--cwd.
+// Appending the parent's cwd last would force every nested step back into the outer
+// directory. Steps that omit --cwd still inherit the parent's working directory through
+// the sticky GlobalCommandOptions value used by PersistentPreRunE.
 func extractGlobalArgs() []string {
 	globalFlagSet := CreateGlobalFlagSet()
 	globalFlagSet.SetOutput(io.Discard)
@@ -1108,7 +1133,7 @@ func extractGlobalArgs() []string {
 
 	var result []string
 	globalFlagSet.VisitAll(func(f *pflag.Flag) {
-		if f.Changed && f.Name != internal.EnvironmentNameFlagName {
+		if f.Changed && f.Name != internal.EnvironmentNameFlagName && f.Name != "cwd" {
 			// Use --flag=value syntax to avoid ambiguity. The two-arg form (--flag value)
 			// doesn't work for boolean flags, where the value is treated as a positional arg.
 			result = append(result, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))

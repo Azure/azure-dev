@@ -24,7 +24,8 @@ import (
 )
 
 type mockResourceManager struct {
-	operations []*armresources.DeploymentOperation
+	operations           []*armresources.DeploymentOperation
+	displayNameFn        func(context.Context, string, string, azapi.AzureResourceType) (string, error)
 }
 
 func (mock *mockResourceManager) WalkDeploymentOperations(
@@ -47,6 +48,10 @@ func (mock *mockResourceManager) GetResourceTypeDisplayName(
 	resourceId string,
 	resourceType azapi.AzureResourceType,
 ) (string, error) {
+	if mock.displayNameFn != nil {
+		return mock.displayNameFn(ctx, subscriptionId, resourceId, resourceType)
+	}
+
 	return string(resourceType), nil
 }
 
@@ -157,6 +162,35 @@ func TestReportProgress(t *testing.T) {
 	err = progressDisplay.ReportProgress(*mockContext.Context, &startTime)
 	require.NoError(t, err)
 	assert.Len(t, mockContext.Console.Output(), outputLength)
+}
+
+func TestGetResourceTypeDisplayNameRetriesAfterLookupError(t *testing.T) {
+	lookupCalls := 0
+	resourceManager := &mockResourceManager{
+		displayNameFn: func(
+			ctx context.Context,
+			subscriptionID string,
+			resourceID string,
+			resourceType azapi.AzureResourceType,
+		) (string, error) {
+			lookupCalls++
+			if lookupCalls == 1 {
+				return "", fmt.Errorf("workspace is not available yet")
+			}
+
+			return "AI Hub", nil
+		},
+	}
+	progressDisplay := NewProvisioningProgressDisplay(resourceManager, nil, nil)
+	resourceType := azapi.AzureResourceTypeMachineLearningWorkspace
+
+	assert.Equal(t, "Machine Learning Workspace", progressDisplay.getResourceTypeDisplayName(
+		t.Context(), string(resourceType), "subscription-id", "resource-id"))
+	assert.Equal(t, "AI Hub", progressDisplay.getResourceTypeDisplayName(
+		t.Context(), string(resourceType), "subscription-id", "resource-id"))
+	assert.Equal(t, "AI Hub", progressDisplay.getResourceTypeDisplayName(
+		t.Context(), string(resourceType), "subscription-id", "resource-id"))
+	assert.Equal(t, 2, lookupCalls)
 }
 
 type walkSkipAwareResourceManager struct {

@@ -396,6 +396,14 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 		} else {
 			return resourceTypeDisplayName, nil
 		}
+	} else if resourceType == azapi.AzureResourceTypeMachineLearningWorkspace {
+		resourceTypeDisplayName, err := rm.getMachineLearningWorkspaceResourceTypeDisplayName(ctx, subscriptionId, resourceId)
+
+		if err != nil {
+			return "", err
+		} else {
+			return resourceTypeDisplayName, nil
+		}
 	} else {
 		resourceTypeDisplayName := azapi.GetResourceTypeDisplayName(resourceType)
 		return resourceTypeDisplayName, nil
@@ -449,6 +457,30 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 		return "Foundry", nil
 	} else {
 		return "Azure AI Services", nil
+	}
+}
+
+// machineLearningWorkspaceApiVersion is the API Version we use when querying workspace kind information.
+const machineLearningWorkspaceApiVersion = "2024-04-01"
+
+func (rm *AzureResourceManager) getMachineLearningWorkspaceResourceTypeDisplayName(
+	ctx context.Context,
+	subscriptionId string,
+	resourceId string,
+) (string, error) {
+	resource, err := rm.resourceService.GetResource(ctx, subscriptionId, resourceId, machineLearningWorkspaceApiVersion)
+
+	if err != nil {
+		return "", fmt.Errorf("getting machine learning workspace resource type display names: %w", err)
+	}
+
+	switch strings.ToLower(resource.Kind) {
+	case "hub":
+		return "AI Hub", nil
+	case "project":
+		return "AI Project", nil
+	default:
+		return "Machine Learning Workspace", nil
 	}
 }
 

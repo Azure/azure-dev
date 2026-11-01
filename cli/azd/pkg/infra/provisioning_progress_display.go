@@ -276,12 +276,6 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		}
 	}
 
-	if !display.console.IsSpinnerInteractive() {
-		// If non-interactive, we simply do not want to display spinner messages that ends up
-		// being individual lines of messages on the console
-		return
-	}
-
 	// ensure stable ordering
 	slices.Sort(inProgress)
 

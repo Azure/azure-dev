@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -319,9 +320,7 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 			properties := pools[1].(map[string]any)["properties"].(map[string]any)
 			properties["nodeLabels"] = map[string]any{}
 			copy := map[string]any{}
-			for key, value := range properties {
-				copy[key] = value
-			}
+			maps.Copy(copy, properties)
 			copy["nodeLabels"] = map[string]any{"agents.ai.azure.com/sandbox-node": "true"}
 			copy["workloadRuntime"] = "OCIContainer"
 			body["value"] = append(pools, map[string]any{
@@ -511,6 +510,7 @@ func TestStorageNetworkWarningsAndURLNonDisclosure(t *testing.T) {
 			properties := body["properties"].(map[string]any)
 			properties["publicNetworkAccess"] = test.access
 			properties["networkAcls"] = map[string]any{"defaultAction": test.action}
+			//nolint:gosec // G101: synthetic URL credentials exercise output redaction.
 			properties["primaryEndpoints"] = map[string]any{
 				"blob": "https://private-user:private-password@customer.blob.core.windows.net/" +
 					"?sig=private-token#private-fragment",
@@ -529,6 +529,7 @@ func TestStorageNetworkWarningsAndURLNonDisclosure(t *testing.T) {
 			assert.NotContains(t, output.String(), "sig=")
 		})
 	}
+	//nolint:gosec // G101: synthetic URL credentials exercise report and error redaction.
 	report := Report{{ID: "S03", Mandatory: true, Status: Fail,
 		Scope:    "https://user:private-password@host/path?sig=private-token#private-fragment",
 		Observed: "read https://user:private-password@host/path?sig=private-token#private-fragment"}}

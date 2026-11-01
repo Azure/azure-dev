@@ -213,6 +213,8 @@ Omit any supporting-resource field to retain its default creation/update path. A
 
 When the hosting-management identity is omitted, provision and preview check the deployer's `Microsoft.Resources/deployments/write` permission at the AKS resource-group scope, where the cluster role-assignment modules are deployed. Cluster-scope role-assignment permissions alone are insufficient, including when AKS and Foundry use different resource groups. This check also applies when all supporting resources use defaults; a supplied hosting-management identity skips these cluster-grant deployments.
 
+Federation and Storage grant deployment records have stable names derived from the originating resource group and the hosting-management or workload identity name, respectively. Retries reuse the same name; different source groups or identity names produce distinct deployment records in shared target groups.
+
 Provision and preview run read-only preflight for every BYO AKS plan, including plans that supply only AKS and create all supporting resources. Checks cover resource existence and identity metadata, subscription owning tenants, supplied-identity grants, AKS hosting prerequisites, the selected existing Agent subnet, and deploying-principal permissions at the actual operation scopes. Ordinary Foundry projects without `agentHosting` do not enter this pipeline.
 
 | Checks | Required evidence |

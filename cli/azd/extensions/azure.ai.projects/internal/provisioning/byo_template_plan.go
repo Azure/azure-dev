@@ -340,11 +340,12 @@ func (n *planResource) id() (string, string) {
 	if len(types)-1 != len(names) {
 		return "", "resource type/name hierarchy is not resolved"
 	}
-	result := scope + "/providers/" + types[0]
+	var result strings.Builder
+	result.WriteString(scope + "/providers/" + types[0])
 	for i, part := range names {
-		result += "/" + types[i+1] + "/" + part
+		result.WriteString("/" + types[i+1] + "/" + part)
 	}
-	return result, ""
+	return result.String(), ""
 }
 
 func (n *planResource) reference(full bool) any {

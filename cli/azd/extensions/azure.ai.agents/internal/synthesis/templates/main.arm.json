@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "15613496065151317615"
+      "templateHash": "12329217174814912855"
     }
   },
   "definitions": {
@@ -362,7 +362,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "4489232757955674446"
+              "templateHash": "16972211162690295419"
             }
           },
           "definitions": {
@@ -821,7 +821,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.48.1.52935",
-                      "templateHash": "2783595861868718384"
+                      "templateHash": "2926993794272695742"
                     }
                   },
                   "parameters": {
@@ -1008,7 +1008,7 @@
                       "condition": "[or(empty(parameters('hostingIdentityResourceId')), empty(parameters('workloadIdentityResourceId')))]",
                       "type": "Microsoft.Resources/deployments",
                       "apiVersion": "2025-04-01",
-                      "name": "byo-federation-access",
+                      "name": "[format('byo-federation-access-{0}', uniqueString(resourceGroup().id, parameters('hostingIdentityName')))]",
                       "subscriptionId": "[variables('workloadParts')[2]]",
                       "resourceGroup": "[variables('workloadParts')[4]]",
                       "properties": {
@@ -1070,7 +1070,7 @@
                       "condition": "[or(empty(parameters('workloadIdentityResourceId')), empty(parameters('storageAccountResourceId')))]",
                       "type": "Microsoft.Resources/deployments",
                       "apiVersion": "2025-04-01",
-                      "name": "byo-storage-access",
+                      "name": "[format('byo-storage-access-{0}', uniqueString(resourceGroup().id, parameters('workloadIdentityName')))]",
                       "subscriptionId": "[variables('storageParts')[2]]",
                       "resourceGroup": "[variables('storageParts')[4]]",
                       "properties": {

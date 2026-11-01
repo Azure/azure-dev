@@ -306,22 +306,6 @@ func byoARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
 	return &result
 }
 
-func parseBYOResourceID(value, kind string) (*arm.ResourceID, error) {
-	if !strings.HasPrefix(strings.ToLower(value), "/subscriptions/") ||
-		strings.ContainsAny(value, "?#%\\@:\x00 \t\r\n") || strings.Contains(value, "//") {
-		return nil, fmt.Errorf("expected a complete %s resource ID without URL components", kind)
-	}
-	id, err := arm.ParseResourceID(value)
-	if err != nil {
-		return nil, fmt.Errorf("invalid %s resource ID: %w", kind, err)
-	}
-	if id.SubscriptionID == "" || id.ResourceGroupName == "" || id.Name == "" ||
-		!strings.EqualFold(id.ResourceType.String(), kind) {
-		return nil, fmt.Errorf("expected a complete %s resource ID", kind)
-	}
-	return id, nil
-}
-
 func (p *FoundryProvisioningProvider) resolveBYOHostBindings(
 	ctx context.Context, plan onboarding.Plan, facts onboarding.Facts, includeAcr bool,
 ) (string, string, error) {

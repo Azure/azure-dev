@@ -485,14 +485,18 @@ func TestHostingGraphIndependentlyReferencesSuppliedResources(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(resources.Resources["prerequisites"], &deployment))
 	require.NoError(t, json.Unmarshal(deployment.Properties.Template, &prerequisites))
+	const federationGrantName = "[format('byo-federation-access-{0}', " +
+		"uniqueString(resourceGroup().id, parameters('hostingIdentityName')))]"
+	const storageGrantName = "[format('byo-storage-access-{0}', " +
+		"uniqueString(resourceGroup().id, parameters('workloadIdentityName')))]"
 	expected := map[string]string{
 		"[parameters('hostingIdentityName')]":  "[empty(parameters('hostingIdentityResourceId'))]",
 		"[parameters('workloadIdentityName')]": "[empty(parameters('workloadIdentityResourceId'))]",
 		"[parameters('storageAccountName')]":   "[empty(parameters('storageAccountResourceId'))]",
 		"clusterGrants":                        "[empty(parameters('hostingIdentityResourceId'))]",
-		"byo-federation-access": "[or(empty(parameters('hostingIdentityResourceId')), " +
+		federationGrantName: "[or(empty(parameters('hostingIdentityResourceId')), " +
 			"empty(parameters('workloadIdentityResourceId')))]",
-		"byo-storage-access": "[or(empty(parameters('workloadIdentityResourceId')), " +
+		storageGrantName: "[or(empty(parameters('workloadIdentityResourceId')), " +
 			"empty(parameters('storageAccountResourceId')))]",
 	}
 	require.Len(t, prerequisites.Resources, len(expected))
@@ -503,7 +507,7 @@ func TestHostingGraphIndependentlyReferencesSuppliedResources(t *testing.T) {
 		}
 		require.Contains(t, expected, name)
 		assert.Equal(t, expected[name], resource.Condition)
-		if name == "byo-federation-access" || name == "byo-storage-access" {
+		if name == federationGrantName || name == storageGrantName {
 			assert.NotEmpty(t, resource.SubscriptionID)
 			assert.NotEmpty(t, resource.ResourceGroup)
 		}

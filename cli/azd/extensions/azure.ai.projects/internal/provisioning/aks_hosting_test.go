@@ -392,6 +392,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 					if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 						return err
 					}
+					//nolint:gosec // G703: embedded fixture path under t.TempDir.
 					return os.WriteFile(target, raw, 0o600)
 				}))
 			resourcePath := filepath.Join(root, "modules", "resources.bicep")
@@ -432,6 +433,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				require.Contains(t, string(raw), "scope: resourceGroup")
 				raw = []byte(strings.Replace(string(raw), "scope: resourceGroup",
 					"scope: az.resourceGroup('foundry-sub', 'foundry-rg')", 1))
+				//nolint:gosec // G703: test-owned main.bicep under t.TempDir.
 				require.NoError(t, os.WriteFile(path, raw, 0o600))
 			}
 			if strings.HasPrefix(scenario, "unknown Storage") {
@@ -471,6 +473,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 					}
 				}
 				require.Equal(t, 2, disabled)
+				//nolint:gosec // G703: test-owned acr.bicep under t.TempDir.
 				require.NoError(t, os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o600))
 			}
 			if scenario == "native registry without connection" {
@@ -486,6 +489,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				require.Contains(t, text, "output connectionName string = foundryAccount::project::acrConnection.name")
 				text = strings.Replace(text, "output connectionName string = foundryAccount::project::acrConnection.name",
 					"output connectionName string = ''", 1)
+				//nolint:gosec // G703: test-owned acr.bicep under t.TempDir.
 				require.NoError(t, os.WriteFile(path, []byte(text), 0o600))
 			}
 			missingStorage := suppliedGroupID + "/providers/Microsoft.Storage/storageAccounts/missingstore"
@@ -540,8 +544,10 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 						text += runtimeNetwork
 					}
 				}
+				//nolint:gosec // G703: test-owned endpoint template under t.TempDir.
 				require.NoError(t, os.WriteFile(path, []byte(text), 0o600))
 			}
+			//nolint:gosec // G703: test-owned resources.bicep under t.TempDir.
 			require.NoError(t, os.WriteFile(resourcePath, []byte(edited), 0o600))
 			main := filepath.Join(root, "main.bicep")
 			//nolint:gosec // Explicit existing offline Bicep tool; fixture paths are under t.TempDir.

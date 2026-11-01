@@ -97,7 +97,7 @@ module clusterGrants 'byo-role-assignment.bicep' = [
 ]
 
 module federationGrant 'byo-identity-role-assignment.bicep' = if (empty(hostingIdentityResourceId) || empty(workloadIdentityResourceId)) {
-  name: 'byo-federation-access'
+  name: 'byo-federation-access-${uniqueString(resourceGroup().id, hostingIdentityName)}'
   scope: resourceGroup(workloadParts[2], workloadParts[4])
   params: {
     resourceName: last(workloadParts)
@@ -108,7 +108,7 @@ module federationGrant 'byo-identity-role-assignment.bicep' = if (empty(hostingI
 }
 
 module storageGrant 'byo-storage-role-assignment.bicep' = if (empty(workloadIdentityResourceId) || empty(storageAccountResourceId)) {
-  name: 'byo-storage-access'
+  name: 'byo-storage-access-${uniqueString(resourceGroup().id, workloadIdentityName)}'
   scope: resourceGroup(storageParts[2], storageParts[4])
   params: {
     resourceName: last(storageParts)

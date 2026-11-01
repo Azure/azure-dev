@@ -661,7 +661,7 @@ func (e *planEnvironment) resourceID(function string, args []any) any {
 	kind, _ := planString(args[typeIndex])
 	var parts []string
 	var components []any
-	for _, part := range strings.Split(scope, "/") {
+	for part := range strings.SplitSeq(scope, "/") {
 		components = append(components, part)
 	}
 	types := strings.Split(kind, "/")

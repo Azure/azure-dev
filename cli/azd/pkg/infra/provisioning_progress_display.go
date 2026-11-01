@@ -252,6 +252,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 
 		display.displayedResources[dedupKey] = true
 	}
+	if !display.console.IsSpinnerInteractive() {
+		// In non-interactive output, in-progress names are not rendered; avoid
+		// querying ARM for values that would be discarded.
+		return
+	}
+
 	// update progress
 	inProgress := []string{}
 	for _, inProgResource := range inProgressResources {

@@ -166,6 +166,7 @@ func TestReportProgress(t *testing.T) {
 
 func TestReportProgressRetriesResourceTypeLookupAfterTransientError(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.Console.SetTerminal(true)
 	deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 	deployment := NewSubscriptionDeployment(scope, "DEPLOYMENT_NAME")

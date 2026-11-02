@@ -33,17 +33,15 @@
         },
         "storageAccountResourceId": {
           "type": ["string", "null"],
-          "description": "Optional existing Storage account ARM resource ID. Omitted, empty or null uses the default account's ARM creation/update path. Supports ${VAR}."
+          "description": "Optional existing Storage account ARM resource ID. Omitted, empty or null uses the default account's ARM creation/update path. Supports ${VAR}; an empty resolved value also uses the default. Undefined variables without a default are rejected."
         },
         "hostingManagementIdentityResourceId": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Optional existing hosting-management user-assigned identity ARM resource ID. Omit to create it. Supports ${VAR}."
+          "type": ["string", "null"],
+          "description": "Optional existing hosting-management user-assigned identity ARM resource ID. Omitted, empty or null uses the default identity's ARM creation/update path. Supports ${VAR}; an empty resolved value also uses the default. Undefined variables without a default are rejected."
         },
         "workloadIdentityResourceId": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Optional existing workload user-assigned identity ARM resource ID, distinct from the hosting identity. Omit to create it. Supports ${VAR}."
+          "type": ["string", "null"],
+          "description": "Optional existing workload user-assigned identity ARM resource ID, distinct from the hosting identity. Omitted, empty or null uses the default identity's ARM creation/update path. Supports ${VAR}; an empty resolved value also uses the default. Undefined variables without a default are rejected."
         }
       }
     },

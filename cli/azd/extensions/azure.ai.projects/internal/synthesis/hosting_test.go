@@ -60,8 +60,8 @@ func TestHostingDefaultSynthesis(t *testing.T) {
 func TestHostingRejectsUnsupportedSelections(t *testing.T) {
 	for _, test := range []struct{ field, value, expected string }{
 		{"storageAccountResourceId", "[]", "expected a nonempty resource ID"},
-		{"hostingManagementIdentityResourceId", "null", "expected a nonempty resource ID"},
-		{"workloadIdentityResourceId", `""`, "expected a nonempty resource ID"},
+		{"hostingManagementIdentityResourceId", "[]", "expected a nonempty resource ID"},
+		{"workloadIdentityResourceId", "{}", "expected a nonempty resource ID"},
 		{"registryResourceId", "/subscriptions/s/resourceGroups/r/providers/Microsoft.ContainerRegistry/registries/r",
 			"unsupported property"},
 		{"unknown", "null", "unsupported property"},
@@ -125,8 +125,9 @@ func TestHostingFileReferencesAndEnvironmentResolution(t *testing.T) {
 	assert.Equal(t, "${CLUSTER_ID}", result.Hosting.ClusterResourceID)
 	config = strings.Replace(config, "    network:", "      hostingManagementIdentityResourceId: ''\n    network:", 1)
 	require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
-	_, err = Synthesize(input)
-	require.ErrorContains(t, err, "hostingManagementIdentityResourceId: expected a nonempty resource ID")
+	result, err = Synthesize(input)
+	require.NoError(t, err)
+	assert.Empty(t, result.Hosting.HostingManagementIdentityResourceID)
 }
 
 func TestHostingSchemaValidatesResourceSelections(t *testing.T) {
@@ -141,23 +142,16 @@ func TestHostingSchemaValidatesResourceSelections(t *testing.T) {
 	hosting := map[string]any{"clusterResourceId": hostingClusterID}
 	service := map[string]any{"agentHosting": hosting}
 	require.NoError(t, schema.Validate(service))
-	for _, empty := range []any{"", nil} {
-		hosting["storageAccountResourceId"] = empty
-		require.NoError(t, schema.Validate(service))
-	}
-	delete(hosting, "storageAccountResourceId")
 	for field, id := range map[string]string{
 		"storageAccountResourceId":            hostingStorageID,
 		"hostingManagementIdentityResourceId": hostingIdentityID + "hosting",
 		"workloadIdentityResourceId":          hostingIdentityID + "workload",
 	} {
-		hosting[field] = id
-		require.NoError(t, schema.Validate(service))
-		invalidValues := []any{1, []any{}}
-		if field != "storageAccountResourceId" {
-			invalidValues = append(invalidValues, "", nil)
+		for _, value := range []any{id, "", nil} {
+			hosting[field] = value
+			require.NoError(t, schema.Validate(service))
 		}
-		for _, invalid := range invalidValues {
+		for _, invalid := range []any{1, []any{}} {
 			hosting[field] = invalid
 			require.Error(t, schema.Validate(service))
 		}
@@ -177,16 +171,24 @@ func TestHostingSchemaValidatesResourceSelections(t *testing.T) {
 	require.Error(t, schema.Validate(service))
 }
 
-func TestHostingEmptyStorageSelectionRetainsDefaultCompatibility(t *testing.T) {
-	for _, value := range []string{`""`, "null"} {
-		raw := strings.Replace(hostingYAML(), "    network:",
-			"      storageAccountResourceId: "+value+"\n    network:", 1)
-		result, err := Synthesize(Input{RawAzureYAML: []byte(raw), ServiceName: "project"})
-		require.NoError(t, err)
-		assert.Empty(t, result.Hosting.StorageAccountResourceID)
-		parameter, ok := result.Parameters["agentHosting"].(agentHostingParameter)
-		require.True(t, ok)
-		assert.Empty(t, parameter.StorageAccountResourceID)
+func TestHostingEmptySupportingSelectionsRetainDefaultCompatibility(t *testing.T) {
+	for _, field := range []string{
+		"storageAccountResourceId", "hostingManagementIdentityResourceId", "workloadIdentityResourceId",
+	} {
+		for _, value := range []string{`""`, "null"} {
+			raw := strings.Replace(hostingYAML(), "    network:",
+				"      "+field+": "+value+"\n    network:", 1)
+			result, err := Synthesize(Input{RawAzureYAML: []byte(raw), ServiceName: "project"})
+			require.NoError(t, err)
+			assert.Empty(t, result.Hosting.StorageAccountResourceID)
+			assert.Empty(t, result.Hosting.HostingManagementIdentityResourceID)
+			assert.Empty(t, result.Hosting.WorkloadIdentityResourceID)
+			parameter, ok := result.Parameters["agentHosting"].(agentHostingParameter)
+			require.True(t, ok)
+			assert.Empty(t, parameter.StorageAccountResourceID)
+			assert.Empty(t, parameter.HostingManagementIdentityResourceID)
+			assert.Empty(t, parameter.WorkloadIdentityResourceID)
+		}
 	}
 }
 
@@ -433,7 +435,14 @@ func TestHostingSupportingReferencesValidateLikeInline(t *testing.T) {
 				input.PreserveVarRefs = false
 				for _, invalid := range []string{"", hostingClusterID, "https://user:private@host/path?sig=private"} {
 					input.Env["SUPPLIED_ID"] = invalid
-					_, err := Synthesize(input)
+					result, err := Synthesize(input)
+					if invalid == "" {
+						require.NoError(t, err)
+						encoded, err := json.Marshal(result.Parameters["agentHosting"])
+						require.NoError(t, err)
+						assert.Contains(t, string(encoded), `"`+field+`":""`)
+						continue
+					}
 					require.Error(t, err)
 					assert.Contains(t, err.Error(), field)
 					assert.NotContains(t, err.Error(), "private")

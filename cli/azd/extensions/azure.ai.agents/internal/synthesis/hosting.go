@@ -59,7 +59,7 @@ func ValidateAgentHostingInputs(node yaml.Node, service string) error {
 			return fmt.Errorf("services.%s.agentHosting.%s: unsupported property", service, name)
 		}
 		value := hosting.Content[i+1]
-		if name == "storageAccountResourceId" &&
+		if name != "clusterResourceId" &&
 			(value.Tag == "!!null" || value.Tag == "!!str" && value.Value == "") {
 			continue
 		}
@@ -98,7 +98,8 @@ func synthesizeAgentHosting(
 			continue
 		}
 		value, err := resolveHostingResourceID(*selection.value,
-			fmt.Sprintf("services.%s.agentHosting.%s", service, selection.name), selection.kind, env, resolve)
+			fmt.Sprintf("services.%s.agentHosting.%s", service, selection.name),
+			selection.kind, env, resolve, selection.required)
 		if err != nil {
 			return nil, err
 		}
@@ -111,7 +112,7 @@ func synthesizeAgentHosting(
 	return &result, nil
 }
 
-func resolveHostingResourceID(value, field, kind string, env map[string]string, resolve bool) (string, error) {
+func resolveHostingResourceID(value, field, kind string, env map[string]string, resolve, required bool) (string, error) {
 	value = strings.TrimSpace(value)
 	if err := ValidateEnvReferences(value); err != nil {
 		return "", fmt.Errorf("%s: %w", field, err)
@@ -124,6 +125,9 @@ func resolveHostingResourceID(value, field, kind string, env map[string]string, 
 		value = strings.TrimSpace(resolved)
 	}
 	if value == "" {
+		if !required {
+			return "", nil
+		}
 		return "", fmt.Errorf("%s: required", field)
 	}
 	if resolve || !containsVarRef(value) {

@@ -6,9 +6,6 @@ PostgreSQL application access. This is an **unpublished development prototype**:
 use azd 1.37.2 or newer and a matching locally built extension bundle. The
 version requirement in the examples is not a public release guarantee.
 
-See the [extension design](docs/design.md) for `springbootapp` database,
-authentication, and identity settings, their expected usage, and implementation.
-
 ## Two packaging paths
 
 - **Explicit `docker.path`**: core azd composes its Docker framework with the

@@ -29,6 +29,8 @@ func hostingYAML() string {
     network:
       agentSubnet: {vnet: ` + hostingVNetID + `, name: agents}
       peSubnet: {vnet: ` + hostingVNetID + `, name: endpoints}
+    monitoring:
+      enabled: false
 `
 }
 

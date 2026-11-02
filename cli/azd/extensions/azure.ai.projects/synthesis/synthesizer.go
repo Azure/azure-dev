@@ -277,6 +277,12 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if mode, _ := monitoring["monitoringMode"].(string); netMode != NetworkModeNone && mode != "" && mode != "none" {
+		return nil, errors.New(
+			"synthesis: automatic monitoring does not configure private-network ingestion; " +
+				"set monitoring.enabled: false on the project service",
+		)
+	}
 	maps.Copy(params, monitoring)
 
 	if hosting != nil {

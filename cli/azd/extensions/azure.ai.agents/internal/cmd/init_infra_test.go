@@ -2186,6 +2186,8 @@ services:
       dns:
         resourceGroup: rg-dns
         subscription: "${AZURE_DNS_SUBSCRIPTION_ID}"
+    monitoring:
+      enabled: false
     deployments: []
     agents:
       - name: my-agent
@@ -2247,6 +2249,8 @@ services:
         vnet: "${AZURE_VNET_ID}"
         name: pe-subnet
         prefix: 192.168.11.0/24
+    monitoring:
+      enabled: false
     deployments: []
     agents:
       - name: my-agent
@@ -2325,6 +2329,8 @@ services:
     network:
       agentSubnet: {vnet: "${VNET_ID}", name: agents}
       peSubnet: {vnet: "${VNET_ID}", name: endpoints}
+    monitoring:
+      enabled: false
 `
 	t.Run("Bicep preserves the provider and unresolved inputs", func(t *testing.T) {
 		dir := t.TempDir()
@@ -3743,6 +3749,8 @@ services:
     host: azure.ai.project
     network:
       peSubnet: {vnet: "${AZURE_VNET_ID}", name: pe-subnet}
+    monitoring:
+      enabled: false
     deployments: []
     agents:
       - name: my-agent

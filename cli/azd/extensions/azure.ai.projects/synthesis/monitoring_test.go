@@ -114,6 +114,49 @@ func TestSynthesizeMonitoring(t *testing.T) {
 	}
 }
 
+func TestSynthesizeMonitoringPrivateNetwork(t *testing.T) {
+	t.Parallel()
+	const vnet = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/net/providers/" +
+		"Microsoft.Network/virtualNetworks/vnet"
+	const component = "/subscriptions/00000000-0000-0000-0000-000000000001" +
+		"/resourceGroups/monitoring/providers/Microsoft.Insights/components/traces"
+	networks := map[string]string{
+		"managed egress": "    network:\n      isolationMode: AllowInternetOutbound\n" +
+			"      peSubnet: {vnet: " + vnet + ", name: pe-subnet, prefix: 192.168.1.0/24}\n",
+		"BYO egress": "    network:\n" +
+			"      agentSubnet: {vnet: " + vnet + ", name: agent-subnet, prefix: 192.168.0.0/24}\n" +
+			"      peSubnet: {vnet: " + vnet + ", name: pe-subnet, prefix: 192.168.1.0/24}\n",
+	}
+	monitoring := []struct {
+		name     string
+		settings string
+		wantErr  bool
+	}{
+		{name: "default", wantErr: true},
+		{name: "empty block", settings: "    monitoring: {}\n", wantErr: true},
+		{name: "BYO component", settings: "    monitoring:\n      applicationInsightsResourceId: " + component + "\n", wantErr: true},
+		{name: "explicit opt out", settings: "    monitoring:\n      enabled: false\n"},
+	}
+	for networkName, network := range networks {
+		for _, tt := range monitoring {
+			t.Run(networkName+" "+tt.name, func(t *testing.T) {
+				t.Parallel()
+				result, err := Synthesize(Input{
+					RawAzureYAML: []byte("services:\n  foundry:\n    host: azure.ai.project\n" + network + tt.settings),
+					ServiceName:  "foundry",
+				})
+				if tt.wantErr {
+					require.ErrorContains(t, err, "does not configure private-network ingestion")
+					require.ErrorContains(t, err, "monitoring.enabled: false")
+					return
+				}
+				require.NoError(t, err)
+				assert.Equal(t, "none", result.Parameters["monitoringMode"])
+			})
+		}
+	}
+}
+
 func TestSynthesizeMonitoringInfrastructureAuthority(t *testing.T) {
 	t.Parallel()
 	for _, synthesize := range []struct {

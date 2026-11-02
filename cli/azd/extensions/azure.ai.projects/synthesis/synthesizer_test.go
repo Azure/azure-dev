@@ -616,7 +616,7 @@ services:
       dns:
         resourceGroup: rg-dns
         subscription: "${AZURE_DNS_SUBSCRIPTION_ID}"
-`
+` + networkTestMonitoringOff
 	res, err := Synthesize(Input{
 		RawAzureYAML:    []byte(yaml),
 		ServiceName:     "my-project",
@@ -944,6 +944,10 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 		"private endpoint location must come from the customer VNet")
 }
 
+// networkTestMonitoringOff keeps network tests focused on networking: automatic
+// monitoring is rejected for private networks.
+const networkTestMonitoringOff = "    monitoring: {enabled: false}\n"
+
 func TestSynthesize_Network(t *testing.T) {
 	t.Setenv("AZURE_VNET_ID",
 		"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/"+
@@ -1107,7 +1111,7 @@ services:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := Synthesize(Input{
-				RawAzureYAML:  []byte(tt.yaml),
+				RawAzureYAML:  []byte(tt.yaml + networkTestMonitoringOff),
 				ServiceName:   "my-project",
 				AcceptedHosts: []string{"azure.ai.project"},
 			})
@@ -1581,7 +1585,7 @@ services:
       peSubnet: {vnet: "${MISSING_VNET_XYZ:-` + fallbackVNet + `}", name: pe-subnet}
       dns:
         subscription: "${MISSING_SUB_XYZ:-` + fallbackSub + `}"
-`
+` + networkTestMonitoringOff
 	res, err := Synthesize(Input{
 		RawAzureYAML:  []byte(yaml),
 		ServiceName:   "my-project",
@@ -1606,7 +1610,7 @@ services:
     host: azure.ai.project
     network:
       peSubnet: {vnet: "` + ref + `", name: pe-subnet}
-`
+` + networkTestMonitoringOff
 	res, err := Synthesize(Input{
 		RawAzureYAML:    []byte(yaml),
 		ServiceName:     "my-project",

@@ -216,7 +216,7 @@ advantage of both where it's safe.
   - **Tier 1 resource names** are suffixed with `-{instance}` too (via the
     RESOURCE NAMING goal and the `--agent-name` flag), so parallel workers do not collide on
     Azure resource names. Each Tier 1b verifier reuses its prerequisite's exact instance.
-  - **`0.34-run-invoke-local-a2a`** is an offline, terminal-only two-session
+  - **`0.35-run-invoke-local-a2a`** is an offline, terminal-only two-session
     local fixture flow. It declares `allocate_ports: [agent]` and uses the same
     `scenario_path`, `instance_id`, and `session_vars.instance` for both sessions
     so each parallel instance shares only its own allocated port. Python 3 must
@@ -354,7 +354,8 @@ in any order, any time.
 | `tier0/0.31-init-adopt-headless-replacement.yaml` | Ambiguous `init --no-prompt --model-deployment` fails before copying files or creating an environment |
 | `tier0/0.32-init-adopt-cancel-replacement.yaml` | Cancelling the template replacement picker leaves no project files or environment |
 | `tier0/0.33-invoke-a2a-version-validation.yaml` | A2A preview help and gating, explicit file versions when enabled, unsupported/empty versions, rejection on non-A2A protocols, and local A2A discovery |
-| `tier0/0.34-run-invoke-local-a2a.yaml` | Terminal-only A2A-only `run` and local 1.0 invoke: text, unchanged file bytes, raw JSON/SSE, allocated port, fixed `POST /a2a` route, no Foundry headers/state, and unsupported flags |
+| `tier0/0.34-init-byo-aks-infra.yaml` | BYO AKS Terraform rejection without mutations and local standard Bicep eject; no Azure or Kubernetes operations |
+| `tier0/0.35-run-invoke-local-a2a.yaml` | Terminal-only A2A-only `run` and local 1.0 invoke: text, unchanged file bytes, raw JSON/SSE, allocated port, fixed `POST /a2a` route, no Foundry headers/state, and unsupported flags |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
@@ -368,7 +369,7 @@ affinity caveats. It does not exercise translation or A2A hosted agent execution
 verify file bytes on the wire, or establish session/task lifecycle support. The
 shared Tier 2 agent is Responses-only and cannot validate A2A translation behavior.
 
-`0.34-run-invoke-local-a2a` seeds a minimal Python standard-library JSON-RPC echo
+`0.35-run-invoke-local-a2a` seeds a minimal Python standard-library JSON-RPC echo
 server and complete A2A 1.0 request files in its own instance directory. It drives
 `run` without `--no-client` to verify automatic graphical-client suppression,
 checks ready-time local invoke guidance, then invokes from a second terminal.
@@ -376,7 +377,7 @@ This is local CLI transport/rendering coverage, not an A2A SDK conformance test,
 Foundry deployment, translation, task lifecycle, or mixed-protocol client test.
 Version-selection policy is unchanged locally: preview off uses 0.3 without the
 version flag; preview on defaults messages to 1.0 and requires explicit file
-versions. `0.34` exercises preview-on 1.0 only; `0.33` and Go tests cover policy
+versions. `0.35` exercises preview-on 1.0 only; `0.33` and Go tests cover policy
 validation. Neither scenario claims timeout or task-cancellation coverage.
 The local fixture has no cloud cleanup; always stop the foreground run and finish
 both tester sessions, including on failure. Keep its files for inspection and
@@ -902,7 +903,7 @@ be run back to back in any order within a tier:
 - `files` and `sessions` are exercised as one lifecycle scenario per command
   group (rather than one file per subcommand) to avoid cross-scenario ordering
   dependencies — still one command at a time.
-- `azd ai agent run` blocks the terminal; `0.34-run-invoke-local-a2a.yaml` and
+- `azd ai agent run` blocks the terminal; `0.35-run-invoke-local-a2a.yaml` and
   `2.12-run-local-and-invoke-local.yaml` use two sessions (one to run, one to
   invoke `--local`) that share an
   allocated `{agent}` port (see

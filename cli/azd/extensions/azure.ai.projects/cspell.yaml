@@ -1,5 +1,6 @@
 import: ../../.vscode/cspell.yaml
 words:
+  - ABAC
   - alnum
   - exterrors
   - foundryproject

@@ -6,8 +6,12 @@
   azd defaults without prompting. Reject missing or ambiguous matches instead of
   falling back to another subscription.
 - Explain infrastructure generation and each interactive choice on screen,
-  without requiring `?` hints. Guide users through environment, region,
+  before subscription selection and without requiring `?` hints. Guide users through environment, region,
   resource naming, and access permissions, then explain the next steps.
+- Follow azd's yellow warning and red error conventions for human-readable
+  diagnostics, including provisioning guidance, prompt validation, schema
+  suggestions, and doctor readiness. Preserve uncolored JSON/none diagnostics,
+  structured error reporting, and `NO_COLOR` behavior.
 - Keep resource choices in each azd environment and use shared Bicep parameter
   substitutions, preventing generation for one environment from retargeting another.
   Migrate older shared literal choices without changing other environments'

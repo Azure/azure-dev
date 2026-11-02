@@ -123,6 +123,36 @@ func TestDoctorHumanReadableMissingDefaults(t *testing.T) {
 	}
 }
 
+func TestDoctorWarningColorDoesNotChangeReadinessOrJSON(t *testing.T) {
+	setHelpColor(t, true)
+	t.Setenv("NO_COLOR", "")
+	for _, format := range []string{"default", "json", "none"} {
+		t.Run(format, func(t *testing.T) {
+			f := newDefaultsFixture(t)
+			f.client.current = cuclient.Defaults{ModelDeployments: map[string]string{}}
+			stdout, stderr, err := f.execute(t.Context(), "doctor", "--output", format)
+			require.NoError(t, err)
+			assert.Empty(t, stderr)
+			switch format {
+			case "default":
+				assert.Contains(t, stdout, "\x1b[33m")
+				assert.Contains(t, stdout, "[WARN] Generative readiness: not ready")
+			case "json":
+				var result doctorResult
+				require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+				assert.False(t, result.Ready)
+				assert.NotContains(t, stdout, "\x1b")
+			case "none":
+				assert.Empty(t, stdout)
+			}
+		})
+	}
+	t.Setenv("NO_COLOR", "1")
+	text := formatDoctorResult(doctorResult{Missing: []string{"Missing model."}})
+	assert.Contains(t, text, "[WARN]")
+	assert.NotContains(t, text, "\x1b")
+}
+
 func TestDoctorHumanReadableFixUsesUpdatedMappings(t *testing.T) {
 	f := newDefaultsFixture(t)
 	f.client.current = cuclient.Defaults{ModelDeployments: map[string]string{}}

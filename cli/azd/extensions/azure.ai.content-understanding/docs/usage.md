@@ -525,6 +525,12 @@ explicit flags take precedence over the SDK environment defaults:
 Run `azd ai cu <command> --help` for command-specific options and common-use
 examples with descriptions. Help uses azd-style headings and colors when enabled;
 set `NO_COLOR=1` for plain text.
+Human-readable diagnostics follow azd conventions: warnings are yellow and
+errors are red. This includes provisioning guidance, retry validation, schema
+suggestion warnings, and doctor readiness warnings. Final command errors retain
+azd's structured host error channel. Explicit JSON/none modes leave extension
+diagnostic text uncolored, and structured result fields never contain added
+color escapes.
 
 ## Usage guidance
 

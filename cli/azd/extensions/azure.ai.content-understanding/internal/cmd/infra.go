@@ -28,7 +28,7 @@ func newInfraCommand(extCtx *azdext.ExtensionContext, open infraHostFactory) *co
 	var roles, noRoles, force bool
 	generate := &cobra.Command{Use: "generate", Short: "Generate the canonical azd/Bicep project", Args: cobra.NoArgs}
 	generate.Long = "Generate an azd/Bicep project without deploying Azure resources.\n" +
-		"Prompt for omitted environment, region, optional new-resource prefix, and role assignment.\n" +
+		"Explain the workflow before selecting a subscription, then prompt for omitted deployment choices.\n" +
 		"Explicit inputs take precedence. --no-prompt and --output json use context/defaults without the wizard.\n" +
 		"Use --subscription with a subscription name or ID to bypass subscription selection and defaults.\n" +
 		"Save resource choices in the selected azd environment and postprovision choices in its config.\n" +
@@ -141,6 +141,20 @@ func runInfraGenerate(
 	if err != nil {
 		return err
 	}
+	showGuidance := !extCtx.NoPrompt && extCtx.OutputFormat != "json" && extCtx.OutputFormat != "none"
+	if showGuidance {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(),
+			"azd ai cu infra generate -> %s\n\n"+
+				"`azd ai cu infra generate` generates an azd template. After the Microsoft Foundry resource "+
+				"is provisioned, its post-provision script can optionally deploy supported chat completion "+
+				"and embeddings models for prebuilt analyzers such as prebuilt-invoice and for custom analyzers.\n"+
+				"It doesn't create any Azure resources itself - you run azd up afterwards "+
+				"to do the actual provisioning.\n"+
+				"Choose the Azure subscription used to provision resources, then configure the deployment.\n\n",
+			output); err != nil {
+			return fmt.Errorf("write infrastructure introduction: %w", err)
+		}
+	}
 	ctx := azdext.WithAccessToken(cmd.Context())
 	host, err := open(cmd, extCtx)
 	if err != nil {
@@ -156,6 +170,12 @@ func runInfraGenerate(
 	}
 	choices.SubscriptionID, choices.SubscriptionName, choices.TenantID =
 		subscription.GetId(), subscription.GetName(), subscription.GetTenantId()
+	if showGuidance {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  Azure subscription: %s (%s)\n\n",
+			choices.SubscriptionName, choices.SubscriptionID); err != nil {
+			return fmt.Errorf("write infrastructure subscription: %w", err)
+		}
+	}
 	if endpoint != "" {
 		resolved, err := host.Resolve(ctx, subscription, endpoint)
 		if err != nil {
@@ -171,18 +191,6 @@ func runInfraGenerate(
 		}
 	}
 	if !extCtx.NoPrompt && extCtx.OutputFormat != "json" {
-		if extCtx.OutputFormat != "none" {
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(),
-				"azd ai cu infra generate -> %s\n  Azure subscription: %s (%s)\n\n"+
-					"`azd ai cu infra generate` generates an azd template. After the Microsoft Foundry resource "+
-					"is provisioned, its post-provision script can optionally deploy supported chat completion "+
-					"and embeddings models for prebuilt analyzers such as prebuilt-invoice and for custom analyzers.\n"+
-					"It doesn't create any Azure resources itself - you run azd up afterwards "+
-					"to do the actual provisioning.\n",
-				output, choices.SubscriptionName, choices.SubscriptionID); err != nil {
-				return fmt.Errorf("write infrastructure introduction: %w", err)
-			}
-		}
 		choices, err = host.PromptGeneration(ctx, choices, generationPrompts{
 			environment: extCtx.Environment == "",
 			location:    !cmd.Flags().Changed("location") && endpoint == "",
@@ -319,8 +327,8 @@ func runInfraPost(cmd *cobra.Command, extCtx *azdext.ExtensionContext, open infr
 	}
 	if request.Selection == "prompt" && extCtx.NoPrompt && !request.SetupComplete {
 		// Model setup is optional in postprovision; expose the actionable failure and continue basic configuration.
-		_, err := fmt.Fprintln(cmd.ErrOrStderr(),
-			"Warning: cu.modelSelection=prompt cannot run without prompts; "+
+		err := writeWarning(cmd, extCtx.OutputFormat,
+			"cu.modelSelection=prompt cannot run without prompts; "+
 				"use azd env config set cu.modelSelection with none, recommended, or model@version.")
 		if err != nil {
 			return err
@@ -335,7 +343,7 @@ func runInfraPost(cmd *cobra.Command, extCtx *azdext.ExtensionContext, open infr
 		return err
 	}
 	for _, warning := range result.Warnings {
-		if _, err := fmt.Fprintln(cmd.ErrOrStderr(), "Warning:", warning); err != nil {
+		if err := writeWarning(cmd, extCtx.OutputFormat, warning); err != nil {
 			return err
 		}
 	}

@@ -165,9 +165,9 @@ func formatDoctorResult(result doctorResult) string {
 	if result.Ready {
 		output.WriteString("\n[OK] Generative readiness: ready\n")
 	} else {
-		output.WriteString("\n[WARN] Generative readiness: not ready\n")
+		output.WriteString(warningText("default", "\n[WARN] Generative readiness: not ready\n"))
 		for _, missing := range result.Missing {
-			fmt.Fprintf(&output, "  - %s\n", missing)
+			output.WriteString(warningText("default", fmt.Sprintf("  - %s\n", missing)))
 		}
 		output.WriteString("\nConfigure mappings with azd ai cu defaults set --model MODEL=DEPLOYMENT.\n" +
 			"If the selected environment has cu.modelDeployments, run azd ai cu doctor --fix-defaults.\n" +

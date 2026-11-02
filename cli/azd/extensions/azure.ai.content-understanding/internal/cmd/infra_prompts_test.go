@@ -114,6 +114,50 @@ func TestInfraGeneratePromptCancellation(t *testing.T) {
 	assert.Equal(t, "close", host.calls[len(host.calls)-1])
 }
 
+func TestInfraGenerateOverviewBeforeSubscription(t *testing.T) {
+	for _, mode := range []string{"default", "json", "none", "no-prompt", "explicit subscription"} {
+		t.Run(mode, func(t *testing.T) {
+			host := infraCommandFixture(t)
+			var stdout, stderr bytes.Buffer
+			showOverview := mode == "default" || mode == "explicit subscription"
+			host.onSubscription = func() {
+				if showOverview {
+					assert.Contains(t, stdout.String(), "`azd ai cu infra generate` generates an azd template.")
+					assert.Contains(t, stdout.String(), "It doesn't create any Azure resources itself")
+					assert.Contains(t, stdout.String(), "Choose the Azure subscription used to provision resources")
+				} else {
+					assert.Empty(t, stdout.String())
+				}
+				assert.NotContains(t, stdout.String(), "Azure subscription: Subscription")
+				assert.Empty(t, host.prompts)
+			}
+			root := newRootCommandWithInfra(nil, func(*cobra.Command, *azdext.ExtensionContext) (infraHost, error) {
+				return host, nil
+			})
+			root.SetOut(&stdout)
+			root.SetErr(&stderr)
+			args := []string{"infra", "generate", "-d", filepath.Join(testutil.TempDir(t), "project"), "--models", "none"}
+			switch mode {
+			case "no-prompt":
+				args = append(args, "--no-prompt")
+			case "explicit subscription":
+				args = append(args, "--subscription", "Subscription")
+			default:
+				args = append(args, "--output", mode)
+			}
+			root.SetArgs(args)
+			require.NoError(t, root.ExecuteContext(t.Context()))
+			assert.Empty(t, stderr.String())
+			assert.Contains(t, host.calls, "subscription")
+			if showOverview {
+				text := stdout.String()
+				assert.Less(t, strings.Index(text, "It doesn't create any Azure resources itself"),
+					strings.Index(text, "Azure subscription: Subscription"))
+			}
+		})
+	}
+}
+
 func TestInfraGenerateOutputModes(t *testing.T) {
 	for _, format := range []string{"default", "json", "none"} {
 		t.Run(format, func(t *testing.T) {
@@ -269,6 +313,46 @@ func TestInfraGenerationHostPrompts(t *testing.T) {
 	assert.Equal(t, 2, strings.Count(output.String(), "Invalid input:"))
 	assert.NotContains(t, output.String(), "../invalid")
 	assert.NotContains(t, output.String(), "invalid prefix")
+}
+
+func TestInfraGenerationPromptDiagnosticColors(t *testing.T) {
+	setHelpColor(t, true)
+	for _, mode := range []string{"default", "json", "none", "NO_COLOR"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("NO_COLOR", "")
+			rpc, host, choices := generationPromptFixture(t)
+			host.outputFormat = mode
+			if mode == "NO_COLOR" {
+				t.Setenv("NO_COLOR", "1")
+				host.outputFormat = "default"
+			}
+			var output bytes.Buffer
+			host.output = &output
+			calls := 0
+			rpc.promptText = func(request *azdext.PromptRequest) (*azdext.PromptResponse, error) {
+				calls++
+				if calls == 1 {
+					return &azdext.PromptResponse{Value: "../invalid"}, nil
+				}
+				assert.Contains(t, request.GetOptions().GetHelpMessage(), "Invalid input:")
+				assert.NotContains(t, request.GetOptions().GetHelpMessage(), "\x1b")
+				return &azdext.PromptResponse{Value: "dev"}, nil
+			}
+			_, err := host.PromptGeneration(azdext.WithAccessToken(t.Context()), choices,
+				generationPrompts{environment: true, roles: true})
+			require.NoError(t, err)
+			text := output.String()
+			assert.Contains(t, text, "Invalid input:")
+			assert.Contains(t, text, "RBAC roles")
+			assert.NotContains(t, text, "../invalid")
+			if mode == "default" {
+				assert.Contains(t, text, "\x1b[31mInvalid input:")
+				assert.Contains(t, text, "\x1b[33mRBAC roles")
+			} else {
+				assert.NotContains(t, text, "\x1b")
+			}
+		})
+	}
 }
 
 func TestInfraGenerationVisibleGuidance(t *testing.T) {
@@ -453,6 +537,8 @@ func pickerModels() []infra.Model {
 }
 
 func TestInfraModelPickerSelections(t *testing.T) {
+	setHelpColor(t, true)
+	t.Setenv("NO_COLOR", "")
 	for _, scenario := range []string{"recommended", "none", "correct conflict", "ambiguous recommendation"} {
 		t.Run(scenario, func(t *testing.T) {
 			rpc := &infraRPC{confirm: func(request *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
@@ -472,6 +558,7 @@ func TestInfraModelPickerSelections(t *testing.T) {
 				assert.Contains(t, options.Choices[0].GetLabel(), "gpt-5.2@1 | completion | GlobalStandard")
 				if scenario == "ambiguous recommendation" {
 					assert.Contains(t, options.GetMessage(), "No models preselected:")
+					assert.Contains(t, options.GetMessage(), "\x1b[33mNo models preselected:")
 					assert.Contains(t, options.GetMessage(), "Select live CU-supported models to deploy")
 					for _, choice := range options.Choices {
 						assert.False(t, choice.GetSelected())
@@ -486,6 +573,7 @@ func TestInfraModelPickerSelections(t *testing.T) {
 						return &azdext.MultiSelectResponse{Values: options.Choices[:2]}, nil
 					}
 					assert.Contains(t, options.GetMessage(), "Invalid selection:")
+					assert.Contains(t, options.GetMessage(), "\x1b[31mInvalid selection:")
 					assert.Contains(t, options.GetMessage(), "A model family was selected more than once.")
 					assert.Contains(t, options.GetMessage(), "Select only one version of each family")
 					assert.Contains(t, options.GetMessage(), "Select live CU-supported models to deploy")
@@ -635,6 +723,7 @@ func TestInfraGenerateOutputFailure(t *testing.T) {
 func TestInfraGenerateIntroductionWriteFailure(t *testing.T) {
 	host := infraCommandFixture(t)
 	root := newRootCommandWithInfra(nil, func(*cobra.Command, *azdext.ExtensionContext) (infraHost, error) {
+		host.calls = append(host.calls, "open")
 		return host, nil
 	})
 	target := filepath.Join(testutil.TempDir(t), "project")
@@ -644,7 +733,7 @@ func TestInfraGenerateIntroductionWriteFailure(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, host.prompts)
 	assert.NoDirExists(t, target)
-	assert.Equal(t, "close", host.calls[len(host.calls)-1])
+	assert.Empty(t, host.calls)
 }
 
 func TestInfraGenerationThroughHostRPC(t *testing.T) {

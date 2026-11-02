@@ -67,7 +67,7 @@ func (h *azdInfraHost) PromptGeneration(
 					return err
 				}
 				reason := "Invalid input: " + err.Error()
-				if err := writeGuidance(reason); err != nil {
+				if err := writeGuidance(errorText(h.outputFormat, reason)); err != nil {
 					return err
 				}
 				help = guidance + "\n" + reason
@@ -125,12 +125,12 @@ func (h *azdInfraHost) PromptGeneration(
 		return choices, err
 	}
 	if prompts.roles {
-		if err := writeGuidance("RBAC roles\n" +
-			"Required for Entra-based auth from `azd ai cu`. The template assigns Cognitive Services User.\n" +
-			"Needs Owner, User Access Administrator, or Role Based Access Control Administrator on the subscription.\n" +
-			"Pick 'n' if you only have Contributor. If you skip assignment, ask an administrator to grant access " +
-			"unless you already have it.\n" +
-			"Provisioning and post-provision setup use Entra ID, not an API key."); err != nil {
+		if err := writeGuidance(warningText(h.outputFormat, "RBAC roles\n"+
+			"Required for Entra-based auth from `azd ai cu`. The template assigns Cognitive Services User.\n"+
+			"Needs Owner, User Access Administrator, or Role Based Access Control Administrator on the subscription.\n"+
+			"Pick 'n' if you only have Contributor. If you skip assignment, ask an administrator to grant access "+
+			"unless you already have it.\n"+
+			"Provisioning and post-provision setup use Entra ID, not an API key.")); err != nil {
 			return choices, err
 		}
 		response, err := h.client.Prompt().Confirm(ctx, &azdext.ConfirmRequest{Options: &azdext.ConfirmOptions{
@@ -167,7 +167,7 @@ func (h *azdInfraHost) promptModels(ctx context.Context, models []infra.Model) (
 		if !ok || (local.Code != "ambiguous_model_version" && local.Code != "no_deployable_models") {
 			return nil, err
 		}
-		options.Message = "No models preselected: " + local.Message + "\n" + message
+		options.Message = warningText(h.outputFormat, "No models preselected: "+local.Message) + "\n" + message
 	}
 	for _, model := range models {
 		label := fmt.Sprintf("%s | %s | %s", model.Selector(), model.Kind, model.SKU)
@@ -219,8 +219,8 @@ func (h *azdInfraHost) promptModels(ctx context.Context, models []infra.Model) (
 			}
 			return selected, ctx.Err()
 		}
-		options.Message = "Invalid selection: " + err.Error() +
-			" Select only one version of each family, or clear all selections for no models.\n" + message
+		options.Message = errorText(h.outputFormat, "Invalid selection: "+err.Error()+
+			" Select only one version of each family, or clear all selections for no models.") + "\n" + message
 		for _, choice := range options.Choices {
 			choice.Selected = slices.Contains(selectors, choice.Value)
 		}

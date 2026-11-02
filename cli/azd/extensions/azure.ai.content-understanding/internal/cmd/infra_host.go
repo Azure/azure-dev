@@ -40,9 +40,10 @@ type infraHost interface {
 type infraHostFactory func(*cobra.Command, *azdext.ExtensionContext) (infraHost, error)
 
 type azdInfraHost struct {
-	client   *azdext.AzdClient
-	noPrompt bool
-	output   io.Writer
+	client       *azdext.AzdClient
+	noPrompt     bool
+	output       io.Writer
+	outputFormat string
 }
 
 // Generation must work without a CU endpoint or project. Only the host channel is opened here.
@@ -55,7 +56,9 @@ func openInfraHost(cmd *cobra.Command, extCtx *azdext.ExtensionContext) (infraHo
 	if extCtx.OutputFormat == "json" || extCtx.OutputFormat == "none" {
 		output = io.Discard
 	}
-	return &azdInfraHost{client: client, noPrompt: extCtx.NoPrompt, output: output}, nil
+	return &azdInfraHost{
+		client: client, noPrompt: extCtx.NoPrompt, output: output, outputFormat: extCtx.OutputFormat,
+	}, nil
 }
 
 func (h *azdInfraHost) Close() { h.client.Close() }

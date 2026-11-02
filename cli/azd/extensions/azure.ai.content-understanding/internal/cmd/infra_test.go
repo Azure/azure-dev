@@ -32,13 +32,14 @@ import (
 )
 
 type infraCommandHost struct {
-	snapshot     infraSnapshot
-	capabilities *infraCommandCapabilities
-	calls        []string
-	selected     string
-	request      infra.PostRequest
-	prompts      []generationPrompts
-	prompt       func(infra.Choices) (infra.Choices, error)
+	snapshot       infraSnapshot
+	capabilities   *infraCommandCapabilities
+	calls          []string
+	selected       string
+	request        infra.PostRequest
+	prompts        []generationPrompts
+	prompt         func(infra.Choices) (infra.Choices, error)
+	onSubscription func()
 }
 
 func infraCommandFixture(t *testing.T) *infraCommandHost {
@@ -57,6 +58,9 @@ func infraCommandFixture(t *testing.T) *infraCommandHost {
 }
 func (f *infraCommandHost) Subscription(context.Context, bool, string) (*azdext.Subscription, error) {
 	f.calls = append(f.calls, "subscription")
+	if f.onSubscription != nil {
+		f.onSubscription()
+	}
 	return &azdext.Subscription{Id: "sub", TenantId: "tenant", Name: "Subscription"}, nil
 }
 func (f *infraCommandHost) Resolve(_ context.Context, _ *azdext.Subscription, resource string) (armclient.Account, error) {

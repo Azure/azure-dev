@@ -96,8 +96,12 @@ For a first deployment without optional models:
 azd ai cu infra generate --output-dir provision --models none
 ```
 
-The wizard explains each choice before asking. Essential guidance is visible
-without pressing `?`; invalid text input shows a reason before retrying.
+The command explains its purpose before asking you to select a subscription,
+then the wizard explains each deployment choice before asking. Essential
+guidance is visible without pressing `?`; invalid text input shows a reason
+before retrying. Human-readable warnings use azd's yellow convention and
+validation errors use red when terminal color is enabled. Set `NO_COLOR=1`
+for plain text; structured JSON results remain uncolored.
 
 | Question | What to provide |
 | --- | --- |
@@ -118,12 +122,14 @@ The user in this example has permission to assign roles.
 
 ```text
 $ azd ai cu infra generate --output-dir provision --models none
-? Select the Azure subscription for the generated Content Understanding project: Development (<subscription-id>)
 azd ai cu infra generate -> /work/provision
-  Azure subscription: Development (<subscription-id>)
 
 `azd ai cu infra generate` generates an azd template. After the Microsoft Foundry resource is provisioned, its post-provision script can optionally deploy supported chat completion and embeddings models for prebuilt analyzers such as prebuilt-invoice and for custom analyzers.
 It doesn't create any Azure resources itself - you run azd up afterwards to do the actual provisioning.
+Choose the Azure subscription used to provision resources, then configure the deployment.
+
+? Select the Azure subscription for the generated Content Understanding project: Development (<subscription-id>)
+  Azure subscription: Development (<subscription-id>)
 
 Input your azd environment name. An azd environment name:
   - lets azd store this deployment's config + outputs under .azure/<env>/ in the generated directory.

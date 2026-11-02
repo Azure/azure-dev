@@ -1049,7 +1049,7 @@ func (m *Manager) installDependencies(
 	}
 
 	var results []UpgradeResult
-	for _, dependency := range dependencies {
+	for _, dependency := range m.dependencyOrder(dependencies) {
 		installedDependency, err := m.GetInstalled(FilterOptions{Id: dependency.Id})
 		if err == nil && installedDependency != nil {
 			if deferDependencyUpdates || matchesVersionConstraint(dependency.Version, installedDependency.Version) {
@@ -1499,7 +1499,7 @@ func (m *Manager) evaluateDependencyChanges(
 ) []UpgradeResult {
 	var results []UpgradeResult
 
-	for _, dep := range dependencies {
+	for _, dep := range m.dependencyOrder(dependencies) {
 		installed, err := m.GetInstalled(FilterOptions{Id: dep.Id})
 		if err != nil || installed == nil {
 			// Not installed — handled by the parent's Install dependency loop.

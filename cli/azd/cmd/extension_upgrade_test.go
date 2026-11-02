@@ -1230,6 +1230,18 @@ func packTestPack(id, version string, dependencies ...extensions.ExtensionDepend
 	}}
 }
 
+// withPackRelease adds a release with dependencies to metadata and returns metadata.
+func withPackRelease(
+	metadata *extensions.ExtensionMetadata,
+	version string,
+	dependencies ...extensions.ExtensionDependency,
+) *extensions.ExtensionMetadata {
+	metadata.Versions = append(metadata.Versions, extensions.ExtensionVersion{
+		Version: version, Dependencies: dependencies,
+	})
+	return metadata
+}
+
 // packTestRecord returns an installed record from the test source.
 func packTestRecord(id, version string, dependencies ...extensions.ExtensionDependency) *extensions.Extension {
 	return &extensions.Extension{Id: id, Version: version, Source: "test", Dependencies: dependencies}
@@ -1288,6 +1300,10 @@ func TestExtensionUpdate_PackDependencyConstraints(t *testing.T) {
 	childRange := extensions.ExtensionDependency{Id: "test.child", Version: "~1.0.0"}
 	leafRange := extensions.ExtensionDependency{Id: "test.leaf", Version: "~1.0.0"}
 	innerRange := extensions.ExtensionDependency{Id: "test.inner", Version: "~1.0.0"}
+	leafV2 := extensions.ExtensionDependency{Id: "test.leaf", Version: "~2.0.0"}
+	innerV2 := extensions.ExtensionDependency{Id: "test.inner", Version: "~2.0.0"}
+	sharedV1 := extensions.ExtensionDependency{Id: "test.shared", Version: "~1.0.0"}
+	sharedV2 := extensions.ExtensionDependency{Id: "test.shared", Version: "~2.0.0"}
 	pack := packTestPack("test.pack", "1.0.0", childRange)
 	child := packTestExtension("test.child", "1.0.0", "1.1.0")
 	heldReason := `1.1.0 is available, but test.pack requires "~1.0.0"`
@@ -1410,6 +1426,52 @@ func TestExtensionUpdate_PackDependencyConstraints(t *testing.T) {
 			wantOutput:   []string{`(!) Warning: test.child 1.1.0 is installed, but test.pack requires "~1.0.0"`},
 		},
 		{
+			name: "explicit version already installed warns",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.1.0"),
+				"test.pack":  packTestRecord("test.pack", "1.0.0", childRange),
+			},
+			metadata:     []*extensions.ExtensionMetadata{pack, child},
+			args:         []string{"test.child"},
+			flags:        extensionUpgradeFlags{version: "1.1.0"},
+			wantVersions: map[string]string{"test.child": "1.1.0"},
+			wantWarnings: []string{`test.child 1.1.0 is installed, but test.pack requires "~1.0.0"`},
+		},
+		{
+			// test.a is processed while test.b still requires shared ~1.0.0; updating test.b resolves it.
+			name: "later update resolves shared member conflict",
+			installed: map[string]*extensions.Extension{
+				"test.a":      packTestRecord("test.a", "1.0.0", sharedV1),
+				"test.b":      packTestRecord("test.b", "1.0.0", sharedV1),
+				"test.shared": packTestRecord("test.shared", "1.0.0"),
+			},
+			metadata: []*extensions.ExtensionMetadata{
+				withPackRelease(packTestPack("test.a", "1.0.0", sharedV1), "2.0.0", sharedV2),
+				withPackRelease(packTestPack("test.b", "1.0.0", sharedV1), "2.0.0", sharedV2),
+				packTestExtension("test.shared", "1.0.0", "2.0.0"),
+			},
+			flags:        extensionUpgradeFlags{all: true},
+			terminal:     true,
+			wantVersions: map[string]string{"test.a": "2.0.0", "test.b": "2.0.0", "test.shared": "2.0.0"},
+			wantOutput:   []string{"Done: Updated test.shared dependency (1.0.0 → 2.0.0)"},
+		},
+		{
+			// The pack lists leaf first, but inner's installed record still requires leaf ~1.0.0.
+			name: "pack update updates dependent member first",
+			installed: map[string]*extensions.Extension{
+				"test.pack":  packTestRecord("test.pack", "1.0.0", leafRange, innerRange),
+				"test.inner": packTestRecord("test.inner", "1.0.0", leafRange),
+				"test.leaf":  packTestRecord("test.leaf", "1.0.0"),
+			},
+			metadata: []*extensions.ExtensionMetadata{
+				withPackRelease(packTestPack("test.pack", "1.0.0", leafRange, innerRange), "2.0.0", leafV2, innerV2),
+				withPackRelease(packTestPack("test.inner", "1.0.0", leafRange), "2.0.0", leafV2),
+				packTestExtension("test.leaf", "1.0.0", "2.0.0"),
+			},
+			args:         []string{"test.pack"},
+			wantVersions: map[string]string{"test.pack": "2.0.0", "test.inner": "2.0.0", "test.leaf": "2.0.0"},
+		},
+		{
 			name: "member update reports existing conflict",
 			installed: map[string]*extensions.Extension{
 				"test.child": packTestRecord("test.child", "1.1.0"),
@@ -1470,6 +1532,9 @@ func TestExtensionUpdate_PackDependencyConstraints(t *testing.T) {
 					require.Contains(t, rendered, want)
 				}
 				require.NotContains(t, rendered, "retry")
+				if test.wantErr == "" {
+					require.NotContains(t, rendered, "Failed")
+				}
 				return
 			}
 			var report struct {
@@ -1572,34 +1637,69 @@ func TestExtensionUpdate_FailureReportsCompletedDependencyUpdates(t *testing.T) 
 	}, report.Extensions[0].DependencyUpgrades)
 }
 
-func TestExtensionInstall_HeldSourceChangeUsesSelectedSource(t *testing.T) {
+func TestExtensionInstall_HeldSourceChange(t *testing.T) {
 	childRange := extensions.ExtensionDependency{Id: "test.child", Version: "~1.0.0"}
-	manager, sources := newPackTestManagerWithSources(t, map[string]*extensions.Extension{
-		"test.child": packTestRecord("test.child", "1.0.5"),
-		"test.pack":  packTestRecord("test.pack", "1.0.0", childRange),
-	}, map[string][]*extensions.ExtensionMetadata{
-		"test":  {packTestPack("test.pack", "1.0.0", childRange), packTestExtension("test.child", "1.0.5")},
-		"other": {packTestExtension("test.child", "1.0.0", "1.1.0")},
-	})
-	action := &extensionInstallAction{
-		args: []string{"test.child"},
-		flags: &extensionInstallFlags{
-			source: "other", force: true, global: &internal.GlobalCommandOptions{NoPrompt: true},
+	tests := []struct {
+		name        string
+		other       *extensions.ExtensionMetadata
+		wantErr     string
+		wantVersion string
+		wantSource  string
+	}{
+		{
+			name:        "selects compatible release from new source",
+			other:       packTestExtension("test.child", "1.0.0", "1.1.0"),
+			wantVersion: "1.0.0",
+			wantSource:  "other",
 		},
-		console: mockinput.NewMockConsole(), sourceManager: sources, extensionManager: manager,
+		{
+			name:        "fails without compatible release",
+			other:       packTestExtension("test.child", "2.0.0"),
+			wantErr:     `no compatible version of test.child satisfies all of its constraints: test.pack requires "~1.0.0"`,
+			wantVersion: "1.0.5",
+			wantSource:  "test",
+		},
 	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manager, sources := newPackTestManagerWithSources(t, map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.5"),
+				"test.pack":  packTestRecord("test.pack", "1.0.0", childRange),
+			}, map[string][]*extensions.ExtensionMetadata{
+				"test":  {packTestPack("test.pack", "1.0.0", childRange), packTestExtension("test.child", "1.0.5")},
+				"other": {test.other},
+			})
+			action := &extensionInstallAction{
+				args: []string{"test.child"},
+				flags: &extensionInstallFlags{
+					source: "other", force: true, global: &internal.GlobalCommandOptions{NoPrompt: true},
+				},
+				console: mockinput.NewMockConsole(), sourceManager: sources, extensionManager: manager,
+			}
 
-	_, err := action.Run(t.Context())
-	require.NoError(t, err)
-	record, err := manager.GetInstalled(extensions.FilterOptions{Id: "test.child"})
-	require.NoError(t, err)
-	require.Equal(t, "1.0.0", record.Version)
-	require.Equal(t, "other", record.Source)
+			_, err := action.Run(t.Context())
+			if test.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantErr)
+				suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+				require.True(t, ok)
+				require.Contains(t, suggestionErr.Suggestion, "--version 2.0.0")
+			}
+			record, err := manager.GetInstalled(extensions.FilterOptions{Id: "test.child"})
+			require.NoError(t, err)
+			require.Equal(t, test.wantVersion, record.Version)
+			require.Equal(t, test.wantSource, record.Source)
+		})
+	}
 }
 
 func TestExtensionInstall_PackDependencyConstraints(t *testing.T) {
 	childRange := extensions.ExtensionDependency{Id: "test.child", Version: "~1.0.0"}
 	otherRange := extensions.ExtensionDependency{Id: "test.other", Version: "~1.0.0"}
+	leafV1 := extensions.ExtensionDependency{Id: "test.leaf", Version: "~1.0.0"}
+	leafV2 := extensions.ExtensionDependency{Id: "test.leaf", Version: "~2.0.0"}
+	innerV2 := extensions.ExtensionDependency{Id: "test.inner", Version: "~2.0.0"}
 	tests := []struct {
 		name         string
 		installed    map[string]*extensions.Extension
@@ -1666,6 +1766,37 @@ func TestExtensionInstall_PackDependencyConstraints(t *testing.T) {
 			wantErr:      `test.other 2.0.0 is installed, but test.pack requires "~1.0.0"`,
 			wantVersions: map[string]string{"test.child": "1.0.0", "test.other": "2.0.0"},
 			wantOutput:   []string{"Done: Updated test.child dependency (1.0.0-beta.1 → 1.0.0)"},
+		},
+		{
+			// The pack lists leaf first, but inner's installed record still requires leaf ~1.0.0.
+			name: "pack updates dependent member first",
+			installed: map[string]*extensions.Extension{
+				"test.inner": packTestRecord("test.inner", "1.0.0", leafV1),
+				"test.leaf":  packTestRecord("test.leaf", "1.0.0"),
+			},
+			metadata: []*extensions.ExtensionMetadata{
+				packTestPack("test.pack", "1.0.0", leafV2, innerV2),
+				withPackRelease(packTestPack("test.inner", "1.0.0", leafV1), "2.0.0", leafV2),
+				packTestExtension("test.leaf", "1.0.0", "2.0.0"),
+			},
+			target:       "test.pack",
+			wantVersions: map[string]string{"test.inner": "2.0.0", "test.leaf": "2.0.0"},
+		},
+		{
+			name: "updated member warns about existing conflict",
+			installed: map[string]*extensions.Extension{
+				"test.other": packTestRecord("test.other", "1.0.0", extensions.ExtensionDependency{
+					Id: "test.leaf", Version: ">=2.0.0",
+				}),
+				"test.leaf": packTestRecord("test.leaf", "0.9.0"),
+			},
+			metadata: []*extensions.ExtensionMetadata{
+				packTestPack("test.pack", "1.0.0", leafV1),
+				packTestExtension("test.leaf", "0.9.0", "1.0.0", "2.0.0"),
+			},
+			target:       "test.pack",
+			wantVersions: map[string]string{"test.leaf": "1.0.0"},
+			wantOutput:   []string{`(!) Warning: test.leaf 1.0.0 is installed, but test.other requires ">=2.0.0"`},
 		},
 	}
 	for _, test := range tests {

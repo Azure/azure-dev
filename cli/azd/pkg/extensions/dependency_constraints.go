@@ -219,6 +219,48 @@ func TraceDependencyFailure(ctx context.Context, parentId string, result Upgrade
 	span.EndWithStatus(result.Error)
 }
 
+// orderDependentsFirst returns dependencies ordered so that one whose installed record declares a
+// constraint on another dependency in the list comes first. Updating it first replaces that
+// constraint, which could otherwise block the update of the other dependency. The declared order is
+// otherwise kept, including within cycles.
+func orderDependentsFirst(dependencies []ExtensionDependency, installed map[string]*Extension) []ExtensionDependency {
+	byId := make(map[string]*Extension, len(installed))
+	for id, record := range installed {
+		byId[strings.ToLower(id)] = record
+	}
+	dependsOn := func(dependent, dependency ExtensionDependency) bool {
+		record := byId[strings.ToLower(dependent.Id)]
+		return record != nil && !strings.EqualFold(dependent.Id, dependency.Id) &&
+			slices.ContainsFunc(record.Dependencies, func(declared ExtensionDependency) bool {
+				return strings.EqualFold(declared.Id, dependency.Id)
+			})
+	}
+
+	remaining := slices.Clone(dependencies)
+	ordered := make([]ExtensionDependency, 0, len(dependencies))
+	for len(remaining) > 0 {
+		// Take the first dependency that no remaining dependency depends on, or the first one in a cycle.
+		next := max(0, slices.IndexFunc(remaining, func(candidate ExtensionDependency) bool {
+			return !slices.ContainsFunc(remaining, func(other ExtensionDependency) bool {
+				return dependsOn(other, candidate)
+			})
+		}))
+		ordered = append(ordered, remaining[next])
+		remaining = slices.Delete(remaining, next, next+1)
+	}
+	return ordered
+}
+
+// dependencyOrder orders dependencies for processing with orderDependentsFirst. When installed
+// records cannot be read, it keeps the declared order and the per-dependency lookups report the error.
+func (m *Manager) dependencyOrder(dependencies []ExtensionDependency) []ExtensionDependency {
+	installed, err := m.ListInstalled()
+	if err != nil {
+		return dependencies
+	}
+	return orderDependentsFirst(dependencies, installed)
+}
+
 // pendingDependencies holds the dependencies declared by an extension that is being installed.
 type pendingDependencies struct {
 	id           string
@@ -316,8 +358,7 @@ type VersionHold struct {
 	// Latest is the release that would otherwise be selected.
 	Latest string
 	// Version is the version to select instead: the highest release that satisfies every
-	// constraint, or the installed version when no such release is newer. It is empty for an
-	// extension without an installed version when no release satisfies the constraints.
+	// constraint, or the installed version when no such release is newer.
 	Version string
 	// Constraints are the constraints that Latest does not satisfy.
 	Constraints []DependencyConstraint
@@ -331,7 +372,8 @@ func (h *VersionHold) Reason() string {
 // HoldForDependents returns a hold when constraints that installed extensions declare on extension
 // exclude latest, a release newer than installedVersion. A hold never selects a version older than
 // installedVersion; pass an empty installedVersion when the installed version must not limit the
-// selection. It returns nil when no hold applies.
+// selection. It returns nil when no hold applies, and a *DependencyConstraintsConflictError when
+// installedVersion is empty and no release satisfies the constraints.
 func (m *Manager) HoldForDependents(
 	extension *ExtensionMetadata,
 	latest string,
@@ -352,6 +394,9 @@ func (m *Manager) HoldForDependents(
 	best := bestVersionForConstraints(constraints, extension.Versions, m.azdVersion)
 	if best != nil && (installedVersion == "" || isNewerVersion(best.Version, installedVersion)) {
 		hold.Version = best.Version
+	}
+	if hold.Version == "" {
+		return nil, &DependencyConstraintsConflictError{DependencyId: extension.Id, Constraints: constraints}
 	}
 	return hold, nil
 }

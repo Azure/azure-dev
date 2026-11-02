@@ -1331,9 +1331,19 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			hold, err = a.extensionManager.HoldForDependents(selectedExtension, targetVersion, installedVersion)
 			if err != nil {
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				if conflictErr, ok := errors.AsType[*extensions.DependencyConstraintsConflictError](err); ok {
+					return nil, &internal.ErrorWithSuggestion{
+						Err: conflictErr,
+						Suggestion: fmt.Sprintf(
+							"%s To install it anyway, run the command again with %s.",
+							conflictErr.Suggestion(),
+							output.WithHighLightFormat("--version %s", targetVersion),
+						),
+					}
+				}
 				return nil, err
 			}
-			if hold != nil && hold.Version != "" {
+			if hold != nil {
 				targetVersion = hold.Version
 				versionPreference = hold.Version
 			}
@@ -1455,7 +1465,6 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		if hold != nil && extensionVersion.Version != hold.Latest {
 			a.console.Message(ctx, "  "+output.WithGrayFormat("%s", hold.Reason()))
 		}
-		displayWarnings(ctx, a.console, dependentConflictWarnings(a.extensionManager, selectedExtension.Id))
 
 		if !a.flags.noDependencies && len(extensionVersion.Dependencies) > 0 {
 			// Render dependencies flat with the parent step.
@@ -1468,6 +1477,14 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 				selectedExtension.SourceCategoryOrUnknown(),
 			)
 		}
+
+		// Warn about constraints left unsatisfied on the target or on any extension the install
+		// changed. They come from an explicit --version or predate the install, so they don't fail it.
+		warningIds := []string{selectedExtension.Id}
+		if installed, err := a.extensionManager.ListInstalled(); err == nil {
+			warningIds = append(warningIds, changedExtensionIds(installed, preInstalledVersions)...)
+		}
+		displayWarnings(ctx, a.console, dependentConflictWarnings(a.extensionManager, warningIds...))
 
 		displayExtensionUsageAndExamples(ctx, a.console, extensionVersion)
 	}
@@ -2769,42 +2786,66 @@ loop:
 
 // validateDependencyConstraints reports constraints that remain unsatisfied after the update and that
 // involve an extension the update processed, either as the declaring extension or as the
-// dependency. Constraints that the results already report as failed or skipped, and conflicts that
-// a warning for an explicitly requested version already covers, are not repeated.
+// dependency. Dependency conflicts found while processing are checked again here, because a later
+// update in the same command can resolve them: resolved conflicts are dropped and the rest are
+// displayed. Constraints that the results already report as failed or skipped, and conflicts that a
+// warning for an explicitly requested version already covers, are not repeated.
 func (a *extensionUpgradeAction) validateDependencyConstraints(
 	ctx context.Context,
 	results []extensions.UpgradeResult,
 	isJsonOutput bool,
 ) error {
+	touched := map[string]struct{}{}
+	var collect func(results []extensions.UpgradeResult)
+	collect = func(results []extensions.UpgradeResult) {
+		for _, result := range results {
+			touched[strings.ToLower(result.ExtensionId)] = struct{}{}
+			collect(result.DependencyUpgrades)
+		}
+	}
+	collect(results)
+
+	conflicts, err := a.extensionManager.DependencyConflicts(slices.Collect(maps.Keys(touched)))
+	if err != nil {
+		return fmt.Errorf("failed to validate extension dependencies: %w", err)
+	}
+	conflicted := map[string]struct{}{}
+	for _, conflict := range conflicts {
+		conflicted[strings.ToLower(conflict.Result.ExtensionId)] = struct{}{}
+	}
+
 	pairKey := func(parentId, dependencyId string) [2]string {
 		return [2]string{strings.ToLower(parentId), strings.ToLower(dependencyId)}
 	}
-	touched := map[string]struct{}{}
 	reported := map[[2]string]struct{}{}
 	warned := map[string]struct{}{}
+	var remaining []extensions.UpgradeResult
 	// Top-level results have no parent; their empty parent id never matches a conflict.
-	var collect func(parentId string, results []extensions.UpgradeResult)
-	collect = func(parentId string, results []extensions.UpgradeResult) {
+	var prune func(parentId string, results []extensions.UpgradeResult) []extensions.UpgradeResult
+	prune = func(parentId string, results []extensions.UpgradeResult) []extensions.UpgradeResult {
+		kept := results[:0]
 		for _, result := range results {
 			id := strings.ToLower(result.ExtensionId)
-			touched[id] = struct{}{}
+			if parentId != "" && isDependencyConflictResult(result) {
+				if _, ok := conflicted[id]; !ok {
+					continue
+				}
+				remaining = append(remaining, result)
+			}
 			if result.Status == extensions.UpgradeStatusFailed || result.Status == extensions.UpgradeStatusSkipped {
 				reported[pairKey(parentId, id)] = struct{}{}
 			}
 			if len(result.Warnings) > 0 {
 				warned[id] = struct{}{}
 			}
-			collect(result.ExtensionId, result.DependencyUpgrades)
+			result.DependencyUpgrades = prune(result.ExtensionId, result.DependencyUpgrades)
+			kept = append(kept, result)
 		}
+		return kept
 	}
-	collect("", results)
+	// Top-level results are never dropped, so pruning updates them in place.
+	prune("", results)
 
-	conflicts, err := a.extensionManager.DependencyConflicts(slices.Collect(maps.Keys(touched)))
-	if err != nil {
-		return fmt.Errorf("failed to validate extension dependencies: %w", err)
-	}
-
-	var added []extensions.UpgradeResult
 	for _, conflict := range conflicts {
 		dependencyId := conflict.Result.ExtensionId
 		if _, ok := reported[pairKey(conflict.ParentId, dependencyId)]; ok {
@@ -2816,15 +2857,43 @@ func (a *extensionUpgradeAction) validateDependencyConstraints(
 		extensions.TraceDependencyFailure(ctx, conflict.ParentId, conflict.Result)
 		owner := dependencyResultOwner(results, conflict.ParentId, dependencyId)
 		results[owner].DependencyUpgrades = append(results[owner].DependencyUpgrades, conflict.Result)
-		added = append(added, conflict.Result)
+		remaining = append(remaining, conflict.Result)
 	}
 
-	if !isJsonOutput && len(added) > 0 {
-		// The affected extensions were already rendered, so the conflicts get their own block.
+	if !isJsonOutput && len(remaining) > 0 {
+		// The affected extensions were already rendered, so the conflicts get their own block. Several
+		// parents can report the same conflict, which renders as identical rows.
+		seen := map[string]struct{}{}
+		remaining = slices.DeleteFunc(remaining, func(result extensions.UpgradeResult) bool {
+			key := strings.ToLower(result.ExtensionId) + "\x00" + result.Error.Error()
+			_, duplicate := seen[key]
+			seen[key] = struct{}{}
+			return duplicate
+		})
 		a.console.Message(ctx, "")
-		displayDependencyUpgradeResults(ctx, a.console, added, "")
+		displayDependencyUpgradeResults(ctx, a.console, remaining, "  ")
 	}
 	return nil
+}
+
+// isDependencyConflictResult reports whether result is a dependency that failed only because of
+// unsatisfied constraints.
+func isDependencyConflictResult(result extensions.UpgradeResult) bool {
+	return result.Status == extensions.UpgradeStatusFailed && extensions.IsDependencyConflict(result.Error)
+}
+
+// withoutDependencyConflicts returns results without dependency conflicts, which the update displays
+// after every extension is processed.
+func withoutDependencyConflicts(results []extensions.UpgradeResult) []extensions.UpgradeResult {
+	var kept []extensions.UpgradeResult
+	for _, result := range results {
+		if isDependencyConflictResult(result) {
+			continue
+		}
+		result.DependencyUpgrades = withoutDependencyConflicts(result.DependencyUpgrades)
+		kept = append(kept, result)
+	}
+	return kept
 }
 
 // dependencyResultOwner returns the index of the result that should report a conflict between
@@ -2856,17 +2925,17 @@ func dependencyResultOwner(results []extensions.UpgradeResult, parentId, depende
 }
 
 // dependentConflictWarnings describes the installed extensions whose constraints the installed
-// version of id does not satisfy. The warnings follow a completed change, so a failure to read
+// versions of ids do not satisfy. The warnings follow a completed change, so a failure to read
 // installed records only skips them.
-func dependentConflictWarnings(manager *extensions.Manager, id string) []string {
-	conflicts, err := manager.DependencyConflicts([]string{id})
+func dependentConflictWarnings(manager *extensions.Manager, ids ...string) []string {
+	conflicts, err := manager.DependencyConflicts(ids)
 	if err != nil {
-		log.Printf("skipping dependent constraint warnings for %s: %v", id, err)
+		log.Printf("skipping dependent constraint warnings for %s: %v", strings.Join(ids, ", "), err)
 		return nil
 	}
 	var warnings []string
 	for _, conflict := range conflicts {
-		if strings.EqualFold(conflict.Result.ExtensionId, id) {
+		if slices.ContainsFunc(ids, func(id string) bool { return strings.EqualFold(conflict.Result.ExtensionId, id) }) {
 			warnings = append(warnings, conflict.Result.Error.Error())
 		}
 	}
@@ -3066,7 +3135,9 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 					),
 				))
 			}
-			displayDependencyUpgradeResults(ctx, a.console, baseResult.DependencyUpgrades, "  ")
+			displayDependencyUpgradeResults(
+				ctx, a.console, withoutDependencyConflicts(baseResult.DependencyUpgrades), "  ",
+			)
 		}
 		return baseResult
 	}
@@ -3258,7 +3329,10 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	var targetVersionStr string
 	versionPreference := a.flags.version
 	var hold *extensions.VersionHold
-	if a.flags.version != "" && a.flags.version != "latest" {
+	// An explicit version is honored even when it leaves a dependent's constraint unsatisfied. Such
+	// conflicts are reported as warnings instead of failing the requested update.
+	explicitVersion := a.flags.version != "" && a.flags.version != "latest"
+	if explicitVersion {
 		targetVersionStr = a.flags.version
 	} else {
 		if candidate == nil || candidate.Version == nil {
@@ -3397,6 +3471,9 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			baseResult.SkipReason = hold.Reason()
 			skipNote = hold.Reason()
 		}
+		if explicitVersion {
+			baseResult.Warnings = dependentConflictWarnings(a.extensionManager, installed.Id)
+		}
 		if !isJsonOutput {
 			skipMsg := stepMsg + output.WithGrayFormat(
 				" (%s)", skipNote,
@@ -3404,7 +3481,10 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			a.console.StopSpinner(
 				ctx, skipMsg, input.StepSkipped,
 			)
-			displayDependencyUpgradeResults(ctx, a.console, baseResult.DependencyUpgrades, "  ")
+			displayWarnings(ctx, a.console, baseResult.Warnings)
+			displayDependencyUpgradeResults(
+				ctx, a.console, withoutDependencyConflicts(baseResult.DependencyUpgrades), "  ",
+			)
 		}
 		return baseResult
 	}
@@ -3432,9 +3512,9 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	}
 	baseResult.ToVersion = extVersion.Version
 	baseResult.DependencyUpgrades = depUpgrades
-	// An explicit --version can leave a dependent's constraint unsatisfied; report it without
-	// failing the requested update.
-	baseResult.Warnings = dependentConflictWarnings(a.extensionManager, installed.Id)
+	if explicitVersion {
+		baseResult.Warnings = dependentConflictWarnings(a.extensionManager, installed.Id)
+	}
 
 	// Handle promotion display and distinct telemetry
 	if isPromotion {
@@ -3469,7 +3549,9 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 			a.console.Message(ctx, "  "+output.WithGrayFormat("%s", hold.Reason()))
 		}
 		displayWarnings(ctx, a.console, baseResult.Warnings)
-		displayDependencyUpgradeResults(ctx, a.console, baseResult.DependencyUpgrades, "  ")
+		displayDependencyUpgradeResults(
+			ctx, a.console, withoutDependencyConflicts(baseResult.DependencyUpgrades), "  ",
+		)
 		displayExtensionUsageAndExamples(
 			ctx, a.console, extVersion,
 		)
@@ -4049,14 +4131,23 @@ func displayDependencyChanges(
 	if err != nil {
 		return
 	}
-	for _, id := range slices.Sorted(maps.Keys(installed)) {
-		record := installed[id]
-		previousVersion, existed := before[strings.ToLower(id)]
-		if strings.EqualFold(id, target.Id) || existed && previousVersion == record.Version {
+	for _, id := range changedExtensionIds(installed, before) {
+		if strings.EqualFold(id, target.Id) {
 			continue
 		}
+		record := installed[id]
+		previousVersion, existed := before[strings.ToLower(id)]
 		displayDependencyRow(ctx, console, record, previousVersion, existed, target.SourceCategoryOrUnknown(), "  ")
 	}
+}
+
+// changedExtensionIds returns the sorted ids of installed extensions that were added, or whose version
+// changed, since the before snapshot from installedVersionsById.
+func changedExtensionIds(installed map[string]*extensions.Extension, before map[string]string) []string {
+	return slices.DeleteFunc(slices.Sorted(maps.Keys(installed)), func(id string) bool {
+		previousVersion, existed := before[strings.ToLower(id)]
+		return existed && previousVersion == installed[id].Version
+	})
 }
 
 // displayDependencyRow renders one dependency of an install as installed, updated, or already

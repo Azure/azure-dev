@@ -26,14 +26,16 @@ type deploymentSafetyChecker interface {
 }
 
 type azureDeploymentSafetyChecker struct {
-	client                 *azdext.AzdClient
-	verifyOwnership        func(context.Context, string, map[string]string, string) error
-	verifyNoOwnedResources func(context.Context, string, map[string]string) error
+	client                     *azdext.AzdClient
+	verifyOwnership            func(context.Context, string, map[string]string, string) error
+	verifyNoDeploymentResource func(context.Context, string, map[string]string) error
+	verifyNoOwnedResources     func(context.Context, string, map[string]string) error
 }
 
 func newDeploymentSafetyChecker(client *azdext.AzdClient) deploymentSafetyChecker {
 	checker := &azureDeploymentSafetyChecker{client: client}
 	checker.verifyOwnership = checker.verifyPostgreSQLOwnership
+	checker.verifyNoDeploymentResource = checker.ensureNoDeploymentPostgreSQLResources
 	checker.verifyNoOwnedResources = checker.ensureNoOwnedPostgreSQLResources
 	return checker
 }
@@ -76,7 +78,61 @@ func (c *azureDeploymentSafetyChecker) EnsureCanGenerate(
 		}
 	}
 
+	if c.verifyNoDeploymentResource != nil {
+		if err := c.verifyNoDeploymentResource(ctx, envName, values); err != nil {
+			return err
+		}
+	}
 	return c.verifyNoOwnedResources(ctx, envName, values)
+}
+
+func (c *azureDeploymentSafetyChecker) ensureNoDeploymentPostgreSQLResources(
+	ctx context.Context,
+	_ string,
+	values map[string]string,
+) error {
+	response, err := c.client.Deployment().GetDeployment(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("reading the selected root deployment: %w", nonDisclosureError(err))
+	}
+	selected := response.GetDeployment()
+	if selected == nil || selected.GetId() == "" {
+		return nil
+	}
+	root, err := arm.ParseResourceID(selected.GetId())
+	if err != nil || !strings.EqualFold(root.ResourceType.String(), "Microsoft.Resources/deployments") ||
+		!strings.EqualFold(root.SubscriptionID, values[azureSubscriptionIDEnv]) {
+		return errors.New("the selected root deployment has an invalid subscription or resource identity")
+	}
+	resourceGroup := strings.TrimSpace(values[azureResourceGroupEnv])
+	if resourceGroup == "" {
+		resourceGroup = root.ResourceGroupName
+	}
+	if resourceGroup == "" {
+		return validationError(
+			"database_resource_group_identity_missing",
+			"the deployment resource group is unavailable",
+			"restore AZURE_RESOURCE_GROUP before retrying; password generation is blocked",
+		)
+	}
+	credential, err := c.credential(ctx, root.SubscriptionID)
+	if err != nil {
+		return err
+	}
+	resources := map[string]bool{}
+	if err := collectDeploymentResources(ctx, credential, root, resourceGroup, resources); err != nil {
+		return err
+	}
+	for resourceID := range resources {
+		identity, parseErr := arm.ParseResourceID(resourceID)
+		if parseErr != nil {
+			return errors.New("the selected deployment contains an invalid resource identity")
+		}
+		if strings.EqualFold(identity.ResourceType.String(), "Microsoft.DBforPostgreSQL/flexibleServers") {
+			return missingExistingDatabasePasswordError()
+		}
+	}
+	return nil
 }
 
 func (c *azureDeploymentSafetyChecker) ensureNoOwnedPostgreSQLResources(

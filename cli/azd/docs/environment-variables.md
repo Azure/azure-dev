@@ -238,13 +238,11 @@ Metadata requests are unauthenticated when no matching token is set.
 | `CU_DEFAULT_ANALYZER` | Process/config input for the default analysis analyzer; defaults to `prebuilt-layout`. `--analyzer` takes precedence. |
 | `CU_API_KEY` | Optional process-only resource key for CU data-plane commands. Must be nonempty and contain no whitespace or controls. Not accepted in saved azd configuration or environments, and never used for provisioning or cross-resource copy. Unset it to use Entra ID. |
 | `CU_ON_EXISTS` | Process-only policy for existing analysis result files: `error` (default), `skip`, or `reanalyze`. `--on-existing` takes precedence. |
-| `CU_DISABLE_AUTO_CONFIG` | Process-only switch to skip automatic CU configuration during postprovision, not model setup. `1`, `true`, `yes`, or `on` enable it, case-insensitively; other values disable it. Disabled by default. |
-| `CU_RESOURCE_NAME` | Bicep output containing the created or adopted account name, used by postprovision model setup. Existing projects' `FOUNDRY_RESOURCE_NAME` is read only when this output is absent. |
-| `CU_PROJECT_NAME` | Bicep output containing the project name when available; may be empty when using an existing resource. |
-| `CU_PROJECT_ENDPOINT` | Bicep output containing the project-scoped endpoint when available. It is not the resource endpoint required by CU commands. |
-| `CU_MODEL_DEPLOYMENTS` | Bicep output listing declared model deployments, not the CU service-default mappings. Subsequent live hook selections are saved in `infra/models.json`. |
-| `CU_MODEL_SELECTION` | Legacy saved-environment input, read only when `cu.modelSelection` is absent. New projects save `--models` in azd environment config instead. See [postprovision settings and compatibility](../extensions/azure.ai.content-understanding/docs/provisioning.md#generated-post-provision-behavior). |
-| `CU_CONFIG_SETUP_FORCE` | Legacy saved-environment input, read only when `cu.forceConfigurationSetup` is absent. New projects save the boolean `--force` choice in azd environment config instead. |
+
+Generated deployment outputs are not user-supplied settings. See the provisioning
+guide for [deployment outputs](../extensions/azure.ai.content-understanding/docs/provisioning.md#deployment-outputs),
+the [postprovision-only override](../extensions/azure.ai.content-understanding/docs/provisioning.md#postprovision-only-override),
+and [compatibility with existing generated projects](../extensions/azure.ai.content-understanding/docs/provisioning.md#compatibility-with-existing-generated-projects).
 
 ### azure.ai.routines
 

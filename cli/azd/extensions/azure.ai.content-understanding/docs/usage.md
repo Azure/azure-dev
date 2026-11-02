@@ -476,6 +476,12 @@ variables. `CU_ON_EXISTS` supplies the analysis existing-result policy when
 generated from flags into Bicep parameters and azd environment config; see
 [provisioning settings](provisioning.md#generated-post-provision-behavior).
 
+The table below covers CU runtime settings and shared azd context inputs.
+Provisioning state and controls are documented separately as
+[deployment outputs](provisioning.md#deployment-outputs),
+the [postprovision-only override](provisioning.md#postprovision-only-override),
+and [compatibility inputs](provisioning.md#compatibility-with-existing-generated-projects).
+
 | Variable | Purpose and default |
 | --- | --- |
 | `CU_ENDPOINT` | CU HTTPS resource endpoint; required unless supplied by another configuration source. |
@@ -483,7 +489,6 @@ generated from flags into Bicep parameters and azd environment config; see
 | `CU_DEFAULT_ANALYZER` | Analysis default; `prebuilt-layout` when no override is configured. |
 | `CU_API_KEY` | Optional process-only resource key for CU data-plane requests; unset means Entra ID. Always redacted. |
 | `CU_ON_EXISTS` | Existing-result policy: `error` (default), `skip`, or `reanalyze`; `--on-existing` takes precedence. |
-| `CU_DISABLE_AUTO_CONFIG` | Skip automatic postprovision CU configuration, not model setup. `1`, `true`, `yes`, or `on` enable it, case-insensitively; other values disable it. Default: disabled. |
 | `AZD_ENVIRONMENT` | Project-environment selection; `--environment` takes precedence. |
 | `AZURE_TENANT_ID` | Entra user-access tenant; not looked up in API-key mode. |
 | `AZURE_SUBSCRIPTION_ID` | Azure resource scope and Entra tenant lookup. |

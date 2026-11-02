@@ -214,8 +214,7 @@ necessarily fail resource provisioning. Inspect the hook output and run
 failures report incomplete setup and return a nonzero status.
 
 Existing CU environment configuration is preserved unless generation used
-`--force`. `CU_DISABLE_AUTO_CONFIG=true` skips automatic CU configuration,
-not model setup.
+`--force`.
 
 Generation saves postprovision choices in the selected environment's
 `cu` configuration, not in dedicated environment variables:
@@ -229,17 +228,73 @@ Successful model setup records the boolean `cu.modelSetupComplete` in azd
 environment configuration. Generation no longer writes `CU_MODEL_SETUP_COMPLETE`;
 any existing legacy value is preserved but is not used as the completion marker.
 Inspect the active marker and model mappings with `azd env config get cu`.
-Deployment outputs are listed in the
-[central environment-variable reference](../../../docs/environment-variables.md#azureaicontent-understanding).
 
-Existing generated projects remain supported: when the new config fields are
-absent, the hook reads saved `CU_MODEL_SELECTION` and `CU_CONFIG_SETUP_FORCE`.
-New fields take precedence, including explicit `false` values; malformed new
-fields fail rather than falling back. The hook accepts legacy
-`FOUNDRY_RESOURCE_NAME` only when `CU_RESOURCE_NAME` is absent.
+### Deployment outputs
+
+The generated Bicep declares the following outputs. After provisioning, azd
+saves them in the selected project's environment. They describe the provisioned
+resource; they are not user-supplied generation settings.
+
+Inspect the saved values from the generated directory:
+
+```bash
+azd env get-values
+```
+
+| Output | Purpose |
+| --- | --- |
+| `AZURE_LOCATION` | Deployment location. |
+| `AZURE_RESOURCE_GROUP` | Created or existing resource group containing the Foundry resource. |
+| `AZURE_SUBSCRIPTION_ID` | Subscription containing the resource. |
+| `AZURE_TENANT_ID` | Tenant of the deployment subscription. |
+| `CU_ENDPOINT` | Created or adopted resource endpoint, also used by CU commands as a runtime setting. |
+| `CU_RESOURCE_NAME` | Created or adopted account name, used by postprovision model setup. |
+| `CU_PROJECT_NAME` | Foundry project name when available; may be empty for an existing resource. |
+| `CU_PROJECT_ENDPOINT` | Project-scoped endpoint when available; not the resource endpoint required by CU commands. |
+| `CU_MODEL_DEPLOYMENTS` | Model deployments declared in Bicep, not CU service-default mappings. Subsequent live hook selections are saved in `infra/models.json`. |
+
+Saving these outputs does not export them into the parent shell. azd makes
+environment values available to hook subprocesses, and the postprovision
+command reads the selected azd environment. `CU_ENDPOINT` is listed in both
+this table and the [runtime environment-variable reference](../../../docs/environment-variables.md#azureaicontent-understanding)
+because it is both a deployment output and a supported user setting.
+
+### Postprovision-only override
+
+`CU_DISABLE_AUTO_CONFIG` is an optional process-only control for the
+postprovision hook, not a durable project setting or an interactive-answer
+handoff. Generation does not save it.
+
+Values `1`, `true`, `yes`, or `on` enable the override, case-insensitively.
+Other values, including an unset value, leave it disabled. When enabled, it
+skips automatic CU configuration, not resource provisioning or model setup.
+Bicep can still save the `CU_ENDPOINT` deployment output.
+
+For example, in Bash:
+
+```bash
+CU_DISABLE_AUTO_CONFIG=true azd up
+```
+
+### Compatibility with existing generated projects
+
+The hook still supports these saved azd environment values for older generated
+projects. New projects use the environment config settings and deployment
+outputs described above.
+
+| Legacy saved value | Compatibility behavior |
+| --- | --- |
+| `CU_MODEL_SELECTION` | Read only when `cu.modelSelection` is absent. New generation saves the `--models` choice in environment config. |
+| `CU_CONFIG_SETUP_FORCE` | Read only when `cu.forceConfigurationSetup` is absent. New generation saves the boolean `--force` choice in environment config. |
+| `FOUNDRY_RESOURCE_NAME` | Read only when the `CU_RESOURCE_NAME` output is absent. |
+
+New config fields take precedence, including explicit `false` values; malformed
+new fields fail rather than falling back.
 Regeneration updates legacy parameter substitutions to literal values while
 preserving old environment entries and editable templates. Use `--force` only
 when you also intend to replace those templates with the new CU-prefixed outputs.
+
+### Verify setup
 
 Verify the selected environment from the generated directory:
 

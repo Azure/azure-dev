@@ -80,6 +80,10 @@ func TestResolvedRunTargetNextSteps(t *testing.T) {
 		{"missing target", []nextstep.ServiceState{{Name: "other", Protocol: nextstep.ProtocolResponses}}},
 		{"conflicting activity", []nextstep.ServiceState{{Name: "agent", Protocol: nextstep.ProtocolActivity}}},
 		{"conflicting invocations", []nextstep.ServiceState{{Name: "agent", Protocol: nextstep.ProtocolInvocations, MultiProtocol: true}}},
+		{"two A2A services", []nextstep.ServiceState{
+			{Name: "other", Protocol: nextstep.ProtocolA2A},
+			{Name: "agent", Protocol: nextstep.ProtocolA2A},
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -89,12 +93,12 @@ func TestResolvedRunTargetNextSteps(t *testing.T) {
 			require.Equal(t, original, state.Services, "must not mutate the reloaded services")
 			for _, svc := range resolved.Services {
 				if svc.Name == "other" {
-					require.Equal(t, nextstep.ProtocolResponses, svc.Protocol)
+					require.Equal(t, original[0], svc)
 				}
 			}
 			suggestions := nextstep.ResolveAfterRun(resolved, "agent", func(string) bool { return true })
 			require.Len(t, suggestions, 1)
-			require.Equal(t, "azd ai agent invoke --local --protocol a2a --port 9091 'Hello!'", suggestions[0].Command)
+			require.Equal(t, "azd ai agent invoke 'agent' --local --protocol a2a --port 9091 'Hello!'", suggestions[0].Command)
 			require.Same(t, state, withResolvedRunTarget(state, "agent", false), "other routes must remain unchanged")
 		})
 	}

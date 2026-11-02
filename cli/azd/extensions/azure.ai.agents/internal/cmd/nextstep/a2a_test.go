@@ -73,15 +73,14 @@ func TestA2AOnlyNextStepsSuggestLocalInvoke(t *testing.T) {
 	state := &State{HasProjectEndpoint: true, Services: []ServiceState{{
 		Name: "agent", Protocol: protocol, MultiProtocol: multi,
 	}}}
-	for _, suggestions := range [][]Suggestion{
-		ResolveAfterInit(state, nil), ResolveAfterRun(state, "agent", nil),
-	} {
-		commands := make([]string, 0, len(suggestions))
-		for _, suggestion := range suggestions {
-			commands = append(commands, suggestion.Command)
-		}
-		require.Contains(t, commands, "azd ai agent invoke --local --protocol a2a 'Hello!'")
-	}
+	require.Contains(t, ResolveAfterInit(state, nil), Suggestion{
+		Command:     "azd ai agent invoke --local --protocol a2a 'Hello!'",
+		Description: "test it in another terminal", Priority: 6,
+	})
+	require.Equal(t, []Suggestion{{
+		Command:     "azd ai agent invoke 'agent' --local --protocol a2a 'Hello!'",
+		Description: "send a sample request to the running agent", Priority: 10,
+	}}, ResolveAfterRun(state, "agent", nil))
 	remote := ResolveAfterDeploy(state, nil, nil)
 	require.Contains(t, remote, Suggestion{
 		Command: "azd ai agent invoke agent '<payload>'", Description: "test the deployment", Priority: 11,
@@ -102,28 +101,48 @@ func TestA2AOnlyNextStepsSuggestLocalInvoke(t *testing.T) {
 func TestLocalA2AGuidancePortAndPreview(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name    string
-		port    int
-		preview bool
-		want    string
+		name       string
+		service    string
+		serviceArg string
+		port       int
+		preview    bool
+		want       string
 	}{
-		{"legacy default", 0, false, "'Hello!'"},
-		{"legacy custom", 9090, false, "--port 9090 'Hello!'"},
-		{"preview default", 0, true, "--a2a-version 1.0 'Hello!'"},
-		{"preview custom", 9091, true, "--port 9091 --a2a-version 1.0 'Hello!'"},
+		{"legacy default", "agent", "'agent'", 0, false, "'Hello!'"},
+		{"legacy custom", "agent", "'agent'", 9090, false, "--port 9090 'Hello!'"},
+		{"preview default", "agent", "'agent'", 0, true, "--a2a-version 1.0 'Hello!'"},
+		{"preview custom", "agent", "'agent'", 9091, true, "--port 9091 --a2a-version 1.0 'Hello!'"},
+		{"legacy quoted service", "agent's service", `'agent'\''s service'`, 9090, false, "--port 9090 'Hello!'"},
+		{"preview quoted service", "agent's service", `'agent'\''s service'`,
+			9091, true, "--port 9091 --a2a-version 1.0 'Hello!'"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			state := &State{
-				LocalPort: tc.port, A2APreviewEnabled: tc.preview,
+				LocalPort: tc.port, A2APreviewEnabled: tc.preview, HasProjectEndpoint: true,
 				HasOpenAPI: true, OpenAPIPayload: `{"stale":"invocations"}`,
-				Services: []ServiceState{{Name: "agent", Protocol: ProtocolA2A}},
+				Services: []ServiceState{
+					{Name: "other", Protocol: ProtocolA2A},
+					{Name: tc.service, Protocol: ProtocolA2A},
+				},
 			}
-			got := ResolveAfterRun(state, "agent", func(string) bool { return true })
+			got := ResolveAfterRun(state, tc.service, func(string) bool { return true })
 			require.Equal(t, []Suggestion{{
-				Command:     "azd ai agent invoke --local --protocol a2a " + tc.want,
+				Command:     "azd ai agent invoke " + tc.serviceArg + " --local --protocol a2a " + tc.want,
 				Description: "send a sample request to the running agent", Priority: 10,
 			}}, got)
+			// Init has no selected run service, including in its manual-vars branch.
+			for _, missing := range [][]string{nil, {"API_KEY"}} {
+				state.MissingManualVars = missing
+				found := false
+				for _, suggestion := range ResolveAfterInit(state, nil) {
+					if strings.Contains(suggestion.Command, "invoke") {
+						require.Equal(t, "azd ai agent invoke --local --protocol a2a "+tc.want, suggestion.Command)
+						found = true
+					}
+				}
+				require.True(t, found)
+			}
 		})
 	}
 }

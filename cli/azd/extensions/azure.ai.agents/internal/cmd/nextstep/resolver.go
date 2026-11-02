@@ -642,7 +642,7 @@ func ResolveAfterRun(state *State, serviceName string, readmeExists func(relativ
 	}
 	if svc != nil && svc.Protocol == ProtocolA2A {
 		return []Suggestion{{
-			Command:     localA2AInvokeCommand(state),
+			Command:     localA2AInvokeCommand(state, serviceName),
 			Description: "send a sample request to the running agent",
 			Priority:    10,
 		}}
@@ -1123,7 +1123,7 @@ func appendInvokeLocalSecondary(
 	}
 	if svc != nil && svc.Protocol == ProtocolA2A {
 		out = append(out, Suggestion{
-			Command:     localA2AInvokeCommand(state),
+			Command:     localA2AInvokeCommand(state, ""),
 			Description: "test it in another terminal",
 			Priority:    priority,
 		})
@@ -1144,7 +1144,11 @@ func appendInvokeLocalSecondary(
 
 // localA2AInvokeCommand uses text input rather than an invocations payload.
 // A2A 1.0 is preview-only; legacy 0.3 must omit the gated version flag.
-func localA2AInvokeCommand(state *State) string {
+func localA2AInvokeCommand(state *State, serviceName string) string {
+	serviceArg := ""
+	if serviceName != "" {
+		serviceArg = " " + shellEscapeSingleQuoted(serviceName)
+	}
 	portFlag := ""
 	if state.LocalPort != 0 {
 		portFlag = fmt.Sprintf(" --port %d", state.LocalPort)
@@ -1153,7 +1157,7 @@ func localA2AInvokeCommand(state *State) string {
 	if state.A2APreviewEnabled {
 		versionFlag = " --a2a-version 1.0"
 	}
-	return fmt.Sprintf("azd ai agent invoke --local --protocol a2a%s%s 'Hello!'", portFlag, versionFlag)
+	return fmt.Sprintf("azd ai agent invoke%s --local --protocol a2a%s%s 'Hello!'", serviceArg, portFlag, versionFlag)
 }
 
 // shellEscapeSingleQuoted wraps s in single quotes for POSIX shells.

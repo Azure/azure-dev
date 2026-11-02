@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
@@ -195,10 +196,14 @@ func (a *InvokeAction) a2aLocal(ctx context.Context, version string) error {
 		return fmt.Errorf("POST %s returned HTTP %d: redirects are not followed for local A2A", reqURL, resp.StatusCode)
 	}
 	if err := handleA2AResponseTo(w, resp, "local", raw, version); err != nil {
+		if !raw && resp.StatusCode >= 400 {
+			_ = printNextIfTerminal(w, nextstep.ResolveAfterInvoke(nil, nextstep.InvokeLocal, "", &nextstep.InvokeFailure{}))
+		}
 		return err
 	}
 	if !raw {
 		printInvokeTiming(w, time.Since(start))
+		_ = printNextIfTerminal(w, nextstep.ResolveAfterInvoke(nil, nextstep.InvokeLocal, "", nil))
 	}
 	return nil
 }

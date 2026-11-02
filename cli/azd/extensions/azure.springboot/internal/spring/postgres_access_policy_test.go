@@ -83,6 +83,24 @@ func (tx *postgresPolicyTx) Exec(_ context.Context, statement string, _ ...any) 
 	return pgconn.NewCommandTag(""), nil
 }
 
+func TestVerifyEntraRoleMappingUsesCatalogRoleName(t *testing.T) {
+	tx := &postgresPolicyTx{
+		row: func(query string, args ...any) pgx.Row {
+			require.Contains(t, query, "WHERE rolname = $1")
+			require.NotContains(t, query, "rolename")
+			require.Equal(t, []any{"petclinic_app"}, args)
+			return postgresPolicyRow{values: []any{"expected-object", "service", int32(0)}}
+		},
+	}
+
+	require.NoError(t, verifyEntraRoleMapping(
+		t.Context(),
+		tx,
+		"petclinic_app",
+		"expected-object",
+	))
+}
+
 func applicationPolicyTx(t *testing.T, objects, schemas [][]any) *postgresPolicyTx {
 	t.Helper()
 	return &postgresPolicyTx{

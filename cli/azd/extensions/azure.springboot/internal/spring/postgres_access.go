@@ -776,7 +776,7 @@ func verifyEntraRoleMapping(
 		ctx,
 		`SELECT objectid, principaltype, isadmin
 		 FROM pg_catalog.pgaadauth_list_principals(false)
-		 WHERE rolename = $1`,
+		 WHERE rolname = $1`,
 		username,
 	).Scan(&objectID, &principalType, &isAdmin)
 	if err != nil {

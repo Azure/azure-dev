@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -887,6 +888,25 @@ func TestExistingProjectEjectionDoesNotEmitReplacedRegistryState(t *testing.T) {
 			assertProjectEjectionOmitsConnections(t, dir)
 		})
 	}
+}
+
+func TestWriteExistingProjectBicepModuleNamedMonitoringDoesNotCollide(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, writeExistingProjectBicep(
+		dir, "monitoring", map[string]any{"deployments": []synthesis.Deployment{}}, projectEjectAcrNone, nil,
+	))
+
+	entrypoint, err := os.ReadFile(filepath.Join(dir, "monitoring.bicep"))
+	require.NoError(t, err)
+	moduleTemplate, err := os.ReadFile(filepath.Join(dir, "modules", "monitoring.bicep"))
+	require.NoError(t, err)
+	embedded, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/modules/monitoring.bicep")
+	require.NoError(t, err)
+
+	assert.Equal(t, string(embedded), string(moduleTemplate), "monitoring module must be the embedded template")
+	assert.NotEqual(t, string(embedded), string(entrypoint), "entrypoint must not be the monitoring module")
+	assert.Contains(t, string(entrypoint), "modules/monitoring.bicep")
+	assert.FileExists(t, filepath.Join(dir, "modules", "monitoring-connection.bicep"))
 }
 
 func TestWriteExistingProjectBicepAcrModes(t *testing.T) {

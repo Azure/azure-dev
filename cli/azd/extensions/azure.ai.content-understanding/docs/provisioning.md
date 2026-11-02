@@ -243,21 +243,32 @@ azd env get-values
 
 | Output | Purpose |
 | --- | --- |
-| `AZURE_LOCATION` | Deployment location. |
-| `AZURE_RESOURCE_GROUP` | Created or existing resource group containing the Foundry resource. |
-| `AZURE_SUBSCRIPTION_ID` | Subscription containing the resource. |
-| `AZURE_TENANT_ID` | Tenant of the deployment subscription. |
-| `CU_ENDPOINT` | Created or adopted resource endpoint, also used by CU commands as a runtime setting. |
-| `CU_RESOURCE_NAME` | Created or adopted account name, used by postprovision model setup. |
-| `CU_PROJECT_NAME` | Foundry project name when available; may be empty for an existing resource. |
-| `CU_PROJECT_ENDPOINT` | Project-scoped endpoint when available; not the resource endpoint required by CU commands. |
-| `CU_MODEL_DEPLOYMENTS` | Model deployments declared in Bicep, not CU service-default mappings. Subsequent live hook selections are saved in `infra/models.json`. |
+| `_CU_PROVISIONED_LOCATION` | Deployment location. |
+| `_CU_PROVISIONED_RESOURCE_GROUP` | Created or existing resource group containing the Foundry resource. |
+| `_CU_PROVISIONED_SUBSCRIPTION_ID` | Subscription containing the resource. |
+| `_CU_PROVISIONED_TENANT_ID` | Tenant of the deployment subscription, not necessarily the signed-in user's access tenant. Postprovision looks up the access tenant through azd. |
+| `_CU_PROVISIONED_ENDPOINT` | Created or adopted resource endpoint, used by postprovision setup. |
+| `_CU_PROVISIONED_RESOURCE_NAME` | Created or adopted account name, used by postprovision model setup. |
+| `_CU_PROVISIONED_PROJECT_NAME` | Foundry project name when available; may be empty for an existing resource. |
+| `_CU_PROVISIONED_PROJECT_ENDPOINT` | Project-scoped endpoint when available; not the resource endpoint required by CU commands. |
+| `_CU_PROVISIONED_MODEL_DEPLOYMENTS` | Model deployments declared in Bicep, not CU service-default mappings. Subsequent live hook selections are saved in `infra/models.json`. |
 
 Saving these outputs does not export them into the parent shell. azd makes
 environment values available to hook subprocesses, and the postprovision
-command reads the selected azd environment. `CU_ENDPOINT` is listed in both
-this table and the [runtime environment-variable reference](../../../docs/environment-variables.md#azureaicontent-understanding)
-because it is both a deployment output and a supported user setting.
+command reads the selected azd environment.
+
+The `_CU_PROVISIONED_*` prefix identifies deployment results, not user settings.
+Generation still saves standard azd inputs such as `AZURE_ENV_NAME`,
+`AZURE_LOCATION`, `AZURE_SUBSCRIPTION_ID`, and `AZURE_TENANT_ID`; these support
+azd's deployment context and are not Bicep outputs. CU commands use provisioned
+subscription and resource-group metadata as saved scope hints, with explicit
+flags and process scope inputs taking precedence.
+
+Automatic postprovision configuration copies the provisioned resource endpoint
+to the runtime setting `CU_ENDPOINT`, unless existing CU configuration is
+preserved. `_CU_PROVISIONED_ENDPOINT` is not a runtime endpoint alias. For
+user-supplied settings, see the
+[runtime environment-variable reference](../../../docs/environment-variables.md#azureaicontent-understanding).
 
 ### Postprovision-only override
 
@@ -268,7 +279,9 @@ handoff. Generation does not save it.
 Values `1`, `true`, `yes`, or `on` enable the override, case-insensitively.
 Other values, including an unset value, leave it disabled. When enabled, it
 skips automatic CU configuration, not resource provisioning or model setup.
-Bicep can still save the `CU_ENDPOINT` deployment output.
+Bicep still saves `_CU_PROVISIONED_ENDPOINT`, but it no longer writes the
+runtime setting `CU_ENDPOINT`. When automatic configuration is disabled,
+configure `CU_ENDPOINT` yourself or pass `--endpoint` to CU commands.
 
 For example, in Bash:
 
@@ -286,13 +299,18 @@ outputs described above.
 | --- | --- |
 | `CU_MODEL_SELECTION` | Read only when `cu.modelSelection` is absent. New generation saves the `--models` choice in environment config. |
 | `CU_CONFIG_SETUP_FORCE` | Read only when `cu.forceConfigurationSetup` is absent. New generation saves the boolean `--force` choice in environment config. |
-| `FOUNDRY_RESOURCE_NAME` | Read only when the `CU_RESOURCE_NAME` output is absent. |
+| `CU_ENDPOINT` | Used as the postprovision endpoint only when `_CU_PROVISIONED_ENDPOINT` is absent. Remains a supported runtime setting. |
+| `CU_RESOURCE_NAME`, `FOUNDRY_RESOURCE_NAME` | Read in this order only when `_CU_PROVISIONED_RESOURCE_NAME` is absent. |
+| `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP` | Saved scope fallbacks when the corresponding `_CU_PROVISIONED_*` outputs are absent. Standard azd inputs remain supported. |
 
 New config fields take precedence, including explicit `false` values; malformed
-new fields fail rather than falling back.
+new fields fail rather than falling back. Postprovision also checks new output
+names by presence: an empty or invalid required output fails instead of using a
+stale legacy value.
 Regeneration updates legacy parameter substitutions to literal values while
 preserving old environment entries and editable templates. Use `--force` only
-when you also intend to replace those templates with the new CU-prefixed outputs.
+when you also intend to replace those templates with the new
+`_CU_PROVISIONED_*` outputs. Old saved values are not automatically deleted.
 
 ### Verify setup
 

@@ -481,6 +481,11 @@ Provisioning state and controls are documented separately as
 [deployment outputs](provisioning.md#deployment-outputs),
 the [postprovision-only override](provisioning.md#postprovision-only-override),
 and [compatibility inputs](provisioning.md#compatibility-with-existing-generated-projects).
+`_CU_PROVISIONED_*` values are saved deployment metadata, not runtime process
+inputs. Postprovision setup writes the runtime `CU_ENDPOINT` separately;
+`_CU_PROVISIONED_ENDPOINT` is not an alias for it. Saved provisioned subscription
+and resource-group values supply scope hints without overriding explicit flags
+or process scope inputs.
 
 | Variable | Purpose and default |
 | --- | --- |

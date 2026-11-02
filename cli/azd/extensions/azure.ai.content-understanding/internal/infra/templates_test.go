@@ -28,12 +28,12 @@ func choices() Choices {
 }
 
 func TestCanonicalInfrastructureAssets(t *testing.T) {
-	// Source asset hashes, with native hook updates for explicit environment binding.
+	// Source asset hashes, with native hook and deployment-output adaptations.
 	golden := map[string]string{
 		"azure.yaml":                  "1d88ddc6e2fecf9e4ac03e277c401a7db6417c43dee3b4fc2d7b3a4a719f73d8",
 		"hooks/postprovision.ps1":     "c52122fa5d528fc481c8d28a41ce652abad9c0562bfa707d4a8c83718cffead6",
 		"hooks/postprovision.sh":      "8929a55610183fd0400af38463d7812a17c979a207de8d346068f721e07f59f8",
-		"infra/main.bicep":            "1c720ef1f8e9ef5c5b85a7a4e85cadd6598bc60336b6241ed3a5e6a213ad4c9f",
+		"infra/main.bicep":            "b1174d9bf97276dc25e2aba92c184b01e34dd278c6ea3f830cf8ed86a4f554ae",
 		"infra/models.json":           "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
 		"infra/modules/foundry.bicep": "18fd2b5d1ca12e75946ae317a08857f61fc5cdb05b329337036345521630c212",
 	}
@@ -63,6 +63,36 @@ func TestCanonicalInfrastructureAssets(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, os.FileMode(0o111), info.Mode().Perm()&0o111)
 	}
+}
+
+func TestProvisionedOutputContract(t *testing.T) {
+	body, err := assets.ReadFile("assets/infra/main.bicep")
+	require.NoError(t, err)
+	outputs := map[string]string{}
+	for line := range strings.SplitSeq(string(body), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == "output" {
+			require.GreaterOrEqual(t, len(fields), 3)
+			outputs[fields[1]] = fields[2]
+		}
+	}
+	assert.Equal(t, map[string]string{
+		"_CU_PROVISIONED_LOCATION": "string", "_CU_PROVISIONED_RESOURCE_GROUP": "string",
+		"_CU_PROVISIONED_TENANT_ID": "string", "_CU_PROVISIONED_SUBSCRIPTION_ID": "string",
+		"_CU_PROVISIONED_RESOURCE_NAME": "string", "_CU_PROVISIONED_PROJECT_NAME": "string",
+		"_CU_PROVISIONED_PROJECT_ENDPOINT": "string", "_CU_PROVISIONED_ENDPOINT": "string",
+		"_CU_PROVISIONED_MODEL_DEPLOYMENTS": "array",
+	}, outputs)
+	directory := testutil.TempDir(t)
+	_, err = Materialize(t.Context(), directory, choices(), false)
+	require.NoError(t, err)
+	// #nosec G304 -- Reads only the generated test environment.
+	environment, err := os.ReadFile(filepath.Join(directory, ".azure/dev/.env"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(environment), "_CU_PROVISIONED_", "generation must not invent deployment outputs")
+	assert.Contains(t, string(environment), `AZURE_LOCATION="eastus2"`)
+	assert.Contains(t, string(environment), `AZURE_SUBSCRIPTION_ID="sub"`)
+	assert.Contains(t, string(environment), `AZURE_TENANT_ID="tenant"`)
 }
 
 func TestGenerationReuseForceAndPreflight(t *testing.T) {

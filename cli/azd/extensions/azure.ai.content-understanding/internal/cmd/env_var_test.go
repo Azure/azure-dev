@@ -187,7 +187,12 @@ func TestEnvironmentVariableDocumentationCoversListedInputs(t *testing.T) {
 		"(https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md)")
 	guide, err := os.ReadFile("../../docs/usage.md")
 	require.NoError(t, err)
+	provisioning, err := os.ReadFile("../../docs/provisioning.md")
+	require.NoError(t, err)
 	for _, variable := range listEnvironmentVariables(func(string) (string, bool) { return "", true }) {
-		assert.Contains(t, string(guide), "`"+variable.Name+"`")
+		assert.Contains(t, string(guide)+"\n"+string(provisioning), "`"+variable.Name+"`")
 	}
+	assert.Contains(t, string(guide), "(provisioning.md#postprovision-only-override)")
+	assert.NotContains(t, string(guide), "| `CU_DISABLE_AUTO_CONFIG` |")
+	assert.Contains(t, string(provisioning), "`CU_DISABLE_AUTO_CONFIG`")
 }

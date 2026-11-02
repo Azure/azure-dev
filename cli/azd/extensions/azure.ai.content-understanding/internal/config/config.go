@@ -128,8 +128,10 @@ func resolve(
 	}
 	result.TenantID = first(options.TenantID, process["AZURE_TENANT_ID"], values["AZURE_TENANT_ID"])
 	result.Scope, err = ResolveResourceScope(options.Resource, options.SubscriptionID, options.ResourceGroup, ResourceScope{
-		SubscriptionID: first(process["AZURE_SUBSCRIPTION_ID"], values["AZURE_SUBSCRIPTION_ID"]),
-		ResourceGroup:  first(process["AZURE_RESOURCE_GROUP"], values["AZURE_RESOURCE_GROUP"]),
+		SubscriptionID: first(process["AZURE_SUBSCRIPTION_ID"],
+			ProvisionedValue(values, "SUBSCRIPTION_ID", "AZURE_SUBSCRIPTION_ID")),
+		ResourceGroup: first(process["AZURE_RESOURCE_GROUP"],
+			ProvisionedValue(values, "RESOURCE_GROUP", "AZURE_RESOURCE_GROUP")),
 	})
 	if err != nil {
 		return result, err
@@ -165,6 +167,16 @@ func validateRuntime(process map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// ProvisionedValue uses saved deployment metadata before legacy names, including explicitly empty values.
+func ProvisionedValue(values map[string]string, name string, legacy ...string) string {
+	for _, key := range append([]string{"_CU_PROVISIONED_" + name}, legacy...) {
+		if value, present := values[key]; present {
+			return value
+		}
+	}
+	return ""
 }
 
 func first(values ...string) string {

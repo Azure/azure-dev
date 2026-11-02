@@ -332,16 +332,15 @@ func runInfraPost(cmd *cobra.Command, extCtx *azdext.ExtensionContext, open infr
 
 func postRequest(snapshot infraSnapshot) (infra.PostRequest, error) {
 	request := infra.PostRequest{
-		Endpoint:      snapshot.values["CU_ENDPOINT"],
-		ResourceGroup: snapshot.values["AZURE_RESOURCE_GROUP"], Account: snapshot.values["FOUNDRY_RESOURCE_NAME"],
-		Subscription:         snapshot.values["AZURE_SUBSCRIPTION_ID"],
+		Endpoint:      config.ProvisionedValue(snapshot.values, "ENDPOINT", "CU_ENDPOINT"),
+		ResourceGroup: config.ProvisionedValue(snapshot.values, "RESOURCE_GROUP", "AZURE_RESOURCE_GROUP"),
+		Account: config.ProvisionedValue(snapshot.values, "RESOURCE_NAME",
+			"CU_RESOURCE_NAME", "FOUNDRY_RESOURCE_NAME"),
+		Subscription:         config.ProvisionedValue(snapshot.values, "SUBSCRIPTION_ID", "AZURE_SUBSCRIPTION_ID"),
 		APIVersion:           firstInfra(snapshot.values["CU_API_VERSION"], cuclient.DefaultAPIVersion),
 		Selection:            firstInfra(snapshot.values["CU_MODEL_SELECTION"], "prompt"),
 		ForceConfiguration:   truthyInfra(snapshot.values["CU_CONFIG_SETUP_FORCE"]),
 		DisableConfiguration: truthyInfra(os.Getenv("CU_DISABLE_AUTO_CONFIG")),
-	}
-	if account, present := snapshot.values["CU_RESOURCE_NAME"]; present {
-		request.Account = account
 	}
 	if raw, present := snapshot.section["modelSelection"]; present {
 		var selection *string

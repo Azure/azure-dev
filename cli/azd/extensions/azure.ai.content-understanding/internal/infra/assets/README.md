@@ -172,6 +172,9 @@ repair action and retains the `prebuilt-layout` sanity check.
 Configuration setup is automatic. To opt out, set
 `CU_DISABLE_AUTO_CONFIG=true` before `azd up`. This does not disable live
 model setup; use `azd env config set cu.modelSelection none` to skip model deployments.
+The provisioned endpoint remains available as `_CU_PROVISIONED_ENDPOINT`, but
+with automatic configuration disabled you must configure `CU_ENDPOINT` yourself
+or pass `--endpoint` to CU commands.
 
 ## Cleanup
 
@@ -185,16 +188,25 @@ before cleanup, especially when the project uses an existing account.
 
 ## Outputs
 
-After `azd up`, `azd env get-values` exposes:
+After `azd up`, `azd env get-values` exposes these Bicep outputs. The
+`_CU_PROVISIONED_*` prefix marks deployment results, not user settings:
 
-| Variable | Notes |
+| Output | Notes |
 | --- | --- |
-| `CU_PROJECT_ENDPOINT` | Project-scoped URL when this project creates a Foundry project |
-| `CU_RESOURCE_NAME` | Created or adopted account name (also the custom subdomain) |
-| `CU_PROJECT_NAME` | Project name when created by this deployment |
-| `CU_ENDPOINT` | Resource endpoint used by CU commands |
-| `CU_DEFAULT_ANALYZER` | Saved by the hook as `prebuilt-layout`, unless existing CU configuration is preserved |
-| `CU_MODEL_DEPLOYMENTS` | Models declared in the Bicep deployment; subsequent hook selections are saved to `infra/models.json` |
+| `_CU_PROVISIONED_LOCATION` | Deployment location |
+| `_CU_PROVISIONED_RESOURCE_GROUP` | Created or existing resource group containing the account |
+| `_CU_PROVISIONED_SUBSCRIPTION_ID` | Subscription containing the resource |
+| `_CU_PROVISIONED_TENANT_ID` | Resource tenant; postprovision looks up the user's access tenant separately |
+| `_CU_PROVISIONED_PROJECT_ENDPOINT` | Project-scoped URL when a Foundry project is available |
+| `_CU_PROVISIONED_RESOURCE_NAME` | Created or adopted account name (also the custom subdomain) |
+| `_CU_PROVISIONED_PROJECT_NAME` | Project name when available |
+| `_CU_PROVISIONED_ENDPOINT` | Resource endpoint used by postprovision setup, not a runtime endpoint alias |
+| `_CU_PROVISIONED_MODEL_DEPLOYMENTS` | Models declared in the Bicep deployment; subsequent hook selections are saved to `infra/models.json` |
+
+The hook separately saves runtime `CU_ENDPOINT` and
+`CU_DEFAULT_ANALYZER=prebuilt-layout`, unless existing CU configuration is
+preserved or automatic configuration is disabled. CU commands do not treat
+`_CU_PROVISIONED_ENDPOINT` as a user-supplied endpoint.
 
 Generation also saves `CU_API_VERSION` and standard Azure scope values in the
 azd environment. These are not Bicep outputs. Use `azd env get-values` to inspect
@@ -205,9 +217,12 @@ never CU user defaults in global azd configuration.
 
 Existing projects remain supported. When new config fields are absent, the hook
 reads saved `CU_MODEL_SELECTION` and `CU_CONFIG_SETUP_FORCE` values. It reads
-`FOUNDRY_RESOURCE_NAME` only when `CU_RESOURCE_NAME` is absent. New values always
-take precedence; invalid new values fail rather than using legacy settings.
-Old environment entries are preserved during regeneration.
+legacy endpoint and scope values only when the corresponding
+`_CU_PROVISIONED_*` outputs are absent. For the account name, it falls back to
+`CU_RESOURCE_NAME`, then `FOUNDRY_RESOURCE_NAME`, only when the newer name is
+absent. Empty required new outputs fail instead of selecting stale legacy
+values. Old environment entries are preserved during regeneration. Templates
+are also preserved unless `--force` is supplied.
 
 ## Layout
 

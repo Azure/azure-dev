@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -374,6 +375,40 @@ func TestInfraPostConfigPrecedesLegacyValues(t *testing.T) {
 	require.Error(t, err, "an empty new output must not fall back to a stale legacy resource")
 }
 
+func TestInfraPostProvisionedOutputs(t *testing.T) {
+	outputs := map[string]string{
+		"_CU_PROVISIONED_ENDPOINT":        "https://provisioned.services.ai.azure.com",
+		"_CU_PROVISIONED_RESOURCE_NAME":   "provisioned",
+		"_CU_PROVISIONED_RESOURCE_GROUP":  "provisioned-group",
+		"_CU_PROVISIONED_SUBSCRIPTION_ID": "provisioned-sub",
+	}
+	for _, legacy := range []bool{false, true} {
+		t.Run(fmt.Sprintf("legacy=%t", legacy), func(t *testing.T) {
+			f := infraCommandFixture(t)
+			if !legacy {
+				f.snapshot.values = map[string]string{}
+			}
+			maps.Copy(f.snapshot.values, outputs)
+			request, err := postRequest(f.snapshot)
+			require.NoError(t, err)
+			assert.Equal(t, "https://provisioned.services.ai.azure.com", request.Endpoint)
+			assert.Equal(t, "provisioned", request.Account)
+			assert.Equal(t, "provisioned-group", request.ResourceGroup)
+			assert.Equal(t, "provisioned-sub", request.Subscription)
+			for key := range outputs {
+				original := f.snapshot.values[key]
+				f.snapshot.values[key] = ""
+				_, err := postRequest(f.snapshot)
+				require.Error(t, err, "%s must not fall back to stale legacy values", key)
+				f.snapshot.values[key] = original
+			}
+			f.snapshot.values["_CU_PROVISIONED_ENDPOINT"] = "http://invalid.services.ai.azure.com"
+			_, err = postRequest(f.snapshot)
+			require.Error(t, err, "an invalid new endpoint must not fall back to the runtime endpoint")
+		})
+	}
+}
+
 type infraRPC struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	azdext.UnimplementedAccountServiceServer
@@ -720,6 +755,91 @@ func TestInfraResolveRejectsUnavailableAccessTenant(t *testing.T) {
 			assert.True(t, os.IsNotExist(err), "tenant lookup failure must not invoke azd auth")
 		})
 	}
+}
+
+func TestInfraPostprovisionUsesAccessTenantInsteadOfProvisionedTenant(t *testing.T) {
+	rpc := &infraRPC{tenantResponse: &azdext.LookupTenantResponse{TenantId: "guest-access-tenant"}}
+	host := infraRPCClient(t, rpc)
+	argsPath := installAuthenticationCLI(t, false)
+	snapshot := infraSnapshot{values: map[string]string{
+		"_CU_PROVISIONED_ENDPOINT":        "https://resource.services.ai.azure.com",
+		"_CU_PROVISIONED_RESOURCE_NAME":   "resource",
+		"_CU_PROVISIONED_RESOURCE_GROUP":  "group",
+		"_CU_PROVISIONED_SUBSCRIPTION_ID": "provisioned-sub",
+		"_CU_PROVISIONED_TENANT_ID":       "resource-tenant",
+		"AZURE_TENANT_ID":                 "stale-resource-tenant",
+	}}
+	request, err := postRequest(snapshot)
+	require.NoError(t, err)
+	ctx := azdext.WithAccessToken(t.Context())
+	post, _, err := host.Capabilities(ctx, snapshot, request)
+	require.NoError(t, err)
+	capabilities, ok := post.(*infraCapabilities)
+	require.True(t, ok)
+	_, err = capabilities.client.GetAnalyzer(ctx, "prebuilt-layout")
+	require.Error(t, err, "the fake azd auth command fails before any service request")
+	// #nosec G304 -- Reads this test's private fake-azd argument log.
+	args, err := os.ReadFile(argsPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(args), "guest-access-tenant")
+	assert.NotContains(t, string(args), "resource-tenant")
+	rpc.mu.Lock()
+	assert.Equal(t, []string{"tenant:provisioned-sub"}, rpc.calls)
+	rpc.mu.Unlock()
+}
+
+func TestInfraPostprovisionRejectsUnavailableAccessTenant(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		response *azdext.LookupTenantResponse
+		err      error
+	}{
+		{name: "missing", response: &azdext.LookupTenantResponse{}},
+		{name: "failure", err: errors.New("tenant lookup failed")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rpc := &infraRPC{tenantResponse: test.response, tenantErr: test.err}
+			host := infraRPCClient(t, rpc)
+			post, models, err := host.Capabilities(azdext.WithAccessToken(t.Context()),
+				infraSnapshot{values: map[string]string{"_CU_PROVISIONED_TENANT_ID": "resource-tenant"}},
+				infra.PostRequest{Subscription: "sub"})
+			require.Error(t, err)
+			assert.Nil(t, post)
+			assert.Nil(t, models)
+		})
+	}
+}
+
+func TestInfraPostprovisionDisabledKeepsOnlyProvisionedEndpoint(t *testing.T) {
+	_ = infraCommandFixture(t)
+	t.Setenv("CU_DISABLE_AUTO_CONFIG", "true")
+	rpc := &infraRPC{
+		section: &azdext.GetConfigSectionResponse{
+			Found: true, Section: []byte(`{"modelSetupComplete":true}`),
+		},
+		writes: map[string]json.RawMessage{},
+		values: []*azdext.KeyValue{
+			{Key: "_CU_PROVISIONED_ENDPOINT", Value: "https://resource.services.ai.azure.com"},
+			{Key: "_CU_PROVISIONED_RESOURCE_NAME", Value: "resource"},
+			{Key: "_CU_PROVISIONED_RESOURCE_GROUP", Value: "group"},
+			{Key: "_CU_PROVISIONED_SUBSCRIPTION_ID", Value: "sub"},
+		},
+	}
+	_ = infraRPCClient(t, rpc)
+	stdout, stderr, err := executeRoot(t, "infra", "_postprovision-v1", "-e", "dev", "--no-prompt", "-o", "json")
+	require.NoError(t, err)
+	assert.Empty(t, stderr)
+	var result infra.PostResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	assert.True(t, result.ConfigurationSetupDisabled)
+	assert.False(t, result.EnvironmentConfigured)
+	rpc.mu.Lock()
+	assert.Empty(t, rpc.writes)
+	for _, pair := range rpc.values {
+		assert.NotEqual(t, "CU_ENDPOINT", pair.Key)
+		assert.NotEqual(t, "CU_DEFAULT_ANALYZER", pair.Key)
+	}
+	rpc.mu.Unlock()
 }
 
 func TestInfraHostScopedRPCAndDottedModelNames(t *testing.T) {

@@ -88,6 +88,8 @@ func testGeneratedProjectPostprovision(t *testing.T, selection string) {
 		var body any
 		code := 200
 		if request.URL.Host == "management.azure.com" {
+			assert.True(t, strings.HasPrefix(request.URL.Path,
+				"/subscriptions/sub/resourceGroups/group/providers/Microsoft.CognitiveServices/accounts/foundry/"))
 			assert.Equal(t, "2025-06-01", request.URL.Query().Get("api-version"))
 			switch {
 			case strings.HasSuffix(request.URL.Path, "/models"):
@@ -177,10 +179,13 @@ func testGeneratedProjectPostprovision(t *testing.T, selection string) {
 	rpc.mu.Lock()
 	rpc.section = &azdext.GetConfigSectionResponse{Found: true, Section: configWire}
 	rpc.values = []*azdext.KeyValue{
-		{Key: "CU_RESOURCE_NAME", Value: "foundry"},
-		{Key: "CU_ENDPOINT", Value: "https://foundry.services.ai.azure.com"},
-		{Key: "AZURE_RESOURCE_GROUP", Value: "group"}, {Key: "AZURE_SUBSCRIPTION_ID", Value: "sub"},
-		{Key: "AZURE_TENANT_ID", Value: "tenant"},
+		{Key: "_CU_PROVISIONED_RESOURCE_NAME", Value: "foundry"},
+		{Key: "_CU_PROVISIONED_ENDPOINT", Value: "https://foundry.services.ai.azure.com"},
+		{Key: "_CU_PROVISIONED_RESOURCE_GROUP", Value: "group"}, {Key: "_CU_PROVISIONED_SUBSCRIPTION_ID", Value: "sub"},
+		{Key: "_CU_PROVISIONED_TENANT_ID", Value: "resource-tenant"},
+		{Key: "CU_RESOURCE_NAME", Value: "stale-account"},
+		{Key: "CU_ENDPOINT", Value: "https://stale.services.ai.azure.com"},
+		{Key: "AZURE_RESOURCE_GROUP", Value: "stale-group"}, {Key: "AZURE_SUBSCRIPTION_ID", Value: "stale-sub"},
 	}
 	rpc.mu.Unlock()
 	t.Chdir(directory)
@@ -203,6 +208,7 @@ func testGeneratedProjectPostprovision(t *testing.T, selection string) {
 	require.NoError(t, json.Unmarshal(modelFile, &saved))
 	assert.Len(t, saved, 2)
 	rpc.mu.Lock()
+	assert.Contains(t, rpc.calls, "env:dev:CU_ENDPOINT:https://foundry.services.ai.azure.com")
 	assert.JSONEq(t, `true`, string(rpc.writes["cu.modelSetupComplete"]))
 	section := map[string]json.RawMessage{
 		"modelSetupComplete": rpc.writes["cu.modelSetupComplete"],

@@ -88,6 +88,64 @@ func TestResolvePrecedence(t *testing.T) {
 	}
 }
 
+func TestResolveProvisionedScopeAndRuntimeSettings(t *testing.T) {
+	values := map[string]string{
+		"CU_ENDPOINT":                       "https://runtime.services.ai.azure.com",
+		"_CU_PROVISIONED_ENDPOINT":          "https://provisioned.services.ai.azure.com",
+		"_CU_PROVISIONED_SUBSCRIPTION_ID":   "provisioned-sub",
+		"_CU_PROVISIONED_RESOURCE_GROUP":    "provisioned-group",
+		"_CU_PROVISIONED_TENANT_ID":         "resource-tenant",
+		"_CU_PROVISIONED_MODEL_DEPLOYMENTS": `[{"name":"not-a-runtime-mapping"}]`,
+		"AZURE_SUBSCRIPTION_ID":             "legacy-sub",
+		"AZURE_RESOURCE_GROUP":              "legacy-group",
+	}
+	for _, test := range []struct {
+		name, subscription, group string
+		options                   Options
+		process                   map[string]string
+	}{
+		{"provisioned", "provisioned-sub", "provisioned-group", Options{}, nil},
+		{"process", "process-sub", "process-group", Options{},
+			map[string]string{"AZURE_SUBSCRIPTION_ID": "process-sub", "AZURE_RESOURCE_GROUP": "process-group"}},
+		{"explicit", "flag-sub", "flag-group",
+			Options{SubscriptionID: "flag-sub", ResourceGroup: "flag-group"},
+			map[string]string{"AZURE_SUBSCRIPTION_ID": "process-sub", "AZURE_RESOURCE_GROUP": "process-group"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := resolve(test.options, test.process, values, nil, nil)
+			require.NoError(t, err)
+			assert.Equal(t, "https://runtime.services.ai.azure.com/contentunderstanding", result.Endpoint)
+			assert.Equal(t, test.subscription, result.Scope.SubscriptionID)
+			assert.Equal(t, test.group, result.Scope.ResourceGroup)
+			assert.Empty(t, result.TenantID, "resource tenant metadata is not an authentication setting")
+			assert.Empty(t, result.ModelDeployments, "declared deployments are not runtime model mappings")
+		})
+	}
+	delete(values, "CU_ENDPOINT")
+	_, err := resolve(Options{}, nil, values, nil, nil)
+	require.ErrorContains(t, err, "Specify --endpoint or CU_ENDPOINT")
+}
+
+func TestProvisionedValuePresencePrecedence(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		values map[string]string
+		want   string
+	}{
+		{"new", map[string]string{"_CU_PROVISIONED_RESOURCE_NAME": "new", "CU_RESOURCE_NAME": "old"}, "new"},
+		{"empty new", map[string]string{"_CU_PROVISIONED_RESOURCE_NAME": "", "CU_RESOURCE_NAME": "old"}, ""},
+		{"previous output", map[string]string{"CU_RESOURCE_NAME": "old", "FOUNDRY_RESOURCE_NAME": "legacy"}, "old"},
+		{"empty previous", map[string]string{"CU_RESOURCE_NAME": "", "FOUNDRY_RESOURCE_NAME": "legacy"}, ""},
+		{"original output", map[string]string{"FOUNDRY_RESOURCE_NAME": "legacy"}, "legacy"},
+		{"missing", nil, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, ProvisionedValue(test.values, "RESOURCE_NAME",
+				"CU_RESOURCE_NAME", "FOUNDRY_RESOURCE_NAME"))
+		})
+	}
+}
+
 func TestResolveFuturePreviewVersions(t *testing.T) {
 	const version = "2027-01-01-preview"
 	for _, tt := range []struct {

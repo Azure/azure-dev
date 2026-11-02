@@ -207,15 +207,13 @@ func (h *azdInfraHost) Snapshot(ctx context.Context, name string) (infraSnapshot
 func (h *azdInfraHost) Capabilities(
 	ctx context.Context, snapshot infraSnapshot, request infra.PostRequest,
 ) (infra.PostCapabilities, infra.ModelCapabilities, error) {
-	tenant := snapshot.values["AZURE_TENANT_ID"]
-	if tenant == "" {
-		response, err := h.client.Account().LookupTenant(ctx,
-			&azdext.LookupTenantRequest{SubscriptionId: request.Subscription})
-		if err != nil {
-			return nil, nil, err
-		}
-		tenant = response.GetTenantId()
+	// Provisioned tenant metadata identifies the resource tenant, not a guest user's access tenant.
+	response, err := h.client.Account().LookupTenant(ctx,
+		&azdext.LookupTenantRequest{SubscriptionId: request.Subscription})
+	if err != nil {
+		return nil, nil, err
 	}
+	tenant := response.GetTenantId()
 	if tenant == "" {
 		return nil, nil, exterrors.MissingTenant()
 	}

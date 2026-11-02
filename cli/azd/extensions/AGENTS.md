@@ -1,5 +1,7 @@
 # Microsoft-authored extension guidance
 
+<!-- cspell:ignore exterrors userinfo -->
+
 Use this guide together with the entire [CLI handbook](../AGENTS.md) and the
 affected extension's local `AGENTS.md`, when present. Local guides describe
 extension-specific contracts, ownership, and exceptions.

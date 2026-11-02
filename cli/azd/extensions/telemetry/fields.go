@@ -20,6 +20,91 @@ import (
 )
 
 var (
+	// AgentPhaseName identifies an extension-owned operation, not a core command span.
+	AgentPhaseName = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.phase.name"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentPhaseScope distinguishes a project command from a provider method.
+	AgentPhaseScope = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.phase.scope"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentPhaseAttemptID is a generated opaque ID for one actual invocation.
+	AgentPhaseAttemptID = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.phase.attempt_id"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentPhaseStartTime records the actual UTC start, not the reporting timestamp.
+	AgentPhaseStartTime = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.phase.start_time"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentPhaseEndTime records the actual UTC return boundary.
+	AgentPhaseEndTime = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.phase.end_time"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentPhaseDurationMs records inclusive monotonic duration as a string.
+	AgentPhaseDurationMs = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.phase.duration_ms"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentPhaseOutcome records success, error, canceled, or timeout for the observed operation.
+	AgentPhaseOutcome = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.phase.outcome"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentPhaseStepID identifies a fixed internal business step.
+	AgentPhaseStepID = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.phase.step.id"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentPhaseStepSequence records start order within one attempt.
+	AgentPhaseStepSequence = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.phase.step.sequence"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentPhaseStepStartOffsetMs records the monotonic offset from the phase start.
+	AgentPhaseStepStartOffsetMs = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.phase.step.start_offset_ms"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentPhaseStepDurationMs records inclusive step elapsed milliseconds as a string.
+	AgentPhaseStepDurationMs = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.phase.step.duration_ms"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentPhaseStepDroppedCount counts local clipping, not delivery or host budget losses.
+	AgentPhaseStepDroppedCount = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.phase.step.dropped_count"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+
 	// AgentInitStepID identifies a fixed business step in agent Init.
 	AgentInitStepID = fields.AttributeKey{
 		Key:            attribute.Key("ext.agent.init.step.id"),

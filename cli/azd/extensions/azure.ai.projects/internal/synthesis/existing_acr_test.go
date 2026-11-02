@@ -122,18 +122,19 @@ func TestGreenfieldACRModeLegacyLoginHost(t *testing.T) {
 func TestARMExistingRegistryShape(t *testing.T) {
 	raw, err := ARMTemplate()
 	require.NoError(t, err)
+	type moduleProperties struct {
+		Template   json.RawMessage `json:"template"`
+		Parameters map[string]any  `json:"parameters"`
+	}
 	type template struct {
 		Parameters map[string]struct {
 			DefaultValue any `json:"defaultValue"`
 		} `json:"parameters"`
 		Resources map[string]struct {
-			Name       string `json:"name"`
-			Type       string `json:"type"`
-			Condition  string `json:"condition"`
-			Properties struct {
-				Template   json.RawMessage `json:"template"`
-				Parameters map[string]any  `json:"parameters"`
-			} `json:"properties"`
+			Name       string          `json:"name"`
+			Type       string          `json:"type"`
+			Condition  string          `json:"condition"`
+			Properties json.RawMessage `json:"properties"`
 		} `json:"resources"`
 	}
 	var main template
@@ -141,8 +142,10 @@ func TestARMExistingRegistryShape(t *testing.T) {
 	require.Contains(t, main.Parameters, "existingAcrResourceId")
 	assert.Equal(t, "", main.Parameters["existingAcrResourceId"].DefaultValue)
 	require.Len(t, main.Resources, 2)
+	var resourcesModule moduleProperties
+	require.NoError(t, json.Unmarshal(main.Resources["resources"].Properties, &resourcesModule))
 	var resources template
-	require.NoError(t, json.Unmarshal(main.Resources["resources"].Properties.Template, &resources))
+	require.NoError(t, json.Unmarshal(resourcesModule.Template, &resources))
 	found := map[string]bool{}
 	for name, resource := range resources.Resources {
 		switch name {
@@ -160,10 +163,8 @@ func TestARMExistingRegistryShape(t *testing.T) {
 			if name == "existingAcrConnection" {
 				prefix += "-connection"
 			}
-			expectedName := "[format('" + prefix + "-{0}', uniqueString(" +
-				"resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName')), " +
-				"resourceId('Microsoft.CognitiveServices/accounts/projects', " +
-				"variables('foundryAccountName'), parameters('foundryProjectName'))))]"
+			expectedName := "[format('" + prefix + "-{0}', " +
+				"uniqueString(variables('activeFoundryAccountId'), variables('activeFoundryProjectId')))]"
 			if name == "existingAcr" {
 				expectedName = "[if(empty(parameters('acrAccessOperationId')), " +
 					strings.TrimSuffix(strings.TrimPrefix(expectedName, "["), "]") +
@@ -171,17 +172,19 @@ func TestARMExistingRegistryShape(t *testing.T) {
 			}
 			assert.Equal(t, expectedName, resource.Name)
 			if name == "existingAcrConnection" {
+				var properties moduleProperties
+				require.NoError(t, json.Unmarshal(resource.Properties, &properties))
 				condition := "and(parameters('includeAcr'), not(empty(parameters('existingAcrResourceId'))))"
 				assert.Equal(t, "[if("+condition+", createObject('value', "+
 					"reference('externalRegistry').loginServer), createObject('value', ''))]",
-					resource.Properties.Parameters["acrEndpoint"])
+					properties.Parameters["acrEndpoint"])
 				assert.Equal(t, "[if("+condition+", createObject('value', "+
 					"extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', "+
 					"split(parameters('existingAcrResourceId'), '/')[2], "+
 					"split(parameters('existingAcrResourceId'), '/')[4]), "+
 					"'Microsoft.ContainerRegistry/registries', "+
 					"last(split(parameters('existingAcrResourceId'), '/')))), createObject('value', ''))]",
-					resource.Properties.Parameters["acrResourceId"])
+					properties.Parameters["acrResourceId"])
 			}
 			found[name] = true
 		}

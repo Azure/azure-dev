@@ -84,6 +84,9 @@ type Input struct {
 // main.bicep, and pass Parameters when invoking the resulting ARM
 // deployment.
 type Result struct {
+	// Hosting selects an existing AKS cluster. Supporting resources are planned by the provider.
+	Hosting *AgentHostingInput
+
 	// Parameters maps bicep param names to plain Go values. Callers wrap
 	// these in ARM's {"value": ...} envelope when serializing.
 	Parameters map[string]any
@@ -147,11 +150,12 @@ type serviceBlock struct {
 // projectService is the subset of a host: azure.ai.project service body the synthesizer reads.
 // Unknown fields are intentionally ignored: they are reconciled in deploy-time service targets.
 type projectService struct {
-	Host        string        `yaml:"host"`
-	Endpoint    string        `yaml:"endpoint,omitempty"`
-	Deployments []Deployment  `yaml:"deployments,omitempty"`
-	Agents      []agentBlock  `yaml:"agents,omitempty"`
-	Network     *networkBlock `yaml:"network,omitempty"`
+	Host         string             `yaml:"host"`
+	Endpoint     string             `yaml:"endpoint,omitempty"`
+	Deployments  []Deployment       `yaml:"deployments,omitempty"`
+	Agents       []agentBlock       `yaml:"agents,omitempty"`
+	Network      *networkBlock      `yaml:"network,omitempty"`
+	AgentHosting *AgentHostingInput `yaml:"agentHosting,omitempty"`
 }
 
 // networkBlock mirrors the network: sub-tree on the service body.
@@ -221,6 +225,9 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, err
 	}
 	if endpoint != "" {
+		if svc.AgentHosting != nil {
+			return nil, errors.New("agentHosting is only supported when azd creates a new Foundry account")
+		}
 		return nil, ErrEndpointBrownfield
 	}
 
@@ -243,6 +250,10 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	hosting, err := synthesizeAgentHosting(svc.AgentHosting, in.ServiceName, in.Env, !in.PreserveVarRefs)
+	if err != nil {
+		return nil, err
+	}
 	if includeAcr && netMode != NetworkModeNone {
 		return nil, errors.New(
 			"synthesis: private networking does not support an auto-created Azure Container Registry; specify an image instead",
@@ -254,10 +265,17 @@ func Synthesize(in Input) (*Result, error) {
 		"includeAcr":  includeAcr,
 	}
 	maps.Copy(params, netParams)
+	if hosting != nil {
+		params["agentHosting"] = agentHostingParameter{
+			Enabled: true, HostingType: "ManagedCluster", Name: "default",
+			ClusterResourceID: hosting.ClusterResourceID,
+		}
+	}
 
 	return &Result{
 		Parameters:  params,
 		NetworkMode: netMode,
+		Hosting:     hosting,
 	}, nil
 }
 
@@ -362,6 +380,9 @@ func SynthesizeExistingProject(in Input) (*Result, error) {
 	}
 	if strings.TrimSpace(svc.Endpoint) == "" {
 		return nil, errors.New("synthesis: existing Foundry project endpoint is empty")
+	}
+	if svc.AgentHosting != nil {
+		return nil, errors.New("agentHosting is only supported when azd creates a new Foundry account")
 	}
 
 	includeAcr, err := deriveIncludeAcr(
@@ -479,6 +500,9 @@ func loadProjectService(
 	}
 
 	var svc projectService
+	if err := validateAgentHostingInputs(node, serviceName); err != nil {
+		return svc, err
+	}
 	if err := node.Decode(&svc); err != nil {
 		return projectService{}, fmt.Errorf("decode service %q: %w", serviceName, err)
 	}
@@ -1267,5 +1291,5 @@ func normalizeSubscription(s string) (string, error) {
 			return parts[1], nil
 		}
 	}
-	return "", fmt.Errorf("%q is not a subscription GUID or /subscriptions/<guid> id", s)
+	return "", errors.New("expected a subscription GUID or /subscriptions/<guid> id")
 }

@@ -77,26 +77,23 @@ func (h *azdInfraHost) PromptGeneration(
 			return nil
 		}
 	}
-	if err := promptText(prompts.environment, "azd environment name",
-		"Environment name\n"+
-			"azd stores this deployment's configuration and outputs under .azure/<environment>/ "+
-			"in the generated directory.\n"+
-			"The name seeds resource names such as rg-<environment> and proj-<environment>, "+
-			"and separates stacks such as dev, test, and prod.\n"+
-			"Use 1-64 letters, numbers, hyphens, underscores, periods, or parentheses.",
+	if err := promptText(prompts.environment,
+		"Enter your environment name (1-64 letters, numbers, -, _, ., or parentheses)",
+		"Input your azd environment name. An azd environment name:\n"+
+			"  - lets azd store this deployment's config + outputs under .azure/<env>/ in the generated directory.\n"+
+			"  - seeds your Azure resource names (e.g. rg-<env>, proj-<env>).\n"+
+			"  - keeps separate stacks apart, such as dev, test, or prod.",
 		&choices.Environment, "invalid_environment"); err != nil {
 		return choices, err
 	}
 	if prompts.location {
-		if err := writeGuidance("Azure region\n" +
-			"This is where the new Microsoft Foundry resource will be created. " +
-			"Model availability and quota vary by region.\n" +
-			"Check supported regions: https://learn.microsoft.com/azure/ai-services/content-understanding/" +
+		if err := writeGuidance("Content Understanding supported regions\n" +
+			"Check the latest region support at https://learn.microsoft.com/azure/ai-services/content-understanding/" +
 			"language-region-support"); err != nil {
 			return choices, err
 		}
 		options := &azdext.SelectOptions{
-			Message:     "Select a Content Understanding region",
+			Message:     "Azure region (where the Foundry resource is created)",
 			HelpMessage: "Region for the new Microsoft Foundry resource.", EnableFiltering: new(true),
 		}
 		index := int32(0)
@@ -117,27 +114,27 @@ func (h *azdInfraHost) PromptGeneration(
 		}
 		choices.Location = infra.Regions[response.GetValue()]
 	}
-	if err := promptText(prompts.prefix, "Optional Microsoft Foundry resource name prefix (blank for generated name)",
+	if err := promptText(prompts.prefix,
+		"Optional Microsoft Foundry resource name prefix (lowercase letters, numbers, hyphen; blank to skip)",
 		"Microsoft Foundry resource naming\n"+
-			"The resource name forms its public endpoint, https://<resource-name>.services.ai.azure.com, "+
-			"and must be globally unique.\n"+
-			"A prefix produces <prefix>-<unique-suffix>; leave it blank for aif-<unique-suffix>.\n"+
-			"Use 1-20 letters, numbers, or internal hyphens; the prefix is normalized to lowercase.",
+			"The resource name becomes part of the public endpoint host "+
+			"(for example, https://<name>.services.ai.azure.com), so it must be globally unique.\n"+
+			"If you provide a prefix, azd constructs the resource name as <prefix>-<unique-suffix>. "+
+			"Without a prefix, it uses aif-<unique-suffix>.",
 		&choices.FoundryPrefix, "invalid_foundry_prefix"); err != nil {
 		return choices, err
 	}
 	if prompts.roles {
-		if err := writeGuidance("Data-plane access (RBAC)\n" +
-			"Cognitive Services User grants Content Understanding data-plane access. " +
-			"Contributor alone does not grant this access or permission to assign roles.\n" +
-			"Assigning the role requires Owner, User Access Administrator, or " +
-			"Role Based Access Control Administrator, in addition to deployment permissions.\n" +
-			"The default is No. If you skip assignment, an administrator must grant access " +
-			"unless you already have it. Provisioning and postprovision setup use Entra ID, not an API key."); err != nil {
+		if err := writeGuidance("RBAC roles\n" +
+			"Required for Entra-based auth from `azd ai cu`. The template assigns Cognitive Services User.\n" +
+			"Needs Owner, User Access Administrator, or Role Based Access Control Administrator on the subscription.\n" +
+			"Pick 'n' if you only have Contributor. If you skip assignment, ask an administrator to grant access " +
+			"unless you already have it.\n" +
+			"Provisioning and post-provision setup use Entra ID, not an API key."); err != nil {
 			return choices, err
 		}
 		response, err := h.client.Prompt().Confirm(ctx, &azdext.ConfirmRequest{Options: &azdext.ConfirmOptions{
-			Message: "Assign Cognitive Services User to your user on the new Foundry resource?",
+			Message: "Assign RBAC roles to your user on the Microsoft Foundry resource?",
 			HelpMessage: "Requires permission to create role assignments, such as Owner, User Access Administrator, " +
 				"or Role Based Access Control Administrator. If skipped, ask an administrator to grant access for Entra ID.",
 			DefaultValue: new(false),

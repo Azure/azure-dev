@@ -156,11 +156,12 @@ func runInfraGenerate(
 	if !extCtx.NoPrompt && extCtx.OutputFormat != "json" {
 		if extCtx.OutputFormat != "none" {
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(),
-				"Generate an azd/Bicep project in %s\nSubscription: %s (%s)\n\n"+
-					"This command writes project files only; it does not create Azure resources.\n"+
-					"Run azd up from the generated directory to provision or reuse a Microsoft Foundry resource.\n"+
-					"After provisioning, the postprovision hook can deploy selected language and embeddings models "+
-					"and configure Content Understanding defaults.\n",
+				"azd ai cu infra generate -> %s\n  Azure subscription: %s (%s)\n\n"+
+					"`azd ai cu infra generate` generates an azd template. After the Microsoft Foundry resource "+
+					"is provisioned, its post-provision script can optionally deploy supported chat completion "+
+					"and embeddings models for prebuilt analyzers such as prebuilt-invoice and for custom analyzers.\n"+
+					"It doesn't create any Azure resources itself - you run azd up afterwards "+
+					"to do the actual provisioning.\n",
 				output, choices.SubscriptionName, choices.SubscriptionID); err != nil {
 				return fmt.Errorf("write infrastructure introduction: %w", err)
 			}
@@ -208,15 +209,22 @@ func runInfraGenerate(
 		}
 		switch index {
 		case 1:
-			fmt.Fprintf(&summary, "  %s    # Sign in if needed; provisioning uses Entra ID.\n", step)
+			fmt.Fprintf(&summary, "  %s    # (one-time)\n", step)
 		case 2:
-			fmt.Fprintf(&summary,
-				"  %s    # Provision resources, then run optional model setup and CU configuration.\n", step)
+			action := "provisions a Microsoft Foundry resource, optionally deploys selected supported " +
+				"LLMs and embeddings models, and configures Content Understanding defaults"
+			if result.FoundryEndpoint != "" {
+				action = "configures Content Understanding and optionally deploys selected supported " +
+					"LLMs and embeddings models on the existing Microsoft Foundry resource"
+			} else if result.ModelSelection == "none" {
+				action = "provisions a Microsoft Foundry resource without model deployments"
+			}
+			fmt.Fprintf(&summary, "  %s    # %s\n", step, action)
 		default:
 			fmt.Fprintf(&summary, "  %s\n", step)
 		}
 	}
-	summary.WriteString("The postprovision hook reports setup readiness and available test commands. " +
+	summary.WriteString("The post-provision hook prints verified Content Understanding setup and test commands.\n" +
 		"Run azd ai cu doctor afterwards to check the selected environment.\n")
 	if _, err := fmt.Fprint(cmd.OutOrStdout(), summary.String()); err != nil {
 		return fmt.Errorf("write infrastructure summary: %w", err)

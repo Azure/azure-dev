@@ -106,7 +106,8 @@ func TestInfraGeneratePromptCancellation(t *testing.T) {
 	target := filepath.Join(testutil.TempDir(t), "project")
 	stdout, _, err := executeInfra(t, host, "infra", "generate", "-d", target, "--models", "none")
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Contains(t, stdout, "This command writes project files only")
+	assert.Contains(t, stdout, "`azd ai cu infra generate` generates an azd template.")
+	assert.Contains(t, stdout, "It doesn't create any Azure resources itself")
 	assert.NotContains(t, stdout, "Generated project:")
 	assert.NotContains(t, stdout, "No Azure resources were deployed. Next:")
 	assert.NoDirExists(t, target)
@@ -124,7 +125,7 @@ func TestInfraGenerateOutputModes(t *testing.T) {
 			require.NoError(t, err)
 			assert.Empty(t, stderr)
 			assert.Empty(t, host.prompts)
-			assert.NotContains(t, stdout, "This command writes project files only")
+			assert.NotContains(t, stdout, "`azd ai cu infra generate` generates an azd template.")
 			switch format {
 			case "json":
 				var result map[string]json.RawMessage
@@ -205,6 +206,37 @@ func generationPromptFixture(t *testing.T) (*infraRPC, *azdInfraHost, infra.Choi
 	}
 }
 
+func TestInfraGenerateNextStepWording(t *testing.T) {
+	for _, test := range []struct {
+		name, selection, action string
+		args                    []string
+	}{
+		{"new without models", "none",
+			"provisions a Microsoft Foundry resource without model deployments", nil},
+		{"new with optional models", "recommended",
+			"provisions a Microsoft Foundry resource, optionally deploys selected supported " +
+				"LLMs and embeddings models, and configures Content Understanding defaults", nil},
+		{"existing resource", "none",
+			"configures Content Understanding and optionally deploys selected supported " +
+				"LLMs and embeddings models on the existing Microsoft Foundry resource",
+			[]string{"--foundry-endpoint", "foundry"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			host := infraCommandFixture(t)
+			args := append([]string{"infra", "generate", "--no-prompt", "-d",
+				filepath.Join(testutil.TempDir(t), "project"), "--models", test.selection}, test.args...)
+			stdout, stderr, err := executeInfra(t, host, args...)
+			require.NoError(t, err)
+			assert.Empty(t, stderr)
+			assert.Contains(t, stdout, "azd auth login    # (one-time)")
+			assert.Contains(t, stdout, "azd up    # "+test.action)
+			assert.Contains(t, stdout,
+				"The post-provision hook prints verified Content Understanding setup and test commands.")
+			assert.Contains(t, stdout, "azd ai cu doctor")
+		})
+	}
+}
+
 func TestInfraGenerationHostPrompts(t *testing.T) {
 	rpc, host, choices := generationPromptFixture(t)
 	var output bytes.Buffer
@@ -246,13 +278,15 @@ func TestInfraGenerationVisibleGuidance(t *testing.T) {
 		stages  []string
 	}{
 		{"all", generationPrompts{true, true, true, true}, []string{
-			"Environment name", "Azure region", "Microsoft Foundry resource naming", "Data-plane access (RBAC)",
+			"Input your azd environment name. An azd environment name:",
+			"Content Understanding supported regions", "Microsoft Foundry resource naming", "RBAC roles",
 		}},
 		{"none", generationPrompts{}, nil},
-		{"environment", generationPrompts{environment: true}, []string{"Environment name"}},
-		{"region", generationPrompts{location: true}, []string{"Azure region"}},
+		{"environment", generationPrompts{environment: true},
+			[]string{"Input your azd environment name. An azd environment name:"}},
+		{"region", generationPrompts{location: true}, []string{"Content Understanding supported regions"}},
 		{"prefix", generationPrompts{prefix: true}, []string{"Microsoft Foundry resource naming"}},
-		{"roles", generationPrompts{roles: true}, []string{"Data-plane access (RBAC)"}},
+		{"roles", generationPrompts{roles: true}, []string{"RBAC roles"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			rpc, host, choices := generationPromptFixture(t)
@@ -266,28 +300,42 @@ func TestInfraGenerationVisibleGuidance(t *testing.T) {
 			}
 			rpc.promptText = func(request *azdext.PromptRequest) (*azdext.PromptResponse, error) {
 				if request.GetOptions().GetRequired() {
-					beforePrompt("Environment name", ".azure/<environment>/")
-					assert.Contains(t, output.String(), "dev, test, and prod")
+					beforePrompt("Input your azd environment name. An azd environment name:",
+						"lets azd store this deployment's config + outputs under .azure/<env>/")
+					assert.Contains(t, output.String(), "seeds your Azure resource names (e.g. rg-<env>, proj-<env>)")
+					assert.Contains(t, output.String(), "keeps separate stacks apart, such as dev, test, or prod")
+					assert.Equal(t, "Enter your environment name (1-64 letters, numbers, -, _, ., or parentheses)",
+						request.GetOptions().GetMessage())
 				} else {
 					beforePrompt("Microsoft Foundry resource naming", "aif-<unique-suffix>")
+					assert.Equal(t, "Optional Microsoft Foundry resource name prefix "+
+						"(lowercase letters, numbers, hyphen; blank to skip)", request.GetOptions().GetMessage())
 					assert.Contains(t, output.String(), "must be globally unique")
+					assert.Contains(t, output.String(),
+						"If you provide a prefix, azd constructs the resource name as <prefix>-<unique-suffix>.")
 				}
 				return &azdext.PromptResponse{Value: request.GetOptions().GetDefaultValue()}, nil
 			}
 			rpc.selectOption = func(request *azdext.SelectRequest) (*azdext.SelectResponse, error) {
-				beforePrompt("Azure region", "language-region-support")
+				beforePrompt("Content Understanding supported regions", "Check the latest region support at")
+				assert.Contains(t, output.String(), "language-region-support")
+				assert.Equal(t, "Azure region (where the Foundry resource is created)", request.GetOptions().GetMessage())
 				return &azdext.SelectResponse{Value: request.GetOptions().SelectedIndex}, nil
 			}
 			rpc.confirm = func(request *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
-				beforePrompt("Data-plane access (RBAC)", "an administrator must grant access")
-				assert.Contains(t, output.String(), "Provisioning and postprovision setup use Entra ID")
+				beforePrompt("RBAC roles", "ask an administrator to grant access")
+				assert.Contains(t, output.String(), "Provisioning and post-provision setup use Entra ID")
+				assert.NotContains(t, output.String(), "cu can use the resource API key instead")
+				assert.Equal(t, "Assign RBAC roles to your user on the Microsoft Foundry resource?",
+					request.GetOptions().GetMessage())
 				return &azdext.ConfirmResponse{Value: request.GetOptions().DefaultValue}, nil
 			}
 			_, err := host.PromptGeneration(azdext.WithAccessToken(t.Context()), choices, test.prompts)
 			require.NoError(t, err)
 			assert.Equal(t, test.stages, stages)
 			for _, stage := range []string{
-				"Environment name", "Azure region", "Microsoft Foundry resource naming", "Data-plane access (RBAC)",
+				"Input your azd environment name. An azd environment name:",
+				"Content Understanding supported regions", "Microsoft Foundry resource naming", "RBAC roles",
 			} {
 				assert.Equal(t, slices.Contains(test.stages, stage),
 					strings.Contains(output.String(), "\n"+stage+"\n"), stage)
@@ -620,8 +668,9 @@ func TestInfraGenerationThroughHostRPC(t *testing.T) {
 			target := filepath.Join(testutil.TempDir(t), "project")
 			stdout, stderr, err := executeRoot(t, "infra", "generate", "-d", target, "--models", "none")
 			assert.Empty(t, stderr)
-			assert.Contains(t, stdout, "Subscription: Subscription (sub)")
-			assert.Contains(t, stdout, "This command writes project files only")
+			assert.Contains(t, stdout, "Azure subscription: Subscription (sub)")
+			assert.Contains(t, stdout, "`azd ai cu infra generate` generates an azd template.")
+			assert.Contains(t, stdout, "It doesn't create any Azure resources itself")
 			if stage == "success" {
 				require.NoError(t, err)
 				assert.Contains(t, stdout, "Environment: chosen")

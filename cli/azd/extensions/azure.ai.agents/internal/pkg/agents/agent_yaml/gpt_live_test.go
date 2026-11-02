@@ -188,6 +188,14 @@ func TestValidateGPTLiveAgent_RejectsRawForbiddenProperties(t *testing.T) {
 		"empty tools":             "tools: []",
 		"empty avatar":            "avatar: {}",
 		"empty greeting":          "greeting: {}",
+		"null delegation":         "delegation: null",
+		"null store":              "store: null",
+		"null audio":              "audio: null",
+		"null audio format":       "audio: {format: null}",
+		"null audio output":       "audio: {output: null}",
+		"null output voice":       "audio: {output: {voice: null}}",
+		"null structured inputs":  "structured_inputs: null",
+		"null policies":           "policies: null",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

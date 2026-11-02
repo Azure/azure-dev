@@ -226,7 +226,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								errors = append(errors,
 									"policies is not supported for prompt-voice agents; "+
 										"move target-owned policies to the hosted target")
-							} else {
+							} else if rawPolicies, found := raw["policies"]; !found || rawPolicies != nil {
 								var policyEnvelope struct {
 									Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
 								}
@@ -358,16 +358,39 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 	if model, found := values["model"]; found {
 		validateRawObject("model", model, []string{"id"})
 	}
-
-	if audio, ok := values["audio"].(map[string]any); ok {
-		validateRawObject("audio", audio, []string{"format", "output"})
-		if format, found := audio["format"]; found {
-			validateRawObject("audio.format", format, []string{"type", "rate"})
+	if store, found := values["store"]; found {
+		if _, ok := store.(bool); !ok {
+			errors = append(errors, "store must be a boolean for GPT Live")
 		}
-		if output, ok := audio["output"].(map[string]any); ok {
-			validateRawObject("audio.output", output, []string{"voice"})
-			if voice, found := output["voice"]; found {
-				validateRawObject("audio.output.voice", voice, []string{"id"})
+	}
+
+	if audioValue, found := values["audio"]; found {
+		audio, ok := audioValue.(map[string]any)
+		if !ok {
+			errors = append(errors, "audio must be an object for GPT Live")
+		} else {
+			validateRawObject("audio", audio, []string{"format", "output"})
+			if format, found := audio["format"]; found {
+				if _, ok := format.(map[string]any); !ok {
+					errors = append(errors, "audio.format must be an object for GPT Live")
+				}
+				validateRawObject("audio.format", format, []string{"type", "rate"})
+			}
+			if outputValue, found := audio["output"]; found {
+				output, ok := outputValue.(map[string]any)
+				if !ok {
+					errors = append(errors, "audio.output must be an object for GPT Live")
+				} else {
+					validateRawObject("audio.output", output, []string{"voice"})
+					if voice, found := output["voice"]; found {
+						if _, stringOK := voice.(string); !stringOK {
+							if _, objectOK := voice.(map[string]any); !objectOK {
+								errors = append(errors, "audio.output.voice must be a voice name or custom voice object")
+							}
+						}
+						validateRawObject("audio.output.voice", voice, []string{"id"})
+					}
+				}
 			}
 		}
 	}
@@ -384,7 +407,10 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 			}
 		}
 	}
-	if inputs, ok := rawMap(values["structuredInputs"], values["structured_inputs"]); ok {
+	inputsValue, inputsFound := rawProperty(values, "structuredInputs", "structured_inputs")
+	if inputs, ok := inputsValue.(map[string]any); inputsFound && !ok {
+		errors = append(errors, "structuredInputs must be an object for GPT Live")
+	} else if ok {
 		for name, input := range inputs {
 			if _, ok := input.(map[string]any); !ok {
 				errors = append(errors, fmt.Sprintf("structuredInputs.%s must be an object for GPT Live", name))
@@ -410,51 +436,61 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 			}
 		}
 	}
-	if delegation, ok := values["delegation"].(map[string]any); ok {
-		validateRawObject("delegation", delegation,
-			[]string{"type", "responses", "agentName", "agent_name", "agentVersion", "agent_version"})
-		typ, typeOK := delegation["type"].(string)
-		if !typeOK || !slices.Contains([]string{"client", "responses", "foundry_managed_agent"}, typ) {
-			errors = append(errors, "delegation.type must be exactly client, responses, or foundry_managed_agent")
-		}
-		if version, found := rawProperty(delegation, "agentVersion", "agent_version"); typ == "foundry_managed_agent" && found {
-			value, ok := version.(string)
-			if !ok || !regexp.MustCompile(`^[1-9][0-9]{0,19}$`).MatchString(value) {
-				errors = append(errors, "delegation.agentVersion must be a positive numeric string when provided")
+	if delegationValue, found := values["delegation"]; found {
+		delegation, ok := delegationValue.(map[string]any)
+		if !ok {
+			errors = append(errors, "delegation must be an object for GPT Live")
+		} else {
+			validateRawObject("delegation", delegation,
+				[]string{"type", "responses", "agentName", "agent_name", "agentVersion", "agent_version"})
+			typ, typeOK := delegation["type"].(string)
+			if !typeOK || !slices.Contains([]string{"client", "responses", "foundry_managed_agent"}, typ) {
+				errors = append(errors, "delegation.type must be exactly client, responses, or foundry_managed_agent")
 			}
-		}
-		if responses, ok := delegation["responses"].(map[string]any); ok {
-			validateRawObject("delegation.responses", responses, []string{
-				"model", "instructions", "maxOutputTokens", "max_output_tokens",
-				"parallelToolCalls", "parallel_tool_calls", "serviceTier", "service_tier",
-				"reasoning", "text", "toolChoice", "tool_choice", "tools",
-			})
-			if reasoning, found := responses["reasoning"]; found {
-				validateRawObject("delegation.responses.reasoning", reasoning, []string{"effort", "summary"})
+			if version, found := rawProperty(delegation, "agentVersion", "agent_version"); typ == "foundry_managed_agent" && found {
+				value, ok := version.(string)
+				if !ok || !regexp.MustCompile(`^[1-9][0-9]{0,19}$`).MatchString(value) {
+					errors = append(errors, "delegation.agentVersion must be a positive numeric string when provided")
+				}
 			}
-			if text, found := responses["text"]; found {
-				validateRawObject("delegation.responses.text", text, []string{"verbosity"})
-			}
-			choice, found := rawProperty(responses, "toolChoice", "tool_choice")
-			if found {
-				validateRawObject("delegation.responses.toolChoice", choice, []string{"type", "name", "serverLabel", "server_label"})
-			}
-			if tools, ok := responses["tools"].([]any); ok {
-				for i, tool := range tools {
-					validateRawObject(fmt.Sprintf("delegation.responses.tools[%d]", i), tool,
-						[]string{"type", "name", "description", "parameters", "strict"})
+			if responses, ok := delegation["responses"].(map[string]any); ok {
+				validateRawObject("delegation.responses", responses, []string{
+					"model", "instructions", "maxOutputTokens", "max_output_tokens",
+					"parallelToolCalls", "parallel_tool_calls", "serviceTier", "service_tier",
+					"reasoning", "text", "toolChoice", "tool_choice", "tools",
+				})
+				if reasoning, found := responses["reasoning"]; found {
+					validateRawObject("delegation.responses.reasoning", reasoning, []string{"effort", "summary"})
+				}
+				if text, found := responses["text"]; found {
+					validateRawObject("delegation.responses.text", text, []string{"verbosity"})
+				}
+				choice, found := rawProperty(responses, "toolChoice", "tool_choice")
+				if found {
+					validateRawObject("delegation.responses.toolChoice", choice, []string{"type", "name", "serverLabel", "server_label"})
+				}
+				if tools, ok := responses["tools"].([]any); ok {
+					for i, tool := range tools {
+						validateRawObject(fmt.Sprintf("delegation.responses.tools[%d]", i), tool,
+							[]string{"type", "name", "description", "parameters", "strict"})
+					}
 				}
 			}
 		}
 	}
-	if policies, ok := values["policies"].([]any); ok {
-		for i, policy := range policies {
-			validateRawObject(fmt.Sprintf("policies[%d]", i), policy,
-				[]string{"type", "raiPolicyName", "rai_policy_name", "invocationsModeration", "invocations_moderation"})
-			if object, ok := policy.(map[string]any); ok {
-				if _, found := rawProperty(object, "invocationsModeration", "invocations_moderation"); found {
-					errors = append(errors, fmt.Sprintf(
-						"policies[%d].invocationsModeration is not supported for GPT Live", i))
+	if policiesValue, found := values["policies"]; found {
+		policies, ok := policiesValue.([]any)
+		if !ok {
+			errors = append(errors, "policies must be an array for GPT Live")
+		} else {
+			for i, policy := range policies {
+				validateRawObject(fmt.Sprintf("policies[%d]", i), policy,
+					[]string{"type", "raiPolicyName", "rai_policy_name", "invocationsModeration", "invocations_moderation"})
+				if object, ok := policy.(map[string]any); ok {
+					if _, found := rawProperty(object, "invocationsModeration", "invocations_moderation"); found {
+						errors = append(errors, fmt.Sprintf(
+							"policies[%d].invocationsModeration is not supported for GPT Live", i))
+					}
 				}
 			}
 		}

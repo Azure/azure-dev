@@ -620,6 +620,57 @@ func TestVoiceAgentFromResolvedService_RejectsExplicitEmptyManagedAgentVersion(t
 	}
 }
 
+func TestVoiceAgentFromResolvedService_RejectsExplicitNullLiveFields(t *testing.T) {
+	for name, invalid := range map[string]map[string]any{
+		"delegation":       map[string]any{"delegation": nil},
+		"store":            map[string]any{"store": nil},
+		"audio":            map[string]any{"audio": nil},
+		"audio format":     map[string]any{"audio": map[string]any{"format": nil}},
+		"audio output":     map[string]any{"audio": map[string]any{"output": nil}},
+		"output voice":     map[string]any{"audio": map[string]any{"output": map[string]any{"voice": nil}}},
+		"structuredInputs": map[string]any{"structuredInputs": nil},
+		"policies":         map[string]any{"policies": nil},
+	} {
+		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+			t.Run(name+"/"+source, func(t *testing.T) {
+				root := t.TempDir()
+				var service *azdext.ServiceConfig
+				if source == "inline" {
+					definition := map[string]any{
+						"kind": "voice", "name": "live", "subProtocol": "live",
+						"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+					}
+					maps.Copy(definition, invalid)
+					service = inlineAgentService(t, definition)
+				} else {
+					rootDefinition := map[string]any{
+						"kind": "voice", "name": "live", "sub_protocol": "live",
+						"model_type": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+					}
+					if source == "root-ref" {
+						rootInvalid := maps.Clone(invalid)
+						if value, found := rootInvalid["structuredInputs"]; found {
+							rootInvalid["structured_inputs"] = value
+							delete(rootInvalid, "structuredInputs")
+						}
+						maps.Copy(rootDefinition, rootInvalid)
+					}
+					encoded, err := yaml.Marshal(rootDefinition)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+					overlay := map[string]any{"$ref": "live.yaml"}
+					if source == "sibling-overlay" {
+						maps.Copy(overlay, invalid)
+					}
+					service = inlineAgentService(t, overlay)
+				}
+				_, _, err := VoiceAgentFromResolvedService(service, root)
+				require.Error(t, err)
+			})
+		}
+	}
+}
+
 func TestVoiceAgentFromResolvedService_GPTLiveRootRefAfterInPlaceResolution(t *testing.T) {
 	root := t.TempDir()
 	definition := `kind: voice

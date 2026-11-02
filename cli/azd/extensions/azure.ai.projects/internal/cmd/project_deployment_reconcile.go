@@ -12,6 +12,7 @@ import (
 
 	"azure.ai.projects/internal/azure"
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/phasetelemetry"
 	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
 
@@ -30,6 +31,8 @@ func reconcileAdoptedDeployments(
 	serviceName string,
 	noPrompt bool,
 ) (string, bool, func() error, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.DeploymentReconciliation)()
+
 	if target == nil || target.Mode != projectModeExistingID ||
 		target.ResourceId == "" {
 		return "", false, func() error { return nil }, nil
@@ -100,6 +103,8 @@ func reconcileAdoptedDeployments(
 	pager := deploymentsClient.NewListPager(
 		target.ResourceGroupName, target.AccountName, nil,
 	)
+	endQuery := phasetelemetry.Start(ctx, phasetelemetry.AzureQuery)
+	defer endQuery()
 	var live []liveProjectDeployment
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
@@ -135,6 +140,7 @@ func reconcileAdoptedDeployments(
 	slices.SortFunc(live, func(a, b liveProjectDeployment) int {
 		return strings.Compare(a.Name, b.Name)
 	})
+	endQuery()
 
 	return reconcileAdoptedDeploymentChoices(
 		ctx, client, envName, target, declared, live, environmentValues, noPrompt,

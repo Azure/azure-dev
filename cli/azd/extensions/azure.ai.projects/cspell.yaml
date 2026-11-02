@@ -1,4 +1,8 @@
 import: ../../.vscode/cspell.yaml
+overrides:
+  - filename: ["internal/phasetelemetry/*.go", "internal/cmd/*.go", "internal/provisioning/*.go"]
+    words:
+      - phasetelemetry
 words:
   - alnum
   - exterrors

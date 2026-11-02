@@ -19,9 +19,10 @@ reporter.Report(ctx, telemetry.Event{
 })
 ```
 
-The example is illustrative; this extension does not currently emit a product
-usage event through this interface. Existing provisioning span attributes are
-unchanged by this adapter. Add an event only after its product question, bounded
+The example is illustrative. Project/deployment add commands and the Foundry
+Provision provider report [operation and internal step timings](../azure.ai.agents/docs/phase-telemetry.md)
+through the existing reporter, including authoring delegated by agent Init.
+Existing provisioning span attributes remain unchanged. Add an event only after its product question, bounded
 values, documentation, and privacy review are agreed. Before emitting, declare each
 `ext.*` attribute in `cli/azd/extensions/telemetry/fields.go` — reuse an existing
 declaration only when its meaning, allowed values, classification, and purpose are

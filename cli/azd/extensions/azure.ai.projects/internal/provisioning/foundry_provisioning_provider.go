@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/phasetelemetry"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -437,6 +438,7 @@ func (p *FoundryProvisioningProvider) refreshReuseOnlyDeployments(ctx context.Co
 	if !p.existingProjectReuseOnly {
 		return nil
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.DeploymentReconciliation)()
 	deployments, present, err := p.projectDeployments(ctx)
 	if err != nil {
 		return err
@@ -872,6 +874,8 @@ func sameExistingProjectEndpoint(a, b string) bool {
 // resolveEnv pulls the env values the provider needs from azd-core. It does
 // no Azure work; credentials are deferred until needed.
 func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ConfigurationLoading)()
+
 	envClient := p.azdClient.Environment()
 
 	currEnv, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
@@ -1099,6 +1103,7 @@ func (p *FoundryProvisioningProvider) ensureCredential(ctx context.Context) erro
 	if p.credential != nil {
 		return nil
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.CredentialAcquisition)()
 
 	tenantResp, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 		SubscriptionId: p.subID,
@@ -1183,7 +1188,10 @@ func (p *FoundryProvisioningProvider) State(
 func (p *FoundryProvisioningProvider) Deploy(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
-) (*azdext.ProvisioningDeployResult, error) {
+) (phaseResult0 *azdext.ProvisioningDeployResult, phaseErr error) {
+	ctx, timing := phasetelemetry.Begin(ctx, phasetelemetry.Provision, phasetelemetry.Provider, phasetelemetry.Reporter(p.azdClient))
+	defer func() { timing.End(ctx, phaseErr) }()
+
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}
@@ -1242,12 +1250,16 @@ func (p *FoundryProvisioningProvider) Deploy(
 	name := p.deploymentName()
 	progress(fmt.Sprintf("Starting ARM deployment %q...", name))
 
+	endSubmit := phasetelemetry.Start(ctx, phasetelemetry.ResourceDeploymentSubmit)
 	poller, err := client.BeginCreateOrUpdateAtSubscriptionScope(ctx, name, dep, nil)
+	endSubmit()
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
 	}
 
+	endWait := phasetelemetry.Start(ctx, phasetelemetry.ResourceDeploymentWait)
 	resp, err := pollWithProgress(ctx, poller, progress, "Foundry deployment in progress")
+	endWait()
 	if err != nil {
 		if trackSupportingResourceGroup && !resourceGroupExisted {
 			if ownershipErr := p.persistCreatedResourceGroupOwnership(ctx); ownershipErr != nil {
@@ -1335,8 +1347,11 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*templateSource, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.TemplateResolution)()
+
 	if p.onDiskSource == nil && p.onDiskTemplatePresent() {
 		progress("Compiling on-disk Bicep templates...")
+		endCompilation := phasetelemetry.Start(ctx, phasetelemetry.TemplateCompilation)
 		src, err := loadOnDiskTemplateAt(
 			ctx,
 			p.onDiskInfraPath(),
@@ -1344,6 +1359,7 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 			p.bicepCli(),
 			p.envValues(ctx),
 		)
+		endCompilation()
 		if err != nil {
 			return nil, err
 		}
@@ -2404,6 +2420,8 @@ func resolveLayerResourceGroupOwnership(
 }
 
 func (p *FoundryProvisioningProvider) resourceGroupExists(ctx context.Context) (bool, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ResourceLookup)()
+
 	_, found, err := p.lookupResourceGroupState(ctx)
 	return found, err
 }

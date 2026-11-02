@@ -798,9 +798,10 @@ func requirePetclinicRecord(t *testing.T, endpoint, ownerID, marker string, pres
 
 func waitForSpringReadiness(t *testing.T, endpoint string) {
 	t.Helper()
+	client := &http.Client{Timeout: 30 * time.Second}
 	deadline := time.Now().Add(10 * time.Minute)
 	for time.Now().Before(deadline) {
-		response, err := http.Get(endpoint + "/actuator/health/readiness")
+		response, err := client.Get(endpoint + "/actuator/health/readiness")
 		if err == nil {
 			_ = response.Body.Close()
 			if response.StatusCode == http.StatusOK {

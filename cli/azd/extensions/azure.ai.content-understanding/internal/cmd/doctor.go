@@ -169,9 +169,12 @@ func formatDoctorResult(result doctorResult) string {
 		for _, missing := range result.Missing {
 			output.WriteString(warningText("default", fmt.Sprintf("  - %s\n", missing)))
 		}
-		output.WriteString("\nConfigure mappings with azd ai cu defaults set --model MODEL=DEPLOYMENT.\n" +
-			"If the selected environment has cu.modelDeployments, run azd ai cu doctor --fix-defaults.\n" +
-			"Non-generative analyzers may still be usable.\n")
+		output.WriteString("\nNext steps:\n")
+		output.WriteString(actionText("default",
+			"  Configure mappings with azd ai cu defaults set --model MODEL=DEPLOYMENT.") + "\n")
+		output.WriteString(actionText("default",
+			"  If the selected environment has cu.modelDeployments, run azd ai cu doctor --fix-defaults.") + "\n")
+		output.WriteString("\nNon-generative analyzers may still be usable.\n")
 	}
 	return output.String()
 }

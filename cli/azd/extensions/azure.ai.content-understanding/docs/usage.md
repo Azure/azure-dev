@@ -527,8 +527,12 @@ examples with descriptions. Help uses azd-style headings and colors when enabled
 set `NO_COLOR=1` for plain text.
 Human-readable diagnostics follow azd conventions: warnings are yellow and
 errors are red. This includes provisioning guidance, retry validation, schema
-suggestion warnings, and doctor readiness warnings. Command failures are
-reported by azd. Explicit JSON/none modes leave diagnostic text uncolored,
+suggestion warnings, and doctor readiness warnings. Follow-up action lines in
+infrastructure generation and doctor reports use azd's bright-blue highlight.
+Inline comments beside infrastructure next-step commands are gray, not blue.
+Blank lines separate infrastructure prompts, execution summaries, and next steps.
+Command failures and their suggestions are reported by azd.
+Explicit JSON/none modes leave diagnostic text uncolored,
 and structured result fields never contain added color escapes.
 
 ## Usage guidance

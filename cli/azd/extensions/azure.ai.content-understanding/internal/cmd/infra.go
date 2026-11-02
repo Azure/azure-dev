@@ -210,6 +210,9 @@ func runInfraGenerate(
 		return writeServiceResult(cmd, extCtx.OutputFormat, result)
 	}
 	var summary strings.Builder
+	if showGuidance {
+		summary.WriteByte('\n')
+	}
 	action := "Generated"
 	if result.ReusedExistingTemplate {
 		action = "Updated"
@@ -223,18 +226,19 @@ func runInfraGenerate(
 		}
 		summary.WriteString(".\n")
 	}
-	summary.WriteString("Files written:\n")
+	summary.WriteString("\nFiles written:\n")
 	for _, path := range result.Files {
 		fmt.Fprintf(&summary, "  %s\n", path)
 	}
-	summary.WriteString("\nNo Azure resources were deployed. Next:\n")
+	summary.WriteString("\nNo Azure resources were deployed.\n\nNext steps:\n")
 	for index, step := range result.NextSteps {
 		if index == 0 && runtime.GOOS == "windows" {
 			step = "Set-Location -LiteralPath '" + strings.ReplaceAll(result.OutputDirectory, "'", "''") + "'"
 		}
+		comment := ""
 		switch index {
 		case 1:
-			fmt.Fprintf(&summary, "  %s    # (one-time)\n", step)
+			comment = "    # (one-time)"
 		case 2:
 			action := "provisions a Microsoft Foundry resource, optionally deploys selected supported " +
 				"LLMs and embeddings models, and configures Content Understanding defaults"
@@ -244,13 +248,14 @@ func runInfraGenerate(
 			} else if result.ModelSelection == "none" {
 				action = "provisions a Microsoft Foundry resource without model deployments"
 			}
-			fmt.Fprintf(&summary, "  %s    # %s\n", step, action)
-		default:
-			fmt.Fprintf(&summary, "  %s\n", step)
+			comment = "    # " + action
 		}
+		fmt.Fprintf(&summary, "  %s%s\n", actionText(extCtx.OutputFormat, step),
+			commentText(extCtx.OutputFormat, comment))
 	}
-	summary.WriteString("The post-provision hook prints verified Content Understanding setup and test commands.\n" +
-		"Run azd ai cu doctor afterwards to check the selected environment.\n")
+	summary.WriteString("\nThe post-provision hook prints verified Content Understanding setup and test commands.\n\n")
+	summary.WriteString(actionText(extCtx.OutputFormat,
+		"Run azd ai cu doctor afterwards to check the selected environment.") + "\n")
 	if _, err := fmt.Fprint(cmd.OutOrStdout(), summary.String()); err != nil {
 		return fmt.Errorf("write infrastructure summary: %w", err)
 	}

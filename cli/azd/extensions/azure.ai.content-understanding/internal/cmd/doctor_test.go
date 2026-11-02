@@ -137,6 +137,11 @@ func TestDoctorWarningColorDoesNotChangeReadinessOrJSON(t *testing.T) {
 			case "default":
 				assert.Contains(t, stdout, "\x1b[33m")
 				assert.Contains(t, stdout, "[WARN] Generative readiness: not ready")
+				assert.Contains(t, strings.ReplaceAll(stdout, "\x1b[0m", ""), "\n\nNext steps:\n")
+				assert.Contains(t, stdout, "\x1b[94m  Configure mappings with azd ai cu defaults set")
+				assert.Contains(t, stdout,
+					"\x1b[94m  If the selected environment has cu.modelDeployments, run azd ai cu doctor --fix-defaults.")
+				assert.Contains(t, stdout, "\n\nNon-generative analyzers")
 			case "json":
 				var result doctorResult
 				require.NoError(t, json.Unmarshal([]byte(stdout), &result))

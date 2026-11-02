@@ -30,14 +30,22 @@ func TestDiagnosticColorsFollowAzdConventions(t *testing.T) {
 			t.Setenv("NO_COLOR", test.noColor)
 			const message = "A diagnostic is 50% complete."
 			warning, failure := warningText(test.format, message), errorText(test.format, message)
+			action := actionText(test.format, message)
+			comment := commentText(test.format, message)
 			if test.colored {
 				assert.Equal(t, output.WithWarningFormat("%s", message), warning)
 				assert.Contains(t, warning, "\x1b[33m")
 				assert.Equal(t, output.WithErrorFormat("%s", message), failure)
 				assert.Contains(t, failure, "\x1b[31m")
+				assert.Equal(t, output.WithHighLightFormat("%s", message), action)
+				assert.Contains(t, action, "\x1b[94m")
+				assert.Equal(t, output.WithGrayFormat("%s", message), comment)
+				assert.Contains(t, comment, "\x1b[90m")
 			} else {
 				assert.Equal(t, message, warning)
 				assert.Equal(t, message, failure)
+				assert.Equal(t, message, action)
+				assert.Equal(t, message, comment)
 			}
 		})
 	}
@@ -45,6 +53,8 @@ func TestDiagnosticColorsFollowAzdConventions(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	assert.Equal(t, "Warning", warningText("default", "Warning"))
 	assert.Equal(t, "Error", errorText("default", "Error"))
+	assert.Equal(t, "Action", actionText("default", "Action"))
+	assert.Equal(t, "Comment", commentText("default", "Comment"))
 }
 
 func TestWarningUsesInjectedWriterAndPropagatesFailures(t *testing.T) {

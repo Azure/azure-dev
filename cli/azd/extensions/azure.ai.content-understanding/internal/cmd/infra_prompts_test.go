@@ -109,7 +109,7 @@ func TestInfraGeneratePromptCancellation(t *testing.T) {
 	assert.Contains(t, stdout, "`azd ai cu infra generate` generates an azd template.")
 	assert.Contains(t, stdout, "It doesn't create any Azure resources itself")
 	assert.NotContains(t, stdout, "Generated project:")
-	assert.NotContains(t, stdout, "No Azure resources were deployed. Next:")
+	assert.NotContains(t, stdout, "Next steps:")
 	assert.NoDirExists(t, target)
 	assert.Equal(t, "close", host.calls[len(host.calls)-1])
 }
@@ -277,6 +277,68 @@ func TestInfraGenerateNextStepWording(t *testing.T) {
 			assert.Contains(t, stdout,
 				"The post-provision hook prints verified Content Understanding setup and test commands.")
 			assert.Contains(t, stdout, "azd ai cu doctor")
+		})
+	}
+}
+
+func TestInfraGenerateSectionsAndActionColors(t *testing.T) {
+	setHelpColor(t, true)
+	for _, mode := range []string{"default", "NO_COLOR", "no-prompt", "json", "none"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("NO_COLOR", "")
+			if mode == "NO_COLOR" {
+				t.Setenv("NO_COLOR", "1")
+			}
+			host := infraCommandFixture(t)
+			var stdout, stderr bytes.Buffer
+			host.prompt = func(choices infra.Choices) (infra.Choices, error) {
+				_, err := stdout.WriteString("Interactive selections complete.\n")
+				return choices, err
+			}
+			root := newRootCommandWithInfra(nil, func(*cobra.Command, *azdext.ExtensionContext) (infraHost, error) {
+				return host, nil
+			})
+			root.SetOut(&stdout)
+			root.SetErr(&stderr)
+			args := []string{"infra", "generate", "-d", filepath.Join(testutil.TempDir(t), "project"), "--models", "none"}
+			switch mode {
+			case "no-prompt":
+				args = append(args, "--no-prompt")
+			case "json", "none":
+				args = append(args, "--output", mode, "--no-prompt")
+			}
+			root.SetArgs(args)
+			require.NoError(t, root.ExecuteContext(t.Context()))
+			assert.Empty(t, stderr.String())
+			text := stdout.String()
+			switch mode {
+			case "json":
+				var result infra.Generation
+				require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+				assert.Len(t, result.NextSteps, 3)
+				assert.NotContains(t, text, "\x1b")
+			case "none":
+				assert.Empty(t, text)
+			default:
+				if mode == "no-prompt" {
+					assert.True(t, strings.HasPrefix(text, "Generated project:"))
+				} else {
+					assert.Contains(t, text, "Interactive selections complete.\n\nGenerated project:")
+				}
+				assert.Contains(t, text, "\n\nFiles written:\n")
+				assert.Contains(t, text, "\n\nNo Azure resources were deployed.\n\nNext steps:\n")
+				assert.Contains(t, text, "\n\nThe post-provision hook")
+				if mode == "NO_COLOR" {
+					assert.NotContains(t, text, "\x1b")
+				} else {
+					assert.Contains(t, text, "\x1b[94mazd auth login\x1b[0m\x1b[90m    # (one-time)\x1b[0m")
+					assert.Contains(t, text,
+						"\x1b[94mazd up\x1b[0m\x1b[90m    # "+
+							"provisions a Microsoft Foundry resource without model deployments\x1b[0m")
+					assert.Contains(t, text, "\n\n\x1b[94mRun azd ai cu doctor afterwards")
+					assert.NotContains(t, text, "\x1b[94mGenerated")
+				}
+			}
 		})
 	}
 }
@@ -794,7 +856,7 @@ func TestInfraGenerationThroughHostRPC(t *testing.T) {
 			} else {
 				require.Error(t, err)
 				assert.NotContains(t, stdout, "Generated project:")
-				assert.NotContains(t, stdout, "No Azure resources were deployed. Next:")
+				assert.NotContains(t, stdout, "Next steps:")
 				assert.NoDirExists(t, target)
 			}
 			rpc.mu.Lock()

@@ -31,6 +31,20 @@ func errorText(format, text string) string {
 	return output.WithErrorFormat("%s", text)
 }
 
+func actionText(format, text string) string {
+	if format == "json" || format == "none" || os.Getenv("NO_COLOR") != "" {
+		return text
+	}
+	return output.WithHighLightFormat("%s", text)
+}
+
+func commentText(format, text string) string {
+	if format == "json" || format == "none" || os.Getenv("NO_COLOR") != "" {
+		return text
+	}
+	return output.WithGrayFormat("%s", text)
+}
+
 func writeWarning(cmd *cobra.Command, format, message string) error {
 	_, err := fmt.Fprintln(cmd.ErrOrStderr(), warningText(format, "Warning: "+message))
 	return err

@@ -13,7 +13,10 @@
   validation feedback, and confirmation before deployment. Retain selections
   when correcting conflicting model versions.
 - Follow azd's yellow warning and red error conventions for human-readable
-  diagnostics. Honor `NO_COLOR` and keep JSON/none diagnostics uncolored.
+  diagnostics and bright-blue highlights for follow-up actions, with gray inline
+  comments beside next-step commands. Separate
+  interactive input, results, and next steps with blank lines.
+  Honor `NO_COLOR` and keep JSON/none diagnostics uncolored.
 - Prevent generation for one azd environment from changing another environment's
   target resource. Save resource, model-selection, and configuration choices
   per environment; preserve effective resource choices when migrating older

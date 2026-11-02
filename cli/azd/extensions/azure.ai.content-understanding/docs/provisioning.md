@@ -100,6 +100,8 @@ The command explains its purpose before asking you to select a subscription,
 then the wizard explains each deployment choice before asking. Invalid text
 input shows a reason before retrying. Human-readable warnings use azd's yellow
 convention and validation errors use red when terminal color is enabled.
+Follow-up commands use azd's bright-blue highlight; their inline comments are gray. Blank lines separate
+the interactive questions, generated-project summary, file list, and next steps.
 Set `NO_COLOR=1` for plain text; structured JSON results remain uncolored.
 
 | Question | What to provide |
@@ -151,10 +153,12 @@ Needs Owner, User Access Administrator, or Role Based Access Control Administrat
 Pick 'n' if you only have Contributor. If you skip assignment, ask an administrator to grant access unless you already have it.
 Provisioning and post-provision setup use Entra ID, not an API key.
 ? Assign RBAC roles to your user on the Microsoft Foundry resource? Yes
+
 Generated project: /work/provision
 Environment: dev
 Region: eastus2
 Subscription: Development (<subscription-id>)
+
 Files written:
   .azure/config.json
   .azure/dev/.env
@@ -168,11 +172,15 @@ Files written:
   infra/models.json
   infra/modules/foundry.bicep
 
-No Azure resources were deployed. Next:
+No Azure resources were deployed.
+
+Next steps:
   cd '/work/provision'
   azd auth login    # (one-time)
   azd up    # provisions a Microsoft Foundry resource without model deployments
+
 The post-provision hook prints verified Content Understanding setup and test commands.
+
 Run azd ai cu doctor afterwards to check the selected environment.
 ```
 

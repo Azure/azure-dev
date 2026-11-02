@@ -125,7 +125,10 @@ func (a *InvokeAction) a2aLocal(ctx context.Context, version string) error {
 	start := time.Now()
 	resp, err := doLocalRequestWithRetryWriter(ctx, client, newReq, progress)
 	if err != nil {
-		return fmt.Errorf("POST %s failed (is the agent running? Start it with: azd ai agent run): %w", reqURL, err)
+		if isConnectionRefused(err) {
+			return fmt.Errorf("POST %s failed (is the agent running? Start it with: azd ai agent run): %w", reqURL, err)
+		}
+		return fmt.Errorf("POST %s failed: %w", reqURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {

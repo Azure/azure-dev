@@ -340,6 +340,7 @@ func TestLocalA2ARetryAndErrorChains(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				require.ErrorIs(t, err, tc.failure)
+				require.NotContains(t, err.Error(), "is the agent running?", "transport failures need their actual cause")
 			}
 			require.Equal(t, tc.wantCalls, calls)
 		})
@@ -381,6 +382,7 @@ func TestLocalA2ACancelAndTimeout(t *testing.T) {
 				require.ErrorIs(t, err, context.DeadlineExceeded)
 				require.Less(t, time.Since(start), 3*time.Second, "timeout must bound all retry attempts")
 			}
+			require.NotContains(t, err.Error(), "is the agent running?")
 			require.Positive(t, calls)
 		})
 	}

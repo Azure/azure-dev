@@ -50,11 +50,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 			"set agentHosting.clusterResourceId on the azure.ai.project service in azure.yaml, "+
 				"or disable agentHosting in the parameters file and template defaults")
 	}
-	includeAcr, ok := byoParameterValue(source, "includeAcr").(bool)
-	if !ok {
-		return exterrors.Validation(exterrors.CodeInvalidParameter,
-			"includeAcr must be a boolean", "set includeAcr to true or false")
-	}
+	includeAcr, _ := byoParameterValue(source, "includeAcr").(bool)
 	if !hosting.Enabled || hosting.HostingType != "ManagedCluster" || hosting.Name != "default" ||
 		!strings.EqualFold(hosting.ClusterResourceID, p.synthResult.Hosting.ClusterResourceID) {
 		return fmt.Errorf("agentHosting deployment parameters conflict with azure.yaml; " +

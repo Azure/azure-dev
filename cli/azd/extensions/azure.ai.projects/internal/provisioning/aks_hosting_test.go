@@ -90,7 +90,11 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 	acrParameter, ok := f.parameters["includeAcr"].(map[string]any)
 	require.True(f.t, ok)
 	includeAcr, ok := acrParameter["value"].(bool)
-	require.True(f.t, ok)
+	if !ok {
+		return f.response(request, 400, map[string]any{
+			"error": map[string]string{"code": "InvalidTemplate", "message": "offline ARM includeAcr type validation"},
+		}), nil
+	}
 	registryID, registryEndpoint, connectionName := "", "", ""
 	if includeAcr {
 		registryID, registryEndpoint, connectionName = offlineRegistryID, "crnative.azurecr.io", "crnative-conn"
@@ -225,12 +229,53 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 	assert.Equal(t, "2.0.0.0", fake.template["contentVersion"])
 	assert.Equal(t, map[string]any{"value": "custom"}, fake.parameters["resourceTokenSalt"])
 	assert.Equal(t, map[string]any{"value": true}, fake.parameters["includeAcr"])
-	assert.Contains(t, fake.parameters, "kubeletObjectId")
+	assert.Equal(t, map[string]any{"value": "11111111-1111-4111-8111-111111111111"}, fake.parameters["kubeletObjectId"])
+	assert.Contains(t, fake.requests, "GET "+offlineClusterID)
 	p.onDiskSource.parameters["resourceTokenSalt"] = map[string]any{"value": "updated"}
 	_, err = p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"value": "updated"}, fake.parameters["resourceTokenSalt"])
 	assert.Equal(t, 2, fake.writes)
+}
+
+func TestBYONonBooleanIncludeAcrReachesARM(t *testing.T) {
+	for _, operation := range []string{"deploy", "preview"} {
+		for _, test := range []struct {
+			name  string
+			value any
+		}{
+			{"string true", "true"},
+			{"string false", "false"},
+			{"expression", "[equals(1, 1)]"},
+			{"number", 1.0},
+			{"null", nil},
+		} {
+			t.Run(operation+"/"+test.name, func(t *testing.T) {
+				p, fake := offlineBYOProvider(t)
+				p.onDiskSource = &templateSource{
+					mode: templateModeBicep, armTemplate: p.armTemplate,
+					parameters: map[string]any{"includeAcr": map[string]any{"value": test.value}},
+				}
+				method, suffix := http.MethodPut, ""
+				var err error
+				if operation == "preview" {
+					method, suffix = http.MethodPost, "/whatIf"
+					_, err = p.Preview(t.Context(), func(string) {})
+				} else {
+					_, err = p.Deploy(t.Context(), func(string) {})
+				}
+				require.ErrorContains(t, err, "InvalidTemplate")
+				require.ErrorContains(t, err, "offline ARM includeAcr type validation")
+				assert.Equal(t, map[string]any{"value": test.value}, fake.parameters["includeAcr"])
+				assert.NotContains(t, fake.parameters, "kubeletObjectId")
+				assert.Equal(t, []string{
+					"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
+					method + " /subscriptions/target-sub/providers/Microsoft.Resources/deployments/" +
+						p.deploymentName() + suffix,
+				}, fake.requests)
+			})
+		}
+	}
 }
 
 func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSReads(t *testing.T) {

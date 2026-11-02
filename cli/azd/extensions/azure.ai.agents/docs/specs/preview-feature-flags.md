@@ -5,7 +5,7 @@
 ## Status and goal
 
 - **Component:** `cli/azd/extensions/azure.ai.agents`
-- **Scope:** Independent managed-harness, voice, long-running invocation, A2A version-selection, and BYO AKS switches. All switches default to off.
+- **Scope:** Independent managed-harness, voice, long-running invocation, A2A version-selection, BYO AKS, and retained RBAC warning switches. All switches default to off.
 
 Keep preview opt-in decisions inside the Microsoft Foundry agents extension until the extension framework supports discovery and evaluation. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
 
@@ -74,8 +74,26 @@ if err := featureflags.Require(featureflags.Voice); err != nil {
 | `LongRunning` | `agents.long_running` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations |
 | `A2A` | `agents.a2a` | `AZD_ALPHA_ENABLE_AGENTS_A2A` | A2A init selection, explicit wire versions, and the 1.0 message default |
 | `BYOAKS` | `agents.byo_aks` | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Existing AKS project initialization and adoption |
+| `RBACWarnings` | `agents.rbac_warnings` | `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS` | Retained developer RBAC deployment warnings through beta service events |
 
 Each ID starts with `agents.`. Its canonical key is `AZD_ALPHA_ENABLE_` plus the ID in upper case with dots replaced by underscores. Registry tests enforce the identities, naming rule, unique IDs and keys, and nonempty descriptions. The evaluator reads the declared `EnvVar` rather than deriving a key at run time.
+
+### Retained RBAC deployment warnings
+
+The listener reads `RBACWarnings` during host configuration, before opening event
+streams. With the switch off, it registers `predeploy` with the stable
+`WithServiceEventHandler` API. With the switch on, it registers that handler
+only with `WithBetaServiceEventHandler` so the host can collect structured
+warnings in final output and JSON `messages`. There is no beta event
+subscription while the switch is off, and no duplicate stable subscription
+while it is on. `postdeploy` and project listeners remain stable.
+
+Both paths share the existing predeploy validation, telemetry, environment
+updates, RBAC checks, automatic assignment, and skip rules. The stable path
+prints the returned safe warning messages and suggestions in temporary hook
+output; the beta path returns them to the host without also printing them.
+Both preserve handler errors. This switch gates retention, not deployment or
+RBAC checking, so a disabled switch does not reject ordinary deployment.
 
 ### BYO AKS initialization and adoption
 
@@ -212,5 +230,12 @@ Root-command regressions cover parsed flags, local-validation precedence, indepe
 Remote-template regressions cover inline and `$ref` previews, rejection before Azure authentication, retained authentication when enabled, single-download adoption, and temporary-directory cleanup on failure.
 
 BYO AKS regressions cover default-off and boolean-value semantics and inline and referenced project configuration during init/adoption. Infrastructure tests cover Bicep eject, Terraform rejection without file changes, standard Project and registry outputs, and the ARM what-if path.
+
+RBAC listener regressions exercise stable-only hosts with the switch absent,
+false, empty, or invalid, and beta hosts with true and `1` values. They check
+exclusive registration, per-service warning and suggestion delivery, preserved
+validation failures, and non-disclosure of transport credentials. The opt-in
+`tier2/2.17b-deploy-rbac-warnings.yaml` scenario enables the switch for its
+readable and JSON retention checks.
 
 Run offline tests, the full agents module build, and scoped static checks with Go 1.26.4. Tier 0 scenarios cover switch discovery and enabled/disabled help. Scenario execution remains opt-in through the `foundry-extension-scenario-orchestrator` agent; no Azure scenarios are required for this integration.

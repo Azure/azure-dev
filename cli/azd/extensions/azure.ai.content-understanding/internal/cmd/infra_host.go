@@ -29,7 +29,7 @@ type infraSnapshot struct {
 }
 
 type infraHost interface {
-	Subscription(context.Context, bool) (*azdext.Subscription, error)
+	Subscription(context.Context, bool, string) (*azdext.Subscription, error)
 	Resolve(context.Context, *azdext.Subscription, string) (armclient.Account, error)
 	PromptGeneration(context.Context, infra.Choices, generationPrompts) (infra.Choices, error)
 	Snapshot(context.Context, string) (infraSnapshot, error)
@@ -60,7 +60,12 @@ func openInfraHost(cmd *cobra.Command, extCtx *azdext.ExtensionContext) (infraHo
 
 func (h *azdInfraHost) Close() { h.client.Close() }
 
-func (h *azdInfraHost) Subscription(ctx context.Context, noPrompt bool) (*azdext.Subscription, error) {
+func (h *azdInfraHost) Subscription(
+	ctx context.Context, noPrompt bool, selector string,
+) (*azdext.Subscription, error) {
+	if selector != "" {
+		return h.explicitSubscription(ctx, selector)
+	}
 	if !noPrompt {
 		response, err := h.client.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{
 			Message: "Select the Azure subscription for the generated Content Understanding project",
@@ -123,6 +128,42 @@ func (h *azdInfraHost) Subscription(ctx context.Context, noPrompt bool) (*azdext
 	if selected.GetId() == "" || selected.GetTenantId() == "" {
 		return nil, commandError("subscription_required", "No unambiguous subscription is available without prompting.",
 			"Set the azd default subscription or generate interactively.")
+	}
+	return selected, nil
+}
+
+func (h *azdInfraHost) explicitSubscription(ctx context.Context, selector string) (*azdext.Subscription, error) {
+	response, err := h.client.Account().ListSubscriptions(ctx, &azdext.ListSubscriptionsRequest{})
+	if err != nil {
+		return nil, err
+	}
+	var selected *azdext.Subscription
+	for _, subscription := range response.GetSubscriptions() {
+		if strings.EqualFold(subscription.GetId(), selector) {
+			selected = subscription
+			break
+		}
+	}
+	if selected == nil {
+		for _, subscription := range response.GetSubscriptions() {
+			if strings.EqualFold(subscription.GetName(), selector) {
+				if selected != nil {
+					return nil, commandError("ambiguous_subscription",
+						"--subscription matches multiple subscription names.",
+						"Supply the subscription ID instead of its name.")
+				}
+				selected = subscription
+			}
+		}
+	}
+	if selected == nil {
+		return nil, commandError("subscription_unavailable",
+			"--subscription does not match an accessible subscription.",
+			"Run azd auth login with the intended account or supply an accessible subscription name or ID.")
+	}
+	if selected.GetId() == "" || selected.GetTenantId() == "" {
+		return nil, commandError("invalid_subscription",
+			"The host returned an incomplete subscription.", "Run azd auth login.")
 	}
 	return selected, nil
 }

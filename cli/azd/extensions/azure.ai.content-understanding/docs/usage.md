@@ -537,8 +537,12 @@ set `NO_COLOR=1` for plain text.
   file writes, confirmations, or errors. Always check the exit code before parsing
   output: the azd host can render extension errors on stdout.
 - `--no-prompt` disables interactive confirmation; it does not imply `--yes`.
-  For unattended infrastructure generation, also provide an unambiguous azd
-  default subscription and `--models none`, `recommended`, or explicit
+  For unattended infrastructure generation, pass `--subscription "<name-or-id>"`
+  to select an accessible subscription without changing azd defaults.
+  IDs and names match case-insensitively; duplicate names require an ID.
+  An explicit selection overrides defaults and never falls back to another
+  subscription. Without it, provide an unambiguous azd default subscription.
+  Also set `--models none`, `recommended`, or explicit
   comma-separated `model@version` selectors.
 - Write extracted content only to trusted private directories. Output safety
   checks reject symlinks, unsafe shared directories, and unsupported filesystems

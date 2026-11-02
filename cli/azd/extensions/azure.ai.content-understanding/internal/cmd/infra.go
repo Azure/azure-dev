@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"unicode"
 
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
@@ -23,12 +24,13 @@ import (
 
 func newInfraCommand(extCtx *azdext.ExtensionContext, open infraHostFactory) *cobra.Command {
 	group := &cobra.Command{Use: "infra", Short: "Generate infrastructure and complete azd-managed provisioning"}
-	var output, location, api, models, endpoint, prefix string
+	var output, location, api, models, endpoint, prefix, subscription string
 	var roles, noRoles, force bool
 	generate := &cobra.Command{Use: "generate", Short: "Generate the canonical azd/Bicep project", Args: cobra.NoArgs}
 	generate.Long = "Generate an azd/Bicep project without deploying Azure resources.\n" +
 		"Prompt for omitted environment, region, optional new-resource prefix, and role assignment.\n" +
 		"Explicit inputs take precedence. --no-prompt and --output json use context/defaults without the wizard.\n" +
+		"Use --subscription with a subscription name or ID to bypass subscription selection and defaults.\n" +
 		"Save resource choices in the selected azd environment and postprovision choices in its config.\n" +
 		"Show a readable summary by default; use --output json for the complete structured result."
 	generate.Example = `  azd ai cu infra generate
@@ -37,10 +39,14 @@ func newInfraCommand(extCtx *azdext.ExtensionContext, open infraHostFactory) *co
   azd ai cu infra generate --location eastus2 --models recommended --output-dir provision
     Generate a project with recommended models and no role assignments by default.
 
+  azd ai cu infra generate --subscription "<subscription-name-or-id>" --models none --no-prompt
+    Generate without prompts using the specified subscription and default environment/region.
+
   azd ai cu infra generate --foundry-endpoint https://resource.services.ai.azure.com/ --models none
     Generate a project targeting an existing Foundry resource without model deployments.`
 	generate.Flags().StringVarP(&output, "output-dir", "d", "provision", "Generated project directory")
 	generate.Flags().StringVarP(&location, "location", "l", "", "CU-supported Azure region (default: eastus2)")
+	generate.Flags().StringVar(&subscription, "subscription", "", "Azure subscription name or ID (overrides azd defaults)")
 	generate.Flags().StringVar(&api, "api-version", "", "Content Understanding API version (default: GA)")
 	generate.Flags().StringVar(&models, "models", "prompt",
 		"prompt, recommended, none, or comma-separated model@version selectors")
@@ -92,7 +98,9 @@ func runInfraGenerate(
 	cmd *cobra.Command, extCtx *azdext.ExtensionContext, open infraHostFactory,
 	output, location, api, models, endpoint, prefix string, roles, force bool,
 ) error {
-	for _, name := range []string{"environment", "location", "api-version", "models", "foundry-endpoint", "output-dir"} {
+	for _, name := range []string{
+		"environment", "location", "subscription", "api-version", "models", "foundry-endpoint", "output-dir",
+	} {
 		if cmd.Flags().Changed(name) {
 			value, err := cmd.Flags().GetString(name)
 			if err != nil {
@@ -104,6 +112,16 @@ func runInfraGenerate(
 			}
 		}
 	}
+	subscriptionSelector, err := cmd.Flags().GetString("subscription")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(subscriptionSelector) != subscriptionSelector ||
+		strings.IndexFunc(subscriptionSelector, unicode.IsControl) >= 0 {
+		return commandError("invalid_subscription",
+			"--subscription must be a name or ID without surrounding whitespace or controls.",
+			"Supply an accessible subscription name or ID.")
+	}
 	environment := extCtx.Environment
 	if environment == "" {
 		environment = "dev"
@@ -112,7 +130,6 @@ func runInfraGenerate(
 	choices := infra.Choices{Environment: environment, Location: firstInfra(location, "eastus2"),
 		APIVersion: firstInfra(api, cuclient.DefaultAPIVersion), ModelSelection: models, FoundryPrefix: prefix,
 		AssignRoles: roles, ForceConfigurationSetup: force}
-	var err error
 	if choices, err = choices.Normalize(); err != nil {
 		return err
 	}
@@ -130,7 +147,7 @@ func runInfraGenerate(
 		return err
 	}
 	defer host.Close()
-	subscription, err := host.Subscription(ctx, extCtx.NoPrompt)
+	subscription, err := host.Subscription(ctx, extCtx.NoPrompt, subscriptionSelector)
 	if err != nil {
 		return err
 	}

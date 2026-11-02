@@ -2,6 +2,9 @@
 
 ## 0.1.1-preview (Unreleased)
 
+- Accept `infra generate --subscription` with a subscription name or ID, overriding
+  azd defaults without prompting. Reject missing or ambiguous matches instead of
+  falling back to another subscription.
 - Explain infrastructure generation and each interactive choice on screen,
   without requiring `?` hints. Guide users through environment, region,
   resource naming, and access permissions, then explain the next steps.

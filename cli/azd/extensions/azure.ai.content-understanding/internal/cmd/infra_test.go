@@ -55,7 +55,7 @@ func infraCommandFixture(t *testing.T) *infraCommandHost {
 		},
 	}}
 }
-func (f *infraCommandHost) Subscription(context.Context, bool) (*azdext.Subscription, error) {
+func (f *infraCommandHost) Subscription(context.Context, bool, string) (*azdext.Subscription, error) {
 	f.calls = append(f.calls, "subscription")
 	return &azdext.Subscription{Id: "sub", TenantId: "tenant", Name: "Subscription"}, nil
 }
@@ -173,7 +173,7 @@ func TestInfraCommandsGenerationReuseAndNoEndpointDependency(t *testing.T) {
 		{"infra", "generate", "-e", "../escape"}, {"infra", "generate", "--location", "invalid"},
 		{"infra", "generate", "--models", "none,other"},
 		{"infra", "generate", "--foundry-prefix", "prefix", "--foundry-endpoint", "foundry"},
-		{"infra", "generate", "--subscription", "sub"}, {"infra", "generate", "--api-key", "private"},
+		{"infra", "generate", "--subscription", ""}, {"infra", "generate", "--api-key", "private"},
 	} {
 		f.calls = nil
 		stdout, _, err := executeInfra(t, f, args...)
@@ -638,7 +638,7 @@ func TestInfraHostConfiguredDefaultSubscription(t *testing.T) {
 			rpc := &infraRPC{subscriptions: test.subscriptions,
 				defaultSubscription: &azdext.GetUserConfigResponse{Found: true, Value: []byte(test.raw)}}
 			host := infraRPCClient(t, rpc)
-			subscription, err := host.Subscription(azdext.WithAccessToken(t.Context()), true)
+			subscription, err := host.Subscription(azdext.WithAccessToken(t.Context()), true, "")
 			if test.selected == "" {
 				require.Error(t, err)
 				assert.Nil(t, subscription)
@@ -649,6 +649,165 @@ func TestInfraHostConfiguredDefaultSubscription(t *testing.T) {
 			rpc.mu.Lock()
 			assert.Contains(t, rpc.calls, "user-config:defaults.subscription")
 			assert.NotContains(t, rpc.calls, "prompt-subscription")
+			rpc.mu.Unlock()
+		})
+	}
+}
+
+func TestInfraHostExplicitSubscription(t *testing.T) {
+	const selectedID = "11111111-2222-3333-4444-555555555555"
+	for _, test := range []struct {
+		name, selector, selected, code string
+		subscriptions                  []*azdext.Subscription
+	}{
+		{"ID", selectedID, selectedID, "", []*azdext.Subscription{
+			{Id: "other", Name: "Other", TenantId: "tenant", IsDefault: true},
+			{Id: selectedID, Name: "Target subscription", TenantId: "tenant"},
+		}},
+		{"name case insensitive", "target SUBSCRIPTION", selectedID, "", []*azdext.Subscription{
+			{Id: selectedID, Name: "Target subscription", TenantId: "tenant"},
+		}},
+		{"ID case insensitive", "ABCDEFAB-2222-3333-4444-555555555555",
+			"abcdefab-2222-3333-4444-555555555555", "", []*azdext.Subscription{
+				{Id: "abcdefab-2222-3333-4444-555555555555", Name: "Target", TenantId: "tenant"},
+			}},
+		{"ID precedes name", selectedID, selectedID, "", []*azdext.Subscription{
+			{Id: "other", Name: selectedID, TenantId: "tenant"},
+			{Id: selectedID, Name: "Target", TenantId: "tenant"},
+		}},
+		{"duplicate name", "Target", "", "ambiguous_subscription", []*azdext.Subscription{
+			{Id: "first", Name: "Target", TenantId: "tenant", IsDefault: true},
+			{Id: "second", Name: "TARGET", TenantId: "tenant"},
+		}},
+		{"missing ignores sole default", "missing", "", "subscription_unavailable", []*azdext.Subscription{
+			{Id: "other", Name: "Other", TenantId: "tenant", IsDefault: true},
+		}},
+		{"empty list", "missing", "", "subscription_unavailable", nil},
+		{"missing tenant", "Target", "", "invalid_subscription", []*azdext.Subscription{
+			{Id: selectedID, Name: "Target"},
+		}},
+		{"missing ID", "Target", "", "invalid_subscription", []*azdext.Subscription{
+			{Name: "Target", TenantId: "tenant"},
+		}},
+	} {
+		for _, noPrompt := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/noPrompt=%t", test.name, noPrompt), func(t *testing.T) {
+				rpc := &infraRPC{subscriptions: test.subscriptions,
+					configErr: errors.New("explicit selection must not read defaults")}
+				host := infraRPCClient(t, rpc)
+				subscription, err := host.Subscription(azdext.WithAccessToken(t.Context()), noPrompt, test.selector)
+				if test.code == "" {
+					require.NoError(t, err)
+					assert.Equal(t, test.selected, subscription.GetId())
+				} else {
+					var failure *cuclient.Error
+					require.ErrorAs(t, err, &failure)
+					assert.Equal(t, test.code, failure.Code)
+					assert.Nil(t, subscription)
+				}
+				rpc.mu.Lock()
+				assert.Equal(t, []string{"subscriptions"}, rpc.calls)
+				assert.Empty(t, rpc.writes)
+				rpc.mu.Unlock()
+			})
+		}
+	}
+}
+
+func TestInfraExplicitSubscriptionGeneration(t *testing.T) {
+	for _, noPrompt := range []bool{false, true} {
+		t.Run(fmt.Sprint("noPrompt=", noPrompt), func(t *testing.T) {
+			_ = infraCommandFixture(t)
+			rpc := &infraRPC{
+				configErr: errors.New("explicit selection must not read defaults"),
+				subscriptions: []*azdext.Subscription{
+					{Id: "default-sub", Name: "Default", TenantId: "default-tenant", IsDefault: true},
+					{Id: "selected-sub", Name: "Target subscription", TenantId: "selected-tenant",
+						UserTenantId: "guest-access-tenant"},
+				},
+			}
+			_ = infraRPCClient(t, rpc)
+			directory := filepath.Join(testutil.TempDir(t), "provision")
+			args := []string{"infra", "generate", "--subscription", "Target subscription", "--environment", "selected",
+				"--location", "eastus2", "--foundry-prefix", "test", "--no-assign-roles",
+				"--models", "none", "--output-dir", directory, "--output", "json"}
+			if noPrompt {
+				args = append(args, "--no-prompt")
+			}
+			stdout, stderr, err := executeRoot(t, args...)
+			require.NoError(t, err)
+			assert.Empty(t, stderr)
+			var result infra.Generation
+			require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+			assert.Equal(t, "selected-sub", result.SubscriptionID)
+			assert.Equal(t, "Target subscription", result.SubscriptionName)
+			assert.Equal(t, "selected-tenant", result.TenantID)
+			// #nosec G304 -- Reads generated fixture state in the test's private directory.
+			values, err := os.ReadFile(filepath.Join(directory, ".azure", "selected", ".env"))
+			require.NoError(t, err)
+			assert.Contains(t, string(values), `AZURE_SUBSCRIPTION_ID="selected-sub"`)
+			assert.Contains(t, string(values), `AZURE_TENANT_ID="selected-tenant"`)
+			rpc.mu.Lock()
+			assert.Equal(t, []string{"subscriptions"}, rpc.calls)
+			assert.Empty(t, rpc.writes)
+			rpc.mu.Unlock()
+		})
+	}
+}
+
+func TestInfraInvalidSubscriptionBeforeHostAccess(t *testing.T) {
+	for _, selector := range []string{"", " ", " Target", "Target ", "Target\nsubscription", "Target\x00"} {
+		t.Run(fmt.Sprintf("%q", selector), func(t *testing.T) {
+			host := infraCommandFixture(t)
+			directory := testutil.TempDir(t)
+			sentinel := filepath.Join(directory, "azure.yaml")
+			require.NoError(t, os.WriteFile(sentinel, []byte("unchanged"), 0o600))
+			stdout, stderr, err := executeInfra(t, host, "infra", "generate",
+				"--subscription", selector, "--output-dir", directory, "--no-prompt")
+			require.Error(t, err)
+			assert.Empty(t, stdout)
+			assert.Empty(t, stderr)
+			assert.Empty(t, host.calls)
+			// #nosec G304 -- Reads a test-owned sentinel.
+			saved, err := os.ReadFile(sentinel)
+			require.NoError(t, err)
+			assert.Equal(t, "unchanged", string(saved))
+			entries, err := os.ReadDir(directory)
+			require.NoError(t, err)
+			assert.Len(t, entries, 1)
+		})
+	}
+}
+
+func TestInfraExplicitSubscriptionFailuresDoNotGenerateFiles(t *testing.T) {
+	for _, reason := range []string{"missing", "ambiguous", "host failure"} {
+		t.Run(reason, func(t *testing.T) {
+			_ = infraCommandFixture(t)
+			rpc := &infraRPC{subscriptions: []*azdext.Subscription{
+				{Id: "default-sub", Name: "Default", TenantId: "tenant", IsDefault: true},
+			}}
+			if reason == "ambiguous" {
+				rpc.subscriptions = []*azdext.Subscription{
+					{Id: "first", Name: "Target", TenantId: "tenant"},
+					{Id: "second", Name: "Target", TenantId: "tenant"},
+				}
+			}
+			if reason == "host failure" {
+				rpc.subscriptionErr = errors.New("private-subscription-detail")
+			}
+			_ = infraRPCClient(t, rpc)
+			directory := filepath.Join(testutil.TempDir(t), "provision")
+			stdout, stderr, err := executeRoot(t, "infra", "generate",
+				"--subscription", "Target", "--output-dir", directory, "--no-prompt")
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "private")
+			assert.Empty(t, stdout)
+			assert.Empty(t, stderr)
+			_, err = os.Stat(directory)
+			assert.ErrorIs(t, err, os.ErrNotExist)
+			rpc.mu.Lock()
+			assert.Equal(t, []string{"subscriptions"}, rpc.calls)
+			assert.Empty(t, rpc.writes)
 			rpc.mu.Unlock()
 		})
 	}
@@ -855,9 +1014,9 @@ func TestInfraHostScopedRPCAndDottedModelNames(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "selected", snapshot.environment)
 	assert.Equal(t, "selected-sub", snapshot.values["AZURE_SUBSCRIPTION_ID"])
-	_, err = host.Subscription(ctx, true)
+	_, err = host.Subscription(ctx, true, "")
 	require.NoError(t, err)
-	_, err = host.Subscription(ctx, false)
+	_, err = host.Subscription(ctx, false, "")
 	require.NoError(t, err)
 	capabilities := &infraCapabilities{host: host, snapshot: snapshot}
 	require.NoError(t, capabilities.SetConfiguration(ctx, "endpoint", "https://account.services.ai.azure.com"))
@@ -889,13 +1048,13 @@ func TestInfraHostNoninteractiveDecisionsAndInvalidState(t *testing.T) {
 		rpc.mu.Lock()
 		rpc.subscriptions = subscriptions
 		rpc.mu.Unlock()
-		_, err := host.Subscription(ctx, true)
+		_, err := host.Subscription(ctx, true, "")
 		require.Error(t, err)
 	}
 	rpc.mu.Lock()
 	rpc.subscriptions = []*azdext.Subscription{{Id: "single", TenantId: "tenant"}}
 	rpc.mu.Unlock()
-	subscription, err := host.Subscription(ctx, true)
+	subscription, err := host.Subscription(ctx, true, "")
 	require.NoError(t, err)
 	assert.Equal(t, "single", subscription.Id)
 	snapshot, err := host.Snapshot(ctx, "")

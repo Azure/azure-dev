@@ -265,7 +265,6 @@ for validation rules and test options.
 Validation errors identify source line/column locations. Authoring checks locate
 the alias they actually use (for example, `field_schema` when `fieldSchema` is
 empty); `--spec` findings retain locations in the original service-contract body.
-Structured finding paths remain unchanged.
 
 ## Command overview
 

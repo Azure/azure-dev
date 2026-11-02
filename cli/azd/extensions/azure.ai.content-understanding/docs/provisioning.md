@@ -98,9 +98,9 @@ azd ai cu infra generate --output-dir provision --models none
 
 The command explains its purpose before asking you to select a subscription,
 then the wizard explains each deployment choice before asking. Invalid text
-input shows a reason before retrying. Human-readable warnings use azd's yellow convention and
-validation errors use red when terminal color is enabled. Set `NO_COLOR=1`
-for plain text; structured JSON results remain uncolored.
+input shows a reason before retrying. Human-readable warnings use azd's yellow
+convention and validation errors use red when terminal color is enabled.
+Set `NO_COLOR=1` for plain text; structured JSON results remain uncolored.
 
 | Question | What to provide |
 | --- | --- |
@@ -423,9 +423,8 @@ Generation saves postprovision choices in the selected environment's
 | `cu.forceConfigurationSetup` | Boolean allowing the hook to replace existing CU environment configuration. Generation saves `true` with `--force`, otherwise `false`. Does not reset completed model setup. |
 
 Successful model setup records the boolean `cu.modelSetupComplete` in azd
-environment configuration. Generation no longer writes `CU_MODEL_SETUP_COMPLETE`;
-any existing legacy value is preserved but is not used as the completion marker.
-Inspect the active marker and model mappings with `azd env config get cu`.
+environment configuration. Inspect this marker and model mappings with
+`azd env config get cu`.
 
 ### Deployment outputs
 
@@ -456,7 +455,7 @@ environment values available to hook subprocesses, and the postprovision
 command reads the selected azd environment.
 
 The `_CU_PROVISIONED_*` prefix identifies deployment results, not user settings.
-Generation still saves standard azd inputs such as `AZURE_ENV_NAME`,
+Generation saves standard azd inputs such as `AZURE_ENV_NAME`,
 `AZURE_LOCATION`, `AZURE_SUBSCRIPTION_ID`, and `AZURE_TENANT_ID`; these support
 azd's deployment context and are not Bicep outputs. CU commands use provisioned
 subscription and resource-group metadata as saved scope hints, with explicit
@@ -477,9 +476,9 @@ handoff. Generation does not save it.
 Values `1`, `true`, `yes`, or `on` enable the override, case-insensitively.
 Other values, including an unset value, leave it disabled. When enabled, it
 skips automatic CU configuration, not resource provisioning or model setup.
-Bicep still saves `_CU_PROVISIONED_ENDPOINT`, but it no longer writes the
-runtime setting `CU_ENDPOINT`. When automatic configuration is disabled,
-configure `CU_ENDPOINT` yourself or pass `--endpoint` to CU commands.
+Bicep saves `_CU_PROVISIONED_ENDPOINT` as deployment metadata. When automatic
+configuration is disabled, configure the runtime setting `CU_ENDPOINT` yourself
+or pass `--endpoint` to CU commands.
 
 For example, in Bash:
 
@@ -497,6 +496,7 @@ outputs described above.
 | --- | --- |
 | `CU_MODEL_SELECTION` | Read only when `cu.modelSelection` is absent. New generation saves the `--models` choice in environment config. |
 | `CU_CONFIG_SETUP_FORCE` | Read only when `cu.forceConfigurationSetup` is absent. New generation saves the boolean `--force` choice in environment config. |
+| `CU_MODEL_SETUP_COMPLETE` | Preserved but ignored. The completion marker is `cu.modelSetupComplete` in environment config. |
 | `CU_ENDPOINT` | Used as the postprovision endpoint only when `_CU_PROVISIONED_ENDPOINT` is absent. Remains a supported runtime setting. |
 | `CU_RESOURCE_NAME`, `FOUNDRY_RESOURCE_NAME` | Read in this order only when `_CU_PROVISIONED_RESOURCE_NAME` is absent. |
 | `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP` | Saved scope fallbacks when the corresponding `_CU_PROVISIONED_*` outputs are absent. Standard azd inputs remain supported. |
@@ -505,10 +505,10 @@ New config fields take precedence, including explicit `false` values; malformed
 new fields fail rather than falling back. Postprovision also checks new output
 names by presence: an empty or invalid required output fails instead of using a
 stale legacy value.
-Regeneration retains the original cu-cli environment substitutions. For projects
-generated with shared literal resource parameters, it restores those substitutions
-and saves the old literals in every other existing environment before applying
-the selected environment's new choices. This preserves the other environments'
+For projects generated with shared literal resource parameters, regeneration
+converts them to environment substitutions and saves the old literals in every
+other existing environment before applying the selected environment's new
+choices. This preserves the other environments'
 effective resource parameters, including when using `--force`; it cannot recover
 choices already overwritten by an earlier generation. Unrelated environment
 entries and other environments' config files are preserved. Unsupported custom

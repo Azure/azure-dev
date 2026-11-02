@@ -263,7 +263,7 @@ Errors in valid JSON identify the property by its one-based source line and colu
 without displaying authored field names or rejected values. Columns count Unicode
 characters; tabs count as one character. Missing properties point to their
 containing object when available. Ambiguous dotted paths list all matching source
-locations. Successful validation output retains its existing structured paths.
+locations.
 
 Create a new analyzer from the reviewed definition:
 
@@ -359,10 +359,10 @@ mappings. It does not deploy models or provision resources.
 ## Configuration and API versions
 
 The default API version is `2025-11-01`. `--api-version` also accepts
-`2026-06-01-preview` and any valid calendar date in `YYYY-MM-DD-preview` format
-for internal testing or future previews. The selected version is sent unchanged;
-the service determines whether it is available and supports the requested
-operation. Other GA versions, malformed dates, and extra suffixes are rejected.
+`2026-06-01-preview` and any valid calendar date in `YYYY-MM-DD-preview` format.
+The service determines whether the requested preview version is available and
+supports the operation. Other GA versions, malformed dates, and extra suffixes
+are rejected.
 
 Inline analysis requires a preview version and does not fall back to
 asynchronous analysis:
@@ -527,10 +527,9 @@ examples with descriptions. Help uses azd-style headings and colors when enabled
 set `NO_COLOR=1` for plain text.
 Human-readable diagnostics follow azd conventions: warnings are yellow and
 errors are red. This includes provisioning guidance, retry validation, schema
-suggestion warnings, and doctor readiness warnings. Final command errors retain
-azd's structured host error channel. Explicit JSON/none modes leave extension
-diagnostic text uncolored, and structured result fields never contain added
-color escapes.
+suggestion warnings, and doctor readiness warnings. Command failures are
+reported by azd. Explicit JSON/none modes leave diagnostic text uncolored,
+and structured result fields never contain added color escapes.
 
 ## Usage guidance
 

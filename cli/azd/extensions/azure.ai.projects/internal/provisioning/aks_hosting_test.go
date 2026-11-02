@@ -6,6 +6,7 @@ package provisioning
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -23,6 +24,7 @@ import (
 
 const offlineClusterID = "/subscriptions/cluster-sub/resourceGroups/aks-rg/providers/" +
 	"Microsoft.ContainerService/managedClusters/aks"
+const offlineKubeletObjectID = "11111111-aaaa-4111-8111-111111111111"
 const offlineProjectID = "/subscriptions/target-sub/resourceGroups/target-rg/providers/" +
 	"Microsoft.CognitiveServices/accounts/cog-native/projects/project"
 const offlineProjectEndpoint = "https://cog-native.services.ai.azure.com/api/projects/project"
@@ -42,14 +44,15 @@ func (byoTestCredential) GetToken(context.Context, policy.TokenRequestOptions) (
 }
 
 type byoARMFake struct {
-	t          *testing.T
-	provider   *FoundryProvisioningProvider
-	requests   []string
-	parameters map[string]any
-	template   map[string]any
-	writes     int
-	previews   int
-	failWrite  bool
+	t                 *testing.T
+	provider          *FoundryProvisioningProvider
+	requests          []string
+	parameters        map[string]any
+	template          map[string]any
+	clusterProperties map[string]any
+	writes            int
+	previews          int
+	failWrite         bool
 }
 
 func (f *byoARMFake) response(request *http.Request, status int, body any) *http.Response {
@@ -62,11 +65,7 @@ func (f *byoARMFake) response(request *http.Request, status int, body any) *http
 func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 	f.requests = append(f.requests, request.Method+" "+request.URL.Path)
 	if request.Method == http.MethodGet && request.URL.Path == offlineClusterID {
-		return f.response(request, 200, map[string]any{
-			"properties": map[string]any{"identityProfile": map[string]any{
-				"kubeletidentity": map[string]any{"objectId": "11111111-1111-4111-8111-111111111111"},
-			}},
-		}), nil
+		return f.response(request, 200, map[string]any{"properties": f.clusterProperties}), nil
 	}
 	if request.Method == http.MethodGet &&
 		request.URL.Path == "/subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions" {
@@ -150,7 +149,12 @@ func offlineBYOProvider(t *testing.T) (*FoundryProvisioningProvider, *byoARMFake
 		foundryName: "project", synthResult: result, armTemplate: template, credential: byoTestCredential{},
 		tenantID: "user-access-tenant", virtualEnv: map[string]string{},
 	}
-	fake := &byoARMFake{t: t, provider: p}
+	fake := &byoARMFake{
+		t: t, provider: p,
+		clusterProperties: map[string]any{"identityProfile": map[string]any{
+			"kubeletidentity": map[string]any{"objectId": offlineKubeletObjectID},
+		}},
+	}
 	p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
 		Transport: fake, Retry: policy.RetryOptions{MaxRetries: -1},
 	}}
@@ -178,6 +182,7 @@ func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
 	}
 	assert.Equal(t, 1, fake.writes)
 	assert.Equal(t, []string{
+		"GET " + offlineClusterID,
 		"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
 		"PUT /subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + p.deploymentName(),
 	}, fake.requests)
@@ -209,7 +214,7 @@ func TestBYOFailedDeploymentCanBeRetried(t *testing.T) {
 	_, err = p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
 	assert.Equal(t, 2, fake.writes)
-	assert.Len(t, fake.requests, 4)
+	assert.Len(t, fake.requests, 6)
 	assert.Empty(t, p.virtualEnv)
 }
 
@@ -229,7 +234,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 	assert.Equal(t, "2.0.0.0", fake.template["contentVersion"])
 	assert.Equal(t, map[string]any{"value": "custom"}, fake.parameters["resourceTokenSalt"])
 	assert.Equal(t, map[string]any{"value": true}, fake.parameters["includeAcr"])
-	assert.Equal(t, map[string]any{"value": "11111111-1111-4111-8111-111111111111"}, fake.parameters["kubeletObjectId"])
+	assert.Equal(t, map[string]any{"value": offlineKubeletObjectID}, fake.parameters["kubeletObjectId"])
 	assert.Contains(t, fake.requests, "GET "+offlineClusterID)
 	p.onDiskSource.parameters["resourceTokenSalt"] = map[string]any{"value": "updated"}
 	_, err = p.Deploy(t.Context(), func(string) {})
@@ -269,6 +274,7 @@ func TestBYONonBooleanIncludeAcrReachesARM(t *testing.T) {
 				assert.Equal(t, map[string]any{"value": test.value}, fake.parameters["includeAcr"])
 				assert.NotContains(t, fake.parameters, "kubeletObjectId")
 				assert.Equal(t, []string{
+					"GET " + offlineClusterID,
 					"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
 					method + " /subscriptions/target-sub/providers/Microsoft.Resources/deployments/" +
 						p.deploymentName() + suffix,
@@ -306,7 +312,86 @@ func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
 	require.NoError(t, p.prepareBYO(t.Context(), source))
 	assert.NotContains(t, source.parameters, "kubeletObjectId")
 	assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
-	assert.Len(t, fake.requests, 1, "preparation only reads the federation role without a registry")
+	assert.Len(t, fake.requests, 2, "preparation reads AKS identity and the federation role without a registry")
+}
+
+func TestBYOPrepareValidatesKubeletIdentityRegardlessOfACR(t *testing.T) {
+	for _, includeAcr := range []bool{false, true} {
+		for _, test := range []struct {
+			name       string
+			properties map[string]any
+			expected   string
+		}{
+			{"missing properties", nil, "requires a kubelet principal object ID"},
+			{"missing kubelet identity", map[string]any{}, "requires a kubelet principal object ID"},
+			{"missing object ID", map[string]any{"identityProfile": map[string]any{
+				"kubeletidentity": map[string]any{},
+			}}, "requires a kubelet principal object ID"},
+			{"empty object ID", map[string]any{"identityProfile": map[string]any{
+				"kubeletidentity": map[string]any{"objectId": ""},
+			}}, "must be a GUID"},
+			{"invalid object ID", map[string]any{"identityProfile": map[string]any{
+				"kubeletidentity": map[string]any{"objectId": "not-a-guid"},
+			}}, "must be a GUID"},
+		} {
+			t.Run(fmt.Sprintf("includeAcr=%t/%s", includeAcr, test.name), func(t *testing.T) {
+				p, fake := offlineBYOProvider(t)
+				fake.clusterProperties = test.properties
+				source, err := p.resolveTemplate(t.Context(), func(string) {})
+				require.NoError(t, err)
+				source.parameters["includeAcr"] = map[string]any{"value": includeAcr}
+				require.ErrorContains(t, p.prepareBYO(t.Context(), source), test.expected)
+				assert.Equal(t, []string{"GET " + offlineClusterID}, fake.requests)
+			})
+		}
+	}
+}
+
+func TestBYOPrepareValidatesSuppliedKubeletRegardlessOfACR(t *testing.T) {
+	for _, includeAcr := range []bool{false, true} {
+		for _, test := range []struct {
+			name      string
+			value     any
+			duplicate bool
+			expected  string
+			requests  int
+		}{
+			{"empty", "", false, "nonempty string", 0},
+			{"whitespace", " ", false, "nonempty string", 0},
+			{"non-string", 1, false, "nonempty string", 0},
+			{"null", nil, false, "nonempty string", 0},
+			{"duplicate", offlineKubeletObjectID, true, "differ only by case", 0},
+			{"mismatch", "22222222-2222-4222-8222-222222222222", false, "conflicts", 2},
+			{"matching", strings.ToUpper(offlineKubeletObjectID), false, "", 2},
+		} {
+			t.Run(fmt.Sprintf("includeAcr=%t/%s", includeAcr, test.name), func(t *testing.T) {
+				p, fake := offlineBYOProvider(t)
+				if test.requests == 0 {
+					p.credential = nil
+				}
+				source, err := p.resolveTemplate(t.Context(), func(string) {})
+				require.NoError(t, err)
+				source.parameters["includeAcr"] = map[string]any{"value": includeAcr}
+				source.parameters["kubeletObjectId"] = map[string]any{"value": test.value}
+				if test.duplicate {
+					source.parameters["KUBELETOBJECTID"] = map[string]any{"value": test.value}
+				}
+				err = p.prepareBYO(t.Context(), source)
+				assert.Len(t, fake.requests, test.requests)
+				if test.expected != "" {
+					require.ErrorContains(t, err, test.expected)
+					return
+				}
+				require.NoError(t, err)
+				expected := test.value
+				if includeAcr {
+					expected = offlineKubeletObjectID
+				}
+				assert.Equal(t, map[string]any{"value": expected}, source.parameters["kubeletObjectId"])
+				assert.Equal(t, map[string]any{"value": includeAcr}, source.parameters["includeAcr"])
+			})
+		}
+	}
 }
 
 func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {

@@ -188,7 +188,7 @@ services:
 
 `agentHosting` does not require a `network` block or additional subnets. Omit `network` for public networking, or supply it to use the standard account network injection and private-endpoint resources. As with ordinary Foundry projects, private networking does not support an automatically created ACR; use an Agent configuration that does not require building a container image.
 
-Use an existing AKS cluster configured for Foundry agent hosting. The provider resolves the built-in federation role for the required grants. When creating an ACR, it also reads the cluster's kubelet principal for image-pull authorization. It does not validate AKS or network readiness or reconfigure the cluster.
+Use an existing AKS cluster configured for Foundry agent hosting. The provider resolves the built-in federation role for the required grants and always reads and validates the cluster's kubelet principal object ID, regardless of `includeAcr`. It does not validate AKS or network readiness or reconfigure the cluster.
 
 The default resource graph creates:
 
@@ -197,7 +197,7 @@ The default resource graph creates:
 - When an Agent requires building a container image, one native azd Container Registry (`cr<resourceToken>`), its Project connection, and `AcrPull` for the Project and AKS kubelet identities. A project without such an Agent does not automatically create a registry; pre-built images and code/ZIP configurations follow the standard Foundry ACR selection.
 - Hosting-management Reader and Kubernetes Extension Contributor roles on the existing cluster, federation-management permission on the workload identity, and workload Storage Blob Data Contributor permission on the storage account.
 
-The account receives a `ManagedCluster` / `default` hosting configuration. Its data-plane access follows the optional `network` configuration. **Storage and any automatically created ACR use public authenticated endpoints**, so the cluster must be able to reach them. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. The deploying principal needs read access to the built-in role definitions and target resource group, creation rights for the new resources, and role-assignment write rights at the cluster, workload identity and Storage scopes. Creating an ACR additionally requires AKS read access and registry role-assignment write rights. Configuring private networking additionally requires the corresponding network permissions.
+The account receives a `ManagedCluster` / `default` hosting configuration. Its data-plane access follows the optional `network` configuration. **Storage and any automatically created ACR use public authenticated endpoints**, so the cluster must be able to reach them. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. The deploying principal needs read access to AKS, the built-in role definitions and target resource group, creation rights for the new resources, and role-assignment write rights at the cluster, workload identity and Storage scopes. Creating an ACR additionally requires registry role-assignment write rights. Configuring private networking additionally requires the corresponding network permissions.
 
 The deploying principal also needs `Microsoft.Resources/deployments/write` at the existing AKS resource-group scope. The cluster role grants are created through nested ARM deployments in that group, including when it differs from the Foundry target resource group.
 
@@ -211,7 +211,7 @@ Embedded provisioning and Bicep eject are supported through `microsoft.foundry`;
 
 BYO AKS uses the standard Foundry resource-group creation/update behavior. The deployment applies the configured location and tags; an existing target resource group's location must match the deployment location.
 
-The provider supplies `federatedIdentityRoleDefinitionId` when the template declares it, and `kubeletObjectId` when `includeAcr=true` and the template declares it. If a parameters file explicitly supplies a binding used by the provider, its value must match the provider-resolved value, ignoring case. Empty or non-string values and conflicting bindings are rejected before deployment or ARM what-if. Omit these parameters to let the provider resolve them automatically; other parameters retain their normal user-supplied precedence.
+The provider supplies `federatedIdentityRoleDefinitionId` when the template declares it, and `kubeletObjectId` when `includeAcr=true` and the template declares it. If a parameters file explicitly supplies either binding, its value must be a nonempty string matching the provider-resolved value, ignoring case. Explicit `kubeletObjectId` values are validated regardless of `includeAcr`; multiple `kubeletObjectId` parameter names differing only by case are rejected. Invalid or conflicting bindings are rejected before deployment or ARM what-if. Omit these parameters to let the provider resolve them automatically; other parameters retain their normal user-supplied precedence.
 
 ### Infrastructure layers
 

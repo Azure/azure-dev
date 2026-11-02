@@ -187,7 +187,9 @@ No monitoring RBAC roles are added.
 Discovery rejects conflicting destinations, protected names, ambiguous sharing,
 unreadable resources, and authentication or ingestion policies that would need
 to be weakened. ApiKey setup does not enable local authentication or configure
-private-network ingestion. Such failures can fail normal provisioning; there
+private-network ingestion. A new project with a `network:` block is rejected
+unless you set `monitoring.enabled: false`, because automatic monitoring cannot
+yet use private ingestion. Such failures can fail normal provisioning; there
 is no second best-effort deployment or agent deployment repair hook.
 
 Monitoring creates billable Azure resources and can store agent telemetry,

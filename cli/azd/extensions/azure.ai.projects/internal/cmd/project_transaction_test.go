@@ -896,8 +896,10 @@ func TestWriteExistingProjectBicepModuleNamedMonitoringDoesNotCollide(t *testing
 		dir, "monitoring", map[string]any{"deployments": []synthesis.Deployment{}}, projectEjectAcrNone, nil,
 	))
 
+	// #nosec G304 -- test reads from its own temp directory
 	entrypoint, err := os.ReadFile(filepath.Join(dir, "monitoring.bicep"))
 	require.NoError(t, err)
+	// #nosec G304 -- test reads from its own temp directory
 	moduleTemplate, err := os.ReadFile(filepath.Join(dir, "modules", "monitoring.bicep"))
 	require.NoError(t, err)
 	embedded, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/modules/monitoring.bicep")

@@ -10,6 +10,7 @@ version requirement in the examples is not a public release guarantee.
 
 The extension supports one application path:
 
+- A project contains exactly one `springbootapp` service.
 - The checked-in Maven Wrapper builds the Spring Boot JAR with JDK 17 or newer.
 - The extension stages the JAR with a generated Java 17 runtime container recipe.
 - Docker builds and packages that generated container.

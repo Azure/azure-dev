@@ -154,6 +154,13 @@ func (r *Runtime) resolveProject(
 	if len(services) == 0 {
 		return nil, resolvedDatabase{}, nil
 	}
+	if len(services) > 1 {
+		return nil, resolvedDatabase{}, validationError(
+			"multiple_spring_services_unsupported",
+			"azure.springboot supports only one Spring service per project",
+			"keep one springbootapp service in azure.yaml",
+		)
+	}
 
 	resolved := make([]*resolvedService, 0, len(services))
 	var selected resolvedDatabase

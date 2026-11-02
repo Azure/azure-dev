@@ -48,6 +48,18 @@ type fakeDeploymentOutputVerifier struct {
 	bound *deploymentBinding
 }
 
+func TestResolveProjectRejectsMultipleSpringServices(t *testing.T) {
+	project := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
+		"api":    {Name: "api", Host: SpringHost},
+		"worker": {Name: "worker", Host: SpringHost},
+	}}
+
+	_, _, err := (&Runtime{}).resolveProject(t.Context(), project, nil, false, false)
+
+	require.Error(t, err)
+	requireLocalErrorCode(t, err, "multiple_spring_services_unsupported")
+}
+
 func (v *fakeDeploymentOutputVerifier) Read(context.Context, map[string]string) (*deploymentBinding, error) {
 	return v.bound, v.err
 }

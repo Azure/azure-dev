@@ -323,6 +323,11 @@ with Repository Writer push permission, a prebuilt image, or a classic RBAC
 registry instead. Code deployments, prebuilt images, and project-only selections
 without source-build demand are unchanged.
 
+An authored service-level `docker` block takes precedence over the entire
+`config.docker` block, including through `$ref`. In particular, an explicit
+service-level `docker.remoteBuild: false` retains local builds even when
+`config.docker.remoteBuild` is `true`.
+
 The registry and its images remain externally owned and are retained by
 `azd down`. Default and JSON output identify the selected registry and its
 external ownership.
@@ -344,10 +349,18 @@ legacy outputs; legacy ownership is verified against the previous Azure
 deployment before provisioning or deleting the group. Unreadable environment
 state or unverified ownership stops the operation instead of creating a
 replacement registry.
-For a partial deployment, a project connection alone does not establish registry
-ownership: recovery requires a successful registry creation operation in that
-environment's deployment history. Missing or ambiguous evidence stops teardown
-before any resources or access grants are deleted.
+Legacy full outputs and partial-deployment project connections do not establish
+registry ownership on their own: recovery requires a successful creation
+operation for that exact registry in the environment's owning deployment
+history, including nested deployments. Missing or ambiguous evidence stops
+recovery and teardown before ownership is saved or resources or access grants
+are deleted.
+
+With greenfield on-disk Bicep, prompted subscription and location choices are
+saved only after the selected template, parameters, and deployment scope pass validation.
+This applies to local and remote builds, JSON parameter files, and
+`.bicepparam` files, including custom root and infrastructure-layer routes.
+An invalid final registry selection leaves those choices unpersisted.
 
 You can select a registry before adding agents; the selection remains pending
 until a source-built agent requires it, including across project-only provisioning

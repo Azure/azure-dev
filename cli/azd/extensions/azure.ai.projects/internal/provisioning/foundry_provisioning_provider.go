@@ -362,7 +362,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 			if mode == "reuse-connect" {
 				p.greenfieldAcrResourceID = id
 			}
-			p.acrDeferPromptedEnv = p.acrRemoteBuild && (onDisk || mode == "reuse-connect")
+			p.acrDeferPromptedEnv = onDisk || p.acrRemoteBuild && mode == "reuse-connect"
 		}
 	}
 
@@ -1044,7 +1044,7 @@ func (p *FoundryProvisioningProvider) resolveEnvName(ctx context.Context) error 
 }
 
 // promptSubscription selects the missing subscription, like azd up.
-// External remote builds save the choice after their ACR check.
+// On-disk templates and external remote builds save after validation.
 // Other flows persist the choice immediately.
 //
 // Under `--no-prompt` the azd host returns a "prompt required" error; that case

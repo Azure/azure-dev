@@ -261,8 +261,14 @@ func TestInitializeValidatesPromptedRegistrySubscriptionBeforeWrites(t *testing.
 						assert.Equal(t, 1, prompt.subscriptionN)
 						if subscription == "sub" {
 							require.NoError(t, err)
-							assert.Equal(t, subscription, env.set[envKeySubscriptionID])
-							assert.Equal(t, "eastus2", env.set[envKeyLocation])
+							if onDisk {
+								assert.Empty(t, env.set)
+								assert.Equal(t, subscription, p.acrPromptedEnv[envKeySubscriptionID])
+								assert.Equal(t, "eastus2", p.acrPromptedEnv[envKeyLocation])
+							} else {
+								assert.Equal(t, subscription, env.set[envKeySubscriptionID])
+								assert.Equal(t, "eastus2", env.set[envKeyLocation])
+							}
 							assert.Equal(t, 1, prompt.locationN)
 							assert.Equal(t, "reuse-connect", p.greenfieldAcrMode)
 							require.NotNil(t, p.synthResult)
@@ -327,7 +333,12 @@ func TestInitializeUsesPromptedLocationInSynthesis(t *testing.T) {
 					assert.Equal(t, "/subscriptions/sub/resourceGroups/network-westus2/"+
 						"providers/Microsoft.Network/virtualNetworks/vnet", p.synthResult.Parameters["vnetId"])
 					assert.Equal(t, "westus2", p.location)
-					assert.Equal(t, "westus2", env.set[envKeyLocation])
+					if onDisk {
+						assert.Empty(t, env.set)
+						assert.Equal(t, "westus2", p.acrPromptedEnv[envKeyLocation])
+					} else {
+						assert.Equal(t, "westus2", env.set[envKeyLocation])
+					}
 					assert.Equal(t, 1, prompt.locationN)
 					assert.Equal(t, 1, env.valuesN)
 					assert.Equal(t, "", p.synthesisEnv[envKeyLocation])

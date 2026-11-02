@@ -145,13 +145,13 @@ type dockerBuildBlock struct {
 
 // serviceBlock is the subset of a service entry we inspect for cross-service provisioning inputs.
 type serviceBlock struct {
-	Host              string           `yaml:"host"`
-	Kind              string           `yaml:"kind,omitempty"`
-	Image             string           `yaml:"image,omitempty"`
-	CodeConfiguration *codeConfigBlock `yaml:"codeConfiguration,omitempty"`
-	Config            *agentBlock      `yaml:"config,omitempty"`
-	Agents            []agentBlock     `yaml:"agents,omitempty"`
-	Docker            dockerBuildBlock `yaml:"docker,omitempty"`
+	Host              string            `yaml:"host"`
+	Kind              string            `yaml:"kind,omitempty"`
+	Image             string            `yaml:"image,omitempty"`
+	CodeConfiguration *codeConfigBlock  `yaml:"codeConfiguration,omitempty"`
+	Config            *agentBlock       `yaml:"config,omitempty"`
+	Agents            []agentBlock      `yaml:"agents,omitempty"`
+	Docker            *dockerBuildBlock `yaml:"docker,omitempty"`
 }
 
 // projectService is the subset of a host: azure.ai.project service body the synthesizer reads.
@@ -922,7 +922,9 @@ func deriveAgentBuildRequirements(
 			Kind:              service.Kind,
 			Image:             service.Image,
 			CodeConfiguration: service.CodeConfiguration,
-			Docker:            service.Docker,
+		}
+		if service.Docker != nil {
+			agent.Docker = *service.Docker
 		}
 		if service.Config != nil {
 			if agent.Kind == "" {
@@ -934,7 +936,7 @@ func deriveAgentBuildRequirements(
 			if agent.CodeConfiguration == nil {
 				agent.CodeConfiguration = service.Config.CodeConfiguration
 			}
-			if agent.Docker == (dockerBuildBlock{}) {
+			if service.Docker == nil {
 				agent.Docker = service.Config.Docker
 			}
 		}

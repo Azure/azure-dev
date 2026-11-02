@@ -1078,6 +1078,14 @@ func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, rec
 			!strings.EqualFold(id.ResourceGroupName, p.rgName) {
 			return errors.New("cannot establish the previous registry ownership from deployed facts")
 		}
+		created, err := p.deploymentCreatedACR(ctx, path, registry.Value, map[string]bool{})
+		if err != nil {
+			return fmt.Errorf("verify previous registry ownership: %w", err)
+		}
+		if !created {
+			return errors.New("cannot establish ownership of the previous registry: " +
+				"the owning deployment has no successful registry creation operation; refusing unsafe recovery")
+		}
 	}
 	project := outputs["AZURE_AI_PROJECT_ID"]
 	if project == nil || project.Value == "" {

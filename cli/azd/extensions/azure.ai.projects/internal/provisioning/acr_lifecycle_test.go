@@ -357,6 +357,16 @@ func TestACRCreatedOutputRequiresDeploymentFacts(t *testing.T) {
 					return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
 				}
 				require.Contains(t, path, "/providers/Microsoft.Resources/deployments/")
+				if strings.HasSuffix(path, "/operations") {
+					return acrTestReply(out, map[string]any{"value": []any{map[string]any{
+						"properties": map[string]any{
+							"targetResource": map[string]any{
+								"id": tt.deployedID, "resourceType": "Microsoft.ContainerRegistry/registries",
+							},
+							"provisioningOperation": "Create", "provisioningState": "Succeeded",
+						},
+					}}})
+				}
 				return acrTestReply(out, map[string]any{"properties": map[string]any{
 					"outputs": map[string]any{
 						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": tt.deployedID},
@@ -400,6 +410,141 @@ func TestACRUnverifiedLegacyOutputCannotDeleteResourceGroup(t *testing.T) {
 	assert.Empty(t, env.set)
 	assert.Empty(t, env.config)
 	assert.Nil(t, p.credential, "unverified ownership must fail before destructive Azure operations")
+}
+
+func TestACRFullOutputRecoveryRequiresCreationEvidence(t *testing.T) {
+	const registryID = "/subscriptions/sub/resourceGroups/foundry/" +
+		"providers/Microsoft.ContainerRegistry/registries/registry"
+	const nestedID = "/subscriptions/sub/resourceGroups/foundry/" +
+		"providers/Microsoft.Resources/deployments/acr"
+	for _, tt := range []struct {
+		name, kind, state, wantError string
+		nested, different, duplicate bool
+	}{
+		{name: "exact creation", kind: "Create", state: "Succeeded"},
+		{name: "nested creation", kind: "Create", state: "Succeeded", nested: true},
+		{name: "outputs only", wantError: "cannot establish ownership"},
+		{name: "read existing registry", kind: "Read", state: "Succeeded", wantError: "no successful creation operation"},
+		{name: "failed creation", kind: "Create", state: "Failed", wantError: "no successful creation operation"},
+		{name: "untyped operation", state: "Succeeded", wantError: "no successful creation operation"},
+		{name: "other registry", kind: "Create", state: "Succeeded", different: true, wantError: "cannot establish ownership"},
+		{name: "ambiguous creation", kind: "Create", state: "Succeeded", duplicate: true,
+			wantError: "multiple registry creation operations"},
+		{name: "unavailable history", wantError: "verify previous registry ownership"},
+	} {
+		for _, action := range []string{"recover", "down"} {
+			t.Run(tt.name+"/"+action, func(t *testing.T) {
+				p, env := acrTestProvider(t)
+				p.rgExplicit = true
+				p.credential = acrOfflineCredential{}
+				p.synthesisEnv = map[string]string{
+					envKeySubscriptionID: "sub", "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID,
+				}
+				if action == "down" && tt.wantError != "" {
+					p.acrPending = acrTestPending()
+					require.NoError(t, p.writeACRConfig(t.Context(), acrPendingConfigKey, p.acrPending))
+				}
+				beforeConfig, pending := maps.Clone(env.config), p.acrPending
+				rootID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+				groupDeleted, historyDeleted := false, false
+				p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+					Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+						require.Empty(t, tt.wantError, "unverified ownership must fail before destructive clients")
+						require.Equal(t, "down", action)
+						if request.Method == http.MethodDelete {
+							require.True(t, strings.EqualFold("/subscriptions/sub/resourceGroups/foundry", request.URL.Path))
+							groupDeleted = true
+							return acrTestHTTPReply(t, request, http.StatusOK, nil)
+						}
+						require.Equal(t, http.MethodGet, request.Method)
+						require.True(t, strings.HasSuffix(request.URL.Path, "/Microsoft.CognitiveServices/accounts"))
+						return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{"value": []any{}})
+					}),
+				}}
+				if action == "down" && tt.wantError == "" {
+					p.credential = acrTestCredential{}
+				}
+				p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+					if method == http.MethodDelete {
+						require.Empty(t, tt.wantError)
+						require.Equal(t, "down", action)
+						require.Equal(t, rootID, path)
+						assert.True(t, groupDeleted)
+						historyDeleted = true
+						return nil
+					}
+					require.Equal(t, http.MethodGet, method, "unverified ownership must not mutate resources or grants")
+					switch path {
+					case rootID:
+						return acrTestReply(out, map[string]any{"properties": map[string]any{
+							"provisioningState": "Succeeded",
+							"outputs": map[string]any{
+								"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": registryID},
+								"AZURE_AI_PROJECT_ID":                  map[string]any{"value": testACRProject},
+							},
+							"parameters": map[string]any{"resourceTokenSalt": map[string]any{"value": "salt"}},
+						}})
+					case testACRProject:
+						return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+					case rootID + "/operations", nestedID + "/operations":
+						if tt.name == "outputs only" {
+							return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+						}
+						if tt.name == "unavailable history" {
+							return &azcore.ResponseError{StatusCode: http.StatusForbidden}
+						}
+						id, resourceType := registryID, "Microsoft.ContainerRegistry/registries"
+						if tt.nested && path == rootID+"/operations" {
+							id, resourceType = nestedID, "Microsoft.Resources/deployments"
+						} else if tt.different {
+							id += "other"
+						}
+						operation := map[string]any{"properties": map[string]any{
+							"targetResource":        map[string]any{"id": id, "resourceType": resourceType},
+							"provisioningOperation": tt.kind, "provisioningState": tt.state,
+						}}
+						operations := []any{operation}
+						if tt.duplicate {
+							operations = append(operations, operation)
+						}
+						return acrTestReply(out, map[string]any{"value": operations})
+					default:
+						t.Fatalf("unexpected recovery request: %s %s", method, path)
+						return nil
+					}
+				}
+				var err error
+				if action == "recover" {
+					err = p.recoverDeployedACRBinding(t.Context())
+				} else {
+					_, err = p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+				}
+				if tt.wantError != "" {
+					require.ErrorContains(t, err, tt.wantError)
+					assert.Nil(t, p.acrBinding)
+					assert.False(t, p.acrBindingRecovered)
+					assert.False(t, groupDeleted)
+					assert.False(t, historyDeleted)
+				} else if action == "down" {
+					require.NoError(t, err)
+					assert.True(t, groupDeleted)
+					assert.True(t, historyDeleted)
+					assert.Nil(t, p.acrBinding)
+				} else {
+					require.NoError(t, err)
+					require.NotNil(t, p.acrBinding)
+					assert.Equal(t, "create", p.acrBinding.Mode)
+					assert.Equal(t, registryID, p.acrBinding.RegistryResourceID)
+					assert.Equal(t, testACRProject, p.acrBinding.ProjectResourceID)
+					assert.Equal(t, "salt", p.acrBinding.DeploymentSalt)
+					assert.True(t, p.acrBindingRecovered)
+				}
+				assert.Same(t, pending, p.acrPending)
+				assert.Equal(t, beforeConfig, env.config)
+				assert.Empty(t, env.set)
+			})
+		}
+	}
 }
 
 func TestACRPartialConnectionRecoveryRequiresCreationEvidence(t *testing.T) {

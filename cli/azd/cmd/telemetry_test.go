@@ -11,8 +11,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
+	"go.opentelemetry.io/otel"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"golang.org/x/tools/go/packages"
 
 	"github.com/stretchr/testify/require"
@@ -21,6 +25,22 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
+
+// tracing caches the first global tracer, so keep its provider alive across tests.
+var commandSpanProvider = sync.OnceValue(func() *tracesdk.TracerProvider {
+	provider := tracesdk.NewTracerProvider()
+	otel.SetTracerProvider(provider)
+	return provider
+})
+
+func recordCommandSpans(t *testing.T) (*tracesdk.TracerProvider, *tracetest.SpanRecorder) {
+	t.Helper()
+	provider := commandSpanProvider()
+	recorder := tracetest.NewSpanRecorder()
+	provider.RegisterSpanProcessor(recorder)
+	t.Cleanup(func() { provider.UnregisterSpanProcessor(recorder) })
+	return provider, recorder
+}
 
 func TestTelemetryEventConstants(t *testing.T) {
 	t.Parallel()

@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -256,8 +256,7 @@ func Test_HooksRunAction_HookNameTelemetry(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tracing.ResetUsageAttributesForTest()
 			t.Cleanup(tracing.ResetUsageAttributesForTest)
-			recorder := tracetest.NewSpanRecorder()
-			provider := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(recorder))
+			provider, recorder := recordCommandSpans(t)
 
 			mockContext := mocks.NewMockContext(t.Context())
 			registerHookExecutors(mockContext)
@@ -310,9 +309,28 @@ func Test_HooksRunAction_HookNameTelemetry(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantExecution, executions > 0)
 
-			foundName := false
-			require.NotEmpty(t, recorder.Ended())
+			var commandSpan tracesdk.ReadOnlySpan
+			var executionSpans []tracesdk.ReadOnlySpan
 			for _, recorded := range recorder.Ended() {
+				if recorded.SpanContext().TraceID() != span.SpanContext().TraceID() {
+					continue
+				}
+				switch recorded.Name() {
+				case "cmd.hooks.run":
+					commandSpan = recorded
+				case events.HooksExecEvent:
+					executionSpans = append(executionSpans, recorded)
+				}
+			}
+			require.NotNil(t, commandSpan)
+			if tt.wantExecution {
+				require.Len(t, executionSpans, 1)
+			} else {
+				require.Empty(t, executionSpans)
+			}
+
+			for _, recorded := range append([]tracesdk.ReadOnlySpan{commandSpan}, executionSpans...) {
+				foundName := false
 				for _, attr := range recorded.Attributes() {
 					if attr.Key == fields.HooksNameKey.Key {
 						foundName = true
@@ -324,8 +342,8 @@ func Test_HooksRunAction_HookNameTelemetry(t *testing.T) {
 						assert.NotContains(t, attr.Value.String(), fields.CaseInsensitiveHash(tt.hookName))
 					}
 				}
+				assert.Equal(t, tt.wantName, foundName, "hook-name attribute on %s", recorded.Name())
 			}
-			assert.Equal(t, tt.wantName, foundName)
 		})
 	}
 }

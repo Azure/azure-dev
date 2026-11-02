@@ -1,25 +1,14 @@
-applyTo:
-  - "**/*.go"
 ---
-# Modern Go (1.26+) — PR Review Guidelines
+applyTo: "**/*.go"
+---
+# Modern Go (1.26+) PR review guidelines
 
 This project uses **Go 1.26** (`cli/azd/go.mod`). Do not flag modern Go 1.26
-features as errors.
-
-## `new(expr)` creates typed pointers from values
-
-`new(false)`, `new(true)`, `new(0)`, `new("s")` are **valid Go 1.26**. They
-create a pointer to the given value. This replaces helper functions like
-`to.Ptr(val)`. Do NOT suggest `boolPtr()` or `&localVar` replacements.
-
-## Other modern patterns to accept (not flag)
-
-- `errors.AsType[*T](err)` — generic error unwrapping (replaces `var e *T; errors.As(err, &e)`)
-- `for i := range n` — range over integers
-- `t.Context()` — test context (replaces `context.Background()` in tests)
-- `t.Chdir(dir)` — test directory change (replaces `os.Chdir` + deferred restore)
-- `wg.Go(func() { ... })` — WaitGroup shorthand (replaces `wg.Add(1); go func() { defer wg.Done(); ... }()`)
-- `min()`, `max()`, `clear()` — built-in functions
+features as errors. The authoritative [modern Go conventions](../../cli/azd/AGENTS.md#modern-go)
+include `new(expr)`, `errors.AsType`, integer ranges, `t.Context`, `t.Chdir`,
+`wg.Go`, and the `min`, `max`, and `clear` built-ins. In particular,
+`new(false)`, `new(true)`, `new(0)`, and `new("s")` are valid; do not suggest
+pointer helpers or address-of-local replacements for them.
 
 ## Review the full file, not just the diff
 

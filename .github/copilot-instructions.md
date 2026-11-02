@@ -1,3 +1,4 @@
-# Azure Developer CLI (azd) - Instructions for Copilot Chat and Copilot code review
+# Repository agent instructions
 
-For any work in this repository, especially for code reviews, you MUST read [cli/azd/AGENTS.md](../cli/azd/AGENTS.md) in its entirety (every line) first.
+Start with [AGENTS.md](../AGENTS.md) for repository-wide requirements and
+guidance for the affected area.

@@ -1,9 +1,12 @@
-# Documentation Maintenance
+---
+applyTo: "**"
+---
+# Documentation maintenance
 
 This repository uses a structured documentation system under `docs/` at the repo root.
 When making changes to the codebase, keep the documentation current.
 
-## Documentation Structure
+## Documentation structure
 
 ```text
 docs/
@@ -14,11 +17,11 @@ docs/
 └── architecture/      — System overviews, design context, ADRs
 ```
 
-## When to Update Documentation
+## When to update documentation
 
 - **New command or flag:** Update `docs/guides/adding-a-new-command.md` if the pattern changes; update `docs/reference/feature-status.md` with the new feature's stage.
 - **User-visible behavior change:** Update relevant command docs/help when behavior affects workflows, especially `--no-prompt` or CI/script semantics.
- - **New environment variable:** Add it to `cli/azd/docs/environment-variables.md` (canonical), and keep `docs/reference/environment-variables.md` in sync when appropriate.
+- **New environment variable:** Add it to `cli/azd/docs/environment-variables.md` (canonical), and keep `docs/reference/environment-variables.md` in sync when appropriate.
 - **New extension capability:** Update `docs/architecture/extension-framework.md` and `docs/guides/creating-an-extension.md`.
 - **Feature stage change:** Update `docs/reference/feature-status.md` when a feature graduates (alpha → beta → stable).
 - **New concept or term:** Add it to `docs/concepts/glossary.md`.
@@ -26,7 +29,7 @@ docs/
 - **New hosting target or language:** Update `docs/reference/feature-status.md` and `docs/concepts/glossary.md`.
 - **Product rebrand or compatibility name:** Use the current product name in user-facing prose, while preserving legacy/internal identifiers only where required by code, telemetry, APIs, or compatibility.
 
-## Documentation Placement Guide
+## Documentation placement guide
 
 | Content type | Location |
 |---|---|
@@ -38,7 +41,7 @@ docs/
 | Extension development details | `cli/azd/docs/extensions/` |
 | Code style standards | `cli/azd/docs/style-guidelines/` |
 
-## Documentation Standards
+## Documentation standards
 
 - Use clear, concise language
 - Link to detailed implementation docs in `cli/azd/docs/` rather than duplicating content

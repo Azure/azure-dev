@@ -395,6 +395,9 @@ The local 24-step buffer and host-wide 100-event budget can lose rows;
 zero. Use actual times and string-encoded durations, not reporting span timing.
 Existing command records remain authoritative for counts, success, and duration.
 
+#### Extension usage rules and event contracts
+
+
 The following rules define the runtime and source-governance boundaries:
 
 | Rule | Enforcement |

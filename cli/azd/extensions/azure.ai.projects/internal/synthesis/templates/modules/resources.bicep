@@ -32,6 +32,9 @@ type agentHostingType = {
   hostingType: 'ManagedCluster' | ''
   name: string
   clusterResourceId: string
+  hostingManagementIdentityResourceId: string
+  storageAccountResourceId: string
+  workloadIdentityResourceId: string
 }
 
 // Parameters
@@ -61,10 +64,15 @@ param agentHosting agentHostingType = {
   hostingType: ''
   name: ''
   clusterResourceId: ''
+  hostingManagementIdentityResourceId: ''
+  storageAccountResourceId: ''
+  workloadIdentityResourceId: ''
 }
 
 param kubeletObjectId string = ''
 param federatedIdentityRoleDefinitionId string = ''
+param hostingPrincipalId string = ''
+param workloadPrincipalId string = ''
 
 @description('Full ARM ID of an existing container registry to reuse instead of creating one.')
 param existingAcrResourceId string = ''
@@ -129,6 +137,15 @@ var activeFoundryProjectId = resourceId('Microsoft.CognitiveServices/accounts/pr
 var storageAccountName = 'st${resourceToken}'
 var hostingIdentityName = '${foundryAccountName}-hosting-mi'
 var workloadIdentityName = '${foundryAccountName}-workload-mi'
+var hostingIdentityResourceId = empty(agentHosting.hostingManagementIdentityResourceId)
+  ? resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', hostingIdentityName)
+  : agentHosting.hostingManagementIdentityResourceId
+var workloadIdentityResourceId = empty(agentHosting.workloadIdentityResourceId)
+  ? resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', workloadIdentityName)
+  : agentHosting.workloadIdentityResourceId
+var storageAccountResourceId = empty(agentHosting.storageAccountResourceId)
+  ? resourceId('Microsoft.Storage/storageAccounts', storageAccountName)
+  : agentHosting.storageAccountResourceId
 
 // Egress: byo injects the agent into a customer subnet; managed uses the
 // Microsoft-managed network. Ingress: an account private endpoint is always
@@ -149,6 +166,11 @@ module prerequisites 'byo-prerequisites.bicep' = if (agentHosting.enabled) {
     hostingIdentityName: hostingIdentityName
     workloadIdentityName: workloadIdentityName
     federatedIdentityRoleDefinitionId: federatedIdentityRoleDefinitionId
+    hostingIdentityResourceId: agentHosting.hostingManagementIdentityResourceId
+    workloadIdentityResourceId: agentHosting.workloadIdentityResourceId
+    storageAccountResourceId: agentHosting.storageAccountResourceId
+    suppliedHostingPrincipalId: hostingPrincipalId
+    suppliedWorkloadPrincipalId: workloadPrincipalId
   }
 }
 
@@ -262,7 +284,7 @@ resource byoFoundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-prev
   identity: {
     type: 'SystemAssigned, UserAssigned'
     userAssignedIdentities: {
-      '${resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', hostingIdentityName)}': {}
+      '${hostingIdentityResourceId}': {}
     }
   }
   properties: {
@@ -272,9 +294,9 @@ resource byoFoundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-prev
         hostingType: 'ManagedCluster'
         name: 'default'
         clusterResourceId: agentHosting.clusterResourceId
-        hostingManagementIdentityResourceId: resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', hostingIdentityName)
-        storageAccountResourceId: resourceId('Microsoft.Storage/storageAccounts', storageAccountName)
-        workloadIdentityResourceId: resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', workloadIdentityName)
+        hostingManagementIdentityResourceId: hostingIdentityResourceId
+        storageAccountResourceId: storageAccountResourceId
+        workloadIdentityResourceId: workloadIdentityResourceId
       }
     ]
   }

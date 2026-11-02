@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "2998290216332527788"
+      "templateHash": "1212357759985453530"
     }
   },
   "definitions": {
@@ -73,6 +73,15 @@
         },
         "clusterResourceId": {
           "type": "string"
+        },
+        "hostingManagementIdentityResourceId": {
+          "type": "string"
+        },
+        "storageAccountResourceId": {
+          "type": "string"
+        },
+        "workloadIdentityResourceId": {
+          "type": "string"
         }
       }
     }
@@ -134,10 +143,13 @@
         "enabled": false,
         "hostingType": "",
         "name": "",
-        "clusterResourceId": ""
+        "clusterResourceId": "",
+        "hostingManagementIdentityResourceId": "",
+        "storageAccountResourceId": "",
+        "workloadIdentityResourceId": ""
       },
       "metadata": {
-        "description": "Existing AKS cluster hosting. Supporting resources are created automatically."
+        "description": "Existing AKS hosting with independently optional Storage and managed identity references."
       }
     },
     "kubeletObjectId": {
@@ -173,6 +185,20 @@
       "defaultValue": "",
       "metadata": {
         "description": "Unique access operation ID persisted by azd before deployment."
+      }
+    },
+    "hostingPrincipalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Verified principal ID of the supplied hosting-management identity, resolved by microsoft.foundry."
+      }
+    },
+    "workloadPrincipalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Verified principal ID of the supplied workload identity, resolved by microsoft.foundry."
       }
     },
     "enableNetworkIsolation": {
@@ -315,6 +341,12 @@
           "acrAccessOperationId": {
             "value": "[parameters('acrAccessOperationId')]"
           },
+          "hostingPrincipalId": {
+            "value": "[parameters('hostingPrincipalId')]"
+          },
+          "workloadPrincipalId": {
+            "value": "[parameters('workloadPrincipalId')]"
+          },
           "enableNetworkIsolation": {
             "value": "[parameters('enableNetworkIsolation')]"
           },
@@ -360,7 +392,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "11291957688034724305"
+              "templateHash": "3626887754441509973"
             }
           },
           "definitions": {
@@ -427,6 +459,15 @@
                 },
                 "clusterResourceId": {
                   "type": "string"
+                },
+                "hostingManagementIdentityResourceId": {
+                  "type": "string"
+                },
+                "storageAccountResourceId": {
+                  "type": "string"
+                },
+                "workloadIdentityResourceId": {
+                  "type": "string"
                 }
               }
             }
@@ -481,7 +522,10 @@
                 "enabled": false,
                 "hostingType": "",
                 "name": "",
-                "clusterResourceId": ""
+                "clusterResourceId": "",
+                "hostingManagementIdentityResourceId": "",
+                "storageAccountResourceId": "",
+                "workloadIdentityResourceId": ""
               }
             },
             "kubeletObjectId": {
@@ -489,6 +533,14 @@
               "defaultValue": ""
             },
             "federatedIdentityRoleDefinitionId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "hostingPrincipalId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "workloadPrincipalId": {
               "type": "string",
               "defaultValue": ""
             },
@@ -607,6 +659,9 @@
             "storageAccountName": "[format('st{0}', variables('resourceToken'))]",
             "hostingIdentityName": "[format('{0}-hosting-mi', variables('foundryAccountName'))]",
             "workloadIdentityName": "[format('{0}-workload-mi', variables('foundryAccountName'))]",
+            "hostingIdentityResourceId": "[if(empty(parameters('agentHosting').hostingManagementIdentityResourceId), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName')), parameters('agentHosting').hostingManagementIdentityResourceId)]",
+            "workloadIdentityResourceId": "[if(empty(parameters('agentHosting').workloadIdentityResourceId), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('workloadIdentityName')), parameters('agentHosting').workloadIdentityResourceId)]",
+            "storageAccountResourceId": "[if(empty(parameters('agentHosting').storageAccountResourceId), resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), parameters('agentHosting').storageAccountResourceId)]",
             "useByoNetwork": "[and(parameters('enableNetworkIsolation'), not(parameters('useManagedEgress')))]",
             "useManagedNetwork": "[and(parameters('enableNetworkIsolation'), parameters('useManagedEgress'))]",
             "disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]",
@@ -734,10 +789,10 @@
               "identity": {
                 "type": "SystemAssigned, UserAssigned",
                 "userAssignedIdentities": {
-                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName')))]": {}
+                  "[format('{0}', variables('hostingIdentityResourceId'))]": {}
                 }
               },
-              "properties": "[shallowMerge(createArray(variables('foundryAccountProperties'), createObject('agentHostingConfigurations', createArray(createObject('hostingType', 'ManagedCluster', 'name', 'default', 'clusterResourceId', parameters('agentHosting').clusterResourceId, 'hostingManagementIdentityResourceId', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName')), 'storageAccountResourceId', resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), 'workloadIdentityResourceId', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('workloadIdentityName')))))))]",
+              "properties": "[shallowMerge(createArray(variables('foundryAccountProperties'), createObject('agentHostingConfigurations', createArray(createObject('hostingType', 'ManagedCluster', 'name', 'default', 'clusterResourceId', parameters('agentHosting').clusterResourceId, 'hostingManagementIdentityResourceId', variables('hostingIdentityResourceId'), 'storageAccountResourceId', variables('storageAccountResourceId'), 'workloadIdentityResourceId', variables('workloadIdentityResourceId'))))))]",
               "dependsOn": [
                 "network",
                 "prerequisites"
@@ -798,6 +853,21 @@
                   },
                   "federatedIdentityRoleDefinitionId": {
                     "value": "[parameters('federatedIdentityRoleDefinitionId')]"
+                  },
+                  "hostingIdentityResourceId": {
+                    "value": "[parameters('agentHosting').hostingManagementIdentityResourceId]"
+                  },
+                  "workloadIdentityResourceId": {
+                    "value": "[parameters('agentHosting').workloadIdentityResourceId]"
+                  },
+                  "storageAccountResourceId": {
+                    "value": "[parameters('agentHosting').storageAccountResourceId]"
+                  },
+                  "suppliedHostingPrincipalId": {
+                    "value": "[parameters('hostingPrincipalId')]"
+                  },
+                  "suppliedWorkloadPrincipalId": {
+                    "value": "[parameters('workloadPrincipalId')]"
                   }
                 },
                 "template": {
@@ -807,7 +877,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.48.1.52935",
-                      "templateHash": "5400303943902594065"
+                      "templateHash": "17798698122283979447"
                     }
                   },
                   "parameters": {
@@ -831,10 +901,32 @@
                     },
                     "federatedIdentityRoleDefinitionId": {
                       "type": "string"
+                    },
+                    "hostingIdentityResourceId": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "workloadIdentityResourceId": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "storageAccountResourceId": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "suppliedHostingPrincipalId": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "suppliedWorkloadPrincipalId": {
+                      "type": "string",
+                      "defaultValue": ""
                     }
                   },
                   "variables": {
                     "clusterParts": "[split(parameters('clusterResourceId'), '/')]",
+                    "workloadParts": "[split(if(empty(parameters('workloadIdentityResourceId')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName')), parameters('workloadIdentityResourceId')), '/')]",
+                    "storageParts": "[split(if(empty(parameters('storageAccountResourceId')), resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('storageAccountResourceId')), '/')]",
                     "storageZrsUnsupportedRegions": [
                       "australiacentral",
                       "australiacentral2",
@@ -860,10 +952,11 @@
                     ],
                     "readerRoleId": "acdd72a7-3385-48ef-bd42-f606fba81ae7",
                     "kubernetesExtensionContributorRoleId": "85cb6faf-e071-4c9b-8136-154b5a04f717",
-                    "blobContributorRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]"
+                    "blobContributorRoleId": "[subscriptionResourceId(variables('storageParts')[2], 'Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]"
                   },
                   "resources": [
                     {
+                      "condition": "[empty(parameters('hostingIdentityResourceId'))]",
                       "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
                       "apiVersion": "2023-01-31",
                       "name": "[parameters('hostingIdentityName')]",
@@ -871,6 +964,7 @@
                       "tags": "[parameters('tags')]"
                     },
                     {
+                      "condition": "[empty(parameters('workloadIdentityResourceId'))]",
                       "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
                       "apiVersion": "2023-01-31",
                       "name": "[parameters('workloadIdentityName')]",
@@ -878,6 +972,7 @@
                       "tags": "[parameters('tags')]"
                     },
                     {
+                      "condition": "[empty(parameters('storageAccountResourceId'))]",
                       "type": "Microsoft.Storage/storageAccounts",
                       "apiVersion": "2023-05-01",
                       "name": "[parameters('storageAccountName')]",
@@ -905,6 +1000,7 @@
                         "name": "clusterGrants",
                         "count": "[length(createArray(variables('readerRoleId'), variables('kubernetesExtensionContributorRoleId')))]"
                       },
+                      "condition": "[empty(parameters('hostingIdentityResourceId'))]",
                       "type": "Microsoft.Resources/deployments",
                       "apiVersion": "2025-04-01",
                       "name": "[format('byo-cluster-{0}-{1}', uniqueString(resourceGroup().id, parameters('hostingIdentityName')), createArray(variables('readerRoleId'), variables('kubernetesExtensionContributorRoleId'))[copyIndex()])]",
@@ -919,9 +1015,7 @@
                           "resourceName": {
                             "value": "[last(variables('clusterParts'))]"
                           },
-                          "principalId": {
-                            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName')), '2023-01-31').principalId]"
-                          },
+                          "principalId": "[if(empty(parameters('hostingIdentityResourceId')), createObject('value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName')), '2023-01-31').principalId), createObject('value', parameters('suppliedHostingPrincipalId')))]",
                           "roleDefinitionId": {
                             "value": "[subscriptionResourceId(variables('clusterParts')[2], 'Microsoft.Authorization/roleDefinitions', createArray(variables('readerRoleId'), variables('kubernetesExtensionContributorRoleId'))[copyIndex()])]"
                           }
@@ -967,9 +1061,12 @@
                       ]
                     },
                     {
+                      "condition": "[or(empty(parameters('hostingIdentityResourceId')), empty(parameters('workloadIdentityResourceId')))]",
                       "type": "Microsoft.Resources/deployments",
                       "apiVersion": "2025-04-01",
-                      "name": "byo-federation-access",
+                      "name": "[if(empty(parameters('workloadIdentityResourceId')), 'byo-federation-access', format('byo-federation-access-{0}', uniqueString(resourceGroup().id, parameters('hostingIdentityName'))))]",
+                      "subscriptionId": "[variables('workloadParts')[2]]",
+                      "resourceGroup": "[variables('workloadParts')[4]]",
                       "properties": {
                         "expressionEvaluationOptions": {
                           "scope": "inner"
@@ -977,11 +1074,9 @@
                         "mode": "Incremental",
                         "parameters": {
                           "resourceName": {
-                            "value": "[parameters('workloadIdentityName')]"
+                            "value": "[last(variables('workloadParts'))]"
                           },
-                          "principalId": {
-                            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName')), '2023-01-31').principalId]"
-                          },
+                          "principalId": "[if(empty(parameters('hostingIdentityResourceId')), createObject('value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName')), '2023-01-31').principalId), createObject('value', parameters('suppliedHostingPrincipalId')))]",
                           "roleDefinitionId": {
                             "value": "[parameters('federatedIdentityRoleDefinitionId')]"
                           }
@@ -1028,9 +1123,12 @@
                       ]
                     },
                     {
+                      "condition": "[or(empty(parameters('workloadIdentityResourceId')), empty(parameters('storageAccountResourceId')))]",
                       "type": "Microsoft.Resources/deployments",
                       "apiVersion": "2025-04-01",
-                      "name": "byo-storage-access",
+                      "name": "[if(empty(parameters('storageAccountResourceId')), 'byo-storage-access', format('byo-storage-access-{0}', uniqueString(resourceGroup().id, parameters('workloadIdentityName'))))]",
+                      "subscriptionId": "[variables('storageParts')[2]]",
+                      "resourceGroup": "[variables('storageParts')[4]]",
                       "properties": {
                         "expressionEvaluationOptions": {
                           "scope": "inner"
@@ -1038,11 +1136,9 @@
                         "mode": "Incremental",
                         "parameters": {
                           "resourceName": {
-                            "value": "[parameters('storageAccountName')]"
+                            "value": "[last(variables('storageParts'))]"
                           },
-                          "principalId": {
-                            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName')), '2023-01-31').principalId]"
-                          },
+                          "principalId": "[if(empty(parameters('workloadIdentityResourceId')), createObject('value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName')), '2023-01-31').principalId), createObject('value', parameters('suppliedWorkloadPrincipalId')))]",
                           "roleDefinitionId": {
                             "value": "[variables('blobContributorRoleId')]"
                           }

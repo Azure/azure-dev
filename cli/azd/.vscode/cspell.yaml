@@ -629,6 +629,15 @@ overrides:
   - filename: extensions/azure.ai.content-understanding/internal/testutil/tempdir.go
     words:
       - testutil
+  - filename: extensions/azure.ai.projects/internal/provisioning/aks_hosting.go
+    words:
+      - federatedidentityroledefinitionid
+      - hostingprincipalid
+      - kubeletobjectid
+      - workloadprincipalid
+  - filename: extensions/azure.ai.projects/internal/provisioning/supplied_resource_bindings.go
+    words:
+      - deploymenttemplate
   - filename: pkg/update/msi_windows.go
     words:
       - norestart

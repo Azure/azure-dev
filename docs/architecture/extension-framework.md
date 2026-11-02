@@ -88,7 +88,9 @@ Extensions declare their capabilities in `extension.yaml`:
 
 The first-party `microsoft.foundry` provisioning provider supports existing AKS hosting
 with independently supplied Storage and hosting/workload identities. Omitted resources
-retain their normal ARM creation/update path; registry selection follows the standard Foundry rules. See
+retain their normal ARM creation/update path; registry selection follows the standard Foundry rules.
+On-disk templates and explicit parameters control deployment behavior. Automatic hosting bindings
+use effective resource selections and fill only declared parameters without a user-supplied value. See
 [Existing AKS hosting](../../cli/azd/extensions/azure.ai.projects/README.md#existing-aks-hosting)
 for deployment bindings, existing grant requirements, and resource-group teardown scope.
 

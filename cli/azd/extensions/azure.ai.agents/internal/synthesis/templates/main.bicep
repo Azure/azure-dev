@@ -78,10 +78,10 @@ param agentHosting agentHostingType = {
   workloadIdentityResourceId: ''
 }
 
-@description('AKS kubelet principal ID, resolved by microsoft.foundry for registry access.')
+@description('AKS kubelet principal ID for registry access; resolved by microsoft.foundry when omitted.')
 param kubeletObjectId string = ''
 
-@description('Built-in federation-management role, resolved by microsoft.foundry.')
+@description('Federation-management role; resolved by microsoft.foundry when omitted.')
 param federatedIdentityRoleDefinitionId string = ''
 
 @description('Full ARM ID of an existing container registry to reuse instead of creating one.')
@@ -93,10 +93,10 @@ param acrPullAssigned bool = false
 @description('Unique access operation ID persisted by azd before deployment.')
 param acrAccessOperationId string = ''
 
-@description('Verified principal ID of the supplied hosting-management identity, resolved by microsoft.foundry.')
+@description('Principal ID of the supplied hosting-management identity; resolved by microsoft.foundry when omitted.')
 param hostingPrincipalId string = ''
 
-@description('Verified principal ID of the supplied workload identity, resolved by microsoft.foundry.')
+@description('Principal ID of the supplied workload identity; resolved by microsoft.foundry when omitted.')
 param workloadPrincipalId string = ''
 
 // Network isolation parameters (see modules/resources.bicep for semantics).

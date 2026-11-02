@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "1212357759985453530"
+      "templateHash": "290216895838053805"
     }
   },
   "definitions": {
@@ -156,14 +156,14 @@
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "AKS kubelet principal ID, resolved by microsoft.foundry for registry access."
+        "description": "AKS kubelet principal ID for registry access; resolved by microsoft.foundry when omitted."
       }
     },
     "federatedIdentityRoleDefinitionId": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Built-in federation-management role, resolved by microsoft.foundry."
+        "description": "Federation-management role; resolved by microsoft.foundry when omitted."
       }
     },
     "existingAcrResourceId": {
@@ -191,14 +191,14 @@
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Verified principal ID of the supplied hosting-management identity, resolved by microsoft.foundry."
+        "description": "Principal ID of the supplied hosting-management identity; resolved by microsoft.foundry when omitted."
       }
     },
     "workloadPrincipalId": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Verified principal ID of the supplied workload identity, resolved by microsoft.foundry."
+        "description": "Principal ID of the supplied workload identity; resolved by microsoft.foundry when omitted."
       }
     },
     "enableNetworkIsolation": {

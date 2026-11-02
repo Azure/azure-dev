@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"azure.ai.projects/internal/exterrors"
 
@@ -373,11 +374,19 @@ func extractParametersFromARMFile(raw []byte, sourcePath string) (map[string]any
 }
 
 // mergeParameters layers host-derived parameters UNDER user-supplied ones:
-// the user's value wins on keys present in both. Lets host-derived values like
-// `location` flow through when the user's file omits them.
+// the user's value wins on case-insensitively matching names. Lets host-derived
+// values like `location` flow through when the user's file omits them.
 func mergeParameters(userParams, hostParams map[string]any) map[string]any {
 	out := make(map[string]any, len(userParams)+len(hostParams))
 	maps.Copy(out, hostParams)
+	for name := range hostParams {
+		for supplied := range userParams {
+			if strings.EqualFold(name, supplied) {
+				delete(out, name)
+				break
+			}
+		}
+	}
 	maps.Copy(out, userParams)
 	return out
 }
@@ -389,8 +398,11 @@ func parametersDeclaredByTemplate(hostParams, armTemplate map[string]any) map[st
 	declared, _ := armTemplate["parameters"].(map[string]any)
 	out := make(map[string]any, min(len(hostParams), len(declared)))
 	for name, value := range hostParams {
-		if _, ok := declared[name]; ok {
-			out[name] = value
+		for declaration := range declared {
+			if strings.EqualFold(name, declaration) {
+				out[name] = value
+				break
+			}
 		}
 	}
 	return out

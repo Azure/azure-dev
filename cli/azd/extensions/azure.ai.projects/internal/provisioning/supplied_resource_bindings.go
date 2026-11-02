@@ -4,14 +4,9 @@
 package provisioning
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
-
-	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/google/uuid"
@@ -39,96 +34,4 @@ func (p *FoundryProvisioningProvider) readBYOIdentityPrincipal(ctx context.Conte
 		return "", fmt.Errorf("supplied identity principal ID must be a GUID: %w", err)
 	}
 	return principal, nil
-}
-
-func validateBYOSupportingTemplate(template map[string]any) error {
-	raw, err := synthesis.ARMTemplate()
-	if err != nil {
-		return fmt.Errorf("load supporting-resource deployment template: %w", err)
-	}
-	var standard map[string]any
-	if err := json.Unmarshal(raw, &standard); err != nil {
-		return fmt.Errorf("decode supporting-resource deployment template: %w", err)
-	}
-	expected, err := json.Marshal(templateBindingContent(standard))
-	if err != nil {
-		return fmt.Errorf("encode standard deployment graph: %w", err)
-	}
-	actual, err := json.Marshal(templateBindingContent(template))
-	if err != nil {
-		return fmt.Errorf("encode supplied-resource deployment graph: %w", err)
-	}
-	if !bytes.Equal(actual, expected) {
-		return exterrors.Validation(exterrors.CodeInvalidParameter,
-			"supplied-resource bindings require the standard BYO AKS deployment graph",
-			"re-eject the infrastructure templates; customize supported deployment parameters instead of "+
-				"resource naming, creation or authorization expressions")
-	}
-	return nil
-}
-
-func templateBindingContent(value any) any {
-	switch value := value.(type) {
-	case map[string]any:
-		result := make(map[string]any, len(value))
-		schema, _ := value["$schema"].(string)
-		isTemplate := strings.HasSuffix(strings.ToLower(schema), "deploymenttemplate.json#")
-		for key, item := range value {
-			if key != "metadata" || !isTemplate {
-				if isTemplate && (key == "parameters" || key == "outputs" || key == "definitions") {
-					result[key] = templateDeclarationMap(item)
-				} else {
-					result[key] = templateBindingContent(item)
-				}
-			}
-		}
-		return result
-	case []any:
-		result := make([]any, len(value))
-		for index, item := range value {
-			result[index] = templateBindingContent(item)
-		}
-		return result
-	default:
-		return value
-	}
-}
-
-func templateDeclarationMap(value any) any {
-	definitions, ok := value.(map[string]any)
-	if !ok {
-		return value
-	}
-	result := make(map[string]any, len(definitions))
-	for key, definition := range definitions {
-		result[key] = templateDeclaration(definition)
-	}
-	return result
-}
-
-func templateDeclaration(value any) any {
-	definition, ok := value.(map[string]any)
-	if !ok {
-		return value
-	}
-	result := make(map[string]any, len(definition))
-	for key, item := range definition {
-		switch key {
-		case "type":
-			if kind, ok := item.(string); ok {
-				switch lower := strings.ToLower(kind); lower {
-				case "string", "securestring", "int", "bool", "object", "secureobject", "array":
-					item = lower
-				}
-			}
-			result[key] = item
-		case "properties":
-			result[key] = templateDeclarationMap(item)
-		case "items", "additionalProperties":
-			result[key] = templateDeclaration(item)
-		default:
-			result[key] = templateBindingContent(item)
-		}
-	}
-	return result
 }

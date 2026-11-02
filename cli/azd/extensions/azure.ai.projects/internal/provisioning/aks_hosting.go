@@ -6,7 +6,6 @@
 package provisioning
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,139 +20,95 @@ import (
 )
 
 func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *templateSource) error {
-	configured := p.synthResult != nil && p.synthResult.Hosting != nil
 	value, err := byoHostingParameter(source)
 	if err != nil {
 		return err
 	}
+	// Read only inputs needed for local lookups; preserve the original deployment object.
 	var hosting struct {
-		Enabled                             bool   `json:"enabled"`
-		HostingType                         string `json:"hostingType"`
-		Name                                string `json:"name"`
-		ClusterResourceID                   string `json:"clusterResourceId"`
-		StorageAccountResourceID            string `json:"storageAccountResourceId"`
-		HostingManagementIdentityResourceID string `json:"hostingManagementIdentityResourceId"`
-		WorkloadIdentityResourceID          string `json:"workloadIdentityResourceId"`
+		Enabled                             bool            `json:"enabled"`
+		ClusterResourceID                   json.RawMessage `json:"clusterResourceId"`
+		HostingManagementIdentityResourceID json.RawMessage `json:"hostingManagementIdentityResourceId"`
+		WorkloadIdentityResourceID          json.RawMessage `json:"workloadIdentityResourceId"`
 	}
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("encode agentHosting deployment parameters: %w", err)
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&hosting); err != nil {
+	if err := json.Unmarshal(raw, &hosting); err != nil {
 		return exterrors.Validation(exterrors.CodeInvalidParameter,
 			fmt.Sprintf("invalid agentHosting deployment parameters: %s", err),
-			"supply agentHosting as a literal object matching azure.yaml, not an ARM expression")
+			"supply agentHosting as a literal object with the values needed for local AKS binding lookups")
 	}
-	if !configured {
-		if !hosting.Enabled {
-			if hosting.StorageAccountResourceID != "" || hosting.HostingManagementIdentityResourceID != "" ||
-				hosting.WorkloadIdentityResourceID != "" {
-				return exterrors.Validation(exterrors.CodeConflictingArguments,
-					"supporting-resource selections cannot take effect without enabled agentHosting in azure.yaml",
-					"declare agentHosting and its resource selections on the azure.ai.project service, "+
-						"or remove the selections")
+	if !hosting.Enabled {
+		return nil
+	}
+	var clusterID string
+	if err := json.Unmarshal(hosting.ClusterResourceID, &clusterID); err != nil {
+		return exterrors.Validation(exterrors.CodeInvalidParameter,
+			"agentHosting.clusterResourceId must be a resource ID string for AKS binding lookups",
+			"supply the complete resource ID of the effective AKS cluster")
+	}
+	if _, err := parseBYOResourceID(clusterID, "Microsoft.ContainerService/managedClusters"); err != nil {
+		return err
+	}
+	hostBindings := map[string]any{
+		"federatedIdentityRoleDefinitionId": nil,
+		"hostingPrincipalId":                nil,
+		"workloadPrincipalId":               nil,
+	}
+	if includeAcr, _ := byoParameterValue(source, "includeAcr").(bool); includeAcr {
+		hostBindings["kubeletObjectId"] = nil
+	}
+	hostBindings = parametersDeclaredByTemplate(hostBindings, source.armTemplate)
+	for name := range hostBindings {
+		for supplied := range source.parameters {
+			if strings.EqualFold(name, supplied) {
+				delete(hostBindings, name)
+				break
 			}
-			return nil
 		}
-		return exterrors.Validation(exterrors.CodeConflictingArguments,
-			"effective agentHosting deployment parameters enable BYO AKS without agentHosting in azure.yaml",
-			"set agentHosting.clusterResourceId on the azure.ai.project service in azure.yaml, "+
-				"or disable agentHosting in the parameters file and template defaults")
 	}
-	includeAcr, _ := byoParameterValue(source, "includeAcr").(bool)
-	want := p.synthResult.Hosting
-	if !hosting.Enabled || hosting.HostingType != "ManagedCluster" || hosting.Name != "default" ||
-		!strings.EqualFold(hosting.ClusterResourceID, want.ClusterResourceID) ||
-		!strings.EqualFold(hosting.StorageAccountResourceID, want.StorageAccountResourceID) ||
-		!strings.EqualFold(hosting.HostingManagementIdentityResourceID, want.HostingManagementIdentityResourceID) ||
-		!strings.EqualFold(hosting.WorkloadIdentityResourceID, want.WorkloadIdentityResourceID) {
-		return fmt.Errorf("agentHosting deployment parameters conflict with azure.yaml; " +
-			"clusterResourceId and every supporting-resource selection must match")
-	}
-	for _, selection := range []struct {
-		id, kind string
+	_, resolveFederationRole := hostBindings["federatedIdentityRoleDefinitionId"]
+	identities := []struct {
+		field, binding, id string
+		value              json.RawMessage
 	}{
-		{hosting.ClusterResourceID, "Microsoft.ContainerService/managedClusters"},
-		{hosting.StorageAccountResourceID, "Microsoft.Storage/storageAccounts"},
-		{hosting.HostingManagementIdentityResourceID, "Microsoft.ManagedIdentity/userAssignedIdentities"},
-		{hosting.WorkloadIdentityResourceID, "Microsoft.ManagedIdentity/userAssignedIdentities"},
-	} {
-		if selection.id != "" {
-			if _, err := parseBYOResourceID(selection.id, selection.kind); err != nil {
-				return err
-			}
-		}
+		{field: "hostingManagementIdentityResourceId", binding: "hostingPrincipalId",
+			value: hosting.HostingManagementIdentityResourceID},
+		{field: "workloadIdentityResourceId", binding: "workloadPrincipalId", value: hosting.WorkloadIdentityResourceID},
 	}
-	if hosting.HostingManagementIdentityResourceID != "" &&
-		strings.EqualFold(hosting.HostingManagementIdentityResourceID, hosting.WorkloadIdentityResourceID) {
-		return fmt.Errorf("hostingManagementIdentityResourceId and workloadIdentityResourceId must be distinct")
-	}
-	hasSupplied := hosting.StorageAccountResourceID != "" ||
-		hosting.HostingManagementIdentityResourceID != "" || hosting.WorkloadIdentityResourceID != ""
-	if hasSupplied {
-		if err := validateBYOSupportingTemplate(source.armTemplate); err != nil {
-			return err
-		}
-		for _, name := range []string{"location", "resourceTokenSalt"} {
-			value, ok := byoParameterValue(source, name).(string)
-			if !ok || name == "location" && strings.TrimSpace(value) == "" {
-				return fmt.Errorf("effective %s must be a literal string, nonempty except resourceTokenSalt", name)
-			}
-		}
-		resourceGroup, ok := byoParameterValue(source, "resourceGroupName").(string)
-		if !ok || strings.TrimSpace(resourceGroup) == "" {
-			return fmt.Errorf("effective resourceGroupName must be a nonempty string")
-		}
-		if p.subID == "" || strings.ContainsAny(p.subID+resourceGroup, "/\\?#%@:\x00 \t\r\n") {
-			return fmt.Errorf("target subscription and resource group must identify a valid ARM scope")
-		}
-	}
-	suppliedBindings := map[string]string{}
-	kubeletSupplied := false
-	for name, parameter := range source.parameters {
-		key := strings.ToLower(name)
-		switch key {
-		case "hostingprincipalid":
-			if hosting.HostingManagementIdentityResourceID == "" {
-				return fmt.Errorf("hostingPrincipalId requires agentHosting.hostingManagementIdentityResourceId")
-			}
-		case "workloadprincipalid":
-			if hosting.WorkloadIdentityResourceID == "" {
-				return fmt.Errorf("workloadPrincipalId requires agentHosting.workloadIdentityResourceId")
-			}
-		case "kubeletobjectid", "federatedidentityroledefinitionid":
-		default:
+	workloadID := ""
+	for i := range identities {
+		identity := &identities[i]
+		if _, needed := hostBindings[identity.binding]; !needed &&
+			!(resolveFederationRole && identity.binding == "workloadPrincipalId") {
 			continue
 		}
-		if strings.EqualFold(name, "kubeletObjectId") {
-			if kubeletSupplied {
-				return exterrors.Validation(exterrors.CodeConflictingArguments,
-					"multiple kubeletObjectId deployment parameters differ only by case",
-					"supply kubeletObjectId only once using the template's parameter name")
+		if len(identity.value) > 0 {
+			if err := json.Unmarshal(identity.value, &identity.id); err != nil {
+				return exterrors.Validation(exterrors.CodeInvalidParameter,
+					fmt.Sprintf("agentHosting.%s must be a resource ID string to resolve deployment bindings",
+						identity.field),
+					"supply a complete managed identity resource ID or provide the required deployment bindings explicitly")
 			}
-			kubeletSupplied = true
 		}
-		if _, duplicate := suppliedBindings[key]; duplicate {
-			return exterrors.Validation(exterrors.CodeConflictingArguments,
-				fmt.Sprintf("multiple %s deployment parameters differ only by case", name),
-				"supply the binding only once using the template's parameter name")
+		if identity.id == "" {
+			delete(hostBindings, identity.binding)
+			continue
 		}
-		envelope, _ := parameter.(map[string]any)
-		value, ok := envelope["value"].(string)
-		if !ok || strings.TrimSpace(value) == "" {
-			return exterrors.Validation(exterrors.CodeInvalidParameter,
-				fmt.Sprintf("%s must be a nonempty string matching the provider-resolved BYO AKS binding", name),
-				fmt.Sprintf("remove %s from the parameters file so microsoft.foundry can resolve it automatically", name))
+		if _, err := parseBYOResourceID(identity.id, "Microsoft.ManagedIdentity/userAssignedIdentities"); err != nil {
+			return err
 		}
-		suppliedBindings[key] = value
+		if identity.binding == "workloadPrincipalId" {
+			workloadID = identity.id
+		}
 	}
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
 	kubeletObjectID, federationRoleID, err := p.resolveBYOHostBindings(
-		ctx, hosting.ClusterResourceID, hosting.WorkloadIdentityResourceID)
+		ctx, clusterID, workloadID, resolveFederationRole)
 	if err != nil {
 		return err
 	}
@@ -161,42 +116,18 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 		"federatedIdentityRoleDefinitionId": federationRoleID,
 		"kubeletObjectId":                   kubeletObjectID,
 	}
-	for _, identity := range []struct{ id, binding string }{
-		{hosting.HostingManagementIdentityResourceID, "hostingPrincipalId"},
-		{hosting.WorkloadIdentityResourceID, "workloadPrincipalId"},
-	} {
-		if identity.id != "" {
-			principal, err := p.readBYOIdentityPrincipal(ctx, identity.id)
-			if err != nil {
-				return err
-			}
-			resolvedBindings[identity.binding] = principal
-		}
-	}
-	for name, expected := range resolvedBindings {
-		if value, supplied := suppliedBindings[strings.ToLower(name)]; supplied && !strings.EqualFold(value, expected) {
-			return exterrors.Validation(exterrors.CodeConflictingArguments,
-				fmt.Sprintf("%s conflicts with the provider-resolved agentHosting binding", name),
-				fmt.Sprintf("remove %s from the parameters file so microsoft.foundry can resolve it automatically", name))
-		}
-	}
-	hostBindings := map[string]any{}
-	if hasSupplied {
-		hostBindings["agentHosting"] = map[string]any{"value": hosting}
-	}
-	for name, value := range resolvedBindings {
-		if name == "kubeletObjectId" && !includeAcr {
+	for _, identity := range identities {
+		if _, needed := hostBindings[identity.binding]; !needed {
 			continue
 		}
-		hostBindings[name] = map[string]any{"value": value}
-	}
-	hostBindings = parametersDeclaredByTemplate(hostBindings, source.armTemplate)
-	for name := range source.parameters {
-		for binding := range hostBindings {
-			if strings.EqualFold(name, binding) {
-				delete(source.parameters, name)
-			}
+		principal, err := p.readBYOIdentityPrincipal(ctx, identity.id)
+		if err != nil {
+			return err
 		}
+		resolvedBindings[identity.binding] = principal
+	}
+	for name := range hostBindings {
+		hostBindings[name] = map[string]any{"value": resolvedBindings[name]}
 	}
 	source.parameters = mergeParameters(source.parameters, hostBindings)
 	return nil
@@ -228,7 +159,7 @@ func parseBYOResourceID(value, kind string) (*arm.ResourceID, error) {
 }
 
 func (p *FoundryProvisioningProvider) resolveBYOHostBindings(
-	ctx context.Context, clusterID, workloadID string,
+	ctx context.Context, clusterID, workloadID string, resolveFederationRole bool,
 ) (string, string, error) {
 	id, err := parseBYOResourceID(clusterID, "Microsoft.ContainerService/managedClusters")
 	if err != nil {
@@ -250,6 +181,9 @@ func (p *FoundryProvisioningProvider) resolveBYOHostBindings(
 	kubeletObjectID := *cluster.Properties.IdentityProfile["kubeletidentity"].ObjectID
 	if _, err := uuid.Parse(kubeletObjectID); err != nil {
 		return "", "", fmt.Errorf("AKS kubelet principal object ID must be a GUID: %w", err)
+	}
+	if !resolveFederationRole {
+		return kubeletObjectID, "", nil
 	}
 	const roleName = "Managed Identity Federated Identity Credential Contributor"
 	roleSubscription := p.subID
@@ -297,13 +231,18 @@ func (p *FoundryProvisioningProvider) resolveBYOHostBindings(
 
 func byoHostingParameter(source *templateSource) (any, error) {
 	var value any
+	declared := false
 	definitions, _ := source.armTemplate["parameters"].(map[string]any)
 	for name, definition := range definitions {
 		if strings.EqualFold(name, "agentHosting") {
+			declared = true
 			if definition, ok := definition.(map[string]any); ok {
 				value = definition["defaultValue"]
 			}
 		}
+	}
+	if !declared {
+		return nil, nil
 	}
 	supplied := false
 	for name, parameter := range source.parameters {
@@ -321,7 +260,7 @@ func byoHostingParameter(source *templateSource) (any, error) {
 		if !ok || !present || len(envelope) != 1 {
 			return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
 				"agentHosting deployment parameter must use a value envelope",
-				"supply agentHosting as a literal object matching azure.yaml")
+				"supply agentHosting as a literal object with the values needed for local AKS binding lookups")
 		}
 		value = literal
 	}
@@ -329,12 +268,18 @@ func byoHostingParameter(source *templateSource) (any, error) {
 }
 
 func byoParameterValue(source *templateSource, key string) any {
-	if envelope, ok := source.parameters[key].(map[string]any); ok {
-		return envelope["value"]
+	for name, parameter := range source.parameters {
+		if strings.EqualFold(name, key) {
+			envelope, _ := parameter.(map[string]any)
+			return envelope["value"]
+		}
 	}
 	if definitions, ok := source.armTemplate["parameters"].(map[string]any); ok {
-		if definition, ok := definitions[key].(map[string]any); ok {
-			return definition["defaultValue"]
+		for name, definition := range definitions {
+			if strings.EqualFold(name, key) {
+				definition, _ := definition.(map[string]any)
+				return definition["defaultValue"]
+			}
 		}
 	}
 	return nil

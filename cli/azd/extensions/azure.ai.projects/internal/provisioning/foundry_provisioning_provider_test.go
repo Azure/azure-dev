@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,7 +15,7 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -457,6 +458,7 @@ func TestArmOutputsToProto(t *testing.T) {
 			assert.Len(t, got, tt.wantLen)
 			if tt.wantKey != "" {
 				assert.Equal(t, tt.wantVal, got[tt.wantKey].Value)
+				assert.Equal(t, "string", got[tt.wantKey].Type)
 			}
 		})
 	}
@@ -1177,6 +1179,42 @@ func TestResolveTemplate_FallsBackToEmbeddedWhenNoOnDisk(t *testing.T) {
 	// armParameters includes host-derived values too.
 	require.Contains(t, got.parameters, "location")
 	require.Contains(t, got.parameters, "includeAcr")
+}
+
+func TestResolveTemplateMonitoringAuthority(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []templateMode{templateModeBicep, templateModeBicepParam} {
+		for _, authored := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/authored=%t", mode, authored), func(t *testing.T) {
+				t.Parallel()
+				parameters := map[string]any{}
+				if authored {
+					parameters["monitoringMode"] = map[string]any{"value": "reuse-connect"}
+					parameters["applicationInsightsResourceId"] = map[string]any{"value": "authored-component"}
+				}
+				p := &FoundryProvisioningProvider{
+					projectPath: t.TempDir(),
+					synthResult: &synthesis.Result{Parameters: map[string]any{
+						"monitoringMode": "create", "applicationInsightsResourceId": "stale-component",
+						"monitoringCreateConnection": true, "monitoringConnectionName": "stale-name",
+					}},
+					onDiskSource: &templateSource{
+						mode: mode, parameters: parameters,
+						armTemplate: map[string]any{"parameters": map[string]any{
+							"monitoringMode":                map[string]any{"type": "string", "defaultValue": "none"},
+							"applicationInsightsResourceId": map[string]any{"type": "string", "defaultValue": ""},
+							"monitoringCreateConnection":    map[string]any{"type": "bool", "defaultValue": false},
+							"monitoringConnectionName":      map[string]any{"type": "string", "defaultValue": ""},
+						}},
+					},
+				}
+				result, err := p.resolveTemplate(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, parameters, result.parameters,
+					"neither synthesis nor host defaults may override authored monitoring parameters or template defaults")
+			})
+		}
+	}
 }
 
 func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {

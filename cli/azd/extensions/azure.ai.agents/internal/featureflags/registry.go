@@ -5,7 +5,7 @@
 
 package featureflags
 
-import "azureaiagent/internal/synthesis"
+import "azure.ai.projects/synthesis"
 
 // Every agents preview feature is declared here and listed by All.
 var (

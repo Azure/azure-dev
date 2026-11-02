@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,7 +23,7 @@ import (
 	"azure.ai.projects/internal/azure"
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/provisioning"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -2010,8 +2011,16 @@ func writeTerraformEjectedInfraAt(
 	if err != nil {
 		return err
 	}
+	monitoring, err := synthesis.RenderTerraformMonitoring(parameters, false)
+	if err != nil {
+		return err
+	}
+	maps.Copy(variables, monitoring.Variables)
 	if err := copyEmbeddedTerraform(infraDir, includeAcr); err != nil {
 		return fmt.Errorf("copy Terraform templates: %w", err)
+	}
+	if err := writeTerraformMonitoring(infraDir, monitoring); err != nil {
+		return err
 	}
 	if err := renderTerraformOutputs(infraDir, includeAcr, layer); err != nil {
 		return fmt.Errorf("render Terraform outputs: %w", err)
@@ -2065,12 +2074,24 @@ func terraformEjectionVariables(
 }
 
 func copyEmbeddedTerraform(destination string, includeAcr bool) error {
-	skip := map[string]struct{}{"outputs.tf.tmpl": {}}
+	skip := map[string]struct{}{
+		"outputs.tf.tmpl": {}, "monitoring.tf.tmpl": {}, "provider-monitoring.tf.tmpl": {},
+	}
 	if !includeAcr {
 		skip["container-registry.tf"] = struct{}{}
 	}
 	return copyEmbeddedTree(synthesis.TerraformTemplatesFS(), "templates/terraform", destination,
 		skip)
+}
+
+func writeTerraformMonitoring(destination string, monitoring synthesis.TerraformMonitoring) error {
+	for name, data := range monitoring.Files {
+		// #nosec G306 -- generated infrastructure is intended to be human-readable.
+		if err := os.WriteFile(filepath.Join(destination, name), data, 0644); err != nil {
+			return fmt.Errorf("write monitoring infrastructure %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func renderTerraformOutputs(destination string, includeAcr, layer bool) error {

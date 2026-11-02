@@ -4,7 +4,7 @@
 package cmd
 
 import (
-	"azureaiagent/internal/synthesis"
+	"azure.ai.projects/synthesis"
 )
 
 // environmentReference and findEnvironmentReferences are this package's view of

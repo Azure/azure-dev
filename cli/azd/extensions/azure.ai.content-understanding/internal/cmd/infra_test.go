@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -564,6 +565,7 @@ func infraRPCClient(t *testing.T, h *infraRPC) *azdInfraHost {
 	t.Setenv("AZD_ACCESS_TOKEN", "host-test-token")
 	cmd := &cobra.Command{}
 	cmd.SetContext(t.Context())
+	cmd.SetOut(io.Discard)
 	host, err := openInfraHost(cmd, &azdext.ExtensionContext{})
 	require.NoError(t, err)
 	t.Cleanup(host.Close)

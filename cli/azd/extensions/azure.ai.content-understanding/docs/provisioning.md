@@ -79,8 +79,12 @@ azd up
 ```
 
 Generation selects a subscription through azd. For a new resource, its wizard
-asks for an environment name, optional resource prefix, supported region, and
-whether to assign a data-plane role. Explicit flags skip the corresponding
+explains that generation writes files without deploying resources, then
+explains each choice before asking for an environment name, supported region,
+optional resource prefix, and whether to assign a data-plane role. Essential
+guidance is visible without entering `?`; hints remain available for reference.
+Invalid text input shows its validation reason before asking again.
+Explicit flags skip the corresponding
 questions, including `--assign-roles=false` and `--foundry-prefix ""`.
 An inherited `AZD_ENVIRONMENT` also skips the environment question.
 Defaults are environment `dev` (or the inherited environment), region `eastus2`,
@@ -94,7 +98,9 @@ generation skips the prefix, region, and role questions. An omitted region uses
 the discovered resource region when available.
 
 Generation prints the directory, environment, files written, reuse status, and
-next commands. Scripts that parse the result must pass `--output json`; its
+next commands with explanations of sign-in, provisioning, and postprovision
+setup. Introductory and per-step explanations are omitted for `--no-prompt` and JSON/none
+output. Scripts that parse the result must pass `--output json`; its
 structured result is unchanged. Both `--output json` and `--no-prompt` skip
 the new wizard questions and use explicit inputs, environment context, and
 defaults. JSON output alone does not disable the existing subscription selector;

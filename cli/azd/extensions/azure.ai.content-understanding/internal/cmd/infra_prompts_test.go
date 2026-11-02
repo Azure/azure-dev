@@ -4,12 +4,14 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -104,7 +106,9 @@ func TestInfraGeneratePromptCancellation(t *testing.T) {
 	target := filepath.Join(testutil.TempDir(t), "project")
 	stdout, _, err := executeInfra(t, host, "infra", "generate", "-d", target, "--models", "none")
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, stdout)
+	assert.Contains(t, stdout, "This command writes project files only")
+	assert.NotContains(t, stdout, "Generated project:")
+	assert.NotContains(t, stdout, "No Azure resources were deployed. Next:")
 	assert.NoDirExists(t, target)
 	assert.Equal(t, "close", host.calls[len(host.calls)-1])
 }
@@ -120,6 +124,7 @@ func TestInfraGenerateOutputModes(t *testing.T) {
 			require.NoError(t, err)
 			assert.Empty(t, stderr)
 			assert.Empty(t, host.prompts)
+			assert.NotContains(t, stdout, "This command writes project files only")
 			switch format {
 			case "json":
 				var result map[string]json.RawMessage
@@ -160,10 +165,24 @@ func TestInfraGenerateOutputModes(t *testing.T) {
 	}
 	t.Run("JSON skips new wizard without no-prompt", func(t *testing.T) {
 		host := infraCommandFixture(t)
-		_, _, err := executeInfra(t, host, "infra", "generate", "-d",
+		stdout, _, err := executeInfra(t, host, "infra", "generate", "-d",
 			filepath.Join(testutil.TempDir(t), "project"), "--models", "none", "-o", "json")
 		require.NoError(t, err)
+		assert.True(t, json.Valid([]byte(stdout)))
 		assert.Empty(t, host.prompts)
+	})
+	t.Run("none retains prompts without narrative output", func(t *testing.T) {
+		_ = infraCommandFixture(t)
+		rpc, _, _ := generationPromptFixture(t)
+		rpc.subscriptions = []*azdext.Subscription{{Id: "sub", TenantId: "tenant", Name: "Subscription"}}
+		stdout, stderr, err := executeRoot(t, "infra", "generate", "-d",
+			filepath.Join(testutil.TempDir(t), "project"), "--models", "none", "-o", "none")
+		require.NoError(t, err)
+		assert.Empty(t, stdout)
+		assert.Empty(t, stderr)
+		rpc.mu.Lock()
+		assert.Equal(t, []string{"prompt-subscription", "prompt-text", "select", "prompt-text", "confirm"}, rpc.calls)
+		rpc.mu.Unlock()
 	})
 }
 
@@ -188,10 +207,13 @@ func generationPromptFixture(t *testing.T) (*infraRPC, *azdInfraHost, infra.Choi
 
 func TestInfraGenerationHostPrompts(t *testing.T) {
 	rpc, host, choices := generationPromptFixture(t)
+	var output bytes.Buffer
+	host.output = &output
 	inputs := []string{"../invalid", "chosen", "invalid prefix", "app"}
 	rpc.promptText = func(request *azdext.PromptRequest) (*azdext.PromptResponse, error) {
 		if len(inputs) == 3 || len(inputs) == 1 {
 			assert.Contains(t, request.GetOptions().GetHelpMessage(), "Invalid input:")
+			assert.Contains(t, output.String(), "Invalid input:")
 		}
 		value := inputs[0]
 		inputs = inputs[1:]
@@ -212,6 +234,84 @@ func TestInfraGenerationHostPrompts(t *testing.T) {
 	assert.Equal(t, "app", result.FoundryPrefix)
 	assert.Equal(t, "westus3", result.Location)
 	assert.False(t, result.AssignRoles)
+	assert.Equal(t, 2, strings.Count(output.String(), "Invalid input:"))
+	assert.NotContains(t, output.String(), "../invalid")
+	assert.NotContains(t, output.String(), "invalid prefix")
+}
+
+func TestInfraGenerationVisibleGuidance(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		prompts generationPrompts
+		stages  []string
+	}{
+		{"all", generationPrompts{true, true, true, true}, []string{
+			"Environment name", "Azure region", "Microsoft Foundry resource naming", "Data-plane access (RBAC)",
+		}},
+		{"none", generationPrompts{}, nil},
+		{"environment", generationPrompts{environment: true}, []string{"Environment name"}},
+		{"region", generationPrompts{location: true}, []string{"Azure region"}},
+		{"prefix", generationPrompts{prefix: true}, []string{"Microsoft Foundry resource naming"}},
+		{"roles", generationPrompts{roles: true}, []string{"Data-plane access (RBAC)"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rpc, host, choices := generationPromptFixture(t)
+			var output bytes.Buffer
+			host.output = &output
+			var stages []string
+			beforePrompt := func(stage, explanation string) {
+				assert.Contains(t, output.String(), "\n"+stage+"\n")
+				assert.Contains(t, output.String(), explanation)
+				stages = append(stages, stage)
+			}
+			rpc.promptText = func(request *azdext.PromptRequest) (*azdext.PromptResponse, error) {
+				if request.GetOptions().GetRequired() {
+					beforePrompt("Environment name", ".azure/<environment>/")
+					assert.Contains(t, output.String(), "dev, test, and prod")
+				} else {
+					beforePrompt("Microsoft Foundry resource naming", "aif-<unique-suffix>")
+					assert.Contains(t, output.String(), "must be globally unique")
+				}
+				return &azdext.PromptResponse{Value: request.GetOptions().GetDefaultValue()}, nil
+			}
+			rpc.selectOption = func(request *azdext.SelectRequest) (*azdext.SelectResponse, error) {
+				beforePrompt("Azure region", "language-region-support")
+				return &azdext.SelectResponse{Value: request.GetOptions().SelectedIndex}, nil
+			}
+			rpc.confirm = func(request *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
+				beforePrompt("Data-plane access (RBAC)", "an administrator must grant access")
+				assert.Contains(t, output.String(), "Provisioning and postprovision setup use Entra ID")
+				return &azdext.ConfirmResponse{Value: request.GetOptions().DefaultValue}, nil
+			}
+			_, err := host.PromptGeneration(azdext.WithAccessToken(t.Context()), choices, test.prompts)
+			require.NoError(t, err)
+			assert.Equal(t, test.stages, stages)
+			for _, stage := range []string{
+				"Environment name", "Azure region", "Microsoft Foundry resource naming", "Data-plane access (RBAC)",
+			} {
+				assert.Equal(t, slices.Contains(test.stages, stage),
+					strings.Contains(output.String(), "\n"+stage+"\n"), stage)
+			}
+			if len(test.stages) == 0 {
+				assert.Empty(t, output.String())
+			}
+		})
+	}
+}
+
+func TestInfraGenerationGuidanceWriteFailure(t *testing.T) {
+	for _, prompts := range []generationPrompts{
+		{environment: true}, {location: true}, {prefix: true}, {roles: true},
+	} {
+		rpc, host, choices := generationPromptFixture(t)
+		host.output = failingWriter{}
+		_, err := host.PromptGeneration(azdext.WithAccessToken(t.Context()), choices, prompts)
+		require.ErrorContains(t, err, "write infrastructure guidance")
+		rpc.mu.Lock()
+		assert.Empty(t, rpc.calls)
+		assert.Empty(t, rpc.writes)
+		rpc.mu.Unlock()
+	}
 }
 
 func TestInfraGenerationHostDoesNotRetryOtherFields(t *testing.T) {
@@ -473,6 +573,21 @@ func TestInfraGenerateOutputFailure(t *testing.T) {
 	assert.FileExists(t, filepath.Join(target, "azure.yaml"))
 }
 
+func TestInfraGenerateIntroductionWriteFailure(t *testing.T) {
+	host := infraCommandFixture(t)
+	root := newRootCommandWithInfra(nil, func(*cobra.Command, *azdext.ExtensionContext) (infraHost, error) {
+		return host, nil
+	})
+	target := filepath.Join(testutil.TempDir(t), "project")
+	root.SetOut(failingWriter{})
+	root.SetArgs([]string{"infra", "generate", "-d", target, "--models", "none"})
+	err := root.ExecuteContext(t.Context())
+	require.Error(t, err)
+	assert.Empty(t, host.prompts)
+	assert.NoDirExists(t, target)
+	assert.Equal(t, "close", host.calls[len(host.calls)-1])
+}
+
 func TestInfraGenerationThroughHostRPC(t *testing.T) {
 	for _, stage := range []string{"success", "environment", "prefix", "region", "roles"} {
 		t.Run(stage, func(t *testing.T) {
@@ -505,9 +620,12 @@ func TestInfraGenerationThroughHostRPC(t *testing.T) {
 			target := filepath.Join(testutil.TempDir(t), "project")
 			stdout, stderr, err := executeRoot(t, "infra", "generate", "-d", target, "--models", "none")
 			assert.Empty(t, stderr)
+			assert.Contains(t, stdout, "Subscription: Subscription (sub)")
+			assert.Contains(t, stdout, "This command writes project files only")
 			if stage == "success" {
 				require.NoError(t, err)
 				assert.Contains(t, stdout, "Environment: chosen")
+				assert.Contains(t, stdout, "azd ai cu doctor")
 				// #nosec G304 -- Reads a generated test-owned environment.
 				body, err := os.ReadFile(filepath.Join(target, "infra", "main.parameters.json"))
 				require.NoError(t, err)
@@ -520,7 +638,8 @@ func TestInfraGenerationThroughHostRPC(t *testing.T) {
 				assert.NoDirExists(t, filepath.Join(target, ".azure", "unrelated"))
 			} else {
 				require.Error(t, err)
-				assert.Empty(t, stdout)
+				assert.NotContains(t, stdout, "Generated project:")
+				assert.NotContains(t, stdout, "No Azure resources were deployed. Next:")
 				assert.NoDirExists(t, target)
 			}
 			rpc.mu.Lock()

@@ -154,6 +154,17 @@ func runInfraGenerate(
 		}
 	}
 	if !extCtx.NoPrompt && extCtx.OutputFormat != "json" {
+		if extCtx.OutputFormat != "none" {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(),
+				"Generate an azd/Bicep project in %s\nSubscription: %s (%s)\n\n"+
+					"This command writes project files only; it does not create Azure resources.\n"+
+					"Run azd up from the generated directory to provision or reuse a Microsoft Foundry resource.\n"+
+					"After provisioning, the postprovision hook can deploy selected language and embeddings models "+
+					"and configure Content Understanding defaults.\n",
+				output, choices.SubscriptionName, choices.SubscriptionID); err != nil {
+				return fmt.Errorf("write infrastructure introduction: %w", err)
+			}
+		}
 		choices, err = host.PromptGeneration(ctx, choices, generationPrompts{
 			environment: extCtx.Environment == "",
 			location:    !cmd.Flags().Changed("location") && endpoint == "",
@@ -195,8 +206,18 @@ func runInfraGenerate(
 		if index == 0 && runtime.GOOS == "windows" {
 			step = "Set-Location -LiteralPath '" + strings.ReplaceAll(result.OutputDirectory, "'", "''") + "'"
 		}
-		fmt.Fprintf(&summary, "  %s\n", step)
+		switch index {
+		case 1:
+			fmt.Fprintf(&summary, "  %s    # Sign in if needed; provisioning uses Entra ID.\n", step)
+		case 2:
+			fmt.Fprintf(&summary,
+				"  %s    # Provision resources, then run optional model setup and CU configuration.\n", step)
+		default:
+			fmt.Fprintf(&summary, "  %s\n", step)
+		}
 	}
+	summary.WriteString("The postprovision hook reports setup readiness and available test commands. " +
+		"Run azd ai cu doctor afterwards to check the selected environment.\n")
 	if _, err := fmt.Fprint(cmd.OutOrStdout(), summary.String()); err != nil {
 		return fmt.Errorf("write infrastructure summary: %w", err)
 	}

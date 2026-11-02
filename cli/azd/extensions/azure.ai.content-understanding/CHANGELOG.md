@@ -2,6 +2,9 @@
 
 ## 0.1.1-preview (Unreleased)
 
+- Explain infrastructure generation and each interactive choice on screen,
+  without requiring `?` hints. Guide users through environment, region,
+  resource naming, and access permissions, then explain the next steps.
 - Generate one-time infrastructure choices directly into Bicep parameters and
   persist postprovision choices in azd environment config instead of dedicated
   environment variables. Use `CU_`-prefixed deployment outputs and retain

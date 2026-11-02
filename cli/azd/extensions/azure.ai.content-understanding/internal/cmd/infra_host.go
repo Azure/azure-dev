@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"azure.ai.content-understanding/internal/armclient"
@@ -41,6 +42,7 @@ type infraHostFactory func(*cobra.Command, *azdext.ExtensionContext) (infraHost,
 type azdInfraHost struct {
 	client   *azdext.AzdClient
 	noPrompt bool
+	output   io.Writer
 }
 
 // Generation must work without a CU endpoint or project. Only the host channel is opened here.
@@ -49,7 +51,11 @@ func openInfraHost(cmd *cobra.Command, extCtx *azdext.ExtensionContext) (infraHo
 	if err != nil {
 		return nil, err
 	}
-	return &azdInfraHost{client: client, noPrompt: extCtx.NoPrompt}, nil
+	output := cmd.OutOrStdout()
+	if extCtx.OutputFormat == "json" || extCtx.OutputFormat == "none" {
+		output = io.Discard
+	}
+	return &azdInfraHost{client: client, noPrompt: extCtx.NoPrompt, output: output}, nil
 }
 
 func (h *azdInfraHost) Close() { h.client.Close() }

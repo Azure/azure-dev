@@ -47,60 +47,38 @@ func prepareAutomaticFirewall(
 ) (func(context.Context) error, error) {
 	serverID := binding.values[postgresServerIDEnv]
 	bootstrapID := serverID + "/firewallRules/" + authoredBootstrapRule
-	var cleanup func(context.Context) error
-	if binding.resources[strings.ToLower(bootstrapID)] {
-		cleanup = func(ctx context.Context) error {
-			rule, err := client.Get(ctx, identity.resourceGroup, identity.postgresServerName, authoredBootstrapRule, nil)
-			if isAzureNotFound(err) {
-				return nil
-			}
-			if err != nil {
-				return nonDisclosureError(err)
-			}
-			if rule.ID == nil || !strings.EqualFold(*rule.ID, bootstrapID) || !isAllPublicIPv4Rule(rule.Properties) {
-				return configurationError("the owned bootstrap rule changed; its deletion cannot be authorized")
-			}
-			if err := deleteBootstrapFirewallRule(
-				ctx, client, identity.resourceGroup, identity.postgresServerName, authoredBootstrapRule,
-			); err != nil {
-				return nonDisclosureError(err)
-			}
-			_, err = client.Get(ctx, identity.resourceGroup, identity.postgresServerName, authoredBootstrapRule, nil)
-			if !isAzureNotFound(err) {
-				return errors.Join(configurationError("the owned bootstrap firewall rule absence could not be verified"),
-					nonDisclosureError(err))
-			}
-			return nil
-		}
-	}
+	ownedBootstrap := binding.resources[strings.ToLower(bootstrapID)]
 	rules := map[string]*armpostgresqlflexibleservers.FirewallRule{}
 	pager := client.NewListByServerPager(identity.resourceGroup, identity.postgresServerName, nil)
 	pages := 0
 	for pager.More() {
 		pages++
 		if pages > 128 {
-			return cleanup, configurationError("the firewall inventory exceeded its bounded page limit")
+			return nil, configurationError("the firewall inventory exceeded its bounded page limit")
 		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return cleanup, nonDisclosureError(err)
+			return nil, nonDisclosureError(err)
 		}
 		for _, rule := range page.Value {
 			if rule == nil || rule.Name == nil || rule.ID == nil {
-				return cleanup, configurationError("the firewall inventory contains an unverifiable rule")
+				return nil, configurationError("the firewall inventory contains an unverifiable rule")
 			}
 			key := strings.ToLower(*rule.Name)
 			if rules[key] != nil || len(rules) >= 5000 ||
 				!strings.EqualFold(*rule.ID, serverID+"/firewallRules/"+*rule.Name) {
-				return cleanup, configurationError("the firewall inventory contains ambiguous or excessive rule identities")
+				return nil, configurationError("the firewall inventory contains ambiguous or excessive rule identities")
 			}
 			rules[key] = rule
-			if isAllPublicIPv4Rule(rule.Properties) && (key != authoredBootstrapRule || cleanup == nil) {
-				return cleanup, configurationError("unowned unrestricted PostgreSQL access must be resolved explicitly")
+			if key == authoredBootstrapRule && ownedBootstrap && !isAllPublicIPv4Rule(rule.Properties) {
+				return nil, configurationError("the owned bootstrap firewall rule changed")
+			}
+			if isAllPublicIPv4Rule(rule.Properties) && (key != authoredBootstrapRule || !ownedBootstrap) {
+				return nil, configurationError("unowned unrestricted PostgreSQL access must be resolved explicitly")
 			}
 		}
 	}
-	return cleanup, validateAutomaticRuntimeFirewall(binding, rules)
+	return nil, validateAutomaticRuntimeFirewall(binding, rules)
 }
 
 func validateAutomaticRuntimeFirewall(

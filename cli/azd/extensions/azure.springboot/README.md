@@ -66,10 +66,9 @@ Hikari's managed-identity plugin through its unchanged Spring properties.
 
 > [!WARNING]
 > This demo's unchanged Bicep creates `bootstrap-local-ip` from `0.0.0.0` to
-> `255.255.255.255` for setup. With the YAML hooks removed, automatic database
-> setup takes responsibility for removing that exact current-deployment-owned
-> broad rule on success, failure or cancellation and verifying its absence.
-> The existing exact runtime-egress rules are verified, not deleted or replaced.
+> `255.255.255.255` for setup. Automatic database setup verifies that this exact
+> broad rule belongs to the current deployment but leaves it unchanged. The
+> existing exact runtime-egress rules are also verified, not deleted or replaced.
 > Entra-only authentication and hostname-verified TLS protect authentication
 > and transport, **not source-IP access**. Process-local cleanup cannot guarantee
 > recovery after host or credential loss; this is not an automatically expiring

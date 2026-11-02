@@ -7,12 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -541,4 +543,175 @@ func TestSufficientRoleLists(t *testing.T) {
 	assert.Contains(t, sufficientACRAbacRoles, roleAcrRepositoryWriter)
 	assert.Contains(t, sufficientACRAbacRoles, roleContainerRegistryRepositoryContributor)
 	assert.NotContains(t, sufficientACRAbacRoles, roleAcrPush)
+}
+
+func rbacResponseError(statusCode int, errorCode, body string) *azcore.ResponseError {
+	return &azcore.ResponseError{
+		StatusCode: statusCode,
+		ErrorCode:  errorCode,
+		RawResponse: &http.Response{
+			StatusCode: statusCode,
+			Body:       io.NopCloser(strings.NewReader(body)),
+		},
+	}
+}
+
+func TestEnsureFoundryAccessReadiness(t *testing.T) {
+	const testEndpoint = "https://account.services.ai.azure.com/api/projects/project"
+	denied := &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "PermissionDenied"}
+	userErrorDenied := rbacResponseError(
+		http.StatusForbidden,
+		"UserError",
+		`{"error":{"code":"UserError","message":"Identity does not have permissions `+
+			`for Microsoft.CognitiveServices/accounts/AIServices/agents/write actions."}}`,
+	)
+	projectMissing := rbacResponseError(http.StatusNotFound, "NotFound", `{"error":{"message":"Project not found"}}`)
+	agentMissing := rbacResponseError(http.StatusNotFound, "NotFound", `{"error":{"message":"Agent not found"}}`)
+	policyDenied := &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "PolicyDenied"}
+
+	for _, tt := range []struct {
+		name       string
+		confirmed  bool
+		assigned   bool
+		probes     []error
+		wantErr    bool
+		wantProbes int
+		wantWaits  []time.Duration
+	}{
+		{
+			name: "new grant settles before first probe", confirmed: true, assigned: true,
+			probes: []error{agentMissing}, wantProbes: 1, wantWaits: []time.Duration{15 * time.Second},
+		},
+		{
+			name: "new grant propagation", confirmed: true, assigned: true,
+			probes: []error{denied, nil}, wantProbes: 2, wantWaits: []time.Duration{15 * time.Second, 5 * time.Second},
+		},
+		{
+			name: "new grant UserError agents write propagation", confirmed: true, assigned: true,
+			probes:     []error{userErrorDenied, nil},
+			wantProbes: 2, wantWaits: []time.Duration{15 * time.Second, 5 * time.Second},
+		},
+		{
+			name: "new grant exhausted", confirmed: true, assigned: true,
+			probes:     []error{denied},
+			wantErr:    true,
+			wantProbes: 3, wantWaits: []time.Duration{15 * time.Second, 5 * time.Second, 5 * time.Second},
+		},
+		{
+			name: "existing role propagation", confirmed: true, assigned: false,
+			probes: []error{denied, nil}, wantProbes: 2, wantWaits: []time.Duration{5 * time.Second},
+		},
+		{
+			name: "existing role exhausted", confirmed: true, assigned: false,
+			probes: []error{denied}, wantErr: true, wantProbes: 3, wantWaits: []time.Duration{5 * time.Second, 5 * time.Second},
+		},
+		{
+			name: "ARM denied custom access succeeds", confirmed: false, assigned: false,
+			probes: []error{nil}, wantProbes: 1,
+		},
+		{
+			name: "ARM denied access fails without propagation polling", confirmed: false, assigned: false,
+			probes: []error{denied}, wantProbes: 1,
+		},
+		{
+			name: "project sync independent of ARM", confirmed: false, assigned: false,
+			probes: []error{projectMissing, agentMissing}, wantProbes: 2, wantWaits: []time.Duration{5 * time.Second},
+		},
+		{
+			name: "project sync exhausted", confirmed: false, assigned: false,
+			probes:     []error{projectMissing},
+			wantErr:    true,
+			wantProbes: 3, wantWaits: []time.Duration{5 * time.Second, 5 * time.Second},
+		},
+		{
+			name: "project sync does not unlock auth retries", confirmed: false, assigned: false,
+			probes: []error{projectMissing, denied}, wantProbes: 2, wantWaits: []time.Duration{5 * time.Second},
+		},
+		{
+			name: "policy failure authoritative", confirmed: true, assigned: false,
+			probes: []error{policyDenied}, wantErr: true, wantProbes: 1,
+		},
+		{
+			name: "network failure authoritative", confirmed: true, assigned: false,
+			probes: []error{errors.New("network failed")}, wantErr: true, wantProbes: 1,
+		},
+		{
+			name: "server failure authoritative", confirmed: true, assigned: false,
+			probes: []error{&azcore.ResponseError{StatusCode: http.StatusInternalServerError}}, wantErr: true, wantProbes: 1,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var waits []time.Duration
+			probes := 0
+			ops := developerRBACOperations{
+				attempts: 3,
+				wait: func(_ context.Context, duration time.Duration) error {
+					waits = append(waits, duration)
+					return nil
+				},
+				probeFoundryAccess: func(
+					ctx context.Context, _ *azidentity.AzureDeveloperCLICredential, endpoint string,
+				) error {
+					assert.Equal(t, testEndpoint, endpoint)
+					deadline, ok := ctx.Deadline()
+					assert.True(t, ok)
+					assert.LessOrEqual(t, time.Until(deadline), 5*time.Minute)
+					err := tt.probes[min(probes, len(tt.probes)-1)]
+					probes++
+					return err
+				},
+			}
+			err := ensureFoundryAccess(t.Context(), nil, testEndpoint, tt.confirmed, tt.assigned, ops)
+			assert.Equal(t, tt.wantErr, err != nil)
+			assert.Equal(t, tt.wantProbes, probes)
+			assert.Equal(t, tt.wantWaits, waits)
+		})
+	}
+}
+
+func TestCheckDeveloperRBACPropagatesFoundryAccess(t *testing.T) {
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "")
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	denied := &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "PermissionDenied"}
+
+	client := newRBACClient(t, &rbacEnvironmentServer{values: map[string]string{
+		"AZURE_AI_PROJECT_ID":      rbacTestProjectScope,
+		"FOUNDRY_PROJECT_ENDPOINT": endpoint + "/",
+	}}, &rbacAccountServer{})
+
+	var waits []time.Duration
+	probes := 0
+	ops := developerRBACOperations{
+		hasAnyRoleAssignment: func(
+			context.Context, *azidentity.AzureDeveloperCLICredential, string, []string, string,
+		) (bool, error) {
+			return false, nil
+		},
+		assignRoleToIdentity: func(
+			context.Context, *azidentity.AzureDeveloperCLICredential,
+			string, string, string, string, armauthorization.PrincipalType,
+		) (bool, error) {
+			return true, nil
+		},
+		wait: func(_ context.Context, duration time.Duration) error {
+			waits = append(waits, duration)
+			return nil
+		},
+		probeFoundryAccess: func(
+			_ context.Context, _ *azidentity.AzureDeveloperCLICredential, gotEndpoint string,
+		) error {
+			assert.Equal(t, endpoint, gotEndpoint)
+			probes++
+			if probes == 1 {
+				return denied
+			}
+			return nil
+		},
+	}
+
+	messages, err := checkDeveloperRBAC(t.Context(), client, false, ops)
+	require.NoError(t, err)
+	assert.Empty(t, messages)
+	assert.Equal(t, 2, probes)
+	assert.Equal(t, []time.Duration{15 * time.Second, 5 * time.Second}, waits)
 }

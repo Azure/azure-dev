@@ -1,5 +1,7 @@
 # Customize Foundry infrastructure with `--infra`
 
+<!-- cspell:ignore kubelet -->
+
 `azd ai agent init --infra` generates editable infrastructure-as-code for the
 `host: azure.ai.project` service in `azure.yaml`.
 

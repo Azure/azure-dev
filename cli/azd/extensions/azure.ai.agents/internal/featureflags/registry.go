@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore featureflags
+// cspell:ignore featureflags BYOAKS
 
 package featureflags
 

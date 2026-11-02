@@ -1,6 +1,6 @@
 # Agents extension preview feature flags
 
-<!-- cspell:ignore featureflags strconv azureaiagent -->
+<!-- cspell:ignore featureflags strconv azureaiagent BYOAKS -->
 
 ## Status and goal
 

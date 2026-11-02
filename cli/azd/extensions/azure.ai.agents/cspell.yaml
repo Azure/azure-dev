@@ -1,8 +1,5 @@
 import: ../../.vscode/cspell.yaml
 overrides:
-  - filename: "docs/infrastructure-eject.md"
-    words:
-      - kubelet
   - filename: ["internal/inittelemetry/*.go", "internal/cmd/*.go", "docs/init-telemetry.md"]
     words:
       - inittelemetry

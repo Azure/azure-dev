@@ -62,15 +62,15 @@ func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 		for _, tt := range []struct {
 			name, location, deploymentLocation, wantLocation, wantDeploymentLocation, wantError string
 		}{
-			{"unsupported project", "eastus", "westus", "eastus", "westus", "configured AZURE_LOCATION"},
+			{"unsupported project", "eastus2", "westus", "eastus2", "westus", "configured AZURE_LOCATION"},
 			{"public split", "japaneast", "westus", "japaneast", "westus", "must match"},
 			{"public both", "westus", "westus", "westus", "westus", ""},
 			{"missing project location", "", "westus", "westus", "westus", ""},
 			{"internal split", "eastus2euap", "westus", "eastus2euap", "westus", "must match"},
 			{"internal both", "eastus2euap", "eastus2euap", "eastus2euap", "eastus2euap", ""},
 			{"internal fallback", "eastus2euap", "", "eastus2euap", "eastus2euap", ""},
-			{"unsupported fallback", "eastus", "", "eastus", "", "configured AZURE_LOCATION"},
-			{"unsupported deployment", "japaneast", "eastus", "japaneast", "eastus", "location \"eastus\""},
+			{"unsupported fallback", "eastus2", "", "eastus2", "", "configured AZURE_LOCATION"},
+			{"unsupported deployment", "japaneast", "eastus2", "japaneast", "eastus2", "location \"eastus2\""},
 		} {
 			t.Run(flow+"/"+tt.name, func(t *testing.T) {
 				values := map[string]string{

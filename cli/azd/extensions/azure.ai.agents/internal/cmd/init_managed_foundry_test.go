@@ -26,13 +26,15 @@ func TestValidateInitLocation(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, allowed)
 	for _, location := range []string{
-		"japaneast", "swedencentral", "uksouth",
-		"australiaeast", "westeurope", "germanywestcentral", " JapanEast ",
-		"canadacentral", "westus", "centralus",
+		"australiaeast", "brazilsouth", "canadacentral", "canadaeast", "centralus",
+		"eastus", "francecentral", "germanywestcentral", "italynorth", "japaneast", " JapanEast ",
+		"koreacentral", "northcentralus", "norwayeast", "polandcentral", "southafricanorth",
+		"southeastasia", "southindia", "spaincentral", "swedencentral", "switzerlandnorth",
+		"uksouth", "westeurope", "westus", "westus3",
 	} {
 		require.NoError(t, validateInitLocation(t.Context(), location, allowed))
 	}
-	for _, location := range []string{"eastus", "eastus2", "eastus2euap", "westus2", "westus3", ""} {
+	for _, location := range []string{"eastus2", "eastus2euap", "japanwest", "southcentralus", "westus2", ""} {
 		err := validateInitLocation(t.Context(), location, allowed)
 		require.ErrorContains(t, err, "not supported for this agent setup")
 		require.NoError(t, validateInitLocation(t.Context(), location, nil), "plain prompt must remain unrestricted")
@@ -74,20 +76,22 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 		wantError      bool
 		allUnsupported bool
 	}{
-		{name: "picker filters unsupported", restricted: true, location: "eastus"},
+		{name: "picker filters unsupported", restricted: true, location: "eastus2"},
 		{name: "picker includes internal", restricted: true, location: "eastus2euap"},
 		{name: "picker excludes unknown", restricted: true},
-		{name: "picker with no eligible projects", restricted: true, location: "eastus", allUnsupported: true},
-		{name: "plain picker unchanged", location: "eastus"},
-		{name: "explicit unsupported rejected", explicitID: true, restricted: true, location: "eastus", wantError: true},
+		{name: "picker with no eligible projects", restricted: true, location: "eastus2", allUnsupported: true},
+		{name: "plain picker unchanged", location: "eastus2"},
+		{name: "explicit unsupported rejected", explicitID: true, restricted: true, location: "westus2", wantError: true},
 		{name: "explicit unknown rejected", explicitID: true, restricted: true, wantError: true},
 		{name: "explicit eastus2 rejected", explicitID: true, restricted: true, location: "eastus2", wantError: true},
 		{name: "explicit westus accepted", explicitID: true, restricted: true, location: "westus"},
 		{name: "explicit centralus accepted", explicitID: true, restricted: true, location: "centralus"},
+		{name: "explicit eastus accepted", explicitID: true, restricted: true, location: "eastus"},
+		{name: "explicit westus3 accepted", explicitID: true, restricted: true, location: "westus3"},
 		{name: "explicit internal accepted", explicitID: true, restricted: true, location: "eastus2euap"},
 		{name: "explicit eastus2-euap rejected", explicitID: true, restricted: true, location: "eastus2-euap", wantError: true},
 		{name: "explicit supported accepted", explicitID: true, restricted: true, location: "japaneast"},
-		{name: "plain explicit unchanged", explicitID: true, location: "eastus"},
+		{name: "plain explicit unchanged", explicitID: true, location: "eastus2"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -97,7 +101,7 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 				if !tt.explicitID {
 					secondLocation := "japaneast"
 					if tt.allUnsupported {
-						secondLocation = "westus3"
+						secondLocation = "westus2"
 					}
 					projectJSON = fmt.Sprintf(`{"value":[%s,{"id":%q,"location":%q}]}`,
 						projectJSON, projectID+"supported", secondLocation)
@@ -192,7 +196,7 @@ func TestEnsureLocationWithAllowedLocations_Harness(t *testing.T) {
 	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2euap"})
 	allowed, err := parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
 	require.NoError(t, err)
-	for _, location := range []string{"", "eastus", "eastus2", "eastus2-euap", "japaneast", "eastus2euap"} {
+	for _, location := range []string{"", "eastus2", "westus2", "eastus2-euap", "japaneast", "eastus2euap"} {
 		t.Run(location, func(t *testing.T) {
 			const envName = "test"
 			envServer := &testEnvironmentServiceServer{values: map[string]map[string]string{envName: {}}}

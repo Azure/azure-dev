@@ -1095,6 +1095,9 @@ func prepareContainerSettings(
 			err,
 		)
 	}
+	if err := project.ResolveAgentContainerSettings(svc, projectRoot); err != nil {
+		return err
+	}
 	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
 	if err != nil {
 		return fmt.Errorf(

@@ -301,6 +301,24 @@ func (p *AgentServiceTargetProvider) adoptAndResolveServiceConfig(
 	return p.resolveServiceConfig()
 }
 
+func (p *AgentServiceTargetProvider) validateDeploymentServiceConfig(
+	ctx context.Context, serviceConfig *azdext.ServiceConfig,
+) error {
+	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+		return err
+	}
+	if container := ServiceConfigProps(p.serviceConfig).GetFields()["container"]; container != nil &&
+		containsFileRef(container.AsInterface()) {
+		if err := p.loadProjectPath(ctx); err != nil {
+			return err
+		}
+		if err := ResolveAgentContainerSettings(p.serviceConfig, p.projectPath); err != nil {
+			return err
+		}
+	}
+	return validateHostedAgentContainerSettings(p.serviceConfig.GetName(), ServiceConfigProps(p.serviceConfig))
+}
+
 func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error {
 	if p.projectPath != "" {
 		return nil
@@ -846,7 +864,7 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
-	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+	if err := p.validateDeploymentServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
 	if p.isPromptAgentService() {
@@ -3172,6 +3190,9 @@ func telephonyTransferTargetsEqual(a, b []agent_api.TelephonyTransferTarget) boo
 	slices.SortFunc(left, func(x, y agent_api.TelephonyTransferTarget) int { return strings.Compare(x.Name, y.Name) })
 	slices.SortFunc(right, func(x, y agent_api.TelephonyTransferTarget) int { return strings.Compare(x.Name, y.Name) })
 	for i := range left {
+		if len(left[i].Destination.RawObject) > 0 || len(right[i].Destination.RawObject) > 0 {
+			return false
+		}
 		if left[i].Name != right[i].Name || left[i].Description != right[i].Description ||
 			left[i].Destination.Kind != right[i].Destination.Kind ||
 			left[i].Destination.Value != right[i].Destination.Value {

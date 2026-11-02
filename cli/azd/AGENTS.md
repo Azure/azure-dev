@@ -511,7 +511,9 @@ For every PR review, including fork PRs, inspect the complete changed-file list 
 Do not wait until a contract change is already suspected. This requirement applies even when
 `azd-code-reviewer` is not otherwise loaded.
 
-Return one inline comment for each distinct new, high-confidence contract change, preserving existing-thread
-deduplication and per-thread approved experiences spec tracking. Before finishing, audit that coverage and comments
-survived triage. Include the contract pass's completion status and counts in the review summary or supported result
-channel; if required evidence or output capacity is unavailable, explicitly report `blocked`, not a clean review.
+Return one inline comment for each distinct new or removed command, positional parameter, flag, or YAML schema
+component, preserving existing-thread deduplication and per-thread approved experiences spec tracking. Do not use
+this pass for behavior-only changes such as defaults, validation, prompts, output, or runtime semantics. Before
+finishing, audit that coverage and comments survived triage. Include the contract pass's completion status and
+counts in the review summary or supported result channel; if required evidence or output capacity is unavailable,
+explicitly report `blocked`, not a clean review.

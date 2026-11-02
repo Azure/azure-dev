@@ -159,6 +159,11 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 	visit = func(value any) {
 		switch value := value.(type) {
 		case map[string]any:
+			// Reuse-only branches are not deployed on the native registry path.
+			if condition, ok := value["condition"].(string); ok &&
+				strings.Contains(condition, "not(empty(parameters('existingAcrResourceId')))") {
+				return
+			}
 			switch value["type"] {
 			case "Microsoft.Resources/deployments":
 				loop, _ := value["copy"].(map[string]any)

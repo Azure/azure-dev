@@ -85,7 +85,7 @@ func RequireAgentFeatures(
 func (p *AgentServiceTargetProvider) prepareGatedOperation(
 	ctx context.Context, serviceConfig *azdext.ServiceConfig,
 ) error {
-	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+	if err := p.validateDeploymentServiceConfig(ctx, serviceConfig); err != nil {
 		return err
 	}
 	return p.requirePreviewFeatures(ctx)

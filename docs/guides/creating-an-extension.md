@@ -100,14 +100,15 @@ For extensions that are still in development or preview, consider publishing to 
 
 The PR reviewer applies the
 [`extension-user-contract-review` skill](../../.github/skills/extension-user-contract-review/SKILL.md)
-through `azd-code-reviewer` when first-party extension changes affect commands, parameters, configuration, schemas,
-output, or compatibility. This replaces the standalone extension user-contract review workflow; the checks run when
-the PR reviewer runs, not as a separate Actions job.
+through `azd-code-reviewer` for additions or removals of commands, positional parameters, flags, and YAML schema
+components. Behavior-only changes such as defaults, validation, prompts, output, and runtime semantics remain part
+of normal code review and do not receive experiences-spec tracking comments. This replaces the standalone extension
+user-contract review workflow; the checks run when the PR reviewer runs, not as a separate Actions job.
 
-Each distinct contract change gets an inline thread requesting a link to its approved experiences spec PR.
-Reply in that finding's thread with the spec link, even when the change is intentional. The reviewer reuses links
-provided by the PR author or repository collaborators in that same thread and avoids repeating existing findings,
-including those posted by the former workflow.
+Each distinct in-scope addition or removal gets an inline thread requesting a link to its approved experiences spec
+PR. Reply in that finding's thread with the spec link, even when the change is intentional. The reviewer reuses
+links provided by the PR author or repository collaborators in that same thread and avoids repeating existing
+findings, including those posted by the former workflow.
 
 Comments for additions and modifications use RIGHT-side new-file line numbers. Deletion-only changes, including
 removed commands or entire files, use LEFT-side deleted lines with old-file line numbers. The reviewer preserves

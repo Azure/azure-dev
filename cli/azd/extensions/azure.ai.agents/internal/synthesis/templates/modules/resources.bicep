@@ -66,6 +66,12 @@ param agentHosting agentHostingType = {
 param kubeletObjectId string = ''
 param federatedIdentityRoleDefinitionId string = ''
 
+@description('Full ARM ID of an existing container registry to reuse instead of creating one.')
+param existingAcrResourceId string = ''
+
+param acrPullAssigned bool = false
+param acrAccessOperationId string = ''
+
 // Network isolation parameters. All default off so an absent network: block in
 // azure.yaml yields a public account identical to the pre-network template.
 
@@ -118,6 +124,8 @@ var byoFoundryAccountName = 'aks-${foundryAccountName}'
 var activeFoundryAccountName = agentHosting.enabled
   ? byoFoundryAccountName
   : foundryAccountName
+var activeFoundryAccountId = resourceId('Microsoft.CognitiveServices/accounts', activeFoundryAccountName)
+var activeFoundryProjectId = resourceId('Microsoft.CognitiveServices/accounts/projects', activeFoundryAccountName, foundryProjectName)
 var storageAccountName = 'st${resourceToken}'
 var hostingIdentityName = '${foundryAccountName}-hosting-mi'
 var workloadIdentityName = '${foundryAccountName}-workload-mi'
@@ -328,7 +336,7 @@ resource foundryManagedNetwork 'Microsoft.CognitiveServices/accounts/managednetw
     ]
   }
 
-module acr 'acr.bicep' = if (includeAcr) {
+module acr 'acr.bicep' = if (includeAcr && empty(existingAcrResourceId)) {
   name: 'acr'
   params: {
     location: location
@@ -343,6 +351,45 @@ module acr 'acr.bicep' = if (includeAcr) {
     byoAks: agentHosting.enabled
     kubeletObjectId: kubeletObjectId
   }
+}
+
+resource externalRegistry 'Microsoft.ContainerRegistry/registries@2025-11-01' existing = if (includeAcr && !empty(existingAcrResourceId)) {
+  name: last(split(existingAcrResourceId, '/'))
+  scope: resourceGroup(split(existingAcrResourceId, '/')[2], split(existingAcrResourceId, '/')[4])
+}
+
+module existingAcr 'container-registry.bicep' = if (includeAcr && !empty(existingAcrResourceId) && !acrPullAssigned) {
+  name: empty(acrAccessOperationId)
+    ? 'existing-acr-${uniqueString(activeFoundryAccountId, activeFoundryProjectId)}'
+    : 'azd-acr-${acrAccessOperationId}'
+  scope: resourceGroup(split(existingAcrResourceId, '/')[2], split(existingAcrResourceId, '/')[4])
+  params: {
+    mode: 'reuse-connect'
+    location: location
+    registryName: last(split(existingAcrResourceId, '/'))
+    projectPrincipalId: agentHosting.enabled
+      ? byoFoundryAccount::project!.identity.principalId
+      : foundryAccount::project!.identity.principalId
+    pullAssigned: acrPullAssigned
+    accessOperationId: acrAccessOperationId
+  }
+}
+
+module existingAcrConnection 'foundry-project.bicep' = if (includeAcr && !empty(existingAcrResourceId)) {
+  name: 'existing-acr-connection-${uniqueString(activeFoundryAccountId, activeFoundryProjectId)}'
+  params: {
+    accountName: activeFoundryAccountName
+    projectName: foundryProjectName
+    acrName: last(split(existingAcrResourceId, '/'))
+    acrEndpoint: includeAcr && !empty(existingAcrResourceId) ? externalRegistry!.properties.loginServer : ''
+    acrResourceId: includeAcr && !empty(existingAcrResourceId) ? externalRegistry!.id : ''
+    createAcrConnection: true
+  }
+  dependsOn: [
+    foundryAccount::project
+    byoFoundryAccount::project
+    existingAcr
+  ]
 }
 
 // Account private endpoint + AI private DNS zones. The account is always given a
@@ -372,8 +419,8 @@ output AZURE_AI_ACCOUNT_NAME string = activeFoundryAccountName
 output AZURE_AI_PROJECT_NAME string = foundryProjectName
 output AZURE_OPENAI_ENDPOINT string = 'https://${activeFoundryAccountName}.openai.azure.com/'
 output FOUNDRY_PROJECT_ENDPOINT string = 'https://${activeFoundryAccountName}.services.ai.azure.com/api/projects/${foundryProjectName}'
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = includeAcr ? acr!.outputs.loginServer : ''
-output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = includeAcr ? acr!.outputs.resourceId : ''
-output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = includeAcr ? acr!.outputs.connectionName : ''
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = !includeAcr ? '' : (empty(existingAcrResourceId) ? acr!.outputs.loginServer : externalRegistry!.properties.loginServer)
+output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = !includeAcr ? '' : (empty(existingAcrResourceId) ? acr!.outputs.resourceId : externalRegistry!.id)
+output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = !includeAcr ? '' : (empty(existingAcrResourceId) ? acr!.outputs.connectionName : existingAcrConnection!.outputs.acrConnectionName)
 output AZURE_FOUNDRY_NETWORK_MODE string = !enableNetworkIsolation ? 'none' : (useManagedEgress ? 'managed' : 'byo')
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = useManagedNetwork ? managedIsolationMode : ''

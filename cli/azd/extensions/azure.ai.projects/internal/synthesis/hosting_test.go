@@ -464,15 +464,15 @@ func TestHostingGraphIndependentlyReferencesSuppliedResources(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(resourcesRaw, &resources))
 	for name, selector := range map[string]string{
-		"hostingIdentityResourceId":  "hostingManagementIdentityResourceId",
-		"workloadIdentityResourceId": "workloadIdentityResourceId",
-		"storageAccountResourceId":   "storageAccountResourceId",
+		"hostingIdentityResourceId":  "suppliedHostingIdentityResourceId",
+		"workloadIdentityResourceId": "suppliedWorkloadIdentityResourceId",
+		"storageAccountResourceId":   "suppliedStorageAccountResourceId",
 	} {
 		var expression string
 		require.NoError(t, json.Unmarshal(resources.Variables[name], &expression))
-		assert.Contains(t, expression, "empty(parameters('agentHosting')."+selector+")")
+		assert.Contains(t, expression, "empty(variables('"+selector+"'))")
 		assert.Contains(t, expression, "resourceId(")
-		assert.Contains(t, expression, "parameters('agentHosting')."+selector)
+		assert.Contains(t, expression, "variables('"+selector+"')")
 	}
 	var prerequisites struct {
 		Resources []struct {

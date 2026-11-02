@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "290216895838053805"
+      "templateHash": "11444310712805509197"
     }
   },
   "definitions": {
@@ -75,13 +75,16 @@
           "type": "string"
         },
         "hostingManagementIdentityResourceId": {
-          "type": "string"
+          "type": "string",
+          "nullable": true
         },
         "storageAccountResourceId": {
-          "type": "string"
+          "type": "string",
+          "nullable": true
         },
         "workloadIdentityResourceId": {
-          "type": "string"
+          "type": "string",
+          "nullable": true
         }
       }
     }
@@ -392,7 +395,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "3626887754441509973"
+              "templateHash": "12875653734830163232"
             }
           },
           "definitions": {
@@ -461,13 +464,16 @@
                   "type": "string"
                 },
                 "hostingManagementIdentityResourceId": {
-                  "type": "string"
+                  "type": "string",
+                  "nullable": true
                 },
                 "storageAccountResourceId": {
-                  "type": "string"
+                  "type": "string",
+                  "nullable": true
                 },
                 "workloadIdentityResourceId": {
-                  "type": "string"
+                  "type": "string",
+                  "nullable": true
                 }
               }
             }
@@ -659,9 +665,12 @@
             "storageAccountName": "[format('st{0}', variables('resourceToken'))]",
             "hostingIdentityName": "[format('{0}-hosting-mi', variables('foundryAccountName'))]",
             "workloadIdentityName": "[format('{0}-workload-mi', variables('foundryAccountName'))]",
-            "hostingIdentityResourceId": "[if(empty(parameters('agentHosting').hostingManagementIdentityResourceId), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName')), parameters('agentHosting').hostingManagementIdentityResourceId)]",
-            "workloadIdentityResourceId": "[if(empty(parameters('agentHosting').workloadIdentityResourceId), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('workloadIdentityName')), parameters('agentHosting').workloadIdentityResourceId)]",
-            "storageAccountResourceId": "[if(empty(parameters('agentHosting').storageAccountResourceId), resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), parameters('agentHosting').storageAccountResourceId)]",
+            "suppliedHostingIdentityResourceId": "[coalesce(tryGet(parameters('agentHosting'), 'hostingManagementIdentityResourceId'), '')]",
+            "suppliedWorkloadIdentityResourceId": "[coalesce(tryGet(parameters('agentHosting'), 'workloadIdentityResourceId'), '')]",
+            "suppliedStorageAccountResourceId": "[coalesce(tryGet(parameters('agentHosting'), 'storageAccountResourceId'), '')]",
+            "hostingIdentityResourceId": "[if(empty(variables('suppliedHostingIdentityResourceId')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName')), variables('suppliedHostingIdentityResourceId'))]",
+            "workloadIdentityResourceId": "[if(empty(variables('suppliedWorkloadIdentityResourceId')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('workloadIdentityName')), variables('suppliedWorkloadIdentityResourceId'))]",
+            "storageAccountResourceId": "[if(empty(variables('suppliedStorageAccountResourceId')), resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), variables('suppliedStorageAccountResourceId'))]",
             "useByoNetwork": "[and(parameters('enableNetworkIsolation'), not(parameters('useManagedEgress')))]",
             "useManagedNetwork": "[and(parameters('enableNetworkIsolation'), parameters('useManagedEgress'))]",
             "disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]",
@@ -855,13 +864,13 @@
                     "value": "[parameters('federatedIdentityRoleDefinitionId')]"
                   },
                   "hostingIdentityResourceId": {
-                    "value": "[parameters('agentHosting').hostingManagementIdentityResourceId]"
+                    "value": "[variables('suppliedHostingIdentityResourceId')]"
                   },
                   "workloadIdentityResourceId": {
-                    "value": "[parameters('agentHosting').workloadIdentityResourceId]"
+                    "value": "[variables('suppliedWorkloadIdentityResourceId')]"
                   },
                   "storageAccountResourceId": {
-                    "value": "[parameters('agentHosting').storageAccountResourceId]"
+                    "value": "[variables('suppliedStorageAccountResourceId')]"
                   },
                   "suppliedHostingPrincipalId": {
                     "value": "[parameters('hostingPrincipalId')]"

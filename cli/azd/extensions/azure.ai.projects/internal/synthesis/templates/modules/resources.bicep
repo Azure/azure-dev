@@ -32,9 +32,9 @@ type agentHostingType = {
   hostingType: 'ManagedCluster' | ''
   name: string
   clusterResourceId: string
-  hostingManagementIdentityResourceId: string
-  storageAccountResourceId: string
-  workloadIdentityResourceId: string
+  hostingManagementIdentityResourceId: string?
+  storageAccountResourceId: string?
+  workloadIdentityResourceId: string?
 }
 
 // Parameters
@@ -137,15 +137,18 @@ var activeFoundryProjectId = resourceId('Microsoft.CognitiveServices/accounts/pr
 var storageAccountName = 'st${resourceToken}'
 var hostingIdentityName = '${foundryAccountName}-hosting-mi'
 var workloadIdentityName = '${foundryAccountName}-workload-mi'
-var hostingIdentityResourceId = empty(agentHosting.hostingManagementIdentityResourceId)
+var suppliedHostingIdentityResourceId = agentHosting.?hostingManagementIdentityResourceId ?? ''
+var suppliedWorkloadIdentityResourceId = agentHosting.?workloadIdentityResourceId ?? ''
+var suppliedStorageAccountResourceId = agentHosting.?storageAccountResourceId ?? ''
+var hostingIdentityResourceId = empty(suppliedHostingIdentityResourceId)
   ? resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', hostingIdentityName)
-  : agentHosting.hostingManagementIdentityResourceId
-var workloadIdentityResourceId = empty(agentHosting.workloadIdentityResourceId)
+  : suppliedHostingIdentityResourceId
+var workloadIdentityResourceId = empty(suppliedWorkloadIdentityResourceId)
   ? resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', workloadIdentityName)
-  : agentHosting.workloadIdentityResourceId
-var storageAccountResourceId = empty(agentHosting.storageAccountResourceId)
+  : suppliedWorkloadIdentityResourceId
+var storageAccountResourceId = empty(suppliedStorageAccountResourceId)
   ? resourceId('Microsoft.Storage/storageAccounts', storageAccountName)
-  : agentHosting.storageAccountResourceId
+  : suppliedStorageAccountResourceId
 
 // Egress: byo injects the agent into a customer subnet; managed uses the
 // Microsoft-managed network. Ingress: an account private endpoint is always
@@ -166,9 +169,9 @@ module prerequisites 'byo-prerequisites.bicep' = if (agentHosting.enabled) {
     hostingIdentityName: hostingIdentityName
     workloadIdentityName: workloadIdentityName
     federatedIdentityRoleDefinitionId: federatedIdentityRoleDefinitionId
-    hostingIdentityResourceId: agentHosting.hostingManagementIdentityResourceId
-    workloadIdentityResourceId: agentHosting.workloadIdentityResourceId
-    storageAccountResourceId: agentHosting.storageAccountResourceId
+    hostingIdentityResourceId: suppliedHostingIdentityResourceId
+    workloadIdentityResourceId: suppliedWorkloadIdentityResourceId
+    storageAccountResourceId: suppliedStorageAccountResourceId
     suppliedHostingPrincipalId: hostingPrincipalId
     suppliedWorkloadPrincipalId: workloadPrincipalId
   }

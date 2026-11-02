@@ -340,6 +340,9 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 		"soundscape", "subagentConfig", "subagent_config", "interimResponse", "interim_response",
 		"live_config", "tools", "avatar", "outputModalities", "output_modalities", "handoff", "include",
 		"conversationEngine", "conversation_engine", "targetAgent", "target_agent",
+		"voice", "inputSchema", "input_schema", "outputSchema", "output_schema",
+		"toolChoice", "tool_choice", "parallelToolCalls", "parallel_tool_calls",
+		"maxOutputTokens", "max_output_tokens", "telephony",
 	} {
 		if _, found := values[key]; found {
 			errors = append(errors, fmt.Sprintf("%s is not supported for GPT Live", key))

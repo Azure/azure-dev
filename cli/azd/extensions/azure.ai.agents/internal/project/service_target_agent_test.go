@@ -634,6 +634,13 @@ func TestVoiceAgentFromResolvedService_RejectsExplicitNullLiveFields(t *testing.
 		"targetAgent":        {"targetAgent": nil},
 		"client agentName":   {"delegation": map[string]any{"type": "client", "agentName": ""}},
 		"client responses":   {"delegation": map[string]any{"type": "client", "responses": nil}},
+		"voice":              {"voice": nil},
+		"inputSchema":        {"inputSchema": nil},
+		"outputSchema":       {"outputSchema": nil},
+		"toolChoice":         {"toolChoice": nil},
+		"parallelToolCalls":  {"parallelToolCalls": nil},
+		"maxOutputTokens":    {"maxOutputTokens": nil},
+		"telephony":          {"telephony": nil},
 	} {
 		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
 			t.Run(name+"/"+source, func(t *testing.T) {
@@ -653,9 +660,15 @@ func TestVoiceAgentFromResolvedService_RejectsExplicitNullLiveFields(t *testing.
 					}
 					if source == "root-ref" {
 						rootInvalid := maps.Clone(invalid)
-						if value, found := rootInvalid["structuredInputs"]; found {
-							rootInvalid["structured_inputs"] = value
-							delete(rootInvalid, "structuredInputs")
+						for inline, rootName := range map[string]string{
+							"structuredInputs": "structured_inputs", "inputSchema": "input_schema",
+							"outputSchema": "output_schema", "toolChoice": "tool_choice",
+							"parallelToolCalls": "parallel_tool_calls", "maxOutputTokens": "max_output_tokens",
+						} {
+							if value, found := rootInvalid[inline]; found {
+								rootInvalid[rootName] = value
+								delete(rootInvalid, inline)
+							}
 						}
 						maps.Copy(rootDefinition, rootInvalid)
 					}

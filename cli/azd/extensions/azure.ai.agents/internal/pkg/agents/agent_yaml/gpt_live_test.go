@@ -202,6 +202,13 @@ func TestValidateGPTLiveAgent_RejectsRawForbiddenProperties(t *testing.T) {
 		"client agent version":     "delegation: {type: client, agent_version: ''}",
 		"client responses":         "delegation: {type: client, responses: null}",
 		"responses agent name":     "delegation: {type: responses, agent_name: '', responses: {model: terra}}",
+		"null root voice":          "voice: null",
+		"null input schema":        "input_schema: null",
+		"null output schema":       "output_schema: null",
+		"null tool choice":         "tool_choice: null",
+		"null parallel tools":      "parallel_tool_calls: null",
+		"null max output tokens":   "max_output_tokens: null",
+		"null telephony":           "telephony: null",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

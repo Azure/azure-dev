@@ -28,13 +28,21 @@ func TestTerraformMonitoringSafetyPlans(t *testing.T) {
 	}
 	rendered, err := RenderTerraformMonitoring(map[string]any{
 		"monitoringMode": "create", "applicationInsightsResourceId": "",
-	}, true)
+	}, false)
 	require.NoError(t, err)
 	preflight, managed, found := strings.Cut(string(rendered.Files["monitoring.tf"]), "# Managed counts")
 	require.True(t, found)
 	require.Contains(t, managed, `ephemeral "azapi_resource_action"`)
 	require.Contains(t, managed, `resource "azapi_resource" "monitoring_connection"`)
-	preflight = strings.ReplaceAll(preflight, "azurerm_resource_group.adjunct.id", "local.test_group_id")
+	// Greenfield graphs reference resources the preflight-only test root does not declare.
+	for reference, local := range map[string]string{
+		"azapi_resource.project.id":         "local.normalized_project_id",
+		"azapi_resource.foundry_account.id": "local.foundry_account_id",
+		"azurerm_resource_group.this.id":    "local.test_group_id",
+	} {
+		require.Contains(t, preflight, reference)
+		preflight = strings.ReplaceAll(preflight, reference, local)
+	}
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "monitoring.tf"), []byte(preflight), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.tf"), []byte(monitoringPlanTestRoot), 0o600))

@@ -28,10 +28,27 @@ func redactURLs(text string) string {
 }
 
 func nonDisclosureError(err error) error {
-	if err == nil ||
-		errors.Is(err, context.Canceled) ||
-		errors.Is(err, context.DeadlineExceeded) {
+	if err == nil || err == context.Canceled || err == context.DeadlineExceeded {
 		return err
 	}
+	if errors.Is(err, context.Canceled) {
+		return &sanitizedContextError{message: redactURLs(err.Error()), cause: context.Canceled}
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return &sanitizedContextError{message: redactURLs(err.Error()), cause: context.DeadlineExceeded}
+	}
 	return errors.New(redactURLs(err.Error()))
+}
+
+type sanitizedContextError struct {
+	message string
+	cause   error
+}
+
+func (e *sanitizedContextError) Error() string {
+	return e.message
+}
+
+func (e *sanitizedContextError) Unwrap() error {
+	return e.cause
 }

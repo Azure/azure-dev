@@ -4,7 +4,10 @@
 package spring
 
 import (
+	"strings"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 func validateRawServiceSettings(service map[string]any) error {
@@ -53,6 +56,17 @@ func validateAutomaticServiceConfig(service *azdext.ServiceConfig) error {
 			"azure.springboot does not support an authored config.database block",
 			"remove config.database and let azure.springboot discover the effective Spring datasource",
 		)
+	}
+	options := service.GetDocker()
+	if options.GetPath() == "" {
+		platform := strings.TrimSpace(options.GetPlatform())
+		if platform != "" && !strings.EqualFold(platform, docker.DefaultPlatform) {
+			return validationError(
+				"unsupported_native_container_platform",
+				"azure.springboot native packaging supports only linux/amd64",
+				"remove docker.platform or set it to linux/amd64",
+			)
+		}
 	}
 	return nil
 }

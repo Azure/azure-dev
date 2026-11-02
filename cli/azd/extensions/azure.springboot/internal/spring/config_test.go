@@ -54,6 +54,14 @@ func TestValidateAutomaticServiceConfigRejectsExplicitSettings(t *testing.T) {
 		service.Docker = &azdext.DockerProjectOptions{Path: "Dockerfile", Context: ".", Platform: "linux/amd64"}
 		require.NoError(t, validateAutomaticServiceConfig(service))
 	})
+
+	t.Run("unsupported native platform", func(t *testing.T) {
+		service := serviceWithConfig(t, nil)
+		service.Docker = &azdext.DockerProjectOptions{Platform: "linux/arm64"}
+		err := validateAutomaticServiceConfig(service)
+		require.Error(t, err)
+		requireLocalErrorCode(t, err, "unsupported_native_container_platform")
+	})
 }
 
 func TestValidateRawServiceSettingsRejectsPresence(t *testing.T) {

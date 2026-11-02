@@ -254,8 +254,11 @@ func TestInfraNewResourceRoleAssignmentOptions(t *testing.T) {
 				Parameters map[string]json.RawMessage `json:"parameters"`
 			}
 			require.NoError(t, json.Unmarshal(body, &parameters))
-			assert.JSONEq(t, fmt.Sprintf(`{"value":"%t"}`, test.want),
+			assert.JSONEq(t, `{"value":"${AZD_ASSIGN_ROLES=false}"}`,
 				string(parameters.Parameters["assignRolesToPrincipal"]))
+			body, err = os.ReadFile(filepath.Join(target, ".azure/dev/.env")) // #nosec G304 -- Test environment.
+			require.NoError(t, err)
+			assert.Contains(t, string(body), fmt.Sprintf("AZD_ASSIGN_ROLES=\"%t\"\n", test.want))
 		})
 	}
 }

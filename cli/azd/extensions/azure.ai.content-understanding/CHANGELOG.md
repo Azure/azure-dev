@@ -5,12 +5,16 @@
 - Explain infrastructure generation and each interactive choice on screen,
   without requiring `?` hints. Guide users through environment, region,
   resource naming, and access permissions, then explain the next steps.
-- Generate one-time infrastructure choices directly into Bicep parameters and
-  persist postprovision choices in azd environment config instead of dedicated
-  environment variables. Prefix all Bicep deployment outputs with
+- Keep resource choices in each azd environment and use shared Bicep parameter
+  substitutions, preventing generation for one environment from retargeting another.
+  Migrate older shared literal choices without changing other environments'
+  effective resource parameters. Persist postprovision choices in azd environment
+  config instead of dedicated environment variables. Prefix all Bicep deployment outputs with
   `_CU_PROVISIONED_` to distinguish them from runtime settings. Retain
   old-output fallbacks for existing generated projects and standard azd inputs.
   Save runtime `CU_ENDPOINT` through postprovision configuration, not Bicep.
+- Show model-picker validation errors and unavailable recommendations directly
+  in the prompt without requiring `?`, retaining selections when retrying.
 - Resolve the postprovision credential's user-access tenant through azd rather
   than using deployment resource-tenant metadata.
 - Support optional CU data-plane API-key authentication through process

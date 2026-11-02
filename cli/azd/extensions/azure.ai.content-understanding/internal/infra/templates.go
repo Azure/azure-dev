@@ -30,6 +30,13 @@ var environmentPattern = regexp.MustCompile(`^[a-z0-9()_.-]{1,64}$`)
 var prefixPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,18}[a-z0-9])?$`)
 var assignmentPattern = regexp.MustCompile(`^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=`)
 
+var resourceParameters = []struct{ name, key, fallback string }{
+	{"foundryResourcePrefix", "FOUNDRY_RESOURCE_PREFIX", ""},
+	{"existingFoundryEndpoint", "FOUNDRY_EXISTING_ENDPOINT", ""},
+	{"existingFoundryResourceGroup", "FOUNDRY_EXISTING_RESOURCE_GROUP", ""},
+	{"assignRolesToPrincipal", "AZD_ASSIGN_ROLES", "false"},
+}
+
 var Regions = []string{
 	"australiaeast", "eastus", "eastus2", "japaneast", "northeurope", "southcentralus", "southeastasia",
 	"swedencentral", "uksouth", "westeurope", "westus", "westus3",
@@ -135,8 +142,10 @@ func (c Choices) Normalize() (Choices, error) {
 
 func environmentAssignments(c Choices) ([]string, map[string]string) {
 	keys := []string{"AZURE_ENV_NAME", "AZURE_LOCATION", "AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID",
-		"CU_API_VERSION"}
-	values := []string{c.Environment, c.Location, c.SubscriptionID, c.TenantID, c.APIVersion}
+		"CU_API_VERSION", "FOUNDRY_RESOURCE_PREFIX", "FOUNDRY_EXISTING_ENDPOINT", "FOUNDRY_EXISTING_RESOURCE_GROUP",
+		"AZD_ASSIGN_ROLES"}
+	values := []string{c.Environment, c.Location, c.SubscriptionID, c.TenantID, c.APIVersion,
+		c.FoundryPrefix, c.FoundryEndpoint, c.FoundryResourceGroup, strconv.FormatBool(c.AssignRoles)}
 	result := make(map[string]string, len(keys))
 	for index, key := range keys {
 		result[key] = key + "=\"" + values[index] + "\""
@@ -147,6 +156,10 @@ func environmentAssignments(c Choices) ([]string, map[string]string) {
 // MergeEnvironment preserves unmanaged lines, including legacy settings, and newline style.
 func MergeEnvironment(existing string, c Choices) string {
 	keys, assignments := environmentAssignments(c)
+	return mergeEnvironment(existing, keys, assignments)
+}
+
+func mergeEnvironment(existing string, keys []string, assignments map[string]string) string {
 	newline := "\n"
 	if strings.Contains(existing, "\r\n") {
 		newline = "\r\n"
@@ -192,37 +205,94 @@ func jsonObject(body []byte) (map[string]json.RawMessage, error) {
 	return value, nil
 }
 
-func renderParameters(body []byte, c Choices) ([]byte, error) {
+func renderParameters(body []byte) ([]byte, map[string]string, error) {
 	document, err := jsonObject(body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	parameters, err := jsonObject(document["parameters"])
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	for name, value := range map[string]any{
-		"foundryResourcePrefix": c.FoundryPrefix, "existingFoundryEndpoint": c.FoundryEndpoint,
-		"existingFoundryResourceGroup": c.FoundryResourceGroup, "assignRolesToPrincipal": strconv.FormatBool(c.AssignRoles),
-	} {
-		parameter, err := jsonObject(parameters[name])
+	literals := map[string]string{}
+	for _, binding := range resourceParameters {
+		parameter, err := jsonObject(parameters[binding.name])
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		parameter["value"], err = json.Marshal(value)
-		if err != nil {
-			return nil, err
+		substitution := "${" + binding.key + "=" + binding.fallback + "}"
+		var value *string
+		if json.Unmarshal(parameter["value"], &value) != nil || value == nil ||
+			(*value != substitution && strings.ContainsAny(*value, "\"\\\r\n`$")) {
+			return nil, nil, &cuclient.Error{
+				Kind: cuclient.ErrorValidation, Code: "unsupported_resource_parameter",
+				Message:    "Resource parameter " + binding.name + " must be a literal string or " + substitution + ".",
+				Suggestion: "Review infra/main.parameters.json or generate into a new directory. No files were changed.",
+			}
 		}
-		parameters[name], err = json.Marshal(parameter)
+		if *value != substitution {
+			literals[binding.key] = binding.key + "=\"" + *value + "\""
+		}
+		parameter["value"], err = json.Marshal(substitution)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		parameters[binding.name], err = json.Marshal(parameter)
+		if err != nil {
+			return nil, nil, err
 		}
 	}
 	document["parameters"], err = json.Marshal(parameters)
 	if err != nil {
+		return nil, nil, err
+	}
+	rendered, err := json.MarshalIndent(document, "", "  ")
+	return rendered, literals, err
+}
+
+func migrateResourceEnvironments(target, selected string, literals map[string]string) (map[string][]byte, error) {
+	writes := map[string][]byte{}
+	if len(literals) == 0 {
+		return writes, nil
+	}
+	if _, err := localio.Check(filepath.Join(target, ".azure/config.json")); err != nil {
 		return nil, err
 	}
-	return json.MarshalIndent(document, "", "  ")
+	entries, err := os.ReadDir(filepath.Join(target, ".azure"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return writes, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	keys := []string{}
+	for _, binding := range resourceParameters {
+		if _, exists := literals[binding.key]; exists {
+			keys = append(keys, binding.key)
+		}
+	}
+	for _, entry := range entries {
+		if entry.Name() == selected {
+			continue
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			return nil, invalid("unsafe_project_output", "An azd environment cannot be a symlink during migration.")
+		}
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(".azure", entry.Name(), ".env")
+		body, err := localio.Read(filepath.Join(target, path))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		// Literal shared parameters took precedence over any older per-environment values.
+		writes[path] = []byte(mergeEnvironment(string(body), keys, literals))
+	}
+	return writes, nil
 }
 
 func renderEnvironmentConfig(body []byte, c Choices) ([]byte, error) {
@@ -278,7 +348,8 @@ func Materialize(ctx context.Context, target string, choices Choices, force bool
 		exists, err := localio.Check(filepath.Join(target, path))
 		return err == nil && exists
 	}
-	reuse := hasContent && isFile("azure.yaml") && isFile("infra/main.bicep") && !force
+	existingTemplate := hasContent && isFile("azure.yaml") && isFile("infra/main.bicep")
+	reuse := existingTemplate && !force
 	if hasContent && !force && !reuse {
 		return Generation{}, invalid("nonempty_output_directory",
 			"The target is not an existing generated project; choose an empty directory or explicitly use --force.")
@@ -325,16 +396,30 @@ func Materialize(ctx context.Context, target string, choices Choices, force bool
 		replaces["infra/models.json"] = force
 	}
 	parameterBody := writes[parameterPath]
-	if reuse {
+	if existingTemplate {
 		parameterBody, err = localio.Read(filepath.Join(target, parameterPath))
 		if err != nil {
 			return Generation{}, err
 		}
 	}
-	writes[parameterPath], err = renderParameters(parameterBody, choices)
+	renderedParameters, literals, err := renderParameters(parameterBody)
 	if err != nil {
 		return Generation{}, err
 	}
+	migrations, err := migrateResourceEnvironments(target, choices.Environment, literals)
+	if err != nil {
+		return Generation{}, err
+	}
+	for path, body := range migrations {
+		writes[path], replaces[path] = body, true
+	}
+	if force {
+		renderedParameters, _, err = renderParameters(writes[parameterPath])
+		if err != nil {
+			return Generation{}, err
+		}
+	}
+	writes[parameterPath] = renderedParameters
 	writes[parameterPath] = append(writes[parameterPath], '\n')
 	envConfigBody, err := localio.Read(filepath.Join(target, envConfigPath))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {

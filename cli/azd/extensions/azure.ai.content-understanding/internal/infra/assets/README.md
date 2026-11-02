@@ -83,10 +83,26 @@ azd up
 ```
 
 This produces resource names following the pattern `my-cu-<unique-suffix>`.
-Generation writes resource choices into `infra/main.parameters.json` under
-`parameters.<name>.value`, not dedicated environment variables. Edit those
-parameter values to change choices before deployment. Regeneration updates
-the four managed resource parameters while preserving other parameter fields.
+Generation saves resource choices in the selected azd environment.
+`infra/main.parameters.json` uses environment substitutions, so dev and prod
+can target different resources in this directory. Regenerate for the selected
+environment or use `azd env set <name> <value> -e <environment>` to change inputs:
+
+| Provisioning input | Purpose |
+| --- | --- |
+| `FOUNDRY_RESOURCE_PREFIX` | Optional name prefix for a new resource |
+| `FOUNDRY_EXISTING_ENDPOINT` | Existing resource endpoint; empty for a new resource |
+| `FOUNDRY_EXISTING_RESOURCE_GROUP` | Existing resource's group; empty for a new resource |
+| `AZD_ASSIGN_ROLES` | `true` or `false` for role assignments on a new resource |
+
+These are saved azd deployment inputs, not runtime settings or deployment outputs.
+They are not automatically exported into the parent shell.
+Regeneration preserves other parameter fields. For older shared literal resource
+parameters, it first saves the effective old values in other existing environments
+before applying new choices to the selected environment, including with `--force`.
+It cannot recover values already overwritten by an earlier generation.
+Unsupported custom resource-parameter expressions or unsafe environment files
+fail before any files are written; review the parameters or use a new directory.
 
 ## Live model setup
 

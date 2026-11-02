@@ -154,8 +154,9 @@ func (h *azdInfraHost) PromptGeneration(
 }
 
 func (h *azdInfraHost) promptModels(ctx context.Context, models []infra.Model) ([]infra.Model, error) {
+	const message = "Select live CU-supported models to deploy"
 	options := &azdext.MultiSelectOptions{
-		Message: "Select live CU-supported models to deploy",
+		Message: message,
 		HelpMessage: "Accept or change the recommended selections. Clear all selections to deploy no models. " +
 			"Select only one version of each model family.",
 		AllowEmptySelection: new(true), EnableFiltering: new(true),
@@ -166,7 +167,7 @@ func (h *azdInfraHost) promptModels(ctx context.Context, models []infra.Model) (
 		if !ok || (local.Code != "ambiguous_model_version" && local.Code != "no_deployable_models") {
 			return nil, err
 		}
-		options.HelpMessage += "\nNo models preselected: " + local.Message
+		options.Message = "No models preselected: " + local.Message + "\n" + message
 	}
 	for _, model := range models {
 		label := fmt.Sprintf("%s | %s | %s", model.Selector(), model.Kind, model.SKU)
@@ -218,8 +219,8 @@ func (h *azdInfraHost) promptModels(ctx context.Context, models []infra.Model) (
 			}
 			return selected, ctx.Err()
 		}
-		options.HelpMessage = "Invalid selection: " + err.Error() +
-			" Select only one version of each family, or clear all selections for no models."
+		options.Message = "Invalid selection: " + err.Error() +
+			" Select only one version of each family, or clear all selections for no models.\n" + message
 		for _, choice := range options.Choices {
 			choice.Selected = slices.Contains(selectors, choice.Value)
 		}

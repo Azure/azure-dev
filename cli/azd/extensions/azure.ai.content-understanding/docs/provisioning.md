@@ -144,12 +144,27 @@ configured default, it uses a host-marked default or the sole accessible
 subscription; ambiguous choices require configuration or interactive generation.
 This command writes project files only; it does not provision resources.
 
-Generation writes resource choices directly into
-`infra/main.parameters.json` under `parameters.<name>.value`; it does not
-introduce environment-variable inputs for prefix, resource selectors, or role
-assignment. Recognized projects retain editable templates and model files
-unless `--force` is supplied. Regeneration updates the four managed resource
-parameters and selected environment settings, preserving other parameter fields.
+Generation saves resource choices in the selected azd environment.
+`infra/main.parameters.json` uses environment substitutions under
+`parameters.<name>.value`, so dev and prod can target different resources in
+the same generated directory. Regeneration changes only the selected environment's
+choices, except when migrating older shared literal parameters as described below.
+Recognized projects retain editable templates and model files unless `--force`
+is supplied. Other parameter fields are preserved.
+
+| Saved provisioning input | Bicep parameter |
+| --- | --- |
+| `FOUNDRY_RESOURCE_PREFIX` | `foundryResourcePrefix`: optional prefix for a new resource. |
+| `FOUNDRY_EXISTING_ENDPOINT` | `existingFoundryEndpoint`: existing resource endpoint, or empty for a new resource. |
+| `FOUNDRY_EXISTING_RESOURCE_GROUP` | `existingFoundryResourceGroup`: existing resource group, or empty for a new resource. |
+| `AZD_ASSIGN_ROLES` | `assignRolesToPrincipal`: `true` or `false` for role assignments on a new resource. |
+
+These are deployment inputs saved under `.azure/<environment>/.env`, not CU
+runtime settings or `_CU_PROVISIONED_*` deployment outputs. Saving them does not
+export them into the parent shell. Inspect them with `azd env get-values -e dev`
+or change them with `azd env set <name> <value> -e dev`. Keep a new-resource prefix
+and an existing endpoint mutually exclusive.
+
 Force replaces known generated assets, including `infra/models.json`, and
 allows CU configuration replacement; unrelated files are not deleted.
 The existing model-setup completion marker is preserved.
@@ -184,9 +199,11 @@ version, kind, and SKU. Recommended models are marked and preselected when an
 unambiguous recommendation is available. Review and submit the selection, then explicitly confirm deployment (default
 No), or clear all selections to deploy no models. Declining confirmation
 cancels model setup rather than silently accepting recommendations. If recommendations
-are ambiguous, the picker explains why nothing is preselected. Selecting
-multiple versions of one family keeps the picker open for correction;
-cancellation starts no model deployment. It does not roll back resources that
+are ambiguous, the picker explains why nothing is preselected directly in the
+prompt. Selecting multiple versions of one family shows the validation reason
+before retrying, preserving the selections for correction; neither explanation
+requires pressing `?`.
+Cancellation starts no model deployment. It does not roll back resources that
 `azd up` already provisioned.
 
 ## Generated post-provision behavior
@@ -307,8 +324,17 @@ New config fields take precedence, including explicit `false` values; malformed
 new fields fail rather than falling back. Postprovision also checks new output
 names by presence: an empty or invalid required output fails instead of using a
 stale legacy value.
-Regeneration updates legacy parameter substitutions to literal values while
-preserving old environment entries and editable templates. Use `--force` only
+Regeneration retains the original cu-cli environment substitutions. For projects
+generated with shared literal resource parameters, it restores those substitutions
+and saves the old literals in every other existing environment before applying
+the selected environment's new choices. This preserves the other environments'
+effective resource parameters, including when using `--force`; it cannot recover
+choices already overwritten by an earlier generation. Unrelated environment
+entries and other environments' config files are preserved. Unsupported custom
+resource-parameter expressions or unsafe environment files fail before any writes;
+review the parameter file or generate into a new directory.
+
+Use `--force` only
 when you also intend to replace those templates with the new
 `_CU_PROVISIONED_*` outputs. Old saved values are not automatically deleted.
 

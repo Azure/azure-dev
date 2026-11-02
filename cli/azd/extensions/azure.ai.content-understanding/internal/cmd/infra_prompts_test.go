@@ -471,7 +471,8 @@ func TestInfraModelPickerSelections(t *testing.T) {
 				assert.True(t, options.GetAllowEmptySelection())
 				assert.Contains(t, options.Choices[0].GetLabel(), "gpt-5.2@1 | completion | GlobalStandard")
 				if scenario == "ambiguous recommendation" {
-					assert.Contains(t, options.GetHelpMessage(), "No models preselected:")
+					assert.Contains(t, options.GetMessage(), "No models preselected:")
+					assert.Contains(t, options.GetMessage(), "Select live CU-supported models to deploy")
 					for _, choice := range options.Choices {
 						assert.False(t, choice.GetSelected())
 					}
@@ -484,7 +485,16 @@ func TestInfraModelPickerSelections(t *testing.T) {
 					if calls == 1 {
 						return &azdext.MultiSelectResponse{Values: options.Choices[:2]}, nil
 					}
-					assert.Contains(t, options.GetHelpMessage(), "Invalid selection:")
+					assert.Contains(t, options.GetMessage(), "Invalid selection:")
+					assert.Contains(t, options.GetMessage(), "A model family was selected more than once.")
+					assert.Contains(t, options.GetMessage(), "Select only one version of each family")
+					assert.Contains(t, options.GetMessage(), "Select live CU-supported models to deploy")
+					assert.True(t, options.Choices[0].GetSelected())
+					assert.True(t, options.Choices[1].GetSelected())
+					assert.False(t, options.Choices[2].GetSelected())
+					rpc.mu.Lock()
+					assert.NotContains(t, rpc.calls, "confirm")
+					rpc.mu.Unlock()
 					return &azdext.MultiSelectResponse{Values: []*azdext.MultiSelectChoice{options.Choices[1]}}, nil
 				}
 				assert.True(t, options.Choices[0].GetSelected())
@@ -542,7 +552,8 @@ func TestInfraModelPickerInvalidResponse(t *testing.T) {
 		if calls == 1 {
 			return &azdext.MultiSelectResponse{Values: []*azdext.MultiSelectChoice{{Value: "unknown@1"}}}, nil
 		}
-		assert.Contains(t, request.GetOptions().GetHelpMessage(), "Invalid selection:")
+		assert.Contains(t, request.GetOptions().GetMessage(), "Invalid selection:")
+		assert.Contains(t, request.GetOptions().GetMessage(), "Select exactly one supported deployable model@version")
 		return nil, status.Error(codes.Canceled, "canceled")
 	}}
 	host := infraRPCClient(t, rpc)
@@ -682,8 +693,14 @@ func TestInfraGenerationThroughHostRPC(t *testing.T) {
 					Parameters map[string]json.RawMessage `json:"parameters"`
 				}
 				require.NoError(t, json.Unmarshal(body, &document))
-				assert.JSONEq(t, `{"value":"app"}`, string(document.Parameters["foundryResourcePrefix"]))
-				assert.JSONEq(t, `{"value":"true"}`, string(document.Parameters["assignRolesToPrincipal"]))
+				assert.JSONEq(t, `{"value":"${FOUNDRY_RESOURCE_PREFIX=}"}`,
+					string(document.Parameters["foundryResourcePrefix"]))
+				assert.JSONEq(t, `{"value":"${AZD_ASSIGN_ROLES=false}"}`,
+					string(document.Parameters["assignRolesToPrincipal"]))
+				body, err = os.ReadFile(filepath.Join(target, ".azure/chosen/.env")) // #nosec G304 -- Test environment.
+				require.NoError(t, err)
+				assert.Contains(t, string(body), "FOUNDRY_RESOURCE_PREFIX=\"app\"\n")
+				assert.Contains(t, string(body), "AZD_ASSIGN_ROLES=\"true\"\n")
 				assert.NoDirExists(t, filepath.Join(target, ".azure", "unrelated"))
 			} else {
 				require.Error(t, err)

@@ -29,7 +29,7 @@ func newInfraCommand(extCtx *azdext.ExtensionContext, open infraHostFactory) *co
 	generate.Long = "Generate an azd/Bicep project without deploying Azure resources.\n" +
 		"Prompt for omitted environment, region, optional new-resource prefix, and role assignment.\n" +
 		"Explicit inputs take precedence. --no-prompt and --output json use context/defaults without the wizard.\n" +
-		"Save resource choices in Bicep parameters and postprovision choices in azd environment config.\n" +
+		"Save resource choices in the selected azd environment and postprovision choices in its config.\n" +
 		"Show a readable summary by default; use --output json for the complete structured result."
 	generate.Example = `  azd ai cu infra generate
     Interactively generate an azd/Bicep project without deploying resources.

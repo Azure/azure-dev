@@ -18,6 +18,8 @@ import (
 
 	"azure.ai.content-understanding/internal/testutil"
 
+	"github.com/drone/envsubst"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -212,11 +214,45 @@ func TestEnvironmentMergeDuplicateManagedValues(t *testing.T) {
 	assert.Equal(t, 2, strings.Count(result, "CU_MODEL_SETUP_COMPLETE="))
 	assert.Contains(t, result, "CU_MODEL_SETUP_COMPLETE=true\n")
 	assert.Contains(t, result, "UNKNOWN=unchanged\n")
-	assert.NotContains(t, result, "AZD_ASSIGN_ROLES")
+	assert.Contains(t, result, "AZD_ASSIGN_ROLES=\"false\"\n")
 	assert.Equal(t, "'a'\"'\"'b'", shellQuote("a'b"))
 }
 
-func TestGenerationPersistsChoicesWithoutInfraEnvironmentVariables(t *testing.T) {
+func resolvedResourceParameters(t *testing.T, directory, name string) map[string]string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(directory, ".azure", name, ".env")) // #nosec G304 -- Test project.
+	require.NoError(t, err)
+	values, err := godotenv.Unmarshal(string(body))
+	require.NoError(t, err)
+	body, err = os.ReadFile(filepath.Join(directory, "infra/main.parameters.json")) // #nosec G304 -- Test project.
+	require.NoError(t, err)
+	var document struct {
+		Parameters map[string]struct {
+			Value string `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(body, &document))
+	result := map[string]string{}
+	for _, binding := range resourceParameters {
+		// Use azd's Bicep substitution engine with the selected environment's saved inputs.
+		value, err := envsubst.Eval(document.Parameters[binding.name].Value, func(key string) string {
+			require.Contains(t, values, key)
+			return values[key]
+		})
+		require.NoError(t, err)
+		result[binding.name] = value
+	}
+	return result
+}
+
+func expectedResourceParameters(c Choices) map[string]string {
+	return map[string]string{
+		"foundryResourcePrefix": c.FoundryPrefix, "existingFoundryEndpoint": c.FoundryEndpoint,
+		"existingFoundryResourceGroup": c.FoundryResourceGroup, "assignRolesToPrincipal": strconv.FormatBool(c.AssignRoles),
+	}
+}
+
+func TestGenerationPersistsEnvironmentScopedResourceInputs(t *testing.T) {
 	for _, existing := range []bool{false, true} {
 		t.Run(fmt.Sprint(existing), func(t *testing.T) {
 			directory := testutil.TempDir(t)
@@ -236,9 +272,11 @@ func TestGenerationPersistsChoicesWithoutInfraEnvironmentVariables(t *testing.T)
 				return body
 			}
 			env := string(read(".azure/dev/.env"))
-			for _, name := range []string{"FOUNDRY_", "AZD_ASSIGN_ROLES", "CU_MODEL_SELECTION",
-				"CU_CONFIG_SETUP_FORCE", "CU_MODEL_SETUP_COMPLETE"} {
+			for _, name := range []string{"CU_MODEL_SELECTION", "CU_CONFIG_SETUP_FORCE", "CU_MODEL_SETUP_COMPLETE"} {
 				assert.NotContains(t, env, name)
+			}
+			for _, binding := range resourceParameters {
+				assert.Contains(t, env, binding.key+"=")
 			}
 			var parameters struct {
 				Parameters map[string]struct {
@@ -246,15 +284,12 @@ func TestGenerationPersistsChoicesWithoutInfraEnvironmentVariables(t *testing.T)
 				} `json:"parameters"`
 			}
 			require.NoError(t, json.Unmarshal(read("infra/main.parameters.json"), &parameters))
-			for name, value := range map[string]any{
-				"foundryResourcePrefix": c.FoundryPrefix, "existingFoundryEndpoint": c.FoundryEndpoint,
-				"existingFoundryResourceGroup": c.FoundryResourceGroup,
-				"assignRolesToPrincipal":       strconv.FormatBool(c.AssignRoles),
-			} {
-				expected, err := json.Marshal(value)
+			for _, binding := range resourceParameters {
+				expected, err := json.Marshal("${" + binding.key + "=" + binding.fallback + "}")
 				require.NoError(t, err)
-				assert.JSONEq(t, string(expected), string(parameters.Parameters[name].Value))
+				assert.JSONEq(t, string(expected), string(parameters.Parameters[binding.name].Value))
 			}
+			assert.Equal(t, expectedResourceParameters(c), resolvedResourceParameters(t, directory, "dev"))
 			assert.JSONEq(t, `{"cu":{"modelSelection":"recommended","forceConfigurationSetup":false}}`,
 				string(read(".azure/dev/config.json")))
 		})
@@ -323,9 +358,10 @@ func TestGenerationMigratesLegacyParametersAndPreservesCustomState(t *testing.T)
 	body, err := os.ReadFile(filepath.Join(directory, "infra/main.parameters.json")) // #nosec G304 -- Test project.
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"parameters":{
-		"foundryResourcePrefix":{"value":"new-prefix","custom":"kept"},
-		"existingFoundryEndpoint":{"value":""},"existingFoundryResourceGroup":{"value":""},
-		"assignRolesToPrincipal":{"value":"false"},"location":{"value":"${AZURE_LOCATION}"},
+		"foundryResourcePrefix":{"value":"${FOUNDRY_RESOURCE_PREFIX=}","custom":"kept"},
+		"existingFoundryEndpoint":{"value":"${FOUNDRY_EXISTING_ENDPOINT=}"},
+		"existingFoundryResourceGroup":{"value":"${FOUNDRY_EXISTING_RESOURCE_GROUP=}"},
+		"assignRolesToPrincipal":{"value":"${AZD_ASSIGN_ROLES=false}"},"location":{"value":"${AZURE_LOCATION}"},
 		"custom":{"value":9007199254740993}},"metadata":{"custom":"kept"}}`, string(body))
 	for path, expected := range map[string]string{
 		"azure.yaml": "customized", "infra/models.json": `[{"name":"saved"}]`,
@@ -336,7 +372,7 @@ func TestGenerationMigratesLegacyParametersAndPreservesCustomState(t *testing.T)
 	}
 	body, err = os.ReadFile(filepath.Join(directory, ".azure/dev/.env")) // #nosec G304 -- Private test project.
 	require.NoError(t, err)
-	assert.Contains(t, string(body), "FOUNDRY_RESOURCE_PREFIX=\"old\"\n")
+	assert.Contains(t, string(body), "FOUNDRY_RESOURCE_PREFIX=\"new-prefix\"\n")
 	assert.Contains(t, string(body), "CU_MODEL_SELECTION=\"prompt\"\n")
 	assert.Contains(t, string(body), "CUSTOM=\"kept\"\n")
 	body, err = os.ReadFile(filepath.Join(directory, ".azure/dev/config.json")) // #nosec G304 -- Private test project.
@@ -352,6 +388,117 @@ func TestGenerationMigratesLegacyParametersAndPreservesCustomState(t *testing.T)
 	after, err := os.ReadFile(filepath.Join(directory, ".azure/dev/.env")) // #nosec G304 -- Private test project.
 	require.NoError(t, err)
 	assert.Equal(t, before, after)
+}
+
+func TestGenerationResourceParametersRemainScopedAcrossEnvironments(t *testing.T) {
+	for _, mode := range []string{"existing resources", "new resources", "mixed resources"} {
+		for _, reverse := range []bool{false, true} {
+			for _, force := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/reverse=%t/force=%t", mode, reverse, force), func(t *testing.T) {
+					directory := testutil.TempDir(t)
+					dev, prod := choices(), choices()
+					dev.FoundryEndpoint, dev.FoundryResourceGroup = "https://dev.services.ai.azure.com", "dev-group"
+					prod.Environment = "prod"
+					prod.FoundryEndpoint, prod.FoundryResourceGroup = "https://prod.services.ai.azure.com", "prod-group"
+					if mode != "existing resources" {
+						dev.FoundryEndpoint, dev.FoundryResourceGroup = "", ""
+						dev.FoundryPrefix, dev.AssignRoles = "dev-prefix", true
+					}
+					if mode == "new resources" {
+						prod.FoundryEndpoint, prod.FoundryResourceGroup = "", ""
+						prod.FoundryPrefix = "prod-prefix"
+					}
+					first, second := dev, prod
+					if reverse {
+						first, second = second, first
+					}
+					for _, binding := range resourceParameters {
+						t.Setenv(binding.key, "unrelated-process-value")
+					}
+					_, err := Materialize(t.Context(), directory, first, false)
+					require.NoError(t, err)
+					firstPath := filepath.Join(directory, ".azure", first.Environment, ".env")
+					firstBody, err := os.ReadFile(firstPath) // #nosec G304 -- Test environment.
+					require.NoError(t, err)
+					_, err = Materialize(t.Context(), directory, second, force)
+					require.NoError(t, err)
+					assert.Equal(t, expectedResourceParameters(dev), resolvedResourceParameters(t, directory, "dev"))
+					assert.Equal(t, expectedResourceParameters(prod), resolvedResourceParameters(t, directory, "prod"))
+					body, err := os.ReadFile(firstPath) // #nosec G304 -- Test environment.
+					require.NoError(t, err)
+					assert.Equal(t, firstBody, body)
+					first.FoundryPrefix, first.AssignRoles = "", false
+					first.FoundryEndpoint = "https://replacement.services.ai.azure.com"
+					first.FoundryResourceGroup = "replacement-group"
+					_, err = Materialize(t.Context(), directory, first, false)
+					require.NoError(t, err)
+					assert.Equal(t, expectedResourceParameters(first),
+						resolvedResourceParameters(t, directory, first.Environment))
+					assert.Equal(t, expectedResourceParameters(second),
+						resolvedResourceParameters(t, directory, second.Environment))
+				})
+			}
+		}
+	}
+}
+
+func TestGenerationMigratesSharedLiteralParametersWithoutRetargetingOtherEnvironments(t *testing.T) {
+	for _, mode := range []string{"existing resource", "new resource", "mixed bindings"} {
+		for _, force := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/force=%t", mode, force), func(t *testing.T) {
+				directory := testutil.TempDir(t)
+				dev := choices()
+				dev.FoundryEndpoint, dev.FoundryResourceGroup = "https://dev.services.ai.azure.com", "dev-group"
+				if mode != "existing resource" {
+					dev.FoundryEndpoint, dev.FoundryResourceGroup = "", ""
+					dev.FoundryPrefix, dev.AssignRoles = "dev-prefix", true
+				}
+				_, err := Materialize(t.Context(), directory, dev, false)
+				require.NoError(t, err)
+				parameterPath := filepath.Join(directory, "infra/main.parameters.json")
+				body, err := os.ReadFile(parameterPath) // #nosec G304 -- Test parameters.
+				require.NoError(t, err)
+				parameters, err := jsonObject(body)
+				require.NoError(t, err)
+				var document map[string]map[string]string
+				require.NoError(t, json.Unmarshal(parameters["parameters"], &document))
+				for name, value := range expectedResourceParameters(dev) {
+					if mode != "mixed bindings" || name == "foundryResourcePrefix" {
+						document[name]["value"] = value
+					}
+				}
+				parameters["parameters"], err = json.Marshal(document)
+				require.NoError(t, err)
+				body, err = json.Marshal(parameters)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(parameterPath, body, 0o600))
+				stale := dev
+				stale.Environment, stale.FoundryPrefix = "test", "stale-prefix"
+				require.NoError(t, os.MkdirAll(filepath.Join(directory, ".azure/test"), 0o700))
+				const custom = "CUSTOM=\"retained\"\r\n_CU_PROVISIONED_RESOURCE_NAME=\"saved-account\"\r\n"
+				require.NoError(t, os.WriteFile(filepath.Join(directory, ".azure/test/.env"),
+					[]byte(MergeEnvironment(custom, stale)), 0o600))
+				before := resolvedResourceParameters(t, directory, "test")
+				configPath := filepath.Join(directory, ".azure/dev/config.json")
+				config, err := os.ReadFile(configPath) // #nosec G304 -- Test config.
+				require.NoError(t, err)
+				prod := choices()
+				prod.Environment = "prod"
+				prod.FoundryEndpoint, prod.FoundryResourceGroup = "https://prod.services.ai.azure.com", "prod-group"
+				_, err = Materialize(t.Context(), directory, prod, force)
+				require.NoError(t, err)
+				assert.Equal(t, expectedResourceParameters(dev), resolvedResourceParameters(t, directory, "dev"))
+				assert.Equal(t, before, resolvedResourceParameters(t, directory, "test"))
+				assert.Equal(t, expectedResourceParameters(prod), resolvedResourceParameters(t, directory, "prod"))
+				body, err = os.ReadFile(filepath.Join(directory, ".azure/test/.env")) // #nosec G304 -- Test state.
+				require.NoError(t, err)
+				assert.Contains(t, string(body), custom)
+				body, err = os.ReadFile(configPath) // #nosec G304 -- Test config.
+				require.NoError(t, err)
+				assert.Equal(t, config, body)
+			})
+		}
+	}
 }
 
 func TestGenerationConfigRemainsScopedToSelectedEnvironment(t *testing.T) {
@@ -370,6 +517,71 @@ func TestGenerationConfigRemainsScopedToSelectedEnvironment(t *testing.T) {
 	body, err = os.ReadFile(filepath.Join(directory, ".azure/dev/config.json")) // #nosec G304 -- Test project.
 	require.NoError(t, err)
 	assert.Equal(t, first, body)
+}
+
+func TestGenerationMigrationRejectsUnsafeStateBeforeWrites(t *testing.T) {
+	for _, scenario := range []string{
+		"null parameter", "boolean parameter", "custom substitution", "unsafe literal",
+		"environment symlink", "environment file symlink", "nonregular environment file", "invalid selected config",
+	} {
+		for _, force := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/force=%t", scenario, force), func(t *testing.T) {
+				directory := testutil.TempDir(t)
+				_, err := Materialize(t.Context(), directory, choices(), false)
+				require.NoError(t, err)
+				read := func(path string) []byte {
+					t.Helper()
+					body, err := os.ReadFile(filepath.Join(directory, path)) // #nosec G304 -- Test-owned state.
+					require.NoError(t, err)
+					return body
+				}
+				body := strings.ReplaceAll(string(read("infra/main.parameters.json")),
+					`"${FOUNDRY_RESOURCE_PREFIX=}"`, `"old-prefix"`)
+				bad := map[string]string{
+					"null parameter": "null", "boolean parameter": "true",
+					"custom substitution": `"${CUSTOM_PREFIX}"`, "unsafe literal": `"bad\nprefix"`,
+				}
+				if value, exists := bad[scenario]; exists {
+					body = strings.ReplaceAll(body, `"old-prefix"`, value)
+				}
+				require.NoError(t, os.WriteFile(filepath.Join(directory, "infra/main.parameters.json"), []byte(body), 0o600))
+				switch scenario {
+				case "environment symlink", "environment file symlink":
+					if runtime.GOOS == "windows" {
+						t.Skip("symlink permission is not guaranteed")
+					}
+					outside := testutil.TempDir(t)
+					path := filepath.Join(directory, ".azure/other")
+					if scenario == "environment file symlink" {
+						require.NoError(t, os.Mkdir(path, 0o700))
+						path = filepath.Join(path, ".env")
+						outside = filepath.Join(outside, "state")
+						require.NoError(t, os.WriteFile(outside, []byte("CUSTOM=outside\n"), 0o600))
+					}
+					require.NoError(t, os.Symlink(outside, path))
+				case "nonregular environment file":
+					require.NoError(t, os.MkdirAll(filepath.Join(directory, ".azure/other/.env"), 0o700))
+				case "invalid selected config":
+					require.NoError(t, os.MkdirAll(filepath.Join(directory, ".azure/prod"), 0o700))
+					require.NoError(t, os.WriteFile(filepath.Join(directory, ".azure/prod/config.json"),
+						[]byte("null"), 0o600))
+				}
+				before := map[string][]byte{}
+				for _, path := range []string{"infra/main.parameters.json", ".azure/config.json",
+					".azure/dev/.env", ".azure/dev/config.json", "azure.yaml", "infra/models.json"} {
+					before[path] = read(path)
+				}
+				prod := choices()
+				prod.Environment, prod.FoundryPrefix = "prod", "new-prefix"
+				_, err = Materialize(t.Context(), directory, prod, force)
+				require.Error(t, err)
+				for path, expected := range before {
+					assert.Equal(t, expected, read(path), path)
+				}
+				assert.NoFileExists(t, filepath.Join(directory, ".azure/prod/.env"))
+			})
+		}
+	}
 }
 
 func TestGeneratedShellLaunchers(t *testing.T) {

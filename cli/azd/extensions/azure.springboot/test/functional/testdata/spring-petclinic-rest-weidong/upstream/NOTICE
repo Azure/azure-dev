@@ -1,9 +1,0 @@
-This template includes Spring Petclinic REST from:
-https://github.com/spring-petclinic/spring-petclinic-rest
-Upstream commit: afc8fc1d3b8ec8de69414482b3bd70a1da78cb95
-
-The upstream application is licensed under Apache License 2.0; see LICENSE.txt.
-Azure template additions introduce infrastructure, container packaging, and
-deployment-only configuration. Application source under src/ is unchanged.
-pom.xml adds the Azure Identity Extensions JDBC authentication dependency.
-API authentication retains upstream's disabled-by-default behavior.

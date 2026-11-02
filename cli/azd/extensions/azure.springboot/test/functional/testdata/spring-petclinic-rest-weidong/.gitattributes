@@ -1,5 +1,0 @@
-# Preserve byte-exact upstream blobs for offline Git-object hash verification.
-upstream/** -text
-azure.yaml text eol=lf
-source-revision.json text eol=lf
-materialize.ps1 text eol=lf

@@ -30,10 +30,7 @@ not treated as verified Spring application settings.
 
 ## Template compatibility example
 
-The [pinned Weidong REST overlay](test/functional/testdata/spring-petclinic-rest-weidong/README.md)
-changes only `azure.yaml` in
-`weidongxu-microsoft/petclinic-rest-azd@d8f601e5d3cdbd640069ffde58fc1370541fb0f4`.
-The same minimal overlay is published at
+The compatible Petclinic REST template is published at
 [`XiaofeiCao/petclinic-rest-azd@ce7d05f5d2044ce91eedd8c8679d83386b757b39`](https://github.com/XiaofeiCao/petclinic-rest-azd/tree/ce7d05f5d2044ce91eedd8c8679d83386b757b39).
 It preserves Bicep, parameter files, scripts, Java sources and Dockerfile:
 
@@ -121,15 +118,13 @@ an explicitly selected attached UAMI, Entra-only server authentication and
 verify-full TLS. A passwordless flag alone is insufficient.
 
 Official azd 1.37.2 native Maven packaging and the generated Java 17 runtime
-have passed local PostgreSQL REST CRUD and restart-persistence checks. A separate
-runtime-H2 MVC fixture also passed native packaging and actual H2 database health
-without changing its application or dependencies. The PostgreSQL
-checks use separate external test configuration with password authentication
-and `sslmode=disable`; they do not establish Azure managed identity or
-verify-full TLS. A probe using the packaged Spring libraries also covers
-repeated command-line options, empty JVM properties and indexed environment
-profile groups. Full live lifecycle acceptance remains pending. Earlier
-`c78d2cfa` authored-Dockerfile acceptance does not apply to this revision.
+have passed local PostgreSQL REST CRUD and restart-persistence checks. The
+PostgreSQL checks use separate external test configuration with password
+authentication and `sslmode=disable`; they do not establish Azure managed
+identity or verify-full TLS. A probe using the packaged Spring libraries also
+covers repeated command-line options, empty JVM properties and indexed
+environment profile groups. Full live lifecycle acceptance remains pending.
+Earlier `c78d2cfa` authored-Dockerfile acceptance does not apply to this revision.
 
 This prototype intentionally breaks its earlier syntax:
 
@@ -182,25 +177,8 @@ is a troubleshooting-only exact public IPv4 override, not a firewall policy.
 ## Commands and validation
 
 Use separate `azd init`, `up`, `package`, `deploy`/redeploy and `down` operations.
-Local image packaging does not require provisioning. No Azure operations are
-part of the offline fixture checks:
-
-```shell
-go test ./test/functional -run 'TestSpringPetclinicManagedIdentityFixtureIsPortable|TestSpringPetclinicRest' -count=1
-```
-
-The opt-in `AZD_TEST_SPRING_PETCLINIC_PACKAGE=1` native REST gate additionally
-starts disposable local PostgreSQL and application containers, checks JSON
-CRUD and restart persistence, and removes only its labeled resources and
-nonce-scoped image tags. Set `CLI_TEST_AZD_PATH` to the official azd executable.
-It requires Docker and a host JDK suitable for the unchanged Maven project.
-For a child-session handoff, optionally set `AZD_TEST_SPRING_ARTIFACTS_DIR` to an
-existing absolute evidence directory. Each gate retains its exact extension
-build-input snapshot and installed bundle in a new private subdirectory there.
-These retained artifacts do not establish acceptance if the corresponding gate
-fails, and contain no azd configuration or Azure authentication state.
-
-The original [MVC managed-identity fixture](test/functional/testdata/spring-petclinic-managedidentity/README.md)
-is retained and migrated to the same application-owned policy. The REST
-fixture uses REST APIs, not MVC HTML forms. Offline/source checks are not live
-deployment acceptance; that requires separate authorization and owned-resource cleanup.
+Local image packaging does not require provisioning. The opt-in
+`AZD_TEST_SPRING_PETCLINIC_PACKAGE=1` gate initializes the fork-owned template
+in an empty directory and verifies native packaging. The opt-in
+`AZD_TEST_SPRING_PETCLINIC_LIVE=1` gate uses that same template for separately
+authorized live lifecycle validation and owned-resource cleanup.

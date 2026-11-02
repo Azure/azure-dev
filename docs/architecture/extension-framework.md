@@ -49,38 +49,6 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 - **Receive calls** from azd (e.g., "build this service")
 - **Make calls** back to azd (e.g., "prompt the user", "read environment config")
 
-### Spring Boot prototype composition
-
-The unpublished [`azure.springboot` prototype](../../cli/azd/extensions/azure.springboot/README.md)
-combines Java framework and Container Apps target providers. An explicit
-`docker.path` delegates compilation/image packaging to core Docker composition;
-the target reuses the resulting container artifact. With no explicit path,
-host Maven builds a JAR and an extension-owned runtime recipe packages it in
-an isolated temporary context. Authored Dockerfiles and ignore files stay
-unchanged and unused by that native route.
-Automatic discovery and complete explicit application-auth verification require
-native packaging; authored images retain only manually selected legacy routes.
-
-Service-level custom `database` configuration travels in protobuf
-`AdditionalProperties`; typed service `module` is retrieved through the project
-configuration RPC instead of assuming it exists in that map. Omitting `database`
-selects standard Spring configuration/dependency discovery, not an H2 fallback.
-The target verifies
-the selected deployment and live resources before database mutations.
-Its fixed `app-owned-v2` policy allows application-owned startup SQL, not a
-privileged initializer/receipt gate. App object ownership permits ALTER/DROP,
-but does not grant database ownership or administrator privileges.
-The [pinned REST overlay](../../cli/azd/extensions/azure.springboot/test/functional/testdata/spring-petclinic-rest-weidong/README.md)
-changes only YAML. Automatic setup removes its verified deployment-owned broad
-bootstrap firewall rule and checks absence before recording readiness, while
-retaining verified exact runtime rules. Local cleanup cannot guarantee recovery
-after host/credential loss; the template is not private production networking.
-Official azd native packaging, local PostgreSQL REST CRUD/restart and a separate
-runtime-H2 health gate now pass. Local PostgreSQL uses deliberate password/TLS
-overrides; Azure managed identity, verify-full TLS and full live acceptance remain
-pending. Source-only discovery rejects recognizable custom bootstrap mechanisms
-but does not prove arbitrary programmatic/generated configuration.
-
 Extension command metadata can set `"launch": {"noAzdEnvironment": true}` on a command.
 For that command only (not its descendants), azd skips loading the selected
 environment, resolving its Key Vault references, and injecting its variables

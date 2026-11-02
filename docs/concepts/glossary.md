@@ -34,19 +34,6 @@ A deployable unit defined in `azure.yaml`. Each service has a source path, a lan
 
 The Azure resource that hosts a deployed service. Supported targets include Azure App Service, Azure Container Apps, Azure Functions, Azure Static Web Apps, Azure Kubernetes Service (AKS), and Azure AI.
 
-### Spring Boot extension host (`springbootapp`)
-
-An unpublished development extension target for Spring Boot applications on
-Azure Container Apps. Without explicit `docker.path`, the extension uses host
-JDK 17+ and Maven to build a JAR, then packages it with an owned generated runtime
-recipe in an isolated temporary context, leaving authored recipes unused.
-Automatic Spring datasource discovery and complete application-auth settings
-require this native route. Explicit `docker.path` uses core azd's authored
-Dockerfile build only for manually selected legacy H2/type-only PostgreSQL routes.
-Both paths require Docker. Its lifecycle handlers prepare and verify database
-access, while Spring initializes application schemas at startup. See the
-[extension README](../../cli/azd/extensions/azure.springboot/README.md).
-
 ### Framework Service
 
 A language/build framework that knows how to restore, build, and package a service's source code. Built-in frameworks include .NET, Python, Java, JavaScript/TypeScript, and Docker. Extensions can add support for additional frameworks.

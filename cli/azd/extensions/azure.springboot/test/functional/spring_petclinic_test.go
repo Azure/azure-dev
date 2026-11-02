@@ -167,6 +167,37 @@ func verifyUnbornGitHead(t *testing.T, ctx context.Context, projectDir string) {
 	require.Contains(t, strings.ReplaceAll(string(output), "\r\n", "\n"), "# branch.oid (initial)\n")
 }
 
+func nativeImageTags(t *testing.T, ctx context.Context, referencePrefix string) []string {
+	t.Helper()
+	// #nosec G204 -- callers supply an exact nonce-scoped image prefix as an argument, never shell syntax.
+	command := osexec.CommandContext(ctx, "docker", "image", "ls", "--filter",
+		"reference="+referencePrefix+"*", "--format", "{{.Repository}}:{{.Tag}}")
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, string(output))
+	tags := strings.Fields(string(output))
+	for _, tag := range tags {
+		require.True(t, strings.HasPrefix(tag, referencePrefix), "refuse an image outside this test's exact scope")
+	}
+	return tags
+}
+
+func registerNativeImageCleanup(t *testing.T, referencePrefix string) {
+	t.Helper()
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		for _, image := range nativeImageTags(t, cleanupCtx, referencePrefix) {
+			// #nosec G204 -- nativeImageTags verifies every tag against this test's exact nonce-scoped prefix.
+			output, err := osexec.CommandContext(
+				cleanupCtx, "docker", "image", "rm", "--no-prune", image,
+			).CombinedOutput()
+			if err != nil {
+				t.Errorf("removing this trial's exact image tag: %v: %s", err, output)
+			}
+		}
+	})
+}
+
 func initAuthoredPetclinicProject(
 	t *testing.T,
 	ctx context.Context,

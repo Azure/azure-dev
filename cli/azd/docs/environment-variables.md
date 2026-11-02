@@ -243,26 +243,6 @@ Metadata requests are unauthenticated when no matching token is set.
 | --- | --- |
 | `AZURE_AI_ROUTINES_HTTP_TIMEOUT` | Overrides the `azure.ai.routines` HTTP request timeout when no `--timeout` flag is provided. Parsed with Go's `time.ParseDuration` format (for example, `90s`, `2m`, or `1m30s`) and must be a positive duration. |
 
-### azure.springboot (development prototype)
-
-These are extension-specific inputs and state, not general azd settings. The
-unpublished development extension must be installed separately.
-
-| Variable | Description |
-| --- | --- |
-| `DATABASE_ADMIN_NAME`, `DATABASE_ADMIN_OBJECT_ID` | Read and validated directly by the extension for managed-identity provisioning. Prepared from the signed-in developer when absent; conflicts with the selected identity are rejected. The Weidong REST template also substitutes these values into its Bicep administrator parameters. |
-| `DATABASE_SERVER_ID`, `APPLICATION_IDENTITY_ID` | Template outputs referenced by expressions in `services.<name>.database`. The extension resolves those expressions and verifies the resources against the selected deployment; core azd does not interpret them as universal settings. |
-| `DATABASE_HOST`, `APPLICATION_IDENTITY_CLIENT_ID`, `APPLICATION_PRINCIPAL_ID`, `CONTAINER_APP_ENVIRONMENT_ID` | Original REST template outputs consumed and verified by the extension. No additional resource-ID aliases or ownership tags need to be added to that template. |
-| `POSTGRES_BOOTSTRAP_CLIENT_IP` | Optional public IPv4 override for temporary single-IP access on narrowly firewalled servers. The extension validates supplied overrides locally. An existing verified all-public-IPv4 rule bypasses IP discovery and temporary firewall creation; the extension never widens access automatically. |
-| `SPRING_DATABASE_TYPE`, `SPRING_DATABASE_AUTHENTICATION`, `SPRING_DATABASE_NAME`, `SPRING_DATABASE_USERNAME` | Extension-prepared database selection. Explicit values must agree with the service's database configuration. Omitting `database` selects native Spring datasource discovery; an explicitly present empty `database: {}` selects H2. |
-| `SPRING_DATABASE_ADMINISTRATOR_NAME`, `SPRING_DATABASE_ADMINISTRATOR_OBJECT_ID`, `SPRING_DATABASE_USER_ACCESS_TENANT_ID` | Extension-prepared developer administrator and user-access tenant state. Do not copy these values between environments or identities. |
-| `SPRING_DATABASE_PASSWORD`, `SPRING_DATABASE_APP_PASSWORD` | Credentials for the extension's password-authenticated fixtures. Rejected for managed-identity authentication; the REST demo does not use a password fallback. |
-| `SPRING_DATABASE_PROVISIONED_TYPE`, `SPRING_DATABASE_PROVISIONED_ACCESS`, `SPRING_DATABASE_ACCESS_CONFIGURED` | Extension-owned selection, versioned access fingerprint and readiness state. Not schema-initialization receipts and not substitutes for current deployment verification. Do not set these manually to bypass provisioning. |
-
-See the [Spring Boot extension README](../extensions/azure.springboot/README.md)
-for the supported fixtures, original output contracts and temporary public
-bootstrap firewall cleanup/recovery limitations.
-
 ## UI Prompt Integration
 
 | Variable | Description |

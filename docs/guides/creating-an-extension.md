@@ -64,30 +64,6 @@ for the stream requirements and legacy-client behavior.
 
 ### 4. Build
 
-When combining framework and service-target providers, keep packaging ownership
-explicit. The unpublished
-[`azure.springboot` example](../../cli/azd/extensions/azure.springboot/README.md)
-uses core Docker composition when `docker.path` is supplied and reuses the
-container artifact instead of building twice. Without the path it retains
-host Maven and an owned generated runtime recipe; unrelated Dockerfiles must
-not be silently adopted or overwritten.
-Its automatic discovery and complete application-auth verification require the
-native route because an authored image does not establish effective packaged
-Spring configuration. Pending configuration selectors must not fabricate a
-datasource or readiness state.
-
-Custom service fields can use `ServiceConfig.AdditionalProperties` without a
-protobuf change. Do not assume typed core fields such as `module` are in that
-map: retrieve the authored services section through the project-config RPC.
-Validate explicit null/empty/unsupported inputs before auth or mutations.
-Document syntax migrations: this prototype moved `config.database` directly
-under the service and removed `auth.permission`, using one application-owned
-access policy rather than silently accepting obsolete fields. Keep application
-startup SQL distinct from access readiness and preserve IaC firewall ownership.
-Its [pinned REST fixture](../../cli/azd/extensions/azure.springboot/test/functional/testdata/spring-petclinic-rest-weidong/README.md)
-illustrates YAML-only adoption, offline structural validation and local native
-runtime checks, not live Azure managed-identity/TLS acceptance.
-
 ```bash
 # Using the developer extension
 azd x build

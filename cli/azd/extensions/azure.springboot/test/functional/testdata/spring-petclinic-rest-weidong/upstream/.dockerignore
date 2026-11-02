@@ -1,9 +1,0 @@
-.git
-.github
-.azure
-.env
-.env.*
-target
-infra
-scripts
-*.md

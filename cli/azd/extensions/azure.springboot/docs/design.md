@@ -16,9 +16,9 @@ and explicit `database` authentication and identity fields. An explicit
 `host`; it is not nested inside `host` or `config`.
 
 For a complete project example, see the
-[local minimal template azure.yaml](../test/functional/testdata/spring-petclinic-rest-weidong/azure.yaml).
-Core azd settings and packaging/deployment-module configuration are outside this
-document's scope.
+[`XiaofeiCao/petclinic-rest-azd` template](https://github.com/XiaofeiCao/petclinic-rest-azd/tree/springbootapp-template).
+Core azd settings and packaging/deployment-module configuration are outside
+this document's scope.
 
 The design separates three concerns: application configuration or explicit YAML selects the database and runtime
 account; the extension verifies resources and reconciles access; the application

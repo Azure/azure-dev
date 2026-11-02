@@ -89,10 +89,6 @@ services:
     language: java
     host: springbootapp
     module: application
-    docker:
-      path: Dockerfile
-      context: .
-      platform: linux/amd64
 `
 	path := filepath.Join(project.Path, "azure.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))

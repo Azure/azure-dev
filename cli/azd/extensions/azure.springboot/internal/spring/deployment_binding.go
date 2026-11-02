@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -145,20 +146,14 @@ func readDeploymentBinding(
 	); err != nil {
 		return nil, err
 	}
-	automatic := false
-	for _, service := range springServices(project.GetProject()) {
-		automatic = automatic || discoversDatabase(service)
-	}
-	binding.automatic = automatic
-	verifyApplication := binding.original || automatic
-	for _, service := range springServices(project.GetProject()) {
-		document, err := decodeDatabaseConfig(service)
-		if err != nil {
+	services := springServices(project.GetProject())
+	for _, service := range services {
+		if err := validateAutomaticServiceConfig(service); err != nil {
 			return nil, err
 		}
-		verifyApplication = verifyApplication || document.Auth != nil
 	}
-	if verifyApplication {
+	binding.automatic = len(services) > 0
+	if binding.original || binding.automatic {
 		if err := bindApplication(ctx, credential, project.GetProject(), binding); err != nil {
 			return nil, err
 		}
@@ -171,9 +166,7 @@ func boundDeploymentValues(
 	outputs currentDeploymentOutputs,
 ) (map[string]string, error) {
 	result := make(map[string]string, len(values)+8)
-	for key, value := range values {
-		result[key] = value
-	}
+	maps.Copy(result, values)
 	_, original, err := findDeploymentOutput(outputs, "DATABASE_SERVER_ID")
 	if err != nil {
 		return nil, err

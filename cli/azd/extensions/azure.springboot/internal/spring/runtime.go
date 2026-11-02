@@ -110,16 +110,10 @@ func (r *Runtime) resolveService(
 			fmt.Sprintf("set the service host to %s", SpringHost),
 		)
 	}
-	var database resolvedDatabase
-	var err error
-	if err := validateApplicationPackaging(service); err != nil {
+	if err := validateAutomaticServiceConfig(service); err != nil {
 		return nil, err
 	}
-	if discoversDatabase(service) {
-		database, err = r.discoverServiceDatabase(ctx, project, service, serviceContext, values, requireLate)
-	} else {
-		database, err = resolveDatabase(service, values, os.LookupEnv, requireLate)
-	}
+	database, err := r.discoverServiceDatabase(ctx, project, service, serviceContext, values, requireLate)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +215,7 @@ func (r *Runtime) ValidateService(
 	if len(projects) > 0 {
 		project = projects[0]
 	}
-	if discoversDatabase(service) && project == nil {
+	if project == nil {
 		if r.client == nil {
 			return configurationError("the project is unavailable for automatic database discovery")
 		}
@@ -589,15 +583,6 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 	if err := validateProvisionedBindings(database, values); err != nil {
 		return err
 	}
-	if r.client != nil || (binding != nil && binding.app != nil) {
-		for _, service := range services {
-			if err := r.verifyExplicitDatasource(
-				ctx, args.Project, service.service, nil, service.database, values,
-			); err != nil {
-				return err
-			}
-		}
-	}
 	switch database.Authentication {
 	case databaseAuthenticationPassword:
 		database.AdministratorName = strings.TrimSpace(values[postgresAdministratorEnv])
@@ -767,13 +752,6 @@ func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEven
 		if binding != nil {
 			values = binding.values
 			ctx = context.WithValue(ctx, deploymentBindingKey{}, binding)
-		}
-		if r.client != nil || (binding != nil && binding.app != nil) {
-			if err := r.verifyExplicitDatasource(
-				ctx, args.Project, args.Service, args.ServiceContext, resolved.database, values,
-			); err != nil {
-				return err
-			}
 		}
 		resolved.database.AdministratorName = values[databaseAdministratorNameEnv]
 		if resolved.database.discovered && resolved.database.Authentication == databaseAuthenticationPassword {

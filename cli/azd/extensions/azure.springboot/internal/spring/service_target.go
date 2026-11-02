@@ -101,10 +101,7 @@ func (t *serviceTarget) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	if err := validateContainerSettings(serviceConfig); err != nil {
-		return nil, err
-	}
-	if err := validateApplicationPackaging(serviceConfig); err != nil {
+	if err := validateAutomaticServiceConfig(serviceConfig); err != nil {
 		return nil, err
 	}
 	projectResponse, err := t.client.Project().Get(ctx, &azdext.EmptyRequest{})
@@ -119,20 +116,8 @@ func (t *serviceTarget) Package(
 			"run the command from an initialized azd project",
 		)
 	}
-	if usesAuthoredDockerfile(serviceConfig) {
-		if err := validateSpringBuild(project, serviceConfig); err != nil {
-			return nil, err
-		}
-		if err := validateCoreContainerPackage(serviceContext); err != nil {
-			return nil, err
-		}
-		// The core Docker composite has already appended this image to ServiceContext.Package.
-		return &azdext.ServicePackageResult{}, nil
-	}
-	if discoversDatabase(serviceConfig) {
-		if _, err := t.runtime.readServiceDatasource(ctx, project, serviceConfig, serviceContext, false); err != nil {
-			return nil, err
-		}
+	if _, err := t.runtime.readServiceDatasource(ctx, project, serviceConfig, serviceContext, false); err != nil {
+		return nil, err
 	}
 	for _, artifacts := range [][]*azdext.Artifact{serviceContext.GetBuild(), serviceContext.GetPackage()} {
 		for _, artifact := range artifacts {
@@ -400,8 +385,8 @@ func validateCoreContainerPackage(serviceContext *azdext.ServiceContext) error {
 		strings.TrimSpace(image.GetLocation()) == "" || image.GetMetadata()["targetImage"] != image.GetLocation() ||
 		image.GetMetadata()["imageHash"] == "" || image.GetMetadata()["sourceImage"] != "" {
 		return validationError("missing_core_container_package",
-			"the authored Dockerfile route requires a local core Docker container package artifact",
-			"rerun azd package so the core Docker framework builds and packages the selected Dockerfile")
+			"native Maven packaging requires a local container package artifact",
+			"rerun azd package so the generated Spring Boot container is built and packaged")
 	}
 	for _, artifact := range serviceContext.GetBuild() {
 		if artifact.GetKind() == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&

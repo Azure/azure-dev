@@ -115,33 +115,10 @@ func TestServiceDeployPreservesModuleImageBindingAndEndpointArtifacts(t *testing
 	}
 }
 
-func TestAuthoredDockerTargetReusesCorePackageWithoutDuplicateArtifacts(t *testing.T) {
-	project, service := createMavenProject(t)
-	service.AdditionalProperties = serviceWithConfig(t, map[string]any{"database": map[string]any{}}).AdditionalProperties
-	service.Docker = &azdext.DockerProjectOptions{Path: "Dockerfile", Context: ".", Platform: "linux/amd64"}
-	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "Dockerfile"), []byte("FROM authored"), 0o600))
-	client := packagingTestClient(t, project)
-	target := newServiceTarget(client, nil, nil, nil)
-	serviceContext := coreDockerPackageContext()
-	before := proto.Clone(serviceContext)
-	result, err := target.Package(t.Context(), service, serviceContext, nil)
-	require.NoError(t, err)
-	require.Empty(t, result.Artifacts)
-	require.True(t, proto.Equal(before, serviceContext))
-	require.Len(t, serviceContext.Package, 1)
-	// No Container service is registered: a duplicate Build or Package RPC would fail this test.
-	require.NoDirExists(t, filepath.Join(project.Path, stagingDirectoryName))
-	serviceContext.Package = nil
-	_, err = target.Package(t.Context(), service, serviceContext, nil)
-	require.ErrorContains(t, err, "requires a local core Docker")
-}
-
 func TestTargetInitializeRejectsInvalidModuleBeforeRuntimeAccess(t *testing.T) {
 	project, service := createMavenProject(t)
 	service.Language = "java"
-	service.Docker = &azdext.DockerProjectOptions{Path: "Dockerfile", Context: ".", Platform: "linux/amd64"}
 	project.Infra = &azdext.InfraOptions{Provider: "bicep", Path: "infra"}
-	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "Dockerfile"), []byte("FROM authored"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "azure.yaml"), []byte(`
 services:
   petclinic:

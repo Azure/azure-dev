@@ -139,12 +139,14 @@ func (r *Runtime) readApplicationSecrets(
 func (r *Runtime) bindAutomaticProject(
 	ctx context.Context, project *azdext.ProjectConfig, envName string, values map[string]string,
 ) (context.Context, map[string]string, error) {
-	automatic := false
-	for _, service := range springServices(project) {
-		automatic = automatic || discoversDatabase(service)
-	}
-	if !automatic {
+	services := springServices(project)
+	if len(services) == 0 {
 		return ctx, values, nil
+	}
+	for _, service := range services {
+		if err := validateAutomaticServiceConfig(service); err != nil {
+			return ctx, values, err
+		}
 	}
 	if r.outputs == nil {
 		return ctx, values, errors.New("current deployment verification is unavailable for automatic database discovery")
@@ -181,7 +183,7 @@ func (r *Runtime) readServiceDatasource(
 	ctx context.Context, project *azdext.ProjectConfig, service *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext, requireFinal bool,
 ) (*discoveredDatasource, error) {
-	if _, err := decodeDatabaseConfig(service); err != nil {
+	if err := validateAutomaticServiceConfig(service); err != nil {
 		return nil, err
 	}
 	root, err := servicePath(project, service)
@@ -299,34 +301,4 @@ func bindDiscoveredDatasource(
 		return resolvedDatabase{}, err
 	}
 	return result, nil
-}
-
-func (r *Runtime) verifyExplicitDatasource(
-	ctx context.Context, project *azdext.ProjectConfig, service *azdext.ServiceConfig,
-	serviceContext *azdext.ServiceContext, database resolvedDatabase, values map[string]string,
-) error {
-	if database.discovered || !database.managedAccess() {
-		return nil
-	}
-	binding, _ := ctx.Value(deploymentBindingKey{}).(*deploymentBinding)
-	if binding == nil || binding.app == nil {
-		return configurationError("explicit application-auth settings require verified application configuration")
-	}
-	intent, err := r.readServiceDatasource(ctx, project, service, serviceContext, true)
-	if err != nil {
-		return err
-	}
-	if intent.engine != database.Type || intent.authentication != database.Authentication ||
-		intent.name != database.Name || intent.username != database.Username ||
-		intent.port != 5432 || !strings.EqualFold(intent.host, binding.values[postgresHostEnv]) {
-		return configurationError("explicit database settings conflict with the effective Spring datasource")
-	}
-	if database.Authentication == databaseAuthenticationManagedIdentity &&
-		!strings.EqualFold(intent.clientID, binding.values[serviceIdentityClientIDEnv]) {
-		return configurationError("explicit appIdentity conflicts with the effective Spring managed identity selector")
-	}
-	if database.Authentication == databaseAuthenticationPassword && intent.password != values[databaseAppPasswordEnv] {
-		return configurationError("the effective application password conflicts with the configured application credential")
-	}
-	return nil
 }

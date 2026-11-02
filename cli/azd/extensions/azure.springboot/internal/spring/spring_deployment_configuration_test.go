@@ -145,41 +145,6 @@ func TestAutomaticDiscoveryBindsActualAttachedIdentityBeforeReturningFinalSelect
 	require.ErrorContains(t, err, "not attached")
 }
 
-func TestExplicitDatasourceChecksEffectiveApplicationSettings(t *testing.T) {
-	project, service := automaticPostgresProject(t)
-	binding := &deploymentBinding{
-		values: map[string]string{postgresHostEnv: "actual.example", serviceIdentityClientIDEnv: testSpringClientID},
-		app: &armappcontainers.ContainerApp{Properties: &armappcontainers.ContainerAppProperties{
-			Template: &armappcontainers.Template{Containers: []*armappcontainers.Container{{
-				Env: []*armappcontainers.EnvironmentVar{
-					{Name: new("POSTGRES_URL"), Value: new("jdbc:postgresql://actual.example/petclinic")},
-					{Name: new("AZURE_CLIENT_ID"), Value: new(testSpringClientID)},
-				},
-			}}},
-		}},
-	}
-	ctx := context.WithValue(t.Context(), deploymentBindingKey{}, binding)
-	expected := resolvedDatabase{
-		Type: databasePostgreSQL, Authentication: databaseAuthenticationManagedIdentity,
-		Name: "petclinic", Username: "petclinic_app",
-	}
-	runtime := new(Runtime)
-	require.NoError(t, runtime.verifyExplicitDatasource(ctx, project, service, nil, expected, nil))
-	for _, mutate := range []func(*resolvedDatabase){
-		func(value *resolvedDatabase) { value.Name = "other" },
-		func(value *resolvedDatabase) { value.Username = "other" },
-		func(value *resolvedDatabase) { value.Type = databaseH2 },
-		func(value *resolvedDatabase) { value.Authentication = databaseAuthenticationPassword },
-	} {
-		selected := expected
-		mutate(&selected)
-		require.Error(t, runtime.verifyExplicitDatasource(ctx, project, service, nil, selected, nil))
-	}
-	binding.values[serviceIdentityClientIDEnv] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	require.Error(t, runtime.verifyExplicitDatasource(ctx, project, service, nil, expected, nil))
-	require.Error(t, runtime.verifyExplicitDatasource(t.Context(), project, service, nil, expected, nil))
-}
-
 func TestDeployedDatasourceRejectsMountsBeforeReadingSecrets(t *testing.T) {
 	app := &armappcontainers.ContainerApp{Properties: &armappcontainers.ContainerAppProperties{
 		Template: &armappcontainers.Template{Containers: []*armappcontainers.Container{{

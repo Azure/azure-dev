@@ -31,6 +31,8 @@ const (
 	petclinicRepository      = "https://github.com/XiaofeiCao/azd-spring-petclinic"
 	petclinicBranch          = "main"
 	petclinicTemplateCommit  = "215d42251c4960c67bd86167a0a67ef8a24cf3ff"
+	proposedTemplateRepo     = "https://github.com/XiaofeiCao/petclinic-rest-azd"
+	proposedTemplateCommit   = "ce7d05f5d2044ce91eedd8c8679d83386b757b39"
 	gitMetadataAccommodation = "Packaging Maven project without Git commit metadata because the repository has no commits."
 )
 
@@ -82,6 +84,33 @@ func verifyPetclinicTemplate(t *testing.T, projectDir string) {
 	require.NotContains(t, rootText, "MANAGEMENT_ENDPOINT_HEALTH_GROUP_LIVENESS_INCLUDE")
 }
 
+func verifyProposedPetclinicTemplate(t *testing.T, projectDir string) {
+	t.Helper()
+	finalYaml, err := os.ReadFile(filepath.Join(projectDir, "azure.yaml"))
+	require.NoError(t, err)
+	require.Contains(t, string(finalYaml), "host: springbootapp")
+	require.NotContains(t, string(finalYaml), "database:")
+	require.NotContains(t, string(finalYaml), "docker:")
+	require.NotContains(t, string(finalYaml), "hooks:")
+
+	mainParameters, err := os.ReadFile(filepath.Join(projectDir, "infra", "main.parameters.json"))
+	require.NoError(t, err)
+	require.Contains(t, string(mainParameters), "${DATABASE_ADMIN_OBJECT_ID}")
+	require.Contains(t, string(mainParameters), "${DATABASE_ADMIN_NAME}")
+
+	applicationParameters, err := os.ReadFile(filepath.Join(projectDir, "infra", "application.parameters.json"))
+	require.NoError(t, err)
+	require.Contains(t, string(applicationParameters), "${SERVICE_SPRING_PETCLINIC_REST_APP_IMAGE_NAME}")
+
+	applicationBicep, err := os.ReadFile(filepath.Join(projectDir, "infra", "application.bicep"))
+	require.NoError(t, err)
+	applicationText := strings.ReplaceAll(string(applicationBicep), "\r\n", "\n")
+	require.Contains(t, applicationText, "sslmode=verify-full")
+	require.Contains(t, applicationText, "azure.managedIdentityEnabled=true")
+	require.Contains(t, applicationText, "SPRING_PROFILES_ACTIVE")
+	require.Contains(t, applicationText, "postgres,spring-data-jpa")
+}
+
 func Test_CLI_SpringExtension_BundleInstallsWithoutBaseTarget(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
@@ -98,27 +127,21 @@ func Test_CLI_SpringPetclinic_StagedPackage(t *testing.T) {
 	defer cancel()
 	configDir := tempDirWithDiagnostics(t)
 	installSpringExtensionFixture(t, ctx, configDir)
-	for _, mode := range []string{"h2", "postgresql"} {
-		t.Run(mode, func(t *testing.T) {
-			projectDir := stagePetclinicTemplate(t, ctx)
-			envName := "petclinic-" + mode + "-" + strconv.FormatInt(time.Now().UnixNano(), 10)
-			referencePrefix := "spring-petclinic/petclinic-" + envName + ":"
-			require.Empty(t, nativeImageTags(t, ctx, referencePrefix))
-			registerNativeImageCleanup(t, referencePrefix)
-			cli := initAuthoredPetclinicProject(t, ctx, configDir, projectDir, envName, mode)
-			result, err := cli.RunCommand(ctx, "package", "--no-prompt")
-			require.NoError(t, err, result.Stdout+result.Stderr)
-			require.NotContains(t, result.Stdout+result.Stderr, gitMetadataAccommodation)
+	projectDir := stagePetclinicTemplate(t, ctx)
+	envName := "petclinic-auto-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	referencePrefix := "petclinic-rest/spring-petclinic-rest-app-" + envName + ":"
+	require.Empty(t, nativeImageTags(t, ctx, referencePrefix))
+	registerNativeImageCleanup(t, referencePrefix)
+	cli := initAuthoredPetclinicProject(t, ctx, configDir, projectDir, envName, "automatic")
+	result, err := cli.RunCommand(ctx, "package", "--no-prompt")
+	require.NoError(t, err, result.Stdout+result.Stderr)
+	require.NotContains(t, result.Stdout+result.Stderr, gitMetadataAccommodation)
 
-			require.NoFileExists(t, filepath.Join(cli.WorkingDirectory, "Dockerfile"))
-			require.NoDirExists(t, filepath.Join(cli.WorkingDirectory, ".azd-springboot"))
-			require.NotContains(t, strings.ToLower(result.Stdout+result.Stderr), "buildpack")
-			image := verifyPackagedImage(t, ctx, envName)
-			if mode == "h2" {
-				verifyH2ContainerStartup(t, ctx, image)
-			}
-		})
-	}
+	require.FileExists(t, filepath.Join(cli.WorkingDirectory, "Dockerfile"))
+	require.NoDirExists(t, filepath.Join(cli.WorkingDirectory, ".azd-springboot"))
+	require.NotContains(t, strings.ToLower(result.Stdout+result.Stderr), "buildpack")
+	image := verifyProposedPackagedImage(t, ctx, envName)
+	verifyH2ContainerStartupAt(t, ctx, image, "9966", "/petclinic/actuator/health")
 }
 
 func Test_CLI_SpringPetclinic_PublishedTemplatePackage(t *testing.T) {
@@ -201,7 +224,7 @@ func registerNativeImageCleanup(t *testing.T, referencePrefix string) {
 func initAuthoredPetclinicProject(
 	t *testing.T,
 	ctx context.Context,
-	configDir, projectDir, envName, mode string,
+	configDir, projectDir, envName, _ string,
 ) *azdcli.CLI {
 	t.Helper()
 	cli := newSpringCLI(t)
@@ -216,10 +239,7 @@ func initAuthoredPetclinicProject(
 	_, err := cli.RunCommand(ctx, "init", "-e", envName, "--no-prompt")
 	require.NoError(t, err)
 	require.DirExists(t, filepath.Join(projectDir, ".azure", envName))
-	verifyPetclinicTemplate(t, projectDir)
-	verifyPetclinicSourceManifest(t, projectDir)
-	_, err = cli.RunCommand(ctx, "env", "set", "SPRING_DATABASE_TYPE", mode)
-	require.NoError(t, err)
+	verifyProposedPetclinicTemplate(t, projectDir)
 	return cli
 }
 
@@ -302,25 +322,26 @@ func stagePetclinicTemplate(t *testing.T, ctx context.Context) string {
 	// #nosec G204 -- fixed upstream URL/ref and argument-vector execution into a fresh test-owned destination.
 	command := osexec.CommandContext(
 		ctx,
-		"git", "clone", "--quiet", "--single-branch", "--branch", petclinicBranch,
-		petclinicRepository, templateDir,
+		"git", "clone", "--quiet", proposedTemplateRepo, templateDir,
 	)
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, "cloning the pinned Petclinic template: %s", output)
 	require.True(t, filepath.IsAbs(parent))
 
+	checkout := osexec.CommandContext(ctx, "git", "-C", templateDir, "checkout", "--quiet", proposedTemplateCommit)
+	output, err = checkout.CombinedOutput()
+	require.NoError(t, err, "checking out the proposed Petclinic revision: %s", output)
+
 	// #nosec G204 -- fixed git arguments and test-owned clone, without shell interpolation.
 	head := osexec.CommandContext(ctx, "git", "-C", templateDir, "rev-parse", "HEAD")
 	output, err = head.CombinedOutput()
 	require.NoError(t, err, "reading the staged Petclinic commit: %s", output)
-	require.Equal(t, petclinicTemplateCommit, strings.TrimSpace(string(output)))
+	require.Equal(t, proposedTemplateCommit, strings.TrimSpace(string(output)))
 
 	azureYamlPath := filepath.Join(templateDir, "azure.yaml")
 	content, err := os.ReadFile(azureYamlPath)
 	require.NoError(t, err)
-	const oldRequirement = `azd: ">= 1.38.0-beta.1"`
-	const newRequirement = `azd: ">= 1.37.2"`
-	require.Zero(t, bytes.Count(content, []byte(oldRequirement)))
+	const newRequirement = `azd: ">=1.37.2"`
 	require.Equal(t, 1, bytes.Count(content, []byte(newRequirement)))
 
 	// #nosec G204 -- fixed git arguments and verified fixture directory, without shell interpolation.
@@ -334,6 +355,27 @@ func stagePetclinicTemplate(t *testing.T, ctx context.Context) string {
 func verifyPackagedImage(t *testing.T, ctx context.Context, envName string) string {
 	t.Helper()
 	reference := "spring-petclinic/petclinic-" + envName + ":*"
+	// #nosec G204 -- inventory-only Docker arguments; reference is a generated tag filter, not shell input.
+	command := osexec.CommandContext(
+		ctx,
+		"docker",
+		"image",
+		"ls",
+		"--format",
+		"{{.Repository}}:{{.Tag}}",
+		"--filter",
+		"reference="+reference,
+	)
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, "listing packaged Spring image: %s", output)
+	images := strings.Fields(string(output))
+	require.NotEmpty(t, images, "expected a packaged container image matching %s", reference)
+	return images[0]
+}
+
+func verifyProposedPackagedImage(t *testing.T, ctx context.Context, envName string) string {
+	t.Helper()
+	reference := "petclinic-rest/spring-petclinic-rest-app-" + envName + ":*"
 	// #nosec G204 -- inventory-only Docker arguments; reference is a generated tag filter, not shell input.
 	command := osexec.CommandContext(
 		ctx,
@@ -471,6 +513,14 @@ func retainSpringAcceptanceSource(t *testing.T, source string) string {
 }
 
 func verifyH2ContainerStartup(t *testing.T, ctx context.Context, image string) {
+	verifyH2ContainerStartupAt(t, ctx, image, "8080", "/actuator/health")
+}
+
+func verifyH2ContainerStartupAt(
+	t *testing.T,
+	ctx context.Context,
+	image, containerPort, healthPath string,
+) {
 	t.Helper()
 	name := "azd-springboot-h2-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	const ownerLabel = "azd.spring.h2.owner"
@@ -487,7 +537,7 @@ func verifyH2ContainerStartup(t *testing.T, ctx context.Context, image string) {
 		"--label",
 		ownerLabel+"="+name,
 		"--publish",
-		"127.0.0.1::8080",
+		"127.0.0.1::"+containerPort,
 		image,
 		"--management.endpoint.health.show-details=always",
 	)
@@ -520,7 +570,7 @@ func verifyH2ContainerStartup(t *testing.T, ctx context.Context, image string) {
 	})
 
 	// #nosec G204 -- validated Docker container ID and fixed inventory arguments, without shell interpolation.
-	portCommand := osexec.CommandContext(ctx, "docker", "port", containerID, "8080/tcp")
+	portCommand := osexec.CommandContext(ctx, "docker", "port", containerID, containerPort+"/tcp")
 	portCommand.Env = dockerEnvironment
 	output, err = portCommand.CombinedOutput()
 	require.NoError(t, err, "reading H2 container port: %s", output)
@@ -529,7 +579,7 @@ func verifyH2ContainerStartup(t *testing.T, ctx context.Context, image string) {
 	if after, ok := strings.CutPrefix(address, "0.0.0.0:"); ok {
 		address = "127.0.0.1:" + after
 	}
-	endpoint := "http://" + address + "/actuator/health"
+	endpoint := "http://" + address + healthPath
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	deadline := time.Now().Add(4 * time.Minute)

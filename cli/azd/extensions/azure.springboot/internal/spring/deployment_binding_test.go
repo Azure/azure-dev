@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"testing"
@@ -20,31 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/structpb"
 )
-
-func TestDatabaseRejectsLegacyPresenceAndObsoleteFields(t *testing.T) {
-	for _, value := range []any{nil, "", map[string]any{}} {
-		service := serviceWithConfig(t, map[string]any{"database": map[string]any{"type": "h2"}})
-		legacy, err := structpb.NewStruct(map[string]any{"database": value})
-		require.NoError(t, err)
-		service.Config = legacy
-		_, err = decodeDatabaseConfig(service)
-		require.ErrorContains(t, err, "config.database")
-	}
-	for _, field := range []string{"bootstrapFirewall", "permission"} {
-		service := serviceWithConfig(t, map[string]any{"database": map[string]any{
-			"type": "postgresql", field: nil,
-		}})
-		_, err := decodeDatabaseConfig(service)
-		require.ErrorContains(t, err, "unsupported field")
-	}
-	for _, value := range []any{nil, "", true} {
-		service := serviceWithConfig(t, map[string]any{"database": value})
-		_, err := decodeDatabaseConfig(service)
-		require.ErrorContains(t, err, "must be an object")
-	}
-}
 
 func TestOwnershipRequiresMembershipEvenWithMatchingEnvironmentTag(t *testing.T) {
 	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app"
@@ -220,12 +197,9 @@ func TestOriginalAdministratorInputsValidateBeforeAuthenticationOrWrites(t *test
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			project, service := createMavenProject(t)
-			service.AdditionalProperties = managedIdentityAccessConfig(t)
+			project, _ := automaticPostgresProject(t)
 			values := map[string]string{azureSubscriptionIDEnv: "sub"}
-			for key, value := range test.inputs {
-				values[key] = value
-			}
+			maps.Copy(values, test.inputs)
 			store := &fakeEnvironmentStore{name: "test", data: values}
 			identity := &fakeDeveloperIdentityResolver{}
 			runtime := &Runtime{environments: store, identities: identity}

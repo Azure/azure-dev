@@ -183,7 +183,9 @@ azd-owned supporting resource group's cleanup binding.
 
 New connections use ApiKey authentication, are scoped to one project, and are
 named `azd-appinsights-<project-name-hash>` to stay within resource name limits.
-No monitoring RBAC roles are added.
+No monitoring RBAC roles are added. Each user who queries traces needs the
+Log Analytics Reader role on the Application Insights resource; azd does not
+grant it.
 Discovery rejects conflicting destinations, protected names, ambiguous sharing,
 unreadable resources, and authentication or ingestion policies that would need
 to be weakened. ApiKey setup does not enable local authentication or configure

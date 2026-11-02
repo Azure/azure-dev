@@ -3599,8 +3599,8 @@ func (f *fakeAkvsKeyVaultService) SecretFromAkvs(_ context.Context, akvs string)
 
 func TestEnsureParametersResolvesNestedKeyVaultSecrets(t *testing.T) {
 	const (
-		passwordRef = "akvs://sub-id/vault-a/password"
-		tokenRef    = "akvs://sub-id/vault-b/token"
+		passwordRef = "akvs://sub-id/vault-a/password" //nolint:gosec // G101: test fixture, not a credential
+		tokenRef    = "akvs://sub-id/vault-b/token"    //nolint:gosec // G101: test fixture, not a credential
 		schema      = "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#"
 	)
 

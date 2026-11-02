@@ -11,8 +11,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 )
 
-// isA2AOnlyRunTarget suppresses Inspector only when every advertised container
-// protocol is A2A. Mixed definitions retain their existing local-client route.
+// isA2AOnlyRunTarget checks container protocols, not remote endpoint enablement.
 func isA2AOnlyRunTarget(def *agent_yaml.ContainerAgent) bool {
 	if def == nil {
 		return false
@@ -25,8 +24,7 @@ func isA2AOnlyRunTarget(def *agent_yaml.ContainerAgent) bool {
 	return len(def.Protocols) > 0
 }
 
-// Container protocols determine the local client, independently of hosted
-// AgentEndpoint enablement. A2A-only containers must not get activity setup.
+// resolveRunClientProfile keeps A2A-only containers out of Activity client setup.
 func resolveRunClientProfile(def *agent_yaml.ContainerAgent) (activityRunProfile, bool) {
 	if isA2AOnlyRunTarget(def) {
 		return activityRunProfile{}, true
@@ -34,9 +32,7 @@ func resolveRunClientProfile(def *agent_yaml.ContainerAgent) (activityRunProfile
 	return resolveActivityRunProfile(def), false
 }
 
-// withResolvedRunTarget preserves the already-resolved A2A-only run target when
-// best-effort next-step assembly cannot reload it or reads conflicting protocols.
-// Copy Services so the assembled snapshot and unrelated services stay unchanged.
+// withResolvedRunTarget preserves the run target if best-effort state reloading fails or disagrees.
 func withResolvedRunTarget(state *nextstep.State, serviceName string, a2aOnly bool) *nextstep.State {
 	if !a2aOnly {
 		return state

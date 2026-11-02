@@ -26,8 +26,7 @@ var localA2AUnsupportedFlags = []string{
 	"session-id", "new-session", "conversation-id", "new-conversation", "version", "user-identity", "call-id",
 }
 
-// captureLocalA2AExplicitFlags preserves explicit empty/false flags for the
-// second validation pass, after automatic protocol selection.
+// captureLocalA2AExplicitFlags preserves empty/false options for validation after protocol selection.
 func captureLocalA2AExplicitFlags(cmd *cobra.Command, flags *invokeFlags) {
 	flags.a2aPathExplicit = cmd.Flags().Changed("a2a-path")
 	flags.localA2AExplicitFlags = nil
@@ -38,8 +37,7 @@ func captureLocalA2AExplicitFlags(cmd *cobra.Command, flags *invokeFlags) {
 	}
 }
 
-// validateLocalA2AOptions runs before local project lookup and again after
-// protocol resolution. An empty protocol defers only the route-specific checks.
+// validateLocalA2AOptions defers route-specific checks until the protocol is known.
 func validateLocalA2AOptions(flags *invokeFlags, protocol agent_api.AgentProtocol) error {
 	pathSet := flags.a2aPathExplicit || (flags.a2aPath != "" && flags.a2aPath != defaultLocalA2APath)
 	if pathSet {
@@ -82,9 +80,7 @@ func validateLocalInvokePort(port int) error {
 	return nil
 }
 
-// validateLocalA2APath accepts only an absolute URL path. Reject encodings that
-// intermediaries could decode into routing syntax, including double escapes.
-// Safe escapes (such as %20) remain byte-for-byte unchanged on the request.
+// validateLocalA2APath rejects URLs and ambiguous routing syntax, preserving safe escapes such as %20.
 func validateLocalA2APath(path string) error {
 	invalid := func() error {
 		return exterrors.Validation(exterrors.CodeInvalidParameter,
@@ -120,8 +116,7 @@ func validateLocalA2APath(path string) error {
 	return nil
 }
 
-// a2aLocal posts once to the configured localhost path. It deliberately does not
-// resolve credentials or Foundry sessions, probe alternate routes, or redirect.
+// a2aLocal invokes the local A2A server without Foundry credentials or session state.
 func (a *InvokeAction) a2aLocal(ctx context.Context, version string) error {
 	if err := validateLocalInvokePort(a.flags.port); err != nil {
 		return err

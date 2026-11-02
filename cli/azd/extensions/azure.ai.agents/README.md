@@ -795,35 +795,20 @@ azd ai agent invoke --local -p a2a --port 9090 --a2a-version 1.0 "Hello!"
 azd ai agent invoke --local -p a2a --port 9090 --a2a-version 1.0 -f a2a-request-1.0.json
 ```
 
-Local A2A sends a public JSON-RPC POST to `http://localhost:<port>/a2a`
-(default port `8088`). For a server with a different route, add
-`--a2a-path /rpc` to **invoke**. This must be an absolute path, not a URL,
-query, or fragment; ambiguous escapes and dot segments are rejected.
-The CLI does not discover routes, fall back to `/invocations/a2a`, follow
-redirects, or use an environment proxy for this request. Your application,
-not `run`, implements the routes.
+Requests go directly to `http://localhost:<port>/a2a` (default port `8088`).
+Use `--a2a-path /rpc` for another server route; only an absolute path is accepted,
+not a URL, query, or fragment. Redirects and alternate routes are not followed.
 
-The version rules above are unchanged locally: preview off uses 0.3 for
-messages and files with no explicit version flag; preview on defaults messages
-to 1.0 and requires `--a2a-version 0.3` or `1.0` for files. File bytes are sent
-unchanged. A request file can carry A2A `contextId`/`taskId` for protocol-level
-continuity, but azd does not persist local A2A session or conversation state.
+Existing A2A version rules apply locally, and request files are sent unchanged.
+Local A2A sends no Foundry authentication or routing headers and persists no
+session state. For continuity, provide A2A `contextId`/`taskId` in a request file.
+These flags are unsupported: `--session-id`, `--new-session`, `--conversation-id`,
+`--new-conversation`, `--version`, `--user-identity`, `--call-id`, and `--client-header`.
+Platform diagnostics are unavailable; omit `--debug-latency` or set it to `false`.
 
-Local A2A does not acquire credentials or send Foundry authentication, session,
-conversation, identity, call-ID, or custom client headers. It rejects
-`--session-id`, `--new-session`, `--conversation-id`, `--new-conversation`,
-`--version`, `--user-identity`, `--call-id`, and `--client-header` rather than
-silently ignoring them. Platform latency diagnostics are unavailable; omit
-`--debug-latency` or pass `--debug-latency=false`.
-
-Formatted output supports non-streaming JSON-RPC replies. Use `--output raw`
-for streaming methods (`message/stream` or `SendStreamingMessage`); it copies
-the HTTP status line, headers, and body without parsing SSE or adding formatted
-summaries. `--timeout` is a request budget in seconds (default 1800; `0` disables
-it), including connection retries and response reading. Independently, connection-refused
-retries during server startup stop after 60 seconds, even with `--timeout 0`.
-Timeout or Ctrl+C stops the local HTTP request; it does **not** send an A2A
-task-cancellation request.
+Use `--output raw` for streaming replies. `--timeout` covers the request and response
+(default 1800 seconds; `0` disables it); startup connection retries have a separate
+60-second limit. Timeout or Ctrl+C stops the HTTP request, not the A2A task.
 
 For completed Tasks in **both A2A 0.3 and 1.0**, default output prefers answer
 artifacts over generic status messages such as “Done.” Other Tasks prefer status
@@ -875,19 +860,14 @@ trailers or change SSE termination.
 
 ## Running Local Agents
 
-`azd ai agent run` starts the selected agent locally. A2A-only definitions run
-terminal-only: no Agent Inspector or browser client is opened. After the port
-is accepting connections, the `Next:` block suggests `invoke --local --protocol
-a2a` with the actual `--port` and a plain-text message. With the A2A preview on,
-it also includes `--a2a-version 1.0`; with it off, it omits that gated flag.
-No Invocations OpenAPI probe or payload suggestion is used for A2A.
-`--inspector-port` is ignored with a warning for A2A-only agents.
+`azd ai agent run` starts the selected agent locally. A2A-only agents open no
+browser client; once ready, azd suggests a local invocation command with the
+selected port and preview-compatible wire version. `--inspector-port` is ignored
+with a warning.
 
-Mixed-protocol definitions retain their existing local-client routing: Activity
-uses Microsoft 365 Agents Playground; other profiles use Agent Inspector.
-For Inspector profiles, launch happens after the local agent port is accepting
-connections and is best-effort: if `azure.ai.inspector` is not installed or
-fails to start, the agent process keeps running and azd prints install guidance.
+Other agents retain their existing client routing: Activity uses Microsoft 365
+Agents Playground; other profiles use Agent Inspector. Client launch is
+best-effort: if unavailable, the agent keeps running.
 
 Use `--no-client` to run only the local agent process for any profile
 (`--no-inspector` remains a deprecated alias):

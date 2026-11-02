@@ -1,0 +1,39 @@
+Work with Azure Content Understanding using a native Go azd extension.
+
+Manage analyzer definitions in your Microsoft Foundry resource.
+
+Usage
+  azd ai cu [command]
+
+Available Commands
+  analyze  : Analyze local files, directories, or HTTPS URLs
+  analyzer : Manage Content Understanding analyzers
+  config   : Manage CU user defaults without an azd project
+  defaults : Read or update CU resource model deployment defaults, not local azd configuration
+  doctor   : Check azd context, Entra authentication, CU access, and generative readiness
+  env-var  : Inspect supported compatibility process variables safely
+  infra    : Generate infrastructure and complete azd-managed provisioning
+  version  : Display the extension version
+
+Flags
+  -v, --version : version for cu
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for cu
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  azd ai cu analyze invoice.pdf
+    Analyze one file using the configured analyzer, or prebuilt-layout if unset.
+
+  azd ai cu analyzer list
+    List the analyzers available in the connected resource.
+
+  azd ai cu doctor
+    Check authentication, resource access, and model configuration.
+
+Use azd ai cu [command] --help for more information about a command.

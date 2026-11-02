@@ -345,6 +345,16 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	if err := expandPromptAgentTools(&managed, toolEnv); err != nil {
 		return nil, err
 	}
+	model, err := ResolvePromptAgentModel(
+		managed.Model, p.serviceConfig, p.projectServices, p.projectPath, env,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if model != strings.TrimSpace(managed.Model) && progress != nil {
+		progress(fmt.Sprintf("Using model deployment %q for %q", model, managed.Model))
+	}
+	managed.Model = model
 
 	if _, mapErr := ResolvePromptTargetFromEnv(settings, env); mapErr != nil {
 		return nil, mapErr

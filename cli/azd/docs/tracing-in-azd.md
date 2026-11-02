@@ -132,7 +132,7 @@ agent spans so that error status and attributes stay consistent.
 
 | Convention | Description | Example |
 | ---------- | ----------- | ------- |
-| Span status | Failed spans mapped through `MapError` set OpenTelemetry status `Error`; the status description is the primary error code. Codes use stable families such as `auth.*`, `ext.*`, `internal.*`, `service.*`, `tool.*`, or `user.*`. | `ext.run.failed`, `service.arm.deployment.failed`, `user.canceled` |
+| Span status | Failed spans mapped through `MapError` set OpenTelemetry status `Error`; the status description is the primary error code. Codes use stable families such as `auth.*`, `ext.*`, `internal.*`, `service.*`, `tool.*`, or `user.*`. Extension cancellation is normalized to `user.canceled`; `ext.run.failed` is reserved for non-cancellation process failures. | `ext.run.failed`, `service.arm.deployment.failed`, `user.canceled` |
 | `error.category` | Broad local error category, used when the error is local rather than returned by an external service. | `auth` |
 | `error.code` | Normalized local or extension error code. | `invalid_payload` |
 | `error.type` | Go error type for unclassified or suggestion-wrapped errors. | `*os.PathError` |

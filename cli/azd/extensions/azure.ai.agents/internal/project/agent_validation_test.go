@@ -5,6 +5,7 @@ package project
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -90,6 +91,63 @@ func TestValidateAgentServiceDefinitionSupportedKinds(t *testing.T) {
 				require.Equal(t, tt.values["name"], got.Name)
 				require.Equal(t, AgentDefinitionSourceInline, got.Source)
 			})
+		}
+	}
+}
+
+func TestValidateAgentServiceDefinitionMemorySnapshot(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"hosted", "prompt", "voice", "prompt-voice"} {
+		for _, source := range []string{"inline", "root-ref", "root-ref-override"} {
+			for _, enabled := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%s/%s/%t", kind, source, enabled), func(t *testing.T) {
+					t.Parallel()
+					root := t.TempDir()
+					values := map[string]any{"kind": kind, "name": "snapshot-agent", "enableMemorySnapshot": enabled}
+					if kind == "prompt" {
+						values["model"] = "gpt-4.1-mini"
+						values["instructions"] = "Help the user."
+					} else if kind == "voice" || kind == "prompt-voice" {
+						values["model"] = map[string]any{"id": "gpt-realtime"}
+					}
+					definitionSource := source
+					if source == "root-ref-override" {
+						definitionSource = "root-ref"
+						values["enableMemorySnapshot"] = !enabled
+					}
+					svc := validationTestService(t, root, definitionSource, values)
+					if source == "root-ref-override" {
+						svc.AdditionalProperties.Fields["enableMemorySnapshot"] = structpb.NewBoolValue(enabled)
+					}
+					for name, validate := range map[string]func() error{
+						"runtime": func() error {
+							_, err := ValidateAgentServiceDefinition(svc, root)
+							return err
+						},
+						"content": func() error {
+							_, err := ValidateAgentServiceDefinitionContent(svc, root)
+							return err
+						},
+						"prompt loader": func() error {
+							_, _, err := PromptAgentFromResolvedService(svc, root)
+							return err
+						},
+						"voice loader": func() error {
+							_, _, err := VoiceAgentFromResolvedService(svc, root)
+							return err
+						},
+					} {
+						t.Run(name, func(t *testing.T) {
+							err := validate()
+							if kind == "hosted" {
+								require.NoError(t, err)
+							} else {
+								require.ErrorContains(t, err, "enableMemorySnapshot is only supported on hosted agents")
+							}
+						})
+					}
+				})
+			}
 		}
 	}
 }

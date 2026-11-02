@@ -1,0 +1,118 @@
+schema_version: 1
+capabilities:
+  - id: 1
+    source_paths: [az cu analyze]
+    target: azd ai cu analyze
+    classification: extension-path
+  - id: 2
+    source_paths: [az cu analyzer list]
+    target: azd ai cu analyzer list
+    classification: extension-path
+  - id: 3
+    source_paths: [az cu analyzer show]
+    target: azd ai cu analyzer show
+    classification: extension-path
+  - id: 4
+    source_paths: [az cu analyzer create]
+    target: azd ai cu analyzer create
+    classification: extension-path
+  - id: 5
+    source_paths: [az cu analyzer copy]
+    target: azd ai cu analyzer copy
+    classification: extension-path
+  - id: 6
+    source_paths: [az cu analyzer delete]
+    target: azd ai cu analyzer delete
+    classification: extension-path
+  - id: 7
+    source_paths: [az cu analyzer validate]
+    target: azd ai cu analyzer validate
+    classification: extension-path
+  - id: 8
+    source_paths: [az cu analyzer test]
+    target: azd ai cu analyzer test
+    classification: extension-path
+  - id: 9
+    source_paths: [az cu analyzer schema create]
+    target: azd ai cu analyzer schema create
+    classification: extension-path
+  - id: 10
+    source_paths: [az cu defaults show]
+    target: azd ai cu defaults show
+    classification: extension-path
+  - id: 11
+    source_paths: [az cu defaults set]
+    target: azd ai cu defaults set
+    classification: extension-path
+  - id: 12
+    source_paths: [az cu profile show]
+    target: azd env get-values plus azd env config get cu
+    classification: environment-mapping
+  - id: 13
+    source_paths: [az cu profile list]
+    target: azd env list
+    classification: environment-mapping
+  - id: 14
+    source_paths: [az cu profile get]
+    target: azd env get-value or azd env config get
+    classification: environment-mapping
+  - id: 15
+    source_paths: [az cu profile set]
+    target: azd env set, azd env set-secret, or azd env config set
+    classification: environment-mapping
+  - id: 16
+    source_paths: [az cu profile unset]
+    target: azd env config unset; environment-value removal requires host support
+    classification: environment-mapping
+  - id: 17
+    source_paths: [az cu profile create]
+    target: azd env new
+    classification: environment-mapping
+  - id: 18
+    source_paths: [az cu profile delete]
+    target: azd env remove
+    classification: environment-mapping
+  - id: 19
+    source_paths: [az cu profile copy]
+    target: optional nonsecret import with secret re-entry
+    classification: environment-mapping
+  - id: 20
+    source_paths: [az cu profile rename]
+    target: optional create, copy, select, and remove workflow
+    classification: environment-mapping
+  - id: 21
+    source_paths: [az cu profile set-active]
+    target: azd env select; per-command selection uses -e/--environment
+    classification: environment-mapping
+  - id: 22
+    source_paths: [az cu profile sync-defaults]
+    target: azd ai cu defaults set --from-environment
+    classification: environment-mapping
+  - id: 23
+    source_paths: [cu profile _has-values]
+    target: generated hooks query environment values and config through the host
+    classification: removed-helper
+  - id: 24
+    source_paths: [az cu env-var list]
+    target: azd ai cu env-var list
+    classification: extension-path
+  - id: 25
+    source_paths: [az cu doctor]
+    target: azd ai cu doctor
+    classification: extension-path
+  - id: 26
+    source_paths: [az cu infra generate]
+    target: azd ai cu infra generate
+    classification: extension-path
+  - id: 27
+    source_paths: [az cu infra _models, cu _infra-models]
+    target: azd ai cu infra _models
+    classification: extension-path
+  - id: 28
+    source_paths: [az cu infra _postprovision-v1, cu _infra-postprovision-v1]
+    target: azd ai cu infra _postprovision-v1
+    classification: extension-path
+  - id: 29
+    source_paths: [cu upgrade]
+    target: azd extension update azure.ai.content-understanding
+    classification: host-owned-update

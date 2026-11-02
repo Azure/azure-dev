@@ -1,11 +1,12 @@
-List evaluations for the current project.
+Command "list" is deprecated, use 'azd ai eval --help' from 'azure.ai.evaluations' instead
+The legacy agent evaluation workflow has been removed. This command only provides migration guidance.
+
+Install the evaluations extension with 'azd extension install azure.ai.evaluations', then use 'azd ai eval --help'. Legacy evaluation configuration and arguments are not automatically converted.
+
+Invocations fail without authentication, service requests, or changes to project or environment files. No arguments are forwarded to the new commands.
 
 Usage
   azd ai agent eval list [flags]
-
-Flags
-      --limit int               : Maximum number of evals to return (default 10)
-  -p, --project-endpoint string : Microsoft Foundry project endpoint URL
 
 Global Flags
   -C, --cwd string         : Sets the current working directory
@@ -16,5 +17,5 @@ Global Flags
   -o, --output string      : The output format (default "default")
 
 Examples
-  List the five most recent evaluations
-    azd ai agent eval list --limit 5
+    azd extension install azure.ai.evaluations
+    azd ai eval --help

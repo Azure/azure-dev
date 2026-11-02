@@ -22,26 +22,83 @@ import (
 	"github.com/google/uuid"
 )
 
-// a2aJSONRPCVersion is the JSON-RPC protocol version A2A rides on.
-const a2aJSONRPCVersion = "2.0"
-
-// a2aSendMethod is the A2A JSON-RPC method for sending a (non-streaming) message.
-// See the A2A protocol spec (https://a2a-protocol.org/latest/specification/).
-const a2aSendMethod = "message/send"
-
-// a2aVersionHeader is the A2A protocol version header (§3.2). Sending it makes
-// the request's protocol version explicit; if the server does not support it,
-// the A2A spec has the agent return VersionNotSupportedError rather than
-// silently applying a compatibility default.
+// a2aVersionHeader selects the public A2A wire dialect, not the Foundry API or
+// agent deployment version. Unsupported dialects produce VersionNotSupportedError.
+// See https://a2a-protocol.org/v1.0.0/specification/#36-versioning.
 const a2aVersionHeader = "A2A-Version"
 
-// a2aProtocolVersion is the A2A protocol version this client speaks. It is a
-// constant tied to the request shape we emit (the v0.3 JSON-RPC message/send
-// envelope in buildA2ARequestBody), not derived from the agent's advertised
-// protocol version: the header must describe the body we actually send. The A2A
-// spec treats an omitted version as a 0.3 compatibility default; we send it
-// explicitly so a Foundry endpoint on a newer contract negotiates deterministically.
-const a2aProtocolVersion = "0.3"
+// a2aJSONRPCVersion identifies the JSON-RPC envelope, not the A2A dialect.
+const a2aJSONRPCVersion = "2.0"
+
+// a2aJSONRPCRequest is the shared envelope around dialect-specific parameters.
+type a2aJSONRPCRequest struct {
+	JSONRPC string `json:"jsonrpc"`
+	ID      string `json:"id"`
+	Method  string `json:"method"`
+	Params  any    `json:"params"`
+}
+
+// a2aTextRequestBuilder constructs one dialect's complete plain-message request.
+// IDs are supplied by the caller so builders are pure and independently testable.
+type a2aTextRequestBuilder func(text, requestID, messageID string) a2aJSONRPCRequest
+
+// a2aRequestBuilderForVersion is the single supported-dialect selection point for
+// request construction and version validation. It never guesses from file input.
+func a2aRequestBuilderForVersion(version string) (a2aTextRequestBuilder, error) {
+	switch version {
+	case "0.3":
+		return buildA2A03TextRequest, nil
+	case "1.0":
+		return buildA2A10TextRequest, nil
+	default:
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("invalid --a2a-version %q: supported versions are 0.3 and 1.0", version),
+			"use --a2a-version 0.3 or --a2a-version 1.0",
+		)
+	}
+}
+
+// validateInvokeA2AVersionFlags validates explicit dialect selection. An empty
+// protocol is unresolved, so route-specific checks must wait for resolution.
+func validateInvokeA2AVersionFlags(flags *invokeFlags, protocol agent_api.AgentProtocol, preview bool) error {
+	if flags.a2aVersion != "" {
+		if err := validateA2AVersion(flags.a2aVersion); err != nil {
+			return err
+		}
+		if protocol != "" && protocol != agent_api.AgentProtocolA2A {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--a2a-version is only supported with the a2a protocol",
+				"omit --a2a-version or select --protocol a2a",
+			)
+		}
+	}
+	if preview && protocol == agent_api.AgentProtocolA2A && flags.inputFile != "" && flags.a2aVersion == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--input-file with the a2a protocol requires an explicit --a2a-version",
+			"pass --a2a-version 0.3 or --a2a-version 1.0 to match the file's request dialect",
+		)
+	}
+	return nil
+}
+
+func validateA2AVersion(version string) error {
+	_, err := a2aRequestBuilderForVersion(version)
+	return err
+}
+
+// resolveA2AVersion fixes the wire version once at invocation entry.
+func resolveA2AVersion(explicit string, preview bool) string {
+	if explicit != "" {
+		return explicit
+	}
+	if preview {
+		return "1.0"
+	}
+	return "0.3"
+}
 
 // buildA2ARequestBody returns the JSON request body for an A2A invoke and a
 // human-readable label describing it.
@@ -49,12 +106,15 @@ const a2aProtocolVersion = "0.3"
 // When the user supplied --input-file, its bytes are forwarded verbatim — the
 // file is assumed to already contain a complete JSON-RPC request (the A2A
 // analogue of the invocations protocol's opaque body pass-through). Otherwise
-// the plain message is wrapped in a JSON-RPC 2.0 `message/send` request whose
-// params carry a single user text Part, per the A2A specification.
-//
-// NOTE: The A2A request envelope is centralized here so it can be adjusted in
-// one place if the Foundry A2A contract differs from the vanilla A2A spec.
-func (a *InvokeAction) buildA2ARequestBody() ([]byte, string, error) {
+// the plain message is wrapped in a JSON-RPC 2.0 request for the selected
+// dialect, with a single user text part and that dialect's execution defaults.
+// This method owns input handling and serialization; each public dialect's
+// complete body is constructed independently by its selected builder.
+func (a *InvokeAction) buildA2ARequestBody(version string) ([]byte, string, error) {
+	buildRequest, err := a2aRequestBuilderForVersion(version)
+	if err != nil {
+		return nil, "", err
+	}
 	body, label, err := a.resolveBody()
 	if err != nil {
 		return nil, "", err
@@ -64,20 +124,7 @@ func (a *InvokeAction) buildA2ARequestBody() ([]byte, string, error) {
 		return body, label, nil
 	}
 
-	request := map[string]any{
-		"jsonrpc": a2aJSONRPCVersion,
-		"id":      uuid.NewString(),
-		"method":  a2aSendMethod,
-		"params": map[string]any{
-			"message": map[string]any{
-				"role":      "user",
-				"messageId": uuid.NewString(),
-				"parts": []map[string]any{
-					{"kind": "text", "text": string(body)},
-				},
-			},
-		},
-	}
+	request := buildRequest(string(body), uuid.NewString(), uuid.NewString())
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to marshal A2A request: %w", err)
@@ -85,10 +132,89 @@ func (a *InvokeAction) buildA2ARequestBody() ([]byte, string, error) {
 	return payload, label, nil
 }
 
-// a2aLocal reports that A2A is not supported for local invocation. A2A is a
-// remote agent-to-agent protocol; a locally running agent (azd ai agent run)
-// does not expose an A2A surface, so we fail fast with actionable guidance
-// rather than guessing a local route.
+// a2a03MessageSendParams is the public A2A 0.3 message/send parameter shape.
+// See https://a2a-protocol.org/v0.3.0/specification/#711-messagesendparams-object.
+type a2a03MessageSendParams struct {
+	Message a2a03Message `json:"message"`
+}
+
+type a2a03Message struct {
+	Kind      string          `json:"kind"`
+	MessageID string          `json:"messageId"`
+	Role      string          `json:"role"`
+	Parts     []a2a03TextPart `json:"parts"`
+}
+
+type a2a03TextPart struct {
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+}
+
+// buildA2A03TextRequest constructs the complete 0.3 body with required message/part
+// discriminators, preserving unspecified execution and output modes. File input
+// never passes through this builder.
+func buildA2A03TextRequest(text, requestID, messageID string) a2aJSONRPCRequest {
+	return a2aJSONRPCRequest{
+		JSONRPC: a2aJSONRPCVersion,
+		ID:      requestID,
+		Method:  "message/send",
+		Params: a2a03MessageSendParams{
+			Message: a2a03Message{
+				Kind:      "message",
+				MessageID: messageID,
+				Role:      "user",
+				Parts:     []a2a03TextPart{{Kind: "text", Text: text}},
+			},
+		},
+	}
+}
+
+// a2a10SendMessageRequest is the public A2A 1.0 SendMessage parameter shape.
+// See https://a2a-protocol.org/v1.0.0/specification/#9-json-rpc-protocol-binding.
+type a2a10SendMessageRequest struct {
+	Message       a2a10Message                  `json:"message"`
+	Configuration a2a10MessageSendConfiguration `json:"configuration"`
+}
+
+type a2a10Message struct {
+	MessageID string          `json:"messageId"`
+	Role      string          `json:"role"`
+	Parts     []a2a10TextPart `json:"parts"`
+}
+
+type a2a10TextPart struct {
+	Text string `json:"text"`
+}
+
+type a2a10MessageSendConfiguration struct {
+	AcceptedOutputModes []string `json:"acceptedOutputModes"`
+	// False explicitly selects 1.0's default synchronous mode.
+	ReturnImmediately bool `json:"returnImmediately"`
+}
+
+// buildA2A10TextRequest constructs the complete 1.0 body independently of 0.3.
+// File input never passes through this builder.
+func buildA2A10TextRequest(text, requestID, messageID string) a2aJSONRPCRequest {
+	return a2aJSONRPCRequest{
+		JSONRPC: a2aJSONRPCVersion,
+		ID:      requestID,
+		Method:  "SendMessage",
+		Params: a2a10SendMessageRequest{
+			Message: a2a10Message{
+				MessageID: messageID,
+				Role:      "ROLE_USER",
+				Parts:     []a2a10TextPart{{Text: text}},
+			},
+			Configuration: a2a10MessageSendConfiguration{
+				AcceptedOutputModes: []string{"text/plain"},
+				ReturnImmediately:   false,
+			},
+		},
+	}
+}
+
+// a2aLocal reports that this CLI does not yet support local A2A invocation.
+// A2A applications can run locally, but azd currently targets Foundry only.
 func (a *InvokeAction) a2aLocal(_ context.Context) error {
 	return exterrors.Validation(
 		exterrors.CodeInvalidParameter,
@@ -102,18 +228,18 @@ func (a *InvokeAction) a2aLocal(_ context.Context) error {
 // A2A-Version header (so the server negotiates deterministically instead of
 // applying an implicit default), the Foundry bearer token, and the remote user
 // identity header. The caller sets Content-Type and any raw-mode headers.
-func applyA2ARequestHeaders(req *http.Request, bearerToken string, identity *userIdentityFlags) {
-	req.Header.Set(a2aVersionHeader, a2aProtocolVersion)
+func applyA2ARequestHeaders(req *http.Request, bearerToken string, identity *userIdentityFlags, version string) {
+	req.Header.Set(a2aVersionHeader, version)
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
 	applyRemoteUserIdentityHeader(req, identity)
 }
 
 // a2aRemote sends the user's message to a deployed Foundry agent using the A2A
 // protocol (POST /agents/{name}/endpoint/protocols/a2a) with a JSON-RPC 2.0
-// message/send request. Memory is bound to the agent session, like the
+// request in the selected dialect. Memory is bound to the agent session, like the
 // invocations protocol.
-func (a *InvokeAction) a2aRemote(ctx context.Context) error {
-	body, bodyLabel, err := a.buildA2ARequestBody()
+func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
+	body, bodyLabel, err := a.buildA2ARequestBody(version)
 	if err != nil {
 		return err
 	}
@@ -124,6 +250,9 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	}
 	if rc.azdClient != nil {
 		defer rc.azdClient.Close()
+	}
+	if err := a.validateA2ATarget(ctx, rc, version); err != nil {
+		return err
 	}
 	a.reportInvokeUsageForRemote(ctx, agent_api.AgentProtocolA2A, rc)
 
@@ -170,7 +299,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	applyA2ARequestHeaders(req, rc.bearerToken, &a.flags.userIdentityFlags)
+	applyA2ARequestHeaders(req, rc.bearerToken, &a.flags.userIdentityFlags, version)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.
@@ -195,7 +324,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel)
 
 	sessionCode := resp.Header.Get("x-adc-response-details")
-	if err := handleA2AResponse(resp, rc.name, raw); err != nil {
+	if err := handleA2AResponse(resp, rc.name, raw, version); err != nil {
 		if !raw && resp.StatusCode >= 400 {
 			a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), sessionCode)
 		}
@@ -215,7 +344,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 // agent error, and the agent's reply text is extracted from the JSON-RPC
 // `result` (a Message or Task) and printed. Non-JSON-RPC bodies fall back to
 // pretty-printed JSON or the raw body.
-func handleA2AResponse(resp *http.Response, agentName string, raw bool) error {
+func handleA2AResponse(resp *http.Response, agentName string, raw bool, version string) error {
 	if raw {
 		if err := writeRawResponse(os.Stdout, resp); err != nil {
 			return err
@@ -250,7 +379,7 @@ func handleA2AResponse(resp *http.Response, agentName string, raw bool) error {
 		return agentErr
 	}
 
-	printA2AResult(respBody, agentName)
+	printA2AResult(respBody, agentName, version)
 	return nil
 }
 
@@ -287,8 +416,8 @@ func a2aErrorFromBody(respBody []byte) error {
 // printA2AResult prints the agent's reply. It extracts the text of the JSON-RPC
 // result (a Message or Task); when no text can be found it pretty-prints the
 // JSON body, falling back to the raw body for non-JSON.
-func printA2AResult(respBody []byte, agentName string) {
-	if text := extractA2AText(respBody); text != "" {
+func printA2AResult(respBody []byte, agentName string, version string) {
+	if text := extractA2AText(respBody, version); text != "" {
 		fmt.Printf("[%s] %s\n", agentName, text)
 		return
 	}
@@ -305,11 +434,13 @@ func printA2AResult(respBody []byte, agentName string) {
 }
 
 // extractA2AText pulls the user-visible reply text out of a JSON-RPC A2A
-// response. The JSON-RPC `result` is either a Message (with `parts`) or a Task
-// (whose `status.message`, `artifacts[].parts`, or `history[]` carry the text).
+// response. In 0.3, `result` is a Message or Task. In 1.0, SendMessage wraps
+// `message` or `task`, while GetTask and CancelTask return a Task directly.
+// Completed Tasks prefer answer artifacts over generic status messages such as "Done".
+// Other Tasks prefer status.message so prompts, progress, and failures remain visible.
 // Returns "" when no text can be found, signaling the caller to fall back to
 // printing the JSON body.
-func extractA2AText(respBody []byte) string {
+func extractA2AText(respBody []byte, version string) string {
 	var envelope struct {
 		Result json.RawMessage `json:"result"`
 	}
@@ -322,21 +453,36 @@ func extractA2AText(respBody []byte) string {
 		return ""
 	}
 
+	if version == "1.0" {
+		if message, ok := result["message"].(map[string]any); ok {
+			return a2aTextFromParts(message["parts"])
+		}
+		if task, ok := result["task"].(map[string]any); ok {
+			result = task
+		} else if _, ok := result["status"].(map[string]any); !ok {
+			// Only task operations return an unwrapped result in 1.0.
+			return ""
+		}
+	}
+
 	// Message result: parts directly on the object.
 	if text := a2aTextFromParts(result["parts"]); text != "" {
 		return text
 	}
 
-	// Task result: status.message.parts.
-	if status, ok := result["status"].(map[string]any); ok {
-		if msg, ok := status["message"].(map[string]any); ok {
-			if text := a2aTextFromParts(msg["parts"]); text != "" {
-				return text
-			}
-		}
+	status, _ := result["status"].(map[string]any)
+	var statusText string
+	if message, ok := status["message"].(map[string]any); ok {
+		statusText = a2aTextFromParts(message["parts"])
+	}
+	state, _ := status["state"].(string)
+	completed := state == "completed" || state == "TASK_STATE_COMPLETED"
+	if !completed && statusText != "" {
+		return statusText
 	}
 
-	// Task result: artifacts[].parts.
+	// Completed Tasks carry answers in artifacts; their status may only say "Done".
+	// Other Tasks also fall back to artifacts when there is no status text.
 	if artifacts, ok := result["artifacts"].([]any); ok {
 		var parts []string
 		for _, art := range artifacts {
@@ -353,6 +499,10 @@ func extractA2AText(respBody []byte) string {
 		}
 	}
 
+	if statusText != "" {
+		return statusText
+	}
+
 	// Task result: last agent message in history[].
 	if history, ok := result["history"].([]any); ok {
 		for i := len(history) - 1; i >= 0; i-- {
@@ -360,7 +510,7 @@ func extractA2AText(respBody []byte) string {
 			if !ok {
 				continue
 			}
-			if role, _ := m["role"].(string); role == "user" {
+			if role, _ := m["role"].(string); role == "user" || role == "ROLE_USER" {
 				continue
 			}
 			if text := a2aTextFromParts(m["parts"]); text != "" {

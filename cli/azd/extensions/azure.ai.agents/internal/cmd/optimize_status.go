@@ -12,7 +12,6 @@ import (
 	"io"
 	"time"
 
-	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -49,6 +48,9 @@ Use --watch to poll until the job completes.`,
   azd ai agent optimize status opt_abc123 --watch`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if flags.pollInterval < 1 {
+				return fmt.Errorf("--poll-interval must be >= 1")
+			}
 			ctx := azdext.WithAccessToken(cmd.Context())
 			flags.envName = extCtx.Environment
 			flags.output = extCtx.OutputFormat
@@ -100,36 +102,42 @@ func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operation
 		return fmt.Errorf("failed to get job status: %w\n\nCheck that the operation ID %q is correct", err, operationID)
 	}
 
-	if flags.output == "json" && !flags.watch {
-		return printOptimizeStatusJSON(out, status)
-	}
-
 	if flags.output != "json" {
+		if err := client.LoadCandidates(cmd.Context(), status); err != nil {
+			return fmt.Errorf("failed to load optimization candidates: %w", err)
+		}
 		printOptimizeJobSummary(out, status)
 	}
 
 	hasProject := isInAzdProject(cmd.Context())
 
 	if flags.watch && !optimize_api.IsTerminal(status.Status) {
-		finalStatus, err := pollOptimizeJob(cmd, client, flags.pollInterval, operationID, flags.envName)
+		finalStatus, err := pollOptimizeJob(cmd, client, flags.pollInterval, operationID, flags.envName, flags.output == "json")
 		if err != nil {
 			return err
 		}
-		if flags.output == "json" {
-			return printOptimizeStatusJSON(out, finalStatus)
+		status = finalStatus
+		if flags.output != "json" {
+			printOptimizeResults(cmd.Context(), out, status, hasProject, flags.envName)
 		}
-		printOptimizeResults(cmd.Context(), out, finalStatus, hasProject, flags.envName)
-	} else if len(status.Candidates()) > 0 {
-		if flags.output == "json" {
-			return printOptimizeStatusJSON(out, status)
-		}
+	} else if flags.output != "json" && len(status.Candidates()) > 0 {
 		printOptimizeResults(cmd.Context(), out, status, hasProject, flags.envName)
 	}
+	if flags.output == "json" {
+		if err := printOptimizeStatusJSON(out, status); err != nil {
+			return err
+		}
+	}
+	return optimizeJobError(status)
+}
 
+func optimizeJobError(status *optimize_api.OptimizeJobStatus) error {
 	if status.Error != nil {
 		return fmt.Errorf("optimization job failed: %s", status.Error.Message)
 	}
-
+	if status.Status == optimize_api.StatusFailed {
+		return fmt.Errorf("optimization job %q failed", status.ID)
+	}
 	return nil
 }
 
@@ -139,8 +147,8 @@ func printOptimizeStatusJSON(out io.Writer, status *optimize_api.OptimizeJobStat
 	if err != nil {
 		return fmt.Errorf("failed to marshal job status to JSON: %w", err)
 	}
-	fmt.Fprintln(out, string(data))
-	return nil
+	_, err = fmt.Fprintln(out, string(data))
+	return err
 }
 
 // printOptimizeJobSummary prints a brief summary of an optimization job's state.
@@ -150,20 +158,22 @@ func printOptimizeJobSummary(out io.Writer, status *optimize_api.OptimizeJobStat
 	if agentName := status.AgentName(); agentName != "" {
 		fmt.Fprintf(out, "  Agent:   %s\n", agentName)
 	}
-	if status.AllTargetAttributesFailed {
-		fmt.Fprintf(out, "  Strategy: %s\n", color.YellowString("failed (baseline only — no candidates generated)"))
-	}
-	if status.Progress != nil {
-		fmt.Fprintf(out, "  Candidates Completed: %d\n", status.Progress.CandidatesCompleted)
-	}
-	if best := status.BestCandidate(); best != nil {
-		fmt.Fprintf(out, "  Best:    %.2f\n", best.AvgScore)
+	if status.Result != nil {
+		if summary := status.Result.CandidateSummary; summary != nil {
+			fmt.Fprintf(out, "  Candidates Completed: %d\n", summary.CompletedCandidateCount)
+			if summary.BestScore != nil {
+				fmt.Fprintf(out, "  Best:    %.2f\n", *summary.BestScore)
+			}
+		}
+		if status.Result.TerminationReason != "" {
+			fmt.Fprintf(out, "  Termination: %s\n", status.Result.TerminationReason)
+		}
 	}
 	if status.CreatedAt != 0 {
-		fmt.Fprintf(out, "  Created: %s\n", eval_api.FormatTimestamp(status.CreatedAt))
+		fmt.Fprintf(out, "  Created: %s\n", formatOptimizeTimestamp(status.CreatedAt))
 	}
 	if status.UpdatedAt != 0 {
-		fmt.Fprintf(out, "  Updated: %s\n", eval_api.FormatTimestamp(status.UpdatedAt))
+		fmt.Fprintf(out, "  Updated: %s\n", formatOptimizeTimestamp(status.UpdatedAt))
 	}
 	if status.CreatedAt != 0 && status.UpdatedAt != 0 && status.UpdatedAt > status.CreatedAt {
 		duration := time.Duration(status.UpdatedAt-status.CreatedAt) * time.Second

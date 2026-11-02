@@ -896,6 +896,62 @@ func TestHostedAgentSchemaSessionIdleTimeoutBoundaries(t *testing.T) {
 	}
 }
 
+func TestHostedAgentSchemaMemorySnapshot(t *testing.T) {
+	t.Parallel()
+	compiler := jsonschema.NewCompiler()
+	const schemaBaseURI = "https://raw.githubusercontent.com/Azure/azure-dev/main/" +
+		"cli/azd/extensions/azure.ai.agents/schemas/"
+	for _, name := range []string{"Agent.json", "FileRef.json", "azure.ai.agent.json"} {
+		raw, err := os.ReadFile(filepath.Join(extensionRoot(t), "schemas", name))
+		require.NoError(t, err)
+		var schema map[string]any
+		require.NoError(t, json.Unmarshal(raw, &schema))
+		require.NoError(t, compiler.AddResource(schemaBaseURI+name, schema))
+	}
+	for _, schemaName := range []string{"Agent.json", "azure.ai.agent.json"} {
+		t.Run(schemaName, func(t *testing.T) {
+			compiled, err := compiler.Compile(schemaBaseURI + schemaName)
+			require.NoError(t, err)
+			for _, test := range []struct {
+				name    string
+				kind    string
+				value   any
+				present bool
+				wantErr bool
+			}{
+				{name: "absent", kind: "hosted"},
+				{name: "enabled", kind: "hosted", value: true, present: true},
+				{name: "disabled", kind: "hosted", value: false, present: true},
+				{name: "string", kind: "hosted", value: "true", present: true, wantErr: true},
+				{name: "number", kind: "hosted", value: 1, present: true, wantErr: true},
+				{name: "null", kind: "hosted", present: true, wantErr: true},
+				{name: "prompt", kind: "prompt", value: true, present: true, wantErr: true},
+				{name: "prompt disabled", kind: "prompt", value: false, present: true, wantErr: true},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					definition := map[string]any{"kind": test.kind, "name": "snapshot-agent"}
+					if test.kind == "prompt" {
+						if schemaName == "azure.ai.agent.json" {
+							definition["model"] = "gpt-4.1-mini"
+						}
+						definition["instructions"] = "Answer briefly."
+					}
+					require.NoError(t, compiled.Validate(definition))
+					if test.present {
+						definition["enableMemorySnapshot"] = test.value
+					}
+					err := compiled.Validate(definition)
+					if test.wantErr {
+						require.Error(t, err)
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestDocSchemaRegistryConnectionID(t *testing.T) {
 	t.Parallel()
 
@@ -958,6 +1014,37 @@ func TestDocSchemaPromptVoiceRejectsToolbox(t *testing.T) {
 		"model":     map[string]any{"id": "gpt-realtime"},
 		"protocols": []any{map[string]any{"protocol": "invocations_ws", "version": "1.0.0"}},
 	}))
+}
+
+func TestDocSchemaVoiceTelephonyAuthoring(t *testing.T) {
+	t.Parallel()
+	schema := loadDocSchema(t, extensionRoot(t))
+	agent := func(identifier string, target map[string]any) map[string]any {
+		binding := map[string]any{"provider": "acs", "identifier": identifier, "connection": "connection"}
+		if target != nil {
+			binding["transferTargets"] = []any{target}
+		}
+		return map[string]any{
+			"kind": "voice", "model": map[string]any{"id": "gpt-realtime"},
+			"telephony": map[string]any{"bindings": []any{binding}},
+		}
+	}
+	validTarget := map[string]any{
+		"name": "teams", "description": "Teams",
+		"destination": map[string]any{"kind": "teams", "value": "28:orgid:00000000-0000-0000-0000-000000000001"},
+	}
+	require.NoError(t, schema.validate(agent("28:orgid:00000000-0000-0000-0000-000000000001", validTarget)))
+	require.Error(t, schema.validate(agent("4:+14255550123", nil)))
+	invalidTeams := map[string]any{
+		"name": "teams", "description": "Teams",
+		"destination": map[string]any{"kind": "teams", "value": "not-a-guid"},
+	}
+	require.Error(t, schema.validate(agent("28:orgid:00000000-0000-0000-0000-000000000001", invalidTeams)))
+	openTarget := map[string]any{
+		"name": "teams", "description": "Teams", "future": true,
+		"destination": map[string]any{"kind": "teams", "value": "00000000-0000-0000-0000-000000000001"},
+	}
+	require.Error(t, schema.validate(agent("28:orgid:00000000-0000-0000-0000-000000000001", openTarget)))
 }
 
 func TestDocSchemaDigitalWorkerPublishFields(t *testing.T) {

@@ -848,7 +848,7 @@ func TestPromptResourceServices(t *testing.T) {
 	t.Run("toolbox reference is only wired when the service exists", func(t *testing.T) {
 		t.Parallel()
 
-		agent := &agent_yaml.PromptAgent{Toolbox: &agent_yaml.ToolboxReference{Name: "my-toolbox"}}
+		agent := &agent_yaml.PromptAgent{Toolboxes: []agent_yaml.ToolboxReference{{Name: "my-toolbox"}}}
 
 		// A dangling uses: entry would fail the project load, so a toolbox with
 		// no service in azure.yaml contributes no edge at all.
@@ -864,18 +864,6 @@ func TestPromptResourceServices(t *testing.T) {
 			},
 		})
 		got, err = promptResourceServices(t.Context(), withToolbox, agent, dir, dir)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"my-toolbox"}, got.ExtraUses)
-
-		// projectConnectionId is an API value, not an azure.yaml service key.
-		agent.Toolbox.ProjectConnectionID = "toolbox-auth"
-		withConnection := newProjectRecorderClient(t, &recordingProjectServer{
-			existing: map[string]*azdext.ServiceConfig{
-				"my-toolbox":   {Name: "my-toolbox", Host: AiToolboxHost},
-				"toolbox-auth": {Name: "toolbox-auth", Host: AiConnectionHost},
-			},
-		})
-		got, err = promptResourceServices(t.Context(), withConnection, agent, dir, dir)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"my-toolbox"}, got.ExtraUses)
 	})

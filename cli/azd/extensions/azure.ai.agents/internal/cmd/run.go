@@ -130,6 +130,8 @@ Playground for activity agents. Use --no-client to skip this.`,
 	cmd.Flags().StringVar(&flags.channel, "channel", defaultPlaygroundChannel,
 		"Channel for the Microsoft 365 Agents Playground (activity-protocol agents only)")
 
+	gateAgentServices(cmd)
+
 	return cmd
 }
 

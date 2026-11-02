@@ -88,10 +88,10 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 		}
 	}
 
-	runResult, err := r.commandRunner.Run(ctx, runArgs)
-	if err != nil {
+	runResult, runErr := r.commandRunner.Run(ctx, runArgs)
+	if runErr != nil {
 		return &runResult, &ExtensionRunError{
-			Err:              err,
+			Err:              runErr,
 			ExtensionId:      extension.Id,
 			ExtensionVersion: extension.Version,
 		}

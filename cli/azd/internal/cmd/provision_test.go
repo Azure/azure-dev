@@ -5,9 +5,12 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -15,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -23,7 +27,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktools"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -134,6 +141,9 @@ func TestProvisionAction_ProvisionValidationCanceled(t *testing.T) {
 			Provider: provisioning.Test,
 			Path:     "infra",
 			Module:   "main",
+			Hooks: map[string][]*ext.HookConfig{
+				"postprovision": {{Shell: "sh", Run: "echo postprovision", Interactive: true}},
+			},
 		},
 	}
 	connection := &project.ServiceConfig{
@@ -151,6 +161,27 @@ func TestProvisionAction_ProvisionValidationCanceled(t *testing.T) {
 	projectConfig.EventDispatcher = ext.NewEventDispatcher[project.ProjectLifecycleEventArgs](
 		project.ProjectEvents...,
 	)
+	preHandlerCalled, postHandlerCalled, postHookCalled := false, false, false
+	require.NoError(t, projectConfig.AddHandler(t.Context(), "preprovision",
+		func(context.Context, project.ProjectLifecycleEventArgs) error {
+			preHandlerCalled = true
+			return nil
+		}))
+	require.NoError(t, projectConfig.AddHandler(t.Context(), "postprovision",
+		func(context.Context, project.ProjectLifecycleEventArgs) error {
+			postHandlerCalled = true
+			return nil
+		}))
+	mockContext := mocks.NewMockContext(t.Context())
+	mocktools.RegisterHookExecutors(mockContext)
+	mockContext.CommandRunner.When(func(_ exec.RunArgs, command string) bool {
+		return strings.Contains(command, "azd-postprovision-")
+	}).RespondFn(func(exec.RunArgs) (exec.RunResult, error) {
+		postHookCalled = true
+		return exec.NewRunResult(0, "", ""), nil
+	})
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Reload", mock.Anything, env).Return(nil)
 
 	action := &ProvisionAction{
 		flags: &ProvisionFlags{
@@ -162,14 +193,16 @@ func TestProvisionAction_ProvisionValidationCanceled(t *testing.T) {
 		importManager:       project.NewImportManager(nil),
 		projectConfig:       projectConfig,
 		env:                 env,
+		envManager:          envManager,
 		console:             console,
+		commandRunner:       mockContext.CommandRunner,
+		serviceLocator:      mockContext.Container,
 		formatter:           &output.NoneFormatter{},
 		writer:              io.Discard,
 		alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 		portalUrlBase:       "https://portal.azure.com",
 	}
 
-	mockContext := mocks.NewMockContext(t.Context())
 	result, err := action.Run(*mockContext.Context)
 
 	// Must return ErrAbortedByUser (not nil, not a panic)
@@ -178,4 +211,59 @@ func TestProvisionAction_ProvisionValidationCanceled(t *testing.T) {
 
 	// Verify project manager was called (action didn't exit prematurely)
 	require.Empty(t, serviceManager.initializedServices)
+	require.True(t, preHandlerCalled)
+	require.False(t, postHandlerCalled)
+	require.False(t, postHookCalled)
+}
+
+func TestWrapProvisionError_NoPromptValidationFailure(t *testing.T) {
+	t.Parallel()
+	validationErr := &internal.ErrorWithSuggestion{
+		Err:        internal.ErrValidationFailed,
+		Message:    "Provisioning was canceled because critical warnings require interactive confirmation.",
+		Suggestion: "Resolve the critical warnings, or rerun without --no-prompt.",
+	}
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "failure only", err: validationErr},
+		{name: "failure then cancellation", err: errors.Join(validationErr, errValidationCanceledByUser)},
+		{name: "cancellation then failure", err: errors.Join(errValidationCanceledByUser, validationErr)},
+		{
+			name: "wrapped joined failures",
+			err:  fmt.Errorf("layer failed: %w", errors.Join(errValidationCanceledByUser, validationErr)),
+		},
+		{
+			name: "provider agnostic cancellation",
+			err:  errors.Join(provisioning.ErrProvisionValidationCanceled, validationErr),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			console := mockinput.NewMockConsole()
+			err := wrapProvisionError(t.Context(), tt.err, provisionErrorDeps{console: console})
+			require.ErrorIs(t, err, internal.ErrValidationFailed)
+			require.NotErrorIs(t, err, internal.ErrAbortedByUser)
+			code, _ := classify(err)
+			require.Equal(t, "error.suggestion", code)
+			require.NotContains(t, strings.Join(console.Output(), "\n"), "SUCCESS:")
+		})
+	}
+}
+
+func TestWrapProvisionError_CancellationOnly(t *testing.T) {
+	t.Parallel()
+	for _, cancellation := range []error{
+		errValidationCanceledByUser,
+		provisioning.ErrProvisionValidationCanceled,
+		fmt.Errorf("layer canceled: %w", errValidationCanceledByUser),
+		errors.Join(errValidationCanceledByUser, provisioning.ErrProvisionValidationCanceled),
+	} {
+		console := mockinput.NewMockConsole()
+		err := wrapProvisionError(t.Context(), cancellation, provisionErrorDeps{console: console})
+		require.ErrorIs(t, err, internal.ErrAbortedByUser)
+		require.Contains(t, strings.Join(console.Output(), "\n"), "SUCCESS: Provisioning was canceled.")
+	}
 }

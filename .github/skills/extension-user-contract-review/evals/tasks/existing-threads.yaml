@@ -1,0 +1,27 @@
+id: existing-threads
+name: Resolved and unanswered findings are not reported twice
+tags: [negative, deduplication]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Export options".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/export.go.
+    Complete before behavior: export has no --format or --overwrite flags.
+    Complete after behavior: both flags work correctly, validate before mutations, and preserve defaults.
+    Tests and docs match. Added RIGHT lines:
+    42: cmd.Flags().StringVar(&format, "format", "table", "Export format")
+    43: cmd.Flags().BoolVar(&overwrite, "overwrite", false, "Replace an existing file")
+    Complete conversation and review history contains exactly these two threads:
+    Thread A: line 42, marker <!-- extension-user-contract-changes-reviewer -->, finding --format added.
+    The PR author replied "Approved experiences spec: https://github.com/example/experiences/pull/12".
+    Thread A is resolved.
+    Thread B: line 43, legacy marker <!-- user-contract-changes-reviewer -->, finding --overwrite added.
+    Thread B is unanswered and unresolved.
+    Neither contract has changed since those comments. No other comments or specs exist.
+graders:
+  - type: code
+    name: no-duplicate-threads
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 0"
+        - "/complete.*1 files? inspected; 0 new contract comments; 2 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"

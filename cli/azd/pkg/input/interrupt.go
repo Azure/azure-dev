@@ -40,20 +40,16 @@ func PushInterruptHandler(h InterruptHandler) func() {
 	idx := len(interruptStack) - 1
 	interruptMu.Unlock()
 
+	var popOnce sync.Once
 	return func() {
-		interruptMu.Lock()
-		defer interruptMu.Unlock()
-		// Only pop this handler if it is still the current top-of-stack
-		// entry. This enforces strict LIFO semantics and avoids accidentally
-		// removing unrelated newer handlers if pop functions are called out
-		// of order.
-		if len(interruptStack) == idx+1 {
-			// Clear the slot first so the GC can reclaim the popped handler
-			// (and anything it captured) even if the underlying array isn't
-			// reallocated for a while.
-			interruptStack[idx] = nil
-			interruptStack = interruptStack[:idx]
-		}
+		popOnce.Do(func() {
+			interruptMu.Lock()
+			defer interruptMu.Unlock()
+			if idx < len(interruptStack) && interruptStack[idx] != nil {
+				interruptStack[idx] = nil
+				trimPoppedInterruptHandlers()
+			}
+		})
 	}
 }
 
@@ -62,10 +58,17 @@ func PushInterruptHandler(h InterruptHandler) func() {
 func currentInterruptHandler() InterruptHandler {
 	interruptMu.Lock()
 	defer interruptMu.Unlock()
+	trimPoppedInterruptHandlers()
 	if len(interruptStack) == 0 {
 		return nil
 	}
 	return interruptStack[len(interruptStack)-1]
+}
+
+func trimPoppedInterruptHandlers() {
+	for len(interruptStack) > 0 && interruptStack[len(interruptStack)-1] == nil {
+		interruptStack = interruptStack[:len(interruptStack)-1]
+	}
 }
 
 // tryStartInterruptHandler returns true if no handler is currently running.
@@ -113,7 +116,11 @@ func incrementForceExitCounter() bool {
 func SnapshotInterruptStack() []InterruptHandler {
 	interruptMu.Lock()
 	defer interruptMu.Unlock()
-	out := make([]InterruptHandler, len(interruptStack))
-	copy(out, interruptStack)
+	out := make([]InterruptHandler, 0, len(interruptStack))
+	for _, handler := range interruptStack {
+		if handler != nil {
+			out = append(out, handler)
+		}
+	}
 	return out
 }

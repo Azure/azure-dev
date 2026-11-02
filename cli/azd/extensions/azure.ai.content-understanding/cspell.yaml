@@ -1,0 +1,52 @@
+import: ../../.vscode/cspell.yaml
+words:
+  - contentunderstanding
+  - noninteractive
+overrides:
+  - filename: "internal/**/*.go"
+    words:
+      - exterrors
+      - cuclient
+      - analyzercopy
+      - armclient
+      - armcognitiveservices
+      - contentunderstanding
+      - fnmatch
+      - localio
+      - renderable
+      - projectless
+  - filename: "README.md"
+    words:
+      - projectless
+  - filename: "cu-rest-client/polling.go"
+    words:
+      - notstarted
+  - filename: "internal/schema/author.go"
+    words:
+      - epub
+  - filename: "internal/localio/guard_linux.go"
+    words:
+      - Btrfs
+      - tmpfs
+      - overlayfs
+  - filename: "internal/localio/guard_darwin.go"
+    words:
+      - Fstypename
+      - Attrlist
+      - Bitmapcount
+      - Commonattr
+  - filename: "internal/localio/guard_windows*.go"
+    words:
+      - OICI
+  - filename: "internal/exterrors/redact.go"
+    words:
+      - accountkey
+  - filename: "internal/infra/templates.go"
+    words:
+      - australiaeast
+      - japaneast
+      - northeurope
+      - southcentralus
+      - southeastasia
+      - uksouth
+      - westeurope

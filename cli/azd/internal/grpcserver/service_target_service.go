@@ -10,6 +10,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/internal/grpcserver/legacybridge"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -19,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -55,6 +57,15 @@ func (s *ServiceTargetService) Stream(stream azdext.ServiceTargetService_StreamS
 	extension, err := s.serviceTargetExtension(ctx)
 	if err != nil {
 		return err
+	}
+
+	first, err := stream.Recv()
+	stream = &replayServiceTargetStream{ServiceTargetService_StreamServer: stream, first: first, firstErr: err}
+	if err == nil && first.GetRegisterServiceTargetRequest().GetSupportsPreview() {
+		if method, _ := grpc.Method(ctx); legacybridge.IsLegacyMethod(method) {
+			return status.Error(codes.Unimplemented, "deployment preview requires the v1 or v1beta service target route")
+		}
+		return s.previewStream(stream, extension)
 	}
 
 	// Create message broker for this stream

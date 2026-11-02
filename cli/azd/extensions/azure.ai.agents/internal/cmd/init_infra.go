@@ -18,6 +18,7 @@ import (
 	"text/template"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	projectPaths "azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
@@ -460,7 +461,6 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 	if provider == "" {
 		return nil
 	}
-
 	projectRoot, err := azdext.GetProjectDir()
 	if errors.Is(err, azdext.ErrProjectNotFound) {
 		return nil
@@ -484,6 +484,7 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 			return err
 		}
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.InfraGeneration)()
 	return ejectInfra(projectRoot, provider, env)
 }
 
@@ -573,6 +574,13 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 			"check the endpoint, deployments, and network fields under your azure.ai.project service",
 		)
 	}
+	deployments, present, err := project.DecodeProjectDeploymentsEnv(environment[projectDeploymentsEnvKey])
+	if err != nil {
+		return err
+	}
+	if present {
+		res.Parameters["deployments"] = deployments
+	}
 	acrMode := infraEjectAcrNone
 	if existingProject {
 		values := environment
@@ -593,6 +601,13 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		}
 	}
 	if provider == project.TerraformProviderName {
+		if res.Hosting != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"BYO AKS requires the microsoft.foundry provisioning provider",
+				"use embedded provisioning or Bicep eject to create the default AKS supporting resources and grants",
+			)
+		}
 		// Private networking is Bicep-only today: the Terraform module has no
 		// VNet / private-endpoint / DNS / networkInjections resources, so ejecting
 		// it for a network: service would silently drop the config and provision a
@@ -1192,6 +1207,12 @@ func writeExistingProjectBicepTemplates(
 			relPath: filepath.ToSlash(filepath.Join(artifactRoot, "modules/container-registry.bicep")),
 			bytes:   registry.Len(),
 		})
+		if acrMode == infraEjectAcrReuseConnect {
+			files = append(files, struct {
+				source string
+				target string
+			}{"templates/modules/acr-pull-role-assignment.bicep", "modules/acr-pull-role-assignment.bicep"})
+		}
 	}
 	for _, file := range files {
 		data, err := fs.ReadFile(synthesis.TemplatesFS(), file.source)

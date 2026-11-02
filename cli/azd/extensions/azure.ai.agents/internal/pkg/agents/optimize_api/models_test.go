@@ -5,336 +5,144 @@ package optimize_api
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+func testGARequest() *OptimizeRequest {
+	return &OptimizeRequest{
+		TargetConfiguration:            &AgentIdentifier{Type: "foundry_agent", Name: "agent", Version: "7"},
+		OptimizationModelConfiguration: ModelConfiguration{Model: "optimizer"},
+		OptimizationConfiguration: OptimizationConfiguration{
+			Type: "agent_optimization", Goal: "improve_quality",
+			EvaluationConfiguration: &EvaluationConfiguration{
+				TrainingSet: SetInput{
+					Type: "target_completion",
+					Source: Dataset{
+						Type: DatasetTypeInline,
+						TestCases: []json.RawMessage{
+							json.RawMessage(`{"query":"Hi","ground_truth":"Hello"}`),
+						},
+					},
+				},
+				Evaluators:      []EvaluatorRef{{Name: "builtin.task_adherence"}},
+				EvaluationModel: EvaluationModelConfiguration{Model: "judge"},
+			},
+			CandidateSearchConfiguration: &CandidateSearchConfiguration{MaxCandidates: new(5)},
+			BaselineAgentConfiguration:   &BaselineAgentConfiguration{SystemPrompt: "Help.", CurrentModel: "baseline-model"},
+			AgentOptimizationSpace:       &OptimizationSpace{TargetAttributes: []string{"instructions"}},
+		},
+	}
+}
+
 func TestOptimizeRequest_RoundTrip(t *testing.T) {
 	t.Parallel()
-
-	original := OptimizeRequest{
-		Agent: AgentIdentifier{
-			AgentName:    "my-agent",
-			AgentVersion: "1",
-		},
-		TrainDataset: &Dataset{
-			Type: DatasetTypeInline,
-			Items: []json.RawMessage{
-				json.RawMessage(`{"query":"What is 2+2?","ground_truth":"4"}`),
-			},
-		},
-		Evaluators: []EvaluatorRef{
-			{Name: "coherence"},
-			{Name: "relevance", Version: "1"},
-		},
-		Options: OptimizeOptions{
-			MaxCandidates:          new(5),
-			EvalModel:              "gpt-4o-mini",
-			OptimizationModel:      "gpt-4o",
-			MaxStalls:              new(3),
-			MaxConcurrentAgentRuns: new(8),
-		},
-	}
-
-	data, err := json.Marshal(original)
-	require.NoError(t, err, "marshal should succeed")
-
-	s := string(data)
-	// Verify snake_case JSON tags
-	for _, field := range []string{
-		`"agent"`, `"agent_name"`, `"agent_version"`,
-		`"train_dataset"`, `"type"`, `"items"`, `"evaluators"`,
-		`"options"`, `"eval_model"`, `"max_candidates"`,
-		`"optimization_model"`, `"max_stalls"`, `"max_concurrent_agent_runs"`,
-		`"ground_truth"`,
-	} {
-		assert.True(t, strings.Contains(s, field), "JSON should contain %s", field)
-	}
-
-	var got OptimizeRequest
-	require.NoError(t, json.Unmarshal(data, &got), "unmarshal should succeed")
-
-	assert.Equal(t, original.Agent.AgentName, got.Agent.AgentName)
-	require.NotNil(t, got.TrainDataset)
-	assert.Equal(t, DatasetTypeInline, got.TrainDataset.Type)
-	assert.Len(t, got.TrainDataset.Items, 1)
-	assert.Contains(t, string(got.TrainDataset.Items[0]), `"ground_truth"`)
-	require.Len(t, got.Evaluators, 2)
-	assert.Equal(t, "relevance", got.Evaluators[1].Name)
-	assert.Equal(t, "1", got.Evaluators[1].Version)
-	assert.Equal(t, "gpt-4o-mini", got.Options.EvalModel)
-	require.NotNil(t, got.Options.MaxStalls)
-	assert.Equal(t, 3, *got.Options.MaxStalls)
-	require.NotNil(t, got.Options.MaxConcurrentAgentRuns)
-	assert.Equal(t, 8, *got.Options.MaxConcurrentAgentRuns)
-}
-
-func TestOptimizeJobStatus_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	original := OptimizeJobStatus{
-		ID:        "op-123",
-		Status:    StatusSucceeded,
-		CreatedAt: 1781036157,
-		UpdatedAt: 1781037526,
-		Inputs: &OptimizeRequest{
-			Agent: AgentIdentifier{AgentName: "agent-1", AgentVersion: "1"},
-			Options: OptimizeOptions{
-				EvalModel:     "gpt-4o",
-				MaxCandidates: new(5),
-			},
-			TrainDataset: &Dataset{Type: DatasetTypeReference, Name: "ds", Version: "2.0"},
-			Evaluators:   []EvaluatorRef{{Name: "task_adherence"}},
-		},
-		Result: &OptimizeResult{
-			Baseline: "cand-1",
-			Best:     "cand-1",
-			Candidates: []CandidateResult{
-				{
-					Name:        "baseline",
-					AvgScore:    0.87,
-					AvgTokens:   0.0,
-					CandidateID: "cand-1",
-					EvalID:      "eval-1",
-					EvalRunID:   "evalrun-1",
-				},
-			},
-		},
-		Warnings: []string{"baseline only"},
-	}
-
-	data, err := json.Marshal(original)
-	require.NoError(t, err, "marshal should succeed")
-
-	s := string(data)
-	for _, field := range []string{
-		`"id"`, `"status"`, `"created_at"`, `"updated_at"`,
-		`"inputs"`, `"agent"`, `"options"`, `"train_dataset"`, `"evaluators"`,
-		`"result"`, `"baseline"`, `"best"`, `"candidates"`, `"candidate_id"`,
-		`"avg_score"`, `"avg_tokens"`,
-		`"eval_id"`, `"eval_run_id"`, `"warnings"`,
-	} {
-		assert.True(t, strings.Contains(s, field), "JSON should contain %s", field)
-	}
-
-	var got OptimizeJobStatus
-	require.NoError(t, json.Unmarshal(data, &got), "unmarshal should succeed")
-
-	assert.Equal(t, "op-123", got.ID)
-	assert.Equal(t, StatusSucceeded, got.Status)
-	assert.Equal(t, int64(1781036157), got.CreatedAt)
-	assert.Equal(t, "agent-1", got.AgentName())
-	require.NotNil(t, got.Result)
-	assert.Len(t, got.Candidates(), 1)
-	// Baseline and Best are candidate IDs resolved against the candidate list.
-	require.NotNil(t, got.BestCandidate())
-	assert.InDelta(t, 0.87, got.BestCandidate().AvgScore, 0.001)
-	require.NotNil(t, got.BaselineCandidate())
-	assert.Equal(t, "cand-1", got.BaselineCandidate().CandidateID)
-}
-
-func TestOptimizeJobStatus_ErrorField(t *testing.T) {
-	t.Parallel()
-
-	original := OptimizeJobStatus{
-		ID:     "op-err",
-		Status: StatusFailed,
-		Error: &JobError{
-			Code:    "InternalError",
-			Message: "something went wrong",
-		},
-	}
-
-	data, err := json.Marshal(original)
+	request := testGARequest()
+	data, err := json.Marshal(request)
 	require.NoError(t, err)
+	var actual OptimizeRequest
+	require.NoError(t, json.Unmarshal(data, &actual))
+	assert.Equal(t, *request, actual)
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &fields))
+	require.Len(t, fields, 3)
+	assert.Contains(t, fields, "target_configuration")
+	assert.Contains(t, fields, "optimization_model_configuration")
+	assert.Contains(t, fields, "optimization_configuration")
+	assert.NotContains(t, fields, "inputs")
+	assert.NotContains(t, fields, "agent")
+	assert.NotContains(t, string(data), `"train_dataset"`)
+	assert.NotContains(t, string(data), `"optimization_config"`)
+	assert.Contains(t, string(data), `"test_cases"`)
+}
 
-	var got OptimizeJobStatus
-	require.NoError(t, json.Unmarshal(data, &got))
+func TestOptimizationSpaceOptionalAttributes(t *testing.T) {
+	t.Parallel()
+	for _, input := range []string{
+		`{}`,
+		`{"model_search_space":["alternative"]}`,
+		`{"target_attributes":[]}`,
+		`{"target_attributes":["instructions"]}`,
+	} {
+		t.Run(input, func(t *testing.T) {
+			t.Parallel()
+			var space OptimizationSpace
+			require.NoError(t, json.Unmarshal([]byte(input), &space))
+			data, err := json.Marshal(space)
+			require.NoError(t, err)
+			assert.JSONEq(t, input, string(data))
+		})
+	}
+}
 
-	assert.Equal(t, StatusFailed, got.Status)
-	require.NotNil(t, got.Error)
-	assert.Equal(t, "InternalError", got.Error.Code)
-	assert.Equal(t, "something went wrong", got.Error.Message)
+func TestOptimizeJobStatus_GAResponse(t *testing.T) {
+	t.Parallel()
+	body := `{
+		"id":"job-1","status":"succeeded",
+		"target_configuration":{"type":"foundry_agent","name":"agent","version":"7"},
+		"optimization_model_configuration":{"model":"optimizer"},
+		"optimization_configuration":{"type":"agent_optimization"},
+		"result":{"candidate_summary":{"baseline_id":"base","best_id":"best","completed_candidate_count":1,
+			"baseline_score":0.4,"best_score":0.9},"token_usage":[],"latency_metrics":[],
+			"termination_reason":"max_candidates"},
+		"run_duration_ms":12500,"created_at":100,"updated_at":113
+	}`
+	var job OptimizeJobStatus
+	require.NoError(t, json.Unmarshal([]byte(body), &job))
+	assert.Equal(t, "agent", job.AgentName())
+	require.NotNil(t, job.Result.CandidateSummary)
+	assert.Equal(t, "best", job.Result.CandidateSummary.BestID)
+	assert.Equal(t, int64(12500), job.RunDurationMS)
+	assert.Empty(t, job.Candidates(), "GA jobs do not embed candidates")
+	job.CandidateResults = []CandidateResult{
+		{CandidateID: "base", Name: "baseline"},
+		{CandidateID: "best", Name: "improved", Evaluation: &CandidateEvaluation{Score: new(0.9)}},
+	}
+	require.NotNil(t, job.BestCandidate())
+	assert.Equal(t, new(0.9), job.BestCandidate().Score())
+	assert.Equal(t, "base", job.BaselineCandidate().CandidateID)
+	data, err := json.Marshal(job)
+	require.NoError(t, err)
+	assert.JSONEq(t, body, string(data))
 }
 
 func TestIsTerminal(t *testing.T) {
 	t.Parallel()
-
-	assert.True(t, IsTerminal(StatusCompleted))
-	assert.True(t, IsTerminal(StatusFailed))
-	assert.True(t, IsTerminal(StatusCancelled))
-	assert.False(t, IsTerminal(StatusRunning))
-	assert.False(t, IsTerminal(StatusQueued))
-	assert.False(t, IsTerminal("unknown"))
-}
-
-func TestOptimizeListResponse_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	original := OptimizeListResponse{
-		Data: []OptimizeJobStatus{
-			{ID: "op-1", Status: StatusCompleted},
-			{ID: "op-2", Status: StatusRunning},
-		},
-		FirstID: "op-1",
-		LastID:  "op-2",
-		HasMore: true,
+	for _, status := range []string{StatusSucceeded, StatusFailed, StatusCancelled, StatusSkipped} {
+		assert.True(t, IsTerminal(status), status)
 	}
-
-	data, err := json.Marshal(original)
-	require.NoError(t, err)
-
-	var got OptimizeListResponse
-	require.NoError(t, json.Unmarshal(data, &got))
-
-	assert.Len(t, got.Data, 2)
-	assert.Equal(t, "op-1", got.FirstID)
-	assert.Equal(t, "op-2", got.LastID)
-	assert.True(t, got.HasMore)
-}
-
-// TestAgentName_ListShape verifies the list endpoint's top-level "agent" field
-// is parsed (jobs there are not wrapped in an "inputs" envelope).
-func TestAgentName_ListShape(t *testing.T) {
-	t.Parallel()
-
-	body := `{"id":"opt_1","status":"succeeded","agent":{"agent_name":"optimization-demo-v6","agent_version":"56"}}`
-	var got OptimizeJobStatus
-	require.NoError(t, json.Unmarshal([]byte(body), &got))
-
-	assert.Equal(t, "optimization-demo-v6", got.AgentName())
-}
-
-// TestAgentName_InputsTakesPrecedence verifies inputs.agent wins over the
-// top-level agent when both are present.
-func TestAgentName_InputsTakesPrecedence(t *testing.T) {
-	t.Parallel()
-
-	s := OptimizeJobStatus{
-		Inputs: &OptimizeRequest{Agent: AgentIdentifier{AgentName: "from-inputs"}},
-		Agent:  &AgentIdentifier{AgentName: "from-top-level"},
+	for _, status := range []string{StatusQueued, StatusInProgress, "pending", "running", "completed", "unknown"} {
+		assert.False(t, IsTerminal(status), status)
 	}
-	assert.Equal(t, "from-inputs", s.AgentName())
 }
 
-// ---- DeploymentReport serialization ----
+func TestCandidateResult_GAOutput(t *testing.T) {
+	t.Parallel()
+	var candidate CandidateResult
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"candidate_id":"c1","job_id":"j1","name":"candidate","status":"completed","started_at":100,
+		"output":{"type":"agent_optimization","mutations":[
+			{"type":"skills","value":[{"name":"help","description":"Help","body":"Be helpful"}]},
+			{"type":"instructions","value":"Be precise"}]},
+		"evaluation":{"score":0.92,"avg_tokens":150,"eval_id":"eval1","eval_run_id":"run1"},
+		"files":[{"path":"config.json","type":"config","size_in_bytes":123}]
+	}`), &candidate))
+	assert.Equal(t, []string{"instructions", "skills"}, candidate.MutationKeys())
+	assert.Equal(t, new(0.92), candidate.Score())
+	assert.Equal(t, "eval1", candidate.Evaluation.EvalID)
+	var skills []SkillDefinition
+	require.NoError(t, json.Unmarshal(candidate.Output.Mutations[0].Value, &skills))
+	assert.Equal(t, "help", skills[0].Name)
+	assert.Equal(t, int64(123), candidate.Files[0].SizeInBytes)
+	assert.Nil(t, (&CandidateResult{}).Score())
+	assert.Nil(t, (&CandidateResult{}).MutationKeys())
+}
 
 func TestDeploymentReport_JSON_ExcludesCandidateID(t *testing.T) {
 	t.Parallel()
-
-	report := DeploymentReport{
-		CandidateID:  "cand_abc123",
-		AgentName:    "my-agent",
-		AgentVersion: "3",
-	}
-
-	data, err := json.Marshal(report)
+	data, err := json.Marshal(DeploymentReport{CandidateID: "c1", AgentName: "agent", AgentVersion: "7"})
 	require.NoError(t, err)
-
-	// CandidateID has json:"-", so it must not appear in the body.
-	assert.NotContains(t, string(data), "candidate_id")
-	assert.NotContains(t, string(data), "cand_abc123")
-
-	// agent_name and agent_version must be present.
-	assert.Contains(t, string(data), `"agent_name":"my-agent"`)
-	assert.Contains(t, string(data), `"agent_version":"3"`)
-}
-
-func TestDeploymentReport_JSON_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	body := `{"agent_name":"test-agent","agent_version":"5"}`
-	var report DeploymentReport
-	require.NoError(t, json.Unmarshal([]byte(body), &report))
-
-	assert.Equal(t, "test-agent", report.AgentName)
-	assert.Equal(t, "5", report.AgentVersion)
-	assert.Empty(t, report.CandidateID, "CandidateID should not be populated from JSON")
-}
-
-// ---- CandidateResult.Mutations ----
-
-// TestCandidateResult_MutationsArrayValues verifies that mutations with array
-// values (as returned by newer server versions) unmarshal correctly.
-func TestCandidateResult_MutationsArrayValues(t *testing.T) {
-	t.Parallel()
-
-	body := `{
-		"name": "candidate_1",
-		"avg_score": 0.92,
-		"avg_tokens": 150,
-		"candidate_id": "cand_abc",
-		"mutations": {
-			"skills": [
-				{
-					"name": "handle-return",
-					"description": "Handle product returns and refunds.",
-					"body": "You are a customer support assistant."
-				}
-			],
-			"system_prompt": ["Updated prompt line 1", "Updated prompt line 2"]
-		}
-	}`
-
-	var got CandidateResult
-	require.NoError(t, json.Unmarshal([]byte(body), &got))
-
-	assert.Equal(t, "candidate_1", got.Name)
-	assert.InDelta(t, 0.92, got.AvgScore, 0.001)
-	assert.Equal(t, "cand_abc", got.CandidateID)
-	require.Len(t, got.Mutations, 2)
-
-	// skills is an array of objects
-	skills, ok := got.Mutations["skills"]
-	require.True(t, ok, "skills key should exist")
-	skillSlice, ok := skills.([]any)
-	require.True(t, ok, "skills should be a slice")
-	require.Len(t, skillSlice, 1)
-
-	// system_prompt is an array of strings
-	sp, ok := got.Mutations["system_prompt"]
-	require.True(t, ok, "system_prompt key should exist")
-	spSlice, ok := sp.([]any)
-	require.True(t, ok, "system_prompt should be a slice")
-	assert.Len(t, spSlice, 2)
-
-	// MutationKeys still works
-	assert.Equal(t, []string{"skills", "system_prompt"}, got.MutationKeys())
-}
-
-// TestCandidateResult_MutationsStringValues verifies backward compatibility
-// with the old server format where mutation values are plain strings.
-func TestCandidateResult_MutationsStringValues(t *testing.T) {
-	t.Parallel()
-
-	body := `{
-		"name": "candidate_2",
-		"avg_score": 0.85,
-		"mutations": {
-			"system_prompt": "new prompt text",
-			"skill_policy-reviewer": "updated instructions"
-		}
-	}`
-
-	var got CandidateResult
-	require.NoError(t, json.Unmarshal([]byte(body), &got))
-
-	assert.Equal(t, "new prompt text", got.Mutations["system_prompt"])
-	assert.Equal(t, "updated instructions", got.Mutations["skill_policy-reviewer"])
-	assert.Equal(t, []string{"skill_policy-reviewer", "system_prompt"}, got.MutationKeys())
-}
-
-// TestCandidateResult_MutationsEmpty verifies MutationKeys returns nil for
-// empty or absent mutations.
-func TestCandidateResult_MutationsEmpty(t *testing.T) {
-	t.Parallel()
-
-	var got CandidateResult
-	require.NoError(t, json.Unmarshal([]byte(`{"name":"baseline","avg_score":0.8}`), &got))
-
-	assert.Nil(t, got.Mutations)
-	assert.Nil(t, got.MutationKeys())
+	assert.JSONEq(t, `{"agent_name":"agent","agent_version":"7"}`, string(data))
 }

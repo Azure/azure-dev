@@ -1,0 +1,674 @@
+{
+  "source": "cu_cli_core.schema and operations.schema at 25d39b30116a840491b7b6f393d6db792b38d4a4",
+  "templates": {
+    "extraction": {
+      "apiVersion": "2025-11-01",
+      "analyzerId": "invoice_v1",
+      "description": "TODO: one-sentence description of what this document analyzer extracts.",
+      "baseAnalyzerId": "prebuilt-document",
+      "fieldSchema": {
+        "name": "invoice_v1_schema",
+        "description": "TODO: one-sentence summary of the extraction.",
+        "fields": {
+          "example_string_field": {
+            "type": "string",
+            "method": "extract",
+            "description": "TODO: replace this field. Describe specifically what to extract, where it appears in the document, and any formatting expectations. Example: 'Full legal name of the vendor as printed in the invoice header.'",
+            "estimateSourceAndConfidence": true
+          },
+          "example_number_field": {
+            "type": "number",
+            "method": "extract",
+            "description": "TODO: replace this field. Use for amounts, totals, rates, or other numeric values. Example: 'Invoice total amount before tax.'",
+            "estimateSourceAndConfidence": true
+          },
+          "example_summary": {
+            "type": "string",
+            "method": "generate",
+            "description": "Provide a one-line summary of the document's main purpose and key outcome. Keep it concise and factual."
+          },
+          "example_classify_field": {
+            "type": "string",
+            "method": "classify",
+            "description": "TODO: replace this field. Use `classify` only when the value comes from a closed set. Always include `enum`.",
+            "enum": [
+              "option_a",
+              "option_b",
+              "other"
+            ],
+            "enumDescriptions": {
+              "option_a": "Primary category when the content strongly matches pattern A.",
+              "option_b": "Secondary category when the content matches pattern B.",
+              "other": "Fallback category when neither option_a nor option_b applies."
+            }
+          },
+          "example_table_field": {
+            "type": "array",
+            "method": "extract",
+            "description": "TODO: replace this field. Use for repeating table rows such as line items, transactions, or schedule entries.",
+            "items": {
+              "type": "object",
+              "description": "One extracted table row.",
+              "properties": {
+                "column_description": {
+                  "type": "string",
+                  "method": "extract",
+                  "description": "Text content for the description column."
+                },
+                "column_amount": {
+                  "type": "number",
+                  "method": "extract",
+                  "description": "Numeric value in the amount column."
+                },
+                "column_category": {
+                  "type": "string",
+                  "method": "classify",
+                  "description": "Classify the column value into a stable category used by downstream business logic.",
+                  "enum": [
+                    "product",
+                    "service",
+                    "fee",
+                    "tax",
+                    "other"
+                  ],
+                  "enumDescriptions": {
+                    "product": "Physical good or inventory item.",
+                    "service": "Labor or service charge.",
+                    "fee": "Non-tax fee such as handling or processing.",
+                    "tax": "Tax line item.",
+                    "other": "Row does not fit the predefined categories."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "config": {
+        "estimateFieldSourceAndConfidence": true
+      },
+      "models": {
+        "completion": "gpt-5.2",
+        "embedding": "text-embedding-3-large"
+      }
+    },
+    "classification": {
+      "apiVersion": "2025-11-01",
+      "analyzerId": "invoice_v1",
+      "description": "TODO: classify inputs into the categories below; give each a clear description. Optional: add \"analyzerId\": \"<existing-analyzer-id>\" to a category to route matching content to that analyzer for extraction (the analyzer \u2014 prebuilt like prebuilt-invoice or a custom one \u2014 must already exist, otherwise create fails with InvalidAnalyzerId).",
+      "baseAnalyzerId": "prebuilt-document",
+      "config": {
+        "estimateFieldSourceAndConfidence": true,
+        "enableSegment": true,
+        "contentCategories": {
+          "invoice": {
+            "description": "Vendor invoices requesting payment for goods or services, typically including vendor details, line items, totals, and payment terms."
+          },
+          "purchase_order": {
+            "description": "Purchase orders that authorize a purchase, typically including a PO number, buyer/supplier details, ordered items, quantities, and prices."
+          },
+          "receipt": {
+            "description": "Retail or expense receipts confirming a completed payment, typically including merchant, date, purchased items, and total paid."
+          },
+          "other": {
+            "description": "Fallback category for content that does not match any category above."
+          }
+        }
+      },
+      "models": {
+        "completion": "gpt-5.2",
+        "embedding": "text-embedding-3-large"
+      }
+    }
+  },
+  "suggestions": [
+    {
+      "name": "nested-placeholders",
+      "contents": [
+        {
+          "fields": {
+            "schema": {
+              "valueJson": {
+                "InvoiceNumber": {
+                  "type": "string",
+                  "method": "extract",
+                  "description": "TODO: describe the 'InvoiceNumber' field."
+                },
+                "LineItems": {
+                  "type": "array",
+                  "description": "Keep existing description",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Amount": {
+                        "type": "number",
+                        "description": "TODO: describe the 'Amount' field."
+                      },
+                      "Details": {
+                        "type": "object",
+                        "properties": {
+                          "Code": {
+                            "type": "string",
+                            "description": "TODO: describe the 'Code' field."
+                          }
+                        },
+                        "description": "TODO: describe the 'Details' field."
+                      }
+                    },
+                    "description": "TODO: describe one item in this array."
+                  }
+                },
+                "Unknown": {
+                  "type": "json",
+                  "description": "TODO: describe the 'Unknown' field.",
+                  "future": 9007199254740993123456789
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "apiVersion": "2025-11-01",
+        "analyzerId": "invoice_v1",
+        "description": "Suggested from sample 'invoice[1].pdf' using prebuilt-documentFieldSchema.",
+        "baseAnalyzerId": "prebuilt-document",
+        "fieldSchema": {
+          "name": "invoice_v1_schema",
+          "description": "Suggested extraction schema derived from one sample document.",
+          "fields": {
+            "InvoiceNumber": {
+              "type": "string",
+              "method": "extract",
+              "description": "TODO: describe the 'InvoiceNumber' field."
+            },
+            "LineItems": {
+              "type": "array",
+              "description": "Keep existing description",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "Amount": {
+                    "type": "number",
+                    "description": "TODO: describe the 'Amount' field."
+                  },
+                  "Details": {
+                    "type": "object",
+                    "properties": {
+                      "Code": {
+                        "type": "string",
+                        "description": "TODO: describe the 'Code' field."
+                      }
+                    },
+                    "description": "TODO: describe the 'Details' field."
+                  }
+                },
+                "description": "TODO: describe one item in this array."
+              }
+            },
+            "Unknown": {
+              "type": "json",
+              "description": "TODO: describe the 'Unknown' field.",
+              "future": 9007199254740993123456789
+            }
+          }
+        },
+        "config": {
+          "estimateFieldSourceAndConfidence": true
+        },
+        "models": {
+          "completion": "gpt-5.2",
+          "embedding": "text-embedding-3-large"
+        }
+      },
+      "found": true
+    },
+    {
+      "name": "first-nonempty-schema",
+      "contents": [
+        {
+          "fields": {}
+        },
+        {
+          "fields": {
+            "schema": null
+          }
+        },
+        {
+          "fields": {
+            "schema": {
+              "valueJson": []
+            }
+          }
+        },
+        {
+          "fields": {
+            "schema": {
+              "valueJson": {}
+            }
+          }
+        },
+        {
+          "fields": {
+            "schema": {
+              "valueJson": {
+                "First": {
+                  "type": "boolean",
+                  "description": "First wins"
+                }
+              }
+            }
+          }
+        },
+        {
+          "fields": {
+            "schema": {
+              "valueJson": {
+                "Second": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "apiVersion": "2025-11-01",
+        "analyzerId": "invoice_v1",
+        "description": "Suggested from sample 'invoice[1].pdf' using prebuilt-documentFieldSchema.",
+        "baseAnalyzerId": "prebuilt-document",
+        "fieldSchema": {
+          "name": "invoice_v1_schema",
+          "description": "Suggested extraction schema derived from one sample document.",
+          "fields": {
+            "First": {
+              "type": "boolean",
+              "description": "First wins"
+            }
+          }
+        },
+        "config": {
+          "estimateFieldSourceAndConfidence": true
+        },
+        "models": {
+          "completion": "gpt-5.2",
+          "embedding": "text-embedding-3-large"
+        }
+      },
+      "found": true
+    },
+    {
+      "name": "empty-contents",
+      "contents": [],
+      "expected": {
+        "apiVersion": "2025-11-01",
+        "analyzerId": "invoice_v1",
+        "description": "TODO: one-sentence description of what this document analyzer extracts.",
+        "baseAnalyzerId": "prebuilt-document",
+        "fieldSchema": {
+          "name": "invoice_v1_schema",
+          "description": "TODO: one-sentence summary of the extraction.",
+          "fields": {
+            "example_string_field": {
+              "type": "string",
+              "method": "extract",
+              "description": "TODO: replace this field. Describe specifically what to extract, where it appears in the document, and any formatting expectations. Example: 'Full legal name of the vendor as printed in the invoice header.'",
+              "estimateSourceAndConfidence": true
+            },
+            "example_number_field": {
+              "type": "number",
+              "method": "extract",
+              "description": "TODO: replace this field. Use for amounts, totals, rates, or other numeric values. Example: 'Invoice total amount before tax.'",
+              "estimateSourceAndConfidence": true
+            },
+            "example_summary": {
+              "type": "string",
+              "method": "generate",
+              "description": "Provide a one-line summary of the document's main purpose and key outcome. Keep it concise and factual."
+            },
+            "example_classify_field": {
+              "type": "string",
+              "method": "classify",
+              "description": "TODO: replace this field. Use `classify` only when the value comes from a closed set. Always include `enum`.",
+              "enum": [
+                "option_a",
+                "option_b",
+                "other"
+              ],
+              "enumDescriptions": {
+                "option_a": "Primary category when the content strongly matches pattern A.",
+                "option_b": "Secondary category when the content matches pattern B.",
+                "other": "Fallback category when neither option_a nor option_b applies."
+              }
+            },
+            "example_table_field": {
+              "type": "array",
+              "method": "extract",
+              "description": "TODO: replace this field. Use for repeating table rows such as line items, transactions, or schedule entries.",
+              "items": {
+                "type": "object",
+                "description": "One extracted table row.",
+                "properties": {
+                  "column_description": {
+                    "type": "string",
+                    "method": "extract",
+                    "description": "Text content for the description column."
+                  },
+                  "column_amount": {
+                    "type": "number",
+                    "method": "extract",
+                    "description": "Numeric value in the amount column."
+                  },
+                  "column_category": {
+                    "type": "string",
+                    "method": "classify",
+                    "description": "Classify the column value into a stable category used by downstream business logic.",
+                    "enum": [
+                      "product",
+                      "service",
+                      "fee",
+                      "tax",
+                      "other"
+                    ],
+                    "enumDescriptions": {
+                      "product": "Physical good or inventory item.",
+                      "service": "Labor or service charge.",
+                      "fee": "Non-tax fee such as handling or processing.",
+                      "tax": "Tax line item.",
+                      "other": "Row does not fit the predefined categories."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "config": {
+          "estimateFieldSourceAndConfidence": true
+        },
+        "models": {
+          "completion": "gpt-5.2",
+          "embedding": "text-embedding-3-large"
+        }
+      },
+      "found": false
+    },
+    {
+      "name": "missing-fields",
+      "contents": [
+        {
+          "fields": null
+        },
+        {
+          "fields": {}
+        },
+        {
+          "fields": {
+            "schema": []
+          }
+        }
+      ],
+      "expected": {
+        "apiVersion": "2025-11-01",
+        "analyzerId": "invoice_v1",
+        "description": "TODO: one-sentence description of what this document analyzer extracts.",
+        "baseAnalyzerId": "prebuilt-document",
+        "fieldSchema": {
+          "name": "invoice_v1_schema",
+          "description": "TODO: one-sentence summary of the extraction.",
+          "fields": {
+            "example_string_field": {
+              "type": "string",
+              "method": "extract",
+              "description": "TODO: replace this field. Describe specifically what to extract, where it appears in the document, and any formatting expectations. Example: 'Full legal name of the vendor as printed in the invoice header.'",
+              "estimateSourceAndConfidence": true
+            },
+            "example_number_field": {
+              "type": "number",
+              "method": "extract",
+              "description": "TODO: replace this field. Use for amounts, totals, rates, or other numeric values. Example: 'Invoice total amount before tax.'",
+              "estimateSourceAndConfidence": true
+            },
+            "example_summary": {
+              "type": "string",
+              "method": "generate",
+              "description": "Provide a one-line summary of the document's main purpose and key outcome. Keep it concise and factual."
+            },
+            "example_classify_field": {
+              "type": "string",
+              "method": "classify",
+              "description": "TODO: replace this field. Use `classify` only when the value comes from a closed set. Always include `enum`.",
+              "enum": [
+                "option_a",
+                "option_b",
+                "other"
+              ],
+              "enumDescriptions": {
+                "option_a": "Primary category when the content strongly matches pattern A.",
+                "option_b": "Secondary category when the content matches pattern B.",
+                "other": "Fallback category when neither option_a nor option_b applies."
+              }
+            },
+            "example_table_field": {
+              "type": "array",
+              "method": "extract",
+              "description": "TODO: replace this field. Use for repeating table rows such as line items, transactions, or schedule entries.",
+              "items": {
+                "type": "object",
+                "description": "One extracted table row.",
+                "properties": {
+                  "column_description": {
+                    "type": "string",
+                    "method": "extract",
+                    "description": "Text content for the description column."
+                  },
+                  "column_amount": {
+                    "type": "number",
+                    "method": "extract",
+                    "description": "Numeric value in the amount column."
+                  },
+                  "column_category": {
+                    "type": "string",
+                    "method": "classify",
+                    "description": "Classify the column value into a stable category used by downstream business logic.",
+                    "enum": [
+                      "product",
+                      "service",
+                      "fee",
+                      "tax",
+                      "other"
+                    ],
+                    "enumDescriptions": {
+                      "product": "Physical good or inventory item.",
+                      "service": "Labor or service charge.",
+                      "fee": "Non-tax fee such as handling or processing.",
+                      "tax": "Tax line item.",
+                      "other": "Row does not fit the predefined categories."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "config": {
+          "estimateFieldSourceAndConfidence": true
+        },
+        "models": {
+          "completion": "gpt-5.2",
+          "embedding": "text-embedding-3-large"
+        }
+      },
+      "found": false
+    },
+    {
+      "name": "value-string-not-schema",
+      "contents": [
+        {
+          "fields": {
+            "schema": {
+              "valueString": "{\"DoNotParse\":{\"type\":\"string\"}}"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "apiVersion": "2025-11-01",
+        "analyzerId": "invoice_v1",
+        "description": "TODO: one-sentence description of what this document analyzer extracts.",
+        "baseAnalyzerId": "prebuilt-document",
+        "fieldSchema": {
+          "name": "invoice_v1_schema",
+          "description": "TODO: one-sentence summary of the extraction.",
+          "fields": {
+            "example_string_field": {
+              "type": "string",
+              "method": "extract",
+              "description": "TODO: replace this field. Describe specifically what to extract, where it appears in the document, and any formatting expectations. Example: 'Full legal name of the vendor as printed in the invoice header.'",
+              "estimateSourceAndConfidence": true
+            },
+            "example_number_field": {
+              "type": "number",
+              "method": "extract",
+              "description": "TODO: replace this field. Use for amounts, totals, rates, or other numeric values. Example: 'Invoice total amount before tax.'",
+              "estimateSourceAndConfidence": true
+            },
+            "example_summary": {
+              "type": "string",
+              "method": "generate",
+              "description": "Provide a one-line summary of the document's main purpose and key outcome. Keep it concise and factual."
+            },
+            "example_classify_field": {
+              "type": "string",
+              "method": "classify",
+              "description": "TODO: replace this field. Use `classify` only when the value comes from a closed set. Always include `enum`.",
+              "enum": [
+                "option_a",
+                "option_b",
+                "other"
+              ],
+              "enumDescriptions": {
+                "option_a": "Primary category when the content strongly matches pattern A.",
+                "option_b": "Secondary category when the content matches pattern B.",
+                "other": "Fallback category when neither option_a nor option_b applies."
+              }
+            },
+            "example_table_field": {
+              "type": "array",
+              "method": "extract",
+              "description": "TODO: replace this field. Use for repeating table rows such as line items, transactions, or schedule entries.",
+              "items": {
+                "type": "object",
+                "description": "One extracted table row.",
+                "properties": {
+                  "column_description": {
+                    "type": "string",
+                    "method": "extract",
+                    "description": "Text content for the description column."
+                  },
+                  "column_amount": {
+                    "type": "number",
+                    "method": "extract",
+                    "description": "Numeric value in the amount column."
+                  },
+                  "column_category": {
+                    "type": "string",
+                    "method": "classify",
+                    "description": "Classify the column value into a stable category used by downstream business logic.",
+                    "enum": [
+                      "product",
+                      "service",
+                      "fee",
+                      "tax",
+                      "other"
+                    ],
+                    "enumDescriptions": {
+                      "product": "Physical good or inventory item.",
+                      "service": "Labor or service charge.",
+                      "fee": "Non-tax fee such as handling or processing.",
+                      "tax": "Tax line item.",
+                      "other": "Row does not fit the predefined categories."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "config": {
+          "estimateFieldSourceAndConfidence": true
+        },
+        "models": {
+          "completion": "gpt-5.2",
+          "embedding": "text-embedding-3-large"
+        }
+      },
+      "found": false
+    },
+    {
+      "name": "unusual-definitions",
+      "contents": [
+        {
+          "fields": {
+            "schema": {
+              "valueJson": {
+                "Null": null,
+                "Scalar": 42,
+                "TypedDescription": {
+                  "type": "string",
+                  "description": 4,
+                  "properties": {
+                    "Nested": {
+                      "type": "string",
+                      "description": "TODO: describe the 'Nested' field."
+                    }
+                  },
+                  "items": {
+                    "type": "string",
+                    "description": "TODO: describe one item in this array."
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "apiVersion": "2025-11-01",
+        "analyzerId": "invoice_v1",
+        "description": "Suggested from sample 'invoice[1].pdf' using prebuilt-documentFieldSchema.",
+        "baseAnalyzerId": "prebuilt-document",
+        "fieldSchema": {
+          "name": "invoice_v1_schema",
+          "description": "Suggested extraction schema derived from one sample document.",
+          "fields": {
+            "Null": null,
+            "Scalar": 42,
+            "TypedDescription": {
+              "type": "string",
+              "description": 4,
+              "properties": {
+                "Nested": {
+                  "type": "string",
+                  "description": "TODO: describe the 'Nested' field."
+                }
+              },
+              "items": {
+                "type": "string",
+                "description": "TODO: describe one item in this array."
+              }
+            }
+          }
+        },
+        "config": {
+          "estimateFieldSourceAndConfidence": true
+        },
+        "models": {
+          "completion": "gpt-5.2",
+          "embedding": "text-embedding-3-large"
+        }
+      },
+      "found": true
+    }
+  ]
+}

@@ -133,6 +133,14 @@ bash, `.ps1` → pwsh, `.cmd`/`.bat` → cmd).
 A missing path-like input remains an error instead of falling through to shell execution. Use
 `--shell` when a single inline command contains shell operators or script-like path arguments.
 
+### Cancellation and Background Processes
+
+Pressing Ctrl+C cancels execution. `azd` stops the command and its child processes,
+waits for shutdown, and reports `ERROR: command execution was canceled by the user`.
+
+After a command or script completes successfully, `azd exec` preserves intentional background child
+processes.
+
 ### Flags
 
 | Flag | Description |
@@ -222,6 +230,7 @@ Metadata requests are unauthenticated when no matching token is set.
 | `AZURE_AI_MODEL_DEPLOYMENT_NAME` | The default model deployment name used for generated agent code and templates. |
 | `AZURE_AI_PROJECT_ACR_CONNECTION_NAME` | The Azure Container Registry connection name used by the extension for hosted agents. |
 | `AI_PROJECT_DEPLOYMENTS` | JSON-encoded deployment metadata populated by the extension for agent workflows. |
+| `AI_PROJECT_DEPLOYMENT_BINDINGS` | JSON object that maps each template deployment declaration to the existing deployment adopted for it in the current environment, for example `{"template-chat":"existing-chat"}`. An empty target records Skip. Prompt agent deploy and invoke honor these bindings. Set it to `'{}'` to clear explicit bindings. |
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |
 | `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd ai agent init` for code-deploy, pre-built image, and managed voice scenarios. |
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |

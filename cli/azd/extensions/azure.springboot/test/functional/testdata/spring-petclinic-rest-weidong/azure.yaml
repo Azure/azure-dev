@@ -1,0 +1,20 @@
+name: petclinic-rest
+metadata:
+  template: petclinic-rest-azd@0.1.0
+
+requiredVersions:
+  azd: ">=1.37.2"
+  extensions:
+    azure.springboot: ">=0.1.0"
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+services:
+  spring-petclinic-rest-app:
+    project: .
+    language: java
+    host: springbootapp
+    module: application

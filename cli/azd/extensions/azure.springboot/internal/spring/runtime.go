@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -40,6 +42,7 @@ func (s *grpcEnvironmentStore) values(ctx context.Context) (string, map[string]s
 		if pair != nil {
 			values[pair.GetKey()] = pair.GetValue()
 		}
+		values["AZURE_ENV_NAME"] = name
 	}
 	return name, values, nil
 }
@@ -58,23 +61,40 @@ func (s *grpcEnvironmentStore) set(ctx context.Context, envName, key, value stri
 
 // Runtime implements the Spring host's lifecycle preparation.
 type Runtime struct {
-	environments environmentStore
-	deployments  deploymentSafetyChecker
-	reconcile    func(context.Context, map[string]string) error
+	client          *azdext.AzdClient
+	environments    environmentStore
+	deployments     deploymentSafetyChecker
+	identities      developerIdentityResolver
+	tenants         userAccessTenantResolver
+	outputs         deploymentOutputVerifier
+	reconcile       func(context.Context, map[string]string) error
+	configureAccess func(context.Context, string, resolvedDatabase, map[string]string) error
+	prepareNetwork  func(context.Context, *deploymentBinding) (func(context.Context) error, error)
 }
 
 // NewRuntime creates a Spring lifecycle runtime backed by azd's stable services.
 func NewRuntime(client *azdext.AzdClient) *Runtime {
+	access := newPostgresAccessReconciler(client)
 	return &Runtime{
-		environments: &grpcEnvironmentStore{client: client},
-		deployments:  newDeploymentSafetyChecker(client),
-		reconcile:    newFirewallReconciler(client).Reconcile,
+		client:          client,
+		environments:    &grpcEnvironmentStore{client: client},
+		deployments:     newDeploymentSafetyChecker(client),
+		identities:      newDeveloperIdentityResolver(client),
+		tenants:         newUserAccessTenantResolver(client),
+		outputs:         newDeploymentOutputVerifier(client),
+		reconcile:       newFirewallReconciler(client).Reconcile,
+		configureAccess: access.Reconcile,
+		prepareNetwork:  newFirewallReconciler(client).PrepareAutomatic,
 	}
 }
 
 func (r *Runtime) resolveService(
+	ctx context.Context,
+	project *azdext.ProjectConfig,
 	service *azdext.ServiceConfig,
+	serviceContext *azdext.ServiceContext,
 	values map[string]string,
+	requireLate bool,
 ) (*resolvedService, error) {
 	if service == nil {
 		return nil, validationError(
@@ -90,54 +110,75 @@ func (r *Runtime) resolveService(
 			fmt.Sprintf("set the service host to %s", SpringHost),
 		)
 	}
-	mode, err := resolveDatabaseType(service, values, os.LookupEnv)
+	var database resolvedDatabase
+	var err error
+	if err := validateApplicationPackaging(service); err != nil {
+		return nil, err
+	}
+	if discoversDatabase(service) {
+		database, err = r.discoverServiceDatabase(ctx, project, service, serviceContext, values, requireLate)
+	} else {
+		database, err = resolveDatabase(service, values, os.LookupEnv, requireLate)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if provisioned := values[provisionedDatabaseTypeEnv]; provisioned != "" &&
-		!strings.EqualFold(provisioned, string(mode)) {
+	if provisioned := values[provisionedDatabaseTypeEnv]; (!database.discovered || requireLate) && provisioned != "" &&
+		!strings.EqualFold(provisioned, string(database.Type)) {
 		return nil, validationError(
 			"database_type_change",
 			fmt.Sprintf(
 				"service %q selects %q but this environment was provisioned for %q",
 				service.GetName(),
-				mode,
+				database.Type,
 				provisioned,
 			),
 			"create a new azd environment to use a different database type",
 		)
 	}
-	return &resolvedService{service: service, mode: mode}, nil
+	if database.managedAccess() && !database.ServerDeferred {
+		if provisioned := values[provisionedDatabaseAccessEnv]; provisioned != "" &&
+			!strings.EqualFold(provisioned, database.accessFingerprint()) {
+			return nil, validationError(
+				"database_access_change",
+				fmt.Sprintf("service %q changes the provisioned PostgreSQL access identity", service.GetName()),
+				"create a new azd environment or perform an explicit database access migration",
+			)
+		}
+	}
+	return &resolvedService{service: service, mode: database.Type, database: database}, nil
 }
 
 func (r *Runtime) resolveProject(
+	ctx context.Context,
 	project *azdext.ProjectConfig,
 	values map[string]string,
 	validateFiles bool,
-) ([]*resolvedService, databaseType, error) {
+	requireLate bool,
+) ([]*resolvedService, resolvedDatabase, error) {
 	services := springServices(project)
 	if len(services) == 0 {
-		return nil, "", nil
+		return nil, resolvedDatabase{}, nil
 	}
 
 	resolved := make([]*resolvedService, 0, len(services))
-	var selected databaseType
+	var selected resolvedDatabase
 	for _, service := range services {
-		item, err := r.resolveService(service, values)
+		item, err := r.resolveService(ctx, project, service, nil, values, requireLate)
 		if err != nil {
-			return nil, "", err
+			return nil, resolvedDatabase{}, err
 		}
-		if selected != "" && item.mode != selected {
-			return nil, "", validationError(
-				"conflicting_service_database_types",
-				"Spring services in one project resolve to different database types",
-				fmt.Sprintf("use one database type for all %s services in the project", SpringHost),
+		if len(resolved) > 0 && !compatibleDatabaseSelection(selected, item.database) {
+			return nil, resolvedDatabase{}, validationError(
+				"conflicting_service_database_configuration",
+				"Spring services in one project resolve to incompatible database targets or application identities",
+				fmt.Sprintf("use one compatible managed database access configuration for all %s services", SpringHost),
 			)
 		}
-		selected = item.mode
+		selected = item.database
 		if validateFiles {
-			if _, _, err := validateDockerfile(project, service); err != nil {
-				return nil, "", err
+			if err := validateSpringBuild(project, service); err != nil {
+				return nil, resolvedDatabase{}, err
 			}
 		}
 		resolved = append(resolved, item)
@@ -145,17 +186,56 @@ func (r *Runtime) resolveProject(
 	return resolved, selected, nil
 }
 
+func compatibleDatabaseSelection(left, right resolvedDatabase) bool {
+	if left.discovered && right.discovered && (left.selectionPending || right.selectionPending) {
+		return true
+	}
+	if left.Type != right.Type || left.Authentication != right.Authentication {
+		return false
+	}
+	if !left.managedAccess() {
+		return true
+	}
+	return strings.EqualFold(left.ServerResourceID, right.ServerResourceID) &&
+		left.Name == right.Name &&
+		left.Username == right.Username &&
+		identityResourceID(left) == identityResourceID(right)
+}
+
+func identityResourceID(database resolvedDatabase) string {
+	if database.AppIdentity == nil {
+		return ""
+	}
+	return strings.ToLower(database.AppIdentity.ResourceID)
+}
+
 // ValidateService performs initialization-time validation without side effects.
-func (r *Runtime) ValidateService(ctx context.Context, service *azdext.ServiceConfig) error {
+func (r *Runtime) ValidateService(
+	ctx context.Context, service *azdext.ServiceConfig, projects ...*azdext.ProjectConfig,
+) error {
 	_, values, err := r.environments.values(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = r.resolveService(service, values)
+	var project *azdext.ProjectConfig
+	if len(projects) > 0 {
+		project = projects[0]
+	}
+	if discoversDatabase(service) && project == nil {
+		if r.client == nil {
+			return configurationError("the project is unavailable for automatic database discovery")
+		}
+		response, readErr := r.client.Project().Get(ctx, &azdext.EmptyRequest{})
+		if readErr != nil {
+			return readErr
+		}
+		project = response.GetProject()
+	}
+	_, err = r.resolveService(ctx, project, service, nil, values, false)
 	return err
 }
 
-// PreProvision validates every Spring service before persisting the selected mode or password.
+// PreProvision validates every Spring service before persisting selected database inputs.
 func (r *Runtime) PreProvision(ctx context.Context, args *azdext.ProjectEventArgs) error {
 	if args == nil || args.Project == nil {
 		return validationError("missing_project_config", "project configuration is missing", "check azure.yaml")
@@ -164,55 +244,288 @@ func (r *Runtime) PreProvision(ctx context.Context, args *azdext.ProjectEventArg
 	if err != nil {
 		return err
 	}
-	services, mode, err := r.resolveProject(args.Project, values, true)
+	services, database, err := r.resolveProject(ctx, args.Project, values, true, false)
 	if err != nil || len(services) == 0 {
 		return err
 	}
-
-	var password string
-	var persistPassword bool
-	switch mode {
-	case databaseH2:
-		if _, present := values[databasePasswordEnv]; present {
-			return validationError(
-				"password_not_supported_for_h2",
-				fmt.Sprintf("%s cannot be set when the database type is h2", databasePasswordEnv),
-				"remove the PostgreSQL password or use a new H2 environment",
-			)
+	if r.client != nil {
+		if _, err := resolveProjectServiceModules(ctx, r.client, args.Project); err != nil {
+			return err
 		}
-		if _, present := os.LookupEnv(databasePasswordEnv); present {
-			return validationError(
-				"password_not_supported_for_h2",
-				fmt.Sprintf("%s cannot be supplied when the database type is h2", databasePasswordEnv),
-				"remove the PostgreSQL password or select postgresql",
-			)
-		}
-	case databasePostgreSQL:
-		password, persistPassword, err = resolvePostgreSQLPassword(values, os.LookupEnv, func() error {
-			return r.deployments.EnsureCanGenerate(ctx, envName, values)
-		})
+	}
+	if err := validateBootstrapClientIPEnvironment(os.LookupEnv); err != nil {
+		return err
+	}
+	preparation := database
+	if database.discovered {
+		preparation, err = automaticProvisionInputs(ctx, args.Project, database)
 		if err != nil {
 			return err
 		}
 	}
 
-	if values[databaseTypeEnv] != string(mode) {
-		if err := r.environments.set(ctx, envName, databaseTypeEnv, string(mode)); err != nil {
-			return err
+	writes := map[string]string{}
+	switch preparation.Type {
+	case databaseH2:
+		for _, name := range []string{
+			databasePasswordEnv,
+			databaseAppPasswordEnv,
+			databaseAuthenticationEnv,
+			databaseNameEnv,
+			databaseUsernameEnv,
+			databaseAdministratorNameEnv,
+		} {
+			if environmentValuePresent(values, os.LookupEnv, name) {
+				return validationError(
+					"postgres_configuration_not_supported_for_h2",
+					fmt.Sprintf("%s cannot be supplied when the database type is h2", name),
+					"remove PostgreSQL credentials and access bindings or select postgresql",
+				)
+			}
 		}
-		values[databaseTypeEnv] = string(mode)
+	case databasePostgreSQL:
+		switch preparation.Authentication {
+		case databaseAuthenticationLegacy:
+			password, persist, resolveErr := resolvePostgreSQLPassword(values, os.LookupEnv, func() error {
+				return r.deployments.EnsureCanGenerate(ctx, envName, values)
+			})
+			if resolveErr != nil {
+				return resolveErr
+			}
+			if environmentValuePresent(values, os.LookupEnv, databaseAppPasswordEnv) {
+				return validationError(
+					"legacy_database_app_password_unsupported",
+					fmt.Sprintf("%s cannot be supplied without database.auth", databaseAppPasswordEnv),
+					"remove the application password or add the complete managed access auth block",
+				)
+			}
+			if persist {
+				writes[databasePasswordEnv] = password
+			}
+		case databaseAuthenticationPassword:
+			var safetyChecked bool
+			var safetyErr error
+			ensureCanGenerate := func() error {
+				if !safetyChecked {
+					safetyErr = r.deployments.EnsureCanGenerate(ctx, envName, values)
+					safetyChecked = true
+				}
+				return safetyErr
+			}
+			administratorPassword, persistAdministrator, resolveErr := resolvePostgreSQLPassword(
+				values,
+				os.LookupEnv,
+				ensureCanGenerate,
+			)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			applicationPassword, persistApplication := "", false
+			if !database.discovered {
+				applicationPassword, persistApplication, resolveErr = resolvePostgreSQLAppPassword(
+					values, os.LookupEnv, ensureCanGenerate,
+				)
+				if resolveErr != nil {
+					return resolveErr
+				}
+			}
+			if persistAdministrator {
+				writes[databasePasswordEnv] = administratorPassword
+			}
+			if persistApplication {
+				writes[databaseAppPasswordEnv] = applicationPassword
+			}
+			subscriptionID := strings.TrimSpace(values[azureSubscriptionIDEnv])
+			if subscriptionID == "" {
+				return validationError(
+					"missing_azure_subscription",
+					"AZURE_SUBSCRIPTION_ID is required to resolve the database hook access tenant",
+					"select the target azd subscription before provisioning",
+				)
+			}
+			userAccessTenantID, resolveErr := r.tenants.Resolve(ctx, subscriptionID)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			if existing, present := values[databaseUserAccessTenantIDEnv]; present &&
+				!strings.EqualFold(existing, userAccessTenantID) {
+				return validationError(
+					"conflicting_user_access_tenant",
+					fmt.Sprintf("%s conflicts with the selected subscription", databaseUserAccessTenantIDEnv),
+					"use the original subscription tenant or create a new azd environment",
+				)
+			}
+			writes[databaseUserAccessTenantIDEnv] = userAccessTenantID
+		case databaseAuthenticationManagedIdentity:
+			for _, name := range []string{databasePasswordEnv, databaseAppPasswordEnv} {
+				if environmentValuePresent(values, os.LookupEnv, name) {
+					return validationError(
+						"password_not_supported_for_managed_identity",
+						fmt.Sprintf("%s cannot be supplied for managedidentity auth", name),
+						"remove administrator and application passwords from the selected environment and process",
+					)
+				}
+			}
+			administratorOverride, resolveErr := resolveAdministratorInputs(preparation, values)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			subscriptionID := strings.TrimSpace(values[azureSubscriptionIDEnv])
+			if subscriptionID == "" {
+				return validationError(
+					"missing_azure_subscription",
+					"AZURE_SUBSCRIPTION_ID is required to resolve the developer database administrator",
+					"select the target azd subscription before provisioning",
+				)
+			}
+			identity, resolveErr := r.identities.Resolve(
+				ctx,
+				subscriptionID,
+				administratorOverride,
+			)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			for _, binding := range []struct {
+				name          string
+				value         string
+				caseSensitive bool
+			}{
+				{databaseAdministratorNameEnv, identity.AdministratorName, true},
+				{databaseAdministratorObjectIDEnv, identity.ObjectID, false},
+				{databaseUserAccessTenantIDEnv, identity.UserAccessTenantID, false},
+				{"DATABASE_ADMIN_NAME", identity.AdministratorName, true},
+				{"DATABASE_ADMIN_OBJECT_ID", identity.ObjectID, false},
+			} {
+				conflicts := func(existing string) bool {
+					if binding.caseSensitive {
+						return existing != binding.value
+					}
+					return !strings.EqualFold(existing, binding.value)
+				}
+				if existing, present := values[binding.name]; present && conflicts(existing) {
+					return validationError(
+						"conflicting_developer_identity",
+						fmt.Sprintf("%s conflicts with the current developer identity", binding.name),
+						"use the original developer login or create a new azd environment",
+					)
+				}
+				if existing, present := os.LookupEnv(binding.name); present && conflicts(existing) {
+					return validationError(
+						"conflicting_developer_identity",
+						fmt.Sprintf("%s conflicts with the current developer identity", binding.name),
+						"remove the conflicting process override before provisioning",
+					)
+				}
+				writes[binding.name] = binding.value
+			}
+		}
 	}
-	if persistPassword {
-		if err := r.environments.set(ctx, envName, databasePasswordEnv, password); err != nil {
+
+	if !database.discovered {
+		writes[databaseTypeEnv] = string(database.Type)
+		if database.managedAccess() {
+			writes[databaseAuthenticationEnv] = string(database.Authentication)
+			writes[databaseNameEnv] = database.Name
+			writes[databaseUsernameEnv] = database.Username
+		}
+	}
+	return persistEnvironmentWrites(ctx, r.environments, envName, values, writes)
+}
+
+func resolveAdministratorInputs(database resolvedDatabase, values map[string]string) (string, error) {
+	administrator := database.AdministratorName
+	objectID := ""
+	for _, field := range []struct {
+		name string
+		isID bool
+	}{
+		{databaseAdministratorNameEnv, false},
+		{"DATABASE_ADMIN_NAME", false},
+		{databaseAdministratorObjectIDEnv, true},
+		{"DATABASE_ADMIN_OBJECT_ID", true},
+	} {
+		candidates := []string{}
+		if value, present := values[field.name]; present {
+			candidates = append(candidates, value)
+		}
+		if value, present := os.LookupEnv(field.name); present {
+			candidates = append(candidates, value)
+		}
+		for _, candidate := range candidates {
+			valid := validAdministratorName(candidate)
+			selected := &administrator
+			if field.isID {
+				valid = databasePrincipalIDPattern.MatchString(candidate)
+				selected = &objectID
+			}
+			if !valid {
+				return "", validationError(
+					"invalid_database_administrator_input",
+					fmt.Sprintf("%s is not a valid administrator identity", field.name),
+					"provide the current signed-in developer's administrator name and object ID",
+				)
+			}
+			matches := *selected == candidate
+			if field.isID {
+				matches = strings.EqualFold(*selected, candidate)
+			}
+			if *selected != "" && !matches {
+				return "", validationError(
+					"conflicting_database_administrator_inputs",
+					fmt.Sprintf("%s conflicts with another explicit administrator input", field.name),
+					"make DATABASE_ADMIN_* and SPRING_DATABASE_ADMINISTRATOR_* identify the same developer",
+				)
+			}
+			*selected = candidate
+		}
+	}
+	return administrator, nil
+}
+
+func environmentValuePresent(
+	values map[string]string,
+	lookupProcess func(string) (string, bool),
+	name string,
+) bool {
+	if _, present := values[name]; present {
+		return true
+	}
+	_, present := lookupProcess(name)
+	return present
+}
+
+func persistEnvironmentWrites(
+	ctx context.Context,
+	environments environmentStore,
+	envName string,
+	values map[string]string,
+	writes map[string]string,
+) error {
+	keys := mapsKeys(writes)
+	slices.Sort(keys)
+	for _, key := range keys {
+		if current, present := values[key]; present && current == writes[key] {
+			continue
+		}
+		if err := environments.set(ctx, envName, key, writes[key]); err != nil {
 			return err
 		}
-		values[databasePasswordEnv] = password
+		values[key] = writes[key]
 	}
 	return nil
 }
 
-// PostProvision binds the environment to its provisioned mode before network reconciliation.
-func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventArgs) error {
+func mapsKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+// PostProvision verifies provisioned resources and reconciles managed database access.
+func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventArgs) (resultErr error) {
 	if args == nil || args.Project == nil {
 		return validationError("missing_project_config", "project configuration is missing", "check azure.yaml")
 	}
@@ -220,23 +533,161 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 	if err != nil {
 		return err
 	}
-	services, mode, err := r.resolveProject(args.Project, values, false)
+	ctx, values, err = r.bindAutomaticProject(ctx, args.Project, envName, values)
+	if err != nil {
+		return err
+	}
+	closeNetwork, err := r.beginAutomaticNetwork(ctx)
+	defer func() {
+		if cleanupErr := closeNetwork(); cleanupErr != nil && !errors.Is(resultErr, cleanupErr) {
+			resultErr = errors.Join(resultErr, cleanupErr)
+		}
+	}()
+	if err != nil {
+		return err
+	}
+	services, database, err := r.resolveProject(ctx, args.Project, values, false, true)
 	if err != nil || len(services) == 0 {
 		return err
 	}
-	if values[provisionedDatabaseTypeEnv] == "" {
-		if err := r.environments.set(ctx, envName, provisionedDatabaseTypeEnv, string(mode)); err != nil {
+	if r.client != nil {
+		if _, err := resolveProjectServiceModules(ctx, r.client, args.Project); err != nil {
 			return err
 		}
-		values[provisionedDatabaseTypeEnv] = string(mode)
 	}
-	if mode == databasePostgreSQL {
-		return r.reconcile(ctx, values)
+	if database.Type != databasePostgreSQL {
+		if err := closeNetwork(); err != nil {
+			return err
+		}
+		return persistEnvironmentWrites(ctx, r.environments, envName, values, map[string]string{
+			provisionedDatabaseTypeEnv: string(database.Type),
+		})
+	}
+	if !database.managedAccess() {
+		if err := r.reconcile(ctx, values); err != nil {
+			return err
+		}
+		if err := closeNetwork(); err != nil {
+			return err
+		}
+		return persistEnvironmentWrites(ctx, r.environments, envName, values, map[string]string{
+			provisionedDatabaseTypeEnv: string(database.Type),
+		})
+	}
+	if r.outputs == nil {
+		return errors.New("current deployment output verification is unavailable")
+	}
+	values["AZURE_ENV_NAME"] = envName
+	binding, err := r.outputs.Verify(ctx, database, values)
+	if err != nil {
+		return err
+	}
+	if binding != nil {
+		values = binding.values
+		ctx = context.WithValue(ctx, deploymentBindingKey{}, binding)
+	}
+	if err := validateProvisionedBindings(database, values); err != nil {
+		return err
+	}
+	if r.client != nil || (binding != nil && binding.app != nil) {
+		for _, service := range services {
+			if err := r.verifyExplicitDatasource(
+				ctx, args.Project, service.service, nil, service.database, values,
+			); err != nil {
+				return err
+			}
+		}
+	}
+	switch database.Authentication {
+	case databaseAuthenticationPassword:
+		database.AdministratorName = strings.TrimSpace(values[postgresAdministratorEnv])
+		if !validAdministratorName(database.AdministratorName) {
+			return validationError(
+				"missing_database_administrator_name",
+				"the provisioned PostgreSQL administrator login output is missing or invalid",
+				"restore AZURE_POSTGRES_ADMINISTRATOR from the current root deployment output",
+			)
+		}
+	case databaseAuthenticationManagedIdentity:
+		database.AdministratorName = strings.TrimSpace(values[databaseAdministratorNameEnv])
+		if !validAdministratorName(database.AdministratorName) {
+			return validationError(
+				"missing_database_administrator_name",
+				"the verified developer PostgreSQL administrator login is missing or invalid",
+				"run azd provision again while signed in as the configured developer administrator",
+			)
+		}
+		if strings.TrimSpace(values[databaseAdministratorObjectIDEnv]) == "" ||
+			strings.TrimSpace(values[databaseUserAccessTenantIDEnv]) == "" {
+			return validationError(
+				"missing_database_administrator_identity",
+				"the verified developer PostgreSQL administrator identity is incomplete",
+				"run azd provision again while signed in as the configured developer administrator",
+			)
+		}
+	}
+	if database.discovered && database.Authentication == databaseAuthenticationPassword {
+		values = maps.Clone(values)
+		values[databaseAppPasswordEnv] = database.appPassword
+	}
+	if err := r.configureAccess(ctx, envName, database, values); err != nil {
+		return err
+	}
+	if err := r.reconcile(ctx, values); err != nil {
+		return err
+	}
+	if err := closeNetwork(); err != nil {
+		return err
+	}
+	writes := map[string]string{
+		provisionedDatabaseTypeEnv:   string(database.Type),
+		provisionedDatabaseAccessEnv: database.accessFingerprint(),
+		databaseAccessConfiguredEnv:  databaseAccessPolicyVersion,
+	}
+	if database.discovered {
+		writes[databaseTypeEnv] = string(database.Type)
+		writes[databaseAuthenticationEnv] = string(database.Authentication)
+		writes[databaseNameEnv] = database.Name
+		writes[databaseUsernameEnv] = database.Username
+	}
+	if database.AdministratorName != "" {
+		writes[databaseAdministratorNameEnv] = database.AdministratorName
+	}
+	return persistEnvironmentWrites(ctx, r.environments, envName, values, writes)
+}
+
+func validateProvisionedBindings(database resolvedDatabase, values map[string]string) error {
+	serverID := strings.TrimSpace(values[postgresServerIDEnv])
+	if serverID == "" || !strings.EqualFold(serverID, database.ServerResourceID) {
+		return validationError(
+			"mismatched_postgres_binding",
+			"database.serverResourceId does not match the current PostgreSQL root deployment output",
+			"restore the current root server output and use the selected serverResourceId expression",
+		)
+	}
+	if output := strings.TrimSpace(values[postgresDatabaseEnv]); output != "" &&
+		output != database.Name {
+		return validationError(
+			"mismatched_database_name",
+			"database.databaseName does not match the current PostgreSQL root deployment output",
+			"restore the authored database selection from the current deployment",
+		)
+	}
+	if database.Authentication == databaseAuthenticationManagedIdentity {
+		identityID := strings.TrimSpace(values[serviceIdentityIDEnv])
+		if database.AppIdentity == nil || identityID == "" ||
+			!strings.EqualFold(identityID, database.AppIdentity.ResourceID) {
+			return validationError(
+				"mismatched_database_app_identity",
+				"database.auth.appIdentity.resourceId does not match the selected service identity output",
+				"restore the current service identity output and use the selected UAMI resourceId expression",
+			)
+		}
 	}
 	return nil
 }
 
-// PreBuild creates the owned Dockerfile before native Docker discovery runs.
+// PreBuild validates packaging inputs without modifying authored build recipes.
 func (r *Runtime) PreBuild(ctx context.Context, args *azdext.ServiceEventArgs) error {
 	if args == nil || args.Project == nil || args.Service == nil {
 		return validationError("missing_service_config", "service build configuration is missing", "check azure.yaml")
@@ -245,39 +696,99 @@ func (r *Runtime) PreBuild(ctx context.Context, args *azdext.ServiceEventArgs) e
 	if err != nil {
 		return err
 	}
-	if _, err := r.resolveService(args.Service, values); err != nil {
+	if _, err := r.resolveService(ctx, args.Project, args.Service, nil, values, false); err != nil {
 		return err
 	}
-	if _, _, err := validateDockerfile(args.Project, args.Service); err != nil {
-		return err
+	if r.client != nil {
+		if _, err := resolveProjectServiceModules(ctx, r.client, args.Project); err != nil {
+			return err
+		}
 	}
-	return ensureDockerfile(args.Project, args.Service)
+	return prepareSpringBuild(args.Project, args.Service)
 }
 
-// PreDeploy re-observes ACA egress before each PostgreSQL deployment.
+// PreDeploy verifies provisioned access before Spring initializes its application schema at startup.
 func (r *Runtime) PreDeploy(ctx context.Context, args *azdext.ServiceEventArgs) error {
 	return r.reconcileService(ctx, args)
 }
 
-// PostDeploy rechecks ACA egress after a successful PostgreSQL deployment.
+// PostDeploy re-verifies managed database access after a successful deployment.
 func (r *Runtime) PostDeploy(ctx context.Context, args *azdext.ServiceEventArgs) error {
 	return r.reconcileService(ctx, args)
 }
 
-func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEventArgs) error {
+func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEventArgs) (resultErr error) {
 	if args == nil || args.Service == nil {
 		return validationError("missing_service_config", "service deployment configuration is missing", "check azure.yaml")
 	}
-	_, values, err := r.environments.values(ctx)
+	envName, values, err := r.environments.values(ctx)
 	if err != nil {
 		return err
 	}
-	resolved, err := r.resolveService(args.Service, values)
+	ctx, values, err = r.bindAutomaticProject(ctx, args.Project, envName, values)
 	if err != nil {
 		return err
 	}
+	closeNetwork, err := r.beginAutomaticNetwork(ctx)
+	defer func() {
+		if cleanupErr := closeNetwork(); cleanupErr != nil && !errors.Is(resultErr, cleanupErr) {
+			resultErr = errors.Join(resultErr, cleanupErr)
+		}
+	}()
+	if err != nil {
+		return err
+	}
+	resolved, err := r.resolveService(ctx, args.Project, args.Service, args.ServiceContext, values, true)
+	if err != nil {
+		return err
+	}
+	if r.client != nil {
+		if _, err := resolveProjectServiceModules(ctx, r.client, args.Project); err != nil {
+			return err
+		}
+	}
+	if resolved.database.managedAccess() {
+		if values[databaseAccessConfiguredEnv] != databaseAccessPolicyVersion ||
+			values[provisionedDatabaseAccessEnv] != resolved.database.accessFingerprint() {
+			return validationError(
+				"database_access_not_configured",
+				"managed PostgreSQL application access is incomplete for this deployment",
+				"run azd provision so the extension can verify the login, grants, identity, and cleanup",
+			)
+		}
+		if r.outputs == nil {
+			return errors.New("current deployment output verification is unavailable")
+		}
+		values["AZURE_ENV_NAME"] = envName
+		binding, err := r.outputs.Verify(ctx, resolved.database, values)
+		if err != nil {
+			return err
+		}
+		if binding != nil {
+			values = binding.values
+			ctx = context.WithValue(ctx, deploymentBindingKey{}, binding)
+		}
+		if r.client != nil || (binding != nil && binding.app != nil) {
+			if err := r.verifyExplicitDatasource(
+				ctx, args.Project, args.Service, args.ServiceContext, resolved.database, values,
+			); err != nil {
+				return err
+			}
+		}
+		resolved.database.AdministratorName = values[databaseAdministratorNameEnv]
+		if resolved.database.discovered && resolved.database.Authentication == databaseAuthenticationPassword {
+			values = maps.Clone(values)
+			values[databaseAppPasswordEnv] = resolved.database.appPassword
+		}
+		if err := r.configureAccess(ctx, envName, resolved.database, values); err != nil {
+			return err
+		}
+	}
+
 	if resolved.mode == databasePostgreSQL {
-		return r.reconcile(ctx, values)
+		if err := r.reconcile(ctx, values); err != nil {
+			return err
+		}
 	}
-	return nil
+	return closeNetwork()
 }

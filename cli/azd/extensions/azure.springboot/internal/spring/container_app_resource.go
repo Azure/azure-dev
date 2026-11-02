@@ -153,13 +153,22 @@ func (s *azureContainerAppResourceService) Resolve(
 		return nil, fmt.Errorf("reading the target Container App: %w", nonDisclosureError(err))
 	}
 	if app.ID == "" || !strings.EqualFold(app.Type, containerAppType) ||
-		!tagEqualsPointers(app.Tags, azdEnvironmentTag, envName) ||
 		!tagEqualsPointers(app.Tags, azdServiceNameTag, service.GetName()) {
 		return nil, validationError(
 			"container_app_ownership_unverified",
 			"the resolved Container App is not owned by the selected azd environment and service",
 			"restore the authored deployment outputs or select the correct environment",
 		)
+	}
+	if err := checkResourceOwnership(ctx, s.client, envName, values, app.ID, app.Tags); err != nil {
+		return nil, err
+	}
+	actual, err := arm.ParseResourceID(app.ID)
+	if err != nil || !strings.EqualFold(actual.SubscriptionID, subscriptionID) ||
+		!strings.EqualFold(actual.ResourceGroupName, candidate.GetResourceGroupName()) ||
+		!strings.EqualFold(actual.Name, candidate.GetResourceName()) ||
+		!strings.EqualFold(actual.Name, app.Name) {
+		return nil, errors.New("the actual Container App identity does not match the selected resource")
 	}
 	return &azdext.TargetResource{
 		SubscriptionId:    subscriptionID,

@@ -70,6 +70,7 @@ func TestFirewallIdentityUsesPersistedResourceIDs(t *testing.T) {
 }
 
 func TestFirewallErrorsDoNotDiscloseResourceIDs(t *testing.T) {
+	// #nosec G101 -- deliberately invalid credential-bearing URL for a non-disclosure regression.
 	secretID := "https://user:password@example.invalid/resource?sig=secret"
 	_, err := firewallIdentityFromValues(map[string]string{
 		containerAppIDEnv:     secretID,

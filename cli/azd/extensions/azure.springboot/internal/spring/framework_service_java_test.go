@@ -7,27 +7,163 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 )
+
+func TestAuthoredDockerCoreCompositionBuildsAndPackagesExactlyOnce(t *testing.T) {
+	projectConfig, service := createMavenProject(t)
+	service.AdditionalProperties = serviceWithConfig(t, map[string]any{"database": map[string]any{}}).AdditionalProperties
+	t.Setenv("AZD_EXEC_PROJECT_DIR", projectConfig.Path)
+	service.Language = "java"
+	service.Docker = &azdext.DockerProjectOptions{Path: "Dockerfile", Context: ".", Platform: "linux/amd64"}
+	recipe := []byte("FROM maven:3 AS build\nCOPY . .\nRUN mvn package\nEXPOSE 9966\n")
+	require.NoError(t, os.WriteFile(filepath.Join(projectConfig.Path, "Dockerfile"), recipe, 0o600))
+	ignore := []byte("target\n")
+	require.NoError(t, os.WriteFile(filepath.Join(projectConfig.Path, ".dockerignore"), ignore, 0o600))
+	builds, tags := 0, 0
+	runner := &commandRunnerFunc{
+		run: func(_ context.Context, args azdexec.RunArgs) (azdexec.RunResult, error) {
+			require.Equal(t, "docker", args.Cmd)
+			switch args.Args[0] {
+			case "build":
+				builds++
+				require.Equal(t, []string{
+					"build", "-f", filepath.Join(projectConfig.Path, "Dockerfile"),
+					"--platform", "linux/amd64", "-t", "petclinic-petclinic", projectConfig.Path,
+				}, args.Args[:len(args.Args)-2])
+				require.NoError(t, os.WriteFile(args.Args[len(args.Args)-1], []byte("sha256:built"), 0o600))
+			case "tag":
+				tags++
+			default:
+				t.Fatalf("unexpected container command %v", args.Args)
+			}
+			return azdexec.RunResult{}, nil
+		},
+	}
+	native, err := project.Parse(t.Context(), `name: petclinic
+services:
+  petclinic:
+    project: .
+    language: java
+    host: springbootapp
+    docker:
+      path: Dockerfile
+      context: .
+      platform: linux/amd64
+`)
+	require.NoError(t, err)
+	native.Path = projectConfig.Path
+	env := environment.New("dev")
+	console := input.NewConsole(true, false,
+		input.Writers{Output: io.Discard, Spinner: io.Discard},
+		input.ConsoleHandles{Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard}, nil, nil)
+	dockerCLI := docker.NewCli(runner)
+	helper := project.NewContainerHelper(clock.NewMock(), nil, nil, runner, dockerCLI, nil, console, cloud.AzurePublic())
+	composite := project.NewDockerProject(env, dockerCLI, helper, console, nil, runner)
+	require.NoError(t, composite.Initialize(t.Context(), native.Services["petclinic"]))
+	require.True(t, composite.Requirements().Package.RequireBuild)
+	context := project.NewServiceContext()
+	build, err := runWithProgress(t.Context(), nil, func(progress *async.Progress[project.ServiceProgress]) (
+		*project.ServiceBuildResult, error,
+	) {
+		return composite.Build(t.Context(), native.Services["petclinic"], context, progress)
+	})
+	require.NoError(t, err)
+	context.Build = append(context.Build, build.Artifacts...)
+	packaged, err := runWithProgress(t.Context(), nil, func(progress *async.Progress[project.ServiceProgress]) (
+		*project.ServicePackageResult, error,
+	) {
+		return composite.Package(t.Context(), native.Services["petclinic"], context, progress)
+	})
+	require.NoError(t, err)
+	context.Package = append(context.Package, packaged.Artifacts...)
+	target := newServiceTarget(packagingTestClient(t, projectConfig), nil, nil, nil)
+	result, err := target.Package(t.Context(), service,
+		&azdext.ServiceContext{Build: extensionArtifacts(context.Build), Package: extensionArtifacts(context.Package)}, nil)
+	require.NoError(t, err)
+	require.Empty(t, result.Artifacts)
+	require.Equal(t, 1, builds)
+	require.Equal(t, 1, tags)
+	content, err := os.ReadFile(filepath.Join(projectConfig.Path, "Dockerfile"))
+	require.NoError(t, err)
+	require.Equal(t, recipe, content)
+	content, err = os.ReadFile(filepath.Join(projectConfig.Path, ".dockerignore"))
+	require.NoError(t, err)
+	require.Equal(t, ignore, content)
+	require.NoDirExists(t, filepath.Join(projectConfig.Path, stagingDirectoryName))
+}
 
 type commandRunnerFunc struct {
 	run        func(context.Context, azdexec.RunArgs) (azdexec.RunResult, error)
 	runList    func(context.Context, []string, azdexec.RunArgs) (azdexec.RunResult, error)
 	toolInPath func(string) error
+}
+
+func TestAuthoredDockerJavaFrameworkNeverInvokesHostTools(t *testing.T) {
+	projectConfig, service := createMavenProject(t)
+	t.Setenv("AZD_EXEC_PROJECT_DIR", projectConfig.Path)
+	service.Language = "java"
+	service.Docker = &azdext.DockerProjectOptions{Path: "Dockerfile", Context: ".", Platform: "linux/amd64"}
+	require.NoError(t, os.WriteFile(filepath.Join(projectConfig.Path, "Dockerfile"), []byte("FROM source-builder"), 0o600))
+	runner := &commandRunnerFunc{
+		run: func(context.Context, azdexec.RunArgs) (azdexec.RunResult, error) {
+			t.Fatal("host tool invocation is forbidden for an authored Dockerfile")
+			return azdexec.RunResult{}, nil
+		},
+		runList: func(context.Context, []string, azdexec.RunArgs) (azdexec.RunResult, error) {
+			t.Fatal("host tool list invocation is forbidden for an authored Dockerfile")
+			return azdexec.RunResult{}, nil
+		},
+		toolInPath: func(string) error {
+			t.Fatal("host tool lookup is forbidden for an authored Dockerfile")
+			return nil
+		},
+	}
+	provider := newJavaFrameworkService(nil, runner)
+	require.NoError(t, provider.Initialize(t.Context(), service))
+	tools, err := provider.RequiredExternalTools(t.Context(), service)
+	require.NoError(t, err)
+	require.Empty(t, tools)
+	requirements, err := provider.Requirements()
+	require.NoError(t, err)
+	require.False(t, requirements.Package.RequireRestore)
+	require.False(t, requirements.Package.RequireBuild)
+	restored, err := provider.Restore(t.Context(), service, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, restored.Artifacts)
+	built, err := provider.Build(t.Context(), service, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, built.Artifacts)
+	packaged, err := provider.Package(t.Context(), service, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, packaged.Artifacts)
+	require.NoDirExists(t, filepath.Join(projectConfig.Path, stagingDirectoryName))
+	require.NoError(t, os.Remove(filepath.Join(projectConfig.Path, "Dockerfile")))
+	_, err = provider.Package(t.Context(), service, nil, nil)
+	require.Error(t, err)
+	require.Error(t, provider.Initialize(t.Context(), service))
+	_, err = provider.Build(t.Context(), service, nil, nil)
+	require.ErrorContains(t, err, "not initialized")
 }
 
 func (r *commandRunnerFunc) Run(ctx context.Context, args azdexec.RunArgs) (azdexec.RunResult, error) {
@@ -121,6 +257,8 @@ func TestHasUnbornGitHeadClassifiesOnlyInitialRepositories(t *testing.T) {
 }
 
 func TestHasUnbornGitHeadPreservesNonRepositoryBehavior(t *testing.T) {
+	projectDir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(projectDir))
 	called := false
 	runner := &commandRunnerFunc{
 		run: func(context.Context, azdexec.RunArgs) (azdexec.RunResult, error) {
@@ -129,7 +267,7 @@ func TestHasUnbornGitHeadPreservesNonRepositoryBehavior(t *testing.T) {
 		},
 	}
 
-	unborn, err := hasUnbornGitHead(t.Context(), runner, t.TempDir(), nil)
+	unborn, err := hasUnbornGitHead(t.Context(), runner, projectDir, nil)
 
 	require.NoError(t, err)
 	require.False(t, unborn)
@@ -186,6 +324,31 @@ func TestHasGitMetadataRecognizesDirectoriesGitfilesAndExplicitDirectories(t *te
 	})
 }
 
+func TestHasGitMetadataHonorsDiscoveryCeilingsWithoutHidingNestedRepositories(t *testing.T) {
+	root := t.TempDir()
+	service := filepath.Join(root, "fixture", "service")
+	require.NoError(t, os.MkdirAll(service, 0o700))
+	require.NoError(t, os.Mkdir(filepath.Join(root, ".git"), 0o700))
+	t.Setenv("GIT_CEILING_DIRECTORIES", root)
+
+	found, err := hasGitMetadata(service, nil)
+	require.NoError(t, err)
+	require.False(t, found)
+
+	found, err = hasGitMetadata(service, []string{"GIT_CEILING_DIRECTORIES="})
+	require.NoError(t, err)
+	require.True(t, found)
+
+	require.NoError(t, os.Mkdir(filepath.Join(root, "fixture", ".git"), 0o700))
+	found, err = hasGitMetadata(service, nil)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	found, err = hasGitMetadata(service, []string{"GIT_DIR=" + filepath.Join(root, ".git")})
+	require.NoError(t, err)
+	require.True(t, found)
+}
+
 func TestHasUnbornGitHeadPreservesCommandScopedGitEnvironment(t *testing.T) {
 	root := t.TempDir()
 	worktree := filepath.Join(root, "worktree")
@@ -222,6 +385,7 @@ func TestHasUnbornGitHeadWithRealGit(t *testing.T) {
 	}
 
 	projectDir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(projectDir))
 	runGit := func(args ...string) {
 		result, err := runner.Run(t.Context(), azdexec.NewRunArgs("git", args...).WithCwd(projectDir))
 		require.NoError(t, err, result.Stderr)
@@ -298,6 +462,7 @@ func TestMavenPackageCommandRunnerScopesAccommodation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			projectDir := t.TempDir()
+			t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(projectDir))
 			if tt.hasMetadata {
 				require.NoError(t, os.Mkdir(filepath.Join(projectDir, ".git"), 0o700))
 			}
@@ -423,12 +588,12 @@ func TestFrameworkCommandErrorsRedactCredentialBearingURLs(t *testing.T) {
 		sensitiveURL string
 		sanitizedURL string
 	}{
-		{
+		{ // #nosec G101 -- dummy credentials intentionally exercise error redaction.
 			name:         "HTTPS",
 			sensitiveURL: "https://user:password@example.test/repository?sig=secret#fragment",
 			sanitizedURL: "https://example.test/repository",
 		},
-		{
+		{ // #nosec G101 -- dummy credentials intentionally exercise error redaction.
 			name:         "Maven scheme",
 			sensitiveURL: "maven://user:password@example.test/repository?sig=secret#fragment",
 			sanitizedURL: "maven://example.test/repository",
@@ -577,6 +742,7 @@ func TestJavaFrameworkDelegatesNativeMavenPackaging(t *testing.T) {
 			projectDir := t.TempDir()
 			serviceDir := filepath.Join(projectDir, "service")
 			require.NoError(t, os.MkdirAll(serviceDir, 0o700))
+			// #nosec G306 -- owner-executable Maven wrapper fixture; contains no credentials.
 			require.NoError(t, os.WriteFile(filepath.Join(serviceDir, "mvnw"), []byte("wrapper"), 0o700))
 			if tt.host == SpringHost {
 				require.NoError(t, os.Mkdir(filepath.Join(projectDir, ".git"), 0o700))
@@ -730,6 +896,7 @@ func TestJavaFrameworkRequirementsMatchNativeMaven(t *testing.T) {
 func TestJavaFrameworkInitializeAndRequirementsAreConcurrentSafe(t *testing.T) {
 	projectDir := t.TempDir()
 	t.Setenv("AZD_EXEC_PROJECT_DIR", projectDir)
+	// #nosec G306 -- owner-executable Maven wrapper fixture; contains no credentials.
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "mvnw"), []byte("wrapper"), 0o700))
 
 	javaHome := filepath.Join(projectDir, "jdk")
@@ -738,6 +905,7 @@ func TestJavaFrameworkInitializeAndRequirementsAreConcurrentSafe(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		javacName += ".exe"
 	}
+	// #nosec G306 -- owner-executable JDK fixture; contains no credentials.
 	require.NoError(t, os.WriteFile(filepath.Join(javaHome, "bin", javacName), []byte("javac"), 0o700))
 	t.Setenv("JAVA_HOME", javaHome)
 

@@ -49,8 +49,11 @@ func TestResolvePostgreSQLPassword(t *testing.T) {
 			persisted: true,
 		},
 		{
-			name:    "existing resource has no password",
-			values:  map[string]string{postgresServerIDEnv: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.DBforPostgreSQL/flexibleServers/pg"},
+			name: "existing resource has no password",
+			values: map[string]string{
+				postgresServerIDEnv: "/subscriptions/sub/resourceGroups/rg/providers/" +
+					"Microsoft.DBforPostgreSQL/flexibleServers/pg",
+			},
 			wantErr: "existing infrastructure",
 		},
 	}

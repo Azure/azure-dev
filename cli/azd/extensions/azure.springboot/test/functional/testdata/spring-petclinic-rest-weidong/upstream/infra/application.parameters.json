@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "${AZURE_LOCATION}" },
+    "environmentId": { "value": "${CONTAINER_APP_ENVIRONMENT_ID}" },
+    "identityId": { "value": "${APPLICATION_IDENTITY_ID}" },
+    "identityClientId": { "value": "${APPLICATION_IDENTITY_CLIENT_ID}" },
+    "registryEndpoint": { "value": "${AZURE_CONTAINER_REGISTRY_ENDPOINT}" },
+    "databaseHost": { "value": "${DATABASE_HOST}" },
+    "appImage": { "value": "${SERVICE_SPRING_PETCLINIC_REST_APP_IMAGE_NAME}" }
+  }
+}

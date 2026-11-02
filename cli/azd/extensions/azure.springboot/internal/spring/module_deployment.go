@@ -19,8 +19,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -41,6 +44,12 @@ type moduleDeploymentRequest struct {
 	EnvironmentName  string
 	EnvironmentValue map[string]string
 	ImageName        string
+	Module           *resolvedServiceModule
+}
+
+type resolvedServiceModule struct {
+	BicepPath      string
+	ParametersPath string
 }
 
 type moduleDeploymentResult struct {
@@ -108,17 +117,18 @@ func (d *azureModuleDeployer) Deploy(
 	request *moduleDeploymentRequest,
 	progress azdext.ProgressReporter,
 ) (*moduleDeploymentResult, error) {
-	bicepPath, parametersPath, err := resolveServiceModulePaths(request.Project, request.Service)
-	if err != nil {
-		return nil, err
+	module := request.Module
+	if module == nil {
+		return nil, validationError("unresolved_service_module", "the authored service module has not been resolved",
+			"resolve services through Project.GetConfigSection before deploying")
 	}
-	parameters, err := loadServiceModuleParameters(parametersPath, request.EnvironmentValue)
+	parameters, err := loadServiceModuleParameters(module.ParametersPath, request.EnvironmentValue)
 	if err != nil {
 		return nil, err
 	}
 
 	progress("Compiling Spring Boot service module")
-	build, err := d.compiler.Build(ctx, bicepPath)
+	build, err := d.compiler.Build(ctx, module.BicepPath)
 	if err != nil {
 		return nil, fmt.Errorf("compiling service Bicep module: %w", nonDisclosureError(err))
 	}
@@ -143,7 +153,7 @@ func (d *azureModuleDeployer) Deploy(
 			nonDisclosureError(err),
 		)
 	}
-	environmentOutputs, err := deploymentOutputs(outputs)
+	environmentOutputs, err := deploymentOutputs(templateOutputDeclarations(template), outputs)
 	if err != nil {
 		return nil, err
 	}
@@ -153,6 +163,7 @@ func (d *azureModuleDeployer) Deploy(
 func resolveServiceModulePaths(
 	project *azdext.ProjectConfig,
 	service *azdext.ServiceConfig,
+	moduleNames ...string,
 ) (string, string, error) {
 	if project == nil || strings.TrimSpace(project.GetPath()) == "" {
 		return "", "", validationError(
@@ -202,7 +213,10 @@ func resolveServiceModulePaths(
 		)
 	}
 
-	moduleName, err := serviceModuleName(service)
+	moduleName, err := serviceModuleName(service, nil)
+	if len(moduleNames) > 0 {
+		moduleName, err = serviceModuleName(service, map[string]any{"module": moduleNames[0]})
+	}
 	if err != nil {
 		return "", "", err
 	}
@@ -235,30 +249,33 @@ func resolveServiceModulePaths(
 				"use a service module contained within the Bicep infrastructure directory",
 			)
 		}
+		info, err := os.Stat(resolved)
+		if err != nil || !info.Mode().IsRegular() {
+			return "", "", validationError("invalid_service_module_file", "service module files must be regular files",
+				"use a regular Bicep module and canonical parameter JSON")
+		}
 	}
 	return bicepPath, parametersPath, nil
 }
 
-func serviceModuleName(service *azdext.ServiceConfig) (string, error) {
+func serviceModuleName(service *azdext.ServiceConfig, raw map[string]any) (string, error) {
 	if service == nil {
 		return "", validationError("missing_service_config", "service configuration is missing", "check azure.yaml")
 	}
-	moduleName := ""
-	if properties := service.GetAdditionalProperties(); properties != nil {
-		if value, present := properties.AsMap()["module"]; present {
-			var ok bool
-			moduleName, ok = value.(string)
-			if !ok {
-				return "", validationError(
-					"invalid_service_module",
-					fmt.Sprintf("service %q module must be a string", service.GetName()),
-					"set module to a relative Bicep module name",
-				)
-			}
+	moduleName := service.GetName()
+	if value, present := raw["module"]; present {
+		var ok bool
+		moduleName, ok = value.(string)
+		if !ok || strings.TrimSpace(moduleName) == "" || moduleName != strings.TrimSpace(moduleName) {
+			return "", validationError("invalid_service_module",
+				fmt.Sprintf("service %q module must be a nonempty relative module name", service.GetName()),
+				"set module to a relative extensionless Bicep module name, or omit module to use the service name")
 		}
 	}
-	if strings.TrimSpace(moduleName) == "" {
-		moduleName = service.GetName()
+	moduleName = strings.ReplaceAll(moduleName, `\`, "/")
+	if strings.Contains(moduleName, ":") || strings.HasPrefix(moduleName, "/") {
+		return "", validationError("invalid_service_module", "service module must be a relative extensionless path",
+			"use a module contained within infra.path")
 	}
 	moduleName = filepath.ToSlash(filepath.Clean(moduleName))
 	if moduleName == "." || moduleName == ".." || strings.HasPrefix(moduleName, "../") ||
@@ -270,6 +287,59 @@ func serviceModuleName(service *azdext.ServiceConfig) (string, error) {
 		)
 	}
 	return moduleName, nil
+}
+
+func resolveProjectServiceModules(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	project *azdext.ProjectConfig,
+) (map[string]*resolvedServiceModule, error) {
+	services := springServices(project)
+	if len(services) == 0 {
+		return map[string]*resolvedServiceModule{}, nil
+	}
+	if client == nil {
+		return nil, errors.New("azd client is required to resolve authored service modules")
+	}
+	response, err := client.Project().GetConfigSection(ctx, &azdext.GetProjectConfigSectionRequest{Path: "services"})
+	if err != nil {
+		return nil, fmt.Errorf("reading authored services configuration: %w", nonDisclosureError(err))
+	}
+	if !response.GetFound() || response.GetSection() == nil {
+		return nil, validationError("missing_services_configuration", "authored services configuration is unavailable",
+			"restore the services section in azure.yaml")
+	}
+	return resolveServiceModulesFromSection(project, response.GetSection().AsMap(), services)
+}
+
+func resolveServiceModulesFromSection(
+	project *azdext.ProjectConfig,
+	raw map[string]any,
+	services []*azdext.ServiceConfig,
+) (map[string]*resolvedServiceModule, error) {
+	resolved := make(map[string]*resolvedServiceModule, len(services))
+	for _, service := range services {
+		// Service names are literal map keys, not dotted configuration paths.
+		authored, ok := raw[service.GetName()].(map[string]any)
+		if !ok {
+			return nil, validationError("missing_service_configuration",
+				fmt.Sprintf("authored configuration for service %q is unavailable", service.GetName()),
+				"restore the service object in azure.yaml")
+		}
+		if err := validateRawDockerSettings(authored); err != nil {
+			return nil, err
+		}
+		name, err := serviceModuleName(service, authored)
+		if err != nil {
+			return nil, err
+		}
+		bicepPath, parametersPath, err := resolveServiceModulePaths(project, service, name)
+		if err != nil {
+			return nil, err
+		}
+		resolved[service.GetName()] = &resolvedServiceModule{BicepPath: bicepPath, ParametersPath: parametersPath}
+	}
+	return resolved, nil
 }
 
 func loadServiceModuleParameters(path string, values map[string]string) (map[string]any, error) {
@@ -390,8 +460,24 @@ func serviceDeploymentName(serviceName string) string {
 	return fmt.Sprintf("azd-%s-%d", name, time.Now().Unix())
 }
 
-func deploymentOutputs(outputs map[string]any) (map[string]string, error) {
-	result := make(map[string]string, len(outputs))
+func templateOutputDeclarations(template map[string]any) azure.ArmTemplateOutputs {
+	raw, ok := template["outputs"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	outputs := make(azure.ArmTemplateOutputs, len(raw))
+	for name := range raw {
+		outputs[name] = azure.ArmTemplateOutput{}
+	}
+	return outputs
+}
+
+func deploymentOutputs(
+	templateOutputs azure.ArmTemplateOutputs,
+	outputs map[string]any,
+) (map[string]string, error) {
+	values := make(map[string]any, len(outputs))
+	casingInputs := make(map[string]azapi.AzCliDeploymentOutput, len(outputs))
 	for name, raw := range outputs {
 		definition, ok := raw.(map[string]any)
 		if !ok {
@@ -404,6 +490,21 @@ func deploymentOutputs(outputs map[string]any) (map[string]string, error) {
 		if !present {
 			return nil, fmt.Errorf("deployment output %q is missing value", name)
 		}
+		values[name] = value
+		casingInputs[name] = azapi.AzCliDeploymentOutput{
+			Type:  "String",
+			Value: name,
+		}
+	}
+
+	normalized := provisioning.OutputParametersFromArmOutputs(templateOutputs, casingInputs)
+	result := make(map[string]string, len(normalized))
+	for name, output := range normalized {
+		sourceName, ok := output.Value.(string)
+		if !ok {
+			return nil, fmt.Errorf("deployment output %q has an invalid normalized name", name)
+		}
+		value := values[sourceName]
 		switch typed := value.(type) {
 		case string:
 			result[name] = typed
@@ -412,7 +513,7 @@ func deploymentOutputs(outputs map[string]any) (map[string]string, error) {
 		default:
 			encoded, err := json.Marshal(typed)
 			if err != nil {
-				return nil, fmt.Errorf("encoding deployment output %q: %w", name, err)
+				return nil, fmt.Errorf("encoding deployment output %q: %w", sourceName, err)
 			}
 			result[name] = string(encoded)
 		}

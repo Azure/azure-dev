@@ -42,6 +42,22 @@ func (r *firewallReconciler) Reconcile(ctx context.Context, values map[string]st
 	if err != nil {
 		return err
 	}
+	binding, ok := ctx.Value(deploymentBindingKey{}).(*deploymentBinding)
+	if !ok {
+		binding, err = readDeploymentBinding(ctx, r.client, values["AZURE_ENV_NAME"], values)
+		if err != nil {
+			return err
+		}
+	}
+	for _, resourceID := range []string{values[postgresServerIDEnv], values[containerAppIDEnv]} {
+		if err := binding.requireResource(resourceID); err != nil {
+			return err
+		}
+		if binding.automatic {
+			_, err := r.PrepareAutomatic(ctx, binding)
+			return err
+		}
+	}
 	tenant, err := r.client.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 		SubscriptionId: identity.subscriptionID,
 	})
@@ -59,19 +75,6 @@ func (r *firewallReconciler) Reconcile(ctx context.Context, values map[string]st
 	)
 	if err != nil {
 		return fmt.Errorf("creating the azd Azure credential: %w", err)
-	}
-
-	apps, err := armappcontainers.NewContainerAppsClient(identity.subscriptionID, credential, nil)
-	if err != nil {
-		return fmt.Errorf("creating Container Apps client: %w", err)
-	}
-	app, err := apps.Get(ctx, identity.resourceGroup, identity.containerAppName, nil)
-	if err != nil {
-		return fmt.Errorf("reading the provisioned Container App: %w", err)
-	}
-	ips, err := normalizeContainerAppOutboundIPs(app.Properties)
-	if err != nil {
-		return err
 	}
 
 	firewalls, err := armpostgresqlflexibleservers.NewFirewallRulesClient(
@@ -97,6 +100,9 @@ func (r *firewallReconciler) Reconcile(ctx context.Context, values map[string]st
 			if rule.Properties != nil &&
 				rule.Properties.StartIPAddress != nil &&
 				rule.Properties.EndIPAddress != nil {
+				if isAllPublicIPv4Rule(rule.Properties) {
+					return nil
+				}
 				ip = *rule.Properties.StartIPAddress
 				if *rule.Properties.StartIPAddress != *rule.Properties.EndIPAddress {
 					ip += "-" + *rule.Properties.EndIPAddress
@@ -106,6 +112,18 @@ func (r *firewallReconciler) Reconcile(ctx context.Context, values map[string]st
 		}
 	}
 
+	apps, err := armappcontainers.NewContainerAppsClient(identity.subscriptionID, credential, nil)
+	if err != nil {
+		return fmt.Errorf("creating Container Apps client: %w", err)
+	}
+	app, err := apps.Get(ctx, identity.resourceGroup, identity.containerAppName, nil)
+	if err != nil {
+		return fmt.Errorf("reading the provisioned Container App: %w", err)
+	}
+	ips, err := normalizeContainerAppOutboundIPs(app.Properties)
+	if err != nil {
+		return err
+	}
 	plan := planFirewallRules(identity.containerAppName, ips, existing)
 	for _, rule := range plan.add {
 		poller, err := firewalls.BeginCreateOrUpdate(
@@ -144,6 +162,31 @@ func (r *firewallReconciler) Reconcile(ctx context.Context, values map[string]st
 		}
 	}
 	return nil
+}
+
+func isAllPublicIPv4Rule(properties *armpostgresqlflexibleservers.FirewallRuleProperties) bool {
+	return properties != nil && properties.StartIPAddress != nil && properties.EndIPAddress != nil &&
+		*properties.StartIPAddress == "0.0.0.0" && *properties.EndIPAddress == "255.255.255.255"
+}
+
+func hasAllPublicIPv4Rule(
+	ctx context.Context,
+	client *armpostgresqlflexibleservers.FirewallRulesClient,
+	resourceGroup, serverName string,
+) (bool, error) {
+	pager := client.NewListByServerPager(resourceGroup, serverName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return false, fmt.Errorf("listing authored PostgreSQL firewall rules: %w", nonDisclosureError(err))
+		}
+		for _, rule := range page.Value {
+			if rule != nil && isAllPublicIPv4Rule(rule.Properties) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 type firewallIdentity struct {

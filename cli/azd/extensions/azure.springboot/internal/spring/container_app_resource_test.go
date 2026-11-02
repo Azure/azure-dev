@@ -50,7 +50,11 @@ func TestContainerAppResourceResolveUsesPersistedCustomIdentity(t *testing.T) {
 	}
 
 	target, err := resources.Resolve(
-		t.Context(),
+		context.WithValue(t.Context(), deploymentBindingKey{}, &deploymentBinding{
+			resources: map[string]bool{
+				"/subscriptions/sub/resourcegroups/custom-rg/providers/microsoft.app/containerapps/custom-app": true,
+			},
+		}),
 		"sub",
 		"dev",
 		map[string]string{
@@ -98,7 +102,7 @@ func TestContainerAppResourceResolveFailsClosedOnOwnershipAndResolverErrors(t *t
 			&azdext.ServiceConfig{Name: "petclinic"},
 			nil,
 		)
-		require.ErrorContains(t, err, "not owned")
+		require.ErrorContains(t, err, "another azd environment")
 	})
 
 	t.Run("default resolver", func(t *testing.T) {
@@ -175,4 +179,38 @@ func TestContainerAppResourceWaitReadyHonorsCancellation(t *testing.T) {
 		ResourceName:      "app",
 	})
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestContainerAppResourceResolveUntaggedDeploymentMembership(t *testing.T) {
+	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app"
+	for _, member := range []bool{false, true} {
+		t.Run(map[bool]string{false: "foreign resource", true: "deployment member"}[member], func(t *testing.T) {
+			reader := &fakeContainerAppReader{snapshots: []*containerAppSnapshot{{
+				ID: resourceID, Name: "app", Type: containerAppType,
+				Tags: map[string]*string{azdServiceNameTag: new("petclinic")},
+			}}}
+			resources := &azureContainerAppResourceService{
+				reader: func(context.Context, string) (containerAppReader, error) {
+					return reader, nil
+				},
+			}
+			ctx := context.WithValue(t.Context(), deploymentBindingKey{}, &deploymentBinding{
+				resources: map[string]bool{
+					"/subscriptions/sub/resourcegroups/rg/providers/microsoft.app/containerapps/app": member,
+				},
+			})
+			target, err := resources.Resolve(ctx, "sub", "dev", nil,
+				&azdext.ServiceConfig{Name: "petclinic"}, func() (*azdext.TargetResource, error) {
+					return &azdext.TargetResource{
+						SubscriptionId: "sub", ResourceGroupName: "rg", ResourceName: "app", ResourceType: containerAppType,
+					}, nil
+				})
+			if member {
+				require.NoError(t, err)
+				require.Equal(t, "app", target.GetResourceName())
+			} else {
+				require.ErrorContains(t, err, "not a member")
+			}
+		})
+	}
 }

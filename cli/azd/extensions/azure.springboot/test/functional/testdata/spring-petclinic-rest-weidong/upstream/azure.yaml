@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: petclinic-rest
+metadata:
+  template: petclinic-rest-azd@0.1.0
+infra:
+  provider: bicep
+  path: infra
+  module: main
+services:
+  spring-petclinic-rest-app:
+    project: .
+    host: containerapp
+    language: docker
+    module: application
+    docker:
+      path: Dockerfile
+      context: .
+      platform: linux/amd64
+hooks:
+  preup:
+    shell: pwsh
+    run: scripts/Prepare-Database.ps1
+    interactive: false
+  preprovision:
+    shell: pwsh
+    run: scripts/Prepare-Database.ps1
+    interactive: false
+  postprovision:
+    shell: pwsh
+    run: scripts/Configure-Database.ps1
+    interactive: false

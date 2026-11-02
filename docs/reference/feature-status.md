@@ -53,6 +53,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Azure Functions | Stable |
 | Azure Kubernetes Service (AKS) | Beta |
 | Azure AI | Beta |
+| Spring Boot extension (`springbootapp`) | Development prototype (unpublished) |
 
 ## Clients
 

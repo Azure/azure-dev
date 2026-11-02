@@ -1,3 +1,5 @@
+<!-- cspell:ignore waza evals -->
+
 # Creating an Extension
 
 This guide covers how to create, build, and publish an extension for the Azure Developer CLI.
@@ -62,6 +64,30 @@ for the stream requirements and legacy-client behavior.
 
 ### 4. Build
 
+When combining framework and service-target providers, keep packaging ownership
+explicit. The unpublished
+[`azure.springboot` example](../../cli/azd/extensions/azure.springboot/README.md)
+uses core Docker composition when `docker.path` is supplied and reuses the
+container artifact instead of building twice. Without the path it retains
+host Maven and an owned generated runtime recipe; unrelated Dockerfiles must
+not be silently adopted or overwritten.
+Its automatic discovery and complete application-auth verification require the
+native route because an authored image does not establish effective packaged
+Spring configuration. Pending configuration selectors must not fabricate a
+datasource or readiness state.
+
+Custom service fields can use `ServiceConfig.AdditionalProperties` without a
+protobuf change. Do not assume typed core fields such as `module` are in that
+map: retrieve the authored services section through the project-config RPC.
+Validate explicit null/empty/unsupported inputs before auth or mutations.
+Document syntax migrations: this prototype moved `config.database` directly
+under the service and removed `auth.permission`, using one application-owned
+access policy rather than silently accepting obsolete fields. Keep application
+startup SQL distinct from access readiness and preserve IaC firewall ownership.
+Its [pinned REST fixture](../../cli/azd/extensions/azure.springboot/test/functional/testdata/spring-petclinic-rest-weidong/README.md)
+illustrates YAML-only adoption, offline structural validation and local native
+runtime checks, not live Azure managed-identity/TLS acceptance.
+
 ```bash
 # Using the developer extension
 azd x build
@@ -93,6 +119,37 @@ For extensions that are still in development or preview, consider publishing to 
 
 > [!NOTE]
 > Extensions in the dev registry have no stability guarantees, are unsigned, and are not covered by Azure support. This is expected and appropriate for pre-release testing. See the [Dev/Experimental Extension Registry](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#devexperimental-extension-registry) guide for full details.
+
+## First-party user contract review
+
+The PR reviewer applies the
+[`extension-user-contract-review` skill](../../.github/skills/extension-user-contract-review/SKILL.md)
+through `azd-code-reviewer` for additions or removals of commands, positional parameters, flags, and YAML schema
+components. Behavior-only changes such as defaults, validation, prompts, output, and runtime semantics remain part
+of normal code review and do not receive experiences-spec tracking comments. This replaces the standalone extension
+user-contract review workflow; the checks run when the PR reviewer runs, not as a separate Actions job.
+
+Each distinct in-scope addition or removal gets an inline thread requesting a link to its approved experiences spec
+PR. Reply in that finding's thread with the spec link, even when the change is intentional. The reviewer reuses
+links provided by the PR author or repository collaborators in that same thread and avoids repeating existing
+findings, including those posted by the former workflow.
+
+Comments for additions and modifications use RIGHT-side new-file line numbers. Deletion-only changes, including
+removed commands or entire files, use LEFT-side deleted lines with old-file line numbers. The reviewer preserves
+the side and coordinates in its returned comments; a host that cannot publish LEFT-side comments receives an
+explicit blocked status rather than a comment on unrelated surviving code.
+
+Repository-wide and extension-specific reviewer instructions require this pass before the general review lenses,
+including on fork PRs. The skill accounts for every changed extension file and audits that findings survive triage.
+The review summary reports completion with inspected-file, new-comment, and existing-thread counts, or an explicit
+blocked status when evidence or output capacity is missing. These are instructions to the reviewing agent, not a
+deterministic merge gate: they cannot force a host to invoke review or guarantee that a model detects every change.
+
+The skill includes a [behavioral evaluation suite](../../.github/skills/extension-user-contract-review/evals/eval.yaml)
+that invokes the parent reviewer and checks the returned inline comments. From the repository root, run
+`waza check .github/skills/extension-user-contract-review` for static readiness and
+`waza run .github/skills/extension-user-contract-review/evals/eval.yaml` for real-agent cases.
+The latter requires Copilot authentication and consumes model usage; it does not post GitHub comments.
 
 ## First-party CI builds
 

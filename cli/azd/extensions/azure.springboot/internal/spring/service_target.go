@@ -9,23 +9,32 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"google.golang.org/protobuf/proto"
 )
 
 type serviceTarget struct {
 	azdext.BaseServiceTargetProvider
-	client    *azdext.AzdClient
-	runtime   *Runtime
-	modules   moduleDeployer
-	resources containerAppResourceService
+	client          *azdext.AzdClient
+	runtime         *Runtime
+	modules         moduleDeployer
+	resources       containerAppResourceService
+	images          runtimeImageBuilder
+	moduleMu        sync.Mutex
+	resolvedModules map[string]*resolvedServiceModule
 }
 
 // NewServiceTarget creates the Spring Boot service target.
 func NewServiceTarget(client *azdext.AzdClient, runtime *Runtime) azdext.ServiceTargetProvider {
-	return newServiceTarget(client, runtime, newAzureModuleDeployer(client, io.Discard), newContainerAppResourceService(client))
+	return newServiceTarget(
+		client, runtime, newAzureModuleDeployer(client, io.Discard), newContainerAppResourceService(client),
+	)
 }
 
 func newServiceTarget(
@@ -39,11 +48,31 @@ func newServiceTarget(
 		runtime:   runtime,
 		modules:   modules,
 		resources: resources,
+		images: newRuntimeImageBuilder(azdexec.NewCommandRunner(&azdexec.RunnerOptions{
+			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
+		})),
 	}
 }
 
 func (t *serviceTarget) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
-	return t.runtime.ValidateService(ctx, serviceConfig)
+	t.moduleMu.Lock()
+	t.resolvedModules = nil
+	t.moduleMu.Unlock()
+	projectResponse, err := t.client.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("getting the azd project for Spring service validation: %w", err)
+	}
+	if err := validateSpringBuild(projectResponse.GetProject(), serviceConfig); err != nil {
+		return err
+	}
+	modules, err := resolveProjectServiceModules(ctx, t.client, projectResponse.GetProject())
+	if err != nil {
+		return err
+	}
+	t.moduleMu.Lock()
+	t.resolvedModules = modules
+	t.moduleMu.Unlock()
+	return t.runtime.ValidateService(ctx, serviceConfig, projectResponse.GetProject())
 }
 
 func (t *serviceTarget) GetTargetResource(
@@ -72,6 +101,12 @@ func (t *serviceTarget) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
+	if err := validateContainerSettings(serviceConfig); err != nil {
+		return nil, err
+	}
+	if err := validateApplicationPackaging(serviceConfig); err != nil {
+		return nil, err
+	}
 	projectResponse, err := t.client.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("getting the azd project for container packaging: %w", err)
@@ -84,6 +119,30 @@ func (t *serviceTarget) Package(
 			"run the command from an initialized azd project",
 		)
 	}
+	if usesAuthoredDockerfile(serviceConfig) {
+		if err := validateSpringBuild(project, serviceConfig); err != nil {
+			return nil, err
+		}
+		if err := validateCoreContainerPackage(serviceContext); err != nil {
+			return nil, err
+		}
+		// The core Docker composite has already appended this image to ServiceContext.Package.
+		return &azdext.ServicePackageResult{}, nil
+	}
+	if discoversDatabase(serviceConfig) {
+		if _, err := t.runtime.readServiceDatasource(ctx, project, serviceConfig, serviceContext, false); err != nil {
+			return nil, err
+		}
+	}
+	for _, artifacts := range [][]*azdext.Artifact{serviceContext.GetBuild(), serviceContext.GetPackage()} {
+		for _, artifact := range artifacts {
+			if artifact.GetKind() == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER {
+				return nil, validationError("ambiguous_native_container_artifacts",
+					"native Maven packaging cannot reuse an unrelated container build or package artifact",
+					"rerun azd package with only this service's current Maven package artifacts")
+			}
+		}
+	}
 
 	staged, err := prepareContainerContext(ctx, project, serviceConfig, serviceContext)
 	if err != nil {
@@ -91,28 +150,26 @@ func (t *serviceTarget) Package(
 	}
 
 	progress("Building Spring Boot container")
-	buildResponse, buildErr := t.client.Container().Build(ctx, &azdext.ContainerBuildRequest{
-		ServiceName:    serviceConfig.GetName(),
-		ServiceContext: serviceContext,
-	})
+	buildArtifact, buildErr := t.images.Build(ctx, staged)
 	cleanupErr := staged.cleanup()
 	buildErr = nonDisclosureError(buildErr)
 	if buildErr != nil || cleanupErr != nil {
 		return nil, errors.Join(buildErr, cleanupErr)
 	}
-	if buildResponse.GetResult() == nil || len(buildResponse.GetResult().GetArtifacts()) == 0 {
+	if buildArtifact == nil {
 		return nil, validationError(
 			"missing_container_build_artifact",
 			"the container build returned no artifacts",
 			"verify Docker is running and the generated Dockerfile is included in the build context",
 		)
 	}
-	serviceContext.Build = append(serviceContext.Build, buildResponse.GetResult().GetArtifacts()...)
+	buildContext := proto.Clone(serviceContext).(*azdext.ServiceContext)
+	buildContext.Build = append(buildContext.Build, buildArtifact)
 
 	progress("Packaging Spring Boot container")
 	packageResponse, err := t.client.Container().Package(ctx, &azdext.ContainerPackageRequest{
 		ServiceName:    serviceConfig.GetName(),
-		ServiceContext: serviceContext,
+		ServiceContext: buildContext,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("packaging the Spring Boot container: %w", nonDisclosureError(err))
@@ -124,6 +181,11 @@ func (t *serviceTarget) Package(
 			"verify Docker is running and retry azd package",
 		)
 	}
+	buildContext.Package = append(buildContext.Package, packageResponse.GetResult().GetArtifacts()...)
+	if err := validateCoreContainerPackage(buildContext); err != nil {
+		return nil, err
+	}
+	serviceContext.Build = append(serviceContext.Build, buildArtifact)
 	return packageResponse.GetResult(), nil
 }
 
@@ -206,6 +268,16 @@ func (t *serviceTarget) Deploy(
 			"run the command from an initialized azd project",
 		)
 	}
+	t.moduleMu.Lock()
+	module := t.resolvedModules[serviceConfig.GetName()]
+	t.moduleMu.Unlock()
+	if module == nil {
+		modules, err := resolveProjectServiceModules(ctx, t.client, project)
+		if err != nil {
+			return nil, err
+		}
+		module = modules[serviceConfig.GetName()]
+	}
 	envName, values, err := t.runtime.environments.values(ctx)
 	if err != nil {
 		return nil, err
@@ -228,6 +300,7 @@ func (t *serviceTarget) Deploy(
 		EnvironmentName:  envName,
 		EnvironmentValue: deploymentValues,
 		ImageName:        imageName,
+		Module:           module,
 	}, progress)
 	if err != nil {
 		return nil, err
@@ -251,18 +324,19 @@ func (t *serviceTarget) Deploy(
 	if err != nil {
 		return nil, fmt.Errorf("resolving the deployed Container App: %w", err)
 	}
-	for key, value := range result.Outputs {
-		if err := t.runtime.environments.set(ctx, envName, key, value); err != nil {
-			return nil, fmt.Errorf("saving service deployment output %s: %w", key, err)
-		}
-	}
-
 	progress("Waiting for Spring Boot service readiness")
 	if err := t.resources.WaitReady(ctx, deployedTarget); err != nil {
 		return nil, err
 	}
 	endpoints, err := t.resources.Endpoints(ctx, deployedTarget)
 	if err != nil {
+		return nil, err
+	}
+	endpoints, err = selectServiceEndpoints(serviceConfig.GetName(), endpoints, result.Outputs)
+	if err != nil {
+		return nil, err
+	}
+	if err := persistDeploymentOutputs(ctx, t.runtime.environments, envName, result.Outputs); err != nil {
 		return nil, err
 	}
 	artifacts := []*azdext.Artifact{{
@@ -299,7 +373,98 @@ func (t *serviceTarget) Endpoints(
 			"run azd provision to restore the authored infrastructure outputs",
 		)
 	}
-	return t.resources.Endpoints(ctx, targetResource)
+	endpoints, err := t.resources.Endpoints(ctx, targetResource)
+	if err != nil {
+		return nil, err
+	}
+	_, values, err := t.runtime.environments.values(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return selectServiceEndpoints(serviceConfig.GetName(), endpoints, values)
+}
+
+func validateCoreContainerPackage(serviceContext *azdext.ServiceContext) error {
+	var image *azdext.Artifact
+	for _, artifact := range serviceContext.GetPackage() {
+		if artifact.GetKind() != azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER {
+			continue
+		}
+		if image != nil {
+			return validationError("ambiguous_container_package", "more than one container package artifact was supplied",
+				"rerun azd package with only this service's core Docker package artifacts")
+		}
+		image = artifact
+	}
+	if image == nil || image.GetLocationKind() != azdext.LocationKind_LOCATION_KIND_LOCAL ||
+		strings.TrimSpace(image.GetLocation()) == "" || image.GetMetadata()["targetImage"] != image.GetLocation() ||
+		image.GetMetadata()["imageHash"] == "" || image.GetMetadata()["sourceImage"] != "" {
+		return validationError("missing_core_container_package",
+			"the authored Dockerfile route requires a local core Docker container package artifact",
+			"rerun azd package so the core Docker framework builds and packages the selected Dockerfile")
+	}
+	for _, artifact := range serviceContext.GetBuild() {
+		if artifact.GetKind() == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
+			artifact.GetLocationKind() == azdext.LocationKind_LOCATION_KIND_LOCAL &&
+			artifact.GetMetadata()["framework"] == "docker" &&
+			artifact.GetLocation() == image.GetMetadata()["imageHash"] {
+			return nil
+		}
+	}
+	return validationError("mismatched_core_container_package",
+		"the container package does not match this service's core Docker build artifact",
+		"rerun azd package without reusing stale artifacts")
+}
+
+func selectServiceEndpoints(serviceName string, armEndpoints []string, outputs map[string]string) ([]string, error) {
+	var authored string
+	found := false
+	prefix := "SERVICE_" + environment.Key(serviceName)
+	for _, suffix := range []string{"_URI", "_URL", "_ENDPOINT"} {
+		value, present := outputs[prefix+suffix]
+		if !present {
+			continue
+		}
+		if found && authored != value {
+			return nil, validationError("conflicting_service_endpoints", "service endpoint outputs conflict",
+				"author one consistent HTTPS service endpoint for the deployed Container App")
+		}
+		authored, found = value, true
+	}
+	if !found {
+		return armEndpoints, nil
+	}
+	endpoint, err := url.Parse(authored)
+	if err != nil || endpoint.Scheme != "https" || endpoint.Hostname() == "" || endpoint.User != nil ||
+		endpoint.RawQuery != "" || endpoint.ForceQuery || endpoint.Fragment != "" || endpoint.Opaque != "" ||
+		(endpoint.Port() != "" && endpoint.Port() != "443") {
+		return nil, validationError("invalid_service_endpoint",
+			"the authored service endpoint must be HTTPS without credentials, query parameters, or fragments",
+			"use the deployed Container App hostname and preserve the application context path")
+	}
+	for _, origin := range armEndpoints {
+		live, err := url.Parse(origin)
+		if err == nil && live.Scheme == "https" && strings.EqualFold(live.Hostname(), endpoint.Hostname()) {
+			return []string{authored}, nil
+		}
+	}
+	return nil, validationError("foreign_service_endpoint",
+		"the authored service endpoint does not belong to the deployed app",
+		"use the hostname returned by the verified live Container App")
+}
+
+func persistDeploymentOutputs(
+	ctx context.Context,
+	environments environmentStore,
+	envName string,
+	outputs map[string]string,
+) error {
+	for key, value := range outputs {
+		if err := environments.set(ctx, envName, key, value); err != nil {
+			return fmt.Errorf("saving service deployment output %s: %w", key, err)
+		}
+	}
+	return nil
 }
 
 func serviceImageEnvironmentKey(serviceName string) string {

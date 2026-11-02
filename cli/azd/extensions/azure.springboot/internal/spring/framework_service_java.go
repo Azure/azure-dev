@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -34,8 +35,9 @@ type javaFrameworkService struct {
 	client *azdext.AzdClient
 	runner azdexec.CommandRunner
 
-	mu      sync.Mutex
-	service *project.ServiceConfig
+	mu       sync.Mutex
+	service  *project.ServiceConfig
+	authored *azdext.ServiceConfig
 }
 
 // NewJavaFrameworkService creates a Java framework provider that preserves azd's native Maven behavior.
@@ -58,9 +60,19 @@ func (p *javaFrameworkService) Initialize(ctx context.Context, serviceConfig *az
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	p.service = nil
+	p.authored = nil
 	service, err := nativeServiceConfig(serviceConfig)
 	if err != nil {
 		return err
+	}
+	if usesAuthoredDockerfile(serviceConfig) {
+		if err := validateSpringBuild(&azdext.ProjectConfig{Path: service.Project.Path}, serviceConfig); err != nil {
+			return err
+		}
+		p.service = service
+		p.authored = proto.Clone(serviceConfig).(*azdext.ServiceConfig)
+		return nil
 	}
 	p.service = service
 
@@ -86,6 +98,9 @@ func (p *javaFrameworkService) RequiredExternalTools(
 	if p.service == nil {
 		return nil, errors.New("Java framework service is not initialized")
 	}
+	if p.authored != nil {
+		return nil, nil
+	}
 	framework := p.nativeFramework(environment.New(""))
 	if err := framework.Initialize(ctx, p.service); err != nil {
 		return nil, err
@@ -102,6 +117,11 @@ func (p *javaFrameworkService) RequiredExternalTools(
 }
 
 func (p *javaFrameworkService) Requirements() (*azdext.FrameworkRequirements, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.authored != nil {
+		return &azdext.FrameworkRequirements{Package: &azdext.FrameworkPackageRequirements{}}, nil
+	}
 	requirements := project.NewMavenProject(
 		nil,
 		maven.NewCli(p.runner),
@@ -124,6 +144,9 @@ func (p *javaFrameworkService) Restore(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.authored != nil {
+		return &azdext.ServiceRestoreResult{}, p.validateAuthoredOperation(ctx)
+	}
 	framework, service, err := p.frameworkForOperation(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -149,6 +172,9 @@ func (p *javaFrameworkService) Build(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.authored != nil {
+		return &azdext.ServiceBuildResult{}, p.validateAuthoredOperation(ctx)
+	}
 	framework, service, err := p.frameworkForOperation(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -174,6 +200,9 @@ func (p *javaFrameworkService) Package(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.authored != nil {
+		return &azdext.ServicePackageResult{}, p.validateAuthoredOperation(ctx)
+	}
 	framework, service, err := p.frameworkForOperation(ctx, progress)
 	if err != nil {
 		return nil, err
@@ -188,6 +217,13 @@ func (p *javaFrameworkService) Package(
 		return nil, err
 	}
 	return &azdext.ServicePackageResult{Artifacts: extensionArtifacts(result.Artifacts)}, nil
+}
+
+func (p *javaFrameworkService) validateAuthoredOperation(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return validateSpringBuild(&azdext.ProjectConfig{Path: p.service.Project.Path}, p.authored)
 }
 
 func (p *javaFrameworkService) frameworkForOperation(
@@ -331,6 +367,8 @@ func hasGitMetadata(servicePath string, commandEnv []string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("resolving service path: %w", err)
 	}
+	ceilingValue, _ := effectiveEnvironmentValue(commandEnv, "GIT_CEILING_DIRECTORIES")
+	ceilings := filepath.SplitList(ceilingValue)
 	for {
 		if _, err := os.Lstat(filepath.Join(current, ".git")); err == nil {
 			return true, nil
@@ -341,6 +379,15 @@ func hasGitMetadata(servicePath string, commandEnv []string) (bool, error) {
 		parent := filepath.Dir(current)
 		if parent == current {
 			return false, nil
+		}
+		for _, ceiling := range ceilings {
+			if filepath.IsAbs(ceiling) {
+				parentInfo, parentErr := os.Stat(parent)
+				ceilingInfo, ceilingErr := os.Stat(ceiling)
+				if parentErr == nil && ceilingErr == nil && os.SameFile(parentInfo, ceilingInfo) {
+					return false, nil
+				}
+			}
 		}
 		current = parent
 	}

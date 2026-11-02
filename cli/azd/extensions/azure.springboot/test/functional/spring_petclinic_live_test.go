@@ -8,9 +8,11 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -288,47 +290,224 @@ func createPetclinicMvcRecord(t *testing.T, endpoint string) (string, string) {
 	client := &http.Client{Jar: jar, Timeout: 30 * time.Second}
 	stamp := fmt.Sprint(time.Now().UnixNano())
 
-	response := postPetclinicForm(t, client, endpoint+"/owners/new", url.Values{
-		"firstName": {"Azd"},
-		"lastName":  {"Owner" + stamp},
-		"address":   {"1 Azure Way"},
-		"city":      {"Redmond"},
-		"telephone": {"4255550100"},
-	})
-	ownerMatch := regexp.MustCompile(`/owners/(\d+)$`).FindStringSubmatch(response.Request.URL.Path)
+	response := postPetclinicForm(
+		t,
+		client,
+		endpoint+"/owners/new",
+		url.Values{
+			"firstName": {"Azd"},
+			"lastName":  {"Owner" + stamp},
+			"address":   {"1 Azure Way"},
+			"city":      {"Redmond"},
+			"telephone": {"4255550100"},
+		},
+		regexp.MustCompile(`/owners/\d+$`),
+	)
+	ownerMatch := regexp.MustCompile(`/owners/(\d+)$`).FindStringSubmatch(petclinicRoutePath(response.Request.URL))
 	_ = response.Body.Close()
 	require.Len(t, ownerMatch, 2)
 	ownerID := ownerMatch[1]
 
-	response = postPetclinicForm(t, client, endpoint+"/owners/"+ownerID+"/pets/new", url.Values{
-		"name":      {"Pet" + stamp},
-		"birthDate": {"2020-01-02"},
-		"type":      {"cat"},
-	})
+	response = postPetclinicForm(
+		t,
+		client,
+		endpoint+"/owners/"+ownerID+"/pets/new",
+		url.Values{
+			"name":      {"Pet" + stamp},
+			"birthDate": {"2020-01-02"},
+			"type":      {"cat"},
+		},
+		regexp.MustCompile(`/owners/`+regexp.QuoteMeta(ownerID)+`$`),
+	)
 	body := readPetclinicResponse(t, response)
-	petMatch := regexp.MustCompile(`pets/(\d+)/edit`).FindStringSubmatch(body)
-	require.Len(t, petMatch, 2)
+	petID, err := petclinicPetEditID(response, body, "Pet"+stamp)
+	require.NoError(t, err)
 
 	marker := "Visit-" + stamp
 	response = postPetclinicForm(
 		t,
 		client,
-		endpoint+"/owners/"+ownerID+"/pets/"+petMatch[1]+"/visits/new",
+		endpoint+"/owners/"+ownerID+"/pets/"+petID+"/visits/new",
 		url.Values{
 			"date":        {time.Now().Add(48 * time.Hour).Format("2006-01-02")},
 			"description": {marker},
 		},
+		regexp.MustCompile(`/owners/`+regexp.QuoteMeta(ownerID)+`$`),
 	)
 	_ = readPetclinicResponse(t, response)
 	return ownerID, marker
 }
 
-func postPetclinicForm(t *testing.T, client *http.Client, endpoint string, values url.Values) *http.Response {
+func postPetclinicForm(
+	t *testing.T,
+	client *http.Client,
+	endpoint string,
+	values url.Values,
+	expectedPath *regexp.Regexp,
+) *http.Response {
 	t.Helper()
-	response, err := client.PostForm(endpoint, values)
+	response, err := submitPetclinicForm(client, endpoint, values, expectedPath)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, response.StatusCode)
 	return response
+}
+
+func submitPetclinicForm(
+	client *http.Client,
+	endpoint string,
+	values url.Values,
+	expectedPath *regexp.Regexp,
+) (*http.Response, error) {
+	response, err := client.PostForm(endpoint, values)
+	if err != nil {
+		return nil, err
+	}
+	if response.StatusCode != http.StatusOK {
+		_ = response.Body.Close()
+		return nil, fmt.Errorf(
+			"Petclinic form submission returned %s after redirects %s",
+			response.Status,
+			petclinicRedirectContext(response.Request),
+		)
+	}
+	if !petclinicHasSuccessRedirect(response.Request) {
+		diagnostics, readErr := petclinicValidationDiagnostics(response.Body)
+		_ = response.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("reading unsuccessful Petclinic form response: %w", readErr)
+		}
+		return nil, fmt.Errorf(
+			"Petclinic form submission returned final status=%s path=%q redirects=none validation=%s",
+			response.Status,
+			petclinicRoutePath(response.Request.URL),
+			diagnostics,
+		)
+	}
+	if expectedPath == nil || !expectedPath.MatchString(petclinicRoutePath(response.Request.URL)) {
+		diagnostics, readErr := petclinicValidationDiagnostics(response.Body)
+		_ = response.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("reading unsuccessful Petclinic form response: %w", readErr)
+		}
+		return nil, fmt.Errorf(
+			"Petclinic form submission did not reach expected owner result; "+
+				"final status=%s path=%q redirects=%s validation=%s",
+			response.Status,
+			petclinicRoutePath(response.Request.URL),
+			petclinicRedirectContext(response.Request),
+			diagnostics,
+		)
+	}
+	return response, nil
+}
+
+func petclinicHasSuccessRedirect(request *http.Request) bool {
+	for current := request; current != nil && current.Response != nil; current = current.Response.Request {
+		if current.Response.StatusCode == http.StatusFound ||
+			current.Response.StatusCode == http.StatusSeeOther {
+			return true
+		}
+	}
+	return false
+}
+
+func petclinicRedirectContext(request *http.Request) string {
+	steps := make([]string, 0, 2)
+	for current := request; current != nil && current.Response != nil; current = current.Response.Request {
+		location, err := current.Response.Location()
+		if err != nil {
+			steps = append(steps, fmt.Sprintf("%d:<invalid-location>", current.Response.StatusCode))
+			continue
+		}
+		steps = append(steps, fmt.Sprintf(
+			"%d:%s",
+			current.Response.StatusCode,
+			petclinicRoutePath(location),
+		))
+	}
+	slices.Reverse(steps)
+	if len(steps) == 0 {
+		return "none"
+	}
+	return strings.Join(steps, " -> ")
+}
+
+func petclinicRoutePath(value *url.URL) string {
+	if value == nil {
+		return "<missing-path>"
+	}
+	segments := strings.Split(value.Path, "/")
+	for index, segment := range segments {
+		segments[index], _, _ = strings.Cut(segment, ";")
+	}
+	route := strings.Join(segments, "/")
+	if route == "" {
+		return "/"
+	}
+	return route
+}
+
+var petclinicValidationTextPattern = regexp.MustCompile(
+	`(?is)<(?:span|div)[^>]*class=["'][^"']*(?:help-inline|alert-danger)[^"']*["'][^>]*>(.*?)</(?:span|div)>`,
+)
+var petclinicHTMLTagPattern = regexp.MustCompile(`(?s)<[^>]*>`)
+var petclinicHrefPattern = regexp.MustCompile(`(?is)href=["']([^"']*pets[^"']*)["']`)
+
+func petclinicValidationDiagnostics(body io.Reader) (string, error) {
+	content, err := io.ReadAll(io.LimitReader(body, 256<<10))
+	if err != nil {
+		return "", err
+	}
+	return petclinicValidationText(content), nil
+}
+
+func petclinicValidationText(content []byte) string {
+	matches := petclinicValidationTextPattern.FindAllSubmatch(content, 5)
+	messages := make([]string, 0, len(matches))
+	for _, match := range matches {
+		text := petclinicHTMLTagPattern.ReplaceAllString(string(match[1]), " ")
+		text = strings.Join(strings.Fields(html.UnescapeString(text)), " ")
+		if text != "" && !slices.Contains(messages, text) {
+			messages = append(messages, text)
+		}
+	}
+	if len(messages) == 0 {
+		return "no validation message found"
+	}
+	return strings.Join(messages, "; ")
+}
+
+func petclinicPetEditID(response *http.Response, body, requestedPetName string) (string, error) {
+	hrefMatches := petclinicHrefPattern.FindAllStringSubmatch(body, -1)
+	const maxDiagnosticHrefs = 5
+	hrefs := make([]string, 0, min(len(hrefMatches), maxDiagnosticHrefs))
+	for index, match := range hrefMatches {
+		href, err := url.Parse(html.UnescapeString(match[1]))
+		if err != nil {
+			if index < maxDiagnosticHrefs {
+				hrefs = append(hrefs, "<invalid-href>")
+			}
+			continue
+		}
+		route := petclinicRoutePath(href)
+		if petMatch := regexp.MustCompile(`/pets/(\d+)/edit$`).FindStringSubmatch(route); len(petMatch) == 2 {
+			return petMatch[1], nil
+		}
+		if index < maxDiagnosticHrefs {
+			hrefs = append(hrefs, route)
+		}
+	}
+
+	return "", fmt.Errorf(
+		"Petclinic owner result has no pet edit link; final status=%s path=%q redirects=%s "+
+			"requestedPetNamePresent=%t validation=%s petHrefCount=%d petHrefs=%v",
+		response.Status,
+		petclinicRoutePath(response.Request.URL),
+		petclinicRedirectContext(response.Request),
+		strings.Contains(body, requestedPetName),
+		petclinicValidationText([]byte(body)),
+		len(hrefMatches),
+		hrefs,
+	)
 }
 
 func readPetclinicResponse(t *testing.T, response *http.Response) string {
@@ -339,6 +518,240 @@ func readPetclinicResponse(t *testing.T, response *http.Response) string {
 	return string(body)
 }
 
+func TestSubmitPetclinicFormAcceptsCreationRedirect(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		request.Body = http.MaxBytesReader(writer, request.Body, 64*1024)
+		switch request.URL.Path {
+		case "/owners/new":
+			if request.Method != http.MethodPost {
+				http.Error(writer, "expected POST", http.StatusMethodNotAllowed)
+				return
+			}
+			http.SetCookie(writer, &http.Cookie{Name: "petclinic", Value: "created", Path: "/"})
+			http.Redirect(writer, request, "/owners/42", http.StatusSeeOther)
+		case "/owners/42":
+			if request.Method != http.MethodGet {
+				http.Error(writer, "expected GET", http.StatusMethodNotAllowed)
+				return
+			}
+			cookie, err := request.Cookie("petclinic")
+			if err != nil || cookie.Value != "created" {
+				http.Error(writer, "cookie missing", http.StatusBadRequest)
+				return
+			}
+			_, _ = io.WriteString(writer, "<html><body>Owner 42</body></html>")
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+	client := server.Client()
+	client.Jar = jar
+	response, err := submitPetclinicForm(
+		client,
+		server.URL+"/owners/new",
+		url.Values{"firstName": {"Azd"}},
+		regexp.MustCompile(`/owners/\d+$`),
+	)
+	require.NoError(t, err)
+	defer response.Body.Close()
+	require.Equal(t, "/owners/42", response.Request.URL.Path)
+	require.Equal(t, "303:/owners/42", petclinicRedirectContext(response.Request))
+}
+
+func TestCreatePetclinicMvcRecordSupportsServletRoutes(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		rewriteURLs bool
+	}{
+		{name: "regular paths"},
+		{name: "matrix parameter paths", rewriteURLs: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			const ownerID = "11"
+			const petID = "22"
+			var petName string
+			var visitMarker string
+			redirectOwner := func(writer http.ResponseWriter, request *http.Request) {
+				location := "/owners/" + ownerID
+				if test.rewriteURLs {
+					location += ";jsessionid=redirect-session"
+				}
+				http.Redirect(writer, request, location, http.StatusFound)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				request.Body = http.MaxBytesReader(writer, request.Body, 64*1024)
+				route := petclinicRoutePath(request.URL)
+				switch {
+				case request.Method == http.MethodPost && route == "/owners/new":
+					if err := request.ParseForm(); err != nil {
+						http.Error(writer, "invalid owner form", http.StatusBadRequest)
+						return
+					}
+					redirectOwner(writer, request)
+				case request.Method == http.MethodPost && route == "/owners/"+ownerID+"/pets/new":
+					if err := request.ParseForm(); err != nil {
+						http.Error(writer, "invalid pet form", http.StatusBadRequest)
+						return
+					}
+					petName = request.Form.Get("name")
+					redirectOwner(writer, request)
+				case request.Method == http.MethodPost &&
+					route == "/owners/"+ownerID+"/pets/"+petID+"/visits/new":
+					if err := request.ParseForm(); err != nil {
+						http.Error(writer, "invalid visit form", http.StatusBadRequest)
+						return
+					}
+					visitMarker = request.Form.Get("description")
+					redirectOwner(writer, request)
+				case request.Method == http.MethodGet && route == "/owners/"+ownerID:
+					petEditPath := "/owners/" + ownerID + "/pets/" + petID + "/edit"
+					if test.rewriteURLs {
+						petEditPath = "/owners/" + ownerID +
+							";owner=matrix/pets/" + petID + ";jsessionid=href-session/edit;view=details"
+					}
+					_, _ = fmt.Fprintf(
+						writer,
+						`<html><body>%s <a href=%q>Edit Pet</a> %s</body></html>`,
+						html.EscapeString(petName),
+						petEditPath,
+						html.EscapeString(visitMarker),
+					)
+				default:
+					http.NotFound(writer, request)
+				}
+			}))
+			defer server.Close()
+
+			actualOwnerID, marker := createPetclinicMvcRecord(t, server.URL)
+			require.Equal(t, ownerID, actualOwnerID)
+			require.NotEmpty(t, petName)
+			require.Equal(t, marker, visitMarker)
+			requirePetclinicRecord(t, server.URL, actualOwnerID, marker, true)
+		})
+	}
+}
+
+func TestSubmitPetclinicFormRejectsValidationResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/owners/new" {
+			http.Error(writer, "unexpected path", http.StatusNotFound)
+			return
+		}
+		writer.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(
+			writer,
+			`<html><body><span class="help-inline">must not be blank</span>`+
+				`<div class="alert alert-danger">Telephone &amp; city are invalid</div>`+
+				`<input name="session" value="sensitive"></body></html>`,
+		)
+	}))
+	defer server.Close()
+
+	_, err := submitPetclinicForm(
+		server.Client(),
+		server.URL+"/owners/new",
+		url.Values{},
+		regexp.MustCompile(`/owners/\d+$`),
+	)
+	require.ErrorContains(t, err, "final status=200 OK")
+	require.ErrorContains(t, err, "redirects=none")
+	require.ErrorContains(t, err, "must not be blank")
+	require.ErrorContains(t, err, "Telephone & city are invalid")
+	require.NotContains(t, err.Error(), "sensitive")
+	require.NotContains(t, err.Error(), "<html>")
+}
+
+func TestPetclinicDiagnosticsRedactCredentialBearingPaths(t *testing.T) {
+	finalURL, err := url.Parse(
+		"https://final-user:final-password@example.test/owners/42;jsessionid=final-session?token=final-token#final-fragment",
+	)
+	require.NoError(t, err)
+	redirectURL, err := url.Parse(
+		"https://redirect-user:redirect-password@example.test/owners/42" +
+			";jsessionid=redirect-session?sig=redirect-token#redirect-fragment",
+	)
+	require.NoError(t, err)
+	originalURL, err := url.Parse(
+		"https://request-user:request-password@example.test/owners/new" +
+			";jsessionid=request-session?key=request-token#request-fragment",
+	)
+	require.NoError(t, err)
+	finalRequest := &http.Request{
+		URL: finalURL,
+		Response: &http.Response{
+			StatusCode: http.StatusSeeOther,
+			Header:     http.Header{"Location": []string{redirectURL.String()}},
+			Request:    &http.Request{URL: originalURL},
+		},
+	}
+
+	diagnostics := petclinicRoutePath(finalRequest.URL) + " " + petclinicRedirectContext(finalRequest)
+	require.Equal(t, "/owners/42 303:/owners/42", diagnostics)
+	for _, sensitive := range []string{
+		"final-user", "final-password", "final-session", "final-token", "final-fragment",
+		"redirect-user", "redirect-password", "redirect-session", "redirect-token", "redirect-fragment",
+		"request-user", "request-password", "request-session", "request-token", "request-fragment",
+	} {
+		require.NotContains(t, diagnostics, sensitive)
+	}
+}
+
+func TestPetclinicRedirectContextReportsInvalidLocation(t *testing.T) {
+	request := &http.Request{
+		URL: &url.URL{Path: "/owners/new"},
+		Response: &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": []string{"http://[::1"}},
+			Request:    &http.Request{URL: &url.URL{Path: "/owners/new"}},
+		},
+	}
+
+	require.Equal(t, "302:<invalid-location>", petclinicRedirectContext(request))
+}
+
+func TestPetclinicPetEditIDReturnsSanitizedDiagnostics(t *testing.T) {
+	finalURL, err := url.Parse("/owners/42;jsessionid=final-session?token=final-token#final-fragment")
+	require.NoError(t, err)
+	response := &http.Response{
+		Status: http.StatusText(http.StatusOK),
+		Request: &http.Request{
+			URL: finalURL,
+			Response: &http.Response{
+				StatusCode: http.StatusFound,
+				Header: http.Header{
+					"Location": []string{
+						"https://redirect-user:redirect-password@example.test/owners/42;" +
+							"jsessionid=redirect-session?sig=redirect-token#redirect-fragment",
+					},
+				},
+				Request: &http.Request{URL: &url.URL{Path: "/owners/42"}},
+			},
+		},
+	}
+	body := `<html><body>Pet123` +
+		`<span class="help-inline">binding failed</span>` +
+		`<a href="https://pet-user:pet-password@example.test/owners/42/pets;jsessionid=pet-session?sig=pet-token">pet</a>` +
+		`<a href="/owners/42/pets/%zz">invalid pet link</a>` +
+		`<input value="sensitive"></body></html>`
+
+	_, err = petclinicPetEditID(response, body, "Pet123")
+	require.ErrorContains(t, err, "requestedPetNamePresent=true")
+	require.ErrorContains(t, err, "validation=binding failed")
+	require.ErrorContains(t, err, "petHrefCount=2")
+	require.ErrorContains(t, err, "petHrefs=[/owners/42/pets <invalid-href>]")
+	for _, sensitive := range []string{
+		"final-session", "final-token", "final-fragment",
+		"redirect-user", "redirect-password", "redirect-session", "redirect-token", "redirect-fragment",
+		"pet-user", "pet-password", "pet-session", "pet-token", "sensitive", "<html>",
+	} {
+		require.NotContains(t, err.Error(), sensitive)
+	}
+}
+
 func requirePetclinicRecord(t *testing.T, endpoint, ownerID, marker string, present bool) {
 	t.Helper()
 	response, err := http.Get(endpoint + "/owners/" + ownerID)
@@ -347,13 +760,25 @@ func requirePetclinicRecord(t *testing.T, endpoint, ownerID, marker string, pres
 			defer response.Body.Close()
 			body, readErr := io.ReadAll(io.LimitReader(response.Body, 2<<20))
 			require.NoError(t, readErr)
-			require.NotContains(t, string(body), marker)
+			require.False(
+				t,
+				strings.Contains(string(body), marker),
+				"Petclinic owner record unexpectedly retained marker; status=%s path=%q",
+				response.Status,
+				petclinicRoutePath(response.Request.URL),
+			)
 		}
 		return
 	}
 	require.NoError(t, err)
 	body := readPetclinicResponse(t, response)
-	require.Contains(t, body, marker)
+	require.True(
+		t,
+		strings.Contains(body, marker),
+		"Petclinic owner record is missing marker; status=%s path=%q",
+		response.Status,
+		petclinicRoutePath(response.Request.URL),
+	)
 }
 
 func waitForSpringReadiness(t *testing.T, endpoint string) {

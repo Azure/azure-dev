@@ -29,23 +29,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLocalA2APath(t *testing.T) {
-	t.Parallel()
-	for _, path := range []string{"/a2a", "/", "/rpc/v1/", "/a-b_c.json", "/hello%20world", "/rpc:send"} {
-		t.Run("valid="+path, func(t *testing.T) {
-			require.NoError(t, validateLocalA2APath(path))
-		})
-	}
-	for _, path := range []string{
-		"", "a2a", "http://localhost/a2a", "https://example.com/a2a", "//example.com/a2a",
-		"///a2a", "/a2a?", "/a2a?q=1", "/a2a#", "/a2a#frag", "/a\\b", "/../a2a", "/./a2a", "/a/..", "/a/./b",
-		"/a%2fb", "/a%2Fb", "/%5ca", "/a%3fb", "/a%23b", "/%2e/a", "/a%2eb", "/%252e%252e",
-		"/%", "/%0", "/%zz", "/a\nb", "/a b", "/a%00b", "/a%0db", "/a%7fb",
-	} {
-		t.Run("invalid="+path, func(t *testing.T) {
-			require.ErrorContains(t, validateLocalA2APath(path), "invalid --a2a-path")
-		})
-	}
+func TestLocalA2ARejectsRemovedPathFlag(t *testing.T) {
+	command := newInvokeCommand(nil)
+	require.ErrorContains(t, command.ParseFlags([]string{"--a2a-path=/rpc"}), "unknown flag: --a2a-path")
 }
 
 func TestLocalA2AFlagValidation(t *testing.T) {
@@ -61,16 +47,6 @@ func TestLocalA2AFlagValidation(t *testing.T) {
 		{"zero port", nil, invokeFlags{local: true, protocol: "a2a"}, "--port"},
 		{"negative port", nil, invokeFlags{local: true, port: -1}, "--port"},
 		{"large port", nil, invokeFlags{local: true, port: 65536}, "--port"},
-		{"remote path", []string{"--a2a-path=/a2a"}, invokeFlags{protocol: "a2a", a2aPath: "/a2a"}, "only supported"},
-		{"responses path", []string{"--a2a-path=/a2a"},
-			invokeFlags{local: true, protocol: "responses", port: 8080, a2aPath: "/a2a"}, "only supported"},
-		{"invocations path", nil,
-			invokeFlags{local: true, protocol: "invocations", port: 8080, a2aPath: "/rpc"}, "only supported"},
-		{"explicit empty path", []string{"--a2a-path="}, invokeFlags{local: true, protocol: "a2a", port: 8080}, "invalid"},
-		{"autodetect path deferred", []string{"--a2a-path=/rpc"},
-			invokeFlags{local: true, port: 8080, a2aPath: "/rpc"}, ""},
-		{"autodetect invalid path early", []string{"--a2a-path=//evil"},
-			invokeFlags{local: true, port: 8080, a2aPath: "//evil"}, "invalid"},
 		{"client header", nil, invokeFlags{local: true, protocol: "a2a", port: 8080,
 			clientHeaders: []string{"x-client-test: v"}}, "--client-header"},
 	} {
@@ -109,7 +85,7 @@ func TestLocalA2AFlagValidation(t *testing.T) {
 
 func TestLocalA2AInvalidFlagsBeforeHostAccess(t *testing.T) {
 	for _, args := range [][]string{
-		{"--a2a-path="}, {"--a2a-path=https://example.com"}, {"--port=0"}, {"--port=65536"},
+		{"--port=0"}, {"--port=65536"},
 		{"--session-id="}, {"--new-session=false"}, {"--conversation-id=x"}, {"--new-conversation"},
 		{"--version=1"}, {"--user-identity=u"}, {"--call-id=c"}, {"--client-header=x-client-test: v"},
 	} {
@@ -208,8 +184,6 @@ func TestLocalA2AValidationAfterAutodetect(t *testing.T) {
 		{"identity", "a2a", "--user-identity=", "--user-identity", invokeFlags{}},
 		{"call id", "a2a", "--call-id=", "--call-id", invokeFlags{}},
 		{"headers", "a2a", "", "--client-header", invokeFlags{clientHeaders: []string{"x-client-test: v"}}},
-		{"path responses", "responses", "", "--a2a-path", invokeFlags{a2aPath: "/rpc"}},
-		{"path invocations", "invocations", "", "--a2a-path", invokeFlags{a2aPath: "/rpc"}},
 		{"file version", "a2a", "", "requires an explicit --a2a-version", invokeFlags{inputFile: "request.json"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -249,31 +223,25 @@ func TestLocalA2AValidationAfterAutodetect(t *testing.T) {
 	}
 }
 
-func TestLocalA2AFileBytesAndPaths(t *testing.T) {
+func TestLocalA2AFileBytes(t *testing.T) {
 	t.Parallel()
 	for _, version := range []string{"0.3", "1.0"} {
-		for _, path := range []string{"", "/rpc", "/hello%20world", "/"} {
-			t.Run(version+path, func(t *testing.T) {
-				content := []byte(" \r\nopaque JSON-RPC\x00\xff\n")
-				file := filepath.Join(t.TempDir(), "request.bin")
-				require.NoError(t, os.WriteFile(file, content, 0600))
-				a := &InvokeAction{flags: &invokeFlags{local: true, port: 12345, inputFile: file, a2aPath: path},
-					a2aWriter: io.Discard, a2aErrorWriter: io.Discard,
-					a2aTransport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-						body, err := io.ReadAll(r.Body)
-						require.NoError(t, err)
-						require.Equal(t, content, body)
-						want := path
-						if want == "" {
-							want = "/a2a"
-						}
-						require.Equal(t, want, r.URL.RequestURI())
-						require.Equal(t, version, r.Header.Get(a2aVersionHeader))
-						return localA2ATestResponse(r, 200, `{}`), nil
-					})}
-				require.NoError(t, a.a2aLocal(t.Context(), version))
-			})
-		}
+		t.Run(version, func(t *testing.T) {
+			content := []byte(" \r\nopaque JSON-RPC\x00\xff\n")
+			file := filepath.Join(t.TempDir(), "request.bin")
+			require.NoError(t, os.WriteFile(file, content, 0600))
+			a := &InvokeAction{flags: &invokeFlags{local: true, port: 12345, inputFile: file},
+				a2aWriter: io.Discard, a2aErrorWriter: io.Discard,
+				a2aTransport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					body, err := io.ReadAll(r.Body)
+					require.NoError(t, err)
+					require.Equal(t, content, body)
+					require.Equal(t, "http://localhost:12345/a2a", r.URL.String())
+					require.Equal(t, version, r.Header.Get(a2aVersionHeader))
+					return localA2ATestResponse(r, 200, `{}`), nil
+				})}
+			require.NoError(t, a.a2aLocal(t.Context(), version))
+		})
 	}
 }
 
@@ -442,7 +410,8 @@ func TestLocalA2AActualLocalhostPort(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		assert.Equal(t, "/custom%20rpc", r.RequestURI)
+		assert.Equal(t, "/a2a", r.RequestURI)
+		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "", r.Header.Get("Authorization"))
 		assert.Equal(t, "", r.Header.Get(agent_api.AgentUserIDHeader))
 		_, _ = io.WriteString(w, `{"result":{"message":{"parts":[{"text":"actual-localhost"}]}}}`)
@@ -454,7 +423,7 @@ func TestLocalA2AActualLocalhostPort(t *testing.T) {
 	require.NoError(t, err)
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
 	var output bytes.Buffer
-	a := &InvokeAction{flags: &invokeFlags{local: true, port: port, a2aPath: "/custom%20rpc", message: "hi", timeout: 5},
+	a := &InvokeAction{flags: &invokeFlags{local: true, port: port, message: "hi", timeout: 5},
 		a2aWriter: &output}
 	require.NoError(t, a.a2aLocal(t.Context(), "1.0"))
 	require.Equal(t, 1, calls)

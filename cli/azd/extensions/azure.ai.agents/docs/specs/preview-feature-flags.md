@@ -100,9 +100,9 @@ default decision and passes the resolved version downstream. Builders, HTTP
 handlers, and renderers do not read feature state. No agent metadata or file
 heuristic selects the wire version.
 
-Local A2A transport and `--a2a-path` are not preview-gated; the same wire-version
-rules apply. A2A-only `run` targets open no browser client. Their local invocation
-guidance includes `--a2a-version 1.0` only when the preview is enabled.
+Local A2A transport is not preview-gated; the same wire-version rules apply.
+A2A-only `run` targets open no browser client. Their invocation guidance includes
+`--a2a-version 1.0` only when the preview is enabled.
 
 ## Process environment enablement
 

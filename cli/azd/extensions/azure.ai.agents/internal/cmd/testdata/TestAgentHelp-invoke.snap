@@ -41,9 +41,9 @@ requests, use --output raw to stream unparsed SSE events.
 
 Local Development
 Use --local to target a locally running agent (started via 'azd ai agent run')
-instead of Foundry. With -p a2a, requests are sent to /a2a by default;
-use --a2a-path to select another local JSON-RPC path. Local A2A sends no
-Foundry authentication, session, conversation, identity, or call-ID headers.
+instead of Foundry. With -p a2a, the server must expose POST /a2a.
+Local A2A sends no Foundry authentication, session, conversation, identity,
+or call-ID headers.
 Those flags are not supported; use A2A contextId/taskId in a request file
 for protocol-level continuity.
 
@@ -98,7 +98,6 @@ Usage
   azd ai agent invoke [name] [message] [flags]
 
 Flags
-      --a2a-path string           : Local A2A JSON-RPC path (only with --local and the a2a protocol; no URL, query, or fragment) (default "/a2a")
       --a2a-version string        : A2A wire version: 0.3 or 1.0. Defaults to 1.0 for messages; required with --input-file for a2a.
       --agent-endpoint string     : Full endpoint URL of a deployed agent (run 'azd ai agent show' to see it). Invokes without requiring an azd project; protocol is derived from the URL.
       --call-id string            : Call ID header value (sent as x-agent-foundry-call-id for local invocations only; ignored for remote requests)

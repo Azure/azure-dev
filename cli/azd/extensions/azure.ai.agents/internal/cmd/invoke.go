@@ -49,7 +49,6 @@ type invokeFlags struct {
 	newConversation bool
 	protocol        string
 	a2aVersion      string
-	a2aPath         string
 	agentEndpoint   string
 	version         string
 	outputFmt       string
@@ -60,7 +59,6 @@ type invokeFlags struct {
 	debugLatency    bool
 
 	// Preserve explicit empty/false local A2A options across protocol resolution.
-	a2aPathExplicit       bool
 	localA2AExplicitFlags []string
 }
 
@@ -131,9 +129,9 @@ JSON-RPC request with the a2a protocol.
 
 ` + invokeA2AVersionHelp + `Local Development:
 Use --local to target a locally running agent (started via 'azd ai agent run')
-instead of Foundry. With -p a2a, requests are sent to /a2a by default;
-use --a2a-path to select another local JSON-RPC path. Local A2A sends no
-Foundry authentication, session, conversation, identity, or call-ID headers.
+instead of Foundry. With -p a2a, the server must expose POST /a2a.
+Local A2A sends no Foundry authentication, session, conversation, identity,
+or call-ID headers.
 Those flags are not supported; use A2A contextId/taskId in a request file
 for protocol-level continuity.
 
@@ -263,8 +261,6 @@ Raw output includes the returned headers without a formatted latency summary.` +
 			"pass --protocol when it cannot be determined.")
 	cmd.Flags().StringVar(&flags.a2aVersion, "a2a-version", "",
 		"A2A wire version: 0.3 or 1.0. Defaults to 1.0 for messages; required with --input-file for a2a.")
-	cmd.Flags().StringVar(&flags.a2aPath, "a2a-path", defaultLocalA2APath,
-		"Local A2A JSON-RPC path (only with --local and the a2a protocol; no URL, query, or fragment)")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,

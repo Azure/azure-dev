@@ -795,9 +795,10 @@ azd ai agent invoke --local -p a2a --port 9090 --a2a-version 1.0 "Hello!"
 azd ai agent invoke --local -p a2a --port 9090 --a2a-version 1.0 -f a2a-request-1.0.json
 ```
 
-Requests go directly to `http://localhost:<port>/a2a` (default port `8088`).
-Use `--a2a-path /rpc` for another server route; only an absolute path is accepted,
-not a URL, query, or fragment. Redirects and alternate routes are not followed.
+Requests go directly to `http://localhost:<port>/a2a` (default port `8088`,
+configurable with `--port`). Your local server must expose `POST /a2a`.
+This fixed route is an azd local transport convention, not a path mandated by
+the A2A specification. Redirects and alternate routes are not followed.
 
 Existing A2A version rules apply locally, and request files are sent unchanged.
 Local A2A sends no Foundry authentication or routing headers and persists no

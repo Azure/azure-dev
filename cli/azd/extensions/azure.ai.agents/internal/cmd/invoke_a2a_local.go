@@ -8,10 +8,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"slices"
-	"strings"
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
@@ -21,15 +19,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultLocalA2APath = "/a2a"
-
 var localA2AUnsupportedFlags = []string{
 	"session-id", "new-session", "conversation-id", "new-conversation", "version", "user-identity", "call-id",
 }
 
 // captureLocalA2AExplicitFlags preserves empty/false options for validation after protocol selection.
 func captureLocalA2AExplicitFlags(cmd *cobra.Command, flags *invokeFlags) {
-	flags.a2aPathExplicit = cmd.Flags().Changed("a2a-path")
 	flags.localA2AExplicitFlags = nil
 	for _, name := range localA2AUnsupportedFlags {
 		if cmd.Flags().Changed(name) {
@@ -40,17 +35,6 @@ func captureLocalA2AExplicitFlags(cmd *cobra.Command, flags *invokeFlags) {
 
 // validateLocalA2AOptions defers route-specific checks until the protocol is known.
 func validateLocalA2AOptions(flags *invokeFlags, protocol agent_api.AgentProtocol) error {
-	pathSet := flags.a2aPathExplicit || (flags.a2aPath != "" && flags.a2aPath != defaultLocalA2APath)
-	if pathSet {
-		if !flags.local || (protocol != "" && protocol != agent_api.AgentProtocolA2A) {
-			return exterrors.Validation(exterrors.CodeInvalidParameter,
-				"--a2a-path is only supported with --local and the a2a protocol",
-				"use --local --protocol a2a, or omit --a2a-path")
-		}
-		if err := validateLocalA2APath(flags.a2aPath); err != nil {
-			return err
-		}
-	}
 	if !flags.local || protocol != agent_api.AgentProtocolA2A {
 		return nil
 	}
@@ -81,55 +65,12 @@ func validateLocalInvokePort(port int) error {
 	return nil
 }
 
-// validateLocalA2APath rejects URLs and ambiguous routing syntax, preserving safe escapes such as %20.
-func validateLocalA2APath(path string) error {
-	invalid := func() error {
-		return exterrors.Validation(exterrors.CodeInvalidParameter,
-			"invalid --a2a-path: expected an absolute path without authority, query, fragment, or ambiguous escapes",
-			"use a path such as /a2a or /rpc; do not provide a URL, backslashes, or dot segments")
-	}
-	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") ||
-		strings.ContainsAny(path, "\\?#") || strings.ContainsFunc(path, func(r rune) bool { return r <= ' ' || r == 127 }) {
-		return invalid()
-	}
-	parsed, err := url.ParseRequestURI(path)
-	if err != nil || parsed.Scheme != "" || parsed.Host != "" || parsed.User != nil || parsed.Opaque != "" {
-		return invalid()
-	}
-	for i := 0; i < len(path); i++ {
-		if path[i] != '%' {
-			continue
-		}
-		if len(path)-i < 3 {
-			return invalid()
-		}
-		decoded, err := url.PathUnescape(path[i : i+3])
-		if err != nil || strings.ContainsAny(decoded, "/\\.?#%") || decoded[0] < ' ' || decoded[0] == 127 {
-			return invalid()
-		}
-		i += 2
-	}
-	for segment := range strings.SplitSeq(parsed.Path, "/") {
-		if segment == "." || segment == ".." {
-			return invalid()
-		}
-	}
-	return nil
-}
-
 // a2aLocal invokes the local A2A server without Foundry credentials or session state.
 func (a *InvokeAction) a2aLocal(ctx context.Context, version string) error {
 	if err := validateLocalInvokePort(a.flags.port); err != nil {
 		return err
 	}
 	if err := validateLocalA2AOptions(a.flags, agent_api.AgentProtocolA2A); err != nil {
-		return err
-	}
-	path := a.flags.a2aPath
-	if path == "" {
-		path = defaultLocalA2APath
-	}
-	if err := validateLocalA2APath(path); err != nil {
 		return err
 	}
 	if len(a.clientHeaders) != 0 {
@@ -148,7 +89,7 @@ func (a *InvokeAction) a2aLocal(ctx context.Context, version string) error {
 		progress = os.Stderr
 	}
 	raw := a.flags.outputFmt == outputRaw
-	reqURL := fmt.Sprintf("http://localhost:%d%s", a.flags.port, path)
+	reqURL := fmt.Sprintf("http://localhost:%d/a2a", a.flags.port)
 	if !raw {
 		fmt.Fprintf(w, "Target:   %s (local, a2a protocol)\nInput:    %s\n\n", reqURL, bodyLabel)
 	}

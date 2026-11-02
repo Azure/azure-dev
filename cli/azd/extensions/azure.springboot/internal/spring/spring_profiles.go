@@ -16,21 +16,26 @@ type profileExpression struct {
 }
 
 func matchesSpringProfiles(expression string, profiles []string) (bool, error) {
-	tokens := strings.Fields(strings.NewReplacer(
-		"(", " ( ", ")", " ) ", "!", " ! ", "&", " & ", "|", " | ",
-	).Replace(expression))
-	if len(tokens) == 0 {
-		return false, errors.New("empty Spring profile activation expression")
-	}
-	p := profileExpression{tokens: tokens, active: map[string]bool{}}
+	active := map[string]bool{}
 	for _, profile := range profiles {
-		p.active[profile] = true
+		active[profile] = true
 	}
-	result, err := p.parseExpression()
-	if err != nil || p.next != len(tokens) {
-		return false, errors.New("invalid Spring profile activation expression")
+	matched := false
+	for alternative := range strings.SplitSeq(expression, ",") {
+		tokens := strings.Fields(strings.NewReplacer(
+			"(", " ( ", ")", " ) ", "!", " ! ", "&", " & ", "|", " | ",
+		).Replace(alternative))
+		if len(tokens) == 0 {
+			return false, errors.New("empty Spring profile activation expression")
+		}
+		p := profileExpression{tokens: tokens, active: active}
+		result, err := p.parseExpression()
+		if err != nil || p.next != len(tokens) {
+			return false, errors.New("invalid Spring profile activation expression")
+		}
+		matched = matched || result
 	}
-	return result, nil
+	return matched, nil
 }
 
 func (p *profileExpression) parseExpression() (bool, error) {

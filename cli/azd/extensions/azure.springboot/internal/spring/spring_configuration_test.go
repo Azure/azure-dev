@@ -281,12 +281,12 @@ func TestSpringConfigurationDoesNotReadHostExternalFilesForDeployedApp(t *testin
 }
 
 func TestSpringProfilesMatchFrameworkGroupingRules(t *testing.T) {
-	for _, expression := range []string{"prod", "prod & !test", "(prod & us) | eu"} {
+	for _, expression := range []string{"prod", "prod & !test", "(prod & us) | eu", "cloud,prod"} {
 		match, err := matchesSpringProfiles(expression, []string{"prod", "us"})
 		require.NoError(t, err)
 		require.True(t, match)
 	}
-	for _, expression := range []string{"prod & us | eu", "(prod", "prod || us", ""} {
+	for _, expression := range []string{"prod & us | eu", "(prod", "prod || us", "", "prod,"} {
 		_, err := matchesSpringProfiles(expression, []string{"prod"})
 		require.Error(t, err)
 	}

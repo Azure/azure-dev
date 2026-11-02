@@ -150,6 +150,8 @@ func TestValidateGPTLiveAgent_RejectsInvalidNativeValues(t *testing.T) {
 		"audio:\n  output:\n    voice: {id: 123}",
 		"delegation:\n  type: foundry_managed_agent\n  agent_name: ../other",
 		"delegation:\n  type: foundry_managed_agent\n  agent_name: teacher\n  agent_version: '0'",
+		"delegation:\n  type: foundry_managed_agent\n  agent_name: teacher\n  agent_version: ''",
+		"delegation:\n  type: foundry_managed_agent\n  agent_name: teacher\n  agent_version: null",
 		"greeting:\n  type: llm_generated\n  text: hello",
 		"greeting:\n  type: template",
 		"greeting:\n  type: template\n  text: null",

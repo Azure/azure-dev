@@ -580,6 +580,46 @@ func TestVoiceAgentFromResolvedService_RejectsEmptyLivePolicies(t *testing.T) {
 	require.ErrorContains(t, err, "exactly one named rai_policy")
 }
 
+func TestVoiceAgentFromResolvedService_RejectsExplicitEmptyManagedAgentVersion(t *testing.T) {
+	for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+		for _, version := range []any{"", nil} {
+			t.Run(fmt.Sprintf("%s/%v", source, version), func(t *testing.T) {
+				root := t.TempDir()
+				delegation := map[string]any{
+					"type": "foundry_managed_agent", "agentName": "teacher", "agentVersion": version,
+				}
+				var service *azdext.ServiceConfig
+				switch source {
+				case "inline":
+					service = inlineAgentService(t, map[string]any{
+						"kind": "voice", "name": "live", "subProtocol": "live",
+						"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+						"delegation": delegation,
+					})
+				case "root-ref":
+					definition := map[string]any{
+						"kind": "voice", "name": "live", "sub_protocol": "live",
+						"model_type": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+						"delegation": map[string]any{
+							"type": "foundry_managed_agent", "agent_name": "teacher", "agent_version": version,
+						},
+					}
+					encoded, err := yaml.Marshal(definition)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+					service = inlineAgentService(t, map[string]any{"$ref": "live.yaml"})
+				case "sibling-overlay":
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(
+						"kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n"), 0o600))
+					service = inlineAgentService(t, map[string]any{"$ref": "live.yaml", "delegation": delegation})
+				}
+				_, _, err := VoiceAgentFromResolvedService(service, root)
+				require.ErrorContains(t, err, "agentVersion must be a positive numeric string")
+			})
+		}
+	}
+}
+
 func TestVoiceAgentFromResolvedService_GPTLiveRootRefAfterInPlaceResolution(t *testing.T) {
 	root := t.TempDir()
 	definition := `kind: voice

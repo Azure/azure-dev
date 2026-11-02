@@ -417,6 +417,12 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 		if !typeOK || !slices.Contains([]string{"client", "responses", "foundry_managed_agent"}, typ) {
 			errors = append(errors, "delegation.type must be exactly client, responses, or foundry_managed_agent")
 		}
+		if version, found := rawProperty(delegation, "agentVersion", "agent_version"); typ == "foundry_managed_agent" && found {
+			value, ok := version.(string)
+			if !ok || !regexp.MustCompile(`^[1-9][0-9]{0,19}$`).MatchString(value) {
+				errors = append(errors, "delegation.agentVersion must be a positive numeric string when provided")
+			}
+		}
 		if responses, ok := delegation["responses"].(map[string]any); ok {
 			validateRawObject("delegation.responses", responses, []string{
 				"model", "instructions", "maxOutputTokens", "max_output_tokens",

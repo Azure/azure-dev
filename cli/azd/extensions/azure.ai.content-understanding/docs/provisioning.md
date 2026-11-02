@@ -97,9 +97,8 @@ azd ai cu infra generate --output-dir provision --models none
 ```
 
 The command explains its purpose before asking you to select a subscription,
-then the wizard explains each deployment choice before asking. Essential
-guidance is visible without pressing `?`; invalid text input shows a reason
-before retrying. Human-readable warnings use azd's yellow convention and
+then the wizard explains each deployment choice before asking. Invalid text
+input shows a reason before retrying. Human-readable warnings use azd's yellow convention and
 validation errors use red when terminal color is enabled. Set `NO_COLOR=1`
 for plain text; structured JSON results remain uncolored.
 

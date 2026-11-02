@@ -4,6 +4,7 @@
 package cli_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -142,11 +144,24 @@ func runSpringPetclinicLiveMode(t *testing.T, configDir, mode string) {
 
 func springLiveEnvironment(t *testing.T, ctx context.Context, cli *azdcli.CLI) map[string]string {
 	t.Helper()
-	result, err := cli.RunCommand(ctx, "env", "get-values", "--output", "json")
+	stdout, err := runSpringCommandWithoutLogging(ctx, cli, "env", "get-values", "--output", "json")
 	require.NoError(t, err)
 	values := map[string]string{}
-	require.NoError(t, json.Unmarshal([]byte(result.Stdout), &values))
+	require.NoError(t, json.Unmarshal([]byte(stdout), &values))
 	return values
+}
+
+func runSpringCommandWithoutLogging(ctx context.Context, cli *azdcli.CLI, args ...string) (string, error) {
+	command := osexec.CommandContext(ctx, cli.AzdPath, args...) // #nosec G204 -- Test-owned azd arguments.
+	command.Dir = cli.WorkingDirectory
+	command.Env = cli.Env
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	if err := command.Run(); err != nil {
+		return "", fmt.Errorf("running azd command: %w", err)
+	}
+	return stdout.String(), nil
 }
 
 func springAzdToken(t *testing.T, ctx context.Context, cli *azdcli.CLI) string {

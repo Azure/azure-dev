@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -32,6 +33,19 @@ import (
 func TestLocalA2ARejectsRemovedPathFlag(t *testing.T) {
 	command := newInvokeCommand(nil)
 	require.ErrorContains(t, command.ParseFlags([]string{"--a2a-path=/rpc"}), "unknown flag: --a2a-path")
+}
+
+func TestLocalA2AHelpRestrictions(t *testing.T) {
+	command := newInvokeCommand(nil)
+	_, localHelp, found := strings.Cut(command.Long, "Local Development:")
+	require.True(t, found)
+	localHelp, _, found = strings.Cut(localHelp, "Sessions & Identity:")
+	require.True(t, found)
+	for _, flag := range append(slices.Clone(localA2AUnsupportedFlags), "client-header") {
+		require.Contains(t, localHelp, "--"+flag)
+	}
+	require.Contains(t, command.Flags().Lookup("user-identity").Usage, "not supported with local a2a")
+	require.Contains(t, command.Flags().Lookup("call-id").Usage, "local responses/invocations only")
 }
 
 func TestLocalA2AFlagValidation(t *testing.T) {

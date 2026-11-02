@@ -130,25 +130,23 @@ JSON-RPC request with the a2a protocol.
 ` + invokeA2AVersionHelp + `Local Development:
 Use --local to target a locally running agent (started via 'azd ai agent run')
 instead of Foundry. With -p a2a, the server must expose POST /a2a.
-Local A2A sends no Foundry authentication, session, conversation, identity,
-or call-ID headers.
-Those flags are not supported; use A2A contextId/taskId in a request file
-for protocol-level continuity.
+Local A2A sends no Foundry headers and persists no session state. It rejects
+--session-id, --new-session, --conversation-id, --new-conversation,
+--version, --user-identity, --call-id, or --client-header. Use A2A
+contextId/taskId in a request file for protocol-level continuity.
 
 Sessions & Identity:
-Sessions are persisted per-agent — consecutive invokes reuse the same
-session automatically. Pass --new-session to force a reset.
+Except for local A2A, sessions are persisted per-agent — consecutive invokes
+reuse the same session automatically. Pass --new-session to force a reset.
 
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
-For agents configured with header-based isolation, pass --user-identity
-on each invoke. Locally it is sent as the x-agent-user-id header; for
-remote invokes it is sent as the x-ms-user-identity header.
+For header-based isolation, --user-identity sends x-agent-user-id with local
+responses/invocations or x-ms-user-identity with remote requests.
 
-Use --call-id to send a call ID with a local invoke. It is sent as the
-x-agent-foundry-call-id header and applies only to local invocations; it is
-ignored for remote requests.
+Use --call-id with local responses/invocations to send x-agent-foundry-call-id.
+It is ignored for remote requests. Both flags are rejected for local A2A.
 
 Use --client-header to send custom x-client-* request headers in "Name: Value"
 format (repeatable). The responses and invocations protocols forward the
@@ -274,11 +272,12 @@ Raw output includes the returned headers without a formatted latency summary.` +
 	cmd.Flags().StringVar(&flags.conversation, "conversation-id", "", "Explicit conversation ID override")
 	cmd.Flags().BoolVar(&flags.newConversation, "new-conversation", false, "Force a new conversation (discard saved one)")
 	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
+	cmd.Flags().Lookup("user-identity").Usage += "; not supported with local a2a"
 	cmd.Flags().StringVar(
 		&flags.callID,
 		"call-id",
 		"",
-		"Call ID header value (sent as "+agent_api.AgentFoundryCallIDHeader+" for local invocations only; "+
+		"Call ID header value (sent as "+agent_api.AgentFoundryCallIDHeader+" for local responses/invocations only; "+
 			"ignored for remote requests)",
 	)
 	cmd.Flags().StringArrayVar(

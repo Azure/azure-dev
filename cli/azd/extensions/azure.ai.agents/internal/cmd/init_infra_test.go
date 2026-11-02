@@ -555,6 +555,41 @@ services:
 	assert.NoFileExists(t, filepath.Join(dir, "custom", "foundry", "main.bicep"))
 }
 
+func TestEjectInfra_ModuleNamedMonitoringDoesNotCollideWithMonitoringTemplate(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: foundry
+      path: infra/foundry
+      module: monitoring
+      provider: microsoft.foundry
+      dependsOn: [app]
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	entrypoint, err := os.ReadFile(filepath.Join(dir, "infra", "foundry", "monitoring.bicep"))
+	require.NoError(t, err)
+	moduleTemplate, err := os.ReadFile(filepath.Join(dir, "infra", "foundry", "modules", "monitoring.bicep"))
+	require.NoError(t, err)
+	embedded, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/modules/monitoring.bicep")
+	require.NoError(t, err)
+	mainTemplate, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/main.bicep")
+	require.NoError(t, err)
+
+	assert.Equal(t, string(mainTemplate), string(entrypoint), "entrypoint must stay the renamed main.bicep")
+	assert.Equal(t, string(embedded), string(moduleTemplate), "monitoring module must be the embedded template")
+	assert.Contains(t, string(entrypoint), "modules/monitoring.bicep")
+	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "monitoring.parameters.json"))
+}
+
 func TestEjectInfra_RefusesNonEmptyDeclaredFoundryTarget(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

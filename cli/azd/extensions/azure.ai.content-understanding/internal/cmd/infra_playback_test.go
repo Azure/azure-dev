@@ -53,7 +53,7 @@ func (h *infraPlaybackHost) Capabilities(
 }
 
 func TestGeneratedProjectPostprovisionThroughHostAndRESTPlayback(t *testing.T) {
-	for _, selection := range []string{"recommended", "prompt"} {
+	for _, selection := range []string{"none", "recommended", "prompt"} {
 		t.Run(selection, func(t *testing.T) {
 			testGeneratedProjectPostprovision(t, selection)
 		})
@@ -164,9 +164,14 @@ func testGeneratedProjectPostprovision(t *testing.T, selection string) {
 		return stdout.String(), err
 	}
 	directory := filepath.Join(testutil.TempDir(t), "generated")
-	_, err := execute("infra", "generate", "-d", directory, "-e", "dev", "--models", selection, "--no-prompt")
+	_, err := execute("infra", "generate", "--subscription", "Subscription", "--environment", "dev",
+		"--location", "eastus2", "--foundry-prefix", "my-cu", "--no-assign-roles",
+		"--models", selection, "--output-dir", directory, "--no-prompt")
 	require.NoError(t, err)
 	assert.Empty(t, calls)
+	rpc.mu.Lock()
+	assert.Equal(t, []string{"subscriptions"}, rpc.calls, "generation must not prompt or change user defaults")
+	rpc.mu.Unlock()
 	env, err := localio.Read(filepath.Join(directory, ".azure/dev/config.json"))
 	require.NoError(t, err)
 	var generatedConfig struct {
@@ -190,29 +195,48 @@ func testGeneratedProjectPostprovision(t *testing.T, selection string) {
 	rpc.mu.Unlock()
 	t.Chdir(directory)
 	postArgs := []string{"infra", "_postprovision-v1", "-e", "dev"}
-	if selection != "prompt" {
+	if selection == "none" {
+		t.Setenv("AZD_NO_PROMPT", "true")
+	} else if selection != "prompt" {
 		postArgs = append(postArgs, "--no-prompt")
 	}
 	stdout, err := execute(postArgs...)
 	require.NoError(t, err)
 	var result infra.PostResult
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
-	assert.True(t, result.GenerativeReady)
+	assert.Equal(t, selection != "none", result.GenerativeReady)
 	assert.True(t, result.EnvironmentConfigured)
 	assert.Equal(t, "completed", result.ModelSetup)
-	assert.Len(t, deployed, 2)
+	expectedModels := 2
+	if selection == "none" {
+		expectedModels = 0
+		assert.False(t, result.DefaultsConfigured)
+		assert.Empty(t, result.Warnings)
+		assert.Equal(t, []string{
+			"No model deployments selected.",
+			"Available without an LLM or embeddings model: prebuilt-digitalParse, prebuilt-read, prebuilt-layout",
+			"No optional models were configured; content extraction analyzers remain available.",
+		}, result.Messages)
+	}
+	assert.Len(t, deployed, expectedModels)
 	assert.Equal(t, "keep-me", defaultMappings["custom-model"])
 	modelFile, err := localio.Read("infra/models.json")
 	require.NoError(t, err)
 	var saved []infra.Model
 	require.NoError(t, json.Unmarshal(modelFile, &saved))
-	assert.Len(t, saved, 2)
+	assert.Len(t, saved, expectedModels)
 	rpc.mu.Lock()
 	assert.Contains(t, rpc.calls, "env:dev:CU_ENDPOINT:https://foundry.services.ai.azure.com")
 	assert.JSONEq(t, `true`, string(rpc.writes["cu.modelSetupComplete"]))
 	section := map[string]json.RawMessage{
 		"modelSetupComplete": rpc.writes["cu.modelSetupComplete"],
-		"modelDeployments":   rpc.writes["cu.modelDeployments"],
+	}
+	if mappings, exists := rpc.writes["cu.modelDeployments"]; exists {
+		section["modelDeployments"] = mappings
+	}
+	if selection != "prompt" {
+		assert.NotContains(t, rpc.calls, "multi-select")
+		assert.NotContains(t, rpc.calls, "confirm")
 	}
 	wire, err := json.Marshal(section)
 	rpc.mu.Unlock()

@@ -4,8 +4,11 @@
 package nextstep
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"azureaiagent/internal/featureflags"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -19,10 +22,10 @@ func TestMultiServiceLocalInvokeNextSteps(t *testing.T) {
 		protocols []string
 		wantLocal bool
 	}{
-		{"two A2A services", []string{ProtocolA2A, ProtocolA2A}, false},
+		{"two A2A services", []string{ProtocolA2A, ProtocolA2A}, true},
 		{"A2A and Responses", []string{ProtocolA2A, ProtocolResponses}, true},
 		{"A2A and unknown", []string{ProtocolA2A, ""}, true},
-		{"A2A and WebSocket", []string{ProtocolA2A, ProtocolInvocationsWS}, false},
+		{"A2A and WebSocket", []string{ProtocolA2A, ProtocolInvocationsWS}, true},
 		{"no services known", nil, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -58,7 +61,7 @@ func TestMultiServiceLocalInvokeNextSteps(t *testing.T) {
 	}
 }
 
-func TestA2AOnlyNextStepsDoNotSuggestLocalInvoke(t *testing.T) {
+func TestA2AOnlyNextStepsSuggestLocalInvoke(t *testing.T) {
 	t.Parallel()
 	properties, err := structpb.NewStruct(map[string]any{
 		"kind": "hosted", "name": "agent",
@@ -73,9 +76,11 @@ func TestA2AOnlyNextStepsDoNotSuggestLocalInvoke(t *testing.T) {
 	for _, suggestions := range [][]Suggestion{
 		ResolveAfterInit(state, nil), ResolveAfterRun(state, "agent", nil),
 	} {
+		commands := make([]string, 0, len(suggestions))
 		for _, suggestion := range suggestions {
-			require.NotContains(t, suggestion.Command, "invoke --local")
+			commands = append(commands, suggestion.Command)
 		}
+		require.Contains(t, commands, "azd ai agent invoke --local --protocol a2a 'Hello!'")
 	}
 	remote := ResolveAfterDeploy(state, nil, nil)
 	require.Contains(t, remote, Suggestion{
@@ -92,6 +97,75 @@ func TestA2AOnlyNextStepsDoNotSuggestLocalInvoke(t *testing.T) {
 		foundLocal = foundLocal || strings.Contains(suggestion.Command, "invoke --local")
 	}
 	require.True(t, foundLocal)
+}
+
+func TestLocalA2AGuidancePortAndPreview(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		port    int
+		preview bool
+		want    string
+	}{
+		{"legacy default", 0, false, "'Hello!'"},
+		{"legacy custom", 9090, false, "--port 9090 'Hello!'"},
+		{"preview default", 0, true, "--a2a-version 1.0 'Hello!'"},
+		{"preview custom", 9091, true, "--port 9091 --a2a-version 1.0 'Hello!'"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			state := &State{
+				LocalPort: tc.port, A2APreviewEnabled: tc.preview,
+				HasOpenAPI: true, OpenAPIPayload: `{"stale":"invocations"}`,
+				Services: []ServiceState{{Name: "agent", Protocol: ProtocolA2A}},
+			}
+			got := ResolveAfterRun(state, "agent", func(string) bool { return true })
+			require.Equal(t, []Suggestion{{
+				Command:     "azd ai agent invoke --local --protocol a2a " + tc.want,
+				Description: "send a sample request to the running agent", Priority: 10,
+			}}, got)
+		})
+	}
+}
+
+func TestAssembleLocalA2AGuidance(t *testing.T) {
+	for _, preview := range []string{"false", "true"} {
+		t.Run(preview, func(t *testing.T) {
+			t.Setenv(featureflags.A2A.EnvVar, preview)
+			properties, err := structpb.NewStruct(map[string]any{
+				"kind": "hosted", "name": "agent",
+				"protocols": []any{map[string]any{"protocol": "a2a", "version": "1.0.0"}},
+			})
+			require.NoError(t, err)
+			src := &fakeSource{
+				envName: "dev",
+				project: &azdext.ProjectConfig{
+					Path: t.TempDir(),
+					Services: map[string]*azdext.ServiceConfig{
+						"agent": {Name: "agent", Host: agentHost, AdditionalProperties: properties},
+					},
+				},
+			}
+			probeCalled := false
+			state, errs := AssembleStateFromSource(t.Context(), src,
+				WithLocalPort(9092), WithOpenAPIProbe("agent", "local"),
+				WithLiveOpenAPIProbe(func(context.Context) ([]byte, error) {
+					probeCalled = true
+					return nil, nil
+				}))
+			require.Empty(t, errs)
+			require.False(t, probeCalled, "A2A must not probe the invocations OpenAPI route")
+			require.False(t, state.HasOpenAPI)
+			require.Equal(t, 9092, state.LocalPort)
+			require.Equal(t, preview == "true", state.A2APreviewEnabled)
+			// The resolver uses the captured snapshot, not subsequent process changes.
+			t.Setenv(featureflags.A2A.EnvVar, "false")
+			got := ResolveAfterRun(state, "agent", nil)
+			require.Len(t, got, 1)
+			require.Contains(t, got[0].Command, "--port 9092")
+			require.Equal(t, preview == "true", strings.Contains(got[0].Command, "--a2a-version 1.0"))
+		})
+	}
 }
 
 func TestMixedA2ANextStepsPreferInvocableProtocols(t *testing.T) {

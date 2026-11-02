@@ -49,6 +49,7 @@ type invokeFlags struct {
 	newConversation bool
 	protocol        string
 	a2aVersion      string
+	a2aPath         string
 	agentEndpoint   string
 	version         string
 	outputFmt       string
@@ -57,6 +58,10 @@ type invokeFlags struct {
 	longRunning     bool
 	noWait          bool
 	debugLatency    bool
+
+	// Preserve explicit empty/false local A2A options across protocol resolution.
+	a2aPathExplicit       bool
+	localA2AExplicitFlags []string
 }
 
 func (f *invokeFlags) forceNewConversation() bool {
@@ -85,6 +90,9 @@ type InvokeAction struct {
 	endpoint              *parsedAgentEndpoint
 	clientHeaders         http.Header
 	invocationsTransport  http.RoundTripper
+	a2aTransport          http.RoundTripper
+	a2aWriter             io.Writer
+	a2aErrorWriter        io.Writer
 	protocolServiceName   string
 	resolvedRemoteContext *remoteContext
 	resolvedBody          []byte
@@ -123,8 +131,11 @@ JSON-RPC request with the a2a protocol.
 
 ` + invokeA2AVersionHelp + `Local Development:
 Use --local to target a locally running agent (started via 'azd ai agent run')
-instead of Foundry. This CLI does not support a2a with --local; this is a
-CLI limitation, not a restriction of the A2A protocol.
+instead of Foundry. With -p a2a, requests are sent to /a2a by default;
+use --a2a-path to select another local JSON-RPC path. Local A2A sends no
+Foundry authentication, session, conversation, identity, or call-ID headers.
+Those flags are not supported; use A2A contextId/taskId in a request file
+for protocol-level continuity.
 
 Sessions & Identity:
 Sessions are persisted per-agent — consecutive invokes reuse the same
@@ -210,6 +221,7 @@ Raw output includes the returned headers without a formatted latency summary.` +
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			*flags = resolveInvokeArgs(*flags, args, extCtx.OutputFormat)
+			captureLocalA2AExplicitFlags(cmd, flags)
 			a2aPreview, err := featureflags.IsEnabled(featureflags.A2A)
 			if err != nil {
 				return err
@@ -251,6 +263,8 @@ Raw output includes the returned headers without a formatted latency summary.` +
 			"pass --protocol when it cannot be determined.")
 	cmd.Flags().StringVar(&flags.a2aVersion, "a2a-version", "",
 		"A2A wire version: 0.3 or 1.0. Defaults to 1.0 for messages; required with --input-file for a2a.")
+	cmd.Flags().StringVar(&flags.a2aPath, "a2a-path", defaultLocalA2APath,
+		"Local A2A JSON-RPC path (only with --local and the a2a protocol; no URL, query, or fragment)")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,
@@ -417,6 +431,15 @@ func resolveInvokeArgs(flags invokeFlags, args []string, outputFormat string) in
 
 func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags, a2aPreview bool) error {
 	flags := *input
+	captureLocalA2AExplicitFlags(cmd, &flags)
+	if flags.local {
+		if err := validateLocalInvokePort(flags.port); err != nil {
+			return err
+		}
+	}
+	if err := validateLocalA2AOptions(&flags, agent_api.AgentProtocol(flags.protocol)); err != nil {
+		return err
+	}
 	if flags.agentEndpoint != "" {
 		if err := validateAgentEndpointFlags(cmd, &flags); err != nil {
 			return err
@@ -466,14 +489,6 @@ func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags, a2aPreview bool)
 				exterrors.CodeInvalidParameter,
 				fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
 				"supported protocols are: responses, invocations, a2a",
-			)
-		}
-		if flags.local && !p.IsLocalInvocable() {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				fmt.Sprintf("the %s protocol cannot be invoked against a local agent", flags.protocol),
-				"omit --local to invoke the deployed agent, "+
-					"or use --protocol responses/invocations for local invocation",
 			)
 		}
 	}
@@ -631,6 +646,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		return err
 	}
 	a2aVersion := resolveA2AVersion(a.flags.a2aVersion, a2aPreview)
+	if err := validateLocalA2AOptions(a.flags, agent_api.AgentProtocol(a.flags.protocol)); err != nil {
+		return err
+	}
 	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocol(a.flags.protocol), a2aPreview); err != nil {
 		return err
 	}
@@ -694,6 +712,11 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		return err
 	}
 
+	if err := validateLocalA2AOptions(a.flags, protocol); err != nil {
+		a.closeResolvedRemoteContextClient()
+		return err
+	}
+
 	// Re-validate after protocol resolution: when --protocol was omitted the
 	// protocol may have been auto-detected as a2a from the service definition. In
 	// that case the flag-parse guard above was skipped and clientHeaders was
@@ -732,7 +755,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		case agent_api.AgentProtocolInvocations:
 			return a.invocationsLocal(ctx)
 		case agent_api.AgentProtocolA2A:
-			return a.a2aLocal(ctx)
+			return a.a2aLocal(ctx, a2aVersion)
 		default:
 			return a.responsesLocal(ctx)
 		}
@@ -1181,6 +1204,15 @@ func doLocalRequestWithRetry(
 	client *http.Client,
 	newReq func() (*http.Request, error),
 ) (*http.Response, error) {
+	return doLocalRequestWithRetryWriter(ctx, client, newReq, os.Stderr)
+}
+
+func doLocalRequestWithRetryWriter(
+	ctx context.Context,
+	client *http.Client,
+	newReq func() (*http.Request, error),
+	progress io.Writer,
+) (*http.Response, error) {
 	deadline := time.Now().Add(localConnectRetryBudget)
 	backoff := localConnectRetryInitialBackoff
 	notified := false
@@ -1199,7 +1231,7 @@ func doLocalRequestWithRetry(
 		if !notified {
 			// Progress note on stderr keeps raw-mode stdout clean while
 			// reassuring the user we're waiting rather than hung.
-			fmt.Fprintln(os.Stderr, "Waiting for the local agent to accept connections...")
+			fmt.Fprintln(progress, "Waiting for the local agent to accept connections...")
 			notified = true
 		}
 		select {

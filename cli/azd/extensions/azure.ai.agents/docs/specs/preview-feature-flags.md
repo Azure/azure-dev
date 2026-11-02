@@ -100,6 +100,19 @@ default decision and passes the resolved version downstream. Builders, HTTP
 handlers, and renderers do not read feature state. No agent metadata or file
 heuristic selects the wire version.
 
+These same rules apply to `invoke --local -p a2a`: local transport itself is
+not preview-gated. It posts to `/a2a` by default, with `--a2a-path` available to
+select another local JSON-RPC path in either feature state. It does not acquire
+credentials, forward Foundry/custom client headers, or persist A2A sessions.
+Unsupported session, conversation, identity, call-ID, and deployed-version flags
+are rejected independently of version selection.
+
+A2A-only `run` targets suppress the graphical client in either feature state.
+Their local-invoke next step uses the actual port and plain text, adding
+`--a2a-version 1.0` only when the preview is enabled. It never suggests the
+preview-only flag while disabled or probes the Invocations OpenAPI route for
+an A2A payload. Mixed-protocol targets retain their existing local-client route.
+
 ## Process environment enablement
 
 Set the desired variable in the shell or CI process environment before running azd. For example:

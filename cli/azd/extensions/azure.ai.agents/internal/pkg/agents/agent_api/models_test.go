@@ -1322,7 +1322,7 @@ func TestIsLocalInvocable(t *testing.T) {
 	}{
 		{AgentProtocolResponses, true},
 		{AgentProtocolInvocations, true},
-		{AgentProtocolA2A, false}, // remote-only
+		{AgentProtocolA2A, true},
 		{AgentProtocolActivityProtocol, false},
 		{AgentProtocol("unknown"), false},
 	}

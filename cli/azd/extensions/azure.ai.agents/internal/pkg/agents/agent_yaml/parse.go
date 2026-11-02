@@ -339,6 +339,7 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 		"input", "client", "reasoning", "reasoningEffort", "reasoning_effort",
 		"soundscape", "subagentConfig", "subagent_config", "interimResponse", "interim_response",
 		"live_config", "tools", "avatar", "outputModalities", "output_modalities", "handoff", "include",
+		"conversationEngine", "conversation_engine", "targetAgent", "target_agent",
 	} {
 		if _, found := values[key]; found {
 			errors = append(errors, fmt.Sprintf("%s is not supported for GPT Live", key))
@@ -447,6 +448,14 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 			if !typeOK || !slices.Contains([]string{"client", "responses", "foundry_managed_agent"}, typ) {
 				errors = append(errors, "delegation.type must be exactly client, responses, or foundry_managed_agent")
 			}
+			for _, key := range []string{"agentName", "agent_name", "agentVersion", "agent_version"} {
+				if _, found := delegation[key]; found && typ != "foundry_managed_agent" {
+					errors = append(errors, fmt.Sprintf("delegation.%s is supported only for foundry_managed_agent", key))
+				}
+			}
+			if _, found := delegation["responses"]; found && typ != "responses" {
+				errors = append(errors, "delegation.responses is supported only for responses delegation")
+			}
 			if version, found := rawProperty(delegation, "agentVersion", "agent_version"); typ == "foundry_managed_agent" && found {
 				value, ok := version.(string)
 				if !ok || !regexp.MustCompile(`^[1-9][0-9]{0,19}$`).MatchString(value) {
@@ -507,15 +516,6 @@ func rawProperty(values map[string]any, names ...string) (any, bool) {
 	return nil, false
 }
 
-func rawMap(values ...any) (map[string]any, bool) {
-	for _, value := range values {
-		if object, ok := value.(map[string]any); ok {
-			return object, true
-		}
-	}
-	return nil, false
-}
-
 func validateLiveVoiceAgent(agent VoiceAgent) []string {
 	var errors []string
 	if agent.Kind != AgentKindVoice {
@@ -526,9 +526,6 @@ func validateLiveVoiceAgent(agent VoiceAgent) []string {
 	}
 	if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
 		errors = append(errors, "model.id is required for a GPT Live voice agent")
-	}
-	if agent.ConversationEngine != nil || agent.TargetAgent != nil {
-		errors = append(errors, "conversationEngine and targetAgent are not supported for GPT Live")
 	}
 	if agent.Voice != nil || agent.InputSchema != nil || agent.OutputSchema != nil ||
 		len(agent.OutputModalities) > 0 || len(agent.Tools) > 0 || len(agent.Avatar) > 0 ||

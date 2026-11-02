@@ -622,14 +622,18 @@ func TestVoiceAgentFromResolvedService_RejectsExplicitEmptyManagedAgentVersion(t
 
 func TestVoiceAgentFromResolvedService_RejectsExplicitNullLiveFields(t *testing.T) {
 	for name, invalid := range map[string]map[string]any{
-		"delegation":       map[string]any{"delegation": nil},
-		"store":            map[string]any{"store": nil},
-		"audio":            map[string]any{"audio": nil},
-		"audio format":     map[string]any{"audio": map[string]any{"format": nil}},
-		"audio output":     map[string]any{"audio": map[string]any{"output": nil}},
-		"output voice":     map[string]any{"audio": map[string]any{"output": map[string]any{"voice": nil}}},
-		"structuredInputs": map[string]any{"structuredInputs": nil},
-		"policies":         map[string]any{"policies": nil},
+		"delegation":         {"delegation": nil},
+		"store":              {"store": nil},
+		"audio":              {"audio": nil},
+		"audio format":       {"audio": map[string]any{"format": nil}},
+		"audio output":       {"audio": map[string]any{"output": nil}},
+		"output voice":       {"audio": map[string]any{"output": map[string]any{"voice": nil}}},
+		"structuredInputs":   {"structuredInputs": nil},
+		"policies":           {"policies": nil},
+		"conversationEngine": {"conversationEngine": nil},
+		"targetAgent":        {"targetAgent": nil},
+		"client agentName":   {"delegation": map[string]any{"type": "client", "agentName": ""}},
+		"client responses":   {"delegation": map[string]any{"type": "client", "responses": nil}},
 	} {
 		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
 			t.Run(name+"/"+source, func(t *testing.T) {

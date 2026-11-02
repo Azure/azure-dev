@@ -187,10 +187,17 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 
 func TestBYOSuppliedBindingsPreserveExplicitValues(t *testing.T) {
 	for _, binding := range []string{"hostingPrincipalId", "workloadPrincipalId", "federatedIdentityRoleDefinitionId"} {
+		mask := 0
+		switch binding {
+		case "hostingPrincipalId":
+			mask = 2
+		case "workloadPrincipalId":
+			mask = 4
+		}
 		for _, declared := range []bool{false, true} {
 			for _, preview := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/declared=%t/preview=%t", binding, declared, preview), func(t *testing.T) {
-					p, fake := suppliedProvider(t, 0)
+					p, fake := suppliedProvider(t, mask)
 					source, err := p.resolveTemplate(t.Context(), func(string) {})
 					require.NoError(t, err)
 					explicit := map[string]any{"value": "explicit-" + binding}

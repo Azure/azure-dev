@@ -28,12 +28,11 @@ func TestValidateInitLocation(t *testing.T) {
 	for _, location := range []string{
 		"japaneast", "swedencentral", "uksouth",
 		"australiaeast", "westeurope", "germanywestcentral", " JapanEast ",
-		"canadacentral", "westus2",
-		"westus", "centralus",
+		"canadacentral", "westus", "centralus",
 	} {
 		require.NoError(t, validateInitLocation(t.Context(), location, allowed))
 	}
-	for _, location := range []string{"eastus", "eastus2", "eastus2euap", "westus3", ""} {
+	for _, location := range []string{"eastus", "eastus2", "eastus2euap", "westus2", "westus3", ""} {
 		err := validateInitLocation(t.Context(), location, allowed)
 		require.ErrorContains(t, err, "not supported for this agent setup")
 		require.NoError(t, validateInitLocation(t.Context(), location, nil), "plain prompt must remain unrestricted")

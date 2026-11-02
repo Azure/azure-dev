@@ -16,8 +16,9 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// promptModelInfrastructureOnDisk detects user-owned deployment inputs.
-// Their environment deployment list may be stale after parameter edits.
+// promptModelInfrastructureOnDisk detects user-owned infrastructure.
+// It validates every configured layer before reporting detection.
+// Environment deployment lists may be stale after parameter edits.
 func promptModelInfrastructureOnDisk(root string) (bool, error) {
 	if root == "" {
 		return false, nil
@@ -53,6 +54,7 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 	if !layered {
 		targets = []infraTarget{document.Infra.infraTarget}
 	}
+	detected := false
 	for i, target := range targets {
 		field := "infra"
 		if layered {
@@ -94,30 +96,28 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 			if err != nil {
 				return false, fmt.Errorf("resolve azure.yaml %s.path Foundry marker: %w", field, err)
 			}
+			sourcePath, err := paths.JoinAllowRoot(root, path, "main.tf")
+			if err != nil {
+				return false, fmt.Errorf("resolve azure.yaml %s.path Terraform source: %w", field, err)
+			}
 			marker, err := os.ReadFile(markerPath)
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return false, fmt.Errorf("read Foundry infrastructure marker: %w", err)
 			}
 			if string(marker) == "terraform-v1\n" {
-				return true, nil
+				detected = true
+				continue
 			}
 			if errors.Is(err, fs.ErrNotExist) {
-				sourcePath, err := paths.JoinAllowRoot(root, path, "main.tf")
-				if err != nil {
-					return false, fmt.Errorf("resolve azure.yaml %s.path Terraform source: %w", field, err)
-				}
 				source, err := os.ReadFile(sourcePath)
 				if err != nil && !errors.Is(err, fs.ErrNotExist) {
 					return false, fmt.Errorf("read Terraform infrastructure: %w", err)
 				}
 				if strings.Contains(string(source), `resource "azapi_resource" "foundry_account"`) &&
 					strings.Contains(string(source), `resource "azapi_resource" "project"`) {
-					return true, nil
+					detected = true
 				}
 			}
-			continue
-		}
-		if layered && provider != "microsoft.foundry" {
 			continue
 		}
 		for _, suffix := range []string{".bicep", ".bicepparam"} {
@@ -125,14 +125,17 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 			if err != nil {
 				return false, fmt.Errorf("resolve azure.yaml %s.module: %w", field, err)
 			}
+			if layered && provider != "microsoft.foundry" {
+				continue
+			}
 			info, err := os.Stat(file)
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return false, fmt.Errorf("inspect infrastructure %q: %w", file, err)
 			}
 			if err == nil && !info.IsDir() {
-				return true, nil
+				detected = true
 			}
 		}
 	}
-	return false, nil
+	return detected, nil
 }

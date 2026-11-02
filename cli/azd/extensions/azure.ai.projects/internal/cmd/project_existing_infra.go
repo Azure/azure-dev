@@ -944,6 +944,23 @@ func writeExistingProjectBicep(
 			return fmt.Errorf("write container registry Bicep module: %w",
 				err)
 		}
+		if mode == projectEjectAcrReuseConnect {
+			accessModule, err := fs.ReadFile(
+				synthesis.TemplatesFS(),
+				"templates/modules/acr-pull-role-assignment.bicep",
+			)
+			if err != nil {
+				return fmt.Errorf("read registry access Bicep module: %w", err)
+			}
+			// #nosec G306
+			if err := os.WriteFile(
+				filepath.Join(moduleDir, "acr-pull-role-assignment.bicep"),
+				accessModule,
+				0644,
+			); err != nil {
+				return fmt.Errorf("write registry access Bicep module: %w", err)
+			}
+		}
 	}
 
 	outputParams := map[string]any{}

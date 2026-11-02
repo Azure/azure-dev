@@ -1,0 +1,48 @@
+# Tier 0: doctor rejects a misspelled resource field without Azure access.
+name: "doctor-invalid-resources"
+command: "azd ai agent doctor --local-only"
+cwd: "~/working/azd-agents-doctor-resources-{instance}"
+tags: ["tier:0", "cmd:doctor", "negative-path", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-doctor-resources-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- "$HOME/working/azd-agents-doctor-resources-{instance}" &&
+      printf 'name: doctor-resources\nservices:\n  resource-agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: resource-agent\n    container:\n      resources:\n        core: "4"\n        memory: 1Gi\n'
+      > "$HOME/working/azd-agents-doctor-resources-{instance}/azure.yaml" &&
+      cp -- "$HOME/working/azd-agents-doctor-resources-{instance}/azure.yaml"
+      "$HOME/working/azd-agents-doctor-resources-{instance}/azure.yaml.before"
+    cwd: "~/working"
+    name: "seed the misspelled resource field and a comparison copy"
+
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Do not sign in, contact Azure,
+    install extensions, or run init, provision, up, deploy, or down. Run only the
+    declared doctor command and read-only inspection of the dedicated directory.
+  - >-
+    Wait for doctor --local-only to finish. Confirm local.agent-service-detected
+    passes and local.agent-yaml-valid fails, naming service resource-agent, its
+    container settings, and the unsupported field core. Confirm the command exits
+    with code 1 rather than reporting a valid defaulted resource allocation.
+  - >-
+    Confirm the resource error's remediation mentions container.resources and the
+    cpu and memory field names. Missing-environment checks may fail because this
+    isolated project has no selected environment; they must not suppress the
+    agent-definition validation result.
+  - >-
+    Compare azure.yaml byte-for-byte with azure.yaml.before and confirm they match.
+    Confirm no .azure directory is created and no authentication or remote checks run.
+  - "Take a best-effort screenshot; capture failure must not block the remaining goals."
+  - >-
+    Report a finding if core is silently ignored, default CPU is treated as successful
+    validation, the configuration is modified, or authentication, network activity,
+    or cloud resource creation occurs. Do not repair the fixture or retry a failed goal.

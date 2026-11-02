@@ -3,7 +3,11 @@
 
 package scripting
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/exec/internal/process"
+)
 
 // ValidationError indicates that input validation failed.
 type ValidationError struct {
@@ -61,5 +65,21 @@ func (e *ExecutionError) Error() string {
 
 // Interrupted reports whether script execution ended because of Ctrl+C.
 func (e *ExecutionError) Interrupted() bool {
-	return e != nil && isInterruptExitCode(e.ExitCode)
+	return e != nil && process.IsInterruptExitCode(e.ExitCode)
+}
+
+type executionErrorWithCause struct {
+	*ExecutionError
+	cause error
+}
+
+func (e *executionErrorWithCause) Unwrap() []error {
+	return []error{e.ExecutionError, e.cause}
+}
+
+func wrapExecutionError(err *ExecutionError, cause error) error {
+	return &executionErrorWithCause{
+		ExecutionError: err,
+		cause:          cause,
+	}
 }

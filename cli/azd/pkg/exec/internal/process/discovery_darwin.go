@@ -3,12 +3,16 @@
 
 //go:build darwin
 
-package exec
+package process
 
-import "golang.org/x/sys/unix"
+import (
+	"context"
 
-func processIDsWithEnvironment(marker string) []int {
-	if marker == "" {
+	"golang.org/x/sys/unix"
+)
+
+func processIDsWithTreeID(ctx context.Context, processTreeID string) []int {
+	if processTreeID == "" || ctx.Err() != nil {
 		return nil
 	}
 
@@ -20,13 +24,17 @@ func processIDsWithEnvironment(marker string) []int {
 	processIDs := []int{}
 	currentUserID := uint32(unix.Getuid())
 	for _, process := range processes {
+		if ctx.Err() != nil {
+			break
+		}
+
 		pid := int(process.Proc.P_pid)
 		if pid <= 0 || process.Eproc.Ucred.Uid != currentUserID {
 			continue
 		}
 
 		environ, err := unix.SysctlRaw("kern.procargs2", pid)
-		if err == nil && containsEnvironmentEntry(environ, marker) {
+		if err == nil && containsProcessTreeID(environ, processTreeID) {
 			processIDs = append(processIDs, pid)
 		}
 	}

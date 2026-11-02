@@ -1,0 +1,62 @@
+name: Evaluation CI hero scenario
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/eval-scenario-ci.yml
+      - eng/pipelines/eval-scenario-live.yml
+      - eng/scripts/eval-scenario-ci/**
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/eval-scenario-ci.yml
+      - eng/pipelines/eval-scenario-live.yml
+      - eng/scripts/eval-scenario-ci/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  NO_COLOR: "1"
+
+jobs:
+  installed-package:
+    name: Installed packages / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2025
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the proof
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up latest released azd
+        uses: Azure/setup-azd@0b7e3a35ab00f2eee7080c845eb39c3f0ebfa553 # v2.4.0
+        with:
+          version: latest
+
+      - name: Install and verify latest canonical evaluation packages
+        shell: pwsh
+        env:
+          AZD_CONFIG_DIR: ${{ runner.temp }}/eval-scenario-azd-config
+        run: ./eng/scripts/eval-scenario-ci/install_packages.ps1
+
+      - name: Test sanitized result generation and CI contracts
+        run: python -m unittest discover -s eng/scripts/eval-scenario-ci -p "test_*.py" -v

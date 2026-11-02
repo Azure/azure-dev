@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -492,6 +493,7 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 				DependencyResolution: depRes,
 			},
 			SessionConfiguration: sessionConfig,
+			EnableMemorySnapshot: hostedAgent.EnableMemorySnapshot,
 		}
 
 		return createAgentAPIRequest(hostedAgent.AgentDefinition, codeDef,
@@ -521,6 +523,7 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 			RegistryConnectionID: registryConnectionID,
 		},
 		SessionConfiguration: sessionConfig,
+		EnableMemorySnapshot: hostedAgent.EnableMemorySnapshot,
 	}
 
 	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageDef,
@@ -840,7 +843,6 @@ func mapVoiceConfig(voice *VoiceConfig, fallbackName string) *agent_api.VoiceCon
 		out := buildVoiceConfig(name)
 		out.Style = voice.Style
 		out.Pitch = voice.Pitch
-		out.Rate = voice.Rate
 		out.Locale = voice.Locale
 		out.Volume = voice.Volume
 		return out
@@ -853,7 +855,6 @@ func mapVoiceConfig(voice *VoiceConfig, fallbackName string) *agent_api.VoiceCon
 		Name:   name,
 		Style:  voice.Style,
 		Pitch:  voice.Pitch,
-		Rate:   voice.Rate,
 		Locale: voice.Locale,
 		Volume: voice.Volume,
 	}
@@ -899,6 +900,17 @@ func CreateHostedVoiceAgentAPIRequest(
 	return createVoiceAgentAPIRequest(voiceAgent, &target)
 }
 
+// ValidateVoiceDefinitionOverlay applies the same deterministic merge-safety
+// checks used by create/update request construction without requiring service access.
+func ValidateVoiceDefinitionOverlay(voiceAgent VoiceAgent) error {
+	var target *agent_api.VoiceTargetAgentReference
+	if isHostedConversationEngine(voiceAgent.ConversationEngine) {
+		target = &agent_api.VoiceTargetAgentReference{Name: "overlay-validation", Version: "validation"}
+	}
+	_, err := createVoiceAgentAPIRequest(voiceAgent, target)
+	return err
+}
+
 func createVoiceAgentAPIRequest(
 	voiceAgent VoiceAgent,
 	target *agent_api.VoiceTargetAgentReference,
@@ -915,13 +927,10 @@ func createVoiceAgentAPIRequest(
 		if target == nil || strings.TrimSpace(target.Name) == "" || strings.TrimSpace(target.Version) == "" {
 			return nil, fmt.Errorf("resolved target agent name and version are required when model_type is 'hosted_agent'")
 		}
-		if voiceAgent.Model != nil || voiceAgent.InputSchema != nil || voiceAgent.OutputSchema != nil ||
-			voiceAgent.Instructions != nil || len(voiceAgent.StructuredInputs) > 0 ||
-			len(voiceAgent.Tools) > 0 || voiceAgent.ToolChoice != nil || voiceAgent.ParallelToolCalls != nil ||
-			voiceAgent.MaxOutputTokens != nil || len(voiceAgent.Include) > 0 || len(voiceAgent.Handoff) > 0 {
+		if voiceAgent.Model != nil || voiceAgent.ModelType != "" || voiceAgent.Instructions != nil ||
+			len(voiceAgent.Tools) > 0 || voiceAgent.ToolChoice != nil {
 			return nil, fmt.Errorf(
-				"model, input_schema, output_schema, instructions, structured_inputs, tools, tool_choice, " +
-					"parallel_tool_calls, max_output_tokens, include, and handoff belong to the target hosted agent",
+				"model, model_type, instructions, tools, and tool_choice belong to the target hosted agent",
 			)
 		}
 	} else if modelType != agent_api.VoiceModelTypeManaged && modelType != agent_api.VoiceModelTypeSelfDeployed {
@@ -1000,7 +1009,6 @@ func createVoiceAgentAPIRequest(
 		},
 		ModelType:          voiceWireModelType(modelType, hostedAgent),
 		Model:              modelID,
-		TargetAgent:        nil,
 		ConversationEngine: voiceWireConversationEngine(voiceAgent.ConversationEngine, target),
 		Instructions:       instructions,
 		StructuredInputs:   mapVoiceStructuredInputs(voiceAgent.StructuredInputs),
@@ -1013,7 +1021,6 @@ func createVoiceAgentAPIRequest(
 				VoiceLocale: voiceWireLocale(outputVoice),
 				Style:       outputVoice.Style,
 				Pitch:       outputVoice.Pitch,
-				Rate:        outputVoice.Rate,
 				Volume:      outputVoice.Volume,
 				Speed:       outputSpeed,
 			},
@@ -1023,14 +1030,136 @@ func createVoiceAgentAPIRequest(
 		Tools:             voiceAgent.Tools,
 		Avatar:            voiceAgent.Avatar,
 		Greeting:          voiceAgent.Greeting,
-		Handoff:           voiceAgent.Handoff,
 		ToolChoice:        voiceAgent.ToolChoice,
 		ParallelToolCalls: voiceAgent.ParallelToolCalls,
 		MaxOutputTokens:   voiceAgent.MaxOutputTokens,
 		Include:           voiceAgent.Include,
 	}
+	definition, err := applyVoiceDefinitionOverlay(voiceDef, voiceAgent.DefinitionOverlay)
+	if err != nil {
+		return nil, err
+	}
 
-	return createAgentAPIRequest(voiceAgent.AgentDefinition, voiceDef, nil, nil)
+	return createAgentAPIRequest(voiceAgent.AgentDefinition, definition, nil, nil)
+}
+
+func applyVoiceDefinitionOverlay(definition agent_api.VoiceAgentDefinition, overlay map[string]any) (any, error) {
+	if len(overlay) == 0 {
+		return definition, nil
+	}
+	encoded, err := json.Marshal(definition)
+	if err != nil {
+		return nil, fmt.Errorf("marshal voice definition for definitionOverlay: %w", err)
+	}
+	var merged map[string]any
+	if err := json.Unmarshal(encoded, &merged); err != nil {
+		return nil, fmt.Errorf("decode voice definition for definitionOverlay: %w", err)
+	}
+	if err := mergeVoiceDefinitionOverlay(merged, overlay, "$", true); err != nil {
+		return nil, err
+	}
+	return merged, nil
+}
+
+func mergeVoiceDefinitionOverlay(target, overlay map[string]any, path string, root bool) error {
+	for _, key := range slices.Sorted(maps.Keys(overlay)) {
+		value := overlay[key]
+		fieldPath := path + "." + key
+		if root && slices.ContainsFunc(
+			[]string{"kind", "model_type", "model", "conversation_engine"},
+			func(reserved string) bool { return strings.EqualFold(key, reserved) },
+		) {
+			return fmt.Errorf("definitionOverlay at %s uses reserved root key %q", fieldPath, key)
+		}
+		if err := validateOverlayValue(value, fieldPath); err != nil {
+			return err
+		}
+		existingKey, found := key, false
+		for _, candidate := range slices.Sorted(maps.Keys(target)) {
+			if strings.EqualFold(candidate, key) {
+				existingKey, found = candidate, true
+				break
+			}
+		}
+		if !found {
+			target[key] = cloneOverlayValue(value)
+			continue
+		}
+		if existingKey != key {
+			return fmt.Errorf("definitionOverlay conflicts with typed voice definition at %s (existing key %q)",
+				fieldPath, existingKey)
+		}
+		existing := target[existingKey]
+		existingObject, existingOK := existing.(map[string]any)
+		overlayObject, overlayOK := value.(map[string]any)
+		if existingOK && overlayOK {
+			if err := mergeVoiceDefinitionOverlay(existingObject, overlayObject, fieldPath, false); err != nil {
+				return err
+			}
+			continue
+		}
+		return fmt.Errorf("definitionOverlay conflicts with typed voice definition at %s", fieldPath)
+	}
+	return nil
+}
+
+func validateOverlayValue(value any, path string) error {
+	if value == nil {
+		return fmt.Errorf("definitionOverlay contains null at %s", path)
+	}
+	switch value := value.(type) {
+	case map[string]any:
+		for _, key := range slices.Sorted(maps.Keys(value)) {
+			child := value[key]
+			if err := validateOverlayValue(child, path+"."+key); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for index, child := range value {
+			if err := validateOverlayValue(child, fmt.Sprintf("%s[%d]", path, index)); err != nil {
+				return err
+			}
+		}
+	case float64:
+		if math.IsNaN(value) || math.IsInf(value, 0) || math.Abs(value) >= 1<<53 {
+			return fmt.Errorf("definitionOverlay at %s must use a finite JSON-safe number with absolute value below 2^53", path)
+		}
+	case float32:
+		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+			return fmt.Errorf("definitionOverlay at %s must use a finite JSON-safe number", path)
+		}
+	default:
+		number := reflect.ValueOf(value)
+		if number.Kind() >= reflect.Int && number.Kind() <= reflect.Int64 &&
+			(number.Int() <= -(1<<53) || number.Int() >= 1<<53) {
+			return fmt.Errorf("definitionOverlay at %s must use a JSON-safe integer with absolute value below 2^53", path)
+		}
+		if (number.Kind() >= reflect.Uint && number.Kind() <= reflect.Uint64 || number.Kind() == reflect.Uintptr) &&
+			number.Uint() >= 1<<53 {
+			return fmt.Errorf("definitionOverlay at %s must use a JSON-safe integer below 2^53", path)
+		}
+	}
+	return nil
+}
+
+func cloneOverlayValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		clone := make(map[string]any, len(value))
+		for key, child := range value {
+			clone[key] = cloneOverlayValue(child)
+		}
+		return clone
+	case []any:
+		clone := make([]any, len(value))
+		for index, child := range value {
+			clone[index] = cloneOverlayValue(child)
+		}
+		return clone
+	default:
+		return value
+	}
 }
 
 func isHostedConversationEngine(engine *VoiceConversationEngine) bool {

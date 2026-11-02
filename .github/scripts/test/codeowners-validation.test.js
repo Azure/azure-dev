@@ -202,7 +202,8 @@ describe('CODEOWNERS validation workflow', () => {
     expect(core.error).toHaveBeenNthCalledWith(
       2,
       'Confirm the owner has write access.\n\n' +
-      'Owners who need write access should request membership in @Azure/azure-dev-write.',
+      'Owners who need write access should request membership in @Azure/azure-dev-write:\n' +
+      'https://repos.opensource.microsoft.com/orgs/Azure/teams/azure-dev-write',
       { file: '.github/CODEOWNERS', startLine: 7, startColumn: 12, title: 'Unknown owner' },
     );
     expect(core.setFailed).toHaveBeenCalledWith(

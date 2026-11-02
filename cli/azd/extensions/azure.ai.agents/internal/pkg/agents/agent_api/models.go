@@ -4,8 +4,10 @@
 package agent_api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"time"
 )
@@ -330,7 +332,8 @@ type HostedAgentDefinition struct {
 	ContainerConfiguration *ContainerConfigurationAPI `json:"container_configuration,omitempty"` // container deploy only
 	CodeConfiguration      *CodeConfigurationAPI      `json:"code_configuration,omitempty"`      // code deploy only
 	SessionConfiguration   *SessionConfigurationAPI   `json:"session_configuration,omitempty"`   // optional session tuning
-	Image                  string                     `json:"image,omitempty"`                   // deprecated: for backward compat deserialization only
+	EnableMemorySnapshot   *bool                      `json:"enable_memory_snapshot,omitempty"`
+	Image                  string                     `json:"image,omitempty"` // deprecated: for backward compat deserialization only
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for HostedAgentDefinition.
@@ -445,9 +448,8 @@ const (
 	VoiceModelTypeHostedAgent  VoiceModelType = "hosted_agent"
 )
 
-// VoiceTargetAgentReference is the data-plane target_agent object on a managed
-// voice wrapper. Name identifies the hosted agent that receives Voice Bridge
-// turns; Version optionally pins the wrapper to one immutable hosted version.
+// VoiceTargetAgentReference is an internal resolved reference used to construct
+// a hosted wrapper's conversation_engine object. It is not a wire shape.
 type VoiceTargetAgentReference struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
@@ -512,7 +514,6 @@ type VoiceConfig struct {
 	Name   string  `json:"name"`
 	Style  *string `json:"style,omitempty"`
 	Pitch  *string `json:"pitch,omitempty"`
-	Rate   *string `json:"rate,omitempty"`
 	Locale *string `json:"locale,omitempty"`
 	Volume *string `json:"volume,omitempty"`
 }
@@ -527,7 +528,6 @@ type VoiceOutputConfig struct {
 	VoiceLocale string            `json:"voice_locale,omitempty"`
 	Style       *string           `json:"style,omitempty"`
 	Pitch       *string           `json:"pitch,omitempty"`
-	Rate        *string           `json:"rate,omitempty"`
 	Volume      *string           `json:"volume,omitempty"`
 	Speed       *float64          `json:"speed,omitempty"`
 }
@@ -542,23 +542,21 @@ type VoiceAudioConfig struct {
 // prompt voice agent. Its Kind is always AgentKindVoice ("voice").
 type VoiceAgentDefinition struct {
 	AgentDefinition
-	ModelType          VoiceModelType             `json:"model_type,omitempty"`
-	Model              string                     `json:"model,omitempty"`
-	TargetAgent        *VoiceTargetAgentReference `json:"target_agent,omitempty"`
-	ConversationEngine *VoiceConversationEngine   `json:"conversation_engine,omitempty"`
-	Instructions       string                     `json:"instructions,omitempty"`
-	StructuredInputs   map[string]any             `json:"structured_inputs,omitempty"`
-	Audio              *VoiceAudioConfig          `json:"audio,omitempty"`
-	OutputModalities   []string                   `json:"output_modalities,omitempty"`
-	Store              *bool                      `json:"store,omitempty"`
-	Tools              []map[string]any           `json:"tools,omitempty"`
-	Avatar             map[string]any             `json:"avatar,omitempty"`
-	Greeting           map[string]any             `json:"greeting,omitempty"`
-	Handoff            map[string]any             `json:"handoff,omitempty"`
-	ToolChoice         any                        `json:"tool_choice,omitempty"`
-	ParallelToolCalls  *bool                      `json:"parallel_tool_calls,omitempty"`
-	MaxOutputTokens    any                        `json:"max_output_tokens,omitempty"`
-	Include            []string                   `json:"include,omitempty"`
+	ModelType          VoiceModelType           `json:"model_type,omitempty"`
+	Model              string                   `json:"model,omitempty"`
+	ConversationEngine *VoiceConversationEngine `json:"conversation_engine,omitempty"`
+	Instructions       string                   `json:"instructions,omitempty"`
+	StructuredInputs   map[string]any           `json:"structured_inputs,omitempty"`
+	Audio              *VoiceAudioConfig        `json:"audio,omitempty"`
+	OutputModalities   []string                 `json:"output_modalities,omitempty"`
+	Store              *bool                    `json:"store,omitempty"`
+	Tools              []map[string]any         `json:"tools,omitempty"`
+	Avatar             map[string]any           `json:"avatar,omitempty"`
+	Greeting           map[string]any           `json:"greeting,omitempty"`
+	ToolChoice         any                      `json:"tool_choice,omitempty"`
+	ParallelToolCalls  *bool                    `json:"parallel_tool_calls,omitempty"`
+	MaxOutputTokens    any                      `json:"max_output_tokens,omitempty"`
+	Include            []string                 `json:"include,omitempty"`
 }
 
 // TelephonyBindingRequest creates an agent telephony binding.
@@ -699,62 +697,105 @@ type TelephonyTransferDestination struct {
 }
 
 // UnmarshalJSON decodes known destination values as strings while preserving
-// the complete object for future destination kinds.
+// the complete object for future destination types and legacy kinds.
 func (d *TelephonyTransferDestination) UnmarshalJSON(data []byte) error {
-	var wire struct {
-		Kind  string          `json:"kind"`
-		Value json.RawMessage `json:"value"`
-	}
-	if err := json.Unmarshal(data, &wire); err != nil {
+	*d = TelephonyTransferDestination{}
+	wire, err := decodeTelephonyTransferDestinationObject(data)
+	if err != nil {
 		return err
 	}
-	d.Kind = wire.Kind
-	d.Value = ""
-	d.RawValue = nil
-	d.RawObject = nil
-	d.HasValue = len(wire.Value) != 0
-	if !isKnownTelephonyTransferDestinationKind(wire.Kind) {
-		d.RawObject = append(d.RawObject, data...)
+	typeValue, hasType := wire["type"]
+	kindValue, hasKind := wire["kind"]
+	if hasType && hasKind {
+		return fmt.Errorf("telephony transfer destination cannot contain both type and kind")
 	}
-	if !d.HasValue {
-		return nil
+	discriminator := typeValue
+	if !hasType {
+		discriminator = kindValue
 	}
-	if isKnownTelephonyTransferDestinationKind(wire.Kind) {
-		if string(wire.Value) == "null" {
+	if len(discriminator) == 0 || string(discriminator) == "null" {
+		return fmt.Errorf("telephony transfer destination required fields are missing: discriminator")
+	}
+	var wireKind string
+	if err := json.Unmarshal(discriminator, &wireKind); err != nil {
+		return fmt.Errorf("telephony transfer destination discriminator must be a string: %w", err)
+	}
+	kind, known := decodeTelephonyTransferDestinationKind(wireKind, hasType)
+	value := wire["value"]
+	hasValue := len(value) != 0
+	if !hasValue {
+		if known {
 			return fmt.Errorf("known telephony transfer destination value must be a string")
 		}
-		if err := json.Unmarshal(wire.Value, &d.Value); err != nil {
-			return fmt.Errorf("known telephony transfer destination value must be a string: %w", err)
-		}
+		d.Kind = kind
+		d.RawObject = append(d.RawObject, data...)
 		return nil
 	}
-	d.RawValue = append(d.RawValue, wire.Value...)
-	if wire.Value[0] == '"' {
-		_ = json.Unmarshal(wire.Value, &d.Value)
+	if known {
+		if string(value) == "null" {
+			return fmt.Errorf("known telephony transfer destination value must be a string")
+		}
+		var decodedValue string
+		if err := json.Unmarshal(value, &decodedValue); err != nil {
+			return fmt.Errorf("known telephony transfer destination value must be a string: %w", err)
+		}
+		d.Kind = kind
+		d.Value = decodedValue
+		d.HasValue = true
+		return nil
+	}
+	d.Kind = kind
+	d.RawObject = append(d.RawObject, data...)
+	d.RawValue = append(d.RawValue, value...)
+	d.HasValue = true
+	if value[0] == '"' {
+		_ = json.Unmarshal(value, &d.Value)
 	}
 	return nil
 }
 
-// MarshalJSON emits typed string values for known kinds and preserves the raw
-// object for future kinds.
+// MarshalJSON emits service type discriminators for known kinds and preserves
+// the raw object for future types and legacy kinds.
 func (d TelephonyTransferDestination) MarshalJSON() ([]byte, error) {
-	if !isKnownTelephonyTransferDestinationKind(d.Kind) && len(d.RawObject) != 0 {
-		var raw struct {
-			Kind string `json:"kind"`
+	if len(d.RawObject) != 0 {
+		raw, err := decodeTelephonyTransferDestinationObject(d.RawObject)
+		if err != nil {
+			return nil, fmt.Errorf("raw telephony transfer destination does not match kind")
 		}
-		if err := json.Unmarshal(d.RawObject, &raw); err != nil || raw.Kind != d.Kind {
+		typeValue, hasType := raw["type"]
+		kindValue, hasKind := raw["kind"]
+		if hasType == hasKind {
+			return nil, fmt.Errorf("raw telephony transfer destination does not match kind")
+		}
+		discriminator := typeValue
+		if hasKind {
+			discriminator = kindValue
+		}
+		var rawKind string
+		if err := json.Unmarshal(discriminator, &rawKind); err != nil {
+			return nil, fmt.Errorf("raw telephony transfer destination does not match kind")
+		}
+		semanticKind, _ := decodeTelephonyTransferDestinationKind(rawKind, hasType)
+		if semanticKind != d.Kind {
 			return nil, fmt.Errorf("raw telephony transfer destination does not match kind")
 		}
 		return append([]byte(nil), d.RawObject...), nil
 	}
+	if isKnownTelephonyTransferDestinationKind(d.Kind) {
+		value, _ := json.Marshal(d.Value)
+		return json.Marshal(struct {
+			Type  string          `json:"type"`
+			Value json.RawMessage `json:"value"`
+		}{Type: telephonyTransferDestinationWireType(d.Kind), Value: value})
+	}
 	value := d.RawValue
-	if isKnownTelephonyTransferDestinationKind(d.Kind) || len(value) == 0 {
-		if !isKnownTelephonyTransferDestinationKind(d.Kind) && !d.HasValue && d.Value == "" {
+	if len(value) == 0 {
+		if !d.HasValue && d.Value == "" {
 			return json.Marshal(struct {
 				Kind string `json:"kind"`
 			}{Kind: d.Kind})
 		}
-		if !isKnownTelephonyTransferDestinationKind(d.Kind) && d.HasValue && len(value) == 0 {
+		if d.HasValue {
 			value = json.RawMessage("null")
 		} else {
 			value, _ = json.Marshal(d.Value)
@@ -764,6 +805,73 @@ func (d TelephonyTransferDestination) MarshalJSON() ([]byte, error) {
 		Kind  string          `json:"kind"`
 		Value json.RawMessage `json:"value"`
 	}{Kind: d.Kind, Value: value})
+}
+
+func decodeTelephonyTransferDestinationObject(data []byte) (map[string]json.RawMessage, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	start, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delimiter, ok := start.(json.Delim); !ok || delimiter != '{' {
+		return nil, fmt.Errorf("telephony transfer destination must be an object")
+	}
+	wire := make(map[string]json.RawMessage)
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		key := keyToken.(string)
+		if _, exists := wire[key]; exists {
+			return nil, fmt.Errorf("telephony transfer destination contains duplicate key %q", key)
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		wire[key] = value
+	}
+	end, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delimiter, ok := end.(json.Delim); !ok || delimiter != '}' {
+		return nil, fmt.Errorf("telephony transfer destination must be an object")
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("telephony transfer destination has a trailing token")
+		}
+		return nil, err
+	}
+	return wire, nil
+}
+
+func decodeTelephonyTransferDestinationKind(kind string, fromType bool) (string, bool) {
+	if fromType {
+		switch kind {
+		case "phone_number":
+			return TelephonyTransferDestinationPSTN, true
+		case TelephonyTransferDestinationTeams, TelephonyTransferDestinationSIP:
+			return kind, true
+		default:
+			return kind, false
+		}
+	}
+	switch kind {
+	case TelephonyTransferDestinationPSTN, TelephonyTransferDestinationTeams, TelephonyTransferDestinationSIP:
+		return kind, true
+	default:
+		return kind, false
+	}
+}
+
+func telephonyTransferDestinationWireType(kind string) string {
+	if kind == TelephonyTransferDestinationPSTN {
+		return "phone_number"
+	}
+	return kind
 }
 
 func isKnownTelephonyTransferDestinationKind(kind string) bool {
@@ -865,6 +973,7 @@ type AgentVersionObject struct {
 type AgentVersionError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Target  string `json:"target,omitempty"`
 }
 
 // AgentObject represents an agent

@@ -32,8 +32,10 @@ func TestRequiresRemoteACRBuild(t *testing.T) {
 			"config:\n  kind: hosted\n  docker: {remoteBuild: true}", false},
 		{"local source", "kind: hosted\ndocker: {remoteBuild: false}", false},
 		{"core local default", "kind: hosted", false},
-		{"bare image remote", "image: registry/image:v1\ndocker: {remoteBuild: true}", true},
-		{"passthrough image remote", "image: registry/image:v1\ndocker: {remoteBuild: true, imagePassthrough: true}", false},
+		{"image defaults to remote source", "image: registry/image:v1\ndocker: {remoteBuild: true}", true},
+		{"prebuilt", "image: registry/image:v1\ndocker: {remoteBuild: true, imagePassthrough: true}", false},
+		{"registry connection", "image: registry/image:v1\nregistryConnectionId: private\n" +
+			"docker: {remoteBuild: true}", false},
 		{"passthrough", "docker: {remoteBuild: true, imagePassthrough: true}", false},
 		{"code", "codeConfiguration: {}\ndocker: {remoteBuild: true}", false},
 		{"prompt", "kind: prompt\ndocker: {remoteBuild: true}", false},

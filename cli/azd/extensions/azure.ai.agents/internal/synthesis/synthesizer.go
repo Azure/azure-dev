@@ -131,11 +131,12 @@ type codeConfigBlock struct {
 // agentBlock is the subset of an agent entry we inspect — both the legacy inline
 // agents[] shape and the unified azure.ai.agent service shape.
 type agentBlock struct {
-	Name              string           `yaml:"name,omitempty"`
-	Kind              string           `yaml:"kind,omitempty"`
-	Image             string           `yaml:"image,omitempty"`
-	CodeConfiguration *codeConfigBlock `yaml:"codeConfiguration,omitempty"`
-	Docker            dockerBuildBlock `yaml:"docker,omitempty"`
+	Name                 string           `yaml:"name,omitempty"`
+	Kind                 string           `yaml:"kind,omitempty"`
+	Image                string           `yaml:"image,omitempty"`
+	RegistryConnectionID string           `yaml:"registryConnectionId,omitempty"`
+	CodeConfiguration    *codeConfigBlock `yaml:"codeConfiguration,omitempty"`
+	Docker               dockerBuildBlock `yaml:"docker,omitempty"`
 }
 
 type dockerBuildBlock struct {
@@ -145,13 +146,14 @@ type dockerBuildBlock struct {
 
 // serviceBlock is the subset of a service entry we inspect for cross-service provisioning inputs.
 type serviceBlock struct {
-	Host              string            `yaml:"host"`
-	Kind              string            `yaml:"kind,omitempty"`
-	Image             string            `yaml:"image,omitempty"`
-	CodeConfiguration *codeConfigBlock  `yaml:"codeConfiguration,omitempty"`
-	Config            *agentBlock       `yaml:"config,omitempty"`
-	Agents            []agentBlock      `yaml:"agents,omitempty"`
-	Docker            *dockerBuildBlock `yaml:"docker,omitempty"`
+	Host                 string            `yaml:"host"`
+	Kind                 string            `yaml:"kind,omitempty"`
+	Image                string            `yaml:"image,omitempty"`
+	RegistryConnectionID string            `yaml:"registryConnectionId,omitempty"`
+	CodeConfiguration    *codeConfigBlock  `yaml:"codeConfiguration,omitempty"`
+	Config               *agentBlock       `yaml:"config,omitempty"`
+	Agents               []agentBlock      `yaml:"agents,omitempty"`
+	Docker               *dockerBuildBlock `yaml:"docker,omitempty"`
 }
 
 // projectService is the subset of a host: azure.ai.project service body the synthesizer reads.
@@ -261,9 +263,12 @@ func Synthesize(in Input) (*Result, error) {
 	default:
 		return nil, fmt.Errorf("synthesis: AZD_FOUNDRY_ACR_MODE has unsupported greenfield value %q", mode)
 	}
+	pendingRegistry := !includeAcr && mode == "reuse-connect" && in.PreserveVarRefs
 	if !includeAcr {
 		mode = "none"
-		existingAcrResourceID = ""
+		if !pendingRegistry {
+			existingAcrResourceID = ""
+		}
 	}
 
 	deployments := svc.Deployments
@@ -282,14 +287,18 @@ func Synthesize(in Input) (*Result, error) {
 	if includeAcr && existingAcrResourceID == "" && netMode != NetworkModeNone && hosting == nil {
 		return nil, errors.New(
 			"synthesis: private networking does not support an auto-created Azure Container Registry; " +
-				"use docker.imagePassthrough: true on a prebuilt image, set AZURE_CONTAINER_REGISTRY_RESOURCE_ID to " +
-				"reuse an existing registry, or remove source-build demand",
+				"use docker.imagePassthrough: true with a prebuilt image, remove source-build demand, " +
+				"or set AZURE_CONTAINER_REGISTRY_RESOURCE_ID for Foundry-only reuse without agentHosting",
 		)
 	}
 
 	params := map[string]any{
 		"deployments": deployments,
 		"includeAcr":  includeAcr,
+	}
+	if pendingRegistry {
+		// Leave includeAcr demand-driven until provision.
+		delete(params, "includeAcr")
 	}
 	if existingAcrResourceID != "" {
 		params["existingAcrResourceId"] = existingAcrResourceID
@@ -749,12 +758,8 @@ func validateAgentRootRefCoreFields(
 // both are scanned. The decision mirrors the deploy-time contract:
 //
 //   - codeConfiguration present -> code (ZIP) deploy, no ACR
-//   - imagePassthrough / legacy skip-ACR image -> pre-built, no ACR
-//   - otherwise (hosted, including bare image) -> source build, needs ACR
-//
-// Keying on image/codeConfiguration rather than the optional docker: block is
-// deliberate: docker: is not in the agent schema and is dropped by omitempty
-// when remoteBuild is false, so it is not a reliable build signal.
+//   - explicit pre-built image selection -> no ACR
+//   - otherwise (hosted) -> source build, even with image set
 func deriveIncludeAcr(
 	services map[string]yaml.Node,
 	svc projectService,
@@ -775,14 +780,14 @@ func RequiresACR(in Input) (bool, error) {
 // A project-only manifest has no agents and permits setup intent.
 func ACRRequirements(in Input) (bool, bool, error) {
 	return acrRequirements(in, func(agent agentBlock) bool {
-		return agentNeedsAcrWithEnv(agent, in.Env)
+		return agentNeedsAcr(agent, in.Env)
 	})
 }
 
 // RequiresRemoteACRBuild reports enabled remote source builds.
 func RequiresRemoteACRBuild(in Input) (bool, error) {
 	_, needed, err := acrRequirements(in, func(agent agentBlock) bool {
-		return agentNeedsAcrWithEnv(agent, in.Env) && agent.Docker.RemoteBuild && !agent.Docker.ImagePassthrough
+		return agentNeedsAcr(agent, in.Env) && agent.Docker.RemoteBuild
 	})
 	return needed, err
 }
@@ -858,15 +863,9 @@ func deriveACRRequirements(
 	projectRoot string,
 	env map[string]string,
 ) (bool, bool, error) {
-	return deriveAgentBuildRequirements(
-		services,
-		svc,
-		projectRoot,
-		env,
-		func(agent agentBlock) bool {
-			return agentNeedsAcrWithEnv(agent, env)
-		},
-	)
+	return deriveAgentBuildRequirements(services, svc, projectRoot, env, func(agent agentBlock) bool {
+		return agentNeedsAcr(agent, env)
+	})
 }
 
 func deriveAgentBuildRequirements(
@@ -922,9 +921,10 @@ func deriveAgentBuildRequirements(
 			continue
 		}
 		agent := agentBlock{
-			Kind:              service.Kind,
-			Image:             service.Image,
-			CodeConfiguration: service.CodeConfiguration,
+			Kind:                 service.Kind,
+			Image:                service.Image,
+			RegistryConnectionID: service.RegistryConnectionID,
+			CodeConfiguration:    service.CodeConfiguration,
 		}
 		if service.Docker != nil {
 			agent.Docker = *service.Docker
@@ -935,6 +935,9 @@ func deriveAgentBuildRequirements(
 			}
 			if agent.Image == "" {
 				agent.Image = service.Config.Image
+			}
+			if agent.RegistryConnectionID == "" {
+				agent.RegistryConnectionID = service.Config.RegistryConnectionID
 			}
 			if agent.CodeConfiguration == nil {
 				agent.CodeConfiguration = service.Config.CodeConfiguration
@@ -948,18 +951,12 @@ func deriveAgentBuildRequirements(
 	return hasAgents, includeAcr, nil
 }
 
-// agentNeedsAcr reports whether a single agent entry builds a container image
-// from source (and therefore requires an ACR). Code/ZIP deploys and explicit
-// prebuilt passthrough do not. A bare image without docker.imagePassthrough is
-// not treated as prebuilt: package/publish default to source build (including
-// --no-prompt), so remoteBuild on that agent must still trigger ACR/ABAC checks.
-// Legacy AZD_AGENT_SKIP_ACR prebuilt selections are handled by callers with env.
-func agentNeedsAcr(a agentBlock) bool {
-	return agentNeedsAcrWithEnv(a, nil)
-}
-
-func agentNeedsAcrWithEnv(a agentBlock, env map[string]string) bool {
-	if a.CodeConfiguration != nil {
+// agentNeedsAcr follows explicit prebuilt selection.
+func agentNeedsAcr(a agentBlock, env map[string]string) bool {
+	if a.CodeConfiguration != nil || a.Docker.ImagePassthrough || a.RegistryConnectionID != "" {
+		return false
+	}
+	if strings.TrimSpace(a.Image) != "" && strings.EqualFold(strings.TrimSpace(env["AZD_AGENT_SKIP_ACR"]), "true") {
 		return false
 	}
 	// "hosted" is the only container kind; an empty kind defaults to hosted for
@@ -968,18 +965,7 @@ func agentNeedsAcrWithEnv(a agentBlock, env map[string]string) bool {
 	// NOTE: if a future non-container kind can omit kind:, replace this
 	// default-to-hosted with an explicit allowlist so it does not trigger ACR.
 	kind := strings.TrimSpace(a.Kind)
-	if kind != "" && !strings.EqualFold(kind, "hosted") {
-		return false
-	}
-	if a.Docker.ImagePassthrough {
-		return false
-	}
-	// Legacy init --image marker: image + AZD_AGENT_SKIP_ACR=true is prebuilt.
-	if strings.TrimSpace(a.Image) != "" &&
-		strings.EqualFold(strings.TrimSpace(env["AZD_AGENT_SKIP_ACR"]), "true") {
-		return false
-	}
-	return true
+	return kind == "" || strings.EqualFold(kind, "hosted")
 }
 
 func serviceNodeEnabled(

@@ -50,8 +50,11 @@ func TestACRRemoteBuildPreflight(t *testing.T) {
 		{name: "service remote overrides nested passthrough", service: "docker: {remoteBuild: true}\n" +
 			"config:\n  docker: {imagePassthrough: true}", reject: true},
 		{name: "core local default", service: "kind: hosted"},
-		{name: "bare image remote ABAC", service: "image: registry/image:v1\ndocker: {remoteBuild: true}", reject: true},
-		{name: "prebuilt passthrough", service: "image: registry/image:v1\ndocker: {remoteBuild: true, imagePassthrough: true}"},
+		{name: "image defaults to remote source", service: "image: registry/image:v1\ndocker: {remoteBuild: true}",
+			reject: true},
+		{name: "prebuilt", service: "image: registry/image:v1\ndocker: {remoteBuild: true, imagePassthrough: true}"},
+		{name: "registry connection", service: "image: registry/image:v1\nregistryConnectionId: private\n" +
+			"docker: {remoteBuild: true}"},
 		{name: "passthrough", service: "docker: {remoteBuild: true, imagePassthrough: true}"},
 		{name: "code", service: "codeConfiguration: {}\ndocker: {remoteBuild: true}"},
 		{name: "prompt", service: "kind: prompt\ndocker: {remoteBuild: true}"},
@@ -263,73 +266,79 @@ func TestACRRemoteBuildLookupFailureStopsPreflight(t *testing.T) {
 }
 
 func TestACRRemoteBuildRejectsBeforePersistingPromptChoices(t *testing.T) {
-	for _, test := range []struct{ abac, onDisk bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
-		t.Run(fmt.Sprintf("ABAC=%t/onDisk=%t", test.abac, test.onDisk), func(t *testing.T) {
-			root := t.TempDir()
-			raw := "infra:\n  provider: microsoft.foundry\nservices:\n  project:\n    host: azure.ai.project\n" +
-				"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    docker: {remoteBuild: true}\n"
-			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
-			env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
-				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
-			}}
-			if test.onDisk {
-				delete(env.get, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
-				infra := filepath.Join(root, "infra")
-				require.NoError(t, os.Mkdir(infra, 0o750))
-				template := "targetScope = 'subscription'\nparam includeAcr bool = true\n" +
-					"param existingAcrResourceId string = '" + testACRID + "'\n" +
-					"param acrPullAssigned bool = false\nparam acrAccessOperationId string = ''\n" +
-					"param acrPullRoleDefinitionId string = ''\nparam acrOwnedAssignments array = []\n"
-				require.NoError(t, os.WriteFile(filepath.Join(infra, "main.bicep"), []byte(template), 0o600))
-			}
-			prompt := &resolveEnvStubPromptServer{subscriptionID: "sub", location: "eastus2"}
-			p := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
-			require.NoError(t, p.Initialize(t.Context(), root,
-				&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
-			assert.Equal(t, 1, prompt.subscriptionN)
-			assert.Equal(t, 1, prompt.locationN)
-			assert.Empty(t, env.set)
-			p.credential = acrTestCredential{}
-			p.resourceGroupState = func(context.Context) (map[string]*string, bool, error) {
-				return nil, true, nil
-			}
-			attempted := false
-			p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
-				Retry: policy.RetryOptions{MaxRetries: -1},
-				Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
-					require.Equal(t, http.MethodPut, request.Method)
+	for _, condition := range []string{"", "${AZURE_LOCATION/eastus2/true}", "${AZURE_SUBSCRIPTION_ID/sub/true}"} {
+		for _, test := range []struct{ abac, onDisk bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
+			t.Run(fmt.Sprintf("condition=%s/ABAC=%t/onDisk=%t", condition, test.abac, test.onDisk), func(t *testing.T) {
+				root := t.TempDir()
+				raw := "infra:\n  provider: microsoft.foundry\nservices:\n  project:\n    host: azure.ai.project\n" +
+					"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    docker: {remoteBuild: true}\n"
+				if condition != "" {
+					raw += "    condition: " + condition + "\n"
+				}
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
+				env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
+				}}
+				if test.onDisk {
+					delete(env.get, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+					infra := filepath.Join(root, "infra")
+					require.NoError(t, os.Mkdir(infra, 0o750))
+					template := "targetScope = 'subscription'\nparam includeAcr bool = true\n" +
+						"param existingAcrResourceId string = '" + testACRID + "'\n" +
+						"param acrPullAssigned bool = false\nparam acrAccessOperationId string = ''\n" +
+						"param acrPullRoleDefinitionId string = ''\nparam acrOwnedAssignments array = []\n"
+					require.NoError(t, os.WriteFile(filepath.Join(infra, "main.bicep"), []byte(template), 0o600))
+				}
+				prompt := &resolveEnvStubPromptServer{subscriptionID: "sub", location: "eastus2"}
+				p := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
+				require.NoError(t, p.Initialize(t.Context(), root,
+					&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
+				assert.Equal(t, 1, prompt.subscriptionN)
+				assert.Equal(t, 1, prompt.locationN)
+				assert.True(t, p.acrRemoteBuild, "final prompted values must determine remote-build demand")
+				assert.Empty(t, env.set)
+				p.credential = acrTestCredential{}
+				p.resourceGroupState = func(context.Context) (map[string]*string, bool, error) {
+					return nil, true, nil
+				}
+				attempted := false
+				p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+					Retry: policy.RetryOptions{MaxRetries: -1},
+					Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+						require.Equal(t, http.MethodPut, request.Method)
+						assert.Equal(t, "sub", env.set[envKeySubscriptionID])
+						assert.Equal(t, "eastus2", env.set[envKeyLocation])
+						attempted = true
+						return nil, errors.New("stop at deployment submission")
+					}),
+				}}
+				p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+					require.Equal(t, http.MethodGet, method)
+					if path == testACRID {
+						mode := "LegacyRegistryPermissions"
+						if test.abac {
+							mode = "AbacRepositoryPermissions"
+						}
+						return acrTestReply(out, map[string]any{"properties": map[string]any{"roleAssignmentMode": mode}})
+					}
+					return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+				}
+				_, err := p.Deploy(t.Context(), func(string) {})
+				require.Error(t, err)
+				if test.abac {
+					require.ErrorContains(t, err, "does not authenticate")
+					assert.False(t, attempted)
+					assert.Empty(t, env.set)
+					assert.Empty(t, env.config)
+					assert.Nil(t, p.acrPending)
+				} else {
+					require.ErrorContains(t, err, "stop at deployment submission")
+					assert.True(t, attempted)
 					assert.Equal(t, "sub", env.set[envKeySubscriptionID])
 					assert.Equal(t, "eastus2", env.set[envKeyLocation])
-					attempted = true
-					return nil, errors.New("stop at deployment submission")
-				}),
-			}}
-			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
-				require.Equal(t, http.MethodGet, method)
-				if path == testACRID {
-					mode := "LegacyRegistryPermissions"
-					if test.abac {
-						mode = "AbacRepositoryPermissions"
-					}
-					return acrTestReply(out, map[string]any{"properties": map[string]any{"roleAssignmentMode": mode}})
 				}
-				return &azcore.ResponseError{StatusCode: http.StatusNotFound}
-			}
-			_, err := p.Deploy(t.Context(), func(string) {})
-			require.Error(t, err)
-			if test.abac {
-				require.ErrorContains(t, err, "does not authenticate")
-				assert.False(t, attempted)
-				assert.Empty(t, env.set)
-				assert.Empty(t, env.config)
-				assert.Nil(t, p.acrPending)
-			} else {
-				require.ErrorContains(t, err, "stop at deployment submission")
-				assert.True(t, attempted)
-				assert.Equal(t, "sub", env.set[envKeySubscriptionID])
-				assert.Equal(t, "eastus2", env.set[envKeyLocation])
-			}
-		})
+			})
+		}
 	}
 }
 

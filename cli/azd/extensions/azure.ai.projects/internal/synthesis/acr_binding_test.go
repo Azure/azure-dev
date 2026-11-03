@@ -188,15 +188,17 @@ func TestACRRequirementsBeforeProjectSetup(t *testing.T) {
 		{"empty", "services: {}", false, false},
 		{"project only", "services:\n  project:\n    host: azure.ai.project", false, false},
 		{"source", "services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted", true, true},
-		{"image", "services:\n  agent:\n    host: azure.ai.agent\n    image: registry/image:v1", true, true},
-		{"passthrough", "services:\n  agent:\n    host: azure.ai.agent\n    image: registry/image:v1\n    docker: {imagePassthrough: true}", true, false},
+		{"image defaults to source", "services:\n  agent:\n    host: azure.ai.agent\n    image: registry/image:v1", true, true},
+		{"image passthrough", "services:\n  agent:\n    host: azure.ai.agent\n    image: registry/image:v1\n" +
+			"    docker: {imagePassthrough: true}", true, false},
 		{"code", "services:\n  agent:\n    host: azure.ai.agent\n    codeConfiguration: {}", true, false},
 		{"prompt", "services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt", true, false},
 		{"disabled", "services:\n  agent:\n    host: azure.ai.agent\n    condition: false", false, false},
 		{"legacy image", "services:\n  agent:\n    host: azure.ai.agent\n    agents:\n" +
 			"      - name: agent\n        image: registry/image:v1", true, true},
 		{"legacy passthrough", "services:\n  agent:\n    host: azure.ai.agent\n    agents:\n" +
-			"      - name: agent\n        image: registry/image:v1\n        docker: {imagePassthrough: true}", true, false},
+			"      - name: agent\n        image: registry/image:v1\n" +
+			"        docker: {imagePassthrough: true}", true, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			has, needs, err := ACRRequirements(Input{RawAzureYAML: []byte(tt.service)})
@@ -274,7 +276,7 @@ func TestACRSelectionChecksEveryManagedResourceGroup(t *testing.T) {
 		{name: "application default", infra: "  layers:\n" +
 			"    - name: application\n      provider: bicep\n" +
 			"    - name: foundry\n      provider: microsoft.foundry\n",
-			subscription: "sub"},
+			subscription: "sub", want: "cannot establish application infrastructure teardown scopes"},
 		{name: "eject retains application scope", infra: "  provider: bicep\n",
 			group: "foundry", root: "application", subscription: "sub", want: "azd down deletes"},
 		{name: "unknown subscription", infra: "  layers:\n" +
@@ -287,7 +289,7 @@ func TestACRSelectionChecksEveryManagedResourceGroup(t *testing.T) {
 		{name: "outside all groups", infra: "  layers:\n" +
 			"    - name: application\n      provider: bicep\n" +
 			"    - name: foundry\n      provider: microsoft.foundry\n",
-			root: "another-group", subscription: "sub"},
+			root: "another-group", subscription: "sub", want: "cannot establish application infrastructure teardown scopes"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			in := Input{
@@ -311,6 +313,53 @@ func TestACRSelectionChecksEveryManagedResourceGroup(t *testing.T) {
 				require.NoError(t, synthErr)
 			}
 		})
+	}
+}
+
+func TestACRSelectionRejectsUnverifiedApplicationScopes(t *testing.T) {
+	const registryID = "/subscriptions/sub/resourceGroups/custom/" +
+		"providers/Microsoft.ContainerRegistry/registries/registry"
+	for _, provider := range []string{"bicep", "terraform", "custom"} {
+		for _, inherited := range []bool{false, true} {
+			t.Run(provider+"/"+map[bool]string{false: "explicit", true: "inherited"}[inherited], func(t *testing.T) {
+				root := t.TempDir()
+				template := "targetScope = 'subscription'\n" +
+					"resource first 'Microsoft.Resources/resourceGroups@2024-03-01' = {\n" +
+					"  name: 'custom'\n  location: 'eastus2'\n}\n" +
+					"resource second 'Microsoft.Resources/resourceGroups@2024-03-01' = {\n" +
+					"  name: 'additional'\n  location: 'eastus2'\n}\n"
+				require.NoError(t, os.WriteFile(filepath.Join(root, "application.bicep"), []byte(template), 0o600))
+				infra := "infra:\n  layers:\n    - name: application\n      provider: " + provider +
+					"\n      path: .\n      module: application\n" +
+					"    - name: foundry\n      provider: microsoft.foundry\n"
+				if inherited {
+					infra = strings.Replace(infra, "  layers:", "  provider: "+provider+"\n  layers:", 1)
+					infra = strings.Replace(infra, "      provider: "+provider+"\n", "", 1)
+				}
+				in := Input{
+					RawAzureYAML: []byte(infra + "services:\n  project:\n    host: azure.ai.project\n"),
+					ServiceName:  "project", ProjectRoot: root,
+					Env: map[string]string{
+						"AZURE_ENV_NAME": "test", "AZURE_SUBSCRIPTION_ID": "sub",
+						"AZURE_RESOURCE_GROUP": "unrelated", "AZURE_FOUNDRY_RESOURCE_GROUP": "foundry",
+						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID,
+					},
+				}
+				before := maps.Clone(in.Env)
+				require.ErrorContains(t, ValidateGreenfieldACRSelectionForInput(in, registryID),
+					"cannot establish application infrastructure teardown scopes")
+				for _, preserve := range []bool{false, true} {
+					in.PreserveVarRefs = preserve
+					_, err := Synthesize(in)
+					require.ErrorContains(t, err, "cannot establish application infrastructure teardown scopes")
+				}
+				assert.Equal(t, before, in.Env)
+				//nolint:gosec // Test-owned path.
+				data, err := os.ReadFile(filepath.Join(root, "application.bicep"))
+				require.NoError(t, err)
+				assert.Equal(t, template, string(data))
+			})
+		}
 	}
 }
 

@@ -240,12 +240,11 @@ func TestBYORegistryValidationBeforeLifecycleWrites(t *testing.T) {
 	for _, test := range []struct {
 		name, expectedError   string
 		abac, remote, invalid bool
-		submitted             bool
 	}{
 		{name: "ABAC remote", abac: true, remote: true, expectedError: "does not authenticate"},
-		{name: "ABAC local", abac: true, submitted: true, expectedError: "offline deployment failure"},
-		{name: "classic remote", remote: true, submitted: true, expectedError: "offline deployment failure"},
-		{name: "invalid hosting", invalid: true, expectedError: "conflict with azure.yaml"},
+		{name: "ABAC local", abac: true, expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "classic remote", remote: true, expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "invalid hosting", invalid: true, expectedError: "registry reuse is not supported with agentHosting"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			p, fake := offlineBYOProvider(t)
@@ -275,36 +274,17 @@ func TestBYORegistryValidationBeforeLifecycleWrites(t *testing.T) {
 			fake.failWrite = true
 			_, err := p.Deploy(t.Context(), func(string) {})
 			require.ErrorContains(t, err, test.expectedError)
-			if !test.submitted {
-				assert.Empty(t, fake.requests)
-				assert.Zero(t, fake.writes)
-				assert.Empty(t, env.set)
-				assert.Empty(t, env.config)
-				assert.Nil(t, p.acrPending)
-				assert.Len(t, p.acrPromptedEnv, 2)
-				return
-			}
-			assert.Equal(t, 1, fake.writes)
-			assert.Len(t, fake.requests, 3)
-			require.NotNil(t, p.acrPending)
-			assert.Contains(t, env.config, acrPendingConfigKey)
-			assert.Equal(t, p.subID, env.set[envKeySubscriptionID])
-			assert.Equal(t, p.location, env.set[envKeyLocation])
-			role := acrPullRole
-			if test.abac {
-				role = acrRepositoryReader
-			}
-			assert.Equal(t, "/subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions/"+role,
-				p.acrPending.RoleDefinitionID)
-			assert.Equal(t, map[string]any{"value": p.acrPending.RoleDefinitionID},
-				fake.parameters["acrPullRoleDefinitionId"])
-			assert.Equal(t, map[string]any{"value": p.acrPending.Token}, fake.parameters["acrAccessOperationId"])
-			assert.Equal(t, map[string]any{"value": offlineKubeletObjectID}, fake.parameters["kubeletObjectId"])
+			assert.Empty(t, fake.requests)
+			assert.Zero(t, fake.writes)
+			assert.Empty(t, env.set)
+			assert.Empty(t, env.config)
+			assert.Nil(t, p.acrPending)
+			assert.Len(t, p.acrPromptedEnv, 2)
 		})
 	}
 }
 
-func TestBYORegistryPreviewPreservesReadOnlyRoleProof(t *testing.T) {
+func TestBYORegistryPreviewRejectsReuseWithoutWrites(t *testing.T) {
 	const registryID = "/subscriptions/target-sub/resourceGroups/shared/providers/" +
 		"Microsoft.ContainerRegistry/registries/registry"
 	for _, abac := range []bool{false, true} {
@@ -327,22 +307,14 @@ func TestBYORegistryPreviewPreservesReadOnlyRoleProof(t *testing.T) {
 				return acrTestReply(out, map[string]any{"properties": map[string]any{"roleAssignmentMode": mode}})
 			}
 			_, err := p.Preview(t.Context(), func(string) {})
-			require.NoError(t, err)
-			assert.Equal(t, 1, fake.previews)
+			require.ErrorIs(t, err, synthesis.ErrACRReuseAgentHosting)
+			assert.Zero(t, fake.previews)
 			assert.Zero(t, fake.writes)
-			assert.Len(t, fake.requests, 3)
+			assert.Empty(t, fake.requests)
 			assert.Empty(t, env.set)
 			assert.Empty(t, env.config)
 			assert.Nil(t, p.acrPending)
-			role := acrPullRole
-			if abac {
-				role = acrRepositoryReader
-			}
-			assert.Equal(t, map[string]any{
-				"value": "/subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions/" + role,
-			}, fake.parameters["acrPullRoleDefinitionId"])
-			assert.Equal(t, map[string]any{"value": ""}, fake.parameters["acrAccessOperationId"])
-			assert.Equal(t, map[string]any{"value": offlineKubeletObjectID}, fake.parameters["kubeletObjectId"])
+			assert.Empty(t, fake.parameters)
 		})
 	}
 }
@@ -472,6 +444,29 @@ func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
 	assert.NotContains(t, source.parameters, "hostingPrincipalId")
 	assert.NotContains(t, source.parameters, "workloadPrincipalId")
 	assert.Equal(t, []string{offlineClusterID}, fake.reads, "the actual kubelet identity is always checked")
+}
+
+func TestBYORejectsExternalRegistryBeforeAuthentication(t *testing.T) {
+	for _, selectedBy := range []string{"parameter", "template default", "binding"} {
+		t.Run(selectedBy, func(t *testing.T) {
+			p, fake := offlineBYOProvider(t)
+			source, err := p.resolveTemplate(t.Context(), func(string) {})
+			require.NoError(t, err)
+			switch selectedBy {
+			case "parameter":
+				source.parameters["existingAcrResourceId"] = map[string]any{"value": testACRID}
+			case "template default":
+				definitions, ok := source.armTemplate["parameters"].(map[string]any)
+				require.True(t, ok)
+				definitions["existingAcrResourceId"] = map[string]any{"defaultValue": testACRID}
+			case "binding":
+				p.acrBinding = acrTestBinding()
+			}
+			p.credential = nil
+			require.ErrorIs(t, p.prepareBYO(t.Context(), source), synthesis.ErrACRReuseAgentHosting)
+			assert.Empty(t, fake.requests)
+		})
+	}
 }
 
 func TestBYOPrepareValidatesKubeletIdentityRegardlessOfACR(t *testing.T) {

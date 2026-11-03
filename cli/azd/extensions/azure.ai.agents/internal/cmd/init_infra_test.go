@@ -1440,7 +1440,7 @@ services:
 	assert.Contains(t, string(tfvars), `"tenant_id": "${AZURE_TENANT_ID}"`)
 }
 
-func TestEjectInfra_ExistingProjectTerraformWithoutDockerOmitsAcr(t *testing.T) {
+func TestEjectInfra_ExistingProjectTerraformPrebuiltOmitsAcr(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
@@ -1454,6 +1454,8 @@ services:
     uses: [ai-project]
     project: src/agent
     image: registry.example.com/agent:latest
+    docker:
+      imagePassthrough: true
 `)
 
 	require.NoError(t, ejectInfra(dir, "terraform"))
@@ -1828,6 +1830,36 @@ func TestEjectInfra_ProjectOnlyRegistrySelectionRejectsTerraform(t *testing.T) {
 	}
 }
 
+func TestEjectInfra_ProjectOnlyRegistrySelectionPreservesDemand(t *testing.T) {
+	const registryID = "/subscriptions/sub/resourceGroups/shared/" +
+		"providers/Microsoft.ContainerRegistry/registries/registry"
+	dir := t.TempDir()
+	raw := "name: project-only\ninfra:\n  provider: microsoft.foundry\n" +
+		"services:\n  project:\n    host: azure.ai.project\n"
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), raw)
+	values := map[string]string{
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID, "AZURE_SUBSCRIPTION_ID": "sub",
+	}
+	before := maps.Clone(values)
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir, "bicep", values))
+	})
+	data, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json"))
+	require.NoError(t, err)
+	var doc struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(data, &doc))
+	assert.NotContains(t, doc.Parameters, "includeAcr")
+	assert.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}", doc.Parameters["existingAcrResourceId"].Value)
+	assert.Equal(t, before, values)
+	after, err := os.ReadFile(filepath.Join(dir, "azure.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, raw, string(after))
+}
+
 func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 	// See TestEjectInfra_HappyPath_WritesExpectedFiles for why this is not parallel.
 	dir := t.TempDir()
@@ -1935,9 +1967,7 @@ func TestEjectInfraPreservesAdoptionChoices(t *testing.T) {
 func TestEjectInfra_HappyPath_NoDockerOmitsAcrParam(t *testing.T) {
 	// See TestEjectInfra_HappyPath_WritesExpectedFiles for why this is not parallel.
 	dir := t.TempDir()
-	// No docker: block -> includeAcr should be false in the params file
-	// but the acr.bicep module is still written (the template files are a
-	// static set; whether ACR is provisioned is a parameter decision).
+	// Legacy prebuilt selection needs no ACR.
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
 services:
   my-foundry:
@@ -1949,7 +1979,7 @@ services:
 `)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "bicep"))
+		require.NoError(t, ejectInfra(dir, "bicep", map[string]string{"AZD_AGENT_SKIP_ACR": "true"}))
 	})
 
 	// acr.bicep is still in the ejected tree -- the template is static.
@@ -2260,7 +2290,7 @@ services:
 `)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "bicep"))
+		require.NoError(t, ejectInfra(dir, "bicep", map[string]string{"AZD_AGENT_SKIP_ACR": "true"}))
 	})
 
 	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
@@ -2321,7 +2351,7 @@ services:
 `)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "bicep"))
+		require.NoError(t, ejectInfra(dir, "bicep", map[string]string{"AZD_AGENT_SKIP_ACR": "true"}))
 	})
 
 	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
@@ -3867,7 +3897,7 @@ func TestEjectInfra_Terraform_TfvarsShape(t *testing.T) {
 func TestEjectInfra_Terraform_NoDockerOmitsAcr(t *testing.T) {
 	// Not parallel: captures os.Stdout.
 	dir := t.TempDir()
-	// image-only agent (no docker:) -> no ACR.
+	// A prebuilt selection needs no source-build registry.
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
 services:
   my-foundry:
@@ -3879,12 +3909,12 @@ services:
 `)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "terraform"))
+		require.NoError(t, ejectInfra(dir, "terraform", map[string]string{"AZD_AGENT_SKIP_ACR": "true"}))
 	})
 
-	// acr.tf must NOT be written when no agent uses docker:.
+	// No source-build resources are needed for a pre-built image.
 	_, err := os.Stat(filepath.Join(dir, "infra", "container-registry.tf"))
-	assert.True(t, os.IsNotExist(err), "acr.tf must be omitted when no agent uses docker:")
+	assert.True(t, os.IsNotExist(err), "acr.tf must be omitted for pre-built images")
 
 	// outputs.tf must not contain any ACR output at all when ACR is not used --
 	// no resource references and no empty-string placeholders.
@@ -3964,7 +3994,7 @@ services:
         image: registry.io/myorg/myagent:latest
 `)
 
-	err := ejectInfra(dir, "terraform")
+	err := ejectInfra(dir, "terraform", map[string]string{"AZD_AGENT_SKIP_ACR": "true"})
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "expected structured azdext.LocalError, got %T", err)

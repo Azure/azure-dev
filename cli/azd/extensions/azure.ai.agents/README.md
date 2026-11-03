@@ -1491,22 +1491,48 @@ the whole body is then moderated and no paths are needed for that direction.
 
 ### Reuse a source-build registry
 
-Set `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` to select an
-external registry for environment-only reuse. That selection uses the same
-validation, persisted reuse mode, and ownership output as interactive setup.
-An unreadable environment stops selection rather than defaulting to a new
-registry. A same-group registry ID alone is not evidence that azd owns the
-registry.
+To reuse a source-build registry, set its full ARM resource ID in the active
+azd environment:
+
+```sh
+azd env set AZURE_CONTAINER_REGISTRY_RESOURCE_ID "<full-registry-arm-id>"
+```
+
+This selection uses the same validation, persisted reuse mode, and ownership
+output as `--acr-resource-id` during source initialization. An unreadable
+environment stops selection rather than defaulting to a new registry.
+A same-group registry ID alone is not evidence that azd owns the registry.
 
 Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
 be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside
-every resource group managed by azd, including the Foundry group and any
-configured application layer's group, because `azd down` deletes those groups.
-Cross-subscription registry reuse is not supported. azd preserves the external
-registry, images, and administrator-managed grants, and cleans up only
+every resource group managed by azd, including the Foundry group and application
+groups, because `azd down` deletes them. `AZURE_RESOURCE_GROUP` cannot establish
+all groups managed by another provider's templates. Reuse therefore requires
+Foundry-only infrastructure; a non-Foundry root deployment or any non-Foundry
+infrastructure layer is rejected even if the registry is outside the groups
+named in environment values. Cross-subscription registry reuse is not supported.
+azd preserves the external registry, images, and
+administrator-managed grants, and cleans up only
 access grants and related resources it can establish it owns. Customers manage
 network reachability and image-publisher push permissions. See
 [non-interactive configuration](../ai-non-interactive.md#azureaiprojects).
+
+Do not combine an external source-build registry selection with `agentHosting`,
+even for a project-only configuration: reuse does not manage AKS node pull
+access. Remove the selector to use an azd-created registry, or use explicit
+prebuilt images with user-managed registry authentication.
+
+An `image` value alone still defaults to a source build, including with
+`--no-prompt`. Explicit prebuilt selection requires
+`docker.imagePassthrough: true` or `registryConnectionId` with a nonempty image.
+The legacy environment value `AZD_AGENT_SKIP_ACR=true` also selects prebuilt
+deployment when an image is configured.
+
+A project-only Bicep eject retains a pending registry selection without freezing
+`includeAcr` to `false`; later source-built agents determine demand at provision
+time. Remove an older generated `parameters.includeAcr` object if it only records
+the absence of agents at eject time. Deliberate user-authored overrides are
+preserved.
 
 For an external ABAC registry, source builds require local Docker:
 set `docker.remoteBuild: false` on each source-built agent service and grant the
@@ -1517,8 +1543,9 @@ supported with ABAC registry reuse: its current request does not authenticate th
 source registry, and Repository Writer permission alone does not fix the request.
 Provisioning rejects this combination. Use local Docker, a prebuilt image, or a
 classic RBAC registry instead. Prebuilt images, code deployments, legacy project
-connections, and unused project-only registry selections keep their existing
-behavior.
+connections, and unused project-only selections do not trigger the ABAC
+remote-build restriction; selector scope and `agentHosting` validation still
+apply.
 
 ### Hosted voice wrapper (preview)
 

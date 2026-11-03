@@ -32,8 +32,12 @@ func TestRequiresRemoteACRBuild(t *testing.T) {
 			"config:\n  kind: hosted\n  docker: {remoteBuild: true}", false},
 		{"local source", "kind: hosted\ndocker: {remoteBuild: false}", false},
 		{"core local default", "kind: hosted", false},
-		{"bare image remote", "image: registry/image:v1\ndocker: {remoteBuild: true}", true},
-		{"passthrough image remote", "image: registry/image:v1\ndocker: {remoteBuild: true, imagePassthrough: true}", false},
+		{"image defaults to remote source", "image: registry/image:v1\ndocker: {remoteBuild: true}", true},
+		{"prebuilt", "image: registry/image:v1\ndocker: {remoteBuild: true, imagePassthrough: true}", false},
+		{"registry connection", "image: registry/image:v1\nregistryConnectionId: private\n" +
+			"docker: {remoteBuild: true}", false},
+		{"nested registry connection", "config:\n  image: registry/image:v1\n  registryConnectionId: private\n" +
+			"docker: {remoteBuild: true}", false},
 		{"passthrough", "docker: {remoteBuild: true, imagePassthrough: true}", false},
 		{"code", "codeConfiguration: {}\ndocker: {remoteBuild: true}", false},
 		{"prompt", "kind: prompt\ndocker: {remoteBuild: true}", false},
@@ -80,6 +84,64 @@ func TestRequiresRemoteACRBuild(t *testing.T) {
 			"      - kind: hosted\n        docker: {remoteBuild: true}\n")})
 	require.NoError(t, err)
 	assert.True(t, got)
+}
+
+func TestACRBuildIntentMatchesImageSelection(t *testing.T) {
+	for _, shape := range []string{"service", "config", "inline", "referenced service", "referenced config"} {
+		for _, tt := range []struct {
+			name, fields, legacy string
+			want                 bool
+		}{
+			{name: "image defaults to source", fields: "image: registry/image:v1", want: true},
+			{name: "passthrough", fields: "image: registry/image:v1\ndocker: {imagePassthrough: true, remoteBuild: true}"},
+			{name: "registry connection", fields: "image: registry/image:v1\nregistryConnectionId: private"},
+			{name: "legacy prebuilt", fields: "image: registry/image:v1", legacy: " TRUE "},
+			{name: "legacy false", fields: "image: registry/image:v1", legacy: "false", want: true},
+			{name: "legacy marker without image", legacy: "true", want: true},
+		} {
+			t.Run(shape+"/"+tt.name, func(t *testing.T) {
+				root := t.TempDir()
+				fields := "kind: hosted\ndocker: {remoteBuild: true}\n"
+				if strings.Contains(tt.fields, "docker:") {
+					fields = "kind: hosted\n"
+				}
+				fields += tt.fields + "\n"
+				indent := func(value, prefix string) string {
+					return prefix + strings.ReplaceAll(strings.TrimSuffix(value, "\n"), "\n", "\n"+prefix) + "\n"
+				}
+				raw := "services:\n  project:\n    host: azure.ai.project\n"
+				switch shape {
+				case "inline":
+					raw += "    agents:\n      - name: agent\n" + indent(fields, "        ")
+				case "config":
+					raw += "  agent:\n    host: azure.ai.agent\n    config:\n" + indent(fields, "      ")
+				case "referenced service":
+					require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
+						[]byte("host: azure.ai.agent\n"), 0o600))
+					raw += "  agent:\n    $ref: agent.yaml\n" + indent(fields, "    ")
+				case "referenced config":
+					require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"), []byte(fields), 0o600))
+					raw += "  agent:\n    host: azure.ai.agent\n    config:\n      $ref: agent.yaml\n"
+				default:
+					raw += "  agent:\n    host: azure.ai.agent\n" + indent(fields, "    ")
+				}
+				input := Input{
+					RawAzureYAML: []byte(raw), ProjectRoot: root, ServiceName: "project",
+					Env: map[string]string{"AZD_AGENT_SKIP_ACR": tt.legacy},
+				}
+				has, needs, err := ACRRequirements(input)
+				require.NoError(t, err)
+				assert.True(t, has)
+				assert.Equal(t, tt.want, needs)
+				remote, err := RequiresRemoteACRBuild(input)
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, remote)
+				result, err := Synthesize(input)
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, result.Parameters["includeAcr"])
+			})
+		}
+	}
 }
 
 func TestRequiresRemoteACRBuildReferencedDockerPrecedence(t *testing.T) {

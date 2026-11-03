@@ -56,20 +56,32 @@ ABAC registry before applying infrastructure or recording an access operation.
 Repository Writer permission by itself does not make Quick Build supported.
 Use local Docker with Repository Writer push permission, a prebuilt image, or a
 classic RBAC registry. Prebuilt images, code deployments, legacy project
-connections, and project-only selections without build demand are unaffected.
+connections, and project-only selections without build demand do not trigger
+this remote-build restriction.
 
 Ensure the registry is reachable from the agent network. The registry must be
 in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside every
-resource group managed by azd, including the Foundry group and any configured
-application layer's group, because `azd down` deletes those groups.
-Cross-subscription reuse is rejected, including environment-only selections and
-ejected parameters. This is
-supported by Bicep, not Terraform eject in reuse mode. `azd down` never deletes the
-external registry.
+resource group managed by azd, including the Foundry and application groups,
+because `azd down` deletes them. `AZURE_RESOURCE_GROUP` does not describe every
+group another infrastructure provider can create. Reuse therefore requires
+Foundry-only infrastructure: a non-Foundry root deployment or any non-Foundry layer
+is rejected, even if the registry is outside the groups named in environment
+values. Cross-subscription reuse is rejected, including environment-only
+selections and ejected parameters. This is supported by Bicep, not Terraform
+eject in reuse mode. `azd down` never deletes the external registry.
+
+An external source-build registry selection cannot be combined with
+`agentHosting`, even without active agents: reuse does not manage AKS node pull
+access. Remove the selector to let azd create the source-build registry, or use
+explicit prebuilt images with user-managed registry authentication.
 
 Without a selection, provisioning creates a registry only when source builds
 need one. Code deployments and prebuilt images do not need a source-build
-registry.
+registry. An `image` value alone still defaults to source build, including with
+`--no-prompt`. To select prebuilt deployment, use `docker.imagePassthrough: true`
+or `registryConnectionId` together with a nonempty image. The legacy environment
+value `AZD_AGENT_SKIP_ACR=true` also selects prebuilt deployment when an image is
+configured.
 
 Registry selection uses one complete environment snapshot. A failed environment
 read stops provisioning rather than falling back to registry creation. A
@@ -77,15 +89,20 @@ registry in the Foundry teardown group is rejected even during project-only
 setup, unless a deployed binding or matching legacy deployment outputs identify
 an azd-created registry. Legacy ownership is verified against Azure deployment
 state before provisioning or deleting the group.
-Source initialization validates against the root or Foundry-layer resource group
-retained by setup before changing project files or environment values. Locations
-chosen during provisioning prompts are applied when expanding
-`${AZURE_LOCATION}` in service configuration without rereading the registry
-selection.
+Source initialization validates the retained Foundry group and rejects unknown
+application teardown scopes before changing project files or environment values.
+Prompted subscription and location choices are applied to final service
+conditions and build demand without rereading the registry selection. For
+external reuse, those choices remain unpersisted until template, scope, and
+remote-build validation succeeds.
 
 Project-only provisioning preserves a pending registry selection until source
 builds need it, including after project-only teardown. Configured project or
-account names do not discard an unused selection.
+account names do not discard an unused selection. Project-only Bicep eject
+retains the selector without authoring `includeAcr: false`, so later source-built
+agents can enable registry access. In an older project-only parameters file,
+remove the generated `parameters.includeAcr` object if it only reflects the
+earlier lack of demand; retain deliberate user-authored overrides.
 Provisioning preview checks the same existing pull access as deployment without
 creating grants or persisting pending access operations.
 

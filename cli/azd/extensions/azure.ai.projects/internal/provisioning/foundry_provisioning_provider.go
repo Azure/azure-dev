@@ -364,7 +364,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 			if mode == "reuse-connect" {
 				p.greenfieldAcrResourceID = id
 			}
-			p.acrDeferPromptedEnv = onDisk || p.acrRemoteBuild && mode == "reuse-connect"
+			p.acrDeferPromptedEnv = onDisk || mode == "reuse-connect"
 		}
 	}
 
@@ -422,8 +422,7 @@ func (p *FoundryProvisioningProvider) initializeInfrastructure(
 	}
 	input.Env[envKeySubscriptionID] = p.subID
 	input.Env[envKeyLocation] = p.location
-	// Recalculate remote-build demand after subscription/location prompts so
-	// condition-gated agents (for example ${AZURE_LOCATION:+true}) are visible.
+	// Evaluate build conditions using the final prompted values.
 	if endpoint == "" {
 		p.acrRemoteBuild, err = synthesis.RequiresRemoteACRBuild(input)
 		if err != nil {
@@ -438,7 +437,7 @@ func (p *FoundryProvisioningProvider) initializeInfrastructure(
 		} else {
 			p.greenfieldAcrResourceID = ""
 		}
-		p.acrDeferPromptedEnv = onDisk || p.acrRemoteBuild && mode == "reuse-connect"
+		p.acrDeferPromptedEnv = onDisk || mode == "reuse-connect"
 	}
 	var res *synthesis.Result
 	if endpoint != "" {
@@ -1064,7 +1063,7 @@ func (p *FoundryProvisioningProvider) resolveEnvName(ctx context.Context) error 
 }
 
 // promptSubscription selects the missing subscription, like azd up.
-// On-disk templates and external remote builds save after validation.
+// On-disk templates and external registries save after validation.
 // Other flows persist the choice immediately.
 //
 // Under `--no-prompt` the azd host returns a "prompt required" error; that case

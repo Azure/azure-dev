@@ -1291,15 +1291,14 @@ func TestProjectAddEndpointOnlyPreflightsHostedAgents(t *testing.T) {
 			reject:  true,
 		},
 		{
-			name: "inline image agent",
-			agents: "    agents:\n      - name: image\n        kind: hosted\n" +
-				"        image: registry.example.com/agent:latest\n" +
-				"        docker:\n          imagePassthrough: true\n",
-		},
-		{
-			name:   "inline bare image agent needs ACR",
+			name:   "inline image defaults to source",
 			agents: "    agents:\n      - name: image\n        kind: hosted\n        image: registry.example.com/agent:latest\n",
 			reject: true,
+		},
+		{
+			name: "inline prebuilt image agent",
+			agents: "    agents:\n      - name: image\n        kind: hosted\n" +
+				"        image: registry.example.com/agent:latest\n        docker: {imagePassthrough: true}\n",
 		},
 		{
 			name:   "inline code agent",
@@ -1859,6 +1858,61 @@ func TestEjectProjectInfraRecordedRegistryMode(t *testing.T) {
 				assert.Equal(t, mode, env["AZD_FOUNDRY_ACR_MODE"], "eject must not mutate its snapshot")
 			})
 		}
+	}
+}
+
+func TestEjectProjectOnlyRegistrySelectionPreservesDemand(t *testing.T) {
+	const registryID = "/subscriptions/sub/resourceGroups/shared/" +
+		"providers/Microsoft.ContainerRegistry/registries/registry"
+	for _, layer := range []bool{false, true} {
+		t.Run(fmt.Sprint(layer), func(t *testing.T) {
+			root := t.TempDir()
+			infra := "infra:\n  provider: microsoft.foundry\n"
+			path, module := "infra", "main"
+			if layer {
+				infra = "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
+					"      path: infra/foundry\n      module: project\n"
+				path, module = filepath.Join("infra", "foundry"), "project"
+			}
+			raw := "name: project-only\n" + infra + "services:\n  project:\n    host: azure.ai.project\n"
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
+			projectServer := &recordingProjectConfigServer{project: &azdext.ProjectConfig{
+				Path: root, Infra: &azdext.InfraOptions{Provider: provisioningFoundryProvider},
+			}}
+			server := grpc.NewServer()
+			azdext.RegisterProjectServiceServer(server, projectServer)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(func() {
+				server.Stop()
+				_ = listener.Close()
+			})
+			client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+			values := map[string]string{
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID, "AZURE_SUBSCRIPTION_ID": "sub",
+			}
+			before := maps.Clone(values)
+			require.NoError(t, ejectProjectInfra(t.Context(), client, root, "project", "bicep", values))
+			//nolint:gosec // Test-owned path.
+			data, err := os.ReadFile(filepath.Join(root, path, module+".parameters.json"))
+			require.NoError(t, err)
+			var doc struct {
+				Parameters map[string]struct {
+					Value any `json:"value"`
+				} `json:"parameters"`
+			}
+			require.NoError(t, json.Unmarshal(data, &doc))
+			assert.NotContains(t, doc.Parameters, "includeAcr")
+			assert.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}", doc.Parameters["existingAcrResourceId"].Value)
+			assert.Equal(t, before, values)
+			//nolint:gosec // Test-owned path.
+			after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+			require.NoError(t, err)
+			assert.Equal(t, raw, string(after))
+		})
 	}
 }
 

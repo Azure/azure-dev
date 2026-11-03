@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
@@ -40,6 +41,11 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 		return exterrors.Validation(exterrors.CodeInvalidParameter,
 			fmt.Sprintf("invalid agentHosting deployment parameters: %s", err),
 			"supply agentHosting as a literal object with the values needed for local AKS binding lookups")
+	}
+	registryID, _ := parameterValue(source, "existingAcrResourceId").(string)
+	if hosting.Enabled && (registryID != "" ||
+		p.acrBinding != nil && p.acrBinding.Mode == "reuse-connect") {
+		return synthesis.ErrACRReuseAgentHosting
 	}
 	if !hosting.Enabled {
 		return nil

@@ -92,16 +92,22 @@ func TestHostingPreservesACRSelection(t *testing.T) {
 		create, canonical, network       bool
 		remote                           bool
 	}{
-		{name: "project only", mode: "none"},
+		{name: "project only reuse", expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "project only", create: true, mode: "none"},
 		{name: "create local", agent: "docker: {remoteBuild: false}", create: true, mode: "create"},
-		{name: "reuse local", agent: "docker: {remoteBuild: false}", mode: "reuse-connect"},
-		{name: "reuse remote", agent: "docker: {remoteBuild: true}", mode: "reuse-connect", remote: true},
-		{name: "canonical reuse", agent: "docker: {remoteBuild: false}", canonical: true, mode: "reuse-connect"},
-		{name: "private reuse", agent: "docker: {remoteBuild: false}", network: true, mode: "reuse-connect"},
+		{name: "reuse local", agent: "docker: {remoteBuild: false}",
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "reuse remote", agent: "docker: {remoteBuild: true}",
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "canonical reuse", agent: "docker: {remoteBuild: false}", canonical: true,
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "private reuse", agent: "docker: {remoteBuild: false}", network: true,
+			expectedError: "registry reuse is not supported with agentHosting"},
 		{name: "private create", agent: "docker: {remoteBuild: false}", network: true, create: true,
 			mode: "create"},
-		{name: "prebuilt", agent: "image: registry/image:v1\n    docker: {imagePassthrough: true}", mode: "none"},
-		{name: "code", agent: "codeConfiguration: {}", mode: "none"},
+		{name: "prebuilt", agent: "image: registry/image:v1\n    docker: {imagePassthrough: true}",
+			create: true, mode: "none"},
+		{name: "code", agent: "codeConfiguration: {}", create: true, mode: "none"},
 	} {
 		for _, preserve := range []bool{false, true} {
 			t.Run(test.name+map[bool]string{false: "/deploy", true: "/eject"}[preserve], func(t *testing.T) {
@@ -125,6 +131,9 @@ func TestHostingPreservesACRSelection(t *testing.T) {
 					}
 				} else if !test.create {
 					input.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = registryID
+				}
+				if test.expectedError == "registry reuse is not supported with agentHosting" {
+					require.ErrorIs(t, ValidateGreenfieldACRSelectionForInput(input, registryID), ErrACRReuseAgentHosting)
 				}
 				result, err := Synthesize(input)
 				if test.expectedError != "" {

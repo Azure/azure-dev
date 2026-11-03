@@ -86,7 +86,7 @@ services:
 			wantDeployName0: "gpt-4.1-mini",
 		},
 		{
-			name: "split project with sibling docker agent and image => ACR on",
+			name: "split project with image defaults to source => ACR",
 			yaml: `
 services:
   my-agent:
@@ -110,7 +110,7 @@ services:
 			wantIncludeAcr: true,
 		},
 		{
-			name: "legacy inline docker agent with image => ACR on",
+			name: "legacy inline image defaults to source => ACR",
 			yaml: `
 services:
   my-project:
@@ -221,7 +221,7 @@ services:
 			wantIncludeAcr: false,
 		},
 		{
-			name: "sibling hosted agent with image, no docker => ACR on",
+			name: "sibling image without passthrough defaults to source",
 			yaml: `
 services:
   assistant:
@@ -242,7 +242,7 @@ services:
 			wantIncludeAcr: true,
 		},
 		{
-			name: "legacy configured agent with image => ACR on",
+			name: "legacy configured image defaults to source => ACR",
 			yaml: `
 services:
   assistant:

@@ -308,10 +308,19 @@ environment to create another project.
 
 This is supported with Bicep only. The registry must be in the Foundry project's
 subscription (`AZURE_SUBSCRIPTION_ID`) and outside every resource group managed
-by azd, including the Foundry group and any configured application layer's group,
-because `azd down` deletes those groups. Cross-subscription registry reuse is not
-supported. You are responsible for registry network connectivity and appropriate
-image push permissions.
+by azd, not just the Foundry group, because `azd down` deletes those groups.
+`AZURE_RESOURCE_GROUP` does not identify every group an application template can
+create. Reuse therefore requires Foundry-only infrastructure: a non-Foundry root
+deployment or any non-Foundry infrastructure layer is rejected, even when the
+registry is outside the groups named in environment values.
+Cross-subscription registry reuse is not supported. You are responsible for
+registry network connectivity and appropriate image push permissions.
+
+An external source-build registry selection cannot be combined with
+`agentHosting`, including an unused project-only selection. Reuse does not
+manage AKS node pull access. Remove the selector and let azd create a registry
+when a source build needs one, or use explicit prebuilt images with
+user-managed registry authentication.
 
 For an ABAC registry (`AbacRepositoryPermissions`), source-built hosted agents
 must use local Docker builds with `docker.remoteBuild: false`. Hosted source
@@ -322,7 +331,14 @@ source registry, so ABAC external-registry reuse with
 permission alone does not make that remote request supported. Use local Docker
 with Repository Writer push permission, a prebuilt image, or a classic RBAC
 registry instead. Code deployments, prebuilt images, and project-only selections
-without source-build demand are unchanged.
+without source-build demand do not trigger this remote-build restriction.
+The scope and `agentHosting` restrictions still apply to the selector.
+
+An `image` value alone does not select a prebuilt deployment: source build is
+the default, including with `--no-prompt`. To use an existing image, set
+`docker.imagePassthrough: true` or `registryConnectionId` together with a
+nonempty image. The legacy environment value `AZD_AGENT_SKIP_ACR=true` also
+selects prebuilt deployment when an image is configured.
 
 An authored service-level `docker` block takes precedence over the entire
 `config.docker` block, including through `$ref`. In particular, an explicit
@@ -357,19 +373,29 @@ history, including nested deployments. Missing or ambiguous evidence stops
 recovery and teardown before ownership is saved or resources or access grants
 are deleted.
 
-With greenfield on-disk Bicep, prompted subscription and location choices are
-saved only after the selected template, parameters, and deployment scope pass validation.
-This applies to local and remote builds, JSON parameter files, and
-`.bicepparam` files, including custom root and infrastructure-layer routes.
-An invalid final registry selection leaves those choices unpersisted.
+With an external registry selection, prompted subscription and location choices
+are saved only after the final template, parameters, deployment scope, and
+remote-build compatibility pass validation. Build demand is recomputed using
+those prompted values, including environment-dependent service conditions.
+This applies to embedded and on-disk Bicep, local and remote builds, JSON
+parameter files, and `.bicepparam` files, including custom root and
+infrastructure-layer routes. An invalid final selection leaves those choices
+unpersisted.
 
 You can select a registry before adding agents; the selection remains pending
 until a source-built agent requires it, including across project-only provisioning
 and teardown. Configured project or account names do not discard an unused
-selection. Source initialization validates environment-only selections against
-the Foundry resource group and any configured application-layer resource group
-before changing files or environment values. An unused `AZURE_RESOURCE_GROUP`
-value does not add a teardown group when only a Foundry layer is configured.
+selection. Source initialization validates the selector and rejects unknown
+application teardown scopes before changing files or environment values.
+An unused `AZURE_RESOURCE_GROUP` value does not add a teardown group when only
+a Foundry layer is configured.
+
+Project-only Bicep eject retains the registry selection without writing an
+`includeAcr: false` override. Adding a source-built agent later lets the provider
+enable registry access from the new build demand. In an older project-only
+parameters file, remove the generated `parameters.includeAcr` object if it only
+reflects that earlier lack of demand. An intentional user-authored `false`
+override remains authoritative.
 
 Once a project has a deployed registry binding, registry migration is not
 supported. Repeating setup with the same selection preserves the deployed
@@ -403,8 +429,10 @@ all owned grants, including earlier pull roles after a permission-mode change
 and grants from before a project-only provision. Recovery verifies the registry,
 project principal, role, and ownership marker before recording a grant.
 An already-deleted grant still allows cleanup of its verified deployment records.
-Recovered ownership is saved before cleanup so a failed teardown remains
-retryable after local state loss.
+Recovered bindings are saved before cleanup even for azd-created registries or
+when there are no owned grants. If the resource group is deleted but retirement
+of the root deployment fails, the saved binding allows a retry without reading
+the deleted project. Failure to save recovery state prevents destructive cleanup.
 Mismatched or unreadable grant ownership stops teardown. Legacy deployments
 without access-operation metadata do not authorize deleting registry grants.
 

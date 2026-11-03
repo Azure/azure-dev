@@ -21,6 +21,12 @@ const ACRBindingConfigKey = "extensions.ai-projects.acrBinding"
 // ACRBindingEnvKey carries a binding in a synthesis snapshot.
 const ACRBindingEnvKey = "AZD_FOUNDRY_ACR_BINDING"
 
+// ErrACRReuseAgentHosting rejects unmanaged AKS pull access.
+var ErrACRReuseAgentHosting = errors.New(
+	"existing registry reuse is not supported with agentHosting; " +
+		"use an azd-created registry or remove agentHosting",
+)
+
 var projectResourceIDPattern = regexp.MustCompile(
 	`(?i)^/subscriptions/[^/\s?#\\%]+/resourceGroups/[^/\s?#\\%]+/providers/` +
 		`Microsoft\.CognitiveServices/accounts/[^/\s?#\\%]+/projects/[^/\s?#\\%]+$`,
@@ -172,14 +178,14 @@ func ValidateGreenfieldACRSelection(env map[string]string, selectedID string) er
 
 // GreenfieldACRResourceGroup resolves the Foundry teardown group.
 func GreenfieldACRResourceGroup(in Input) (string, error) {
-	groups, err := greenfieldACRResourceGroups(in)
+	groups, _, err := greenfieldACRResourceGroups(in)
 	if err != nil {
 		return "", err
 	}
 	return groups[0], nil
 }
 
-func greenfieldACRResourceGroups(in Input) ([]string, error) {
+func greenfieldACRResourceGroups(in Input) ([]string, bool, error) {
 	var doc struct {
 		Infra struct {
 			Provider string `yaml:"provider"`
@@ -190,7 +196,7 @@ func greenfieldACRResourceGroups(in Input) ([]string, error) {
 		} `yaml:"infra"`
 	}
 	if err := yaml.Unmarshal(in.RawAzureYAML, &doc); err != nil {
-		return nil, fmt.Errorf("parse infrastructure scope in azure.yaml: %w", err)
+		return nil, false, fmt.Errorf("parse infrastructure scope in azure.yaml: %w", err)
 	}
 	layered := false
 	rootManaged := len(doc.Infra.Layers) == 0 &&
@@ -206,7 +212,7 @@ func greenfieldACRResourceGroups(in Input) ([]string, error) {
 			continue
 		}
 		if strings.TrimSpace(layer.Name) == "" || layered {
-			return nil, errors.New("registry selection requires one named Foundry infrastructure layer")
+			return nil, false, errors.New("registry selection requires one named Foundry infrastructure layer")
 		}
 		layered = true
 	}
@@ -231,12 +237,12 @@ func greenfieldACRResourceGroups(in Input) ([]string, error) {
 			groups = append(groups, root)
 		}
 	}
-	return groups, nil
+	return groups, rootManaged, nil
 }
 
-// ValidateACRSelectorForInput checks every managed teardown group.
+// ValidateACRSelectorForInput requires separate teardown scopes.
 func ValidateACRSelectorForInput(in Input, selectedID string) error {
-	groups, err := greenfieldACRResourceGroups(in)
+	groups, otherInfrastructure, err := greenfieldACRResourceGroups(in)
 	if err != nil {
 		return err
 	}
@@ -248,6 +254,20 @@ func ValidateACRSelectorForInput(in Input, selectedID string) error {
 		if subscription == "" && group != "" && strings.EqualFold(strings.Split(selectedID, "/")[4], group) {
 			return errors.New("cannot establish that the registry is outside the environment's resource groups; " +
 				"configure AZURE_SUBSCRIPTION_ID before selecting a registry with the same resource-group name")
+		}
+	}
+	if otherInfrastructure {
+		return errors.New("cannot establish application infrastructure teardown scopes for external registry reuse; " +
+			"AZURE_RESOURCE_GROUP does not describe every group deleted by azd down. " +
+			"Use Foundry-only infrastructure, or an azd-created registry in a new environment")
+	}
+	_, projects, err := acrProjectServices(in)
+	if err != nil {
+		return err
+	}
+	for _, project := range projects {
+		if project.AgentHosting != nil {
+			return ErrACRReuseAgentHosting
 		}
 	}
 	return nil

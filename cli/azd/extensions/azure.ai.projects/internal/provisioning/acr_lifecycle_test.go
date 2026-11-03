@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -878,6 +879,7 @@ func TestACRFullOutputRecoveryRequiresCreationEvidence(t *testing.T) {
 					assert.True(t, groupDeleted)
 					assert.True(t, historyDeleted)
 					assert.Nil(t, p.acrBinding)
+					assert.Empty(t, env.config)
 				} else {
 					require.NoError(t, err)
 					require.NotNil(t, p.acrBinding)
@@ -888,7 +890,9 @@ func TestACRFullOutputRecoveryRequiresCreationEvidence(t *testing.T) {
 					assert.True(t, p.acrBindingRecovered)
 				}
 				assert.Same(t, pending, p.acrPending)
-				assert.Equal(t, beforeConfig, env.config)
+				if action != "down" || tt.wantError != "" {
+					assert.Equal(t, beforeConfig, env.config)
+				}
 				assert.Empty(t, env.set)
 			})
 		}
@@ -1157,8 +1161,8 @@ func TestACRRepeatProvisionThenStateLossCleanup(t *testing.T) {
 				group := "foundry"
 				if layer {
 					group = "on-disk-foundry"
-					p.projectYAML = []byte("name: test\ninfra:\n  provider: bicep\n  layers:\n" +
-						"    - name: application\n    - name: foundry\n      provider: microsoft.foundry\n")
+					p.projectYAML = []byte("name: test\ninfra:\n  layers:\n" +
+						"    - name: foundry\n      provider: microsoft.foundry\n")
 				}
 				groupID := "/subscriptions/sub/resourceGroups/" + group
 				projectID := strings.Replace(testACRProject, "/foundry/", "/"+group+"/", 1)
@@ -2202,6 +2206,195 @@ func TestACRDestroyRetirementFailurePreservesRecovery(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Nil(t, p.acrBinding)
 	assert.Empty(t, env.config)
+}
+
+func TestACRRecoveredZeroGrantBindingSurvivesDestroyRetry(t *testing.T) {
+	for _, mode := range []string{"create", "reuse-connect"} {
+		t.Run(mode, func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			p.rgExplicit = true
+			p.credential = acrTestCredential{}
+			registryID := testACRID
+			if mode == "create" {
+				registryID = strings.Replace(registryID, "/shared/", "/foundry/", 1)
+			}
+			deploymentID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+			groupID := "/subscriptions/sub/resourceGroups/foundry"
+			groupGone, failRetirement := false, true
+			projectReads, groupDeletes := 0, 0
+			p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+				Retry: policy.RetryOptions{MaxRetries: -1},
+				Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+					path := request.URL.Path
+					switch {
+					case request.Method == http.MethodGet && strings.HasSuffix(path, "/Microsoft.CognitiveServices/accounts"):
+						return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{"value": []any{}})
+					case request.Method == http.MethodDelete && strings.EqualFold(path, groupID):
+						require.NotEmpty(t, env.config[synthesis.ACRBindingConfigKey],
+							"recovered bindings must be durable before resource deletion")
+						groupDeletes++
+						if groupGone {
+							return acrTestHTTPReply(t, request, http.StatusNotFound, nil)
+						}
+						groupGone = true
+						return acrTestHTTPReply(t, request, http.StatusOK, nil)
+					case request.Method == http.MethodGet && strings.EqualFold(path, groupID):
+						require.True(t, groupGone)
+						return acrTestHTTPReply(t, request, http.StatusNotFound, nil)
+					default:
+						t.Fatalf("unexpected resource-group request: %s %s", request.Method, path)
+						return nil, errors.New("unexpected resource-group request")
+					}
+				}),
+			}}
+			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+				switch {
+				case method == http.MethodGet && path == deploymentID:
+					parameters := map[string]any{}
+					if mode == "reuse-connect" {
+						parameters["existingAcrResourceId"] = map[string]any{"value": registryID}
+					}
+					return acrTestReply(out, map[string]any{"properties": map[string]any{
+						"provisioningState": "Succeeded", "parameters": parameters,
+						"outputs": map[string]any{
+							"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": registryID},
+							"AZURE_AI_PROJECT_ID":                  map[string]any{"value": testACRProject},
+						},
+					}})
+				case method == http.MethodGet && path == deploymentID+"/operations":
+					require.Equal(t, "create", mode)
+					return acrTestReply(out, map[string]any{"value": []any{map[string]any{
+						"properties": map[string]any{
+							"targetResource": map[string]any{
+								"id": registryID, "resourceType": "Microsoft.ContainerRegistry/registries",
+							},
+							"provisioningOperation": "Create", "provisioningState": "Succeeded",
+						},
+					}}})
+				case method == http.MethodGet && path == testACRProject:
+					require.False(t, groupGone, "retry must not read the deleted project")
+					projectReads++
+					return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+				case method == http.MethodDelete && path == deploymentID:
+					require.True(t, groupGone)
+					require.NotEmpty(t, env.config[synthesis.ACRBindingConfigKey])
+					if failRetirement {
+						return &azcore.ResponseError{StatusCode: http.StatusForbidden}
+					}
+					return nil
+				default:
+					t.Fatalf("unexpected registry lifecycle request: %s %s", method, path)
+					return errors.New("unexpected registry lifecycle request")
+				}
+			}
+			require.Empty(t, env.config, "simulate local lifecycle state loss")
+			result, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+			require.ErrorContains(t, err, "delete completed Foundry deployment record")
+			require.Nil(t, result)
+			require.True(t, groupGone)
+			require.NotNil(t, p.acrBinding)
+			require.Empty(t, p.acrBinding.OwnedAssignments)
+			require.NotEmpty(t, env.config[synthesis.ACRBindingConfigKey])
+			retry := &FoundryProvisioningProvider{
+				azdClient: p.azdClient, envName: p.envName, subID: p.subID,
+				rgName: p.rgName, foundryName: p.foundryName, rgExplicit: true,
+				credential: p.credential, armClientOptions: p.armClientOptions, acrRequest: p.acrRequest,
+			}
+			require.NoError(t, retry.loadACRLifecycle(t.Context()))
+			require.Equal(t, p.acrBinding, retry.acrBinding)
+			failRetirement = false
+			result, err = retry.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, 1, projectReads)
+			assert.Equal(t, 2, groupDeletes)
+			assert.Empty(t, env.config)
+		})
+	}
+}
+
+func TestACRRecoveredZeroGrantBindingMustPersistBeforeCleanup(t *testing.T) {
+	for _, mode := range []string{"create", "reuse-connect"} {
+		t.Run(mode, func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			p.acrBinding = acrTestBinding()
+			p.acrBinding.Mode = mode
+			p.acrBindingRecovered = true
+			env.configErr = errors.New("cannot save recovered binding")
+			p.acrRequest = func(context.Context, string, string, string, any) error {
+				t.Fatal("failed persistence must prevent cleanup requests")
+				return nil
+			}
+			require.ErrorContains(t, p.cleanupACRAccess(t.Context()), "cannot save recovered binding")
+			assert.True(t, p.acrBindingRecovered)
+			assert.Empty(t, env.config)
+		})
+	}
+}
+
+func TestACRProjectOnlyEjectionRemainsDemandDriven(t *testing.T) {
+	for _, layer := range []bool{false, true} {
+		for _, addAgent := range []bool{false, true} {
+			for _, explicitFalse := range []bool{false, true} {
+				t.Run(strconv.FormatBool(layer)+"/agent="+strconv.FormatBool(addAgent)+
+					"/override="+strconv.FormatBool(explicitFalse), func(t *testing.T) {
+					p, _ := acrTestProvider(t)
+					root := t.TempDir()
+					path, module := "infra", "main"
+					raw := "infra:\n  provider: microsoft.foundry\n"
+					if layer {
+						path, module = filepath.Join("infra", "foundry"), "project"
+						raw = "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
+							"      path: infra/foundry\n      module: project\n"
+					}
+					raw += "services:\n  project:\n    host: azure.ai.project\n"
+					values := map[string]string{
+						"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
+					}
+					input := synthesis.Input{
+						RawAzureYAML: []byte(raw), ServiceName: "project", ProjectRoot: root,
+						Env: values, PreserveVarRefs: true,
+					}
+					ejected, err := synthesis.Synthesize(input)
+					require.NoError(t, err)
+					require.NotContains(t, ejected.Parameters, "includeAcr")
+					require.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}", ejected.Parameters["existingAcrResourceId"])
+					if explicitFalse {
+						ejected.Parameters["includeAcr"] = false
+					}
+					params := minimalARMParametersFile(t, ejected.Parameters)
+					infra := filepath.Join(root, path)
+					require.NoError(t, os.MkdirAll(infra, 0o750))
+					require.NoError(t, os.WriteFile(filepath.Join(infra, module+".bicep"), []byte("// test"), 0o600))
+					paramsPath := filepath.Join(infra, module+".parameters.json")
+					require.NoError(t, os.WriteFile(paramsPath, []byte(params), 0o600))
+					if addAgent {
+						raw += "  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
+					}
+					input.RawAzureYAML, input.PreserveVarRefs = []byte(raw), false
+					p.synthResult, err = synthesis.Synthesize(input)
+					require.NoError(t, err)
+					p.projectPath, p.projectYAML, p.synthesisEnv = root, input.RawAzureYAML, values
+					p.infraPath, p.infraModule, p.isLayer = infra, module, layer
+					template := acrTestSource().armTemplate
+					declared, ok := template["parameters"].(map[string]any)
+					require.True(t, ok)
+					declared["includeAcr"] = map[string]any{"type": "bool", "defaultValue": false}
+					compiled, err := json.Marshal(template)
+					require.NoError(t, err)
+					p.bicepCliInstance = &stubCompiler{buildResult: bicep.BuildResult{Compiled: string(compiled)}}
+					source, err := p.resolveTemplate(t.Context(), func(string) {})
+					require.NoError(t, err)
+					assert.Equal(t, addAgent && !explicitFalse, parameterValue(source, "includeAcr"))
+					assert.Equal(t, testACRID, parameterValue(source, "existingAcrResourceId"))
+					//nolint:gosec // Test-owned path.
+					after, err := os.ReadFile(paramsPath)
+					require.NoError(t, err)
+					assert.Equal(t, params, string(after), "provision must not rewrite authored parameters")
+				})
+			}
+		}
+	}
 }
 
 func TestACRDestroyFailureDoesNotRetireDeployment(t *testing.T) {

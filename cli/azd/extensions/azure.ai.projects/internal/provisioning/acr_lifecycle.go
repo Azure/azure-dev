@@ -422,7 +422,8 @@ func (p *FoundryProvisioningProvider) validateACRTeardownScopes(id, group string
 	maps.Copy(env, p.synthesisEnv)
 	env[envKeySubscriptionID] = p.subID
 	return synthesis.ValidateACRSelectorForInput(synthesis.Input{
-		RawAzureYAML: p.projectYAML, Env: env, ResourceGroupName: group,
+		RawAzureYAML: p.projectYAML, Env: env, ResourceGroupName: group, ProjectRoot: p.projectPath,
+		AcceptedHosts: FoundryProvisioningServiceHosts,
 	}, id)
 }
 
@@ -936,15 +937,14 @@ func (p *FoundryProvisioningProvider) clearACRConfig(ctx context.Context, key st
 }
 
 func (p *FoundryProvisioningProvider) cleanupACRAccess(ctx context.Context) error {
+	if err := p.persistRecoveredACRBinding(ctx); err != nil {
+		return err
+	}
 	var assignments []synthesis.ACRAssignment
 	registryID := ""
 	if p.acrBinding != nil && p.acrBinding.Mode == "reuse-connect" {
 		registryID = p.acrBinding.RegistryResourceID
 		assignments = slices.Clone(p.acrBinding.OwnedAssignments)
-		// Persist recovered bindings even with no owned grants (admin-provided pull).
-		if err := p.persistRecoveredACRBinding(ctx); err != nil {
-			return err
-		}
 	}
 	if p.acrPending != nil {
 		registryID = p.acrPending.RegistryResourceID

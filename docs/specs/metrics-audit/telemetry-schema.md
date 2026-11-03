@@ -671,6 +671,9 @@ same `AttributeKey` metadata model. Follow the declaration style in the owning
 package; repository tests enforce the supported source forms. Field
 declarations apply across events and are not tied to a single event.
 
+An explicitly declared `Endpoint: "N/A"` is valid for `OrganizationalIdentifiableInformation`
+when the field owner's identifier-handling assessment supports it. Structural acceptance does not establish approval coverage.
+
 Track declaration changes, metadata deployment, and downstream verification separately using the [audit process](audit-process.md#retained-copies-and-rollout).
 
 ### Event declaration contract

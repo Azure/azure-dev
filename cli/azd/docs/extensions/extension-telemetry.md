@@ -179,8 +179,11 @@ Attributes: map[string]string{
 Choose classification, purpose, and endpoint from what the property actually
 contains and why it is collected. Do not copy `SystemMetadata` or
 `FeatureInsight` merely because another extension field uses them.
-`SystemMetadata` must use `N/A`; every other classification must use a
-non-`N/A` endpoint.
+Set an explicit, nonempty `Endpoint`. `SystemMetadata` requires exactly `N/A`.
+`OrganizationalIdentifiableInformation` may use explicit `N/A` when the field
+owner's assessment of the identifier's handling supports it. Other supported
+classifications require a non-`N/A` endpoint. Structural validation does not
+grant approval; ask an owner to assess ambiguous identifier semantics.
 
 Set `Attributes` only in the telemetry payload literal, using `nil` or an
 inline `map[string]string` literal. Reading or assigning `Attributes` or

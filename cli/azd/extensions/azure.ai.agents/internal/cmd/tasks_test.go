@@ -731,6 +731,10 @@ func TestTasksMissingEnvironmentAndCheckout(t *testing.T) {
 	require.Equal(t, "remote", target.Name)
 	_, err = resolveTasksTarget(t.Context(), host, tasksTargetOptions{projectEndpoint: tasksTestEndpoint, list: true})
 	require.Error(t, err)
+	_, err = resolveTasksTarget(t.Context(), host, tasksTargetOptions{
+		projectEndpoint: tasksTestEndpoint, agentName: "remote", environment: "missing", list: true,
+	})
+	require.ErrorContains(t, err, `reading selected azd environment "missing"`)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err = resolveTasksTarget(ctx, nil, tasksTargetOptions{projectEndpoint: tasksTestEndpoint})

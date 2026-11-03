@@ -395,8 +395,9 @@ func resolveTasksTarget(
 		return nil, ctx.Err()
 	}
 	if err != nil {
-		// Explicit endpoint + name is intentionally usable outside a checkout.
-		if !explicit {
+		// Explicit endpoint + name is intentionally usable outside a checkout,
+		// but an explicitly selected environment must not silently be ignored.
+		if !explicit || opts.environment != "" {
 			return nil, fmt.Errorf("reading selected azd environment %q: %w", opts.environment, err)
 		}
 		if opts.agentName == "" {

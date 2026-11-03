@@ -472,16 +472,19 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	}
 	registryID := effectiveValues["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 	mode := effectiveValues["AZD_FOUNDRY_ACR_MODE"]
-	if registryID == "" && a.flags.deployedBinding != nil {
-		registryID = a.flags.deployedBinding.RegistryResourceID
+	if a.flags.deployedBinding != nil {
+		if registryID == "" {
+			registryID = a.flags.deployedBinding.RegistryResourceID
+		}
 		if mode == "" {
 			mode = a.flags.deployedBinding.Mode
 		}
 	}
 	if registryID != "" {
 		result.ContainerRegistry = &projectRegistryOutput{
-			ResourceID:      registryID,
-			ExternallyOwned: mode == "reuse-connect" || mode == "already-connected",
+			ResourceID: registryID,
+			ExternallyOwned: mode == "reuse-connect" || mode == "already-connected" ||
+				mode == "" && target.Mode != projectModeNew,
 		}
 	}
 	registryChanged := target.ACRResourceID != "" &&
@@ -570,7 +573,7 @@ func resolveProjectTarget(
 	flags *projectAddFlags,
 ) (*resolvedProject, error) {
 	projectID, endpoint := flags.projectID, flags.projectEndpoint
-	if flags.newProject {
+	if flags.newProject || flags.preserveProjectID != "" && !explicitProjectTarget(flags) {
 		return &resolvedProject{Mode: projectModeNew}, nil
 	}
 	if projectID != "" {

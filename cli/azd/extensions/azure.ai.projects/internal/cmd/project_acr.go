@@ -23,7 +23,7 @@ func projectACRValidation(message string) error {
 	return exterrors.Validation(
 		exterrors.CodeInvalidParameter,
 		message,
-		"use an external registry in the project's subscription, outside its resource group, "+
+		"use an external registry in the project's subscription, outside all azd-managed resource groups, "+
 			"with --new-project and Bicep source builds; registry migration is not supported",
 	)
 }
@@ -145,6 +145,13 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 				}
 			}
 		}
+	}
+	if a.flags.preserveProjectID != "" && (a.flags.projectID != "" || a.flags.projectEndpoint != "") {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--project-id and --project-endpoint cannot adopt a Foundry project owned by this environment",
+			"rerun without those flags to retain the deployed project, or use a new azd environment for an existing project",
+		)
 	}
 	greenfield := a.flags.newProject ||
 		(!explicitProjectTarget(a.flags) && !strings.EqualFold(values["USE_EXISTING_AI_PROJECT"], "true"))

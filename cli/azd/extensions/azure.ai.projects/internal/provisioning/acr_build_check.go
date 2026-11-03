@@ -68,7 +68,7 @@ func acrBuildCheckFailure(err error) *azdext.ValidationCheckResponse {
 		Severity:     azdext.ValidationCheckSeverity_VALIDATION_CHECK_SEVERITY_ERROR,
 		DiagnosticId: ACRRemoteBuildRuleID,
 		Message:      err.Error(),
-		Suggestion:   acrRemoteBuildSuggestion,
+		Suggestion:   azdext.ErrorSuggestion(err),
 	}}}
 }
 
@@ -101,6 +101,7 @@ func (c *ACRRemoteBuildCheck) ValidateProject(
 	}
 	p := &FoundryProvisioningProvider{
 		azdClient: c.azdClient, projectPath: project.Path, envName: envName,
+		projectYAML:  raw,
 		synthesisEnv: snapshot, acrRemoteBuild: true,
 		acrRequest: c.acrRequest, bicepCliInstance: c.compiler,
 		subID: strings.TrimSpace(values[envKeySubscriptionID]), location: strings.TrimSpace(values[envKeyLocation]),
@@ -120,12 +121,6 @@ func (c *ACRRemoteBuildCheck) ValidateProject(
 	}
 	if p.foundryName == "" {
 		p.foundryName = sanitizeFoundryName(envName)
-	}
-	if p.subID == "" && id != "" {
-		if err := synthesis.ValidateACRSelector(id, "", ""); err != nil {
-			return err
-		}
-		p.subID = strings.Split(id, "/")[2]
 	}
 	var infra struct {
 		Infra struct {
@@ -158,7 +153,8 @@ func (c *ACRRemoteBuildCheck) ValidateProject(
 		"includeAcr":            map[string]any{"value": mode == "reuse-connect"},
 		"existingAcrResourceId": map[string]any{"value": id},
 	}}
-	if p.onDiskTemplatePresent() {
+	onDisk := p.onDiskTemplatePresent()
+	if onDisk {
 		result, err := synthesis.Synthesize(in)
 		if err != nil {
 			return err
@@ -167,8 +163,20 @@ func (c *ACRRemoteBuildCheck) ValidateProject(
 		if mode == "reuse-connect" {
 			p.synthResult.Parameters["existingAcrResourceId"] = id
 		}
-		src, err = p.resolveTemplate(ctx, func(string) {})
+		src, err = p.resolveTemplateSource(ctx, func(string) {})
 		if err != nil {
+			return err
+		}
+	}
+	id, _ = parameterValue(src, "existingAcrResourceId").(string)
+	if p.subID == "" && id != "" {
+		if err := synthesis.ValidateACRSelector(id, "", ""); err != nil {
+			return err
+		}
+		p.subID = strings.Split(id, "/")[2]
+	}
+	if onDisk {
+		if err := p.validateACRTemplate(src); err != nil {
 			return err
 		}
 	}
@@ -199,7 +207,11 @@ func (p *FoundryProvisioningProvider) validateACRRemoteBuild(ctx context.Context
 	if !p.acrRemoteBuild || p.brownfieldEndpoint != "" || !include || id == "" {
 		return nil
 	}
-	if err := synthesis.ValidateACRSelector(id, p.subID, ""); err != nil {
+	group, _ := parameterValue(src, "resourceGroupName").(string)
+	if group == "" {
+		group = p.rgName
+	}
+	if err := p.validateACRTeardownScopes(id, group); err != nil {
 		return err
 	}
 	abac, err := p.acrUsesABAC(ctx, id)

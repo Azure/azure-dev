@@ -102,6 +102,10 @@ param workloadPrincipalId string = ''
 @description('Registry pull role persisted with the access operation.')
 param acrPullRoleDefinitionId string = ''
 
+@description('Owned registry grants retained for recovery after local state loss.')
+#disable-next-line no-unused-params
+param acrOwnedAssignments array = []
+
 // Network isolation parameters (see modules/resources.bicep for semantics).
 // All default off so an absent network: block yields a public account.
 

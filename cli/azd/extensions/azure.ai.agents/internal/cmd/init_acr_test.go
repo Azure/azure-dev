@@ -139,7 +139,9 @@ func TestInitACRRejectsTeardownScopeBeforeWrites(t *testing.T) {
 		{"root group", "", "registry-rg", "", true},
 		{"layer group", "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n",
 			"application-rg", "registry-rg", true},
-		{"other layer root", "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n",
+		{"other layer root", "infra:\n  layers:\n    - name: app\n      provider: bicep\n" +
+			"    - name: foundry\n      provider: microsoft.foundry\n", "registry-rg", "foundry-rg", true},
+		{"unused root group", "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n",
 			"registry-rg", "foundry-rg", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -177,20 +179,27 @@ func TestInitACRRejectsTeardownScopeBeforeWrites(t *testing.T) {
 
 func TestInitACREnvironmentSelectorPreflight(t *testing.T) {
 	for _, tt := range []struct {
-		name       string
-		layer      bool
-		rootGroup  string
-		layerGroup string
-		registry   string
-		binding    bool
-		wantErr    bool
+		name        string
+		layer       bool
+		application bool
+		rootGroup   string
+		layerGroup  string
+		registry    string
+		binding     bool
+		wantErr     bool
 	}{
 		{name: "retained root group", rootGroup: "registry-rg", registry: testInitACRID, wantErr: true},
 		{name: "external root registry", rootGroup: "foundry-rg", registry: testInitACRID},
 		{name: "retained layer group", layer: true, rootGroup: "application-rg",
 			layerGroup: "registry-rg", registry: testInitACRID, wantErr: true},
-		{name: "layer can reuse root registry", layer: true, rootGroup: "registry-rg",
+		{name: "unused root registry", layer: true, rootGroup: "registry-rg",
 			layerGroup: "foundry-rg", registry: testInitACRID},
+		{name: "application group", layer: true, application: true, rootGroup: "registry-rg",
+			layerGroup: "foundry-rg", registry: testInitACRID, wantErr: true},
+		{name: "canonical application group", layer: true, application: true, rootGroup: "registry-rg",
+			layerGroup: "foundry-rg", registry: testInitACRID, binding: true, wantErr: true},
+		{name: "default application group", layer: true, application: true,
+			registry: strings.Replace(testInitACRID, "/registry-rg/", "/rg-test/", 1), wantErr: true},
 		{name: "default root group", registry: strings.Replace(testInitACRID, "/registry-rg/", "/rg-test/", 1),
 			wantErr: true},
 		{name: "default layer group", layer: true,
@@ -208,7 +217,11 @@ func TestInitACREnvironmentSelectorPreflight(t *testing.T) {
 			t.Chdir(root)
 			content := "name: test\nservices:\n  foundry:\n    host: azure.ai.project\n"
 			if tt.layer {
-				content += "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n"
+				content += "infra:\n  layers:\n"
+				if tt.application {
+					content += "    - name: app\n      provider: bicep\n"
+				}
+				content += "    - name: foundry\n      provider: microsoft.foundry\n"
 			}
 			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(content), 0o600))
 			server := &initACREnvironmentServer{

@@ -1800,6 +1800,34 @@ func TestEjectInfra_RecordedRegistryMode(t *testing.T) {
 	}
 }
 
+func TestEjectInfra_ProjectOnlyRegistrySelectionRejectsTerraform(t *testing.T) {
+	const registryID = "/subscriptions/sub/resourceGroups/shared/" +
+		"providers/Microsoft.ContainerRegistry/registries/registry"
+	for _, mode := range []string{"", "create", "reuse-connect"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			yaml := "name: project-only\ninfra:\n  provider: microsoft.foundry\n" +
+				"services:\n  foundry:\n    host: azure.ai.project\n"
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yaml)
+			values := map[string]string{
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID, "AZD_FOUNDRY_ACR_MODE": mode,
+			}
+			before := maps.Clone(values)
+			err := ejectInfra(dir, "terraform", values)
+			require.ErrorContains(t, err, "not supported with Terraform")
+			suggestion := azdext.ErrorSuggestion(err)
+			assert.Contains(t, suggestion, "Bicep")
+			assert.Contains(t, suggestion, "new azd environment")
+			assert.NotContains(t, suggestion, "AZD_FOUNDRY_ACR_MODE=create")
+			assert.NoDirExists(t, filepath.Join(dir, "infra"))
+			raw, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml"))
+			require.NoError(t, readErr)
+			assert.Equal(t, yaml, string(raw))
+			assert.Equal(t, before, values)
+		})
+	}
+}
+
 func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 	// See TestEjectInfra_HappyPath_WritesExpectedFiles for why this is not parallel.
 	dir := t.TempDir()

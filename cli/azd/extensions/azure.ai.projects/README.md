@@ -307,8 +307,9 @@ environment to create another project.
 ### Reuse an external container registry
 
 This is supported with Bicep only. The registry must be in the Foundry project's
-subscription (`AZURE_SUBSCRIPTION_ID`) and outside the Foundry resource group
-because `azd down` deletes that group. Cross-subscription registry reuse is not
+subscription (`AZURE_SUBSCRIPTION_ID`) and outside every resource group managed
+by azd, including the Foundry group and any configured application layer's group,
+because `azd down` deletes those groups. Cross-subscription registry reuse is not
 supported. You are responsible for registry network connectivity and appropriate
 image push permissions.
 
@@ -366,13 +367,16 @@ You can select a registry before adding agents; the selection remains pending
 until a source-built agent requires it, including across project-only provisioning
 and teardown. Configured project or account names do not discard an unused
 selection. Source initialization validates environment-only selections against
-the root or Foundry-layer resource group retained by setup before changing files
-or environment values.
+the Foundry resource group and any configured application-layer resource group
+before changing files or environment values. An unused `AZURE_RESOURCE_GROUP`
+value does not add a teardown group when only a Foundry layer is configured.
 
 Once a project has a deployed registry binding, registry migration is not
 supported. Repeating setup with the same selection preserves the deployed
-project identity and ownership even if legacy project and registry ID outputs
-are absent. Bicep eject uses the binding's recorded registry ID when no registry
+project identity and ownership whether ordinary project and registry ID outputs
+are present or absent. Explicit `--project-id` or `--project-endpoint` adoption
+cannot convert this environment's owned project to an existing-project target.
+Bicep eject uses the binding's recorded registry ID when no registry
 environment-variable reference is available. Use a new azd environment to choose
 a different registry; do not clear internal mode or ownership state to bypass
 this check.
@@ -390,10 +394,13 @@ ownership and verifies effective pull access before reporting success. Missing
 access returns retry or cleanup guidance instead of a successful deployment
 result; administrator-managed grants are not changed.
 Re-eject older Foundry Bicep templates before provisioning an external registry
-so their access-operation contract accepts the persisted role.
+so their access-operation contract accepts the persisted role and owned-grant
+recovery metadata.
 
 If local registry lifecycle state is lost, azd can recover owned grants from
-retained deployment access-operation metadata. Recovery verifies the registry,
+retained deployment access-operation metadata. Repeated provisioning retains
+all owned grants, including earlier pull roles after a permission-mode change
+and grants from before a project-only provision. Recovery verifies the registry,
 project principal, role, and ownership marker before recording a grant.
 An already-deleted grant still allows cleanup of its verified deployment records.
 Recovered ownership is saved before cleanup so a failed teardown remains

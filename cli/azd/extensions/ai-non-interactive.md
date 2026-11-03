@@ -41,8 +41,7 @@ are not forwarded; `--help` remains available. Use the standalone
 
 ## `azure.ai.projects`
 
-Scripts can
-also set `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` to the full
+Scripts can set `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` to the full
 ARM ID of an existing `Microsoft.ContainerRegistry/registries` resource.
 Provisioning reuses it, grants the project identity pull access, and creates the
 project connection without changing the registry's networking. Classic registries

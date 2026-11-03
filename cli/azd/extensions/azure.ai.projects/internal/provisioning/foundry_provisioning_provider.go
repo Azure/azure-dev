@@ -71,6 +71,7 @@ type FoundryProvisioningProvider struct {
 
 	// Populated by Initialize.
 	projectPath      string
+	projectYAML      []byte
 	infraPath        string
 	infraModule      string
 	isLayer          bool
@@ -287,6 +288,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		)
 	}
 	p.isLayer = config.hasFoundryLayer(strings.TrimSpace(options.GetName()))
+	p.projectYAML = rawYAML
 	env, err := p.synthesisEnvMap(ctx)
 	if err != nil {
 		return err
@@ -1472,6 +1474,20 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*templateSource, error) {
+	src, err := p.resolveTemplateSource(ctx, progress)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.validateACRTemplate(src); err != nil {
+		return nil, err
+	}
+	return src, nil
+}
+
+func (p *FoundryProvisioningProvider) resolveTemplateSource(
+	ctx context.Context,
+	progress grpcbroker.ProgressFunc,
+) (*templateSource, error) {
 	if p.onDiskSource == nil && p.onDiskTemplatePresent() {
 		progress("Compiling on-disk Bicep templates...")
 		env, err := p.envValues(ctx)
@@ -1507,9 +1523,6 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 			parameters:  merged,
 			sourcePath:  p.onDiskSource.sourcePath,
 		}
-		if err := p.validateACRTemplate(source); err != nil {
-			return nil, err
-		}
 		return source, nil
 	}
 
@@ -1535,9 +1548,6 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 		mode:        templateModeEmbedded,
 		armTemplate: p.armTemplate,
 		parameters:  parameters,
-	}
-	if err := p.validateACRTemplate(src); err != nil {
-		return nil, err
 	}
 	return src, nil
 }
@@ -1733,14 +1743,35 @@ func (p *FoundryProvisioningProvider) Destroy(
 		p.isLayer = true
 	}
 
-	if recorded := p.synthesisEnv["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]; p.brownfieldEndpoint == "" && recorded != "" {
-		mode, err := synthesis.GreenfieldACRMode(synthesis.Input{
-			Env: p.synthesisEnv, ResourceGroupName: p.rgName, ACRBinding: p.acrBinding,
+	if p.brownfieldEndpoint == "" {
+		mode, recorded, err := synthesis.ResolveGreenfieldACRSelection(synthesis.Input{
+			RawAzureYAML: p.projectYAML, Env: p.synthesisEnv, ResourceGroupName: p.rgName, ACRBinding: p.acrBinding,
 		})
 		if err != nil {
 			return nil, err
 		}
-		if mode == "create" {
+		if mode == "reuse-connect" && recorded != "" {
+			if scopeErr := p.validateACRTeardownScopes(recorded, p.rgName); scopeErr != nil {
+				if p.acrBinding != nil ||
+					p.synthesisEnv["AZD_FOUNDRY_ACR_MODE"] == "reuse-connect" {
+					return nil, scopeErr
+				}
+				// Legacy ownership needs deployed creation proof.
+				if err := p.recoverDeployedACRBinding(ctx); err != nil {
+					return nil, err
+				}
+				if p.acrBinding == nil || p.acrBinding.Mode != "create" {
+					return nil, scopeErr
+				}
+				mode = "create"
+			}
+		}
+		if p.acrPending != nil {
+			if err := p.validateACRTeardownScopes(p.acrPending.RegistryResourceID, p.rgName); err != nil {
+				return nil, err
+			}
+		}
+		if mode == "create" && recorded != "" {
 			if err := p.recoverDeployedACRBinding(ctx); err != nil {
 				return nil, err
 			}

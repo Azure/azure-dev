@@ -436,64 +436,66 @@ func TestProjectACRPreflightCurrentEnvironment(t *testing.T) {
 
 func TestProjectAddAlreadyConnectedRegistryOwnershipOutput(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
-	for _, hasRegistry := range []bool{false, true} {
-		for _, format := range []string{"default", "json", "none"} {
-			t.Run(strconv.FormatBool(hasRegistry)+"/"+format, func(t *testing.T) {
-				root := t.TempDir()
-				t.Setenv("AZD_EXEC_PROJECT_DIR", root)
-				raw := "name: test\nservices:\n  project:\n    host: azure.ai.project\n    endpoint: " + endpoint + "\n"
-				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
-				client, project, env, _, _ := newSelfInitializingDeploymentClient(t, root)
-				project.project.Services["project"] = &azdext.ServiceConfig{Name: "project", Host: aiProjectHost}
-				project.services["project"] = map[string]any{"host": aiProjectHost, "endpoint": endpoint}
-				maps.Copy(env.values, map[string]string{
-					"FOUNDRY_PROJECT_ENDPOINT": endpoint, "AZURE_AI_PROJECT_NAME": "project",
-					"USE_EXISTING_AI_PROJECT": "true", "AZD_FOUNDRY_ACR_MODE": "already-connected",
+	for _, mode := range []string{"already-connected", ""} {
+		for _, hasRegistry := range []bool{false, true} {
+			for _, format := range []string{"default", "json", "none"} {
+				t.Run(mode+"/"+strconv.FormatBool(hasRegistry)+"/"+format, func(t *testing.T) {
+					root := t.TempDir()
+					t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+					raw := "name: test\nservices:\n  project:\n    host: azure.ai.project\n    endpoint: " + endpoint + "\n"
+					require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
+					client, project, env, _, _ := newSelfInitializingDeploymentClient(t, root)
+					project.project.Services["project"] = &azdext.ServiceConfig{Name: "project", Host: aiProjectHost}
+					project.services["project"] = map[string]any{"host": aiProjectHost, "endpoint": endpoint}
+					maps.Copy(env.values, map[string]string{
+						"FOUNDRY_PROJECT_ENDPOINT": endpoint, "AZURE_AI_PROJECT_NAME": "project",
+						"USE_EXISTING_AI_PROJECT": "true", "AZD_FOUNDRY_ACR_MODE": mode,
+					})
+					if hasRegistry {
+						env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = testExternalRegistryID
+						env.values["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = "shared.azurecr.io"
+						env.values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"] = "shared-conn"
+					}
+					var output, diagnostics bytes.Buffer
+					action := &ProjectAddAction{
+						client: client, stdout: &output, stderr: &diagnostics,
+						flags:  &projectAddFlags{projectEndpoint: endpoint, noPrompt: true, output: format},
+						extCtx: &azdext.ExtensionContext{Environment: "test"},
+					}
+					require.NoError(t, action.Run(t.Context()))
+					assert.Empty(t, diagnostics.String())
+					assert.Equal(t, mode, env.values["AZD_FOUNDRY_ACR_MODE"])
+					switch format {
+					case "none":
+						assert.Empty(t, output.String())
+					case "json":
+						var result map[string]any
+						require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+						assert.Equal(t, float64(1), result["schemaVersion"])
+						assert.Equal(t, projectOutputProducerVersion(), result["producerVersion"])
+						assert.Equal(t, "project", result["serviceName"])
+						assert.Equal(t, string(projectModeExistingEndpoint), result["mode"])
+						assert.Equal(t, "unchanged", result["mutation"])
+						assert.Equal(t, endpoint, result["endpoint"])
+						assert.NotContains(t, result, "resourceId")
+						if hasRegistry {
+							assert.Equal(t, map[string]any{
+								"resourceId": testExternalRegistryID, "externallyOwned": true,
+							}, result["containerRegistry"])
+						} else {
+							assert.NotContains(t, result, "containerRegistry")
+						}
+					default:
+						if hasRegistry {
+							assert.Contains(t, output.String(), testExternalRegistryID)
+							assert.Contains(t, output.String(), "externally owned; retained by azd down")
+							assert.NotContains(t, output.String(), "managed by azd")
+						} else {
+							assert.NotContains(t, output.String(), "Container registry:")
+						}
+					}
 				})
-				if hasRegistry {
-					env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = testExternalRegistryID
-					env.values["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = "shared.azurecr.io"
-					env.values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"] = "shared-conn"
-				}
-				var output, diagnostics bytes.Buffer
-				action := &ProjectAddAction{
-					client: client, stdout: &output, stderr: &diagnostics,
-					flags:  &projectAddFlags{projectEndpoint: endpoint, noPrompt: true, output: format},
-					extCtx: &azdext.ExtensionContext{Environment: "test"},
-				}
-				require.NoError(t, action.Run(t.Context()))
-				assert.Empty(t, diagnostics.String())
-				assert.Equal(t, "already-connected", env.values["AZD_FOUNDRY_ACR_MODE"])
-				switch format {
-				case "none":
-					assert.Empty(t, output.String())
-				case "json":
-					var result map[string]any
-					require.NoError(t, json.Unmarshal(output.Bytes(), &result))
-					assert.Equal(t, float64(1), result["schemaVersion"])
-					assert.Equal(t, projectOutputProducerVersion(), result["producerVersion"])
-					assert.Equal(t, "project", result["serviceName"])
-					assert.Equal(t, string(projectModeExistingEndpoint), result["mode"])
-					assert.Equal(t, "unchanged", result["mutation"])
-					assert.Equal(t, endpoint, result["endpoint"])
-					assert.NotContains(t, result, "resourceId")
-					if hasRegistry {
-						assert.Equal(t, map[string]any{
-							"resourceId": testExternalRegistryID, "externallyOwned": true,
-						}, result["containerRegistry"])
-					} else {
-						assert.NotContains(t, result, "containerRegistry")
-					}
-				default:
-					if hasRegistry {
-						assert.Contains(t, output.String(), testExternalRegistryID)
-						assert.Contains(t, output.String(), "externally owned; retained by azd down")
-						assert.NotContains(t, output.String(), "managed by azd")
-					} else {
-						assert.NotContains(t, output.String(), "Container registry:")
-					}
-				}
-			})
+			}
 		}
 	}
 }
@@ -652,13 +654,18 @@ func TestProjectAddCanonicalBindingWithoutLegacyAliases(t *testing.T) {
 	for _, tt := range []struct {
 		mode        string
 		explicitNew bool
+		aliases     bool
 	}{
 		{mode: "reuse-connect"},
 		{mode: "reuse-connect", explicitNew: true},
+		{mode: "reuse-connect", aliases: true},
+		{mode: "reuse-connect", explicitNew: true, aliases: true},
 		{mode: "create"},
 		{mode: "create", explicitNew: true},
+		{mode: "create", aliases: true},
+		{mode: "create", explicitNew: true, aliases: true},
 	} {
-		t.Run(tt.mode+"/"+strconv.FormatBool(tt.explicitNew), func(t *testing.T) {
+		t.Run(tt.mode+"/"+strconv.FormatBool(tt.explicitNew)+"/aliases="+strconv.FormatBool(tt.aliases), func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("AZD_EXEC_PROJECT_DIR", root)
 			raw := []byte("name: test\ninfra:\n  provider: microsoft.foundry\nservices:\n" +
@@ -677,6 +684,10 @@ func TestProjectAddCanonicalBindingWithoutLegacyAliases(t *testing.T) {
 			registryID := testExternalRegistryID
 			if tt.mode == "create" {
 				registryID = strings.Replace(registryID, "/external/", "/project/", 1)
+			}
+			if tt.aliases {
+				env.values["AZURE_AI_PROJECT_ID"] = projectID
+				env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = registryID
 			}
 			binding, err := json.Marshal(synthesis.ACRBinding{
 				Version: 1, Mode: tt.mode, RegistryResourceID: registryID,
@@ -701,13 +712,18 @@ func TestProjectAddCanonicalBindingWithoutLegacyAliases(t *testing.T) {
 				assert.Equal(t, registryID, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
 				assert.Equal(t, tt.mode, env.values["AZD_FOUNDRY_ACR_MODE"])
 			} else {
-				assert.Empty(t, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+				if tt.aliases {
+					assert.Equal(t, registryID, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+				} else {
+					assert.Empty(t, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+				}
 				assert.Empty(t, env.values["AZD_FOUNDRY_ACR_MODE"])
 			}
 			assert.Equal(t, binding, env.config[synthesis.ACRBindingConfigKey])
 			assert.False(t, project.providerSet)
 			var result projectAddOutput
 			require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+			assert.Equal(t, string(projectModeNew), result.Mode)
 			assert.Equal(t, projectID, result.ResourceID)
 			require.NotNil(t, result.ContainerRegistry)
 			assert.Equal(t, registryID, result.ContainerRegistry.ResourceID)
@@ -717,6 +733,49 @@ func TestProjectAddCanonicalBindingWithoutLegacyAliases(t *testing.T) {
 			require.NoError(t, readErr)
 			assert.Equal(t, raw, persisted)
 		})
+	}
+}
+
+func TestProjectAddRejectsOwnedProjectAdoptionBeforeWrites(t *testing.T) {
+	const projectID = "/subscriptions/subscription/resourceGroups/project/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project"
+	for _, legacy := range []bool{false, true} {
+		for _, endpoint := range []bool{false, true} {
+			t.Run(strconv.FormatBool(legacy)+"/endpoint="+strconv.FormatBool(endpoint), func(t *testing.T) {
+				root := t.TempDir()
+				t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+				client, project, env, _, workflow := newSelfInitializingDeploymentClient(t, root)
+				maps.Copy(env.values, map[string]string{
+					"AZURE_AI_PROJECT_ID": projectID, "USE_EXISTING_AI_PROJECT": "false",
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testExternalRegistryID,
+					"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "shared.azurecr.io", "AZD_FOUNDRY_ACR_MODE": "reuse-connect",
+				})
+				if !legacy {
+					binding, err := json.Marshal(synthesis.ACRBinding{
+						Version: 1, Mode: "reuse-connect", RegistryResourceID: testExternalRegistryID,
+						ProjectResourceID: projectID, PrincipalID: "principal",
+					})
+					require.NoError(t, err)
+					env.config = map[string][]byte{synthesis.ACRBindingConfigKey: binding}
+				}
+				before, beforeConfig := maps.Clone(env.values), maps.Clone(env.config)
+				flags := &projectAddFlags{noPrompt: true, output: "none", projectID: projectID}
+				if endpoint {
+					flags.projectID = ""
+					flags.projectEndpoint = "https://account.services.ai.azure.com/api/projects/project"
+				}
+				action := &ProjectAddAction{client: client, flags: flags,
+					extCtx: &azdext.ExtensionContext{Environment: "test"}}
+				require.ErrorContains(t, action.Run(t.Context()), "cannot adopt")
+				assert.Equal(t, before, env.values)
+				assert.Equal(t, beforeConfig, env.config)
+				assert.Empty(t, env.setLog)
+				assert.Empty(t, workflow.args)
+				assert.False(t, project.providerSet)
+				assert.NoFileExists(t, filepath.Join(root, "azure.yaml"))
+				assert.NoDirExists(t, filepath.Join(root, ".azure"))
+			})
+		}
 	}
 }
 

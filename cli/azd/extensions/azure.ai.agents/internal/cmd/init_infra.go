@@ -578,6 +578,20 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		synthesisInput.Env = environment
 		synthesisInput.ResourceGroupName = group
 	}
+	if !existingProject && provider == project.TerraformProviderName {
+		mode, err := synthesis.GreenfieldACRMode(synthesisInput)
+		if err != nil {
+			return err
+		}
+		if mode == "reuse-connect" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"reuse mode with AZURE_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
+				"eject Bicep instead with `azd ai agent init --infra=bicep`, "+
+					"or use a new azd environment without an external registry selection",
+			)
+		}
+	}
 	var res *synthesis.Result
 	if existingProject {
 		res, err = synthesis.SynthesizeExistingProject(synthesisInput)
@@ -601,13 +615,6 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		res.Parameters["deployments"] = deployments
 	}
 	acrMode := infraEjectAcrNone
-	if !existingProject && provider == project.TerraformProviderName && res.ACRMode == "reuse-connect" {
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"reuse mode with AZURE_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
-			"eject Bicep instead with `azd ai agent init --infra=bicep`, or set AZD_FOUNDRY_ACR_MODE to create",
-		)
-	}
 	if existingProject {
 		values := environment
 		acrMode, err = resolveInfraEjectAcrMode(res.Parameters, values)

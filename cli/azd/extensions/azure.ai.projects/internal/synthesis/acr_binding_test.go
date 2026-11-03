@@ -254,6 +254,63 @@ func TestGreenfieldACRSelectionForInput(t *testing.T) {
 	}
 }
 
+func TestACRSelectionChecksEveryManagedResourceGroup(t *testing.T) {
+	const registryID = "/subscriptions/sub/resourceGroups/application/" +
+		"providers/Microsoft.ContainerRegistry/registries/registry"
+	for _, tt := range []struct {
+		name, infra, group, root, subscription, want string
+	}{
+		{name: "application layer", infra: "  layers:\n" +
+			"    - name: application\n      provider: bicep\n" +
+			"    - name: foundry\n      provider: microsoft.foundry\n",
+			root: "application", subscription: "sub", want: "azd down deletes"},
+		{name: "inherited application provider", infra: "  provider: bicep\n  layers:\n" +
+			"    - name: application\n" +
+			"    - name: foundry\n      provider: microsoft.foundry\n",
+			root: "APPLICATION", subscription: "SUB", want: "azd down deletes"},
+		{name: "application default", infra: "  layers:\n" +
+			"    - name: application\n      provider: bicep\n" +
+			"    - name: foundry\n      provider: microsoft.foundry\n",
+			subscription: "sub"},
+		{name: "eject retains application scope", infra: "  provider: bicep\n",
+			group: "foundry", root: "application", subscription: "sub", want: "azd down deletes"},
+		{name: "unknown subscription", infra: "  layers:\n" +
+			"    - name: application\n      provider: bicep\n" +
+			"    - name: foundry\n      provider: microsoft.foundry\n",
+			root: "application", want: "configure AZURE_SUBSCRIPTION_ID"},
+		{name: "unused root group", infra: "  layers:\n" +
+			"    - name: foundry\n      provider: microsoft.foundry\n",
+			root: "application", subscription: "sub"},
+		{name: "outside all groups", infra: "  layers:\n" +
+			"    - name: application\n      provider: bicep\n" +
+			"    - name: foundry\n      provider: microsoft.foundry\n",
+			root: "another-group", subscription: "sub"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			in := Input{
+				RawAzureYAML: []byte("infra:\n" + tt.infra + "services:\n" +
+					"  project:\n    host: azure.ai.project\n" +
+					"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"),
+				ServiceName: "project", ResourceGroupName: tt.group,
+				Env: map[string]string{
+					"AZURE_ENV_NAME": "test", "AZURE_SUBSCRIPTION_ID": tt.subscription,
+					"AZURE_RESOURCE_GROUP": tt.root, "AZURE_FOUNDRY_RESOURCE_GROUP": "foundry",
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID,
+				},
+			}
+			err := ValidateGreenfieldACRSelectionForInput(in, registryID)
+			_, synthErr := Synthesize(in)
+			if tt.want != "" {
+				require.ErrorContains(t, err, tt.want)
+				require.ErrorContains(t, synthErr, tt.want)
+			} else {
+				require.NoError(t, err)
+				require.NoError(t, synthErr)
+			}
+		})
+	}
+}
+
 func TestGreenfieldACRSelectionRejectsAuthoredExistingProject(t *testing.T) {
 	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
 	for _, host := range []string{"azure.ai.project", "azure.ai.agents"} {

@@ -142,7 +142,7 @@ func validateInitACRProjectContent(
 	if err := synthesis.ValidateGreenfieldACRSelectionForInput(input, selectedID); err != nil {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments, err.Error(),
-			"use a registry in the Foundry project's subscription, outside its resource group; "+
+			"use a registry in the Foundry project's subscription, outside all azd-managed resource groups; "+
 				"deployed registry migration is not supported",
 		)
 	}

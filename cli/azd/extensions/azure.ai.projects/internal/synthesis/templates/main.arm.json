@@ -211,6 +211,13 @@
         "description": "Registry pull role persisted with the access operation."
       }
     },
+    "acrOwnedAssignments": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Owned registry grants retained for recovery after local state loss."
+      }
+    },
     "enableNetworkIsolation": {
       "type": "bool",
       "defaultValue": false,

@@ -401,17 +401,8 @@ func existingContainerRegistry(in Input) (string, error) {
 		return "", errors.New("synthesis: AZD_FOUNDRY_ACR_MODE reuse-connect requires " +
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID; set it to an external registry ARM ID or use create mode")
 	}
-	group, err := GreenfieldACRResourceGroup(in)
-	if err != nil {
-		return "", err
-	}
-	if err := ValidateACRSelector(id, in.Env["AZURE_SUBSCRIPTION_ID"], group); err != nil {
+	if err := ValidateACRSelectorForInput(in, id); err != nil {
 		return "", fmt.Errorf("synthesis: %w", err)
-	}
-	if group != "" && in.Env["AZURE_SUBSCRIPTION_ID"] == "" &&
-		strings.EqualFold(strings.Split(id, "/")[4], group) {
-		return "", errors.New("cannot establish that the registry is outside the Foundry resource group; " +
-			"configure AZURE_SUBSCRIPTION_ID before selecting a registry with the same resource-group name")
 	}
 	return id, nil
 }

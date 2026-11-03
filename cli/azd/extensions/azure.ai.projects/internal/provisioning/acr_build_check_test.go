@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -134,61 +135,100 @@ func TestACRRemoteBuildPreflight(t *testing.T) {
 func TestACRRemoteBuildPreflightUsesOnDiskSelection(t *testing.T) {
 	for _, layer := range []bool{false, true} {
 		for _, params := range []bool{false, true} {
-			t.Run(fmt.Sprintf("layer=%t/params=%t", layer, params), func(t *testing.T) {
-				root := t.TempDir()
-				raw := "infra:\n  provider: microsoft.foundry\n"
-				path, module := "infra", "main"
-				if layer {
-					path, module = filepath.Join("infra", "foundry"), "project"
-					raw = "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
-						"      path: infra/foundry\n      module: project\n"
+			for _, savedSubscription := range []bool{false, true} {
+				for _, classic := range []bool{false, true} {
+					t.Run(fmt.Sprintf("layer=%t/params=%t/subscription=%t/classic=%t",
+						layer, params, savedSubscription, classic), func(t *testing.T) {
+						root := t.TempDir()
+						raw := "infra:\n  provider: microsoft.foundry\n"
+						path, module := "infra", "main"
+						if layer {
+							path, module = filepath.Join("infra", "foundry"), "project"
+							raw = "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
+								"      path: infra/foundry\n      module: project\n"
+						}
+						raw += "services:\n  project:\n    host: azure.ai.project\n" +
+							"  agent:\n    host: azure.ai.agent\n    docker: {remoteBuild: true}\n"
+						require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
+						require.NoError(t, os.MkdirAll(filepath.Join(root, path), 0o750))
+						suffix := ".bicep"
+						if params {
+							suffix = ".bicepparam"
+						}
+						require.NoError(t, os.WriteFile(filepath.Join(root, path, module+suffix), []byte("// test"), 0o600))
+						template := acrTestSource().armTemplate
+						declared := template["parameters"].(map[string]any)
+						declared["includeAcr"] = map[string]any{"type": "bool", "defaultValue": true}
+						declared["existingAcrResourceId"] = map[string]any{"type": "string", "defaultValue": testACRID}
+						body, err := json.Marshal(template)
+						require.NoError(t, err)
+						paramFile := minimalARMParametersFile(t, map[string]any{
+							"includeAcr": true, "existingAcrResourceId": testACRID,
+						})
+						require.NoError(t, os.WriteFile(filepath.Join(root, path, module+".parameters.json"), []byte(paramFile), 0o600))
+						envelope, err := json.Marshal(map[string]string{"templateJson": string(body), "parametersJson": paramFile})
+						require.NoError(t, err)
+						compiler := &stubCompiler{
+							buildResult:      bicep.BuildResult{Compiled: string(body)},
+							buildParamResult: bicep.BuildResult{Compiled: string(envelope)},
+						}
+						env := &resolveEnvStubEnvServer{envName: "test"}
+						client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+						check := NewACRRemoteBuildCheck(client)
+						check.compiler = compiler
+						check.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+							require.Equal(t, http.MethodGet, method)
+							require.Equal(t, testACRID, path)
+							mode := "AbacRepositoryPermissions"
+							if classic {
+								mode = "LegacyRegistryPermissions"
+							}
+							return acrTestReply(out, map[string]any{"properties": map[string]any{"roleAssignmentMode": mode}})
+						}
+						values := map[string]string{"AZURE_ENV_NAME": "test"}
+						if savedSubscription {
+							values["AZURE_SUBSCRIPTION_ID"] = "sub"
+						}
+						err = check.ValidateProject(t.Context(), &azdext.ProjectConfig{Path: root}, "test", values)
+						if classic {
+							require.NoError(t, err)
+						} else {
+							require.ErrorContains(t, err, "does not authenticate")
+						}
+						assert.Empty(t, env.set)
+						assert.Empty(t, env.config)
+					})
 				}
-				raw += "services:\n  project:\n    host: azure.ai.project\n" +
-					"  agent:\n    host: azure.ai.agent\n    docker: {remoteBuild: true}\n"
-				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
-				require.NoError(t, os.MkdirAll(filepath.Join(root, path), 0o750))
-				suffix := ".bicep"
-				if params {
-					suffix = ".bicepparam"
-				}
-				require.NoError(t, os.WriteFile(filepath.Join(root, path, module+suffix), []byte("// test"), 0o600))
-				template := acrTestSource().armTemplate
-				declared := template["parameters"].(map[string]any)
-				declared["includeAcr"] = map[string]any{"type": "bool", "defaultValue": true}
-				declared["existingAcrResourceId"] = map[string]any{"type": "string", "defaultValue": testACRID}
-				body, err := json.Marshal(template)
-				require.NoError(t, err)
-				paramFile := minimalARMParametersFile(t, map[string]any{
-					"includeAcr": true, "existingAcrResourceId": testACRID,
-				})
-				require.NoError(t, os.WriteFile(filepath.Join(root, path, module+".parameters.json"), []byte(paramFile), 0o600))
-				envelope, err := json.Marshal(map[string]string{"templateJson": string(body), "parametersJson": paramFile})
-				require.NoError(t, err)
-				compiler := &stubCompiler{
-					buildResult:      bicep.BuildResult{Compiled: string(body)},
-					buildParamResult: bicep.BuildResult{Compiled: string(envelope)},
-				}
-				env := &resolveEnvStubEnvServer{envName: "test"}
-				client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
-				check := NewACRRemoteBuildCheck(client)
-				check.compiler = compiler
-				check.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
-					require.Equal(t, http.MethodGet, method)
-					require.Equal(t, testACRID, path)
-					return acrTestReply(out, map[string]any{"properties": map[string]any{
-						"roleAssignmentMode": "AbacRepositoryPermissions",
-					}})
-				}
-				err = check.ValidateProject(t.Context(), &azdext.ProjectConfig{Path: root}, "test",
-					map[string]string{"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_ENV_NAME": "test"})
-				require.ErrorContains(t, err, "does not authenticate")
-				assert.Empty(t, env.set)
-				assert.Empty(t, env.config)
-			})
+			}
 		}
 	}
 }
 
+func TestACRBuildFailurePreservesOnlyActualSuggestions(t *testing.T) {
+	for _, tt := range []struct {
+		name, want string
+		err        error
+	}{
+		{name: "project read", err: errors.New("read project: unavailable")},
+		{name: "binding", err: errors.New("invalid deployed ACR binding")},
+		{name: "network", err: errors.New("registry request: connection refused")},
+		{name: "forbidden", err: &azcore.ResponseError{StatusCode: http.StatusForbidden}},
+		{name: "ABAC", err: exterrors.Validation(exterrors.CodeInvalidServiceConfig,
+			"unsupported registry build", acrRemoteBuildSuggestion), want: acrRemoteBuildSuggestion},
+		{name: "service", err: &azdext.ServiceError{
+			Message: "service unavailable", Suggestion: "retry when the service is available",
+		}, want: "retry when the service is available"},
+		{name: "wrapped", err: fmt.Errorf("validate: %w", exterrors.Validation(
+			exterrors.CodeInvalidParameter, "invalid input", "correct the input")), want: "correct the input"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result := acrBuildCheckFailure(tt.err)
+			require.Len(t, result.Results, 1)
+			assert.Equal(t, tt.err.Error(), result.Results[0].Message)
+			assert.Equal(t, tt.want, result.Results[0].Suggestion)
+		})
+	}
+}
 func TestACRRemoteBuildRejectedBeforeLifecycleWrites(t *testing.T) {
 	p, env := acrTestProvider(t)
 	p.acrRemoteBuild, p.acrBindingRecovered = true, true
@@ -238,7 +278,7 @@ func TestACRRemoteBuildRejectsBeforePersistingPromptChoices(t *testing.T) {
 				template := "targetScope = 'subscription'\nparam includeAcr bool = true\n" +
 					"param existingAcrResourceId string = '" + testACRID + "'\n" +
 					"param acrPullAssigned bool = false\nparam acrAccessOperationId string = ''\n" +
-					"param acrPullRoleDefinitionId string = ''\n"
+					"param acrPullRoleDefinitionId string = ''\nparam acrOwnedAssignments array = []\n"
 				require.NoError(t, os.WriteFile(filepath.Join(infra, "main.bicep"), []byte(template), 0o600))
 			}
 			prompt := &resolveEnvStubPromptServer{subscriptionID: "sub", location: "eastus2"}
@@ -339,7 +379,7 @@ func TestACROnDiskLocalBuildValidatesPromptedScopeBeforeWrites(t *testing.T) {
 						bicepFile: "targetScope = 'subscription'\nparam includeAcr bool = true\n" +
 							"param existingAcrResourceId string = ''\nparam resourceGroupName string\n" +
 							"param acrPullAssigned bool = false\nparam acrAccessOperationId string = ''\n" +
-							"param acrPullRoleDefinitionId string = ''\n",
+							"param acrPullRoleDefinitionId string = ''\nparam acrOwnedAssignments array = []\n",
 					}
 					values := map[string]any{"includeAcr": true, "existingAcrResourceId": testACRID}
 					group := defaultResourceGroupName("test")

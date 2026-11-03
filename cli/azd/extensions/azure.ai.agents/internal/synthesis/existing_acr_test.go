@@ -314,7 +314,8 @@ func TestARMExistingRegistryShape(t *testing.T) {
 	}
 	type template struct {
 		Parameters map[string]struct {
-			DefaultValue any `json:"defaultValue"`
+			DefaultValue any    `json:"defaultValue"`
+			Type         string `json:"type"`
 		} `json:"parameters"`
 		Resources map[string]struct {
 			Name       string          `json:"name"`
@@ -329,6 +330,9 @@ func TestARMExistingRegistryShape(t *testing.T) {
 	assert.Equal(t, "", main.Parameters["existingAcrResourceId"].DefaultValue)
 	require.Contains(t, main.Parameters, "acrPullRoleDefinitionId")
 	assert.Equal(t, "", main.Parameters["acrPullRoleDefinitionId"].DefaultValue)
+	require.Contains(t, main.Parameters, "acrOwnedAssignments")
+	assert.Equal(t, "array", main.Parameters["acrOwnedAssignments"].Type)
+	assert.Equal(t, []any{}, main.Parameters["acrOwnedAssignments"].DefaultValue)
 	require.Len(t, main.Resources, 2)
 	var resourcesModule moduleProperties
 	require.NoError(t, json.Unmarshal(main.Resources["resources"].Properties, &resourcesModule))

@@ -709,19 +709,49 @@ func TestFrameworkArtifactConversionsPreserveContracts(t *testing.T) {
 	require.Equal(t, "directory", original[0].Metadata["kind"])
 }
 
-func TestJavaFrameworkInitializePreservesNonSpringJavaDockerConfig(t *testing.T) {
+func TestJavaFrameworkInitializePreservesMixedHostJavaProject(t *testing.T) {
 	projectDir, runner := setupJavaFrameworkInitializeTest(t)
-	service := &azdext.ServiceConfig{
+	worker := &azdext.ServiceConfig{
 		Name:         "worker",
 		Language:     "java",
 		Host:         "containerapp",
 		RelativePath: ".",
 		Docker:       &azdext.DockerProjectOptions{Path: "Dockerfile"},
 	}
+	api := &azdext.ServiceConfig{
+		Name:         "api",
+		Language:     "java",
+		Host:         SpringHost,
+		RelativePath: ".",
+		Docker:       &azdext.DockerProjectOptions{},
+	}
+	projectConfig := &azdext.ProjectConfig{
+		Name: "mixed-java",
+		Path: projectDir,
+		Services: map[string]*azdext.ServiceConfig{
+			"api":    api,
+			"worker": worker,
+		},
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "azure.yaml"), []byte(`
+name: mixed-java
+services:
+  api:
+    project: .
+    language: java
+    host: springbootapp
+  worker:
+    project: .
+    language: java
+    host: containerapp
+    docker:
+      path: Dockerfile
+`), 0o600))
 
-	provider := newJavaFrameworkService(nil, runner)
-	require.NoError(t, provider.Initialize(t.Context(), service))
+	provider := newJavaFrameworkService(packagingTestClient(t, projectConfig), runner)
+	require.NoError(t, provider.Initialize(t.Context(), worker))
 	require.Equal(t, projectDir, provider.service.Project.Path)
+	require.NoError(t, provider.Initialize(t.Context(), api))
 }
 
 func TestJavaFrameworkInitializeUsesRawAuthoredSpringConfiguration(t *testing.T) {

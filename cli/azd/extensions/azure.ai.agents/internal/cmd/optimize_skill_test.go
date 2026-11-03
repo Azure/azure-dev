@@ -201,7 +201,7 @@ func TestSkillOptimizeInvalidConfigs(t *testing.T) {
 		{"invalid timestamp", func(r *optimize_api.OptimizeRequest) {
 			r.OptimizationConfiguration.Context[0].TraceWindow.StartTime =
 				optimize_api.SkillTraceTimestamp(`"2026-10-20"`)
-		}, "timezone-aware ISO"},
+		}, "integer Unix seconds"},
 		{"inverted window", func(r *optimize_api.OptimizeRequest) {
 			r.OptimizationConfiguration.Context[0].TraceWindow.EndTime = optimize_api.SkillTraceTimestamp(`1792368000`)
 		}, "end_time after start_time"},

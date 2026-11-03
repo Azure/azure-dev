@@ -56,7 +56,7 @@ func LoadOptimizeConfig(path string) (*OptimizeConfig, error) {
 		return nil, fmt.Errorf("legacy optimization/eval configuration is not supported; " +
 			"use an optimization request file or select an eval configured with 'azd ai eval init'")
 	}
-	if err := validateSkillTraceTimestampNumbers(values); err != nil {
+	if err := validateSkillTraceRequestTimestamps(values); err != nil {
 		return nil, fmt.Errorf("invalid optimization config file %s: %w", path, err)
 	}
 	encoded, err := json.Marshal(values)
@@ -212,7 +212,17 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 	if config.Type == "" {
 		config.Type = "agent_optimization"
 	}
-	if config.Type == "prompt_optimization" || config.Type == optimize_api.SkillOptimizationType {
+	if config.Type == optimize_api.SkillOptimizationType {
+		for _, context := range config.Context {
+			if context.Type == "agent_traces" && context.TraceWindow != nil {
+				if err := validateSkillTraceWindow(context.TraceWindow); err != nil {
+					return nil, nil, err
+				}
+			}
+		}
+		return &req, nil, nil
+	}
+	if config.Type == "prompt_optimization" {
 		return &req, nil, nil
 	}
 	evaluation := optimize_api.EvaluationConfiguration{}

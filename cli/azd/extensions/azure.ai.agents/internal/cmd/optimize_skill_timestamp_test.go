@@ -46,9 +46,6 @@ func TestSkillOptimizeTraceTimestampConfigRoundTrips(t *testing.T) {
 			end   string
 		}{
 			{"unix", "1792454400", "1793059200"},
-			{"iso", `"2026-10-20T00:00:00Z"`, `"2026-10-27T00:00:00Z"`},
-			{"mixed", "1792454400", `"2026-10-27T00:00:00Z"`},
-			{"fractional iso", `"2026-10-20T01:00:00.1234567+01:00"`, `"2026-10-27T00:00:00.7654321Z"`},
 			{"epoch zero", "0", "1"},
 		} {
 			t.Run(format+"/"+tt.name, func(t *testing.T) {
@@ -79,6 +76,7 @@ func TestSkillOptimizeRejectsInvalidTimestampConfigs(t *testing.T) {
 				`1792454400.5`, `1792454400.0`, `1e3`, `"1792454400"`, `1792454400000`,
 				`9223372036854775808`, `253402300800`, `-62135596801`,
 				`null`, `true`, `[]`, `{}`, `""`, `"2026-10-20T00:00:00"`,
+				`"2026-10-20T00:00:00Z"`, `"2026-10-20T01:00:00.1234567+01:00"`,
 			} {
 				t.Run(format+"/"+field+"/"+value, func(t *testing.T) {
 					t.Parallel()
@@ -130,22 +128,54 @@ func TestSkillOptimizeUnixWindowValidation(t *testing.T) {
 	require.ErrorContains(t, validateSkillOptimizeRequest(&request), "cannot contain start_time")
 }
 
+func TestSkillOptimizeRejectsISORequestsBeforeSerialization(t *testing.T) {
+	t.Parallel()
+	for _, field := range []string{"start_time", "end_time"} {
+		for _, value := range []string{
+			`"2026-10-20T00:00:00Z"`, `"2026-10-20T01:00:00.1234567+01:00"`,
+		} {
+			t.Run(field+"/"+value, func(t *testing.T) {
+				t.Parallel()
+				request := skillOptimizeRequest(t)
+				var timestamp optimize_api.SkillTraceTimestamp
+				require.NoError(t, json.Unmarshal([]byte(value), &timestamp), "response decoding must still accept ISO")
+				window := request.OptimizationConfiguration.Context[0].TraceWindow
+				if field == "start_time" {
+					window.StartTime = timestamp
+				} else {
+					window.EndTime = timestamp
+				}
+				cfg := optimizeConfigFromRequest(&request)
+				require.ErrorContains(t, cfg.Validate(), "integer Unix seconds")
+				actual, _, err := cfg.ToRequest()
+				require.ErrorContains(t, err, "integer Unix seconds")
+				assert.Nil(t, actual)
+			})
+		}
+	}
+}
+
 func TestSkillOptimizeTimestampErrorsPrecedeAuthentication(t *testing.T) {
 	t.Setenv("AZD_SERVER", "")
-	for _, value := range []string{`1792454400.0`, `"1792454400"`, `1792454400000`, `null`} {
-		t.Run(value, func(t *testing.T) {
-			file := writeTestFile(t, t.TempDir(), "invalid.yaml", skillTimestampConfig("yaml", value, "1793059200"))
-			cmd := newOptimizeCommand(&azdext.ExtensionContext{NoPrompt: true})
-			var output bytes.Buffer
-			cmd.SetOut(&output)
-			cmd.SetErr(&output)
-			cmd.SetArgs([]string{"--config", file})
-			err := cmd.Execute()
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "timestamp")
-			assert.NotContains(t, err.Error(), "credential")
-			assert.NotContains(t, output.String(), "Job ID")
-		})
+	for _, format := range []string{"json", "yaml"} {
+		for _, value := range []string{
+			`1792454400.0`, `"1792454400"`, `1792454400000`, `null`,
+			`"2026-10-20T00:00:00Z"`, `"2026-10-20T01:00:00.1234567+01:00"`,
+		} {
+			t.Run(format+"/"+value, func(t *testing.T) {
+				file := writeTestFile(t, t.TempDir(), "invalid."+format, skillTimestampConfig(format, value, "1793059200"))
+				cmd := newOptimizeCommand(&azdext.ExtensionContext{NoPrompt: true})
+				var output bytes.Buffer
+				cmd.SetOut(&output)
+				cmd.SetErr(&output)
+				cmd.SetArgs([]string{"--config", file})
+				err := cmd.Execute()
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "timestamp")
+				assert.NotContains(t, err.Error(), "credential")
+				assert.NotContains(t, output.String(), "Job ID")
+			})
+		}
 	}
 }
 

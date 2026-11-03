@@ -162,7 +162,7 @@ func validateSkillTraceConnection(
 	return nil
 }
 
-func validateSkillTraceTimestampNumbers(values map[string]any) error {
+func validateSkillTraceRequestTimestamps(values map[string]any) error {
 	config, _ := values["optimization_configuration"].(map[string]any)
 	if config["type"] != optimize_api.SkillOptimizationType {
 		return nil
@@ -174,11 +174,15 @@ func validateSkillTraceTimestampNumbers(values map[string]any) error {
 			continue
 		}
 		window, _ := context["trace_window"].(map[string]any)
+		if window["type"] != "fixed" {
+			continue
+		}
 		for _, field := range []string{"start_time", "end_time"} {
-			// Generic YAML decoding would otherwise turn 1.0 into integer JSON before validation.
-			if _, fractional := window[field].(float64); fractional {
-				return fmt.Errorf(
-					"trace_window.%s timestamp requires integer Unix seconds, not floating-point values", field)
+			switch window[field].(type) {
+			case int, int64, uint64:
+			default:
+				return fmt.Errorf("trace_window.%s timestamp requires integer Unix seconds; "+
+					"strings and floating-point values are not supported in requests", field)
 			}
 		}
 	}
@@ -191,11 +195,16 @@ func validateSkillTraceWindow(window *optimize_api.SkillTraceWindow) error {
 		if window.TraceIDs != nil || window.LookbackHours != nil {
 			return fmt.Errorf("a fixed trace_window cannot contain trace_ids or lookback_hours")
 		}
+		for _, value := range []optimize_api.SkillTraceTimestamp{window.StartTime, window.EndTime} {
+			if strings.HasPrefix(strings.TrimSpace(string(value)), `"`) {
+				return fmt.Errorf("fixed trace_window requires integer Unix seconds for start_time and end_time; " +
+					"ISO timestamps are not supported in requests")
+			}
+		}
 		start, startErr := window.StartTime.Time()
 		end, endErr := window.EndTime.Time()
 		if startErr != nil || endErr != nil || start.Before(time.Unix(0, 0)) || !end.After(start) || end.After(time.Now()) {
-			return fmt.Errorf("fixed trace_window requires integer Unix seconds or timezone-aware ISO " +
-				"start_time and end_time " +
+			return fmt.Errorf("fixed trace_window requires integer Unix seconds for start_time and end_time " +
 				"with end_time after start_time and not in the future, and start_time on or after 1970-01-01")
 		}
 		if window.MaxTraces != nil && (*window.MaxTraces < 1 || *window.MaxTraces > 100) {

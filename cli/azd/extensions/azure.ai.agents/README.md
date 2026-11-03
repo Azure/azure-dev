@@ -1626,8 +1626,9 @@ set your deployed agent name/version, optimizer deployment, and trace window.
 The window is half-open (`start_time` inclusive, `end_time` exclusive). Use integer
 Unix timestamps in **seconds**, not milliseconds or quoted numbers, and set
 `max_traces` from 1 to 100. Omitting `max_traces` retains the service default.
-Legacy timezone-aware ISO timestamps remain accepted without rounding fractional
-seconds. Job responses can contain ISO strings or Unix seconds; both formats are
+New fixed-window requests accept only integer Unix seconds; ISO strings,
+floating-point values, and quoted numeric strings are rejected before authentication.
+Job responses can contain ISO strings or Unix seconds; both formats are
 preserved when reading jobs and listing results. Unix input requires the backend
 Unix-timestamp compatibility update to be deployed; it does not require the later
 Unix-response format change.

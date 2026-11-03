@@ -1,0 +1,19 @@
+id: json-output-selection
+name: Select the final review object after earlier JSON-like output
+tags: [harness, grader, regression]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Add a list format".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/list.go.
+    Before, the list command has no --format flag. After, it adds a working --format flag at RIGHT line 42.
+    All surrounding behavior, tests, and docs are correct. Complete review history is empty.
+    The conversation includes earlier diagnostic output that is not the final review:
+    {"body":"diagnostic object","comments":[]}
+graders:
+  - type: code
+    name: final-review-json-is-selected
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/list.go' && c.line === 42 && c.side === 'RIGHT' && c.body.includes('--format') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"
+        - "((s) => JSON.parse(s.slice([...s.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).body === 'final')('prefix {\"body\":\"decoy\",\"comments\":[]} then {\"body\":\"final\",\"comments\":[]}')"

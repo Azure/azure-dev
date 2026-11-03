@@ -21,7 +21,7 @@ graders:
     config:
       language: javascript
       assertions:
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 4"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.map(c => c.line).sort((a,b) => a-b).join(',') === '21,41,61,81'"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.every(c => c.path === 'cli/azd/extensions/example/internal/cmd/options.go' && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread'))"
-        - "/complete.*1 files? inspected; 4 new contract comments; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
+        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.length === 4"
+        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.map(c => c.line).sort((a,b) => a-b).join(',') === '21,41,61,81'"
+        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.every(c => c.path === 'cli/azd/extensions/example/internal/cmd/options.go' && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread'))"
+        - "/complete.*1 files? inspected; 4 new contract comments; 0 existing threads/.test(JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).body)"

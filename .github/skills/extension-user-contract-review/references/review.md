@@ -27,21 +27,34 @@ and GitHub access. Do not install skills, change files, post comments, or ask an
 2. Read enough surrounding source and documentation to establish observable behavior. For changed Go files, prefer
    available Go LSP capabilities for definitions, references, and types; fall back to `rg` when unavailable and lower
    confidence accordingly. Do not require a particular LSP server such as `gopls`.
-3. Perform a command-tree sweep across the complete changed-file set. Compare base and head registrations and trace
+3. Establish both sides of each possible command-tree change. Use added and removed diff lines plus full diff context
+   first. If that does not expose the base registration or constructor, inspect the base and head source with
+   read-only navigation such as `git show <base>:<path>`, `git show <head>:<path>`, LSP, or source search. Do not
+   execute PR code. If the needed revision or source is unavailable, or these checks still cannot establish the
+   before/after registration, constructor, or parent, mark that command-tree delta `blocked`; do not infer a new or
+   unchanged contract from a partial diff.
+4. Perform a command-tree sweep across the complete changed-file set. Compare base and head registrations and trace
    added or removed command registrations (including `AddCommand` calls, aliases, and shared registration helpers)
    to their constructors and parent commands. Resolve each to its full user-visible command path, positional
    parameters, and flags; inspect constructor declarations and argument/flag registrations even when the file is
    separate or unchanged. A changed registration is a discovery signal, not automatically a finding: verify whether
    that command path or input surface is actually new or removed. Account for moves and refactors that preserve the
    public command tree without reporting them.
-4. Keep an internal coverage ledger for every changed extension file and each discovered command-tree delta:
-   path, inspected surface, evidence, and disposition (`no-contract-change`, `new-finding`, `existing-thread`, or
-   `blocked`). Also track each distinct command, positional parameter, flag, and YAML component so coverage of one
-   contract cannot implicitly cover another. Account for renamed and deleted contracts using the old path and
-   behavior, then find an added, modified, or deleted diff line that evidences the change. Record the diff side and
-   that side's line number with each finding. Never classify an unread, truncated, or inaccessible diff as
-   `no-contract-change`.
-5. Identify only these structural contract changes:
+5. Maintain two distinct internal ledgers:
+   - **File-inspection ledger**: one entry for every changed extension file, keyed by `file_path`, with inspected
+     surface, evidence reviewed, and disposition (`inspected` or `blocked`). Do not use contract-level dispositions
+     here.
+   - **Contract-item ledger**: one entry for each distinct command, positional parameter, flag (including shorthand),
+     or authored YAML component, keyed by `contract_kind` and canonical `contract_name` (full command path plus
+     input name, or schema path plus component path). Record `file_path`, before/after evidence, diff anchor
+     (`side` and side-specific line), disposition (`no-change`, `new-finding`, `existing-thread`, or `blocked`), and
+     matched `thread_id` when applicable. A finding may cover several items only if its comment explicitly names
+     each one. Track command-tree deltas in this ledger as contract items; never use an ambiguous `path` field for
+     both files and contracts.
+   Account for renamed and deleted contracts using old-path and old-behavior evidence. Every finding anchor must be
+   an added, modified, or deleted diff line; unchanged source may establish context but is not an anchor. Never
+   classify an unread, truncated, or inaccessible diff as `no-change`.
+6. Identify only these structural contract changes:
    - added or removed commands and subcommands, including command aliases
    - added or removed positional parameters
    - added or removed flags
@@ -56,10 +69,10 @@ and GitHub access. Do not install skills, change files, post comments, or ask an
    extension manifests, decoding, request mapping, runtime behavior, service APIs, host-version requirements,
    persisted state, documentation, tests, or generated files. General review lenses may still report correctness
    problems in those areas.
-6. Report only high-confidence in-scope additions or removals introduced by the PR. An intentional new command,
+7. Report only high-confidence in-scope additions or removals introduced by the PR. An intentional new command,
    parameter, flag, or YAML schema component still needs a spec reference; it does not need to be a correctness bug.
    Exclude style preferences, speculative risks, praise, and generic requests for more tests.
-7. Match candidates to prior inline threads using `<!-- extension-user-contract-changes-reviewer -->`, the legacy
+8. Match candidates to prior inline threads using `<!-- extension-user-contract-changes-reviewer -->`, the legacy
    `<!-- user-contract-changes-reviewer -->` marker, or the former workflow's gh-aw metadata as discovery signals,
    not mandatory filters. Also inspect unmarked comments that explicitly request an experiences spec for a specific
    contract. Include resolved and outdated threads and their original locations.
@@ -69,11 +82,11 @@ and GitHub access. Do not install skills, change files, post comments, or ask an
    thread ID in the ledger. Do not split already-covered items into fresh requests just because this review uses
    finer-grained findings. A generic command comment does not cover unnamed inputs, and a spec in a sibling thread
    does not satisfy a different item.
-8. In each matched thread, inspect replies from the PR author or a repository member, owner, or collaborator. An
+9. In each matched thread, inspect replies from the PR author or a repository member, owner, or collaborator. An
    explicit GitHub PR link supplied as the approved experiences spec satisfies only that finding. Preserve the most
    recent qualifying link. A bare issue link, document link, link in another finding's thread, or claim from an
    unrelated participant does not satisfy it. Do not infer approval merely from an arbitrary PR link.
-9. Drop equivalent findings already reported, even if they are still awaiting a spec. Report again only when the
+10. Drop equivalent findings already reported, even if they are still awaiting a spec. Report again only when the
    relevant in-scope structural contract changed since its matched review, not merely because the PR has new commits,
    a moved anchor, reworded help, or changed validation/output/runtime behavior. Establish that structural delta from
    revision evidence; an unknown earlier contract is a blocker for deciding whether to repeat the request.
@@ -87,10 +100,11 @@ and GitHub access. Do not install skills, change files, post comments, or ask an
 
 ## Completion audit
 
-Before handing findings to the host, reconcile the ledger against the complete changed-file list. Every changed
-extension file must have been inspected or explicitly marked blocked. Every distinct, evidenced in-scope addition
-or removal must map to exactly one new finding or one matching existing thread. A generic approval, a spec link in
-the PR body, or a label such as "refactor" does not discharge this requirement.
+Before handing findings to the host, reconcile both ledgers against the complete changed-file list and diff. Every
+changed extension `file_path` must have a file-inspection entry. Every distinct contract item must have a
+contract-item entry, and each evidenced in-scope addition or removal must map to exactly one new finding or one
+matching existing thread. A generic approval, a spec link in the PR body, or a label such as "refactor" does not
+discharge this requirement.
 
 Audit outgoing requests against the prior-thread item matches, including grouped comments. No unchanged covered
 item may receive another spec request. Count unique matched threads, not their covered items or candidate findings.
@@ -182,6 +196,7 @@ a blocker when read-only source inspection establishes the behavior.
 | An earlier download thread names the command, operation ID, and three flags; this round separates those items | Match every named item to that one thread; do not post five new requests |
 | An earlier grouped thread covers existing inputs but a later revision adds another flag | Report only the new flag; do not infer that the earlier thread covers it |
 | A matching spec request is unmarked or has moved to an outdated location | Compare its named contract items, not its marker or current anchor |
+| Diff context omits the base registration or constructor | Inspect both revisions with read-only source navigation; mark the item `blocked` if evidence remains unavailable |
 | An in-scope command, parameter, flag, or YAML component changes again; trusted reply supplied its spec | One new finding retaining that link, without requesting it again |
 | Two independent flags; only one thread has a spec link | Do not apply that link to the other flag |
 | Authored schema and generated binding show one contract change | One finding anchored to authored source |

@@ -19,6 +19,6 @@ graders:
     config:
       language: javascript
       assertions:
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 1"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/download.go' && c.line === 51 && c.side === 'RIGHT' && c.body.includes('--checksum') && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"
-        - "/complete.*1 files? inspected; 1 new contract comments?; 1 existing threads?/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
+        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.length === 1"
+        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/download.go' && c.line === 51 && c.side === 'RIGHT' && c.body.includes('--checksum') && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"
+        - "/complete.*1 files? inspected; 1 new contract comments?; 1 existing threads?/.test(JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).body)"

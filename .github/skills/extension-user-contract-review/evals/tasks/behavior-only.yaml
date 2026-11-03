@@ -16,5 +16,5 @@ graders:
     config:
       language: javascript
       assertions:
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 0"
-        - "/complete.*1 files? inspected; 0 new contract comments; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
+        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.length === 0"
+        - "/complete.*1 files? inspected; 0 new contract comments; 0 existing threads/.test(JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).body)"

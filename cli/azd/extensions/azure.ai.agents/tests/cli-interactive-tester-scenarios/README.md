@@ -355,6 +355,7 @@ in any order, any time.
 | `tier0/0.32-init-adopt-cancel-replacement.yaml` | Cancelling the template replacement picker leaves no project files or environment |
 | `tier0/0.33-invoke-a2a-version-validation.yaml` | A2A preview help and gating, explicit file versions when enabled, unsupported/empty versions, rejection on non-A2A protocols, and local A2A discovery |
 | `tier0/0.34-init-byo-aks-infra.yaml` | BYO AKS Terraform rejection without mutations and local standard Bicep eject; no Azure or Kubernetes operations |
+| `tier0/0.34-tasks-help-validation.yaml` | Tasks list/show discovery, one-page pagination help, local validation, and the shared long-running preview gate |
 | `tier0/0.35-run-invoke-local-a2a.yaml` | Terminal-only A2A-only `run` and local 1.0 invoke: text, unchanged file bytes, raw JSON/SSE, allocated port, fixed `POST /a2a` route, no Foundry headers/state, and unsupported flags |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
@@ -383,6 +384,11 @@ The local fixture has no cloud cleanup; always stop the foreground run and finis
 both tester sessions, including on failure. Keep its files for inspection and
 pre-wipe only that instance directory on the next run. These scenarios remain
 opt-in through `foundry-extension-scenario-orchestrator`; they are not run automatically.
+
+The Tier 0 Tasks scenario is limited to offline help, local validation, and the
+`agents.long_running` gate. It does not execute successful list/show reads, verify
+live pagination or output privacy, or establish service-side preview availability.
+It has no Azure prerequisites and must not run a valid preview-enabled request.
 
 The Tier 0 State Store scenario is limited to offline help and invalid-input checks. It does not
 read or mutate stores, exercise a live store picker, or provision a hosted agent. A separate opt-in
@@ -598,7 +604,7 @@ grouping — colons are treated as ordinary characters by the filter):
 | Namespace | Values | Meaning |
 |---|---|---|
 | `tier:N` | `tier:0`, `tier:1`, `tier:1b`, `tier:2` | The tier the scenario belongs to (same axis as the directory's four sections above). Use this to express cost / auth profile in one tag. |
-| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:invocations`, `cmd:sessions`, `cmd:files`, `cmd:state-stores`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete`, `cmd:toolbox`, `cmd:connection`, `cmd:add` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. `cmd:add` tags the Agent add command; `cmd:toolbox` and `cmd:connection` cover Agent dependency composition, not the sibling extensions' resource lifecycle commands. |
+| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:invocations`, `cmd:tasks`, `cmd:sessions`, `cmd:files`, `cmd:state-stores`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete`, `cmd:toolbox`, `cmd:connection`, `cmd:add` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. `cmd:add` tags the Agent add command; `cmd:toolbox` and `cmd:connection` cover Agent dependency composition, not the sibling extensions' resource lifecycle commands. |
 | traits | `parallel-safe`, `serial-only`, `negative-path`, `picker`, `verify-deploy`, `manual-seed` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 / Tier 1b scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. `verify-deploy` flags Tier 1b scenarios that verify a Tier 1 scaffold deploys. `manual-seed` flags an opt-in scenario that needs an externally prepared fixture before it runs; filtering by this tag does not create the fixture. |
 
 The tool returns matching `manual-seed` rows, but runner plans exclude them

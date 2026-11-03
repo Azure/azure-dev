@@ -293,11 +293,9 @@ func printSkillOptimizeCandidate(out io.Writer, jobID string, candidate optimize
 				fmt.Fprintln(out, "    Warning: publication is unconfirmed; verify the skill before retrying.")
 			}
 			for _, validation := range result.Validations {
-				if validation.Status != "passed" {
-					fmt.Fprintf(out, "    Validation %s/%s: %s - %s\n",
-						optimizeTerminalText(validation.Type), optimizeTerminalText(validation.ID),
-						optimizeTerminalText(validation.Status), optimizeTerminalText(validation.Details))
-				}
+				fmt.Fprintf(out, "    Validation %s/%s: %s - %s\n",
+					optimizeTerminalText(validation.Type), optimizeTerminalText(validation.ID),
+					optimizeTerminalText(validation.Status), optimizeTerminalText(validation.Details))
 			}
 		}
 	}

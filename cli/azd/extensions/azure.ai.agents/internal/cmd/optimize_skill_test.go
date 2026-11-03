@@ -472,7 +472,10 @@ func TestSkillOptimizePreservesAgentJobState(t *testing.T) {
 				switch r.URL.Path {
 				case "/agent_optimization_jobs":
 					var request optimize_api.OptimizeRequest
-					require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+					if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
 					assert.Equal(t, tc.kind, request.OptimizationConfiguration.Type)
 					w.WriteHeader(http.StatusAccepted)
 					_, _ = w.Write([]byte(`{"id":"job-new","status":"queued"}`))
@@ -535,6 +538,42 @@ func TestSkillOptimizeTerminalText(t *testing.T) {
 		}
 		assert.Equal(t, -1, strings.IndexFunc(optimizeTerminalText(string(r)), unicode.IsControl),
 			"control %s must not reach the terminal", strconv.QuoteRune(r))
+	}
+}
+
+func TestSkillOptimizeCandidateValidationCoverage(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		statuses []string
+	}{
+		{"unreported", nil},
+		{"empty", []string{}},
+		{"all passed", []string{"passed", "passed"}},
+		{"mixed", []string{"passed", "warning", "failed", "skipped"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var candidate optimize_api.CandidateResult
+			require.NoError(t, json.Unmarshal([]byte(skillOptimizeTestCandidate), &candidate))
+			candidate.Output.SkillResults[0].Validations = nil
+			if tc.statuses != nil {
+				candidate.Output.SkillResults[0].Validations = []optimize_api.SkillValidation{}
+			}
+			for i, status := range tc.statuses {
+				candidate.Output.SkillResults[0].Validations = append(candidate.Output.SkillResults[0].Validations,
+					optimize_api.SkillValidation{
+						Type: "artifact", ID: "check-" + strconv.Itoa(i), Status: status, Details: "Reported coverage.",
+					})
+			}
+			var output bytes.Buffer
+			printSkillOptimizeCandidate(&output, "job", candidate)
+			assert.Equal(t, len(tc.statuses), strings.Count(output.String(), "    Validation "))
+			for i, status := range tc.statuses {
+				assert.Contains(t, output.String(),
+					"Validation artifact/check-"+strconv.Itoa(i)+": "+status+" - Reported coverage.")
+			}
+		})
 	}
 }
 

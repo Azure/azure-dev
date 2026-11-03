@@ -96,20 +96,12 @@ For a first deployment without optional models:
 azd ai cu infra generate --output-dir provision --models none
 ```
 
-The command explains its purpose before asking you to select a subscription,
-then the wizard explains each deployment choice before asking. Invalid text
-input shows a reason before retrying. Human-readable warnings use azd's yellow
-convention and validation errors use red when terminal color is enabled.
-Follow-up commands use azd's bright-blue highlight; their inline comments are gray. Blank lines separate
-the interactive questions, generated-project summary, file list, and next steps.
-Set `NO_COLOR=1` for plain text; structured JSON results remain uncolored.
-
 | Question | What to provide |
 | --- | --- |
 | Subscription | An accessible subscription for the deployment. Pass `--subscription "<name-or-id>"` to skip this question. |
-| Environment | A local deployment name, such as `dev`. Default: `dev`, or inherited `AZD_ENVIRONMENT`. Separate names keep stacks apart. |
-| Region | A supported region. Default: `eastus2`. Model availability and quota matter if you plan to add models. |
-| Resource prefix | An optional lowercase prefix, such as `my-cu`. A unique suffix is appended; blank uses `aif-<unique-suffix>`. |
+| azd environment name | A name such as `dev`, `test`, or `prod` for the azd environment, not a model deployment. azd stores its configuration and outputs under `.azure/<env>/` and uses the name to derive Azure resource names such as `rg-<env>` and `proj-<env>`. Separate environments keep stacks apart. Default: `dev`, or inherited `AZD_ENVIRONMENT`. |
+| Region | The Azure region where the Microsoft Foundry resource is created. Choose a [Content Understanding supported region](https://learn.microsoft.com/azure/ai-services/content-understanding/language-region-support#region-support). Default: `eastus2`. Model availability and quota matter if you plan to add models. |
+| Microsoft Foundry resource name prefix | An optional lowercase prefix, such as `my-cu`, for the globally unique resource name used in the public endpoint hostname (`https://<name>.services.ai.azure.com`). With a prefix, the name is `<prefix>-<unique-suffix>`; blank uses `aif-<unique-suffix>`. |
 | Assign RBAC roles | Default: No. Select Yes only with role-assignment permissions. Otherwise arrange data-plane access with an administrator. |
 
 Explicit flags skip the corresponding questions, including
@@ -188,12 +180,12 @@ Run azd ai cu doctor afterwards to check the selected environment.
 
 ```bash
 cd provision
-azd up --environment dev
+azd up
 ```
 
 The new-resource path creates a resource group, a Microsoft Foundry resource,
 and a Foundry project. The postprovision hook then saves the runtime endpoint
-and default analyzer. Keep the extension installed for this hook.
+and default analyzer.
 
 This illustrative successful continuation includes the hook's complete JSON
 result for a fresh resource with no models. Host progress wording, timing, and
@@ -201,7 +193,7 @@ resource names vary by azd version; no model picker appears with `--models none`
 
 ```text
 $ cd provision
-$ azd up --environment dev
+$ azd up
 Provisioning Azure resources (azd provision)
   (✓) Done: Resource group: rg-dev
   (✓) Done: Azure AI Services: my-cu-<unique-suffix>

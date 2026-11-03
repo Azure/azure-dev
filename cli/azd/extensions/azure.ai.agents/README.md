@@ -874,8 +874,8 @@ trailers or change SSE termination.
 
 `azd ai agent run` starts the selected agent locally. A2A-only agents open no
 browser client; once ready, azd suggests a local invocation command with the
-selected port and preview-compatible wire version. `--inspector-port` is ignored
-with a warning.
+selected port and preview-compatible wire version. `--inspector-port` is rejected
+because no Inspector is opened.
 
 Other agents retain their existing client routing: Activity uses Microsoft 365
 Agents Playground; other profiles use Agent Inspector. Client launch is
@@ -961,13 +961,14 @@ azd ai agent run --port 9091 --inspector-port 9002
 `--inspector-port` is rejected when it cannot be honored:
 
 - with `--no-client` (or the deprecated `--no-inspector`), since no local client
-  is opened and the port would go unused; and
+  is opened and the port would go unused;
+- for A2A-only agents, which never open Agent Inspector; and
 - for agents that use Agent Inspector, when it matches `--port`, since the agent
   binds that address first and the inspector would then fail to bind it.
 
 azd also warns, without failing the run, when `--inspector-port` cannot take
-effect: A2A-only agents have no graphical client, and activity-protocol agents
-open the Microsoft 365 Agents Playground rather than the Agent Inspector.
+effect: activity-protocol agents open the Microsoft 365 Agents Playground
+rather than the Agent Inspector.
 For Inspector profiles, `--port 8087` on its own also warns about a collision
 with the inspector's default UI port.
 

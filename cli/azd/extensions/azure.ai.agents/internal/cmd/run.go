@@ -86,8 +86,9 @@ project type. Use --start-command to override both.
 
 By default, this also opens a local client after the agent starts listening:
 Agent Inspector for responses/invocations agents, or the Microsoft 365 Agents
-Playground for activity agents. A2A-only agents run without a browser client;
-test them from another terminal with 'azd ai agent invoke --local -p a2a'.
+Playground for activity agents. A2A-only agents run without a browser client
+and reject --inspector-port. Test them from another terminal with
+'azd ai agent invoke --local -p a2a'.
 Use --no-client to skip launching a client for other agents.`,
 		Example: `  # Start the agent in the current directory
   azd ai agent run
@@ -166,7 +167,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		activityProfile,
 		suppressClient,
 	)
-	if err := validateInspectorPortForProfile(flags, activityProfile.IsActivity || a2aOnly); err != nil {
+	if err := validateInspectorPortForProfile(flags, activityProfile.IsActivity, a2aOnly); err != nil {
 		return err
 	}
 
@@ -195,13 +196,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// Once proc.Start() runs, this would land under the dependency install
 	// output and compete with the agent's own stdout/stderr, where it is easy
 	// to scroll past.
-	if a2aOnly {
-		if flags.inspectorPortSet {
-			fmt.Fprintln(os.Stderr, "Warning: --inspector-port is ignored for A2A-only agents, which do not open Agent Inspector.")
-		}
-	} else {
-		warnInspectorPortIssues(flags, activityProfile.IsActivity, inspectorInstalled, os.Stderr)
-	}
+	warnInspectorPortIssues(flags, activityProfile.IsActivity, inspectorInstalled, os.Stderr)
 
 	// Resolve start command: --start-command flag > azure.yaml startupCommand > detect
 	startCmd := flags.startCommand
@@ -606,12 +601,16 @@ func validateInspectorPortFlags(flags *runFlags) error {
 	return nil
 }
 
-// validateInspectorPortForProfile rejects an inspector/agent port collision
-// only when the resolved agent actually launches the Agent Inspector. Activity
-// agents launch the Playground and A2A-only agents have no graphical client, so
-// --inspector-port is advisory and equal values do not contend for a listener.
-func validateInspectorPortForProfile(flags *runFlags, skipsInspector bool) error {
-	if !skipsInspector && flags.inspectorPortSet && flags.inspectorPort == flags.port {
+// validateInspectorPortForProfile rejects unsupported A2A-only options and Inspector port collisions.
+func validateInspectorPortForProfile(flags *runFlags, isActivity, a2aOnly bool) error {
+	if a2aOnly && flags.inspectorPortSet {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--inspector-port is not supported for A2A-only agents, which do not open Agent Inspector",
+			"omit --inspector-port to run the agent without a browser client",
+		)
+	}
+	if !isActivity && !a2aOnly && flags.inspectorPortSet && flags.inspectorPort == flags.port {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
 			fmt.Sprintf(

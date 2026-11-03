@@ -59,9 +59,10 @@ func TestA2AOnlyRunTargetRouting(t *testing.T) {
 			reporter := &recordingUsageReporter{}
 			reportLocalClientRouteSelected(t.Context(), reporter, profile, suppressed)
 			require.Equal(t, telemetry.LocalClientRouteSelected(telemetry.LocalClientRouteSuppressed), reporter.event)
-			require.NoError(t, validateInspectorPortForProfile(&runFlags{
+			require.ErrorContains(t, validateInspectorPortForProfile(&runFlags{
 				port: 9090, inspectorPort: 9090, inspectorPortSet: true,
-			}, suppressed))
+			}, profile.IsActivity, suppressed), "not supported for A2A-only agents")
+			require.NoError(t, validateInspectorPortForProfile(&runFlags{port: 9090}, profile.IsActivity, suppressed))
 			// A nil workflow would panic if Inspector tried to launch.
 			var stderr bytes.Buffer
 			handleInspectorAutoLaunch(t.Context(), nil, 9090, 0, suppressed, true, nil, &stderr)

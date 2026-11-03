@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.projects/internal/testutil"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/assert"
@@ -554,10 +556,10 @@ func TestHostingGraphIndependentlyReferencesSuppliedResources(t *testing.T) {
 }
 
 func TestBicepToolVersionAndExplicitOverride(t *testing.T) {
-	require.NoError(t, validateBicepVersion("Bicep CLI version "+bicep.Version.String()+" (hash)"))
-	require.ErrorContains(t, validateBicepVersion("Bicep CLI version 0.38.33 (hash)"), "below azd SDK minimum")
-	require.ErrorContains(t, validateBicepVersion("other CLI version 99.0.0"), "unrecognized Bicep")
-	path, err := findBicep(t.Context(), filepath.Join(t.TempDir(), "missing-bicep"))
+	require.NoError(t, testutil.ValidateBicepVersion("Bicep CLI version "+bicep.Version.String()+" (hash)"))
+	require.ErrorContains(t, testutil.ValidateBicepVersion("Bicep CLI version 0.38.33 (hash)"), "below azd SDK minimum")
+	require.ErrorContains(t, testutil.ValidateBicepVersion("other CLI version 99.0.0"), "unrecognized Bicep")
+	path, err := testutil.FindBicep(t.Context(), filepath.Join(t.TempDir(), "missing-bicep"))
 	require.Error(t, err)
 	assert.Empty(t, path)
 }

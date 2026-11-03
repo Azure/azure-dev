@@ -632,6 +632,59 @@ overrides:
   - filename: extensions/azure.ai.content-understanding/internal/testutil/tempdir.go
     words:
       - testutil
+  - filename: "extensions/azure.ai.projects/internal/onboarding/*.go"
+    words:
+      - armcompute
+      - armnetwork
+      - armstorage
+      - deploymenttemplate
+      - GZRS
+      - hasgroups
+      - Kata
+      - katagen
+      - kubelet
+      - kubeletidentity
+      - OSSKU
+      - parseable
+      - RAGRS
+      - RAGZRS
+  - filename: "extensions/azure.ai.projects/{README.md,internal/provisioning/aks_hosting.go}"
+    words:
+      - Kata
+      - katagen
+      - kubelet
+  - filename: "extensions/azure.ai.projects/internal/provisioning/{aks_hosting,byo_plan_bindings,byo_plan_expression,byo_template_plan,onboarding_naming}.go"
+    words:
+      - ARMID
+      - copyindex
+      - createarray
+      - createobject
+      - extensionresourceid
+      - federatedidentityroledefinitionid
+      - hostingprincipalid
+      - kubelet
+      - kubeletobjectid
+      - managedclusters
+      - managedidentity
+      - privateendpoints
+      - privatednszonegroups
+      - privatednszones
+      - resourceid
+      - resourceinfo
+      - shallowmerge
+      - storageaccounts
+      - subscriptionresourceid
+      - tolower
+      - toupper
+      - tryget
+      - uniquestring
+      - userassignedidentities
+      - virtualnetworklinks
+      - vnets
+      - workloadprincipalid
+  - filename: extensions/azure.ai.projects/internal/testutil/bicep.go
+    words:
+      - testutil
   - filename: pkg/update/msi_windows.go
     words:
       - norestart

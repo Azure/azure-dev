@@ -9,18 +9,23 @@ package provisioning
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/onboarding"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
 
-func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *templateSource) error {
+func (p *FoundryProvisioningProvider) prepareBYO(
+	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
+) error {
 	value, err := byoHostingParameter(source)
 	if err != nil {
 		return err
@@ -79,7 +84,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 			value: hosting.HostingManagementIdentityResourceID},
 		{field: "workloadIdentityResourceId", binding: "workloadPrincipalId", value: hosting.WorkloadIdentityResourceID},
 	}
-	workloadID := ""
+	roleSubscription := p.subID
 	for i := range identities {
 		identity := &identities[i]
 		if _, needed := hostBindings[identity.binding]; !needed &&
@@ -98,18 +103,43 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 			delete(hostBindings, identity.binding)
 			continue
 		}
-		if _, err := parseBYOResourceID(identity.id, "Microsoft.ManagedIdentity/userAssignedIdentities"); err != nil {
+		id, err := parseBYOResourceID(identity.id, "Microsoft.ManagedIdentity/userAssignedIdentities")
+		if err != nil {
 			return err
 		}
 		if identity.binding == "workloadPrincipalId" {
-			workloadID = identity.id
+			roleSubscription = id.SubscriptionID
 		}
 	}
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
+	plan, err := p.identifyBYOTemplatePlan(ctx, source)
+	if err != nil {
+		return err
+	}
+	pipeline := onboarding.Pipeline{
+		Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions),
+		Access:    onboarding.NewAuthorizer(p.credential, p.armClientOptions),
+	}
+	_, report, preflightErr := pipeline.Preflight(ctx, plan)
+	if err := writeBYOPreflight(report, preflightErr, progress); err != nil {
+		return err
+	}
+	if plan.Cluster.ID != "" && plan.Cluster.Missing == "" {
+		clusterID = plan.Cluster.ID
+	}
+	workloadScope := plan.Workload.ID
+	if workloadScope == "" {
+		workloadScope = plan.Workload.Parent
+	}
+	if resolveFederationRole && workloadScope != "" {
+		if scope, err := arm.ParseResourceID(workloadScope); err == nil && scope.SubscriptionID != "" {
+			roleSubscription = scope.SubscriptionID
+		}
+	}
 	kubeletObjectID, federationRoleID, err := p.resolveBYOHostBindings(
-		ctx, clusterID, workloadID, resolveFederationRole)
+		ctx, clusterID, roleSubscription, resolveFederationRole)
 	if err != nil {
 		return err
 	}
@@ -132,6 +162,17 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 	}
 	source.parameters = mergeParameters(source.parameters, hostBindings)
 	return nil
+}
+
+func writeBYOPreflight(report onboarding.Report, preflightErr error, progress grpcbroker.ProgressFunc) error {
+	var output strings.Builder
+	if err := report.Write(&output); err != nil {
+		return errors.Join(preflightErr, err)
+	}
+	if output.Len() > 0 {
+		progress(output.String())
+	}
+	return preflightErr
 }
 
 func byoARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
@@ -160,7 +201,7 @@ func parseBYOResourceID(value, kind string) (*arm.ResourceID, error) {
 }
 
 func (p *FoundryProvisioningProvider) resolveBYOHostBindings(
-	ctx context.Context, clusterID, workloadID string, resolveFederationRole bool,
+	ctx context.Context, clusterID, roleSubscription string, resolveFederationRole bool,
 ) (string, string, error) {
 	id, err := parseBYOResourceID(clusterID, "Microsoft.ContainerService/managedClusters")
 	if err != nil {
@@ -187,14 +228,6 @@ func (p *FoundryProvisioningProvider) resolveBYOHostBindings(
 		return kubeletObjectID, "", nil
 	}
 	const roleName = "Managed Identity Federated Identity Credential Contributor"
-	roleSubscription := p.subID
-	if workloadID != "" {
-		workload, err := parseBYOResourceID(workloadID, "Microsoft.ManagedIdentity/userAssignedIdentities")
-		if err != nil {
-			return "", "", err
-		}
-		roleSubscription = workload.SubscriptionID
-	}
 	roles, err := armauthorization.NewRoleDefinitionsClient(p.credential, options)
 	if err != nil {
 		return "", "", fmt.Errorf("create role definitions client: %w", err)

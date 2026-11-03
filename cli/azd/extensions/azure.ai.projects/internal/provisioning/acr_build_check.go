@@ -91,7 +91,9 @@ func (c *ACRRemoteBuildCheck) ValidateProject(
 	if err != nil {
 		return err
 	}
-	if err := synthesis.RequireACRReuseForProject(ctx, c.azdClient, project); err != nil {
+	if err := synthesis.RequireACRReuseForEnvironment(ctx, c.azdClient, envName, synthesis.Input{
+		RawAzureYAML: raw, Env: snapshot, ProjectRoot: project.Path,
+	}); err != nil {
 		return err
 	}
 	if !remote {

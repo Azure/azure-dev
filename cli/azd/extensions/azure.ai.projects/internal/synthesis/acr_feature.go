@@ -180,19 +180,25 @@ func requireACRReuseForProject(
 	if ACRReuseEnabled() {
 		return nil
 	}
-	current, err := client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("read current environment before checking registry reuse: %w", err)
-	}
-	envName := current.GetEnvironment().GetName()
-	values := map[string]string{"AZURE_ENV_NAME": envName}
-	if envName != "" {
-		response, err := client.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
+	var envName string
+	values := map[string]string{}
+	// Direct service-target callers may construct a provider without an azd client.
+	// Still inspect project/on-disk reuse intent with empty host values.
+	if client != nil {
+		current, err := client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 		if err != nil {
-			return fmt.Errorf("read environment before checking registry reuse: %w", err)
+			return fmt.Errorf("read current environment before checking registry reuse: %w", err)
 		}
-		for _, entry := range response.GetKeyValues() {
-			values[entry.GetKey()] = entry.GetValue()
+		envName = current.GetEnvironment().GetName()
+		values["AZURE_ENV_NAME"] = envName
+		if envName != "" {
+			response, err := client.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
+			if err != nil {
+				return fmt.Errorf("read environment before checking registry reuse: %w", err)
+			}
+			for _, entry := range response.GetKeyValues() {
+				values[entry.GetKey()] = entry.GetValue()
+			}
 		}
 	}
 	in := Input{Env: values, ProjectRoot: project.GetPath()}

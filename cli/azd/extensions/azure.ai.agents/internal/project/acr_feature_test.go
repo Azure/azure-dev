@@ -204,3 +204,17 @@ func TestACRParameterOnlyAgentRuntimePositivePaths(t *testing.T) {
 		}
 	}
 }
+
+func TestACRReuseDisabledWithoutAzdClient(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "")
+	root := t.TempDir()
+	testutil.ACRParameters(t, root, false, "json",
+		"/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry")
+	service := hostedTestService(t, "agent", "")
+	p := &AgentServiceTargetProvider{projectPath: root, serviceConfig: service}
+	err := p.prepareGatedOperation(t.Context(), service)
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "%v", err)
+	require.Equal(t, "feature_not_enabled", local.Code, "%s", local.Message)
+	require.Contains(t, local.Message, synthesis.ACRReuseEnvVar+"=true")
+}

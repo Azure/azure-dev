@@ -157,13 +157,16 @@ func validateProjectACRBuilds(ctx context.Context, client *azdext.AzdClient, arg
 	current, err := client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		if projectACREnvironmentMissing(args.Project.Path, "", err) {
-			return nil
+			// Still gate on-disk existingAcrResourceId when no environment is selected.
+			return provisioning.NewACRRemoteBuildCheck(client).ValidateProject(
+				ctx, args.Project, "", map[string]string{})
 		}
 		return fmt.Errorf("resolving current azd environment: %w", err)
 	}
 	envName := current.GetEnvironment().GetName()
 	if envName == "" {
-		return nil
+		return provisioning.NewACRRemoteBuildCheck(client).ValidateProject(
+			ctx, args.Project, "", map[string]string{})
 	}
 	values, err := currentProjectEnvironment(ctx, client, envName)
 	if err != nil {

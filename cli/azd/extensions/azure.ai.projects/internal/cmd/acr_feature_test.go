@@ -17,6 +17,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -28,6 +30,33 @@ func requireACRFeatureDisabled(t *testing.T, err error) {
 	require.Equal(t, "feature_not_enabled", local.Code)
 	require.Equal(t, azdext.LocalErrorCategoryCompatibility, local.Category)
 	require.Contains(t, local.Message, synthesis.ACRReuseEnvVar+"=true")
+}
+
+func TestProjectACRParameterOnlyPrepackageWithoutEnvironment(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "")
+	for _, tt := range []struct {
+		name       string
+		envName    string
+		currentErr error
+	}{
+		{name: "empty environment"},
+		{name: "not found", currentErr: status.Error(codes.NotFound, "environment not found")},
+		{name: "no default", currentErr: status.Error(codes.Unknown, "default environment not found")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			testutil.ACRParameters(t, root, false, "json", testExternalRegistryID)
+			client, project, env, _, _ := newSelfInitializingDeploymentClient(t, root)
+			project.project.Services["project"] = &azdext.ServiceConfig{Name: "project", Host: aiProjectHost}
+			env.current = tt.envName
+			env.currentErr = tt.currentErr
+			beforeFiles := testutil.Snapshot(t, root)
+			requireACRFeatureDisabled(t, validateProjectACRBuilds(t.Context(), client,
+				&azdext.ProjectEventArgs{Project: project.project}))
+			require.Empty(t, env.setLog)
+			require.Equal(t, beforeFiles, testutil.Snapshot(t, root))
+		})
+	}
 }
 
 func TestProjectACRParameterOnlyPrepackage(t *testing.T) {

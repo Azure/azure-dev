@@ -8,7 +8,7 @@ deployments enable prebuilt analyzers such as `prebuilt-invoice` and custom
 analyzers. The template also configures Content Understanding defaults that map
 model names to deployment names. It is purpose-built as a launchpad for
 **Azure Content Understanding in Foundry Tools** workflows and the
-native Go `azd ai cu` extension.
+`azd ai cu` extension.
 
 ```sh
 azd auth login
@@ -32,12 +32,13 @@ project, and selected model deployments.
 Contributor cannot create Azure role assignments. If the deployment should
 also assign the generated data-plane role, the identity additionally needs
 **Role Based Access Control Administrator**, **User Access Administrator**, or
-**Owner** on the subscription. If you have Contributor only, set
-`AZD_ASSIGN_ROLES` to `false`; the post-provision hook then requires an existing
+**Owner** on the subscription. If you have Contributor only, omit
+`--assign-roles` when generating the project; the post-provision hook requires an existing
 data-plane role assignment. It never retrieves or persists a resource key.
-The native extension is Entra-only, including projectless commands. Role assignment defaults to
-`false`; pass `--assign-roles`
-when generating the project.
+Provisioning and postprovision setup use azd / Entra ID authentication.
+`CU_API_KEY` applies only to separate CU data-plane commands, not to `azd up`.
+Role assignment defaults to `false`; pass `--assign-roles` when generating the
+project.
 
 With Entra authentication, `azd ai cu` also requires **Cognitive Services User** on
 the Microsoft Foundry resource to configure defaults and create, manage, and run
@@ -58,8 +59,8 @@ The resource endpoint is `https://<resource-name>.services.ai.azure.com/` — th
 host that serves `/contentunderstanding/...`, `/openai/...`, and the Foundry
 project API.
 
-If `FOUNDRY_EXISTING_ENDPOINT` is set, this template skips resource and project
-creation and performs the same live discovery against that existing resource.
+Generate with `--foundry-endpoint` to skip resource and project creation and
+perform the same live discovery against that existing resource.
 
 ## Microsoft Foundry resource naming
 
@@ -69,18 +70,47 @@ public DNS hostname:
 `https://<resource-name>.services.ai.azure.com/`
 
 By default, this template uses `aif-<unique-suffix>`. To make the name more
-meaningful, set an optional prefix and azd will construct:
+meaningful, pass `--foundry-prefix` during generation and azd will construct:
 
 `<prefix>-<unique-suffix>`
 
 Example:
 
 ```sh
-azd env set FOUNDRY_RESOURCE_PREFIX my-cu
+azd ai cu infra generate --foundry-prefix my-cu --output-dir provision
+cd provision
 azd up
 ```
 
 This produces resource names following the pattern `my-cu-<unique-suffix>`.
+Generation saves resource choices in the selected azd environment.
+`infra/main.parameters.json` uses environment substitutions, so dev and prod
+can target different resources in this directory. Regenerate for the selected
+environment or use `azd env set <name> <value> -e <environment>` to change inputs:
+
+| Provisioning input | Purpose |
+| --- | --- |
+| `CU_FOUNDRY_RESOURCE_PREFIX` | Optional name prefix for a new resource |
+| `CU_FOUNDRY_EXISTING_ENDPOINT` | Existing resource endpoint; empty for a new resource |
+| `CU_FOUNDRY_EXISTING_RESOURCE_GROUP` | Existing resource's group; empty for a new resource |
+| `CU_ASSIGN_ROLES` | `true` or `false` for role assignments on a new resource |
+
+These are saved azd deployment inputs, not runtime settings or deployment outputs.
+They are not automatically exported into the parent shell.
+Regeneration preserves other parameter fields. Older projects using the saved
+names `FOUNDRY_RESOURCE_PREFIX`, `FOUNDRY_EXISTING_ENDPOINT`,
+`FOUNDRY_EXISTING_RESOURCE_GROUP`, and `AZD_ASSIGN_ROLES` still work without
+regeneration. Regeneration updates their parameter references and copies old
+values to the new keys in other existing environments only when the new key is
+absent. A present new key wins, including an empty value; missing inputs use the
+parameter defaults. Old keys are retained but no longer referenced.
+The selected environment uses the current generation choices.
+For older shared literal resource
+parameters, it first saves the effective old values in other existing environments
+before applying new choices to the selected environment, including with `--force`.
+It cannot recover values already overwritten by an earlier generation.
+Unsupported custom resource-parameter expressions or unsafe environment files
+fail before any files are written; review the parameters or use a new directory.
 
 ## Live model setup
 
@@ -94,29 +124,30 @@ with an empty `infra/models.json`. The post-provision hook then:
 5. Deploys the selection and writes it to `infra/models.json`, making subsequent
    Bicep runs repeatable.
 
-Decline every model confirmation to deploy no models. In that mode, `prebuilt-digitalParse`,
+For setup without model deployments, generate the project with `--models none`.
+In that mode, `prebuilt-digitalParse`,
 `prebuilt-read`, and `prebuilt-layout` are available without language or
 embeddings model deployments.
-Set `CU_MODEL_SELECTION=recommended` for noninteractive selection or
-`CU_MODEL_SELECTION=none` for deterministic setup without model deployments.
 
 The generated hook runs a versioned internal postprovision contract through
 `azd ai cu`, so keep azd and the Azure Content Understanding extension installed
-when running `azd up`. A saved `prompt` selection
-requires an interactive terminal; set `CU_MODEL_SELECTION=recommended`, `none`,
-or explicit `model@version` selectors for unattended runs. Model setup failures
+when running `azd up`. The default `prompt` selection requires an interactive
+terminal. For unattended runs, save `recommended`, `none`, or comma-separated
+`model@version` selectors with `azd env config set cu.modelSelection <selection>`.
+Model setup failures
 are reported without blocking azd environment configuration. Resolve the model
 deployment issue and rerun `azd up`; `prebuilt-digitalParse`, `prebuilt-read`,
 and `prebuilt-layout` remain available without language or embeddings models.
 
 Successful model setup is recorded in the selected environment's
-`cu.modelSetupComplete` configuration setting. The legacy
-`CU_MODEL_SETUP_COMPLETE` environment value is not the completion marker used
-by this extension.
+`cu.modelSetupComplete` configuration setting. Generation saves `--models` in
+`cu.modelSelection` and the `--force` choice in the boolean
+`cu.forceConfigurationSetup`; neither requires a dedicated environment variable.
+Regeneration preserves the completion marker and other existing config.
 
 Generated projects use the `_postprovision-v1` contract. Check extension release
 notes before upgrading and regenerate the project if a later release does not
-retain that contract. The hook does not require Python or the standalone `cu` CLI.
+retain that contract.
 
 ## Auto-configuring the azd environment
 
@@ -164,7 +195,10 @@ repair action and retains the `prebuilt-layout` sanity check.
 
 Configuration setup is automatic. To opt out, set
 `CU_DISABLE_AUTO_CONFIG=true` before `azd up`. This does not disable live
-model setup; use `azd env set CU_MODEL_SELECTION none` to skip model deployments.
+model setup; use `azd env config set cu.modelSelection none` to skip model deployments.
+The provisioned endpoint remains available as `_CU_PROVISIONED_ENDPOINT`, but
+with automatic configuration disabled you must configure `CU_ENDPOINT` yourself
+or pass `--endpoint` to CU commands.
 
 ## Cleanup
 
@@ -178,24 +212,41 @@ before cleanup, especially when the project uses an existing account.
 
 ## Outputs
 
-After `azd up`, `azd env get-values` exposes:
+After `azd up`, `azd env get-values` exposes these Bicep outputs. The
+`_CU_PROVISIONED_*` prefix marks deployment results, not user settings:
 
-| Variable | Notes |
+| Output | Notes |
 | --- | --- |
-| `FOUNDRY_ENDPOINT` | `https://<resource-name>.services.ai.azure.com/` |
-| `FOUNDRY_PROJECT_ENDPOINT` | Project-scoped URL when this project creates a Foundry project |
-| `FOUNDRY_RESOURCE_NAME` | Account name (also the custom subdomain) |
-| `FOUNDRY_PROJECT_NAME` | Project name when created by this deployment |
-| `CU_ENDPOINT` | Resource endpoint used by CU commands; those commands do not fall back to `FOUNDRY_ENDPOINT` |
-| `CU_DEFAULT_ANALYZER` | Saved by the hook as `prebuilt-layout`, unless existing CU configuration is preserved |
-| `MODEL_DEPLOYMENTS` | Models declared in the Bicep deployment; subsequent hook selections are saved to `infra/models.json` |
+| `_CU_PROVISIONED_LOCATION` | Deployment location |
+| `_CU_PROVISIONED_RESOURCE_GROUP` | Created or existing resource group containing the account |
+| `_CU_PROVISIONED_SUBSCRIPTION_ID` | Subscription containing the resource |
+| `_CU_PROVISIONED_TENANT_ID` | Resource tenant; postprovision looks up the user's access tenant separately |
+| `_CU_PROVISIONED_PROJECT_ENDPOINT` | Project-scoped URL when a Foundry project is available |
+| `_CU_PROVISIONED_RESOURCE_NAME` | Created or adopted account name (also the custom subdomain) |
+| `_CU_PROVISIONED_PROJECT_NAME` | Project name when available |
+| `_CU_PROVISIONED_ENDPOINT` | Resource endpoint used by postprovision setup, not a runtime endpoint alias |
+| `_CU_PROVISIONED_MODEL_DEPLOYMENTS` | Models declared in the Bicep deployment; subsequent hook selections are saved to `infra/models.json` |
 
-Generation also saves inputs such as `CU_API_VERSION`, `CU_MODEL_SELECTION`,
-and any existing-resource selectors in the azd environment. These are not Bicep
-outputs. Use `azd env get-values` to inspect `CU_DEFAULT_ANALYZER`, and
-`azd env config get cu` for `modelDeployments` and the `modelSetupComplete`
+The hook separately saves runtime `CU_ENDPOINT` and
+`CU_DEFAULT_ANALYZER=prebuilt-layout`, unless existing CU configuration is
+preserved or automatic configuration is disabled. CU commands do not treat
+`_CU_PROVISIONED_ENDPOINT` as a user-supplied endpoint.
+
+Generation also saves `CU_API_VERSION` and standard Azure scope values in the
+azd environment. These are not Bicep outputs. Use `azd env get-values` to inspect
+`CU_DEFAULT_ANALYZER`, and `azd env config get cu` for postprovision choices,
+`modelDeployments`, and the `modelSetupComplete`
 marker set by successful setup. Hooks update only the selected azd environment,
 never CU user defaults in global azd configuration.
+
+Existing projects remain supported. When new config fields are absent, the hook
+reads saved `CU_MODEL_SELECTION` and `CU_CONFIG_SETUP_FORCE` values. It reads
+legacy endpoint and scope values only when the corresponding
+`_CU_PROVISIONED_*` outputs are absent. For the account name, it falls back to
+`CU_RESOURCE_NAME`, then `FOUNDRY_RESOURCE_NAME`, only when the newer name is
+absent. Empty required new outputs fail instead of selecting stale legacy
+values. Old environment entries are preserved during regeneration. Templates
+are also preserved unless `--force` is supplied.
 
 ## Layout
 

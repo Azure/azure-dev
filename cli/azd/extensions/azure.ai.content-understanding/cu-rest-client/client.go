@@ -221,14 +221,16 @@ func safeResponseError(resp *http.Response, explicitCode string) error {
 	if code == "" {
 		code = resp.Header.Get("x-ms-error-code")
 	}
-	if code == "" && resp.Body != nil {
+	if explicitCode == "" && resp.Body != nil {
 		payload, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes+1))
 		closeErr := resp.Body.Close()
 		if readErr != nil || closeErr != nil {
 			return errors.Join(readErr, closeErr)
 		}
 		if len(payload) <= maxErrorBodyBytes {
-			code = deepestErrorCode(payload)
+			if bodyCode, nested := deepestErrorCode(payload); bodyCode != "" && (code == "" || nested) {
+				code = bodyCode
+			}
 		}
 	}
 	if !serviceErrorCodePattern.MatchString(code) {
@@ -242,15 +244,17 @@ func safeResponseError(resp *http.Response, explicitCode string) error {
 	return &azcore.ResponseError{ErrorCode: code, StatusCode: resp.StatusCode, RawResponse: safe}
 }
 
-func deepestErrorCode(payload []byte) string {
+func deepestErrorCode(payload []byte) (string, bool) {
 	var envelope struct {
 		Error json.RawMessage `json:"error"`
 	}
 	if json.Unmarshal(payload, &envelope) != nil || len(envelope.Error) == 0 {
-		return ""
+		return "", false
 	}
 	current := envelope.Error
 	code := ""
+	nested := false
+	depth := 0
 	for len(current) != 0 {
 		var item struct {
 			Code       string          `json:"code"`
@@ -261,10 +265,12 @@ func deepestErrorCode(payload []byte) string {
 		}
 		if serviceErrorCodePattern.MatchString(item.Code) {
 			code = item.Code
+			nested = depth > 0
 		}
 		current = item.InnerError
+		depth++
 	}
-	return code
+	return code, nested
 }
 
 func decodeResponse[T any](resp *http.Response) (T, error) {

@@ -9,13 +9,13 @@
       "value": "${AZURE_LOCATION}"
     },
     "foundryResourcePrefix": {
-      "value": "${FOUNDRY_RESOURCE_PREFIX=}"
+      "value": "${CU_FOUNDRY_RESOURCE_PREFIX=}"
     },
     "existingFoundryEndpoint": {
-      "value": "${FOUNDRY_EXISTING_ENDPOINT=}"
+      "value": "${CU_FOUNDRY_EXISTING_ENDPOINT=}"
     },
     "existingFoundryResourceGroup": {
-      "value": "${FOUNDRY_EXISTING_RESOURCE_GROUP=}"
+      "value": "${CU_FOUNDRY_EXISTING_RESOURCE_GROUP=}"
     },
     "principalId": {
       "value": "${AZURE_PRINCIPAL_ID}"
@@ -24,7 +24,7 @@
       "value": "${AZURE_PRINCIPAL_TYPE=User}"
     },
     "assignRolesToPrincipal": {
-      "value": "${AZD_ASSIGN_ROLES=false}"
+      "value": "${CU_ASSIGN_ROLES=false}"
     }
   }
 }

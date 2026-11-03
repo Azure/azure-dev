@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -402,8 +403,61 @@ func TestBoundedErrorBodyAndRedaction(t *testing.T) {
 		assert.True(t, body.closed)
 		assert.LessOrEqual(t, body.read, maxErrorBodyBytes+1)
 	}
+
 }
 
+func TestActionableServiceFailureDiagnostics(t *testing.T) {
+	for _, test := range []struct {
+		status     int
+		code, hint string
+	}{
+		{http.StatusNotFound, "NotFound", "azd ai cu analyzer list"},
+		{http.StatusConflict, "Conflict", "choose an unused analyzer ID"},
+		{http.StatusBadRequest, "private invalid code", "Check the service configuration"},
+	} {
+		t.Run(test.code, func(t *testing.T) {
+			calls := 0
+			client := newRESTTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
+				calls++
+				return response(test.status, fmt.Sprintf(
+					`{"error":{"code":%q,"message":"private response body"}}`, test.code)), nil
+			})
+			var err error
+			if test.status == http.StatusConflict {
+				_, err = client.CreateAnalyzer(t.Context(), CreateAnalyzerRequest{
+					AnalyzerID: "existing", Definition: []byte(`{"baseAnalyzerId":"prebuilt-document"}`),
+				})
+			} else {
+				err = client.DeleteAnalyzer(t.Context(), "missing")
+			}
+			var domain *Error
+			require.ErrorAs(t, err, &domain)
+			require.Contains(t, domain.Suggestion, test.hint)
+			require.Contains(t, domain.Message, fmt.Sprintf("HTTP %d; code:", test.status))
+			require.NotContains(t, domain.Message, "private")
+			if test.status == http.StatusBadRequest {
+				require.Contains(t, domain.Message, "http_400")
+			} else {
+				require.Contains(t, domain.Message, test.code)
+			}
+			require.Equal(t, 1, calls)
+		})
+	}
+}
+
+func TestOperationFailureDiagnosticsDoNotExposeServiceMessages(t *testing.T) {
+	for _, code := range []string{"InvalidRequest", "invalid private code"} {
+		domain := operationError("analysis", "Failed", &wireDiagnostic{
+			Code: code, Message: "private authored content",
+		})
+		require.NotContains(t, domain.Message, "private")
+		if code == "InvalidRequest" {
+			require.Contains(t, domain.Message, "Service code: InvalidRequest")
+		} else {
+			require.NotContains(t, domain.Message, "Service code:")
+		}
+	}
+}
 func TestResponseErrorCategories(t *testing.T) {
 	for _, test := range []struct {
 		status int

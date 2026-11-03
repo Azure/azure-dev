@@ -57,6 +57,33 @@ func TestHostingDefaultSynthesis(t *testing.T) {
 	}
 }
 
+func TestHostingAllowsAutoCreatedAcrWithPrivateNetworking(t *testing.T) {
+	for _, test := range []struct{ name, raw, mode string }{
+		{"byo egress", hostingYAML(), NetworkModeByo},
+		{"managed egress", strings.Replace(hostingYAML(),
+			"      agentSubnet: {vnet: "+hostingVNetID+", name: agents}\n", "", 1), NetworkModeManaged},
+	} {
+		for _, preserve := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/preserve=%t", test.name, preserve), func(t *testing.T) {
+				raw := test.raw + `  assistant:
+    host: azure.ai.agent
+    kind: hosted
+`
+				result, err := Synthesize(Input{
+					RawAzureYAML: []byte(raw),
+					ServiceName:  "project", PreserveVarRefs: preserve,
+				})
+				require.NoError(t, err)
+				require.NotNil(t, result.Hosting)
+				assert.Equal(t, hostingClusterID, result.Hosting.ClusterResourceID)
+				assert.Equal(t, true, result.Parameters["includeAcr"])
+				assert.Equal(t, true, result.Parameters["enableNetworkIsolation"])
+				assert.Equal(t, test.mode, result.NetworkMode)
+			})
+		}
+	}
+}
+
 func TestHostingRejectsUnsupportedSelections(t *testing.T) {
 	for _, test := range []struct{ field, value, expected string }{
 		{"storageAccountResourceId", "[]", "expected a nonempty resource ID"},

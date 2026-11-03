@@ -254,6 +254,60 @@ func TestInitACREnvironmentSelectorPreflight(t *testing.T) {
 	}
 }
 
+func TestInitACRStagedEnvironmentSelectorPreflight(t *testing.T) {
+	for _, canonical := range []bool{false, true} {
+		t.Run(fmt.Sprint("canonical=", canonical), func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
+			stagingDir := t.TempDir()
+			stagedContent := append([]byte("infra:\n  layers:\n    - name: foundry\n"+
+				"      provider: microsoft.foundry\n"), content...)
+			require.NoError(t, os.WriteFile(filepath.Join(stagingDir, "azure.yaml"), stagedContent, 0o600))
+			server := &initACREnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					values: map[string]map[string]string{"test": {
+						"AZURE_SUBSCRIPTION_ID":                "sub",
+						"AZURE_RESOURCE_GROUP":                 "application-rg",
+						"AZURE_FOUNDRY_RESOURCE_GROUP":         "registry-rg",
+						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testInitACRID,
+						"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
+					}},
+				},
+			}
+			if canonical {
+				binding, err := json.Marshal(synthesis.ACRBinding{
+					Version: 1, Mode: "reuse-connect", RegistryResourceID: testInitACRID,
+					ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry-rg/providers/" +
+						"Microsoft.CognitiveServices/accounts/account/projects/project",
+					PrincipalID: "principal",
+				})
+				require.NoError(t, err)
+				server.binding = binding
+				delete(server.values["test"], "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+				delete(server.values["test"], "AZD_FOUNDRY_ACR_MODE")
+			}
+			before := maps.Clone(server.values["test"])
+			bindingBefore := string(server.binding)
+			workflow := &recordingProjectWorkflowServer{}
+			client := newTestAzdClient(t, server, workflow)
+			flags := &initFlags{templatePointer: "template.yaml"}
+			require.NoError(t, validateInitACRProject(t.Context(), client, flags))
+			err := validateInitACRProjectContent(t.Context(), client, flags, stagedContent, stagingDir)
+			require.ErrorContains(t, err, "azd down deletes")
+			require.Equal(t, before, server.values["test"])
+			require.Equal(t, bindingBefore, string(server.binding))
+			require.Empty(t, server.setKeys)
+			require.Empty(t, workflow.requests)
+			after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+			require.NoError(t, err)
+			require.Equal(t, content, after)
+			require.NoDirExists(t, filepath.Join(root, ".azure"))
+		})
+	}
+}
+
 func TestInitACREnvironmentSelectorRejectsBeforeSourceInit(t *testing.T) {
 	for _, canonical := range []bool{false, true} {
 		t.Run(fmt.Sprint("canonical=", canonical), func(t *testing.T) {

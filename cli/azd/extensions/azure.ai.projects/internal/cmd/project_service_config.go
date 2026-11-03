@@ -151,7 +151,18 @@ func validateProjectACRBuilds(ctx context.Context, client *azdext.AzdClient, arg
 	if err != nil || !found {
 		return err
 	}
-	envName, values, err := projectLifecycleEnvironment(ctx, client)
+	current, err := client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		if projectACREnvironmentMissing(args.Project.Path, "", err) {
+			return nil
+		}
+		return fmt.Errorf("resolving current azd environment: %w", err)
+	}
+	envName := current.GetEnvironment().GetName()
+	if envName == "" {
+		return nil
+	}
+	values, err := currentProjectEnvironment(ctx, client, envName)
 	if err != nil {
 		return err
 	}

@@ -19,6 +19,11 @@ func TestRequiresRemoteACRBuild(t *testing.T) {
 		want          bool
 	}{
 		{"remote source", "kind: hosted\ndocker: {remoteBuild: true}", true},
+		{"nested remote source", "config:\n  kind: hosted\n  docker: {remoteBuild: true}", true},
+		{"service docker wins", "docker: {imagePassthrough: true}\n" +
+			"config:\n  kind: hosted\n  docker: {remoteBuild: true}", false},
+		{"service remote build wins", "docker: {remoteBuild: true}\n" +
+			"config:\n  kind: hosted\n  docker: {imagePassthrough: true}", true},
 		{"local source", "kind: hosted\ndocker: {remoteBuild: false}", false},
 		{"core local default", "kind: hosted", false},
 		{"prebuilt", "image: registry/image:v1\ndocker: {remoteBuild: true}", false},

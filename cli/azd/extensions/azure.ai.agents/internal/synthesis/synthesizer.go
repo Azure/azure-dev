@@ -934,6 +934,9 @@ func deriveAgentBuildRequirements(
 			if agent.CodeConfiguration == nil {
 				agent.CodeConfiguration = service.Config.CodeConfiguration
 			}
+			if agent.Docker == (dockerBuildBlock{}) {
+				agent.Docker = service.Config.Docker
+			}
 		}
 		includeAcr = includeAcr || needsACR(agent)
 	}

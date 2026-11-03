@@ -649,8 +649,16 @@ func TestProjectAddACRDeployedIdentity(t *testing.T) {
 func TestProjectAddCanonicalBindingWithoutLegacyAliases(t *testing.T) {
 	const projectID = "/subscriptions/subscription/resourceGroups/project/providers/" +
 		"Microsoft.CognitiveServices/accounts/account/projects/project"
-	for _, explicitNew := range []bool{false, true} {
-		t.Run(strconv.FormatBool(explicitNew), func(t *testing.T) {
+	for _, tt := range []struct {
+		mode        string
+		explicitNew bool
+	}{
+		{mode: "reuse-connect"},
+		{mode: "reuse-connect", explicitNew: true},
+		{mode: "create"},
+		{mode: "create", explicitNew: true},
+	} {
+		t.Run(tt.mode+"/"+strconv.FormatBool(tt.explicitNew), func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("AZD_EXEC_PROJECT_DIR", root)
 			raw := []byte("name: test\ninfra:\n  provider: microsoft.foundry\nservices:\n" +
@@ -666,15 +674,19 @@ func TestProjectAddCanonicalBindingWithoutLegacyAliases(t *testing.T) {
 				"AZURE_AI_PROJECT_NAME": "project", "USE_EXISTING_AI_PROJECT": "false",
 				"AZURE_CONTAINER_REGISTRY_ENDPOINT": "shared.azurecr.io",
 			})
+			registryID := testExternalRegistryID
+			if tt.mode == "create" {
+				registryID = strings.Replace(registryID, "/external/", "/project/", 1)
+			}
 			binding, err := json.Marshal(synthesis.ACRBinding{
-				Version: 1, Mode: "reuse-connect", RegistryResourceID: testExternalRegistryID,
+				Version: 1, Mode: tt.mode, RegistryResourceID: registryID,
 				ProjectResourceID: projectID, PrincipalID: "principal",
 			})
 			require.NoError(t, err)
 			env.config = map[string][]byte{synthesis.ACRBindingConfigKey: binding}
 			before := maps.Clone(env.values)
 			var output bytes.Buffer
-			flags := &projectAddFlags{newProject: explicitNew, noPrompt: true, output: "json"}
+			flags := &projectAddFlags{newProject: tt.explicitNew, noPrompt: true, output: "json"}
 			action := &ProjectAddAction{
 				client: client, flags: flags, stdout: &output,
 				extCtx: &azdext.ExtensionContext{Environment: "test"},
@@ -685,16 +697,21 @@ func TestProjectAddCanonicalBindingWithoutLegacyAliases(t *testing.T) {
 			for key, value := range before {
 				assert.Equal(t, value, env.values[key], key)
 			}
-			assert.Equal(t, testExternalRegistryID, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
-			assert.Equal(t, "reuse-connect", env.values["AZD_FOUNDRY_ACR_MODE"])
+			if tt.mode == "reuse-connect" {
+				assert.Equal(t, registryID, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+				assert.Equal(t, tt.mode, env.values["AZD_FOUNDRY_ACR_MODE"])
+			} else {
+				assert.Empty(t, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+				assert.Empty(t, env.values["AZD_FOUNDRY_ACR_MODE"])
+			}
 			assert.Equal(t, binding, env.config[synthesis.ACRBindingConfigKey])
 			assert.False(t, project.providerSet)
 			var result projectAddOutput
 			require.NoError(t, json.Unmarshal(output.Bytes(), &result))
 			assert.Equal(t, projectID, result.ResourceID)
 			require.NotNil(t, result.ContainerRegistry)
-			assert.Equal(t, testExternalRegistryID, result.ContainerRegistry.ResourceID)
-			assert.True(t, result.ContainerRegistry.ExternallyOwned)
+			assert.Equal(t, registryID, result.ContainerRegistry.ResourceID)
+			assert.Equal(t, tt.mode == "reuse-connect", result.ContainerRegistry.ExternallyOwned)
 			//nolint:gosec // Test-owned path.
 			persisted, readErr := os.ReadFile(path)
 			require.NoError(t, readErr)

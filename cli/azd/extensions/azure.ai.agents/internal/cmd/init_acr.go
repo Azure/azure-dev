@@ -46,25 +46,35 @@ func readInitACREnvironment(
 }
 
 func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags *initFlags) error {
+	return validateInitACRProjectContent(ctx, client, flags, nil, "")
+}
+
+func validateInitACRProjectContent(
+	ctx context.Context, client *azdext.AzdClient, flags *initFlags, content []byte, root string,
+) error {
+	staged := content != nil
 	if flags.acrResourceIDSet {
 		if err := synthesis.ValidateACRSelector(flags.acrResourceID, "", ""); err != nil {
 			return exterrors.Validation(exterrors.CodeConflictingArguments,
 				"--acr-resource-id: "+err.Error(), "provide an external registry ARM resource ID")
 		}
 	}
-	if !flags.acrResourceIDSet && (flags.projectResourceId != "" || flags.templatePointer != "") {
+	if !flags.acrResourceIDSet && (flags.projectResourceId != "" || !staged && flags.templatePointer != "") {
 		return nil
 	}
-	root, err := azdext.GetProjectDir()
-	if errors.Is(err, azdext.ErrProjectNotFound) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("resolve project before selecting a registry: %w", err)
-	}
-	content, err := readProjectAzureYAML(root)
-	if err != nil {
-		return fmt.Errorf("read project registry configuration: %w", err)
+	if !staged {
+		var err error
+		root, err = azdext.GetProjectDir()
+		if errors.Is(err, azdext.ErrProjectNotFound) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("resolve project before selecting a registry: %w", err)
+		}
+		content, err = readProjectAzureYAML(root)
+		if err != nil {
+			return fmt.Errorf("read project registry configuration: %w", err)
+		}
 	}
 	if !flags.acrResourceIDSet && flags.infra != "" {
 		provider, err := parseInfraProvider(flags.infra)
@@ -124,7 +134,7 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 		}
 		selectedID = id
 	}
-	if flags.templatePointer != "" {
+	if !staged && flags.templatePointer != "" {
 		// A template can replace the manifest and teardown scope.
 		input.RawAzureYAML = nil
 		input.Env = map[string]string{"AZURE_SUBSCRIPTION_ID": values["AZURE_SUBSCRIPTION_ID"]}

@@ -470,10 +470,17 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		Endpoint:        target.Endpoint,
 		ResourceID:      target.ResourceId,
 	}
-	if id := effectiveValues["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]; id != "" {
-		mode := effectiveValues["AZD_FOUNDRY_ACR_MODE"]
+	registryID := effectiveValues["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+	mode := effectiveValues["AZD_FOUNDRY_ACR_MODE"]
+	if registryID == "" && a.flags.deployedBinding != nil {
+		registryID = a.flags.deployedBinding.RegistryResourceID
+		if mode == "" {
+			mode = a.flags.deployedBinding.Mode
+		}
+	}
+	if registryID != "" {
 		result.ContainerRegistry = &projectRegistryOutput{
-			ResourceID:      id,
+			ResourceID:      registryID,
 			ExternallyOwned: mode == "reuse-connect" || mode == "already-connected",
 		}
 	}

@@ -181,6 +181,9 @@ func sanitizeBlobStorageSasSig(i *cassette.Interaction) error {
 		}
 
 		i.Request.URL = sanitized
+		if i.Request.Form.Has("sig") {
+			i.Request.Form.Set("sig", "SANITIZED")
+		}
 	}
 
 	return nil

@@ -391,6 +391,18 @@ func validateDefinition(name string, d Definition) error {
 			len(d.Containers) > 0 || len(d.Queues) > 0 || len(d.Topics) > 0 || len(d.Hubs) > 0 {
 			return invalidProperties(name, d.Type)
 		}
+		deployments := map[string]string{}
+		for _, model := range d.Models {
+			deployment := strings.ToLower(scaffold.BicepName(model.Name))
+			if deployment == "" {
+				return fmt.Errorf("AI model %q in resource %q requires a nonempty deployment name", model.Name, name)
+			}
+			if previous, exists := deployments[deployment]; exists {
+				return fmt.Errorf("AI models %q and %q in resource %q produce the same deployment name",
+					previous, model.Name, name)
+			}
+			deployments[deployment] = model.Name
+		}
 	case Redis, Postgres, MySQL, Mongo, AISearch, KeyVault:
 		if d.Port != 0 || len(d.Env) > 0 || d.Runtime != (AppServiceRuntime{}) ||
 			d.StartupCommand != "" || d.Model != (AIModelPropsModel{}) ||

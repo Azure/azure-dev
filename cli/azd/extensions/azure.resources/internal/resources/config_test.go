@@ -13,7 +13,36 @@ import (
 	"testing"
 
 	"azure.resources/internal/resources/scaffold"
+	"github.com/stretchr/testify/require"
 )
+
+func TestConfigRejectsFoundryDeploymentNameCollisions(t *testing.T) {
+	for _, names := range [][]string{
+		{"gpt-4o", "gpt-4o"},
+		{"gpt-4o", "gpt--4o"},
+		{"GPT-4O", "gpt-4o"},
+	} {
+		t.Run(strings.Join(names, "_"), func(t *testing.T) {
+			config := Config{"foundry": {Type: AIProject, Models: []AiServicesModel{
+				{Name: names[0], Version: "1", Format: "OpenAI", Sku: AiServicesModelSku{Name: "Standard"}},
+				{Name: names[1], Version: "2", Format: "OpenAI", Sku: AiServicesModelSku{Name: "GlobalStandard"}},
+			}}}
+			raw, err := config.Raw()
+			require.NoError(t, err)
+			_, err = Decode(raw)
+			require.ErrorContains(t, err, "same deployment name")
+			_, err = Generate("data", config)
+			require.ErrorContains(t, err, "same deployment name")
+		})
+	}
+}
+
+func TestGeneratedFoundryUserRolesIncludePrincipalIdentity(t *testing.T) {
+	files, err := Generate("data", Config{"foundry": {Type: AIProject}})
+	require.NoError(t, err)
+	require.Equal(t, 2, strings.Count(string(files["ai-project.bicep"]),
+		"guid(subscription().id, resourceGroup().id, principalId, 'localUser'"))
+}
 
 func TestConfigValidation(t *testing.T) {
 	tests := []struct {
@@ -418,6 +447,25 @@ func TestGenerateFullResourceCatalog(t *testing.T) {
 			t.Errorf("%s is not deterministic", name)
 		}
 	}
+}
+
+func TestGeneratedBicepFilesHaveCopyrightHeaders(t *testing.T) {
+	config := catalogConfig()
+	config["existing-storage"] = Definition{Type: Storage, Existing: true}
+	files, err := Generate("backend", config)
+	require.NoError(t, err)
+	header := "// Copyright (c) Microsoft Corporation. All rights reserved.\n" +
+		"// Licensed under the MIT License.\n"
+	bicepFiles := 0
+	for name, contents := range files {
+		if strings.HasSuffix(name, ".bicep") {
+			require.Truef(t, strings.HasPrefix(string(contents), header), "%s is missing its copyright header", name)
+			bicepFiles++
+		} else if strings.HasSuffix(name, ".json") {
+			require.Truef(t, json.Valid(contents), "%s must remain valid JSON", name)
+		}
+	}
+	require.Equal(t, 6, bicepFiles, "cover all templates and supporting Bicep modules")
 }
 
 func TestGenerateExistingResourceBindings(t *testing.T) {

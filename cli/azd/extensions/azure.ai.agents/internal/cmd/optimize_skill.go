@@ -21,6 +21,7 @@ import (
 var (
 	skillReferenceNamePattern    = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 	skillReferenceVersionPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+	skillDownloadArgumentPattern = regexp.MustCompile(`^[a-zA-Z0-9_./:][a-zA-Z0-9_./: -]*$`)
 )
 
 func (c *OptimizeConfig) isSkillOptimization() bool {
@@ -302,8 +303,15 @@ func printSkillOptimizeCandidate(out io.Writer, jobID string, candidate optimize
 	for _, file := range candidate.Files {
 		fmt.Fprintf(out, "\n  File: %s (%s, %d bytes)\n",
 			optimizeTerminalText(file.Path), optimizeTerminalText(file.Type), file.SizeInBytes)
-		fmt.Fprintf(out, "    azd ai agent optimize download %q --candidate %q --file %q\n",
-			jobID, candidate.CandidateID, file.Path)
+		// Only suggest commands when Go quoting is also literal in common shells.
+		if skillDownloadArgumentPattern.MatchString(jobID) &&
+			skillDownloadArgumentPattern.MatchString(candidate.CandidateID) &&
+			skillDownloadArgumentPattern.MatchString(file.Path) {
+			fmt.Fprintf(out, "    azd ai agent optimize download %q --candidate %q --file %q\n",
+				jobID, candidate.CandidateID, file.Path)
+		} else {
+			fmt.Fprintln(out, "    Use 'azd ai agent optimize download --help' for download options.")
+		}
 	}
 	fmt.Fprintln(out, "\n  Skill versions are not automatically attached or deployed to an agent.")
 }

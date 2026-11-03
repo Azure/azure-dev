@@ -127,7 +127,8 @@ func (c *OptimizeConfig) Validate() error {
 				"without surrounding whitespace, control, path, or query characters: " +
 				"set --optimize-model or optimization_model_configuration.model")
 		}
-		return validateSkillOptimizeRequest(c.Request)
+		_, _, err := c.ToRequest()
+		return err
 	}
 	if c.Agent.Name == "" {
 		return fmt.Errorf("agent.name is required")
@@ -213,12 +214,8 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 		config.Type = "agent_optimization"
 	}
 	if config.Type == optimize_api.SkillOptimizationType {
-		for _, context := range config.Context {
-			if context.Type == "agent_traces" && context.TraceWindow != nil {
-				if err := validateSkillTraceWindow(context.TraceWindow); err != nil {
-					return nil, nil, err
-				}
-			}
+		if err := validateSkillOptimizeRequest(&req); err != nil {
+			return nil, nil, err
 		}
 		return &req, nil, nil
 	}

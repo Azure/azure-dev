@@ -95,7 +95,7 @@ type OptimizationSpace struct {
 type EvaluationConfiguration struct {
 	TrainingSet                      *SetInput                         `json:"training_set,omitempty"`
 	ValidationSet                    *SetInput                         `json:"validation_set,omitempty"`
-	Evaluators                       []EvaluatorRef                    `json:"evaluators"`
+	Evaluators                       []EvaluatorRef                    `json:"evaluators,omitzero"`
 	EvaluatorGenerationConfiguration *EvaluatorGenerationConfiguration `json:"evaluator_generation_configuration,omitempty"`
 	EvaluationModel                  EvaluationModelConfiguration      `json:"evaluation_model"`
 	MaxConcurrentAgentRuns           *int                              `json:"max_concurrent_agent_runs,omitempty"`

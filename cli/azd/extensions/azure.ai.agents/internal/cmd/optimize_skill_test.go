@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -140,6 +141,55 @@ func TestSkillOptimizeConfigRoundTrip(t *testing.T) {
 			} else {
 				assert.NotContains(t, string(encoded), `"training_set"`)
 			}
+		})
+	}
+}
+
+func TestSkillOptimizeEvaluatorArrayPresenceOnSubmission(t *testing.T) {
+	t.Setenv("AZD_SERVER", "")
+	for _, tc := range []struct {
+		name       string
+		evaluation string
+	}{
+		{"generated evaluator without list", `{
+			"evaluation_model":{"model":"judge"},
+			"evaluator_generation_configuration":{"type":"agent_traces"}}`},
+		{"generated evaluator with empty list", `{
+			"evaluation_model":{"model":"judge"},"evaluators":[],
+			"evaluator_generation_configuration":{"type":"agent_traces"}}`},
+		{"supplied evaluator", `{
+			"evaluation_model":{"model":"judge"},
+			"evaluators":[{"name":"rubric","version":"1"}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			authored := strings.Replace(skillOptimizeTestConfig, `"type":"skill_optimization",`,
+				`"type":"skill_optimization","evaluation_configuration":`+tc.evaluation+`,`, 1)
+			configPath := writeTestFile(t, t.TempDir(), "skill.json", authored)
+			cfg, err := LoadOptimizeConfig(configPath)
+			require.NoError(t, err)
+			require.NoError(t, cfg.Validate())
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodPost, r.Method)
+				assert.Equal(t, "/agent_optimization_jobs", r.URL.Path)
+				var submitted json.RawMessage
+				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&submitted)) {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				assert.JSONEq(t, authored, string(submitted))
+				w.WriteHeader(http.StatusAccepted)
+				_, _ = w.Write([]byte(`{"id":"job-skill","status":"queued"}`))
+			}))
+			defer server.Close()
+			action := &OptimizeAction{
+				flags: &optimizeFlags{}, client: newTestOptimizeClient(server.URL),
+			}
+			response, _, err := action.submitJob(t.Context(), &bytes.Buffer{}, server.URL, cfg, "")
+			require.NoError(t, err)
+			assert.Equal(t, "job-skill", response.ID)
+			unchanged, err := json.Marshal(cfg.Request)
+			require.NoError(t, err)
+			assert.JSONEq(t, authored, string(unchanged))
 		})
 	}
 }
@@ -332,6 +382,103 @@ func TestSkillOptimizeAgentlessResolveAndFlagConflict(t *testing.T) {
 	require.ErrorContains(t, cmd.Execute(), "cannot override an agentless")
 }
 
+func TestSkillOptimizeResolvedAgentIdentity(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	for _, tc := range []struct {
+		name, agent, deployedName, deployedVersion, wantName, wantVersion string
+		project, invalid                                                  bool
+	}{
+		{name: "standalone override", agent: "other-agent", wantName: "other-agent"},
+		{name: "padded standalone override", agent: " demo-agent ", invalid: true},
+		{name: "project override", agent: "assistant", project: true,
+			deployedName: "deployed-agent", deployedVersion: "8", wantName: "deployed-agent", wantVersion: "8"},
+		{name: "padded deployed name", agent: "assistant", project: true,
+			deployedName: " deployed-agent ", deployedVersion: "8", invalid: true},
+		{name: "latest deployed version", agent: "assistant", project: true,
+			deployedName: "deployed-agent", deployedVersion: "latest", invalid: true},
+		{name: "default deployed version", agent: "assistant", project: true,
+			deployedName: "deployed-agent", deployedVersion: "default", invalid: true},
+		{name: "authored pin without override", project: true,
+			deployedName: "deployed-agent", deployedVersion: "8", wantName: "demo-agent", wantVersion: "4"},
+		{name: "ignore unselected deployed alias", project: true,
+			deployedName: "deployed-agent", deployedVersion: "latest", wantName: "demo-agent", wantVersion: "4"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			projectServer := &recordingProjectServer{nilProject: !tc.project, projectPath: root}
+			if tc.project {
+				projectServer.existing = map[string]*azdext.ServiceConfig{
+					"assistant": optimizeTestDirectService(t, root),
+				}
+			}
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
+				values: map[string]map[string]string{"dev": {
+					"AGENT_ASSISTANT_NAME": tc.deployedName, "AGENT_ASSISTANT_VERSION": tc.deployedVersion,
+				}},
+			}
+			t.Setenv("AZD_SERVER", newProjectRecorderServer(t, projectServer, envServer))
+			var submissions atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				submissions.Add(1)
+				var submitted optimize_api.OptimizeRequest
+				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&submitted)) {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				assert.Equal(t, &optimize_api.AgentIdentifier{
+					Type: "foundry_agent", Name: tc.wantName, Version: tc.wantVersion,
+				}, submitted.TargetConfiguration)
+				w.WriteHeader(http.StatusAccepted)
+				_, _ = w.Write([]byte(`{"id":"job-skill","status":"queued"}`))
+			}))
+			defer server.Close()
+			action := &OptimizeAction{
+				flags: &optimizeFlags{
+					configFile: writeTestFile(t, root, "skill.json", skillOptimizeTestConfig),
+					agent:      tc.agent, noWait: true,
+					optimizeConnectionFlags: optimizeConnectionFlags{endpoint: server.URL},
+				},
+				envName: "dev", noPrompt: true, client: newTestOptimizeClient(server.URL),
+			}
+			cfg, _, project, err := action.resolveConfig(t.Context())
+			require.NoError(t, err)
+			err = action.applyOverrides(t.Context(), cfg, project)
+			if tc.invalid {
+				require.ErrorContains(t, err, "target_configuration")
+			} else {
+				require.NoError(t, err)
+			}
+			request, _, err := cfg.ToRequest()
+			if tc.invalid {
+				require.ErrorContains(t, err, "target_configuration")
+				assert.Nil(t, request)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.wantName, request.TargetConfiguration.Name)
+				assert.Equal(t, tc.wantVersion, request.TargetConfiguration.Version)
+			}
+			assert.Equal(t, "demo-agent", cfg.Request.TargetConfiguration.Name)
+			assert.Equal(t, "4", cfg.Request.TargetConfiguration.Version)
+			cmd := &cobra.Command{}
+			cmd.SetContext(t.Context())
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			cmd.SetErr(&output)
+			err = action.Run(t.Context(), cmd)
+			if tc.invalid {
+				require.ErrorContains(t, err, "target_configuration")
+				assert.Zero(t, submissions.Load())
+				assert.NotContains(t, output.String(), "Optimizing")
+			} else {
+				require.NoError(t, err)
+				assert.EqualValues(t, 1, submissions.Load())
+			}
+		})
+	}
+}
+
 func TestSkillOptimizeUnknownFieldsAreNotDropped(t *testing.T) {
 	t.Parallel()
 	input := strings.Replace(skillOptimizeTestConfig, `"max_traces":10`, `"max_traces":10,"misspelled":true`, 1)
@@ -447,6 +594,11 @@ func TestSkillOptimizePreservesAgentJobState(t *testing.T) {
 				request := skillOptimizeRequest(t)
 				if tc.agentless {
 					request.TargetConfiguration = nil
+					request.OptimizationConfiguration.Context[0].TraceConnectionConfiguration =
+						&optimize_api.SkillTraceConnectionConfiguration{
+							Type: "appinsights", AgentName: new("service"),
+							ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Insights/components/traces",
+						}
 				}
 				cfg = optimizeConfigFromRequest(&request)
 			} else {
@@ -628,6 +780,103 @@ func TestSkillOptimizeCandidateEscapesEveryRenderedField(t *testing.T) {
 			after, err := json.Marshal(candidate)
 			require.NoError(t, err)
 			assert.Equal(t, before, after, "rendering must not mutate the service result")
+		})
+	}
+}
+
+func TestSkillOptimizeCandidateDownloadSuggestions(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, value string
+	}{
+		{"command substitution", "$(printf substituted)"},
+		{"backtick substitution", "`printf substituted`"},
+		{"environment substitution", "%PATH%"},
+		{"delayed substitution", "!PATH!"},
+		{"double quote", `value"quoted`},
+		{"single quote", "value'quoted"},
+		{"backslash", `reports\file.json`},
+		{"command separator", "value;command"},
+		{"command chain", "value&command"},
+		{"pipeline", "value|command"},
+		{"redirection", "value>file"},
+		{"newline", "value\ncommand"},
+		{"terminal control", "value\x1b[2J"},
+		{"smart quote", "value\u2019quoted"},
+		{"non-ASCII path", "r\u00e9sum\u00e9.json"},
+		{"flag-like value", "--help"},
+		{"empty", ""},
+	} {
+		for _, field := range []string{"job", "candidate", "file"} {
+			t.Run(tc.name+"/"+field, func(t *testing.T) {
+				t.Parallel()
+				var candidate optimize_api.CandidateResult
+				require.NoError(t, json.Unmarshal([]byte(skillOptimizeTestCandidate), &candidate))
+				jobID := "job-skill"
+				switch field {
+				case "job":
+					jobID = tc.value
+				case "candidate":
+					candidate.CandidateID = tc.value
+				case "file":
+					candidate.Files[0].Path = tc.value
+				}
+				before, err := json.Marshal(candidate)
+				require.NoError(t, err)
+				var output bytes.Buffer
+				printSkillOptimizeCandidate(&output, jobID, candidate)
+				assert.NotContains(t, output.String(), "    azd ai agent optimize download ")
+				assert.Contains(t, output.String(), "azd ai agent optimize download --help")
+				after, err := json.Marshal(candidate)
+				require.NoError(t, err)
+				assert.Equal(t, before, after, "rendering must not mutate the service result")
+			})
+		}
+	}
+}
+
+func TestSkillOptimizeCandidateDownloadSuggestionShellRoundTrip(t *testing.T) {
+	t.Parallel()
+	for _, shell := range []struct {
+		name   string
+		args   []string
+		prefix string
+	}{
+		{"sh", []string{"-c"}, `azd() { printf '%s\n' "$@"; }; `},
+		{"pwsh", []string{"-NoProfile", "-NonInteractive", "-Command"}, "function azd { $args }; "},
+	} {
+		t.Run(shell.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := exec.LookPath(shell.name); err != nil {
+				t.Skip(shell.name + " is not available on PATH")
+			}
+			for _, path := range []string{"reports/trace-analysis.json", "reports/trace analysis.json"} {
+				t.Run(path, func(t *testing.T) {
+					t.Parallel()
+					var candidate optimize_api.CandidateResult
+					require.NoError(t, json.Unmarshal([]byte(skillOptimizeTestCandidate), &candidate))
+					candidate.Files[0].Path = path
+					var output bytes.Buffer
+					printSkillOptimizeCandidate(&output, "job-skill", candidate)
+					var suggestion string
+					for line := range strings.SplitSeq(output.String(), "\n") {
+						if strings.HasPrefix(line, "    azd ai agent optimize download ") {
+							suggestion = strings.TrimSpace(line)
+							break
+						}
+					}
+					require.NotEmpty(t, suggestion)
+					args := append([]string{}, shell.args...)
+					args = append(args, shell.prefix+suggestion)
+					actual, err := exec.CommandContext(t.Context(), shell.name, args...).Output()
+					require.NoError(t, err)
+					lines := strings.Split(strings.TrimRight(strings.ReplaceAll(string(actual), "\r\n", "\n"), "\n"), "\n")
+					assert.Equal(t, []string{
+						"ai", "agent", "optimize", "download", "job-skill",
+						"--candidate", "candidate-skill", "--file", path,
+					}, lines)
+				})
+			}
 		})
 	}
 }

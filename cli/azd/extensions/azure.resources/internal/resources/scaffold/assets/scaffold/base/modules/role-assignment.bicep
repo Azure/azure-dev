@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 param resourceId string = ''
 param roleDefinitionId string
 param principalId string

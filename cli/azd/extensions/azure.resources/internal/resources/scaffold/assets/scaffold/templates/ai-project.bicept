@@ -1,4 +1,7 @@
 {{define "ai-project.bicep" -}}
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
@@ -74,7 +77,7 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
 
 resource localUserAiDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (principalType == 'User') {
   scope: resourceGroup()
-  name: guid(subscription().id, resourceGroup().id, 'localUser', '64702f94-c441-49e6-a78b-ef80e0188fee')
+  name: guid(subscription().id, resourceGroup().id, principalId, 'localUser', '64702f94-c441-49e6-a78b-ef80e0188fee')
   properties: {
     principalId: principalId
     principalType: 'User'
@@ -84,7 +87,7 @@ resource localUserAiDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignm
 
 resource localUserCognitiveServicesUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (principalType == 'User') {
   scope: resourceGroup()
-  name: guid(subscription().id, resourceGroup().id, 'localUser', 'a97b65f3-24c7-4388-baec-2e87135dc908')
+  name: guid(subscription().id, resourceGroup().id, principalId, 'localUser', 'a97b65f3-24c7-4388-baec-2e87135dc908')
   properties: {
     principalId: principalId
     principalType: 'User'

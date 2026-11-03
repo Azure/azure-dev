@@ -1,4 +1,7 @@
 {{define "main.bicep" -}}
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 targetScope = 'subscription'
 
 @minLength(1)

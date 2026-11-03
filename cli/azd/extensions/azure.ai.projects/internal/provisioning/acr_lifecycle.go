@@ -486,11 +486,8 @@ func (p *FoundryProvisioningProvider) prepareACRAccess(ctx context.Context, src 
 	if err != nil {
 		return err
 	}
-	if p.acrBindingRecovered {
-		if err := p.writeACRConfig(ctx, synthesis.ACRBindingConfigKey, p.acrBinding); err != nil {
-			return err
-		}
-		p.acrBindingRecovered = false
+	if err := p.persistRecoveredACRBinding(ctx); err != nil {
+		return err
 	}
 	group, _ := parameterValue(src, "resourceGroupName").(string)
 	if group == "" {
@@ -914,6 +911,11 @@ func (p *FoundryProvisioningProvider) cleanupACRAccess(ctx context.Context) erro
 	if p.acrBinding != nil && p.acrBinding.Mode == "reuse-connect" {
 		registryID = p.acrBinding.RegistryResourceID
 		assignments = slices.Clone(p.acrBinding.OwnedAssignments)
+		if len(assignments) > 0 {
+			if err := p.persistRecoveredACRBinding(ctx); err != nil {
+				return err
+			}
+		}
 	}
 	if p.acrPending != nil {
 		registryID = p.acrPending.RegistryResourceID
@@ -924,6 +926,17 @@ func (p *FoundryProvisioningProvider) cleanupACRAccess(ctx context.Context) erro
 		})
 	}
 	return p.cleanupACROperations(ctx, registryID, assignments)
+}
+
+func (p *FoundryProvisioningProvider) persistRecoveredACRBinding(ctx context.Context) error {
+	if !p.acrBindingRecovered {
+		return nil
+	}
+	if err := p.writeACRConfig(ctx, synthesis.ACRBindingConfigKey, p.acrBinding); err != nil {
+		return err
+	}
+	p.acrBindingRecovered = false
+	return nil
 }
 
 func (p *FoundryProvisioningProvider) cleanupACROperations(
@@ -1024,7 +1037,7 @@ func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, rec
 		return fmt.Errorf("read previous deployed registry binding: %w", err)
 	}
 	state := deployment.Properties.ProvisioningState
-	if p.acrPending != nil && state != "" && state != "Succeeded" && state != "Failed" && state != "Canceled" {
+	if state != "" && state != "Succeeded" && state != "Failed" && state != "Canceled" {
 		return errors.New("a Foundry deployment is still active; wait for it to finish before registry access recovery")
 	}
 	outputs := map[string]*azdext.ProvisioningOutputParameter{}
@@ -1059,7 +1072,7 @@ func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, rec
 				return nil
 			}
 		}
-		return p.recoverPartialACRBinding(ctx, salt)
+		return p.recoverPartialACRBinding(ctx, salt, deployment.Properties.Parameters)
 	}
 	mode := "create"
 	for name, parameter := range deployment.Properties.Parameters {
@@ -1102,8 +1115,70 @@ func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, rec
 	if _, err := synthesis.ParseACRBinding(binding); err != nil {
 		return err
 	}
+	if err := p.recoverACRBindingAssignments(ctx, binding, deployment.Properties.Parameters); err != nil {
+		return err
+	}
 	p.acrBinding = binding
 	p.acrBindingRecovered = true
+	return nil
+}
+
+func (p *FoundryProvisioningProvider) recoverACRBindingAssignments(
+	ctx context.Context, binding *synthesis.ACRBinding, parameters map[string]struct{ Value any },
+) error {
+	if binding.Mode != "reuse-connect" {
+		return nil
+	}
+	var operation any
+	var found bool
+	var registryID, roleID string
+	for name, parameter := range parameters {
+		switch {
+		case strings.EqualFold(name, "acrAccessOperationId"):
+			operation, found = parameter.Value, true
+		case strings.EqualFold(name, "acrPullRoleDefinitionId"):
+			roleID, _ = parameter.Value.(string)
+		case strings.EqualFold(name, "existingAcrResourceId"):
+			registryID, _ = parameter.Value.(string)
+		}
+	}
+	if !found {
+		return nil
+	}
+	token, ok := operation.(string)
+	if !ok {
+		return errors.New("cannot recover registry grant ownership: invalid access operation ID; " +
+			"restore the saved registry lifecycle state before retrying")
+	}
+	if token == "" {
+		return nil
+	}
+	if !strings.EqualFold(registryID, binding.RegistryResourceID) {
+		return errors.New("cannot recover registry grant ownership: " +
+			"the deployment registry selector does not match the recovered registry")
+	}
+	owned := synthesis.ACRAssignment{
+		ID:          binding.RegistryResourceID + "/providers/Microsoft.Authorization/roleAssignments/" + token,
+		PrincipalID: binding.PrincipalID, RoleDefinitionID: roleID, OwnershipToken: token,
+		DeploymentIDs: acrAccessDeploymentIDs(binding.RegistryResourceID, token),
+	}
+	recovered := *binding
+	recovered.OwnedAssignments = []synthesis.ACRAssignment{owned}
+	if _, err := synthesis.ParseACRBinding(&recovered); err != nil {
+		return fmt.Errorf("cannot recover registry grant ownership: %w", err)
+	}
+	var actual acrRoleAssignment
+	err := p.acrARM(ctx, http.MethodGet, owned.ID, "2022-04-01", &actual)
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("verify recovered registry grant ownership: %w", err)
+	}
+	if err == nil && !ownedACRAssignment(actual, binding.RegistryResourceID,
+		binding.PrincipalID, roleID, token) {
+		return errors.New("previous deployment registry grant does not match azd ownership; " +
+			"restore the saved registry lifecycle state before retrying")
+	}
+	// Keep deployment cleanup retryable after a grant was deleted.
+	binding.OwnedAssignments = recovered.OwnedAssignments
 	return nil
 }
 
@@ -1234,7 +1309,9 @@ func (p *FoundryProvisioningProvider) deploymentCreatedACR(
 	return created, ctx.Err()
 }
 
-func (p *FoundryProvisioningProvider) recoverPartialACRBinding(ctx context.Context, salt string) error {
+func (p *FoundryProvisioningProvider) recoverPartialACRBinding(
+	ctx context.Context, salt string, parameters map[string]struct{ Value any },
+) error {
 	projectID, principalID, err := p.partialProjectIdentity(ctx)
 	if err != nil || projectID == "" {
 		return err
@@ -1306,6 +1383,9 @@ func (p *FoundryProvisioningProvider) recoverPartialACRBinding(ctx context.Conte
 		DeploymentSalt: salt,
 	}
 	if _, err := synthesis.ParseACRBinding(binding); err != nil {
+		return err
+	}
+	if err := p.recoverACRBindingAssignments(ctx, binding, parameters); err != nil {
 		return err
 	}
 	p.acrBinding = binding

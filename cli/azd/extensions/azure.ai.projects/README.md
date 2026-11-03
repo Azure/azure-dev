@@ -392,6 +392,15 @@ result; administrator-managed grants are not changed.
 Re-eject older Foundry Bicep templates before provisioning an external registry
 so their access-operation contract accepts the persisted role.
 
+If local registry lifecycle state is lost, azd can recover owned grants from
+retained deployment access-operation metadata. Recovery verifies the registry,
+project principal, role, and ownership marker before recording a grant.
+An already-deleted grant still allows cleanup of its verified deployment records.
+Recovered ownership is saved before cleanup so a failed teardown remains
+retryable after local state loss.
+Mismatched or unreadable grant ownership stops teardown. Legacy deployments
+without access-operation metadata do not authorize deleting registry grants.
+
 If deployment fails or is canceled, resource-group and registry-access ownership
 recovery are attempted independently. Recovery errors are reported without
 preventing the other ownership record from being recovered.

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -331,6 +332,302 @@ func TestACRLegacyBindingUsesDeploymentFacts(t *testing.T) {
 	require.ErrorContains(t, p.prepareACRAccess(t.Context(), src), "migration")
 	assert.Empty(t, env.config)
 	assert.Empty(t, env.set)
+}
+
+func TestACRDeploymentGrantRecoveryAfterStateLoss(t *testing.T) {
+	for _, tt := range []struct {
+		name, role                string
+		partial, missing, unowned bool
+	}{
+		{name: "classic", role: acrPullRole},
+		{name: "ABAC", role: acrRepositoryReader},
+		{name: "partial", role: acrPullRole, partial: true},
+		{name: "grant already deleted", role: acrPullRole, missing: true},
+		{name: "partial grant already deleted", role: acrRepositoryReader, partial: true, missing: true},
+		{name: "administrator access", role: acrPullRole, unowned: true},
+	} {
+		for _, action := range []string{"recover", "down"} {
+			t.Run(tt.name+"/"+action, func(t *testing.T) {
+				p, env := acrTestProvider(t)
+				p.rgExplicit = true
+				p.credential = acrTestCredential{}
+				require.NoError(t, p.loadACRLifecycle(t.Context()))
+				require.Nil(t, p.acrBinding)
+				require.Nil(t, p.acrPending)
+				assignment := acrTestAssignment()
+				assignment.Properties.RoleDefinitionID = "/subscriptions/sub/providers/Microsoft.Authorization/roleDefinitions/" + tt.role
+				owned := synthesis.ACRAssignment{
+					ID: assignment.ID, PrincipalID: "principal",
+					RoleDefinitionID: assignment.Properties.RoleDefinitionID, OwnershipToken: testACRToken,
+					DeploymentIDs: acrAccessDeploymentIDs(testACRID, testACRToken),
+				}
+				rootID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+				resourcesID := "/subscriptions/sub/resourceGroups/foundry/" +
+					"providers/Microsoft.Resources/deployments/foundry-resources"
+				deleted := []string{}
+				groupDeleted := false
+				p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+					if method == http.MethodDelete {
+						require.Equal(t, "down", action)
+						if !tt.unowned {
+							require.NotEmpty(t, env.config[synthesis.ACRBindingConfigKey])
+						}
+						if path == rootID {
+							require.True(t, groupDeleted)
+						}
+						deleted = append(deleted, path)
+						return nil
+					}
+					require.Equal(t, http.MethodGet, method)
+					switch path {
+					case rootID:
+						state := "Succeeded"
+						outputs := map[string]any{
+							"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": testACRID},
+							"AZURE_AI_PROJECT_ID":                  map[string]any{"value": testACRProject},
+						}
+						if tt.partial {
+							state, outputs = "Failed", nil
+						}
+						parameters := map[string]any{
+							"existingAcrResourceId":   map[string]any{"value": testACRID},
+							"acrAccessOperationId":    map[string]any{"value": testACRToken},
+							"acrPullRoleDefinitionId": map[string]any{"value": owned.RoleDefinitionID},
+						}
+						if tt.unowned {
+							parameters["acrAccessOperationId"] = map[string]any{"value": ""}
+						}
+						if tt.name == "ABAC" {
+							for _, name := range []string{"acrAccessOperationId", "acrPullRoleDefinitionId"} {
+								parameters[strings.ToUpper(name)] = parameters[name]
+								delete(parameters, name)
+							}
+						}
+						return acrTestReply(out, map[string]any{"properties": map[string]any{
+							"provisioningState": state, "outputs": outputs,
+							"parameters": parameters,
+						}})
+					case testACRProject:
+						return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+					case resourcesID + "/operations":
+						return acrTestReply(out, map[string]any{"value": []any{map[string]any{"properties": map[string]any{
+							"targetResource": map[string]any{
+								"id": testACRProject, "resourceType": "Microsoft.CognitiveServices/accounts/projects",
+							},
+						}}}})
+					case testACRProject + "/connections":
+						return acrTestReply(out, map[string]any{"value": []any{map[string]any{"properties": map[string]any{
+							"category": "ContainerRegistry", "metadata": map[string]string{"ResourceId": testACRID},
+						}}}})
+					case owned.ID:
+						require.False(t, tt.unowned, "administrator grants must remain outside ownership recovery")
+						if tt.missing {
+							return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+						}
+						return acrTestReply(out, assignment)
+					case owned.DeploymentIDs[0], owned.DeploymentIDs[1]:
+						parameters := map[string]any{
+							"accessOperationId": map[string]any{"value": testACRToken},
+						}
+						if path == owned.DeploymentIDs[0] {
+							parameters = map[string]any{
+								"assignmentName":       map[string]any{"value": testACRToken},
+								"ownershipDescription": map[string]any{"value": "azd-foundry:" + testACRToken},
+							}
+						}
+						return acrTestReply(out, map[string]any{"properties": map[string]any{
+							"parameters": parameters,
+						}})
+					default:
+						t.Fatalf("unexpected recovery request: %s %s", method, path)
+						return nil
+					}
+				}
+				p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+					Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+						require.Equal(t, "down", action)
+						if request.Method == http.MethodDelete {
+							require.True(t, strings.EqualFold("/subscriptions/sub/resourceGroups/foundry", request.URL.Path))
+							if !tt.unowned {
+								require.Contains(t, deleted, owned.DeploymentIDs[0])
+								require.Contains(t, deleted, owned.DeploymentIDs[1])
+							}
+							groupDeleted = true
+							return acrTestHTTPReply(t, request, http.StatusOK, nil)
+						}
+						require.Equal(t, http.MethodGet, request.Method)
+						require.True(t, strings.HasSuffix(request.URL.Path, "/Microsoft.CognitiveServices/accounts"))
+						return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{"value": []any{}})
+					}),
+				}}
+				if action == "recover" {
+					require.NoError(t, p.recoverDeployedACRBinding(t.Context()))
+					require.NotNil(t, p.acrBinding)
+					if tt.unowned {
+						assert.Empty(t, p.acrBinding.OwnedAssignments)
+					} else {
+						assert.Equal(t, []synthesis.ACRAssignment{owned}, p.acrBinding.OwnedAssignments)
+					}
+					assert.Empty(t, deleted)
+				} else {
+					result, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+					require.NoError(t, err)
+					require.NotNil(t, result)
+					expected := slices.Clone(owned.DeploymentIDs)
+					if tt.unowned {
+						expected = nil
+					} else if !tt.missing {
+						expected = append([]string{owned.ID}, expected...)
+					}
+					assert.Equal(t, append(expected, rootID), deleted)
+					assert.True(t, groupDeleted)
+					assert.Nil(t, p.acrBinding)
+				}
+				assert.Nil(t, p.acrPending)
+				assert.Empty(t, env.config)
+				assert.Empty(t, env.set)
+			})
+		}
+	}
+}
+
+func TestACRDeploymentGrantRecoveryRejectsUnverifiedOwnership(t *testing.T) {
+	for _, tt := range []struct {
+		name, wantError string
+	}{
+		{name: "administrator grant", wantError: "does not match azd ownership"},
+		{name: "wrong principal", wantError: "does not match azd ownership"},
+		{name: "wrong role", wantError: "does not match azd ownership"},
+		{name: "wrong scope", wantError: "does not match azd ownership"},
+		{name: "wrong assignment", wantError: "does not match azd ownership"},
+		{name: "conditional grant", wantError: "does not match azd ownership"},
+		{name: "unreadable grant", wantError: "verify recovered registry grant ownership"},
+		{name: "invalid token", wantError: "cannot recover registry grant ownership"},
+		{name: "invalid token type", wantError: "cannot recover registry grant ownership"},
+		{name: "null token", wantError: "cannot recover registry grant ownership"},
+		{name: "missing role", wantError: "cannot recover registry grant ownership"},
+		{name: "invalid role", wantError: "cannot recover registry grant ownership"},
+		{name: "invalid role type", wantError: "cannot recover registry grant ownership"},
+		{name: "active deployment", wantError: "deployment is still active"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			p.rgExplicit = true
+			p.credential = acrOfflineCredential{}
+			assignment := acrTestAssignment()
+			parameters := map[string]any{
+				"existingAcrResourceId":   map[string]any{"value": testACRID},
+				"acrAccessOperationId":    map[string]any{"value": testACRToken},
+				"acrPullRoleDefinitionId": map[string]any{"value": assignment.Properties.RoleDefinitionID},
+			}
+			state := "Succeeded"
+			switch tt.name {
+			case "administrator grant":
+				assignment.Properties.Description = ""
+			case "wrong principal":
+				assignment.Properties.PrincipalID = "other"
+			case "wrong role":
+				assignment.Properties.RoleDefinitionID = "/roles/owner"
+			case "wrong scope":
+				assignment.Properties.Scope = "/subscriptions/sub"
+			case "wrong assignment":
+				assignment.ID += "other"
+			case "conditional grant":
+				assignment.Properties.Condition = "condition"
+			case "invalid token":
+				parameters["acrAccessOperationId"] = map[string]any{"value": "invalid"}
+			case "invalid token type":
+				parameters["acrAccessOperationId"] = map[string]any{"value": 123}
+			case "null token":
+				parameters["acrAccessOperationId"] = map[string]any{"value": nil}
+			case "missing role":
+				delete(parameters, "acrPullRoleDefinitionId")
+			case "invalid role":
+				parameters["acrPullRoleDefinitionId"] = map[string]any{"value": "/roles/owner"}
+			case "invalid role type":
+				parameters["acrPullRoleDefinitionId"] = map[string]any{"value": true}
+			case "active deployment":
+				state = "Running"
+			}
+			rootID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+				require.Equal(t, http.MethodGet, method, "unverified ownership must not mutate resources")
+				switch path {
+				case rootID:
+					return acrTestReply(out, map[string]any{"properties": map[string]any{
+						"provisioningState": state, "parameters": parameters,
+						"outputs": map[string]any{
+							"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": testACRID},
+							"AZURE_AI_PROJECT_ID":                  map[string]any{"value": testACRProject},
+						},
+					}})
+				case testACRProject:
+					return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+				case acrTestAssignment().ID:
+					if tt.name == "unreadable grant" {
+						return &azcore.ResponseError{StatusCode: http.StatusForbidden}
+					}
+					return acrTestReply(out, assignment)
+				default:
+					t.Fatalf("unexpected ownership request: %s %s", method, path)
+					return nil
+				}
+			}
+			result, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+			require.ErrorContains(t, err, tt.wantError)
+			assert.Nil(t, result)
+			assert.Nil(t, p.acrBinding)
+			assert.False(t, p.acrBindingRecovered)
+			assert.Nil(t, p.acrPending)
+			assert.Empty(t, env.config)
+			assert.Empty(t, env.set)
+		})
+	}
+}
+
+func TestACRRecoveredGrantOwnershipIsPersistedBeforeCleanup(t *testing.T) {
+	for _, failure := range []string{"save", "delete"} {
+		t.Run(failure, func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			p.acrBinding = acrTestBinding()
+			assignment := acrTestAssignment()
+			p.acrBinding.OwnedAssignments = []synthesis.ACRAssignment{{
+				ID: assignment.ID, PrincipalID: "principal",
+				RoleDefinitionID: assignment.Properties.RoleDefinitionID, OwnershipToken: testACRToken,
+				DeploymentIDs: acrAccessDeploymentIDs(testACRID, testACRToken),
+			}}
+			p.acrBindingRecovered = true
+			if failure == "save" {
+				env.configErr = errors.New("cannot save recovered ownership")
+			}
+			deletes := 0
+			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+				require.Equal(t, "delete", failure, "failed persistence must prevent ARM mutations")
+				require.Equal(t, assignment.ID, path)
+				if method == http.MethodDelete {
+					deletes++
+					require.NotEmpty(t, env.config[synthesis.ACRBindingConfigKey])
+					return &azcore.ResponseError{StatusCode: http.StatusForbidden}
+				}
+				require.Equal(t, http.MethodGet, method)
+				return acrTestReply(out, assignment)
+			}
+			err := p.cleanupACRAccess(t.Context())
+			if failure == "save" {
+				require.ErrorContains(t, err, "cannot save recovered ownership")
+				assert.Zero(t, deletes)
+				assert.True(t, p.acrBindingRecovered)
+				assert.Empty(t, env.config)
+			} else {
+				require.ErrorContains(t, err, "delete azd-owned registry grant")
+				assert.Equal(t, 1, deletes)
+				assert.False(t, p.acrBindingRecovered)
+				reloaded := &FoundryProvisioningProvider{azdClient: p.azdClient, envName: p.envName}
+				require.NoError(t, reloaded.loadACRLifecycle(t.Context()))
+				assert.Equal(t, p.acrBinding, reloaded.acrBinding)
+			}
+		})
+	}
 }
 
 func TestACRCreatedOutputRequiresDeploymentFacts(t *testing.T) {

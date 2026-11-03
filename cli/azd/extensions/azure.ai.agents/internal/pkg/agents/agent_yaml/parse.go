@@ -479,12 +479,23 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 				}
 				choice, found := rawProperty(responses, "toolChoice", "tool_choice")
 				if found {
+					if _, stringOK := choice.(string); !stringOK {
+						if _, objectOK := choice.(map[string]any); !objectOK {
+							errors = append(errors,
+								"delegation.responses.toolChoice must be a string or object for GPT Live")
+						}
+					}
 					validateRawObject("delegation.responses.toolChoice", choice, []string{"type", "name", "serverLabel", "server_label"})
 				}
-				if tools, ok := responses["tools"].([]any); ok {
-					for i, tool := range tools {
-						validateRawObject(fmt.Sprintf("delegation.responses.tools[%d]", i), tool,
-							[]string{"type", "name", "description", "parameters", "strict"})
+				if toolsValue, found := responses["tools"]; found {
+					tools, ok := toolsValue.([]any)
+					if !ok {
+						errors = append(errors, "delegation.responses.tools must be an array for GPT Live")
+					} else {
+						for i, tool := range tools {
+							validateRawObject(fmt.Sprintf("delegation.responses.tools[%d]", i), tool,
+								[]string{"type", "name", "description", "parameters", "strict"})
+						}
 					}
 				}
 			}

@@ -641,6 +641,12 @@ func TestVoiceAgentFromResolvedService_RejectsExplicitNullLiveFields(t *testing.
 		"parallelToolCalls":  {"parallelToolCalls": nil},
 		"maxOutputTokens":    {"maxOutputTokens": nil},
 		"telephony":          {"telephony": nil},
+		"responses toolChoice": {"delegation": map[string]any{
+			"type": "responses", "responses": map[string]any{"model": "terra", "toolChoice": nil},
+		}},
+		"responses tools": {"delegation": map[string]any{
+			"type": "responses", "responses": map[string]any{"model": "terra", "tools": nil},
+		}},
 	} {
 		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
 			t.Run(name+"/"+source, func(t *testing.T) {

@@ -14,12 +14,14 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/botservice"
@@ -1787,6 +1789,9 @@ func newServiceTargetTestClient(
 	}
 	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
 		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
+		if telemetrySrv, ok := projectSrvs[0].(azdext.TelemetryServiceServer); ok {
+			azdext.RegisterTelemetryServiceServer(srv, telemetrySrv)
+		}
 	} else {
 		azdext.RegisterProjectServiceServer(srv, &previewProjectServer{})
 	}
@@ -1805,6 +1810,80 @@ func newServiceTargetTestClient(
 	t.Cleanup(func() { client.Close() })
 
 	return client
+}
+
+type snapshotDeployTelemetryServer struct {
+	previewProjectServer
+	azdext.UnimplementedTelemetryServiceServer
+	mu        sync.Mutex
+	requests  []*azdext.ReportUsageRequest
+	reportErr error
+}
+
+func (server *snapshotDeployTelemetryServer) ReportUsage(
+	_ context.Context, request *azdext.ReportUsageRequest,
+) (*azdext.ReportUsageResponse, error) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	server.requests = append(server.requests, request)
+	return &azdext.ReportUsageResponse{Accepted: false}, server.reportErr
+}
+
+func (server *snapshotDeployTelemetryServer) recordedRequests() []*azdext.ReportUsageRequest {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	return append([]*azdext.ReportUsageRequest(nil), server.requests...)
+}
+
+func TestSnapshotDeployReportsPerServiceResult(t *testing.T) {
+	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	for _, reportErr := range []error{nil, status.Error(codes.Unavailable, "customer-secret")} {
+		for _, ref := range []bool{false, true} {
+			root := t.TempDir()
+			recorder := &snapshotDeployTelemetryServer{reportErr: reportErr}
+			client := newServiceTargetTestClient(t, nil, nil, recorder)
+			provider := &AgentServiceTargetProvider{azdClient: client, projectPath: root, deployContextReady: true}
+			for index, snapshot := range []*bool{new(true), new(false), nil, new(true)} {
+				properties := map[string]any{
+					"kind": "hosted", "name": "customer-secret",
+					"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}},
+				}
+				if snapshot != nil {
+					properties["enableMemorySnapshot"] = *snapshot
+				}
+				if ref {
+					content, err := json.Marshal(properties)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "agent.json"), content, 0600))
+					properties = map[string]any{"$ref": "agent.json"}
+				}
+				props, err := structpb.NewStruct(properties)
+				require.NoError(t, err)
+				service := &azdext.ServiceConfig{
+					Name: fmt.Sprintf("worker-%d", index), Host: "azure.ai.agent", AdditionalProperties: props,
+					Environment: map[string]string{"INVALID-NAME": "customer-secret"},
+				}
+				result, err := provider.Deploy(t.Context(), service, nil, nil, func(string) {})
+				require.Nil(t, result)
+				require.ErrorContains(t, err, "INVALID-NAME")
+				require.NotContains(t, err.Error(), "Unavailable")
+			}
+			requests := recorder.recordedRequests()
+			require.Len(t, requests, 2, "one result per snapshot service attempt, not per configuration")
+			for _, request := range requests {
+				require.Equal(t, "agent.snapshot.deploy.completed", request.EventName)
+				require.Equal(t, "true", request.Attributes["agent.memory_snapshot"])
+				require.Equal(t, "failed", request.Attributes["agent.deploy.outcome"])
+				require.Equal(t, "other", request.Attributes["agent.deploy.error_code"])
+				require.Contains(t, request.Attributes, "agent.deploy.duration_ms")
+				require.Len(t, request.Attributes, 4)
+				for _, value := range request.Attributes {
+					require.NotContains(t, value, "customer-secret")
+				}
+			}
+		}
+	}
 }
 
 type stubProjectServer struct {

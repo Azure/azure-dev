@@ -20,11 +20,12 @@ import (
 )
 
 const (
-	agentContextResolvedEvent   = "agent.context.resolved"
-	agentKindAttribute          = "agent.kind"
-	agentHarnessAttribute       = "agent.harness"
-	agentOperationAttribute     = "agent.operation"
-	agentContainerModeAttribute = "agent.container.mode"
+	agentContextResolvedEvent    = "agent.context.resolved"
+	agentKindAttribute           = "agent.kind"
+	agentHarnessAttribute        = "agent.harness"
+	agentOperationAttribute      = "agent.operation"
+	agentContainerModeAttribute  = "agent.container.mode"
+	agentMemorySnapshotAttribute = "agent.memory_snapshot"
 
 	containerModeBuild           = "build"
 	containerModeCode            = "code"
@@ -38,10 +39,11 @@ const (
 )
 
 type agentTelemetryContext struct {
-	kind          string
-	harness       string
-	operation     string
-	containerMode string // empty for non-hosted agents
+	kind           string
+	harness        string
+	operation      string
+	containerMode  string // empty for non-hosted agents
+	memorySnapshot string
 }
 
 type agentContextReporter struct {
@@ -76,7 +78,7 @@ func (r *agentContextReporter) reportProjectConfig(
 	operation string,
 ) {
 	for _, agentCtx := range agentTelemetryContexts(project, operation) {
-		key := agentCtx.kind + "\x00" + agentCtx.harness + "\x00" + agentCtx.containerMode
+		key := agentCtx.kind + "\x00" + agentCtx.harness + "\x00" + agentCtx.containerMode + "\x00" + agentCtx.memorySnapshot
 		r.mu.Lock()
 		_, exists := r.seen[key]
 		if !exists {
@@ -117,13 +119,20 @@ func (r *agentContextReporter) report(
 
 	var err error
 	if agentCtx.containerMode != "" {
+		snapshot := agentCtx.memorySnapshot
+		switch snapshot {
+		case "true", "false", "unset":
+		default:
+			snapshot = "unknown"
+		}
 		_, err = telemetry.ReportUsage(ctx, &azdext.ReportUsageRequest{
 			EventName: agentContextResolvedEvent,
 			Attributes: map[string]string{
-				agentKindAttribute:          agentCtx.kind,
-				agentHarnessAttribute:       agentCtx.harness,
-				agentOperationAttribute:     agentCtx.operation,
-				agentContainerModeAttribute: agentCtx.containerMode,
+				agentKindAttribute:           agentCtx.kind,
+				agentHarnessAttribute:        agentCtx.harness,
+				agentOperationAttribute:      agentCtx.operation,
+				agentContainerModeAttribute:  agentCtx.containerMode,
+				agentMemorySnapshotAttribute: snapshot,
 			},
 		})
 	} else {
@@ -165,18 +174,38 @@ func agentTelemetryContexts(project *azdext.ProjectConfig, operation string) []a
 		}
 
 		containerMode := ""
+		memorySnapshot := ""
 		if kind == string(agent_yaml.AgentKindHosted) {
 			containerMode = telemetryContainerMode(svc, project.GetPath())
+			memorySnapshot = telemetryMemorySnapshot(svc, project.GetPath())
 		}
 
 		contexts = append(contexts, agentTelemetryContext{
-			kind:          kind,
-			harness:       harness,
-			operation:     operation,
-			containerMode: containerMode,
+			kind:           kind,
+			harness:        harness,
+			operation:      operation,
+			containerMode:  containerMode,
+			memorySnapshot: memorySnapshot,
 		})
 	}
 	return contexts
+}
+
+func telemetryMemorySnapshot(svc *azdext.ServiceConfig, projectRoot string) string {
+	if os.Getenv("AGENT_DEFINITION_PATH") != "" {
+		return "unknown"
+	}
+	agentDef, isHosted, _, err := projectpkg.LoadHostedAgentDefinition(svc, projectRoot)
+	if err != nil || !isHosted {
+		return "unknown"
+	}
+	if agentDef.EnableMemorySnapshot == nil {
+		return "unset"
+	}
+	if *agentDef.EnableMemorySnapshot {
+		return "true"
+	}
+	return "false"
 }
 
 // telemetryContainerMode classifies the project-authored hosted definition without

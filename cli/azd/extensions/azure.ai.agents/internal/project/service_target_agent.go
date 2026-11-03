@@ -39,6 +39,7 @@ import (
 	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
+	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -46,6 +47,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
@@ -1577,7 +1579,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
-) (*azdext.ServiceDeployResult, error) {
+) (serviceResult *azdext.ServiceDeployResult, deployErr error) {
+	startedAt := time.Now()
 	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
@@ -1617,6 +1620,16 @@ func (p *AgentServiceTargetProvider) Deploy(
 				"unsupported agent kind in the agent service definition",
 				"use a supported kind: 'hosted'",
 			)
+		}
+		if agentDef.EnableMemorySnapshot != nil && *agentDef.EnableMemorySnapshot && p.azdClient != nil {
+			defer func() {
+				if serviceResult == nil && deployErr == nil {
+					return
+				}
+				usage := foundryTelemetry.NewReporter(p.azdClient.Telemetry(), &foundryTelemetry.Options{Timeout: time.Second})
+				usage.Report(context.WithoutCancel(ctx),
+					agentTelemetry.AgentSnapshotDeployCompleted(deployErr, time.Since(startedAt)))
+			}()
 		}
 		if err := validateEnvironmentVariableNames(
 			serviceConfig.GetEnvironment(),

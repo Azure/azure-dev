@@ -4,8 +4,19 @@
 package telemetry
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"maps"
 	"testing"
+	"time"
+
+	"azureaiagent/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestAgentInvokeSelectedWireContract(t *testing.T) {
@@ -102,4 +113,46 @@ func TestLocalClientRouteSelectedWireContract(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAgentSnapshotDeployCompleted(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		err     error
+		outcome string
+		code    string
+	}{
+		{"success", nil, "succeeded", "none"},
+		{"failure", errors.New("customer-secret"), "failed", "other"},
+		{"deadline", fmt.Errorf("customer-secret: %w", context.DeadlineExceeded), "timeout", "deadline_exceeded"},
+		{"cancellation", fmt.Errorf("customer-secret: %w", context.Canceled), "cancelled", "cancelled"},
+		{"structured cancellation", exterrors.Cancelled("customer-secret"), "cancelled", "cancelled"},
+		{"RPC cancellation", status.Error(codes.Canceled, "customer-secret"), "cancelled", "cancelled"},
+		{"RPC deadline", status.Error(codes.DeadlineExceeded, "customer-secret"), "timeout", "deadline_exceeded"},
+		{"activation timeout", &azdext.ServiceError{ErrorCode: "create_agent.timeout"},
+			"timeout", "create_agent.timeout"},
+		{"snapshot failure", &azdext.ServiceError{ErrorCode: "create_agent.SnapshotCreationError"},
+			"failed", "create_agent.SnapshotCreationError"},
+		{"provisioning failure", &azdext.ServiceError{ErrorCode: "create_agent.ProvisioningError"},
+			"failed", "create_agent.ProvisioningError"},
+		{"image failure", &azdext.ServiceError{ErrorCode: "create_agent.ImageError"}, "failed", "create_agent.ImageError"},
+		{"code failure", &azdext.ServiceError{ErrorCode: "create_agent.CodeError"}, "failed", "create_agent.CodeError"},
+		{"unknown service code", &azdext.ServiceError{ErrorCode: "customer-secret", Message: "customer-secret"},
+			"failed", "other"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			event := AgentSnapshotDeployCompleted(tc.err, 1250*time.Millisecond)
+			require.Equal(t, "agent.snapshot.deploy.completed", event.Name)
+			require.Equal(t, map[string]string{
+				"agent.memory_snapshot": "true", "agent.deploy.outcome": tc.outcome,
+				"agent.deploy.error_code": tc.code, "agent.deploy.duration_ms": "1250",
+			}, event.Attributes)
+			for value := range maps.Values(event.Attributes) {
+				require.NotContains(t, value, "customer-secret")
+			}
+		})
+	}
+	require.Equal(t, "0", AgentSnapshotDeployCompleted(nil, -time.Second).Attributes["agent.deploy.duration_ms"])
 }

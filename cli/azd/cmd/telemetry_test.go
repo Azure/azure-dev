@@ -17,6 +17,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	extensionFields "github.com/azure/azure-dev/cli/azd/extensions/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -44,6 +45,32 @@ func TestTelemetryEventConstants(t *testing.T) {
 // rejected by TestNoRawTelemetryAttributes (below).
 func TestTelemetryFieldConstants(t *testing.T) {
 	t.Parallel()
+	t.Run("AgentMemorySnapshot", func(t *testing.T) {
+		t.Parallel()
+		field := extensionFields.AgentMemorySnapshot
+		require.Equal(t, "ext.agent.memory_snapshot", string(field.Key))
+		require.Equal(t, fields.SystemMetadata, field.Classification)
+		require.Equal(t, fields.FeatureInsight, field.Purpose)
+		require.Equal(t, "N/A", field.Endpoint)
+		require.False(t, field.IsMeasurement)
+	})
+	t.Run("AgentSnapshotDeployment", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct {
+			field fields.AttributeKey
+			key   string
+		}{
+			{extensionFields.AgentDeployOutcome, "ext.agent.deploy.outcome"},
+			{extensionFields.AgentDeployErrorCode, "ext.agent.deploy.error_code"},
+			{extensionFields.AgentDeployDurationMs, "ext.agent.deploy.duration_ms"},
+		} {
+			require.Equal(t, tc.key, string(tc.field.Key))
+			require.Equal(t, fields.SystemMetadata, tc.field.Classification)
+			require.Equal(t, fields.PerformanceAndHealth, tc.field.Purpose)
+			require.Equal(t, "N/A", tc.field.Endpoint)
+			require.False(t, tc.field.IsMeasurement)
+		}
+	})
 	t.Run("ResourceFields", func(t *testing.T) {
 		t.Parallel()
 		require.Equal(t, "agency", fields.EnvModifierAgency)

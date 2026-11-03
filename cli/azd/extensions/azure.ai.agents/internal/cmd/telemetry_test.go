@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
 	"os"
 	"path/filepath"
@@ -98,10 +99,11 @@ func TestAgentContextReporterReportsContext(t *testing.T) {
 	require.Len(t, client.requests, 1)
 	require.Equal(t, agentContextResolvedEvent, client.requests[0].EventName)
 	require.True(t, maps.Equal(client.requests[0].Attributes, map[string]string{
-		agentKindAttribute:          "hosted",
-		agentHarnessAttribute:       agentHarnessNone,
-		agentOperationAttribute:     "deploy",
-		agentContainerModeAttribute: containerModePassthroughAuth,
+		agentKindAttribute:           "hosted",
+		agentHarnessAttribute:        agentHarnessNone,
+		agentOperationAttribute:      "deploy",
+		agentContainerModeAttribute:  containerModePassthroughAuth,
+		agentMemorySnapshotAttribute: "unknown",
 	}))
 }
 
@@ -109,7 +111,7 @@ func TestAgentContextReporterOmitsContainerModeForNonHosted(t *testing.T) {
 	reporter := newAgentContextReporter()
 	client := &telemetryRecordingClient{}
 	reporter.report(t.Context(), client, agentTelemetryContext{
-		kind: "prompt", harness: agentHarnessNone, operation: "invoke",
+		kind: "prompt", harness: agentHarnessNone, operation: "invoke", memorySnapshot: "true",
 	})
 
 	require.Len(t, client.requests, 1)
@@ -281,4 +283,88 @@ func TestTelemetryClassificationsBoundCustomerValues(t *testing.T) {
 	require.Equal(t, agentHarnessOther, telemetryAgentHarness("customer-harness"))
 	require.Equal(t, "files.upload", telemetryOperation("agent files upload"))
 	require.Equal(t, string(agent_yaml.AgentKindVoice), telemetryAgentKind(string(agent_yaml.AgentKindVoice)))
+}
+
+func TestTelemetryMemorySnapshotClassification(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	for _, tc := range []struct {
+		name  string
+		field string
+		value any
+		want  string
+	}{
+		{"omitted", "", nil, "unset"},
+		{"enabled", "enableMemorySnapshot", true, "true"},
+		{"disabled", "enableMemorySnapshot", false, "false"},
+		{"case variant", "EnableMemorySnapshot", true, "true"},
+		{"invalid", "enableMemorySnapshot", "customer-secret", "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			properties := map[string]any{
+				"kind": "hosted", "name": "customer-secret",
+				"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}},
+			}
+			if tc.field != "" {
+				properties[tc.field] = tc.value
+			}
+			for _, ref := range []bool{false, true} {
+				root := t.TempDir()
+				props, err := structpb.NewStruct(properties)
+				require.NoError(t, err)
+				if ref {
+					content, err := json.Marshal(properties)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "agent.json"), content, 0600))
+					props, err = structpb.NewStruct(map[string]any{"$ref": "agent.json"})
+					require.NoError(t, err)
+				}
+				service := &azdext.ServiceConfig{Name: "worker", Host: AiAgentHost, AdditionalProperties: props}
+				require.Equal(t, tc.want, telemetryMemorySnapshot(service, root))
+			}
+		})
+	}
+	t.Setenv("AGENT_DEFINITION_PATH", "customer-secret")
+	require.Equal(t, "unknown", telemetryMemorySnapshot(&azdext.ServiceConfig{}, t.TempDir()))
+}
+
+func TestAgentContextReporterKeepsDistinctMemorySnapshots(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	project := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{}}
+	for name, enabled := range map[string]bool{"enabled": true, "disabled": false} {
+		props, err := structpb.NewStruct(map[string]any{
+			"kind": "hosted", "name": "customer-secret", "enableMemorySnapshot": enabled,
+			"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}},
+		})
+		require.NoError(t, err)
+		project.Services[name] = &azdext.ServiceConfig{Name: name, Host: AiAgentHost, AdditionalProperties: props}
+	}
+	reporter := newAgentContextReporter()
+	client := &telemetryRecordingClient{}
+	reporter.reportProjectConfig(t.Context(), client, project, "deploy")
+	reporter.reportProjectConfig(t.Context(), client, project, "deploy")
+	require.Len(t, client.requests, 2)
+	states := map[string]bool{}
+	for _, request := range client.requests {
+		states[request.Attributes[agentMemorySnapshotAttribute]] = true
+		require.NotContains(t, request.Attributes, "name")
+		require.NotContains(t, request.Attributes, "version")
+		require.NotContains(t, request.Attributes, "enableMemorySnapshot")
+		for value := range maps.Values(request.Attributes) {
+			require.NotContains(t, value, "customer-secret")
+		}
+	}
+	require.Equal(t, map[string]bool{"true": true, "false": true}, states)
+}
+
+func TestAgentContextReporterBoundsMemorySnapshot(t *testing.T) {
+	client := &telemetryRecordingClient{}
+	newAgentContextReporter().report(t.Context(), client, agentTelemetryContext{
+		kind: "hosted", harness: agentHarnessNone, operation: "deploy",
+		containerMode: containerModeCode, memorySnapshot: "customer-secret",
+	})
+	require.Len(t, client.requests, 1)
+	require.Equal(t, "unknown", client.requests[0].Attributes[agentMemorySnapshotAttribute])
+	for value := range maps.Values(client.requests[0].Attributes) {
+		require.NotContains(t, value, "customer-secret")
+	}
 }

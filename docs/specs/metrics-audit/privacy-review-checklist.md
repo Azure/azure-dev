@@ -54,6 +54,41 @@ The new fields require the normal privacy review before rollout; this records th
 
 ## When to Trigger a Privacy Review
 
+### Hosted-agent memory snapshot configuration
+
+`azure.ai.agents` adds `ext.agent.memory_snapshot` to the existing
+`agent.context.resolved` event. It is `SystemMetadata` / `FeatureInsight`, with
+endpoint `N/A`, no hashing, and no measurement. Values are limited to `true`,
+`false`, `unset`, and `unknown`, derived from the project-authored hosted
+definition. No agent names, versions, images, endpoints, file paths, credentials,
+or configuration contents are reported. Invalid definitions and explicit
+deployment-definition overrides produce `unknown`; non-hosted agents omit it.
+The field records intent, not successful deployment, capture, or restore.
+
+`agent.snapshot.deploy.completed` additionally reports one client-observed
+result per snapshot-enabled service Deploy after its definition is resolved.
+It reuses `ext.agent.memory_snapshot=true` and adds three fields classified
+`SystemMetadata` / `PerformanceAndHealth`, endpoint `N/A`, not hashed and not
+native measurements:
+
+- `ext.agent.deploy.outcome`: `succeeded`, `failed`, `timeout`, or `cancelled`.
+- `ext.agent.deploy.error_code`: the fixed vocabulary in the telemetry schema;
+  unrecognized codes become `other`, and raw error messages are never reported.
+- `ext.agent.deploy.duration_ms`: nonnegative integer milliseconds as a string,
+  from service Deploy entry to return, excluding reporting and Package/Publish.
+
+No agent names, versions, service names, request IDs, or new identifiers are
+introduced. Completion events are not configuration-deduplicated; a whole-command
+failure is never applied to every service. Timeout/cancellation leave the final
+backend outcome unknown. Reporting has an independent one-second deadline and
+does not replace the original result. Earlier gate/definition/context failures
+and process termination are not covered; missing events do not prove non-execution.
+
+Deduplication includes snapshot configuration so mixed settings are retained.
+The official-registry gate, telemetry opt-out, and shared event budget are
+unchanged. Normal extension privacy review and destination/query validation are
+required before rollout; this records the proposed scope, not completed approval.
+
 ### Agent operation markers (#10072)
 
 Agent operation marker proposal: `azure.ai.agents` adds bounded

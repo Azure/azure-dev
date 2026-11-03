@@ -44,7 +44,6 @@ func TestA2APreviewGateAndLocalValidation(t *testing.T) {
 		{[]string{"-p", "a2a", "--a2a-version=", "hi"}, "invalid --a2a-version"},
 		{[]string{"-p", "a2a", "--a2a-version", "2.0", "hi"}, "supported versions are 0.3 and 1.0"},
 		{[]string{"-p", "responses", "--a2a-version", "1.0", "hi"}, "only supported with the a2a protocol"},
-		{[]string{"-p", "a2a", "--a2a-version", "1.0", "--local", "hi"}, "cannot be invoked against a local agent"},
 		{[]string{"--a2a-version", "1.0", "--no-wait", "hi"}, "--no-wait requires --long-running"},
 		{[]string{"--a2a-version", "1.0", "--client-header", "bad", "hi"}, "invalid --client-header"},
 		{[]string{"--a2a-version", "1.0", "agent", "hi", "-f", "missing.json"}, "cannot use --input-file and a message"},
@@ -1229,16 +1228,5 @@ func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {
 			err = action.validateA2ATarget(t.Context(), rc, "1.0")
 			require.NoError(t, err)
 		})
-	}
-}
-
-// Local guard.
-
-// TestA2ALocal_NotSupported verifies A2A fails fast for local invocation.
-func TestA2ALocal_NotSupported(t *testing.T) {
-	t.Parallel()
-	a := &InvokeAction{flags: &invokeFlags{local: true, message: "hi"}}
-	if err := a.a2aLocal(t.Context()); err == nil {
-		t.Fatal("expected an error for local a2a invocation, got nil")
 	}
 }

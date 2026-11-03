@@ -46,6 +46,13 @@ type Suggestion struct {
 // marked optional below are populated only by the resolver paths that
 // need them — see field docs.
 type State struct {
+	// LocalPort is the running agent's port. Zero omits the port flag in guidance.
+	LocalPort int
+
+	// A2APreviewEnabled captures the existing agents.a2a opt-in at assembly
+	// time. Resolvers never read process environment themselves.
+	A2APreviewEnabled bool
+
 	// EnvironmentName is the explicitly selected azd environment that emitted
 	// commands must target. It stays empty when assembly uses the current
 	// environment, preserving the existing unqualified command shape.

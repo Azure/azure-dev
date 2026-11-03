@@ -134,8 +134,9 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 		return fmt.Errorf("the declared existing AppInsights connection was not found; no connection was created")
 	}
 	if enabled, present := templateParameter(source, "enableNetworkIsolation"); present && enabled != false {
-		return fmt.Errorf("automatic monitoring does not configure private-network ingestion; " +
-			"preserve the existing connection or disable monitoring setup")
+		// Private-network ingestion is unsupported; skip monitoring instead of failing provisioning.
+		source.parameters["monitoringMode"] = map[string]any{"value": "none"}
+		return nil
 	}
 	for _, resource := range []*armresources.GenericResource{account, projectResource} {
 		if resource == nil {

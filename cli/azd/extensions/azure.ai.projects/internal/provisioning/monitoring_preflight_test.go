@@ -473,6 +473,22 @@ func TestMonitoringPreflightImplicitExistingProjectIsNotConsent(t *testing.T) {
 	assert.Len(t, fixture.requests, 3, "only deployment binding, What-If and project identity are read; no setup or discovery")
 }
 
+func TestMonitoringPreflightPrivateNetworkSkipsMonitoring(t *testing.T) {
+	t.Parallel()
+	fixture := monitoringCloudFixture{}
+	p := newMonitoringCloudFixture(t, &fixture)
+	p.synthResult = &synthesis.Result{MonitoringExplicit: true}
+	source := monitoringTestSource("create")
+	source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+	client, err := p.deploymentsClient(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, p.prepareMonitoring(t.Context(), source, client, func(string) {}))
+	assert.Equal(t, "none", source.parameters["monitoringMode"].(map[string]any)["value"])
+	fixture.mu.Lock()
+	defer fixture.mu.Unlock()
+	assert.Empty(t, fixture.writes)
+}
+
 func TestMonitoringPreflightOwnedExistingProjectRetainsCreateGraph(t *testing.T) {
 	t.Parallel()
 	source := monitoringTestSource("create")

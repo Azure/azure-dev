@@ -1,8 +1,16 @@
 <!-- cspell:ignore waza evals -->
 
-# Creating an Extension
+# Creating an extension
 
 This guide covers how to create, build, and publish an extension for the Azure Developer CLI.
+
+## Design before implementation
+
+Start with the [guiding principles](../../cli/azd/docs/style-guidelines/guiding-principles.md#choose-between-core-and-an-extension) to decide whether your change belongs in core or an extension. For service-specific workflows, first consider an extension that uses existing lifecycle events or providers. This lets users keep using familiar commands such as `azd provision` and `azd deploy`.
+
+Use the [extensions style guide](../../cli/azd/docs/extensions/extensions-style-guide.md) to plan commands, flags, help, and errors. Read [contract versioning](../../cli/azd/docs/extensions/contract-versioning.md) before choosing APIs for calling azd, and identify the published software development kit (SDK) and minimum azd version your extension needs.
+
+You can develop an external extension in your own repository. First-party extension development happens in `Azure/azure-dev`; the repository directory and CI instructions below apply to that work. Discuss missing host APIs or proposed core changes with maintainers on an issue before committing to an approach.
 
 ## Overview
 
@@ -18,16 +26,18 @@ azd extensions use a gRPC-based framework to add functionality. The extension fr
 
 ## Prerequisites
 
-- Go 1.26 or later
-- A fork of the [azure-dev](https://github.com/Azure/azure-dev) repository
+- Go 1.26 or later for Go extensions
+- A fork of the [azure-dev](https://github.com/Azure/azure-dev) repository for first-party repository contributions
 - The `azd` Developer Extension installed (`azd extension install microsoft.azd.extensions`)
 - One of the supported languages: Go (best support), .NET (C#), Python, or JavaScript
 
-## Getting Started
+## Getting started
 
 ### 1. Create the extension
 
-First-party extensions live under `cli/azd/extensions/`. Create a new directory for your extension:
+For an external extension, use your own project directory. The Developer Extension provides `azd x init` to create a project from a template; its `--internal` option creates first-party repository files and currently supports Go only.
+
+For first-party repository work, extensions live under `cli/azd/extensions/`. The following directory example uses that layout:
 
 ```bash
 mkdir -p cli/azd/extensions/my.extension

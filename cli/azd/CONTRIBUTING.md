@@ -151,7 +151,7 @@ azd collects coverage from both unit tests and integration/functional tests. Sev
 | **Full local** (unit + integration) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport` | `go tool mage coverage:full` | Azure subscription + service principal | ~30-60 min |
 | **CI baseline** (latest main) | `./eng/scripts/Get-CICoverageReport.ps1 -ShowReport` | `go tool mage coverage:ci` | `az login` | ~1 min |
 
-Additional Mage targets: `go tool mage coverage:html` (HTML report), `go tool mage coverage:check` (enforce 50% unit-only threshold; CI gate is 55% combined).
+Additional Mage targets: `go tool mage coverage:html` (HTML report), `go tool mage coverage:check` (enforce the local 50% unit-only threshold). The [CI gate](./docs/code-coverage-guide.md#ci-gate) checks combined unit and integration coverage separately.
 Override the threshold with: `COVERAGE_MIN=55 go tool mage coverage:check`.
 
 **Typical workflow**: Use *Unit only* during development for fast feedback. After pushing a PR, use *Hybrid* or check your PR's CI coverage with `Get-CICoverageReport.ps1 -PullRequestId <N> -ShowReport`.
@@ -185,6 +185,8 @@ Launch `azd` separately, then attach:
 > Tip: Use the VSCode terminal to perform all `azd` build and run commands.
 
 ## Submitting a change
+
+Consider the [guiding principles](./docs/style-guidelines/guiding-principles.md), including whether new functionality belongs in core or an extension. Use the linked issue to discuss design choices and any exceptions with maintainers.
 
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change, add tests, and ensure tests pass

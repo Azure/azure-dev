@@ -4,6 +4,8 @@
 
 For end-user documentation, see [aka.ms/azd](https://aka.ms/azd). For template examples, see [awesome-azd](https://azure.github.io/awesome-azd/).
 
+Before designing a change, read the [guiding principles](../cli/azd/docs/style-guidelines/guiding-principles.md) for command design and choosing between core and extensions. For extension user experience and code standards, use the [extensions style guide](../cli/azd/docs/extensions/extensions-style-guide.md).
+
 ---
 
 ## Concepts
@@ -18,7 +20,8 @@ Core mental models, terminology, and feature lifecycle.
 
 Task-oriented how-tos for common contributor workflows.
 
-- [Contributing](../CONTRIBUTING.md) — How to build, test, lint, and submit changes
+- [Contributing](../CONTRIBUTING.md): Starting points for core contributors, extension authors, and documentation contributors
+- [CLI contribution guide](../cli/azd/CONTRIBUTING.md): How to build, test, lint, and submit changes
 - [Tracking and Recovering a Core Release](guides/releasing-azd.md) — Find publishing runs, build an end-to-end roadmap, and troubleshoot release failures
 - [Adding a New Command](guides/adding-a-new-command.md) — End-to-end walkthrough for new CLI commands
 - [Creating an Extension](guides/creating-an-extension.md) — How to build and publish an azd extension
@@ -61,11 +64,11 @@ System overviews, design context, and decision records.
 | A system design or ADR | `docs/architecture/` |
 | Detailed implementation design | `cli/azd/docs/design/` |
 | Extension development details | `cli/azd/docs/extensions/` |
-| Style and coding standards | `cli/azd/docs/style-guidelines/` |
+| Core CLI user experience and code standards | `cli/azd/docs/style-guidelines/` |
 
 ## Related documentation
 
 - [AGENTS.md](../AGENTS.md) — AI agent coding instructions
 - [cli/azd/docs/](../cli/azd/docs/) — Detailed implementation-level documentation
-- [cli/azd/docs/style-guidelines/](../cli/azd/docs/style-guidelines/) — Code style guide
-- [cli/azd/docs/extensions/](../cli/azd/docs/extensions/) — Extension framework details
+- [cli/azd/docs/style-guidelines/](../cli/azd/docs/style-guidelines/): Core CLI user experience and code standards
+- [cli/azd/docs/extensions/](../cli/azd/docs/extensions/): Extension framework details, user experience guidance, and code standards

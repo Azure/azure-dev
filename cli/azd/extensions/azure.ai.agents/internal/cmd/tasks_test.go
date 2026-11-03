@@ -8,7 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +26,7 @@ import (
 
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/recordproxy"
 )
 
 // Command and action tests.
@@ -284,6 +287,70 @@ func TestTasksErrorsAreSanitizedAndActionable(t *testing.T) {
 	require.NotContains(t, err.Error(), "secret")
 	require.NotContains(t, tasksOperationError(errors.New("payload secret"), "show").Error(), "secret")
 	require.ErrorIs(t, tasksOperationError(context.Canceled, "show"), context.Canceled)
+	require.ErrorIs(t, tasksOperationError(context.DeadlineExceeded, "show"), context.DeadlineExceeded)
+	wrapped := fmt.Errorf("secret transport context: %w", &agent_api.TaskResponseTooLargeError{})
+	wire := azdext.WrapError(tasksOperationError(wrapped, "show"))
+	require.Contains(t, wire.Message, "32 MiB")
+	require.NotContains(t, wire.Message, "secret")
+}
+
+func TestTasksOversizedTransportCommandError(t *testing.T) {
+	for _, operation := range []string{"list", "show"} {
+		for _, format := range []string{"json", "table"} {
+			t.Run(operation+"/"+format, func(t *testing.T) {
+				attempts := 0
+				original := recordproxy.Transport
+				recordproxy.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					attempts++
+					return &http.Response{
+						StatusCode: http.StatusOK, Header: http.Header{}, Request: req,
+						Body: io.NopCloser(io.MultiReader(strings.NewReader("payload-secret"),
+							io.LimitReader(&tasksSpaceReader{}, 32*1024*1024))),
+					}, nil
+				})
+				t.Cleanup(func() { recordproxy.Transport = original })
+				client := agent_api.NewAgentClient(tasksTestEndpoint, responseTestCredential{})
+				cmd := newTasksOperationCommand(&azdext.ExtensionContext{OutputFormat: format}, operation,
+					func(context.Context, *tasksFlags, bool) (*tasksAction, func(), error) {
+						return &tasksAction{api: client, target: &AgentContext{Name: "worker"}}, func() {}, nil
+					})
+				var writer bytes.Buffer
+				cmd.SilenceUsage = true // The extension root suppresses Cobra usage on operational failures.
+				cmd.SetOut(&writer)
+				cmd.SetErr(io.Discard)
+				if operation == "show" {
+					cmd.SetArgs([]string{"secret-id"})
+				}
+				err := cmd.ExecuteContext(t.Context())
+				require.Error(t, err)
+				wire := azdext.WrapError(err)
+				require.Contains(t, wire.Message, "32 MiB")
+				require.NotContains(t, wire.Message, "authentication")
+				require.NotContains(t, wire.Message, "secret")
+				if operation == "list" {
+					require.Contains(t, wire.Message, "reduce --limit")
+					require.Contains(t, wire.Message, "--omit-attachment-values")
+				} else {
+					require.Contains(t, wire.Message, "full Task")
+					require.Contains(t, wire.Message, "including with --output table")
+					require.NotContains(t, wire.Message, "--limit")
+					require.NotContains(t, wire.Message, "--omit-attachment-values")
+				}
+				require.Equal(t, 1, attempts, "oversized successes must not be retried")
+				require.Empty(t, writer.String())
+			})
+		}
+	}
+}
+
+// Generate an oversized body without retaining another full payload in the test.
+type tasksSpaceReader struct{}
+
+func (*tasksSpaceReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = ' '
+	}
+	return len(p), nil
 }
 
 // Target resolution tests.
@@ -313,6 +380,53 @@ func TestTasksProjectEndpoint(t *testing.T) {
 	} {
 		_, err := tasksProjectEndpoint(endpoint)
 		require.Error(t, err, endpoint)
+	}
+}
+
+func TestTasksInvalidSelectedEndpointSerialization(t *testing.T) {
+	for _, raw := range []string{
+		"http://account.services.ai.azure.com/api/projects/secret-project",
+		"https://secret-host.example/api/projects/secret-project",
+		"https://%zz/secret-project",
+		tasksTestEndpoint + "?token=secret-token",
+	} {
+		for _, tt := range []struct {
+			name, key, agent string
+			list             bool
+		}{
+			{"show Foundry output", "FOUNDRY_PROJECT_ENDPOINT", "", false},
+			{"show deployment output", "AGENT_WORKER_PROJECT_ENDPOINT", "", false},
+			{"list service alias", "AGENT_WORKER_PROJECT_ENDPOINT", "worker", true},
+			{"list deployed name", "AGENT_WORKER_PROJECT_ENDPOINT", "deployed", true},
+			{"list auto selected", "AGENT_WORKER_PROJECT_ENDPOINT", "", true},
+		} {
+			t.Run(tt.name+"/"+raw, func(t *testing.T) {
+				env := &testEnvironmentServiceServer{
+					current:      &azdext.Environment{Name: "default"},
+					environments: map[string]*azdext.Environment{"selected": {Name: "selected"}},
+					values: map[string]map[string]string{
+						"default":  {"FOUNDRY_PROJECT_ENDPOINT": tasksTestEndpoint},
+						"selected": {tt.key: raw, "AGENT_WORKER_NAME": "deployed"},
+					},
+				}
+				host := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+					Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+						"worker": {Name: "worker", Host: AiAgentHost},
+					},
+				}}, &helpersPromptServer{}, env)
+				_, err := resolveTasksTarget(t.Context(), host, tasksTargetOptions{
+					environment: "selected", agentName: tt.agent, list: tt.list,
+				})
+				require.Error(t, err)
+				wire := azdext.WrapError(err)
+				require.Contains(t, wire.Message, "project endpoint")
+				require.Contains(t, wire.Message, "deploy")
+				require.Contains(t, wire.Message, "supply --project-endpoint")
+				require.NotContains(t, wire.Message, "secret")
+				require.Zero(t, env.getCurrentCalls)
+				require.Empty(t, env.setKeys)
+			})
+		}
 	}
 }
 

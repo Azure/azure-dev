@@ -133,6 +133,14 @@ bash, `.ps1` → pwsh, `.cmd`/`.bat` → cmd).
 A missing path-like input remains an error instead of falling through to shell execution. Use
 `--shell` when a single inline command contains shell operators or script-like path arguments.
 
+### Cancellation and Background Processes
+
+Pressing Ctrl+C cancels execution. `azd` stops the command and its child processes,
+waits for shutdown, and reports `ERROR: command execution was canceled by the user`.
+
+After a command or script completes successfully, `azd exec` preserves intentional background child
+processes.
+
 ### Flags
 
 | Flag | Description |

@@ -197,8 +197,7 @@ func validateSkillTraceWindow(window *optimize_api.SkillTraceWindow) error {
 		}
 		for _, value := range []optimize_api.SkillTraceTimestamp{window.StartTime, window.EndTime} {
 			if strings.HasPrefix(strings.TrimSpace(string(value)), `"`) {
-				return fmt.Errorf("fixed trace_window requires integer Unix seconds for start_time and end_time; " +
-					"ISO timestamps are not supported in requests")
+				return fmt.Errorf("fixed trace_window requires integer Unix seconds for start_time and end_time")
 			}
 		}
 		start, startErr := window.StartTime.Time()

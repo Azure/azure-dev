@@ -153,6 +153,93 @@ func TestAgentDefinitionRoundTrip_SessionConfiguration(t *testing.T) {
 	require.Equal(t, 600, *got.SessionConfiguration.IdleTimeoutSeconds)
 }
 
+func TestAgentDefinitionMemorySnapshot(t *testing.T) {
+	t.Parallel()
+	for _, setting := range []struct {
+		name  string
+		value *bool
+	}{
+		{name: "absent"},
+		{name: "disabled", value: new(false)},
+		{name: "enabled", value: new(true)},
+	} {
+		t.Run(setting.name, func(t *testing.T) {
+			t.Parallel()
+			agent := sampleContainerAgent()
+			agent.EnableMemorySnapshot = setting.value
+			props, err := AgentDefinitionToServiceProperties(agent, nil)
+			require.NoError(t, err)
+			_, present := props.GetFields()["enableMemorySnapshot"]
+			require.Equal(t, setting.value != nil, present)
+			svc := &azdext.ServiceConfig{Host: "azure.ai.agent", Name: agent.Name, AdditionalProperties: props}
+			actual, hosted, found, _, err := AgentDefinitionFromService(svc)
+			require.NoError(t, err)
+			require.True(t, hosted)
+			require.True(t, found)
+			require.Equal(t, setting.value, actual.EnableMemorySnapshot)
+		})
+	}
+}
+
+func TestAgentDefinitionMemorySnapshotFileRef(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name     string
+		override *bool
+		want     bool
+	}{
+		{name: "reference", want: true},
+		{name: "explicit disabled override", override: new(false)},
+		{name: "explicit enabled override", override: new(true), want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(root, "definition.yaml"), []byte(
+				"kind: hosted\nname: snapshot-agent\nenableMemorySnapshot: true\n"), 0o600))
+			values := map[string]any{"$ref": "./definition.yaml"}
+			if test.override != nil {
+				values["enableMemorySnapshot"] = *test.override
+			}
+			svc := &azdext.ServiceConfig{
+				Name: "snapshot-agent", Host: "azure.ai.agent", Image: "registry.example/agent:v1",
+				AdditionalProperties: mustStruct(t, values),
+			}
+			agent, hosted, _, err := LoadHostedAgentDefinition(svc, root)
+			require.NoError(t, err)
+			require.True(t, hosted)
+			require.Equal(t, new(test.want), agent.EnableMemorySnapshot)
+		})
+	}
+}
+
+func TestAgentDefinitionMemorySnapshotInvalid(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name  string
+		kind  string
+		value any
+		want  string
+	}{
+		{name: "string", kind: "hosted", value: "true", want: "must be a boolean"},
+		{name: "number", kind: "hosted", value: 1, want: "must be a boolean"},
+		{name: "null", kind: "hosted", want: "must be a boolean"},
+		{name: "prompt", kind: "prompt", value: true, want: "is only supported on hosted agents"},
+		{name: "prompt disabled", kind: "prompt", value: false, want: "is only supported on hosted agents"},
+		{name: "voice", kind: "voice", value: true, want: "is only supported on hosted agents"},
+		{name: "workflow", kind: "workflow", value: true, want: "is only supported on hosted agents"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			svc := &azdext.ServiceConfig{AdditionalProperties: mustStruct(t, map[string]any{
+				"kind": test.kind, "name": "snapshot-agent", "enableMemorySnapshot": test.value,
+			})}
+			_, _, _, _, err := AgentDefinitionFromService(svc)
+			require.ErrorContains(t, err, "enableMemorySnapshot "+test.want)
+		})
+	}
+}
+
 func TestAgentDefinitionFromServiceRejectsNestedConfig(t *testing.T) {
 	props, err := AgentDefinitionToServiceProperties(sampleContainerAgent(), nil)
 	require.NoError(t, err)
@@ -918,28 +1005,36 @@ func TestAgentDefinitionUsesFileRefIgnoresNestedResourceRefs(
 func TestAgentDefinitionUsesFileRefIgnoresInlineDefinition(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "settings.yaml"),
-		[]byte("startupCommand: python main.py\n"),
-		0o600,
-	))
-	props, err := structpb.NewStruct(map[string]any{
-		"$ref": "./settings.yaml",
-		"kind": "hosted",
-		"name": "inline-agent",
-	})
-	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{
-		Name:                 "inline-agent",
-		Host:                 "azure.ai.agent",
-		AdditionalProperties: props,
+	for _, test := range []struct {
+		name     string
+		settings string
+		snapshot *bool
+	}{
+		{name: "startup settings", settings: "startupCommand: python main.py\n"},
+		{name: "snapshot disabled", settings: "enableMemorySnapshot: false\n", snapshot: new(false)},
+		{name: "snapshot enabled", settings: "enableMemorySnapshot: true\n", snapshot: new(true)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "settings.yaml"), []byte(test.settings), 0o600))
+			props, err := structpb.NewStruct(map[string]any{
+				"$ref": "./settings.yaml", "kind": "hosted", "name": "inline-agent",
+			})
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{
+				Name: "inline-agent", Host: "azure.ai.agent", AdditionalProperties: props,
+			}
+			usesFileRef, err := AgentDefinitionUsesFileRef(svc, dir)
+			require.NoError(t, err)
+			require.False(t, usesFileRef)
+			agent, isHosted, found, _, err := AgentDefinitionFromResolvedService(svc, dir)
+			require.NoError(t, err)
+			require.True(t, found)
+			require.True(t, isHosted)
+			require.Equal(t, test.snapshot, agent.EnableMemorySnapshot)
+		})
 	}
-
-	usesFileRef, err := AgentDefinitionUsesFileRef(svc, dir)
-
-	require.NoError(t, err)
-	require.False(t, usesFileRef)
 }
 
 // TestUpsertAgentEnvVars verifies that env vars are added/updated on the inline

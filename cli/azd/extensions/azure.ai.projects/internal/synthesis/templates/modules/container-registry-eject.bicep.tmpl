@@ -28,11 +28,16 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
 }
 {{- else }}
 
-resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+resource registry 'Microsoft.ContainerRegistry/registries@2025-11-01' existing = {
   name: registryName
 }
+var repositoryReaderRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  'b93aa761-3e63-49ed-ac28-beffa264f7ac'
+)
 {{- end }}
 
+{{- if eq .AcrMode "create" }}
 resource registryAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: registry
   name: guid(registry.id, projectPrincipalId, acrPullRoleId)
@@ -42,6 +47,21 @@ resource registryAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     roleDefinitionId: acrPullRoleId
   }
 }
+{{- else }}
+// Nested so roleDefinitionId can be chosen from the registry's
+// roleAssignmentMode. Bicep forbids runtime existing-resource
+// properties in resource conditions/names.
+module registryAccess 'acr-pull-role-assignment.bicep' = {
+  name: 'existing-acr-access-${uniqueString(projectPrincipalId, registryName)}'
+  params: {
+    registryName: registryName
+    principalId: projectPrincipalId
+    roleDefinitionId: registry.properties.roleAssignmentMode == 'AbacRepositoryPermissions'
+      ? repositoryReaderRoleId
+      : acrPullRoleId
+  }
+}
+{{- end }}
 
 output registryName string = registry.name
 output endpoint string = {{ if eq .AcrMode "create" }}registry.properties.loginServer{{ else }}''{{ end }}

@@ -48,6 +48,13 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 
 			var fields map[string]yaml.Node
 			if fieldErr := yaml.Unmarshal(templateBytes, &fields); fieldErr == nil {
+				if setting, exists := fields["enableMemorySnapshot"]; exists {
+					if agentDef.Kind != AgentKindHosted {
+						errors = append(errors, "enableMemorySnapshot is only supported on hosted agents")
+					} else if setting.Tag != "!!bool" {
+						errors = append(errors, "enableMemorySnapshot must be a boolean")
+					}
+				}
 				if modelType, ok := fields["model_type"]; ok &&
 					modelType.Kind == yaml.ScalarNode && modelType.Value == string(VoiceModelTypeHostedAgent) &&
 					!IsVoiceAgentKind(agentDef.Kind) {

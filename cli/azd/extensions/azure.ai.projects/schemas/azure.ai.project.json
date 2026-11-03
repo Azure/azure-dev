@@ -20,6 +20,19 @@
         ]
       }
     },
+    "agentHosting": {
+      "type": "object",
+      "description": "Host agents on an existing AKS cluster when azd creates a new Foundry account. azd creates a storage account, separate hosting and workload managed identities, and its standard container registry. Network configuration is optional and independent of agentHosting.",
+      "additionalProperties": false,
+      "required": ["clusterResourceId"],
+      "properties": {
+        "clusterResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Complete Microsoft.ContainerService/managedClusters ARM resource ID. Supports ${VAR} from the azd environment."
+        }
+      }
+    },
     "network": {
       "type": "object",
       "description": "Private networking for the Foundry account that backs this project. When omitted, the account uses public networking. When present, azd provisions an account private endpoint and disables public data-plane access.",
@@ -64,6 +77,19 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": { "required": ["agentHosting"] },
+      "then": {
+        "properties": {
+          "endpoint": {
+            "pattern": "^(?:\\s|\\$\\{[A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?\\})*$",
+            "description": "Must resolve to empty when agentHosting is set; an existing account cannot receive hosting."
+          }
+        }
+      }
+    }
+  ],
   "definitions": {
     "Deployment": {
       "type": "object",

@@ -52,8 +52,12 @@ func NewPlatformDetector(commandRunner exec.CommandRunner) *PlatformDetector {
 
 // Detect identifies the current platform by reading runtime.GOOS and checking
 // each known package manager for availability. Managers that are not found are
-// silently skipped; the method only returns an error for unexpected failures.
+// silently skipped. Context cancellation is returned to the caller.
 func (pd *PlatformDetector) Detect(ctx context.Context) (*Platform, error) {
+	if cause := context.Cause(ctx); cause != nil {
+		return nil, cause
+	}
+
 	osName := runtime.GOOS
 
 	candidates := platformManagers[osName]
@@ -62,6 +66,9 @@ func (pd *PlatformDetector) Detect(ctx context.Context) (*Platform, error) {
 	for _, mgr := range candidates {
 		if pd.IsManagerAvailable(ctx, mgr) {
 			available = append(available, mgr)
+		}
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
 		}
 	}
 

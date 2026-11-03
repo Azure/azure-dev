@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"azure.ai.toolboxes/internal/definition"
 	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/foundry/connections"
 	"azure.ai.toolboxes/internal/pkg/azure"
@@ -533,20 +534,26 @@ skills:
 func TestRunToolboxCreateWith_AlreadyExists(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}}
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, definition.Save(inputPath, &definition.Definition{
+		Tools: []map[string]any{{"type": "web_search"}},
+	}))
 
 	err := runToolboxCreateWith(
 		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
-		toolboxCreateFlags{}, toolboxFlags{output: "table"},
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
 }
 
 func TestRunToolboxCreateWith_NoEntriesRejected(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, definition.Save(inputPath, &definition.Definition{}))
 
 	err := runToolboxCreateWith(
 		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
-		toolboxCreateFlags{}, toolboxFlags{output: "table"},
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
 	assert.Empty(t, client.createVersionCalls)

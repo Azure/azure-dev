@@ -148,7 +148,7 @@ func TestSkillOptimizeRejectsISORequestsBeforeSerialization(t *testing.T) {
 				cfg := optimizeConfigFromRequest(&request)
 				require.ErrorContains(t, cfg.Validate(), "integer Unix seconds")
 				actual, _, err := cfg.ToRequest()
-				require.ErrorContains(t, err, "integer Unix seconds")
+				require.EqualError(t, err, "fixed trace_window requires integer Unix seconds for start_time and end_time")
 				assert.Nil(t, actual)
 			})
 		}

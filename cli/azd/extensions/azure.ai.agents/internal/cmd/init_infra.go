@@ -601,6 +601,13 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		}
 	}
 	if provider == project.TerraformProviderName {
+		if res.Hosting != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"BYO AKS requires the microsoft.foundry provisioning provider",
+				"use embedded provisioning or Bicep eject to create the default AKS supporting resources and grants",
+			)
+		}
 		// Private networking is Bicep-only today: the Terraform module has no
 		// VNet / private-endpoint / DNS / networkInjections resources, so ejecting
 		// it for a network: service would silently drop the config and provision a
@@ -1200,6 +1207,12 @@ func writeExistingProjectBicepTemplates(
 			relPath: filepath.ToSlash(filepath.Join(artifactRoot, "modules/container-registry.bicep")),
 			bytes:   registry.Len(),
 		})
+		if acrMode == infraEjectAcrReuseConnect {
+			files = append(files, struct {
+				source string
+				target string
+			}{"templates/modules/acr-pull-role-assignment.bicep", "modules/acr-pull-role-assignment.bicep"})
+		}
 	}
 	for _, file := range files {
 		data, err := fs.ReadFile(synthesis.TemplatesFS(), file.source)

@@ -647,6 +647,16 @@ func validateTelephonyTransferTargets(
 		if utf8.RuneCountInString(target.Description) > 1024 {
 			return fmt.Errorf("invalid telephony %s transfer target at index %d: description is too long", source, i)
 		}
+		if len(target.Destination.RawObject) > 0 {
+			if strictKinds {
+				return fmt.Errorf(
+					"invalid telephony %s transfer target at index %d: unsupported raw destination type",
+					source,
+					i,
+				)
+			}
+			continue
+		}
 		switch target.Destination.Kind {
 		case TelephonyTransferDestinationPSTN:
 			if target.Destination.Value == "" {

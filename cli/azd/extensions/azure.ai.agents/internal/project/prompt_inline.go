@@ -91,6 +91,9 @@ func PromptAgentFromResolvedService(
 	if !structHasKind(resolved) {
 		return agent_yaml.PromptAgent{}, false, nil
 	}
+	if err := validateDefinitionOverlayKind(resolved); err != nil {
+		return agent_yaml.PromptAgent{}, false, err
+	}
 	if !strings.EqualFold(structKind(resolved), string(agent_yaml.AgentKindPrompt)) {
 		// A definition is present but it is not a prompt agent.
 		return agent_yaml.PromptAgent{}, false, nil

@@ -2042,6 +2042,7 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 
 		// Errors that are always caught/handled before reaching MapError
 		"ErrArchivedTemplateDeclined":          "caught in cmd/init.go and converted to a successful cancellation result",
+		"ErrRestartRequired":                   "caught in cmd/update.go and converted to a successful update result",
 		"ErrEnsureEnvPreReqBicepCompileFailed": "caught in cmd/env.go and cmd/up.go before reaching telemetry",
 		"ErrAzdOperationsNotEnabled":           "caught in pkg/project/dotnet_importer.go before reaching telemetry",
 		"ErrDeployPreviewNotSupported":         "caught in internal/cmd/deploy.go and reported as a skipped service",

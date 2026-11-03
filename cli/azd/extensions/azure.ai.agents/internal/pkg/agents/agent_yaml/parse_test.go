@@ -8,6 +8,38 @@ import (
 	"testing"
 )
 
+func TestValidateAgentDefinition_MemorySnapshot(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name  string
+		kind  string
+		value string
+		want  string
+	}{
+		{name: "enabled", kind: "hosted", value: "true"},
+		{name: "disabled", kind: "hosted", value: "false"},
+		{name: "string", kind: "hosted", value: "\"true\"", want: "must be a boolean"},
+		{name: "null", kind: "hosted", value: "null", want: "must be a boolean"},
+		{name: "number", kind: "hosted", value: "1", want: "must be a boolean"},
+		{name: "prompt", kind: "prompt", value: "true", want: "is only supported on hosted agents"},
+		{name: "voice", kind: "voice", value: "false", want: "is only supported on hosted agents"},
+		{name: "workflow", kind: "workflow", value: "true", want: "is only supported on hosted agents"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			definition := "kind: " + test.kind + "\nname: snapshot-agent\nenableMemorySnapshot: " + test.value + "\n"
+			err := ValidateAgentDefinition([]byte(definition))
+			if test.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "enableMemorySnapshot "+test.want) {
+				t.Fatalf("expected snapshot error %q, got %v", test.want, err)
+			}
+		})
+	}
+}
+
 func TestValidateAgentDefinition_RaiConfig(t *testing.T) {
 	t.Parallel()
 

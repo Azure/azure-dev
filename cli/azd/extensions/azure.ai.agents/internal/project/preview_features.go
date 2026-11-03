@@ -45,6 +45,13 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 
 // RequireDefinitionFeatures checks the definition's preview opt-in.
 func RequireDefinitionFeatures(definition map[string]any) error {
+	yamlSnapshot, _ := definition["enableMemorySnapshot"].(bool)
+	apiSnapshot, _ := definition["enable_memory_snapshot"].(bool)
+	if yamlSnapshot || apiSnapshot {
+		if err := featureflags.Require(featureflags.MemorySnapshot); err != nil {
+			return err
+		}
+	}
 	feature := PreviewFeature(definition)
 	if feature.ID == "" {
 		return nil
@@ -78,7 +85,7 @@ func RequireAgentFeatures(
 func (p *AgentServiceTargetProvider) prepareGatedOperation(
 	ctx context.Context, serviceConfig *azdext.ServiceConfig,
 ) error {
-	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+	if err := p.validateDeploymentServiceConfig(ctx, serviceConfig); err != nil {
 		return err
 	}
 	return p.requirePreviewFeatures(ctx)

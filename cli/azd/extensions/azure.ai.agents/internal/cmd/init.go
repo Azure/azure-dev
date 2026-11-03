@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore BYOAKS
+
 package cmd
 
 import (
@@ -865,6 +867,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return err
 					}
 				} else {
+					endLoading := inittelemetry.Start(ctx, inittelemetry.TemplateLoading)
+					defer endLoading()
+
 					stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
 					if err != nil {
 						if exterrors.IsCancellation(err) {
@@ -889,6 +894,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := requireStagedPreviewFeatures(stagingDir); err != nil {
 						return err
 					}
+					endLoading()
 				}
 				cachedExplicitAzureYaml = content
 			}
@@ -953,6 +959,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			if !userProvidedTemplate {
 				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 				if projectErr == nil && projectResponse.GetProject() != nil {
+					if err := requireBYOAKSProjectFeature(projectResponse.GetProject()); err != nil {
+						return err
+					}
 					if err := requireProjectPreviewFeatures(projectResponse.GetProject()); err != nil {
 						return err
 					}
@@ -1684,11 +1693,11 @@ func ensureProject(
 
 		// Scaffold a minimal project via `azd init -t <empty dir> <targetDir>`.
 		// We use an empty template dir rather than `--minimal` (which can't
-		// take a positional target) or `-C` (a no-op on workflow re-entry,
-		// since azd-core parses global flags once at startup). The empty
-		// template skips the network call and produces just azure.yaml +
-		// .azure/<env>/ + git init; writeFoundryProvider then stamps the
-		// provider name onto azure.yaml.
+		// take a positional target). Prefer the positional target over `-C`
+		// so init creates the nested folder even when the parent process
+		// already used -C/--cwd. The empty template skips the network call
+		// and produces just azure.yaml + .azure/<env>/ + git init;
+		// writeFoundryProvider then stamps the provider name onto azure.yaml.
 		emptyTemplateDir, err := os.MkdirTemp("", "azd-foundry-empty-*")
 		if err != nil {
 			return nil, exterrors.Dependency(

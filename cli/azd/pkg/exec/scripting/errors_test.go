@@ -4,6 +4,7 @@
 package scripting
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -78,4 +79,33 @@ func TestExecutionError_Interrupted(t *testing.T) {
 func TestExecutionError_UnkeyedLiteralCompatibility(t *testing.T) {
 	err := &ExecutionError{1, "", false}
 	assert.Equal(t, 1, err.ExitCode)
+}
+
+func TestExecutionError_UnwrapsCancellation(t *testing.T) {
+	cleanupErr := errors.New("cleanup failed")
+	executionErr := &ExecutionError{
+		ExitCode: 1,
+	}
+	err := wrapExecutionError(
+		executionErr,
+		errors.Join(context.Canceled, cleanupErr),
+	)
+
+	var typedErr *ExecutionError
+	assert.ErrorAs(t, err, &typedErr)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.ErrorIs(t, err, cleanupErr)
+}
+
+func TestExecutionError_CauseWrapperPreservesInterrupted(t *testing.T) {
+	err := wrapExecutionError(
+		&ExecutionError{ExitCode: 130},
+		context.Canceled,
+	)
+
+	interrupted, ok := err.(interface {
+		Interrupted() bool
+	})
+	assert.True(t, ok)
+	assert.True(t, interrupted.Interrupted())
 }

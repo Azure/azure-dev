@@ -27,6 +27,10 @@ Useful places to start:
 
 During the staged ownership migration, `internal/synthesis/` is also present in `azure.ai.agents` for `azd ai agent init --infra`. Keep the production files and templates byte-for-byte aligned until init moves.
 
+BYO AKS synthesis contract tests live in Projects; its parity test checks both production copies and embedded templates. Run the Projects synthesis suite when changing either copy.
+
+Native Bicep tests require at least the minimum exported by the referenced azd SDK's `pkg/tools/bicep.Version`. They use `AZD_BICEP_TOOL_PATH` when set, otherwise PATH and the Azure CLI bundled location. Missing or unsupported automatically discovered tools skip with a diagnostic; an invalid explicit override fails. These helpers never install or upgrade tools.
+
 ## Build and test
 
 From `cli/azd/extensions/azure.ai.projects`:

@@ -50,7 +50,8 @@ func TestACRRemoteBuildPreflight(t *testing.T) {
 		{name: "service remote overrides nested passthrough", service: "docker: {remoteBuild: true}\n" +
 			"config:\n  docker: {imagePassthrough: true}", reject: true},
 		{name: "core local default", service: "kind: hosted"},
-		{name: "prebuilt", service: "image: registry/image:v1\ndocker: {remoteBuild: true}"},
+		{name: "bare image remote ABAC", service: "image: registry/image:v1\ndocker: {remoteBuild: true}", reject: true},
+		{name: "prebuilt passthrough", service: "image: registry/image:v1\ndocker: {remoteBuild: true, imagePassthrough: true}"},
 		{name: "passthrough", service: "docker: {remoteBuild: true, imagePassthrough: true}"},
 		{name: "code", service: "codeConfiguration: {}\ndocker: {remoteBuild: true}"},
 		{name: "prompt", service: "kind: prompt\ndocker: {remoteBuild: true}"},

@@ -941,10 +941,9 @@ func (p *FoundryProvisioningProvider) cleanupACRAccess(ctx context.Context) erro
 	if p.acrBinding != nil && p.acrBinding.Mode == "reuse-connect" {
 		registryID = p.acrBinding.RegistryResourceID
 		assignments = slices.Clone(p.acrBinding.OwnedAssignments)
-		if len(assignments) > 0 {
-			if err := p.persistRecoveredACRBinding(ctx); err != nil {
-				return err
-			}
+		// Persist recovered bindings even with no owned grants (admin-provided pull).
+		if err := p.persistRecoveredACRBinding(ctx); err != nil {
+			return err
 		}
 	}
 	if p.acrPending != nil {

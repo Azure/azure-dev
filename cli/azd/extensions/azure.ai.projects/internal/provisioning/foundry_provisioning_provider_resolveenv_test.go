@@ -349,6 +349,26 @@ func TestInitializeUsesPromptedLocationInSynthesis(t *testing.T) {
 	}
 }
 
+func TestInitializeRecalculatesRemoteBuildAfterLocationPrompt(t *testing.T) {
+	root := t.TempDir()
+	// Condition expands to the prompted location value. Use a truthy location so
+	// the agent is disabled before the prompt and enabled afterward.
+	raw := "services:\n  project:\n    host: azure.ai.project\n  agent:\n" +
+		"    host: azure.ai.agent\n    kind: hosted\n" +
+		"    condition: ${AZURE_LOCATION}\n    docker: {remoteBuild: true}\n"
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
+	env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
+		envKeySubscriptionID:                   "sub",
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
+	}}
+	prompt := &resolveEnvStubPromptServer{location: "true"}
+	p := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
+	require.NoError(t, p.Initialize(t.Context(), root, &azdext.ProvisioningOptions{Provider: FoundryProviderName}))
+	assert.True(t, p.acrRemoteBuild, "condition-gated remote build must be visible after location prompt")
+	assert.Equal(t, "true", p.location)
+	assert.Equal(t, 1, prompt.locationN)
+}
+
 func TestResolveEnv_UsesVirtualEnvFromPreviousLayer(t *testing.T) {
 	env := &resolveEnvStubEnvServer{envName: "foundry-layer", get: map[string]string{}}
 	prompt := &resolveEnvStubPromptServer{}

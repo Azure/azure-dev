@@ -188,12 +188,15 @@ func TestACRRequirementsBeforeProjectSetup(t *testing.T) {
 		{"empty", "services: {}", false, false},
 		{"project only", "services:\n  project:\n    host: azure.ai.project", false, false},
 		{"source", "services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted", true, true},
-		{"image", "services:\n  agent:\n    host: azure.ai.agent\n    image: registry/image:v1", true, false},
+		{"image", "services:\n  agent:\n    host: azure.ai.agent\n    image: registry/image:v1", true, true},
+		{"passthrough", "services:\n  agent:\n    host: azure.ai.agent\n    image: registry/image:v1\n    docker: {imagePassthrough: true}", true, false},
 		{"code", "services:\n  agent:\n    host: azure.ai.agent\n    codeConfiguration: {}", true, false},
 		{"prompt", "services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt", true, false},
 		{"disabled", "services:\n  agent:\n    host: azure.ai.agent\n    condition: false", false, false},
 		{"legacy image", "services:\n  agent:\n    host: azure.ai.agent\n    agents:\n" +
-			"      - name: agent\n        image: registry/image:v1", true, false},
+			"      - name: agent\n        image: registry/image:v1", true, true},
+		{"legacy passthrough", "services:\n  agent:\n    host: azure.ai.agent\n    agents:\n" +
+			"      - name: agent\n        image: registry/image:v1\n        docker: {imagePassthrough: true}", true, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			has, needs, err := ACRRequirements(Input{RawAzureYAML: []byte(tt.service)})

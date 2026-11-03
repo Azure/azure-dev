@@ -747,8 +747,8 @@ func validateAgentRootRefCoreFields(
 // both are scanned. The decision mirrors the deploy-time contract:
 //
 //   - codeConfiguration present -> code (ZIP) deploy, no ACR
-//   - image present             -> pre-built image (BYO registry), no ACR
-//   - otherwise (hosted)        -> container build from source, needs ACR
+//   - imagePassthrough / legacy skip-ACR image -> pre-built, no ACR
+//   - otherwise (hosted, including bare image) -> source build, needs ACR
 //
 // Keying on image/codeConfiguration rather than the optional docker: block is
 // deliberate: docker: is not in the agent schema and is dropped by omitempty
@@ -772,13 +772,15 @@ func RequiresACR(in Input) (bool, error) {
 // ACRRequirements resolves enabled agents, including inline and $ref.
 // A project-only manifest has no agents and permits setup intent.
 func ACRRequirements(in Input) (bool, bool, error) {
-	return acrRequirements(in, agentNeedsAcr)
+	return acrRequirements(in, func(agent agentBlock) bool {
+		return agentNeedsAcrWithEnv(agent, in.Env)
+	})
 }
 
 // RequiresRemoteACRBuild reports enabled remote source builds.
 func RequiresRemoteACRBuild(in Input) (bool, error) {
 	_, needed, err := acrRequirements(in, func(agent agentBlock) bool {
-		return agentNeedsAcr(agent) && agent.Docker.RemoteBuild && !agent.Docker.ImagePassthrough
+		return agentNeedsAcrWithEnv(agent, in.Env) && agent.Docker.RemoteBuild && !agent.Docker.ImagePassthrough
 	})
 	return needed, err
 }
@@ -937,10 +939,17 @@ func deriveAgentBuildRequirements(
 }
 
 // agentNeedsAcr reports whether a single agent entry builds a container image
-// from source (and therefore requires an ACR). Pre-built images and code/ZIP
-// deploys do not; any other hosted agent does.
+// from source (and therefore requires an ACR). Code/ZIP deploys and explicit
+// prebuilt passthrough do not. A bare image without docker.imagePassthrough is
+// not treated as prebuilt: package/publish default to source build (including
+// --no-prompt), so remoteBuild on that agent must still trigger ACR/ABAC checks.
+// Legacy AZD_AGENT_SKIP_ACR prebuilt selections are handled by callers with env.
 func agentNeedsAcr(a agentBlock) bool {
-	if a.CodeConfiguration != nil || strings.TrimSpace(a.Image) != "" {
+	return agentNeedsAcrWithEnv(a, nil)
+}
+
+func agentNeedsAcrWithEnv(a agentBlock, env map[string]string) bool {
+	if a.CodeConfiguration != nil {
 		return false
 	}
 	// "hosted" is the only container kind; an empty kind defaults to hosted for
@@ -949,7 +958,18 @@ func agentNeedsAcr(a agentBlock) bool {
 	// NOTE: if a future non-container kind can omit kind:, replace this
 	// default-to-hosted with an explicit allowlist so it does not trigger ACR.
 	kind := strings.TrimSpace(a.Kind)
-	return kind == "" || strings.EqualFold(kind, "hosted")
+	if kind != "" && !strings.EqualFold(kind, "hosted") {
+		return false
+	}
+	if a.Docker.ImagePassthrough {
+		return false
+	}
+	// Legacy init --image marker: image + AZD_AGENT_SKIP_ACR=true is prebuilt.
+	if strings.TrimSpace(a.Image) != "" &&
+		strings.EqualFold(strings.TrimSpace(env["AZD_AGENT_SKIP_ACR"]), "true") {
+		return false
+	}
+	return true
 }
 
 func serviceNodeEnabled(

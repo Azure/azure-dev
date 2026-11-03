@@ -1291,8 +1291,15 @@ func TestProjectAddEndpointOnlyPreflightsHostedAgents(t *testing.T) {
 			reject:  true,
 		},
 		{
-			name:   "inline image agent",
+			name: "inline image agent",
+			agents: "    agents:\n      - name: image\n        kind: hosted\n" +
+				"        image: registry.example.com/agent:latest\n" +
+				"        docker:\n          imagePassthrough: true\n",
+		},
+		{
+			name:   "inline bare image agent needs ACR",
 			agents: "    agents:\n      - name: image\n        kind: hosted\n        image: registry.example.com/agent:latest\n",
+			reject: true,
 		},
 		{
 			name:   "inline code agent",

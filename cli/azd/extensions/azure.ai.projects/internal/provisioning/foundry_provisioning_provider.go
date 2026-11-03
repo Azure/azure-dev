@@ -422,6 +422,24 @@ func (p *FoundryProvisioningProvider) initializeInfrastructure(
 	}
 	input.Env[envKeySubscriptionID] = p.subID
 	input.Env[envKeyLocation] = p.location
+	// Recalculate remote-build demand after subscription/location prompts so
+	// condition-gated agents (for example ${AZURE_LOCATION:+true}) are visible.
+	if endpoint == "" {
+		p.acrRemoteBuild, err = synthesis.RequiresRemoteACRBuild(input)
+		if err != nil {
+			return foundrySynthesisError(svcName, err)
+		}
+		mode, id, selErr := synthesis.ResolveGreenfieldACRSelection(input)
+		if selErr != nil {
+			return foundrySynthesisError(svcName, selErr)
+		}
+		if mode == "reuse-connect" {
+			p.greenfieldAcrResourceID = id
+		} else {
+			p.greenfieldAcrResourceID = ""
+		}
+		p.acrDeferPromptedEnv = onDisk || p.acrRemoteBuild && mode == "reuse-connect"
+	}
 	var res *synthesis.Result
 	if endpoint != "" {
 		if err := warnNetworkIgnoredInBrownfield(

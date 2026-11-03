@@ -100,7 +100,7 @@ func TestHostingPreservesACRSelection(t *testing.T) {
 		{name: "private reuse", agent: "docker: {remoteBuild: false}", network: true, mode: "reuse-connect"},
 		{name: "private create", agent: "docker: {remoteBuild: false}", network: true, create: true,
 			mode: "create"},
-		{name: "prebuilt", agent: "image: registry/image:v1", mode: "none"},
+		{name: "prebuilt", agent: "image: registry/image:v1\n    docker: {imagePassthrough: true}", mode: "none"},
 		{name: "code", agent: "codeConfiguration: {}", mode: "none"},
 	} {
 		for _, preserve := range []bool{false, true} {

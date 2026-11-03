@@ -59,9 +59,11 @@ classic RBAC registry. Prebuilt images, code deployments, legacy project
 connections, and project-only selections without build demand are unaffected.
 
 Ensure the registry is reachable from the agent network. The registry must be
-in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside the
-Foundry resource group (which `azd down` deletes). Cross-subscription reuse is
-rejected, including environment-only selections and ejected parameters. This is
+in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside every
+resource group managed by azd, including the Foundry group and any configured
+application layer's group, because `azd down` deletes those groups.
+Cross-subscription reuse is rejected, including environment-only selections and
+ejected parameters. This is
 supported by Bicep, not Terraform eject in reuse mode. `azd down` never deletes the
 external registry.
 

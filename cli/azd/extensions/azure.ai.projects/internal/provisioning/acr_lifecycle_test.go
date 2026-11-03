@@ -663,6 +663,24 @@ func TestACRRecoveredGrantOwnershipIsPersistedBeforeCleanup(t *testing.T) {
 	}
 }
 
+func TestACRRecoveredBindingPersistedWithoutOwnedAssignments(t *testing.T) {
+	p, env := acrTestProvider(t)
+	p.acrBinding = acrTestBinding()
+	p.acrBinding.OwnedAssignments = nil
+	p.acrBindingRecovered = true
+	p.acrRequest = func(context.Context, string, string, string, any) error {
+		t.Fatal("admin-provided pull must not mutate ARM grants")
+		return nil
+	}
+	require.NoError(t, p.cleanupACRAccess(t.Context()))
+	require.NotEmpty(t, env.config[synthesis.ACRBindingConfigKey])
+	assert.False(t, p.acrBindingRecovered)
+	reloaded := &FoundryProvisioningProvider{azdClient: p.azdClient, envName: p.envName}
+	require.NoError(t, reloaded.loadACRLifecycle(t.Context()))
+	assert.Equal(t, p.acrBinding, reloaded.acrBinding)
+	assert.Empty(t, reloaded.acrBinding.OwnedAssignments)
+}
+
 func TestACRCreatedOutputRequiresDeploymentFacts(t *testing.T) {
 	const registryID = "/subscriptions/sub/resourceGroups/foundry/" +
 		"providers/Microsoft.ContainerRegistry/registries/registry"

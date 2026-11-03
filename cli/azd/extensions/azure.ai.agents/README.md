@@ -1491,16 +1491,19 @@ the whole body is then moderated and no paths are needed for that direction.
 
 ### Reuse a source-build registry
 
-Environment-only selections use the same validation, persisted reuse mode, and
-ownership output. An unreadable environment stops selection rather than
-defaulting to a new registry. A same-group registry ID alone is not evidence
-that azd owns the registry.
+Set `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` to select an
+external registry for environment-only reuse. That selection uses the same
+validation, persisted reuse mode, and ownership output as interactive setup.
+An unreadable environment stops selection rather than defaulting to a new
+registry. A same-group registry ID alone is not evidence that azd owns the
+registry.
 
 Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
 be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside
-the Foundry resource group that `azd down` deletes. Cross-subscription registry
-reuse is not supported. azd preserves the external registry, images, and
-administrator-managed grants, and cleans up only
+every resource group managed by azd, including the Foundry group and any
+configured application layer's group, because `azd down` deletes those groups.
+Cross-subscription registry reuse is not supported. azd preserves the external
+registry, images, and administrator-managed grants, and cleans up only
 access grants and related resources it can establish it owns. Customers manage
 network reachability and image-publisher push permissions. See
 [non-interactive configuration](../ai-non-interactive.md#azureaiprojects).

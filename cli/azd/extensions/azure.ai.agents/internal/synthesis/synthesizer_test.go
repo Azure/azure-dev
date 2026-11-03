@@ -86,7 +86,7 @@ services:
 			wantDeployName0: "gpt-4.1-mini",
 		},
 		{
-			name: "split project with sibling docker agent and image => no ACR",
+			name: "split project with sibling docker agent and image => ACR on",
 			yaml: `
 services:
   my-agent:
@@ -107,10 +107,10 @@ services:
 `,
 			serviceName:    "my-project",
 			wantDeployLen:  1,
-			wantIncludeAcr: false,
+			wantIncludeAcr: true,
 		},
 		{
-			name: "legacy inline docker agent with image => no ACR",
+			name: "legacy inline docker agent with image => ACR on",
 			yaml: `
 services:
   my-project:
@@ -124,7 +124,7 @@ services:
 `,
 			serviceName:    "my-project",
 			wantDeployLen:  0,
-			wantIncludeAcr: false,
+			wantIncludeAcr: true,
 		},
 		{
 			name: "greenfield hosted agent runtime-only (no docker) => ACR on",
@@ -221,7 +221,7 @@ services:
 			wantIncludeAcr: false,
 		},
 		{
-			name: "sibling hosted agent with image, no docker => no ACR",
+			name: "sibling hosted agent with image, no docker => ACR on",
 			yaml: `
 services:
   assistant:
@@ -239,10 +239,10 @@ services:
 `,
 			serviceName:    "ai-project",
 			wantDeployLen:  1,
-			wantIncludeAcr: false,
+			wantIncludeAcr: true,
 		},
 		{
-			name: "legacy configured agent with image => no ACR",
+			name: "legacy configured agent with image => ACR on",
 			yaml: `
 services:
   assistant:
@@ -254,7 +254,7 @@ services:
     host: azure.ai.project
 `,
 			serviceName:    "ai-project",
-			wantIncludeAcr: false,
+			wantIncludeAcr: true,
 		},
 		{
 			name: "legacy configured agent with codeConfiguration => no ACR",
@@ -847,7 +847,7 @@ func TestSynthesize_RequiresAgentImageInline(t *testing.T) {
 	require.NoError(t, err)
 	includeAcr, ok := result.Parameters["includeAcr"].(bool)
 	require.True(t, ok)
-	assert.False(t, includeAcr)
+	assert.True(t, includeAcr)
 }
 
 func TestSynthesize_RejectsCoreFieldsFromAgentRef(t *testing.T) {

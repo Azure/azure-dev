@@ -189,11 +189,10 @@ grant it.
 Discovery rejects conflicting destinations, protected names, ambiguous sharing,
 unreadable resources, and authentication or ingestion policies that would need
 to be weakened. ApiKey setup does not enable local authentication or configure
-private-network ingestion. A project with a `network:` block skips automatic
-monitoring when `monitoring:` is omitted. Explicitly enabling monitoring (an
-empty `monitoring: {}` block, or `applicationInsightsResourceId`) is rejected,
-because automatic monitoring cannot yet use private ingestion. Such failures can
-fail normal provisioning; there
+private-network ingestion. A project with a `network:` block always skips
+automatic monitoring, whether `monitoring:` is omitted, empty, or names a
+component, so provisioning is never blocked; set up monitoring for such
+projects outside azd. Other monitoring failures can fail normal provisioning; there
 is no second best-effort deployment or agent deployment repair hook.
 
 Monitoring creates billable Azure resources and can store agent telemetry,

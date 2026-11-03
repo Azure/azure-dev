@@ -278,13 +278,8 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, err
 	}
 	if mode, _ := monitoring["monitoringMode"].(string); netMode != NetworkModeNone && mode != "" && mode != "none" {
-		if svc.Monitoring.Kind != 0 {
-			return nil, errors.New(
-				"synthesis: automatic monitoring does not configure private-network ingestion; " +
-					"set monitoring.enabled: false on the project service",
-			)
-		}
-		// Monitoring was not requested, so keep existing private-network projects working.
+		// Automatic monitoring cannot use private ingestion yet. Skip it rather than
+		// failing so private-network projects keep provisioning.
 		monitoring = map[string]any{"monitoringMode": "none", "applicationInsightsResourceId": ""}
 	}
 	maps.Copy(params, monitoring)

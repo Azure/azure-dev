@@ -130,11 +130,10 @@ func TestSynthesizeMonitoringPrivateNetwork(t *testing.T) {
 	monitoring := []struct {
 		name     string
 		settings string
-		wantErr  bool
 	}{
 		{name: "default"},
-		{name: "empty block", settings: "    monitoring: {}\n", wantErr: true},
-		{name: "BYO component", settings: "    monitoring:\n      applicationInsightsResourceId: " + component + "\n", wantErr: true},
+		{name: "empty block", settings: "    monitoring: {}\n"},
+		{name: "BYO component", settings: "    monitoring:\n      applicationInsightsResourceId: " + component + "\n"},
 		{name: "explicit opt out", settings: "    monitoring:\n      enabled: false\n"},
 	}
 	for networkName, network := range networks {
@@ -145,13 +144,9 @@ func TestSynthesizeMonitoringPrivateNetwork(t *testing.T) {
 					RawAzureYAML: []byte("services:\n  foundry:\n    host: azure.ai.project\n" + network + tt.settings),
 					ServiceName:  "foundry",
 				})
-				if tt.wantErr {
-					require.ErrorContains(t, err, "does not configure private-network ingestion")
-					require.ErrorContains(t, err, "monitoring.enabled: false")
-					return
-				}
 				require.NoError(t, err)
 				assert.Equal(t, "none", result.Parameters["monitoringMode"])
+				assert.Equal(t, "", result.Parameters["applicationInsightsResourceId"])
 			})
 		}
 	}

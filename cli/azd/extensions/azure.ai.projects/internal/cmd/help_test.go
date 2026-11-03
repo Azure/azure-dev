@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.projects/internal/synthesis"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/fatih/color"
@@ -18,6 +20,7 @@ import (
 )
 
 func TestAIHelp(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	t.Setenv("NO_COLOR", "1")
 	previous := color.NoColor
 	color.NoColor = true

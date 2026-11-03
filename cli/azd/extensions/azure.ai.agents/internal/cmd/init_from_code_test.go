@@ -580,6 +580,7 @@ func (s *sourceInitACRAccountServer) LookupTenant(
 }
 
 func TestInitFromCodeValidatesACRBeforeSetupWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name                   string
 		subscription           string
@@ -706,6 +707,7 @@ func TestInitFromCodeValidatesACRBeforeSetupWrites(t *testing.T) {
 }
 
 func TestInitFromCodePlannedACREnvironmentBeforeScaffolding(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		targetDir, envName string
 	}{
@@ -750,6 +752,7 @@ func TestInitFromCodePlannedACREnvironmentBeforeScaffolding(t *testing.T) {
 }
 
 func TestInitFromCodeMissingEnvironmentACRScopeBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name, group, rootGroup, foundryGroup string
 		layer, existing, fresh, noPrompt     bool
@@ -898,6 +901,7 @@ func TestInitFromCodeEffectiveACRSelection(t *testing.T) {
 			{name: "explicit container", noPrompt: true, args: []string{"--deploy-mode", "container"}},
 		} {
 			t.Run(fmt.Sprintf("canonical=%t/%s", canonical, tt.name), func(t *testing.T) {
+				t.Setenv(synthesis.ACRReuseEnvVar, "true")
 				root := t.TempDir()
 				t.Chdir(root)
 				content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n")

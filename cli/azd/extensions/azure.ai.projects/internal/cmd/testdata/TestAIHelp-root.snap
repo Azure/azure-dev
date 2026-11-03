@@ -61,6 +61,11 @@ Environments & Environment Variables
   to inspect values. They may contain secrets; do not share the output or
   commit .azure to source control.
 
+Preview Features
+  Existing ACR reuse is disabled by default.
+  Set AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true in the process running azd.
+  Re-enable it for every reuse operation, including preview, down, and eject.
+
 Learn More
   Environment commands: 'azd env --help'
   Managed model deployments: 'azd ai project deployment --help'

@@ -135,6 +135,13 @@ func TestHostingPreservesACRSelection(t *testing.T) {
 				if test.expectedError == "registry reuse is not supported with agentHosting" {
 					require.ErrorIs(t, ValidateGreenfieldACRSelectionForInput(input, registryID), ErrACRReuseAgentHosting)
 				}
+				if test.canonical || !test.create {
+					t.Setenv(ACRReuseEnvVar, "false")
+					disabledResult, disabledErr := Synthesize(input)
+					requireACRDisabled(t, disabledErr)
+					require.Nil(t, disabledResult)
+					t.Setenv(ACRReuseEnvVar, "true")
+				}
 				result, err := Synthesize(input)
 				if test.expectedError != "" {
 					require.ErrorContains(t, err, test.expectedError)

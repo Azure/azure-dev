@@ -1,8 +1,10 @@
 # Azure Developer CLI (azd) Agents Extension
 
+<!-- cspell:ignore strconv -->
+
 ## Preview feature switches
 
-All six preview capabilities are off by default. Each switch is controlled independently.
+All seven preview capabilities are off by default. Each switch is controlled independently.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
@@ -12,6 +14,7 @@ All six preview capabilities are off by default. Each switch is controlled indep
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 | `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
 | `agents.byo_aks` | [Existing AKS project initialization and adoption](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
+| `foundry.acr_reuse` | External ACR reuse in new Foundry projects, including preview and cleanup | `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE` |
 
 Override a switch in your shell or CI before running azd:
 
@@ -22,6 +25,7 @@ export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
 export AZD_ALPHA_ENABLE_AGENTS_A2A=true
 export AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
 export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
+export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true
 ```
 
 In PowerShell, for example:
@@ -40,7 +44,8 @@ can override the same key from the shell or CI.
 
 User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
 `AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary
-hosted and plain prompt agents without BYO AKS hosting need no opt-in.
+hosted and plain prompt agents without BYO AKS hosting or new ACR reuse intent
+need no opt-in.
 
 Root help always lists the canonical switches and their scopes. While a
 feature is off, its command-specific flags and help sections are hidden.
@@ -76,11 +81,13 @@ eject do not check the BYO AKS switch. Ordinary Foundry provisioning is unchange
   not query its remote definition, so the managed harness check does not cover
   that route. The long-running check still applies. Text invoke does not
   accept voice WebSocket endpoints.
-- Agent read and cleanup commands stay available with features off. This includes
+- Agent read and cleanup commands stay available with agent-kind previews off. This includes
   show, endpoint show, invocations show, follow, and cancel, delete, and down.
   BYO AKS infrastructure operations do not require its switch to be enabled.
   BYO AKS infrastructure uses the standard Foundry `azd down`
   path, which deletes the target resource group and all resources inside it.
+  External ACR reuse is stricter: preview, down, recovery, and eject require
+  `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true`, including for a BYO AKS project.
 - These checks do not govern requests from the evaluations or routines
   extensions.
 
@@ -1491,6 +1498,51 @@ the whole body is then moderated and no paths are needed for that direction.
 
 ### Reuse a source-build registry
 
+Existing ACR reuse is a **default-off preview**, shared with the projects
+extension. Set `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true` in the process running
+azd. For PowerShell:
+
+```powershell
+$env:AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE = 'true'
+```
+
+For POSIX shells use `export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true`; set the
+same variable in CI jobs. Only `strconv.ParseBool` true forms enable it, not
+`on`, `yes`, or core `azd config` alpha settings. Host-injected process values
+are honored; the evaluator does not open dotenv files.
+
+When disabled, `--acr-resource-id` and its help examples are hidden but still
+parse and return explicit enablement guidance. Environment-only selections,
+saved reuse bindings without legacy aliases, and unfinished access operations
+also require the switch. Re-enable it for **preview, down, recovery, and
+eject**, as well as setup, provision, package, publish, and deploy using reuse.
+Disabled operations leave project files, environment values, saved context,
+and Azure resources unchanged; they never fall back to creating a registry.
+Automatic registry creation and code, prebuilt-image, and old connection
+workflows without new reuse intent are unchanged. Other preview switches
+cannot enable ACR reuse.
+
+The pre-operation check includes `existingAcrResourceId` present only in
+generated/ejected `main.parameters.json` or `main.bicepparam` on a supported
+`microsoft.foundry` root or layer, including custom paths and module names.
+It runs before project hooks or independent package, publish, and deploy
+handlers mutate state. JSON `${VAR}` substitutions use the host environment;
+`.bicepparam` takes precedence and Bicep resolves its expressions. Parameter
+checks retain normal Bicep installation and module restoration. Dependency
+caches may be populated, but rejected reuse does not change project files,
+environment/config values, saved context, or Azure resources. Invalid
+parameters remain errors rather than being treated as non-reuse.
+
+Provider initialization and `azd down` remain compiler-free. Down uses
+recorded environment selectors, bindings, pending cleanup, and recovered
+deployment facts instead of current parameter files. Recorded reuse still
+requires the switch; a source-only selector that has not been deployed does
+not block teardown. Non-reuse provisioning retains automatic Bicep setup.
+
+The provision validation rule also honors this switch before registry
+lookups. Mandatory lifecycle hooks, including prepackage, and independent
+agent operations still enforce it when optional validation is skipped.
+
 For hosted-container source builds in a new Foundry project, select an existing
 registry during setup:
 
@@ -1568,6 +1620,12 @@ A project-only Bicep eject retains a pending registry selection without freezing
 time. Remove an older generated `parameters.includeAcr` object if it only records
 the absence of agents at eject time. Deliberate user-authored overrides are
 preserved.
+
+Keep the generated Foundry layer on `microsoft.foundry`, including after
+Bicep eject. Manually switching it to core `infra.provider: bicep` is
+unsupported and outside this flag's enforcement contract, as is running
+external IaC directly. Core Bicep preview does not run extension lifecycle
+hooks; it cannot provide this extension's mandatory gate.
 
 For an external ABAC registry, source builds require local Docker:
 set `docker.remoteBuild: false` on each source-built agent service and grant the

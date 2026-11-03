@@ -13,6 +13,7 @@ import (
 )
 
 func TestSynthesizeExistingRegistry(t *testing.T) {
+	t.Setenv(ACRReuseEnvVar, "true")
 	const subscription = "11111111-1111-1111-1111-111111111111"
 	const id = "/subscriptions/" + subscription + "/resourceGroups/shared/" +
 		"providers/Microsoft.ContainerRegistry/registries/sharedregistry"
@@ -123,6 +124,7 @@ func TestSynthesizeExistingRegistry(t *testing.T) {
 }
 
 func TestSynthesizeRegistryUsesOnlySnapshotAndMode(t *testing.T) {
+	t.Setenv(ACRReuseEnvVar, "true")
 	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/sharedregistry"
 	t.Setenv("AZURE_CONTAINER_REGISTRY_RESOURCE_ID", id)
 	input := Input{
@@ -160,6 +162,7 @@ func TestSynthesizeRegistryUsesOnlySnapshotAndMode(t *testing.T) {
 }
 
 func TestSynthesizeCanonicalReuseBinding(t *testing.T) {
+	t.Setenv(ACRReuseEnvVar, "true")
 	const registryID = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
 	for _, alias := range []string{"", registryID, strings.ToUpper(registryID)} {
 		for _, preserve := range []bool{false, true} {

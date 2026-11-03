@@ -29,7 +29,24 @@ import (
 	"github.com/google/uuid"
 )
 
-const acrPendingConfigKey = "extensions.ai-projects.acrPending"
+const acrPendingConfigKey = synthesis.ACRPendingConfigKey
+
+func (p *FoundryProvisioningProvider) requireACRReuse() error {
+	if p.greenfieldAcrMode == "reuse-connect" || p.acrPending != nil {
+		return synthesis.RequireACRReuse()
+	}
+	values := p.synthesisEnv
+	if p.brownfieldEndpoint != "" {
+		values = map[string]string{
+			"USE_EXISTING_AI_PROJECT":              "true",
+			"AZD_FOUNDRY_ACR_MODE":                 p.synthesisEnv["AZD_FOUNDRY_ACR_MODE"],
+			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": p.synthesisEnv["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"],
+		}
+	}
+	return synthesis.RequireACRReuseForInput(synthesis.Input{
+		Env: values, ACRBinding: p.acrBinding, ResourceGroupName: p.rgName,
+	})
+}
 
 const (
 	acrPullRole          = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
@@ -173,6 +190,9 @@ func (p *FoundryProvisioningProvider) readACRConfig(ctx context.Context, key str
 }
 
 func (p *FoundryProvisioningProvider) writeACRConfig(ctx context.Context, key string, value any) error {
+	if err := p.requireACRReuse(); err != nil {
+		return err
+	}
 	if p.azdClient == nil {
 		return errors.New("cannot persist registry lifecycle state without an azd environment")
 	}
@@ -224,6 +244,9 @@ func (p *FoundryProvisioningProvider) loadACRLifecycle(ctx context.Context) erro
 		}
 		p.acrPending = &pending
 	}
+	if p.acrPending != nil || p.acrBinding != nil && p.acrBinding.Mode == "reuse-connect" {
+		return synthesis.RequireACRReuse()
+	}
 	return nil
 }
 
@@ -236,6 +259,9 @@ func acrAccessDeploymentIDs(registryID, token string) []string {
 func (p *FoundryProvisioningProvider) acrARM(
 	ctx context.Context, method, path, apiVersion string, out any,
 ) error {
+	if err := p.requireACRReuse(); err != nil {
+		return err
+	}
 	if p.acrRequest != nil {
 		return p.acrRequest(ctx, method, path, apiVersion, out)
 	}
@@ -407,22 +433,7 @@ func acrActionMatches(patterns []string, operation string) bool {
 }
 
 func parameterValue(src *templateSource, name string) any {
-	for key, value := range src.parameters {
-		if strings.EqualFold(key, name) {
-			if entry, ok := value.(map[string]any); ok {
-				return entry["value"]
-			}
-		}
-	}
-	params, _ := src.armTemplate["parameters"].(map[string]any)
-	for key, value := range params {
-		if strings.EqualFold(key, name) {
-			if entry, ok := value.(map[string]any); ok {
-				return entry["defaultValue"]
-			}
-		}
-	}
-	return nil
+	return synthesis.ARMParameterValue(src.armTemplate, src.parameters, name)
 }
 
 func setParameterValue(src *templateSource, name string, value any) {
@@ -467,6 +478,12 @@ func (p *FoundryProvisioningProvider) validateACRTemplate(src *templateSource) e
 		if err := p.validateACRTeardownScopes(registryScopeID, group); err != nil {
 			return err
 		}
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
+		}
+	}
+	if err := p.requireACRReuse(); err != nil {
+		return err
 	}
 	if id != "" {
 		mode = "reuse-connect"
@@ -524,6 +541,9 @@ func (p *FoundryProvisioningProvider) validateACRTemplate(src *templateSource) e
 }
 
 func (p *FoundryProvisioningProvider) prepareACRAccess(ctx context.Context, src *templateSource) error {
+	if err := p.requireACRReuse(); err != nil {
+		return err
+	}
 	if p.brownfieldEndpoint != "" {
 		return nil
 	}
@@ -650,6 +670,9 @@ func (p *FoundryProvisioningProvider) prepareACRAccess(ctx context.Context, src 
 func (p *FoundryProvisioningProvider) planACRAccess(
 	ctx context.Context, src *templateSource,
 ) (*acrAccessPlan, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if p.brownfieldEndpoint != "" {
 		return nil, nil
 	}
@@ -700,6 +723,9 @@ func (p *FoundryProvisioningProvider) planACRAccess(
 	}
 	if !include || id == "" {
 		return nil, p.validateACRRemoteBuild(ctx, src)
+	}
+	if err := synthesis.RequireACRReuse(); err != nil {
+		return nil, err
 	}
 	abac, err := p.acrUsesABAC(ctx, id)
 	if err != nil {
@@ -810,6 +836,9 @@ func (p *FoundryProvisioningProvider) verifyDeployedACRAccess(ctx context.Contex
 }
 
 func (p *FoundryProvisioningProvider) recoverACRAssignment(ctx context.Context) error {
+	if err := p.requireACRReuse(); err != nil {
+		return err
+	}
 	actual, err := p.readPendingACRAssignment(ctx)
 	if err != nil || actual == nil {
 		return err
@@ -855,6 +884,9 @@ func ownedACRAssignment(actual acrRoleAssignment, registryID, principalID, roleI
 func (p *FoundryProvisioningProvider) preserveACROutputs(
 	ctx context.Context, outputs map[string]*azdext.ProvisioningOutputParameter,
 ) error {
+	if err := p.requireACRReuse(); err != nil {
+		return err
+	}
 	if p.brownfieldEndpoint != "" {
 		return nil
 	}
@@ -973,6 +1005,9 @@ func (p *FoundryProvisioningProvider) persistACRBinding(
 }
 
 func (p *FoundryProvisioningProvider) clearACRConfig(ctx context.Context, key string) error {
+	if err := p.requireACRReuse(); err != nil {
+		return err
+	}
 	if p.azdClient == nil {
 		return errors.New("cannot clear registry lifecycle state without an azd environment")
 	}
@@ -986,6 +1021,9 @@ func (p *FoundryProvisioningProvider) clearACRConfig(ctx context.Context, key st
 }
 
 func (p *FoundryProvisioningProvider) cleanupACRAccess(ctx context.Context) error {
+	if err := p.requireACRReuse(); err != nil {
+		return err
+	}
 	if err := p.persistRecoveredACRBinding(ctx); err != nil {
 		return err
 	}
@@ -1065,6 +1103,9 @@ func (p *FoundryProvisioningProvider) cleanupACROperations(
 }
 
 func (p *FoundryProvisioningProvider) completeDestroy(ctx context.Context) (*azdext.ProvisioningDestroyResult, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	path := "/subscriptions/" + p.subID + "/providers/Microsoft.Resources/deployments/" + p.deploymentName()
 	if err := p.acrARM(ctx, http.MethodDelete, path, "2022-09-01", nil); err != nil && !isNotFound(err) {
 		return nil, fmt.Errorf("delete completed Foundry deployment record: %w", err)
@@ -1097,6 +1138,9 @@ func (p *FoundryProvisioningProvider) recoverDeployedACRBinding(ctx context.Cont
 }
 
 func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, recoverProjectIdentity bool) error {
+	if err := p.requireACRReuse(); err != nil {
+		return err
+	}
 	if p.brownfieldEndpoint != "" || p.acrBinding != nil {
 		return nil
 	}
@@ -1193,6 +1237,11 @@ func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, rec
 		}
 	} else if err := p.validateACRTeardownScopes(registry.Value, p.rgName); err != nil {
 		return err
+	}
+	if mode == "reuse-connect" {
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
+		}
 	}
 	project := outputs["AZURE_AI_PROJECT_ID"]
 	if project == nil || project.Value == "" {
@@ -1439,6 +1488,9 @@ func (p *FoundryProvisioningProvider) deploymentCreatedACR(
 func (p *FoundryProvisioningProvider) recoverPartialACRBinding(
 	ctx context.Context, salt string, parameters map[string]struct{ Value any },
 ) error {
+	if err := p.requireACRReuse(); err != nil {
+		return err
+	}
 	projectID, principalID := p.acrExistingProjectID, p.acrExistingPrincipalID
 	if projectID == "" {
 		var err error
@@ -1531,6 +1583,9 @@ func (p *FoundryProvisioningProvider) recoverPartialACRBinding(
 		mode = "create"
 	}
 	if mode == "reuse-connect" {
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
+		}
 		if err := p.validateACRTeardownScopes(registryID, p.rgName); err != nil {
 			return err
 		}

@@ -88,6 +88,9 @@ func projectLifecycleHandler(
 	); err != nil {
 		return err
 	}
+	if err := synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project); err != nil {
+		return err
+	}
 	onDisk, err := projectOnDiskFoundryTemplatePresent(args.Project)
 	if err != nil {
 		return err

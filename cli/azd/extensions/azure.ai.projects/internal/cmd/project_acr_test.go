@@ -229,6 +229,7 @@ func TestProjectACRSelectionDoesNotAdoptExistingProjectOutputs(t *testing.T) {
 }
 
 func TestProjectAddACRPendingSelection(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, mode := range []string{"create", "none", "reuse-connect"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
@@ -259,6 +260,7 @@ func TestProjectAddACRPendingSelection(t *testing.T) {
 }
 
 func TestProjectAddACREnvironmentSelectionWithConfiguredName(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, key := range []string{"AZURE_AI_PROJECT_NAME", "AZURE_AI_ACCOUNT_NAME"} {
 		for _, mode := range []string{"", "reuse-connect"} {
 			for _, invalidScope := range []bool{false, true} {
@@ -302,6 +304,7 @@ func TestProjectAddACREnvironmentSelectionWithConfiguredName(t *testing.T) {
 }
 
 func TestProjectAddACRPlannedScopeBeforeScaffolding(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, layer := range []bool{false, true} {
 		t.Run(map[bool]string{false: "root", true: "layer"}[layer], func(t *testing.T) {
 			root := t.TempDir()
@@ -338,6 +341,7 @@ func TestProjectAddACRPlannedScopeBeforeScaffolding(t *testing.T) {
 }
 
 func TestProjectAddACREnvironmentInputBeforeScaffolding(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, layer := range []bool{false, true} {
 		t.Run(strconv.FormatBool(layer), func(t *testing.T) {
 			root := t.TempDir()
@@ -372,6 +376,7 @@ func TestProjectAddACREnvironmentInputBeforeScaffolding(t *testing.T) {
 }
 
 func TestProjectAddExplicitEnvironmentInEmptyDirectory(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, selector := range []bool{false, true} {
 		t.Run(strconv.FormatBool(selector), func(t *testing.T) {
 			root := t.TempDir()
@@ -404,6 +409,7 @@ func TestProjectAddExplicitEnvironmentInEmptyDirectory(t *testing.T) {
 }
 
 func TestProjectAddACRRejectsCrossSubscriptionBeforeScaffolding(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, selectorFlag := range []bool{false, true} {
 		for _, layer := range []bool{false, true} {
 			t.Run(strconv.FormatBool(selectorFlag)+"/"+strconv.FormatBool(layer), func(t *testing.T) {
@@ -442,6 +448,7 @@ func TestProjectAddACRRejectsCrossSubscriptionBeforeScaffolding(t *testing.T) {
 }
 
 func TestProjectAddACRValidatesResolvedSubscription(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, selectorFlag := range []bool{false, true} {
 		for _, layer := range []bool{false, true} {
 			for _, subscription := range []string{"subscription", "other-subscription"} {
@@ -518,6 +525,7 @@ func (s *projectACRPlanningPromptServer) PromptSubscription(
 }
 
 func TestProjectAddACRPlansSubscriptionBeforeEmptyDirectorySetup(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name, environment, subscription, group, wantError string
 		cancelled, noPrompt, withoutSelector              bool
@@ -798,6 +806,7 @@ func TestProjectAddAlreadyConnectedRegistryOwnershipOutput(t *testing.T) {
 }
 
 func TestProjectAddEnvironmentRegistryOwnershipOutput(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, managed := range []bool{false, true} {
 		for _, format := range []string{"default", "json"} {
 			t.Run(strconv.FormatBool(managed)+"/"+format, func(t *testing.T) {
@@ -883,6 +892,7 @@ func TestProjectACRSelectionRollback(t *testing.T) {
 }
 
 func TestProjectAddACRDeployedIdentity(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const projectID = "/subscriptions/subscription/resourceGroups/project/providers/" +
 		"Microsoft.CognitiveServices/accounts/account/projects/project"
 	for _, changed := range []bool{false, true} {
@@ -946,6 +956,7 @@ func TestProjectAddACRDeployedIdentity(t *testing.T) {
 }
 
 func TestProjectAddCanonicalBindingWithoutLegacyAliases(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const projectID = "/subscriptions/subscription/resourceGroups/project/providers/" +
 		"Microsoft.CognitiveServices/accounts/account/projects/project"
 	for _, tt := range []struct {
@@ -1092,6 +1103,7 @@ func (s *acrPreflightEnvironmentServer) GetConfig(
 }
 
 func TestProjectACRBindingPreflight(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const projectID = "/subscriptions/sub/resourceGroups/project/providers/" +
 		"Microsoft.CognitiveServices/accounts/account/projects/project"
 	binding, err := json.Marshal(synthesis.ACRBinding{
@@ -1150,6 +1162,7 @@ func TestProjectACRBindingPreflight(t *testing.T) {
 }
 
 func TestProjectACRLegacyOutputsPreserveIdentity(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const projectID = "/subscriptions/sub/resourceGroups/project/providers/" +
 		"Microsoft.CognitiveServices/accounts/account/projects/project"
 	for _, tt := range []struct {
@@ -1272,6 +1285,7 @@ func TestProjectAddACRManifestValidationBeforeMutation(t *testing.T) {
 }
 
 func TestProjectAddEnvironmentACRManifestValidation(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const source = "  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
 	const prebuilt = "  agent:\n    host: azure.ai.agent\n    image: registry/image:v1\n" +
 		"    docker: {imagePassthrough: true}\n"

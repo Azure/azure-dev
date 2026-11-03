@@ -103,7 +103,7 @@ func TestInitACRRejectsInvalidInputsBeforeSideEffects(t *testing.T) {
 }
 
 func TestAuthorFoundryProjectForwardsACRSelector(t *testing.T) {
-	t.Parallel()
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, mode := range []projectAuthoringMode{projectAuthoringNew, projectAuthoringCurrent} {
 		t.Run(string(mode), func(t *testing.T) {
 			workflow := &recordingProjectWorkflowServer{}
@@ -131,6 +131,7 @@ func TestAuthorFoundryProjectRejectsExistingProjectACRSelector(t *testing.T) {
 }
 
 func TestInitACRManifestSourceBuildValidation(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name    string
 		service string
@@ -164,6 +165,7 @@ func TestInitACRManifestSourceBuildValidation(t *testing.T) {
 }
 
 func TestInitACRManifestResolvesRefs(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	root := t.TempDir()
 	t.Chdir(root)
 	require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
@@ -200,6 +202,7 @@ func TestInitACRManifestValidatesPlannedEnvironmentBeforeScaffolding(t *testing.
 			{name: "matching subscription", existing: true, group: "registry-rg", subscription: "sub"},
 		} {
 			t.Run(route+"/"+tt.name, func(t *testing.T) {
+				t.Setenv(synthesis.ACRReuseEnvVar, "true")
 				root := t.TempDir()
 				t.Chdir(root)
 				templateDir := t.TempDir()
@@ -284,6 +287,7 @@ func TestInitACRManifestValidatesPlannedEnvironmentBeforeScaffolding(t *testing.
 }
 
 func TestPreflightAzdTemplateRejectsUnsupportedACRBeforeScaffolding(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	root := t.TempDir()
 	t.Chdir(root)
 	for _, tt := range []struct {
@@ -339,6 +343,7 @@ func (s *initACRPromptServer) PromptSubscription(
 }
 
 func TestInitACRTemplateRejectsExistingProjectBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, route := range []string{"azure.yaml", "repository"} {
 		for _, declaration := range []string{"inline", "reference"} {
 			t.Run(route+"/"+declaration, func(t *testing.T) {
@@ -391,6 +396,7 @@ func TestInitACRTemplateRejectsExistingProjectBeforeWrites(t *testing.T) {
 }
 
 func TestInitACRTemplateValidatesSubscriptionBeforeScaffolding(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, route := range []string{"azure.yaml", "repository"} {
 		for _, tt := range []struct {
 			name, subscription, wantError string
@@ -446,6 +452,7 @@ func TestInitACRTemplateValidatesSubscriptionBeforeScaffolding(t *testing.T) {
 }
 
 func TestInitACRTemplateRetainsPlannedSubscriptionWithoutWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	root := t.TempDir()
 	t.Chdir(root)
 	templateDir := t.TempDir()
@@ -507,6 +514,7 @@ func TestFinalizeAdoptedProjectUsesPlannedACRSubscription(t *testing.T) {
 type initACREnvironmentServer struct {
 	testEnvironmentServiceServer
 	binding      []byte
+	pending      []byte
 	bindingReads int
 }
 
@@ -519,13 +527,110 @@ func (s *initACREnvironmentServer) List(
 }
 
 func (s *initACREnvironmentServer) GetConfig(
-	context.Context, *azdext.GetConfigRequest,
+	_ context.Context, request *azdext.GetConfigRequest,
 ) (*azdext.GetConfigResponse, error) {
+	if request.GetPath() == synthesis.ACRPendingConfigKey {
+		return &azdext.GetConfigResponse{Found: s.pending != nil, Value: s.pending}, nil
+	}
 	s.bindingReads++
 	return &azdext.GetConfigResponse{Found: s.binding != nil, Value: s.binding}, nil
 }
 
+func TestInitACRTemplateEnvironmentReusePreflight(t *testing.T) {
+	for _, route := range []string{"azure.yaml", "repository"} {
+		for _, tt := range []struct {
+			name, group, wantError string
+			enabled, binding       bool
+		}{
+			{name: "disabled aliases"},
+			{name: "disabled binding", binding: true},
+			{name: "retained group aliases", enabled: true, group: "registry-rg", wantError: "azd down deletes"},
+			{name: "retained group binding", enabled: true, binding: true,
+				group: "registry-rg", wantError: "azd down deletes"},
+			{name: "external registry", enabled: true, group: "foundry-rg", wantError: "stopped at core init"},
+		} {
+			t.Run(route+"/"+tt.name, func(t *testing.T) {
+				t.Setenv(synthesis.ACRReuseEnvVar, fmt.Sprint(tt.enabled))
+				root := t.TempDir()
+				t.Chdir(root)
+				current := []byte("name: current\nservices:\n  foundry:\n    host: azure.ai.project\n" +
+					"    endpoint: https://account.services.ai.azure.com/api/projects/project\n")
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), current, 0o600))
+				templateDir := t.TempDir()
+				content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n" +
+					"    $ref: project.yaml\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: agent\n")
+				require.NoError(t, os.WriteFile(filepath.Join(templateDir, "azure.yaml"), content, 0o600))
+				require.NoError(t, os.WriteFile(filepath.Join(templateDir, "project.yaml"), []byte("name: new-project\n"), 0o600))
+				values := map[string]string{
+					"AZURE_SUBSCRIPTION_ID":                "sub",
+					"AZURE_RESOURCE_GROUP":                 tt.group,
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testInitACRID,
+					"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
+				}
+				environments := &initACREnvironmentServer{
+					testEnvironmentServiceServer: testEnvironmentServiceServer{
+						values: map[string]map[string]string{"test": values},
+					},
+				}
+				if tt.binding {
+					binding, err := json.Marshal(synthesis.ACRBinding{
+						Version: 1, Mode: "reuse-connect", RegistryResourceID: testInitACRID,
+						ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry-rg/providers/" +
+							"Microsoft.CognitiveServices/accounts/account/projects/project",
+						PrincipalID: "principal",
+					})
+					require.NoError(t, err)
+					environments.binding = binding
+					delete(values, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+					delete(values, "AZD_FOUNDRY_ACR_MODE")
+				}
+				before := maps.Clone(values)
+				workflow := &testWorkflowServiceServer{runErr: errors.New("stopped at core init")}
+				prompts := &initACRPromptServer{}
+				client := newTestAzdClient(t, environments, workflow, prompts)
+				flags := &initFlags{
+					src: "project", templatePointer: filepath.Join(templateDir, "azure.yaml"),
+				}
+
+				var err error
+				if route == "azure.yaml" {
+					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, templateDir)
+				} else {
+					_, err = scaffoldAzdTemplateProject(
+						t.Context(), client, http.DefaultClient, "project", templateDir, "test", flags,
+					)
+				}
+				if !tt.enabled {
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok, "expected feature gate error, got %v", err)
+					require.Equal(t, "feature_not_enabled", localErr.Code)
+				} else {
+					require.ErrorContains(t, err, tt.wantError)
+				}
+				if tt.wantError == "stopped at core init" {
+					require.Equal(t, 1, workflow.runCalls)
+					require.Equal(t, testInitACRID, flags.effectiveACRResourceID)
+				} else {
+					require.Zero(t, workflow.runCalls)
+				}
+				require.Zero(t, prompts.calls)
+				require.Equal(t, before, values)
+				require.Empty(t, environments.setKeys)
+				require.NoDirExists(t, filepath.Join(root, "project"))
+				require.NoDirExists(t, filepath.Join(root, ".azure"))
+				after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+				require.NoError(t, err)
+				require.Equal(t, current, after)
+				after, err = os.ReadFile(filepath.Join(templateDir, "azure.yaml"))
+				require.NoError(t, err)
+				require.Equal(t, content, after)
+			})
+		}
+	}
+}
+
 func TestPlanInitACRSubscriptionUsesConfiguredSubscription(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, subscription := range []string{"SUB", "other"} {
 		t.Run(subscription, func(t *testing.T) {
 			root := t.TempDir()
@@ -558,6 +663,7 @@ func TestPlanInitACRSubscriptionUsesConfiguredSubscription(t *testing.T) {
 }
 
 func TestInitACRBindingPreflight(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name     string
 		mode     string
@@ -649,6 +755,7 @@ func TestInitACRExplicitSelectionChecksDeployedStateBeforeWrites(t *testing.T) {
 				output: "AZURE_CONTAINER_REGISTRY_ENDPOINT", noProjectID: true, selector: testInitACRID + "other"},
 		} {
 			t.Run(route+"/"+tt.name, func(t *testing.T) {
+				t.Setenv(synthesis.ACRReuseEnvVar, "true")
 				root := t.TempDir()
 				t.Chdir(root)
 				content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n")
@@ -766,6 +873,7 @@ func TestInitACRExplicitSelectionChecksDeployedStateBeforeWrites(t *testing.T) {
 }
 
 func TestInitACRBindingFallbackPreflight(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name        string
 		bindingMode string
@@ -858,6 +966,7 @@ func TestInitACRBindingFallbackPreflight(t *testing.T) {
 }
 
 func TestInitACRRejectsCrossSubscriptionBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, template := range []string{"", "template.yaml"} {
 		t.Run(template, func(t *testing.T) {
 			root := t.TempDir()
@@ -888,6 +997,7 @@ func TestInitACRRejectsCrossSubscriptionBeforeWrites(t *testing.T) {
 }
 
 func TestInitACRRejectsTeardownScopeBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name       string
 		infra      string
@@ -937,6 +1047,7 @@ func TestInitACRRejectsTeardownScopeBeforeWrites(t *testing.T) {
 }
 
 func TestInitACREnvironmentSelectorPreflight(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name        string
 		layer       bool
@@ -1067,24 +1178,35 @@ func TestInitACRStagedEnvironmentSelectorPreflight(t *testing.T) {
 			workflow := &recordingProjectWorkflowServer{}
 			client := newTestAzdClient(t, server, workflow)
 			flags := &initFlags{templatePointer: "template.yaml", src: "project", noPrompt: true}
+			t.Setenv(synthesis.ACRReuseEnvVar, "false")
+			requireACRFeatureDisabled(t, validateInitACRProject(t.Context(), client, flags))
+			requireACRFeatureDisabled(t, validateInitACRProjectContent(t.Context(), client, flags, stagedContent, stagingDir, "."))
+			t.Setenv(synthesis.ACRReuseEnvVar, "true")
 			require.NoError(t, validateInitACRProject(t.Context(), client, flags))
 			err := validateInitACRProjectContent(t.Context(), client, flags, stagedContent, stagingDir, ".")
 			require.ErrorContains(t, err, "azd down deletes")
 			for _, route := range []string{"azure.yaml", "repository"} {
-				t.Run(route, func(t *testing.T) {
-					var err error
-					switch route {
-					case "azure.yaml":
-						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, stagedContent, stagingDir)
-					case "repository":
-						_, err = scaffoldAzdTemplateProject(
-							t.Context(), client, http.DefaultClient, "project", stagingDir, "test", flags,
-						)
-					}
-					require.ErrorContains(t, err, "azd down deletes")
-					require.Empty(t, workflow.requests)
-					require.NoDirExists(t, filepath.Join(root, "project"))
-				})
+				for _, enabled := range []bool{false, true} {
+					t.Run(route+"/"+fmt.Sprint(enabled), func(t *testing.T) {
+						t.Setenv(synthesis.ACRReuseEnvVar, map[bool]string{false: "false", true: "true"}[enabled])
+						var err error
+						switch route {
+						case "azure.yaml":
+							err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, stagedContent, stagingDir)
+						case "repository":
+							_, err = scaffoldAzdTemplateProject(
+								t.Context(), client, http.DefaultClient, "project", stagingDir, "test", flags,
+							)
+						}
+						if enabled {
+							require.ErrorContains(t, err, "azd down deletes")
+						} else {
+							requireACRFeatureDisabled(t, err)
+						}
+						require.Empty(t, workflow.requests)
+						require.NoDirExists(t, filepath.Join(root, "project"))
+					})
+				}
 			}
 			require.Equal(t, before, server.values["test"])
 			require.Equal(t, bindingBefore, string(server.binding))
@@ -1099,6 +1221,7 @@ func TestInitACRStagedEnvironmentSelectorPreflight(t *testing.T) {
 }
 
 func TestInitACREnvironmentSelectorRejectsBeforeSourceInit(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, canonical := range []bool{false, true} {
 		t.Run(fmt.Sprint("canonical=", canonical), func(t *testing.T) {
 			root := t.TempDir()
@@ -1149,6 +1272,7 @@ func TestInitACREnvironmentSelectorRejectsBeforeSourceInit(t *testing.T) {
 }
 
 func TestInitACREnvironmentSelectorPreservesOtherProjectFlows(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, flow := range []string{
 		"explicit existing", "saved existing", "endpoint", "referenced endpoint", "legacy create",
 		"canonical saved existing", "canonical endpoint",
@@ -1208,6 +1332,7 @@ func TestInitACREnvironmentSelectorPreservesOtherProjectFlows(t *testing.T) {
 }
 
 func TestInitACREffectiveSelectionManifestPreflight(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, canonical := range []bool{false, true} {
 		for _, tt := range []struct {
 			name            string

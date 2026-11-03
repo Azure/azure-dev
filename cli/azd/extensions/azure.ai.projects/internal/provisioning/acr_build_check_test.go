@@ -31,6 +31,7 @@ import (
 )
 
 func TestACRRemoteBuildPreflight(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name, service, endpoint, provider string
 		classic, canonical, noSelector    bool
@@ -154,6 +155,7 @@ func TestACRRemoteBuildPreflight(t *testing.T) {
 }
 
 func TestACRRemoteBuildPreflightUsesOnDiskSelection(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, include := range []bool{false, true} {
 		for _, layer := range []bool{false, true} {
 			for _, params := range []bool{false, true} {
@@ -228,6 +230,7 @@ func TestACRRemoteBuildPreflightUsesOnDiskSelection(t *testing.T) {
 }
 
 func TestACROnDiskNetworkingUsesEffectiveInputs(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, route := range []struct {
 		name, path, module string
 		layer              bool
@@ -472,6 +475,26 @@ func TestACRRemoteBuildLookupFailureStopsPreflight(t *testing.T) {
 	require.ErrorContains(t, p.validateACRRemoteBuild(t.Context(), acrTestSource()), "registry unavailable")
 }
 
+func TestACRRemoteBuildRequiresPreview(t *testing.T) {
+	for _, include := range []bool{false, true} {
+		t.Run(strconv.FormatBool(include), func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			t.Setenv(synthesis.ACRReuseEnvVar, "false")
+			p.acrRemoteBuild = true
+			p.acrRequest = func(context.Context, string, string, string, any) error {
+				t.Fatal("disabled reuse must fail before registry requests")
+				return nil
+			}
+			src := acrTestSource()
+			src.parameters["includeAcr"] = map[string]any{"value": include}
+			err := p.validateACRRemoteBuild(t.Context(), src)
+			require.ErrorContains(t, err, synthesis.ACRReuseEnvVar+"=true")
+			assert.Empty(t, env.config)
+			assert.Empty(t, env.set)
+		})
+	}
+}
+
 func TestACRRemoteBuildPreservesManagedBinding(t *testing.T) {
 	for _, include := range []bool{false, true} {
 		t.Run(strconv.FormatBool(include), func(t *testing.T) {
@@ -528,6 +551,7 @@ func TestACRRemoteBuildWithInfrastructureDisabled(t *testing.T) {
 }
 
 func TestACRRemoteBuildRejectsBeforePersistingPromptChoices(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, condition := range []string{"", "${AZURE_LOCATION/eastus2/true}", "${AZURE_SUBSCRIPTION_ID/sub/true}"} {
 		for _, test := range []struct{ abac, onDisk bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
 			t.Run(fmt.Sprintf("condition=%s/ABAC=%t/onDisk=%t", condition, test.abac, test.onDisk), func(t *testing.T) {
@@ -628,6 +652,7 @@ func TestACROnDiskLocalBuildValidatesPromptedScopeBeforeWrites(t *testing.T) {
 				{name: "compile failure", subscription: "sub", compileFailure: true, wantError: "invalid authored template"},
 			} {
 				t.Run(route.name+"/"+params+"/"+tt.name, func(t *testing.T) {
+					t.Setenv(synthesis.ACRReuseEnvVar, "true")
 					root := t.TempDir()
 					options := &azdext.ProvisioningOptions{Provider: FoundryProviderName}
 					raw := "infra:\n  provider: microsoft.foundry\n"

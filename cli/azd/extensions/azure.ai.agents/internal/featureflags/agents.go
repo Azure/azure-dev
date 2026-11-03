@@ -7,10 +7,14 @@ import (
 	"fmt"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/synthesis"
 )
 
 // Require rejects a disabled preview before its operation starts.
 func Require(feature Feature) error {
+	if feature == FoundryACRReuse {
+		return synthesis.RequireACRReuse()
+	}
 	enabled, err := IsEnabled(feature)
 	if err != nil {
 		return err

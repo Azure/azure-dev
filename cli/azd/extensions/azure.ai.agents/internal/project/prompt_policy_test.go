@@ -26,6 +26,16 @@ func TestExpandPromptAgentPolicies(t *testing.T) {
 	require.NoError(t, managed.ValidatePolicies())
 }
 
+func TestExpandPromptAgentPoliciesSupportsGPTLivePolicyCopy(t *testing.T) {
+	voicePolicies := []agent_yaml.Policy{{
+		Type: agent_yaml.PolicyTypeRai, RaiPolicyName: "${RAI_POLICY_ID}",
+	}}
+	managed := agent_yaml.PromptAgent{Policies: append([]agent_yaml.Policy(nil), voicePolicies...)}
+	require.NoError(t, expandPromptAgentPolicies(&managed, map[string]string{"RAI_POLICY_ID": raiPolicyID}))
+	require.Equal(t, raiPolicyID, managed.Policies[0].RaiPolicyName)
+	require.Equal(t, "${RAI_POLICY_ID}", voicePolicies[0].RaiPolicyName)
+}
+
 func TestExpandPromptAgentPoliciesUnresolved(t *testing.T) {
 	t.Parallel()
 	managed := agent_yaml.PromptAgent{Policies: []agent_yaml.Policy{{

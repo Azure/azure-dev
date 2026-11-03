@@ -1,0 +1,114 @@
+# Tier 0 — terminal-only local A2A run/invoke against a stdlib echo fixture; no Azure auth or cost.
+name: "run-invoke-local-a2a"
+command: "azd ai agent run echo --port {agent} --no-prompt"
+cwd: "~/working/azd-agents-local-a2a-{instance}"
+tags: ["tier:0", "cmd:run", "cmd:invoke", "parallel-safe"]
+allocate_ports: [agent]
+env:
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_CHECK_VERSION: "false"
+  AZURE_ENV_NAME: ""
+  AZD_ALPHA_ENABLE_AGENTS_A2A: "true"
+notes: |
+  This is a local CLI transport fixture, not an A2A SDK/interoperability or hosted execution test.
+  Python 3 must already be installed. No packages, credentials, models, or cloud resources are needed.
+  Start run and invoke sessions with the same scenario_path AND instance_id/session_vars.instance
+  so both use this instance's allocated port. Use session IDs local-a2a-run-{instance} and
+  local-a2a-invoke-{instance}, with role-suffixed run_name values. Finish both sessions even on failure;
+  stop the foreground run with Ctrl-C before finishing it. Leave fixture files for inspection.
+pre:
+  - name: "seed isolated local-only A2A echo project and exact request files"
+    cwd: "~/working"
+    run: |
+      set -eu
+      command -v python3 >/dev/null
+      work="$HOME/working/azd-agents-local-a2a-{instance}"
+      rm -rf "$work"
+      mkdir -p "$work"
+      python3 - "$work" <<'PY'
+      import json
+      import pathlib
+      import sys
+      work = pathlib.Path(sys.argv[1])
+      (work / "azure.yaml").write_text('''name: local-a2a
+      services:
+        echo:
+          host: azure.ai.agent
+          project: .
+          language: python
+          kind: hosted
+          name: local-a2a-echo
+          startupCommand: python3 server.py
+          protocols:
+            - protocol: a2a
+              version: 1.0.0
+          agentEndpoint:
+            protocols: [a2a]
+      ''')
+      request = dict(jsonrpc="2.0", id="file-1", method="SendMessage", params=dict(
+          message=dict(messageId="file-message", role="ROLE_USER", parts=[dict(text="file hello")]),
+          configuration=dict(acceptedOutputModes=["text/plain"], returnImmediately=False)))
+      (work / "request.json").write_text(json.dumps(request, indent=2) + "\n")
+      request["id"] = "stream-1"
+      request["method"] = "SendStreamingMessage"
+      (work / "stream.json").write_text(json.dumps(request, indent=2) + "\n")
+      (work / "server.py").write_text('''import base64
+      import json
+      import os
+      from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+      class Handler(BaseHTTPRequestHandler):
+          def do_POST(self):
+              body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+              with open("requests.jsonl", "a") as trace:
+                  trace.write(json.dumps(dict(path=self.path, headers=dict(self.headers),
+                      body_base64=base64.b64encode(body).decode())) + "\\n")
+              if self.path != "/a2a":
+                  self.send_error(404)
+                  return
+              request = json.loads(body)
+              text = request["params"]["message"]["parts"][0]["text"]
+              reply = dict(jsonrpc="2.0", id=request["id"], result=dict(message=dict(
+                  messageId="reply", role="ROLE_AGENT", parts=[dict(text="echo: " + text)])))
+              streaming = request["method"] == "SendStreamingMessage"
+              payload = json.dumps(reply).encode()
+              if streaming:
+                  payload = b"data: " + payload + b"\\n\\n"
+              self.send_response(200)
+              self.send_header("Content-Type", "text/event-stream" if streaming else "application/json")
+              self.send_header("Content-Length", str(len(payload)))
+              self.end_headers()
+              self.wfile.write(payload)
+
+      port = int(os.environ["PORT"])
+      server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+      print("Fixture listening on port " + str(port), flush=True)
+      try:
+          server.serve_forever()
+      except KeyboardInterrupt:
+          pass
+      finally:
+          server.server_close()
+      ''')
+      PY
+goals:
+  - "In the run session, wait for 'Fixture listening on port {agent}' and the Agent ready/Next block. Confirm the suggested invocation selects echo and includes --local --protocol a2a --port {agent} --a2a-version 1.0 with a plain-text Hello! message, not an Invocations payload or OpenAPI URL. No Agent Inspector, Playground, or browser client may launch; --no-client is deliberately omitted to test automatic A2A-only suppression. No product prompts are allowed anywhere in this scenario."
+  - "Start a second bash tester session in the same cwd using the same scenario_path, instance_id, and session_vars.instance, sharing allocated port {agent}. All subsequent invoke commands run there with this scenario's environment."
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --a2a-version 1.0 "Hello!". Confirm exit 0, target http://localhost:{agent}/a2a, formatted reply [local] echo: Hello!, and a Next block suggesting azd deploy.'
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --a2a-version 1.0 --input-file request.json. Confirm exit 0 and formatted reply [local] echo: file hello.'
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --a2a-version 1.0 --input-file request.json --output raw > raw.txt. Confirm exit 0. Inspect raw.txt: HTTP 200 status line, response headers, and the complete JSON-RPC envelope with id file-1 and echo: file hello must be present. Target/Input/Session/Client elapsed summaries must be absent.'
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --a2a-version 1.0 --input-file stream.json --output raw > stream.txt. Confirm exit 0, Content-Type text/event-stream, and a data: SSE event containing the response with id stream-1; no formatted reply or timing summary may be added.'
+  - "Inspect requests.jsonl. Confirm exactly four POSTs, all to /a2a, and A2A-Version 1.0 and Content-Type application/json on each (header names are case-insensitive). Decode body_base64: the first is SendMessage with ROLE_USER and text Hello!; the next two bodies match request.json byte-for-byte, and the fourth matches stream.json byte-for-byte. Confirm no Authorization, session, conversation, identity, call-ID, or x-client-* headers."
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --session-id test "Hello!". Confirm non-zero exit naming --session-id as unsupported with local a2a invocation.'
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --new-session "Hello!". Confirm non-zero exit naming --new-session as unsupported with local a2a invocation.'
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --conversation-id test "Hello!". Confirm non-zero exit naming --conversation-id as unsupported with local a2a invocation.'
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --new-conversation "Hello!". Confirm non-zero exit naming --new-conversation as unsupported with local a2a invocation.'
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --version 3 "Hello!". Confirm non-zero exit naming --version as unsupported with local a2a invocation.'
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --user-identity test "Hello!". Confirm non-zero exit naming --user-identity as unsupported with local a2a invocation.'
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --call-id test "Hello!". Confirm non-zero exit naming --call-id as unsupported with local a2a invocation.'
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --client-header "x-client-test: value" "Hello!". Confirm non-zero exit explaining --client-header is unsupported with local a2a or the a2a protocol.'
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --input-file request.json. Confirm non-zero exit requiring explicit --a2a-version for A2A file input; the message default must not apply.'
+  - "Confirm requests.jsonl still contains exactly four entries after every invalid command: validation must not send requests. Confirm no session/conversation IDs were persisted by the successful A2A calls. Do not initialize, provision, deploy, invoke Foundry, or install dependencies. This fixture requires only localhost traffic."
+  - 'Run azd ai agent run echo --port {agent} --inspector-port 9002 --no-prompt in the second session. Confirm non-zero exit explaining --inspector-port is unsupported for A2A-only agents, with no second agent started; the original server must remain running.'
+  - "Take best-effort terminal screenshots of the ready/Next block, formatted reply, raw captures, and validation output. Stop the run session with Ctrl-C and confirm the fixture shuts down and releases port {agent}. Always stop and finish both sessions, including after a failed goal."
+  - "Report a finding for unexpected prompts, any graphical client launch, incorrect port/path/version/body/headers, persisted A2A session state, accepted unsupported flags, raw-output contamination, or failed shutdown."

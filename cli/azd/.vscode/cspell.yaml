@@ -178,6 +178,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: pkg/output/colors.go
+    words:
+      - termenv
   - filename: "{docs/extensions/contract-versioning.md,grpc/README.md}"
     words:
       - generateprojectclient
@@ -707,6 +710,10 @@ overrides:
       - userbyid
       - xact
       - zaxxer
+  - filename: docs/extensions/extension-telemetry.md
+    words:
+      - dcount
+      - isnotempty
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

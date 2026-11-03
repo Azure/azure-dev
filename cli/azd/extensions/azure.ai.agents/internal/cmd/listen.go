@@ -389,16 +389,20 @@ func predeployHandler(
 		return nil, fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 	}
 
+	hosted := isHostedAgentService(svc, args.Project)
+	messages, err := project.CheckDeveloperRBAC(ctx, azdClient, hosted)
+	if err != nil {
+		return &azdext.BetaServiceEventResponse{Messages: messages}, err
+	}
+
 	// Capture the current session so it can be resumed on the newly deployed
 	// version after deploy (see session_carryover.go). Best-effort; hosted
 	// agents only.
-	hosted := isHostedAgentService(svc, args.Project)
 	if hosted {
 		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
-	messages, err := project.CheckDeveloperRBAC(ctx, azdClient, hosted)
-	return &azdext.BetaServiceEventResponse{Messages: messages}, err
+	return &azdext.BetaServiceEventResponse{Messages: messages}, nil
 }
 
 // isHostedAgentService checks if a service is a hosted (container) agent by

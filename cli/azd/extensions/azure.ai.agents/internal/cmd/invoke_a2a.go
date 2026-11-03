@@ -213,17 +213,6 @@ func buildA2A10TextRequest(text, requestID, messageID string) a2aJSONRPCRequest 
 	}
 }
 
-// a2aLocal reports that this CLI does not yet support local A2A invocation.
-// A2A applications can run locally, but azd currently targets Foundry only.
-func (a *InvokeAction) a2aLocal(_ context.Context) error {
-	return exterrors.Validation(
-		exterrors.CodeInvalidParameter,
-		"the a2a protocol cannot be invoked against a local agent",
-		"omit --local to invoke the deployed agent over a2a, "+
-			"or use --protocol responses/invocations for local invocation",
-	)
-}
-
 // applyA2ARequestHeaders sets the A2A-specific request headers: the explicit
 // A2A-Version header (so the server negotiates deterministically instead of
 // applying an implicit default), the Foundry bearer token, and the remote user
@@ -345,8 +334,12 @@ func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
 // `result` (a Message or Task) and printed. Non-JSON-RPC bodies fall back to
 // pretty-printed JSON or the raw body.
 func handleA2AResponse(resp *http.Response, agentName string, raw bool, version string) error {
+	return handleA2AResponseTo(os.Stdout, resp, agentName, raw, version)
+}
+
+func handleA2AResponseTo(w io.Writer, resp *http.Response, agentName string, raw bool, version string) error {
 	if raw {
-		if err := writeRawResponse(os.Stdout, resp); err != nil {
+		if err := writeRawResponse(w, resp); err != nil {
 			return err
 		}
 		if resp.StatusCode >= 400 {
@@ -359,7 +352,7 @@ func handleA2AResponse(resp *http.Response, agentName string, raw bool, version 
 	}
 
 	if traceID := responseTraceID(resp); traceID != "" {
-		fmt.Printf("Trace ID:     %s\n", traceID)
+		fmt.Fprintf(w, "Trace ID:     %s\n", traceID)
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -379,8 +372,7 @@ func handleA2AResponse(resp *http.Response, agentName string, raw bool, version 
 		return agentErr
 	}
 
-	printA2AResult(respBody, agentName, version)
-	return nil
+	return printA2AResultTo(w, respBody, agentName, version)
 }
 
 // a2aRequestURL returns the request URL of a response for error messages,
@@ -413,24 +405,25 @@ func a2aErrorFromBody(respBody []byte) error {
 	return fmt.Errorf("agent error: %s", envelope.Error.Message)
 }
 
-// printA2AResult prints the agent's reply. It extracts the text of the JSON-RPC
+// printA2AResultTo prints the agent's reply. It extracts the text of the JSON-RPC
 // result (a Message or Task); when no text can be found it pretty-prints the
 // JSON body, falling back to the raw body for non-JSON.
-func printA2AResult(respBody []byte, agentName string, version string) {
+func printA2AResultTo(w io.Writer, respBody []byte, agentName string, version string) error {
 	if text := extractA2AText(respBody, version); text != "" {
-		fmt.Printf("[%s] %s\n", agentName, text)
-		return
+		_, err := fmt.Fprintf(w, "[%s] %s\n", agentName, text)
+		return err
 	}
 
 	if json.Valid(respBody) {
 		var pretty bytes.Buffer
 		if err := json.Indent(&pretty, respBody, "", "  "); err == nil {
-			fmt.Printf("[%s] %s\n", agentName, pretty.String())
-			return
+			_, err := fmt.Fprintf(w, "[%s] %s\n", agentName, pretty.String())
+			return err
 		}
 	}
 
-	fmt.Printf("[%s] %s\n", agentName, strings.TrimSpace(string(respBody)))
+	_, err := fmt.Fprintf(w, "[%s] %s\n", agentName, strings.TrimSpace(string(respBody)))
+	return err
 }
 
 // extractA2AText pulls the user-visible reply text out of a JSON-RPC A2A

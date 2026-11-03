@@ -87,6 +87,24 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 	}
 	require.NoError(f.t, json.NewDecoder(request.Body).Decode(&submitted))
 	f.template, f.parameters = submitted.Properties.Template, submitted.Properties.Parameters
+	definitions, ok := f.template["parameters"].(map[string]any)
+	require.True(f.t, ok)
+	for name := range f.parameters {
+		declared := false
+		for definition := range definitions {
+			if strings.EqualFold(name, definition) {
+				declared = true
+				break
+			}
+		}
+		if !declared {
+			return f.response(request, 400, map[string]any{
+				"error": map[string]string{
+					"code": "InvalidTemplate", "message": "offline ARM undeclared parameter: " + name,
+				},
+			}), nil
+		}
+	}
 	acrParameter, ok := f.parameters["includeAcr"].(map[string]any)
 	require.True(f.t, ok)
 	includeAcr, ok := acrParameter["value"].(bool)
@@ -307,93 +325,101 @@ func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSReads(t *testing.T) {
 }
 
 func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
-	p, fake := offlineBYOProvider(t)
+	p, fake := suppliedProvider(t, 7)
 	source, err := p.resolveTemplate(t.Context(), func(string) {})
 	require.NoError(t, err)
 	definitions, ok := source.armTemplate["parameters"].(map[string]any)
 	require.True(t, ok)
-	delete(definitions, "kubeletObjectId")
-	delete(definitions, "federatedIdentityRoleDefinitionId")
+	for _, name := range []string{
+		"kubeletObjectId", "federatedIdentityRoleDefinitionId", "hostingPrincipalId", "workloadPrincipalId",
+	} {
+		delete(definitions, name)
+	}
 	require.NoError(t, p.prepareBYO(t.Context(), source))
 	assert.NotContains(t, source.parameters, "kubeletObjectId")
 	assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
-	assert.Len(t, fake.requests, 2, "preparation reads AKS identity and the federation role without a registry")
+	assert.NotContains(t, source.parameters, "hostingPrincipalId")
+	assert.NotContains(t, source.parameters, "workloadPrincipalId")
+	assert.Equal(t, []string{offlineClusterID}, fake.reads, "the actual kubelet identity is always checked")
 }
 
 func TestBYOPrepareValidatesKubeletIdentityRegardlessOfACR(t *testing.T) {
 	for _, includeAcr := range []bool{false, true} {
-		for _, test := range []struct {
-			name       string
-			properties map[string]any
-			expected   string
-		}{
-			{"missing properties", nil, "requires a kubelet principal object ID"},
-			{"missing kubelet identity", map[string]any{}, "requires a kubelet principal object ID"},
-			{"missing object ID", map[string]any{"identityProfile": map[string]any{
-				"kubeletidentity": map[string]any{},
-			}}, "requires a kubelet principal object ID"},
-			{"empty object ID", map[string]any{"identityProfile": map[string]any{
-				"kubeletidentity": map[string]any{"objectId": ""},
-			}}, "must be a GUID"},
-			{"invalid object ID", map[string]any{"identityProfile": map[string]any{
-				"kubeletidentity": map[string]any{"objectId": "not-a-guid"},
-			}}, "must be a GUID"},
-		} {
-			t.Run(fmt.Sprintf("includeAcr=%t/%s", includeAcr, test.name), func(t *testing.T) {
-				p, fake := offlineBYOProvider(t)
-				fake.clusterProperties = test.properties
-				source, err := p.resolveTemplate(t.Context(), func(string) {})
-				require.NoError(t, err)
-				source.parameters["includeAcr"] = map[string]any{"value": includeAcr}
-				require.ErrorContains(t, p.prepareBYO(t.Context(), source), test.expected)
-				assert.Equal(t, []string{"GET " + offlineClusterID}, fake.requests)
-			})
+		for _, supplied := range []bool{false, true} {
+			for _, test := range []struct {
+				name       string
+				properties map[string]any
+				expected   string
+			}{
+				{"missing properties", nil, "requires a kubelet principal object ID"},
+				{"missing kubelet identity", map[string]any{}, "requires a kubelet principal object ID"},
+				{"missing object ID", map[string]any{"identityProfile": map[string]any{
+					"kubeletidentity": map[string]any{},
+				}}, "requires a kubelet principal object ID"},
+				{"empty object ID", map[string]any{"identityProfile": map[string]any{
+					"kubeletidentity": map[string]any{"objectId": ""},
+				}}, "must be a GUID"},
+				{"invalid object ID", map[string]any{"identityProfile": map[string]any{
+					"kubeletidentity": map[string]any{"objectId": "not-a-guid"},
+				}}, "must be a GUID"},
+			} {
+				t.Run(fmt.Sprintf("includeAcr=%t/supplied=%t/%s", includeAcr, supplied, test.name), func(t *testing.T) {
+					p, fake := offlineBYOProvider(t)
+					fake.clusterProperties = test.properties
+					source, err := p.resolveTemplate(t.Context(), func(string) {})
+					require.NoError(t, err)
+					source.parameters["includeAcr"] = map[string]any{"value": includeAcr}
+					if supplied {
+						source.parameters["kubeletObjectId"] = map[string]any{"value": suppliedHostingPrincipal}
+					}
+					require.ErrorContains(t, p.prepareBYO(t.Context(), source), test.expected)
+					assert.Equal(t, []string{"GET " + offlineClusterID}, fake.requests)
+				})
+			}
 		}
 	}
 }
 
-func TestBYOPrepareValidatesSuppliedKubeletRegardlessOfACR(t *testing.T) {
+func TestBYOPreparePreservesSuppliedKubeletRegardlessOfACR(t *testing.T) {
 	for _, includeAcr := range []bool{false, true} {
 		for _, test := range []struct {
 			name      string
 			value     any
 			duplicate bool
-			expected  string
-			requests  int
 		}{
-			{"empty", "", false, "nonempty string", 0},
-			{"whitespace", " ", false, "nonempty string", 0},
-			{"non-string", 1, false, "nonempty string", 0},
-			{"null", nil, false, "nonempty string", 0},
-			{"duplicate", offlineKubeletObjectID, true, "differ only by case", 0},
-			{"mismatch", "22222222-2222-4222-8222-222222222222", false, "conflicts", 2},
-			{"matching", strings.ToUpper(offlineKubeletObjectID), false, "", 2},
+			{"empty", "", false},
+			{"whitespace", " ", false},
+			{"non-string", 1, false},
+			{"null", nil, false},
+			{"reference", map[string]any{"reference": map[string]any{"secretName": "kubelet"}}, false},
+			{"duplicate", offlineKubeletObjectID, true},
+			{"different", "22222222-2222-4222-8222-222222222222", false},
+			{"matching", strings.ToUpper(offlineKubeletObjectID), false},
 		} {
 			t.Run(fmt.Sprintf("includeAcr=%t/%s", includeAcr, test.name), func(t *testing.T) {
 				p, fake := offlineBYOProvider(t)
-				if test.requests == 0 {
-					p.credential = nil
-				}
 				source, err := p.resolveTemplate(t.Context(), func(string) {})
 				require.NoError(t, err)
-				source.parameters["includeAcr"] = map[string]any{"value": includeAcr}
-				source.parameters["kubeletObjectId"] = map[string]any{"value": test.value}
+				delete(source.parameters, "includeAcr")
+				source.parameters["INCLUDEACR"] = map[string]any{"value": includeAcr}
+				parameter := any(map[string]any{"value": test.value})
+				if test.name == "reference" {
+					parameter = test.value
+				}
+				source.parameters["kubeletObjectId"] = parameter
 				if test.duplicate {
 					source.parameters["KUBELETOBJECTID"] = map[string]any{"value": test.value}
 				}
-				err = p.prepareBYO(t.Context(), source)
-				assert.Len(t, fake.requests, test.requests)
-				if test.expected != "" {
-					require.ErrorContains(t, err, test.expected)
-					return
+				require.NoError(t, p.prepareBYO(t.Context(), source))
+				assert.Equal(t, []string{
+					"GET " + offlineClusterID,
+					"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
+				}, fake.requests)
+				assert.Equal(t, parameter, source.parameters["kubeletObjectId"])
+				if test.duplicate {
+					assert.Equal(t, map[string]any{"value": test.value}, source.parameters["KUBELETOBJECTID"])
 				}
-				require.NoError(t, err)
-				expected := test.value
-				if includeAcr {
-					expected = offlineKubeletObjectID
-				}
-				assert.Equal(t, map[string]any{"value": expected}, source.parameters["kubeletObjectId"])
-				assert.Equal(t, map[string]any{"value": includeAcr}, source.parameters["includeAcr"])
+				assert.Equal(t, map[string]any{"value": includeAcr}, source.parameters["INCLUDEACR"])
 			})
 		}
 	}
@@ -404,11 +430,20 @@ func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {
 		key, expected string
 		value         any
 	}{
-		{"agentHosting", `unknown field "storageAccountResourceId"`,
-			map[string]any{"enabled": true, "storageAccountResourceId": "supplied"}},
-		{"agentHosting", "conflict with azure.yaml", map[string]any{
-			"enabled": true, "hostingType": "ManagedCluster", "name": "default",
-			"clusterResourceId": offlineClusterID + "-other",
+		{"agentHosting", "invalid agentHosting deployment parameters", "not-an-object"},
+		{"agentHosting", "invalid agentHosting deployment parameters", map[string]any{"enabled": "true"}},
+		{"agentHosting", "clusterResourceId must be a resource ID string", map[string]any{
+			"enabled": true, "clusterResourceId": 42,
+		}},
+		{"agentHosting", "expected a complete Microsoft.ContainerService/managedClusters resource ID", map[string]any{
+			"enabled": true, "clusterResourceId": "/not-a-cluster",
+		}},
+		{"agentHosting", "expected a complete Microsoft.ManagedIdentity/userAssignedIdentities resource ID", map[string]any{
+			"enabled": true, "clusterResourceId": offlineClusterID,
+			"hostingManagementIdentityResourceId": "/not-an-identity",
+		}},
+		{"agentHosting", "hostingManagementIdentityResourceId must be a resource ID string", map[string]any{
+			"enabled": true, "clusterResourceId": offlineClusterID, "hostingManagementIdentityResourceId": 42,
 		}},
 	} {
 		t.Run(test.key, func(t *testing.T) {

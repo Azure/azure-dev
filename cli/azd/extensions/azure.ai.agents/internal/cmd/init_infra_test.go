@@ -2368,6 +2368,29 @@ services:
 		assert.Equal(t, config, string(raw))
 		require.NoDirExists(t, filepath.Join(dir, "infra"))
 	})
+	t.Run("Bicep preserves supplied-resource references", func(t *testing.T) {
+		dir := t.TempDir()
+		supplied := strings.Replace(config, "    network:",
+			"      storageAccountResourceId: ${STORAGE_ID}\n"+
+				"      hostingManagementIdentityResourceId: ${HOSTING_ID}\n"+
+				"      workloadIdentityResourceId: ${WORKLOAD_ID}\n    network:", 1)
+		mustWriteFile(t, filepath.Join(dir, "azure.yaml"), supplied)
+		withCapturedStdout(t, func() {
+			require.NoError(t, ejectInfra(dir, "bicep"))
+		})
+		raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json"))
+		require.NoError(t, err)
+		var parameters struct {
+			Parameters map[string]struct{ Value any }
+		}
+		require.NoError(t, json.Unmarshal(raw, &parameters))
+		hosting, ok := parameters.Parameters["agentHosting"].Value.(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "${STORAGE_ID}", hosting["storageAccountResourceId"])
+		assert.Equal(t, "${HOSTING_ID}", hosting["hostingManagementIdentityResourceId"])
+		assert.Equal(t, "${WORKLOAD_ID}", hosting["workloadIdentityResourceId"])
+		assert.Equal(t, "${CLUSTER_ID}", hosting["clusterResourceId"])
+	})
 }
 
 func TestEjectInfra_RefusesSymlinkedFoundryPath(t *testing.T) {

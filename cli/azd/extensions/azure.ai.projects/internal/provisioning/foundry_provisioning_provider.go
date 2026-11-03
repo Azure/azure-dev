@@ -777,6 +777,13 @@ func foundryServiceEndpointAtRoot(
 		}
 		values = resolved
 	}
+	var node yaml.Node
+	if err := node.Encode(values); err != nil {
+		return "", err
+	}
+	if err := synthesis.ValidateAgentHostingInputs(node, svcName); err != nil {
+		return "", err
+	}
 	data, err := yaml.Marshal(values)
 	if err != nil {
 		return "", err

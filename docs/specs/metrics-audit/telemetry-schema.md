@@ -259,6 +259,8 @@ tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `er
 | Extension version | `extension.version` | SystemMetadata | FeatureInsight | |
 | Extension event | `extension.event` | SystemMetadata | FeatureInsight | Extension-defined usage event or failed-invocation event |
 | Legacy gRPC call count | `extension.grpc.legacy_call_count` | SystemMetadata | FeatureInsight | **Measurement** — number of unary calls or streams opened through the temporary `/azdext.*` compatibility bridge during one command |
+| Dropped extension usage reports | `extension.usage.dropped` | SystemMetadata | PerformanceAndHealth | Not hashed. Unique `<extension-id-or-unattributed>@<reason>` entries per invocation. The extension ID is included only after official-source admission; earlier failures use fixed `unattributed`, and reasons are host-defined: `event_name_invalid`, `attribute_count_exceeded`, `attribute_key_invalid`, `attribute_value_too_long`, `not_installed`, `lookup_failed`, `source_check_failed`, `source_ineligible`, `budget_exhausted`, `unauthenticated` |
+| Dropped extension usage report count | `extension.usage.dropped.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total dropped reports in the invocation |
 | Extension installed | `extension.installed` | SystemMetadata | FeatureInsight | List of installed extensions, each formatted `id@version` |
 | Installed extension source category | `extension.installed.source.category` | SystemMetadata | FeatureInsight | List formatted `id@category`; categories: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
 | Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an update |
@@ -290,7 +292,8 @@ First-party fields are declared as exported `AttributeKey` variables in
 field name and may be reused by multiple first-party extensions when the
 meaning, allowed values, classification, and purpose are identical. The
 extension column lists the current emitter, not an exclusive owner. The current
-declarations are:
+declarations are listed below; entries marked pending reserve a contract without
+enabling runtime reporting.
 
 The agents extension also supplies `extension.event=agent.init.step` on
 `ext.usage` for completed `azd ai agent init` business steps. It buffers timings
@@ -312,15 +315,29 @@ command completion, per-step outcome, category, or summary event is emitted.
 | `azure.ai.agents` | `ext.agent.init.step.id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Fixed business-step identifier on `agent.init.step`; vocabulary below |
 | `azure.ai.agents` | `ext.agent.init.step.sequence` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded start order, 1–96 within one Init invocation, on `agent.init.step`; repeated calls retain their ID and get new sequence numbers |
 | `azure.ai.agents` | `ext.agent.init.step.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative monotonic elapsed milliseconds, string encoded with three decimal places, on `agent.init.step`; convert to a number for percentiles |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.name` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String enum: `project_authoring`, `model_deployment_authoring`, `provision`, `package`, `publish`, `deploy`; both phase events, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.scope` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String enum: `command` (projects authoring handler) or `provider` (extension method); both phase events, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.attempt_id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Generated opaque random string per invocation, not derived from user/resource identifiers; both phase events, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.start_time` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | UTC RFC3339Nano string at actual phase start; `agent.phase.completed`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.end_time` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | UTC RFC3339Nano string at actual return, captured before reporting; `agent.phase.completed`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative inclusive monotonic elapsed milliseconds, string encoded with three decimal places; `agent.phase.completed`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.outcome` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String enum: `success`, `error`, `canceled`, `timeout`, for the observed operation only; `agent.phase.completed`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Fixed string identifier from the phase-step vocabulary below; `agent.phase.step`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.sequence` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded integer start order, 1-24 per attempt; repeated IDs get new sequences; `agent.phase.step`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.start_offset_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative monotonic offset from phase start in milliseconds, string encoded with three decimal places; `agent.phase.step`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative inclusive monotonic step elapsed milliseconds, string encoded with three decimal places; `agent.phase.step`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.dropped_count` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded nonnegative integer counting step starts beyond the local 24-step buffer, not transport/host loss; `agent.phase.completed`, pending #10811 |
 | `azure.ai.agents` | `ext.route` | SystemMetadata | FeatureInsight | `N/A` | No | No | `inspector`, `playground`, or `suppressed` on `local_client.route.selected` |
 | `azure.ai.inspector` | `ext.stage` | SystemMetadata | FeatureInsight | `N/A` | No | No | `ui_ready` on `inspector.funnel.stage` |
 | `azure.ai.inspector` | `ext.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `succeeded` on `inspector.funnel.stage` |
 | `azure.ai.dataset` | `ext.operation` | SystemMetadata | FeatureInsight | `N/A` | No | No | `create`, `update`, or `unknown` on `dataset.published` |
 | `azure.ai.evaluations` | `ext.source` | SystemMetadata | FeatureInsight | `N/A` | No | No | `traces`, `dataset`, or `unknown` on `init.completed` |
 
-Product classification fields are bounded enums for `FeatureInsight`. Init timing
-fields use `PerformanceAndHealth`: the step ID is a fixed identifier and sequence
-and duration are string-encoded numbers, not enums or native measurements.
+Product classification fields are bounded enums for `FeatureInsight`. Init and
+phase timing fields use `PerformanceAndHealth`. All twelve `ext.agent.phase.*`
+properties are un-hashed strings with endpoint `N/A` and `IsMeasurement=false`,
+including numeric-looking counts, offsets, and durations. Convert those strings
+to numbers for analysis; they are not native measurements.
 `SystemMetadata` and `FeatureInsight` are not defaults for an unknown or future
 `ext.*` field.
 
@@ -344,27 +361,69 @@ operation ID. Event emission and the detailed guide are introduced separately in
 [the agent Init implementation PR](https://github.com/Azure/azure-dev/pull/10548);
 the field declarations alone do not enable reporting.
 
+#### Reserved project and provider phase timing contract
+
+Reporting via `ext.usage` with `extension.event=agent.phase.completed` and
+`agent.phase.step` is **pending [#10811](https://github.com/Azure/azure-dev/pull/10811)**.
+Both events share phase name, scope, and attempt ID. The completion carries actual
+start/end, phase duration/outcome, and local dropped count; steps carry ID,
+sequence, start offset, and duration. Field registration alone emits neither event.
+
+Planned scopes are `command` for the projects extension's project-add and
+deployment-add handlers (`project_authoring`, `model_deployment_authoring`),
+`provider` for Foundry provisioning `Deploy` (`provision`), and `provider` for the
+agents extension's `Package`, `Publish`, and `Deploy` methods. The latter methods
+are shared by `up` and standalone workflows; they do not measure whole core
+commands, provider initialization, or subsequent hooks.
+
+The `ext.agent.phase.step.id` vocabulary is: `project_resolution`,
+`subscription_selection`, `location_selection`, `azure_query`,
+`deployment_reconciliation`, `configuration_save`, `configuration_loading`,
+`validation`, `credential_acquisition`, `template_resolution`,
+`template_compilation`, `resource_lookup`, `resource_deployment_submit`,
+`resource_deployment_wait`, `code_packaging`, `image_build`, `image_packaging`,
+`image_push`, `artifact_upload`, `deploy_context_resolution`,
+`dependency_validation`, `agent_create_or_update`, `agent_activation_wait`,
+`endpoint_update`, and `voice_telephony_configuration`.
+
+Durations include loading, interaction, validation, and retries within the measured
+operation. Nested intervals are inclusive, not additive, including nesting under
+existing Init authoring steps. Join by operation ID, extension ID, and attempt ID;
+there is no cross-command journey or started-event contract. A successful provider
+no-op can produce a completion without a generation/deployment step. Completion
+reporting precedes buffered steps, within a shared one-second deadline per attempt.
+The local 24-step buffer and host-wide 100-event budget can lose rows;
+`step.dropped_count` describes only local clipping. Missing rows are unknown, not
+zero. Use actual times and string-encoded durations, not reporting span timing.
+Existing command records remain authoritative for counts, success, and duration.
+
+#### Extension usage rules and event contracts
+
+
 The following rules define the runtime and source-governance boundaries:
 
 | Rule | Enforcement |
 |------|-------------|
-| Eligibility | Only eligible official-registry installations produce `ext.usage` spans; other installations receive a normal response without recording an event |
+| Eligibility | Only eligible official-registry installations produce `ext.usage` spans. A valid call from any other source succeeds without producing an `ext.usage` span, while the command-span drop fields are still recorded |
 | Key namespace | Every caller-supplied key is prefixed with `ext.` by the host, so it can never overwrite a host-owned attribute |
 | Size | At most 32 attributes per event; event name and keys at most 128 UTF-8 bytes; values at most 512 UTF-8 bytes |
-| Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that are dropped without recording |
+| Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that produce no `ext.usage` span, while the command-span drop fields are still recorded |
+| Drop observability | Rejected and dropped calls append one unique `<extension-id-or-unattributed>@<reason>` value to `extension.usage.dropped` on the hosting command span and increment `extension.usage.dropped.count`. IDs appear only after official-source admission; earlier failures use fixed `unattributed`. Synthetic `azd up` phase spans, workflow step command spans, and VS RPC spans do not copy these fields. Reasons are fixed by the host, and no caller-controlled event or attribute content is copied |
 | Values | Not enumerated or pattern-checked. The extension author owns what a value means and is responsible for keeping it low cardinality and free of customer content |
 | Classification | Each first-party field has an explicit source declaration based on its actual semantics; the runtime does not assign one classification to the whole `ext.*` class |
-| Purpose | Each first-party field declares its actual collection purpose; `FeatureInsight` is not applied automatically |
+| Purpose | Each first-party field declares its actual collection purpose; `FeatureInsight` is not applied automatically. Command-span drop fields use `PerformanceAndHealth` |
 | Identity | The host supplies extension identity and source context; the request cannot override those fields |
 | Repository validation | `go test ./extensions/telemetry` rejects undeclared fields, dynamic keys, invalid metadata, and unsupported classifications before release |
 | Review | Extension telemetry follows the same documented classification and content rules as core fields. Official-registry admission remains the runtime boundary |
 
 <!-- cspell:ignore byom -->
 
-Reviewed first-party event contracts:
+First-party event contracts (reserved phase reporting is pending #10811):
 
 | Extension | `extension.event` | Trigger | Extension attributes |
 |-----------|-------------------|---------|----------------------|
+| `azure.ai.agents` / `azure.ai.projects` | `agent.phase.completed` | **Pending #10811**: observed authoring handler or provider method returns, including error/cancellation/timeout | `ext.agent.phase.name`, `.scope`, `.attempt_id`, `.start_time`, `.end_time`, `.duration_ms`, `.outcome`, `.step.dropped_count`; string properties as declared above, not a core command completion |
+| `azure.ai.agents` / `azure.ai.projects` | `agent.phase.step` | **Pending #10811**: completed business steps buffered until phase return | `ext.agent.phase.name`, `.scope`, `.attempt_id`, `.step.id`, `.step.sequence`, `.step.start_offset_ms`, `.step.duration_ms`; all strings, no step outcomes or customer content |
 | `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; one event per distinct kind/harness/container-mode classification in the invocation, before the corresponding operation completes | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, `microsoft_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; optional `ext.agent.container.mode` on hosted agents: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown`. `build` does not distinguish ACR ownership; `passthrough` does not prove an image is public; `passthrough_auth` records a configured Foundry registry connection, not successful authentication. No identifiers or customer content |
 | `azure.ai.agents` | `agent.invoke.selected` | A remote `invoke` passes input and protocol validation and resolves its target; project-backed routes must resolve a hosted agent, while explicit `--agent-endpoint` routes have no project kind to verify. Once per selected route before the invoke request, including later failures. Resolution can authenticate or probe a brownfield agent first, so earlier failures are not counted. Local and non-hosted project routes are excluded | `ext.agent.invoke.protocol`: resolved invocable protocol (currently `responses`, `invocations`, or `a2a`); `ext.agent.invoke.long_running` and `ext.agent.invoke.no_wait`: string-encoded `true` or `false`. Long-running/no-wait modes are remote Responses only; `no_wait=true` requires `long_running=true`. No names, IDs, endpoints, prompts, or outcomes |
 | `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode`: fixed enum `sample`; `ext.demo.outcome`: fixed enum `completed` |

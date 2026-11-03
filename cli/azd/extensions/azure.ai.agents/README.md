@@ -109,9 +109,11 @@ Overlay references have the same trust boundary and relative-path behavior as
 existing `$ref` references; only reference files you trust.
 The overlay can only add missing keys; objects recurse, while existing scalar or
 array keys conflict even when values match. New arrays are allowed. Null values
-and the reserved root keys `kind`, `model_type`, `model`, and
-`conversation_engine` are rejected. The overlay is not OpenAPI-validated and
-must use GA wire names. Prompt and hosted agents do not accept this property.
+and the reserved root keys `kind`, `model_type`, `model`,
+`conversation_engine`, and `sub_protocol` (`subProtocol`, case-insensitively)
+are rejected. Protocol selection must use the typed `subProtocol` field. The
+overlay is not OpenAPI-validated and must use GA wire names. Prompt and hosted
+agents do not accept this property.
 
 ## Hosted agent deployment preview
 
@@ -806,9 +808,35 @@ azd ai agent invoke -p a2a --a2a-version 0.3 --input-file a2a-request-0.3.json
 
 `--a2a-version` is valid only for A2A; do not use it with Responses or
 Invocations. It is separate from `--version`, which continues to select a
-**deployed agent version**, not an A2A protocol version. This CLI does not
-support A2A invocation with `--local`; this is a CLI limitation, not a
-restriction of the A2A protocol.
+**deployed agent version**, not an A2A protocol version. `--version` is not
+supported for local A2A invocation.
+
+### Local A2A invocation
+
+Run your A2A server with `azd ai agent run`, then invoke it from another terminal:
+
+```bash
+azd ai agent run --port 9090
+# In another terminal, with AZD_ALPHA_ENABLE_AGENTS_A2A=true:
+azd ai agent invoke --local -p a2a --port 9090 --a2a-version 1.0 "Hello!"
+azd ai agent invoke --local -p a2a --port 9090 --a2a-version 1.0 -f a2a-request-1.0.json
+```
+
+Requests go directly to `http://localhost:<port>/a2a` (default port `8088`,
+configurable with `--port`). Your local server must expose `POST /a2a`.
+This fixed route is an azd local transport convention, not a path mandated by
+the A2A specification. Redirects and alternate routes are not followed.
+
+Existing A2A version rules apply locally, and request files are sent unchanged.
+Local A2A sends no Foundry authentication or routing headers and persists no
+session state. For continuity, provide A2A `contextId`/`taskId` in a request file.
+These flags are unsupported: `--session-id`, `--new-session`, `--conversation-id`,
+`--new-conversation`, `--version`, `--user-identity`, `--call-id`, and `--client-header`.
+Platform diagnostics are unavailable; omit `--debug-latency` or set it to `false`.
+
+Use `--output raw` for streaming replies. `--timeout` covers the request and response
+(default 1800 seconds; `0` disables it); startup connection retries have a separate
+60-second limit. Timeout or Ctrl+C stops the HTTP request, not the A2A task.
 
 For completed Tasks in **both A2A 0.3 and 1.0**, default output prefers answer
 artifacts over generic status messages such as “Done.” Other Tasks prefer status
@@ -860,15 +888,20 @@ trailers or change SSE termination.
 
 ## Running Local Agents
 
-`azd ai agent run` starts the selected agent locally and, by default, opens the
-Agent Inspector after the local agent port is accepting connections. The
-inspector launch is best-effort: if `azure.ai.inspector` is not installed or
-fails to start, the agent process keeps running and azd prints install guidance.
+`azd ai agent run` starts the selected agent locally. A2A-only agents open no
+browser client; once ready, azd suggests a local invocation command with the
+selected port and preview-compatible wire version. `--inspector-port` is rejected
+because no Inspector is opened.
 
-Use `--no-inspector` to run only the local agent process:
+Other agents retain their existing client routing: Activity uses Microsoft 365
+Agents Playground; other profiles use Agent Inspector. Client launch is
+best-effort: if unavailable, the agent keeps running.
+
+Use `--no-client` to run only the local agent process for any profile
+(`--no-inspector` remains a deprecated alias):
 
 ```bash
-azd ai agent run --no-inspector
+azd ai agent run --no-client
 ```
 
 ## Publishing a Digital Worker
@@ -944,14 +977,16 @@ azd ai agent run --port 9091 --inspector-port 9002
 `--inspector-port` is rejected when it cannot be honored:
 
 - with `--no-client` (or the deprecated `--no-inspector`), since no local client
-  is opened and the port would go unused; and
+  is opened and the port would go unused;
+- for A2A-only agents, which never open Agent Inspector; and
 - for agents that use Agent Inspector, when it matches `--port`, since the agent
   binds that address first and the inspector would then fail to bind it.
 
 azd also warns, without failing the run, when `--inspector-port` cannot take
-effect: activity-protocol agents open the Microsoft 365 Agents Playground rather
-than the Agent Inspector, and `--port 8087` on its own collides with the
-inspector's own default UI port.
+effect: activity-protocol agents open the Microsoft 365 Agents Playground
+rather than the Agent Inspector.
+For Inspector profiles, `--port 8087` on its own also warns about a collision
+with the inspector's default UI port.
 
 ### Local client route telemetry
 
@@ -959,9 +994,10 @@ When installed from the official registry, the extension reports the
 `local_client.route.selected` usage event after `azd ai agent run` resolves the
 service and protocol profile. Its `ext.route` attribute is exactly one of:
 
-- `inspector` for a non-activity agent;
+- `inspector` for a non-activity agent that is not A2A-only;
 - `playground` for an activity-protocol agent; or
-- `suppressed` when `--no-client` or the deprecated `--no-inspector` is set.
+- `suppressed` for A2A-only agents, or when `--no-client` or the deprecated
+  `--no-inspector` is set.
 
 The event is emitted before checking client availability, starting the local
 agent, or launching a client. It records route selection, not successful client
@@ -1242,6 +1278,67 @@ To try a prompt voice agent or hosted voice wrapper, open your project in the
 implement voice conversations; recognized voice services receive portal guidance.
 Programmatic clients use the voice WebSocket endpoint with a Voice Live client.
 Use the project-level `azd deploy` workflow above for voice services.
+
+### GPT Live voice agent (preview)
+
+GPT Live is an advanced native Live protocol under the same service `kind: voice`.
+It is initialized from a complete manifest, like Hosted Voice, so the existing
+prompt voice init flow and flags remain unchanged:
+
+```bash
+azd ai agent init -t ./schemas/examples/gpt-live.azure.yaml
+azd provision
+azd deploy
+```
+
+The manifest references an **existing compatible GPT Live model deployment**.
+The deployment and the subscription-scoped GPT Live service gate must already be
+available; azd does not infer Live from a model name or provision the model in
+this example.
+
+```yaml
+name: gpt-live-agent
+services:
+  ai-project:
+    host: azure.ai.project
+  gpt-live-agent:
+    host: azure.ai.agent
+    kind: voice
+    name: gpt-live-agent
+    uses:
+      - ai-project
+    subProtocol: live
+    modelType: self_deployed
+    model:
+      id: gpt-live-1
+    instructions: You are a concise spoken English teacher. Always delegate grammar correction requests before answering.
+    store: false
+    audio:
+      format:
+        type: audio/pcm
+        rate: 24000
+      output:
+        voice: marin
+    delegation:
+      type: responses
+      responses:
+        model: gpt-5.6-terra
+        instructions: Return concise grammar guidance for the spoken teacher.
+infra:
+  provider: microsoft.foundry
+```
+
+The persisted definition uses the service discriminator `sub_protocol: live`.
+GPT Live is self-deployed only and uses native audio, template greeting, structured
+inputs, and `client`, `responses`, or `foundry_managed_agent` delegation. It is
+mutually exclusive with Voice Live-only fields such as `conversationEngine`,
+avatar, telephony, STT/VAD settings, root tools, handoff, and output modalities.
+
+GPT Live clients connect to
+`/agents/{name}/endpoint/protocols/voice/live/sessions?api-version=v1` and use the
+native Live event protocol. `azd ai agent invoke` is not a native audio client;
+use a GPT Live-compatible client or Dashboard. Do not use the ordinary
+`/endpoint/protocols/voice` route for this definition.
 
 ## Prompt voice telephony bindings
 
@@ -1738,7 +1835,7 @@ deployment.
 
 Foundry project services can be provisioned as network-secured, VNet-bound accounts by adding a `network:` block to the `host: azure.ai.project` service in `azure.yaml`. The `azure.ai.projects` extension owns that service and the `microsoft.foundry` provider; this extension still authors the block during agent init. See [Private networking for `host: azure.ai.project`](docs/private-networking.md) for the schema reference, BYO-image requirements, and VNet deployment cheatsheet.
 
-For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes the default Storage, separate managed identities, required permissions, and lifecycle limitations. A native registry is created only when an Agent requires building a container image, following the standard Foundry rules. Foundry networking is optional through `network:`, but cannot be combined with an automatically created registry. This mode does not accept supplied supporting resources through `agentHosting` or Terraform eject.
+For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes default or independently supplied Storage and hosting/workload identities, required grants, and lifecycle limitations. A native registry is created only when an Agent requires building a container image, following the standard Foundry rules. Foundry networking is optional through `network:` and can be combined with an automatically created registry when using AKS hosting. Terraform eject is not supported for this mode.
 
 ## Local Development
 

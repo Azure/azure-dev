@@ -60,15 +60,26 @@ and GitHub access. Do not install skills, change files, post comments, or ask an
    parameter, flag, or YAML schema component still needs a spec reference; it does not need to be a correctness bug.
    Exclude style preferences, speculative risks, praise, and generic requests for more tests.
 7. Match candidates to prior inline threads using `<!-- extension-user-contract-changes-reviewer -->`, the legacy
-   `<!-- user-contract-changes-reviewer -->` marker, or the former workflow's gh-aw metadata. Match by the specific
-   contract and root cause, not just file or line. Include resolved threads in this comparison.
+   `<!-- user-contract-changes-reviewer -->` marker, or the former workflow's gh-aw metadata as discovery signals,
+   not mandatory filters. Also inspect unmarked comments that explicitly request an experiences spec for a specific
+   contract. Include resolved and outdated threads and their original locations.
+   Match by the full command path and input name, or authored schema path/component, not identical wording, file,
+   line, reviewer identity, or comment format. Separate a prior comment into the contract items it explicitly covers:
+   a grouped command thread may already cover its named positional parameters and flags. Record each item's matching
+   thread ID in the ledger. Do not split already-covered items into fresh requests just because this review uses
+   finer-grained findings. A generic command comment does not cover unnamed inputs, and a spec in a sibling thread
+   does not satisfy a different item.
 8. In each matched thread, inspect replies from the PR author or a repository member, owner, or collaborator. An
    explicit GitHub PR link supplied as the approved experiences spec satisfies only that finding. Preserve the most
    recent qualifying link. A bare issue link, document link, link in another finding's thread, or claim from an
    unrelated participant does not satisfy it. Do not infer approval merely from an arbitrary PR link.
 9. Drop equivalent findings already reported, even if they are still awaiting a spec. Report again only when the
-   relevant contract changed again. Merge findings with the same root cause; prefer authored source over generated
-   files. If a changed contract still belongs to the same finding, retain its previously supplied spec link.
+   relevant in-scope structural contract changed since its matched review, not merely because the PR has new commits,
+   a moved anchor, reworded help, or changed validation/output/runtime behavior. Establish that structural delta from
+   revision evidence; an unknown earlier contract is a blocker for deciding whether to repeat the request.
+   For partial overlap, report only newly added or removed items not covered by the earlier thread. Merge findings
+   with the same root cause; prefer authored source over generated files. If a changed contract still belongs to the
+   same finding, retain its previously supplied spec link.
 
 ## Completion audit
 
@@ -76,6 +87,9 @@ Before handing findings to the host, reconcile the ledger against the complete c
 extension file must have been inspected or explicitly marked blocked. Every distinct, evidenced in-scope addition
 or removal must map to exactly one new finding or one matching existing thread. A generic approval, a spec link in
 the PR body, or a label such as "refactor" does not discharge this requirement.
+
+Audit outgoing requests against the prior-thread item matches, including grouped comments. No unchanged covered
+item may receive another spec request. Count unique matched threads, not their covered items or candidate findings.
 
 After shared triage and formatting, compare the actual outgoing comments with the retained contract findings.
 Restore any finding accidentally removed by ordinary noise filters or comment budgets. Preserve each contract
@@ -158,6 +172,9 @@ a blocker when read-only source inspection establishes the behavior.
 | New optional flag, fully tested and documented, no matching thread | One inline spec request; correct implementation is not an exemption |
 | PR changes a default, validation rule, prompt, output shape, or runtime behavior | Inspect for structural additions or removals, but do not create a contract finding for the behavior change alone |
 | Same unchanged contract already has a spec-request thread | No duplicate, including when that thread is resolved or unanswered |
+| An earlier download thread names the command, operation ID, and three flags; this round separates those items | Match every named item to that one thread; do not post five new requests |
+| An earlier grouped thread covers existing inputs but a later revision adds another flag | Report only the new flag; do not infer that the earlier thread covers it |
+| A matching spec request is unmarked or has moved to an outdated location | Compare its named contract items, not its marker or current anchor |
 | An in-scope command, parameter, flag, or YAML component changes again; trusted reply supplied its spec | One new finding retaining that link, without requesting it again |
 | Two independent flags; only one thread has a spec link | Do not apply that link to the other flag |
 | Authored schema and generated binding show one contract change | One finding anchored to authored source |

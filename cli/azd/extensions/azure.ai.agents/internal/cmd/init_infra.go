@@ -606,6 +606,9 @@ func prepareInfraEject(
 			"check the endpoint, deployments, and network fields under your azure.ai.project service",
 		)
 	}
+	for _, warning := range res.Warnings {
+		fmt.Fprintln(os.Stderr, color.YellowString("Warning: "+warning))
+	}
 	deployments, present, err := project.DecodeProjectDeploymentsEnv(environment[projectDeploymentsEnvKey])
 	if err != nil {
 		return nil, err

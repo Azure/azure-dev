@@ -57,6 +57,11 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 	client *armresources.DeploymentsClient,
 	progress grpcbroker.ProgressFunc,
 ) error {
+	if p.synthResult != nil {
+		for _, warning := range p.synthResult.Warnings {
+			progress("Warning: " + warning)
+		}
+	}
 	mode, err := monitoringParameter(source, "monitoringMode")
 	if err != nil {
 		return err
@@ -136,6 +141,7 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 	if enabled, present := templateParameter(source, "enableNetworkIsolation"); present && enabled != false {
 		// Private-network ingestion is unsupported; skip monitoring instead of failing provisioning.
 		source.parameters["monitoringMode"] = map[string]any{"value": "none"}
+		progress("Warning: " + synthesis.PrivateNetworkMonitoringWarning)
 		return nil
 	}
 	for _, resource := range []*armresources.GenericResource{account, projectResource} {

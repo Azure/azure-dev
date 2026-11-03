@@ -102,6 +102,9 @@ type Result struct {
 	// MonitoringExplicit distinguishes authored monitoring from the new-project
 	// default, so an upgrade cannot opt an already-provisioned project into setup.
 	MonitoringExplicit bool
+	// Warnings are user-facing notices about settings that were adjusted, such as
+	// skipped automatic monitoring.
+	Warnings []string
 	// ACRMode is the greenfield registry mode: create,
 	// reuse-connect, or none.
 	ACRMode string
@@ -277,10 +280,11 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	var warnings []string
 	if mode, _ := monitoring["monitoringMode"].(string); netMode != NetworkModeNone && mode != "" && mode != "none" {
-		// Automatic monitoring cannot use private ingestion yet. Skip it rather than
-		// failing so private-network projects keep provisioning.
+		// Private-network ingestion is not supported yet; skip rather than fail provisioning.
 		monitoring = map[string]any{"monitoringMode": "none", "applicationInsightsResourceId": ""}
+		warnings = append(warnings, PrivateNetworkMonitoringWarning)
 	}
 	maps.Copy(params, monitoring)
 
@@ -296,8 +300,13 @@ func Synthesize(in Input) (*Result, error) {
 		NetworkMode:        netMode,
 		MonitoringExplicit: !in.InfrastructureOwnsMonitoring && svc.Monitoring.Kind != 0,
 		Hosting:            hosting,
+		Warnings:           warnings,
 	}, nil
 }
+
+// PrivateNetworkMonitoringWarning is shown when automatic monitoring is skipped for a private network.
+const PrivateNetworkMonitoringWarning = "Automatic Application Insights monitoring is not supported for projects " +
+	"with a network: block yet, so monitoring was not configured. Agent traces will not be collected automatically."
 
 // GreenfieldACRMode distinguishes selectors from deployed outputs.
 func GreenfieldACRMode(in Input) (string, error) {

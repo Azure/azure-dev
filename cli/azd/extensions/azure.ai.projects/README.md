@@ -191,7 +191,8 @@ unreadable resources, and authentication or ingestion policies that would need
 to be weakened. ApiKey setup does not enable local authentication or configure
 private-network ingestion. A project with a `network:` block always skips
 automatic monitoring, whether `monitoring:` is omitted, empty, or names a
-component, so provisioning is never blocked; set up monitoring for such
+component, so provisioning is never blocked; azd prints a warning when it
+skips monitoring. Set up monitoring for such
 projects outside azd. Other monitoring failures can fail normal provisioning; there
 is no second best-effort deployment or agent deployment repair hook.
 

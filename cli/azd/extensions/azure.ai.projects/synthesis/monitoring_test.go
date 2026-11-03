@@ -147,6 +147,11 @@ func TestSynthesizeMonitoringPrivateNetwork(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, "none", result.Parameters["monitoringMode"])
 				assert.Equal(t, "", result.Parameters["applicationInsightsResourceId"])
+				if tt.name == "explicit opt out" {
+					assert.Empty(t, result.Warnings)
+				} else {
+					assert.Equal(t, []string{PrivateNetworkMonitoringWarning}, result.Warnings)
+				}
 			})
 		}
 	}

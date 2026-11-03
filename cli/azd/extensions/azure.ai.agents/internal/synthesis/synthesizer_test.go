@@ -850,6 +850,55 @@ func TestSynthesize_RequiresAgentImageInline(t *testing.T) {
 	assert.True(t, includeAcr)
 }
 
+func TestSynthesize_BareImageHonorsSkipAcrEnv(t *testing.T) {
+	t.Parallel()
+
+	const raw = `services:
+  my-project:
+    host: azure.ai.project
+  assistant:
+    host: azure.ai.agent
+    image: myprivacr.azurecr.io/agents/assistant:v1
+`
+
+	tests := []struct {
+		name           string
+		env            map[string]string
+		wantIncludeAcr bool
+	}{
+		{
+			name:           "without skip flag includeAcr is true",
+			env:            nil,
+			wantIncludeAcr: true,
+		},
+		{
+			name: "with AZD_AGENT_SKIP_ACR=true includeAcr is false",
+			env: map[string]string{
+				"AZD_AGENT_SKIP_ACR": "true",
+			},
+			wantIncludeAcr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := Synthesize(Input{
+				RawAzureYAML:  []byte(raw),
+				ServiceName:   "my-project",
+				AcceptedHosts: []string{"azure.ai.project"},
+				Env:           tt.env,
+			})
+
+			require.NoError(t, err)
+			includeAcr, ok := result.Parameters["includeAcr"].(bool)
+			require.True(t, ok)
+			assert.Equal(t, tt.wantIncludeAcr, includeAcr)
+		})
+	}
+}
+
 func TestSynthesize_RejectsCoreFieldsFromAgentRef(t *testing.T) {
 	t.Parallel()
 

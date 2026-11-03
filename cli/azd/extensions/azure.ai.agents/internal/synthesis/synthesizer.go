@@ -281,7 +281,9 @@ func Synthesize(in Input) (*Result, error) {
 	}
 	if includeAcr && existingAcrResourceID == "" && netMode != NetworkModeNone && hosting == nil {
 		return nil, errors.New(
-			"synthesis: private networking does not support an auto-created Azure Container Registry; specify an image instead",
+			"synthesis: private networking does not support an auto-created Azure Container Registry; " +
+				"use docker.imagePassthrough: true on a prebuilt image, set AZURE_CONTAINER_REGISTRY_RESOURCE_ID to " +
+				"reuse an existing registry, or remove source-build demand",
 		)
 	}
 
@@ -856,7 +858,15 @@ func deriveACRRequirements(
 	projectRoot string,
 	env map[string]string,
 ) (bool, bool, error) {
-	return deriveAgentBuildRequirements(services, svc, projectRoot, env, agentNeedsAcr)
+	return deriveAgentBuildRequirements(
+		services,
+		svc,
+		projectRoot,
+		env,
+		func(agent agentBlock) bool {
+			return agentNeedsAcrWithEnv(agent, env)
+		},
+	)
 }
 
 func deriveAgentBuildRequirements(

@@ -103,6 +103,7 @@ func TestDeployBlocksInvalidEnvironmentVariableName(t *testing.T) {
 		AdditionalProperties: props,
 	}
 	provider := &AgentServiceTargetProvider{
+		azdClient:          newContainerTestClient(t, nil),
 		deployContextReady: true,
 	}
 

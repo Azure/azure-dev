@@ -8,6 +8,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"unicode"
 
 	"azureaiagent/internal/pkg/servicekey"
 )
@@ -19,6 +20,8 @@ const (
 	// ProtocolResponses identifies plain
 	// text /responses agents.
 	ProtocolResponses = "responses"
+	// ProtocolA2A identifies A2A agents.
+	ProtocolA2A = "a2a"
 	// ProtocolInvocationsWS identifies
 	// bidirectional WebSocket /invocations_ws agents.
 	ProtocolInvocationsWS = "invocations_ws"
@@ -47,6 +50,67 @@ const (
 	// variables or unresolved placeholders.
 	maxFixupLines = 3
 )
+
+// shellQuoteCdPath quotes paths for POSIX shells.
+func shellQuoteCdPath(path string) string {
+	if strings.ContainsFunc(path, unicode.IsSpace) || strings.ContainsAny(path, "'\"&;|<>()$`!*?[]{}#\\~%@,^") {
+		return shellEscapeSingleQuoted(path)
+	}
+	return path
+}
+
+// CdSuggestions returns navigation hints with labeled shell alternatives
+// when the path needs quoting. All init flows share these commands.
+func CdSuggestions(folder string) []Suggestion {
+	posixPath := shellQuoteCdPath(folder)
+	driveQualified := len(folder) >= 2 && folder[1] == ':' &&
+		((folder[0] >= 'A' && folder[0] <= 'Z') || (folder[0] >= 'a' && folder[0] <= 'z'))
+	// POSIX cd treats '-' as an option; cmd.exe cannot cd into UNC paths.
+	optionLike := strings.HasPrefix(folder, "-")
+	powerShellOptionLike := strings.HasPrefix(folder, "\u2013") || strings.HasPrefix(folder, "\u2014") ||
+		strings.HasPrefix(folder, "\u2015")
+	unc := strings.HasPrefix(folder, "//") || strings.HasPrefix(folder, `\\`)
+	if posixPath == folder && !driveQualified && !optionLike && !powerShellOptionLike && !unc &&
+		!strings.ContainsAny(folder, "\u2018\u2019\u201a\u201b\u201c\u201d\u201e\u201f") {
+		return []Suggestion{{
+			Command:     "cd " + folder,
+			Description: "enter your project folder",
+		}}
+	}
+
+	suggestions := []Suggestion{
+		{
+			Command:     "cd " + posixPath,
+			Description: "POSIX shells: enter your project folder (choose one)",
+		},
+		{
+			Command: "Set-Location -LiteralPath '" +
+				strings.NewReplacer(
+					"'", "''",
+					"\u2018", "\u2018\u2018",
+					"\u2019", "\u2019\u2019",
+					"\u201a", "\u201a\u201a",
+					"\u201b", "\u201b\u201b",
+				).Replace(folder) + "'",
+			Description: "PowerShell: enter your project folder (choose one)",
+		},
+	}
+	if optionLike {
+		suggestions[0].Command = "cd -- " + posixPath
+	}
+	if unc || strings.ContainsAny(folder, "%!\"\r\n") {
+		suggestions = append(suggestions, Suggestion{
+			Command:     "cmd.exe: use a shell-specific alternative above",
+			Description: "this path cannot be represented safely by a literal cmd.exe cd hint",
+		})
+	} else {
+		suggestions = append(suggestions, Suggestion{
+			Command:     "cd /d \"" + folder + "\"",
+			Description: "cmd.exe: enter your project folder (choose one)",
+		})
+	}
+	return suggestions
+}
 
 // ResolveAfterInit produces the Next: block printed at the end of a
 // successful `azd ai agent init`. Pure function over *State.
@@ -143,15 +207,11 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 	out := make([]Suggestion, 0, 4)
 	priority := 5
 
-	// When init created a new project folder, the user's shell is still
+	// When init set up the project in another folder, the user's shell is still
 	// in the original directory. A leading `cd` suggestion lets them
 	// navigate before running any subsequent commands.
 	if state.CreatedFolderDisplay != "" {
-		out = append(out, Suggestion{
-			Command:     fmt.Sprintf("cd %s", state.CreatedFolderDisplay),
-			Description: "enter your new project folder",
-			Priority:    0,
-		})
+		out = append(out, CdSuggestions(state.CreatedFolderDisplay)...)
 	}
 
 	// Placeholder fix-ups come first when present: they are
@@ -579,6 +639,13 @@ func ResolveAfterRun(state *State, serviceName string, readmeExists func(relativ
 	svc := findService(state, serviceName)
 	if !serviceSupportsAzdInvoke(svc) {
 		return nil
+	}
+	if svc != nil && svc.Protocol == ProtocolA2A {
+		return []Suggestion{{
+			Command:     localA2AInvokeCommand(state, serviceName),
+			Description: "send a sample request to the running agent",
+			Priority:    10,
+		}}
 	}
 
 	cachedPayload := ""
@@ -1022,7 +1089,8 @@ func resolveInvokeArg(
 // when applicable. With zero or multiple services we pass nil — the
 // resolver cannot pick deterministically which service the user will
 // target with an unqualified `azd ai agent invoke --local`, so it emits
-// the bare placeholderPayload without a README hint.
+// the bare placeholderPayload without a README hint. When services are known,
+// at least one must support local invocation for this suggestion to be useful.
 //
 // Returns the updated slice and the next priority counter value so
 // callers can continue numbering subsequent suggestions.
@@ -1036,8 +1104,30 @@ func appendInvokeLocalSecondary(
 	if len(state.Services) == 1 {
 		svc = &state.Services[0]
 	}
-	if !serviceSupportsAzdInvoke(svc) {
+	if len(state.Services) > 0 && !slices.ContainsFunc(state.Services, func(service ServiceState) bool {
+		return serviceSupportsAzdInvoke(&service)
+	}) {
 		return out, priority
+	}
+	// Preserve generic guidance when a Responses/Invocations target exists.
+	// When only A2A targets can be invoked locally, explicitly select A2A.
+	if svc == nil && !slices.ContainsFunc(state.Services, func(service ServiceState) bool {
+		return serviceSupportsAzdInvoke(&service) && service.Protocol != ProtocolA2A
+	}) {
+		for i := range state.Services {
+			if state.Services[i].Protocol == ProtocolA2A {
+				svc = &state.Services[i]
+				break
+			}
+		}
+	}
+	if svc != nil && svc.Protocol == ProtocolA2A {
+		out = append(out, Suggestion{
+			Command:     localA2AInvokeCommand(state, ""),
+			Description: "test it in another terminal",
+			Priority:    priority,
+		})
+		return out, priority + 1
 	}
 	invokeArg, readmeHint := resolveInvokeArg(svc, "", readmeExists, priority)
 	if readmeHint != nil {
@@ -1050,6 +1140,24 @@ func appendInvokeLocalSecondary(
 		Priority:    priority,
 	})
 	return out, priority + 1
+}
+
+// localA2AInvokeCommand uses text input rather than an invocations payload.
+// A2A 1.0 is preview-only; legacy 0.3 must omit the gated version flag.
+func localA2AInvokeCommand(state *State, serviceName string) string {
+	serviceArg := ""
+	if serviceName != "" {
+		serviceArg = " " + shellEscapeSingleQuoted(serviceName)
+	}
+	portFlag := ""
+	if state.LocalPort != 0 {
+		portFlag = fmt.Sprintf(" --port %d", state.LocalPort)
+	}
+	versionFlag := ""
+	if state.A2APreviewEnabled {
+		versionFlag = " --a2a-version 1.0"
+	}
+	return fmt.Sprintf("azd ai agent invoke%s --local --protocol a2a%s%s 'Hello!'", serviceArg, portFlag, versionFlag)
 }
 
 // shellEscapeSingleQuoted wraps s in single quotes for POSIX shells.

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -290,6 +291,12 @@ func runProjectWorkflow(
 	operation string,
 	errorCode string,
 ) error {
+	step := inittelemetry.ProjectAuthoring
+	if errorCode == exterrors.CodeDeploymentAuthoringFailed {
+		step = inittelemetry.ModelDeploymentAuthoring
+	}
+	defer inittelemetry.Start(ctx, step)()
+
 	projectRoot, err := filepath.Abs(projectRoot)
 	if err != nil {
 		return exterrors.Dependency(

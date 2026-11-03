@@ -53,10 +53,19 @@ to migrate consumers to the already-graduated stable API without changing
 contracts or removing retained beta routes. Do not publish SDK pins before the
 target SDK version exists.
 
-The October 2026 batch targets azd 1.36.0. `Telemetry()` intentionally changes
+The first October 2026 batch targets azd 1.36.0. `Telemetry()` intentionally changes
 to stable without adding `TelemetryBeta()`; deprecated beta wire routes remain
 available. `AccountBeta()` is deprecated in favor of `Account()`. Future
 source-breaking accessor changes still require an explicit decision.
+
+The second October batch targets azd 1.37.0 for deployment preview:
+[batch audit](https://github.com/Azure/azure-dev/issues/10625),
+[consumer migration](https://github.com/Azure/azure-dev/issues/10626).
+Keep deprecated beta preview Go helpers source-compatible and preserve their beta
+route while adding the new stable helpers. The consumer PR #10571 stays draft
+until the graduation merges and SDK v1.37.0 is published, then migrates preview
+consumers and aligns all affected extension SDK pins/minimum hosts on 1.37.0.
+Do not pin an unpublished version or merge local SDK replacements.
 
 ## Verify both client populations
 

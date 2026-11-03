@@ -9,9 +9,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"sync/atomic"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -54,8 +57,9 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 
 	rootCmd.SilenceErrors = true
 
-	ctx := NewContext()
-	ctx = WithAccessToken(ctx)
+	interruptCtx, stopInterruptNotifications := newInterruptContext(NewContext())
+	defer stopInterruptNotifications()
+	ctx := WithAccessToken(interruptCtx)
 
 	var cfg runConfig
 	for _, o := range opts {
@@ -83,7 +87,7 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 		}
 	}
 
-	if err := rootCmd.ExecuteContext(ctx); err != nil {
+	if err := executeCommand(ctx, rootCmd); err != nil {
 		if reportErr := ReportError(ctx, err); reportErr != nil {
 			log.Printf("warning: failed to report structured error: %v", reportErr)
 			printError(err)
@@ -91,6 +95,45 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 
 		os.Exit(1)
 	}
+}
+
+func newInterruptContext(parent context.Context) (context.Context, func()) {
+	cancelCtx, cancel := context.WithCancel(parent)
+	var interruptHandled atomic.Bool
+	// input.Console subscribes to the same process signal independently. Claim
+	// its first dispatch so it cannot race graceful cancellation with os.Exit.
+	popHandler := input.PushInterruptHandler(func() bool {
+		if !interruptHandled.CompareAndSwap(false, true) {
+			return false
+		}
+
+		cancel()
+		return true
+	})
+
+	ctx, stopSignals := signal.NotifyContext(cancelCtx, os.Interrupt)
+	go func() {
+		<-ctx.Done()
+		// Restore the default signal behavior after the first interrupt so a
+		// subsequent Ctrl+C can still force-exit an unresponsive extension.
+		stopSignals()
+	}()
+
+	return ctx, func() {
+		stopSignals()
+		popHandler()
+		cancel()
+	}
+}
+
+func executeCommand(ctx context.Context, rootCmd *cobra.Command) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
+		return err
+	}
+	return ctx.Err()
 }
 
 func printError(err error) {

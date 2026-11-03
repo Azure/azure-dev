@@ -1,0 +1,426 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+schema_version: 1
+source:
+  repository: microsoft-foundry/content-understanding-cli
+  commit: 25d39b30116a840491b7b6f393d6db792b38d4a4
+hygiene:
+  file: testdata/parity/hygiene_scenarios.json
+  sha256: 152c411c6fbfb2eeabd42735c2825272dca6af54f68d56ce364820f03e421b76
+scenario_source:
+  file: testdata/parity/source_scenarios.yaml
+  sha256: 406e6e9d960c26ab88c233c2c0608407030f79d1fc8fb4bc3680f5294eeecd24
+  source_path: tests/playback/scenarios/scenarios.yaml
+  license: MIT
+normalized:
+  file: testdata/parity/normalized_adapter.json
+  sha256: 3721730c9eb34c079b88ae6ff5877e47931816cee16e4c0176b66aa3fcdd795f
+generated_projects:
+  file: testdata/parity/generated_projects.json
+  sha256: 912ecafbafc55ff491ecc84fff9e5f89f76c6981ecde406a66ec4592108802b4
+core_show_bindings:
+  file: testdata/parity/core_show_bindings.json
+  sha256: 1331dd95dc8a06d0b4b114a9945d41e7ad717a9eba5cf5a25d8d323fb1b17153
+core_create_binding:
+  file: testdata/parity/core_create_binding.json
+  sha256: df1f3e740cf19678b1bc483c1fa0052b40a1896295f42e8394d6410ff2b67a8a
+core_test_binding:
+  file: testdata/parity/core_test_binding.json
+  sha256: 2d1d60ccc65a149d7c02e90f5e873f6b3c2321ed0996a7a5f5ed6cc0e3ae0b0c
+core_validate_binding:
+  file: testdata/parity/core_validate_binding.json
+  sha256: 12a8030c1db05ee04a0b3d6936425c386d50dafeeddba317af7abb18eb33f4fc
+core_copy_binding:
+  file: testdata/parity/core_copy_binding.json
+  sha256: 042903978dbfe103e324e1ba4d692806cecbfc1b6bbbfc71ce1490fee52eb1f9
+capability_source:
+  file: testdata/parity/source_capabilities.yaml
+  sha256: 7573f107038183b21cac2698f3d454823f62c8ed83bcc2a049d2ed391cd71fed
+  source_path: tests/parity/capability_dispositions.yaml
+  license: MIT
+capabilities:
+- id: 1
+  source_paths:
+  - az cu analyze
+  target: azd ai cu analyze
+  classification: extension-path
+- id: 2
+  source_paths:
+  - az cu analyzer list
+  target: azd ai cu analyzer list
+  classification: extension-path
+- id: 3
+  source_paths:
+  - az cu analyzer show
+  target: azd ai cu analyzer show
+  classification: extension-path
+- id: 4
+  source_paths:
+  - az cu analyzer create
+  target: azd ai cu analyzer create
+  classification: extension-path
+- id: 5
+  source_paths:
+  - az cu analyzer copy
+  target: azd ai cu analyzer copy
+  classification: extension-path
+- id: 6
+  source_paths:
+  - az cu analyzer delete
+  target: azd ai cu analyzer delete
+  classification: extension-path
+- id: 7
+  source_paths:
+  - az cu analyzer validate
+  target: azd ai cu analyzer validate
+  classification: extension-path
+- id: 8
+  source_paths:
+  - az cu analyzer test
+  target: azd ai cu analyzer test
+  classification: extension-path
+- id: 9
+  source_paths:
+  - az cu analyzer schema create
+  target: azd ai cu analyzer schema create
+  classification: extension-path
+- id: 10
+  source_paths:
+  - az cu defaults show
+  target: azd ai cu defaults show
+  classification: extension-path
+- id: 11
+  source_paths:
+  - az cu defaults set
+  target: azd ai cu defaults set
+  classification: extension-path
+- id: 12
+  source_paths:
+  - az cu profile show
+  target: azd env get-values plus azd env config get cu
+  classification: environment-mapping
+- id: 13
+  source_paths:
+  - az cu profile list
+  target: azd env list
+  classification: environment-mapping
+- id: 14
+  source_paths:
+  - az cu profile get
+  target: azd env get-value or azd env config get
+  classification: environment-mapping
+- id: 15
+  source_paths:
+  - az cu profile set
+  target: azd env set, azd env set-secret, or azd env config set
+  classification: environment-mapping
+- id: 16
+  source_paths:
+  - az cu profile unset
+  target: azd env config unset; environment-value removal requires host support
+  classification: environment-mapping
+- id: 17
+  source_paths:
+  - az cu profile create
+  target: azd env new
+  classification: environment-mapping
+- id: 18
+  source_paths:
+  - az cu profile delete
+  target: azd env remove
+  classification: environment-mapping
+- id: 19
+  source_paths:
+  - az cu profile copy
+  target: optional nonsecret import with secret re-entry
+  classification: environment-mapping
+- id: 20
+  source_paths:
+  - az cu profile rename
+  target: optional create, copy, select, and remove workflow
+  classification: environment-mapping
+- id: 21
+  source_paths:
+  - az cu profile set-active
+  target: azd env select; per-command selection uses -e/--environment
+  classification: environment-mapping
+- id: 22
+  source_paths:
+  - az cu profile sync-defaults
+  target: azd ai cu defaults set --from-environment
+  classification: environment-mapping
+- id: 23
+  source_paths:
+  - cu profile _has-values
+  target: generated hooks query environment values and config through the host
+  classification: removed-helper
+- id: 24
+  source_paths:
+  - az cu env-var list
+  target: azd ai cu env-var list
+  classification: extension-path
+- id: 25
+  source_paths:
+  - az cu doctor
+  target: azd ai cu doctor
+  classification: extension-path
+- id: 26
+  source_paths:
+  - az cu infra generate
+  target: azd ai cu infra generate
+  classification: extension-path
+- id: 27
+  source_paths:
+  - az cu infra _models
+  - cu _infra-models
+  target: azd ai cu infra _models
+  classification: extension-path
+- id: 28
+  source_paths:
+  - az cu infra _postprovision-v1
+  - cu _infra-postprovision-v1
+  target: azd ai cu infra _postprovision-v1
+  classification: extension-path
+- id: 29
+  source_paths:
+  - cu upgrade
+  target: azd extension update azure.ai.content-understanding
+  classification: host-owned-update
+scenarios:
+- id: 1
+  name: analyze-single-file-markdown
+  kind: command
+  mode: playback
+  recordings:
+  - analyze_single
+- id: 2
+  name: analyze-directory-writes-results
+  kind: command
+  mode: playback
+  recordings:
+  - analyze_batch
+- id: 3
+  name: analyze-prebuilt-invoice-json
+  kind: command
+  mode: playback
+  recordings:
+  - analyze_prebuilt_invoice_json
+- id: 4
+  name: analyzer-list-json
+  kind: command
+  mode: playback
+  recordings:
+  - analyzer_list
+- id: 5
+  name: analyzer-list-custom-sorted
+  kind: command
+  mode: playback
+  recordings:
+  - analyzer_list
+- id: 6
+  name: analyzer-list-created-at
+  kind: command
+  mode: playback
+  recordings:
+  - analyzer_list
+- id: 7
+  name: analyzer-create-show-delete
+  kind: command
+  mode: playback
+  recordings:
+  - analyzer_create
+  - analyzer_show
+  - analyzer_delete
+- id: 8
+  name: analyzer-copy-same-resource
+  kind: command
+  mode: live-only
+  recordings: []
+- id: 9
+  name: analyzer-copy-cross-resource
+  kind: command
+  mode: live-only
+  recordings: []
+- id: 10
+  name: analyzer-test-field-report
+  kind: command
+  mode: playback
+  recordings:
+  - analyzer_test
+- id: 11
+  name: template-analyzer-create-show-delete
+  kind: command
+  mode: playback
+  recordings:
+  - template_analyzer_create
+  - template_analyzer_show
+  - template_analyzer_delete
+- id: 12
+  name: classifier-routing-lifecycle
+  kind: command
+  mode: playback
+  recordings:
+  - route_target_create
+  - classifier_route_create
+  - classifier_route_show
+  - classifier_route_delete
+  - route_target_delete
+- id: 13
+  name: doctor-connectivity
+  kind: command
+  mode: playback
+  recordings:
+  - doctor
+- id: 14
+  name: defaults-show-json
+  kind: command
+  mode: playback
+  recordings:
+  - defaults_get
+- id: 15
+  name: schema-template-validate-lifecycle
+  kind: command
+  mode: playback
+  recordings:
+  - analyzer_create
+  - analyzer_show
+  - analyzer_delete
+- id: 16
+  name: schema-create-from-sample
+  kind: command
+  mode: playback
+  recordings:
+  - schema_suggest
+- id: 17
+  name: scrub-request-sas-basic
+  kind: hygiene
+  mode: offline
+  recordings: []
+- id: 18
+  name: scrub-request-sas-apostrophe-path
+  kind: hygiene
+  mode: offline
+  recordings: []
+- id: 19
+  name: scrub-request-sas-apostrophe-query
+  kind: hygiene
+  mode: offline
+  recordings: []
+- id: 20
+  name: scrub-response-sas-basic-text
+  kind: hygiene
+  mode: offline
+  recordings: []
+- id: 21
+  name: scrub-response-sas-apostrophe-path-text
+  kind: hygiene
+  mode: offline
+  recordings: []
+- id: 22
+  name: scrub-response-sas-apostrophe-query-text
+  kind: hygiene
+  mode: offline
+  recordings: []
+- id: 23
+  name: scrub-response-sas-basic-bytes
+  kind: hygiene
+  mode: offline
+  recordings: []
+- id: 24
+  name: scrub-response-sas-apostrophe-path-bytes
+  kind: hygiene
+  mode: offline
+  recordings: []
+- id: 25
+  name: scrub-response-sas-apostrophe-query-bytes
+  kind: hygiene
+  mode: offline
+  recordings: []
+- id: 26
+  name: scrub-response-host-and-query
+  kind: hygiene
+  mode: offline
+  recordings: []
+- id: 27
+  name: scrub-response-bytes-payload
+  kind: hygiene
+  mode: offline
+  recordings: []
+recordings:
+- name: defaults_get
+  file: testdata/playback/defaults_get.json
+  sha256: 1a7721cf988071954f09edf60f15e5be15ac96a9d01f713a31b8de32e615597f
+  source_sha256: 8292bd42ac999a8d501f4944e4872ade7a3fc45958256a4e020d49565df29fcc
+- name: analyzer_list
+  file: testdata/playback/analyzer_list.json
+  sha256: 92e891a7974aeb30fe75aa48ec68bca8f5a384d66dca029165cb617d87d56a61
+  source_sha256: 72c5954e96bc1f92124f5c141c0757e74faa136073fea30abab7e5c5f7c84720
+- name: analyze_single
+  file: testdata/playback/analyze_single.json
+  sha256: fa7e622be939df59187c57afdf479fc882cc091965bab54e3b7c4488d7558120
+  source_sha256: d958af832809b8dd7f5b47d6e9e7eddacf0aa4a9b0f70fe0d62d1413b1e12cdb
+- name: analyze_batch
+  file: testdata/playback/analyze_batch.json
+  sha256: fec707782d4131202e83150e2339f802f8d3d0342370f3c6acab25729001de0d
+  source_sha256: 794d89b2d05a89471b7e9300df40471d7cdfe8d5f63854a3213390874a68a05f
+- name: analyze_prebuilt_invoice_json
+  file: testdata/playback/analyze_prebuilt_invoice_json.json
+  sha256: 8171a89bb867d1c4a8aadbc2e5206c6890a13a28624be87c26f31732d8d8412e
+  source_sha256: adcddd442b00fd28992db1729e182f751125fa62c7841569250e0590d1054917
+- name: analyzer_test
+  file: testdata/playback/analyzer_test.json
+  sha256: b048570bfcfa0d9e1548915b87e9ea23eca45395e2b503ff2e5e3d601a30017c
+  source_sha256: dfa54f52ebb62d0856f5127004cb863b5b552bd517af55e807f7ff29eae6d684
+- name: schema_suggest
+  file: testdata/playback/schema_suggest.json
+  sha256: 32b241f0fff3d1f00d5c0a438cc1a58d2658dfd5bfc1d1a0dee688585c044e7a
+  source_sha256: 4f54b3a8b723d6593cd726d6bd38b01c15d18507212d8a3ec54e3c5df3c3f750
+- name: analyzer_create
+  file: testdata/playback/analyzer_create.json
+  sha256: 8282ccf3780f3b3bb5fc416994a40e9406e44a70b7bf4d5ec46d502a23a21509
+  source_sha256: ed34b063c84cbc04935f28b9ca689b4c210be66312bc88c7a594e077de96d935
+- name: analyzer_show
+  file: testdata/playback/analyzer_show.json
+  sha256: ae73d6aa1654bcdcc7046e4f04d9ffa7f4a0be4b8f8ce59e45f6c9e62bf609aa
+  source_sha256: c51f6c90ef35721eb0e7357cd26c63c2db4bffbb148721f1745c83db33d7d224
+- name: analyzer_delete
+  file: testdata/playback/analyzer_delete.json
+  sha256: cb77fa1226ea6e81831787a20e7e2e0ecb1b5ca348738952a7b33c112b1769c3
+  source_sha256: 05071e692a2db35be19f78a93605f884fc9f476808c85b096d1dd2862f8566e4
+- name: template_analyzer_create
+  file: testdata/playback/template_analyzer_create.json
+  sha256: 512916039f8c96e8ec2e937cb0a6c061c18c3aa31cbe1159e282cff1cc81e5c7
+  source_sha256: ab5a477825ff376573fad8d44149f29b9d094960d095d24dc01342e2835d00a0
+- name: template_analyzer_show
+  file: testdata/playback/template_analyzer_show.json
+  sha256: 01ad39a3120d49a2b0eed55b0c773b94a97939bb18fb578bf578a4e6cf8e38ae
+  source_sha256: 7df30346aac2561cedbde104cfceb3166490ea01fe5ecd03bb23a3fc72abb26f
+- name: template_analyzer_delete
+  file: testdata/playback/template_analyzer_delete.json
+  sha256: 4e17a39f8ca875ea493b7ec64e4b30523627cd6afe1cd50765523815dbe81c2c
+  source_sha256: 8dbe85e9073b524d7c6d4b157cdd564b4b76ca6802e79c1b65c5954f2cb06663
+- name: route_target_create
+  file: testdata/playback/route_target_create.json
+  sha256: dc020d088017a3688acb5b01eed5764c5da204d64f62949168d2bc21f0d3c1f8
+  source_sha256: 8da02eb9e486d1f7f235f10f7c606791832c9ad8f794248e065448b81ea0cd47
+- name: classifier_route_create
+  file: testdata/playback/classifier_route_create.json
+  sha256: 031645f6b8a88a3c2642bd36e1f83092e43b0b8e2407b883d0f41cbcdf8f2b5f
+  source_sha256: 7f5841239e09bd3fb4be14fa79727423384c38a5e07f9b707f74ce89b3e3da20
+- name: classifier_route_show
+  file: testdata/playback/classifier_route_show.json
+  sha256: 2355e2aea0cc10e723ade2c7cbaf6513731eaffac34435f96d346d521f7b545b
+  source_sha256: 61929e2d89f95c0c4029fa6c89a0a10160959b2f8156a211e97c1099b76ab9e6
+- name: classifier_route_delete
+  file: testdata/playback/classifier_route_delete.json
+  sha256: 8c1b9b5724ba08b86f48b41276d45b0e5d94aff53c87c324a124dc41904b8662
+  source_sha256: 8af4ceef97c8e48655b023efd717ab9a0844fc25c1bee076e84e7ca8ae015a3b
+- name: route_target_delete
+  file: testdata/playback/route_target_delete.json
+  sha256: 173d416fc4875f1400efafab220d76568e242896fec8a96ee5d1e7be5735e157
+  source_sha256: b6f11103276b43092028c4f12a65621718081e0dfd2eafe0577855b40c93ca0e
+- name: doctor
+  file: testdata/playback/doctor.json
+  sha256: 62a1a75e265f23733c3c88350225ec8f2e1fd6906ebd3afe4b4345fd7d2a9aea
+  source_sha256: 9baf9f6db6e01cf784ba9280b14bce303ed893e41693b6ee7abf457073c4988e

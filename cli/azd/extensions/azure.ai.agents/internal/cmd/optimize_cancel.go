@@ -19,6 +19,7 @@ import (
 // optimizeCancelFlags holds connection settings for the cancel command.
 type optimizeCancelFlags struct {
 	envName string
+	output  string
 	optimizeConnectionFlags
 }
 
@@ -28,19 +29,23 @@ func newOptimizeCancelCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cancel <operation-id>",
 		Short: "Cancel a running optimization job.",
-		Long: `Cancel a running optimization or evaluation job by its operation ID.
+		Long: `Cancel a queued or running optimization job by its operation ID.
 
-Only jobs in a non-terminal state (pending, running) can be cancelled.`,
+Only jobs in a non-terminal state (queued, in_progress) can be cancelled.`,
 		Example: `  # Cancel a running job
   azd ai agent optimize cancel opt_abc123`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.envName = extCtx.Environment
+			flags.output = extCtx.OutputFormat
 			return runOptimizeCancel(cmd, flags, args[0])
 		},
 	}
 
 	flags.optimizeConnectionFlags.register(cmd)
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name: "output", AllowedValues: []string{"json", "table"}, Default: "table",
+	})
 
 	return cmd
 }
@@ -64,6 +69,9 @@ func runOptimizeCancel(cmd *cobra.Command, flags *optimizeCancelFlags, operation
 	}
 
 	out := cmd.OutOrStdout()
+	if flags.output == "json" {
+		return printOptimizeStatusJSON(out, cancelResp)
+	}
 	fmt.Fprintf(out, "  %s Job %s has been cancelled (status: %s).\n",
 		color.YellowString("⚠"), operationID, cancelResp.Status)
 	fmt.Fprintf(out, "\n  Check status with:\n    azd ai agent optimize status %s\n", operationID)

@@ -14,7 +14,8 @@ explicitly.
 
 Voice Agents
 For prompt voice agents and hosted voice wrappers, open your agent in the
-Microsoft Foundry portal at https://ai.azure.com to try it.
+Microsoft Foundry portal at https://ai.azure.com to try it. GPT Live agents use
+the native /voice/live/sessions protocol and require a GPT Live-compatible client.
 For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
 'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
 hosted agent protocols such as responses, invocations, and a2a.
@@ -25,25 +26,40 @@ instead of a positional message argument. This is useful for structured
 or large payloads with the invocations protocol, or for sending a complete
 JSON-RPC request with the a2a protocol.
 
+A2A Version:
+Use -p a2a with --a2a-version to select public A2A version 0.3 or 1.0,
+not a Foundry API version or the deployed agent version selected by --version.
+For plain messages, azd composes the body and A2A-Version header together,
+so 1.0 is a convenience default. With --input-file, --a2a-version is always
+required, even if native A2A agent YAML declares a version. File bytes are
+sent unchanged as a complete public JSON-RPC request. The caller must match
+the body to the selected header version; azd does not infer the version.
+With the preview disabled, messages and files use 0.3 without --a2a-version.
+A2A 0.3 uses non-blocking defaults; 1.0 waits for completion or user action.
+The CLI prints a single response without polling.
+Formatted A2A output expects non-streaming JSON-RPC responses. For streaming
+requests, use --output raw to stream unparsed SSE events.
+
 Local Development
 Use --local to target a locally running agent (started via 'azd ai agent run')
-instead of Foundry. The a2a protocol is remote-only and cannot be used with
---local.
+instead of Foundry. With -p a2a, the server must expose POST /a2a.
+Local A2A sends no Foundry headers and persists no session state. It rejects
+--session-id, --new-session, --conversation-id, --new-conversation,
+--version, --user-identity, --call-id, or --client-header. Use A2A
+contextId/taskId in a request file for protocol-level continuity.
 
 Sessions & Identity
-Sessions are persisted per-agent — consecutive invokes reuse the same
-session automatically. Pass --new-session to force a reset.
+Except for local A2A, sessions are persisted per-agent — consecutive invokes
+reuse the same session automatically. Pass --new-session to force a reset.
 
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
-For agents configured with header-based isolation, pass --user-identity
-on each invoke. Locally it is sent as the x-agent-user-id header; for
-remote invokes it is sent as the x-ms-user-identity header.
+For header-based isolation, --user-identity sends x-agent-user-id with local
+responses/invocations or x-ms-user-identity with remote requests.
 
-Use --call-id to send a call ID with a local invoke. It is sent as the
-x-agent-foundry-call-id header and applies only to local invocations; it is
-ignored for remote requests.
+Use --call-id with local responses/invocations to send x-agent-foundry-call-id.
+It is ignored for remote requests. Both flags are rejected for local A2A.
 
 Use --client-header to send custom x-client-* request headers in "Name: Value"
 format (repeatable). The responses and invocations protocols forward the
@@ -57,6 +73,9 @@ line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
+For completed A2A Tasks, default output prefers answer artifacts over generic
+status messages such as "Done". Other Tasks prefer status messages, falling
+back to artifacts when no status text is present. History is the final fallback.
 
 Platform Latency
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
@@ -78,8 +97,9 @@ Usage
   azd ai agent invoke [name] [message] [flags]
 
 Flags
+      --a2a-version string        : A2A wire version: 0.3 or 1.0. Defaults to 1.0 for messages; required with --input-file for a2a.
       --agent-endpoint string     : Full endpoint URL of a deployed agent (run 'azd ai agent show' to see it). Invokes without requiring an azd project; protocol is derived from the URL.
-      --call-id string            : Call ID header value (sent as x-agent-foundry-call-id for local invocations only; ignored for remote requests)
+      --call-id string            : Call ID header value (sent as x-agent-foundry-call-id for local responses/invocations only; ignored for remote requests)
       --client-header stringArray : Custom x-client-* request header in "Name: Value" format (repeatable). The responses and invocations protocols forward the x-client-* header family to the agent; other header names are rejected and the flag is not supported with a2a.
       --conversation-id string    : Explicit conversation ID override
       --debug-latency             : Collect and show platform latency for remote responses/invocations; use --debug-latency=false to disable (default true)
@@ -93,7 +113,7 @@ Flags
   -p, --protocol string           : Protocol to use: responses, invocations, or a2a. Auto-detected from deployment data or the agent definition; pass --protocol when it cannot be determined.
   -s, --session-id string         : Explicit session ID override
   -t, --timeout int               : Request timeout in seconds (0 for no timeout) (default 1800)
-      --user-identity string      : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+      --user-identity string      : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests); not supported with local a2a
       --version string            : Agent version to invoke (creates or reuses a session backed by that version)
 
 Global Flags
@@ -114,11 +134,17 @@ Examples
   Invoke using a specific protocol
     azd ai agent invoke --protocol invocations "Hello!"
 
-  Invoke a deployed agent over the a2a protocol
-    azd ai agent invoke --protocol a2a "Hello!"
+  Invoke a deployed agent with an explicit public A2A version
+    azd ai agent invoke -p a2a --a2a-version 1.0 "Hello!"
 
-  Invoke the a2a protocol with a complete JSON-RPC request from a file
-    azd ai agent invoke --protocol a2a -f a2a-request.json
+  Invoke using public A2A 0.3
+    azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"
+
+  Use the A2A 1.0 convenience default for a plain message
+    azd ai agent invoke -p a2a "Hello!"
+
+  Send a complete public JSON-RPC file unchanged (version is required)
+    azd ai agent invoke -p a2a --a2a-version 1.0 -f a2a-request-1.0.json
 
   Invoke with a file as the request body
     azd ai agent invoke -f request.json

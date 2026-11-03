@@ -554,7 +554,17 @@ func (m *manager) SaveWithOptions(ctx context.Context, env *Environment, options
 		return nil
 	}
 
-	if err := m.remote.Save(ctx, env, options); err != nil {
+	remoteEnv := env
+	if options.DotenvKeys != nil {
+		// Remote persistence must use committed local state, not the shared environment's pending changes.
+		var err error
+		remoteEnv, err = m.local.Get(ctx, env.Name())
+		if err != nil {
+			return fmt.Errorf("loading saved local environment for remote persistence: %w", err)
+		}
+	}
+
+	if err := m.remote.Save(ctx, remoteEnv, options); err != nil {
 		return fmt.Errorf("saving remote environment, %w", err)
 	}
 

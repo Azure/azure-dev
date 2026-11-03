@@ -32,15 +32,18 @@ const (
 )
 
 // promptNode is a single dependency in the prompt-agent deploy graph. Validate
-// is pure and runs for every node before any Resolve executes, so a graph is
-// fully validated before the first live mutation. Resolve is idempotent and
+// is pure and supports offline definition validation. Prepare checks deployment
+// inputs for every node before any Resolve executes. Resolve is idempotent and
 // create-if-missing; it writes any outputs later nodes consume into
 // promptGraph.bindings.
 type promptNode struct {
 	Kind     promptNodeKind
 	ID       string
 	Validate func() error
-	Resolve  func(ctx context.Context) error
+	// Prepare validates deployment inputs available only after dependencies deploy.
+	// Every Prepare runs before the first Resolve can mutate remote resources.
+	Prepare func() error
+	Resolve func(ctx context.Context) error
 }
 
 // promptGraph is the internal, non-user-facing dependency graph for one
@@ -159,13 +162,13 @@ func newPromptGraph(
 		return nil, err
 	}
 	if managed.HarnessType() != "" {
-		// An explicit toolbox: reference is a separate feature from skills: it
-		// attaches an existing shared toolbox as an mcp tool. Skills are never
+		// Explicit toolboxes: references are a separate feature from skills: they
+		// attach existing shared toolboxes as mcp tools. Skills are never
 		// routed through a toolbox of azd's making — the harness already has a
 		// service-owned system toolbox whose name, version and lifecycle the
 		// customer does not manage.
-		if node := toolboxNode(g, managed.Toolbox, func() (toolboxBuilder, error) {
-			return newFoundryToolboxBuilder(settings)
+		if node := toolboxNode(g, managed.Toolboxes, func() (toolboxConnectionEnsurer, error) {
+			return newFoundryToolboxConnections(g, settings, credential)
 		}); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
@@ -173,7 +176,7 @@ func newPromptGraph(
 			g.nodes = append(g.nodes, *node)
 		}
 	} else {
-		if node := skillsShellNode(g, skills, managed.Toolbox); node != nil {
+		if node := skillsShellNode(g, skills); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
 	}
@@ -192,6 +195,11 @@ func (g *promptGraph) agentNode() promptNode {
 		Kind: nodeAgent,
 		ID:   g.managed.Name,
 		Validate: func() error {
+			if len(g.managed.Toolboxes) > 0 && g.managed.HarnessType() == "" {
+				return exterrors.Validation(exterrors.CodeInvalidAgentManifest,
+					"toolboxes: is only available to an agent that names a harness",
+					"add a harness block or remove toolboxes from the prompt agent")
+			}
 			if err := g.managed.ValidateHarnessBlock(); err != nil {
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
@@ -273,6 +281,13 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 
 	if err := g.validate(); err != nil {
 		return err
+	}
+	for _, n := range g.nodes {
+		if n.Prepare != nil {
+			if err := n.Prepare(); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Reported after validation and before any node injects its own tools, so

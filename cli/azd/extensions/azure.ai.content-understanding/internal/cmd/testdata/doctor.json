@@ -1,0 +1,18 @@
+{
+  "ready": true,
+  "endpoint": "https://configured.services.ai.azure.com/contentunderstanding",
+  "apiVersion": "2025-11-01",
+  "authentication": "Microsoft Entra ID",
+  "profile": "dev",
+  "defaultAnalyzer": null,
+  "modelDeployments": {
+    "gpt-4.1": "old-completion",
+    "text-embedding-3-large": "embedding",
+    "prebuilt-analyzer-completion": "old-completion",
+    "prebuilt-analyzer-completion-mini": "old-completion",
+    "prebuilt-analyzer-embedding": "embedding"
+  },
+  "missingRequirements": [],
+  "failures": [],
+  "sources": null
+}

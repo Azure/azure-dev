@@ -1,0 +1,722 @@
+{
+  "$ref": "#/definitions/ContentAnalyzer",
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "definitions": {
+    "Azure.Core.Foundations.Error": {
+      "description": "The error object.",
+      "properties": {
+        "code": {
+          "description": "One of a server-defined set of error codes.",
+          "type": "string"
+        },
+        "details": {
+          "description": "An array of details about specific errors that led to this reported error.",
+          "items": {
+            "$ref": "#/definitions/Azure.Core.Foundations.Error"
+          },
+          "type": "array"
+        },
+        "innererror": {
+          "$ref": "#/definitions/Azure.Core.Foundations.InnerError",
+          "description": "An object containing more specific information than the current object about the error."
+        },
+        "message": {
+          "description": "A human-readable representation of the error.",
+          "type": "string"
+        },
+        "target": {
+          "description": "The target of the error.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "Azure.Core.Foundations.InnerError": {
+      "description": "An object containing more specific information about the error. As per Azure REST API guidelines - https://aka.ms/AzureRestApiGuidelines#handling-errors.",
+      "properties": {
+        "code": {
+          "description": "One of a server-defined set of error codes.",
+          "type": "string"
+        },
+        "innererror": {
+          "$ref": "#/definitions/Azure.Core.Foundations.InnerError",
+          "description": "Inner error."
+        }
+      },
+      "type": "object"
+    },
+    "ChunkingStrategy": {
+      "description": "Strategy for chunking document content. The `kind` property serves as the discriminator.",
+      "discriminator": "kind",
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/ChunkingStrategyKind",
+          "description": "The chunking strategy kind."
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ChunkingStrategyKind": {
+      "description": "The kind of chunking strategy.",
+      "enum": [
+        "semantic"
+      ],
+      "type": "string",
+      "x-ms-enum": {
+        "modelAsString": true,
+        "name": "ChunkingStrategyKind",
+        "values": [
+          {
+            "description": "Semantic chunking strategy.",
+            "name": "semantic",
+            "value": "semantic"
+          }
+        ]
+      }
+    },
+    "ContentAnalyzer": {
+      "description": "Analyzer that extracts content and fields from multimodal documents.",
+      "properties": {
+        "analyzerId": {
+          "description": "The unique identifier of the analyzer.",
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9._-]{1,64}$",
+          "readOnly": true,
+          "type": "string"
+        },
+        "baseAnalyzerId": {
+          "description": "The analyzer to incrementally train from.",
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9._-]{1,64}$",
+          "type": "string",
+          "x-ms-mutability": [
+            "read",
+            "create"
+          ]
+        },
+        "config": {
+          "$ref": "#/definitions/ContentAnalyzerConfig",
+          "description": "Analyzer configuration settings.",
+          "x-ms-mutability": [
+            "read",
+            "create"
+          ]
+        },
+        "createdAt": {
+          "description": "The date and time when the analyzer was created.",
+          "format": "date-time",
+          "readOnly": true,
+          "type": "string"
+        },
+        "description": {
+          "description": "A description of the analyzer.",
+          "type": "string"
+        },
+        "dynamicFieldSchema": {
+          "default": false,
+          "description": "Indicates whether the result may contain additional fields outside of the defined schema.",
+          "type": "boolean",
+          "x-ms-mutability": [
+            "read",
+            "create"
+          ]
+        },
+        "fieldSchema": {
+          "$ref": "#/definitions/ContentFieldSchema",
+          "description": "The schema of fields to extracted.",
+          "x-ms-mutability": [
+            "read",
+            "create"
+          ]
+        },
+        "knowledgeSources": {
+          "description": "Additional knowledge sources used to enhance the analyzer.",
+          "items": {
+            "$ref": "#/definitions/KnowledgeSource"
+          },
+          "type": "array",
+          "x-ms-mutability": [
+            "read",
+            "create"
+          ]
+        },
+        "lastModifiedAt": {
+          "description": "The date and time when the analyzer was last modified.",
+          "format": "date-time",
+          "readOnly": true,
+          "type": "string"
+        },
+        "models": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Mapping of model roles to specific model names.\nEx. { \"completion\": \"gpt-4.1\", \"embedding\": \"text-embedding-3-large\" }.",
+          "type": "object",
+          "x-ms-mutability": [
+            "read",
+            "create"
+          ]
+        },
+        "processingLocation": {
+          "default": "global",
+          "description": "The location where the data may be processed.  Defaults to global.",
+          "enum": [
+            "geography",
+            "dataZone",
+            "global"
+          ],
+          "type": "string",
+          "x-ms-enum": {
+            "modelAsString": true,
+            "name": "ProcessingLocation",
+            "values": [
+              {
+                "description": "Data may be processed in the same geography as the resource.",
+                "name": "geography",
+                "value": "geography"
+              },
+              {
+                "description": "Data may be processed in the same data zone as the resource.",
+                "name": "dataZone",
+                "value": "dataZone"
+              },
+              {
+                "description": "Data may be processed in any Azure data center globally.",
+                "name": "global",
+                "value": "global"
+              }
+            ]
+          },
+          "x-ms-mutability": [
+            "read",
+            "create"
+          ]
+        },
+        "status": {
+          "$ref": "#/definitions/ContentAnalyzerStatus",
+          "description": "The status of the analyzer.",
+          "readOnly": true
+        },
+        "supportedModels": {
+          "$ref": "#/definitions/SupportedModels",
+          "description": "Chat completion and embedding models supported by the analyzer.",
+          "readOnly": true
+        },
+        "tags": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Tags associated with the analyzer.",
+          "type": "object"
+        },
+        "warnings": {
+          "description": "Warnings encountered while creating the analyzer.",
+          "items": {
+            "$ref": "#/definitions/Azure.Core.Foundations.Error"
+          },
+          "readOnly": true,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ContentAnalyzerConfig": {
+      "description": "Configuration settings for an analyzer.",
+      "properties": {
+        "allowInPageSegments": {
+          "description": "Enable sub-page segmentation. When true, segments may cover a portion of a page instead of full pages.",
+          "type": "boolean"
+        },
+        "allowInputTruncation": {
+          "description": "When true, input that exceeds the service's processable-unit limit is truncated to the limit and returned as a\npartial result with a warning, instead of failing. Field extraction and segmentation, where configured, run over\nthe processed content and may be inaccurate. Defaults to false. Overridable per request by the allowInputTruncation\nquery parameter.",
+          "type": "boolean"
+        },
+        "annotationFormat": {
+          "default": "markdown",
+          "description": "Representation format of annotations in analyze result markdown.",
+          "enum": [
+            "none",
+            "markdown"
+          ],
+          "type": "string",
+          "x-ms-enum": {
+            "modelAsString": true,
+            "name": "AnnotationFormat",
+            "values": [
+              {
+                "description": "Do not represent annotations.",
+                "name": "none",
+                "value": "none"
+              },
+              {
+                "description": "Represent basic annotation information using markdown formatting.",
+                "name": "markdown",
+                "value": "markdown"
+              }
+            ]
+          }
+        },
+        "chartFormat": {
+          "default": "chartJs",
+          "description": "Representation format of charts in analyze result markdown.",
+          "enum": [
+            "chartJs",
+            "markdown"
+          ],
+          "type": "string",
+          "x-ms-enum": {
+            "modelAsString": true,
+            "name": "ChartFormat",
+            "values": [
+              {
+                "description": "Represent charts as Chart.js code blocks.",
+                "name": "chartJs",
+                "value": "chartJs"
+              },
+              {
+                "description": "Represent charts as markdown tables.",
+                "name": "markdown",
+                "value": "markdown"
+              }
+            ]
+          }
+        },
+        "chunkingStrategy": {
+          "$ref": "#/definitions/ChunkingStrategy",
+          "description": "Strategy for chunking document content into smaller units for RAG scenarios. When omitted, chunking is disabled."
+        },
+        "contentCategories": {
+          "additionalProperties": {
+            "$ref": "#/definitions/ContentCategoryDefinition"
+          },
+          "description": "Map of categories to classify the input content(s) against.",
+          "type": "object"
+        },
+        "disableFaceBlurring": {
+          "description": "Disable the default blurring of faces for privacy while processing the content.",
+          "type": "boolean"
+        },
+        "enableFigureAnalysis": {
+          "description": "Enable analysis of figures, such as charts and diagrams.",
+          "type": "boolean"
+        },
+        "enableFigureDescription": {
+          "description": "Enable generation of figure description.",
+          "type": "boolean"
+        },
+        "enableFormula": {
+          "description": "Enable mathematical formula detection.",
+          "type": "boolean"
+        },
+        "enableLayout": {
+          "description": "Enable layout analysis.",
+          "type": "boolean"
+        },
+        "enableOcr": {
+          "description": "Enable optical character recognition (OCR).",
+          "type": "boolean"
+        },
+        "enableSegment": {
+          "description": "Enable segmentation of the input by contentCategories.",
+          "type": "boolean"
+        },
+        "estimateFieldSourceAndConfidence": {
+          "description": "Return field grounding source and confidence.",
+          "type": "boolean"
+        },
+        "locales": {
+          "description": "List of locale hints for speech transcription.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "omitContent": {
+          "description": "Omit the content for this analyzer from analyze result.\nOnly return content(s) from additional analyzers specified in contentCategories, if any.",
+          "type": "boolean"
+        },
+        "returnDetails": {
+          "description": "Return all content details.",
+          "type": "boolean"
+        },
+        "segmentPerPage": {
+          "description": "Force segmentation of document content by page.",
+          "type": "boolean"
+        },
+        "tableFormat": {
+          "default": "html",
+          "description": "Representation format of tables in analyze result markdown.",
+          "enum": [
+            "html",
+            "markdown"
+          ],
+          "type": "string",
+          "x-ms-enum": {
+            "modelAsString": true,
+            "name": "TableFormat",
+            "values": [
+              {
+                "description": "Represent tables using HTML table elements: \\<table>, \\<th>, \\<tr>, \\<td>.",
+                "name": "html",
+                "value": "html"
+              },
+              {
+                "description": "Represent tables using GitHub Flavored Markdown table syntax, which does not support merged cells or rich headers.",
+                "name": "markdown",
+                "value": "markdown"
+              }
+            ]
+          }
+        },
+        "workflow": {
+          "$ref": "#/definitions/ContentAnalyzerWorkflow",
+          "description": "Workflow used for content analysis."
+        }
+      },
+      "type": "object"
+    },
+    "ContentAnalyzerStatus": {
+      "description": "Status of a resource.",
+      "enum": [
+        "creating",
+        "ready",
+        "deleting",
+        "failed"
+      ],
+      "type": "string",
+      "x-ms-enum": {
+        "modelAsString": true,
+        "name": "ContentAnalyzerStatus",
+        "values": [
+          {
+            "description": "The resource is being created.",
+            "name": "creating",
+            "value": "creating"
+          },
+          {
+            "description": "The resource is ready.",
+            "name": "ready",
+            "value": "ready"
+          },
+          {
+            "description": "The resource is being deleted.",
+            "name": "deleting",
+            "value": "deleting"
+          },
+          {
+            "description": "The resource failed during creation.",
+            "name": "failed",
+            "value": "failed"
+          }
+        ]
+      }
+    },
+    "ContentAnalyzerWorkflow": {
+      "description": "Workflow used for document analysis.",
+      "enum": [
+        "default",
+        "agentic"
+      ],
+      "type": "string",
+      "x-ms-enum": {
+        "modelAsString": true,
+        "name": "ContentAnalyzerWorkflow",
+        "values": [
+          {
+            "description": "Default analysis workflow. The service selects standard or advanced contextualization as appropriate for the analyzer.",
+            "name": "default",
+            "value": "default"
+          },
+          {
+            "description": "Agentic analysis workflow using iterative reasoning with integrated tool calling for enhanced accuracy on complex documents.",
+            "name": "agentic",
+            "value": "agentic"
+          }
+        ]
+      }
+    },
+    "ContentCategoryDefinition": {
+      "description": "Content category definition.",
+      "properties": {
+        "analyzer": {
+          "$ref": "#/definitions/ContentAnalyzer",
+          "description": "Optional inline definition of analyzer used to process the content."
+        },
+        "analyzerId": {
+          "description": "Optional analyzer used to process the content.",
+          "type": "string"
+        },
+        "description": {
+          "description": "The description of the category.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ContentFieldDefinition": {
+      "description": "Definition of the field using a JSON Schema like syntax.",
+      "properties": {
+        "$ref": {
+          "description": "Reference to another field definition.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Field description.",
+          "type": "string"
+        },
+        "enum": {
+          "description": "Enumeration of possible field values.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "enumDescriptions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Descriptions for each enumeration value.",
+          "type": "object"
+        },
+        "estimateSourceAndConfidence": {
+          "description": "Return grounding source and confidence.",
+          "type": "boolean"
+        },
+        "examples": {
+          "description": "Examples of field values.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "items": {
+          "$ref": "#/definitions/ContentFieldDefinition",
+          "description": "Field type schema of each array element, if type is array."
+        },
+        "method": {
+          "$ref": "#/definitions/GenerationMethod",
+          "description": "Generation method."
+        },
+        "properties": {
+          "additionalProperties": {
+            "$ref": "#/definitions/ContentFieldDefinition"
+          },
+          "description": "Named sub-fields, if type is object.",
+          "type": "object"
+        },
+        "type": {
+          "$ref": "#/definitions/ContentFieldType",
+          "description": "Semantic data type of the field value."
+        }
+      },
+      "type": "object"
+    },
+    "ContentFieldSchema": {
+      "description": "Schema of fields to be extracted from documents.",
+      "properties": {
+        "definitions": {
+          "additionalProperties": {
+            "$ref": "#/definitions/ContentFieldDefinition"
+          },
+          "description": "Additional definitions referenced by the fields in the schema.",
+          "type": "object",
+          "x-ms-mutability": [
+            "read",
+            "create"
+          ]
+        },
+        "description": {
+          "description": "A description of the field schema.",
+          "type": "string",
+          "x-ms-mutability": [
+            "read",
+            "create"
+          ]
+        },
+        "fields": {
+          "additionalProperties": {
+            "$ref": "#/definitions/ContentFieldDefinition"
+          },
+          "description": "The fields defined in the schema.",
+          "type": "object",
+          "x-ms-mutability": [
+            "read",
+            "create"
+          ]
+        },
+        "name": {
+          "description": "The name of the field schema.",
+          "type": "string",
+          "x-ms-mutability": [
+            "read",
+            "create"
+          ]
+        }
+      },
+      "required": [
+        "fields"
+      ],
+      "type": "object"
+    },
+    "ContentFieldType": {
+      "description": "Semantic data type of the field value.",
+      "enum": [
+        "string",
+        "date",
+        "time",
+        "number",
+        "integer",
+        "boolean",
+        "array",
+        "object",
+        "json"
+      ],
+      "type": "string",
+      "x-ms-enum": {
+        "modelAsString": true,
+        "name": "ContentFieldType",
+        "values": [
+          {
+            "description": "Plain text.",
+            "name": "string",
+            "value": "string"
+          },
+          {
+            "description": "Date, normalized to ISO 8601 (YYYY-MM-DD) format.",
+            "name": "date",
+            "value": "date"
+          },
+          {
+            "description": "Time, normalized to ISO 8601 (hh:mm:ss) format.",
+            "name": "time",
+            "value": "time"
+          },
+          {
+            "description": "Number as double precision floating point.",
+            "name": "number",
+            "value": "number"
+          },
+          {
+            "description": "Integer as 64-bit signed integer.",
+            "name": "integer",
+            "value": "integer"
+          },
+          {
+            "description": "Boolean value.",
+            "name": "boolean",
+            "value": "boolean"
+          },
+          {
+            "description": "List of subfields of the same type.",
+            "name": "array",
+            "value": "array"
+          },
+          {
+            "description": "Named list of subfields.",
+            "name": "object",
+            "value": "object"
+          },
+          {
+            "description": "JSON object.",
+            "name": "json",
+            "value": "json"
+          }
+        ]
+      }
+    },
+    "GenerationMethod": {
+      "description": "Generation method.",
+      "enum": [
+        "generate",
+        "extract",
+        "classify"
+      ],
+      "type": "string",
+      "x-ms-enum": {
+        "modelAsString": true,
+        "name": "GenerationMethod",
+        "values": [
+          {
+            "description": "Values are generated freely based on the content.",
+            "name": "generate",
+            "value": "generate"
+          },
+          {
+            "description": "Values are extracted as they appear in the content.",
+            "name": "extract",
+            "value": "extract"
+          },
+          {
+            "description": "Values are classified against a predefined set of categories.",
+            "name": "classify",
+            "value": "classify"
+          }
+        ]
+      }
+    },
+    "KnowledgeSource": {
+      "description": "Knowledge source.",
+      "discriminator": "kind",
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/KnowledgeSourceKind",
+          "description": "The kind of knowledge source."
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "KnowledgeSourceKind": {
+      "description": "Knowledge source kind.",
+      "enum": [
+        "labeledData"
+      ],
+      "type": "string",
+      "x-ms-enum": {
+        "modelAsString": true,
+        "name": "KnowledgeSourceKind",
+        "values": [
+          {
+            "description": "A labeled data knowledge source.",
+            "name": "labeledData",
+            "value": "labeledData"
+          }
+        ]
+      }
+    },
+    "SupportedModels": {
+      "description": "Chat completion and embedding models supported by the analyzer.",
+      "properties": {
+        "completion": {
+          "description": "Chat completion models supported by the analyzer.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "embedding": {
+          "description": "Embedding models supported by the analyzer.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "x-cu-license": "MIT; Copyright (c) Microsoft Corporation.",
+  "x-cu-source": "https://github.com/microsoft-foundry/content-understanding-cli/blob/25d39b30116a840491b7b6f393d6db792b38d4a4/packages/core/src/cu_cli_core/resources/openapi/2026-06-01-preview/ContentUnderstanding.json",
+  "x-cu-source-sha256": "c5bf28571c83d2afe3edb9afaf52d41305d458eeda691de62fbdcf50fb9c5e14"
+}

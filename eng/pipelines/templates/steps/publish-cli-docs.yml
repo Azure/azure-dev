@@ -8,7 +8,7 @@ steps:
   - template: /eng/pipelines/templates/steps/set-git-credentials.yml
 
   - pwsh: |
-      git clone https://github.com/azure-sdk/azure-dev-docs-pr/
+      git clone https://github.com/MicrosoftDocs/azure-dev-docs-pr/
       Copy-Item docs/azd.md azure-dev-docs-pr/articles/azure-developer-cli/reference.md -Force
     displayName: Update azd reference.md
 
@@ -20,6 +20,7 @@ steps:
       CommitMsg: Update reference documents for Azure CLI @ $(CLI_VERSION)
       PRTitle: Update reference documents for Azure CLI @ $(CLI_VERSION)
       WorkingDirectory: $(System.DefaultWorkingDirectory)/azure-dev-docs-pr
+      PROwner: MicrosoftDocs
       RepoOwner: MicrosoftDocs
       RepoName: azure-dev-docs-pr
       BaseBranchName: main

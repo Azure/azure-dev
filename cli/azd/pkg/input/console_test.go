@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
@@ -24,10 +25,116 @@ import (
 	"go.uber.org/atomic"
 )
 
+func TestAskerConsole_Confirm_RequireInput(t *testing.T) {
+	tests := []struct {
+		name         string
+		stdin        string
+		defaultValue bool
+		requireInput bool
+		noPrompt     bool
+		dataEOF      bool
+		want         bool
+		wantErr      error
+	}{
+		{name: "LegacyEOFDefaultTrue", defaultValue: true, want: true},
+		{name: "LegacyEOFDefaultFalse"},
+		{name: "LegacyInvalidEOF", stdin: "invalid", defaultValue: true, want: true},
+		{name: "ClosedStdin", defaultValue: true, requireInput: true, wantErr: io.EOF},
+		{name: "ClosedStdinDefaultFalse", requireInput: true, wantErr: io.EOF},
+		{name: "WhitespaceEOF", stdin: " \t\r", defaultValue: true, requireInput: true, wantErr: io.EOF},
+		{name: "InvalidEOF", stdin: "invalid", defaultValue: true, requireInput: true, wantErr: io.EOF},
+		{name: "InvalidLineThenEOF", stdin: "invalid\n", defaultValue: true, requireInput: true, wantErr: io.EOF},
+		{name: "EnterDefaultTrue", stdin: "\n", defaultValue: true, requireInput: true, want: true},
+		{name: "EnterDefaultFalse", stdin: "\n", requireInput: true},
+		{name: "WhitespaceEnter", stdin: " \t\n", defaultValue: true, requireInput: true, want: true},
+		{name: "WindowsEnter", stdin: "\r\n", defaultValue: true, requireInput: true, want: true},
+		{name: "ExplicitYes", stdin: "y\n", requireInput: true, want: true},
+		{name: "ExplicitNo", stdin: "n\n", defaultValue: true, requireInput: true},
+		{name: "ExplicitYesEOF", stdin: "y", requireInput: true, want: true},
+		{name: "ExplicitNoEOF", stdin: "n", defaultValue: true, requireInput: true},
+		{name: "UppercaseYesEOF", stdin: "Y", requireInput: true, want: true},
+		{name: "UppercaseNoEOF", stdin: "N", defaultValue: true, requireInput: true},
+		{name: "InvalidThenYes", stdin: "invalid\ny\n", requireInput: true, want: true},
+		{name: "InvalidThenNo", stdin: "invalid\nn\n", defaultValue: true, requireInput: true},
+		{name: "InvalidThenEnter", stdin: "invalid\n\n", defaultValue: true, requireInput: true, want: true},
+		{
+			name: "EnterWithEOF", stdin: "\n", defaultValue: true,
+			requireInput: true, dataEOF: true, want: true,
+		},
+		{name: "YesWithEOF", stdin: "y", requireInput: true, dataEOF: true, want: true},
+		{
+			name: "NoPromptDefaultTrue", stdin: "n\n", defaultValue: true,
+			requireInput: true, noPrompt: true, want: true,
+		},
+		{name: "NoPromptDefaultFalse", stdin: "y\n", requireInput: true, noPrompt: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdin io.Reader = strings.NewReader(tt.stdin)
+			if tt.dataEOF {
+				stdin = iotest.DataErrReader(stdin)
+			}
+			writer := &bytes.Buffer{}
+			console := NewConsole(tt.noPrompt, false, Writers{Output: writer},
+				ConsoleHandles{Stdin: stdin, Stdout: writer, Stderr: writer}, &output.NoneFormatter{}, nil)
+
+			confirmed, err := console.Confirm(t.Context(), ConsoleOptions{
+				Message:      "Continue?",
+				DefaultValue: tt.defaultValue,
+				RequireInput: tt.requireInput,
+			})
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.want, confirmed)
+			if tt.noPrompt {
+				require.Empty(t, writer.String())
+			} else {
+				require.Contains(t, writer.String(), "Continue?")
+			}
+		})
+	}
+}
+
 type lineCapturer struct {
 	mu       sync.Mutex
 	captured []string
 	raw      strings.Builder
+}
+
+func TestNewConsole_NonTerminalInstallsInterruptWatcher(t *testing.T) {
+	previousWatcher := processInterruptWatcher
+	var watchedConsoles []*AskerConsole
+	processInterruptWatcher = &interruptSignalWatcher{
+		watch: func(c *AskerConsole) {
+			watchedConsoles = append(watchedConsoles, c)
+		},
+	}
+	t.Cleanup(func() {
+		processInterruptWatcher = previousWatcher
+	})
+
+	newConsole := func() *AskerConsole {
+		console := NewConsole(
+			false,
+			false,
+			Writers{Output: io.Discard},
+			ConsoleHandles{Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard},
+			&output.NoneFormatter{},
+			nil,
+		)
+		askerConsole, ok := console.(*AskerConsole)
+		require.True(t, ok)
+		return askerConsole
+	}
+
+	firstConsole := newConsole()
+	newConsole()
+
+	require.Equal(t, []*AskerConsole{firstConsole}, watchedConsoles)
+	require.Nil(t, firstConsole.consoleWidth)
 }
 
 func (l *lineCapturer) String() string {

@@ -19,8 +19,23 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+type stableOnlyServiceTargetServer struct {
+	azdext.ServiceTargetServiceServer
+}
+
+func (s *stableOnlyServiceTargetServer) Stream(stream azdext.ServiceTargetService_StreamServer) error {
+	method, _ := grpc.Method(stream.Context())
+	if method != "/azd.extensions.v1.ServiceTargetService/Stream" {
+		return status.Errorf(codes.Unimplemented, "preview integration requires the stable v1 route, got %q", method)
+	}
+	return s.ServiceTargetServiceServer.Stream(stream)
+}
 
 type foundryPreviewProject struct {
 	azdext.UnimplementedProjectServiceServer
@@ -171,7 +186,7 @@ func TestFoundryExtensionPreviewAgainstMainHost(t *testing.T) {
 		ioc.NewNestedContainer(nil), newStreamTestExtensionManager(t, extension), nil,
 	).(*ServiceTargetService)
 	server := newServerWithContainerService(azdext.UnimplementedContainerServiceServer{})
-	server.serviceTargetService = service
+	server.serviceTargetService = &stableOnlyServiceTargetServer{ServiceTargetServiceServer: service}
 	server.projectService = &foundryPreviewProject{project: &azdext.ProjectConfig{Path: root, Services: services}}
 	server.environmentService = &foundryPreviewEnvironment{}
 	server.accountService = &foundryPreviewAccount{}
@@ -393,7 +408,7 @@ func TestFoundryProjectPreviewAgainstMainHost(t *testing.T) {
 	manager := newStreamTestExtensionManager(t, extension)
 	service := NewServiceTargetService(container, manager, nil).(*ServiceTargetService)
 	server := newServerWithContainerService(azdext.UnimplementedContainerServiceServer{})
-	server.serviceTargetService = service
+	server.serviceTargetService = &stableOnlyServiceTargetServer{ServiceTargetServiceServer: service}
 	server.provisioningService = NewProvisioningService(container, manager)
 	server.validationService = NewValidationService(manager)
 	server.eventService = NewEventService(manager, nil, lazy.NewLazy(func() (*project.ProjectConfig, error) {

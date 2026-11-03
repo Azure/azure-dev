@@ -12,7 +12,10 @@ project type. Use --start-command to override both.
 
 By default, this also opens a local client after the agent starts listening:
 Agent Inspector for responses/invocations agents, or the Microsoft 365 Agents
-Playground for activity agents. Use --no-client to skip this.
+Playground for activity agents. A2A-only agents run without a browser client
+and reject --inspector-port. Test them from another terminal with
+'azd ai agent invoke --local -p a2a'.
+Use --no-client to skip launching a client for other agents.
 
 Usage
   azd ai agent run [name] [flags]

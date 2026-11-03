@@ -6,6 +6,8 @@ package exec
 import (
 	"fmt"
 	"os/exec"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/exec/internal/process"
 )
 
 // RunResult is the result of running a command.
@@ -40,14 +42,29 @@ type ExitError struct {
 
 	// The underlying exec.ExitError.
 	err exec.ExitError
+
+	cause error
 }
 
+// NewExitError creates an ExitError from an os/exec exit failure.
 func NewExitError(
 	exitErr exec.ExitError,
 	cmd string,
 	stdOut string,
 	stdErr string,
-	outputAvailable bool) error {
+	outputAvailable bool,
+) error {
+	return newExitError(exitErr, cmd, stdOut, stdErr, outputAvailable, nil)
+}
+
+func newExitError(
+	exitErr exec.ExitError,
+	cmd string,
+	stdOut string,
+	stdErr string,
+	outputAvailable bool,
+	cause error,
+) *ExitError {
 	return &ExitError{
 		ExitCode:        exitErr.ExitCode(),
 		Cmd:             cmd,
@@ -55,6 +72,7 @@ func NewExitError(
 		stdOut:          stdOut,
 		stdErr:          stdErr,
 		outputAvailable: outputAvailable,
+		cause:           cause,
 	}
 }
 
@@ -75,4 +93,18 @@ func (e *ExitError) Error() string {
 	}
 
 	return fmt.Sprintf("%s, stdout: %s, stderr: %s", errorPrefix, e.stdOut, e.stdErr)
+}
+
+// Interrupted reports whether the process exit represents a Ctrl+C interrupt.
+func (e *ExitError) Interrupted() bool {
+	if e == nil {
+		return false
+	}
+
+	return process.IsInterruptExit(&e.err, e.ExitCode)
+}
+
+// Unwrap returns additional execution failures, including context cancellation.
+func (e *ExitError) Unwrap() error {
+	return e.cause
 }

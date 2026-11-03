@@ -51,7 +51,8 @@ type PermissionCheckResult struct {
 // "Microsoft.Authorization/roleAssignments/write".
 //
 // The check is performed by:
-//  1. Listing all role assignments for the principal on the subscription.
+//  1. Listing role assignments for the principal at or above the subscription scope,
+//     excluding assignments at child resource-group and resource scopes.
 //  2. Retrieving the role definition for each assignment.
 //  3. Checking that the required actions are included in at least one role's
 //     effective permissions (Actions minus NotActions). NotActions are evaluated
@@ -68,7 +69,8 @@ func (s *PermissionsService) HasRequiredPermissions(
 		return PermissionCheckResult{}, fmt.Errorf("getting credential for subscription %s: %w", subscriptionId, err)
 	}
 
-	// Create a role assignments client to list the principal's role assignments at subscription scope.
+	// Create a role assignments client to list the principal's role assignments that apply
+	// at the subscription scope without including assignments from child scopes.
 	roleAssignmentsClient, err := armauthorization.NewRoleAssignmentsClient(
 		subscriptionId, credential, s.armClientOptions,
 	)
@@ -84,7 +86,7 @@ func (s *PermissionsService) HasRequiredPermissions(
 
 	// Collect role assignments with metadata about conditions.
 	subscriptionScope := fmt.Sprintf("/subscriptions/%s", subscriptionId)
-	filter := fmt.Sprintf("assignedTo('%s')", principalId)
+	filter := fmt.Sprintf("atScope() and assignedTo('%s')", principalId)
 	pager := roleAssignmentsClient.NewListForScopePager(
 		subscriptionScope,
 		&armauthorization.RoleAssignmentsClientListForScopeOptions{

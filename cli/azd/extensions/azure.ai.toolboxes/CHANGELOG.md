@@ -1,5 +1,17 @@
 # Release History
 
+## 1.0.0-beta.13 (2026-10-29)
+
+### Bugs Fixed
+
+- [[#10753]](https://github.com/Azure/azure-dev/pull/10753) Fix HTTP 403 failures during toolbox creation and deployment by preparing developer data-plane access to newly provisioned Foundry projects.
+
+## 1.0.0-beta.12 (2026-10-23)
+
+### Other Changes
+
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+
 ## 1.0.0-beta.11 (2026-10-15)
 
 ### Bugs Fixed

@@ -1,0 +1,30 @@
+# Tier 0: reject an ambiguous replacement before any local writes.
+name: "init-adopt-headless-replacement"
+command: 'azd ai agent init -t "{fixtures_dir}/adopt-model-replacement/azure.yaml" --src . --model-deployment existing-chat --no-prompt'
+cwd: "~/working/azd-agents-adopt-headless-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+pre:
+  - run: "rm -rf ~/working/azd-agents-adopt-headless-{instance}"
+    cwd: "~/working"
+    name: "reset isolated adoption working dir"
+
+goals:
+  - >-
+    Confirm init exits non-zero without showing any interactive prompt or attempting
+    Azure authentication. The error must name --model-deployment, existing-chat,
+    template-chat, and template-embed, and explain that the replaced template
+    deployment cannot be determined.
+  - >-
+    Confirm the suggestion says to run azd ai agent init without --no-prompt
+    to choose the template deployment.
+  - >-
+    Confirm the working directory contains neither azure.yaml nor .azure after
+    the error. No project files or environment may be created.
+  - "Take a screenshot of the final error output."
+  - >-
+    Report a finding if init prompts, authenticates, succeeds, omits the recovery
+    suggestion, or leaves project files or an environment behind.

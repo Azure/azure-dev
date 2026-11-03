@@ -523,7 +523,7 @@ func Test_askOnePrompt_Select_StringResponse(t *testing.T) {
 		Options: []string{"alpha", "beta"},
 	}
 	var result string
-	err := askOnePrompt(prompt, &result, false, w, r)
+	err := askOnePrompt(prompt, &result, false, w, r, false)
 
 	require.NoError(t, err)
 	require.Equal(t, "beta", result)
@@ -538,7 +538,7 @@ func Test_askOnePrompt_Select_BadResponseType(t *testing.T) {
 		Options: []string{"alpha"},
 	}
 	var result float64
-	err := askOnePrompt(prompt, &result, false, w, r)
+	err := askOnePrompt(prompt, &result, false, w, r, false)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "bad type")
@@ -554,7 +554,7 @@ func Test_askOnePrompt_MultiSelect_BadDefaultType(t *testing.T) {
 		Default: "not-a-slice",
 	}
 	var result []string
-	err := askOnePrompt(prompt, &result, false, w, r)
+	err := askOnePrompt(prompt, &result, false, w, r, false)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not a string list")

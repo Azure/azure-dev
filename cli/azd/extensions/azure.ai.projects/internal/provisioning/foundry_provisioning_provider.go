@@ -93,6 +93,7 @@ type FoundryProvisioningProvider struct {
 	// only declared model deployments and supporting ACR resources are provisioned.
 	brownfieldEndpoint        string
 	existingProjectReuseOnly  bool
+	reuseOnlyDeclarations     []synthesis.Deployment
 	existingProjectID         string
 	existingAcrMode           string
 	existingAcrEndpoint       string
@@ -104,6 +105,7 @@ type FoundryProvisioningProvider struct {
 
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
+	armClientOptions *arm.ClientOptions
 }
 
 func readProjectFile(projectRoot string) ([]byte, string, error) {
@@ -324,6 +326,9 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	if endpoint != "" && !onDisk {
+		if err := p.resolveEnvName(ctx); err != nil {
+			return err
+		}
 		existingResult, synthErr := synthesis.SynthesizeExistingProject(synthesis.Input{
 			RawAzureYAML:    rawYAML,
 			ServiceName:     svcName,
@@ -335,16 +340,28 @@ func (p *FoundryProvisioningProvider) Initialize(
 		if synthErr != nil {
 			return foundrySynthesisError(svcName, synthErr)
 		}
+		p.reuseOnlyDeclarations, _ = existingResult.Parameters["deployments"].([]synthesis.Deployment)
+		if deployments, present, err := p.projectDeployments(ctx); err != nil {
+			return err
+		} else if present {
+			existingResult.Parameters["deployments"] = deployments
+		}
 		if !existingProjectHasMutations(existingResult) {
 			p.brownfieldEndpoint = endpoint
 			p.existingProjectReuseOnly = true
 			p.synthResult = existingResult
 			p.foundryName = projectNameFromEndpoint(endpoint)
-			return p.resolveEnvName(ctx)
+			return nil
 		}
 	}
-	// Resolve the project environment before synthesizing infrastructure inputs.
-	err = p.resolveEnv(ctx)
+	return p.initializeInfrastructure(ctx, rawYAML, projectRoot, svcName, endpoint, onDisk)
+}
+
+func (p *FoundryProvisioningProvider) initializeInfrastructure(
+	ctx context.Context, rawYAML []byte, projectRoot, svcName, endpoint string, onDisk bool,
+) error {
+	// Resolve environment values before synthesizing inputs.
+	err := p.resolveEnv(ctx)
 	if err != nil {
 		return err
 	}
@@ -414,6 +431,37 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 	p.armTemplate = tmpl
 
+	return nil
+}
+
+func (p *FoundryProvisioningProvider) refreshReuseOnlyDeployments(ctx context.Context) error {
+	if !p.existingProjectReuseOnly {
+		return nil
+	}
+	deployments, present, err := p.projectDeployments(ctx)
+	if err != nil {
+		return err
+	}
+	if !present {
+		deployments = p.reuseOnlyDeclarations
+	}
+	if len(deployments) == 0 {
+		return nil
+	}
+	raw, _, err := readProjectFile(p.projectPath)
+	if err != nil {
+		return err
+	}
+	serviceName, err := findFoundryProjectService(raw)
+	if err != nil {
+		return err
+	}
+	if err := p.initializeInfrastructure(
+		ctx, raw, p.projectPath, serviceName, p.brownfieldEndpoint, false,
+	); err != nil {
+		return err
+	}
+	p.existingProjectReuseOnly = false
 	return nil
 }
 
@@ -1092,6 +1140,9 @@ func (p *FoundryProvisioningProvider) State(
 	ctx context.Context,
 	options *azdext.ProvisioningStateOptions,
 ) (*azdext.ProvisioningStateResult, error) {
+	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
+		return nil, err
+	}
 	if p.existingProjectReuseOnly {
 		if err := p.resolveReuseOnlyTenant(ctx); err != nil {
 			return nil, err
@@ -1134,6 +1185,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDeployResult, error) {
+	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
+		return nil, err
+	}
 	if p.existingProjectReuseOnly {
 		if err := p.resolveReuseOnlyTenant(ctx); err != nil {
 			return nil, err
@@ -1156,6 +1210,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
+		return nil, err
+	}
+	if err := p.prepareBYO(ctx, src); err != nil {
 		return nil, err
 	}
 
@@ -1327,11 +1384,26 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 		)
 	}
 
+	parameters := p.armParameters()
+	if deployments, present, err := p.projectDeployments(ctx); err != nil {
+		return nil, err
+	} else if present {
+		parameters["deployments"] = map[string]any{"value": deployments}
+	}
 	return &templateSource{
 		mode:        templateModeEmbedded,
 		armTemplate: p.armTemplate,
-		parameters:  p.armParameters(),
+		parameters:  parameters,
 	}, nil
+}
+
+func (p *FoundryProvisioningProvider) projectDeployments(
+	ctx context.Context,
+) ([]synthesis.Deployment, bool, error) {
+	if p.azdClient == nil {
+		return DecodeProjectDeployments(p.virtualEnv[ProjectDeploymentsEnvKey])
+	}
+	return ReadProjectDeployments(ctx, p.azdClient, p.envName)
 }
 
 // bicepCli lazily constructs a *bicep.Cli using azd-core's download-on-demand
@@ -1419,6 +1491,9 @@ func (p *FoundryProvisioningProvider) Preview(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
+	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
+		return nil, err
+	}
 	if p.existingProjectReuseOnly {
 		progress("Using existing Foundry project; nothing to provision")
 		return &azdext.ProvisioningPreviewResult{
@@ -1429,6 +1504,9 @@ func (p *FoundryProvisioningProvider) Preview(
 
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
+		return nil, err
+	}
+	if err := p.prepareBYO(ctx, src); err != nil {
 		return nil, err
 	}
 
@@ -2020,6 +2098,9 @@ func (p *FoundryProvisioningProvider) Parameters(
 func (p *FoundryProvisioningProvider) PlannedOutputs(
 	ctx context.Context,
 ) ([]*azdext.ProvisioningPlannedOutput, error) {
+	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
+		return nil, err
+	}
 	names := greenfieldOutputNames
 	if p.existingProjectReuseOnly {
 		names = []string{"AZURE_AI_PROJECT_NAME", "FOUNDRY_PROJECT_ENDPOINT"}
@@ -2095,7 +2176,11 @@ func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*a
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	options := p.armClientOptions
+	if p.synthResult != nil && p.synthResult.Hosting != nil {
+		options = byoARMOptions(options)
+	}
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, options)
 	if err != nil {
 		return nil, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,

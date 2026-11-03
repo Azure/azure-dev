@@ -250,8 +250,8 @@ func (m promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
 	if m.promptType == PromptTypeSelect || m.promptType == PromptTypeMultiSelect {
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			// Only handle printable characters for filter
-			if len(keyMsg.String()) == 1 && keyMsg.String() >= " " {
-				m.filterText += keyMsg.String()
+			if len(keyMsg.Text) == 1 && keyMsg.Text >= " " {
+				m.filterText += keyMsg.Text
 				m.updateFilter()
 				return m, nil
 			}

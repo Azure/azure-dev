@@ -23,6 +23,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/telemetry"
 
@@ -47,6 +48,7 @@ type invokeFlags struct {
 	conversation    string
 	newConversation bool
 	protocol        string
+	a2aVersion      string
 	agentEndpoint   string
 	version         string
 	outputFmt       string
@@ -55,6 +57,9 @@ type invokeFlags struct {
 	longRunning     bool
 	noWait          bool
 	debugLatency    bool
+
+	// Preserve explicit empty/false local A2A options across protocol resolution.
+	localA2AExplicitFlags []string
 }
 
 func (f *invokeFlags) forceNewConversation() bool {
@@ -83,6 +88,9 @@ type InvokeAction struct {
 	endpoint              *parsedAgentEndpoint
 	clientHeaders         http.Header
 	invocationsTransport  http.RoundTripper
+	a2aTransport          http.RoundTripper
+	a2aWriter             io.Writer
+	a2aErrorWriter        io.Writer
 	protocolServiceName   string
 	resolvedRemoteContext *remoteContext
 	resolvedBody          []byte
@@ -113,38 +121,32 @@ redeploying or bypassed with --protocol. Otherwise the agent definition is
 used. If neither identifies exactly one invocable protocol, pass --protocol
 explicitly.
 
-Voice Agents:
-For prompt voice agents and hosted voice wrappers, open your agent in the
-Microsoft Foundry portal at https://ai.azure.com to try it.
-For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
-'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
-hosted agent protocols such as responses, invocations, and a2a.
-
-Request Body:
+` + invokeVoiceHelp + `Request Body:
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
 or large payloads with the invocations protocol, or for sending a complete
 JSON-RPC request with the a2a protocol.
 
-Local Development:
+` + invokeA2AVersionHelp + `Local Development:
 Use --local to target a locally running agent (started via 'azd ai agent run')
-instead of Foundry. The a2a protocol is remote-only and cannot be used with
---local.
+instead of Foundry. With -p a2a, the server must expose POST /a2a.
+Local A2A sends no Foundry headers and persists no session state. It rejects
+--session-id, --new-session, --conversation-id, --new-conversation,
+--version, --user-identity, --call-id, or --client-header. Use A2A
+contextId/taskId in a request file for protocol-level continuity.
 
 Sessions & Identity:
-Sessions are persisted per-agent — consecutive invokes reuse the same
-session automatically. Pass --new-session to force a reset.
+Except for local A2A, sessions are persisted per-agent — consecutive invokes
+reuse the same session automatically. Pass --new-session to force a reset.
 
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
-For agents configured with header-based isolation, pass --user-identity
-on each invoke. Locally it is sent as the x-agent-user-id header; for
-remote invokes it is sent as the x-ms-user-identity header.
+For header-based isolation, --user-identity sends x-agent-user-id with local
+responses/invocations or x-ms-user-identity with remote requests.
 
-Use --call-id to send a call ID with a local invoke. It is sent as the
-x-agent-foundry-call-id header and applies only to local invocations; it is
-ignored for remote requests.
+Use --call-id with local responses/invocations to send x-agent-foundry-call-id.
+It is ignored for remote requests. Both flags are rejected for local A2A.
 
 Use --client-header to send custom x-client-* request headers in "Name: Value"
 format (repeatable). The responses and invocations protocols forward the
@@ -158,6 +160,9 @@ line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
+For completed A2A Tasks, default output prefers answer artifacts over generic
+status messages such as "Done". Other Tasks prefer status messages, falling
+back to artifacts when no status text is present. History is the final fallback.
 
 Platform Latency:
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
@@ -167,13 +172,7 @@ and the summary. This is independent of the global --debug logging flag.
 Local, prompt-agent, and a2a invokes do not collect platform latency.
 Explicit --debug-latency=true is rejected for these routes; omit the flag
 or use --debug-latency=false.
-Raw output includes the returned headers without a formatted latency summary.
-
-Long-running Invocations:
-Use --long-running with the Responses protocol to start work that continues running in
-the service if this command disconnects. The command remains attached until the work
-finishes. Add --no-wait to return after azd receives the Response ID.
-This option does not provide crash recovery or automatic reconnection.`,
+Raw output includes the returned headers without a formatted latency summary.` + invokeLongRunningHelp,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -182,13 +181,7 @@ This option does not provide crash recovery or automatic reconnection.`,
 
   # Invoke using a specific protocol
   azd ai agent invoke --protocol invocations "Hello!"
-
-  # Invoke a deployed agent over the a2a protocol
-  azd ai agent invoke --protocol a2a "Hello!"
-
-  # Invoke the a2a protocol with a complete JSON-RPC request from a file
-  azd ai agent invoke --protocol a2a -f a2a-request.json
-
+` + invokeA2APreviewExamples + `
   # Invoke with a file as the request body
   azd ai agent invoke -f request.json
 
@@ -200,13 +193,7 @@ This option does not provide crash recovery or automatic reconnection.`,
 
   # Invoke a specific agent locally (useful in multi-agent projects)
   azd ai agent invoke my-agent --local "Hello!"
-
-  # Start background work and remain attached until it finishes
-  azd ai agent invoke --long-running "Run the long task"
-
-  # Start background work and return after its Response ID is received
-  azd ai agent invoke --long-running --no-wait "Run the long task"
-
+` + invokeLongRunningExamples[0] + invokeLongRunningExamples[1] + `
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
 
@@ -229,40 +216,22 @@ This option does not provide crash recovery or automatic reconnection.`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-
-			// The inherited global --output flag is parsed and validated by the
-			// extension SDK (see azdext.RegisterFlagOptions below). Snapshot the
-			// resolved value into our flags struct so the rest of this action
-			// reads a single field.
-			flags.outputFmt = extCtx.OutputFormat
-
-			switch len(args) {
-			case 2:
-				flags.name = args[0]
-				flags.message = args[1]
-			case 1:
-				// Single arg could be a name (when -f is used) or a message
-				if flags.inputFile != "" {
-					flags.name = args[0]
-				} else {
-					flags.message = args[0]
-				}
-			case 0:
-				// Only valid when -f is provided
+			*flags = resolveInvokeArgs(*flags, args, extCtx.OutputFormat)
+			captureLocalA2AExplicitFlags(cmd, flags)
+			a2aPreview, err := featureflags.IsEnabled(featureflags.A2A)
+			if err != nil {
+				return err
 			}
-
+			if err := validateInvokeArgs(cmd, flags, a2aPreview); err != nil {
+				return err
+			}
+			flags.version = strings.TrimSpace(flags.version)
 			action := &InvokeAction{
 				flags:                flags,
 				noPrompt:             extCtx.NoPrompt,
 				debugLatencyExplicit: cmd.Flags().Changed("debug-latency"),
 			}
-
-			// Agent-endpoint structural conflicts are surfaced first so the user sees
-			// the precise reason their invocation cannot proceed.
 			if flags.agentEndpoint != "" {
-				if err := validateAgentEndpointFlags(cmd, flags); err != nil {
-					return err
-				}
 				parsed, err := parseAgentEndpoint(flags.agentEndpoint)
 				if err != nil {
 					return err
@@ -271,109 +240,11 @@ This option does not provide crash recovery or automatic reconnection.`,
 				flags.name = parsed.AgentName
 				action.endpoint = parsed
 			}
-
-			if flags.inputFile != "" && flags.message != "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"cannot use --input-file and a message argument together",
-					"provide either a message argument or --input-file, not both",
-				)
-			}
-			if flags.inputFile == "" && flags.message == "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"a message argument or --input-file is required",
-					"provide a message as a positional argument, or use --input-file/-f to send a file",
-				)
-			}
-
-			if err := validateInvokeVersionFlags(cmd, flags); err != nil {
-				return err
-			}
-
-			if cmd.Flags().Changed("conversation-id") && strings.TrimSpace(flags.conversation) == "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"--conversation-id cannot be empty",
-					"provide a valid conversation ID or omit --conversation-id",
-				)
-			}
-
-			if flags.forceNewConversation() && flags.conversation != "" {
-				return exterrors.Validation(
-					exterrors.CodeConflictingArguments,
-					"cannot use conversation reset flags with --conversation-id",
-					"remove --conversation-id to start a new conversation, or remove the reset flag to reuse it",
-				)
-			}
-
-			if flags.protocol != "" {
-				p := agent_api.AgentProtocol(flags.protocol)
-				if !p.IsInvocable() {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
-						"supported protocols are: responses, invocations, a2a",
-					)
-				}
-				if flags.local && !p.IsLocalInvocable() {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						fmt.Sprintf("the %s protocol cannot be invoked against a local agent", flags.protocol),
-						"omit --local to invoke the deployed agent, "+
-							"or use --protocol responses/invocations for local invocation",
-					)
-				}
-			}
-
 			clientHeaders, err := parseCustomHeaders(flags.clientHeaders)
 			if err != nil {
 				return err
 			}
-			// A2A routes through a translating proxy with its own fixed header
-			// set and does not propagate x-client-* to the agent, so accepting
-			// the flag there would silently drop the headers.
-			if len(clientHeaders) > 0 && agent_api.AgentProtocol(flags.protocol) == agent_api.AgentProtocolA2A {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"--client-header is not supported with the a2a protocol",
-					"the a2a protocol does not forward x-client-* headers to the agent; "+
-						"use --protocol responses or invocations to send client headers",
-				)
-			}
 			action.clientHeaders = clientHeaders
-
-			if flags.noWait && !flags.longRunning {
-				return exterrors.Validation(
-					exterrors.CodeConflictingArguments,
-					"--no-wait requires --long-running",
-					"add --long-running or remove --no-wait",
-				)
-			}
-			if flags.longRunning {
-				if cmd.Flags().Changed("timeout") {
-					return exterrors.Validation(
-						exterrors.CodeConflictingArguments,
-						"--timeout cannot be used with --long-running",
-						"remove --timeout; background Responses remain attached until completion or interruption",
-					)
-				}
-				if flags.local {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--long-running is supported only for remote Responses agents",
-						"remove --local and invoke a deployed Responses agent",
-					)
-				}
-				if flags.outputFmt == outputRaw {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--output raw is not supported with --long-running",
-						"remove --output raw so azd can save the Response identity",
-					)
-				}
-			}
-
 			return action.Run(ctx)
 		},
 	}
@@ -386,6 +257,8 @@ This option does not provide crash recovery or automatic reconnection.`,
 		"Protocol to use: responses, invocations, or a2a. "+
 			"Auto-detected from deployment data or the agent definition; "+
 			"pass --protocol when it cannot be determined.")
+	cmd.Flags().StringVar(&flags.a2aVersion, "a2a-version", "",
+		"A2A wire version: 0.3 or 1.0. Defaults to 1.0 for messages; required with --input-file for a2a.")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,
@@ -399,11 +272,12 @@ This option does not provide crash recovery or automatic reconnection.`,
 	cmd.Flags().StringVar(&flags.conversation, "conversation-id", "", "Explicit conversation ID override")
 	cmd.Flags().BoolVar(&flags.newConversation, "new-conversation", false, "Force a new conversation (discard saved one)")
 	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
+	cmd.Flags().Lookup("user-identity").Usage += "; not supported with local a2a"
 	cmd.Flags().StringVar(
 		&flags.callID,
 		"call-id",
 		"",
-		"Call ID header value (sent as "+agent_api.AgentFoundryCallIDHeader+" for local invocations only; "+
+		"Call ID header value (sent as "+agent_api.AgentFoundryCallIDHeader+" for local responses/invocations only; "+
 			"ignored for remote requests)",
 	)
 	cmd.Flags().StringArrayVar(
@@ -452,7 +326,221 @@ This option does not provide crash recovery or automatic reconnection.`,
 		Default:       outputDefault,
 	})
 
+	gateAgentServices(cmd)
+	validateBeforePreview(cmd, func(cmd *cobra.Command, args []string) error {
+		resolved := resolveInvokeArgs(*flags, args, extCtx.OutputFormat)
+		a2aPreview, err := featureflags.IsEnabled(featureflags.A2A)
+		if err != nil {
+			return err
+		}
+		return validateInvokeArgs(cmd, &resolved, a2aPreview)
+	})
+	previewFlag(cmd, "a2a-version", featureflags.A2A)
+	previewHelp(cmd, featureflags.A2A, []string{invokeA2AVersionHelp}, nil)
+	previewHelpText(cmd, featureflags.A2A, invokeA2APreviewExamples, invokeA2ALegacyExamples)
+	previewFlag(cmd, "long-running", featureflags.LongRunning)
+	previewFlag(cmd, "no-wait", featureflags.LongRunning)
+	previewHelp(cmd, featureflags.LongRunning, []string{invokeLongRunningHelp}, invokeLongRunningExamples)
+	previewHelp(cmd, featureflags.Voice, []string{invokeVoiceHelp}, nil)
+
 	return cmd
+}
+
+const invokeA2AVersionHelp = `A2A Version:
+Use -p a2a with --a2a-version to select public A2A version 0.3 or 1.0,
+not a Foundry API version or the deployed agent version selected by --version.
+For plain messages, azd composes the body and A2A-Version header together,
+so 1.0 is a convenience default. With --input-file, --a2a-version is always
+required, even if native A2A agent YAML declares a version. File bytes are
+sent unchanged as a complete public JSON-RPC request. The caller must match
+the body to the selected header version; azd does not infer the version.
+With the preview disabled, messages and files use 0.3 without --a2a-version.
+A2A 0.3 uses non-blocking defaults; 1.0 waits for completion or user action.
+The CLI prints a single response without polling.
+Formatted A2A output expects non-streaming JSON-RPC responses. For streaming
+requests, use --output raw to stream unparsed SSE events.
+
+`
+
+const invokeA2APreviewExamples = `
+  # Invoke a deployed agent with an explicit public A2A version
+  azd ai agent invoke -p a2a --a2a-version 1.0 "Hello!"
+
+  # Invoke using public A2A 0.3
+  azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"
+
+  # Use the A2A 1.0 convenience default for a plain message
+  azd ai agent invoke -p a2a "Hello!"
+
+  # Send a complete public JSON-RPC file unchanged (version is required)
+  azd ai agent invoke -p a2a --a2a-version 1.0 -f a2a-request-1.0.json
+`
+
+const invokeA2ALegacyExamples = `
+  # Invoke a deployed agent over the a2a protocol
+  azd ai agent invoke --protocol a2a "Hello!"
+
+  # Invoke the a2a protocol with a complete JSON-RPC request from a file
+  azd ai agent invoke --protocol a2a -f a2a-request.json
+`
+
+const invokeVoiceHelp = `Voice Agents:
+For prompt voice agents and hosted voice wrappers, open your agent in the
+Microsoft Foundry portal at https://ai.azure.com to try it. GPT Live agents use
+the native /voice/live/sessions protocol and require a GPT Live-compatible client.
+For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
+'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
+hosted agent protocols such as responses, invocations, and a2a.
+
+`
+
+const invokeLongRunningHelp = `
+
+Long-running Invocations:
+Use --long-running with the Responses protocol to start work that continues running in
+the service if this command disconnects. The command remains attached until the work
+finishes. Add --no-wait to return after azd receives the Response ID.
+This option does not provide crash recovery or automatic reconnection.`
+
+var invokeLongRunningExamples = []string{`
+  # Start background work and remain attached until it finishes
+  azd ai agent invoke --long-running "Run the long task"
+`, `
+  # Start background work and return after its Response ID is received
+  azd ai agent invoke --long-running --no-wait "Run the long task"
+`}
+
+func resolveInvokeArgs(flags invokeFlags, args []string, outputFormat string) invokeFlags {
+	flags.outputFmt = outputFormat
+	switch len(args) {
+	case 2:
+		flags.name, flags.message = args[0], args[1]
+	case 1:
+		if flags.inputFile != "" {
+			flags.name = args[0]
+		} else {
+			flags.message = args[0]
+		}
+	}
+	return flags
+}
+
+func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags, a2aPreview bool) error {
+	flags := *input
+	captureLocalA2AExplicitFlags(cmd, &flags)
+	if flags.local {
+		if err := validateLocalInvokePort(flags.port); err != nil {
+			return err
+		}
+	}
+	if err := validateLocalA2AOptions(&flags, agent_api.AgentProtocol(flags.protocol)); err != nil {
+		return err
+	}
+	if flags.agentEndpoint != "" {
+		if err := validateAgentEndpointFlags(cmd, &flags); err != nil {
+			return err
+		}
+		parsed, err := parseAgentEndpoint(flags.agentEndpoint)
+		if err != nil {
+			return err
+		}
+		flags.protocol = string(parsed.Protocol)
+		flags.name = parsed.AgentName
+	}
+	if flags.inputFile != "" && flags.message != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"cannot use --input-file and a message argument together",
+			"provide either a message argument or --input-file, not both",
+		)
+	}
+	if flags.inputFile == "" && flags.message == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"a message argument or --input-file is required",
+			"provide a message as a positional argument, or use --input-file/-f to send a file",
+		)
+	}
+	if err := validateInvokeVersionFlags(cmd, &flags); err != nil {
+		return err
+	}
+	if cmd.Flags().Changed("conversation-id") && strings.TrimSpace(flags.conversation) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--conversation-id cannot be empty",
+			"provide a valid conversation ID or omit --conversation-id",
+		)
+	}
+	if flags.forceNewConversation() && flags.conversation != "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"cannot use conversation reset flags with --conversation-id",
+			"remove --conversation-id to start a new conversation, or remove the reset flag to reuse it",
+		)
+	}
+	if flags.protocol != "" {
+		p := agent_api.AgentProtocol(flags.protocol)
+		if !p.IsInvocable() {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
+				"supported protocols are: responses, invocations, a2a",
+			)
+		}
+	}
+	if cmd.Flags().Changed("a2a-version") && flags.a2aVersion == "" {
+		return validateA2AVersion(flags.a2aVersion)
+	}
+	clientHeaders, err := parseCustomHeaders(flags.clientHeaders)
+	if err != nil {
+		return err
+	}
+	if len(clientHeaders) > 0 && agent_api.AgentProtocol(flags.protocol) == agent_api.AgentProtocolA2A {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--client-header is not supported with the a2a protocol",
+			"the a2a protocol does not forward x-client-* headers to the agent; "+
+				"use --protocol responses or invocations to send client headers",
+		)
+	}
+	if flags.noWait && !flags.longRunning {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--no-wait requires --long-running",
+			"add --long-running or remove --no-wait",
+		)
+	}
+	if flags.longRunning {
+		if cmd.Flags().Changed("timeout") {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--timeout cannot be used with --long-running",
+				"remove --timeout; background Responses remain attached until completion or interruption",
+			)
+		}
+		if flags.local {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--long-running is supported only for remote Responses agents",
+				"remove --local and invoke a deployed Responses agent",
+			)
+		}
+		if flags.outputFmt == outputRaw {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--output raw is not supported with --long-running",
+				"remove --output raw so azd can save the Response identity",
+			)
+		}
+		if flags.protocol != "" && flags.protocol != "responses" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("--long-running is not supported with the %s protocol", flags.protocol),
+				"use a deployed Responses agent or remove --long-running",
+			)
+		}
+	}
+	return validateInvokeA2AVersionFlags(&flags, agent_api.AgentProtocol(flags.protocol), a2aPreview)
 }
 
 func validateInvokeVersionFlags(cmd *cobra.Command, flags *invokeFlags) error {
@@ -549,6 +637,17 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	a2aPreview, err := featureflags.IsEnabled(featureflags.A2A)
+	if err != nil {
+		return err
+	}
+	a2aVersion := resolveA2AVersion(a.flags.a2aVersion, a2aPreview)
+	if err := validateLocalA2AOptions(a.flags, agent_api.AgentProtocol(a.flags.protocol)); err != nil {
+		return err
+	}
+	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocol(a.flags.protocol), a2aPreview); err != nil {
+		return err
+	}
 	if a.flags.inputFile != "" {
 		if _, _, err := a.resolveBody(); err != nil {
 			return err
@@ -569,6 +668,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		defer azdClient.Close()
 		pctx, isPrompt, pErr := resolvePromptAgentService(
 			ctx, azdClient, a.flags.name, a.noPrompt, withVoiceInvocationGuidance(),
+			withPromptModelResolution(),
 		)
 		if pErr != nil {
 			if errors.Is(pErr, errVoiceInvocationUnsupported) {
@@ -582,6 +682,16 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			}
 		}
 		if isPrompt {
+			if a.flags.longRunning || a.flags.noWait {
+				return exterrors.Validation(
+					exterrors.CodeConflictingArguments,
+					"--long-running and --no-wait are not supported for prompt agents",
+					"remove these flags or invoke a hosted Responses agent",
+				)
+			}
+			if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolResponses, a2aPreview); err != nil {
+				return err
+			}
 			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
 				return err
 			}
@@ -591,6 +701,15 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
+		return err
+	}
+	if err := validateInvokeA2AVersionFlags(a.flags, protocol, a2aPreview); err != nil {
+		a.closeResolvedRemoteContextClient()
+		return err
+	}
+
+	if err := validateLocalA2AOptions(a.flags, protocol); err != nil {
+		a.closeResolvedRemoteContextClient()
 		return err
 	}
 
@@ -625,11 +744,14 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	}
 
 	if a.flags.local {
+		if err := a.selectLocalService(ctx); err != nil {
+			return err
+		}
 		switch protocol {
 		case agent_api.AgentProtocolInvocations:
 			return a.invocationsLocal(ctx)
 		case agent_api.AgentProtocolA2A:
-			return a.a2aLocal(ctx)
+			return a.a2aLocal(ctx, a2aVersion)
 		default:
 			return a.responsesLocal(ctx)
 		}
@@ -640,7 +762,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	case agent_api.AgentProtocolInvocations:
 		return a.invocationsRemote(ctx)
 	case agent_api.AgentProtocolA2A:
-		return a.a2aRemote(ctx)
+		return a.a2aRemote(ctx, a2aVersion)
 	default:
 		return a.responsesRemote(ctx)
 	}
@@ -1078,6 +1200,15 @@ func doLocalRequestWithRetry(
 	client *http.Client,
 	newReq func() (*http.Request, error),
 ) (*http.Response, error) {
+	return doLocalRequestWithRetryWriter(ctx, client, newReq, os.Stderr)
+}
+
+func doLocalRequestWithRetryWriter(
+	ctx context.Context,
+	client *http.Client,
+	newReq func() (*http.Request, error),
+	progress io.Writer,
+) (*http.Response, error) {
 	deadline := time.Now().Add(localConnectRetryBudget)
 	backoff := localConnectRetryInitialBackoff
 	notified := false
@@ -1096,7 +1227,7 @@ func doLocalRequestWithRetry(
 		if !notified {
 			// Progress note on stderr keeps raw-mode stdout clean while
 			// reassuring the user we're waiting rather than hung.
-			fmt.Fprintln(os.Stderr, "Waiting for the local agent to accept connections...")
+			fmt.Fprintln(progress, "Waiting for the local agent to accept connections...")
 			notified = true
 		}
 		select {

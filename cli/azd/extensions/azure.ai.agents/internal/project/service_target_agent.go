@@ -201,6 +201,7 @@ var _ azdext.ServiceTargetProvider = &AgentServiceTargetProvider{}
 // AgentServiceTargetProvider is a minimal implementation of ServiceTargetProvider for demonstration
 type AgentServiceTargetProvider struct {
 	azdClient           *azdext.AzdClient
+	deploymentReporter  foundryTelemetry.Reporter
 	serviceConfig       *azdext.ServiceConfig
 	agentDefinitionPath string
 	agentDefinitionRef  string
@@ -230,10 +231,16 @@ const (
 )
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
-func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
-	return &AgentServiceTargetProvider{
+func NewAgentServiceTargetProvider(
+	azdClient *azdext.AzdClient, reporters ...foundryTelemetry.Reporter,
+) azdext.ServiceTargetProvider {
+	provider := &AgentServiceTargetProvider{
 		azdClient: azdClient,
 	}
+	if len(reporters) > 0 {
+		provider.deploymentReporter = reporters[0]
+	}
+	return provider
 }
 
 // Initialize stores and validates the service config. Heavy work such as
@@ -1647,14 +1654,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 				"use a supported kind: 'hosted'",
 			)
 		}
-		if agentDef.EnableMemorySnapshot != nil && *agentDef.EnableMemorySnapshot && p.azdClient != nil {
+		if agentDef.EnableMemorySnapshot != nil && *agentDef.EnableMemorySnapshot && p.deploymentReporter != nil {
 			defer func() {
 				if serviceResult == nil && deployErr == nil {
 					return
 				}
-				usage := foundryTelemetry.NewReporter(p.azdClient.Telemetry(), &foundryTelemetry.Options{Timeout: time.Second})
-				usage.Report(context.WithoutCancel(ctx),
-					agentTelemetry.AgentSnapshotDeployCompleted(deployErr, time.Since(startedAt)))
+				p.deploymentReporter.Report(ctx,
+					agentTelemetry.AgentSnapshotDeployCompleted(ctx, deployErr, time.Since(startedAt)))
 			}()
 		}
 		if err := validateEnvironmentVariableNames(

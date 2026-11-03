@@ -14,6 +14,7 @@ import (
 	"azureaiagent/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -143,7 +144,7 @@ func TestAgentSnapshotDeployCompleted(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			event := AgentSnapshotDeployCompleted(tc.err, 1250*time.Millisecond)
+			event := AgentSnapshotDeployCompleted(t.Context(), tc.err, 1250*time.Millisecond)
 			require.Equal(t, "agent.snapshot.deploy.completed", event.Name)
 			require.Equal(t, map[string]string{
 				"agent.memory_snapshot": "true", "agent.deploy.outcome": tc.outcome,
@@ -154,5 +155,93 @@ func TestAgentSnapshotDeployCompleted(t *testing.T) {
 			}
 		})
 	}
-	require.Equal(t, "0", AgentSnapshotDeployCompleted(nil, -time.Second).Attributes["agent.deploy.duration_ms"])
+	require.Equal(t, "0", AgentSnapshotDeployCompleted(t.Context(), nil, -time.Second).Attributes["agent.deploy.duration_ms"])
+}
+
+func TestAgentSnapshotDeployRequestTermination(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		cause         error
+		deploymentErr error
+		outcome       string
+	}{
+		{"host deadline", context.DeadlineExceeded, context.Canceled, "timeout"},
+		{"cancelled environment lookup", context.Canceled,
+			exterrors.Dependency(exterrors.CodeEnvironmentValuesFailed, "lookup failed", "retry"), "cancelled"},
+		{"deadline environment lookup", context.DeadlineExceeded,
+			exterrors.Dependency(exterrors.CodeEnvironmentValuesFailed, "lookup failed", "retry"), "timeout"},
+		{"successful return remains successful", context.Canceled, nil, "succeeded"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(nil)
+			cancel(tc.cause)
+			event := AgentSnapshotDeployCompleted(ctx, tc.deploymentErr, time.Second)
+			require.Equal(t, tc.outcome, event.Attributes["agent.deploy.outcome"])
+		})
+	}
+}
+
+type blockingDeploymentReporter struct {
+	started  chan struct{}
+	finished chan struct{}
+}
+
+func (reporter *blockingDeploymentReporter) Report(ctx context.Context, _ foundryTelemetry.Event) {
+	close(reporter.started)
+	<-ctx.Done()
+	close(reporter.finished)
+}
+
+func TestDeploymentReporterDoesNotBlockRequest(t *testing.T) {
+	sink := &blockingDeploymentReporter{started: make(chan struct{}), finished: make(chan struct{})}
+	reporter := NewDeploymentReporter(sink)
+	t.Cleanup(reporter.Close)
+	ctx, cancel := context.WithCancelCause(t.Context())
+	defer cancel(nil)
+	cancel(context.DeadlineExceeded)
+	returned := make(chan struct{})
+	go func() {
+		reporter.Report(ctx, AgentSnapshotDeployCompleted(ctx, context.Canceled, time.Second))
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("enqueue waited for the blocked telemetry transport")
+	}
+	<-sink.started
+	reporter.Close()
+	select {
+	case <-sink.finished:
+	default:
+		t.Fatal("reporting worker outlived its bounded drain")
+	}
+	reporter.Report(ctx, foundryTelemetry.Event{})
+	reporter.Close()
+}
+
+func TestDeploymentReporterPreservesSuccessfulReturnNearDeadline(t *testing.T) {
+	sink := &blockingDeploymentReporter{started: make(chan struct{}), finished: make(chan struct{})}
+	reporter := NewDeploymentReporter(sink)
+	t.Cleanup(reporter.Close)
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+	returned := make(chan error, 1)
+	go func() {
+		err := func() error {
+			defer reporter.Report(ctx, AgentSnapshotDeployCompleted(ctx, nil, time.Second))
+			return nil
+		}()
+		returned <- err
+	}()
+	select {
+	case err := <-returned:
+		require.NoError(t, err)
+		require.NoError(t, ctx.Err())
+	case <-ctx.Done():
+		t.Fatal("telemetry delayed the successful result until the service deadline")
+	}
+	<-sink.started
+	reporter.Close()
 }

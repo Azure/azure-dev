@@ -27,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -39,14 +40,36 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 	configureExtensionHostWithTelemetry(host, newAgentContextReporter())
 }
 
-func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryReporter *agentContextReporter) {
+func newAgentListenCommand(telemetryReporter *agentContextReporter) *cobra.Command {
+	var deploymentReporter foundryTelemetry.Reporter
+	command := azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
+		configureExtensionHostWithTelemetry(host, telemetryReporter, deploymentReporter)
+	})
+	run := command.RunE
+	command.RunE = func(cmd *cobra.Command, args []string) error {
+		deploymentReporter = nil
+		client, err := azdext.NewAzdClient()
+		if err == nil {
+			defer client.Close()
+			queue := agentTelemetry.NewDeploymentReporter(foundryTelemetry.NewReporter(client.Telemetry(), nil))
+			deploymentReporter = queue
+			defer queue.Close()
+		}
+		return run(cmd, args)
+	}
+	return command
+}
+
+func configureExtensionHostWithTelemetry(
+	host *azdext.ExtensionHost, telemetryReporter *agentContextReporter, reporters ...foundryTelemetry.Reporter,
+) {
 	azdClient := host.Client()
 	operationReporter := newOperationReporter()
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
 	host.
 		WithServiceTargetPreview(AiAgentHost, func() azdext.ServiceTargetProvider {
-			return project.NewAgentServiceTargetProvider(azdClient)
+			return project.NewAgentServiceTargetProvider(azdClient, reporters...)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			telemetryReporter.reportProjectConfig(ctx, azdClient.Telemetry(), args.Project, "provision")

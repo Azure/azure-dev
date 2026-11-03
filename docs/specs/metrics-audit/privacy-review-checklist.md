@@ -80,8 +80,11 @@ native measurements:
 No agent names, versions, service names, request IDs, or new identifiers are
 introduced. Completion events are not configuration-deduplicated; a whole-command
 failure is never applied to every service. Timeout/cancellation leave the final
-backend outcome unknown. Reporting has an independent one-second deadline and
-does not replace the original result. Earlier gate/definition/context failures
+backend outcome unknown. Errored returns use request termination state and cause
+without replacing the original error. Deploy only enqueues into a 100-event
+bounded queue. A single listen-owned worker sends with one-second RPC deadlines
+and drains for at most one second at listen exit before closing its client;
+full or closed queues drop events. Earlier gate/definition/context failures
 and process termination are not covered; missing events do not prove non-execution.
 
 Deduplication includes snapshot configuration so mixed settings are retained.

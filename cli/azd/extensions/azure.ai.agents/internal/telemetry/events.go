@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"sync"
 	"time"
 
 	"azureaiagent/internal/exterrors"
@@ -27,6 +28,74 @@ const (
 	localClientRouteAttribute         = "route"
 )
 
+type queuedDeploymentEvent struct {
+	ctx   context.Context
+	event foundryTelemetry.Event
+}
+
+// DeploymentReporter sends bounded best-effort events outside service return paths.
+type DeploymentReporter struct {
+	mu     sync.Mutex
+	closed bool
+	queue  chan queuedDeploymentEvent
+	done   chan struct{}
+	cancel context.CancelFunc
+}
+
+// NewDeploymentReporter starts a single worker, owned by the listen command.
+func NewDeploymentReporter(reporter foundryTelemetry.Reporter) *DeploymentReporter {
+	ctx, cancel := context.WithCancel(context.Background())
+	result := &DeploymentReporter{
+		queue: make(chan queuedDeploymentEvent, 100), done: make(chan struct{}), cancel: cancel,
+	}
+	go func() {
+		defer close(result.done)
+		for pending := range result.queue {
+			if ctx.Err() != nil {
+				return
+			}
+			reportCtx, cancelReport := context.WithTimeout(context.WithoutCancel(pending.ctx), time.Second)
+			stop := context.AfterFunc(ctx, cancelReport)
+			reporter.Report(reportCtx, pending.event)
+			stop()
+			cancelReport()
+		}
+	}()
+	return result
+}
+
+// Report enqueues without waiting for a telemetry RPC; full or closed queues drop events.
+func (reporter *DeploymentReporter) Report(ctx context.Context, event foundryTelemetry.Event) {
+	reporter.mu.Lock()
+	defer reporter.mu.Unlock()
+	if reporter.closed {
+		return
+	}
+	select {
+	case reporter.queue <- queuedDeploymentEvent{ctx: ctx, event: event}:
+	default:
+	}
+}
+
+// Close drains for at most one second, then cancels outstanding reporting before returning.
+func (reporter *DeploymentReporter) Close() {
+	reporter.mu.Lock()
+	if !reporter.closed {
+		reporter.closed = true
+		close(reporter.queue)
+	}
+	reporter.mu.Unlock()
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case <-reporter.done:
+	case <-timer.C:
+		reporter.cancel()
+		<-reporter.done
+	}
+	reporter.cancel()
+}
+
 // AgentInvokeSelected creates the adoption event for a resolved remote hosted-agent invoke.
 // It records the selected request mode, not a service response or success.
 // The caller supplies the protocol resolved and validated by the invoke command.
@@ -42,7 +111,14 @@ func AgentInvokeSelected(protocol string, longRunning, noWait bool) foundryTelem
 }
 
 // AgentSnapshotDeployCompleted reports the client-observed result, not a snapshot lifecycle outcome.
-func AgentSnapshotDeployCompleted(err error, elapsed time.Duration) foundryTelemetry.Event {
+func AgentSnapshotDeployCompleted(ctx context.Context, err error, elapsed time.Duration) foundryTelemetry.Event {
+	if err != nil && ctx.Err() != nil {
+		if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+			err = context.DeadlineExceeded
+		} else {
+			err = ctx.Err()
+		}
+	}
 	outcome, code := "succeeded", "none"
 	if err != nil {
 		outcome, code = "failed", "other"

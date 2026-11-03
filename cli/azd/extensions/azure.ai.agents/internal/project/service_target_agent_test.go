@@ -27,9 +27,12 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/botservice"
 	"azureaiagent/internal/pkg/envkey"
+	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -2517,6 +2520,9 @@ func newServiceTargetTestClient(
 		if telemetrySrv, ok := projectSrvs[0].(azdext.TelemetryServiceServer); ok {
 			azdext.RegisterTelemetryServiceServer(srv, telemetrySrv)
 		}
+		if snapshotSrv, ok := projectSrvs[0].(*snapshotDeployTelemetryServer); ok && snapshotSrv.environment != nil {
+			azdext.RegisterEnvironmentServiceServer(srv, snapshotSrv.environment)
+		}
 	} else {
 		azdext.RegisterProjectServiceServer(srv, &previewProjectServer{})
 	}
@@ -2540,14 +2546,20 @@ func newServiceTargetTestClient(
 type snapshotDeployTelemetryServer struct {
 	previewProjectServer
 	azdext.UnimplementedTelemetryServiceServer
-	mu        sync.Mutex
-	requests  []*azdext.ReportUsageRequest
-	reportErr error
+	mu          sync.Mutex
+	requests    []*azdext.ReportUsageRequest
+	reportErr   error
+	environment azdext.EnvironmentServiceServer
+	blockReport bool
 }
 
 func (server *snapshotDeployTelemetryServer) ReportUsage(
-	_ context.Context, request *azdext.ReportUsageRequest,
+	ctx context.Context, request *azdext.ReportUsageRequest,
 ) (*azdext.ReportUsageResponse, error) {
+	if server.blockReport {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	server.requests = append(server.requests, request)
@@ -2560,6 +2572,19 @@ func (server *snapshotDeployTelemetryServer) recordedRequests() []*azdext.Report
 	return append([]*azdext.ReportUsageRequest(nil), server.requests...)
 }
 
+type snapshotDeployEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	cancel context.CancelCauseFunc
+	cause  error
+}
+
+func (server *snapshotDeployEnvironmentServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	server.cancel(server.cause)
+	return nil, status.Error(codes.Canceled, "environment lookup cancelled")
+}
+
 func TestSnapshotDeployReportsPerServiceResult(t *testing.T) {
 	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
 	t.Setenv("AGENT_DEFINITION_PATH", "")
@@ -2568,7 +2593,11 @@ func TestSnapshotDeployReportsPerServiceResult(t *testing.T) {
 			root := t.TempDir()
 			recorder := &snapshotDeployTelemetryServer{reportErr: reportErr}
 			client := newServiceTargetTestClient(t, nil, nil, recorder)
-			provider := &AgentServiceTargetProvider{azdClient: client, projectPath: root, deployContextReady: true}
+			usage := agentTelemetry.NewDeploymentReporter(foundryTelemetry.NewReporter(client.Telemetry(), nil))
+			t.Cleanup(usage.Close)
+			provider := &AgentServiceTargetProvider{
+				azdClient: client, projectPath: root, deployContextReady: true, deploymentReporter: usage,
+			}
 			for index, snapshot := range []*bool{new(true), new(false), nil, new(true)} {
 				properties := map[string]any{
 					"kind": "hosted", "name": "customer-secret",
@@ -2594,6 +2623,7 @@ func TestSnapshotDeployReportsPerServiceResult(t *testing.T) {
 				require.ErrorContains(t, err, "INVALID-NAME")
 				require.NotContains(t, err.Error(), "Unavailable")
 			}
+			usage.Close()
 			requests := recorder.recordedRequests()
 			require.Len(t, requests, 2, "one result per snapshot service attempt, not per configuration")
 			for _, request := range requests {
@@ -2609,6 +2639,60 @@ func TestSnapshotDeployReportsPerServiceResult(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestSnapshotDeployRequestTermination(t *testing.T) {
+	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		ctx, cancel := context.WithCancelCause(t.Context())
+		t.Cleanup(func() { cancel(nil) })
+		server := &snapshotDeployTelemetryServer{environment: &snapshotDeployEnvironmentServer{cancel: cancel, cause: cause}}
+		client := newServiceTargetTestClient(t, nil, nil, server)
+		usage := agentTelemetry.NewDeploymentReporter(foundryTelemetry.NewReporter(client.Telemetry(), nil))
+		t.Cleanup(usage.Close)
+		resourceID, err := arm.ParseResourceID("/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/account/projects/project")
+		require.NoError(t, err)
+		provider := &AgentServiceTargetProvider{
+			azdClient: client, projectPath: t.TempDir(), deployContextReady: true,
+			foundryProject: resourceID, env: &azdext.Environment{Name: "test"}, deploymentReporter: usage,
+		}
+		service := &azdext.ServiceConfig{Name: "agent", Host: "azure.ai.agent", AdditionalProperties: mustStruct(t,
+			map[string]any{"kind": "hosted", "name": "worker", "enableMemorySnapshot": true,
+				"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}}})}
+		_, err = provider.Deploy(ctx, service, nil, nil, func(string) {})
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		require.Equal(t, exterrors.CodeEnvironmentValuesFailed, localErr.Code)
+		usage.Close()
+		requests := server.recordedRequests()
+		require.Len(t, requests, 1)
+		want := "cancelled"
+		if errors.Is(cause, context.DeadlineExceeded) {
+			want = "timeout"
+		}
+		require.Equal(t, want, requests[0].Attributes["agent.deploy.outcome"])
+	}
+}
+
+func TestSnapshotDeployBlockedTelemetryDoesNotDelayReturn(t *testing.T) {
+	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
+	server := &snapshotDeployTelemetryServer{blockReport: true}
+	client := newServiceTargetTestClient(t, nil, nil, server)
+	usage := agentTelemetry.NewDeploymentReporter(foundryTelemetry.NewReporter(client.Telemetry(), nil))
+	t.Cleanup(usage.Close)
+	provider := &AgentServiceTargetProvider{
+		azdClient: client, projectPath: t.TempDir(), deployContextReady: true, deploymentReporter: usage,
+	}
+	service := &azdext.ServiceConfig{Name: "agent", Host: "azure.ai.agent", AdditionalProperties: mustStruct(t,
+		map[string]any{"kind": "hosted", "name": "worker", "enableMemorySnapshot": true,
+			"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}}}),
+		Environment: map[string]string{"INVALID-NAME": "value"}}
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+	_, err := provider.Deploy(ctx, service, nil, nil, func(string) {})
+	require.ErrorContains(t, err, "INVALID-NAME")
+	require.NoError(t, ctx.Err(), "telemetry consumed the service deadline")
 }
 
 type stubProjectServer struct {

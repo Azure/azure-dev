@@ -84,9 +84,7 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
-	rootCmd.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
-		configureExtensionHostWithTelemetry(host, telemetryReporter)
-	}))
+	rootCmd.AddCommand(newAgentListenCommand(telemetryReporter))
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(extCtx))
 	rootCmd.AddCommand(newAgentServiceAddCommand(extCtx))

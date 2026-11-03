@@ -237,6 +237,9 @@ func (r *Runtime) PreProvision(ctx context.Context, args *azdext.ProjectEventArg
 	if args == nil || args.Project == nil {
 		return validationError("missing_project_config", "project configuration is missing", "check azure.yaml")
 	}
+	if len(springServices(args.Project)) == 0 {
+		return nil
+	}
 	envName, values, err := r.environments.values(ctx)
 	if err != nil {
 		return err
@@ -525,6 +528,9 @@ func mapsKeys(values map[string]string) []string {
 func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventArgs) (resultErr error) {
 	if args == nil || args.Project == nil {
 		return validationError("missing_project_config", "project configuration is missing", "check azure.yaml")
+	}
+	if len(springServices(args.Project)) == 0 {
+		return nil
 	}
 	envName, values, err := r.environments.values(ctx)
 	if err != nil {

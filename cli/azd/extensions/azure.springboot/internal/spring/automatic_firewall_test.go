@@ -152,7 +152,7 @@ func TestAutomaticFirewallDeletesOnlyVerifiedBroadBootstrapAndConfirmsAbsence(t 
 	}
 }
 
-func TestAutomaticPostProvisionCleanupPrecedesSuccessAndSurvivesFailureOrCancellation(t *testing.T) {
+func TestAutomaticPostProvisionCleanupRunsBeforeCompletionAndSurvivesHandlerFailureOrCancellation(t *testing.T) {
 	scenarios := []string{"success", "inference-failure", "unresolved-final", "cleanup-failure", "cancellation"}
 	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {

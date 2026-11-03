@@ -81,3 +81,29 @@ func TestSpringRuntimeDependenciesExcludeTestScope(t *testing.T) {
 	require.True(t, dependencies.postgresql)
 	require.True(t, dependencies.azureIdentity)
 }
+
+func TestSpringProfileDependenciesRequirePackagedEvidenceOnlyForNonTestScope(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		scope       string
+		expectedErr string
+	}{
+		{name: "test dependency", scope: "test"},
+		{name: "runtime dependency", scope: "runtime", expectedErr: "packaged JAR evidence"},
+		{name: "default dependency", expectedErr: "packaged JAR evidence"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := springConfigFixture(t, map[string]string{"pom.xml": `<project><profiles><profile><dependencies>
+<dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>` +
+				test.scope + `</scope></dependency>
+</dependencies></profile></profiles></project>`})
+			dependencies, err := readSpringDependencies(t.Context(), root)
+			if test.expectedErr == "" {
+				require.NoError(t, err)
+				require.Equal(t, springDependencies{}, dependencies)
+			} else {
+				require.ErrorContains(t, err, test.expectedErr)
+			}
+		})
+	}
+}

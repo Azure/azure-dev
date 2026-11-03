@@ -132,8 +132,19 @@ attached user-assigned identity must match the verified deployment and
 PostgreSQL Entra mapping.
 
 The extension creates a temporary narrow bootstrap firewall rule only when
-needed, removes its exact owned rule on success or failure, and verifies the
-runtime network path. It does not adopt or delete unknown firewall rules.
+needed and verifies the runtime network path. During `postprovision`, it also
+deletes the template-authored `bootstrap-local-ip` rule only when current
+deployment evidence proves that the exact rule belongs to the selected
+PostgreSQL server and still allows all public IPv4 addresses. This mutation
+requires permission to read and delete PostgreSQL firewall rules. The extension
+does not adopt or delete unknown, changed, or unowned rules.
+
+The deletion is bounded by the azd lifecycle. Once `postprovision` is running,
+the extension attempts cleanup before returning success or an application,
+database, or cancellation error. azd does not invoke `postprovision` when the
+provisioning action itself fails, so the extension cannot guarantee cleanup on
+that failure path. Templates must not treat a broad bootstrap rule as an
+automatically recoverable temporary control.
 
 ## Failure behavior
 

@@ -5,10 +5,12 @@ package spring
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,6 +18,8 @@ type fakeEnvironmentStore struct {
 	name   string
 	data   map[string]string
 	writes []string
+	err    error
+	calls  int
 }
 
 type fakeDeveloperIdentityResolver struct {
@@ -25,12 +29,14 @@ type fakeDeveloperIdentityResolver struct {
 }
 
 type fakeDeploymentOutputVerifier struct {
-	err   error
-	calls int
-	bound *deploymentBinding
+	err       error
+	calls     int
+	readCalls int
+	bound     *deploymentBinding
 }
 
 func (v *fakeDeploymentOutputVerifier) Read(context.Context, map[string]string) (*deploymentBinding, error) {
+	v.readCalls++
 	return v.bound, v.err
 }
 
@@ -53,6 +59,10 @@ func (r *fakeDeveloperIdentityResolver) Resolve(
 }
 
 func (s *fakeEnvironmentStore) values(context.Context) (string, map[string]string, error) {
+	s.calls++
+	if s.err != nil {
+		return "", nil, s.err
+	}
 	values := make(map[string]string, len(s.data))
 	maps.Copy(values, s.data)
 	return s.name, values, nil
@@ -75,4 +85,30 @@ func clearProcessValue(t *testing.T, key string) {
 			_ = os.Unsetenv(key)
 		}
 	})
+}
+
+func TestProjectLifecycleSkipsProjectsWithoutSpringServices(t *testing.T) {
+	store := &fakeEnvironmentStore{err: errors.New("environment must not be read")}
+	outputs := &fakeDeploymentOutputVerifier{err: errors.New("deployment must not be read")}
+	networkCalls := 0
+	runtime := &Runtime{
+		environments: store,
+		outputs:      outputs,
+		prepareNetwork: func(context.Context, *deploymentBinding) (func(context.Context) error, error) {
+			networkCalls++
+			return nil, errors.New("network must not be prepared")
+		},
+	}
+	args := &azdext.ProjectEventArgs{Project: &azdext.ProjectConfig{
+		Services: map[string]*azdext.ServiceConfig{
+			"worker": {Name: "worker", Language: "java", Host: "containerapp"},
+		},
+	}}
+
+	require.NoError(t, runtime.PreProvision(t.Context(), args))
+	require.NoError(t, runtime.PostProvision(t.Context(), args))
+	require.Zero(t, store.calls)
+	require.Zero(t, outputs.readCalls)
+	require.Zero(t, outputs.calls)
+	require.Zero(t, networkCalls)
 }

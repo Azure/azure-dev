@@ -143,8 +143,12 @@ func readSpringDependencies(ctx context.Context, root string) (springDependencie
 		return springDependencies{}, configurationError("the application Maven dependency declaration is invalid")
 	}
 	for _, profile := range pom.Profiles {
-		if len(profile.Dependencies) != 0 {
-			return springDependencies{}, configurationError("Maven profile dependencies require packaged JAR evidence")
+		for _, dependency := range profile.Dependencies {
+			if dependency.Scope != "test" {
+				return springDependencies{}, configurationError(
+					"Maven profile dependencies require packaged JAR evidence",
+				)
+			}
 		}
 	}
 	result := springDependencies{}

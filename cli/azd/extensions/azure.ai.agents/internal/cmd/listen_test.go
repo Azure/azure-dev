@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -376,6 +377,108 @@ func TestPrepareContainerSettings_RejectsNestedAgentConfigBeforeMutation(t *test
 	require.Equal(t, exterrors.CodeDeprecatedAgentServiceConfig, localErr.Code)
 	require.Equal(t, before, svc.GetConfig().AsMap())
 	require.Nil(t, svc.GetAdditionalProperties())
+}
+
+func TestPrepareContainerSettings_ValidatesResourceReferences(t *testing.T) {
+	t.Parallel()
+	for _, scope := range []string{"container", "resources"} {
+		for _, valid := range []bool{false, true} {
+			t.Run(scope+"/"+strconv.FormatBool(valid), func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				resources := map[string]any{"cpu": "4", "memory": "8Gi"}
+				if !valid {
+					resources = map[string]any{"core": "4", "memory": "8Gi"}
+				}
+				fragment := any(resources)
+				container := map[string]any{"resources": map[string]any{"$ref": "./resources.json"}}
+				if scope == "container" {
+					fragment = map[string]any{"resources": resources}
+					container = map[string]any{"$ref": "./resources.json"}
+				}
+				data, err := json.Marshal(fragment)
+				require.NoError(t, err)
+				path := filepath.Join(root, "resources.json")
+				require.NoError(t, os.WriteFile(path, data, 0o600))
+				svc := &azdext.ServiceConfig{
+					Name: "agent", Host: AiAgentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "hosted", "name": "agent", "container": container,
+						"deployments": []any{map[string]any{"$ref": "./missing-deployment.yaml"}},
+					}),
+				}
+
+				err = prepareContainerSettings(svc, root)
+
+				if valid {
+					require.NoError(t, err)
+					cfg, err := project.LoadServiceTargetAgentConfig(svc)
+					require.NoError(t, err)
+					require.Equal(t, "4", cfg.Container.Resources.Cpu)
+					require.Equal(t, "8Gi", cfg.Container.Resources.Memory)
+				} else {
+					require.ErrorContains(t, err, "core")
+				}
+				after, err := os.ReadFile(path)
+				require.NoError(t, err)
+				require.Equal(t, data, after)
+				require.Equal(t, "./missing-deployment.yaml",
+					svc.AdditionalProperties.GetFields()["deployments"].GetListValue().
+						Values[0].GetStructValue().GetFields()["$ref"].GetStringValue())
+			})
+		}
+	}
+}
+
+func TestResourceValidationBeforeLifecycleSideEffects(t *testing.T) {
+	t.Parallel()
+	for _, source := range []string{"inline", "root-ref"} {
+		for _, event := range []string{"preprovision", "predeploy"} {
+			t.Run(source+"/"+event, func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				values := map[string]any{
+					"kind": "hosted", "name": "agent",
+					"container": map[string]any{"resources": map[string]any{"core": "4", "memory": "1Gi"}},
+				}
+				content := map[string]any{"name": "test", "services": map[string]any{"agent": values}}
+				data, err := yaml.Marshal(content)
+				require.NoError(t, err)
+				projectPath := filepath.Join(root, "azure.yaml")
+				require.NoError(t, os.WriteFile(projectPath, data, 0o600))
+				if source == "root-ref" {
+					definition, err := json.Marshal(values)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "agent.json"), definition, 0o600))
+					values = map[string]any{"$ref": "./agent.json"}
+				}
+				svc := &azdext.ServiceConfig{
+					Name: "agent", Host: AiAgentHost, AdditionalProperties: mustStruct(t, values),
+				}
+				proj := &azdext.ProjectConfig{Path: root, Services: map[string]*azdext.ServiceConfig{"agent": svc}}
+				before := proto.CloneOf(proj)
+
+				// A nil client proves validation precedes environment, auth and Azure calls.
+				if event == "preprovision" {
+					err = preprovisionHandler(t.Context(), nil, &azdext.ProjectEventArgs{Project: proj})
+				} else {
+					response, predeployErr := predeployHandler(
+						t.Context(), nil, &azdext.ServiceEventArgs{Project: proj, Service: svc},
+					)
+					require.Nil(t, response)
+					err = predeployErr
+				}
+
+				require.ErrorContains(t, err, "core")
+				require.True(t, proto.Equal(before, proj))
+				after, err := os.ReadFile(projectPath)
+				require.NoError(t, err)
+				require.Equal(t, data, after)
+				_, err = os.Stat(filepath.Join(root, ".azure"))
+				require.True(t, errors.Is(err, os.ErrNotExist))
+			})
+		}
+	}
 }
 
 func TestValidateRuntimeAgentSources_PreservesNonAgentConfig(t *testing.T) {
@@ -967,7 +1070,7 @@ func TestAgentListenersDoNotProjectSplitConnections(t *testing.T) {
 			if event == "preprovision" {
 				err = preprovisionHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: proj})
 			} else {
-				err = predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: agent})
+				_, err = predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: agent})
 			}
 			require.NoError(t, err)
 			require.Equal(t, before, connection.GetConfig().AsMap())
@@ -1194,7 +1297,7 @@ func TestPredeployValidatesAllAgentServicesBeforeMutation(t *testing.T) {
 			}
 			client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 
-			err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+			_, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
 				Project: proj,
 				Service: current,
 			})
@@ -1257,7 +1360,7 @@ func TestPredeployAcceptsValidDirectAndRootRefServices(t *testing.T) {
 	}
 	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 
-	err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+	_, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
 		Project: proj,
 		Service: current,
 	})
@@ -1287,10 +1390,14 @@ func TestPredeployAgentRBACRunsPerService(t *testing.T) {
 	envServer := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
 	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 
-	require.NoError(t, predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: prompt}))
+	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: prompt})
+	require.NoError(t, err)
+	require.Empty(t, response.Messages)
 	firstCalls := envServer.getCurrentCalls
 	require.GreaterOrEqual(t, firstCalls, 2)
-	require.NoError(t, predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: hosted}))
+	response, err = predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: hosted})
+	require.NoError(t, err)
+	require.Empty(t, response.Messages)
 	require.GreaterOrEqual(t, envServer.getCurrentCalls, firstCalls+2)
 }
 
@@ -1315,12 +1422,43 @@ func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
 			envServer := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
 			client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 
-			require.NoError(t, predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+			response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
 				Project: proj, Service: svc,
-			}))
+			})
+			require.NoError(t, err)
+			require.Empty(t, response.Messages)
 			require.GreaterOrEqual(t, envServer.getCurrentCalls, 2)
 		})
 	}
+}
+
+func TestPredeployRejectsDisabledVoiceBeforeMutation(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "")
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	svc := &azdext.ServiceConfig{
+		Name: "voice-agent", Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "voice", "name": "voice-agent", "modelType": "managed",
+			"model": map[string]any{"id": "gpt-realtime"},
+		}),
+	}
+	proj := &azdext.ProjectConfig{
+		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{"voice-agent": svc},
+	}
+	before := proto.Clone(proj)
+	envServer := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
+	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+		Project: proj, Service: svc,
+	})
+
+	require.Nil(t, response)
+	require.ErrorContains(t, err, featureflags.Voice.ID)
+	require.True(t, proto.Equal(before, proj))
+	require.Zero(t, envServer.getCurrentCalls)
+	require.Zero(t, envServer.getValuesCalls)
+	require.Empty(t, envServer.setKeys)
 }
 
 func TestPredownRejectsUnsupportedRuntimeSourcesBeforeCleanup(t *testing.T) {

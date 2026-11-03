@@ -153,6 +153,25 @@ func buildVoiceWSProtocolURL(projectEndpoint, agentName string) string {
 	)
 }
 
+func buildGPTLiveWSProtocolURL(projectEndpoint, agentName string) string {
+	projectEndpoint = strings.TrimSpace(projectEndpoint)
+	u, err := url.Parse(projectEndpoint)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"wss://%s%s/agents/%s/endpoint/protocols/voice/live/sessions?api-version=%s",
+		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
+	)
+}
+
+func buildVoiceAgentWSProtocolURL(projectEndpoint, agentName string, subProtocol agent_yaml.VoiceSubProtocol) string {
+	if subProtocol == agent_yaml.VoiceSubProtocolLive {
+		return buildGPTLiveWSProtocolURL(projectEndpoint, agentName)
+	}
+	return buildVoiceWSProtocolURL(projectEndpoint, agentName)
+}
+
 // ProtocolEnvSuffix pairs a user-facing label with the env var suffix
 // used in AGENT_{KEY}_{SUFFIX}_ENDPOINT variables.
 type ProtocolEnvSuffix struct {
@@ -299,6 +318,24 @@ func (p *AgentServiceTargetProvider) adoptAndResolveServiceConfig(
 		return err
 	}
 	return p.resolveServiceConfig()
+}
+
+func (p *AgentServiceTargetProvider) validateDeploymentServiceConfig(
+	ctx context.Context, serviceConfig *azdext.ServiceConfig,
+) error {
+	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+		return err
+	}
+	if container := ServiceConfigProps(p.serviceConfig).GetFields()["container"]; container != nil &&
+		containsFileRef(container.AsInterface()) {
+		if err := p.loadProjectPath(ctx); err != nil {
+			return err
+		}
+		if err := ResolveAgentContainerSettings(p.serviceConfig, p.projectPath); err != nil {
+			return err
+		}
+	}
+	return validateHostedAgentContainerSettings(p.serviceConfig.GetName(), ServiceConfigProps(p.serviceConfig))
 }
 
 func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error {
@@ -789,10 +826,17 @@ func ResolveVoiceAgentDeploymentEndpoint(envValues map[string]string, serviceNam
 	}
 
 	parsed, err := url.Parse(endpoint)
-	if err != nil ||
-		!strings.EqualFold(parsed.Scheme, "wss") ||
-		parsed.Hostname() == "" ||
-		!strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/endpoint/protocols/voice") {
+	if err != nil || parsed == nil ||
+		!strings.EqualFold(parsed.Scheme, "wss") || parsed.Hostname() == "" {
+		return "", invalidAgentEndpointState(
+			serviceName,
+			"voice",
+			"run `azd deploy` to deploy the voice agent and refresh its callable endpoint",
+		)
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	if !strings.HasSuffix(path, "/endpoint/protocols/voice") &&
+		!strings.HasSuffix(path, "/endpoint/protocols/voice/live/sessions") {
 		return "", invalidAgentEndpointState(
 			serviceName,
 			"voice",
@@ -846,7 +890,7 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
-	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+	if err := p.validateDeploymentServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
 	if p.isPromptAgentService() {
@@ -1600,7 +1644,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 				"use a supported kind: 'hosted'",
 			)
 		}
-
 		if err := validateEnvironmentVariableNames(
 			serviceConfig.GetEnvironment(),
 			agentDef.EnvironmentVariables,
@@ -1720,10 +1763,15 @@ func (p *AgentServiceTargetProvider) Deploy(
 			endpointHost(projectEndpoint),
 			result.agentName,
 			result.agentVersion.Version,
+			10*time.Second,
+			agentDeploymentPollTimeout,
+			agentDef.EnableMemorySnapshot,
 			progress,
 		)
 		if pollErr != nil {
-			return nil, pollErr
+			return nil, agentDeploymentErrorWithVersion(
+				pollErr, azdEnv["AZURE_AI_PROJECT_ID"], result.agentName, result.agentVersion.Version,
+			)
 		}
 		result.agentVersion = polledVersion
 	} else {
@@ -2586,6 +2634,22 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 			Name: hostedTarget.AgentName, Version: hostedTarget.AgentVersion,
 		})
 	} else {
+		if va.SubProtocol == agent_yaml.VoiceSubProtocolLive {
+			managed := agent_yaml.PromptAgent{Policies: append([]agent_yaml.Policy(nil), va.Policies...)}
+			if err := expandPromptAgentPolicies(&managed, azdEnv); err != nil {
+				return nil, err
+			}
+			for i, policy := range managed.Policies {
+				if err := agent_yaml.ValidateRaiPolicyName(policy.RaiPolicyName); err != nil {
+					return nil, exterrors.Validation(
+						exterrors.CodeInvalidAgentManifest,
+						fmt.Sprintf("invalid GPT Live policies[%d].raiPolicyName after expansion: %s", i, err),
+						"set the referenced value to a valid RAI policy name or ARM ID",
+					)
+				}
+			}
+			va.Policies = managed.Policies
+		}
 		request, err = agent_yaml.CreateVoiceAgentAPIRequest(va)
 	}
 	if err != nil {
@@ -2651,7 +2715,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 
 	// Persist NAME first and ENDPOINT last. ENDPOINT is used as the voice deploy
 	// completion marker by other commands, so avoid writing it before NAME.
-	baseEndpoint := buildVoiceWSProtocolURL(projectEndpoint, agentObject.Name)
+	baseEndpoint := buildVoiceAgentWSProtocolURL(projectEndpoint, agentObject.Name, va.SubProtocol)
 	if err := p.registerVoiceAgentEnvironmentVariables(
 		ctx,
 		serviceConfig,
@@ -3168,6 +3232,9 @@ func telephonyTransferTargetsEqual(a, b []agent_api.TelephonyTransferTarget) boo
 	slices.SortFunc(left, func(x, y agent_api.TelephonyTransferTarget) int { return strings.Compare(x.Name, y.Name) })
 	slices.SortFunc(right, func(x, y agent_api.TelephonyTransferTarget) int { return strings.Compare(x.Name, y.Name) })
 	for i := range left {
+		if len(left[i].Destination.RawObject) > 0 || len(right[i].Destination.RawObject) > 0 {
+			return false
+		}
 		if left[i].Name != right[i].Name || left[i].Description != right[i].Description ||
 			left[i].Destination.Kind != right[i].Destination.Kind ||
 			left[i].Destination.Value != right[i].Destination.Value {
@@ -4529,20 +4596,26 @@ func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (stri
 	return url, nil
 }
 
+const agentDeploymentPollTimeout = 8 * time.Minute
+
+type agentVersionStatusReader interface {
+	GetAgentVersion(context.Context, string, string, string, bool) (*agent_api.AgentVersionObject, error)
+}
+
 // waitForAgentActive polls the agent version until it reaches a confirmed terminal state.
 // It requires 2 consecutive polls with the same terminal status ("active" or "failed") to confirm,
 // avoiding transient service-side flickers. Returns the final AgentVersionObject or an error.
 func (p *AgentServiceTargetProvider) waitForAgentActive(
 	ctx context.Context,
-	agentClient *agent_api.AgentClient,
+	agentClient agentVersionStatusReader,
 	serviceName string,
 	agentName string,
 	version string,
+	pollInterval time.Duration,
+	pollTimeout time.Duration,
+	enableMemorySnapshot *bool,
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentVersionObject, error) {
-	const pollInterval = 10 * time.Second
-	// Code agent activation can take several minutes in a busy region.
-	const pollTimeout = 8 * time.Minute
 	const confirmCount = 2 // consecutive times a terminal status must be seen
 
 	deadline := time.Now().Add(pollTimeout)
@@ -4600,30 +4673,72 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		}
 	}
 
-	// Timeout
-	if lastPollErr != nil {
+	if lastPollErr != nil && (enableMemorySnapshot == nil || !*enableMemorySnapshot) {
 		return nil, exterrors.ServiceFromAzure(lastPollErr, exterrors.OpCreateAgent)
 	}
+	return nil, agentDeploymentTimeoutError(lastVersion, serviceName, lastPollErr)
+}
+
+func agentDeploymentErrorWithVersion(err error, projectResourceID, agentName, version string) error {
+	inspectionSuggestion := fmt.Sprintf("inspect agent %q version %q in the Foundry portal", agentName, version)
+	if inspectionURL, linkErr := AgentPlaygroundURL(projectResourceID, agentName, version); linkErr == nil {
+		inspectionSuggestion += ": " + inspectionURL
+	}
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	if !ok {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("%w; %s", err, inspectionSuggestion)
+		}
+		return err
+	}
+	if serviceErr.ErrorCode == exterrors.OpCreateAgent+".timeout" {
+		serviceErr.Message = fmt.Sprintf("agent %q version %q: %s", agentName, version, serviceErr.Message)
+	}
+	if serviceErr.Suggestion == "" || serviceErr.Suggestion == "inspect the attempted agent version in the Foundry portal" {
+		serviceErr.Suggestion = inspectionSuggestion
+	} else {
+		serviceErr.Suggestion += "; " + inspectionSuggestion
+	}
+	return serviceErr
+}
+
+func agentDeploymentTimeoutError(
+	lastVersion *agent_api.AgentVersionObject, serviceName string, lastPollErr error,
+) error {
 	lastStatus := "unknown"
 	if lastVersion != nil {
 		lastStatus = lastVersion.Status
 	}
-	return nil, exterrors.Service(
+	message := fmt.Sprintf("azd stopped waiting for agent activation (last status: %s); "+
+		"this does not mean the deployment failed. The final deployment outcome is unknown, "+
+		"and provisioning may still be running in Azure. Check this version's status "+
+		"before deploying again; another deploy creates a new version", lastStatus)
+	if lastPollErr != nil {
+		message += fmt.Sprintf("; last status check failed: %s", lastPollErr)
+	}
+	return exterrors.Service(
 		exterrors.OpCreateAgent,
 		"timeout",
-		fmt.Sprintf("agent deployment timed out (last status: %s); check agent status manually", lastStatus),
+		message,
 		serviceName,
-		"run `azd ai agent show` to inspect the latest deployment status",
+		"inspect the attempted agent version in the Foundry portal",
 	)
 }
 
 func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, serviceName string) error {
 	code := "failed"
 	errMsg := "agent deployment failed"
-	suggestion := "run `azd ai agent show` to inspect the latest deployment status"
+	suggestion := "inspect the attempted agent version in the Foundry portal"
 	if versionResp.Error != nil {
 		code = versionResp.Error.Code
 		errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", code, versionResp.Error.Message)
+		if code == "SnapshotCreationError" && versionResp.Error.Target != "" {
+			errMsg += fmt.Sprintf(" (stage: %s)", versionResp.Error.Target)
+		}
+		if code == "SnapshotCreationError" {
+			suggestion = "inspect the attempted agent version in the Foundry portal; " +
+				"check agent logs for snapshot hook diagnostics and verify your hosting library supports memory snapshots"
+		}
 		if remediation, ok := nextstep.RemediationForUserErrorCode(nextstep.UserErrorCode(code)); ok {
 			suggestion = fmt.Sprintf("run `%s` to %s", remediation.Command, remediation.Description)
 		}

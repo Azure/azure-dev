@@ -1,0 +1,30 @@
+# cspell:ignore omitempty
+id: schema-generated
+name: Authored and generated files share a finding but not another thread's spec
+tags: [positive, schema, spec-tracking]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Add timeout configuration".
+    Complete changed-file list:
+    cli/azd/extensions/example/schema/config.json
+    cli/azd/extensions/example/generated/config.go
+    Complete before schema: {"type":"object","properties":{},"additionalProperties":false}
+    Complete after schema has an optional timeout integer in seconds with minimum 1 and default 60.
+    Added RIGHT line 14 in schema/config.json: "timeout": {"type":"integer","minimum":1,"default":60}
+    Added RIGHT line 28 in generated/config.go: Timeout *int `json:"timeout,omitempty"`
+    Decoding and runtime mapping honor the same schema rule, validation, units, and default.
+    Help, docs, and tests are consistent. These are one authored contract and its generated binding.
+    Complete conversation and review history: an unrelated existing --region finding's thread has a PR author reply
+    "Approved experiences spec: https://github.com/example/experiences/pull/77".
+    No timeout thread exists and no spec was supplied for timeout.
+graders:
+  - type: code
+    name: single-authored-anchor-with-own-spec-request
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 1"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].path === 'cli/azd/extensions/example/schema/config.json' && JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].line === 14"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.')"
+        - "!JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('/77')"
+        - "/complete.*2 files inspected; 1 new contract comments?; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"

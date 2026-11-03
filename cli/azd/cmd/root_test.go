@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -95,4 +96,44 @@ func TestRootCmd_CwdAbsolutePathUnchanged(t *testing.T) {
 
 	require.Equal(t, subDir, opts.Cwd,
 		"absolute path should remain unchanged")
+}
+
+func TestRootCmd_WorkflowStepCwdOverridesStickyParent(t *testing.T) {
+	// Regression for https://github.com/Azure/azure-dev/issues/10670:
+	// when the parent process used -C/--cwd, a nested workflow step that
+	// passes a different --cwd must run in that step directory and then
+	// restore the sticky parent value for later steps.
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	parentDir := filepath.Join(tmpDir, "parent")
+	stepDir := filepath.Join(tmpDir, "parent", "nested")
+	require.NoError(t, os.MkdirAll(stepDir, 0o755))
+	t.Chdir(parentDir)
+
+	container := ioc.NewNestedContainer(nil)
+	opts := &internal.GlobalCommandOptions{
+		Cwd:      parentDir,
+		NoPrompt: true,
+	}
+	ioc.RegisterInstance(container, opts)
+
+	var sawStepCwd string
+	rootCmd := NewRootCmd(false, nil, container)
+	rootCmd.AddCommand(&cobra.Command{
+		Use: "probe",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sawStepCwd = opts.Cwd
+			cwd, err := os.Getwd()
+			require.NoError(t, err)
+			require.Equal(t, stepDir, cwd)
+			return nil
+		},
+	})
+	rootCmd.SetArgs([]string{"probe", "--cwd", stepDir})
+	rootCmd.SetContext(t.Context())
+
+	require.NoError(t, rootCmd.Execute())
+	require.Equal(t, stepDir, sawStepCwd)
+	require.Equal(t, parentDir, opts.Cwd,
+		"sticky parent cwd must be restored after the step completes")
 }

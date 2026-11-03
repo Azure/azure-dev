@@ -62,11 +62,11 @@ func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 		for _, tt := range []struct {
 			name, location, deploymentLocation, wantLocation, wantDeploymentLocation, wantError string
 		}{
-			{"unsupported project", "eastus", "westus2", "eastus", "westus2", "configured AZURE_LOCATION"},
-			{"public split", "japaneast", "westus2", "japaneast", "westus2", "must match"},
-			{"public both", "westus2", "westus2", "westus2", "westus2", ""},
-			{"missing project location", "", "westus2", "westus2", "westus2", ""},
-			{"internal split", "eastus2euap", "westus2", "eastus2euap", "westus2", "must match"},
+			{"unsupported project", "eastus", "westus", "eastus", "westus", "configured AZURE_LOCATION"},
+			{"public split", "japaneast", "westus", "japaneast", "westus", "must match"},
+			{"public both", "westus", "westus", "westus", "westus", ""},
+			{"missing project location", "", "westus", "westus", "westus", ""},
+			{"internal split", "eastus2euap", "westus", "eastus2euap", "westus", "must match"},
 			{"internal both", "eastus2euap", "eastus2euap", "eastus2euap", "eastus2euap", ""},
 			{"internal fallback", "eastus2euap", "", "eastus2euap", "eastus2euap", ""},
 			{"unsupported fallback", "eastus", "", "eastus", "", "configured AZURE_LOCATION"},

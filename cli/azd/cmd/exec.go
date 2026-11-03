@@ -48,6 +48,10 @@ A single quoted argument uses shell inline execution unless it is ambiguous
 with a missing script path. Use --shell to make inline intent explicit when
 the command contains script-like path arguments.
 
+Canceling execution stops the command and its child processes and reports
+that the command was canceled by the user. After successful completion,
+intentional background child processes may continue running.
+
 Examples:
   azd exec python script.py                     # Direct exec (exact argv)
   azd exec npm run dev                           # Direct exec (no shell)
@@ -98,6 +102,20 @@ type execAction struct {
 	keyvaultService keyvault.KeyVaultService
 	flags           *execFlags
 	args            []string
+}
+
+// execCancellationError keeps execution diagnostics available without
+// presenting an exit-code-focused message for a user-initiated cancellation.
+type execCancellationError struct {
+	err error
+}
+
+func (e *execCancellationError) Error() string {
+	return "command execution was canceled by the user"
+}
+
+func (e *execCancellationError) Unwrap() error {
+	return e.err
 }
 
 func newExecAction(
@@ -175,7 +193,17 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 	if err != nil {
+		if cause := context.Cause(ctx); cause != nil && errors.Is(err, cause) {
+			if errors.Is(ctx.Err(), context.Canceled) &&
+				!errors.Is(cause, context.DeadlineExceeded) {
+				return nil, &execCancellationError{err: err}
+			}
+			return nil, err
+		}
 		if execErr, ok := errors.AsType[*scripting.ExecutionError](err); ok {
+			if execErr.Interrupted() {
+				return nil, &execCancellationError{err: err}
+			}
 			return nil, &internal.ExitCodeError{
 				ExitCode: execErr.ExitCode,
 				Err:      err,

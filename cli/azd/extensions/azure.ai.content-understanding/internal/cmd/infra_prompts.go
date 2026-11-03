@@ -28,55 +28,72 @@ func invalidInfraPrompt() error {
 func (h *azdInfraHost) PromptGeneration(
 	ctx context.Context, choices infra.Choices, prompts generationPrompts,
 ) (infra.Choices, error) {
-	for _, field := range []struct {
-		enabled bool
-		message string
-		help    string
-		value   *string
-		code    string
-	}{
-		{prompts.environment, "azd environment name",
-			"Generate files only; run azd up afterwards. This name identifies the deployment under .azure/<name>.",
-			&choices.Environment, "invalid_environment"},
-		{prompts.prefix, "Optional Microsoft Foundry resource name prefix (blank for generated name)",
-			"The globally unique resource name becomes part of its public endpoint. Use 1-20 letters, numbers or hyphens.",
-			&choices.FoundryPrefix, "invalid_foundry_prefix"},
-	} {
-		if !field.enabled {
-			continue
+	writeGuidance := func(text string) error {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		help := field.help
+		if _, err := fmt.Fprintf(h.output, "\n%s\n", text); err != nil {
+			return fmt.Errorf("write infrastructure guidance: %w", err)
+		}
+		return nil
+	}
+	promptText := func(enabled bool, message, guidance string, value *string, code string) error {
+		if !enabled {
+			return nil
+		}
+		if err := writeGuidance(guidance); err != nil {
+			return err
+		}
+		help := guidance
 		for {
 			if err := ctx.Err(); err != nil {
-				return choices, err
+				return err
 			}
 			response, err := h.client.Prompt().Prompt(ctx, &azdext.PromptRequest{Options: &azdext.PromptOptions{
-				Message: field.message, HelpMessage: help, DefaultValue: *field.value,
-				Required: field.value == &choices.Environment,
+				Message: message, HelpMessage: help, DefaultValue: *value,
+				Required: value == &choices.Environment,
 			}})
 			if err != nil {
-				return choices, err
+				return err
 			}
 			if response == nil {
-				return choices, invalidInfraPrompt()
+				return invalidInfraPrompt()
 			}
-			*field.value = response.GetValue()
+			*value = response.GetValue()
 			normalized, err := choices.Normalize()
 			if err != nil {
 				local, ok := errors.AsType[*cuclient.Error](err)
-				if !ok || local.Kind != cuclient.ErrorValidation || local.Code != field.code {
-					return choices, err
+				if !ok || local.Kind != cuclient.ErrorValidation || local.Code != code {
+					return err
 				}
-				help = field.help + "\nInvalid input: " + err.Error()
+				reason := "Invalid input: " + err.Error()
+				if err := writeGuidance(errorText(h.outputFormat, reason)); err != nil {
+					return err
+				}
+				help = guidance + "\n" + reason
 				continue
 			}
 			choices = normalized
-			break
+			return nil
 		}
 	}
+	if err := promptText(prompts.environment,
+		"Enter your environment name (1-64 letters, numbers, -, _, ., or parentheses)",
+		"Input your azd environment name. An azd environment name:\n"+
+			"  - lets azd store this deployment's config + outputs under .azure/<env>/ in the generated directory.\n"+
+			"  - seeds your Azure resource names (e.g. rg-<env>, proj-<env>).\n"+
+			"  - keeps separate stacks apart, such as dev, test, or prod.",
+		&choices.Environment, "invalid_environment"); err != nil {
+		return choices, err
+	}
 	if prompts.location {
+		if err := writeGuidance("Content Understanding supported regions\n" +
+			"Check the latest region support at https://learn.microsoft.com/azure/ai-services/content-understanding/" +
+			"language-region-support"); err != nil {
+			return choices, err
+		}
 		options := &azdext.SelectOptions{
-			Message:     "Select a Content Understanding region",
+			Message:     "Azure region (where the Foundry resource is created)",
 			HelpMessage: "Region for the new Microsoft Foundry resource.", EnableFiltering: new(true),
 		}
 		index := int32(0)
@@ -97,9 +114,27 @@ func (h *azdInfraHost) PromptGeneration(
 		}
 		choices.Location = infra.Regions[response.GetValue()]
 	}
+	if err := promptText(prompts.prefix,
+		"Optional Microsoft Foundry resource name prefix (lowercase letters, numbers, hyphen; blank to skip)",
+		"Microsoft Foundry resource naming\n"+
+			"The resource name becomes part of the public endpoint host "+
+			"(for example, https://<name>.services.ai.azure.com), so it must be globally unique.\n"+
+			"If you provide a prefix, azd constructs the resource name as <prefix>-<unique-suffix>. "+
+			"Without a prefix, it uses aif-<unique-suffix>.",
+		&choices.FoundryPrefix, "invalid_foundry_prefix"); err != nil {
+		return choices, err
+	}
 	if prompts.roles {
+		if err := writeGuidance(warningText(h.outputFormat, "RBAC roles\n"+
+			"Required for Entra-based auth from `azd ai cu`. The template assigns Cognitive Services User.\n"+
+			"Needs Owner, User Access Administrator, or Role Based Access Control Administrator on the subscription.\n"+
+			"Pick 'n' if you only have Contributor. If you skip assignment, ask an administrator to grant access "+
+			"unless you already have it.\n"+
+			"Provisioning and post-provision setup use Entra ID, not an API key.")); err != nil {
+			return choices, err
+		}
 		response, err := h.client.Prompt().Confirm(ctx, &azdext.ConfirmRequest{Options: &azdext.ConfirmOptions{
-			Message: "Assign Cognitive Services User to your user on the new Foundry resource?",
+			Message: "Assign RBAC roles to your user on the Microsoft Foundry resource?",
 			HelpMessage: "Requires permission to create role assignments, such as Owner, User Access Administrator, " +
 				"or Role Based Access Control Administrator. If skipped, ask an administrator to grant access for Entra ID.",
 			DefaultValue: new(false),
@@ -119,8 +154,9 @@ func (h *azdInfraHost) PromptGeneration(
 }
 
 func (h *azdInfraHost) promptModels(ctx context.Context, models []infra.Model) ([]infra.Model, error) {
+	const message = "Select live CU-supported models to deploy"
 	options := &azdext.MultiSelectOptions{
-		Message: "Select live CU-supported models to deploy",
+		Message: message,
 		HelpMessage: "Accept or change the recommended selections. Clear all selections to deploy no models. " +
 			"Select only one version of each model family.",
 		AllowEmptySelection: new(true), EnableFiltering: new(true),
@@ -131,7 +167,7 @@ func (h *azdInfraHost) promptModels(ctx context.Context, models []infra.Model) (
 		if !ok || (local.Code != "ambiguous_model_version" && local.Code != "no_deployable_models") {
 			return nil, err
 		}
-		options.HelpMessage += "\nNo models preselected: " + local.Message
+		options.Message = warningText(h.outputFormat, "No models preselected: "+local.Message) + "\n" + message
 	}
 	for _, model := range models {
 		label := fmt.Sprintf("%s | %s | %s", model.Selector(), model.Kind, model.SKU)
@@ -183,8 +219,8 @@ func (h *azdInfraHost) promptModels(ctx context.Context, models []infra.Model) (
 			}
 			return selected, ctx.Err()
 		}
-		options.HelpMessage = "Invalid selection: " + err.Error() +
-			" Select only one version of each family, or clear all selections for no models."
+		options.Message = errorText(h.outputFormat, "Invalid selection: "+err.Error()+
+			" Select only one version of each family, or clear all selections for no models.") + "\n" + message
 		for _, choice := range options.Choices {
 			choice.Selected = slices.Contains(selectors, choice.Value)
 		}

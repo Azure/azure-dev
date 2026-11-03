@@ -1,0 +1,22 @@
+id: internal-refactor
+name: Inspect a refactor without manufacturing a contract comment
+tags: [negative]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Rename private variable".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/list.go.
+    Complete before function:
+    func labels() []string { items := []string{"table", "json"}; return items }
+    Complete after function:
+    func labels() []string { formats := []string{"table", "json"}; return formats }
+    RIGHT changed line 12 is the after function above. This is a private local variable rename only.
+    Callers, returned values, ordering, help, validation, defaults, and output are unchanged.
+    Complete conversation and review history: empty.
+graders:
+  - type: code
+    name: inspected-without-false-positive
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 0"
+        - "/complete.*1 files? inspected; 0 new contract comments; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"

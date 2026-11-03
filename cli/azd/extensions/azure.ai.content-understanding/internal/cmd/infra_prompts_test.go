@@ -4,12 +4,14 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -104,9 +106,56 @@ func TestInfraGeneratePromptCancellation(t *testing.T) {
 	target := filepath.Join(testutil.TempDir(t), "project")
 	stdout, _, err := executeInfra(t, host, "infra", "generate", "-d", target, "--models", "none")
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, stdout)
+	assert.Contains(t, stdout, "`azd ai cu infra generate` generates an azd template.")
+	assert.Contains(t, stdout, "It doesn't create any Azure resources itself")
+	assert.NotContains(t, stdout, "Generated project:")
+	assert.NotContains(t, stdout, "Next steps:")
 	assert.NoDirExists(t, target)
 	assert.Equal(t, "close", host.calls[len(host.calls)-1])
+}
+
+func TestInfraGenerateOverviewBeforeSubscription(t *testing.T) {
+	for _, mode := range []string{"default", "json", "none", "no-prompt", "explicit subscription"} {
+		t.Run(mode, func(t *testing.T) {
+			host := infraCommandFixture(t)
+			var stdout, stderr bytes.Buffer
+			showOverview := mode == "default" || mode == "explicit subscription"
+			host.onSubscription = func() {
+				if showOverview {
+					assert.Contains(t, stdout.String(), "`azd ai cu infra generate` generates an azd template.")
+					assert.Contains(t, stdout.String(), "It doesn't create any Azure resources itself")
+					assert.Contains(t, stdout.String(), "Choose the Azure subscription used to provision resources")
+				} else {
+					assert.Empty(t, stdout.String())
+				}
+				assert.NotContains(t, stdout.String(), "Azure subscription: Subscription")
+				assert.Empty(t, host.prompts)
+			}
+			root := newRootCommandWithInfra(nil, func(*cobra.Command, *azdext.ExtensionContext) (infraHost, error) {
+				return host, nil
+			})
+			root.SetOut(&stdout)
+			root.SetErr(&stderr)
+			args := []string{"infra", "generate", "-d", filepath.Join(testutil.TempDir(t), "project"), "--models", "none"}
+			switch mode {
+			case "no-prompt":
+				args = append(args, "--no-prompt")
+			case "explicit subscription":
+				args = append(args, "--subscription", "Subscription")
+			default:
+				args = append(args, "--output", mode)
+			}
+			root.SetArgs(args)
+			require.NoError(t, root.ExecuteContext(t.Context()))
+			assert.Empty(t, stderr.String())
+			assert.Contains(t, host.calls, "subscription")
+			if showOverview {
+				text := stdout.String()
+				assert.Less(t, strings.Index(text, "It doesn't create any Azure resources itself"),
+					strings.Index(text, "Azure subscription: Subscription"))
+			}
+		})
+	}
 }
 
 func TestInfraGenerateOutputModes(t *testing.T) {
@@ -120,6 +169,7 @@ func TestInfraGenerateOutputModes(t *testing.T) {
 			require.NoError(t, err)
 			assert.Empty(t, stderr)
 			assert.Empty(t, host.prompts)
+			assert.NotContains(t, stdout, "`azd ai cu infra generate` generates an azd template.")
 			switch format {
 			case "json":
 				var result map[string]json.RawMessage
@@ -137,7 +187,7 @@ func TestInfraGenerateOutputModes(t *testing.T) {
 				assert.Equal(t, "eastus2", generation.Location)
 				assert.Equal(t, "none", generation.ModelSelection)
 				assert.False(t, generation.AssignRoles)
-				assert.Len(t, generation.Files, 10)
+				assert.Len(t, generation.Files, 11)
 				assert.Len(t, generation.NextSteps, 3)
 			case "none":
 				assert.Empty(t, stdout)
@@ -160,10 +210,24 @@ func TestInfraGenerateOutputModes(t *testing.T) {
 	}
 	t.Run("JSON skips new wizard without no-prompt", func(t *testing.T) {
 		host := infraCommandFixture(t)
-		_, _, err := executeInfra(t, host, "infra", "generate", "-d",
+		stdout, _, err := executeInfra(t, host, "infra", "generate", "-d",
 			filepath.Join(testutil.TempDir(t), "project"), "--models", "none", "-o", "json")
 		require.NoError(t, err)
+		assert.True(t, json.Valid([]byte(stdout)))
 		assert.Empty(t, host.prompts)
+	})
+	t.Run("none retains prompts without narrative output", func(t *testing.T) {
+		_ = infraCommandFixture(t)
+		rpc, _, _ := generationPromptFixture(t)
+		rpc.subscriptions = []*azdext.Subscription{{Id: "sub", TenantId: "tenant", Name: "Subscription"}}
+		stdout, stderr, err := executeRoot(t, "infra", "generate", "-d",
+			filepath.Join(testutil.TempDir(t), "project"), "--models", "none", "-o", "none")
+		require.NoError(t, err)
+		assert.Empty(t, stdout)
+		assert.Empty(t, stderr)
+		rpc.mu.Lock()
+		assert.Equal(t, []string{"prompt-subscription", "prompt-text", "select", "prompt-text", "confirm"}, rpc.calls)
+		rpc.mu.Unlock()
 	})
 }
 
@@ -186,12 +250,108 @@ func generationPromptFixture(t *testing.T) (*infraRPC, *azdInfraHost, infra.Choi
 	}
 }
 
+func TestInfraGenerateNextStepWording(t *testing.T) {
+	for _, test := range []struct {
+		name, selection, action string
+		args                    []string
+	}{
+		{"new without models", "none",
+			"provisions a Microsoft Foundry resource without model deployments", nil},
+		{"new with optional models", "recommended",
+			"provisions a Microsoft Foundry resource, optionally deploys selected supported " +
+				"LLMs and embeddings models, and configures Content Understanding defaults", nil},
+		{"existing resource", "none",
+			"configures Content Understanding and optionally deploys selected supported " +
+				"LLMs and embeddings models on the existing Microsoft Foundry resource",
+			[]string{"--foundry-endpoint", "foundry"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			host := infraCommandFixture(t)
+			args := append([]string{"infra", "generate", "--no-prompt", "-d",
+				filepath.Join(testutil.TempDir(t), "project"), "--models", test.selection}, test.args...)
+			stdout, stderr, err := executeInfra(t, host, args...)
+			require.NoError(t, err)
+			assert.Empty(t, stderr)
+			assert.Contains(t, stdout, "azd auth login    # (one-time)")
+			assert.Contains(t, stdout, "azd up    # "+test.action)
+			assert.Contains(t, stdout,
+				"The post-provision hook prints verified Content Understanding setup and test commands.")
+			assert.Contains(t, stdout, "azd ai cu doctor")
+		})
+	}
+}
+
+func TestInfraGenerateSectionsAndActionColors(t *testing.T) {
+	setHelpColor(t, true)
+	for _, mode := range []string{"default", "NO_COLOR", "no-prompt", "json", "none"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("NO_COLOR", "")
+			if mode == "NO_COLOR" {
+				t.Setenv("NO_COLOR", "1")
+			}
+			host := infraCommandFixture(t)
+			var stdout, stderr bytes.Buffer
+			host.prompt = func(choices infra.Choices) (infra.Choices, error) {
+				_, err := stdout.WriteString("Interactive selections complete.\n")
+				return choices, err
+			}
+			root := newRootCommandWithInfra(nil, func(*cobra.Command, *azdext.ExtensionContext) (infraHost, error) {
+				return host, nil
+			})
+			root.SetOut(&stdout)
+			root.SetErr(&stderr)
+			args := []string{"infra", "generate", "-d", filepath.Join(testutil.TempDir(t), "project"), "--models", "none"}
+			switch mode {
+			case "no-prompt":
+				args = append(args, "--no-prompt")
+			case "json", "none":
+				args = append(args, "--output", mode, "--no-prompt")
+			}
+			root.SetArgs(args)
+			require.NoError(t, root.ExecuteContext(t.Context()))
+			assert.Empty(t, stderr.String())
+			text := stdout.String()
+			switch mode {
+			case "json":
+				var result infra.Generation
+				require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+				assert.Len(t, result.NextSteps, 3)
+				assert.NotContains(t, text, "\x1b")
+			case "none":
+				assert.Empty(t, text)
+			default:
+				if mode == "no-prompt" {
+					assert.True(t, strings.HasPrefix(text, "Generated project:"))
+				} else {
+					assert.Contains(t, text, "Interactive selections complete.\n\nGenerated project:")
+				}
+				assert.Contains(t, text, "\n\nFiles written:\n")
+				assert.Contains(t, text, "\n\nNo Azure resources were deployed.\n\nNext steps:\n")
+				assert.Contains(t, text, "\n\nThe post-provision hook")
+				if mode == "NO_COLOR" {
+					assert.NotContains(t, text, "\x1b")
+				} else {
+					assert.Contains(t, text, "\x1b[94mazd auth login\x1b[0m\x1b[90m    # (one-time)\x1b[0m")
+					assert.Contains(t, text,
+						"\x1b[94mazd up\x1b[0m\x1b[90m    # "+
+							"provisions a Microsoft Foundry resource without model deployments\x1b[0m")
+					assert.Contains(t, text, "\n\n\x1b[94mRun azd ai cu doctor afterwards")
+					assert.NotContains(t, text, "\x1b[94mGenerated")
+				}
+			}
+		})
+	}
+}
+
 func TestInfraGenerationHostPrompts(t *testing.T) {
 	rpc, host, choices := generationPromptFixture(t)
+	var output bytes.Buffer
+	host.output = &output
 	inputs := []string{"../invalid", "chosen", "invalid prefix", "app"}
 	rpc.promptText = func(request *azdext.PromptRequest) (*azdext.PromptResponse, error) {
 		if len(inputs) == 3 || len(inputs) == 1 {
 			assert.Contains(t, request.GetOptions().GetHelpMessage(), "Invalid input:")
+			assert.Contains(t, output.String(), "Invalid input:")
 		}
 		value := inputs[0]
 		inputs = inputs[1:]
@@ -212,6 +372,140 @@ func TestInfraGenerationHostPrompts(t *testing.T) {
 	assert.Equal(t, "app", result.FoundryPrefix)
 	assert.Equal(t, "westus3", result.Location)
 	assert.False(t, result.AssignRoles)
+	assert.Equal(t, 2, strings.Count(output.String(), "Invalid input:"))
+	assert.NotContains(t, output.String(), "../invalid")
+	assert.NotContains(t, output.String(), "invalid prefix")
+}
+
+func TestInfraGenerationPromptDiagnosticColors(t *testing.T) {
+	setHelpColor(t, true)
+	for _, mode := range []string{"default", "json", "none", "NO_COLOR"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("NO_COLOR", "")
+			rpc, host, choices := generationPromptFixture(t)
+			host.outputFormat = mode
+			if mode == "NO_COLOR" {
+				t.Setenv("NO_COLOR", "1")
+				host.outputFormat = "default"
+			}
+			var output bytes.Buffer
+			host.output = &output
+			calls := 0
+			rpc.promptText = func(request *azdext.PromptRequest) (*azdext.PromptResponse, error) {
+				calls++
+				if calls == 1 {
+					return &azdext.PromptResponse{Value: "../invalid"}, nil
+				}
+				assert.Contains(t, request.GetOptions().GetHelpMessage(), "Invalid input:")
+				assert.NotContains(t, request.GetOptions().GetHelpMessage(), "\x1b")
+				return &azdext.PromptResponse{Value: "dev"}, nil
+			}
+			_, err := host.PromptGeneration(azdext.WithAccessToken(t.Context()), choices,
+				generationPrompts{environment: true, roles: true})
+			require.NoError(t, err)
+			text := output.String()
+			assert.Contains(t, text, "Invalid input:")
+			assert.Contains(t, text, "RBAC roles")
+			assert.NotContains(t, text, "../invalid")
+			if mode == "default" {
+				assert.Contains(t, text, "\x1b[31mInvalid input:")
+				assert.Contains(t, text, "\x1b[33mRBAC roles")
+			} else {
+				assert.NotContains(t, text, "\x1b")
+			}
+		})
+	}
+}
+
+func TestInfraGenerationVisibleGuidance(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		prompts generationPrompts
+		stages  []string
+	}{
+		{"all", generationPrompts{true, true, true, true}, []string{
+			"Input your azd environment name. An azd environment name:",
+			"Content Understanding supported regions", "Microsoft Foundry resource naming", "RBAC roles",
+		}},
+		{"none", generationPrompts{}, nil},
+		{"environment", generationPrompts{environment: true},
+			[]string{"Input your azd environment name. An azd environment name:"}},
+		{"region", generationPrompts{location: true}, []string{"Content Understanding supported regions"}},
+		{"prefix", generationPrompts{prefix: true}, []string{"Microsoft Foundry resource naming"}},
+		{"roles", generationPrompts{roles: true}, []string{"RBAC roles"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rpc, host, choices := generationPromptFixture(t)
+			var output bytes.Buffer
+			host.output = &output
+			var stages []string
+			beforePrompt := func(stage, explanation string) {
+				assert.Contains(t, output.String(), "\n"+stage+"\n")
+				assert.Contains(t, output.String(), explanation)
+				stages = append(stages, stage)
+			}
+			rpc.promptText = func(request *azdext.PromptRequest) (*azdext.PromptResponse, error) {
+				if request.GetOptions().GetRequired() {
+					beforePrompt("Input your azd environment name. An azd environment name:",
+						"lets azd store this deployment's config + outputs under .azure/<env>/")
+					assert.Contains(t, output.String(), "seeds your Azure resource names (e.g. rg-<env>, proj-<env>)")
+					assert.Contains(t, output.String(), "keeps separate stacks apart, such as dev, test, or prod")
+					assert.Equal(t, "Enter your environment name (1-64 letters, numbers, -, _, ., or parentheses)",
+						request.GetOptions().GetMessage())
+				} else {
+					beforePrompt("Microsoft Foundry resource naming", "aif-<unique-suffix>")
+					assert.Equal(t, "Optional Microsoft Foundry resource name prefix "+
+						"(lowercase letters, numbers, hyphen; blank to skip)", request.GetOptions().GetMessage())
+					assert.Contains(t, output.String(), "must be globally unique")
+					assert.Contains(t, output.String(),
+						"If you provide a prefix, azd constructs the resource name as <prefix>-<unique-suffix>.")
+				}
+				return &azdext.PromptResponse{Value: request.GetOptions().GetDefaultValue()}, nil
+			}
+			rpc.selectOption = func(request *azdext.SelectRequest) (*azdext.SelectResponse, error) {
+				beforePrompt("Content Understanding supported regions", "Check the latest region support at")
+				assert.Contains(t, output.String(), "language-region-support")
+				assert.Equal(t, "Azure region (where the Foundry resource is created)", request.GetOptions().GetMessage())
+				return &azdext.SelectResponse{Value: request.GetOptions().SelectedIndex}, nil
+			}
+			rpc.confirm = func(request *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
+				beforePrompt("RBAC roles", "ask an administrator to grant access")
+				assert.Contains(t, output.String(), "Provisioning and post-provision setup use Entra ID")
+				assert.NotContains(t, output.String(), "cu can use the resource API key instead")
+				assert.Equal(t, "Assign RBAC roles to your user on the Microsoft Foundry resource?",
+					request.GetOptions().GetMessage())
+				return &azdext.ConfirmResponse{Value: request.GetOptions().DefaultValue}, nil
+			}
+			_, err := host.PromptGeneration(azdext.WithAccessToken(t.Context()), choices, test.prompts)
+			require.NoError(t, err)
+			assert.Equal(t, test.stages, stages)
+			for _, stage := range []string{
+				"Input your azd environment name. An azd environment name:",
+				"Content Understanding supported regions", "Microsoft Foundry resource naming", "RBAC roles",
+			} {
+				assert.Equal(t, slices.Contains(test.stages, stage),
+					strings.Contains(output.String(), "\n"+stage+"\n"), stage)
+			}
+			if len(test.stages) == 0 {
+				assert.Empty(t, output.String())
+			}
+		})
+	}
+}
+
+func TestInfraGenerationGuidanceWriteFailure(t *testing.T) {
+	for _, prompts := range []generationPrompts{
+		{environment: true}, {location: true}, {prefix: true}, {roles: true},
+	} {
+		rpc, host, choices := generationPromptFixture(t)
+		host.output = failingWriter{}
+		_, err := host.PromptGeneration(azdext.WithAccessToken(t.Context()), choices, prompts)
+		require.ErrorContains(t, err, "write infrastructure guidance")
+		rpc.mu.Lock()
+		assert.Empty(t, rpc.calls)
+		assert.Empty(t, rpc.writes)
+		rpc.mu.Unlock()
+	}
 }
 
 func TestInfraGenerationHostDoesNotRetryOtherFields(t *testing.T) {
@@ -305,6 +599,8 @@ func pickerModels() []infra.Model {
 }
 
 func TestInfraModelPickerSelections(t *testing.T) {
+	setHelpColor(t, true)
+	t.Setenv("NO_COLOR", "")
 	for _, scenario := range []string{"recommended", "none", "correct conflict", "ambiguous recommendation"} {
 		t.Run(scenario, func(t *testing.T) {
 			rpc := &infraRPC{confirm: func(request *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
@@ -323,7 +619,9 @@ func TestInfraModelPickerSelections(t *testing.T) {
 				assert.True(t, options.GetAllowEmptySelection())
 				assert.Contains(t, options.Choices[0].GetLabel(), "gpt-5.2@1 | completion | GlobalStandard")
 				if scenario == "ambiguous recommendation" {
-					assert.Contains(t, options.GetHelpMessage(), "No models preselected:")
+					assert.Contains(t, options.GetMessage(), "No models preselected:")
+					assert.Contains(t, options.GetMessage(), "\x1b[33mNo models preselected:")
+					assert.Contains(t, options.GetMessage(), "Select live CU-supported models to deploy")
 					for _, choice := range options.Choices {
 						assert.False(t, choice.GetSelected())
 					}
@@ -336,7 +634,17 @@ func TestInfraModelPickerSelections(t *testing.T) {
 					if calls == 1 {
 						return &azdext.MultiSelectResponse{Values: options.Choices[:2]}, nil
 					}
-					assert.Contains(t, options.GetHelpMessage(), "Invalid selection:")
+					assert.Contains(t, options.GetMessage(), "Invalid selection:")
+					assert.Contains(t, options.GetMessage(), "\x1b[31mInvalid selection:")
+					assert.Contains(t, options.GetMessage(), "A model family was selected more than once.")
+					assert.Contains(t, options.GetMessage(), "Select only one version of each family")
+					assert.Contains(t, options.GetMessage(), "Select live CU-supported models to deploy")
+					assert.True(t, options.Choices[0].GetSelected())
+					assert.True(t, options.Choices[1].GetSelected())
+					assert.False(t, options.Choices[2].GetSelected())
+					rpc.mu.Lock()
+					assert.NotContains(t, rpc.calls, "confirm")
+					rpc.mu.Unlock()
 					return &azdext.MultiSelectResponse{Values: []*azdext.MultiSelectChoice{options.Choices[1]}}, nil
 				}
 				assert.True(t, options.Choices[0].GetSelected())
@@ -394,7 +702,8 @@ func TestInfraModelPickerInvalidResponse(t *testing.T) {
 		if calls == 1 {
 			return &azdext.MultiSelectResponse{Values: []*azdext.MultiSelectChoice{{Value: "unknown@1"}}}, nil
 		}
-		assert.Contains(t, request.GetOptions().GetHelpMessage(), "Invalid selection:")
+		assert.Contains(t, request.GetOptions().GetMessage(), "Invalid selection:")
+		assert.Contains(t, request.GetOptions().GetMessage(), "Select exactly one supported deployable model@version")
 		return nil, status.Error(codes.Canceled, "canceled")
 	}}
 	host := infraRPCClient(t, rpc)
@@ -473,6 +782,22 @@ func TestInfraGenerateOutputFailure(t *testing.T) {
 	assert.FileExists(t, filepath.Join(target, "azure.yaml"))
 }
 
+func TestInfraGenerateIntroductionWriteFailure(t *testing.T) {
+	host := infraCommandFixture(t)
+	root := newRootCommandWithInfra(nil, func(*cobra.Command, *azdext.ExtensionContext) (infraHost, error) {
+		host.calls = append(host.calls, "open")
+		return host, nil
+	})
+	target := filepath.Join(testutil.TempDir(t), "project")
+	root.SetOut(failingWriter{})
+	root.SetArgs([]string{"infra", "generate", "-d", target, "--models", "none"})
+	err := root.ExecuteContext(t.Context())
+	require.Error(t, err)
+	assert.Empty(t, host.prompts)
+	assert.NoDirExists(t, target)
+	assert.Empty(t, host.calls)
+}
+
 func TestInfraGenerationThroughHostRPC(t *testing.T) {
 	for _, stage := range []string{"success", "environment", "prefix", "region", "roles"} {
 		t.Run(stage, func(t *testing.T) {
@@ -505,18 +830,33 @@ func TestInfraGenerationThroughHostRPC(t *testing.T) {
 			target := filepath.Join(testutil.TempDir(t), "project")
 			stdout, stderr, err := executeRoot(t, "infra", "generate", "-d", target, "--models", "none")
 			assert.Empty(t, stderr)
+			assert.Contains(t, stdout, "Azure subscription: Subscription (sub)")
+			assert.Contains(t, stdout, "`azd ai cu infra generate` generates an azd template.")
+			assert.Contains(t, stdout, "It doesn't create any Azure resources itself")
 			if stage == "success" {
 				require.NoError(t, err)
 				assert.Contains(t, stdout, "Environment: chosen")
+				assert.Contains(t, stdout, "azd ai cu doctor")
 				// #nosec G304 -- Reads a generated test-owned environment.
-				body, err := os.ReadFile(filepath.Join(target, ".azure", "chosen", ".env"))
+				body, err := os.ReadFile(filepath.Join(target, "infra", "main.parameters.json"))
 				require.NoError(t, err)
-				assert.Contains(t, string(body), `FOUNDRY_RESOURCE_PREFIX="app"`)
-				assert.Contains(t, string(body), `AZD_ASSIGN_ROLES="true"`)
+				var document struct {
+					Parameters map[string]json.RawMessage `json:"parameters"`
+				}
+				require.NoError(t, json.Unmarshal(body, &document))
+				assert.JSONEq(t, `{"value":"${CU_FOUNDRY_RESOURCE_PREFIX=}"}`,
+					string(document.Parameters["foundryResourcePrefix"]))
+				assert.JSONEq(t, `{"value":"${CU_ASSIGN_ROLES=false}"}`,
+					string(document.Parameters["assignRolesToPrincipal"]))
+				body, err = os.ReadFile(filepath.Join(target, ".azure/chosen/.env")) // #nosec G304 -- Test environment.
+				require.NoError(t, err)
+				assert.Contains(t, string(body), "CU_FOUNDRY_RESOURCE_PREFIX=\"app\"\n")
+				assert.Contains(t, string(body), "CU_ASSIGN_ROLES=\"true\"\n")
 				assert.NoDirExists(t, filepath.Join(target, ".azure", "unrelated"))
 			} else {
 				require.Error(t, err)
-				assert.Empty(t, stdout)
+				assert.NotContains(t, stdout, "Generated project:")
+				assert.NotContains(t, stdout, "Next steps:")
 				assert.NoDirExists(t, target)
 			}
 			rpc.mu.Lock()

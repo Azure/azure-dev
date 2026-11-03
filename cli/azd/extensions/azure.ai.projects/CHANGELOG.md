@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.16 (2026-10-29)
+
+### Bugs Fixed
+
+- [[#10713]](https://github.com/Azure/azure-dev/pull/10713) Fix Foundry project replacement reusing model deployment settings from the previous project.
+
 ## 1.0.0-beta.15 (2026-10-23)
 
 ### Bugs Fixed

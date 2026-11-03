@@ -57,6 +57,9 @@ type invokeFlags struct {
 	longRunning     bool
 	noWait          bool
 	debugLatency    bool
+
+	// Preserve explicit empty/false local A2A options across protocol resolution.
+	localA2AExplicitFlags []string
 }
 
 func (f *invokeFlags) forceNewConversation() bool {
@@ -85,6 +88,9 @@ type InvokeAction struct {
 	endpoint              *parsedAgentEndpoint
 	clientHeaders         http.Header
 	invocationsTransport  http.RoundTripper
+	a2aTransport          http.RoundTripper
+	a2aWriter             io.Writer
+	a2aErrorWriter        io.Writer
 	protocolServiceName   string
 	resolvedRemoteContext *remoteContext
 	resolvedBody          []byte
@@ -123,23 +129,24 @@ JSON-RPC request with the a2a protocol.
 
 ` + invokeA2AVersionHelp + `Local Development:
 Use --local to target a locally running agent (started via 'azd ai agent run')
-instead of Foundry. This CLI does not support a2a with --local; this is a
-CLI limitation, not a restriction of the A2A protocol.
+instead of Foundry. With -p a2a, the server must expose POST /a2a.
+Local A2A sends no Foundry headers and persists no session state. It rejects
+--session-id, --new-session, --conversation-id, --new-conversation,
+--version, --user-identity, --call-id, or --client-header. Use A2A
+contextId/taskId in a request file for protocol-level continuity.
 
 Sessions & Identity:
-Sessions are persisted per-agent — consecutive invokes reuse the same
-session automatically. Pass --new-session to force a reset.
+Except for local A2A, sessions are persisted per-agent — consecutive invokes
+reuse the same session automatically. Pass --new-session to force a reset.
 
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
-For agents configured with header-based isolation, pass --user-identity
-on each invoke. Locally it is sent as the x-agent-user-id header; for
-remote invokes it is sent as the x-ms-user-identity header.
+For header-based isolation, --user-identity sends x-agent-user-id with local
+responses/invocations or x-ms-user-identity with remote requests.
 
-Use --call-id to send a call ID with a local invoke. It is sent as the
-x-agent-foundry-call-id header and applies only to local invocations; it is
-ignored for remote requests.
+Use --call-id with local responses/invocations to send x-agent-foundry-call-id.
+It is ignored for remote requests. Both flags are rejected for local A2A.
 
 Use --client-header to send custom x-client-* request headers in "Name: Value"
 format (repeatable). The responses and invocations protocols forward the
@@ -210,6 +217,7 @@ Raw output includes the returned headers without a formatted latency summary.` +
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			*flags = resolveInvokeArgs(*flags, args, extCtx.OutputFormat)
+			captureLocalA2AExplicitFlags(cmd, flags)
 			a2aPreview, err := featureflags.IsEnabled(featureflags.A2A)
 			if err != nil {
 				return err
@@ -264,11 +272,12 @@ Raw output includes the returned headers without a formatted latency summary.` +
 	cmd.Flags().StringVar(&flags.conversation, "conversation-id", "", "Explicit conversation ID override")
 	cmd.Flags().BoolVar(&flags.newConversation, "new-conversation", false, "Force a new conversation (discard saved one)")
 	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
+	cmd.Flags().Lookup("user-identity").Usage += "; not supported with local a2a"
 	cmd.Flags().StringVar(
 		&flags.callID,
 		"call-id",
 		"",
-		"Call ID header value (sent as "+agent_api.AgentFoundryCallIDHeader+" for local invocations only; "+
+		"Call ID header value (sent as "+agent_api.AgentFoundryCallIDHeader+" for local responses/invocations only; "+
 			"ignored for remote requests)",
 	)
 	cmd.Flags().StringArrayVar(
@@ -377,7 +386,8 @@ const invokeA2ALegacyExamples = `
 
 const invokeVoiceHelp = `Voice Agents:
 For prompt voice agents and hosted voice wrappers, open your agent in the
-Microsoft Foundry portal at https://ai.azure.com to try it.
+Microsoft Foundry portal at https://ai.azure.com to try it. GPT Live agents use
+the native /voice/live/sessions protocol and require a GPT Live-compatible client.
 For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
 'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
 hosted agent protocols such as responses, invocations, and a2a.
@@ -417,6 +427,15 @@ func resolveInvokeArgs(flags invokeFlags, args []string, outputFormat string) in
 
 func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags, a2aPreview bool) error {
 	flags := *input
+	captureLocalA2AExplicitFlags(cmd, &flags)
+	if flags.local {
+		if err := validateLocalInvokePort(flags.port); err != nil {
+			return err
+		}
+	}
+	if err := validateLocalA2AOptions(&flags, agent_api.AgentProtocol(flags.protocol)); err != nil {
+		return err
+	}
 	if flags.agentEndpoint != "" {
 		if err := validateAgentEndpointFlags(cmd, &flags); err != nil {
 			return err
@@ -466,14 +485,6 @@ func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags, a2aPreview bool)
 				exterrors.CodeInvalidParameter,
 				fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
 				"supported protocols are: responses, invocations, a2a",
-			)
-		}
-		if flags.local && !p.IsLocalInvocable() {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				fmt.Sprintf("the %s protocol cannot be invoked against a local agent", flags.protocol),
-				"omit --local to invoke the deployed agent, "+
-					"or use --protocol responses/invocations for local invocation",
 			)
 		}
 	}
@@ -631,6 +642,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		return err
 	}
 	a2aVersion := resolveA2AVersion(a.flags.a2aVersion, a2aPreview)
+	if err := validateLocalA2AOptions(a.flags, agent_api.AgentProtocol(a.flags.protocol)); err != nil {
+		return err
+	}
 	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocol(a.flags.protocol), a2aPreview); err != nil {
 		return err
 	}
@@ -694,6 +708,11 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		return err
 	}
 
+	if err := validateLocalA2AOptions(a.flags, protocol); err != nil {
+		a.closeResolvedRemoteContextClient()
+		return err
+	}
+
 	// Re-validate after protocol resolution: when --protocol was omitted the
 	// protocol may have been auto-detected as a2a from the service definition. In
 	// that case the flag-parse guard above was skipped and clientHeaders was
@@ -732,7 +751,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		case agent_api.AgentProtocolInvocations:
 			return a.invocationsLocal(ctx)
 		case agent_api.AgentProtocolA2A:
-			return a.a2aLocal(ctx)
+			return a.a2aLocal(ctx, a2aVersion)
 		default:
 			return a.responsesLocal(ctx)
 		}
@@ -1181,6 +1200,15 @@ func doLocalRequestWithRetry(
 	client *http.Client,
 	newReq func() (*http.Request, error),
 ) (*http.Response, error) {
+	return doLocalRequestWithRetryWriter(ctx, client, newReq, os.Stderr)
+}
+
+func doLocalRequestWithRetryWriter(
+	ctx context.Context,
+	client *http.Client,
+	newReq func() (*http.Request, error),
+	progress io.Writer,
+) (*http.Response, error) {
 	deadline := time.Now().Add(localConnectRetryBudget)
 	backoff := localConnectRetryInitialBackoff
 	notified := false
@@ -1199,7 +1227,7 @@ func doLocalRequestWithRetry(
 		if !notified {
 			// Progress note on stderr keeps raw-mode stdout clean while
 			// reassuring the user we're waiting rather than hung.
-			fmt.Fprintln(os.Stderr, "Waiting for the local agent to accept connections...")
+			fmt.Fprintln(progress, "Waiting for the local agent to accept connections...")
 			notified = true
 		}
 		select {

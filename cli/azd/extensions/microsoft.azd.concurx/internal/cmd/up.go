@@ -12,8 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -156,8 +156,5 @@ func createUI(services map[string]*azdext.ServiceConfig, cancel context.CancelFu
 	}
 
 	model := newDeploymentModel(serviceNames, cancel, promptServer)
-	return tea.NewProgram(
-		model,
-		tea.WithAltScreen(), // Use alternate screen buffer
-	)
+	return tea.NewProgram(model)
 }

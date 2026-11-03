@@ -4,6 +4,7 @@
 package exec
 
 import (
+	"context"
 	"errors"
 	osexec "os/exec"
 	"runtime"
@@ -267,4 +268,27 @@ func TestExitError_InterruptedFromProcess(t *testing.T) {
 	typedErr, ok := errors.AsType[*ExitError](wrappedErr)
 	require.True(t, ok)
 	require.True(t, typedErr.Interrupted())
+}
+
+func TestExitError_UnwrapsCancellation(t *testing.T) {
+	t.Parallel()
+
+	osExitErr := makeOSExitError(t)
+	err := newExitError(osExitErr, "go", "out", "err", true, context.Canceled)
+
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestExitError_UnwrapsAdditionalFailures(t *testing.T) {
+	t.Parallel()
+
+	osExitErr := makeOSExitError(t)
+	cleanupErr := errors.New("cleanup failed")
+	waitErr := errors.Join(&osExitErr, cleanupErr)
+
+	err := newExitError(osExitErr, "go", "out", "err", true, waitErr)
+
+	require.ErrorIs(t, err, cleanupErr)
+	var unwrappedExitErr *osexec.ExitError
+	require.ErrorAs(t, err, &unwrappedExitErr)
 }

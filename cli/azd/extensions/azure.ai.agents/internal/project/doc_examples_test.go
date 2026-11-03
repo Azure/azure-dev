@@ -896,6 +896,62 @@ func TestHostedAgentSchemaSessionIdleTimeoutBoundaries(t *testing.T) {
 	}
 }
 
+func TestHostedAgentSchemaMemorySnapshot(t *testing.T) {
+	t.Parallel()
+	compiler := jsonschema.NewCompiler()
+	const schemaBaseURI = "https://raw.githubusercontent.com/Azure/azure-dev/main/" +
+		"cli/azd/extensions/azure.ai.agents/schemas/"
+	for _, name := range []string{"Agent.json", "FileRef.json", "azure.ai.agent.json"} {
+		raw, err := os.ReadFile(filepath.Join(extensionRoot(t), "schemas", name))
+		require.NoError(t, err)
+		var schema map[string]any
+		require.NoError(t, json.Unmarshal(raw, &schema))
+		require.NoError(t, compiler.AddResource(schemaBaseURI+name, schema))
+	}
+	for _, schemaName := range []string{"Agent.json", "azure.ai.agent.json"} {
+		t.Run(schemaName, func(t *testing.T) {
+			compiled, err := compiler.Compile(schemaBaseURI + schemaName)
+			require.NoError(t, err)
+			for _, test := range []struct {
+				name    string
+				kind    string
+				value   any
+				present bool
+				wantErr bool
+			}{
+				{name: "absent", kind: "hosted"},
+				{name: "enabled", kind: "hosted", value: true, present: true},
+				{name: "disabled", kind: "hosted", value: false, present: true},
+				{name: "string", kind: "hosted", value: "true", present: true, wantErr: true},
+				{name: "number", kind: "hosted", value: 1, present: true, wantErr: true},
+				{name: "null", kind: "hosted", present: true, wantErr: true},
+				{name: "prompt", kind: "prompt", value: true, present: true, wantErr: true},
+				{name: "prompt disabled", kind: "prompt", value: false, present: true, wantErr: true},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					definition := map[string]any{"kind": test.kind, "name": "snapshot-agent"}
+					if test.kind == "prompt" {
+						if schemaName == "azure.ai.agent.json" {
+							definition["model"] = "gpt-4.1-mini"
+						}
+						definition["instructions"] = "Answer briefly."
+					}
+					require.NoError(t, compiled.Validate(definition))
+					if test.present {
+						definition["enableMemorySnapshot"] = test.value
+					}
+					err := compiled.Validate(definition)
+					if test.wantErr {
+						require.Error(t, err)
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestDocSchemaRegistryConnectionID(t *testing.T) {
 	t.Parallel()
 
@@ -1221,6 +1277,39 @@ func TestDocExamplesAreValid(t *testing.T) {
 	}
 
 	require.NotZero(t, checked, "no azure.ai.agent doc examples were found — is the extractor still working?")
+}
+
+func TestGPTLiveSchemaExampleIsValid(t *testing.T) {
+	t.Parallel()
+	root := extensionRoot(t)
+	path := filepath.Join(root, "schemas", "examples", "gpt-live.azure.yaml")
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	example := docExample{file: "schemas/examples/gpt-live.azure.yaml", line: 1, content: string(raw)}
+	services := agentServicesInExample(t, example)
+	require.Len(t, services, 1)
+	schema := loadDocSchema(t, root)
+	for name, service := range services {
+		cfg := serviceConfigFromDoc(t, example, name, service)
+		_, _, found, _, err := AgentDefinitionFromService(cfg)
+		require.NoError(t, err)
+		require.True(t, found)
+		checkVocabulary(t, example, name, service, schema)
+	}
+
+	readme, err := os.ReadFile(filepath.Join(root, "README.md"))
+	require.NoError(t, err)
+	var readmeLive map[string]any
+	for _, candidate := range extractYAMLExamples("README.md", string(readme)) {
+		services := agentServicesInExample(t, candidate)
+		if service, ok := services["gpt-live-agent"]; ok {
+			readmeLive = service
+			break
+		}
+	}
+	require.NotNil(t, readmeLive, "README GPT Live example not found")
+	require.Equal(t, services["gpt-live-agent"], readmeLive,
+		"README and canonical GPT Live manifest must not drift")
 }
 
 // checkVocabulary asserts that every property the snippet declares is one azd

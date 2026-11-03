@@ -485,7 +485,8 @@ func TestOptimizeRejectsInvalidExplicitFlagsBeforeResolution(t *testing.T) {
 	request, _, err := cfg.ToRequest()
 	require.NoError(t, err)
 	assert.Nil(t, request.OptimizationConfiguration.EvaluationConfiguration)
-	assert.Equal(t, "Be concise", request.OptimizationConfiguration.Context[0].Prompt)
+	require.NotNil(t, request.OptimizationConfiguration.Context[0].Prompt)
+	assert.Equal(t, "Be concise", *request.OptimizationConfiguration.Context[0].Prompt)
 }
 
 func TestOptimizePromptConfigDefersRequestValidationToServer(t *testing.T) {

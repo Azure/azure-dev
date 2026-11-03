@@ -72,7 +72,8 @@ func serviceResponseError(statusCode int, code, retryAfterHeader string) error {
 		kind = ErrorValidation
 	case http.StatusUnauthorized, http.StatusForbidden:
 		kind = ErrorAuthentication
-		suggestion = "Check the azd account, selected tenant, and access to the CU resource."
+		suggestion = "Check the resource API key when using CU_API_KEY, " +
+			"or the azd account and tenant when using Entra ID. Verify access to the CU resource."
 	case http.StatusNotFound:
 		kind = ErrorNotFound
 		suggestion = "Verify the requested resource or analyzer exists and check the endpoint. " +

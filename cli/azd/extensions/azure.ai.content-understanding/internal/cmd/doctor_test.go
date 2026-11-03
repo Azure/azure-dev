@@ -4,22 +4,105 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
 
+	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/defaults"
 	"azure.ai.content-understanding/internal/exterrors"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDoctorNestedDefaultsNotSetResponse(t *testing.T) {
+	for _, test := range []struct {
+		name, body string
+		status     int
+		wantError  bool
+	}{
+		{"unset defaults",
+			`{"error":{"code":"InvalidRequest","message":"private response",` +
+				`"innererror":{"code":"DefaultsNotSet","message":"private detail"}}}`, http.StatusBadRequest, false},
+		{"other bad request", `{"error":{"code":"InvalidRequest"}}`, http.StatusBadRequest, true},
+		{"unauthorized",
+			`{"error":{"code":"InvalidRequest","innererror":{"code":"DefaultsNotSet"}}}`, http.StatusUnauthorized, true},
+		{"server failure",
+			`{"error":{"code":"InvalidRequest","innererror":{"code":"DefaultsNotSet"}}}`,
+			http.StatusInternalServerError, true},
+	} {
+		for _, format := range []string{"default", "json", "none"} {
+			t.Run(test.name+"/"+format, func(t *testing.T) {
+				calls := 0
+				client, err := cuclient.NewRESTTransportWithKeyCredential(
+					"https://configured.services.ai.azure.com", azcore.NewKeyCredential("test-key"),
+					&cuclient.TransportOptions{Transport: &http.Client{Transport: serviceHTTPTransport(
+						func(request *http.Request) (*http.Response, error) {
+							calls++
+							assert.Equal(t, http.MethodGet, request.Method)
+							assert.Equal(t, "/contentunderstanding/defaults", request.URL.Path)
+							assert.Equal(t, cuclient.DefaultAPIVersion, request.URL.Query().Get("api-version"))
+							return &http.Response{
+								StatusCode: test.status, Request: request,
+								Header: http.Header{
+									"Content-Type": {"application/json"}, "X-Ms-Error-Code": {"InvalidRequest"},
+								},
+								Body: io.NopCloser(strings.NewReader(test.body)),
+							}, nil
+						})}},
+				)
+				require.NoError(t, err)
+				var stdout, stderr bytes.Buffer
+				root := newRootCommand(func(
+					*cobra.Command, *azdext.ExtensionContext, config.Options,
+				) (*serviceSession, error) {
+					return &serviceSession{
+						client: client, close: func() {}, authentication: "API key", apiVersion: cuclient.DefaultAPIVersion,
+					}, nil
+				})
+				root.SetOut(&stdout)
+				root.SetErr(&stderr)
+				root.SetArgs([]string{"doctor", "--output", format})
+				err = root.ExecuteContext(t.Context())
+				assert.NotContains(t, stdout.String()+stderr.String(), "private")
+				if test.wantError {
+					require.Error(t, err)
+					assert.NotContains(t, err.Error(), "private")
+					assert.Empty(t, stdout.String())
+					return
+				}
+				require.NoError(t, err)
+				assert.Equal(t, 1, calls, "diagnostics must not initialize defaults")
+				assert.Empty(t, stderr.String())
+				switch format {
+				case "default":
+					assert.Contains(t, stdout.String(), "[OK] Authentication and CU service access")
+					assert.Contains(t, stdout.String(), "[WARN] Generative readiness: not ready")
+				case "json":
+					var result doctorResult
+					require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+					assert.False(t, result.Ready)
+					assert.Empty(t, result.Models)
+					assert.Len(t, result.Missing, 3)
+				case "none":
+					assert.Empty(t, stdout.String())
+				}
+			})
+		}
+	}
+}
 
 func TestDoctorHealthyGoldenReadOnlyAndContextLabel(t *testing.T) {
 	for _, environment := range []string{"dev", ""} {
@@ -121,6 +204,41 @@ func TestDoctorHumanReadableMissingDefaults(t *testing.T) {
 		assert.Equal(t, []string{"get"}, f.client.calls)
 		assert.Equal(t, 1, f.closes)
 	}
+}
+
+func TestDoctorWarningColorDoesNotChangeReadinessOrJSON(t *testing.T) {
+	setHelpColor(t, true)
+	t.Setenv("NO_COLOR", "")
+	for _, format := range []string{"default", "json", "none"} {
+		t.Run(format, func(t *testing.T) {
+			f := newDefaultsFixture(t)
+			f.client.current = cuclient.Defaults{ModelDeployments: map[string]string{}}
+			stdout, stderr, err := f.execute(t.Context(), "doctor", "--output", format)
+			require.NoError(t, err)
+			assert.Empty(t, stderr)
+			switch format {
+			case "default":
+				assert.Contains(t, stdout, "\x1b[33m")
+				assert.Contains(t, stdout, "[WARN] Generative readiness: not ready")
+				assert.Contains(t, strings.ReplaceAll(stdout, "\x1b[0m", ""), "\n\nNext steps:\n")
+				assert.Contains(t, stdout, "\x1b[94m  Configure mappings with azd ai cu defaults set")
+				assert.Contains(t, stdout,
+					"\x1b[94m  If the selected environment has cu.modelDeployments, run azd ai cu doctor --fix-defaults.")
+				assert.Contains(t, stdout, "\n\nNon-generative analyzers")
+			case "json":
+				var result doctorResult
+				require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+				assert.False(t, result.Ready)
+				assert.NotContains(t, stdout, "\x1b")
+			case "none":
+				assert.Empty(t, stdout)
+			}
+		})
+	}
+	t.Setenv("NO_COLOR", "1")
+	text := formatDoctorResult(doctorResult{Missing: []string{"Missing model."}})
+	assert.Contains(t, text, "[WARN]")
+	assert.NotContains(t, text, "\x1b")
 }
 
 func TestDoctorHumanReadableFixUsesUpdatedMappings(t *testing.T) {
@@ -338,7 +456,7 @@ func TestDoctorActualProjectlessConfigurationErrorsNeverReachService(t *testing.
 		{"credential-bearing endpoint", "https://private-user:private-pass@configured.example?sig=private#private",
 			"tenant", "", "", "invalid_endpoint"},
 		{"invalid version", "https://configured.example", "tenant", "private", "", "unsupported_api_version"},
-		{"blocked key", "https://configured.example", "tenant", "", "private-key", "unsupported_authentication"},
+		{"blank key", "https://configured.example", "tenant", "", " ", "invalid_api_key"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			startHost(t, &deploymentServer{get: func(context.Context) (*azdext.GetDeploymentContextResponse, error) {

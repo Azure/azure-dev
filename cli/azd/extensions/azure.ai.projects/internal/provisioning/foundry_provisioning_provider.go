@@ -105,6 +105,7 @@ type FoundryProvisioningProvider struct {
 
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
+	armClientOptions *arm.ClientOptions
 }
 
 func readProjectFile(projectRoot string) ([]byte, string, error) {
@@ -768,6 +769,13 @@ func foundryServiceEndpointAtRoot(
 		}
 		values = resolved
 	}
+	var node yaml.Node
+	if err := node.Encode(values); err != nil {
+		return "", err
+	}
+	if err := synthesis.ValidateAgentHostingInputs(node, svcName); err != nil {
+		return "", err
+	}
 	data, err := yaml.Marshal(values)
 	if err != nil {
 		return "", err
@@ -1211,6 +1219,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	if err := p.prepareBYO(ctx, src); err != nil {
+		return nil, err
+	}
 
 	dep := armresources.Deployment{
 		Location: new(p.location),
@@ -1500,6 +1511,9 @@ func (p *FoundryProvisioningProvider) Preview(
 
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
+		return nil, err
+	}
+	if err := p.prepareBYO(ctx, src); err != nil {
 		return nil, err
 	}
 
@@ -2169,7 +2183,11 @@ func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*a
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	options := p.armClientOptions
+	if p.synthResult != nil && p.synthResult.Hosting != nil {
+		options = byoARMOptions(options)
+	}
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, options)
 	if err != nil {
 		return nil, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,

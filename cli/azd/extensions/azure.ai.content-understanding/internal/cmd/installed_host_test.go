@@ -123,6 +123,25 @@ func TestInstalledHostOffline(t *testing.T) {
 	require.Contains(t, string(run(true, "extension", "list", "--installed", "-o", "json")), extensionID)
 	require.Contains(t, string(run(true, "ai", "cu", "--help")), "analyzer")
 	require.Contains(t, string(run(true, "ai", "cu", "infra", "generate", "--help")), "human-readable")
+	for _, args := range [][]string{{"ai", "cu", "env-var"}, {"ai", "cu", "env-var", "--help"}} {
+		help := string(run(true, args...))
+		require.Contains(t, help, "Supported environment variables")
+		for _, variable := range environmentVariables {
+			require.Contains(t, help, variable.Name)
+			require.Contains(t, help, "Default: "+variable.Default)
+		}
+	}
+	environment = append(environment, "CU_API_KEY=private-smoke-key")
+	listed := string(run(true, "ai", "cu", "env-var", "list", "-o", "json"))
+	require.Contains(t, listed, `"name": "CU_API_KEY"`)
+	require.Contains(t, listed, `"value": "********"`)
+	require.NotContains(t, listed, "private-smoke-key")
+	keyFailure := string(run(false, "ai", "cu", "doctor",
+		"--endpoint", "https://resource.services.ai.azure.com", "-o", "json"))
+	require.Contains(t, keyFailure, "The CU service request could not be completed.",
+		"a signed-out host must reach the blocked HTTP transport instead of requiring Entra authentication")
+	require.NotContains(t, keyFailure, "private-smoke-key")
+	environment = environment[:len(environment)-1]
 	for _, test := range []struct {
 		name string
 		args []string

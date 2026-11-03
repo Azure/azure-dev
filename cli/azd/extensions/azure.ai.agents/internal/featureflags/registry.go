@@ -1,9 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore featureflags
+// cspell:ignore featureflags BYOAKS
 
 package featureflags
+
+import "azureaiagent/internal/synthesis"
 
 // Every agents preview feature is declared here and listed by All.
 var (
@@ -31,12 +33,25 @@ var (
 		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING",
 		Description: "Long-running Responses invocations",
 	}
+	// MemorySnapshot controls hosted agent memory snapshot opt-in.
+	MemorySnapshot = Feature{
+		ID:          "agents.memory_snapshot",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT",
+		Description: "Hosted agent memory snapshots",
+	}
+	// BYOAKS controls existing-AKS project initialization and adoption.
+	BYOAKS = Feature{
+		ID:             synthesis.BYOAKSFeatureID,
+		EnvVar:         synthesis.BYOAKSEnvVar,
+		Description:    "Existing AKS project initialization and adoption",
+		DefaultEnabled: false,
+	}
 )
 
 // All returns every declared feature in a stable order.
 // The slice is a fresh copy, so callers may change it.
 func All() []Feature {
-	return []Feature{ManagedHarness, Voice, LongRunning, A2A}
+	return []Feature{ManagedHarness, Voice, LongRunning, A2A, MemorySnapshot, BYOAKS}
 }
 
 // Lookup returns the declared feature with the given ID.

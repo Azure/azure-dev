@@ -3,22 +3,25 @@ targetScope = 'resourceGroup'
 @description('Name of the Azure Container Registry.')
 param registryName string
 
-@description('Principal receiving AcrPull on the registry.')
+@description('Principal receiving pull access on the registry.')
 param principalId string
 
-@description('AcrPull role definition resource ID.')
+@description('Pull role definition resource ID (AcrPull or Container Registry Repository Reader).')
 param roleDefinitionId string
+param assignmentName string = ''
+param ownershipDescription string = ''
 
-resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+resource registry 'Microsoft.ContainerRegistry/registries@2025-11-01' existing = {
   name: registryName
 }
 
 resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, principalId, roleDefinitionId)
+  name: empty(assignmentName) ? guid(registry.id, principalId, roleDefinitionId) : assignmentName
   scope: registry
   properties: {
     principalId: principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: roleDefinitionId
+    description: ownershipDescription
   }
 }

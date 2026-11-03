@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.10 (2026-10-29)
+
+### Bugs Fixed
+
+- [[#10774]](https://github.com/Azure/azure-dev/pull/10774) Fix HTTP 403 failures during skill creation and deployment by preparing developer data-plane access to newly provisioned Foundry projects.
+
 ## 1.0.0-beta.9 (2026-10-23)
 
 ### Other Changes

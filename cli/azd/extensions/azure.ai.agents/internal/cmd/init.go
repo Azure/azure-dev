@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore BYOAKS
+
 package cmd
 
 import (
@@ -865,6 +867,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return err
 					}
 				} else {
+					endLoading := inittelemetry.Start(ctx, inittelemetry.TemplateLoading)
+					defer endLoading()
+
 					stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
 					if err != nil {
 						if exterrors.IsCancellation(err) {
@@ -889,6 +894,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := requireStagedPreviewFeatures(stagingDir); err != nil {
 						return err
 					}
+					endLoading()
 				}
 				cachedExplicitAzureYaml = content
 			}
@@ -953,6 +959,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			if !userProvidedTemplate {
 				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 				if projectErr == nil && projectResponse.GetProject() != nil {
+					if err := requireBYOAKSProjectFeature(projectResponse.GetProject()); err != nil {
+						return err
+					}
 					if err := requireProjectPreviewFeatures(projectResponse.GetProject()); err != nil {
 						return err
 					}
@@ -1354,7 +1363,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"'prompt' requires --agent-name and either --model or --model-deployment.")
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
 		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand).")
-	_ = cmd.Flags().MarkHidden("harness")
 	previewFlag(cmd, "harness", featureflags.ManagedHarness,
 		agent_api.ManagedAgentHarnessMicrosoftCopilot, agent_api.ManagedAgentHarnessGitHubCopilot)
 	previewFlag(cmd, "kind", featureflags.Voice, kindFlagPromptVoice)
@@ -1685,11 +1693,11 @@ func ensureProject(
 
 		// Scaffold a minimal project via `azd init -t <empty dir> <targetDir>`.
 		// We use an empty template dir rather than `--minimal` (which can't
-		// take a positional target) or `-C` (a no-op on workflow re-entry,
-		// since azd-core parses global flags once at startup). The empty
-		// template skips the network call and produces just azure.yaml +
-		// .azure/<env>/ + git init; writeFoundryProvider then stamps the
-		// provider name onto azure.yaml.
+		// take a positional target). Prefer the positional target over `-C`
+		// so init creates the nested folder even when the parent process
+		// already used -C/--cwd. The empty template skips the network call
+		// and produces just azure.yaml + .azure/<env>/ + git init;
+		// writeFoundryProvider then stamps the provider name onto azure.yaml.
 		emptyTemplateDir, err := os.MkdirTemp("", "azd-foundry-empty-*")
 		if err != nil {
 			return nil, exterrors.Dependency(
@@ -2921,7 +2929,8 @@ prompt-only or registry options are not supported by this voice initialization.
 
 Prompt voice services support modelType: managed or self_deployed (bring your own model
 deployment), audio input/output, structured inputs, tools, greeting, avatar,
-handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use
+and telephony bindings (acs or twilio). Legacy handoff is not supported by the
+GA Voice Agent API; use telephony transferTargets where applicable. Hosted voice wrappers use
 conversationEngine.type: hosted_agent and conversationEngine.name to reference
 the hosted target service in azure.yaml. The old modelType: hosted_agent and
 targetAgent settings are not supported; use conversationEngine instead. Initialize from a sample

@@ -1047,13 +1047,14 @@ services:
 		wantMain       string
 		wantRegistry   string
 		expectRegistry bool
+		wantAccess     bool
 	}{
 		{name: "create", env: map[string]string{"AZD_FOUNDRY_ACR_MODE": "create"}, wantMode: "create", wantMain: "resource adjunctResourceGroup", wantRegistry: "resource registry ", expectRegistry: true},
 		{name: "reuse connect", env: map[string]string{
 			"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
 			"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "registry.azurecr.io",
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/registry",
-		}, wantMode: "reuse-connect", wantMain: "scope: resourceGroup(split(existingAcrResourceId", wantRegistry: "existing =", expectRegistry: true},
+		}, wantMode: "reuse-connect", wantMain: "scope: resourceGroup(split(existingAcrResourceId", wantRegistry: "existing =", expectRegistry: true, wantAccess: true},
 		{name: "reuse connect with AcrPull", env: map[string]string{
 			"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
 			"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
@@ -1091,6 +1092,12 @@ services:
 				assert.Contains(t, string(registry), tt.wantRegistry)
 			} else {
 				assert.NoFileExists(t, registryPath)
+			}
+			accessPath := filepath.Join(dir, "infra", "modules", "acr-pull-role-assignment.bicep")
+			if tt.wantAccess {
+				assert.FileExists(t, accessPath)
+			} else {
+				assert.NoFileExists(t, accessPath)
 			}
 
 			params, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec
@@ -2235,6 +2242,80 @@ func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(dir, "infra")) //nolint:gosec // G304: test file path from t.TempDir()
 	require.NoError(t, err)
 	assert.Equal(t, "this is a file, not a dir", string(got))
+}
+
+func TestEjectInfra_BYOAKS(t *testing.T) {
+	const config = `name: byo-aks
+infra:
+  provider: microsoft.foundry
+services:
+  project:
+    host: azure.ai.project
+    agentHosting:
+      clusterResourceId: ${CLUSTER_ID}
+    network:
+      agentSubnet: {vnet: "${VNET_ID}", name: agents}
+      peSubnet: {vnet: "${VNET_ID}", name: endpoints}
+`
+	t.Run("Bicep preserves the provider and unresolved inputs", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWriteFile(t, filepath.Join(dir, "azure.yaml"), config)
+		withCapturedStdout(t, func() {
+			require.NoError(t, ejectInfra(dir, "bicep"))
+		})
+		raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json"))
+		require.NoError(t, err)
+		var parameters struct {
+			Parameters map[string]struct {
+				Value any `json:"value"`
+			} `json:"parameters"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &parameters))
+		hosting, ok := parameters.Parameters["agentHosting"].Value.(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "${CLUSTER_ID}", hosting["clusterResourceId"])
+		assert.Empty(t, hosting["storageAccountResourceId"])
+		assert.Equal(t, false, parameters.Parameters["includeAcr"].Value)
+		assert.NotContains(t, parameters.Parameters, "byoOnboarding")
+		require.FileExists(t, filepath.Join(dir, "infra", "modules", "byo-prerequisites.bicep"))
+		raw, err = os.ReadFile(filepath.Join(dir, "azure.yaml"))
+		require.NoError(t, err)
+		assert.Contains(t, string(raw), "provider: microsoft.foundry")
+	})
+	t.Run("Terraform fails before changing any files", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "azure.yaml")
+		mustWriteFile(t, path, config)
+		err := ejectInfra(dir, "terraform")
+		require.ErrorContains(t, err, "BYO AKS requires the microsoft.foundry provisioning provider")
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, config, string(raw))
+		require.NoDirExists(t, filepath.Join(dir, "infra"))
+	})
+	t.Run("Bicep preserves supplied-resource references", func(t *testing.T) {
+		dir := t.TempDir()
+		supplied := strings.Replace(config, "    network:",
+			"      storageAccountResourceId: ${STORAGE_ID}\n"+
+				"      hostingManagementIdentityResourceId: ${HOSTING_ID}\n"+
+				"      workloadIdentityResourceId: ${WORKLOAD_ID}\n    network:", 1)
+		mustWriteFile(t, filepath.Join(dir, "azure.yaml"), supplied)
+		withCapturedStdout(t, func() {
+			require.NoError(t, ejectInfra(dir, "bicep"))
+		})
+		raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json"))
+		require.NoError(t, err)
+		var parameters struct {
+			Parameters map[string]struct{ Value any }
+		}
+		require.NoError(t, json.Unmarshal(raw, &parameters))
+		hosting, ok := parameters.Parameters["agentHosting"].Value.(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "${STORAGE_ID}", hosting["storageAccountResourceId"])
+		assert.Equal(t, "${HOSTING_ID}", hosting["hostingManagementIdentityResourceId"])
+		assert.Equal(t, "${WORKLOAD_ID}", hosting["workloadIdentityResourceId"])
+		assert.Equal(t, "${CLUSTER_ID}", hosting["clusterResourceId"])
+	})
 }
 
 func TestEjectInfra_RefusesSymlinkedFoundryPath(t *testing.T) {

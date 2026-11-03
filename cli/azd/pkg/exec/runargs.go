@@ -26,6 +26,11 @@ type RunArgs struct {
 
 	// When set will run the command within a shell
 	UseShell bool
+	shellSet bool
+
+	// WindowsCommandLine overrides Windows argument quoting for executables such as
+	// msiexec. Use with WithShell(false); Args are still retained for logging.
+	WindowsCommandLine string
 
 	// When set will attach commands to std input/output
 	Interactive bool
@@ -80,9 +85,10 @@ func (b RunArgs) WithInteractive(interactive bool) RunArgs {
 	return b
 }
 
-// Updates whether or not this will be run in a shell
+// WithShell explicitly selects whether to use a shell, overriding the Windows shell default.
 func (b RunArgs) WithShell(useShell bool) RunArgs {
 	b.UseShell = useShell
+	b.shellSet = true
 	return b
 }
 

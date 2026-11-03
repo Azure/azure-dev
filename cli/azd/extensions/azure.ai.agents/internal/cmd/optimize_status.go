@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -24,6 +26,7 @@ type optimizeStatusFlags struct {
 	envName      string // explicit environment name (from -e flag)
 	output       string // output format (json or table)
 	watch        bool   // poll until job completes
+	candidate    string // inspect a candidate's full details instead of the job
 	pollInterval int    // polling interval in seconds
 	optimizeConnectionFlags
 }
@@ -37,7 +40,9 @@ func newOptimizeStatusCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Check the status of an optimization job by its operation ID.
 
 If no operation ID is provided, uses the last optimization job from this project.
-Use --watch to poll until the job completes.`,
+Use --watch to poll until the job completes.
+Use --candidate to inspect full candidate details, including skill outcomes and files.
+--candidate cannot be combined with --watch.`,
 		Example: `  # Check last job status (auto-resolved)
   azd ai agent optimize status
 
@@ -45,11 +50,21 @@ Use --watch to poll until the job completes.`,
   azd ai agent optimize status opt_abc123
 
   # Watch until complete
-  azd ai agent optimize status opt_abc123 --watch`,
+  azd ai agent optimize status opt_abc123 --watch
+
+  # Inspect full candidate details as JSON
+  azd ai agent optimize status opt_abc123 --candidate candidate_abc123 --output json`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if flags.pollInterval < 1 {
 				return fmt.Errorf("--poll-interval must be >= 1")
+			}
+			if cmd.Flags().Changed("candidate") && strings.TrimSpace(flags.candidate) == "" {
+				return exterrors.Validation(exterrors.CodeInvalidParameter, "--candidate must not be empty", "provide a candidate ID")
+			}
+			if flags.candidate != "" && flags.watch {
+				return exterrors.Validation(exterrors.CodeConflictingArguments,
+					"--candidate cannot be combined with --watch", "inspect a candidate or watch the job")
 			}
 			ctx := azdext.WithAccessToken(cmd.Context())
 			flags.envName = extCtx.Environment
@@ -71,6 +86,7 @@ Use --watch to poll until the job completes.`,
 	}
 
 	cmd.Flags().BoolVar(&flags.watch, "watch", false, "Poll until job completes")
+	cmd.Flags().StringVar(&flags.candidate, "candidate", "", "Inspect this candidate's full details instead of the job")
 	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 10, "Polling interval in seconds")
 	flags.optimizeConnectionFlags.register(cmd)
 
@@ -96,6 +112,9 @@ func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operation
 
 	client := optimize_api.NewOptimizeClient(endpoint, credential)
 	out := cmd.OutOrStdout()
+	if flags.candidate != "" {
+		return showOptimizeCandidate(cmd, client, operationID, flags.candidate, flags.output)
+	}
 
 	status, err := client.GetOptimizeStatus(cmd.Context(), operationID)
 	if err != nil {
@@ -131,9 +150,43 @@ func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operation
 	return optimizeJobError(status)
 }
 
+func showOptimizeCandidate(
+	cmd *cobra.Command,
+	client *optimize_api.OptimizeClient,
+	jobID, candidateID, format string,
+) error {
+	candidate, err := client.GetCandidate(cmd.Context(), jobID, candidateID)
+	if err != nil {
+		return fmt.Errorf("failed to get candidate details: %w", err)
+	}
+	if format == "json" {
+		data, err := json.MarshalIndent(candidate, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal candidate details: %w", err)
+		}
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), string(data)); err != nil {
+			return err
+		}
+	} else if candidate.ExecutionSummary != nil || candidate.ResolvedContext != nil ||
+		(candidate.Output != nil && candidate.Output.Type == optimize_api.SkillOptimizationType) {
+		printSkillOptimizeCandidate(cmd.OutOrStdout(), jobID, *candidate)
+	} else {
+		status := &optimize_api.OptimizeJobStatus{ID: jobID, CandidateResults: []optimize_api.CandidateResult{*candidate}}
+		printOptimizeResults(cmd.Context(), cmd.OutOrStdout(), status, false, "")
+	}
+	if candidate.Error != nil {
+		return fmt.Errorf("candidate failed [%s]: %s",
+			optimizeTerminalText(candidate.Error.Code), optimizeTerminalText(candidate.Error.Message))
+	}
+	if candidate.Status == optimize_api.StatusFailed {
+		return fmt.Errorf("candidate %q failed", candidateID)
+	}
+	return nil
+}
+
 func optimizeJobError(status *optimize_api.OptimizeJobStatus) error {
 	if status.Error != nil {
-		return fmt.Errorf("optimization job failed: %s", status.Error.Message)
+		return fmt.Errorf("optimization job failed: %s", optimizeTerminalText(status.Error.Message))
 	}
 	if status.Status == optimize_api.StatusFailed {
 		return fmt.Errorf("optimization job %q failed", status.ID)
@@ -153,10 +206,10 @@ func printOptimizeStatusJSON(out io.Writer, status *optimize_api.OptimizeJobStat
 
 // printOptimizeJobSummary prints a brief summary of an optimization job's state.
 func printOptimizeJobSummary(out io.Writer, status *optimize_api.OptimizeJobStatus) {
-	fmt.Fprintf(out, "  Job ID:  %s\n", color.CyanString(status.ID))
-	fmt.Fprintf(out, "  Status:  %s\n", formatOptimizeStatus(status.Status))
+	fmt.Fprintf(out, "  Job ID:  %s\n", color.CyanString(optimizeTerminalText(status.ID)))
+	fmt.Fprintf(out, "  Status:  %s\n", formatOptimizeStatus(optimizeTerminalText(status.Status)))
 	if agentName := status.AgentName(); agentName != "" {
-		fmt.Fprintf(out, "  Agent:   %s\n", agentName)
+		fmt.Fprintf(out, "  Agent:   %s\n", optimizeTerminalText(agentName))
 	}
 	if status.Result != nil {
 		if summary := status.Result.CandidateSummary; summary != nil {
@@ -166,7 +219,7 @@ func printOptimizeJobSummary(out io.Writer, status *optimize_api.OptimizeJobStat
 			}
 		}
 		if status.Result.TerminationReason != "" {
-			fmt.Fprintf(out, "  Termination: %s\n", status.Result.TerminationReason)
+			fmt.Fprintf(out, "  Termination: %s\n", optimizeTerminalText(status.Result.TerminationReason))
 		}
 	}
 	if status.CreatedAt != 0 {
@@ -180,11 +233,11 @@ func printOptimizeJobSummary(out io.Writer, status *optimize_api.OptimizeJobStat
 		fmt.Fprintf(out, "  Duration: %s\n", duration)
 	}
 	if status.Error != nil {
-		fmt.Fprintf(out, "  Error:   %s\n", color.RedString(status.Error.Message))
+		fmt.Fprintf(out, "  Error:   %s\n", color.RedString(optimizeTerminalText(status.Error.Message)))
 	}
 	if len(status.Warnings) > 0 {
 		for _, w := range status.Warnings {
-			fmt.Fprintf(out, "  Warning: %s\n", color.YellowString(w))
+			fmt.Fprintf(out, "  Warning: %s\n", color.YellowString(optimizeTerminalText(w)))
 		}
 	}
 	fmt.Fprintln(out)

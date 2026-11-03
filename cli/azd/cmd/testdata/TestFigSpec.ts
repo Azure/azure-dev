@@ -792,6 +792,15 @@ const completionSpec: Fig.Spec = {
 									isDangerous: true,
 								},
 								{
+									name: ['--harness'],
+									description: 'Optional execution harness for --kind prompt: \'microsoft_copilot_preview\' (Microsoft Copilot Brain+Hand).',
+									args: [
+										{
+											name: 'harness',
+										},
+									],
+								},
+								{
 									name: ['--image'],
 									description: 'Pre-built container image URL (e.g., \'myacr.azurecr.io/agent:v1\'). Skips template/language selection, code scaffolding, Dockerfile-based source setup and build configuration, and ACR setup, and requires --agent-name. Incompatible with --deploy-mode code.',
 									args: [
@@ -857,7 +866,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--protocol'],
-									description: 'Protocols supported by the agent (responses, invocations, invocations_ws, activity). Can be specified multiple times.',
+									description: 'Protocols supported by the agent (responses, invocations, invocations_ws, activity, a2a). Can be specified multiple times.',
 									isRepeatable: true,
 									args: [
 										{
@@ -1114,6 +1123,15 @@ const completionSpec: Fig.Spec = {
 							name: ['invoke'],
 							description: 'Send a message to your prompt or hosted agent.',
 							options: [
+								{
+									name: ['--a2a-version'],
+									description: 'A2A wire version: 0.3 or 1.0. Defaults to 1.0 for messages; required with --input-file for a2a.',
+									args: [
+										{
+											name: 'a2a-version',
+										},
+									],
+								},
 								{
 									name: ['--agent-endpoint'],
 									description: 'Full endpoint URL of a deployed agent (run \'azd ai agent show\' to see it). Invokes without requiring an azd project; protocol is derived from the URL.',

@@ -4,22 +4,105 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
 
+	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/defaults"
 	"azure.ai.content-understanding/internal/exterrors"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDoctorNestedDefaultsNotSetResponse(t *testing.T) {
+	for _, test := range []struct {
+		name, body string
+		status     int
+		wantError  bool
+	}{
+		{"unset defaults",
+			`{"error":{"code":"InvalidRequest","message":"private response",` +
+				`"innererror":{"code":"DefaultsNotSet","message":"private detail"}}}`, http.StatusBadRequest, false},
+		{"other bad request", `{"error":{"code":"InvalidRequest"}}`, http.StatusBadRequest, true},
+		{"unauthorized",
+			`{"error":{"code":"InvalidRequest","innererror":{"code":"DefaultsNotSet"}}}`, http.StatusUnauthorized, true},
+		{"server failure",
+			`{"error":{"code":"InvalidRequest","innererror":{"code":"DefaultsNotSet"}}}`,
+			http.StatusInternalServerError, true},
+	} {
+		for _, format := range []string{"default", "json", "none"} {
+			t.Run(test.name+"/"+format, func(t *testing.T) {
+				calls := 0
+				client, err := cuclient.NewRESTTransportWithKeyCredential(
+					"https://configured.services.ai.azure.com", azcore.NewKeyCredential("test-key"),
+					&cuclient.TransportOptions{Transport: &http.Client{Transport: serviceHTTPTransport(
+						func(request *http.Request) (*http.Response, error) {
+							calls++
+							assert.Equal(t, http.MethodGet, request.Method)
+							assert.Equal(t, "/contentunderstanding/defaults", request.URL.Path)
+							assert.Equal(t, cuclient.DefaultAPIVersion, request.URL.Query().Get("api-version"))
+							return &http.Response{
+								StatusCode: test.status, Request: request,
+								Header: http.Header{
+									"Content-Type": {"application/json"}, "X-Ms-Error-Code": {"InvalidRequest"},
+								},
+								Body: io.NopCloser(strings.NewReader(test.body)),
+							}, nil
+						})}},
+				)
+				require.NoError(t, err)
+				var stdout, stderr bytes.Buffer
+				root := newRootCommand(func(
+					*cobra.Command, *azdext.ExtensionContext, config.Options,
+				) (*serviceSession, error) {
+					return &serviceSession{
+						client: client, close: func() {}, authentication: "API key", apiVersion: cuclient.DefaultAPIVersion,
+					}, nil
+				})
+				root.SetOut(&stdout)
+				root.SetErr(&stderr)
+				root.SetArgs([]string{"doctor", "--output", format})
+				err = root.ExecuteContext(t.Context())
+				assert.NotContains(t, stdout.String()+stderr.String(), "private")
+				if test.wantError {
+					require.Error(t, err)
+					assert.NotContains(t, err.Error(), "private")
+					assert.Empty(t, stdout.String())
+					return
+				}
+				require.NoError(t, err)
+				assert.Equal(t, 1, calls, "diagnostics must not initialize defaults")
+				assert.Empty(t, stderr.String())
+				switch format {
+				case "default":
+					assert.Contains(t, stdout.String(), "[OK] Authentication and CU service access")
+					assert.Contains(t, stdout.String(), "[WARN] Generative readiness: not ready")
+				case "json":
+					var result doctorResult
+					require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+					assert.False(t, result.Ready)
+					assert.Empty(t, result.Models)
+					assert.Len(t, result.Missing, 3)
+				case "none":
+					assert.Empty(t, stdout.String())
+				}
+			})
+		}
+	}
+}
 
 func TestDoctorHealthyGoldenReadOnlyAndContextLabel(t *testing.T) {
 	for _, environment := range []string{"dev", ""} {

@@ -331,9 +331,11 @@ func TestRESTTransportContract(t *testing.T) {
 func TestRESTTransportSafeErrorsAndRetryPolicy(t *testing.T) {
 	t.Run("nested service code is safe", func(t *testing.T) {
 		client := newRESTTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
-			return restResponse(request, http.StatusBadRequest,
+			response := restResponse(request, http.StatusBadRequest,
 				`{"error":{"code":"InvalidRequest","message":"private value",`+
-					`"innererror":{"code":"DefaultsNotSet"}}}`), nil
+					`"innererror":{"code":"DefaultsNotSet"}}}`)
+			response.Header.Set("x-ms-error-code", "InvalidRequest")
+			return response, nil
 		})
 		_, err := client.GetDefaults(t.Context())
 		var serviceErr *Error

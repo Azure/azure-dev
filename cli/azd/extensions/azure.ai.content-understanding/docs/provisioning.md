@@ -227,6 +227,8 @@ SUCCESS: Your up workflow to provision and deploy to Azure completed.
 `generativeReady: false` is expected in this model-free example. Check the
 selected environment with `azd ai cu doctor --environment dev`; see
 [readiness diagnostics](#diagnose-readiness) for exit-code semantics.
+If model defaults have not been set, `doctor` reports incomplete generative
+readiness without creating models or initializing defaults.
 If role assignment was skipped, obtain data-plane access before expecting setup
 to complete. Errors or warnings are not evidence of a successful setup.
 

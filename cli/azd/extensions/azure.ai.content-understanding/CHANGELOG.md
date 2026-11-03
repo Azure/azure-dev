@@ -2,6 +2,9 @@
 
 ## 0.1.1-preview (Unreleased)
 
+- Recognize nested service error codes even when an outer error code is supplied
+  in the response header. Report unset model defaults as incomplete readiness in
+  `doctor`, rather than a generic invalid-request failure.
 - Accept `infra generate --subscription` with a subscription name or ID, overriding
   azd defaults without prompting. Reject missing or ambiguous matches instead of
   falling back to another subscription.

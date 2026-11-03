@@ -694,6 +694,56 @@ func TestVoiceAgentFromResolvedService_RejectsExplicitNullLiveFields(t *testing.
 	}
 }
 
+func TestVoiceAgentFromResolvedService_RejectsExplicitNullResponsesFields(t *testing.T) {
+	fields := map[string]string{
+		"model": "model", "instructions": "instructions", "maxOutputTokens": "max_output_tokens",
+		"parallelToolCalls": "parallel_tool_calls", "serviceTier": "service_tier",
+		"reasoning": "reasoning", "text": "text", "toolChoice": "tool_choice", "tools": "tools",
+	}
+	for inlineName, rootName := range fields {
+		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+			t.Run(inlineName+"/"+source, func(t *testing.T) {
+				root := t.TempDir()
+				responses := map[string]any{"model": "terra", inlineName: nil}
+				if source == "root-ref" {
+					delete(responses, inlineName)
+					responses[rootName] = nil
+				}
+				if inlineName == "model" {
+					responses["model"] = nil
+				}
+				delegation := map[string]any{"type": "responses", "responses": responses}
+				var service *azdext.ServiceConfig
+				if source == "inline" {
+					service = inlineAgentService(t, map[string]any{
+						"kind": "voice", "name": "live", "subProtocol": "live",
+						"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+						"delegation": delegation,
+					})
+				} else {
+					rootDefinition := map[string]any{
+						"kind": "voice", "name": "live", "sub_protocol": "live",
+						"model_type": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+					}
+					if source == "root-ref" {
+						rootDefinition["delegation"] = delegation
+					}
+					encoded, err := yaml.Marshal(rootDefinition)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+					overlay := map[string]any{"$ref": "live.yaml"}
+					if source == "sibling-overlay" {
+						overlay["delegation"] = delegation
+					}
+					service = inlineAgentService(t, overlay)
+				}
+				_, _, err := VoiceAgentFromResolvedService(service, root)
+				require.ErrorContains(t, err, "must not be null for GPT Live")
+			})
+		}
+	}
+}
+
 func TestVoiceAgentFromResolvedService_GPTLiveRootRefAfterInPlaceResolution(t *testing.T) {
 	root := t.TempDir()
 	definition := `kind: voice

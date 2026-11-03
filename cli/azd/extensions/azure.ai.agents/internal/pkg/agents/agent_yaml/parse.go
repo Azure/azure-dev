@@ -471,6 +471,16 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 					"parallelToolCalls", "parallel_tool_calls", "serviceTier", "service_tier",
 					"reasoning", "text", "toolChoice", "tool_choice", "tools",
 				})
+				for _, names := range [][]string{
+					{"model"}, {"instructions"}, {"maxOutputTokens", "max_output_tokens"},
+					{"parallelToolCalls", "parallel_tool_calls"}, {"serviceTier", "service_tier"},
+					{"reasoning"}, {"text"}, {"toolChoice", "tool_choice"}, {"tools"},
+				} {
+					if value, found := rawProperty(responses, names...); found && value == nil {
+						errors = append(errors, fmt.Sprintf(
+							"delegation.responses.%s must not be null for GPT Live", names[0]))
+					}
+				}
 				if reasoning, found := responses["reasoning"]; found {
 					validateRawObject("delegation.responses.reasoning", reasoning, []string{"effort", "summary"})
 				}
@@ -478,7 +488,7 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 					validateRawObject("delegation.responses.text", text, []string{"verbosity"})
 				}
 				choice, found := rawProperty(responses, "toolChoice", "tool_choice")
-				if found {
+				if found && choice != nil {
 					if _, stringOK := choice.(string); !stringOK {
 						if _, objectOK := choice.(map[string]any); !objectOK {
 							errors = append(errors,
@@ -487,7 +497,7 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 					}
 					validateRawObject("delegation.responses.toolChoice", choice, []string{"type", "name", "serverLabel", "server_label"})
 				}
-				if toolsValue, found := responses["tools"]; found {
+				if toolsValue, found := responses["tools"]; found && toolsValue != nil {
 					tools, ok := toolsValue.([]any)
 					if !ok {
 						errors = append(errors, "delegation.responses.tools must be an array for GPT Live")

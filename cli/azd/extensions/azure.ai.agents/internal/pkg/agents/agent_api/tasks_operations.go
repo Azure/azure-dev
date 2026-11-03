@@ -117,7 +117,7 @@ func (t *taskResponseTransport) Do(req *http.Request) (*http.Response, error) {
 		headers.Set("X-Ms-Error-Code", code)
 		body = nil
 	} else if len(body) > limit {
-		return nil, &taskResponseTooLargeError{}
+		return nil, &TaskResponseTooLargeError{}
 	}
 	return &http.Response{
 		StatusCode: resp.StatusCode,
@@ -128,14 +128,16 @@ func (t *taskResponseTransport) Do(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
-type taskResponseTooLargeError struct{}
+// TaskResponseTooLargeError is a sanitized local rejection of a successful Tasks
+// response exceeding 32 MiB. Command boundaries may add operation-specific guidance.
+type TaskResponseTooLargeError struct{}
 
-func (*taskResponseTooLargeError) Error() string {
+func (*TaskResponseTooLargeError) Error() string {
 	return "task response exceeds the local safety cap of 32 MiB"
 }
 
 // NonRetriable prevents retrying a locally rejected oversized successful response.
-func (*taskResponseTooLargeError) NonRetriable() {}
+func (*TaskResponseTooLargeError) NonRetriable() {}
 
 func safeTaskIOError(ctx context.Context, operation string) error {
 	if ctx.Err() != nil {
@@ -253,7 +255,7 @@ func (c *AgentClient) taskRequest(ctx context.Context, id string, query url.Valu
 		}
 		// All errors from the private transport are sanitized before SDK logging.
 		// Authentication policies can still return arbitrary errors: do not expose them.
-		if _, ok := errors.AsType[*taskResponseTooLargeError](err); ok {
+		if _, ok := errors.AsType[*TaskResponseTooLargeError](err); ok {
 			return nil, err
 		}
 		return nil, errors.New("sending task request failed")
@@ -276,7 +278,7 @@ func (c *AgentClient) taskRequest(ctx context.Context, id string, query url.Valu
 		return nil, ctx.Err()
 	}
 	if len(body) > maxTaskResponseBytes {
-		return nil, &taskResponseTooLargeError{}
+		return nil, &TaskResponseTooLargeError{}
 	}
 	trimmed := bytes.TrimSpace(body)
 	if len(trimmed) == 0 || trimmed[0] != '{' || !json.Valid(trimmed) {

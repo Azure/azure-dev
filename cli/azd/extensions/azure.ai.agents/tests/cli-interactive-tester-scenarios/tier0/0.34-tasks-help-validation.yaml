@@ -5,7 +5,7 @@ cwd: "~/working/azd-agents-tasks-validation-{instance}"
 tags: ["tier:0", "cmd:tasks", "cmd:help", "negative-path", "parallel-safe"]
 env:
   AZURE_DEV_COLLECT_TELEMETRY: "no"
-  AZD_CHECK_VERSION: "false"
+  AZD_SKIP_UPDATE_CHECK: "true"
   AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING: "true"
   AZURE_ENV_NAME: ""
 pre:

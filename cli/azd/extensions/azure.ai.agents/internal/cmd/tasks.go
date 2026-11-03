@@ -244,6 +244,14 @@ func (a *tasksAction) run(ctx context.Context, operation string, args []string) 
 }
 
 func tasksOperationError(err error, operation string) error {
+	if _, ok := errors.AsType[*agent_api.TaskResponseTooLargeError](err); ok {
+		if operation == "list" {
+			return errors.New("Tasks list response exceeds the local safety cap of 32 MiB; " +
+				"reduce --limit or use --omit-attachment-values")
+		}
+		return errors.New("Tasks show response exceeds the local safety cap of 32 MiB; " +
+			"the full Task is too large to retrieve safely, including with --output table")
+	}
 	if response, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		suggestion := "check the project endpoint, agent, and your access permissions"
 		message := fmt.Sprintf("Tasks %s failed: HTTP %d (%s)",
@@ -303,14 +311,18 @@ type tasksTargetOptions struct {
 func tasksProjectEndpoint(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return "", fmt.Errorf("invalid project endpoint: %w", err)
+		return "", errors.New("invalid project endpoint URL")
 	}
 	if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") {
 		return "", fmt.Errorf("project endpoint must not contain credentials, query, or fragment")
 	}
 	normalized, _, err := validateProjectEndpoint(raw)
 	if err != nil {
-		return "", err
+		// The shared validator returns structured errors that discard outer context
+		// during serialization and may include the raw host. Return a plain, safe
+		// reason so target-resolution callers retain their remediation guidance.
+		return "", errors.New("project endpoint must be an HTTPS Foundry project URL " +
+			"ending in /api/projects/<project> without credentials, query, or fragment")
 	}
 	// Inspect the decoded path as well, rejecting escaped separators and dot
 	// segments rather than allowing them to change the resource being addressed.

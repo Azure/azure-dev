@@ -62,7 +62,8 @@ all `az` commands and in the project's `AZURE_SUBSCRIPTION_ID` environment value
 It obtains a token in memory with an explicit subscription, sends exactly three
 POST requests, captures exact task IDs, reads each record, and polls for
 `suspended` for at most `delay + 45` seconds. It never writes access tokens or
-request headers, never deletes tasks, and requires a **new** output directory.
+request headers, rejects HTTP redirects so bearer tokens never follow a redirected
+URL, never deletes tasks, and requires a **new** output directory.
 
 ```bash
 python3 seed.py \
@@ -123,6 +124,9 @@ still be confirmed before release; the published TypeSpec currently describes a
 different specification version.
 
 ## Local smoke test
+
+Run the local-only redirect regression test with `python3 -m unittest -v test_seed.py`.
+It uses synthetic credentials and loopback servers; it needs no Azure access.
 
 Install `requirements.txt` in a scratch virtual environment and run `main.py`
 from a scratch copy of the fixture. The host defaults to port 8088 (`PORT` can

@@ -12,6 +12,13 @@ import urllib.request
 import uuid
 
 
+class RejectRedirects(urllib.request.HTTPRedirectHandler):
+    """Reject redirects rather than forward authenticated requests to another URL."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--subscription", required=True)
@@ -33,6 +40,7 @@ def main():
     if not 1 <= args.delay_seconds <= 180:
         parser.error("delay must be 1-180 seconds")
     args.output.mkdir(parents=True, exist_ok=False)
+    opener = urllib.request.build_opener(RejectRedirects())
     token = subprocess.check_output(
         ["az", "account", "get-access-token", "--subscription", args.subscription,
          "--resource", "https://ai.azure.com", "--query", "accessToken", "-o", "tsv"],
@@ -47,7 +55,7 @@ def main():
                      "Foundry-Features": "Routines=V2Preview"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=60) as response:
+            with opener.open(req, timeout=60) as response:
                 return json.load(response)
         except urllib.error.HTTPError as error:
             # Never include request headers or the access token in diagnostics.

@@ -259,6 +259,7 @@ func (b *taskCountingBody) Read(p []byte) (int, error) {
 func (b *taskCountingBody) Close() error { b.closed = true; return nil }
 
 func TestTasksResponseSafetyCaps(t *testing.T) {
+	logs := captureTaskLogs(t)
 	for _, status := range []int{200, 403, 503} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			var bodies []*taskCountingBody
@@ -272,13 +273,19 @@ func TestTasksResponseSafetyCaps(t *testing.T) {
 			ctx := policy.WithRetryOptions(t.Context(), policy.RetryOptions{
 				MaxRetries: 2, RetryDelay: time.Nanosecond, MaxRetryDelay: time.Nanosecond,
 			})
-			_, err := client.GetTask(ctx, "secret-id")
+			result, err := client.GetTask(ctx, "secret-id")
+			require.Nil(t, result)
 			require.Error(t, err)
+			require.NotContains(t, err.Error(), "secret")
 			limit := maxTaskErrorResponseBytes
 			attempts := 1
 			if status == 200 {
 				limit = maxTaskResponseBytes
-				require.ErrorContains(t, err, "32 MiB")
+				oversized, ok := errors.AsType[*TaskResponseTooLargeError](err)
+				require.True(t, ok)
+				require.EqualError(t, oversized, "task response exceeds the local safety cap of 32 MiB")
+				_, nonRetryable := any(oversized).(interface{ NonRetriable() })
+				require.True(t, nonRetryable)
 			} else {
 				responseError, ok := errors.AsType[*azcore.ResponseError](err)
 				require.True(t, ok)
@@ -294,6 +301,7 @@ func TestTasksResponseSafetyCaps(t *testing.T) {
 			}
 		})
 	}
+	require.NotContains(t, logs.String(), "secret")
 }
 
 func TestTasksRetriesAndCursorPreservation(t *testing.T) {

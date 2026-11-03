@@ -844,14 +844,14 @@ func TestInfraGenerationThroughHostRPC(t *testing.T) {
 					Parameters map[string]json.RawMessage `json:"parameters"`
 				}
 				require.NoError(t, json.Unmarshal(body, &document))
-				assert.JSONEq(t, `{"value":"${FOUNDRY_RESOURCE_PREFIX=}"}`,
+				assert.JSONEq(t, `{"value":"${CU_FOUNDRY_RESOURCE_PREFIX=}"}`,
 					string(document.Parameters["foundryResourcePrefix"]))
-				assert.JSONEq(t, `{"value":"${AZD_ASSIGN_ROLES=false}"}`,
+				assert.JSONEq(t, `{"value":"${CU_ASSIGN_ROLES=false}"}`,
 					string(document.Parameters["assignRolesToPrincipal"]))
 				body, err = os.ReadFile(filepath.Join(target, ".azure/chosen/.env")) // #nosec G304 -- Test environment.
 				require.NoError(t, err)
-				assert.Contains(t, string(body), "FOUNDRY_RESOURCE_PREFIX=\"app\"\n")
-				assert.Contains(t, string(body), "AZD_ASSIGN_ROLES=\"true\"\n")
+				assert.Contains(t, string(body), "CU_FOUNDRY_RESOURCE_PREFIX=\"app\"\n")
+				assert.Contains(t, string(body), "CU_ASSIGN_ROLES=\"true\"\n")
 				assert.NoDirExists(t, filepath.Join(target, ".azure", "unrelated"))
 			} else {
 				require.Error(t, err)

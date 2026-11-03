@@ -12,7 +12,7 @@
     },
     "adaptations": [
       "Native README documents azd provisioning, _CU_PROVISIONED_* outputs, runtime configuration separation, and saved postprovision config. Retain the source README hash alongside the native expectation.",
-      "Native generation keeps resource inputs scoped to each azd environment through Bicep substitutions, and saves postprovision choices in per-environment config. Retain source hashes alongside native expectations.",
+      "Native generation keeps CU_-prefixed resource inputs scoped to each azd environment through Bicep substitutions, and saves postprovision choices in per-environment config. Retain source hashes alongside native expectations.",
       "Native Bicep prefixes every deployment output with _CU_PROVISIONED_; the hook separately saves runtime CU_ENDPOINT. Standard azd generation inputs remain unchanged.",
       "Native Go JSON sorts keys; source preserves version/defaultEnvironment insertion order. Retain both byte-level hashes and compare complete parsed JSON separately, not filtered keys.",
       "Native hooks pass AZURE_ENV_NAME explicitly as --environment and reject missing names. Retain the source hook hashes and arguments alongside native expectations."
@@ -46,11 +46,11 @@
       "infra/modules/foundry.bicep": "18fd2b5d1ca12e75946ae317a08857f61fc5cdb05b329337036345521630c212"
     },
     "native_hashes": {
-      ".azure/dev/.env": "5f1f0b2cb70146551860fba968cb121c0350ef331dfd6ebc0af81447097a1677",
+      ".azure/dev/.env": "3074f54a6dbb53dc01244eaee639413f9a61ebede3f1d6b8d8e1d555852f41ee",
       ".azure/dev/config.json": "ec8b659dd4265e128c8bf99cca72327d80756421243d1f7b91127d542164dbac",
-      "README.md": "4df49e58f83b8377b0e4c1fe94ca7bf33872f3cd63337e744abf620bd3fb078d",
+      "README.md": "83441ef67872a01c420c3ad9adab496c33972953a5d97727e8217a5fd951dc10",
       "infra/main.bicep": "b1174d9bf97276dc25e2aba92c184b01e34dd278c6ea3f830cf8ed86a4f554ae",
-      "infra/main.parameters.json": "ae6c0eb3486cc17528cdb71bd623d4c08b6c48c83d973d0ccacb4f8718b1e848",
+      "infra/main.parameters.json": "ea06442e923ef3ee298a4be488ef55122f1a51d58a726df9657b6d2b437827a1",
       "hooks/postprovision.ps1": "c52122fa5d528fc481c8d28a41ce652abad9c0562bfa707d4a8c83718cffead6",
       "hooks/postprovision.sh": "8929a55610183fd0400af38463d7812a17c979a207de8d346068f721e07f59f8"
     },

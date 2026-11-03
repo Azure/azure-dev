@@ -90,14 +90,22 @@ environment or use `azd env set <name> <value> -e <environment>` to change input
 
 | Provisioning input | Purpose |
 | --- | --- |
-| `FOUNDRY_RESOURCE_PREFIX` | Optional name prefix for a new resource |
-| `FOUNDRY_EXISTING_ENDPOINT` | Existing resource endpoint; empty for a new resource |
-| `FOUNDRY_EXISTING_RESOURCE_GROUP` | Existing resource's group; empty for a new resource |
-| `AZD_ASSIGN_ROLES` | `true` or `false` for role assignments on a new resource |
+| `CU_FOUNDRY_RESOURCE_PREFIX` | Optional name prefix for a new resource |
+| `CU_FOUNDRY_EXISTING_ENDPOINT` | Existing resource endpoint; empty for a new resource |
+| `CU_FOUNDRY_EXISTING_RESOURCE_GROUP` | Existing resource's group; empty for a new resource |
+| `CU_ASSIGN_ROLES` | `true` or `false` for role assignments on a new resource |
 
 These are saved azd deployment inputs, not runtime settings or deployment outputs.
 They are not automatically exported into the parent shell.
-Regeneration preserves other parameter fields. For older shared literal resource
+Regeneration preserves other parameter fields. Older projects using the saved
+names `FOUNDRY_RESOURCE_PREFIX`, `FOUNDRY_EXISTING_ENDPOINT`,
+`FOUNDRY_EXISTING_RESOURCE_GROUP`, and `AZD_ASSIGN_ROLES` still work without
+regeneration. Regeneration updates their parameter references and copies old
+values to the new keys in other existing environments only when the new key is
+absent. A present new key wins, including an empty value; missing inputs use the
+parameter defaults. Old keys are retained but no longer referenced.
+The selected environment uses the current generation choices.
+For older shared literal resource
 parameters, it first saves the effective old values in other existing environments
 before applying new choices to the selected environment, including with `--force`.
 It cannot recover values already overwritten by an earlier generation.

@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/joho/godotenv"
+
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/localio"
 )
@@ -30,11 +32,11 @@ var environmentPattern = regexp.MustCompile(`^[a-z0-9()_.-]{1,64}$`)
 var prefixPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,18}[a-z0-9])?$`)
 var assignmentPattern = regexp.MustCompile(`^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=`)
 
-var resourceParameters = []struct{ name, key, fallback string }{
-	{"foundryResourcePrefix", "FOUNDRY_RESOURCE_PREFIX", ""},
-	{"existingFoundryEndpoint", "FOUNDRY_EXISTING_ENDPOINT", ""},
-	{"existingFoundryResourceGroup", "FOUNDRY_EXISTING_RESOURCE_GROUP", ""},
-	{"assignRolesToPrincipal", "AZD_ASSIGN_ROLES", "false"},
+var resourceParameters = []struct{ name, key, legacy, fallback string }{
+	{"foundryResourcePrefix", "CU_FOUNDRY_RESOURCE_PREFIX", "FOUNDRY_RESOURCE_PREFIX", ""},
+	{"existingFoundryEndpoint", "CU_FOUNDRY_EXISTING_ENDPOINT", "FOUNDRY_EXISTING_ENDPOINT", ""},
+	{"existingFoundryResourceGroup", "CU_FOUNDRY_EXISTING_RESOURCE_GROUP", "FOUNDRY_EXISTING_RESOURCE_GROUP", ""},
+	{"assignRolesToPrincipal", "CU_ASSIGN_ROLES", "AZD_ASSIGN_ROLES", "false"},
 }
 
 var Regions = []string{
@@ -142,8 +144,8 @@ func (c Choices) Normalize() (Choices, error) {
 
 func environmentAssignments(c Choices) ([]string, map[string]string) {
 	keys := []string{"AZURE_ENV_NAME", "AZURE_LOCATION", "AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID",
-		"CU_API_VERSION", "FOUNDRY_RESOURCE_PREFIX", "FOUNDRY_EXISTING_ENDPOINT", "FOUNDRY_EXISTING_RESOURCE_GROUP",
-		"AZD_ASSIGN_ROLES"}
+		"CU_API_VERSION", "CU_FOUNDRY_RESOURCE_PREFIX", "CU_FOUNDRY_EXISTING_ENDPOINT", "CU_FOUNDRY_EXISTING_RESOURCE_GROUP",
+		"CU_ASSIGN_ROLES"}
 	values := []string{c.Environment, c.Location, c.SubscriptionID, c.TenantID, c.APIVersion,
 		c.FoundryPrefix, c.FoundryEndpoint, c.FoundryResourceGroup, strconv.FormatBool(c.AssignRoles)}
 	result := make(map[string]string, len(keys))
@@ -221,16 +223,17 @@ func renderParameters(body []byte) ([]byte, map[string]string, error) {
 			return nil, nil, err
 		}
 		substitution := "${" + binding.key + "=" + binding.fallback + "}"
+		legacySubstitution := "${" + binding.legacy + "=" + binding.fallback + "}"
 		var value *string
 		if json.Unmarshal(parameter["value"], &value) != nil || value == nil ||
-			(*value != substitution && strings.ContainsAny(*value, "\"\\\r\n`$")) {
+			(*value != substitution && *value != legacySubstitution && strings.ContainsAny(*value, "\"\\\r\n`$")) {
 			return nil, nil, &cuclient.Error{
 				Kind: cuclient.ErrorValidation, Code: "unsupported_resource_parameter",
 				Message:    "Resource parameter " + binding.name + " must be a literal string or " + substitution + ".",
 				Suggestion: "Review infra/main.parameters.json or generate into a new directory. No files were changed.",
 			}
 		}
-		if *value != substitution {
+		if *value != substitution && *value != legacySubstitution {
 			literals[binding.key] = binding.key + "=\"" + *value + "\""
 		}
 		parameter["value"], err = json.Marshal(substitution)
@@ -252,9 +255,6 @@ func renderParameters(body []byte) ([]byte, map[string]string, error) {
 
 func migrateResourceEnvironments(target, selected string, literals map[string]string) (map[string][]byte, error) {
 	writes := map[string][]byte{}
-	if len(literals) == 0 {
-		return writes, nil
-	}
 	if _, err := localio.Check(filepath.Join(target, ".azure/config.json")); err != nil {
 		return nil, err
 	}
@@ -264,12 +264,6 @@ func migrateResourceEnvironments(target, selected string, literals map[string]st
 	}
 	if err != nil {
 		return nil, err
-	}
-	keys := []string{}
-	for _, binding := range resourceParameters {
-		if _, exists := literals[binding.key]; exists {
-			keys = append(keys, binding.key)
-		}
 	}
 	for _, entry := range entries {
 		if entry.Name() == selected {
@@ -289,8 +283,35 @@ func migrateResourceEnvironments(target, selected string, literals map[string]st
 		if err != nil {
 			return nil, err
 		}
-		// Literal shared parameters took precedence over any older per-environment values.
-		writes[path] = []byte(mergeEnvironment(string(body), keys, literals))
+		values, err := godotenv.Unmarshal(string(body))
+		if err != nil {
+			return nil, invalid("invalid_environment_value", "A saved azd environment could not be parsed during migration.")
+		}
+		keys := []string{}
+		assignments := map[string]string{}
+		for _, binding := range resourceParameters {
+			assignment, literal := literals[binding.key]
+			if !literal {
+				if _, present := values[binding.key]; present {
+					continue
+				}
+				value, present := values[binding.legacy]
+				if !present {
+					value = binding.fallback
+				}
+				if strings.ContainsAny(value, "\"\\\r\n`$") {
+					return nil, invalid("invalid_environment_value",
+						"A saved provisioning input contains unsafe shell syntax.")
+				}
+				assignment = binding.key + "=\"" + value + "\""
+			}
+			// Shared literals were effective for every environment, even when saved keys differed.
+			keys = append(keys, binding.key)
+			assignments[binding.key] = assignment
+		}
+		if len(keys) != 0 {
+			writes[path] = []byte(mergeEnvironment(string(body), keys, assignments))
+		}
 	}
 	return writes, nil
 }

@@ -376,22 +376,40 @@ Generation saves resource choices in the selected azd environment.
 `infra/main.parameters.json` uses environment substitutions under
 `parameters.<name>.value`, so dev and prod can target different resources in
 the same generated directory. Regeneration changes only the selected environment's
-choices, except when migrating older shared literal parameters as described below.
+choices, except when migrating older saved input names or shared literal parameters
+as described below.
 Recognized projects retain editable templates and model files unless `--force`
 is supplied. Other parameter fields are preserved.
 
 | Saved provisioning input | Bicep parameter |
 | --- | --- |
-| `FOUNDRY_RESOURCE_PREFIX` | `foundryResourcePrefix`: optional prefix for a new resource. |
-| `FOUNDRY_EXISTING_ENDPOINT` | `existingFoundryEndpoint`: existing resource endpoint, or empty for a new resource. |
-| `FOUNDRY_EXISTING_RESOURCE_GROUP` | `existingFoundryResourceGroup`: existing resource group, or empty for a new resource. |
-| `AZD_ASSIGN_ROLES` | `assignRolesToPrincipal`: `true` or `false` for role assignments on a new resource. |
+| `CU_FOUNDRY_RESOURCE_PREFIX` | `foundryResourcePrefix`: optional prefix for a new resource. |
+| `CU_FOUNDRY_EXISTING_ENDPOINT` | `existingFoundryEndpoint`: existing resource endpoint, or empty for a new resource. |
+| `CU_FOUNDRY_EXISTING_RESOURCE_GROUP` | `existingFoundryResourceGroup`: existing resource group, or empty for a new resource. |
+| `CU_ASSIGN_ROLES` | `assignRolesToPrincipal`: `true` or `false` for role assignments on a new resource. |
 
 These are deployment inputs saved under `.azure/<environment>/.env`, not CU
 runtime settings or `_CU_PROVISIONED_*` deployment outputs. Saving them does not
 export them into the parent shell. Inspect them with `azd env get-values -e dev`
 or change them with `azd env set <name> <value> -e dev`. Keep a new-resource prefix
 and an existing endpoint mutually exclusive.
+
+Older generated projects using `FOUNDRY_RESOURCE_PREFIX`,
+`FOUNDRY_EXISTING_ENDPOINT`, `FOUNDRY_EXISTING_RESOURCE_GROUP`, or `AZD_ASSIGN_ROLES`
+continue to work with their existing parameter files. On regeneration, including
+with `--force`, generation updates the parameter references to the names above.
+For other existing environments, it copies each old saved value only when the
+new key is absent; a present new key wins, even when empty. Missing values use
+the parameter default (empty for resource selectors, `false` for role assignment).
+Old keys are retained but no longer used by the updated parameter file.
+The selected environment uses the current generation choices instead.
+
+For older shared literal resource parameters, generation preserves their effective
+values in other existing environments before changing the shared references.
+Those literals take precedence over saved keys because they controlled the previous
+deployment target. Values already overwritten by an earlier generation cannot be
+recovered. Unsupported resource expressions or unsafe saved inputs fail before
+any files are written.
 
 Force replaces known generated assets, including `infra/models.json`, and
 allows CU configuration replacement; unrelated files are not deleted.

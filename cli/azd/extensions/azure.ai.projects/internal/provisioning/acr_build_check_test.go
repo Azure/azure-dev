@@ -34,11 +34,14 @@ func TestACRRemoteBuildPreflight(t *testing.T) {
 	for _, tt := range []struct {
 		name, service, endpoint, provider string
 		classic, canonical, noSelector    bool
+		managed                           bool
 		reject                            bool
 	}{
 		{name: "remote ABAC", service: "docker: {remoteBuild: true}", reject: true},
 		{name: "generated remote default", service: "kind: hosted\ndocker: {remoteBuild: true}", reject: true},
 		{name: "canonical only", service: "docker: {remoteBuild: true}", canonical: true, reject: true},
+		{name: "legacy managed registry", service: "docker: {remoteBuild: true}", managed: true},
+		{name: "canonical managed registry", service: "docker: {remoteBuild: true}", managed: true, canonical: true},
 		{name: "classic remote", service: "docker: {remoteBuild: true}", classic: true},
 		{name: "explicit local", service: "docker: {remoteBuild: false}"},
 		{name: "local overrides nested remote", service: "docker: {remoteBuild: false}\n" +
@@ -93,8 +96,18 @@ func TestACRRemoteBuildPreflight(t *testing.T) {
 			if tt.noSelector {
 				delete(env.get, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
 			}
+			bound := acrTestBinding()
+			if tt.managed {
+				bound.Mode = "create"
+				bound.RegistryResourceID = strings.Replace(testACRID, "/shared/", "/foundry/", 1)
+				env.get["AZURE_SUBSCRIPTION_ID"] = "sub"
+				env.get["AZURE_RESOURCE_GROUP"] = "foundry"
+				env.get["AZURE_AI_PROJECT_ID"] = testACRProject
+				env.get["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = bound.RegistryResourceID
+				env.get["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = "registry.azurecr.io"
+			}
 			if tt.canonical {
-				binding, err := json.Marshal(acrTestBinding())
+				binding, err := json.Marshal(bound)
 				require.NoError(t, err)
 				env.config = map[string][]byte{synthesis.ACRBindingConfigKey: binding}
 				delete(env.get, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
@@ -124,6 +137,9 @@ func TestACRRemoteBuildPreflight(t *testing.T) {
 				assert.Equal(t, 1, reads)
 			} else {
 				assert.Empty(t, result.Results)
+			}
+			if tt.managed {
+				assert.Zero(t, reads)
 			}
 			assert.Equal(t, beforeValues, env.get)
 			assert.Equal(t, beforeConfig, env.config)
@@ -266,6 +282,29 @@ func TestACRRemoteBuildLookupFailureStopsPreflight(t *testing.T) {
 		return errors.New("registry unavailable")
 	}
 	require.ErrorContains(t, p.validateACRRemoteBuild(t.Context(), acrTestSource()), "registry unavailable")
+}
+
+func TestACRRemoteBuildPreservesManagedBinding(t *testing.T) {
+	for _, include := range []bool{false, true} {
+		t.Run(strconv.FormatBool(include), func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			p.acrRemoteBuild = true
+			p.acrBinding = acrTestBinding()
+			p.acrBinding.Mode = "create"
+			p.acrBinding.RegistryResourceID = strings.Replace(testACRID, "/shared/", "/foundry/", 1)
+			p.acrRequest = func(context.Context, string, string, string, any) error {
+				t.Fatal("managed registries must not use external registry validation")
+				return nil
+			}
+			src := acrTestSource()
+			src.parameters["includeAcr"] = map[string]any{"value": include}
+			delete(src.parameters, "existingAcrResourceId")
+			require.NoError(t, p.validateACRRemoteBuild(t.Context(), src))
+			require.NoError(t, p.prepareACRAccess(t.Context(), src))
+			assert.Empty(t, env.config)
+			assert.Empty(t, env.set)
+		})
+	}
 }
 
 func TestACRRemoteBuildWithInfrastructureDisabled(t *testing.T) {

@@ -150,9 +150,11 @@ func (c *ACRRemoteBuildCheck) ValidateProject(
 	}
 	p.infraPath, p.infraModule = filepath.Join(project.Path, path), module
 	src := &templateSource{parameters: map[string]any{
-		"includeAcr":            map[string]any{"value": mode == "reuse-connect"},
-		"existingAcrResourceId": map[string]any{"value": id},
+		"includeAcr": map[string]any{"value": mode == "reuse-connect"},
 	}}
+	if mode == "reuse-connect" {
+		src.parameters["existingAcrResourceId"] = map[string]any{"value": id}
+	}
 	onDisk := p.onDiskTemplatePresent()
 	if onDisk {
 		result, err := synthesis.Synthesize(in)
@@ -203,7 +205,7 @@ func acrBuildProjectConfig(project *azdext.ProjectConfig) ([]byte, foundryInfraC
 
 func (p *FoundryProvisioningProvider) validateACRRemoteBuild(ctx context.Context, src *templateSource) error {
 	id, _ := parameterValue(src, "existingAcrResourceId").(string)
-	if id == "" && p.acrBinding != nil {
+	if id == "" && p.acrBinding != nil && p.acrBinding.Mode == "reuse-connect" {
 		id = p.acrBinding.RegistryResourceID
 	}
 	if !p.acrRemoteBuild || p.brownfieldEndpoint != "" || id == "" {

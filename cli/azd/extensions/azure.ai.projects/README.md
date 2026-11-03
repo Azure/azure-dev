@@ -366,6 +366,9 @@ legacy outputs; legacy ownership is verified against the previous Azure
 deployment before provisioning or deleting the group. Unreadable environment
 state or unverified ownership stops the operation instead of creating a
 replacement registry.
+The external-registry build checks apply to `reuse-connect` selections, not
+azd-created registries retained through a `create` binding or matching legacy
+outputs. Managed registries can remain inside the Foundry resource group.
 Legacy full outputs and partial-deployment project connections do not establish
 registry ownership on their own: recovery requires a successful creation
 operation for that exact registry in the environment's owning deployment

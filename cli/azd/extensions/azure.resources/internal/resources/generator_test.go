@@ -137,6 +137,9 @@ func TestGenerateEnvironmentSubstitutions(t *testing.T) {
 		parameters []scaffold.Parameter
 	}{
 		{"literal", "foo", false, "'foo'", nil},
+		{"multiline literal", "first\r\nsecond", false, "'first\\r\\nsecond'", nil},
+		{"multiline interpolation", "first\n${WORLD}\r", false, "'first\\n${world}\\r'",
+			[]scaffold.Parameter{{Name: "world", Value: "${WORLD}", Type: "string"}}},
 		{"parameter", "${MY_VAR}", false, "myVar",
 			[]scaffold.Parameter{{Name: "myVar", Value: "${MY_VAR}", Type: "string"}}},
 		{"secure parameter", "${MY_SECRET}", true, "mySecret",

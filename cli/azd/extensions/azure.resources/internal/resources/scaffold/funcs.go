@@ -269,6 +269,8 @@ func BicepString(value string) string {
 		"\\", "\\\\",
 		"'", `\u{27}`,
 		"${", "\\${",
+		"\r", "\\r",
+		"\n", "\\n",
 	)
 	return replacer.Replace(value)
 }

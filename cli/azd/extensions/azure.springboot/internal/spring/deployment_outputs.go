@@ -65,7 +65,9 @@ func (v *azureDeploymentOutputVerifier) Verify(
 		binding.values[containerAppIDEnv],
 	}
 	if database.AppIdentity != nil {
-		required = append(required, database.AppIdentity.ResourceID)
+		if database.AppIdentity.Type == databaseAppIdentityTypeUserAssigned {
+			required = append(required, database.AppIdentity.ResourceID)
+		}
 	}
 	if binding.original {
 		required = append(required, binding.values["CONTAINER_APP_ENVIRONMENT_ID"])
@@ -107,21 +109,35 @@ func validateCurrentDeploymentOutputs(
 		{containerAppIDEnv, false},
 	}
 	if database.Authentication == databaseAuthenticationManagedIdentity {
-		bindings = append(
-			bindings,
-			struct {
+		if database.AppIdentity == nil {
+			return validationError(
+				"missing_database_app_identity",
+				"the discovered Spring application identity is unavailable",
+				"restore the current application identity configuration and deployment outputs",
+			)
+		}
+		if database.AppIdentity.Type == databaseAppIdentityTypeSystemAssigned {
+			bindings = append(bindings, struct {
 				name          string
 				caseSensitive bool
-			}{serviceIdentityIDEnv, false},
-			struct {
-				name          string
-				caseSensitive bool
-			}{serviceIdentityClientIDEnv, false},
-			struct {
-				name          string
-				caseSensitive bool
-			}{serviceIdentityPrincipalIDEnv, false},
-		)
+			}{serviceIdentityPrincipalIDEnv, false})
+		} else {
+			bindings = append(
+				bindings,
+				struct {
+					name          string
+					caseSensitive bool
+				}{serviceIdentityIDEnv, false},
+				struct {
+					name          string
+					caseSensitive bool
+				}{serviceIdentityClientIDEnv, false},
+				struct {
+					name          string
+					caseSensitive bool
+				}{serviceIdentityPrincipalIDEnv, false},
+			)
+		}
 	}
 	currentValues := make(map[string]string, len(bindings))
 	for _, binding := range bindings {
@@ -167,14 +183,31 @@ func validateCurrentDeploymentOutputs(
 			"restore AZURE_POSTGRES_DATABASE and use the authored database name",
 		)
 	}
-	if database.Authentication == databaseAuthenticationManagedIdentity &&
-		(database.AppIdentity == nil ||
-			!strings.EqualFold(currentValues[serviceIdentityIDEnv], database.AppIdentity.ResourceID)) {
-		return validationError(
-			"mismatched_database_app_identity",
-			"database.auth.appIdentity.resourceId does not match the current service identity output",
-			"restore the current service identity output and use the selected UAMI resourceId expression",
-		)
+	if database.Authentication == databaseAuthenticationManagedIdentity {
+		switch database.AppIdentity.Type {
+		case databaseAppIdentityTypeSystemAssigned:
+			if !strings.EqualFold(currentValues[containerAppIDEnv], database.AppIdentity.ResourceID) {
+				return validationError(
+					"mismatched_database_app_identity",
+					"the discovered system-assigned identity does not belong to the current service application",
+					"restore the current Container App and application principal outputs",
+				)
+			}
+		case databaseAppIdentityTypeUserAssigned:
+			if !strings.EqualFold(currentValues[serviceIdentityIDEnv], database.AppIdentity.ResourceID) {
+				return validationError(
+					"mismatched_database_app_identity",
+					"the discovered Spring application identity does not match the current service identity output",
+					"restore the current service identity output and use the selected UAMI resourceId expression",
+				)
+			}
+		default:
+			return validationError(
+				"unsupported_database_app_identity",
+				"the discovered Spring application identity type is unsupported",
+				"select the Container App system identity or one attached user-assigned identity",
+			)
+		}
 	}
 	return nil
 }

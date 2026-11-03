@@ -382,7 +382,7 @@ func (r *postgresAccessReconciler) verifySelectedIdentity(
 		return "", "", validationError(
 			"managed_identity_binding_missing",
 			"managedidentity auth has no selected application identity",
-			"set auth.appIdentity to the selected user-assigned identity",
+			"restore the selected Container App managed identity and current deployment outputs",
 		)
 	}
 	appID, err := arm.ParseResourceID(values[containerAppIDEnv])
@@ -421,6 +421,47 @@ func (r *postgresAccessReconciler) verifySelectedIdentity(
 	}
 	if err := checkResourceOwnership(ctx, r.client, envName, values, *app.ID, app.Tags); err != nil {
 		return "", "", err
+	}
+	return selectedApplicationIdentity(database, values, &app)
+}
+
+func selectedApplicationIdentity(
+	database resolvedDatabase,
+	values map[string]string,
+	app *armappcontainers.ContainerApp,
+) (string, string, error) {
+	if database.AppIdentity == nil || app == nil || app.ID == nil || app.Identity == nil {
+		return "", "", validationError(
+			"container_app_identity_unverified",
+			"the selected Container App managed identity could not be verified",
+			"restore the authored Container App identity and current deployment outputs",
+		)
+	}
+	if database.AppIdentity.Type == databaseAppIdentityTypeSystemAssigned {
+		if !strings.EqualFold(database.AppIdentity.ResourceID, *app.ID) ||
+			!hasSystemAssignedIdentity(app.Identity) || app.Identity.PrincipalID == nil {
+			return "", "", validationError(
+				"database_app_identity_not_attached",
+				"the selected system-assigned identity is not enabled on the provisioned Container App",
+				"restore the authored system-assigned identity and application principal output",
+			)
+		}
+		principalID := strings.TrimSpace(*app.Identity.PrincipalID)
+		if principalID == "" || !strings.EqualFold(principalID, values[serviceIdentityPrincipalIDEnv]) {
+			return "", "", validationError(
+				"database_app_identity_output_mismatch",
+				"the system-assigned identity principal does not match the current deployment output",
+				"restore the current application principal output before retrying",
+			)
+		}
+		return principalID, "", nil
+	}
+	if database.AppIdentity.Type != databaseAppIdentityTypeUserAssigned {
+		return "", "", validationError(
+			"unsupported_database_app_identity",
+			"the selected application managed identity type is unsupported",
+			"select the Container App system identity or one attached user-assigned identity",
+		)
 	}
 	var selected *armappcontainers.UserAssignedIdentity
 	for resourceID, identity := range app.Identity.UserAssignedIdentities {
@@ -598,7 +639,66 @@ func (r *postgresAccessReconciler) reconcileSQL(
 	); err != nil {
 		return err
 	}
-	return r.reconcileDatabasePrivileges(ctx, resources, database, password, marker)
+	if err := r.reconcileDatabasePrivileges(ctx, resources, database, password, marker); err != nil {
+		return err
+	}
+	if database.Authentication == databaseAuthenticationPassword {
+		return r.verifyPasswordApplicationLogin(ctx, resources, database, values[databaseAppPasswordEnv])
+	}
+	return nil
+}
+
+func (r *postgresAccessReconciler) verifyPasswordApplicationLogin(
+	ctx context.Context,
+	resources *verifiedPostgresResources,
+	database resolvedDatabase,
+	applicationPassword string,
+) error {
+	if applicationPassword == "" {
+		return missingExistingDatabaseAppPasswordError()
+	}
+	config, err := postgresConnectionConfig(
+		resources.Host,
+		database.Name,
+		database.Username,
+		applicationPassword,
+	)
+	if err != nil {
+		return err
+	}
+	delete(config.RuntimeParams, "search_path")
+	connection, err := r.connectConfigWithRetry(ctx, config)
+	if err != nil {
+		return errors.Join(
+			validationError(
+				"database_application_password_mismatch",
+				fmt.Sprintf(
+					"the effective Spring password cannot authenticate PostgreSQL role %q",
+					database.Username,
+				),
+				"restore the password for the existing application role or use a new application username",
+			),
+			err,
+		)
+	}
+	defer connection.Close(context.WithoutCancel(ctx))
+
+	var username string
+	var databaseName string
+	if err := connection.QueryRow(
+		ctx,
+		"SELECT current_user, pg_catalog.current_database()",
+	).Scan(&username, &databaseName); err != nil {
+		return fmt.Errorf("verifying the ordinary PostgreSQL application login: %w", nonDisclosureError(err))
+	}
+	if username != database.Username || databaseName != database.Name {
+		return validationError(
+			"database_application_login_mismatch",
+			"the effective Spring credential connected with an unexpected PostgreSQL identity or database",
+			"restore the application role and database binding before deployment",
+		)
+	}
+	return nil
 }
 
 func (r *postgresAccessReconciler) verifyDatabaseScope(
@@ -627,7 +727,7 @@ func (r *postgresAccessReconciler) verifyDatabaseScope(
 	defer transaction.Rollback(context.WithoutCancel(ctx)) //nolint:errcheck
 	if _, err := transaction.Exec(
 		ctx,
-		"SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+		"SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended($1, 0))",
 		"azure.springboot.grants."+database.Name,
 	); err != nil {
 		return fmt.Errorf("locking PostgreSQL scope verification: %w", err)
@@ -680,7 +780,7 @@ func (r *postgresAccessReconciler) reconcileRole(
 	defer transaction.Rollback(context.WithoutCancel(ctx)) //nolint:errcheck
 	if _, err := transaction.Exec(
 		ctx,
-		"SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+		"SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended($1, 0))",
 		"azure.springboot.role."+database.Username,
 	); err != nil {
 		return fmt.Errorf("locking PostgreSQL application role reconciliation: %w", err)
@@ -752,7 +852,8 @@ func readRoleState(ctx context.Context, transaction pgx.Tx, username string) (*r
 	state := &roleState{}
 	err := transaction.QueryRow(
 		ctx,
-		`SELECT true, COALESCE(shobj_description(oid, 'pg_authid'), '') FROM pg_roles WHERE rolname = $1`,
+		`SELECT true, COALESCE(pg_catalog.shobj_description(oid, 'pg_authid'), '')
+		 FROM pg_catalog.pg_roles WHERE rolname = $1`,
 		username,
 	).Scan(&state.Exists, &state.Comment)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -776,7 +877,7 @@ func verifyEntraRoleMapping(
 		ctx,
 		`SELECT objectid, principaltype, isadmin
 		 FROM pg_catalog.pgaadauth_list_principals(false)
-		 WHERE rolname = $1`,
+		 WHERE rolename = $1`,
 		username,
 	).Scan(&objectID, &principalType, &isAdmin)
 	if err != nil {
@@ -805,8 +906,8 @@ func verifyRoleIsOrdinary(
 	err := transaction.QueryRow(
 		ctx,
 		`SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls,
-		        COALESCE(shobj_description(oid, 'pg_authid'), '')
-		 FROM pg_roles WHERE rolname = $1`,
+		        COALESCE(pg_catalog.shobj_description(oid, 'pg_authid'), '')
+		 FROM pg_catalog.pg_roles WHERE rolname = $1`,
 		username,
 	).Scan(&login, &superuser, &createDB, &createRole, &replication, &bypassRLS, &comment)
 	if err != nil {
@@ -822,7 +923,8 @@ func verifyRoleIsOrdinary(
 	var memberships int
 	if err := transaction.QueryRow(
 		ctx,
-		`SELECT count(*) FROM pg_auth_members WHERE member = (SELECT oid FROM pg_roles WHERE rolname = $1)`,
+		`SELECT count(*) FROM pg_catalog.pg_auth_members
+		 WHERE member = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $1)`,
 		username,
 	).Scan(&memberships); err != nil {
 		return fmt.Errorf("verifying PostgreSQL application role memberships: %w", err)
@@ -863,7 +965,7 @@ func (r *postgresAccessReconciler) reconcileDatabasePrivileges(
 	defer transaction.Rollback(context.WithoutCancel(ctx)) //nolint:errcheck
 	if _, err := transaction.Exec(
 		ctx,
-		"SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+		"SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended($1, 0))",
 		"azure.springboot.grants."+database.Name,
 	); err != nil {
 		return fmt.Errorf("locking PostgreSQL application grants: %w", err)
@@ -970,13 +1072,13 @@ func validateOwnedDatabaseScope(
 	var administratorIsMember bool
 	if err := transaction.QueryRow(
 		ctx,
-		`SELECT pg_get_userbyid(datdba),
-		        COALESCE(shobj_description(oid, 'pg_database'), ''),
+		`SELECT pg_catalog.pg_get_userbyid(datdba),
+		        COALESCE(pg_catalog.shobj_description(oid, 'pg_database'), ''),
 		        CASE
-		          WHEN pg_get_userbyid(datdba) = $1 THEN true
-		          ELSE pg_has_role($1, datdba, 'MEMBER')
+		          WHEN pg_catalog.pg_get_userbyid(datdba) = $1 THEN true
+		          ELSE pg_catalog.pg_has_role($1, datdba, 'MEMBER')
 		        END
-		 FROM pg_database WHERE datname = current_database()`,
+		 FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database()`,
 		administratorName,
 	).Scan(&owner, &comment, &administratorIsMember); err != nil {
 		return false, fmt.Errorf("verifying PostgreSQL database scope ownership: %w", err)
@@ -1064,7 +1166,8 @@ func verifyApplicationObjectOwnership(
 	var databaseOwner string
 	if err := transaction.QueryRow(
 		ctx,
-		`SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()`,
+		`SELECT pg_catalog.pg_get_userbyid(datdba)
+		 FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database()`,
 	).Scan(&databaseOwner); err != nil {
 		return fmt.Errorf("verifying PostgreSQL database ownership: %w", err)
 	}
@@ -1264,7 +1367,15 @@ func (r *postgresAccessReconciler) connectWithRetry(
 	if err != nil {
 		return nil, err
 	}
+	return r.connectConfigWithRetry(ctx, config)
+}
+
+func (r *postgresAccessReconciler) connectConfigWithRetry(
+	ctx context.Context,
+	config *pgx.ConnConfig,
+) (*pgx.Conn, error) {
 	var connection *pgx.Conn
+	var err error
 	for attempt := range 3 {
 		connection, err = r.connect(ctx, config)
 		if err == nil {
@@ -1289,7 +1400,7 @@ func postgresConnectionConfig(host, databaseName, username, password string) (*p
 		return nil, fmt.Errorf("creating PostgreSQL connection configuration: %w", nonDisclosureError(err))
 	}
 	config.Password = password
-	config.RuntimeParams["search_path"] = "public,pg_catalog"
+	config.RuntimeParams["search_path"] = "pg_catalog"
 	if config.TLSConfig == nil || config.TLSConfig.InsecureSkipVerify ||
 		!strings.EqualFold(config.TLSConfig.ServerName, host) {
 		return nil, errors.New("PostgreSQL connection did not enable hostname-verified TLS")

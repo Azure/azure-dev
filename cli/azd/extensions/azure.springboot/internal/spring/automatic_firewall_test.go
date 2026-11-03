@@ -47,10 +47,10 @@ func automaticFirewallBinding() (*deploymentBinding, *firewallIdentity) {
 	}
 }
 
-func TestAutomaticFirewallRetainsOnlyVerifiedOwnedBroadBootstrap(t *testing.T) {
+func TestAutomaticFirewallDeletesOnlyVerifiedBroadBootstrapAndConfirmsAbsence(t *testing.T) {
 	for _, scenario := range []string{
 		"success", "missing-runtime", "changed-runtime", "stale-outbound", "unowned-bootstrap",
-		"unknown-broad", "changed-bootstrap",
+		"unknown-broad", "changed-bootstrap", "delete-denied", "absence-unconfirmed",
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			binding, identity := automaticFirewallBinding()
@@ -81,34 +81,73 @@ func TestAutomaticFirewallRetainsOnlyVerifiedOwnedBroadBootstrap(t *testing.T) {
 			case "changed-bootstrap":
 				bootstrap.Properties.EndIPAddress = new("1.2.3.4")
 			}
-			mutations := 0
+			deletions, reads, removed := 0, 0, false
 			client, err := armpostgresqlflexibleservers.NewFirewallRulesClient(
 				identity.subscriptionID, postgresPolicyCredential{}, &arm.ClientOptions{
 					ClientOptions: policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1},
 						Transport: postgresPolicyTransport(func(request *http.Request) (*http.Response, error) {
-							if request.Method != http.MethodGet ||
-								!strings.HasSuffix(request.URL.Path, "/firewallRules") {
-								mutations++
-								t.Fatalf("unexpected firewall operation: %s %s", request.Method, request.URL.Path)
+							status, body := http.StatusOK, `{}`
+							if request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/firewallRules") {
+								data, err := json.Marshal(map[string]any{"value": rules})
+								require.NoError(t, err)
+								body = string(data)
+							} else {
+								require.True(t, strings.HasSuffix(request.URL.Path, "/firewallRules/"+authoredBootstrapRule))
+								switch request.Method {
+								case http.MethodGet:
+									reads++
+									if removed && scenario != "absence-unconfirmed" {
+										status, body = http.StatusNotFound, `{"error":{"code":"ResourceNotFound"}}`
+									} else {
+										data, err := json.Marshal(bootstrap)
+										require.NoError(t, err)
+										body = string(data)
+									}
+								case http.MethodDelete:
+									deletions++
+									removed = true
+									status = http.StatusNoContent
+									if scenario == "delete-denied" {
+										status, body = http.StatusForbidden, `{"error":{"code":"AuthorizationFailed"}}`
+									}
+								default:
+									t.Fatalf("unexpected firewall operation: %s", request.Method)
+								}
 							}
-							data, err := json.Marshal(map[string]any{"value": rules})
-							require.NoError(t, err)
-							return &http.Response{StatusCode: http.StatusOK,
+							return &http.Response{StatusCode: status,
 								Header: http.Header{"Content-Type": []string{"application/json"}},
-								Body:   io.NopCloser(strings.NewReader(string(data))), Request: request}, nil
+								Body:   io.NopCloser(strings.NewReader(body)), Request: request}, nil
 						}),
 					},
 				},
 			)
 			require.NoError(t, err)
 			cleanup, prepareErr := prepareAutomaticFirewall(t.Context(), client, identity, binding)
-			if scenario == "success" {
+			switch scenario {
+			case "success", "changed-bootstrap", "delete-denied", "absence-unconfirmed":
 				require.NoError(t, prepareErr)
-			} else {
+			default:
 				require.Error(t, prepareErr)
 			}
-			require.Nil(t, cleanup)
-			require.Zero(t, mutations)
+			if scenario == "unowned-bootstrap" {
+				require.Nil(t, cleanup)
+				require.Zero(t, deletions)
+				return
+			}
+			require.NotNil(t, cleanup)
+			cleanupErr := cleanup(t.Context())
+			switch scenario {
+			case "changed-bootstrap":
+				require.Error(t, cleanupErr)
+				require.Zero(t, deletions)
+			case "delete-denied", "absence-unconfirmed":
+				require.Error(t, cleanupErr)
+				require.Equal(t, 1, deletions)
+			default:
+				require.NoError(t, cleanupErr)
+				require.Equal(t, 1, deletions)
+				require.Equal(t, 2, reads)
+			}
 		})
 	}
 }

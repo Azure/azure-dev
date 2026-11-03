@@ -146,10 +146,10 @@ func coreDockerPackageContext() *azdext.ServiceContext {
 	}
 }
 
-func TestCoreContainerPackageValidation(t *testing.T) {
+func TestContainerPackageValidation(t *testing.T) {
 	serviceContext := coreDockerPackageContext()
 	before := proto.Clone(serviceContext)
-	require.NoError(t, validateCoreContainerPackage(serviceContext))
+	require.NoError(t, validateContainerPackage(serviceContext))
 	require.True(t, proto.Equal(before, serviceContext))
 	for _, invalid := range []*azdext.ServiceContext{
 		nil,
@@ -162,15 +162,15 @@ func TestCoreContainerPackageValidation(t *testing.T) {
 			LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 		}}},
 	} {
-		require.Error(t, validateCoreContainerPackage(invalid))
+		require.Error(t, validateContainerPackage(invalid))
 	}
 	serviceContext.Package[0].Metadata["imageHash"] = "sha256:stale"
-	require.ErrorContains(t, validateCoreContainerPackage(serviceContext), "does not match")
+	require.ErrorContains(t, validateContainerPackage(serviceContext), "does not match")
 }
 
 func TestServiceEndpointsPreserveAuthoredContextPath(t *testing.T) {
 	origin := []string{"https://actual.azurecontainerapps.io"}
-	key := "SERVICE_SPRING_PETCLINIC_REST_APP_URI"
+	key := "SERVICE_SPRING_PETCLINIC_REST_APP_ENDPOINT_URL"
 	endpoint := origin[0] + "/petclinic"
 	got, err := selectServiceEndpoints("spring-petclinic-rest-app", origin, map[string]string{key: endpoint})
 	require.NoError(t, err)

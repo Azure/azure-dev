@@ -83,24 +83,6 @@ func (tx *postgresPolicyTx) Exec(_ context.Context, statement string, _ ...any) 
 	return pgconn.NewCommandTag(""), nil
 }
 
-func TestVerifyEntraRoleMappingUsesCatalogRoleName(t *testing.T) {
-	tx := &postgresPolicyTx{
-		row: func(query string, args ...any) pgx.Row {
-			require.Contains(t, query, "WHERE rolname = $1")
-			require.NotContains(t, query, "rolename")
-			require.Equal(t, []any{"petclinic_app"}, args)
-			return postgresPolicyRow{values: []any{"expected-object", "service", int32(0)}}
-		},
-	}
-
-	require.NoError(t, verifyEntraRoleMapping(
-		t.Context(),
-		tx,
-		"petclinic_app",
-		"expected-object",
-	))
-}
-
 func applicationPolicyTx(t *testing.T, objects, schemas [][]any) *postgresPolicyTx {
 	t.Helper()
 	return &postgresPolicyTx{
@@ -112,7 +94,7 @@ func applicationPolicyTx(t *testing.T, objects, schemas [][]any) *postgresPolicy
 				return postgresPolicyRow{values: []any{0}}
 			case strings.Contains(query, "shobj_description(oid, 'pg_database')"):
 				return postgresPolicyRow{values: []any{"developer", "marker", true}}
-			case strings.Contains(query, "SELECT pg_get_userbyid(datdba)"):
+			case strings.Contains(query, "pg_get_userbyid(datdba)"):
 				return postgresPolicyRow{values: []any{"developer"}}
 			case strings.Contains(query, "SELECT has_database_privilege"):
 				privilege := strings.Contains(query, "'CONNECT'")

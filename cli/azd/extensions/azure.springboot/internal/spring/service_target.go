@@ -101,7 +101,10 @@ func (t *serviceTarget) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	if err := validateAutomaticServiceConfig(serviceConfig); err != nil {
+	if err := validateServiceConfiguration(serviceConfig); err != nil {
+		return nil, err
+	}
+	if err := validateApplicationPackaging(serviceConfig); err != nil {
 		return nil, err
 	}
 	projectResponse, err := t.client.Project().Get(ctx, &azdext.EmptyRequest{})
@@ -167,7 +170,7 @@ func (t *serviceTarget) Package(
 		)
 	}
 	buildContext.Package = append(buildContext.Package, packageResponse.GetResult().GetArtifacts()...)
-	if err := validateCoreContainerPackage(buildContext); err != nil {
+	if err := validateContainerPackage(buildContext); err != nil {
 		return nil, err
 	}
 	serviceContext.Build = append(serviceContext.Build, buildArtifact)
@@ -369,7 +372,7 @@ func (t *serviceTarget) Endpoints(
 	return selectServiceEndpoints(serviceConfig.GetName(), endpoints, values)
 }
 
-func validateCoreContainerPackage(serviceContext *azdext.ServiceContext) error {
+func validateContainerPackage(serviceContext *azdext.ServiceContext) error {
 	var image *azdext.Artifact
 	for _, artifact := range serviceContext.GetPackage() {
 		if artifact.GetKind() != azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER {
@@ -377,7 +380,7 @@ func validateCoreContainerPackage(serviceContext *azdext.ServiceContext) error {
 		}
 		if image != nil {
 			return validationError("ambiguous_container_package", "more than one container package artifact was supplied",
-				"rerun azd package with only this service's core Docker package artifacts")
+				"rerun azd package with only this service's generated container package artifacts")
 		}
 		image = artifact
 	}
@@ -385,8 +388,8 @@ func validateCoreContainerPackage(serviceContext *azdext.ServiceContext) error {
 		strings.TrimSpace(image.GetLocation()) == "" || image.GetMetadata()["targetImage"] != image.GetLocation() ||
 		image.GetMetadata()["imageHash"] == "" || image.GetMetadata()["sourceImage"] != "" {
 		return validationError("missing_core_container_package",
-			"native Maven packaging requires a local container package artifact",
-			"rerun azd package so the generated Spring Boot container is built and packaged")
+			"the Spring package operation requires a local generated container package artifact",
+			"rerun azd package so the generated runtime image is built and packaged")
 	}
 	for _, artifact := range serviceContext.GetBuild() {
 		if artifact.GetKind() == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
@@ -397,7 +400,7 @@ func validateCoreContainerPackage(serviceContext *azdext.ServiceContext) error {
 		}
 	}
 	return validationError("mismatched_core_container_package",
-		"the container package does not match this service's core Docker build artifact",
+		"the container package does not match this service's generated container build artifact",
 		"rerun azd package without reusing stale artifacts")
 }
 
@@ -405,7 +408,7 @@ func selectServiceEndpoints(serviceName string, armEndpoints []string, outputs m
 	var authored string
 	found := false
 	prefix := "SERVICE_" + environment.Key(serviceName)
-	for _, suffix := range []string{"_URI", "_URL", "_ENDPOINT"} {
+	for _, suffix := range []string{"_URI", "_URL", "_ENDPOINT", "_ENDPOINT_URL"} {
 		value, present := outputs[prefix+suffix]
 		if !present {
 			continue

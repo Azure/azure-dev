@@ -4,10 +4,13 @@
 package spring
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,6 +50,39 @@ class App {
 	for _, pattern := range unsupportedSpringBootstrap {
 		require.False(t, pattern.Match(code), "%s", pattern)
 	}
+}
+
+func TestExplicitPasswordMatchesEffectiveApplicationWithoutDisclosure(t *testing.T) {
+	project, service := automaticPostgresProject(t)
+	properties := "spring.datasource.url=jdbc:postgresql://actual.example/petclinic?" +
+		"sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt\n" +
+		"spring.datasource.username=petclinic_app\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(project.Path, "src", "main", "resources", "application.properties"), []byte(properties), 0o600,
+	))
+	password := strings.Repeat("fixture-", 8)
+	variable := &armappcontainers.EnvironmentVar{Name: new("SPRING_DATASOURCE_PASSWORD"), Value: new(password)}
+	binding := &deploymentBinding{
+		values: map[string]string{postgresHostEnv: "actual.example"},
+		app: &armappcontainers.ContainerApp{Properties: &armappcontainers.ContainerAppProperties{
+			Template: &armappcontainers.Template{Containers: []*armappcontainers.Container{{
+				Env: []*armappcontainers.EnvironmentVar{variable},
+			}}},
+		}},
+	}
+	ctx := context.WithValue(t.Context(), deploymentBindingKey{}, binding)
+	expected := resolvedDatabase{
+		Type: databasePostgreSQL, Authentication: databaseAuthenticationPassword,
+		Name: "petclinic", Username: "petclinic_app",
+	}
+	values := map[string]string{databaseAppPasswordEnv: password}
+	runtime := new(Runtime)
+	require.NoError(t, runtime.verifyExplicitDatasource(ctx, project, service, nil, expected, values))
+	variable.Value = new(password + "different")
+	err := runtime.verifyExplicitDatasource(ctx, project, service, nil, expected, values)
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), password)
+	require.NotContains(t, err.Error(), *variable.Value)
 }
 
 func TestPendingDatasourceDoesNotMaskKnownUnsupportedConstruction(t *testing.T) {

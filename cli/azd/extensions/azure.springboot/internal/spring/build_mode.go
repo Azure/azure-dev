@@ -4,76 +4,70 @@
 package spring
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
-func validateRawServiceSettings(service map[string]any) error {
-	if _, present := service["database"]; present {
-		return validationError(
-			"explicit_database_config_unsupported",
-			"azure.springboot does not support an authored database block",
-			"remove database and let azure.springboot discover the effective Spring datasource",
-		)
-	}
-	if config, ok := service["config"].(map[string]any); ok {
-		if _, present := config["database"]; present {
-			return validationError(
-				"explicit_database_config_unsupported",
-				"azure.springboot does not support an authored config.database block",
-				"remove config.database and let azure.springboot discover the effective Spring datasource",
-			)
+func validateRawServiceConfiguration(serviceName string, service map[string]any) error {
+	var unsupported []string
+	for key := range service {
+		switch key {
+		case "name", "project", "language", "host", "module", "resourceGroup",
+			"resourceName", "apiVersion", "dist", "output", "image", "k8s", "infra",
+			"uses", "env", "hooks", "condition", "remoteBuild":
+			continue
+		default:
+			unsupported = append(unsupported, key)
 		}
 	}
-	if _, present := service["docker"]; present {
-		return validationError(
-			"explicit_docker_config_unsupported",
-			"azure.springboot does not support an authored docker block",
-			"remove docker and let azure.springboot use native Maven packaging",
-		)
+	if len(unsupported) == 0 {
+		return nil
 	}
-	return nil
+	slices.Sort(unsupported)
+	return unsupportedServiceConfigurationError(serviceName, unsupported)
 }
 
-func validateAutomaticServiceConfig(service *azdext.ServiceConfig) error {
+func validateServiceConfiguration(service *azdext.ServiceConfig) error {
 	if service == nil {
 		return validationError("missing_service_config", "service configuration is missing", "check azure.yaml")
 	}
-	if additional := service.GetAdditionalProperties(); additional != nil {
-		if _, present := additional.AsMap()["database"]; present {
-			return validationError(
-				"explicit_database_config_unsupported",
-				"azure.springboot does not support an authored database block",
-				"remove database and let azure.springboot discover the effective Spring datasource",
-			)
+	var unsupported []string
+	if service.Docker != nil {
+		unsupported = append(unsupported, "docker")
+	}
+	if service.Config != nil {
+		unsupported = append(unsupported, "config")
+	}
+	if service.AdditionalProperties != nil {
+		for key := range service.AdditionalProperties.GetFields() {
+			unsupported = append(unsupported, key)
 		}
 	}
-	if _, present := service.GetConfig().GetFields()["database"]; present {
-		return validationError(
-			"explicit_database_config_unsupported",
-			"azure.springboot does not support an authored config.database block",
-			"remove config.database and let azure.springboot discover the effective Spring datasource",
-		)
+	if len(unsupported) == 0 {
+		return nil
 	}
-	options := service.GetDocker()
-	if options.GetPath() == "" {
-		platform := strings.TrimSpace(options.GetPlatform())
-		if platform != "" && !strings.EqualFold(platform, docker.DefaultPlatform) {
-			return validationError(
-				"unsupported_native_container_platform",
-				"azure.springboot native packaging supports only linux/amd64",
-				"remove docker.platform or set it to linux/amd64",
-			)
-		}
-	}
-	return nil
+	slices.Sort(unsupported)
+	return unsupportedServiceConfigurationError(service.GetName(), slices.Compact(unsupported))
+}
+
+func unsupportedServiceConfigurationError(serviceName string, keys []string) error {
+	return validationError(
+		"unsupported_spring_service_configuration",
+		fmt.Sprintf(
+			"service %q contains unsupported springbootapp configuration: %s",
+			serviceName,
+			strings.Join(keys, ", "),
+		),
+		"check the service configuration and retry",
+	)
 }
 
 // validateSpringBuild validates local packaging inputs without changing authored files.
 func validateSpringBuild(project *azdext.ProjectConfig, service *azdext.ServiceConfig) error {
-	if err := validateAutomaticServiceConfig(service); err != nil {
+	if err := validateServiceConfiguration(service); err != nil {
 		return err
 	}
 	_, err := servicePath(project, service)

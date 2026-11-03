@@ -6,29 +6,28 @@ PostgreSQL application access. This is an **unpublished development prototype**:
 use azd 1.37.2 or newer and a matching locally built extension bundle. The
 version requirement in the examples is not a public release guarantee.
 
-## Automatic application configuration
+See the [extension design](docs/design.md) for automatic datasource discovery,
+packaging, deployment, and PostgreSQL access verification.
 
-The extension supports one application path:
+## Packaging
 
-- A project contains exactly one `springbootapp` service.
-- The checked-in Maven Wrapper builds the Spring Boot JAR with JDK 17 or newer.
-- The extension stages the JAR with a generated Java 17 runtime container recipe.
-- Docker builds and packages that generated container.
-- The extension discovers the effective datasource from Spring configuration
-  and verifies it against the deployed Container App and Azure resources.
+The host JDK 17+ and checked-in Maven Wrapper build the Spring Boot JAR. The
+extension stages that JAR with its Java 17 runtime recipe in an isolated
+temporary context and sends it through azd's container pipeline. Project
+`Dockerfile` and `.dockerignore` files are not read or modified.
 
-Do not add `database`, `config.database`, or `docker` to a Spring service in
-`azure.yaml`. The extension rejects those blocks, including empty blocks,
-before authentication, packaging, provisioning, or environment mutation.
-An unreferenced Dockerfile or `.dockerignore` may remain in the project, but the
-automatic path does not execute, replace, or use it.
+Packaging requires Docker, `pom.xml`, `mvnw`,
+`.mvn/wrapper/maven-wrapper.properties`, and `src`. Deployment also requires
+Bicep (azd can install it when missing). Application SQL and infrastructure
+remain project-owned.
 
 ## Template compatibility example
 
-The compatible Petclinic REST template is published at
-[`XiaofeiCao/petclinic-rest-azd@ce7d05f5d2044ce91eedd8c8679d83386b757b39`](https://github.com/XiaofeiCao/petclinic-rest-azd/tree/ce7d05f5d2044ce91eedd8c8679d83386b757b39).
-It preserves Bicep, parameter files, scripts, Java sources, and its unreferenced
-Dockerfile:
+The [pinned Weidong REST overlay](test/functional/testdata/spring-petclinic-rest-weidong/README.md)
+changes only `azure.yaml` in
+`weidongxu-microsoft/petclinic-rest-azd@427ef7f7e6d3244e5aabd101f5a73435320599fa`.
+It preserves Bicep, parameter files, scripts, Java sources, and unrelated
+project files:
 
 ```yaml
 name: petclinic-rest
@@ -53,33 +52,42 @@ services:
 The extension prepares the original `DATABASE_ADMIN_OBJECT_ID` and
 `DATABASE_ADMIN_NAME` inputs. It verifies the selected current ARM deployment
 and live resources against `DATABASE_SERVER_ID`, `DATABASE_HOST`,
-`APPLICATION_IDENTITY_ID`, `APPLICATION_IDENTITY_CLIENT_ID`,
 `APPLICATION_PRINCIPAL_ID`, `CONTAINER_APP_ENVIRONMENT_ID`, and the existing
-registry outputs. Saved environment values alone are not ownership evidence.
-No new root aliases or resource tags are required.
-
-The authored module remains `infra/application.bicep`; its parameter file
-retains `SERVICE_SPRING_PETCLINIC_REST_APP_IMAGE_NAME`. The HTTPS endpoint
-retains `/petclinic`, with port 9966 and the original profiles and JDBC
-managed-identity plugin.
+registry outputs. User-assigned identity mode additionally verifies
+`APPLICATION_IDENTITY_ID` and `APPLICATION_IDENTITY_CLIENT_ID`. Saved
+environment values alone are not ownership evidence. No new root aliases or
+resource tags are required. The authored module remains
+`infra/application.bicep`; its parameter file retains
+`SERVICE_SPRING_PETCLINIC_REST_APP_IMAGE_NAME`. The HTTPS endpoint retains
+`/petclinic`, with port 9966 and the original profiles/JDBC managed-identity plugin.
+The application selects PostgreSQL, the runtime username, verify-full TLS and
+Hikari's managed-identity plugin through its unchanged Spring properties.
 
 > [!WARNING]
 > This demo's unchanged Bicep creates `bootstrap-local-ip` from `0.0.0.0` to
-> `255.255.255.255` for setup. Automatic database setup verifies that this exact
-> broad rule belongs to the current deployment but leaves it unchanged. The
-> existing exact runtime-egress rules are also verified, not deleted or replaced.
+> `255.255.255.255` for setup. With the YAML hooks removed, automatic database
+> setup takes responsibility for removing that exact current-deployment-owned
+> broad rule on success, failure or cancellation and verifying its absence.
+> The existing exact runtime-egress rules are verified, not deleted or replaced.
 > Entra-only authentication and hostname-verified TLS protect authentication
 > and transport, **not source-IP access**. Process-local cleanup cannot guarantee
 > recovery after host or credential loss; this is not an automatically expiring
 > firewall rule or private networking. Unknown rules are never adopted or deleted.
 
-## Datasource discovery
+## Service configuration and datasource discovery
 
-The extension reads standard Spring properties, YAML, profiles, imports, built
-JAR classpath resources, runtime libraries, deployed environment variables,
-arguments, secrets, and Azure resource bindings. H2 requires positive runtime
-datasource evidence; test-only H2, missing configuration, or a PostgreSQL error
-never becomes H2.
+`springbootapp` is an automatic-only host. A service may use the standard azd
+fields needed to identify the project, language, host, module, resource, output,
+environment, hooks, and dependencies. Any other authored top-level service
+property is rejected before authentication, environment writes, file staging,
+or Azure mutations. The error lists offending property names without printing
+their values.
+
+The extension reads standard Spring properties/YAML, profiles, imports,
+arguments, environment variables, and deployed Container App settings. Final
+deployment validation uses the packaged Spring Boot JAR's classpath resources
+and runtime libraries. H2 requires positive runtime datasource evidence;
+test-only H2, missing configuration, or a PostgreSQL error never becomes H2.
 
 Unresolved infrastructure-dependent profile, configuration-location, and
 datasource selectors remain pending during preparation. Final resolution must
@@ -89,44 +97,83 @@ substitute host external files for container files.
 
 Discovery supports standard Spring Boot datasource auto-configuration, not
 arbitrary custom Java configuration. A bounded source check rejects recognizable
-custom property sources, bootstrap registrations, and datasource factories
-while ignoring comments and string literals. This is not proof of generated or
-transitive code, reflection, arbitrary programmatic configuration, mounted
-application files, or custom launch scripts.
+custom property sources, bootstrap registrations and datasource factories while
+ignoring comments/string literals. This is not proof of generated or transitive
+code, reflection or arbitrary programmatic configuration. Such customization,
+non-Java bootstrap, mounted application files and custom launch scripts require
+additional runtime evidence that this prototype does not provide; do not use
+automatic or complete-block managed access for those applications.
 
 Automatic PostgreSQL password setup uses the application's effective password
-in memory without generating or saving an unrelated application password.
+in memory, without generating or saving an unrelated application password.
 Administrator inputs remain separate and must match the authored infrastructure
 bindings. Automatic Entra setup requires an effective supported JDBC integration,
-an explicitly selected attached user-assigned managed identity, Entra-only
-server authentication, and `sslmode=verify-full`.
+either the Container App system identity or an explicitly selected attached
+UAMI, Entra-only server authentication, and verify-full TLS. An omitted client
+ID selects system-assigned identity; an explicitly configured empty or
+unresolved client ID is rejected. A passwordless flag alone is insufficient.
+
+Official azd 1.37.2 native Maven packaging and the generated Java 17 runtime
+have passed local PostgreSQL REST CRUD and restart-persistence checks. A separate
+runtime-H2 MVC fixture also passed native packaging and actual H2 database health
+without changing its application or dependencies. The PostgreSQL
+checks use separate external test configuration with password authentication
+and `sslmode=disable`; they do not establish Azure managed identity or
+verify-full TLS. A probe using the packaged Spring libraries also covers
+repeated command-line options, empty JVM properties and indexed environment
+profile groups. Full live lifecycle acceptance remains pending. The extension
+maps a verified system-assigned or attached user-assigned identity to an
+ordinary non-admin PostgreSQL login, or verifies the effective Spring password
+login when the application uses password authentication. The verified azd
+developer user remains the Entra administrator. Existing password roles must authenticate
+with the effective Spring credential; a mismatch fails without rotating it.
 
 ## Application-owned startup initialization
 
-All extension-managed application accounts use the fixed **`app-owned-v2`**
-access policy: database CONNECT, public-schema USAGE/CREATE, and table read/write
-and sequence privileges as applicable. It grants no database CREATE/TEMPORARY,
-administrator membership, or database ownership. The application owns objects
-it creates, including the ability to ALTER or DROP them.
+All extension-managed app accounts use the fixed **`app-owned-v2`** access
+policy: database CONNECT, public-schema USAGE/CREATE, and table read/write and
+sequence privileges as applicable. It grants no database CREATE/TEMPORARY,
+administrator membership or database ownership. The app owns objects it
+creates, including the ability to ALTER/DROP those objects. This replaces the
+old DML-only guarantee.
 
-The extension verifies identity, grants, deployment binding, and connectivity.
-Bootstrap readiness does not mean application tables already exist. Spring
-startup runs the existing schema and seed SQL with
-`spring.sql.init.mode=always`; Hibernate DDL remains `none`. Startup and restart
-can rerun SQL and reset or reseed data.
+The extension verifies identity, grants, deployment binding and connectivity;
+bootstrap readiness does **not** mean application tables already exist.
+Spring startup runs the existing schema/seed SQL with
+`spring.sql.init.mode=always`; Hibernate DDL remains `none`. There is no separate
+initializer, receipt, baseline-once promise or initialization completion gate.
+Startup/restart can rerun SQL and reset/reseed data; the upstream SQL is not
+claimed to be perfectly idempotent.
 
-Existing administrator-owned or foreign application objects are rejected, not
-adopted or transferred. Old readiness markers are insufficient. Changing the
-target, authentication mode, username, or identity requires an explicit
-migration. `POSTGRES_BOOTSTRAP_CLIENT_IP`, where needed for narrow-network
-templates, is a troubleshooting-only exact public IPv4 override.
+Existing administrator-owned or foreign application objects are rejected,
+not adopted or transferred. Old DML-only readiness markers are insufficient.
+Use a fresh database/environment or a separately approved migration. Changing
+target, auth mode, username or identity likewise needs explicit migration.
+`POSTGRES_BOOTSTRAP_CLIENT_IP`, where needed for narrow-network templates,
+is a troubleshooting-only exact public IPv4 override, not a firewall policy.
 
 ## Commands and validation
 
-Use separate `azd init`, `up`, `package`, `deploy` or redeploy, and `down`
-operations. Local image packaging does not require provisioning.
+Use separate `azd init`, `up`, `package`, `deploy`/redeploy and `down` operations.
+Local image packaging does not require provisioning. No Azure operations are
+part of the offline fixture checks:
 
-The opt-in `AZD_TEST_SPRING_PETCLINIC_PACKAGE=1` gate initializes the fork-owned
-template in an empty directory and verifies native packaging. The opt-in
-`AZD_TEST_SPRING_PETCLINIC_LIVE=1` gate uses that same template for separately
-authorized live lifecycle validation and owned-resource cleanup.
+```shell
+go test ./test/functional -run 'TestSpringPetclinicManagedIdentityFixtureIsPortable|TestSpringPetclinicRest' -count=1
+```
+
+The opt-in `AZD_TEST_SPRING_PETCLINIC_PACKAGE=1` native REST gate additionally
+starts disposable local PostgreSQL and application containers, checks JSON
+CRUD and restart persistence, and removes only its labeled resources and
+nonce-scoped image tags. Set `CLI_TEST_AZD_PATH` to the official azd executable.
+It requires Docker and a host JDK suitable for the unchanged Maven project.
+For a child-session handoff, optionally set `AZD_TEST_SPRING_ARTIFACTS_DIR` to an
+existing absolute evidence directory. Each gate retains its exact extension
+build-input snapshot and installed bundle in a new private subdirectory there.
+These retained artifacts do not establish acceptance if the corresponding gate
+fails, and contain no azd configuration or Azure authentication state.
+
+The original [MVC managed-identity fixture](test/functional/testdata/spring-petclinic-managedidentity/README.md)
+is retained and migrated to the same application-owned policy. The REST
+fixture uses REST APIs, not MVC HTML forms. Offline/source checks are not live
+deployment acceptance; that requires separate authorization and owned-resource cleanup.

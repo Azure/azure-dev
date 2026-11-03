@@ -9,9 +9,61 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSelectedApplicationIdentitySupportsSystemAndUserAssigned(t *testing.T) {
+	appID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app"
+	systemPrincipalID := "11111111-2222-3333-4444-555555555555"
+	identityID := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.ManagedIdentity/userAssignedIdentities/app"
+	userPrincipalID := "66666666-7777-8888-9999-aaaaaaaaaaaa"
+	clientID := "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+	app := &armappcontainers.ContainerApp{
+		ID: new(appID),
+		Identity: &armappcontainers.ManagedServiceIdentity{
+			Type:        new(armappcontainers.ManagedServiceIdentityTypeSystemAssignedUserAssigned),
+			PrincipalID: new(systemPrincipalID),
+			UserAssignedIdentities: map[string]*armappcontainers.UserAssignedIdentity{
+				identityID: {PrincipalID: new(userPrincipalID), ClientID: new(clientID)},
+			},
+		},
+	}
+
+	principalID, selectedClientID, err := selectedApplicationIdentity(resolvedDatabase{
+		AppIdentity: &databaseAppIdentity{
+			Type:       databaseAppIdentityTypeSystemAssigned,
+			ResourceID: appID,
+		},
+	}, map[string]string{serviceIdentityPrincipalIDEnv: systemPrincipalID}, app)
+	require.NoError(t, err)
+	require.Equal(t, systemPrincipalID, principalID)
+	require.Empty(t, selectedClientID)
+
+	principalID, selectedClientID, err = selectedApplicationIdentity(resolvedDatabase{
+		AppIdentity: &databaseAppIdentity{
+			Type:       databaseAppIdentityTypeUserAssigned,
+			ResourceID: identityID,
+		},
+	}, map[string]string{
+		serviceIdentityPrincipalIDEnv: userPrincipalID,
+		serviceIdentityClientIDEnv:    clientID,
+	}, app)
+	require.NoError(t, err)
+	require.Equal(t, userPrincipalID, principalID)
+	require.Equal(t, clientID, selectedClientID)
+
+	app.Identity.PrincipalID = new("different")
+	_, _, err = selectedApplicationIdentity(resolvedDatabase{
+		AppIdentity: &databaseAppIdentity{
+			Type:       databaseAppIdentityTypeSystemAssigned,
+			ResourceID: appID,
+		},
+	}, map[string]string{serviceIdentityPrincipalIDEnv: systemPrincipalID}, app)
+	require.ErrorContains(t, err, "does not match")
+}
 
 func TestPostgresConnectionConfigUsesVerifiedTLSWithoutCredentialURL(t *testing.T) {
 	config, err := postgresConnectionConfig(
@@ -25,7 +77,7 @@ func TestPostgresConnectionConfigUsesVerifiedTLSWithoutCredentialURL(t *testing.
 	require.NotNil(t, config.TLSConfig)
 	require.False(t, config.TLSConfig.InsecureSkipVerify)
 	require.Equal(t, "server.postgres.database.azure.com", config.TLSConfig.ServerName)
-	require.Equal(t, "public,pg_catalog", config.RuntimeParams["search_path"])
+	require.Equal(t, "pg_catalog", config.RuntimeParams["search_path"])
 	connectionString := postgresConnectionString(
 		"server.postgres.database.azure.com",
 		"petclinic",

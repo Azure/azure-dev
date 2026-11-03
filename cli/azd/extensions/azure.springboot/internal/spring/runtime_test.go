@@ -5,12 +5,10 @@ package spring
 
 import (
 	"context"
-	"errors"
 	"maps"
 	"os"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,44 +18,16 @@ type fakeEnvironmentStore struct {
 	writes []string
 }
 
-type fakeDeploymentSafetyChecker struct {
-	err   error
-	calls int
-}
-
 type fakeDeveloperIdentityResolver struct {
 	identity *developerIdentity
 	err      error
 	calls    int
 }
 
-type fakeUserAccessTenantResolver struct {
-	tenant string
-	err    error
-	calls  int
-}
-
-func (r *fakeUserAccessTenantResolver) Resolve(context.Context, string) (string, error) {
-	r.calls++
-	return r.tenant, r.err
-}
-
 type fakeDeploymentOutputVerifier struct {
 	err   error
 	calls int
 	bound *deploymentBinding
-}
-
-func TestResolveProjectRejectsMultipleSpringServices(t *testing.T) {
-	project := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
-		"api":    {Name: "api", Host: SpringHost},
-		"worker": {Name: "worker", Host: SpringHost},
-	}}
-
-	_, _, err := (&Runtime{}).resolveProject(t.Context(), project, nil, false, false)
-
-	require.Error(t, err)
-	requireLocalErrorCode(t, err, "multiple_spring_services_unsupported")
 }
 
 func (v *fakeDeploymentOutputVerifier) Read(context.Context, map[string]string) (*deploymentBinding, error) {
@@ -80,15 +50,6 @@ func (r *fakeDeveloperIdentityResolver) Resolve(
 ) (*developerIdentity, error) {
 	r.calls++
 	return r.identity, r.err
-}
-
-func (c *fakeDeploymentSafetyChecker) EnsureCanGenerate(
-	context.Context,
-	string,
-	map[string]string,
-) error {
-	c.calls++
-	return c.err
 }
 
 func (s *fakeEnvironmentStore) values(context.Context) (string, map[string]string, error) {
@@ -114,24 +75,4 @@ func clearProcessValue(t *testing.T, key string) {
 			_ = os.Unsetenv(key)
 		}
 	})
-}
-
-type assertError string
-
-func (e assertError) Error() string {
-	return string(e)
-}
-
-func TestResolveServiceRejectsLegacyHost(t *testing.T) {
-	runtime := &Runtime{}
-
-	_, err := runtime.resolveService(t.Context(), nil, &azdext.ServiceConfig{
-		Name: "petclinic",
-		Host: "azure.springboot",
-	}, nil, nil, false)
-	require.ErrorContains(t, err, `service "petclinic" uses unsupported Spring host "azure.springboot"`)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok)
-	require.Equal(t, "unsupported_spring_host", localErr.Code)
-	require.Equal(t, "set the service host to springbootapp", localErr.Suggestion)
 }

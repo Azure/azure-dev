@@ -11,7 +11,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 
@@ -60,7 +59,7 @@ func (p *javaFrameworkService) Initialize(ctx context.Context, serviceConfig *az
 	defer p.mu.Unlock()
 
 	p.service = nil
-	if err := validateAutomaticServiceConfig(serviceConfig); err != nil {
+	if err := validateServiceConfiguration(serviceConfig); err != nil {
 		return err
 	}
 	service, err := nativeServiceConfig(serviceConfig)
@@ -388,8 +387,8 @@ func effectiveEnvironmentValue(commandEnv []string, name string) (string, bool) 
 }
 
 func environmentSliceValue(values []string, name string) (string, bool) {
-	for _, value := range slices.Backward(values) {
-		key, value, found := strings.Cut(value, "=")
+	for i := len(values) - 1; i >= 0; i-- {
+		key, value, found := strings.Cut(values[i], "=")
 		if found && key == name {
 			return value, true
 		}

@@ -1,0 +1,11 @@
+.azure
+.git
+.github
+.idea
+.vscode
+target
+*.log
+*.pem
+*.key
+Dockerfile*
+!Dockerfile

@@ -49,6 +49,33 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 - **Receive calls** from azd (e.g., "build this service")
 - **Make calls** back to azd (e.g., "prompt the user", "read environment config")
 
+### Spring Boot prototype composition
+
+The unpublished [`azure.springboot` prototype](../../cli/azd/extensions/azure.springboot/README.md)
+combines Java framework and Container Apps target providers. Host Maven builds
+the JAR, and an extension-owned Java 17 runtime recipe packages it in an
+isolated temporary context through azd's container pipeline. Project
+Dockerfiles and ignore files stay unchanged and unused.
+
+The host is automatic-only: any authored top-level service property outside its
+supported standard azd field set is rejected before authentication or mutation.
+Typed core fields such as `module` are retrieved through the project
+configuration RPC.
+The extension discovers the effective datasource from packaged Spring
+configuration and verifies the selected deployment and live resources before
+database mutations. PostgreSQL managed identity may use the verified Container
+App system identity or one explicitly selected attached user-assigned identity.
+Its fixed `app-owned-v2` policy allows application-owned startup SQL, not a
+privileged initializer/receipt gate. App object ownership permits ALTER/DROP,
+but does not grant database ownership or administrator privileges.
+Administrator connections use hostname-verified TLS with a catalog-only search
+path. Password mode verifies a real connection with the exact effective Spring
+credential rather than rotating an existing role. Endpoint selection recognizes
+`_ENDPOINT_URL` and preserves the application path after matching the live
+Container App hostname. Source-only discovery rejects recognizable custom
+bootstrap mechanisms but does not prove arbitrary programmatic or generated
+configuration.
+
 Extension command metadata can set `"launch": {"noAzdEnvironment": true}` on a command.
 For that command only (not its descendants), azd skips loading the selected
 environment, resolving its Key Vault references, and injecting its variables

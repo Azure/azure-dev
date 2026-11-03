@@ -13,18 +13,19 @@ import (
 const azurePostgreSQLPlugin = "com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin"
 
 type discoveredDatasource struct {
-	engine           databaseType
-	authentication   databaseAuthentication
-	host             string
-	port             int
-	name             string
-	username         string
-	password         string
-	clientID         string
-	sslmode          string
-	rootCert         string
-	pending          bool
-	selectionPending bool
+	engine             databaseType
+	authentication     databaseAuthentication
+	host               string
+	port               int
+	name               string
+	username           string
+	password           string
+	clientID           string
+	clientIDConfigured bool
+	sslmode            string
+	rootCert           string
+	pending            bool
+	selectionPending   bool
 }
 
 func inferSpringDatasource(
@@ -122,6 +123,7 @@ func inferSpringDatasource(
 		host: "localhost", port: 5432, username: username, password: password,
 	}
 	driverProperties := map[string]string{}
+	clientIDConfigured := false
 	mapPrefix := compactSpringKey(hikariPropertiesPrefix) + ":"
 	for key, property := range config.properties {
 		if name, present := strings.CutPrefix(key, mapPrefix); present {
@@ -130,25 +132,35 @@ func inferSpringDatasource(
 				return nil, err
 			}
 			driverProperties[name] = resolved
+			if name == "azure.clientId" {
+				clientIDConfigured = true
+			}
 		}
 	}
 	parsed, err := url.Parse(strings.TrimPrefix(jdbcURL, "jdbc:"))
 	if err != nil || parsed.User != nil || parsed.Fragment != "" || strings.Contains(jdbcURL, "#") {
 		return nil, configurationError("the PostgreSQL JDBC URL is malformed or contains unsupported components")
 	}
+	urlHost := false
+	urlPort := false
+	urlDatabase := false
 	if parsed.Opaque != "" {
 		result.name = parsed.Opaque
+		urlDatabase = true
 	} else {
 		if parsed.Hostname() != "" {
 			result.host = parsed.Hostname()
+			urlHost = true
 		}
 		if parsed.Port() != "" {
 			result.port, err = springPort(parsed.Port())
 			if err != nil {
 				return nil, err
 			}
+			urlPort = true
 		}
 		result.name = strings.TrimPrefix(parsed.Path, "/")
+		urlDatabase = result.name != ""
 	}
 	parameters, err := url.ParseQuery(parsed.RawQuery)
 	if err != nil {
@@ -160,15 +172,22 @@ func inferSpringDatasource(
 		}
 		// pgJDBC URL parameters override the Properties object supplied by Hikari.
 		driverProperties[key] = values[0]
+		if key == "azure.clientId" {
+			clientIDConfigured = true
+		}
 	}
-	for key, target := range map[string]*string{
-		"PGHOST": &result.host, "PGDBNAME": &result.name, "user": &result.username, "password": &result.password,
-	} {
+	if selected, present := driverProperties["PGHOST"]; present && !urlHost {
+		result.host = selected
+	}
+	if selected, present := driverProperties["PGDBNAME"]; present && !urlDatabase {
+		result.name = selected
+	}
+	for key, target := range map[string]*string{"user": &result.username, "password": &result.password} {
 		if selected, present := driverProperties[key]; present {
 			*target = selected
 		}
 	}
-	if selected, present := driverProperties["PGPORT"]; present {
+	if selected, present := driverProperties["PGPORT"]; present && !urlPort {
 		result.port, err = springPort(selected)
 		if err != nil {
 			return nil, err
@@ -240,6 +259,9 @@ func inferSpringDatasource(
 				}
 				if present {
 					candidate, selectedSource = selected, true
+					if suffix == "client-id" {
+						clientIDConfigured = true
+					}
 				}
 			}
 			if selectedSource {
@@ -277,16 +299,21 @@ func inferSpringDatasource(
 		}
 		result.authentication = databaseAuthenticationManagedIdentity
 		result.clientID = driverProperties["azure.clientId"]
+		result.clientIDConfigured = clientIDConfigured
 		if result.password != "" {
 			return nil, configurationError("the PostgreSQL datasource supplies both token authentication and a password")
 		}
-		if result.clientID == "" || strings.Contains(result.clientID, "${") {
-			if requireFinal {
-				return nil, configurationError("the PostgreSQL managed identity client ID is unresolved or system-assigned")
+		if result.clientIDConfigured {
+			if result.clientID == "" || strings.Contains(result.clientID, "${") {
+				if requireFinal {
+					return nil, configurationError(
+						"the explicitly configured PostgreSQL managed identity client ID is unresolved",
+					)
+				}
+				result.pending = true
+			} else if !databasePrincipalIDPattern.MatchString(result.clientID) {
+				return nil, configurationError("the PostgreSQL managed identity client ID is invalid")
 			}
-			result.pending = true
-		} else if !databasePrincipalIDPattern.MatchString(result.clientID) {
-			return nil, configurationError("the PostgreSQL managed identity client ID is invalid")
 		}
 		if scope := driverProperties["azure.scopes"]; scope != "" && scope != postgresTokenScope {
 			return nil, configurationError("the PostgreSQL token audience is unsupported")

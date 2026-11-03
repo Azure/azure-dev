@@ -35,9 +35,6 @@ func TestAutomaticProvisionInputsValidateAuthoredBindings(t *testing.T) {
 		{name: "MI app with password bootstrap",
 			document: `{"parameters":{"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD:-}"}}}`,
 			managed:  true, wantError: true},
-		{name: "password app with MI bootstrap", document: `{"parameters":{
-			"databaseAdministratorName":{"value":"${DATABASE_ADMIN_NAME}"},
-			"databaseAdministratorObjectId":{"value":"${DATABASE_ADMIN_OBJECT_ID}"}}}`, wantError: true},
 		{name: "malformed JSON", document: "{", wantError: true},
 		{name: "PostgreSQL without parameters", wantError: true},
 		{name: "positive H2 without parameters", h2: true},

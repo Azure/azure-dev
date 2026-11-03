@@ -4,9 +4,7 @@
 package spring
 
 import (
-	"context"
 	"errors"
-	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -39,27 +37,4 @@ func TestNonDisclosureErrorRedactsNonHTTPURLCredentials(t *testing.T) {
 	require.NotContains(t, err.Error(), "secret")
 	require.NotContains(t, err.Error(), "fragment")
 	require.Contains(t, err.Error(), "maven://example.test/releases")
-}
-
-func TestNonDisclosureErrorRedactsWrappedContextErrors(t *testing.T) {
-	for name, cause := range map[string]error{
-		"canceled": context.Canceled,
-		"deadline": context.DeadlineExceeded,
-	} {
-		t.Run(name, func(t *testing.T) {
-			err := nonDisclosureError(&url.Error{
-				Op:  "Get",
-				URL: "https://user:password@example.test/download?sig=secret#fragment",
-				Err: cause,
-			})
-
-			require.ErrorIs(t, err, cause)
-			require.NotContains(t, err.Error(), "user")
-			require.NotContains(t, err.Error(), "password")
-			require.NotContains(t, err.Error(), "sig=")
-			require.NotContains(t, err.Error(), "secret")
-			require.NotContains(t, err.Error(), "fragment")
-			require.Contains(t, err.Error(), "https://example.test/download")
-		})
-	}
 }

@@ -110,14 +110,17 @@ func (r *Runtime) resolveService(
 			fmt.Sprintf("set the service host to %s", SpringHost),
 		)
 	}
-	if err := validateAutomaticServiceConfig(service); err != nil {
+	if err := validateServiceConfiguration(service); err != nil {
+		return nil, err
+	}
+	if err := validateApplicationPackaging(service); err != nil {
 		return nil, err
 	}
 	database, err := r.discoverServiceDatabase(ctx, project, service, serviceContext, values, requireLate)
 	if err != nil {
 		return nil, err
 	}
-	if provisioned := values[provisionedDatabaseTypeEnv]; (!database.discovered || requireLate) && provisioned != "" &&
+	if provisioned := values[provisionedDatabaseTypeEnv]; requireLate && provisioned != "" &&
 		!strings.EqualFold(provisioned, string(database.Type)) {
 		return nil, validationError(
 			"database_type_change",
@@ -153,13 +156,6 @@ func (r *Runtime) resolveProject(
 	services := springServices(project)
 	if len(services) == 0 {
 		return nil, resolvedDatabase{}, nil
-	}
-	if len(services) > 1 {
-		return nil, resolvedDatabase{}, validationError(
-			"multiple_spring_services_unsupported",
-			"azure.springboot supports only one Spring service per project",
-			"keep one springbootapp service in azure.yaml",
-		)
 	}
 
 	resolved := make([]*resolvedService, 0, len(services))
@@ -296,8 +292,8 @@ func (r *Runtime) PreProvision(ctx context.Context, args *azdext.ProjectEventArg
 			if environmentValuePresent(values, os.LookupEnv, databaseAppPasswordEnv) {
 				return validationError(
 					"legacy_database_app_password_unsupported",
-					fmt.Sprintf("%s cannot be supplied without database.auth", databaseAppPasswordEnv),
-					"remove the application password or add the complete managed access auth block",
+					fmt.Sprintf("%s cannot be supplied for legacy PostgreSQL access", databaseAppPasswordEnv),
+					"remove the application password or use supported Spring datasource authentication",
 				)
 			}
 			if persist {
@@ -590,6 +586,15 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 	if err := validateProvisionedBindings(database, values); err != nil {
 		return err
 	}
+	if r.client != nil || (binding != nil && binding.app != nil) {
+		for _, service := range services {
+			if err := r.verifyExplicitDatasource(
+				ctx, args.Project, service.service, nil, service.database, values,
+			); err != nil {
+				return err
+			}
+		}
+	}
 	switch database.Authentication {
 	case databaseAuthenticationPassword:
 		database.AdministratorName = strings.TrimSpace(values[postgresAdministratorEnv])
@@ -666,13 +671,37 @@ func validateProvisionedBindings(database resolvedDatabase, values map[string]st
 		)
 	}
 	if database.Authentication == databaseAuthenticationManagedIdentity {
-		identityID := strings.TrimSpace(values[serviceIdentityIDEnv])
-		if database.AppIdentity == nil || identityID == "" ||
-			!strings.EqualFold(identityID, database.AppIdentity.ResourceID) {
+		if database.AppIdentity == nil {
 			return validationError(
 				"mismatched_database_app_identity",
-				"database.auth.appIdentity.resourceId does not match the selected service identity output",
-				"restore the current service identity output and use the selected UAMI resourceId expression",
+				"the discovered Spring application identity is unavailable",
+				"restore the current application identity and deployment outputs",
+			)
+		}
+		switch database.AppIdentity.Type {
+		case databaseAppIdentityTypeSystemAssigned:
+			if principalID := strings.TrimSpace(values[serviceIdentityPrincipalIDEnv]); principalID == "" ||
+				!strings.EqualFold(database.AppIdentity.ResourceID, values[containerAppIDEnv]) {
+				return validationError(
+					"mismatched_database_app_identity",
+					"the discovered system-assigned identity does not match the selected service application",
+					"restore the current Container App and application principal outputs",
+				)
+			}
+		case databaseAppIdentityTypeUserAssigned:
+			identityID := strings.TrimSpace(values[serviceIdentityIDEnv])
+			if identityID == "" || !strings.EqualFold(identityID, database.AppIdentity.ResourceID) {
+				return validationError(
+					"mismatched_database_app_identity",
+					"the discovered Spring application identity does not match the selected service identity output",
+					"restore the current service identity output and use the selected UAMI resourceId expression",
+				)
+			}
+		default:
+			return validationError(
+				"unsupported_database_app_identity",
+				"the discovered Spring application identity type is unsupported",
+				"select the Container App system identity or one attached user-assigned identity",
 			)
 		}
 	}
@@ -759,6 +788,13 @@ func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEven
 		if binding != nil {
 			values = binding.values
 			ctx = context.WithValue(ctx, deploymentBindingKey{}, binding)
+		}
+		if r.client != nil || (binding != nil && binding.app != nil) {
+			if err := r.verifyExplicitDatasource(
+				ctx, args.Project, args.Service, args.ServiceContext, resolved.database, values,
+			); err != nil {
+				return err
+			}
 		}
 		resolved.database.AdministratorName = values[databaseAdministratorNameEnv]
 		if resolved.database.discovered && resolved.database.Authentication == databaseAuthenticationPassword {

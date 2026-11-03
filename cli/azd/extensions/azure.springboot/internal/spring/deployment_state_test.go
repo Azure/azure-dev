@@ -12,14 +12,10 @@ import (
 )
 
 func TestDeploymentSafetyCheckerAllowsOnlyAuthoritativeAbsence(t *testing.T) {
-	deploymentCalls, listCalls := 0, 0
+	listCalls := 0
 	checker := &azureDeploymentSafetyChecker{
 		verifyOwnership: func(context.Context, string, map[string]string, string) error {
 			return errPostgreSQLResourceNotFound
-		},
-		verifyNoDeploymentResource: func(context.Context, string, map[string]string) error {
-			deploymentCalls++
-			return nil
 		},
 		verifyNoOwnedResources: func(context.Context, string, map[string]string) error {
 			listCalls++
@@ -33,7 +29,6 @@ func TestDeploymentSafetyCheckerAllowsOnlyAuthoritativeAbsence(t *testing.T) {
 			"Microsoft.DBforPostgreSQL/flexibleServers/pg",
 	})
 	require.NoError(t, err)
-	require.Equal(t, 1, deploymentCalls)
 	require.Equal(t, 1, listCalls)
 }
 
@@ -136,25 +131,6 @@ func TestDeploymentSafetyCheckerBlocksOwnedResourceDiscoveredByList(t *testing.T
 		azureSubscriptionIDEnv: "sub",
 	})
 	require.ErrorContains(t, err, "existing infrastructure")
-}
-
-func TestDeploymentSafetyCheckerBlocksResourceDiscoveredByDeployment(t *testing.T) {
-	listCalls := 0
-	checker := &azureDeploymentSafetyChecker{
-		verifyNoDeploymentResource: func(context.Context, string, map[string]string) error {
-			return missingExistingDatabasePasswordError()
-		},
-		verifyNoOwnedResources: func(context.Context, string, map[string]string) error {
-			listCalls++
-			return nil
-		},
-	}
-
-	err := checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{
-		azureSubscriptionIDEnv: "sub",
-	})
-	require.ErrorContains(t, err, "existing infrastructure")
-	require.Zero(t, listCalls)
 }
 
 func TestParsePostgreSQLResourceIDRejectsAnotherResourceType(t *testing.T) {

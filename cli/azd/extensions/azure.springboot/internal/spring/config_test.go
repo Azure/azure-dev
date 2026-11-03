@@ -4,7 +4,6 @@
 package spring
 
 import (
-	"errors"
 	"os"
 	"testing"
 
@@ -18,74 +17,6 @@ func serviceWithConfig(t *testing.T, value map[string]any) *azdext.ServiceConfig
 	config, err := structpb.NewStruct(value)
 	require.NoError(t, err)
 	return &azdext.ServiceConfig{Name: "petclinic", Host: SpringHost, AdditionalProperties: config}
-}
-
-func requireLocalErrorCode(t *testing.T, err error, code string) {
-	t.Helper()
-	local, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok)
-	require.Equal(t, code, local.Code)
-}
-
-func TestValidateAutomaticServiceConfigRejectsExplicitSettings(t *testing.T) {
-	require.NoError(t, validateAutomaticServiceConfig(&azdext.ServiceConfig{Name: "petclinic", Host: SpringHost}))
-
-	t.Run("database", func(t *testing.T) {
-		for _, value := range []any{nil, map[string]any{}, map[string]any{"type": "postgresql"}} {
-			service := serviceWithConfig(t, map[string]any{"database": value})
-			err := validateAutomaticServiceConfig(service)
-			require.Error(t, err)
-			requireLocalErrorCode(t, err, "explicit_database_config_unsupported")
-		}
-	})
-
-	t.Run("legacy database", func(t *testing.T) {
-		config, err := structpb.NewStruct(map[string]any{"database": map[string]any{}})
-		require.NoError(t, err)
-		service := serviceWithConfig(t, nil)
-		service.Config = config
-		err = validateAutomaticServiceConfig(service)
-		require.Error(t, err)
-		requireLocalErrorCode(t, err, "explicit_database_config_unsupported")
-	})
-
-	t.Run("parser inferred docker options", func(t *testing.T) {
-		service := serviceWithConfig(t, nil)
-		service.Docker = &azdext.DockerProjectOptions{Path: "Dockerfile", Context: ".", Platform: "linux/amd64"}
-		require.NoError(t, validateAutomaticServiceConfig(service))
-	})
-
-	t.Run("unsupported native platform", func(t *testing.T) {
-		service := serviceWithConfig(t, nil)
-		service.Docker = &azdext.DockerProjectOptions{Platform: "linux/arm64"}
-		err := validateAutomaticServiceConfig(service)
-		require.Error(t, err)
-		requireLocalErrorCode(t, err, "unsupported_native_container_platform")
-	})
-}
-
-func TestValidateRawServiceSettingsRejectsPresence(t *testing.T) {
-	require.NoError(t, validateRawServiceSettings(nil))
-
-	for _, test := range []struct {
-		name string
-		raw  map[string]any
-		code string
-	}{
-		{"empty database", map[string]any{"database": map[string]any{}}, "explicit_database_config_unsupported"},
-		{"null database", map[string]any{"database": nil}, "explicit_database_config_unsupported"},
-		{"legacy database", map[string]any{
-			"config": map[string]any{"database": map[string]any{}},
-		}, "explicit_database_config_unsupported"},
-		{"empty docker", map[string]any{"docker": map[string]any{}}, "explicit_docker_config_unsupported"},
-		{"null docker", map[string]any{"docker": nil}, "explicit_docker_config_unsupported"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			err := validateRawServiceSettings(test.raw)
-			require.Error(t, err)
-			requireLocalErrorCode(t, err, test.code)
-		})
-	}
 }
 
 func TestEnvironmentLookupPrefersPersistedValue(t *testing.T) {

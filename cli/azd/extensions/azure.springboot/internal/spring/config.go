@@ -16,33 +16,34 @@ import (
 )
 
 const (
-	SpringHost                          = "springbootapp"
-	databaseTypeEnv                     = "SPRING_DATABASE_TYPE"
-	databaseAuthenticationEnv           = "SPRING_DATABASE_AUTHENTICATION"
-	databaseNameEnv                     = "SPRING_DATABASE_NAME"
-	databaseUsernameEnv                 = "SPRING_DATABASE_USERNAME"
-	databaseAdministratorNameEnv        = "SPRING_DATABASE_ADMINISTRATOR_NAME"
-	databaseAdministratorObjectIDEnv    = "SPRING_DATABASE_ADMINISTRATOR_OBJECT_ID"
-	databaseUserAccessTenantIDEnv       = "SPRING_DATABASE_USER_ACCESS_TENANT_ID"
-	databasePasswordEnv                 = "SPRING_DATABASE_PASSWORD"
-	databaseAppPasswordEnv              = "SPRING_DATABASE_APP_PASSWORD"
-	provisionedDatabaseTypeEnv          = "SPRING_DATABASE_PROVISIONED_TYPE"
-	provisionedDatabaseAccessEnv        = "SPRING_DATABASE_PROVISIONED_ACCESS"
-	databaseAccessConfiguredEnv         = "SPRING_DATABASE_ACCESS_CONFIGURED"
-	databaseAccessPolicyVersion         = "app-owned-v2"
-	azureSubscriptionIDEnv              = "AZURE_SUBSCRIPTION_ID"
-	azureResourceGroupEnv               = "AZURE_RESOURCE_GROUP"
-	containerAppIDEnv                   = "AZURE_CONTAINER_APP_ID"
-	postgresServerNameEnv               = "AZURE_POSTGRES_SERVER_NAME"
-	postgresServerIDEnv                 = "AZURE_POSTGRES_SERVER_ID"
-	postgresHostEnv                     = "AZURE_POSTGRES_HOST"
-	postgresDatabaseEnv                 = "AZURE_POSTGRES_DATABASE"
-	postgresAdministratorEnv            = "AZURE_POSTGRES_ADMINISTRATOR"
-	serviceIdentityIDEnv                = "SERVICE_PETCLINIC_IDENTITY_ID"
-	serviceIdentityClientIDEnv          = "SERVICE_PETCLINIC_IDENTITY_CLIENT_ID"
-	serviceIdentityPrincipalIDEnv       = "SERVICE_PETCLINIC_IDENTITY_PRINCIPAL_ID"
-	postgresBootstrapClientIPEnv        = "POSTGRES_BOOTSTRAP_CLIENT_IP"
-	databaseAppIdentityTypeUserAssigned = "userAssigned"
+	SpringHost                            = "springbootapp"
+	databaseTypeEnv                       = "SPRING_DATABASE_TYPE"
+	databaseAuthenticationEnv             = "SPRING_DATABASE_AUTHENTICATION"
+	databaseNameEnv                       = "SPRING_DATABASE_NAME"
+	databaseUsernameEnv                   = "SPRING_DATABASE_USERNAME"
+	databaseAdministratorNameEnv          = "SPRING_DATABASE_ADMINISTRATOR_NAME"
+	databaseAdministratorObjectIDEnv      = "SPRING_DATABASE_ADMINISTRATOR_OBJECT_ID"
+	databaseUserAccessTenantIDEnv         = "SPRING_DATABASE_USER_ACCESS_TENANT_ID"
+	databasePasswordEnv                   = "SPRING_DATABASE_PASSWORD"
+	databaseAppPasswordEnv                = "SPRING_DATABASE_APP_PASSWORD"
+	provisionedDatabaseTypeEnv            = "SPRING_DATABASE_PROVISIONED_TYPE"
+	provisionedDatabaseAccessEnv          = "SPRING_DATABASE_PROVISIONED_ACCESS"
+	databaseAccessConfiguredEnv           = "SPRING_DATABASE_ACCESS_CONFIGURED"
+	databaseAccessPolicyVersion           = "app-owned-v2"
+	azureSubscriptionIDEnv                = "AZURE_SUBSCRIPTION_ID"
+	azureResourceGroupEnv                 = "AZURE_RESOURCE_GROUP"
+	containerAppIDEnv                     = "AZURE_CONTAINER_APP_ID"
+	postgresServerNameEnv                 = "AZURE_POSTGRES_SERVER_NAME"
+	postgresServerIDEnv                   = "AZURE_POSTGRES_SERVER_ID"
+	postgresHostEnv                       = "AZURE_POSTGRES_HOST"
+	postgresDatabaseEnv                   = "AZURE_POSTGRES_DATABASE"
+	postgresAdministratorEnv              = "AZURE_POSTGRES_ADMINISTRATOR"
+	serviceIdentityIDEnv                  = "SERVICE_PETCLINIC_IDENTITY_ID"
+	serviceIdentityClientIDEnv            = "SERVICE_PETCLINIC_IDENTITY_CLIENT_ID"
+	serviceIdentityPrincipalIDEnv         = "SERVICE_PETCLINIC_IDENTITY_PRINCIPAL_ID"
+	postgresBootstrapClientIPEnv          = "POSTGRES_BOOTSTRAP_CLIENT_IP"
+	databaseAppIdentityTypeSystemAssigned = "systemAssigned"
+	databaseAppIdentityTypeUserAssigned   = "userAssigned"
 )
 
 type databaseType string
@@ -80,14 +81,19 @@ type resolvedDatabase struct {
 	appPassword       string
 }
 
+func validateApplicationPackaging(service *azdext.ServiceConfig) error {
+	return validateServiceConfiguration(service)
+}
+
 func (d resolvedDatabase) managedAccess() bool {
 	return d.Authentication == databaseAuthenticationPassword ||
 		d.Authentication == databaseAuthenticationManagedIdentity
 }
 
 func (d resolvedDatabase) accessFingerprint() string {
-	identity := ""
+	identityType, identity := "", ""
 	if d.AppIdentity != nil {
+		identityType = d.AppIdentity.Type
 		identity = strings.ToLower(d.AppIdentity.ResourceID)
 	}
 	return strings.Join([]string{
@@ -97,6 +103,7 @@ func (d resolvedDatabase) accessFingerprint() string {
 		strings.ToLower(d.ServerResourceID),
 		d.Name,
 		d.Username,
+		identityType,
 		identity,
 	}, "|")
 }
@@ -150,7 +157,7 @@ func validateAzureResourceID(
 		return validationError(
 			"invalid_database_resource_id",
 			fmt.Sprintf("service %q %s is not a valid %s resource ID", service.GetName(), field, expectedType),
-			fmt.Sprintf("set %s to a complete Azure resource ID or a deferred deployment-output expression", field),
+			fmt.Sprintf("set %s to a complete Azure resource ID", field),
 		)
 	}
 	return nil

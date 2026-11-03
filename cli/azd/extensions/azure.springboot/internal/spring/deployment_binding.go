@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -146,17 +145,9 @@ func readDeploymentBinding(
 	); err != nil {
 		return nil, err
 	}
-	services := springServices(project.GetProject())
-	for _, service := range services {
-		if err := validateAutomaticServiceConfig(service); err != nil {
-			return nil, err
-		}
-	}
-	binding.automatic = len(services) > 0
-	if binding.original || binding.automatic {
-		if err := bindApplication(ctx, credential, project.GetProject(), binding); err != nil {
-			return nil, err
-		}
+	binding.automatic = true
+	if err := bindApplication(ctx, credential, project.GetProject(), binding); err != nil {
+		return nil, err
 	}
 	return binding, nil
 }
@@ -166,7 +157,9 @@ func boundDeploymentValues(
 	outputs currentDeploymentOutputs,
 ) (map[string]string, error) {
 	result := make(map[string]string, len(values)+8)
-	maps.Copy(result, values)
+	for key, value := range values {
+		result[key] = value
+	}
 	_, original, err := findDeploymentOutput(outputs, "DATABASE_SERVER_ID")
 	if err != nil {
 		return nil, err
@@ -178,9 +171,6 @@ func boundDeploymentValues(
 		{"AZURE_RESOURCE_GROUP", azureResourceGroupEnv},
 		{"DATABASE_SERVER_ID", postgresServerIDEnv},
 		{"DATABASE_HOST", postgresHostEnv},
-		{"APPLICATION_IDENTITY_ID", serviceIdentityIDEnv},
-		{"APPLICATION_IDENTITY_CLIENT_ID", serviceIdentityClientIDEnv},
-		{"APPLICATION_PRINCIPAL_ID", serviceIdentityPrincipalIDEnv},
 		{"CONTAINER_APP_ENVIRONMENT_ID", "CONTAINER_APP_ENVIRONMENT_ID"},
 		{"AZURE_CONTAINER_REGISTRY_ENDPOINT", "AZURE_CONTAINER_REGISTRY_ENDPOINT"},
 	} {
@@ -195,6 +185,27 @@ func boundDeploymentValues(
 		}
 		if existing := values[binding.internal]; existing != "" && !strings.EqualFold(existing, value) {
 			return nil, fmt.Errorf("%s conflicts with the selected root deployment", binding.internal)
+		}
+		result[binding.internal] = value
+	}
+	for _, binding := range []struct{ authored, internal string }{
+		{"APPLICATION_IDENTITY_ID", serviceIdentityIDEnv},
+		{"APPLICATION_IDENTITY_CLIENT_ID", serviceIdentityClientIDEnv},
+		{"APPLICATION_PRINCIPAL_ID", serviceIdentityPrincipalIDEnv},
+	} {
+		output, present, err := findDeploymentOutput(outputs, binding.authored)
+		if err != nil {
+			return nil, err
+		}
+		if !present {
+			delete(result, binding.internal)
+			delete(result, binding.authored)
+			continue
+		}
+		value, stringValue := output.Value.(string)
+		if !stringValue || !strings.EqualFold(output.Type, "string") ||
+			strings.TrimSpace(value) == "" || !strings.EqualFold(value, values[binding.authored]) {
+			return nil, fmt.Errorf("%s was not emitted consistently by the current root deployment", binding.authored)
 		}
 		result[binding.internal] = value
 	}

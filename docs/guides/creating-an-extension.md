@@ -64,6 +64,23 @@ for the stream requirements and legacy-client behavior.
 
 ### 4. Build
 
+When combining framework and service-target providers, keep packaging ownership
+explicit. The unpublished
+[`azure.springboot` example](../../cli/azd/extensions/azure.springboot/README.md)
+uses host Maven and an owned generated Java runtime recipe. Project Dockerfiles
+must not be silently adopted, overwritten, or treated as evidence of the
+packaged application's effective configuration.
+
+Decide whether custom service fields are part of the public contract.
+`ServiceConfig.AdditionalProperties` can carry them without a protobuf change,
+but an automatic-only host should reject their presence consistently. Do not
+assume typed core fields such as `module` are in that map: retrieve the authored
+services section through the project-config RPC. Validate explicit
+null/empty/unsupported inputs before authentication or mutations. Pending
+configuration selectors must not fabricate a datasource or readiness state.
+Keep application startup SQL distinct from access readiness and preserve IaC
+firewall ownership.
+
 ```bash
 # Using the developer extension
 azd x build

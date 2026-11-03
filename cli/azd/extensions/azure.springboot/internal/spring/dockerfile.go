@@ -187,7 +187,7 @@ func prepareContainerContext(
 	service *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
 ) (*stagedContainerContext, error) {
-	if err := validateAutomaticServiceConfig(service); err != nil {
+	if err := validateServiceConfiguration(service); err != nil {
 		return nil, err
 	}
 	if _, err := servicePath(project, service); err != nil {

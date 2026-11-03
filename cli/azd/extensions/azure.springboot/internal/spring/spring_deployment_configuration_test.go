@@ -145,6 +145,128 @@ func TestAutomaticDiscoveryBindsActualAttachedIdentityBeforeReturningFinalSelect
 	require.ErrorContains(t, err, "not attached")
 }
 
+func TestAutomaticDiscoveryBindsSystemAssignedIdentityWithoutClientID(t *testing.T) {
+	project, service := automaticPostgresProject(t)
+	propertiesPath := filepath.Join(project.Path, "src", "main", "resources", "application.properties")
+	properties, err := os.ReadFile(propertiesPath)
+	require.NoError(t, err)
+	properties = []byte(strings.ReplaceAll(
+		string(properties),
+		"spring.datasource.hikari.data-source-properties[azure.clientId]=${AZURE_CLIENT_ID:}\n",
+		"",
+	))
+	require.NoError(t, os.WriteFile(propertiesPath, properties, 0o600))
+
+	subscription := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	serverID := "/subscriptions/" + subscription + "/resourceGroups/rg/providers/" +
+		"Microsoft.DBforPostgreSQL/flexibleServers/pg"
+	appID := "/subscriptions/" + subscription + "/resourceGroups/rg/providers/Microsoft.App/containerApps/app"
+	principalID := "22222222-3333-4444-5555-666666666666"
+	binding := &deploymentBinding{
+		values: map[string]string{
+			postgresServerIDEnv: serverID, postgresHostEnv: "actual.example",
+			containerAppIDEnv: appID, serviceIdentityPrincipalIDEnv: principalID,
+		},
+		resources: map[string]bool{
+			strings.ToLower(serverID): true, strings.ToLower(serverID + "/databases/petclinic"): true,
+			strings.ToLower(appID): true,
+		},
+		app: &armappcontainers.ContainerApp{
+			ID: new(appID),
+			Identity: &armappcontainers.ManagedServiceIdentity{
+				Type:        new(armappcontainers.ManagedServiceIdentityTypeSystemAssigned),
+				PrincipalID: new(principalID),
+			},
+			Properties: &armappcontainers.ContainerAppProperties{Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{{Env: []*armappcontainers.EnvironmentVar{
+					{Name: new("POSTGRES_URL"),
+						Value: new("jdbc:postgresql://actual.example:5432/petclinic")},
+				}}},
+			}},
+		},
+	}
+	ctx := context.WithValue(t.Context(), deploymentBindingKey{}, binding)
+	resolved, err := new(Runtime).resolveService(ctx, project, service, nil, binding.values, true)
+	require.NoError(t, err)
+	require.Equal(t, databaseAppIdentityTypeSystemAssigned, resolved.database.AppIdentity.Type)
+	require.Equal(t, appID, resolved.database.AppIdentity.ResourceID)
+
+	binding.app.Identity.PrincipalID = new("77777777-8888-9999-aaaa-bbbbbbbbbbbb")
+	_, err = new(Runtime).resolveService(ctx, project, service, nil, binding.values, true)
+	require.ErrorContains(t, err, "does not match")
+}
+
+func TestPinnedRestSourceInfersManagedPostgresWithoutTestOnlyH2(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join(
+		"..", "..", "test", "functional", "testdata", "spring-petclinic-rest-weidong", "upstream",
+	))
+	require.NoError(t, err)
+	project, service := createMavenProject(t)
+	for _, path := range []string{
+		"pom.xml", filepath.Join("src", "main", "resources", "application.properties"),
+		filepath.Join("infra", "main.parameters.json"),
+	} {
+		content, err := os.ReadFile(filepath.Join(root, path))
+		require.NoError(t, err)
+		target := filepath.Join(project.Path, path)
+		require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o700))
+		// #nosec G703 -- path is one of the three fixed fixture-relative names above; project.Path is a fresh test root.
+		require.NoError(t, os.WriteFile(target, content, 0o600))
+	}
+
+	dependencies, err := readSpringDependencies(t.Context(), root)
+	require.NoError(t, err)
+	require.True(t, dependencies.postgresql)
+	require.True(t, dependencies.azureIdentity)
+	require.False(t, dependencies.h2)
+	require.False(t, dependencies.azureJDBC)
+	selected, err := new(Runtime).discoverServiceDatabase(t.Context(), project, service, nil, nil, false)
+	require.NoError(t, err)
+	require.Equal(t, databasePostgreSQL, selected.Type)
+	require.Equal(t, databaseAuthenticationManagedIdentity, selected.Authentication)
+	require.Equal(t, "petclinic_app", selected.Username)
+	require.True(t, selected.ServerDeferred)
+	preparation, err := automaticProvisionInputs(t.Context(), project, selected)
+	require.NoError(t, err)
+	require.Equal(t, databaseAuthenticationManagedIdentity, preparation.Authentication)
+}
+
+func TestExplicitDatasourceChecksEffectiveApplicationSettings(t *testing.T) {
+	project, service := automaticPostgresProject(t)
+	binding := &deploymentBinding{
+		values: map[string]string{postgresHostEnv: "actual.example", serviceIdentityClientIDEnv: testSpringClientID},
+		app: &armappcontainers.ContainerApp{Properties: &armappcontainers.ContainerAppProperties{
+			Template: &armappcontainers.Template{Containers: []*armappcontainers.Container{{
+				Env: []*armappcontainers.EnvironmentVar{
+					{Name: new("POSTGRES_URL"), Value: new("jdbc:postgresql://actual.example/petclinic")},
+					{Name: new("AZURE_CLIENT_ID"), Value: new(testSpringClientID)},
+				},
+			}}},
+		}},
+	}
+	ctx := context.WithValue(t.Context(), deploymentBindingKey{}, binding)
+	expected := resolvedDatabase{
+		Type: databasePostgreSQL, Authentication: databaseAuthenticationManagedIdentity,
+		Name: "petclinic", Username: "petclinic_app",
+		AppIdentity: &databaseAppIdentity{Type: databaseAppIdentityTypeUserAssigned},
+	}
+	runtime := new(Runtime)
+	require.NoError(t, runtime.verifyExplicitDatasource(ctx, project, service, nil, expected, nil))
+	for _, mutate := range []func(*resolvedDatabase){
+		func(value *resolvedDatabase) { value.Name = "other" },
+		func(value *resolvedDatabase) { value.Username = "other" },
+		func(value *resolvedDatabase) { value.Type = databaseH2 },
+		func(value *resolvedDatabase) { value.Authentication = databaseAuthenticationPassword },
+	} {
+		selected := expected
+		mutate(&selected)
+		require.Error(t, runtime.verifyExplicitDatasource(ctx, project, service, nil, selected, nil))
+	}
+	binding.values[serviceIdentityClientIDEnv] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	require.Error(t, runtime.verifyExplicitDatasource(ctx, project, service, nil, expected, nil))
+	require.Error(t, runtime.verifyExplicitDatasource(t.Context(), project, service, nil, expected, nil))
+}
+
 func TestDeployedDatasourceRejectsMountsBeforeReadingSecrets(t *testing.T) {
 	app := &armappcontainers.ContainerApp{Properties: &armappcontainers.ContainerAppProperties{
 		Template: &armappcontainers.Template{Containers: []*armappcontainers.Container{{

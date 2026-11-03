@@ -139,15 +139,6 @@ func (r *Runtime) readApplicationSecrets(
 func (r *Runtime) bindAutomaticProject(
 	ctx context.Context, project *azdext.ProjectConfig, envName string, values map[string]string,
 ) (context.Context, map[string]string, error) {
-	services := springServices(project)
-	if len(services) == 0 {
-		return ctx, values, nil
-	}
-	for _, service := range services {
-		if err := validateAutomaticServiceConfig(service); err != nil {
-			return ctx, values, err
-		}
-	}
 	if r.outputs == nil {
 		return ctx, values, errors.New("current deployment verification is unavailable for automatic database discovery")
 	}
@@ -183,7 +174,7 @@ func (r *Runtime) readServiceDatasource(
 	ctx context.Context, project *azdext.ProjectConfig, service *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext, requireFinal bool,
 ) (*discoveredDatasource, error) {
-	if err := validateAutomaticServiceConfig(service); err != nil {
+	if err := validateServiceConfiguration(service); err != nil {
 		return nil, err
 	}
 	root, err := servicePath(project, service)
@@ -273,32 +264,111 @@ func bindDiscoveredDatasource(
 	}
 	binding.values[postgresDatabaseEnv] = result.Name
 	if intent.authentication == databaseAuthenticationManagedIdentity {
-		identityID := binding.values[serviceIdentityIDEnv]
-		if identityID == "" || !strings.EqualFold(intent.clientID, binding.values[serviceIdentityClientIDEnv]) ||
-			binding.app.Identity == nil {
-			return resolvedDatabase{}, configurationError(
-				"the application does not select the verified deployed user-assigned identity",
-			)
-		}
-		matched := false
-		for resourceID, identity := range binding.app.Identity.UserAssignedIdentities {
-			if strings.EqualFold(resourceID, identityID) && identity != nil &&
-				identity.ClientID != nil && strings.EqualFold(*identity.ClientID, intent.clientID) {
-				matched = true
+		if !intent.clientIDConfigured {
+			if binding.app.ID == nil || !hasSystemAssignedIdentity(binding.app.Identity) ||
+				binding.app.Identity.PrincipalID == nil {
+				return resolvedDatabase{}, configurationError(
+					"the application does not expose the selected system-assigned identity",
+				)
+			}
+			principalID := strings.TrimSpace(*binding.app.Identity.PrincipalID)
+			if principalID == "" ||
+				!strings.EqualFold(principalID, binding.values[serviceIdentityPrincipalIDEnv]) {
+				return resolvedDatabase{}, configurationError(
+					"the application system-assigned identity does not match the current deployment output",
+				)
+			}
+			result.AppIdentity = &databaseAppIdentity{
+				Type:       databaseAppIdentityTypeSystemAssigned,
+				ResourceID: *binding.app.ID,
+			}
+		} else {
+			identityID := binding.values[serviceIdentityIDEnv]
+			if identityID == "" || !strings.EqualFold(intent.clientID, binding.values[serviceIdentityClientIDEnv]) ||
+				binding.app.Identity == nil {
+				return resolvedDatabase{}, configurationError(
+					"the application does not select the verified deployed user-assigned identity",
+				)
+			}
+			matched := false
+			for resourceID, identity := range binding.app.Identity.UserAssignedIdentities {
+				if strings.EqualFold(resourceID, identityID) && identity != nil &&
+					identity.ClientID != nil && strings.EqualFold(*identity.ClientID, intent.clientID) {
+					matched = true
+				}
+			}
+			if !matched {
+				return resolvedDatabase{}, configurationError(
+					"the selected managed identity is not attached to the current application",
+				)
+			}
+			if err := binding.requireResource(identityID); err != nil {
+				return resolvedDatabase{}, err
+			}
+			result.AppIdentity = &databaseAppIdentity{
+				Type:       databaseAppIdentityTypeUserAssigned,
+				ResourceID: identityID,
 			}
 		}
-		if !matched {
-			return resolvedDatabase{}, configurationError(
-				"the selected managed identity is not attached to the current application",
-			)
-		}
-		if err := binding.requireResource(identityID); err != nil {
-			return resolvedDatabase{}, err
-		}
-		result.AppIdentity = &databaseAppIdentity{Type: databaseAppIdentityTypeUserAssigned, ResourceID: identityID}
 	}
 	if err := validateProvisionedBindings(result, binding.values); err != nil {
 		return resolvedDatabase{}, err
 	}
 	return result, nil
+}
+
+func hasSystemAssignedIdentity(identity *armappcontainers.ManagedServiceIdentity) bool {
+	if identity == nil || identity.Type == nil {
+		return false
+	}
+	return *identity.Type == armappcontainers.ManagedServiceIdentityTypeSystemAssigned ||
+		*identity.Type == armappcontainers.ManagedServiceIdentityTypeSystemAssignedUserAssigned
+}
+
+func (r *Runtime) verifyExplicitDatasource(
+	ctx context.Context, project *azdext.ProjectConfig, service *azdext.ServiceConfig,
+	serviceContext *azdext.ServiceContext, database resolvedDatabase, values map[string]string,
+) error {
+	if database.discovered || !database.managedAccess() {
+		return nil
+	}
+	binding, _ := ctx.Value(deploymentBindingKey{}).(*deploymentBinding)
+	if binding == nil || binding.app == nil {
+		return configurationError("explicit application-auth settings require verified application configuration")
+	}
+	intent, err := r.readServiceDatasource(ctx, project, service, serviceContext, true)
+	if err != nil {
+		return err
+	}
+	if intent.engine != database.Type || intent.authentication != database.Authentication ||
+		intent.name != database.Name || intent.username != database.Username ||
+		intent.port != 5432 || !strings.EqualFold(intent.host, binding.values[postgresHostEnv]) {
+		return configurationError("explicit database settings conflict with the effective Spring datasource")
+	}
+	if database.Authentication == databaseAuthenticationManagedIdentity {
+		if database.AppIdentity == nil {
+			return configurationError("explicit appIdentity is unavailable for the effective Spring datasource")
+		}
+		switch database.AppIdentity.Type {
+		case databaseAppIdentityTypeSystemAssigned:
+			if intent.clientIDConfigured {
+				return configurationError(
+					"explicit system-assigned appIdentity conflicts with the effective Spring client ID selector",
+				)
+			}
+		case databaseAppIdentityTypeUserAssigned:
+			if !intent.clientIDConfigured ||
+				!strings.EqualFold(intent.clientID, binding.values[serviceIdentityClientIDEnv]) {
+				return configurationError(
+					"explicit appIdentity conflicts with the effective Spring managed identity selector",
+				)
+			}
+		default:
+			return configurationError("explicit appIdentity uses an unsupported managed identity type")
+		}
+	}
+	if database.Authentication == databaseAuthenticationPassword && intent.password != values[databaseAppPasswordEnv] {
+		return configurationError("the effective application password conflicts with the configured application credential")
+	}
+	return nil
 }

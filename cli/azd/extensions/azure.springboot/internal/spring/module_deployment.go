@@ -326,7 +326,7 @@ func resolveServiceModulesFromSection(
 				fmt.Sprintf("authored configuration for service %q is unavailable", service.GetName()),
 				"restore the service object in azure.yaml")
 		}
-		if err := validateRawServiceSettings(authored); err != nil {
+		if err := validateRawServiceConfiguration(service.GetName(), authored); err != nil {
 			return nil, err
 		}
 		name, err := serviceModuleName(service, authored)

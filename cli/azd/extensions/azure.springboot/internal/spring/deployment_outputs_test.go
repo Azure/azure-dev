@@ -48,6 +48,26 @@ func TestDeploymentOutputsAcceptNativeARMShape(t *testing.T) {
 	require.NoError(t, validateCurrentDeploymentOutputs(database, values, outputs))
 }
 
+func TestDeploymentOutputsAcceptSystemAssignedPrincipalWithoutIdentityResource(t *testing.T) {
+	database, values := managedIdentityDeploymentOutputFixture()
+	database.AppIdentity = &databaseAppIdentity{
+		Type:       databaseAppIdentityTypeSystemAssigned,
+		ResourceID: values[containerAppIDEnv],
+	}
+	delete(values, serviceIdentityIDEnv)
+	delete(values, serviceIdentityClientIDEnv)
+
+	require.NoError(t, validateCurrentDeploymentOutputs(
+		database,
+		values,
+		deploymentOutputsFromValues(values),
+	))
+
+	delete(values, serviceIdentityPrincipalIDEnv)
+	err := validateCurrentDeploymentOutputs(database, values, deploymentOutputsFromValues(values))
+	require.ErrorContains(t, err, serviceIdentityPrincipalIDEnv+" was not emitted consistently")
+}
+
 func TestDeploymentOutputsRejectAmbiguousNameCasing(t *testing.T) {
 	database, values := managedIdentityDeploymentOutputFixture()
 	outputs := deploymentOutputsFromValues(values)
@@ -112,7 +132,7 @@ func TestDeploymentOutputsRejectMismatchedResourceBindings(t *testing.T) {
 			mutate: func(database *resolvedDatabase) {
 				database.AppIdentity.ResourceID += "-different"
 			},
-			message: "appIdentity.resourceId does not match",
+			message: "application identity does not match",
 		},
 	}
 	for _, test := range tests {

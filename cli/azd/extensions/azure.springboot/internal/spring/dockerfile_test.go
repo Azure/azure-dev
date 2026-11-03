@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func createMavenProject(t *testing.T) (*azdext.ProjectConfig, *azdext.ServiceConfig) {
@@ -30,6 +31,31 @@ func createMavenProject(t *testing.T) (*azdext.ProjectConfig, *azdext.ServiceCon
 		Services: map[string]*azdext.ServiceConfig{"petclinic": service},
 	}
 	return project, service
+}
+
+func TestServiceConfigurationRejectsUnsupportedTopLevelProperties(t *testing.T) {
+	err := validateRawServiceConfiguration("petclinic", map[string]any{
+		"host":     SpringHost,
+		"language": "java",
+		"config":   nil,
+		"database": map[string]any{},
+		"docker":   map[string]any{},
+		"unknown":  true,
+	})
+	require.ErrorContains(t, err, "config, database, docker, unknown")
+	require.NotContains(t, err.Error(), "true")
+
+	config, configErr := structpb.NewStruct(map[string]any{"secret": "do-not-print"})
+	require.NoError(t, configErr)
+	service := &azdext.ServiceConfig{
+		Name:                 "petclinic",
+		Config:               config,
+		Docker:               &azdext.DockerProjectOptions{},
+		AdditionalProperties: config,
+	}
+	err = validateServiceConfiguration(service)
+	require.ErrorContains(t, err, "config, docker, secret")
+	require.NotContains(t, err.Error(), "do-not-print")
 }
 
 func TestServicePathRejectsTraversal(t *testing.T) {

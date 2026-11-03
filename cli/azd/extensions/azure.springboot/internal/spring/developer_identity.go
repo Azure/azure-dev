@@ -119,7 +119,7 @@ func (r *azureDeveloperIdentityResolver) Resolve(
 			return nil, validationError(
 				"missing_database_administrator_name",
 				"the current azd login did not expose a PostgreSQL administrator login name",
-				"set database.auth.administratorName to the current developer's Entra login name",
+				"set DATABASE_ADMIN_NAME to the current developer's Entra login name",
 			)
 		}
 	}
@@ -127,7 +127,7 @@ func (r *azureDeveloperIdentityResolver) Resolve(
 		return nil, validationError(
 			"invalid_database_administrator_name",
 			"the resolved PostgreSQL administrator login name contains unsupported characters",
-			"set database.auth.administratorName to the current developer's Entra login name",
+			"set DATABASE_ADMIN_NAME to the current developer's Entra login name",
 		)
 	}
 	return &developerIdentity{

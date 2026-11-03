@@ -95,11 +95,6 @@ func automaticProvisionInputs(
 		return resolvedDatabase{}, configurationError("the infrastructure mixes incompatible database bootstrap credentials")
 	}
 	if managed {
-		if selected.Authentication == databaseAuthenticationPassword {
-			return resolvedDatabase{}, configurationError(
-				"the application and infrastructure database authentication modes conflict",
-			)
-		}
 		return resolvedDatabase{Type: databasePostgreSQL, Authentication: databaseAuthenticationManagedIdentity}, nil
 	}
 	if password {

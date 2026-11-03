@@ -216,8 +216,15 @@ func TestPostgresPasswordAccessUsesApplicationOwnedPolicyIntegration(t *testing.
 		base.Password,
 		marker,
 	))
+	err = reconciler.verifyPasswordApplicationLogin(
+		t.Context(),
+		resources,
+		database,
+		"Different-Pass8!",
+	)
+	require.ErrorContains(t, err, "cannot authenticate")
 	app, err = pgx.ConnectConfig(t.Context(), appConfig)
-	require.NoError(t, err, "rerun must not rotate the application password")
+	require.NoError(t, err, "a rejected credential mismatch must not rotate the application password")
 	require.NoError(t, app.QueryRow(
 		t.Context(),
 		"INSERT INTO public.items(name) VALUES ($1) RETURNING id",

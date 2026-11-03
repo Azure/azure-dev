@@ -68,6 +68,47 @@ func TestSkillOptimizeTraceTimestampConfigRoundTrips(t *testing.T) {
 	}
 }
 
+func TestSkillOptimizeRequiresFixedWindowTimestamps(t *testing.T) {
+	t.Setenv("AZD_SERVER", "")
+	for _, format := range []string{"json", "yaml"} {
+		for _, field := range []string{"start_time", "end_time"} {
+			for _, presence := range []string{"omitted", "null"} {
+				t.Run(format+"/"+field+"/"+presence, func(t *testing.T) {
+					start, end := "1792454400", "1793059200"
+					if field == "start_time" {
+						start = "null"
+					} else {
+						end = "null"
+					}
+					body := skillTimestampConfig(format, start, end)
+					if presence == "omitted" {
+						if format == "json" {
+							body = strings.Replace(body, `"`+field+`":null,`, "", 1)
+						} else {
+							body = strings.Replace(body, "        "+field+": null\n", "", 1)
+						}
+					}
+					file := writeTestFile(t, t.TempDir(), "missing."+format, body)
+					want := "trace_window." + field + " timestamp is required"
+					_, err := LoadOptimizeConfig(file)
+					require.ErrorContains(t, err, want)
+					assert.NotContains(t, err.Error(), "strings and floating-point values")
+
+					cmd := newOptimizeCommand(&azdext.ExtensionContext{NoPrompt: true})
+					var output bytes.Buffer
+					cmd.SetOut(&output)
+					cmd.SetErr(&output)
+					cmd.SetArgs([]string{"--config", file})
+					err = cmd.Execute()
+					require.ErrorContains(t, err, want)
+					assert.NotContains(t, err.Error(), "credential")
+					assert.NotContains(t, output.String(), "Job ID")
+				})
+			}
+		}
+	}
+}
+
 func TestSkillOptimizeRejectsInvalidTimestampConfigs(t *testing.T) {
 	t.Parallel()
 	for _, format := range []string{"json", "yaml"} {

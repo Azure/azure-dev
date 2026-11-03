@@ -179,6 +179,9 @@ func validateSkillTraceRequestTimestamps(values map[string]any) error {
 			continue
 		}
 		for _, field := range []string{"start_time", "end_time"} {
+			if window[field] == nil {
+				return fmt.Errorf("trace_window.%s timestamp is required", field)
+			}
 			switch window[field].(type) {
 			case int, int64, uint64:
 			default:

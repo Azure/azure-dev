@@ -11,7 +11,7 @@ import (
 )
 
 func TestResolvePostgreSQLPassword(t *testing.T) {
-	const valid = "Valid-Pass9!"
+	const valid = "ValidPass9"
 	tests := []struct {
 		name      string
 		values    map[string]string
@@ -82,6 +82,27 @@ func TestResolvePostgreSQLPassword(t *testing.T) {
 				require.Equal(t, test.want, password)
 				require.Equal(t, test.persisted, persist)
 			}
+		})
+	}
+}
+
+func TestValidatePostgreSQLCredentialPasswordCategoryCount(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		password string
+		wantErr  bool
+	}{
+		{name: "three categories", password: "ValidPass9"},
+		{name: "four categories", password: "Valid-Pass9!"},
+		{name: "two categories", password: "lowercase9", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validatePostgreSQLCredentialPassword(test.password, "application")
+			if test.wantErr {
+				require.ErrorContains(t, err, "does not meet Azure complexity requirements")
+				return
+			}
+			require.NoError(t, err)
 		})
 	}
 }

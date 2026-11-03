@@ -10,7 +10,7 @@ import (
 	"regexp"
 )
 
-var credentialURLPattern = regexp.MustCompile(`\b[A-Za-z][A-Za-z0-9+.-]*://[^\s"'<>]+`)
+var credentialURLPattern = regexp.MustCompile(`\b[A-Za-z][A-Za-z0-9+.-]*://[^\s"<>]+`)
 
 func redactURL(raw string) string {
 	parsed, err := url.Parse(raw)

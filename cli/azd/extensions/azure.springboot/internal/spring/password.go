@@ -22,7 +22,8 @@ func validatePostgreSQLCredentialPassword(password, label string) error {
 		return validationError(
 			"invalid_database_password",
 			fmt.Sprintf("the PostgreSQL %s password must contain 8 to 128 characters", label),
-			"provide a password with upper-case, lower-case, numeric, and non-alphanumeric characters",
+			"provide a password containing characters from at least three categories: upper-case, lower-case, "+
+				"numeric, and non-alphanumeric",
 		)
 	}
 	var upper, lower, digit, symbol bool
@@ -38,11 +39,18 @@ func validatePostgreSQLCredentialPassword(password, label string) error {
 			symbol = true
 		}
 	}
-	if !upper || !lower || !digit || !symbol {
+	categories := 0
+	for _, present := range []bool{upper, lower, digit, symbol} {
+		if present {
+			categories++
+		}
+	}
+	if categories < 3 {
 		return validationError(
 			"invalid_database_password",
 			fmt.Sprintf("the PostgreSQL %s password does not meet Azure complexity requirements", label),
-			"provide a password with upper-case, lower-case, numeric, and non-alphanumeric characters",
+			"provide a password containing characters from at least three categories: upper-case, lower-case, "+
+				"numeric, and non-alphanumeric",
 		)
 	}
 	if strings.ContainsAny(password, `"'\\`) {

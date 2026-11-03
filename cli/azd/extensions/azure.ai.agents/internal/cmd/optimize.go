@@ -635,15 +635,19 @@ func (a *OptimizeAction) submitJob(
 			"failed to submit optimization job: %w\n\nCheck that the project endpoint is reachable", err)
 	}
 
-	fmt.Fprintf(out, "  Job ID: %s\n", color.CyanString(resp.ID))
-	fmt.Fprintf(out, "  Status: %s\n", resp.Status)
+	fmt.Fprintf(out, "  Job ID: %s\n", color.CyanString(optimizeTerminalText(resp.ID)))
+	fmt.Fprintf(out, "  Status: %s\n", optimizeTerminalText(resp.Status))
 
 	if cfg.Agent.Name != "" {
 		printOptimizePortalLink(ctx, out, cfg.Agent.Name, resp.ID, a.envName)
 	}
 	fmt.Fprintln(out)
 
-	saveLastOptimizeJobID(ctx, optimizeEnvKeyName(a.serviceName, cfg.Agent.Name), resp.ID, a.envName)
+	agentKeyName := optimizeEnvKeyName(a.serviceName, cfg.Agent.Name)
+	if cfg.isSkillOptimization() {
+		agentKeyName = ""
+	}
+	saveLastOptimizeJobID(ctx, agentKeyName, resp.ID, a.envName)
 
 	return resp, client, nil
 }
@@ -782,11 +786,11 @@ func pollOptimizeJob(
 			// gets overwritten on the next tick.
 			if !optimize_api.IsTerminal(status.Status) {
 				var statusLine string
-				statusLine = fmt.Sprintf("  %s %s", spin, status.Status)
+				statusLine = fmt.Sprintf("  %s %s", spin, optimizeTerminalText(status.Status))
 				if status.ActivityProgress != nil {
 					for _, activity := range status.ActivityProgress.Activities {
 						if activity.Status == "in_progress" {
-							statusLine += " · " + activity.Title
+							statusLine += " · " + optimizeTerminalText(activity.Title)
 						}
 					}
 				}
@@ -827,7 +831,7 @@ func pollOptimizeJob(
 // printOptimizeResults prints the optimization results table and next-step commands.
 func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_api.OptimizeJobStatus, hasProject bool, envName string) {
 	if status.Error != nil {
-		fmt.Fprintf(out, "\n  %s %s\n", color.RedString("Error:"), status.Error.Message)
+		fmt.Fprintf(out, "\n  %s %s\n", color.RedString("Error:"), optimizeTerminalText(status.Error.Message))
 	}
 
 	if len(status.Candidates()) == 0 {

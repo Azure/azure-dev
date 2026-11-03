@@ -175,7 +175,8 @@ func showOptimizeCandidate(
 		printOptimizeResults(cmd.Context(), cmd.OutOrStdout(), status, false, "")
 	}
 	if candidate.Error != nil {
-		return fmt.Errorf("candidate failed [%s]: %s", candidate.Error.Code, candidate.Error.Message)
+		return fmt.Errorf("candidate failed [%s]: %s",
+			optimizeTerminalText(candidate.Error.Code), optimizeTerminalText(candidate.Error.Message))
 	}
 	if candidate.Status == optimize_api.StatusFailed {
 		return fmt.Errorf("candidate %q failed", candidateID)
@@ -185,7 +186,7 @@ func showOptimizeCandidate(
 
 func optimizeJobError(status *optimize_api.OptimizeJobStatus) error {
 	if status.Error != nil {
-		return fmt.Errorf("optimization job failed: %s", status.Error.Message)
+		return fmt.Errorf("optimization job failed: %s", optimizeTerminalText(status.Error.Message))
 	}
 	if status.Status == optimize_api.StatusFailed {
 		return fmt.Errorf("optimization job %q failed", status.ID)
@@ -205,10 +206,10 @@ func printOptimizeStatusJSON(out io.Writer, status *optimize_api.OptimizeJobStat
 
 // printOptimizeJobSummary prints a brief summary of an optimization job's state.
 func printOptimizeJobSummary(out io.Writer, status *optimize_api.OptimizeJobStatus) {
-	fmt.Fprintf(out, "  Job ID:  %s\n", color.CyanString(status.ID))
-	fmt.Fprintf(out, "  Status:  %s\n", formatOptimizeStatus(status.Status))
+	fmt.Fprintf(out, "  Job ID:  %s\n", color.CyanString(optimizeTerminalText(status.ID)))
+	fmt.Fprintf(out, "  Status:  %s\n", formatOptimizeStatus(optimizeTerminalText(status.Status)))
 	if agentName := status.AgentName(); agentName != "" {
-		fmt.Fprintf(out, "  Agent:   %s\n", agentName)
+		fmt.Fprintf(out, "  Agent:   %s\n", optimizeTerminalText(agentName))
 	}
 	if status.Result != nil {
 		if summary := status.Result.CandidateSummary; summary != nil {
@@ -218,7 +219,7 @@ func printOptimizeJobSummary(out io.Writer, status *optimize_api.OptimizeJobStat
 			}
 		}
 		if status.Result.TerminationReason != "" {
-			fmt.Fprintf(out, "  Termination: %s\n", status.Result.TerminationReason)
+			fmt.Fprintf(out, "  Termination: %s\n", optimizeTerminalText(status.Result.TerminationReason))
 		}
 	}
 	if status.CreatedAt != 0 {
@@ -232,11 +233,11 @@ func printOptimizeJobSummary(out io.Writer, status *optimize_api.OptimizeJobStat
 		fmt.Fprintf(out, "  Duration: %s\n", duration)
 	}
 	if status.Error != nil {
-		fmt.Fprintf(out, "  Error:   %s\n", color.RedString(status.Error.Message))
+		fmt.Fprintf(out, "  Error:   %s\n", color.RedString(optimizeTerminalText(status.Error.Message)))
 	}
 	if len(status.Warnings) > 0 {
 		for _, w := range status.Warnings {
-			fmt.Fprintf(out, "  Warning: %s\n", color.YellowString(w))
+			fmt.Fprintf(out, "  Warning: %s\n", color.YellowString(optimizeTerminalText(w)))
 		}
 	}
 	fmt.Fprintln(out)

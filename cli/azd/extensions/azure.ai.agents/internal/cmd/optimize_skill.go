@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -221,23 +222,39 @@ func validateSkillTraceWindow(window *optimize_api.SkillTraceWindow) error {
 	return nil
 }
 
+// optimizeTerminalText escapes terminal controls without flattening multiline prose.
+func optimizeTerminalText(value string) string {
+	var text strings.Builder
+	for _, r := range value {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			quoted := strconv.QuoteRune(r)
+			text.WriteString(quoted[1 : len(quoted)-1])
+		} else {
+			text.WriteRune(r)
+		}
+	}
+	return text.String()
+}
+
 func printSkillOptimizeCandidate(out io.Writer, jobID string, candidate optimize_api.CandidateResult) {
-	fmt.Fprintf(out, "\n  Candidate: %s (%s)\n  Status: %s\n", candidate.Name, candidate.CandidateID, candidate.Status)
+	fmt.Fprintf(out, "\n  Candidate: %s (%s)\n  Status: %s\n",
+		optimizeTerminalText(candidate.Name), optimizeTerminalText(candidate.CandidateID), optimizeTerminalText(candidate.Status))
 	if candidate.Error != nil {
-		fmt.Fprintf(out, "  Error [%s]: %s\n", candidate.Error.Code, candidate.Error.Message)
+		fmt.Fprintf(out, "  Error [%s]: %s\n",
+			optimizeTerminalText(candidate.Error.Code), optimizeTerminalText(candidate.Error.Message))
 	}
 	if candidate.Rationale != "" {
-		fmt.Fprintf(out, "  Rationale: %s\n", candidate.Rationale)
+		fmt.Fprintf(out, "  Rationale: %s\n", optimizeTerminalText(candidate.Rationale))
 	}
 	if candidate.ExecutionSummary != nil {
 		fmt.Fprintln(out, "  Execution:")
 		for _, step := range candidate.ExecutionSummary.Steps {
-			fmt.Fprintf(out, "    %s: %s", step.Name, step.Status)
+			fmt.Fprintf(out, "    %s: %s", optimizeTerminalText(step.Name), optimizeTerminalText(step.Status))
 			if step.Summary != "" {
-				fmt.Fprintf(out, " - %s", step.Summary)
+				fmt.Fprintf(out, " - %s", optimizeTerminalText(step.Summary))
 			}
 			if step.ErrorCode != "" {
-				fmt.Fprintf(out, " [%s]", step.ErrorCode)
+				fmt.Fprintf(out, " [%s]", optimizeTerminalText(step.ErrorCode))
 			}
 			fmt.Fprintln(out)
 		}
@@ -249,18 +266,20 @@ func printSkillOptimizeCandidate(out io.Writer, jobID string, candidate optimize
 	} else {
 		for _, result := range candidate.Output.SkillResults {
 			fmt.Fprintf(out, "\n    Skill: %s\n    Change: %s\n    Outcome: %s\n",
-				result.OutputSkill.Name, result.ChangeType, result.Status)
+				optimizeTerminalText(result.OutputSkill.Name), optimizeTerminalText(result.ChangeType),
+				optimizeTerminalText(result.Status))
 			if result.Status == "created" && result.OutputSkill.Version != nil {
-				fmt.Fprintf(out, "    Published version: %s\n", *result.OutputSkill.Version)
+				fmt.Fprintf(out, "    Published version: %s\n", optimizeTerminalText(*result.OutputSkill.Version))
 			}
 			if result.InputSkill != nil {
-				fmt.Fprintf(out, "    Baseline version: %s\n", result.InputSkill.Version)
+				fmt.Fprintf(out, "    Baseline version: %s\n", optimizeTerminalText(result.InputSkill.Version))
 			}
 			if result.Rationale != "" {
-				fmt.Fprintf(out, "    Rationale: %s\n", result.Rationale)
+				fmt.Fprintf(out, "    Rationale: %s\n", optimizeTerminalText(result.Rationale))
 			}
 			if result.Error != nil {
-				fmt.Fprintf(out, "    Error [%s]: %s\n", result.Error.Code, result.Error.Message)
+				fmt.Fprintf(out, "    Error [%s]: %s\n",
+					optimizeTerminalText(result.Error.Code), optimizeTerminalText(result.Error.Message))
 			}
 			if result.Status == "publication_unknown" {
 				fmt.Fprintln(out, "    Warning: publication is unconfirmed; verify the skill before retrying.")
@@ -268,13 +287,15 @@ func printSkillOptimizeCandidate(out io.Writer, jobID string, candidate optimize
 			for _, validation := range result.Validations {
 				if validation.Status != "passed" {
 					fmt.Fprintf(out, "    Validation %s/%s: %s - %s\n",
-						validation.Type, validation.ID, validation.Status, validation.Details)
+						optimizeTerminalText(validation.Type), optimizeTerminalText(validation.ID),
+						optimizeTerminalText(validation.Status), optimizeTerminalText(validation.Details))
 				}
 			}
 		}
 	}
 	for _, file := range candidate.Files {
-		fmt.Fprintf(out, "\n  File: %s (%s, %d bytes)\n", file.Path, file.Type, file.SizeInBytes)
+		fmt.Fprintf(out, "\n  File: %s (%s, %d bytes)\n",
+			optimizeTerminalText(file.Path), optimizeTerminalText(file.Type), file.SizeInBytes)
 		fmt.Fprintf(out, "    azd ai agent optimize download %q --candidate %q --file %q\n",
 			jobID, candidate.CandidateID, file.Path)
 	}

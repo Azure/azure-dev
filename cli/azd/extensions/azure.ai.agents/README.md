@@ -1618,6 +1618,8 @@ Foundry project services can be provisioned as network-secured, VNet-bound accou
 Use the existing optimization job API to learn reusable skills from recorded agent
 traces. This flow publishes skill versions; it does not automatically attach them
 to an agent, deploy an agent version, or update your local agent baseline.
+Skill runs update the global last-job shortcut for `optimize status`, but preserve
+the per-agent job/candidate state used by agent apply, deploy, and promotion.
 
 Copy [examples/skill-optimization.yaml](examples/skill-optimization.yaml), then
 set your deployed agent name/version, optimizer deployment, and trace window.
@@ -1724,6 +1726,8 @@ uncertain publication must be verified before retrying.
 `optimize apply` and `optimize deploy` do not treat skill results as agent
 configuration files. Attach the desired published skill versions explicitly.
 `status --candidate` is a one-time detail read and cannot be combined with `--watch`.
+Human-readable output escapes terminal control characters in service-provided text,
+preserving ordinary text, newlines, and tabs. JSON output retains the original values.
 
 ### Local verification
 

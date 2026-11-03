@@ -88,7 +88,8 @@ Existing local files are never overwritten; choose another --target-path.`,
 					"job_id": args[0], "candidate_id": flags.candidate, "path": flags.file, "target_path": target,
 				})
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Downloaded %s -> %s\n", flags.file, target)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Downloaded %s -> %s\n",
+				optimizeTerminalText(flags.file), optimizeTerminalText(target))
 			return err
 		},
 	}

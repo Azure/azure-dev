@@ -215,6 +215,8 @@ agentHosting:
 
 Omit any supporting-resource field to retain its default creation/update path. Empty or null Storage and identity selections also retain their defaults, including when an environment variable resolves to an empty value. Undefined variables without a default are rejected, and `clusterResourceId` must resolve to a nonempty cluster resource ID. A supplied resource is referenced without a Storage or identity PUT, reconfiguration, or owner tag. Registry selection follows the standard Foundry rules; `agentHosting` does not accept a registry resource ID. An existing `endpoint:` cannot receive hosting. `${VAR}` inputs resolve from the active azd environment, including in `$ref` service definitions; a cluster ID is not a Kubernetes context name.
 
+Agents using pre-built images retain their standard registry-connection and authentication requirements; azd does not automatically grant the AKS cluster access to an external registry.
+
 A supplied hosting-management identity needs Reader and Kubernetes Extension Contributor on the cluster. A supplied hosting-management identity and a supplied workload identity require an existing federation-management grant between them. A supplied workload identity and supplied Storage require an existing Storage Blob Data Contributor grant. ARM creates the federation or Storage grant when either corresponding resource selection is omitted; two explicit endpoints require existing grants. A supplied hosting-management identity skips the cluster-grant deployments. Cross-subscription grants use the selected workload or Storage resource's subscription and resource group.
 
 The user or automation identity running the deployment also needs the following permissions:

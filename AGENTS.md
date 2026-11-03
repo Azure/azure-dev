@@ -28,7 +28,7 @@ rules and exceptions.
 | Core CLI (`cli/azd/`) | Read the entire [CLI handbook](cli/azd/AGENTS.md), including conditional UX, telemetry, release, and testing guidance. |
 | Microsoft-authored extensions (`cli/azd/extensions/`) | Read the entire [CLI handbook](cli/azd/AGENTS.md), the [shared extension guide](cli/azd/extensions/AGENTS.md), and any extension-local `AGENTS.md`. |
 | VS Code extension (`ext/vscode/`) | Read the [VS Code guide](ext/vscode/AGENTS.md). |
-| Go code | Follow the [Go review instructions](.github/instructions/go.instructions.md) and the [Go conventions](cli/azd/AGENTS.md#modern-go) in the CLI handbook. |
+| Go code | Check the affected module's Go version. For `cli/azd/`, follow the [Go conventions](cli/azd/AGENTS.md#modern-go) in the CLI handbook. |
 | Documentation | Follow the [documentation maintenance instructions](.github/instructions/documentation.instructions.md) and the relevant area guide. |
 
 For **every PR review**, inspect the full changed-file list first. If any file

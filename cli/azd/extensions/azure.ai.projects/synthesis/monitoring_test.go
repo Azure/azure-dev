@@ -132,7 +132,7 @@ func TestSynthesizeMonitoringPrivateNetwork(t *testing.T) {
 		settings string
 		wantErr  bool
 	}{
-		{name: "default", wantErr: true},
+		{name: "default"},
 		{name: "empty block", settings: "    monitoring: {}\n", wantErr: true},
 		{name: "BYO component", settings: "    monitoring:\n      applicationInsightsResourceId: " + component + "\n", wantErr: true},
 		{name: "explicit opt out", settings: "    monitoring:\n      enabled: false\n"},

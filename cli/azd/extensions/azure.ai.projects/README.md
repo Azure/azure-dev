@@ -189,9 +189,11 @@ grant it.
 Discovery rejects conflicting destinations, protected names, ambiguous sharing,
 unreadable resources, and authentication or ingestion policies that would need
 to be weakened. ApiKey setup does not enable local authentication or configure
-private-network ingestion. A new project with a `network:` block is rejected
-unless you set `monitoring.enabled: false`, because automatic monitoring cannot
-yet use private ingestion. Such failures can fail normal provisioning; there
+private-network ingestion. A project with a `network:` block skips automatic
+monitoring when `monitoring:` is omitted. Explicitly enabling monitoring (an
+empty `monitoring: {}` block, or `applicationInsightsResourceId`) is rejected,
+because automatic monitoring cannot yet use private ingestion. Such failures can
+fail normal provisioning; there
 is no second best-effort deployment or agent deployment repair hook.
 
 Monitoring creates billable Azure resources and can store agent telemetry,
@@ -217,9 +219,9 @@ YAML and resolvable local references, even for values no longer used by IaC.
 Generated Bicep calls `modules/monitoring.bicep`; Terraform declares monitoring
 in `monitoring.tf`. Monitoring modes are `none`, `create`, `reuse-connect`, and
 `already-connected`. The last mode references compatible external monitoring
-without managing its connection. Existing-project creation shares the normal
-supporting resource group used by ACR rather than creating a separate monitoring
-resource group. Native/Bicep preview uses normal ARM What-If.
+without managing its connection. Creating monitoring for a new project shares
+the normal supporting resource group used by ACR rather than creating a separate
+monitoring resource group. Native/Bicep preview uses normal ARM What-If.
 
 Monitoring-enabled Terraform exports require Terraform 1.11 or later and AzAPI
 2.7 or later (existing-project exports retain their higher provider baseline).

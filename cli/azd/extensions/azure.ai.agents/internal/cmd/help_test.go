@@ -63,10 +63,12 @@ func TestAgentHelp(t *testing.T) {
 				require.Contains(t, text, "When set, only 1, t, T, true, TRUE, or True enable a switch.")
 				require.Contains(t, text, "False, empty, and invalid values disable a switch.")
 				require.Contains(t, text, "We recommend setting overrides in your shell or CI before running azd:")
-				require.Contains(t, text, "The extension reads these switches from its process environment, including")
+				require.Contains(t, text, "Set these switches in your shell or CI before running azd.")
+				require.Contains(t, text, "The extension reads only its process environment, not azd config or")
 				require.Contains(t, text,
-					"values the azd host already injected from the selected environment.")
-				require.Contains(t, text, "It does not query azd config or load environment files from disk itself.")
+					".azure/<env>/.env. The host does not flatten selected-environment dotenv")
+				require.Contains(t, text,
+					"for these switches; 'azd env set' does not enable them for the listener.")
 				require.NotContains(t, text, "These declarations do not add command or runtime gates")
 				require.Contains(t, text, "Regular hosted and plain prompt agents are outside these preview scopes.")
 				require.NotContains(t, text, "AZD_FOUNDRY_EXT_ENABLE_")

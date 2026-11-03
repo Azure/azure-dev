@@ -48,9 +48,10 @@ Preview Feature Switches:
   All preview switches default to off.
   When set, only 1, t, T, true, TRUE, or True enable a switch.
   False, empty, and invalid values disable a switch.
-  The extension reads these switches from its process environment, including
-  values the azd host already injected from the selected environment.
-  It does not query azd config or load environment files from disk itself.
+  Set these switches in your shell or CI before running azd.
+  The extension reads only its process environment, not azd config or
+  .azure/<env>/.env. The host does not flatten selected-environment dotenv
+  for these switches; 'azd env set' does not enable them for the listener.
   Regular hosted and plain prompt agents are outside these preview scopes.
 
 Learn More:

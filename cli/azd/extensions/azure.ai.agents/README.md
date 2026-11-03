@@ -35,10 +35,11 @@ $env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
 When a variable is absent, its feature is off.
 When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature.
 False, empty, and invalid values disable it, including BYO AKS.
-The evaluator reads the current
-process environment without querying azd config or loading environment files.
-Values already injected by the azd host count; the selected azd environment
-can override the same key from the shell or CI.
+The evaluator reads only the current process environment, without querying
+azd config or loading dotenv files. The host does not flatten the selected
+environment's `.azure/<env>/.env` into the extension for these switches.
+Set them in the shell or CI before running azd; persisted `azd env set`
+values do not enable or override them for the listener.
 
 User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
 `AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary

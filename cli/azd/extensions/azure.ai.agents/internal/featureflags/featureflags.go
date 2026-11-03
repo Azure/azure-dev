@@ -17,7 +17,7 @@ type Feature struct {
 	// ID identifies the capability, not a user config key.
 	ID string
 	// EnvVar is the process environment key for this feature.
-	// A value already in the process counts, including one the azd host injected.
+	// Set it in the shell or CI before running azd.
 	EnvVar string
 	// Description is an optional short summary for help.
 	Description string
@@ -27,7 +27,7 @@ type Feature struct {
 
 // IsEnabled reports whether the feature is enabled in the current process environment.
 // It uses the declared default only when EnvVar is absent.
-// Explicit values, including those injected by the azd host, use strconv.ParseBool.
+// Explicit process values use strconv.ParseBool.
 // Invalid declarations return an error; invalid values leave the feature off.
 // IsEnabled does not load azd config or dotenv files from disk.
 func IsEnabled(feature Feature) (bool, error) {

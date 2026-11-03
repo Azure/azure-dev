@@ -51,7 +51,7 @@ func All() []Feature
 func Lookup(id string) (Feature, bool)
 ```
 
-`ID` is a capability identity, not a user-config contract. `EnvVar` is the process environment key to read, including a value the azd host has already injected. `Description` is optional for evaluation and supplies a short scope summary in help. `DefaultEnabled` applies only when the variable is absent; all declared features default to `false`.
+`ID` is a capability identity, not a user-config contract. `EnvVar` is the process environment key to read, set in the shell or CI before running azd (or through scenario `env:`). `Description` is optional for evaluation and supplies a short scope summary in help. `DefaultEnabled` applies only when the variable is absent; all declared features default to `false`.
 
 ```go
 if err := featureflags.Require(featureflags.Voice); err != nil {
@@ -59,7 +59,7 @@ if err := featureflags.Require(featureflags.Voice); err != nil {
 }
 ```
 
-`IsEnabled` rejects an empty `ID` or `EnvVar` before reading the process environment. The function takes no context, azd client, selected-environment, project, or login argument. Values the host already injected are present in the process environment it reads. Command input validation stays with the commands; there is no flag-specific environment validation or init-scope exception.
+`IsEnabled` rejects an empty `ID` or `EnvVar` before reading only the current process environment with `os.LookupEnv`. The function takes no context, azd client, selected-environment, project, or login argument. The extension inherits shell/CI process values; the host does not flatten selected-environment dotenv into the extension for these switches. Command input validation stays with the commands; there is no flag-specific environment validation or init-scope exception.
 
 `Require` delegates to `IsEnabled` and returns the structured `feature_not_enabled` compatibility error when the feature is off. Its suggestion names the canonical variable to set in the shell or CI. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader.
 
@@ -150,7 +150,9 @@ Each feature is independent. There is no global toggle, experimentation default,
 
 ### Evaluator source boundary
 
-`IsEnabled` reads the declared key from the process environment with `os.LookupEnv`, using `DefaultEnabled` only when the key is absent. That environment includes variables set in the shell or CI before azd starts and values the azd host has already placed there. On a normal agents command, the host appends the selected azd environment before it launches the extension. These commands do not opt out of that injection, so a value saved with `azd env set` is visible on the next `azd` invocation. The host appends those values after the parent process environment. When the same key appears twice, the child process keeps the last value, so the selected environment overrides the parent process for that key.
+`IsEnabled` reads only the declared key from the current process environment with `os.LookupEnv`, using `DefaultEnabled` only when the key is absent. Set switches in the shell or CI before running azd, or through scenario YAML `env:`. The extension inherits those process values at startup.
+
+The azd host listen/extension startup path does not flatten `.azure/<env>/.env` into the extension process for these switches. It may set `AZD_ENVIRONMENT` to the selected environment name, but that does not load its dotenv values. Persisting `AZD_ALPHA_ENABLE_*` with `azd env set` therefore does not enable or override these switches for the listener. This boundary is the same for Voice, A2A, RBAC warnings, and the other Agents preview switches.
 
 The evaluator does not query azd user config (including `alpha.all`), open selected or default environment files, or read project/service environment mappings. It does not filter process values by where they came from.
 
@@ -213,7 +215,7 @@ Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and
 This intentionally adopts the process-only mechanism in place of the earlier multi-source implementation:
 
 - `AZD_FOUNDRY_EXT_ENABLE_*` names are no longer recognized; there is no legacy alias.
-- The evaluator no longer reads user config or opens selected/default azd environment files. The host may still inject selected-environment values before launch.
+- The evaluator no longer reads user config or opens selected/default azd environment files. The extension inherits shell/CI process values at launch; the host does not flatten selected-environment dotenv for preview switches.
 - Feature evaluation no longer loads project/service scopes or calls the host.
 - Old context/client/environment parameters, host-error sentinels, and flag-specific scope validation are removed.
 
@@ -235,7 +237,7 @@ RBAC listener regressions exercise stable-only hosts with the switch absent,
 false, empty, or invalid, and beta hosts with true and `1` values. They check
 exclusive registration, per-service warning and suggestion delivery, preserved
 validation failures, and non-disclosure of transport credentials. The opt-in
-`tier2/2.17b-deploy-rbac-warnings.yaml` scenario enables the switch for its
+`tier2/2.17b-deploy-rbac-warnings.yaml` scenario enables the switch through scenario process `env:` for its
 readable and JSON retention checks.
 
 Run offline tests, the full agents module build, and scoped static checks with Go 1.26.4. Tier 0 scenarios cover switch discovery and enabled/disabled help. Scenario execution remains opt-in through the `foundry-extension-scenario-orchestrator` agent; no Azure scenarios are required for this integration.

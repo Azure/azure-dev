@@ -47,14 +47,6 @@ func ClassifyOperation(properties map[string]any) OperationClass {
 	case "workflow":
 		result.Category = "workflow"
 	case "voice", "prompt-voice":
-		protocol := text("subProtocol")
-		if protocol == "" {
-			protocol = text("sub_protocol")
-		}
-		if protocol == "live" {
-			result.Category = "voice_live"
-			break
-		}
 		engine, hasEngine := properties["conversationEngine"]
 		if !hasEngine {
 			engine, hasEngine = properties["conversation_engine"]
@@ -111,7 +103,7 @@ func OperationClassified(operation string, class OperationClass) (foundryTelemet
 	}
 	if !slices.Contains([]string{
 		"hosted", "hosted_invocations_ws", "prompt", "workflow",
-		"voice_managed", "voice_byom", "voice_hosted_wrapper", "voice_live", "unknown",
+		"voice_managed", "voice_byom", "voice_hosted_wrapper", "unknown",
 	}, class.Category) {
 		class.Category = "unknown"
 	}

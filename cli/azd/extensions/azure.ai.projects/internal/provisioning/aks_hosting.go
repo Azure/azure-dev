@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 // cspell:ignore BYOAKS kubelet kubeletidentity
+// cspell:ignore federatedidentityroledefinitionid hostingprincipalid kubeletobjectid workloadprincipalid
 
 package provisioning
 

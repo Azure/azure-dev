@@ -566,7 +566,7 @@ func TestEnsureFoundryAccessReadiness(t *testing.T) {
 			`for Microsoft.CognitiveServices/accounts/AIServices/agents/write actions."}}`,
 	)
 	projectMissing := rbacResponseError(http.StatusNotFound, "NotFound", `{"error":{"message":"Project not found"}}`)
-	agentMissing := rbacResponseError(http.StatusNotFound, "NotFound", `{"error":{"message":"Agent not found"}}`)
+	genericNotFound := rbacResponseError(http.StatusNotFound, "NotFound", `{"error":{"message":"Resource not found"}}`)
 	policyDenied := &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "PolicyDenied"}
 
 	for _, tt := range []struct {
@@ -580,7 +580,7 @@ func TestEnsureFoundryAccessReadiness(t *testing.T) {
 	}{
 		{
 			name: "new grant settles before first probe", confirmed: true, assigned: true,
-			probes: []error{agentMissing}, wantProbes: 1, wantWaits: []time.Duration{15 * time.Second},
+			probes: []error{nil}, wantProbes: 1, wantWaits: []time.Duration{15 * time.Second},
 		},
 		{
 			name: "new grant propagation", confirmed: true, assigned: true,
@@ -615,7 +615,11 @@ func TestEnsureFoundryAccessReadiness(t *testing.T) {
 		},
 		{
 			name: "project sync independent of ARM", confirmed: false, assigned: false,
-			probes: []error{projectMissing, agentMissing}, wantProbes: 2, wantWaits: []time.Duration{5 * time.Second},
+			probes: []error{projectMissing, nil}, wantProbes: 2, wantWaits: []time.Duration{5 * time.Second},
+		},
+		{
+			name: "collection 404 without project text retries sync", confirmed: true, assigned: false,
+			probes: []error{genericNotFound, nil}, wantProbes: 2, wantWaits: []time.Duration{5 * time.Second},
 		},
 		{
 			name: "project sync exhausted", confirmed: false, assigned: false,
@@ -714,4 +718,196 @@ func TestCheckDeveloperRBACPropagatesFoundryAccess(t *testing.T) {
 	assert.Empty(t, messages)
 	assert.Equal(t, 2, probes)
 	assert.Equal(t, []time.Duration{15 * time.Second, 5 * time.Second}, waits)
+}
+
+func TestCheckDeveloperRBACIgnoresLegacyEndpointFallback(t *testing.T) {
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "")
+	client := newRBACClient(t, &rbacEnvironmentServer{values: map[string]string{
+		"AZURE_AI_PROJECT_ID":       rbacTestProjectScope,
+		"AZURE_AI_PROJECT_ENDPOINT": "https://legacy.services.ai.azure.com/api/projects/legacy",
+	}}, &rbacAccountServer{})
+
+	probed := false
+	ops := developerRBACOperations{
+		hasAnyRoleAssignment: func(
+			context.Context, *azidentity.AzureDeveloperCLICredential, string, []string, string,
+		) (bool, error) {
+			return true, nil
+		},
+		probeFoundryAccess: func(
+			context.Context, *azidentity.AzureDeveloperCLICredential, string,
+		) error {
+			probed = true
+			return nil
+		},
+	}
+
+	messages, err := checkDeveloperRBAC(t.Context(), client, false, ops)
+	require.NoError(t, err)
+	assert.Empty(t, messages)
+	assert.False(t, probed)
+}
+
+func TestCheckDeveloperRBACReadinessTimeoutsAndCancellation(t *testing.T) {
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "")
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	denied := &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "PermissionDenied"}
+
+	newEnvClient := func(t *testing.T) *azdext.AzdClient {
+		return newRBACClient(t, &rbacEnvironmentServer{values: map[string]string{
+			"AZURE_AI_PROJECT_ID":      rbacTestProjectScope,
+			"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+		}}, &rbacAccountServer{})
+	}
+
+	t.Run("budget expiry before probe remains advisory", func(t *testing.T) {
+		ops := developerRBACOperations{
+			timeout: time.Millisecond,
+			hasAnyRoleAssignment: func(
+				context.Context, *azidentity.AzureDeveloperCLICredential, string, []string, string,
+			) (bool, error) {
+				return false, nil
+			},
+			assignRoleToIdentity: func(
+				context.Context, *azidentity.AzureDeveloperCLICredential,
+				string, string, string, string, armauthorization.PrincipalType,
+			) (bool, error) {
+				return true, nil
+			},
+			wait: func(ctx context.Context, _ time.Duration) error {
+				<-ctx.Done()
+				return ctx.Err()
+			},
+			probeFoundryAccess: func(
+				context.Context, *azidentity.AzureDeveloperCLICredential, string,
+			) error {
+				return nil
+			},
+		}
+		messages, err := checkDeveloperRBAC(t.Context(), newEnvClient(t), false, ops)
+		require.NoError(t, err)
+		assert.Empty(t, messages)
+	})
+
+	t.Run("budget expiry after failed probe remains advisory", func(t *testing.T) {
+		ops := developerRBACOperations{
+			timeout: 5 * time.Millisecond,
+			hasAnyRoleAssignment: func(
+				context.Context, *azidentity.AzureDeveloperCLICredential, string, []string, string,
+			) (bool, error) {
+				return true, nil
+			},
+			wait: func(ctx context.Context, _ time.Duration) error {
+				<-ctx.Done()
+				return ctx.Err()
+			},
+			probeFoundryAccess: func(
+				context.Context, *azidentity.AzureDeveloperCLICredential, string,
+			) error {
+				return denied
+			},
+		}
+		messages, err := checkDeveloperRBAC(t.Context(), newEnvClient(t), false, ops)
+		require.NoError(t, err)
+		assert.Empty(t, messages)
+	})
+
+	t.Run("probe-local deadline remains advisory", func(t *testing.T) {
+		ops := developerRBACOperations{
+			hasAnyRoleAssignment: func(
+				context.Context, *azidentity.AzureDeveloperCLICredential, string, []string, string,
+			) (bool, error) {
+				return true, nil
+			},
+			probeFoundryAccess: func(
+				context.Context, *azidentity.AzureDeveloperCLICredential, string,
+			) error {
+				return fmt.Errorf("http timeout: %w", context.DeadlineExceeded)
+			},
+		}
+		messages, err := checkDeveloperRBAC(t.Context(), newEnvClient(t), false, ops)
+		require.NoError(t, err)
+		assert.Empty(t, messages)
+	})
+
+	t.Run("parent cancellation propagates", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		ops := developerRBACOperations{
+			hasAnyRoleAssignment: func(
+				context.Context, *azidentity.AzureDeveloperCLICredential, string, []string, string,
+			) (bool, error) {
+				return true, nil
+			},
+			probeFoundryAccess: func(
+				context.Context, *azidentity.AzureDeveloperCLICredential, string,
+			) error {
+				cancel()
+				return context.Canceled
+			},
+		}
+		_, err := checkDeveloperRBAC(ctx, newEnvClient(t), false, ops)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+func TestCheckDeveloperRBACConcurrentSettling(t *testing.T) {
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "")
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	client := newRBACClient(t, &rbacEnvironmentServer{values: map[string]string{
+		"AZURE_AI_PROJECT_ID":      rbacTestProjectScope,
+		"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+	}}, &rbacAccountServer{})
+
+	var mu sync.Mutex
+	roleAssigned := false
+	settled := false
+	var events []string
+
+	ops := developerRBACOperations{
+		hasAnyRoleAssignment: func(
+			context.Context, *azidentity.AzureDeveloperCLICredential, string, []string, string,
+		) (bool, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			return roleAssigned, nil
+		},
+		assignRoleToIdentity: func(
+			context.Context, *azidentity.AzureDeveloperCLICredential,
+			string, string, string, string, armauthorization.PrincipalType,
+		) (bool, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			roleAssigned = true
+			events = append(events, "assign")
+			return true, nil
+		},
+		wait: func(_ context.Context, duration time.Duration) error {
+			mu.Lock()
+			defer mu.Unlock()
+			events = append(events, fmt.Sprintf("wait:%s", duration))
+			settled = true
+			return nil
+		},
+		probeFoundryAccess: func(
+			context.Context, *azidentity.AzureDeveloperCLICredential, string,
+		) error {
+			mu.Lock()
+			defer mu.Unlock()
+			assert.True(t, settled, "no probe should run before the initial settling wait completes")
+			events = append(events, "probe")
+			return nil
+		},
+	}
+
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			messages, err := checkDeveloperRBAC(t.Context(), client, false, ops)
+			assert.NoError(t, err)
+			assert.Empty(t, messages)
+		})
+	}
+	wg.Wait()
+
+	assert.Equal(t, []string{"assign", "wait:15s", "probe", "probe"}, events)
 }

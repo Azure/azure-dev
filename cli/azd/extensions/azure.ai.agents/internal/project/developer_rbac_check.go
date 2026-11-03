@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -22,7 +23,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -109,6 +109,12 @@ var sufficientRoleAssignWriteRoles = []string{
 	roleAzureAIAccountOwner,
 	roleFoundryOwner, // c883944f-...: includes Microsoft.Authorization/roleAssignments/write
 }
+
+// developerFoundryRBACMu serializes the Foundry User role check, auto-assignment,
+// and data-plane readiness wait across concurrent predeploy handlers so a parallel
+// service does not observe the new ARM assignment and probe before the 15-second
+// settling period completes.
+var developerFoundryRBACMu sync.Mutex
 
 type developerRBACOperations struct {
 	hasAnyRoleAssignment func(
@@ -220,6 +226,7 @@ func checkDeveloperRBAC(
 	fmt.Printf("  Developer: %s (%s)\n", principalID, principalType)
 
 	// Check 1: Foundry User (or a superset) is sufficient to use the agent data plane.
+	developerFoundryRBACMu.Lock()
 	confirmed := false
 	assigned := false
 	hasAIAccess, err := ops.hasAnyRoleAssignment(ctx, cred, principalID, sufficientAIUserRoles, info.ProjectScope)
@@ -261,11 +268,16 @@ func checkDeveloperRBAC(
 	}
 
 	projectEndpoint := developerRBACProjectEndpoint(ctx, envClient, envName)
-	if probeErr := ensureFoundryAccess(ctx, cred, projectEndpoint, confirmed, assigned, ops); probeErr != nil {
-		if cancelErr := developerRBACCancellation(ctx, probeErr); cancelErr != nil {
-			return messages, cancelErr
+	probeErr := ensureFoundryAccess(ctx, cred, projectEndpoint, confirmed, assigned, ops)
+	developerFoundryRBACMu.Unlock()
+	if probeErr != nil {
+		if ctx.Err() != nil {
+			return messages, ctx.Err()
 		}
-		log.Printf("developer RBAC: Foundry access readiness check did not succeed: %v", probeErr)
+		log.Printf(
+			"developer RBAC: Foundry access readiness check did not succeed: %s",
+			developerRBACErrorSummary(probeErr),
+		)
 	}
 	if !hasHosted {
 		return messages, nil
@@ -391,23 +403,18 @@ func developerRBACProjectEndpoint(
 	envClient azdext.EnvironmentServiceClient,
 	envName string,
 ) string {
-	for _, key := range []string{"FOUNDRY_PROJECT_ENDPOINT", "AZURE_AI_PROJECT_ENDPOINT"} {
-		resp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envName,
-			Key:     key,
-		})
-		if err != nil || resp == nil {
-			continue
-		}
-		endpoint := strings.TrimSpace(resp.GetValue())
-		if endpoint == "" {
-			continue
-		}
-		if validateAuthenticatedPromptEndpoint(endpoint) == nil {
-			return strings.TrimRight(endpoint, "/")
-		}
+	resp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     promptProjectEndpointEnvKey,
+	})
+	if err != nil || resp == nil {
+		return ""
 	}
-	return ""
+	endpoint := strings.TrimSpace(resp.GetValue())
+	if endpoint == "" || validateAuthenticatedPromptEndpoint(endpoint) != nil {
+		return ""
+	}
+	return strings.TrimRight(endpoint, "/")
 }
 
 func probeFoundryAccess(
@@ -422,19 +429,6 @@ func probeFoundryAccess(
 		agent_api.AgentEndpointAPIVersion,
 	)
 	return err
-}
-
-func developerRBACCancellation(ctx context.Context, err error) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
-	if code := status.Code(err); code == codes.Canceled || code == codes.DeadlineExceeded {
-		return err
-	}
-	return nil
 }
 
 func foundryAccessDenied(err error) bool {
@@ -454,10 +448,6 @@ func foundryAccessDenied(err error) bool {
 func isFoundryNotFound(err error) bool {
 	response, ok := errors.AsType[*azcore.ResponseError](err)
 	return ok && response.StatusCode == http.StatusNotFound
-}
-
-func foundryProjectNotFound(err error) bool {
-	return isFoundryNotFound(err) && strings.Contains(strings.ToLower(err.Error()), "project not found")
 }
 
 func waitDeveloperRBAC(ctx context.Context, duration time.Duration) error {
@@ -497,8 +487,8 @@ func ensureFoundryAccess(
 		}
 		cancel()
 	}()
-	if err := developerRBACCancellation(ctx, nil); err != nil {
-		return err
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 	wait := waitDeveloperRBAC
 	if ops.wait != nil {
@@ -518,11 +508,11 @@ func ensureFoundryAccess(
 	}
 	for attempt := range attempts {
 		err := ops.probeFoundryAccess(ctx, cred, projectEndpoint)
-		if cancelErr := developerRBACCancellation(ctx, err); cancelErr != nil {
-			return cancelErr
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
-		projectMissing := foundryProjectNotFound(err)
-		if err == nil || (isFoundryNotFound(err) && !projectMissing) {
+		projectMissing := isFoundryNotFound(err)
+		if err == nil {
 			if assigned || waitMessage != "" {
 				fmt.Println("  ✓ Foundry access is ready")
 			}

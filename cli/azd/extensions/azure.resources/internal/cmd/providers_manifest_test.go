@@ -13,13 +13,13 @@ import (
 
 func TestConfigureExtensionHostMatchesManifest(t *testing.T) {
 	require.NoError(t, azdext.VerifyProvidersMatchManifest(
-		func(host *azdext.ExtensionHost) { configureExtensionHost(host) },
+		configureExtensionHost,
 		filepath.Join("..", "..", "extension.yaml")))
 }
 
 func TestConfigureExtensionHostUsesSharedProvisioningProvider(t *testing.T) {
 	host := azdext.NewExtensionHost(nil)
-	p := configureExtensionHost(host)
+	p := configureResourcesProvider(host)
 	t.Cleanup(func() { require.NoError(t, p.Close()) })
 
 	registrations := host.ProvisioningProviders()

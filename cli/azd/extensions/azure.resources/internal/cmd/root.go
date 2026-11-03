@@ -22,7 +22,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newAddCommand(extCtx))
 	var resourcesProvider *provider.Provider
 	listen := azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
-		resourcesProvider = configureExtensionHost(host)
+		resourcesProvider = configureResourcesProvider(host)
 	})
 	runListen := listen.RunE
 	listen.RunE = func(cmd *cobra.Command, args []string) (err error) {
@@ -39,7 +39,11 @@ func NewRootCommand() *cobra.Command {
 	return root
 }
 
-func configureExtensionHost(host *azdext.ExtensionHost) *provider.Provider {
+func configureExtensionHost(host *azdext.ExtensionHost) {
+	configureResourcesProvider(host)
+}
+
+func configureResourcesProvider(host *azdext.ExtensionHost) *provider.Provider {
 	resourcesProvider := provider.New(host.Client())
 	host.WithProvisioningProvider("resources", func() azdext.ProvisioningProvider {
 		return resourcesProvider

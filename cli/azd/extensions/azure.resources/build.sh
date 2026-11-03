@@ -6,6 +6,10 @@ OUTPUT_DIR="${OUTPUT_DIR:-$PWD/bin}"
 EXTENSION_VERSION="${EXTENSION_VERSION:-$(cat version.txt)}"
 mkdir -p "$OUTPUT_DIR"
 
+COMMIT=$(git rev-parse HEAD)
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+APP_PATH="azure.resources/internal/version"
+
 if [ -n "${EXTENSION_PLATFORM:-}" ]; then
     PLATFORMS=("$EXTENSION_PLATFORM")
 else
@@ -20,6 +24,6 @@ for PLATFORM in "${PLATFORMS[@]}"; do
         OUTPUT_NAME+=".exe"
     fi
     GOOS="$OS" GOARCH="$ARCH" go build \
-        -ldflags="-X azure.resources/internal/version.Version=$EXTENSION_VERSION" \
+        -ldflags="-X '$APP_PATH.Version=$EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" \
         -o "$OUTPUT_NAME" .
 done

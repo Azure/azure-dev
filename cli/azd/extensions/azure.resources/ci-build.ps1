@@ -11,7 +11,6 @@ $PSNativeCommandArgumentPassing = 'Legacy'
 
 & "$PSScriptRoot/../scripts/ci-build.ps1" `
     -VersionPackages @("azure.resources/internal/version") `
-    -VersionOnly `
     -Version $Version `
     -SourceVersion $SourceVersion `
     -CodeCoverageEnabled:$CodeCoverageEnabled `

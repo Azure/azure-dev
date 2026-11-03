@@ -6,21 +6,29 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"maps"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestSanitizeAgentName(t *testing.T) {
@@ -532,6 +540,434 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 			if envVar.Name == "AZURE_AI_MODEL_DEPLOYMENT_NAME" {
 				t.Fatalf("deferred model configuration should not add %s", envVar.Name)
 			}
+		}
+	}
+}
+
+type sourceInitACRPromptServer struct {
+	initACRPromptServer
+	locationCalls int
+}
+
+func (s *sourceInitACRPromptServer) PromptLocation(
+	context.Context, *azdext.PromptLocationRequest,
+) (*azdext.PromptLocationResponse, error) {
+	s.locationCalls++
+	return &azdext.PromptLocationResponse{Location: &azdext.Location{Name: "eastus2"}}, nil
+}
+
+func (s *sourceInitACRPromptServer) Select(
+	_ context.Context, req *azdext.SelectRequest,
+) (*azdext.SelectResponse, error) {
+	for i, choice := range req.GetOptions().GetChoices() {
+		if choice.GetValue() == "skip" || choice.GetValue() == initModeFromCode {
+			return &azdext.SelectResponse{Value: new(int32(i))}, nil
+		}
+	}
+	return nil, status.Error(codes.FailedPrecondition, "unexpected source init selection")
+}
+
+type sourceInitACRAccountServer struct {
+	azdext.UnimplementedAccountServiceServer
+	subscriptions []string
+}
+
+func (s *sourceInitACRAccountServer) LookupTenant(
+	_ context.Context, req *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	s.subscriptions = append(s.subscriptions, req.GetSubscriptionId())
+	return &azdext.LookupTenantResponse{TenantId: "user-tenant"}, nil
+}
+
+func TestInitFromCodeValidatesACRBeforeSetupWrites(t *testing.T) {
+	for _, tt := range []struct {
+		name                   string
+		subscription           string
+		promptedSubscription   string
+		wantError              string
+		freshProject, noPrompt bool
+		withoutSelector        bool
+		wantPrompts            int
+	}{
+		{name: "prompted mismatch", promptedSubscription: "other",
+			wantError: "same subscription", wantPrompts: 1},
+		{name: "fresh prompted mismatch", freshProject: true, promptedSubscription: "other",
+			wantError: "same subscription", wantPrompts: 1},
+		{name: "configured mismatch", subscription: "other", wantError: "same subscription"},
+		{name: "matching prompted choice", promptedSubscription: "SUB", wantPrompts: 1},
+		{name: "matching configured choice", subscription: "sub"},
+		{name: "headless selector defers", noPrompt: true},
+		{name: "ordinary headless init defers", noPrompt: true, withoutSelector: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			source := []byte("print('hello')\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "main.py"), source, 0o600))
+			manifest := []byte("name: test\nservices: {}\n")
+			projects := &recordingProjectServer{projectPath: root}
+			if tt.freshProject {
+				projects.getProjectErr = status.Error(codes.NotFound, initScopeNoProject)
+			} else {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), manifest, 0o600))
+			}
+			values := map[string]string{}
+			if tt.subscription != "" {
+				values["AZURE_SUBSCRIPTION_ID"] = tt.subscription
+			}
+			before := maps.Clone(values)
+			environments := &initACREnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					environments: map[string]*azdext.Environment{"test": {Name: "test"}},
+					values:       map[string]map[string]string{"test": values},
+				},
+			}
+			prompts := &sourceInitACRPromptServer{initACRPromptServer: initACRPromptServer{
+				subscription: &azdext.Subscription{
+					Id: tt.promptedSubscription, TenantId: "resource-tenant", UserTenantId: "user-tenant",
+				},
+			}}
+			account := &sourceInitACRAccountServer{}
+			workflow := &recordingProjectWorkflowServer{}
+			if tt.freshProject {
+				workflow.err = errors.New("source init reached project scaffolding")
+			}
+			server := grpc.NewServer()
+			azdext.RegisterProjectServiceServer(server, projects)
+			azdext.RegisterEnvironmentServiceServer(server, environments)
+			azdext.RegisterPromptServiceServer(server, prompts)
+			azdext.RegisterAccountServiceServer(server, account)
+			azdext.RegisterWorkflowServiceServer(server, workflow)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+			client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+			require.NoError(t, err)
+			t.Cleanup(func() { client.Close() })
+			flags := &initFlags{
+				src: ".", env: "test", agentName: "test-agent",
+				protocols: []string{"responses"}, noPrompt: tt.noPrompt,
+				acrResourceIDSet: !tt.withoutSelector,
+			}
+			if !tt.withoutSelector {
+				flags.acrResourceID = testInitACRID
+			}
+			action := &InitFromCodeAction{azdClient: client, flags: flags}
+
+			err = action.Run(t.Context())
+			require.Equal(t, tt.wantPrompts, prompts.calls)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				require.Equal(t, before, values)
+				require.Empty(t, environments.setKeys)
+				require.Zero(t, prompts.locationCalls)
+				require.Empty(t, workflow.requests)
+				require.Empty(t, projects.added)
+				require.NoFileExists(t, filepath.Join(root, ".agentignore"))
+				require.NoDirExists(t, filepath.Join(root, ".azure"))
+			} else {
+				require.NoError(t, err)
+				require.Len(t, projects.added, 1)
+				require.Len(t, workflow.requests, 1)
+				if tt.noPrompt {
+					require.Nil(t, action.credential)
+					require.Zero(t, prompts.locationCalls)
+					require.Empty(t, values["AZURE_SUBSCRIPTION_ID"])
+				} else {
+					require.Equal(t, 1, prompts.locationCalls)
+					require.NotNil(t, action.credential)
+					require.True(t, strings.EqualFold("sub", values["AZURE_SUBSCRIPTION_ID"]))
+					require.Equal(t, "user-tenant", values["AZURE_TENANT_ID"])
+					require.Equal(t, "user-tenant", action.azureContext.Scope.TenantId)
+					require.Equal(t, []string{values["AZURE_SUBSCRIPTION_ID"]}, account.subscriptions)
+					require.Equal(t, "eastus2", values["AZURE_LOCATION"])
+				}
+				if !tt.withoutSelector {
+					require.Equal(t, "docker", projects.added[0].Language)
+					args := []string{"ai", "project", "add"}
+					if tt.noPrompt {
+						args = append(args, "--no-prompt")
+					}
+					args = append(args, "--output", "none", "--new-project", "--acr-resource-id", testInitACRID)
+					require.Equal(t, expectedProjectWorkflowArgs(t, root, args...), workflowArgs(t, workflow, 0))
+				}
+			}
+			after, readErr := os.ReadFile(filepath.Join(root, "main.py"))
+			require.NoError(t, readErr)
+			require.Equal(t, source, after)
+			if !tt.freshProject {
+				after, readErr = os.ReadFile(filepath.Join(root, "azure.yaml"))
+				require.NoError(t, readErr)
+				require.Equal(t, manifest, after)
+			}
+		})
+	}
+}
+
+func TestInitFromCodePlannedACREnvironmentBeforeScaffolding(t *testing.T) {
+	for _, tt := range []struct {
+		targetDir, envName string
+	}{
+		{"", "my-source-dev"},
+		{".", "my-source-dev"},
+		{"target-folder", "target-folder-dev"},
+	} {
+		t.Run("target="+tt.targetDir, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "My Source")
+			require.NoError(t, os.Mkdir(root, 0o700))
+			t.Chdir(root)
+			source := []byte("print('hello')\n")
+			require.NoError(t, os.WriteFile("main.py", source, 0o600))
+			environments := &testEnvironmentServiceServer{}
+			workflow := &recordingProjectWorkflowServer{}
+			prompts := &sourceInitACRPromptServer{}
+			client := newTestAzdClient(t, environments, workflow, prompts)
+			action := &InitFromCodeAction{
+				azdClient: client,
+				flags: &initFlags{
+					src: ".", protocols: []string{"responses"}, noPrompt: true,
+					acrResourceIDSet: true,
+					acrResourceID:    strings.Replace(testInitACRID, "/registry-rg/", "/rg-"+tt.envName+"/", 1),
+				},
+				projectTargetDir: tt.targetDir,
+				sourceValidated:  true,
+			}
+
+			require.ErrorContains(t, action.Run(t.Context()), "same resource-group name")
+			require.Empty(t, workflow.requests)
+			require.Empty(t, environments.setKeys)
+			require.Zero(t, prompts.calls)
+			require.Zero(t, prompts.locationCalls)
+			entries, err := os.ReadDir(root)
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			after, err := os.ReadFile("main.py")
+			require.NoError(t, err)
+			require.Equal(t, source, after)
+		})
+	}
+}
+
+func TestInitFromCodeMissingEnvironmentACRScopeBeforeWrites(t *testing.T) {
+	for _, tt := range []struct {
+		name, group, rootGroup, foundryGroup string
+		layer, existing, fresh, noPrompt     bool
+		wantError                            bool
+	}{
+		{name: "missing root environment", group: "rg-dev", wantError: true},
+		{name: "missing layer environment", layer: true, group: "rg-dev-foundry", wantError: true},
+		{name: "fresh root project", fresh: true, group: "rg-dev", wantError: true},
+		{name: "headless missing root", noPrompt: true, group: "rg-dev", wantError: true},
+		{name: "headless missing layer", noPrompt: true, layer: true, group: "rg-dev-foundry", wantError: true},
+		{name: "configured root", existing: true, rootGroup: "registry-rg", group: "registry-rg", wantError: true},
+		{name: "configured layer", existing: true, layer: true, rootGroup: "application-rg",
+			foundryGroup: "registry-rg", group: "registry-rg", wantError: true},
+		{name: "external root ignores current scope", group: "registry-rg"},
+		{name: "external layer ignores current scope", layer: true, group: "registry-rg"},
+		{name: "headless external defers", noPrompt: true, group: "registry-rg"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			source := []byte("print('hello')\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "main.py"), source, 0o600))
+			content := []byte("name: test\nservices: {}\n")
+			if tt.layer {
+				content = append(content, []byte(
+					"infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n")...)
+			}
+			projects := &recordingProjectServer{projectPath: root}
+			if tt.fresh {
+				projects.getProjectErr = status.Error(codes.NotFound, initScopeNoProject)
+			} else {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
+			}
+			environments := &reuseInitACREnvironmentServer{testEnvironmentServiceServer: testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"current": {Name: "current"}},
+				current:      &azdext.Environment{Name: "current"},
+				values: map[string]map[string]string{"current": {
+					"AZURE_SUBSCRIPTION_ID": "other", "AZURE_RESOURCE_GROUP": "registry-rg",
+					"AZURE_FOUNDRY_RESOURCE_GROUP": "registry-rg",
+				}},
+				config: map[string][]byte{"keep": []byte(`"unchanged"`)},
+			}}
+			if tt.existing {
+				environments.environments["dev"] = &azdext.Environment{Name: "dev"}
+				environments.values["dev"] = map[string]string{
+					"AZURE_SUBSCRIPTION_ID":        "sub",
+					"AZURE_RESOURCE_GROUP":         tt.rootGroup,
+					"AZURE_FOUNDRY_RESOURCE_GROUP": tt.foundryGroup,
+				}
+			}
+			beforeValues := make(map[string]map[string]string, len(environments.values))
+			for name, values := range environments.values {
+				beforeValues[name] = maps.Clone(values)
+			}
+			beforeCurrent := proto.Clone(environments.current)
+			beforeConfig := maps.Clone(environments.config)
+			beforeEnvironments := maps.Clone(environments.environments)
+			prompts := &sourceInitACRPromptServer{initACRPromptServer: initACRPromptServer{
+				subscription: &azdext.Subscription{
+					Id: "sub", TenantId: "resource-tenant", UserTenantId: "user-tenant",
+				},
+			}}
+			workflow := &recordingProjectWorkflowServer{}
+			workflow.runHook = func(call int) error {
+				args := workflow.requests[call-1].GetWorkflow().GetSteps()[0].GetCommand().GetArgs()
+				if len(args) >= 2 && args[0] == "env" && args[1] == "new" {
+					environment := &azdext.Environment{Name: "dev"}
+					environments.environments["dev"] = environment
+					environments.current = environment
+					environments.values["dev"] = map[string]string{}
+					return nil
+				}
+				if tt.wantError {
+					return errors.New("registry is in the resource group that azd down deletes")
+				}
+				return nil
+			}
+			account := &sourceInitACRAccountServer{}
+			registry := strings.Replace(testInitACRID, "/registry-rg/", "/"+tt.group+"/", 1)
+			err := executeReuseInitACR(t, environments, workflow, prompts, projects, account, tt.noPrompt, "dev",
+				"--src", ".", "--agent-name", "test-agent", "--protocol", "responses", "--acr-resource-id", registry)
+			if tt.wantError {
+				require.ErrorContains(t, err, "resource group")
+				require.Zero(t, prompts.calls)
+				require.Zero(t, prompts.locationCalls)
+				require.Empty(t, workflow.requests)
+				require.Empty(t, projects.added)
+				require.Empty(t, projects.configValues)
+				require.Empty(t, projects.configSections)
+				require.Empty(t, environments.setKeys)
+				require.Equal(t, beforeValues, environments.values)
+				require.Equal(t, beforeConfig, environments.config)
+				require.Equal(t, beforeEnvironments, environments.environments)
+				require.True(t, proto.Equal(beforeCurrent, environments.current))
+				require.Empty(t, account.subscriptions)
+				require.NoFileExists(t, filepath.Join(root, ".agentignore"))
+			} else {
+				require.NoError(t, err)
+				require.Len(t, projects.added, 1)
+				require.Len(t, workflow.requests, 2)
+				require.Equal(t, beforeValues["current"], environments.values["current"])
+				if tt.noPrompt {
+					require.Zero(t, prompts.calls)
+					require.Zero(t, prompts.locationCalls)
+					require.Empty(t, environments.values["dev"]["AZURE_SUBSCRIPTION_ID"])
+				} else {
+					require.Equal(t, 1, prompts.calls)
+					require.Equal(t, 1, prompts.locationCalls)
+					require.Equal(t, "sub", environments.values["dev"]["AZURE_SUBSCRIPTION_ID"])
+					require.Equal(t, "user-tenant", environments.values["dev"]["AZURE_TENANT_ID"])
+				}
+			}
+			after, readErr := os.ReadFile(filepath.Join(root, "main.py"))
+			require.NoError(t, readErr)
+			require.Equal(t, source, after)
+			require.NoDirExists(t, filepath.Join(root, ".azure"))
+			if tt.fresh {
+				require.NoFileExists(t, filepath.Join(root, "azure.yaml"))
+			} else {
+				after, readErr = os.ReadFile(filepath.Join(root, "azure.yaml"))
+				require.NoError(t, readErr)
+				require.Equal(t, content, after)
+			}
+		})
+	}
+}
+
+func TestInitFromCodeEffectiveACRSelection(t *testing.T) {
+	for _, canonical := range []bool{false, true} {
+		for _, tt := range []struct {
+			name, wantError string
+			args            []string
+			noPrompt        bool
+		}{
+			{name: "code conflict", noPrompt: true, args: []string{"--deploy-mode", "code"},
+				wantError: "--acr-resource-id cannot be combined with --deploy-mode code"},
+			{name: "interactive code conflict", args: []string{"--deploy-mode", "code"},
+				wantError: "--acr-resource-id cannot be combined with --deploy-mode code"},
+			{name: "image conflict", noPrompt: true, args: []string{"--image", "registry.example.com/agent:v1"},
+				wantError: "--acr-resource-id cannot be combined with --image"},
+			{name: "empty image conflict", noPrompt: true, args: []string{"--image="},
+				wantError: "--acr-resource-id cannot be combined with --image"},
+			{name: "runtime conflict", noPrompt: true, args: []string{"--runtime", "python_3_13"},
+				wantError: "--acr-resource-id cannot be combined with --runtime"},
+			{name: "headless source forces container", noPrompt: true},
+			{name: "explicit container", noPrompt: true, args: []string{"--deploy-mode", "container"}},
+		} {
+			t.Run(fmt.Sprintf("canonical=%t/%s", canonical, tt.name), func(t *testing.T) {
+				root := t.TempDir()
+				t.Chdir(root)
+				content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n")
+				source := []byte("print('hello')\n")
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "main.py"), source, 0o600))
+				values := map[string]string{
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testInitACRID,
+					"AZD_AGENT_SKIP_ACR":                   "true",
+				}
+				environments := &reuseInitACREnvironmentServer{testEnvironmentServiceServer: testEnvironmentServiceServer{
+					environments: map[string]*azdext.Environment{"test": {Name: "test"}},
+					current:      &azdext.Environment{Name: "test"},
+					values:       map[string]map[string]string{"test": values},
+					config:       map[string][]byte{},
+				}}
+				if canonical {
+					binding, err := json.Marshal(synthesis.ACRBinding{
+						Version: 1, Mode: "reuse-connect", RegistryResourceID: testInitACRID,
+						ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry-rg/providers/" +
+							"Microsoft.CognitiveServices/accounts/account/projects/project",
+						PrincipalID: "principal",
+					})
+					require.NoError(t, err)
+					environments.config[synthesis.ACRBindingConfigKey] = binding
+					delete(values, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+				}
+				before := maps.Clone(values)
+				beforeConfig := maps.Clone(environments.config)
+				projects := &recordingProjectServer{projectPath: root}
+				workflow := &recordingProjectWorkflowServer{}
+				prompts := &sourceInitACRPromptServer{}
+				account := &sourceInitACRAccountServer{}
+				args := append([]string{"--src", ".", "--agent-name", "test-agent", "--protocol", "responses"}, tt.args...)
+				err := executeReuseInitACR(
+					t, environments, workflow, prompts, projects, account, tt.noPrompt, "test", args...,
+				)
+				if tt.wantError != "" {
+					require.ErrorContains(t, err, tt.wantError)
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+					require.Equal(t, before, values)
+					require.Empty(t, environments.setKeys)
+					require.Empty(t, workflow.requests)
+					require.Empty(t, projects.added)
+					require.Empty(t, projects.configValues)
+					require.Empty(t, projects.configSections)
+					require.NoFileExists(t, filepath.Join(root, ".agentignore"))
+				} else {
+					require.NoError(t, err)
+					require.Len(t, projects.added, 1)
+					require.Equal(t, "docker", projects.added[0].Language)
+					require.Empty(t, projects.added[0].Image)
+					require.Equal(t, "false", values["AZD_AGENT_SKIP_ACR"])
+					require.Len(t, workflow.requests, 1)
+					require.FileExists(t, filepath.Join(root, ".agentignore"))
+				}
+				require.Zero(t, prompts.calls)
+				require.Zero(t, prompts.locationCalls)
+				require.Empty(t, account.subscriptions)
+				require.Equal(t, beforeConfig, environments.config)
+				require.NoDirExists(t, filepath.Join(root, ".azure"))
+				after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+				require.NoError(t, err)
+				require.Equal(t, content, after)
+				after, err = os.ReadFile(filepath.Join(root, "main.py"))
+				require.NoError(t, err)
+				require.Equal(t, source, after)
+			})
 		}
 	}
 }

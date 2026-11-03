@@ -306,6 +306,13 @@ environment to create another project.
 
 ### Reuse an external container registry
 
+For source-built hosted agents in a new Foundry project, select an existing
+Azure Container Registry by its full ARM resource ID:
+
+```sh
+azd ai project add --new-project --acr-resource-id "/subscriptions/<subscription-id>/resourceGroups/<external-resource-group>/providers/Microsoft.ContainerRegistry/registries/<registry-name>"
+```
+
 This is supported with Bicep only. The registry must be in the Foundry project's
 subscription (`AZURE_SUBSCRIPTION_ID`) and outside every resource group managed
 by azd, not just the Foundry group, because `azd down` deletes those groups.
@@ -402,12 +409,21 @@ When creating an ACR, a declared `enableNetworkIsolation` parameter must have a
 literal boolean value for local compatibility checks; ARM expressions are not
 evaluated locally.
 
+Before provisioning, the flag overrides environment defaults and saves
+`AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `AZD_FOUNDRY_ACR_MODE=reuse-connect`.
 You can select a registry before adding agents; the selection remains pending
 until a source-built agent requires it, including across project-only provisioning,
 environment refresh, and teardown. Configured project or account names do not
 discard an unused selection. Source initialization validates the selector and
 rejects unknown application teardown scopes before changing files or environment
 values.
+Interactive setup validates the selection against the final chosen subscription
+and planned teardown group before scaffolding a new project or environment.
+The validated subscription is reused without a second selection prompt.
+An explicit empty value,
+an existing project selector, or a manifest containing only code, prebuilt-image, or
+non-container agents is rejected. Without a selector, source builds continue
+to create a registry automatically.
 An unused `AZURE_RESOURCE_GROUP` value does not add a teardown group when only
 a Foundry layer is configured.
 

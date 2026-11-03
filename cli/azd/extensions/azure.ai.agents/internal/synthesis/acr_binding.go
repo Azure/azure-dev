@@ -153,6 +153,42 @@ func ValidateACRNetworking(includeACR bool, registryID string, isolated, hosting
 	return nil
 }
 
+// HasLegacyACRDeployment requires identity and registry outputs.
+func HasLegacyACRDeployment(env map[string]string) bool {
+	return env["AZURE_AI_PROJECT_ID"] != "" &&
+		env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] != "" &&
+		(env["AZURE_CONTAINER_REGISTRY_ENDPOINT"] != "" ||
+			env["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"] != "" ||
+			env["AZD_FOUNDRY_ACR_PULL_ASSIGNED"] != "")
+}
+
+// ValidateDeployedACRReuse preserves deployed mode and identity.
+func ValidateDeployedACRReuse(in Input, selectedID string) error {
+	binding := in.ACRBinding
+	if binding == nil {
+		var err error
+		binding, err = ParseACRBinding(in.Env[ACRBindingEnvKey])
+		if err != nil {
+			return err
+		}
+	}
+	if binding != nil {
+		return ValidateACRBinding(binding, "reuse-connect", selectedID)
+	}
+	if !HasLegacyACRDeployment(in.Env) {
+		return nil
+	}
+	mode, id, err := ResolveGreenfieldACRSelection(in)
+	if err != nil {
+		return err
+	}
+	if in.Env["AZD_FOUNDRY_ACR_MODE"] == "create" || mode != "reuse-connect" || !strings.EqualFold(id, selectedID) {
+		return errors.New("cannot change the registry of a provisioned Foundry project; " +
+			"retain the deployed registry selection or use a new azd environment")
+	}
+	return nil
+}
+
 // ValidateACRSelector validates a registry before writes.
 func ValidateACRSelector(registryID, subscriptionID, resourceGroup string) error {
 	if !containerRegistryIDPattern.MatchString(registryID) {
@@ -181,11 +217,7 @@ func ValidateGreenfieldACRSelection(env map[string]string, selectedID string) er
 	if err := ValidateACRSelector(selectedID, env["AZURE_SUBSCRIPTION_ID"], group); err != nil {
 		return err
 	}
-	binding, err := ParseACRBinding(env[ACRBindingEnvKey])
-	if err != nil {
-		return err
-	}
-	return ValidateACRBinding(binding, "reuse-connect", selectedID)
+	return ValidateDeployedACRReuse(Input{Env: env}, selectedID)
 }
 
 // GreenfieldACRResourceGroup resolves the Foundry teardown group.
@@ -300,12 +332,5 @@ func ValidateGreenfieldACRSelectionForInput(in Input, selectedID string) error {
 	if err := ValidateACRSelectorForInput(in, selectedID); err != nil {
 		return err
 	}
-	binding := in.ACRBinding
-	if binding == nil {
-		binding, err = ParseACRBinding(in.Env[ACRBindingEnvKey])
-		if err != nil {
-			return err
-		}
-	}
-	return ValidateACRBinding(binding, "reuse-connect", selectedID)
+	return ValidateDeployedACRReuse(in, selectedID)
 }

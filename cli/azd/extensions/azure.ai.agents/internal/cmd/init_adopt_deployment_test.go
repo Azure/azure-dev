@@ -316,7 +316,7 @@ func TestValidateInitModelSelectors(t *testing.T) {
 			require.Contains(t, localErr.Suggestion, "--model")
 			// No client is available, so reaching any project or Azure operation would fail.
 			err = finalizeAdoptedProject(t.Context(), &test.flags, nil, "test", "", false,
-				"renamed-agent", TemplateTypeAzureYaml, "")
+				"renamed-agent", TemplateTypeAzureYaml, adoptedProjectPreflight{})
 			require.EqualError(t, err, localErr.Error())
 		})
 	}

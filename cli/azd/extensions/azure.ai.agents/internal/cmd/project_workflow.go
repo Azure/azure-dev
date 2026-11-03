@@ -40,6 +40,7 @@ func authorFoundryProject(
 	projectRoot string,
 	mode projectAuthoringMode,
 	noPrompt bool,
+	acrResourceID string,
 ) error {
 	if mode != projectAuthoringCurrent &&
 		mode != projectAuthoringExisting &&
@@ -57,6 +58,9 @@ func authorFoundryProject(
 			"select an existing Foundry project and retry",
 		)
 	}
+	if acrResourceID != "" && mode == projectAuthoringExisting {
+		return initACRConflict("--project-id")
+	}
 	if mode != projectAuthoringExisting && target != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
@@ -73,8 +77,11 @@ func authorFoundryProject(
 		args = append(args, "--no-prompt")
 	}
 	args = append(args, "--output", "none")
-	if mode == projectAuthoringNew {
+	if mode == projectAuthoringNew || acrResourceID != "" {
 		args = append(args, "--new-project")
+	}
+	if acrResourceID != "" {
+		args = append(args, "--acr-resource-id", acrResourceID)
 	}
 	if mode == projectAuthoringExisting {
 		if resourceID := strings.TrimSpace(target.ResourceId); resourceID != "" {
@@ -101,13 +108,14 @@ func authorSelectedFoundryProject(
 	projectRoot string,
 	mode projectAuthoringMode,
 	noPrompt bool,
+	acrResourceID string,
 ) error {
 	if mode == projectAuthoringNew || mode == projectAuthoringCurrent {
 		return authorFoundryProjectPreservingEnvironment(
-			ctx, azdClient, envName, projectRoot, mode, noPrompt,
+			ctx, azdClient, envName, projectRoot, mode, noPrompt, acrResourceID,
 		)
 	}
-	return authorFoundryProject(ctx, azdClient, target, projectRoot, mode, noPrompt)
+	return authorFoundryProject(ctx, azdClient, target, projectRoot, mode, noPrompt, acrResourceID)
 }
 
 var newProjectEnvironmentKeys = []string{
@@ -126,7 +134,7 @@ func authorNewFoundryProject(
 	projectRoot string,
 ) error {
 	return authorFoundryProjectPreservingEnvironment(
-		ctx, azdClient, envName, projectRoot, projectAuthoringNew, true,
+		ctx, azdClient, envName, projectRoot, projectAuthoringNew, true, "",
 	)
 }
 
@@ -137,6 +145,7 @@ func authorFoundryProjectPreservingEnvironment(
 	projectRoot string,
 	mode projectAuthoringMode,
 	noPrompt bool,
+	acrResourceID string,
 ) error {
 	response, err := azdClient.Environment().GetValues(
 		ctx,
@@ -157,7 +166,7 @@ func authorFoundryProjectPreservingEnvironment(
 	}
 
 	authorErr := authorFoundryProject(
-		ctx, azdClient, nil, projectRoot, mode, noPrompt,
+		ctx, azdClient, nil, projectRoot, mode, noPrompt, acrResourceID,
 	)
 	rollbackCtx, cancel := context.WithTimeout(
 		context.WithoutCancel(ctx),

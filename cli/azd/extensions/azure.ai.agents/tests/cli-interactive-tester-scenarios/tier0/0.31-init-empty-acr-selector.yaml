@@ -1,0 +1,17 @@
+# Tier 0: empty ACR selection fails offline without local mutations.
+name: "init-empty-acr-selector"
+command: 'azd ai agent init --acr-resource-id="" --no-prompt'
+cwd: "~/working/azd-agents-empty-acr-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+pre:
+  - run: "rm -rf ~/working/azd-agents-empty-acr-{instance}"
+    cwd: "~/working"
+    name: "reset isolated validation directory"
+goals:
+  - "Confirm the process exits non-zero with an error naming --acr-resource-id and requiring a non-empty ACR ARM resource ID."
+  - "Confirm no authentication, subscription, project, registry, or agent wizard prompt appears."
+  - "Confirm no azure.yaml, .azure environment directory, or infrastructure files are created."
+  - "Take a screenshot of the error output; screenshot failure does not block the product assertions."
+  - "Report a finding if the empty selector is ignored, the command prompts or succeeds, or project files are created."

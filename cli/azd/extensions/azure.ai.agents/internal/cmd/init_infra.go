@@ -253,6 +253,7 @@ type declaredInfraConfig struct {
 		Name     string `yaml:"name"`
 		Provider string `yaml:"provider"`
 		Path     string `yaml:"path"`
+		Module   string `yaml:"module"`
 	} `yaml:"layers"`
 }
 

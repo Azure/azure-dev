@@ -1,0 +1,49 @@
+# Tier 0: reject ACR reuse with a template's existing project.
+# No Azure authentication, network, or resource creation is allowed.
+name: "init-acr-existing-project-template"
+command: >-
+  azd ai agent init -t ./template/azure.yaml --acr-resource-id
+  "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+  --no-prompt
+cwd: "~/working/azd-agents-acr-existing-project-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-acr-existing-project-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- template &&
+      cp -r -- "{fixtures_dir}/acr-existing-project/." ./template
+    name: "seed a source-build template with a referenced project endpoint"
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Fail without answering any
+    prompt. Do not obtain credentials, install or update extensions, fetch files,
+    contact Azure, create cloud resources, or make network calls. Use only the
+    literal init command and read-only inspection; do not repair the fixture.
+  - >-
+    Wait for the init command to exit non-zero. Confirm the error says
+    --acr-resource-id is only supported for a new Foundry project and directs
+    the user to the existing project's registry connection.
+  - >-
+    Confirm no authentication, subscription, location, project, registry, or agent
+    wizard prompt appears. A credential, network, capability, or missing-file error
+    does not satisfy the required existing-project validation.
+  - >-
+    Confirm template/azure.yaml and template/foundry-project.yaml remain
+    byte-for-byte identical to the files in
+    '{fixtures_dir}/acr-existing-project'. No files or directories beyond the
+    seeded template may be added, including a project directory, an .azure
+    environment directory, agent configuration, or infrastructure.
+  - >-
+    Take a best-effort screenshot of the error output; capture failure must not
+    block later product assertions.
+  - >-
+    Report a finding if init succeeds, prompts, reaches authentication or Azure,
+    reports a different error, changes seeded files, or adds local artifacts.
+    Do not retry or work around a failed goal.

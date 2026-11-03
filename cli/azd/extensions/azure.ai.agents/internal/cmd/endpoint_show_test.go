@@ -28,7 +28,8 @@ func TestPrintEndpointTable_FullConfig(t *testing.T) {
 	agent := &agent_api.AgentObject{
 		Name: "patch-poc-resp",
 		AgentEndpoint: &agent_api.AgentEndpoint{
-			Protocols: []agent_api.AgentEndpointProtocol{"responses", "a2a", "mcp"},
+			StandbyPool: &agent_api.StandbyPool{Size: new(int32(3))},
+			Protocols:   []agent_api.AgentEndpointProtocol{"responses", "a2a", "mcp"},
 			VersionSelector: &agent_api.VersionSelector{
 				VersionSelectionRules: []agent_api.VersionSelectionRule{
 					{Type: "FixedRatio", AgentVersion: "@latest", TrafficPercentage: &pct80},
@@ -75,6 +76,7 @@ func TestPrintEndpointTable_FullConfig(t *testing.T) {
 	assert.Contains(t, output, "Updated echo agent")
 	assert.Contains(t, output, "Echo")
 	assert.Contains(t, output, "Stream Echo")
+	assert.Contains(t, output, "Standby Pool Target (per serving version):")
 
 	t.Logf("=== endpoint show output ===\n%s", output)
 }
@@ -109,7 +111,8 @@ func TestPrintEndpointJSON(t *testing.T) {
 	agent := &agent_api.AgentObject{
 		Name: "json-test-agent",
 		AgentEndpoint: &agent_api.AgentEndpoint{
-			Protocols: []agent_api.AgentEndpointProtocol{"responses"},
+			StandbyPool: &agent_api.StandbyPool{Size: new(int32(0))},
+			Protocols:   []agent_api.AgentEndpointProtocol{"responses"},
 			VersionSelector: &agent_api.VersionSelector{
 				VersionSelectionRules: []agent_api.VersionSelectionRule{
 					{Type: "FixedRatio", AgentVersion: "@latest", TrafficPercentage: &pct100},
@@ -139,6 +142,8 @@ func TestPrintEndpointJSON(t *testing.T) {
 	assert.Contains(t, output, `"kind": "hosted"`)
 	assert.Contains(t, output, `"protocols"`)
 	assert.Contains(t, output, `"responses"`)
+	assert.Contains(t, output, `"standby_pool"`)
+	assert.Contains(t, output, `"size": 0`)
 
 	t.Logf("=== endpoint show --output json ===\n%s", output)
 }

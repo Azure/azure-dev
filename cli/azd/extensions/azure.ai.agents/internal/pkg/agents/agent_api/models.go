@@ -261,10 +261,17 @@ type ProtocolConfiguration struct {
 
 // AgentEndpoint describes the endpoint configuration for an agent.
 type AgentEndpoint struct {
+	StandbyPool           *StandbyPool                       `json:"standby_pool,omitempty"`
 	VersionSelector       *VersionSelector                   `json:"version_selector,omitempty"`
 	Protocols             []AgentEndpointProtocol            `json:"protocols,omitempty"`
 	ProtocolConfiguration *ProtocolConfiguration             `json:"protocol_configuration,omitempty"`
 	AuthorizationSchemes  []AgentEndpointAuthorizationScheme `json:"authorization_schemes,omitempty"`
+}
+
+// StandbyPool is the endpoint's desired standby capacity for each serving version.
+// Size is optional so an explicit zero is distinct from an unspecified target.
+type StandbyPool struct {
+	Size *int32 `json:"size,omitempty"`
 }
 
 // AgentCardSkill describes a single capability that an agent can perform.

@@ -1382,6 +1382,13 @@ func createAgentAPIRequest(
 	if agentEndpoint != nil {
 		apiEndpoint := &agent_api.AgentEndpoint{}
 
+		if err := agentEndpoint.StandbyPool.Validate(); err != nil {
+			return nil, err
+		}
+		if agentEndpoint.StandbyPool != nil && agentEndpoint.StandbyPool.Size != nil {
+			apiEndpoint.StandbyPool = &agent_api.StandbyPool{Size: agentEndpoint.StandbyPool.Size}
+		}
+
 		// Map protocols
 		if len(agentEndpoint.Protocols) > 0 {
 			protocols := make(

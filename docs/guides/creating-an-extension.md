@@ -62,6 +62,13 @@ Go extensions can opt into beta structured messages for service
 [contract versioning](../../cli/azd/docs/extensions/contract-versioning.md)
 for the stream requirements and legacy-client behavior.
 
+Keep version definitions separate from endpoint-level configuration. For example,
+the Foundry agents extension maps
+[`agentEndpoint.standbyPool.size`](../../cli/azd/extensions/azure.ai.agents/README.md#standby-pool-target-preview)
+to a scoped preview management request and uses endpoint PATCH for capacity-only
+updates, without changing invocation APIs or creating another version. Preserve
+omitted settings and explicit zero values when mapping optional configuration.
+
 ### 4. Build
 
 ```bash

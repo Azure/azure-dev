@@ -293,8 +293,23 @@
       "description": "Name or ID of a Foundry project connection used to pull a private pre-built container image."
     },
     "agentEndpoint": {
-      "type": "object",
-      "description": "Agent endpoint configuration (protocols, version selection, auth).",
+      "type": ["object", "null"],
+      "description": "Agent endpoint configuration (protocols, version selection, auth, standby capacity).",
+      "properties": {
+        "standbyPool": {
+          "type": ["object", "null"],
+          "description": "Preview standby capacity target per serving version on AKS. ADC ignores this configuration. Omit to keep the service default or existing value.",
+          "properties": {
+            "size": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 50,
+              "description": "Target standby sessions per serving version, independently including canaries. Zero stops refill without disabling claims or expiry. Saving the target does not wait for warm-up."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
       "additionalProperties": true
     },
     "agentCard": {

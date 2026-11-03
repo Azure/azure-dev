@@ -41,6 +41,8 @@ type endpointUpdateFlags struct {
 	force bool
 }
 
+var newEndpointUpdateClient = (*AgentContext).NewClient
+
 func newEndpointUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &endpointUpdateFlags{}
 	extCtx = ensureExtensionContext(extCtx)
@@ -160,7 +162,7 @@ func runEndpointUpdate(
 		return err
 	}
 
-	agentClient, err := agentContext.NewClient()
+	agentClient, err := newEndpointUpdateClient(agentContext)
 	if err != nil {
 		return err
 	}

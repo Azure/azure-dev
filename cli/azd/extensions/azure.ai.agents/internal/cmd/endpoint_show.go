@@ -394,6 +394,11 @@ func printEndpointResultTable(result endpointShowResult) error {
 		fmt.Fprintf(w, "(not configured)\n")
 	}
 
+	if result.AgentEndpoint != nil && result.AgentEndpoint.StandbyPool != nil &&
+		result.AgentEndpoint.StandbyPool.Size != nil {
+		fmt.Fprintf(w, "\nStandby Pool Target (per serving version):\t%d\n", *result.AgentEndpoint.StandbyPool.Size)
+	}
+
 	// Version Selector
 	fmt.Fprintf(w, "\nVersion Selector:\n")
 	if result.AgentEndpoint != nil && result.AgentEndpoint.VersionSelector != nil &&

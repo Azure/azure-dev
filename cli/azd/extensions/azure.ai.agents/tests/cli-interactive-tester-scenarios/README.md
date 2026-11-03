@@ -316,6 +316,10 @@ template catalog; the local A2A fixture uses localhost HTTP only. Fast and mostl
 deterministic. Safe to run
 in any order, any time.
 
+`tier0/0.36-endpoint-standby-validation.yaml` checks that an out-of-range
+`agentEndpoint.standbyPool.size` is rejected by endpoint update before
+authentication or remote writes, without changing project or environment files.
+
 | File | Targets |
 |------|---------|
 | `tier0/0.01-version.yaml` | `version` |

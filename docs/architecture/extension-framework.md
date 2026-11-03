@@ -74,6 +74,13 @@ for the API, host compatibility, and contribution ordering rules.
 
 ## Capabilities
 
+The Foundry agents extension keeps endpoint configuration separate from agent
+versions. Its [preview standby pool target](../../cli/azd/extensions/azure.ai.agents/README.md#standby-pool-target-preview)
+is applied through management PATCH after deployment, or through endpoint update
+without creating a version. The service uses infrastructure capabilities to
+apply it on AKS and ignore it on ADC; invocation and session API versions are
+unchanged.
+
 Extensions declare their capabilities in `extension.yaml`:
 
 | Capability | Description |

@@ -335,7 +335,32 @@ func (p *AgentServiceTargetProvider) validateDeploymentServiceConfig(
 			return err
 		}
 	}
-	return validateHostedAgentContainerSettings(p.serviceConfig.GetName(), ServiceConfigProps(p.serviceConfig))
+	if err := validateHostedAgentContainerSettings(p.serviceConfig.GetName(), ServiceConfigProps(p.serviceConfig)); err != nil {
+		return err
+	}
+	endpoint := ServiceConfigProps(p.serviceConfig).GetFields()["agentEndpoint"]
+	if endpoint == nil {
+		return nil
+	}
+	if containsFileRef(endpoint.AsInterface()) {
+		if err := p.loadProjectPath(ctx); err != nil {
+			return err
+		}
+	}
+	// Validate endpoint inputs before resolving credentials or mutating deployment state.
+	resolved, err := resolveServiceProps(&structpb.Struct{Fields: map[string]*structpb.Value{
+		"agentEndpoint": endpoint,
+	}}, p.serviceConfig.GetName(), p.projectPath)
+	if err != nil {
+		return invalidAgentDefinitionError(p.serviceConfig, err)
+	}
+	var fields struct {
+		AgentEndpoint *agent_yaml.AgentEndpoint `json:"agentEndpoint"`
+	}
+	if err := UnmarshalStruct(resolved, &fields); err != nil {
+		return invalidAgentDefinitionError(p.serviceConfig, err)
+	}
+	return nil
 }
 
 func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error {
@@ -1808,6 +1833,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err := p.patchAgentEndpointFields(
 		ctx, result.agentName, result.request.AgentEndpoint, result.request.AgentCard, azdEnv,
 	); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr,
+			"Agent %q version %s deployed, but endpoint/card configuration was not saved. "+
+				"No deployed resources were deleted; retry with `azd ai agent endpoint update`.\n",
+			result.agentName, result.agentVersion.Version,
+		)
 		return nil, err
 	}
 

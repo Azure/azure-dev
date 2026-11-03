@@ -1377,9 +1377,60 @@ type AuthorizationScheme struct {
 
 // AgentEndpoint describes the endpoint configuration for an agent.
 type AgentEndpoint struct {
+	StandbyPool          *StandbyPool          `json:"standbyPool,omitempty" yaml:"standby_pool,omitempty"`
 	VersionSelector      *VersionSelector      `json:"versionSelector,omitempty" yaml:"version_selector,omitempty"`
 	Protocols            []string              `json:"protocols,omitempty" yaml:"protocols,omitempty"`
 	AuthorizationSchemes []AuthorizationScheme `json:"authorizationSchemes,omitempty" yaml:"authorization_schemes,omitempty"`
+}
+
+// StandbyPool configures the endpoint's target pool size, not its ready count.
+// A nil Size leaves the service default or existing setting unchanged.
+type StandbyPool struct {
+	Size *int32 `json:"size,omitempty" yaml:"size,omitempty"`
+}
+
+// Validate checks the supported standby pool size range.
+func (p *StandbyPool) Validate() error {
+	if p != nil && p.Size != nil && (*p.Size < 0 || *p.Size > 50) {
+		return fmt.Errorf("agentEndpoint.standbyPool.size must be an integer between 0 and 50")
+	}
+	return nil
+}
+
+// UnmarshalJSON rejects unsupported pool controls rather than silently dropping them.
+func (p *StandbyPool) UnmarshalJSON(data []byte) error {
+	type pool StandbyPool
+	var decoded pool
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&decoded); err != nil {
+		return fmt.Errorf("agentEndpoint.standbyPool: %w", err)
+	}
+	*p = StandbyPool(decoded)
+	return p.Validate()
+}
+
+// UnmarshalYAML enforces the same integer-only contract as the JSON decoding path.
+func (p *StandbyPool) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("agentEndpoint.standbyPool must be an object")
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		key, value := node.Content[i], node.Content[i+1]
+		if key.Value != "size" {
+			return fmt.Errorf("agentEndpoint.standbyPool contains unsupported field %q", key.Value)
+		}
+		if value.Tag != "!!int" && value.Tag != "!!null" {
+			return fmt.Errorf("agentEndpoint.standbyPool.size must be an integer between 0 and 50")
+		}
+	}
+	type pool StandbyPool
+	var decoded pool
+	if err := node.Decode(&decoded); err != nil {
+		return fmt.Errorf("agentEndpoint.standbyPool: %w", err)
+	}
+	*p = StandbyPool(decoded)
+	return p.Validate()
 }
 
 // AgentCardSkill describes a single capability that an agent can perform.

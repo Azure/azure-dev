@@ -634,6 +634,54 @@ Missing, unknown, or malformed kinds return a structured validation error rather
 than falling back to hosted-agent behavior. Hosted Activity and session
 capabilities do not change the agent kind and follow the hosted behavior above.
 
+### Standby pool target (preview)
+
+For hosted agents on AKS, configure standby capacity on the **agent endpoint**,
+not the version definition:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: my-agent
+    agentEndpoint:
+      standbyPool:
+        size: 3
+```
+
+`size` is an integer from **0 to 50**, inclusive. This is a target applied
+independently to every serving version, including canaries, not a ready count
+or a concurrency limit. Successful configuration saves the target; it does not
+wait for warm-up. ADC accepts and ignores this configuration: azd passes the
+endpoint setting through and the service uses its infrastructure capabilities
+to decide whether standby work applies.
+
+`azd deploy` applies the endpoint settings after deploying the agent version.
+To change capacity without creating a version, edit `size` and run
+`azd ai agent endpoint update my-agent`. Undeclared selector, authorization,
+and protocol fields are not sent by a capacity-only update. If endpoint
+configuration fails after deployment, the command returns an error and reports
+the deployed version; resources are not deleted. Retry the endpoint update.
+`azd ai agent endpoint show` displays the target when the service returns it;
+JSON output includes `agent_endpoint.standby_pool.size`.
+
+Omitting the pool or size, setting either to `null`, or using `standbyPool: {}`
+sends no pool change. On creation the server supplies the default of 0; on PATCH
+the existing target is preserved. An explicit `size: 0` is sent and stops refill,
+but does not disable remaining claims or expiry. No refill controls or separate
+pool command are exposed.
+
+This requires a service deployment supporting the preview standby contract
+([Azure/azure-rest-api-specs#46752](https://github.com/Azure/azure-rest-api-specs/pull/46752),
+currently proposed). Management writes containing an explicit size use
+`2025-11-15-preview`; other requests, including invocation and sessions, keep
+their existing API versions. There is no standby feature header. Public gateway
+and regional rollout must be confirmed before relying on this preview.
+Existing BYO AKS initialization/adoption still requires
+`AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true`; that opt-in does not set a positive pool
+target automatically.
+
 ## Initializing an A2A hosted agent
 
 Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI before initializing

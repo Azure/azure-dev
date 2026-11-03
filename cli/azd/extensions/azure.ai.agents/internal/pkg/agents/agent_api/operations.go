@@ -220,6 +220,7 @@ func (c *AgentClient) CreateAgentWithHeaders(
 	apiVersion string,
 	headers map[string]string,
 ) (*AgentObject, error) {
+	apiVersion = endpointManagementAPIVersion(request.AgentEndpoint, apiVersion)
 	url := fmt.Sprintf("%s/agents?api-version=%s", c.endpoint, apiVersion)
 
 	payload, err := json.Marshal(request)
@@ -541,6 +542,7 @@ func (c *AgentClient) PatchAgent(
 	request *PatchAgentRequest,
 	apiVersion string,
 ) (*AgentObject, error) {
+	apiVersion = endpointManagementAPIVersion(request.AgentEndpoint, apiVersion)
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
 
 	payload, err := json.Marshal(request)

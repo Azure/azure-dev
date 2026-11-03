@@ -4,13 +4,20 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -18,6 +25,98 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+type endpointUpdateTransport func(*http.Request) (*http.Response, error)
+
+func (f endpointUpdateTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func TestStandbyPoolEndpointUpdateCommand(t *testing.T) {
+	for _, size := range []int{0, 3} {
+		t.Run(fmt.Sprintf("size=%d", size), func(t *testing.T) {
+			svc := &azdext.ServiceConfig{
+				Name: "agent", Host: AiAgentHost,
+				AdditionalProperties: mustEndpointUpdateProperties(t, size),
+			}
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{svc.Name: svc},
+			}}, &helpersPromptServer{})
+			previousFactory := newEndpointUpdateClient
+			previousSources := readAzdHostedSourcesFunc
+			previousTransport := recordproxy.Transport
+			t.Cleanup(func() {
+				newEndpointUpdateClient = previousFactory
+				readAzdHostedSourcesFunc = previousSources
+				recordproxy.Transport = previousTransport
+			})
+			readAzdHostedSourcesFunc = func(context.Context) (azdHostedSources, error) {
+				return azdHostedSources{
+					EnvValue: "https://account.services.ai.azure.com/api/projects/project", EnvName: "test",
+				}, nil
+			}
+			newEndpointUpdateClient = func(ac *AgentContext) (*agent_api.AgentClient, error) {
+				return agent_api.NewAgentClient(ac.ProjectEndpoint, responseTestCredential{}), nil
+			}
+			var calls []string
+			recordproxy.Transport = endpointUpdateTransport(func(request *http.Request) (*http.Response, error) {
+				calls = append(calls, request.Method)
+				require.Equal(t, "/api/projects/project/agents/agent", request.URL.Path)
+				if request.Method == http.MethodPatch {
+					require.Equal(t, agent_api.StandbyPoolAPIVersion, request.URL.Query().Get("api-version"))
+					data, err := io.ReadAll(request.Body)
+					require.NoError(t, err)
+					expected, err := json.Marshal(map[string]any{
+						"agent_endpoint": map[string]any{"standby_pool": map[string]any{"size": size}},
+					})
+					require.NoError(t, err)
+					require.JSONEq(t, string(expected), string(data),
+						"capacity-only updates must not overwrite undeclared endpoint settings")
+				} else {
+					require.Equal(t, http.MethodGet, request.Method)
+					require.Equal(t, "v1", request.URL.Query().Get("api-version"))
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+					Body: io.NopCloser(strings.NewReader(`{"name":"agent","agent_endpoint":{
+						"protocols":["responses"],"version_selector":{"version_selection_rules":[]},
+						"authorization_schemes":[{"type":"Entra"}]}}`)),
+					Request: request,
+				}, nil
+			})
+			require.NoError(t, runEndpointUpdate(t.Context(), client,
+				&endpointUpdateFlags{name: svc.Name}, &azdext.ExtensionContext{NoPrompt: true}))
+			require.Equal(t, []string{http.MethodGet, http.MethodPatch}, calls, "must not create a version")
+		})
+	}
+}
+
+func mustEndpointUpdateProperties(t *testing.T, size int) *structpb.Struct {
+	t.Helper()
+	props, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted", "name": "agent",
+		"agentEndpoint": map[string]any{"standbyPool": map[string]any{"size": size}},
+	})
+	require.NoError(t, err)
+	return props
+}
+
+func TestStandbyPoolEndpointUpdateRejectsInvalidInputBeforeClient(t *testing.T) {
+	svc := &azdext.ServiceConfig{
+		Name: "agent", Host: AiAgentHost, AdditionalProperties: mustEndpointUpdateProperties(t, 51),
+	}
+	client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{svc.Name: svc},
+	}}, &helpersPromptServer{})
+	previous := newEndpointUpdateClient
+	t.Cleanup(func() { newEndpointUpdateClient = previous })
+	newEndpointUpdateClient = func(*AgentContext) (*agent_api.AgentClient, error) {
+		t.Fatal("invalid configuration must not create an authenticated client")
+		return nil, nil
+	}
+	require.ErrorContains(t, runEndpointUpdate(t.Context(), client,
+		&endpointUpdateFlags{name: svc.Name}, &azdext.ExtensionContext{NoPrompt: true}), "between 0 and 50")
+}
 
 func TestEndpointUpdatePreservesStructuredServiceConfigErrors(t *testing.T) {
 	tests := []struct {

@@ -1,0 +1,50 @@
+# Tier 0: endpoint update rejects an invalid standby target before authentication or remote writes.
+name: "endpoint-standby-validation"
+command: "azd ai agent endpoint update agent --no-prompt"
+cwd: "~/working/azd-agents-endpoint-standby-{instance}"
+tags: ["tier:0", "cmd:endpoint", "negative-path", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-endpoint-standby-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- "$HOME/working/azd-agents-endpoint-standby-{instance}" &&
+      printf 'name: endpoint-standby\nservices:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: standby-agent\n    agentEndpoint:\n      standbyPool:\n        size: 51\n'
+      > "$HOME/working/azd-agents-endpoint-standby-{instance}/azure.yaml" &&
+      cp -- "$HOME/working/azd-agents-endpoint-standby-{instance}/azure.yaml"
+      "$HOME/working/azd-agents-endpoint-standby-{instance}/azure.yaml.before"
+    cwd: "~/working"
+    name: "seed the invalid standby target and a comparison copy"
+  - run: "azd env new standby-validation-{instance} --no-prompt && cp -a .azure .azure.before"
+    cwd: "~/working/azd-agents-endpoint-standby-{instance}"
+    name: "create and snapshot an isolated local environment"
+
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Run only the declared
+    endpoint update command and read-only inspection of the dedicated directory.
+    Do not sign in, contact Azure, install extensions, repair the fixture, or run
+    init, provision, up, deploy, or down.
+  - >-
+    Wait for endpoint update to finish with a non-zero exit code. Confirm the
+    error identifies agentEndpoint.standbyPool.size and says it must be an
+    integer between 0 and 50. It must not report successful endpoint configuration.
+  - >-
+    Confirm no credential lookup, project-endpoint lookup, version creation,
+    standby refill, or remote endpoint update occurs before this local error.
+  - >-
+    Compare azure.yaml byte-for-byte with azure.yaml.before and compare .azure
+    recursively with .azure.before. Confirm project configuration and persisted
+    environment values are unchanged.
+  - "Take a best-effort screenshot; capture failure must not block the remaining goals."
+  - >-
+    Report a finding if size 51 is ignored or accepted, a product prompt appears,
+    an authentication or network operation runs, or project/environment files
+    change. Do not retry a failed goal.

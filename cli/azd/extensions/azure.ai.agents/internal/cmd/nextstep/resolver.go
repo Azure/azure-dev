@@ -20,7 +20,7 @@ const (
 	// ProtocolResponses identifies plain
 	// text /responses agents.
 	ProtocolResponses = "responses"
-	// ProtocolA2A identifies A2A agents (remote invocation only).
+	// ProtocolA2A identifies A2A agents.
 	ProtocolA2A = "a2a"
 	// ProtocolInvocationsWS identifies
 	// bidirectional WebSocket /invocations_ws agents.
@@ -637,8 +637,15 @@ func ResolveAfterRun(state *State, serviceName string, readmeExists func(relativ
 	}
 
 	svc := findService(state, serviceName)
-	if !serviceSupportsAzdInvoke(svc) || svc != nil && svc.Protocol == ProtocolA2A {
+	if !serviceSupportsAzdInvoke(svc) {
 		return nil
+	}
+	if svc != nil && svc.Protocol == ProtocolA2A {
+		return []Suggestion{{
+			Command:     localA2AInvokeCommand(state, serviceName),
+			Description: "send a sample request to the running agent",
+			Priority:    10,
+		}}
 	}
 
 	cachedPayload := ""
@@ -1098,9 +1105,29 @@ func appendInvokeLocalSecondary(
 		svc = &state.Services[0]
 	}
 	if len(state.Services) > 0 && !slices.ContainsFunc(state.Services, func(service ServiceState) bool {
-		return serviceSupportsAzdInvoke(&service) && service.Protocol != ProtocolA2A
+		return serviceSupportsAzdInvoke(&service)
 	}) {
 		return out, priority
+	}
+	// Preserve generic guidance when a Responses/Invocations target exists.
+	// When only A2A targets can be invoked locally, explicitly select A2A.
+	if svc == nil && !slices.ContainsFunc(state.Services, func(service ServiceState) bool {
+		return serviceSupportsAzdInvoke(&service) && service.Protocol != ProtocolA2A
+	}) {
+		for i := range state.Services {
+			if state.Services[i].Protocol == ProtocolA2A {
+				svc = &state.Services[i]
+				break
+			}
+		}
+	}
+	if svc != nil && svc.Protocol == ProtocolA2A {
+		out = append(out, Suggestion{
+			Command:     localA2AInvokeCommand(state, ""),
+			Description: "test it in another terminal",
+			Priority:    priority,
+		})
+		return out, priority + 1
 	}
 	invokeArg, readmeHint := resolveInvokeArg(svc, "", readmeExists, priority)
 	if readmeHint != nil {
@@ -1113,6 +1140,24 @@ func appendInvokeLocalSecondary(
 		Priority:    priority,
 	})
 	return out, priority + 1
+}
+
+// localA2AInvokeCommand uses text input rather than an invocations payload.
+// A2A 1.0 is preview-only; legacy 0.3 must omit the gated version flag.
+func localA2AInvokeCommand(state *State, serviceName string) string {
+	serviceArg := ""
+	if serviceName != "" {
+		serviceArg = " " + shellEscapeSingleQuoted(serviceName)
+	}
+	portFlag := ""
+	if state.LocalPort != 0 {
+		portFlag = fmt.Sprintf(" --port %d", state.LocalPort)
+	}
+	versionFlag := ""
+	if state.A2APreviewEnabled {
+		versionFlag = " --a2a-version 1.0"
+	}
+	return fmt.Sprintf("azd ai agent invoke%s --local --protocol a2a%s%s 'Hello!'", serviceArg, portFlag, versionFlag)
 }
 
 // shellEscapeSingleQuoted wraps s in single quotes for POSIX shells.

@@ -792,9 +792,35 @@ azd ai agent invoke -p a2a --a2a-version 0.3 --input-file a2a-request-0.3.json
 
 `--a2a-version` is valid only for A2A; do not use it with Responses or
 Invocations. It is separate from `--version`, which continues to select a
-**deployed agent version**, not an A2A protocol version. This CLI does not
-support A2A invocation with `--local`; this is a CLI limitation, not a
-restriction of the A2A protocol.
+**deployed agent version**, not an A2A protocol version. `--version` is not
+supported for local A2A invocation.
+
+### Local A2A invocation
+
+Run your A2A server with `azd ai agent run`, then invoke it from another terminal:
+
+```bash
+azd ai agent run --port 9090
+# In another terminal, with AZD_ALPHA_ENABLE_AGENTS_A2A=true:
+azd ai agent invoke --local -p a2a --port 9090 --a2a-version 1.0 "Hello!"
+azd ai agent invoke --local -p a2a --port 9090 --a2a-version 1.0 -f a2a-request-1.0.json
+```
+
+Requests go directly to `http://localhost:<port>/a2a` (default port `8088`,
+configurable with `--port`). Your local server must expose `POST /a2a`.
+This fixed route is an azd local transport convention, not a path mandated by
+the A2A specification. Redirects and alternate routes are not followed.
+
+Existing A2A version rules apply locally, and request files are sent unchanged.
+Local A2A sends no Foundry authentication or routing headers and persists no
+session state. For continuity, provide A2A `contextId`/`taskId` in a request file.
+These flags are unsupported: `--session-id`, `--new-session`, `--conversation-id`,
+`--new-conversation`, `--version`, `--user-identity`, `--call-id`, and `--client-header`.
+Platform diagnostics are unavailable; omit `--debug-latency` or set it to `false`.
+
+Use `--output raw` for streaming replies. `--timeout` covers the request and response
+(default 1800 seconds; `0` disables it); startup connection retries have a separate
+60-second limit. Timeout or Ctrl+C stops the HTTP request, not the A2A task.
 
 For completed Tasks in **both A2A 0.3 and 1.0**, default output prefers answer
 artifacts over generic status messages such as “Done.” Other Tasks prefer status
@@ -846,15 +872,20 @@ trailers or change SSE termination.
 
 ## Running Local Agents
 
-`azd ai agent run` starts the selected agent locally and, by default, opens the
-Agent Inspector after the local agent port is accepting connections. The
-inspector launch is best-effort: if `azure.ai.inspector` is not installed or
-fails to start, the agent process keeps running and azd prints install guidance.
+`azd ai agent run` starts the selected agent locally. A2A-only agents open no
+browser client; once ready, azd suggests a local invocation command with the
+selected port and preview-compatible wire version. `--inspector-port` is rejected
+because no Inspector is opened.
 
-Use `--no-inspector` to run only the local agent process:
+Other agents retain their existing client routing: Activity uses Microsoft 365
+Agents Playground; other profiles use Agent Inspector. Client launch is
+best-effort: if unavailable, the agent keeps running.
+
+Use `--no-client` to run only the local agent process for any profile
+(`--no-inspector` remains a deprecated alias):
 
 ```bash
-azd ai agent run --no-inspector
+azd ai agent run --no-client
 ```
 
 ## Publishing a Digital Worker
@@ -930,14 +961,16 @@ azd ai agent run --port 9091 --inspector-port 9002
 `--inspector-port` is rejected when it cannot be honored:
 
 - with `--no-client` (or the deprecated `--no-inspector`), since no local client
-  is opened and the port would go unused; and
+  is opened and the port would go unused;
+- for A2A-only agents, which never open Agent Inspector; and
 - for agents that use Agent Inspector, when it matches `--port`, since the agent
   binds that address first and the inspector would then fail to bind it.
 
 azd also warns, without failing the run, when `--inspector-port` cannot take
-effect: activity-protocol agents open the Microsoft 365 Agents Playground rather
-than the Agent Inspector, and `--port 8087` on its own collides with the
-inspector's own default UI port.
+effect: activity-protocol agents open the Microsoft 365 Agents Playground
+rather than the Agent Inspector.
+For Inspector profiles, `--port 8087` on its own also warns about a collision
+with the inspector's default UI port.
 
 ### Local client route telemetry
 
@@ -945,9 +978,10 @@ When installed from the official registry, the extension reports the
 `local_client.route.selected` usage event after `azd ai agent run` resolves the
 service and protocol profile. Its `ext.route` attribute is exactly one of:
 
-- `inspector` for a non-activity agent;
+- `inspector` for a non-activity agent that is not A2A-only;
 - `playground` for an activity-protocol agent; or
-- `suppressed` when `--no-client` or the deprecated `--no-inspector` is set.
+- `suppressed` for A2A-only agents, or when `--no-client` or the deprecated
+  `--no-inspector` is set.
 
 The event is emitted before checking client availability, starting the local
 agent, or launching a client. It records route selection, not successful client

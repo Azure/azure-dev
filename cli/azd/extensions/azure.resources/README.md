@@ -36,17 +36,26 @@ application hosts, and existing Azure resources. It writes resource declarations
 only to `infra.layers[].config`, with service configuration under `services`.
 Resource links are local to the selected infrastructure entry.
 
-Without `--layer`, enter a layer name (default `default-resources`). An explicit
+Without `--layer`, enter a layer name (defaulting to the existing resources layer,
+or `default-resources` for a new project). An explicit
 `--layer` takes precedence. An existing resources layer is updated only after
 confirmation; choosing a layer owned by another provider requires confirmation
 to replace that entry. Both confirmations default to No. Unrelated layers and
 configuration are preserved.
+Only one resources infrastructure entry is supported. Adding a second is rejected
+before Azure context selection or project changes, including entries that inherit
+`infra.provider`. Initialization also rejects hand-authored projects with multiple
+resources entries.
 
 After the wizard completes, changes are saved automatically without displaying
 the full YAML or asking for final confirmation. A short summary lists the layer,
 resources, and services added or updated. Canceling during configuration leaves
 the project and environment unchanged. After saving, choose whether to provision,
 preview first, or apply the changes later.
+When adding a host, preview covers all infrastructure layers because the follow-up
+`azd up` provisions and deploys the whole project. Resource-only additions preview
+and provision the selected layer. The selected `--environment` or `AZD_ENVIRONMENT`
+is used for resource discovery, environment values, and follow-up commands.
 The wizard requires interactive input and rejects `--no-prompt`.
 Existing flat infrastructure must first be moved into `infra.layers`; top-level
 project `layers` authoring is not supported by this command.
@@ -64,6 +73,13 @@ go build
 go test ./...
 ```
 
+The local `build.sh` and `build.ps1` scripts populate version, source commit, and
+UTC build date metadata, following the Go extension scaffold. `EXTENSION_VERSION`
+overrides the version (default: `version.txt`), `EXTENSION_PLATFORM` selects one
+target such as `linux/arm64` (default: all six supported targets), and `OUTPUT_DIR`
+sets the output directory (default: `bin` beside the script). CI populates the
+same three metadata fields through the shared build script.
+
 For local installation, build and package with the developer extension, then
 install the bundle so both the commands and provider are registered:
 
@@ -75,6 +91,8 @@ azd extension install ./bin/azure-resources-dev.zip --force
 
 A Bicep executable is required at runtime for compilation.
 Azure credentials and environment access are requested through the azd SDK.
+ARM and Key Vault clients use the selected environment's cloud configuration,
+falling back to project and user configuration, then Azure Public Cloud.
 Tests use local fixtures and mocks rather than deploying Azure resources.
 
 ### Project editing and the azd API gap
@@ -104,7 +122,8 @@ locally. RPC saves may reformat the file and discard comments, and concurrent ed
 made after the initial read may be overwritten.
 
 The layer is saved first, followed by changed services and then environment values.
-A service failure reports that the infrastructure layer was already saved. Canceling
+A service failure restores the original infrastructure and services; if restoration
+also fails, the error requests manual cleanup. Canceling
 the wizard performs no writes; all project write payloads are prepared before the
 first mutation.
 
@@ -172,7 +191,8 @@ tool execution is reported explicitly.
   can move to the host when it guarantees setup across the relevant flows.
 - The stable SDK shares one provider object per provider name for the listen
   session. Only the first infrastructure entry initializes that object; independent
-  execution of multiple `resources` entries is deferred with instance isolation.
+  execution of multiple `resources` entries is deferred with instance isolation,
+  so projects with multiple entries are rejected.
 - Provider initialization resolves and saves the shared subscription and location,
   matching built-in provider setup before parallel layer steps. It uses host
   account and environment services, but does not compile Bicep or deploy resources.
@@ -191,7 +211,7 @@ discover resources inside the extension's configuration. See the
 [migration guide](./migration.md) before moving existing declarations.
 
 Provider-owned outputs and existing-resource bindings use entry-scoped environment
-keys: `AZURE_RESOURCES_<ENTRY>__<KEY>`. The entry is uppercased, with each hyphen
+keys: `AZURE_RESOURCES_<ENTRY>__<KEY>`. The entry is converted to uppercase, with each hyphen
 replaced by an underscore (repeated and trailing hyphens are preserved). The key
 omits the former `AZURE_` prefix. For example, entry `data` uses
 `AZURE_RESOURCES_DATA__RESOURCE_STORAGE_ID` and
@@ -205,7 +225,7 @@ For environments created with earlier preview builds, copy existing-resource ID
 bindings and the Key Vault name into the appropriate entry-scoped keys before
 provisioning. Copying the vault name preserves the existing database password
 lookup; do not share another entry's vault key. Update custom references to the
-old output keys. Reprovision each entry to replace its deployment's old output
+old output keys. Provision each entry again to replace its deployment's old output
 names before relying on entry-isolated refresh or `down`.
 
 ## Release handoff

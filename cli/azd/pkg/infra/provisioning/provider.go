@@ -162,7 +162,7 @@ func (o *Options) GetLayer(name string) (Options, error) {
 //
 // This should be called immediately right after Unmarshal() before any defaulting is performed.
 func (o *Options) Validate() error {
-	return o.validate(false)
+	return o.validate(true)
 }
 
 // ValidateProjectLayers validates infrastructure entries declared under top-level project layers.

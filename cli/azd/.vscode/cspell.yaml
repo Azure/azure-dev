@@ -645,6 +645,20 @@ overrides:
     words:
       - dcount
       - isnotempty
+  - filename: extensions/azure.resources/internal/resources/config.go
+    words:
+      - abbrs
+  - filename: extensions/azure.resources/internal/resources/generator.go
+    words:
+      - GUNICORN
+      - MULTIWORKERS
+  - filename: extensions/azure.resources/internal/resources/scaffold/scaffold.go
+    words:
+      - environmentname
+      - aideploymentslocation
+      - principalid
+      - principaltype
+      - aifoundryprojectendpoint
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

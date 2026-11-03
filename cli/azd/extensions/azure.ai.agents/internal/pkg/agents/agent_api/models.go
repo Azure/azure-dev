@@ -57,12 +57,6 @@ func (p AgentProtocol) IsInvocable() bool {
 	}
 }
 
-// IsLocalInvocable reports whether the protocol can be invoked against a locally
-// running agent (azd ai agent run).
-func (p AgentProtocol) IsLocalInvocable() bool {
-	return p.IsInvocable()
-}
-
 // AgentKind represents the different types of agents
 type AgentKind string
 

@@ -709,6 +709,99 @@ func TestFrameworkArtifactConversionsPreserveContracts(t *testing.T) {
 	require.Equal(t, "directory", original[0].Metadata["kind"])
 }
 
+func TestJavaFrameworkInitializePreservesNonSpringJavaDockerConfig(t *testing.T) {
+	projectDir, runner := setupJavaFrameworkInitializeTest(t)
+	service := &azdext.ServiceConfig{
+		Name:         "worker",
+		Language:     "java",
+		Host:         "containerapp",
+		RelativePath: ".",
+		Docker:       &azdext.DockerProjectOptions{Path: "Dockerfile"},
+	}
+
+	provider := newJavaFrameworkService(nil, runner)
+	require.NoError(t, provider.Initialize(t.Context(), service))
+	require.Equal(t, projectDir, provider.service.Project.Path)
+}
+
+func TestJavaFrameworkInitializeUsesRawAuthoredSpringConfiguration(t *testing.T) {
+	projectDir, runner := setupJavaFrameworkInitializeTest(t)
+	service := &azdext.ServiceConfig{
+		Name:         "api",
+		Language:     "java",
+		Host:         SpringHost,
+		RelativePath: ".",
+		Docker:       &azdext.DockerProjectOptions{},
+	}
+	projectConfig := &azdext.ProjectConfig{
+		Name:     "spring-test",
+		Path:     projectDir,
+		Services: map[string]*azdext.ServiceConfig{"api": service},
+	}
+
+	t.Run("AbsentDockerBlock", func(t *testing.T) {
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, "azure.yaml"), []byte(`
+name: spring-test
+services:
+  api:
+    project: .
+    language: java
+    host: springbootapp
+`), 0o600))
+
+		provider := newJavaFrameworkService(packagingTestClient(t, projectConfig), runner)
+		require.NoError(t, provider.Initialize(t.Context(), service))
+	})
+
+	t.Run("UnsupportedAuthoredProperty", func(t *testing.T) {
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, "azure.yaml"), []byte(`
+name: spring-test
+services:
+  api:
+    project: .
+    language: java
+    host: springbootapp
+    unsupported: true
+`), 0o600))
+
+		provider := newJavaFrameworkService(packagingTestClient(t, projectConfig), runner)
+		err := provider.Initialize(t.Context(), service)
+		require.ErrorContains(t, err, "unsupported")
+		require.NotContains(t, err.Error(), "true")
+	})
+}
+
+func setupJavaFrameworkInitializeTest(t *testing.T) (string, *commandRunnerFunc) {
+	t.Helper()
+	projectDir := t.TempDir()
+	t.Setenv("AZD_EXEC_PROJECT_DIR", projectDir)
+	// #nosec G306 -- owner-executable Maven wrapper fixture; contains no credentials.
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "mvnw"), []byte("wrapper"), 0o700))
+	javaHome := filepath.Join(projectDir, "jdk")
+	require.NoError(t, os.MkdirAll(filepath.Join(javaHome, "bin"), 0o700))
+	javacName := "javac"
+	if runtime.GOOS == "windows" {
+		javacName += ".exe"
+	}
+	// #nosec G306 -- owner-executable JDK fixture; contains no credentials.
+	require.NoError(t, os.WriteFile(filepath.Join(javaHome, "bin", javacName), []byte("javac"), 0o700))
+	t.Setenv("JAVA_HOME", javaHome)
+
+	return projectDir, &commandRunnerFunc{
+		run: func(_ context.Context, args azdexec.RunArgs) (azdexec.RunResult, error) {
+			switch {
+			case len(args.Args) == 1 && args.Args[0] == "--version" &&
+				filepath.Base(args.Cmd) == "mvnw":
+				return azdexec.NewRunResult(0, "Apache Maven 3.9.9 (test)\n", ""), nil
+			case len(args.Args) == 1 && args.Args[0] == "--version":
+				return azdexec.NewRunResult(0, "javac 17.0.10\n", ""), nil
+			default:
+				return azdexec.RunResult{}, fmt.Errorf("unexpected command: %s %v", args.Cmd, args.Args)
+			}
+		},
+	}
+}
+
 func TestNativeServiceConfigPreservesMixedJavaHosts(t *testing.T) {
 	projectDir := t.TempDir()
 	t.Setenv("AZD_EXEC_PROJECT_DIR", projectDir)
@@ -790,7 +883,7 @@ func TestJavaFrameworkInitializeAndRequirementsAreConcurrentSafe(t *testing.T) {
 	service := &azdext.ServiceConfig{
 		Name:         "service",
 		RelativePath: ".",
-		Host:         SpringHost,
+		Host:         "containerapp",
 		Language:     "java",
 	}
 

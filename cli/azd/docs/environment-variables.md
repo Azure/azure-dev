@@ -250,13 +250,13 @@ unpublished development extension must be installed separately.
 
 | Variable | Description |
 | --- | --- |
-| `DATABASE_ADMIN_NAME`, `DATABASE_ADMIN_OBJECT_ID` | Read and validated directly by the extension for managed-identity provisioning. Prepared from the signed-in developer when absent; conflicts with the selected identity are rejected. The Weidong REST template also substitutes these values into its Bicep administrator parameters. |
+| `DATABASE_ADMIN_NAME`, `DATABASE_ADMIN_OBJECT_ID` | Read and validated directly by the extension for managed-identity provisioning. Prepared from the signed-in developer when absent; conflicts with the selected identity are rejected. |
 | `DATABASE_SERVER_ID`, `APPLICATION_IDENTITY_ID` | Template outputs used to verify the database server and application identity selected by the effective Spring configuration. Core azd does not interpret them as universal settings. |
-| `DATABASE_HOST`, `APPLICATION_IDENTITY_CLIENT_ID`, `APPLICATION_PRINCIPAL_ID`, `CONTAINER_APP_ENVIRONMENT_ID` | Original REST template outputs consumed and verified by the extension. No additional resource-ID aliases or ownership tags need to be added to that template. |
-| `POSTGRES_BOOTSTRAP_CLIENT_IP` | Optional public IPv4 override for temporary single-IP access on narrowly firewalled servers. The extension validates supplied overrides locally. An existing verified all-public-IPv4 rule bypasses IP discovery and temporary firewall creation; the extension never widens access automatically. |
+| `DATABASE_HOST`, `APPLICATION_IDENTITY_CLIENT_ID`, `APPLICATION_PRINCIPAL_ID`, `CONTAINER_APP_ENVIRONMENT_ID` | Deployment outputs consumed and verified by the extension. Core azd does not interpret them as universal settings. |
+| `POSTGRES_BOOTSTRAP_CLIENT_IP` | Optional public IPv4 override for temporary single-IP access on servers protected by narrow firewall rules. The extension validates supplied overrides locally. An existing verified all-public-IPv4 rule bypasses IP discovery and temporary firewall creation; the extension never widens access automatically. |
 | `SPRING_DATABASE_TYPE`, `SPRING_DATABASE_AUTHENTICATION`, `SPRING_DATABASE_NAME`, `SPRING_DATABASE_USERNAME` | Extension-prepared state for the datasource discovered from effective Spring Boot configuration. These values must agree with the packaged application and verified deployment. |
 | `SPRING_DATABASE_ADMINISTRATOR_NAME`, `SPRING_DATABASE_ADMINISTRATOR_OBJECT_ID`, `SPRING_DATABASE_USER_ACCESS_TENANT_ID` | Extension-prepared developer administrator and user-access tenant state. Do not copy these values between environments or identities. |
-| `SPRING_DATABASE_PASSWORD`, `SPRING_DATABASE_APP_PASSWORD` | Credentials for the extension's password-authenticated fixtures. Rejected for managed-identity authentication; the REST demo does not use a password fallback. |
+| `SPRING_DATABASE_PASSWORD`, `SPRING_DATABASE_APP_PASSWORD` | Credentials for password-authenticated deployments. Rejected for managed-identity authentication; the extension does not add a password fallback. |
 | `SPRING_DATABASE_PROVISIONED_TYPE`, `SPRING_DATABASE_PROVISIONED_ACCESS`, `SPRING_DATABASE_ACCESS_CONFIGURED` | Extension-owned selection, versioned access fingerprint and readiness state. Not schema-initialization receipts and not substitutes for current deployment verification. Do not set these manually to bypass provisioning. |
 
 See the [Spring Boot extension README](../extensions/azure.springboot/README.md)

@@ -4,6 +4,8 @@
 package spring
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -35,12 +37,6 @@ func validateServiceConfiguration(service *azdext.ServiceConfig) error {
 		return validationError("missing_service_config", "service configuration is missing", "check azure.yaml")
 	}
 	var unsupported []string
-	if service.Docker != nil {
-		unsupported = append(unsupported, "docker")
-	}
-	if service.Config != nil {
-		unsupported = append(unsupported, "config")
-	}
 	if service.AdditionalProperties != nil {
 		for key := range service.AdditionalProperties.GetFields() {
 			unsupported = append(unsupported, key)
@@ -51,6 +47,42 @@ func validateServiceConfiguration(service *azdext.ServiceConfig) error {
 	}
 	slices.Sort(unsupported)
 	return unsupportedServiceConfigurationError(service.GetName(), slices.Compact(unsupported))
+}
+
+func validateAuthoredSpringServiceConfiguration(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	service *azdext.ServiceConfig,
+) error {
+	if service == nil {
+		return validationError("missing_service_config", "service configuration is missing", "check azure.yaml")
+	}
+	if service.GetHost() != SpringHost {
+		return nil
+	}
+	if client == nil {
+		return errors.New("azd client is required to validate authored Spring service configuration")
+	}
+	response, err := client.Project().GetConfigSection(ctx, &azdext.GetProjectConfigSectionRequest{Path: "services"})
+	if err != nil {
+		return fmt.Errorf("reading authored services configuration: %w", nonDisclosureError(err))
+	}
+	if !response.GetFound() || response.GetSection() == nil {
+		return validationError(
+			"missing_services_configuration",
+			"authored services configuration is unavailable",
+			"restore the services section in azure.yaml",
+		)
+	}
+	authored, ok := response.GetSection().AsMap()[service.GetName()].(map[string]any)
+	if !ok {
+		return validationError(
+			"missing_service_configuration",
+			fmt.Sprintf("authored configuration for service %q is unavailable", service.GetName()),
+			"restore the service object in azure.yaml",
+		)
+	}
+	return validateRawServiceConfiguration(service.GetName(), authored)
 }
 
 func unsupportedServiceConfigurationError(serviceName string, keys []string) error {

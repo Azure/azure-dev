@@ -21,59 +21,6 @@ Packaging requires Docker, `pom.xml`, `mvnw`,
 Bicep (azd can install it when missing). Application SQL and infrastructure
 remain project-owned.
 
-## Template compatibility example
-
-The [pinned Weidong REST overlay](test/functional/testdata/spring-petclinic-rest-weidong/README.md)
-changes only `azure.yaml` in
-`weidongxu-microsoft/petclinic-rest-azd@427ef7f7e6d3244e5aabd101f5a73435320599fa`.
-It preserves Bicep, parameter files, scripts, Java sources, and unrelated
-project files:
-
-```yaml
-name: petclinic-rest
-metadata:
-  template: petclinic-rest-azd@0.1.0
-requiredVersions:
-  azd: ">=1.37.2"
-  extensions:
-    azure.springboot: ">=0.1.0"
-infra:
-  provider: bicep
-  path: infra
-  module: main
-services:
-  spring-petclinic-rest-app:
-    project: .
-    language: java
-    host: springbootapp
-    module: application
-```
-
-The extension prepares the original `DATABASE_ADMIN_OBJECT_ID` and
-`DATABASE_ADMIN_NAME` inputs. It verifies the selected current ARM deployment
-and live resources against `DATABASE_SERVER_ID`, `DATABASE_HOST`,
-`APPLICATION_PRINCIPAL_ID`, `CONTAINER_APP_ENVIRONMENT_ID`, and the existing
-registry outputs. User-assigned identity mode additionally verifies
-`APPLICATION_IDENTITY_ID` and `APPLICATION_IDENTITY_CLIENT_ID`. Saved
-environment values alone are not ownership evidence. No new root aliases or
-resource tags are required. The authored module remains
-`infra/application.bicep`; its parameter file retains
-`SERVICE_SPRING_PETCLINIC_REST_APP_IMAGE_NAME`. The HTTPS endpoint retains
-`/petclinic`, with port 9966 and the original profiles/JDBC managed-identity plugin.
-The application selects PostgreSQL, the runtime username, verify-full TLS and
-Hikari's managed-identity plugin through its unchanged Spring properties.
-
-> [!WARNING]
-> This demo's unchanged Bicep creates `bootstrap-local-ip` from `0.0.0.0` to
-> `255.255.255.255` for setup. With the YAML hooks removed, automatic database
-> setup takes responsibility for removing that exact current-deployment-owned
-> broad rule on success, failure or cancellation and verifying its absence.
-> The existing exact runtime-egress rules are verified, not deleted or replaced.
-> Entra-only authentication and hostname-verified TLS protect authentication
-> and transport, **not source-IP access**. Process-local cleanup cannot guarantee
-> recovery after host or credential loss; this is not an automatically expiring
-> firewall rule or private networking. Unknown rules are never adopted or deleted.
-
 ## Service configuration and datasource discovery
 
 `springbootapp` is an automatic-only host. A service may use the standard azd
@@ -113,20 +60,15 @@ UAMI, Entra-only server authentication, and verify-full TLS. An omitted client
 ID selects system-assigned identity; an explicitly configured empty or
 unresolved client ID is rejected. A passwordless flag alone is insufficient.
 
-Official azd 1.37.2 native Maven packaging and the generated Java 17 runtime
-have passed local PostgreSQL REST CRUD and restart-persistence checks. A separate
-runtime-H2 MVC fixture also passed native packaging and actual H2 database health
-without changing its application or dependencies. The PostgreSQL
-checks use separate external test configuration with password authentication
-and `sslmode=disable`; they do not establish Azure managed identity or
-verify-full TLS. A probe using the packaged Spring libraries also covers
-repeated command-line options, empty JVM properties and indexed environment
-profile groups. Full live lifecycle acceptance remains pending. The extension
+Focused datasource and deployment tests cover repeated command-line options,
+empty JVM properties, indexed environment profile groups, and both managed
+identity modes. Full live lifecycle acceptance remains pending. The extension
 maps a verified system-assigned or attached user-assigned identity to an
 ordinary non-admin PostgreSQL login, or verifies the effective Spring password
 login when the application uses password authentication. The verified azd
-developer user remains the Entra administrator. Existing password roles must authenticate
-with the effective Spring credential; a mismatch fails without rotating it.
+developer user remains the Entra administrator. Existing password roles must
+authenticate with the effective Spring credential; a mismatch fails without
+rotating it.
 
 ## Application-owned startup initialization
 
@@ -154,26 +96,10 @@ is a troubleshooting-only exact public IPv4 override, not a firewall policy.
 
 ## Commands and validation
 
-Use separate `azd init`, `up`, `package`, `deploy`/redeploy and `down` operations.
-Local image packaging does not require provisioning. No Azure operations are
-part of the offline fixture checks:
+Use separate `azd init`, `up`, `package`, `deploy`/redeploy and `down`
+operations. Local image packaging does not require provisioning. The extension
+test suite is self-contained and does not vendor application repositories:
 
 ```shell
-go test ./test/functional -run 'TestSpringPetclinicManagedIdentityFixtureIsPortable|TestSpringPetclinicRest' -count=1
+go test ./...
 ```
-
-The opt-in `AZD_TEST_SPRING_PETCLINIC_PACKAGE=1` native REST gate additionally
-starts disposable local PostgreSQL and application containers, checks JSON
-CRUD and restart persistence, and removes only its labeled resources and
-nonce-scoped image tags. Set `CLI_TEST_AZD_PATH` to the official azd executable.
-It requires Docker and a host JDK suitable for the unchanged Maven project.
-For a child-session handoff, optionally set `AZD_TEST_SPRING_ARTIFACTS_DIR` to an
-existing absolute evidence directory. Each gate retains its exact extension
-build-input snapshot and installed bundle in a new private subdirectory there.
-These retained artifacts do not establish acceptance if the corresponding gate
-fails, and contain no azd configuration or Azure authentication state.
-
-The original [MVC managed-identity fixture](test/functional/testdata/spring-petclinic-managedidentity/README.md)
-is retained and migrated to the same application-owned policy. The REST
-fixture uses REST APIs, not MVC HTML forms. Offline/source checks are not live
-deployment acceptance; that requires separate authorization and owned-resource cleanup.

@@ -196,41 +196,6 @@ func TestAutomaticDiscoveryBindsSystemAssignedIdentityWithoutClientID(t *testing
 	require.ErrorContains(t, err, "does not match")
 }
 
-func TestPinnedRestSourceInfersManagedPostgresWithoutTestOnlyH2(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join(
-		"..", "..", "test", "functional", "testdata", "spring-petclinic-rest-weidong", "upstream",
-	))
-	require.NoError(t, err)
-	project, service := createMavenProject(t)
-	for _, path := range []string{
-		"pom.xml", filepath.Join("src", "main", "resources", "application.properties"),
-		filepath.Join("infra", "main.parameters.json"),
-	} {
-		content, err := os.ReadFile(filepath.Join(root, path))
-		require.NoError(t, err)
-		target := filepath.Join(project.Path, path)
-		require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o700))
-		// #nosec G703 -- path is one of the three fixed fixture-relative names above; project.Path is a fresh test root.
-		require.NoError(t, os.WriteFile(target, content, 0o600))
-	}
-
-	dependencies, err := readSpringDependencies(t.Context(), root)
-	require.NoError(t, err)
-	require.True(t, dependencies.postgresql)
-	require.True(t, dependencies.azureIdentity)
-	require.False(t, dependencies.h2)
-	require.False(t, dependencies.azureJDBC)
-	selected, err := new(Runtime).discoverServiceDatabase(t.Context(), project, service, nil, nil, false)
-	require.NoError(t, err)
-	require.Equal(t, databasePostgreSQL, selected.Type)
-	require.Equal(t, databaseAuthenticationManagedIdentity, selected.Authentication)
-	require.Equal(t, "petclinic_app", selected.Username)
-	require.True(t, selected.ServerDeferred)
-	preparation, err := automaticProvisionInputs(t.Context(), project, selected)
-	require.NoError(t, err)
-	require.Equal(t, databaseAuthenticationManagedIdentity, preparation.Authentication)
-}
-
 func TestExplicitDatasourceChecksEffectiveApplicationSettings(t *testing.T) {
 	project, service := automaticPostgresProject(t)
 	binding := &deploymentBinding{

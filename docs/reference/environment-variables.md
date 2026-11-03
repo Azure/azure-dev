@@ -75,7 +75,7 @@ For details on the external authentication protocol, see [cli/azd/docs/external-
 ## Extension-Specific Variables
 
 The unpublished `azure.springboot` development extension reads and prepares the
-REST template's `DATABASE_ADMIN_NAME` and `DATABASE_ADMIN_OBJECT_ID` inputs,
+`DATABASE_ADMIN_NAME` and `DATABASE_ADMIN_OBJECT_ID` inputs,
 verifies database and identity outputs against the datasource discovered from
 effective Spring configuration, and owns `SPRING_DATABASE_*` readiness state.
 These are not universal core azd settings.

@@ -37,12 +37,11 @@ func TestServiceConfigurationRejectsUnsupportedTopLevelProperties(t *testing.T) 
 	err := validateRawServiceConfiguration("petclinic", map[string]any{
 		"host":     SpringHost,
 		"language": "java",
-		"config":   nil,
-		"database": map[string]any{},
-		"docker":   map[string]any{},
+		"alpha":    nil,
+		"beta":     map[string]any{},
 		"unknown":  true,
 	})
-	require.ErrorContains(t, err, "config, database, docker, unknown")
+	require.ErrorContains(t, err, "alpha, beta, unknown")
 	require.NotContains(t, err.Error(), "true")
 
 	config, configErr := structpb.NewStruct(map[string]any{"secret": "do-not-print"})
@@ -54,7 +53,7 @@ func TestServiceConfigurationRejectsUnsupportedTopLevelProperties(t *testing.T) 
 		AdditionalProperties: config,
 	}
 	err = validateServiceConfiguration(service)
-	require.ErrorContains(t, err, "config, docker, secret")
+	require.ErrorContains(t, err, "secret")
 	require.NotContains(t, err.Error(), "do-not-print")
 }
 

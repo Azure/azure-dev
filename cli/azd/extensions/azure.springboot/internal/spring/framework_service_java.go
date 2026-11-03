@@ -59,7 +59,7 @@ func (p *javaFrameworkService) Initialize(ctx context.Context, serviceConfig *az
 	defer p.mu.Unlock()
 
 	p.service = nil
-	if err := validateServiceConfiguration(serviceConfig); err != nil {
+	if err := validateAuthoredSpringServiceConfiguration(ctx, p.client, serviceConfig); err != nil {
 		return err
 	}
 	service, err := nativeServiceConfig(serviceConfig)

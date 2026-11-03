@@ -4,6 +4,7 @@
 package cli_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -40,20 +42,25 @@ func Test_CLI_SpringPetclinic_Live(t *testing.T) {
 	defer cancel()
 	installSpringExtensionFixture(t, installCtx, configDir)
 
-	runSpringPetclinicLiveMode(t, configDir)
+	for _, mode := range []string{"h2", "postgresql"} {
+		t.Run(mode, func(t *testing.T) {
+			runSpringPetclinicLiveMode(t, configDir, mode)
+		})
+	}
 }
 
-func runSpringPetclinicLiveMode(t *testing.T, configDir string) {
+func runSpringPetclinicLiveMode(t *testing.T, configDir, mode string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 75*time.Minute)
 	defer cancel()
 
-	envName := "petclinic-rest-" + strings.ToLower(rand.Text()[:8])
-	cli := initPetclinicRestTemplate(
-		t, ctx, configDir, envName,
+	envName := "petclinic-" + mode + "-" + strings.ToLower(rand.Text()[:8])
+	cli := initPetclinicTemplate(
+		t, ctx, configDir, envName, mode,
 		"AZURE_SUBSCRIPTION_ID="+os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID"),
 		"AZURE_LOCATION="+os.Getenv("AZD_TEST_AZURE_LOCATION"),
 	)
+	projectDir := cli.WorkingDirectory
 	ownedResources := map[string]string{}
 	expectedPassword := ""
 	t.Cleanup(func() {
@@ -76,31 +83,24 @@ func runSpringPetclinicLiveMode(t *testing.T, configDir string) {
 		assertSpringSecretNotDisclosed(t, up, password)
 	}
 
-	endpoint := strings.TrimSuffix(values["SERVICE_SPRING_PETCLINIC_REST_APP_ENDPOINT_URL"], "/")
+	endpoint := strings.TrimSuffix(values["SERVICE_PETCLINIC_URI"], "/")
 	require.NotEmpty(t, endpoint)
-	require.NotEmpty(t, password)
-	require.NotEmpty(t, values["AZURE_POSTGRES_SERVER_ID"])
-	expectedPassword = password
-	verifySpringLiveFirewall(t, ctx, cli, values)
+	if mode == "h2" {
+		require.Empty(t, password)
+		require.Empty(t, values["AZURE_POSTGRES_SERVER_ID"])
+	} else {
+		require.NotEmpty(t, password)
+		require.NotEmpty(t, values["AZURE_POSTGRES_SERVER_ID"])
+		expectedPassword = password
+		verifySpringLiveFirewall(t, ctx, cli, values)
+	}
 	ownedResources[values["AZURE_CONTAINER_APP_ID"]] = "2024-03-01"
-	ownedResources[values["AZURE_POSTGRES_SERVER_ID"]] = "2023-12-01-preview"
+	if values["AZURE_POSTGRES_SERVER_ID"] != "" {
+		ownedResources[values["AZURE_POSTGRES_SERVER_ID"]] = "2023-12-01-preview"
+	}
 
-	apiEndpoint := endpoint + "/api"
-	client := &http.Client{Timeout: 30 * time.Second}
-	input := map[string]any{
-		"firstName": "Live",
-		"lastName":  "Validation",
-		"address":   "1 Test Street",
-		"city":      "Seattle",
-		"telephone": "1234567890",
-	}
-	created := petclinicRestRequest(t, client, http.MethodPost, apiEndpoint, "/owners", input, http.StatusCreated)
-	var owner struct {
-		ID int `json:"id"`
-	}
-	require.NoError(t, json.Unmarshal(created, &owner))
-	require.Positive(t, owner.ID)
-	ownerPath := fmt.Sprintf("/owners/%d", owner.ID)
+	ownerID, marker := createPetclinicMvcRecord(t, endpoint)
+	requirePetclinicRecord(t, endpoint, ownerID, marker, true)
 	revisionBefore := springLatestRevision(t, ctx, cli, values["AZURE_CONTAINER_APP_ID"])
 
 	deploy, err := cli.RunCommand(ctx, "deploy", "--no-prompt")
@@ -111,50 +111,57 @@ func runSpringPetclinicLiveMode(t *testing.T, configDir string) {
 	revisionAfter := waitForSpringRevisionChange(t, ctx, cli, values["AZURE_CONTAINER_APP_ID"], revisionBefore)
 	require.NotEqual(t, revisionBefore, revisionAfter, "deploy must replace the running revision")
 	waitForSpringReadiness(t, endpoint)
-	petclinicRestRequest(t, client, http.MethodGet, apiEndpoint, ownerPath, nil, http.StatusOK)
+	requirePetclinicRecord(t, endpoint, ownerID, marker, mode == "postgresql")
+
+	if mode != "postgresql" {
+		return
+	}
 
 	reprovision, err := cli.RunCommand(ctx, "provision", "--no-prompt")
 	require.NoError(t, err)
 	assertSpringSecretNotDisclosed(t, reprovision, password)
 	waitForSpringReadiness(t, endpoint)
-	petclinicRestRequest(t, client, http.MethodGet, apiEndpoint, ownerPath, nil, http.StatusOK)
+	requirePetclinicRecord(t, endpoint, ownerID, marker, true)
 
 	repeated, err := cli.RunCommand(ctx, "up", "--no-prompt")
 	require.NoError(t, err, "repeated azd up failed")
 	assertSpringSecretNotDisclosed(t, repeated, password)
 	waitForSpringReadiness(t, endpoint)
-	petclinicRestRequest(t, client, http.MethodGet, apiEndpoint, ownerPath, nil, http.StatusOK)
+	requirePetclinicRecord(t, endpoint, ownerID, marker, true)
 	verifySpringLiveFirewall(t, ctx, cli, springLiveEnvironment(t, ctx, cli))
-	petclinicRestRequest(t, client, http.MethodDelete, apiEndpoint, ownerPath, nil, http.StatusNoContent)
-}
-
-func initPetclinicRestTemplate(
-	t *testing.T,
-	ctx context.Context,
-	configDir string,
-	envName string,
-	environment ...string,
-) *azdcli.CLI {
-	t.Helper()
-	projectDir := tempDirWithDiagnostics(t)
-	materializePetclinicRestFixture(t, ctx, projectDir)
-	cli := newSpringCLI(t)
-	cli.WorkingDirectory = projectDir
-	cli.Env = environmentWithout(cli.Env, "AZD_CONFIG_DIR")
-	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+configDir)
-	cli.Env = append(cli.Env, environment...)
-	result, err := cli.RunCommand(ctx, "init", "-e", envName, "--no-prompt")
-	require.NoError(t, err, result.Stdout+result.Stderr)
-	return cli
+	verifySpringFreshRunnerPasswordRestoration(
+		t,
+		ctx,
+		cli,
+		projectDir,
+		envName,
+		values,
+		endpoint,
+		ownerID,
+		marker,
+	)
 }
 
 func springLiveEnvironment(t *testing.T, ctx context.Context, cli *azdcli.CLI) map[string]string {
 	t.Helper()
-	result, err := cli.RunCommand(ctx, "env", "get-values", "--output", "json")
+	stdout, err := runSpringCommandWithoutLogging(ctx, cli, "env", "get-values", "--output", "json")
 	require.NoError(t, err)
 	values := map[string]string{}
-	require.NoError(t, json.Unmarshal([]byte(result.Stdout), &values))
+	require.NoError(t, json.Unmarshal([]byte(stdout), &values))
 	return values
+}
+
+func runSpringCommandWithoutLogging(ctx context.Context, cli *azdcli.CLI, args ...string) (string, error) {
+	command := osexec.CommandContext(ctx, cli.AzdPath, args...) // #nosec G204 -- Test-owned azd arguments.
+	command.Dir = cli.WorkingDirectory
+	command.Env = cli.Env
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	if err := command.Run(); err != nil {
+		return "", fmt.Errorf("running azd command: %w", err)
+	}
+	return stdout.String(), nil
 }
 
 func springAzdToken(t *testing.T, ctx context.Context, cli *azdcli.CLI) string {
@@ -791,9 +798,10 @@ func requirePetclinicRecord(t *testing.T, endpoint, ownerID, marker string, pres
 
 func waitForSpringReadiness(t *testing.T, endpoint string) {
 	t.Helper()
+	client := &http.Client{Timeout: 30 * time.Second}
 	deadline := time.Now().Add(10 * time.Minute)
 	for time.Now().Before(deadline) {
-		response, err := http.Get(endpoint + "/actuator/health/readiness")
+		response, err := client.Get(endpoint + "/actuator/health/readiness")
 		if err == nil {
 			_ = response.Body.Close()
 			if response.StatusCode == http.StatusOK {

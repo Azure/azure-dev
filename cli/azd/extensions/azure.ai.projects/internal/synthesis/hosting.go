@@ -105,10 +105,6 @@ func synthesizeAgentHosting(
 		}
 		*selection.value = value
 	}
-	if result.HostingManagementIdentityResourceID != "" &&
-		strings.EqualFold(result.HostingManagementIdentityResourceID, result.WorkloadIdentityResourceID) {
-		return nil, fmt.Errorf("services.%s.agentHosting: hosting and workload identities must be distinct", service)
-	}
 	return &result, nil
 }
 

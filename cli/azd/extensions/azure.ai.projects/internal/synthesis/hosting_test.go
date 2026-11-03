@@ -454,7 +454,7 @@ func TestHostingSupportingReferencesValidateLikeInline(t *testing.T) {
 		"      hostingManagementIdentityResourceId: "+hostingIdentityID+"same\n"+
 			"      workloadIdentityResourceId: "+strings.ToUpper(hostingIdentityID+"same")+"\n    network:", 1)
 	_, err := Synthesize(Input{RawAzureYAML: []byte(raw), ServiceName: "project"})
-	require.ErrorContains(t, err, "must be distinct")
+	require.NoError(t, err)
 }
 
 func TestHostingGraphIndependentlyReferencesSuppliedResources(t *testing.T) {

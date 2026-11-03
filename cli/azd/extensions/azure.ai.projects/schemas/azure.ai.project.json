@@ -22,7 +22,7 @@
     },
     "agentHosting": {
       "type": "object",
-      "description": "Host agents on an existing AKS cluster when azd creates a new Foundry account. Storage and the separate hosting and workload identities may each be supplied independently; omitted resources are created. Container registry selection follows the standard Foundry rules. Network configuration is optional and independent of agentHosting.",
+      "description": "Host agents on an existing AKS cluster when azd creates a new Foundry account. Storage and the hosting and workload identities may each be supplied independently; omitted resources are created. Container registry selection follows the standard Foundry rules. Network configuration is optional and independent of agentHosting.",
       "additionalProperties": false,
       "required": ["clusterResourceId"],
       "properties": {
@@ -41,7 +41,7 @@
         },
         "workloadIdentityResourceId": {
           "type": ["string", "null"],
-          "description": "Optional existing workload user-assigned identity ARM resource ID, distinct from the hosting identity. Omitted, empty or null uses the default identity's ARM creation/update path. Supports ${VAR}; an empty resolved value also uses the default. Undefined variables without a default are rejected."
+          "description": "Optional existing workload user-assigned identity ARM resource ID. Omitted, empty or null uses the default identity's ARM creation/update path. Supports ${VAR}; an empty resolved value also uses the default. Undefined variables without a default are rejected."
         }
       }
     },

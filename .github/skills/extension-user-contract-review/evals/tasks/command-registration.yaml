@@ -1,0 +1,28 @@
+id: command-registration
+name: Discover a command registered in a different changed file
+tags: [positive, command, registration, deduplication]
+inputs:
+  prompt: |
+    Review this synthetic extension PR. Complete metadata: title "Add optimization downloads".
+    Complete changed-file list:
+    cli/azd/extensions/example/internal/cmd/optimize.go
+    cli/azd/extensions/example/internal/cmd/optimize_download.go
+    cli/azd/extensions/example/internal/pkg/agents/optimize_api/models.go
+    cli/azd/extensions/example/README.md
+    In optimize.go, the optimize command already has status and list subcommands. Added RIGHT line 88:
+    cmd.AddCommand(newOptimizeDownloadCommand(extCtx))
+    The added optimize_download.go constructor returns a Cobra command with Use "download" and no positional
+    arguments or local flags. It is reachable as "azd ai agent optimize download". Tests, help snapshots, and docs
+    are also updated. The optimize API model adds a trace-window field, but an existing review thread already
+    covers that exact field and has no new changes beyond the reviewed contract.
+    Complete conversation and review history contains one matching trace-window thread marked
+    <!-- extension-user-contract-changes-reviewer --> at models.go line 42. There is no thread for download.
+graders:
+  - type: code
+    name: registered-command-survives-schema-thread
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/optimize.go' && c.line === 88 && c.side === 'RIGHT' && c.body.includes('download') && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 1"
+        - "/complete.*4 files? inspected; 1 new contract comments?; 1 existing threads?/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"

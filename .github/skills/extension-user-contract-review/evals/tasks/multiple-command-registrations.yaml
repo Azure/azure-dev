@@ -1,0 +1,26 @@
+id: multiple-command-registrations
+name: Account for each independent command registration
+tags: [positive, command, registration, coverage]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Add maintenance commands".
+    Complete changed-file list:
+    cli/azd/extensions/example/internal/cmd/root.go
+    cli/azd/extensions/example/internal/cmd/archive.go
+    cli/azd/extensions/example/internal/cmd/restore.go
+    The root command had neither child before this PR. Added RIGHT lines in root.go:
+    70: root.AddCommand(newArchiveCommand())
+    71: root.AddCommand(newRestoreCommand())
+    The constructors are in the separate added files archive.go and restore.go. Each registers a command with its
+    corresponding name and has no positional arguments, aliases, or flags. The paths are "azd data archive" and
+    "azd data restore". Tests, help snapshots, and docs are updated. Complete review history is empty.
+graders:
+  - type: code
+    name: one-comment-per-new-command
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 2"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.some(c => c.line === 70 && c.body.includes('archive') && c.body.includes('<!-- extension-user-contract-changes-reviewer -->'))"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.some(c => c.line === 71 && c.body.includes('restore') && c.body.includes('<!-- extension-user-contract-changes-reviewer -->'))"
+        - "/complete.*3 files? inspected; 2 new contract comments?; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"

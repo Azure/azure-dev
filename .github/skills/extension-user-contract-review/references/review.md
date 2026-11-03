@@ -27,12 +27,21 @@ and GitHub access. Do not install skills, change files, post comments, or ask an
 2. Read enough surrounding source and documentation to establish observable behavior. For changed Go files, prefer
    available Go LSP capabilities for definitions, references, and types; fall back to `rg` when unavailable and lower
    confidence accordingly. Do not require a particular LSP server such as `gopls`.
-3. Keep an internal coverage ledger for every changed extension file: path, inspected contract surface, evidence,
-   and disposition (`no-contract-change`, `new-finding`, `existing-thread`, or `blocked`). Account for renamed and
-   deleted contracts using the old path and behavior, then find an added, modified, or deleted diff line that
-   evidences the change. Record the diff side and that side's line number with each finding.
-   Never classify an unread, truncated, or inaccessible diff as `no-contract-change`.
-4. Identify only these structural contract changes:
+3. Perform a command-tree sweep across the complete changed-file set. Compare base and head registrations and trace
+   added or removed command registrations (including `AddCommand` calls, aliases, and shared registration helpers)
+   to their constructors and parent commands. Resolve each to its full user-visible command path, positional
+   parameters, and flags; inspect constructor declarations and argument/flag registrations even when the file is
+   separate or unchanged. A changed registration is a discovery signal, not automatically a finding: verify whether
+   that command path or input surface is actually new or removed. Account for moves and refactors that preserve the
+   public command tree without reporting them.
+4. Keep an internal coverage ledger for every changed extension file and each discovered command-tree delta:
+   path, inspected surface, evidence, and disposition (`no-contract-change`, `new-finding`, `existing-thread`, or
+   `blocked`). Also track each distinct command, positional parameter, flag, and YAML component so coverage of one
+   contract cannot implicitly cover another. Account for renamed and deleted contracts using the old path and
+   behavior, then find an added, modified, or deleted diff line that evidences the change. Record the diff side and
+   that side's line number with each finding. Never classify an unread, truncated, or inaccessible diff as
+   `no-contract-change`.
+5. Identify only these structural contract changes:
    - added or removed commands and subcommands, including command aliases
    - added or removed positional parameters
    - added or removed flags
@@ -47,17 +56,17 @@ and GitHub access. Do not install skills, change files, post comments, or ask an
    extension manifests, decoding, request mapping, runtime behavior, service APIs, host-version requirements,
    persisted state, documentation, tests, or generated files. General review lenses may still report correctness
    problems in those areas.
-5. Report only high-confidence in-scope additions or removals introduced by the PR. An intentional new command,
+6. Report only high-confidence in-scope additions or removals introduced by the PR. An intentional new command,
    parameter, flag, or YAML schema component still needs a spec reference; it does not need to be a correctness bug.
    Exclude style preferences, speculative risks, praise, and generic requests for more tests.
-6. Match candidates to prior inline threads using `<!-- extension-user-contract-changes-reviewer -->`, the legacy
+7. Match candidates to prior inline threads using `<!-- extension-user-contract-changes-reviewer -->`, the legacy
    `<!-- user-contract-changes-reviewer -->` marker, or the former workflow's gh-aw metadata. Match by the specific
    contract and root cause, not just file or line. Include resolved threads in this comparison.
-7. In each matched thread, inspect replies from the PR author or a repository member, owner, or collaborator. An
+8. In each matched thread, inspect replies from the PR author or a repository member, owner, or collaborator. An
    explicit GitHub PR link supplied as the approved experiences spec satisfies only that finding. Preserve the most
    recent qualifying link. A bare issue link, document link, link in another finding's thread, or claim from an
    unrelated participant does not satisfy it. Do not infer approval merely from an arbitrary PR link.
-8. Drop equivalent findings already reported, even if they are still awaiting a spec. Report again only when the
+9. Drop equivalent findings already reported, even if they are still awaiting a spec. Report again only when the
    relevant contract changed again. Merge findings with the same root cause; prefer authored source over generated
    files. If a changed contract still belongs to the same finding, retain its previously supplied spec link.
 
@@ -143,6 +152,9 @@ a blocker when read-only source inspection establishes the behavior.
 
 | Evidence | Required result |
 | --- | --- |
+| A changed `AddCommand` registration connects a constructor in another file to a parent command for the first time | Trace the full command path and report one command addition at a changed registration or constructor line |
+| A command constructor or registration is moved but the before/after command tree is unchanged | Inspect the route and inputs, then report no command contract finding |
+| One changed file contains multiple independent new registrations or inputs | Track each distinct contract; do not let an existing thread or another finding cover its siblings |
 | New optional flag, fully tested and documented, no matching thread | One inline spec request; correct implementation is not an exemption |
 | PR changes a default, validation rule, prompt, output shape, or runtime behavior | Inspect for structural additions or removals, but do not create a contract finding for the behavior change alone |
 | Same unchanged contract already has a spec-request thread | No duplicate, including when that thread is resolved or unanswered |

@@ -509,3 +509,16 @@ For every PR review, including fork PRs, inspect the complete changed-file list
 first. If any file under `cli/azd/extensions/` changed, follow the mandatory
 contract review pass in the [shared extension guide](extensions/AGENTS.md#required-pr-review-pass)
 before general review lenses, even when `azd-code-reviewer` is not loaded.
+
+### CLI behavior and domain filtering
+
+- Explicit CLI arguments and flags take precedence over defaults. Do not prompt
+  toward a different default when the user supplied a valid value; preserve
+  deterministic `--no-prompt` behavior for CI and scripts.
+- Reject an explicitly set flag when the code path would silently ignore it.
+  Use `cmd.Flags().Changed("<name>")` to detect explicit flags and return a clear
+  error for unsupported combinations.
+- When filtering AI models or quota data by location, associate location-specific
+  usage data only with models available in that location. Empty or unknown usage
+  data from another location must not make a model eligible elsewhere; add
+  regression coverage for cross-location quota cases.

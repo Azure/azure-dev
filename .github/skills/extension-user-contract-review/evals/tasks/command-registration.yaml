@@ -7,16 +7,16 @@ inputs:
     Complete changed-file list:
     cli/azd/extensions/example/internal/cmd/optimize.go
     cli/azd/extensions/example/internal/cmd/optimize_download.go
-    cli/azd/extensions/example/internal/pkg/agents/optimize_api/models.go
+    cli/azd/extensions/example/schemas/optimization.yaml
     cli/azd/extensions/example/README.md
     In optimize.go, the optimize command already has status and list subcommands. Added RIGHT line 88:
     cmd.AddCommand(newOptimizeDownloadCommand(extCtx))
     The added optimize_download.go constructor returns a Cobra command with Use "download" and no positional
     arguments or local flags. It is reachable as "azd ai agent optimize download". Tests, help snapshots, and docs
-    are also updated. The optimize API model adds a trace-window field, but an existing review thread already
-    covers that exact field and has no new changes beyond the reviewed contract.
-    Complete conversation and review history contains one matching trace-window thread marked
-    <!-- extension-user-contract-changes-reviewer --> at models.go line 42. There is no thread for download.
+    are also updated. The authored optimization YAML schema adds an optional trace-window configuration component.
+    An existing review thread marked <!-- extension-user-contract-changes-reviewer --> at
+    schemas/optimization.yaml line 42 covers that exact component and has no new changes beyond the reviewed contract.
+    There is no thread for download.
 graders:
   - type: code
     name: registered-command-survives-schema-thread

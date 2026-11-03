@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -1648,12 +1649,35 @@ services:
 	assert.NotContains(t, projectServer.unsetPaths, "infra.path")
 }
 
+type ejectEnvironmentServer struct {
+	transactionEnvironmentServer
+}
+
+func (s *ejectEnvironmentServer) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{
+		Environment: &azdext.Environment{Name: s.values["AZURE_ENV_NAME"]},
+	}, nil
+}
+
+func (s *ejectEnvironmentServer) GetValue(
+	_ context.Context, req *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	return &azdext.KeyValueResponse{Value: s.values[req.Key]}, nil
+}
+
 func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	t.Setenv("ENABLE_AGENT", "false")
+	const existingRegistryID = "/subscriptions/sub/resourceGroups/shared/" +
+		"providers/Microsoft.ContainerRegistry/registries/sharedregistry"
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "azure.yaml"),
 		[]byte("name: test\nservices:\n  project:\n    host: azure.ai.project\n"+
+			"    network:\n      peSubnet:\n"+
+			"        vnet: /subscriptions/sub/resourceGroups/network/providers/Microsoft.Network/virtualNetworks/vnet\n"+
+			"        name: pe-subnet\n"+
 			"  active-agent:\n    host: azure.ai.agent\n    condition: ${ENABLE_AGENT}\n"),
 		0600,
 	))
@@ -1666,6 +1690,10 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	}
 	server := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(server, projectServer)
+	envServer := &ejectEnvironmentServer{transactionEnvironmentServer: transactionEnvironmentServer{
+		values: map[string]string{},
+	}}
+	azdext.RegisterEnvironmentServiceServer(server, envServer)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() {
@@ -1682,6 +1710,31 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 
+	environment := map[string]string{
+		"ENABLE_AGENT":                         "true",
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": existingRegistryID,
+		"AZURE_SUBSCRIPTION_ID":                "sub",
+		"AZURE_RESOURCE_GROUP":                 "foundry",
+		"AZURE_ENV_NAME":                       "test",
+		"AZURE_LOCATION":                       "eastus",
+	}
+	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
+		"project", "terraform", "", "", environment), "not supported with Terraform")
+	assert.NoDirExists(t, filepath.Join(root, "infra"))
+	environment["AZURE_RESOURCE_GROUP"] = "shared"
+	environment["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
+	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
+		"project", "bicep", "", "", environment), "azd down deletes")
+	delete(environment, "AZD_FOUNDRY_ACR_MODE")
+	assert.NoDirExists(t, filepath.Join(root, "infra"))
+	assert.Empty(t, envServer.values, "invalid eject must not persist the inferred mode")
+	environment["AZURE_RESOURCE_GROUP"] = "foundry"
+	envServer.failAt = 1
+	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
+		"project", "bicep", "", "", environment), "persist ACR mode")
+	assert.NoDirExists(t, filepath.Join(root, "infra"), "failed persistence must roll back the ejected files")
+	assert.Empty(t, envServer.values)
+	envServer.failAt = 0
 	require.NoError(t, ejectProjectInfraWithTarget(
 		t.Context(),
 		client,
@@ -1690,7 +1743,7 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 		"bicep",
 		"",
 		"",
-		map[string]string{"ENABLE_AGENT": "true"},
+		environment,
 	))
 
 	// #nosec G304 -- path is inside the test project directory.
@@ -1703,7 +1756,103 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(raw, &parameters))
 	assert.Equal(t, true, parameters.Parameters["includeAcr"].Value)
+	assert.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}",
+		parameters.Parameters["existingAcrResourceId"].Value)
+	assert.NotContains(t, string(raw), existingRegistryID)
+	for _, module := range []string{"container-registry.bicep", "foundry-project.bicep"} {
+		assert.FileExists(t, filepath.Join(root, "infra", "modules", module))
+	}
 	assertProjectEjectionOmitsConnections(t, filepath.Join(root, "infra"))
+	assert.Equal(t, "reuse-connect", envServer.values["AZD_FOUNDRY_ACR_MODE"])
+	assert.NotContains(t, environment, "AZD_FOUNDRY_ACR_MODE", "eject must not mutate its snapshot")
+
+	for _, recordedMode := range []bool{true, false} {
+		t.Run(fmt.Sprintf("initialize/recorded=%t", recordedMode), func(t *testing.T) {
+			envServer.values = maps.Clone(environment)
+			if recordedMode {
+				envServer.values["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
+			}
+			before := maps.Clone(envServer.values)
+			provider := provisioning.NewFoundryProvisioningProvider(client)
+			require.NoError(t, provider.Initialize(t.Context(), root, &azdext.ProvisioningOptions{
+				Provider: provisioning.FoundryProviderName,
+			}))
+			assert.Equal(t, before, envServer.values)
+		})
+	}
+}
+
+func TestEjectProjectInfraRecordedRegistryMode(t *testing.T) {
+	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+	for _, provider := range []string{"bicep", "terraform"} {
+		for _, mode := range []string{"create", "reuse-connect", "already-connected"} {
+			t.Run(provider+"/"+mode, func(t *testing.T) {
+				root := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"),
+					[]byte("name: test\nservices:\n  project:\n    host: azure.ai.project\n"+
+						"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"), 0600))
+				projectServer := &recordingProjectConfigServer{
+					project: &azdext.ProjectConfig{
+						Path: root, Infra: &azdext.InfraOptions{Provider: provisioningFoundryProvider},
+					},
+				}
+				server := grpc.NewServer()
+				azdext.RegisterProjectServiceServer(server, projectServer)
+				listener, err := net.Listen("tcp", "127.0.0.1:0")
+				require.NoError(t, err)
+				go func() { _ = server.Serve(listener) }()
+				t.Cleanup(func() {
+					server.Stop()
+					_ = listener.Close()
+				})
+				client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+				require.NoError(t, err)
+				t.Cleanup(client.Close)
+				env := map[string]string{
+					"AZD_FOUNDRY_ACR_MODE": mode, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": id,
+				}
+				if mode == "create" {
+					env["AZURE_SUBSCRIPTION_ID"] = "sub"
+					env["AZURE_RESOURCE_GROUP"] = "shared"
+					env["AZURE_AI_PROJECT_ID"] = "/subscriptions/sub/resourceGroups/shared/" +
+						"providers/Microsoft.CognitiveServices/accounts/account/projects/project"
+					env["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = "registry.azurecr.io"
+				}
+				err = ejectProjectInfraWithTarget(t.Context(), client, root,
+					"project", provider, "", "", env)
+				switch {
+				case mode == "already-connected":
+					require.ErrorContains(t, err, "AZD_FOUNDRY_ACR_MODE")
+					assert.NoDirExists(t, filepath.Join(root, "infra"))
+				case provider == "terraform" && mode == "reuse-connect":
+					require.ErrorContains(t, err, "reuse mode")
+					require.ErrorContains(t, err, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+					assert.NoDirExists(t, filepath.Join(root, "infra"))
+				case provider == "terraform":
+					require.NoError(t, err)
+					assert.FileExists(t, filepath.Join(root, "infra", "main.tf"))
+				default:
+					require.NoError(t, err)
+					// #nosec G304 -- path is inside the test project directory.
+					raw, err := os.ReadFile(filepath.Join(root, "infra", "main.parameters.json"))
+					require.NoError(t, err)
+					var params struct {
+						Parameters map[string]struct {
+							Value any `json:"value"`
+						} `json:"parameters"`
+					}
+					require.NoError(t, json.Unmarshal(raw, &params))
+					if mode == "reuse-connect" {
+						assert.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}",
+							params.Parameters["existingAcrResourceId"].Value)
+					} else {
+						assert.NotContains(t, params.Parameters, "existingAcrResourceId")
+					}
+				}
+				assert.Equal(t, mode, env["AZD_FOUNDRY_ACR_MODE"], "eject must not mutate its snapshot")
+			})
+		}
+	}
 }
 
 func TestEjectTerraformUsesFoundryLayerPathAndProvider(t *testing.T) {
@@ -2008,6 +2157,12 @@ type projectAddEnvironmentServer struct {
 	setCalls int
 	setErr   error
 	values   map[string]string
+}
+
+func (s *projectAddEnvironmentServer) GetConfig(
+	context.Context, *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	return &azdext.GetConfigResponse{}, nil
 }
 
 func (s *projectAddEnvironmentServer) Select(

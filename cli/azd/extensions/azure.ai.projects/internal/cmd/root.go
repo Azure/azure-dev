@@ -69,6 +69,13 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		).
 		WithValidationCheck(azdext.ValidationCheckRegistration{
 			CheckType: azdext.ValidationCheckTypeProvision,
+			RuleID:    provisioning.ACRRemoteBuildRuleID,
+			Factory: func() azdext.ValidationCheckProvider {
+				return provisioning.NewACRRemoteBuildCheck(azdClient)
+			},
+		}).
+		WithValidationCheck(azdext.ValidationCheckRegistration{
+			CheckType: azdext.ValidationCheckTypeProvision,
 			RuleID:    provisioning.ResourceGroupLocationRuleID,
 			Factory: func() azdext.ValidationCheckProvider {
 				return provisioning.NewResourceGroupLocationCheck(
@@ -76,6 +83,12 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 				)
 			},
 		}).
+		WithProjectEventHandler(
+			"prepackage",
+			func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+				return validateProjectACRBuilds(ctx, azdClient, args)
+			},
+		).
 		WithProjectEventHandler(
 			"preprovision",
 			func(

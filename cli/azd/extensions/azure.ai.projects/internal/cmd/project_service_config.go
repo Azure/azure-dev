@@ -79,20 +79,13 @@ func projectLifecycleHandler(
 		return nil
 	}
 
-	current, err := azdClient.Environment().GetCurrent(
-		ctx,
-		&azdext.EmptyRequest{},
-	)
+	envName, values, err := projectLifecycleEnvironment(ctx, azdClient)
 	if err != nil {
-		return fmt.Errorf("resolving current azd environment: %w", err)
+		return err
 	}
-	if current.GetEnvironment().GetName() == "" {
-		return fmt.Errorf("current azd environment has no name")
-	}
-
-	envName := current.GetEnvironment().GetName()
-	values, err := currentProjectEnvironment(ctx, azdClient, envName)
-	if err != nil {
+	if err := provisioning.NewACRRemoteBuildCheck(azdClient).ValidateProject(
+		ctx, args.Project, envName, values,
+	); err != nil {
 		return err
 	}
 	onDisk, err := projectOnDiskFoundryTemplatePresent(args.Project)
@@ -148,6 +141,34 @@ func projectLifecycleHandler(
 		return nil
 	}
 	return seedProjectModelDeploymentName(ctx, azdClient, envName, values, cfg.Deployments)
+}
+
+func validateProjectACRBuilds(ctx context.Context, client *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	if args == nil || args.Project == nil {
+		return fmt.Errorf("project lifecycle event has no project")
+	}
+	_, found, err := loadProjectServiceConfig(args.Project.Services, args.Project.Path)
+	if err != nil || !found {
+		return err
+	}
+	envName, values, err := projectLifecycleEnvironment(ctx, client)
+	if err != nil {
+		return err
+	}
+	return provisioning.NewACRRemoteBuildCheck(client).ValidateProject(ctx, args.Project, envName, values)
+}
+
+func projectLifecycleEnvironment(ctx context.Context, client *azdext.AzdClient) (string, map[string]string, error) {
+	current, err := client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", nil, fmt.Errorf("resolving current azd environment: %w", err)
+	}
+	envName := current.GetEnvironment().GetName()
+	if envName == "" {
+		return "", nil, fmt.Errorf("current azd environment has no name")
+	}
+	values, err := currentProjectEnvironment(ctx, client, envName)
+	return envName, values, err
 }
 
 func seedProjectModelDeploymentName(

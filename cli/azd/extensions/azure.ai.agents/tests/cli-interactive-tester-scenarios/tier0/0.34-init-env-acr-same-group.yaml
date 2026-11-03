@@ -1,0 +1,51 @@
+# Tier 0: reject an env-only registry inside the retained Foundry group.
+# No Azure authentication, network, or resource creation is allowed.
+name: "init-env-acr-same-group"
+command: "azd ai agent init --src ./src --no-prompt"
+cwd: "~/working/azd-agents-env-acr-same-group-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZURE_ENV_NAME: "acr-env"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-env-acr-same-group-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- .azure/acr-env src &&
+      cp -- "{fixtures_dir}/acr-env-preflight/azure.yaml" ./azure.yaml &&
+      cp -- "{fixtures_dir}/acr-env-preflight/config.json" .azure/config.json &&
+      cp -- "{fixtures_dir}/acr-env-preflight/environment.env" .azure/acr-env/.env &&
+      cp -r -- "{fixtures_dir}/from-code/." ./src
+    name: "seed a source project with a same-group environment selector"
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Fail without answering any prompt.
+    Do not obtain credentials, install or update extensions, fetch files, contact Azure,
+    create cloud resources, or make network calls. Use only the literal init command in
+    this scenario and read-only inspection; do not repair fixtures or substitute commands.
+  - >-
+    Wait for 'azd ai agent init --src ./src --no-prompt' to exit non-zero. Confirm the
+    error says the selected registry must be outside the Foundry resource group because
+    azd down deletes that group. The selector comes only from the seeded environment;
+    do not add --acr-resource-id.
+  - >-
+    Confirm no authentication, subscription, location, project, registry, or agent wizard
+    prompt appears. A missing AI-service capability, credential, or network error does
+    not satisfy the required resource-group validation.
+  - >-
+    Confirm azure.yaml, .azure/config.json, and .azure/acr-env/.env remain byte-for-byte
+    identical to their corresponding files in '{fixtures_dir}/acr-env-preflight'.
+    Confirm src remains identical to '{fixtures_dir}/from-code'. No files or directories
+    beyond those seeded by the hooks may be added, including agent configuration,
+    infrastructure, or deployment state.
+  - >-
+    Take a best-effort screenshot of the error output; capture failure must not block
+    later product assertions.
+  - >-
+    Report a finding if the command succeeds, prompts, reaches authentication or Azure,
+    reports a different error, changes seeded files, or adds local artifacts. Do not retry
+    or work around a failed goal.

@@ -1489,6 +1489,34 @@ proxy — fails validation rather than silently deploying a policy that never ru
 Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
 the whole body is then moderated and no paths are needed for that direction.
 
+### Reuse a source-build registry
+
+Environment-only selections use the same validation, persisted reuse mode, and
+ownership output. An unreadable environment stops selection rather than
+defaulting to a new registry. A same-group registry ID alone is not evidence
+that azd owns the registry.
+
+Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
+be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside
+the Foundry resource group that `azd down` deletes. Cross-subscription registry
+reuse is not supported. azd preserves the external registry, images, and
+administrator-managed grants, and cleans up only
+access grants and related resources it can establish it owns. Customers manage
+network reachability and image-publisher push permissions. See
+[non-interactive configuration](../ai-non-interactive.md#azureaiprojects).
+
+For an external ABAC registry, source builds require local Docker:
+set `docker.remoteBuild: false` on each source-built agent service and grant the
+image publisher Container Registry Repository Writer push permission.
+Hosted source initialization normally sets `docker.remoteBuild: true` unless
+network injection requires local builds. That remote Quick Build path is not
+supported with ABAC registry reuse: its current request does not authenticate the
+source registry, and Repository Writer permission alone does not fix the request.
+Provisioning rejects this combination. Use local Docker, a prebuilt image, or a
+classic RBAC registry instead. Prebuilt images, code deployments, legacy project
+connections, and unused project-only registry selections keep their existing
+behavior.
+
 ### Hosted voice wrapper (preview)
 
 A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,

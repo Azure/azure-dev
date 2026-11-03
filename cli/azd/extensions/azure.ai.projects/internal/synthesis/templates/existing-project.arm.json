@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "4511924015068411233"
+      "templateHash": "18175900106630812612"
     }
   },
   "definitions": {
@@ -172,7 +172,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "15235048848214962716"
+              "templateHash": "11513645951317576548"
             }
           },
           "parameters": {
@@ -201,6 +201,10 @@
               "defaultValue": false
             },
             "accessOperationId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "pullRoleDefinitionId": {
               "type": "string",
               "defaultValue": ""
             }
@@ -265,7 +269,7 @@
                     "value": "[parameters('accessOperationId')]"
                   },
                   "ownershipDescription": "[if(empty(parameters('accessOperationId')), createObject('value', ''), createObject('value', format('azd-foundry:{0}', parameters('accessOperationId'))))]",
-                  "roleDefinitionId": "[if(equals(parameters('mode'), 'reuse-connect'), if(equals(reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').roleAssignmentMode, 'AbacRepositoryPermissions'), createObject('value', variables('repositoryReaderRoleId')), createObject('value', variables('acrPullRoleId'))), createObject('value', variables('acrPullRoleId')))]"
+                  "roleDefinitionId": "[if(not(empty(parameters('accessOperationId'))), createObject('value', parameters('pullRoleDefinitionId')), if(equals(parameters('mode'), 'reuse-connect'), if(equals(reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').roleAssignmentMode, 'AbacRepositoryPermissions'), createObject('value', variables('repositoryReaderRoleId')), createObject('value', variables('acrPullRoleId'))), createObject('value', variables('acrPullRoleId'))))]"
                 },
                 "template": {
                   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
@@ -376,7 +380,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "15235048848214962716"
+              "templateHash": "11513645951317576548"
             }
           },
           "parameters": {
@@ -405,6 +409,10 @@
               "defaultValue": false
             },
             "accessOperationId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "pullRoleDefinitionId": {
               "type": "string",
               "defaultValue": ""
             }
@@ -469,7 +477,7 @@
                     "value": "[parameters('accessOperationId')]"
                   },
                   "ownershipDescription": "[if(empty(parameters('accessOperationId')), createObject('value', ''), createObject('value', format('azd-foundry:{0}', parameters('accessOperationId'))))]",
-                  "roleDefinitionId": "[if(equals(parameters('mode'), 'reuse-connect'), if(equals(reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').roleAssignmentMode, 'AbacRepositoryPermissions'), createObject('value', variables('repositoryReaderRoleId')), createObject('value', variables('acrPullRoleId'))), createObject('value', variables('acrPullRoleId')))]"
+                  "roleDefinitionId": "[if(not(empty(parameters('accessOperationId'))), createObject('value', parameters('pullRoleDefinitionId')), if(equals(parameters('mode'), 'reuse-connect'), if(equals(reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').roleAssignmentMode, 'AbacRepositoryPermissions'), createObject('value', variables('repositoryReaderRoleId')), createObject('value', variables('acrPullRoleId'))), createObject('value', variables('acrPullRoleId'))))]"
                 },
                 "template": {
                   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",

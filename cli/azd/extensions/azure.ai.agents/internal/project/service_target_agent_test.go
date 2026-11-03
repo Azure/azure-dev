@@ -744,6 +744,50 @@ func TestVoiceAgentFromResolvedService_RejectsExplicitNullResponsesFields(t *tes
 	}
 }
 
+func TestVoiceAgentFromResolvedService_RejectsExplicitNullResponsesSubfields(t *testing.T) {
+	fields := map[string]map[string]any{
+		"reasoning effort":  {"reasoning": map[string]any{"effort": nil}},
+		"reasoning summary": {"reasoning": map[string]any{"summary": nil}},
+		"text verbosity":    {"text": map[string]any{"verbosity": nil}},
+	}
+	for name, responseField := range fields {
+		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+			t.Run(name+"/"+source, func(t *testing.T) {
+				root := t.TempDir()
+				responses := map[string]any{"model": "terra"}
+				maps.Copy(responses, responseField)
+				delegation := map[string]any{"type": "responses", "responses": responses}
+				var service *azdext.ServiceConfig
+				if source == "inline" {
+					service = inlineAgentService(t, map[string]any{
+						"kind": "voice", "name": "live", "subProtocol": "live",
+						"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+						"delegation": delegation,
+					})
+				} else {
+					definition := map[string]any{
+						"kind": "voice", "name": "live", "sub_protocol": "live",
+						"model_type": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+					}
+					if source == "root-ref" {
+						definition["delegation"] = delegation
+					}
+					encoded, err := yaml.Marshal(definition)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+					overlay := map[string]any{"$ref": "live.yaml"}
+					if source == "sibling-overlay" {
+						overlay["delegation"] = delegation
+					}
+					service = inlineAgentService(t, overlay)
+				}
+				_, _, err := VoiceAgentFromResolvedService(service, root)
+				require.ErrorContains(t, err, "must not be null for GPT Live")
+			})
+		}
+	}
+}
+
 func TestVoiceAgentFromResolvedService_GPTLiveRootRefAfterInPlaceResolution(t *testing.T) {
 	root := t.TempDir()
 	definition := `kind: voice

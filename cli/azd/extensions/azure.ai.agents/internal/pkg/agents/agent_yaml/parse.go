@@ -483,9 +483,23 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 				}
 				if reasoning, found := responses["reasoning"]; found {
 					validateRawObject("delegation.responses.reasoning", reasoning, []string{"effort", "summary"})
+					if object, ok := reasoning.(map[string]any); ok {
+						for _, key := range []string{"effort", "summary"} {
+							if value, found := object[key]; found && value == nil {
+								errors = append(errors, fmt.Sprintf(
+									"delegation.responses.reasoning.%s must not be null for GPT Live", key))
+							}
+						}
+					}
 				}
 				if text, found := responses["text"]; found {
 					validateRawObject("delegation.responses.text", text, []string{"verbosity"})
+					if object, ok := text.(map[string]any); ok {
+						if value, found := object["verbosity"]; found && value == nil {
+							errors = append(errors,
+								"delegation.responses.text.verbosity must not be null for GPT Live")
+						}
+					}
 				}
 				choice, found := rawProperty(responses, "toolChoice", "tool_choice")
 				if found && choice != nil {

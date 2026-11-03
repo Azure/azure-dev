@@ -173,7 +173,7 @@ a blocker when read-only source inspection establishes the behavior.
 
 | Evidence | Required result |
 | --- | --- |
-| A changed `AddCommand` registration connects a constructor in another file to a parent command for the first time | Trace the full command path and report one command addition at a changed registration or constructor line |
+| A changed `AddCommand` registration connects a constructor in another file to a parent command for the first time | Trace the full command path; anchor the finding only on an added, modified, or deleted registration or constructor line in the PR diff. Inspect unchanged constructors only for context |
 | A command constructor or registration is moved but the before/after command tree is unchanged | Inspect the route and inputs, then report no command contract finding |
 | One changed file contains multiple independent new registrations or inputs | Track each distinct contract; do not let an existing thread or another finding cover its siblings |
 | New optional flag, fully tested and documented, no matching thread | One inline spec request; correct implementation is not an exemption |

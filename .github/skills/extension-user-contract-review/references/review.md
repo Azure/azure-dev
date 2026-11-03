@@ -80,6 +80,10 @@ and GitHub access. Do not install skills, change files, post comments, or ask an
    For partial overlap, report only newly added or removed items not covered by the earlier thread. Merge findings
    with the same root cause; prefer authored source over generated files. If a changed contract still belongs to the
    same finding, retain its previously supplied spec link.
+   Every merged finding must explicitly name all contract items it covers in its outgoing comment: full command
+   paths, positional parameter names, flag names (including added or removed shorthand aliases), and authored YAML
+   component paths. A generic command or feature description is not an item inventory. Preserve these names when
+   merging correctness feedback, shortening prose, or adapting the host format so later reviews can match them.
 
 ## Completion audit
 
@@ -90,6 +94,8 @@ the PR body, or a label such as "refactor" does not discharge this requirement.
 
 Audit outgoing requests against the prior-thread item matches, including grouped comments. No unchanged covered
 item may receive another spec request. Count unique matched threads, not their covered items or candidate findings.
+Compare each outgoing finding's named items with its ledger coverage. Restore any names lost during merging or
+formatting before returning `complete`; if the host cannot preserve them, report `blocked` and the affected items.
 
 After shared triage and formatting, compare the actual outgoing comments with the retained contract findings.
 Restore any finding accidentally removed by ordinary noise filters or comment budgets. Preserve each contract
@@ -134,7 +140,8 @@ Set `<spec status>` to this when no qualifying spec link was previously supplied
 Otherwise use `Previously provided approved experiences spec: <link>` and do not ask for that finding's link again.
 
 The host must preserve the marker, contract explanation, spec status, `side`, and `line` in exactly one inline
-comment per distinct finding. Use `side: RIGHT` with the new-file line number for additions and modifications.
+comment per distinct finding, including every covered item's explicit name in merged findings.
+Use `side: RIGHT` with the new-file line number for additions and modifications.
 For deletion-only contract changes, use `side: LEFT` with the old-file line number of a deleted line. This includes
 removed flags, positional parameters, schema components, commands, and entire files: a deletion-only diff does not
 itself block review.

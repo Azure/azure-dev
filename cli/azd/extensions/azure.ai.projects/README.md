@@ -366,6 +366,9 @@ legacy outputs; legacy ownership is verified against the previous Azure
 deployment before provisioning or deleting the group. Unreadable environment
 state or unverified ownership stops the operation instead of creating a
 replacement registry.
+For a deployed binding, `azd env refresh` also retains its registry ID,
+endpoint, and connection when the latest deployment has empty registry
+outputs. Refreshing does not change the binding or registry access.
 The external-registry build checks apply to `reuse-connect` selections, not
 azd-created registries retained through a `create` binding or matching legacy
 outputs. Managed registries can remain inside the Foundry resource group.
@@ -386,10 +389,11 @@ infrastructure-layer routes. An invalid final selection leaves those choices
 unpersisted.
 
 You can select a registry before adding agents; the selection remains pending
-until a source-built agent requires it, including across project-only provisioning
-and teardown. Configured project or account names do not discard an unused
-selection. Source initialization validates the selector and rejects unknown
-application teardown scopes before changing files or environment values.
+until a source-built agent requires it, including across project-only provisioning,
+environment refresh, and teardown. Configured project or account names do not
+discard an unused selection. Source initialization validates the selector and
+rejects unknown application teardown scopes before changing files or environment
+values.
 An unused `AZURE_RESOURCE_GROUP` value does not add a teardown group when only
 a Foundry layer is configured.
 

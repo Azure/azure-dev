@@ -815,7 +815,7 @@ func ownedACRAssignment(actual acrRoleAssignment, registryID, principalID, roleI
 		actual.Properties.Condition == "" && actual.Properties.Description == "azd-foundry:"+token
 }
 
-func (p *FoundryProvisioningProvider) persistACRBinding(
+func (p *FoundryProvisioningProvider) preserveACROutputs(
 	ctx context.Context, outputs map[string]*azdext.ProvisioningOutputParameter,
 ) error {
 	if p.brownfieldEndpoint != "" {
@@ -843,6 +843,18 @@ func (p *FoundryProvisioningProvider) persistACRBinding(
 				outputs[key] = &azdext.ProvisioningOutputParameter{Type: "string", Value: value}
 			}
 		}
+	}
+	return nil
+}
+
+func (p *FoundryProvisioningProvider) persistACRBinding(
+	ctx context.Context, outputs map[string]*azdext.ProvisioningOutputParameter,
+) error {
+	if p.brownfieldEndpoint != "" {
+		return nil
+	}
+	if err := p.preserveACROutputs(ctx, outputs); err != nil {
+		return err
 	}
 	registry := outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 	project := outputs["AZURE_AI_PROJECT_ID"]

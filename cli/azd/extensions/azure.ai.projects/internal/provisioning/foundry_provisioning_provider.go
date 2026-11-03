@@ -1271,9 +1271,13 @@ func (p *FoundryProvisioningProvider) State(
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentGet)
 	}
 
+	outputs := p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties))))
+	if err := p.preserveACROutputs(ctx, outputs); err != nil {
+		return nil, err
+	}
 	return &azdext.ProvisioningStateResult{
 		State: &azdext.ProvisioningState{
-			Outputs:   p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties)))),
+			Outputs:   outputs,
 			Resources: armResourcesToProto(deploymentResources(resp.Properties)),
 		},
 	}, nil

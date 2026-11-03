@@ -1612,13 +1612,15 @@ func acrTestHTTPReply(t *testing.T, request *http.Request, code int, value any) 
 
 func TestACRProjectOnlyProvisionPreservesPendingSelector(t *testing.T) {
 	for _, tt := range []struct {
-		mode string
-		down bool
+		mode          string
+		down, refresh bool
 	}{
 		{mode: ""}, {mode: "reuse-connect"},
 		{mode: "", down: true}, {mode: "reuse-connect", down: true},
+		{mode: "", refresh: true}, {mode: "reuse-connect", refresh: true},
+		{mode: "", down: true, refresh: true}, {mode: "reuse-connect", down: true, refresh: true},
 	} {
-		t.Run(tt.mode+"/down="+strconv.FormatBool(tt.down), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/down=%t/refresh=%t", tt.mode, tt.down, tt.refresh), func(t *testing.T) {
 			root := t.TempDir()
 			manifest := "services:\n  project:\n    host: azure.ai.project\n"
 			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(manifest), 0o600))
@@ -1634,6 +1636,7 @@ func TestACRProjectOnlyProvisionPreservesPendingSelector(t *testing.T) {
 				&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
 			require.Equal(t, "none", p.greenfieldAcrMode)
 			p.credential = acrTestCredential{}
+			var deployedOutputs map[string]any
 			p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
 				Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
 					if request.Method == http.MethodGet &&
@@ -1646,11 +1649,17 @@ func TestACRProjectOnlyProvisionPreservesPendingSelector(t *testing.T) {
 						}
 						require.Equal(t, "/subscriptions/sub/providers/Microsoft.Resources/deployments/"+
 							p.deploymentName(), request.URL.Path)
+						deployedOutputs = nil
 						return acrTestHTTPReply(t, request, http.StatusNoContent, nil)
 					}
 					require.Contains(t, request.URL.Path, "/providers/Microsoft.Resources/deployments/")
 					if request.Method == http.MethodGet {
-						return acrTestHTTPReply(t, request, http.StatusNotFound, nil)
+						if deployedOutputs == nil {
+							return acrTestHTTPReply(t, request, http.StatusNotFound, nil)
+						}
+						return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{
+							"properties": map[string]any{"provisioningState": "Succeeded", "outputs": deployedOutputs},
+						})
 					}
 					require.Equal(t, http.MethodPut, request.Method)
 					outputs := map[string]any{
@@ -1663,6 +1672,7 @@ func TestACRProjectOnlyProvisionPreservesPendingSelector(t *testing.T) {
 					} {
 						outputs[key] = map[string]any{"type": "string", "value": ""}
 					}
+					deployedOutputs = outputs
 					return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{
 						"properties": map[string]any{"provisioningState": "Succeeded", "outputs": outputs},
 					})
@@ -1685,6 +1695,28 @@ func TestACRProjectOnlyProvisionPreservesPendingSelector(t *testing.T) {
 			assert.Equal(t, tt.mode, env.get["AZD_FOUNDRY_ACR_MODE"])
 			assert.Empty(t, env.config)
 			assert.Nil(t, p.acrBinding)
+
+			if tt.refresh {
+				refresher := &FoundryProvisioningProvider{
+					azdClient: p.azdClient, credential: p.credential, armClientOptions: p.armClientOptions,
+				}
+				require.NoError(t, refresher.Initialize(t.Context(), root,
+					&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
+				env.configErr = errors.New("refresh must not persist registry lifecycle state")
+				state, err := refresher.State(t.Context(), &azdext.ProvisioningStateOptions{})
+				env.configErr = nil
+				require.NoError(t, err)
+				require.NotNil(t, state.State)
+				assert.Empty(t, env.config)
+				assert.Empty(t, env.set)
+				for key, output := range state.State.Outputs {
+					values[key] = output.Value
+				}
+				require.NoError(t, godotenv.Write(values, envPath))
+				env.get, err = godotenv.Read(envPath)
+				require.NoError(t, err)
+				require.Equal(t, testACRID, env.get["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+			}
 
 			if tt.down {
 				destroyed, err := p.Destroy(t.Context(),
@@ -1712,6 +1744,134 @@ func TestACRProjectOnlyProvisionPreservesPendingSelector(t *testing.T) {
 			assert.Equal(t, "reuse-connect", next.greenfieldAcrMode)
 			assert.Equal(t, map[string]any{"value": testACRID}, next.armParameters()["existingAcrResourceId"])
 		})
+	}
+}
+
+func TestACROutputPreservationKeepsCurrentOutputs(t *testing.T) {
+	for _, tt := range []struct {
+		name, registry, endpoint, connection string
+		brownfield                           bool
+	}{
+		{
+			name: "current registry", registry: testACRID,
+			endpoint: "current.azurecr.io", connection: "current-connection",
+		},
+		{
+			name: "current connection", endpoint: "current.azurecr.io", connection: "current-connection",
+		},
+		{name: "brownfield", brownfield: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			p.acrBinding = acrTestBinding()
+			if tt.brownfield {
+				p.brownfieldEndpoint = "https://existing.services.ai.azure.com/api/projects/project"
+			}
+			env.getErr = map[string]error{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    errors.New("must not replace current outputs"),
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": errors.New("must not replace current outputs"),
+			}
+			outputs := map[string]*azdext.ProvisioningOutputParameter{
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": {Type: "string", Value: tt.registry},
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    {Type: "string", Value: tt.endpoint},
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": {Type: "string", Value: tt.connection},
+			}
+			require.NoError(t, p.preserveACROutputs(t.Context(), outputs))
+			registry := tt.registry
+			if !tt.brownfield {
+				registry = testACRID
+			}
+			assert.Equal(t, registry, outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"].Value)
+			assert.Equal(t, tt.endpoint, outputs["AZURE_CONTAINER_REGISTRY_ENDPOINT"].Value)
+			assert.Equal(t, tt.connection, outputs["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"].Value)
+			assert.Empty(t, env.set)
+			assert.Empty(t, env.config)
+		})
+	}
+}
+
+func TestACRStatePreservesDeployedRegistryOutputs(t *testing.T) {
+	for _, mode := range []string{"create", "reuse-connect"} {
+		for _, alias := range []bool{false, true} {
+			for _, failRead := range []string{"", "AZURE_CONTAINER_REGISTRY_ENDPOINT", "AZURE_AI_PROJECT_ACR_CONNECTION_NAME"} {
+				t.Run(fmt.Sprintf("%s/alias=%t/read=%s", mode, alias, failRead), func(t *testing.T) {
+					root := t.TempDir()
+					require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+						"services:\n  project:\n    host: azure.ai.project\n"), 0o600))
+					p, env := acrTestProvider(t)
+					binding := acrTestBinding()
+					binding.Mode = mode
+					if mode == "create" {
+						binding.RegistryResourceID = strings.Replace(testACRID, "/shared/", "/foundry/", 1)
+					}
+					data, err := json.Marshal(binding)
+					require.NoError(t, err)
+					env.config = map[string][]byte{synthesis.ACRBindingConfigKey: data}
+					env.get = map[string]string{
+						envKeySubscriptionID: "sub", envKeyLocation: "eastus2",
+						envKeyResourceGroup: "foundry", envKeyProjectName: "project",
+						"AZD_FOUNDRY_ACR_MODE":                 mode,
+						"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "registry.azurecr.io",
+						"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "registry-connection",
+					}
+					if alias {
+						env.get["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = binding.RegistryResourceID
+					}
+					require.NoError(t, p.Initialize(t.Context(), root,
+						&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
+					beforeValues, beforeConfig := maps.Clone(env.get), maps.Clone(env.config)
+					env.configErr = errors.New("state must not persist registry lifecycle state")
+					if failRead != "" {
+						env.getErr = map[string]error{failRead: errors.New("registry output unavailable")}
+					}
+					p.credential = acrTestCredential{}
+					reads := 0
+					p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+						Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+							require.Equal(t, http.MethodGet, request.Method)
+							require.Equal(t, "/subscriptions/sub/providers/Microsoft.Resources/deployments/"+
+								p.deploymentName(), request.URL.Path)
+							reads++
+							outputs := map[string]any{"AZURE_AI_PROJECT_ID": map[string]any{
+								"type": "string", "value": testACRProject,
+							}}
+							for _, key := range []string{
+								"AZURE_CONTAINER_REGISTRY_RESOURCE_ID", "AZURE_CONTAINER_REGISTRY_ENDPOINT",
+								"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+							} {
+								outputs[key] = map[string]any{"type": "string", "value": ""}
+							}
+							return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{
+								"properties": map[string]any{"provisioningState": "Succeeded", "outputs": outputs},
+							})
+						}),
+					}}
+					state, err := p.State(t.Context(), &azdext.ProvisioningStateOptions{})
+					if failRead != "" {
+						require.ErrorContains(t, err, "preserve deployed registry output")
+						require.ErrorContains(t, err, "registry output unavailable")
+						assert.Nil(t, state)
+					} else {
+						require.NoError(t, err)
+						require.NotNil(t, state.State)
+						for key, value := range map[string]string{
+							"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": binding.RegistryResourceID,
+							"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "registry.azurecr.io",
+							"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "registry-connection",
+						} {
+							require.Contains(t, state.State.Outputs, key)
+							assert.Equal(t, value, state.State.Outputs[key].Value)
+						}
+					}
+					assert.Equal(t, 1, reads)
+					assert.Equal(t, beforeValues, env.get)
+					assert.Equal(t, beforeConfig, env.config)
+					assert.Empty(t, env.set)
+					assert.Equal(t, binding, p.acrBinding)
+					assert.Nil(t, p.acrPending)
+				})
+			}
+		}
 	}
 }
 

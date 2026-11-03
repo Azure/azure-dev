@@ -202,9 +202,11 @@ func acrBuildProjectConfig(project *azdext.ProjectConfig) ([]byte, foundryInfraC
 }
 
 func (p *FoundryProvisioningProvider) validateACRRemoteBuild(ctx context.Context, src *templateSource) error {
-	include, _ := parameterValue(src, "includeAcr").(bool)
 	id, _ := parameterValue(src, "existingAcrResourceId").(string)
-	if !p.acrRemoteBuild || p.brownfieldEndpoint != "" || !include || id == "" {
+	if id == "" && p.acrBinding != nil {
+		id = p.acrBinding.RegistryResourceID
+	}
+	if !p.acrRemoteBuild || p.brownfieldEndpoint != "" || id == "" {
 		return nil
 	}
 	group, _ := parameterValue(src, "resourceGroupName").(string)

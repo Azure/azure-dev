@@ -662,7 +662,7 @@ func (p *FoundryProvisioningProvider) planACRAccess(
 		}
 	}
 	if !include || id == "" {
-		return nil, nil
+		return nil, p.validateACRRemoteBuild(ctx, src)
 	}
 	abac, err := p.acrUsesABAC(ctx, id)
 	if err != nil {
@@ -1099,7 +1099,7 @@ func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, rec
 		}
 	}
 	if registry == nil || registry.Value == "" {
-		if !recoverProjectIdentity && state == "Succeeded" && p.acrPending == nil {
+		if !recoverProjectIdentity && state == "Succeeded" && p.acrPending == nil && selectedRegistry == "" {
 			return nil
 		}
 		project := outputs["AZURE_AI_PROJECT_ID"]
@@ -1111,7 +1111,7 @@ func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, rec
 			p.acrExistingProjectID = project.Value
 			p.acrExistingPrincipalID = actual.Identity.PrincipalID
 			p.acrExistingProjectSalt = salt
-			if state == "Succeeded" && p.acrPending == nil {
+			if state == "Succeeded" && p.acrPending == nil && selectedRegistry == "" {
 				return nil
 			}
 		}
@@ -1390,9 +1390,13 @@ func (p *FoundryProvisioningProvider) deploymentCreatedACR(
 func (p *FoundryProvisioningProvider) recoverPartialACRBinding(
 	ctx context.Context, salt string, parameters map[string]struct{ Value any },
 ) error {
-	projectID, principalID, err := p.partialProjectIdentity(ctx)
-	if err != nil || projectID == "" {
-		return err
+	projectID, principalID := p.acrExistingProjectID, p.acrExistingPrincipalID
+	if projectID == "" {
+		var err error
+		projectID, principalID, err = p.partialProjectIdentity(ctx)
+		if err != nil || projectID == "" {
+			return err
+		}
 	}
 	p.acrExistingProjectID = projectID
 	p.acrExistingPrincipalID = principalID
@@ -1412,7 +1416,7 @@ func (p *FoundryProvisioningProvider) recoverPartialACRBinding(
 		connections.Value = nil
 		if err := p.acrARM(ctx, http.MethodGet, path, "2025-10-01-preview", &connections); err != nil {
 			if isNotFound(err) {
-				return nil
+				break
 			}
 
 			return fmt.Errorf("recover deployed registry connection: %w", err)
@@ -1438,7 +1442,29 @@ func (p *FoundryProvisioningProvider) recoverPartialACRBinding(
 		path = connections.NextLink
 	}
 	if registryID == "" {
-		return nil
+		retained, err := retainedACRAssignments(parameters)
+		if err != nil {
+			return err
+		}
+		token := ""
+		for name, parameter := range parameters {
+			switch {
+			case strings.EqualFold(name, "existingAcrResourceId"):
+				registryID, _ = parameter.Value.(string)
+			case strings.EqualFold(name, "acrAccessOperationId"):
+				var ok bool
+				token, ok = parameter.Value.(string)
+				if !ok {
+					return errors.New("cannot recover registry grant ownership: invalid access operation ID")
+				}
+			}
+		}
+		if token == "" && len(retained) == 0 {
+			return nil
+		}
+		if err := synthesis.ValidateACRSelector(registryID, "", ""); err != nil {
+			return fmt.Errorf("cannot recover registry grant ownership: %w", err)
+		}
 	}
 	parts := strings.Split(registryID, "/")
 	mode := "reuse-connect"

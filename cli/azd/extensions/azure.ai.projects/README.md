@@ -396,6 +396,15 @@ enable registry access from the new build demand. In an older project-only
 parameters file, remove the generated `parameters.includeAcr` object if it only
 reflects that earlier lack of demand. An intentional user-authored `false`
 override remains authoritative.
+That override controls infrastructure creation, not the service's build mode.
+Remote source builds still validate the selected or bound registry's ABAC
+compatibility when `includeAcr` is `false`.
+
+Removing source-build demand does not release an existing registry binding.
+Recovery can use the deployed project connection even when no azd-owned grants
+exist. After a failed connection deployment, verified access-operation parameters
+allow `azd down` to clean up owned grants before removing deployment evidence.
+An unused selector with no connection or owned access operation remains pending.
 
 Once a project has a deployed registry binding, registry migration is not
 supported. Repeating setup with the same selection preserves the deployed

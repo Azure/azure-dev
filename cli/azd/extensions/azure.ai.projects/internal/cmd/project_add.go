@@ -238,16 +238,6 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		target.PreserveDeployed = true
 		target.ResourceId = a.flags.preserveProjectID
 	}
-	if id := a.flags.preserveProjectID; id != "" && target.Mode != projectModeNew {
-		boundProject, err := projectFromResourceID(id)
-		if err != nil {
-			return projectACRValidation("deployed registry binding has an invalid project resource ID")
-		}
-		if (target.ResourceId != "" && !strings.EqualFold(target.ResourceId, id)) ||
-			(target.Endpoint != "" && !equalProjectEndpoint(target.Endpoint, boundProject.Endpoint)) {
-			return projectACRValidation("cannot replace a project while its deployed registry binding is still in use")
-		}
-	}
 	if err := confirmExplicitProjectReplacement(
 		ctx, client, target, service, oldValues, a.flags,
 	); err != nil {

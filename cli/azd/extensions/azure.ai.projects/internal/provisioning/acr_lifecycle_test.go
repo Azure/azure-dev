@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -338,8 +339,9 @@ func TestACRLegacyBindingUsesDeploymentFacts(t *testing.T) {
 
 func TestACRDeploymentGrantRecoveryAfterStateLoss(t *testing.T) {
 	for _, tt := range []struct {
-		name, role                string
-		partial, missing, unowned bool
+		name, role                                                string
+		partial, missing, unowned                                 bool
+		projectOnly, noConnection, connection404, pendingSelector bool
 	}{
 		{name: "classic", role: acrPullRole},
 		{name: "ABAC", role: acrRepositoryReader},
@@ -347,6 +349,13 @@ func TestACRDeploymentGrantRecoveryAfterStateLoss(t *testing.T) {
 		{name: "grant already deleted", role: acrPullRole, missing: true},
 		{name: "partial grant already deleted", role: acrRepositoryReader, partial: true, missing: true},
 		{name: "administrator access", role: acrPullRole, unowned: true},
+		{name: "project-only administrator access", role: acrPullRole, unowned: true, projectOnly: true},
+		{name: "unused project-only selector", role: acrPullRole, unowned: true,
+			projectOnly: true, noConnection: true, pendingSelector: true},
+		{name: "failed connection", role: acrPullRole, partial: true, noConnection: true},
+		{name: "missing connection API", role: acrRepositoryReader, partial: true, connection404: true},
+		{name: "failed connection grant already deleted", role: acrPullRole,
+			partial: true, noConnection: true, missing: true},
 	} {
 		for _, action := range []string{"recover", "down"} {
 			t.Run(tt.name+"/"+action, func(t *testing.T) {
@@ -390,8 +399,12 @@ func TestACRDeploymentGrantRecoveryAfterStateLoss(t *testing.T) {
 						}
 						if tt.partial {
 							state, outputs = "Failed", nil
+						} else if tt.projectOnly {
+							outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = map[string]any{"value": ""}
 						}
 						parameters := map[string]any{
+							"includeAcr":              map[string]any{"value": !tt.projectOnly},
+							"acrOwnedAssignments":     map[string]any{"value": []synthesis.ACRAssignment{}},
 							"existingAcrResourceId":   map[string]any{"value": testACRID},
 							"acrAccessOperationId":    map[string]any{"value": testACRToken},
 							"acrPullRoleDefinitionId": map[string]any{"value": owned.RoleDefinitionID},
@@ -418,6 +431,12 @@ func TestACRDeploymentGrantRecoveryAfterStateLoss(t *testing.T) {
 							},
 						}}}})
 					case testACRProject + "/connections":
+						if tt.connection404 {
+							return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+						}
+						if tt.noConnection {
+							return acrTestReply(out, map[string]any{"value": []any{}})
+						}
 						return acrTestReply(out, map[string]any{"value": []any{map[string]any{"properties": map[string]any{
 							"category": "ContainerRegistry", "metadata": map[string]string{"ResourceId": testACRID},
 						}}}})
@@ -464,9 +483,21 @@ func TestACRDeploymentGrantRecoveryAfterStateLoss(t *testing.T) {
 				}}
 				if action == "recover" {
 					require.NoError(t, p.recoverDeployedACRBinding(t.Context()))
+					if tt.pendingSelector {
+						require.Nil(t, p.acrBinding)
+						src := acrTestSource()
+						src.parameters["existingAcrResourceId"] = map[string]any{"value": testACRID + "other"}
+						require.NoError(t, p.validateACRTemplate(src))
+						return
+					}
 					require.NotNil(t, p.acrBinding)
 					if tt.unowned {
 						assert.Empty(t, p.acrBinding.OwnedAssignments)
+						if tt.projectOnly {
+							src := acrTestSource()
+							src.parameters["existingAcrResourceId"] = map[string]any{"value": testACRID + "other"}
+							require.ErrorContains(t, p.validateACRTemplate(src), "migration is not supported")
+						}
 					} else {
 						assert.Equal(t, []synthesis.ACRAssignment{owned}, p.acrBinding.OwnedAssignments)
 					}
@@ -494,128 +525,139 @@ func TestACRDeploymentGrantRecoveryAfterStateLoss(t *testing.T) {
 }
 
 func TestACRDeploymentGrantRecoveryRejectsUnverifiedOwnership(t *testing.T) {
-	for _, tt := range []struct {
-		name, wantError string
-	}{
-		{name: "administrator grant", wantError: "does not match azd ownership"},
-		{name: "wrong principal", wantError: "does not match azd ownership"},
-		{name: "wrong role", wantError: "does not match azd ownership"},
-		{name: "wrong scope", wantError: "does not match azd ownership"},
-		{name: "wrong assignment", wantError: "does not match azd ownership"},
-		{name: "conditional grant", wantError: "does not match azd ownership"},
-		{name: "unreadable grant", wantError: "verify recovered registry grant ownership"},
-		{name: "invalid token", wantError: "cannot recover registry grant ownership"},
-		{name: "invalid token type", wantError: "cannot recover registry grant ownership"},
-		{name: "null token", wantError: "cannot recover registry grant ownership"},
-		{name: "missing role", wantError: "cannot recover registry grant ownership"},
-		{name: "invalid role", wantError: "cannot recover registry grant ownership"},
-		{name: "invalid role type", wantError: "cannot recover registry grant ownership"},
-		{name: "retained null", wantError: "invalid retained assignments"},
-		{name: "retained invalid type", wantError: "cannot recover retained registry grant ownership"},
-		{name: "retained unknown fields", wantError: "cannot recover retained registry grant ownership"},
-		{name: "retained wrong principal", wantError: "cannot recover registry grant ownership"},
-		{name: "retained wrong role", wantError: "cannot recover registry grant ownership"},
-		{name: "retained wrong deployment", wantError: "cannot recover registry grant ownership"},
-		{name: "retained administrator grant", wantError: "does not match azd ownership"},
-		{name: "active deployment", wantError: "deployment is still active"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			p, env := acrTestProvider(t)
-			p.rgExplicit = true
-			p.credential = acrOfflineCredential{}
-			assignment := acrTestAssignment()
-			parameters := map[string]any{
-				"existingAcrResourceId":   map[string]any{"value": testACRID},
-				"acrAccessOperationId":    map[string]any{"value": testACRToken},
-				"acrPullRoleDefinitionId": map[string]any{"value": assignment.Properties.RoleDefinitionID},
-			}
-			state := "Succeeded"
-			if strings.HasPrefix(tt.name, "retained ") {
-				parameters["acrAccessOperationId"] = map[string]any{"value": ""}
-				owned := synthesis.ACRAssignment{
-					ID: assignment.ID, PrincipalID: "principal",
-					RoleDefinitionID: assignment.Properties.RoleDefinitionID, OwnershipToken: testACRToken,
-					DeploymentIDs: acrAccessDeploymentIDs(testACRID, testACRToken),
+	for _, partial := range []bool{false, true} {
+		for _, tt := range []struct {
+			name, wantError string
+		}{
+			{name: "administrator grant", wantError: "does not match azd ownership"},
+			{name: "wrong principal", wantError: "does not match azd ownership"},
+			{name: "wrong role", wantError: "does not match azd ownership"},
+			{name: "wrong scope", wantError: "does not match azd ownership"},
+			{name: "wrong assignment", wantError: "does not match azd ownership"},
+			{name: "conditional grant", wantError: "does not match azd ownership"},
+			{name: "unreadable grant", wantError: "verify recovered registry grant ownership"},
+			{name: "invalid token", wantError: "cannot recover registry grant ownership"},
+			{name: "invalid token type", wantError: "cannot recover registry grant ownership"},
+			{name: "null token", wantError: "cannot recover registry grant ownership"},
+			{name: "missing role", wantError: "cannot recover registry grant ownership"},
+			{name: "invalid role", wantError: "cannot recover registry grant ownership"},
+			{name: "invalid role type", wantError: "cannot recover registry grant ownership"},
+			{name: "retained null", wantError: "invalid retained assignments"},
+			{name: "retained invalid type", wantError: "cannot recover retained registry grant ownership"},
+			{name: "retained unknown fields", wantError: "cannot recover retained registry grant ownership"},
+			{name: "retained wrong principal", wantError: "cannot recover registry grant ownership"},
+			{name: "retained wrong role", wantError: "cannot recover registry grant ownership"},
+			{name: "retained wrong deployment", wantError: "cannot recover registry grant ownership"},
+			{name: "retained administrator grant", wantError: "does not match azd ownership"},
+			{name: "active deployment", wantError: "deployment is still active"},
+		} {
+			t.Run(fmt.Sprintf("%s/partial=%t", tt.name, partial), func(t *testing.T) {
+				p, env := acrTestProvider(t)
+				p.rgExplicit = true
+				p.credential = acrOfflineCredential{}
+				assignment := acrTestAssignment()
+				parameters := map[string]any{
+					"existingAcrResourceId":   map[string]any{"value": testACRID},
+					"acrAccessOperationId":    map[string]any{"value": testACRToken},
+					"acrPullRoleDefinitionId": map[string]any{"value": assignment.Properties.RoleDefinitionID},
+				}
+				state := "Succeeded"
+				if strings.HasPrefix(tt.name, "retained ") {
+					parameters["acrAccessOperationId"] = map[string]any{"value": ""}
+					owned := synthesis.ACRAssignment{
+						ID: assignment.ID, PrincipalID: "principal",
+						RoleDefinitionID: assignment.Properties.RoleDefinitionID, OwnershipToken: testACRToken,
+						DeploymentIDs: acrAccessDeploymentIDs(testACRID, testACRToken),
+					}
+					switch tt.name {
+					case "retained wrong principal":
+						owned.PrincipalID = "another-principal"
+					case "retained wrong role":
+						owned.RoleDefinitionID = "/roles/owner"
+					case "retained wrong deployment":
+						owned.DeploymentIDs[0] += "-other"
+					case "retained administrator grant":
+						assignment.Properties.Description = ""
+					}
+					parameters["acrOwnedAssignments"] = map[string]any{"value": []synthesis.ACRAssignment{owned}}
 				}
 				switch tt.name {
-				case "retained wrong principal":
-					owned.PrincipalID = "another-principal"
-				case "retained wrong role":
-					owned.RoleDefinitionID = "/roles/owner"
-				case "retained wrong deployment":
-					owned.DeploymentIDs[0] += "-other"
-				case "retained administrator grant":
+				case "administrator grant":
 					assignment.Properties.Description = ""
+				case "wrong principal":
+					assignment.Properties.PrincipalID = "other"
+				case "wrong role":
+					assignment.Properties.RoleDefinitionID = "/roles/owner"
+				case "wrong scope":
+					assignment.Properties.Scope = "/subscriptions/sub"
+				case "wrong assignment":
+					assignment.ID += "other"
+				case "conditional grant":
+					assignment.Properties.Condition = "condition"
+				case "invalid token":
+					parameters["acrAccessOperationId"] = map[string]any{"value": "invalid"}
+				case "invalid token type":
+					parameters["acrAccessOperationId"] = map[string]any{"value": 123}
+				case "null token":
+					parameters["acrAccessOperationId"] = map[string]any{"value": nil}
+				case "missing role":
+					delete(parameters, "acrPullRoleDefinitionId")
+				case "invalid role":
+					parameters["acrPullRoleDefinitionId"] = map[string]any{"value": "/roles/owner"}
+				case "invalid role type":
+					parameters["acrPullRoleDefinitionId"] = map[string]any{"value": true}
+				case "retained null":
+					parameters["acrOwnedAssignments"] = map[string]any{"value": nil}
+				case "retained invalid type":
+					parameters["acrOwnedAssignments"] = map[string]any{"value": "not-an-array"}
+				case "retained unknown fields":
+					parameters["acrOwnedAssignments"] = map[string]any{"value": []map[string]any{{"unexpected": true}}}
+				case "active deployment":
+					state = "Running"
 				}
-				parameters["acrOwnedAssignments"] = map[string]any{"value": []synthesis.ACRAssignment{owned}}
-			}
-			switch tt.name {
-			case "administrator grant":
-				assignment.Properties.Description = ""
-			case "wrong principal":
-				assignment.Properties.PrincipalID = "other"
-			case "wrong role":
-				assignment.Properties.RoleDefinitionID = "/roles/owner"
-			case "wrong scope":
-				assignment.Properties.Scope = "/subscriptions/sub"
-			case "wrong assignment":
-				assignment.ID += "other"
-			case "conditional grant":
-				assignment.Properties.Condition = "condition"
-			case "invalid token":
-				parameters["acrAccessOperationId"] = map[string]any{"value": "invalid"}
-			case "invalid token type":
-				parameters["acrAccessOperationId"] = map[string]any{"value": 123}
-			case "null token":
-				parameters["acrAccessOperationId"] = map[string]any{"value": nil}
-			case "missing role":
-				delete(parameters, "acrPullRoleDefinitionId")
-			case "invalid role":
-				parameters["acrPullRoleDefinitionId"] = map[string]any{"value": "/roles/owner"}
-			case "invalid role type":
-				parameters["acrPullRoleDefinitionId"] = map[string]any{"value": true}
-			case "retained null":
-				parameters["acrOwnedAssignments"] = map[string]any{"value": nil}
-			case "retained invalid type":
-				parameters["acrOwnedAssignments"] = map[string]any{"value": "not-an-array"}
-			case "retained unknown fields":
-				parameters["acrOwnedAssignments"] = map[string]any{"value": []map[string]any{{"unexpected": true}}}
-			case "active deployment":
-				state = "Running"
-			}
-			rootID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
-			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
-				require.Equal(t, http.MethodGet, method, "unverified ownership must not mutate resources")
-				switch path {
-				case rootID:
-					return acrTestReply(out, map[string]any{"properties": map[string]any{
-						"provisioningState": state, "parameters": parameters,
-						"outputs": map[string]any{
-							"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": testACRID},
-							"AZURE_AI_PROJECT_ID":                  map[string]any{"value": testACRProject},
-						},
-					}})
-				case testACRProject:
-					return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
-				case acrTestAssignment().ID:
-					if tt.name == "unreadable grant" {
-						return &azcore.ResponseError{StatusCode: http.StatusForbidden}
+				registryID := testACRID
+				if partial {
+					registryID = ""
+					if state == "Succeeded" {
+						state = "Failed"
 					}
-					return acrTestReply(out, assignment)
-				default:
-					t.Fatalf("unexpected ownership request: %s %s", method, path)
-					return nil
 				}
-			}
-			result, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
-			require.ErrorContains(t, err, tt.wantError)
-			assert.Nil(t, result)
-			assert.Nil(t, p.acrBinding)
-			assert.False(t, p.acrBindingRecovered)
-			assert.Nil(t, p.acrPending)
-			assert.Empty(t, env.config)
-			assert.Empty(t, env.set)
-		})
+				rootID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+				p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+					require.Equal(t, http.MethodGet, method, "unverified ownership must not mutate resources")
+					switch path {
+					case rootID:
+						return acrTestReply(out, map[string]any{"properties": map[string]any{
+							"provisioningState": state, "parameters": parameters,
+							"outputs": map[string]any{
+								"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": registryID},
+								"AZURE_AI_PROJECT_ID":                  map[string]any{"value": testACRProject},
+							},
+						}})
+					case testACRProject:
+						return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+					case testACRProject + "/connections":
+						return acrTestReply(out, map[string]any{"value": []any{}})
+					case acrTestAssignment().ID:
+						if tt.name == "unreadable grant" {
+							return &azcore.ResponseError{StatusCode: http.StatusForbidden}
+						}
+						return acrTestReply(out, assignment)
+					default:
+						t.Fatalf("unexpected ownership request: %s %s", method, path)
+						return nil
+					}
+				}
+				result, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+				require.ErrorContains(t, err, tt.wantError)
+				assert.Nil(t, result)
+				assert.Nil(t, p.acrBinding)
+				assert.False(t, p.acrBindingRecovered)
+				assert.Nil(t, p.acrPending)
+				assert.Empty(t, env.config)
+				assert.Empty(t, env.set)
+			})
+		}
 	}
 }
 
@@ -1878,6 +1920,8 @@ func TestACRPreviewUsesReadOnlyAccessPlan(t *testing.T) {
 					return acrTestReply(out, map[string]any{"properties": map[string]any{"roleAssignmentMode": mode}})
 				case testACRProject:
 					return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+				case testACRProject + "/connections":
+					return acrTestReply(out, map[string]any{"value": []any{}})
 				case acrTestPending().assignmentID():
 					return acrTestReply(out, acrTestAssignment())
 				default:

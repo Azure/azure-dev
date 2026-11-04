@@ -128,6 +128,14 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 			}
 			a.flags.deployedBinding = binding
 			a.flags.preserveProjectID = binding.ProjectResourceID
+			boundProject, err := projectFromResourceID(binding.ProjectResourceID)
+			if err != nil {
+				return err
+			}
+			if saved := strings.TrimSpace(values["AZURE_SUBSCRIPTION_ID"]); saved != "" &&
+				!strings.EqualFold(saved, boundProject.SubscriptionId) {
+				return projectACRValidation("AZURE_SUBSCRIPTION_ID conflicts with the deployed project binding")
+			}
 			if id := values["AZURE_AI_PROJECT_ID"]; id != "" && !strings.EqualFold(id, binding.ProjectResourceID) {
 				return projectACRValidation(
 					"persisted project identity differs from the deployed registry binding; use a new azd environment",

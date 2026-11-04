@@ -38,6 +38,10 @@ func TestACRRemoteBuildPreflight(t *testing.T) {
 		reject                            bool
 	}{
 		{name: "remote ABAC", service: "docker: {remoteBuild: true}", reject: true},
+		{name: "empty endpoint variable", service: "docker: {remoteBuild: true}",
+			endpoint: "${FOUNDRY_PROJECT_ENDPOINT}", reject: true},
+		{name: "expanded existing endpoint", service: "docker: {remoteBuild: true}",
+			endpoint: "${FOUNDRY_PROJECT_ENDPOINT}"},
 		{name: "generated remote default", service: "kind: hosted\ndocker: {remoteBuild: true}", reject: true},
 		{name: "canonical only", service: "docker: {remoteBuild: true}", canonical: true, reject: true},
 		{name: "legacy managed registry", service: "docker: {remoteBuild: true}", managed: true},
@@ -92,7 +96,11 @@ func TestACRRemoteBuildPreflight(t *testing.T) {
 				[]byte("kind: hosted\ndocker: {remoteBuild: true}\n"), 0o600))
 			env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
 				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
+				"FOUNDRY_PROJECT_ENDPOINT":             "",
 			}}
+			if tt.name == "expanded existing endpoint" {
+				env.get["FOUNDRY_PROJECT_ENDPOINT"] = "https://account.services.ai.azure.com/api/projects/project"
+			}
 			if tt.noSelector {
 				delete(env.get, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
 			}

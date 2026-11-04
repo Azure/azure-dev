@@ -21,9 +21,10 @@ reporter.Report(ctx, telemetry.Event{
 })
 ```
 
-The example is illustrative; this extension does not currently emit a product
-usage event through this interface. Existing provisioning span attributes are
-unchanged by this adapter. Add an event only after its product question, bounded
+The example is illustrative. Project/deployment add commands and the Foundry
+Provision provider report [operation and internal step timings](../azure.ai.agents/docs/phase-telemetry.md)
+through the existing reporter, including authoring delegated by agent Init.
+Existing provisioning span attributes remain unchanged. Add an event only after its product question, bounded
 values, documentation, and privacy review are agreed. Before emitting, declare each
 `ext.*` attribute in `cli/azd/extensions/telemetry/fields.go` — reuse an existing
 declaration only when its meaning, allowed values, classification, and purpose are
@@ -303,6 +304,8 @@ azd ai project add --new-project
 `--project-endpoint`. If the environment already has a deployed registry
 binding, repeating setup preserves that project identity. Use a new azd
 environment to create another project.
+Setup restores a missing subscription from the deployed project binding and
+rejects a conflicting `AZURE_SUBSCRIPTION_ID` before changing configuration.
 
 ### Reuse an external container registry
 
@@ -378,6 +381,11 @@ replacement registry.
 For a deployed binding, `azd env refresh` also retains its registry ID,
 endpoint, and connection when the latest deployment has empty registry
 outputs. Refreshing does not change the binding or registry access.
+Project-only provisioning retains an azd-created registry's name and the
+verified nested creation deployment in root deployment tags. Recovery reads
+that creation operation again; the tags alone never establish ownership.
+Missing creation history blocks recovery and teardown rather than permitting
+an unverified deletion.
 An unused external-registry selection also survives refresh when the latest
 deployment has empty registry outputs, even if a source-built agent was added
 to `azure.yaml` after that deployment.

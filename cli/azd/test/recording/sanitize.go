@@ -12,7 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
-	"gopkg.in/dnaeon/go-vcr.v3/cassette"
+	"gopkg.in/dnaeon/go-vcr.v4/pkg/cassette"
 )
 
 func sanitizeContainerAppTokenExchange(i *cassette.Interaction) error {
@@ -181,6 +181,9 @@ func sanitizeBlobStorageSasSig(i *cassette.Interaction) error {
 		}
 
 		i.Request.URL = sanitized
+		if i.Request.Form.Has("sig") {
+			i.Request.Form.Set("sig", "SANITIZED")
+		}
 	}
 
 	return nil

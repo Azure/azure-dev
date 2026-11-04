@@ -4,9 +4,11 @@
 package grpcserver
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -587,6 +590,37 @@ func TestEventService_syncExtensionOutputCleansUpPreview(t *testing.T) {
 
 	console := service.console.(*mockinput.MockConsole)
 	require.Empty(t, console.Output())
+}
+
+func TestEventService_syncExtensionOutputFallsBackToStderrWhenPreviewSuppressed(t *testing.T) {
+	service, _ := createTestEventService()
+	extension := createTestExtension()
+
+	var stderr bytes.Buffer
+	console := input.NewConsole(
+		false,
+		false,
+		input.Writers{Output: io.Discard, Spinner: io.Discard},
+		input.ConsoleHandles{
+			Stdin:  strings.NewReader(""),
+			Stdout: io.Discard,
+			Stderr: &stderr,
+		},
+		nil,
+		nil,
+	)
+	pauser, ok := console.(input.PreviewerPauser)
+	require.True(t, ok)
+	pauser.PausePreviewer()
+	service.console = console
+
+	cleanup := service.syncExtensionOutput(
+		t.Context(), extension, "Test Extension (predeploy)")
+	_, err := extension.StdOut().Write([]byte("preview output\n"))
+	require.NoError(t, err)
+	cleanup()
+
+	require.Contains(t, stderr.String(), "preview output")
 }
 
 func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *testing.T) {

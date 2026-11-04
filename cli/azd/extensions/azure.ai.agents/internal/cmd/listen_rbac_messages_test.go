@@ -302,7 +302,7 @@ func testAgentRBACMessages(t *testing.T, betaEnabled bool) {
 	require.ElementsMatch(t, []string{"preprovision", "postprovision", "predown", "postdown"}, projectEvents)
 	require.ElementsMatch(t, wantServiceEvents, serviceEvents)
 	require.Empty(t, stable.registrations)
-	text, err := captureStdout(t, func() error {
+	stdout, stderr, err := captureStdoutAndStderr(t, func() error {
 		for _, serviceName := range []string{"assistant", "second-assistant", "invalid-assistant"} {
 			wireService := &azdext.ServiceConfig{}
 			proto.Merge(wireService, svc)
@@ -372,17 +372,52 @@ func testAgentRBACMessages(t *testing.T, betaEnabled bool) {
 	})
 	require.NoError(t, err)
 	if betaEnabled {
-		require.NotContains(t, text, message.Message)
-		require.NotContains(t, text, message.Suggestion)
+		require.NotContains(t, stdout, message.Message)
+		require.NotContains(t, stdout, message.Suggestion)
+		require.NotContains(t, stderr, message.Message)
+		require.NotContains(t, stderr, message.Suggestion)
 	} else {
-		require.Equal(t, 2, strings.Count(text, message.Message))
-		require.Equal(t, 2, strings.Count(text, message.Suggestion))
+		require.Equal(t, 2, strings.Count(stdout, message.Message))
+		require.Equal(t, 2, strings.Count(stdout, message.Suggestion))
+		require.NotContains(t, stderr, message.Message)
+		require.NotContains(t, stderr, message.Suggestion)
 	}
 	for _, sensitive := range []string{"example.invalid", "sig=secret", "fragment"} {
-		require.NotContains(t, text, sensitive)
+		require.NotContains(t, stdout, sensitive)
+		require.NotContains(t, stderr, sensitive)
 	}
 	require.Equal(t, int32(3), account.calls.Load())
 	require.Empty(t, beta.registrations)
 	require.Empty(t, beta.responses)
 	require.Empty(t, stable.responses)
+}
+
+func captureStdoutAndStderr(t *testing.T, run func() error) (string, string, error) {
+	t.Helper()
+
+	oldStdout := os.Stdout
+	oldStderr := os.Stderr
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	require.NoError(t, err)
+	stderrReader, stderrWriter, err := os.Pipe()
+	require.NoError(t, err)
+	defer func() {
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+	}()
+	defer stdoutReader.Close()
+	defer stderrReader.Close()
+
+	os.Stdout = stdoutWriter
+	os.Stderr = stderrWriter
+	runErr := run()
+	require.NoError(t, stdoutWriter.Close())
+	require.NoError(t, stderrWriter.Close())
+
+	stdoutOutput, err := io.ReadAll(stdoutReader)
+	require.NoError(t, err)
+	stderrOutput, err := io.ReadAll(stderrReader)
+	require.NoError(t, err)
+
+	return string(stdoutOutput), string(stderrOutput), runErr
 }

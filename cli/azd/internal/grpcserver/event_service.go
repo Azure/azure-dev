@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -364,14 +365,21 @@ func (s *eventService) syncExtensionOutput(
 	// Any output from stdout on the extension will be shown in the preview window.
 	extOut := extension.StdOut()
 	previewWriter := s.console.ShowPreviewer(ctx, previewOptions)
-	extOut.AddWriter(previewWriter)
+	outputWriter := previewWriter
+	if previewWriter == io.Discard {
+		outputWriter = s.console.Handles().Stderr
+		if outputWriter == nil || outputWriter == io.Discard {
+			outputWriter = os.Stderr
+		}
+	}
+	extOut.AddWriter(outputWriter)
 
 	// Stop the previewer when the function exits.
 	return func() {
 		if previewWriter != io.Discard {
 			s.console.StopPreviewer(ctx, false)
 		}
-		extOut.RemoveWriter(previewWriter)
+		extOut.RemoveWriter(outputWriter)
 	}
 }
 

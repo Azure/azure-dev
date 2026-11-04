@@ -59,7 +59,7 @@ if err := featureflags.Require(featureflags.Voice); err != nil {
 }
 ```
 
-`IsEnabled` rejects an empty `ID` or `EnvVar` before reading only the current process environment with `os.LookupEnv`. The function takes no context, azd client, selected-environment, project, or login argument. The extension inherits shell/CI process values; the host does not flatten selected-environment dotenv into the extension for these switches. Command input validation stays with the commands; there is no flag-specific environment validation or init-scope exception.
+`IsEnabled` rejects an empty `ID` or `EnvVar` before reading only the current process environment with `os.LookupEnv`. The function takes no context, azd client, selected-environment, project, or login argument. The extension inherits shell/CI process values. Lifecycle listeners do not receive selected-environment dotenv flattening for these switches, while direct `azd ai agent ...` commands still receive selected-environment values after shell/CI values. Command input validation stays with the commands; there is no flag-specific environment validation or init-scope exception.
 
 `Require` delegates to `IsEnabled` and returns the structured `feature_not_enabled` compatibility error when the feature is off. Its suggestion names the canonical variable to set in the shell or CI. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader.
 
@@ -91,7 +91,9 @@ while it is on. `postdeploy` and project listeners remain stable.
 Both paths share the existing predeploy validation, telemetry, environment
 updates, RBAC checks, automatic assignment, and skip rules. The stable path
 prints the returned safe warning messages and suggestions in temporary hook
-output; the beta path returns them to the host without also printing them.
+output. When deploy progress suppresses the previewer, the host surfaces that
+hook stdout on a visible stderr channel; the beta path returns them to the
+host without also printing them.
 Both preserve handler errors. This switch gates retention, not deployment or
 RBAC checking, so a disabled switch does not reject ordinary deployment.
 
@@ -152,7 +154,7 @@ Each feature is independent. There is no global toggle, experimentation default,
 
 `IsEnabled` reads only the declared key from the current process environment with `os.LookupEnv`, using `DefaultEnabled` only when the key is absent. Set switches in the shell or CI before running azd, or through scenario YAML `env:`. The extension inherits those process values at startup.
 
-The azd host listen/extension startup path does not flatten `.azure/<env>/.env` into the extension process for these switches. It may set `AZD_ENVIRONMENT` to the selected environment name, but that does not load its dotenv values. Persisting `AZD_ALPHA_ENABLE_*` with `azd env set` therefore does not enable or override these switches for the listener. This boundary is the same for Voice, A2A, RBAC warnings, and the other Agents preview switches.
+The azd host listen/extension startup path does not flatten `.azure/<env>/.env` into the extension process for these switches. It may set `AZD_ENVIRONMENT` to the selected environment name, but that does not load its dotenv values. Persisting `AZD_ALPHA_ENABLE_*` with `azd env set` therefore does not enable or override these switches for the listener. Direct `azd ai agent ...` command launches still append selected-environment values after shell/CI values, so persisted dotenv values can override shell opt-ins there. This boundary is the same for Voice, A2A, RBAC warnings, and the other Agents preview switches.
 
 The evaluator does not query azd user config (including `alpha.all`), open selected or default environment files, or read project/service environment mappings. It does not filter process values by where they came from.
 
@@ -215,7 +217,7 @@ Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and
 This intentionally adopts the process-only mechanism in place of the earlier multi-source implementation:
 
 - `AZD_FOUNDRY_EXT_ENABLE_*` names are no longer recognized; there is no legacy alias.
-- The evaluator no longer reads user config or opens selected/default azd environment files. The extension inherits shell/CI process values at launch; the host does not flatten selected-environment dotenv for preview switches.
+- The evaluator no longer reads user config or opens selected/default azd environment files. The extension inherits shell/CI process values at launch. Lifecycle listeners do not receive selected-environment dotenv flattening for preview switches, while direct command launches still append selected-environment values after shell/CI values.
 - Feature evaluation no longer loads project/service scopes or calls the host.
 - Old context/client/environment parameters, host-error sentinels, and flag-specific scope validation are removed.
 

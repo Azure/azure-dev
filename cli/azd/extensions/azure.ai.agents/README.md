@@ -36,10 +36,12 @@ When a variable is absent, its feature is off.
 When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature.
 False, empty, and invalid values disable it, including BYO AKS.
 The evaluator reads only the current process environment, without querying
-azd config or loading dotenv files. The host does not flatten the selected
-environment's `.azure/<env>/.env` into the extension for these switches.
-Set them in the shell or CI before running azd; persisted `azd env set`
-values do not enable or override them for the listener.
+azd config or loading dotenv files. For lifecycle listeners, the host does
+not flatten the selected environment's `.azure/<env>/.env` into the extension
+for these switches, so persisted `azd env set` values do not enable or
+override the listener. Direct `azd ai agent ...` commands still receive
+selected-environment values after shell/CI values, so a persisted dotenv value
+can override a shell opt-in for those commands.
 
 User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
 `AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary
@@ -75,8 +77,10 @@ eject do not check the BYO AKS switch. Ordinary Foundry provisioning is unchange
 
 The RBAC warnings switch controls retention only, not whether checks run.
 With it off, `predeploy` uses the stable event API and prints warnings and
-suggestions in the temporary hook output. With it on, `predeploy` uses the beta
-event API so the host can retain warnings in final output and JSON `messages`.
+suggestions in temporary hook output. When deploy progress suppresses the
+previewer, the host surfaces that hook stdout on a visible stderr channel.
+With it on, `predeploy` uses the beta event API so the host can retain warnings
+in final output and JSON `messages`.
 
 ### Enforcement limits
 
@@ -535,7 +539,8 @@ the service `predeploy` check in the final `azd deploy` / `azd up` output,
 including when a later deployment step fails. In PowerShell, use
 `$env:AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS = 'true'`.
 This preview is off by default; absent, false, empty, or invalid values keep
-the stable event API and warnings in temporary hook output only, without
+the stable event API and warnings in temporary hook output only (surfaced on a
+visible stderr channel when deploy progress suppresses the previewer), without
 retained JSON `messages`. RBAC checks, automatic role assignment, and skip
 rules still run as before. Warnings are non-blocking: a warning does not
 change the deployment exit code, and deployment errors still fail the command.

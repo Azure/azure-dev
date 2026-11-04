@@ -102,7 +102,7 @@ by extension PR [#10825](https://github.com/Azure/azure-dev/pull/10825); registr
 alone does not enable collection or change extension hosting behavior.
 
 The existing `agent.phase.completed` includes the fixed marker
-`ext.agent.memory_snapshot=true` only for resolved hosted provider Deploy attempts
+`ext.agent.memory.snapshot=true` only for resolved hosted provider Deploy attempts
 with snapshots explicitly enabled. It is classified `SystemMetadata` /
 `FeatureInsight`, endpoint `N/A`, not hashed and not a measurement. Disabled,
 unspecified, unresolved or non-hosted definitions, context events, other phases

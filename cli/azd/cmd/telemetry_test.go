@@ -68,7 +68,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 	t.Run("AgentMemorySnapshot", func(t *testing.T) {
 		t.Parallel()
 		field := extensionFields.AgentMemorySnapshot
-		require.Equal(t, "ext.agent.memory_snapshot", string(field.Key))
+		require.Equal(t, "ext.agent.memory.snapshot", string(field.Key))
 		require.Equal(t, fields.SystemMetadata, field.Classification)
 		require.Equal(t, fields.FeatureInsight, field.Purpose)
 		require.Equal(t, "N/A", field.Endpoint)

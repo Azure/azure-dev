@@ -206,6 +206,14 @@ var (
 		Endpoint:       "N/A",
 	}
 
+	// AgentMemorySnapshot records the project-authored hosted-agent snapshot setting.
+	AgentMemorySnapshot = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.memory_snapshot"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.FeatureInsight,
+		Endpoint:       "N/A",
+	}
+
 	// LocalClientRoute records the bounded local-client route selected by azure.ai.agents.
 	LocalClientRoute = fields.AttributeKey{
 		Key:            attribute.Key("ext.route"),

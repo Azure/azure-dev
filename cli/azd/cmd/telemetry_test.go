@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	extensionFields "github.com/azure/azure-dev/cli/azd/extensions/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -64,6 +65,15 @@ func TestTelemetryEventConstants(t *testing.T) {
 // rejected by TestNoRawTelemetryAttributes (below).
 func TestTelemetryFieldConstants(t *testing.T) {
 	t.Parallel()
+	t.Run("AgentMemorySnapshot", func(t *testing.T) {
+		t.Parallel()
+		field := extensionFields.AgentMemorySnapshot
+		require.Equal(t, "ext.agent.memory_snapshot", string(field.Key))
+		require.Equal(t, fields.SystemMetadata, field.Classification)
+		require.Equal(t, fields.FeatureInsight, field.Purpose)
+		require.Equal(t, "N/A", field.Endpoint)
+		require.False(t, field.IsMeasurement)
+	})
 	t.Run("ResourceFields", func(t *testing.T) {
 		t.Parallel()
 		require.Equal(t, "agency", fields.EnvModifierAgency)

@@ -1596,7 +1596,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 	progress azdext.ProgressReporter,
 ) (phaseResult0 *azdext.ServiceDeployResult, phaseErr error) {
 	ctx, timing := phasetelemetry.Begin(ctx, phasetelemetry.Deploy, phasetelemetry.Provider, phasetelemetry.Reporter(p.azdClient))
-	defer func() { timing.End(ctx, phaseErr) }()
+	defer func() {
+		if r := recover(); r != nil {
+			timing.End(ctx, errors.New("operation panicked"))
+			panic(r)
+		}
+		timing.End(ctx, phaseErr)
+	}()
 
 	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
 		return nil, err

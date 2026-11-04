@@ -1541,6 +1541,11 @@ for source init without a new folder), also determines the root or Foundry-layer
 teardown group during preflight.
 A successful preflight carries that subscription into setup without asking again.
 Headless setup with missing Azure context continues to defer configuration.
+Template adoption resolves the planned environment in the target directory,
+including any retained target state from a partial initialization; it does not
+inherit a different project's active environment or registry selection.
+Saved registry selections receive the same subscription preflight as an explicit
+flag and retain container source-build mode when adopting an unconfigured service.
 
 Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
 be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside

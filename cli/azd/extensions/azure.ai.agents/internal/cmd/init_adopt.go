@@ -877,6 +877,7 @@ func runInitFromAzureYaml(
 	if err != nil {
 		return fmt.Errorf("reading staged azure.yaml: %w", err)
 	}
+	flags.acrTemplateTarget = true
 	if err := validateInitACRManifest(ctx, azdClient, stagedContent, stagingDir, flags, targetDir); err != nil {
 		return err
 	}
@@ -1034,6 +1035,7 @@ func preflightAzdTemplate(
 	flags *initFlags,
 	targetDir string,
 ) (adoptedProjectPreflight, error) {
+	flags.acrTemplateTarget = true
 	stagingDir, cleanup, err := stageAzdTemplateRepository(
 		ctx,
 		templateSource,
@@ -1331,7 +1333,7 @@ func finalizeAdoptedProject(
 		azureContext.Scope.SubscriptionId = plan.subscription.SubscriptionId
 		azureContext.Scope.TenantId = plan.subscription.TenantId
 	}
-	if err := validateInitACRSubscription(flags.acrResourceID, azureContext.Scope.SubscriptionId); err != nil {
+	if err := validateInitACRSubscription(initACRResourceID(flags), azureContext.Scope.SubscriptionId); err != nil {
 		return err
 	}
 	// Defensive: the sample should already declare `infra.provider:
@@ -1410,7 +1412,7 @@ func finalizeAdoptedProject(
 		filterHostedRegions && !promptOnly,
 		preserveDeferredProjectState,
 		allowedLocations,
-		flags.acrResourceID,
+		initACRResourceID(flags),
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -1460,7 +1462,7 @@ func finalizeAdoptedProject(
 			projectRoot,
 			projectAuthoringExisting,
 			adoptedProjectAddNoPrompt(flags),
-			flags.acrResourceID,
+			initACRResourceID(flags),
 		); err != nil {
 			return err
 		}
@@ -1511,7 +1513,7 @@ func finalizeAdoptedProject(
 			projectRoot,
 			result.AuthoringMode,
 			flags.noPrompt,
-			flags.acrResourceID,
+			initACRResourceID(flags),
 		); err != nil {
 			return err
 		}
@@ -2494,7 +2496,7 @@ func applyDeployModeToService(
 	showCodeDeploy := supportsCodeDeploy(serviceDir)
 	// The final argument is true because -t supplied unified project input.
 	requestedMode := flags.deployMode
-	if flags.acrResourceIDSet {
+	if initACRResourceID(flags) != "" {
 		requestedMode = "container"
 	}
 	deployMode, err := promptDeployMode(

@@ -1066,6 +1066,8 @@ func TestInitFromCodeEffectiveACRSelection(t *testing.T) {
 					require.Empty(t, projects.added[0].Image)
 					require.Equal(t, "false", values["AZD_AGENT_SKIP_ACR"])
 					require.Len(t, workflow.requests, 1)
+					require.Contains(t, workflow.requests[0].Workflow.Steps[0].Command.Args, "--acr-resource-id")
+					require.Contains(t, workflow.requests[0].Workflow.Steps[0].Command.Args, testInitACRID)
 					require.FileExists(t, filepath.Join(root, ".agentignore"))
 				}
 				require.Zero(t, prompts.calls)

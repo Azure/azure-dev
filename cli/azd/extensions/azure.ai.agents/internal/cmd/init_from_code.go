@@ -400,7 +400,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		return nil, err
 	}
 
-	if a.flags.projectResourceId == "" && !a.flags.acrResourceIDSet {
+	if a.flags.projectResourceId == "" && initACRResourceID(a.flags) == "" {
 		projectResourceId, err := getEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_PROJECT_ID")
 		if err != nil {
 			return nil, fmt.Errorf("failed to read AZURE_AI_PROJECT_ID: %w", err)
@@ -482,10 +482,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 			return nil, err
 		}
 		deferredAzureContext = true
-	} else if a.flags.noPrompt || a.flags.acrResourceIDSet {
+	} else if a.flags.noPrompt || initACRResourceID(a.flags) != "" {
 		newCred, err := configureNewProjectForNoPrompt(
 			ctx, a.azdClient, a.environment.Name, a.azureContext,
-			a.flags.acrResourceID,
+			initACRResourceID(a.flags),
 		)
 		if err != nil {
 			return nil, err
@@ -1067,7 +1067,7 @@ func (a *InitFromCodeAction) addToProject(
 			return projectAuthoringCurrent
 		}(),
 		a.flags.noPrompt,
-		a.flags.acrResourceID,
+		initACRResourceID(a.flags),
 	); err != nil {
 		return err
 	}

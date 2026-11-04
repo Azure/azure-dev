@@ -85,6 +85,22 @@ func agentServiceConfig(t *testing.T, name string, props map[string]any) *azdext
 	return sc
 }
 
+func TestApplyDeployModeToAdoptedProjectSavedACRWithoutDocker(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "main.py"), []byte("print('hello')\n"), 0o600))
+	server := &deployModeProjectServer{
+		path: root, services: map[string]*azdext.ServiceConfig{"agent": agentServiceConfig(t, "agent", nil)},
+	}
+	client := newProjectRecorderClient(t, server)
+	needsACR, err := applyDeployModeToAdoptedProject(t.Context(),
+		&initFlags{effectiveACRResourceID: testInitACRID}, client)
+	require.NoError(t, err)
+	require.True(t, needsACR)
+	require.Equal(t, "docker", server.sets["agent"]["language"])
+	require.Contains(t, server.sets["agent"], "docker")
+	require.NotContains(t, server.sets["agent"], "codeConfiguration")
+}
+
 // TestApplyDeployModeToAdoptedProject verifies that the adopt flow reports
 // whether the resolved deploy mode requires an Azure Container Registry.
 func TestApplyDeployModeToAdoptedProject(t *testing.T) {

@@ -54,6 +54,7 @@ type initFlags struct {
 	acrResourceID           string
 	acrResourceIDSet        bool
 	effectiveACRResourceID  string
+	acrTemplateTarget       bool
 	acrConnection           string
 	modelDeployment         string
 	model                   string

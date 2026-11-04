@@ -28,6 +28,179 @@ import (
 const testInitACRID = "/subscriptions/sub/resourceGroups/registry-rg/providers/" +
 	"Microsoft.ContainerRegistry/registries/shared"
 
+func TestInitACRTemplateUsesTargetScope(t *testing.T) {
+	for _, route := range []string{"azure.yaml", "repository", "interactive repository"} {
+		for _, conflict := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/conflict=%t", route, conflict), func(t *testing.T) {
+				root := t.TempDir()
+				t.Chdir(root)
+				require.NoError(t, os.WriteFile("azure.yaml", []byte("name: caller\n"), 0o600))
+				staging := t.TempDir()
+				content := []byte("name: child\ninfra:\n  layers:\n    - name: foundry\n" +
+					"      provider: microsoft.foundry\nservices:\n  foundry:\n    host: azure.ai.project\n" +
+					"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: agent\n")
+				require.NoError(t, os.WriteFile(filepath.Join(staging, "azure.yaml"), content, 0o600))
+				server := &initACREnvironmentServer{testEnvironmentServiceServer: testEnvironmentServiceServer{
+					values: map[string]map[string]string{"test": {
+						"AZURE_SUBSCRIPTION_ID": "other", "AZURE_FOUNDRY_RESOURCE_GROUP": "rg-old-foundry",
+					}},
+				}}
+				group := "rg-old-foundry"
+				if conflict {
+					group = "rg-child-dev-foundry"
+				}
+				flags := &initFlags{
+					templatePointer: filepath.Join(staging, "azure.yaml"), src: "child", noPrompt: true,
+					acrResourceIDSet: true,
+					acrResourceID:    strings.Replace(testInitACRID, "registry-rg", group, 1),
+				}
+				if route == "interactive repository" {
+					flags.templatePointer = ""
+				}
+				workflow := &recordingProjectWorkflowServer{err: errors.New("stopped at core init")}
+				client := newTestAzdClient(t, server, workflow)
+				var err error
+				if route == "azure.yaml" {
+					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, staging)
+				} else {
+					_, err = scaffoldAzdTemplateProject(
+						t.Context(), client, http.DefaultClient, "child", staging, "child-dev", flags,
+					)
+				}
+				if conflict {
+					require.ErrorContains(t, err, "same resource-group name")
+					require.Empty(t, workflow.requests)
+				} else {
+					require.ErrorContains(t, err, "stopped at core init")
+					require.Len(t, workflow.requests, 1)
+					require.Contains(t, workflow.requests[0].Workflow.Steps[0].Command.Args, "child-dev")
+				}
+				require.Equal(t, "child-dev", flags.resolvedEnvironmentName)
+				require.Empty(t, server.setKeys)
+				require.NoDirExists(t, filepath.Join(root, "child"))
+			})
+		}
+	}
+}
+
+func TestInitACRTemplateReadsOnlyTargetState(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	require.NoError(t, os.WriteFile("azure.yaml", []byte("name: caller\n"), 0o600))
+	dir := filepath.Join(root, "child", ".azure", "child-dev")
+	require.NoError(t, os.MkdirAll(dir, 0o750))
+	state := []byte("AZURE_SUBSCRIPTION_ID=sub\nAZURE_CONTAINER_REGISTRY_RESOURCE_ID=" + testInitACRID + "\n")
+	envPath := filepath.Join(dir, ".env")
+	require.NoError(t, os.WriteFile(envPath, state, 0o600))
+	content := []byte("name: child\nservices:\n  foundry:\n    host: azure.ai.project\n" +
+		"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: agent\n")
+	flags := &initFlags{templatePointer: "template.yaml", noPrompt: true}
+	require.NoError(t, validateInitACRProjectContent(t.Context(), nil, flags, content, root, "child"))
+	require.Equal(t, testInitACRID, flags.effectiveACRResourceID)
+	scope, err := planInitACRSubscription(t.Context(), nil, flags, "child")
+	require.NoError(t, err)
+	require.Equal(t, "sub", scope.SubscriptionId)
+	flags.deployMode = "code"
+	err = validateInitACRProjectContent(t.Context(), nil, flags, content, root, "child")
+	require.ErrorContains(t, err, "--deploy-mode code")
+	actual, err := os.ReadFile(envPath)
+	require.NoError(t, err)
+	require.Equal(t, state, actual)
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.NoFileExists(t, filepath.Join(root, "child", "azure.yaml"))
+}
+
+func TestInitACRTargetBindingAndReadErrors(t *testing.T) {
+	for _, corrupt := range []bool{false, true} {
+		t.Run(fmt.Sprint(corrupt), func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			dir := filepath.Join(root, "child", ".azure", "child-dev")
+			require.NoError(t, os.MkdirAll(dir, 0o750))
+			binding := synthesis.ACRBinding{
+				Version: 1, Mode: "reuse-connect", RegistryResourceID: testInitACRID,
+				ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry-rg/providers/" +
+					"Microsoft.CognitiveServices/accounts/account/projects/project",
+				PrincipalID: "principal",
+			}
+			data, err := json.Marshal(map[string]any{
+				"extensions": map[string]any{"ai-projects": map[string]any{"acrBinding": binding}},
+			})
+			require.NoError(t, err)
+			if corrupt {
+				data = []byte("{")
+			}
+			path := filepath.Join(dir, "config.json")
+			require.NoError(t, os.WriteFile(path, data, 0o600))
+			flags := &initFlags{templatePointer: "template.yaml", noPrompt: true}
+			content := []byte("name: child\nservices:\n  foundry:\n    host: azure.ai.project\n")
+			err = validateInitACRProjectContent(t.Context(), nil, flags, content, root, "child")
+			if corrupt {
+				require.ErrorContains(t, err, "read target registry binding")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, testInitACRID, flags.effectiveACRResourceID)
+			}
+			actual, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, data, actual)
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+		})
+	}
+}
+
+func TestInitACRSavedSourceSubscriptionRejectsBeforeWrites(t *testing.T) {
+	for _, canonical := range []bool{false, true} {
+		t.Run(fmt.Sprint(canonical), func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n")
+			require.NoError(t, os.WriteFile("azure.yaml", content, 0o600))
+			require.NoError(t, os.WriteFile("main.py", []byte("print('hello')\n"), 0o600))
+			values := map[string]string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testInitACRID}
+			server := &reuseInitACREnvironmentServer{testEnvironmentServiceServer: testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"test": {Name: "test"}},
+				current:      &azdext.Environment{Name: "test"}, values: map[string]map[string]string{"test": values},
+				config: map[string][]byte{},
+			}}
+			if canonical {
+				binding, err := json.Marshal(synthesis.ACRBinding{
+					Version: 1, Mode: "reuse-connect", RegistryResourceID: testInitACRID,
+					ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry-rg/providers/" +
+						"Microsoft.CognitiveServices/accounts/account/projects/project",
+					PrincipalID: "principal",
+				})
+				require.NoError(t, err)
+				server.config[synthesis.ACRBindingConfigKey] = binding
+				delete(values, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+			}
+			before := maps.Clone(values)
+			prompts := &sourceInitACRPromptServer{initACRPromptServer: initACRPromptServer{
+				subscription: &azdext.Subscription{Id: "other", UserTenantId: "user-tenant"},
+			}}
+			workflow := &recordingProjectWorkflowServer{}
+			projects := &recordingProjectServer{projectPath: root}
+			err := executeReuseInitACR(t, server, workflow, prompts, projects, &sourceInitACRAccountServer{},
+				false, "test", "--src", ".", "--agent-name", "agent", "--protocol", "responses")
+			require.ErrorContains(t, err, "same subscription")
+			require.Equal(t, 1, prompts.calls)
+			require.Zero(t, prompts.locationCalls)
+			require.Equal(t, before, values)
+			require.Empty(t, server.setKeys)
+			require.Empty(t, workflow.requests)
+			require.Empty(t, projects.added)
+			require.NoFileExists(t, ".agentignore")
+			actual, err := os.ReadFile("azure.yaml")
+			require.NoError(t, err)
+			require.Equal(t, content, actual)
+		})
+	}
+}
+
 func TestResolveACREnvironmentUsesActualAgentName(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -249,13 +422,13 @@ func TestInitACRManifestValidatesPlannedEnvironmentBeforeScaffolding(t *testing.
 			{name: "derived group without current environment", existing: true, defaultEnv: true, noCurrent: true,
 				group: "rg-project-dev", wantError: "same resource-group name"},
 			{name: "existing root environment", existing: true, group: "rg-demo", subscription: "sub",
-				wantError: "azd down deletes"},
+				wantError: "same resource-group name"},
 			{name: "current environment without explicit selector", existing: true, defaultEnv: true,
-				group: "rg-demo", subscription: "sub", wantError: "azd down deletes"},
+				group: "rg-demo", subscription: "sub"},
 			{name: "existing layer environment", existing: true, layer: true,
-				group: "rg-demo-foundry", subscription: "sub", wantError: "azd down deletes"},
+				group: "rg-demo-foundry", subscription: "sub", wantError: "same resource-group name"},
 			{name: "configured subscription mismatch", existing: true, group: "registry-rg",
-				subscription: "other", wantError: "same subscription"},
+				subscription: "other"},
 			{name: "external registry", group: "registry-rg"},
 			{name: "matching subscription", existing: true, group: "registry-rg", subscription: "sub"},
 		} {
@@ -662,7 +835,7 @@ func TestInitACRBindingPreflight(t *testing.T) {
 				acrResourceIDSet: true, acrResourceID: tt.selected,
 				templatePointer: tt.template,
 			})
-			if tt.wantErr {
+			if tt.wantErr && (tt.template == "" || tt.selected == "") {
 				if tt.selected == "" {
 					require.ErrorContains(t, err, "--acr-resource-id")
 				} else {
@@ -783,7 +956,8 @@ func TestInitACRExplicitSelectionChecksDeployedStateBeforeWrites(t *testing.T) {
 						t.Context(), client, http.DefaultClient, "project", templateDir, "test", flags,
 					)
 				}
-				if tt.wantError {
+				targetIsFresh := route == "azure.yaml" || route == "repository"
+				if tt.wantError && !targetIsFresh {
 					require.ErrorContains(t, err, "provisioned Foundry project")
 					require.Equal(t, before, values)
 					require.Empty(t, environments.setKeys)
@@ -937,7 +1111,11 @@ func TestInitACRRejectsCrossSubscriptionBeforeWrites(t *testing.T) {
 			err := validateInitACRProject(t.Context(), client, &initFlags{
 				acrResourceIDSet: true, acrResourceID: testInitACRID, templatePointer: template,
 			})
-			require.ErrorContains(t, err, "same subscription")
+			if template == "" {
+				require.ErrorContains(t, err, "same subscription")
+			} else {
+				require.NoError(t, err)
+			}
 			require.Empty(t, server.setKeys)
 			after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
 			require.NoError(t, err)
@@ -1126,10 +1304,11 @@ func TestInitACRStagedEnvironmentSelectorPreflight(t *testing.T) {
 			bindingBefore := string(server.binding)
 			workflow := &recordingProjectWorkflowServer{}
 			client := newTestAzdClient(t, server, workflow)
-			flags := &initFlags{templatePointer: "template.yaml", src: "project", noPrompt: true}
+			flags := &initFlags{templatePointer: "template.yaml", src: "project", env: "test", noPrompt: true}
 			require.NoError(t, validateInitACRProject(t.Context(), client, flags))
 			err := validateInitACRProjectContent(t.Context(), client, flags, stagedContent, stagingDir, ".")
 			require.ErrorContains(t, err, "azd down deletes")
+			workflow.err = errors.New("stopped at core init")
 			for _, route := range []string{"azure.yaml", "repository"} {
 				t.Run(route, func(t *testing.T) {
 					var err error
@@ -1141,15 +1320,15 @@ func TestInitACRStagedEnvironmentSelectorPreflight(t *testing.T) {
 							t.Context(), client, http.DefaultClient, "project", stagingDir, "test", flags,
 						)
 					}
-					require.ErrorContains(t, err, "azd down deletes")
-					require.Empty(t, workflow.requests)
+					require.ErrorContains(t, err, "stopped at core init")
+					require.Empty(t, flags.effectiveACRResourceID)
 					require.NoDirExists(t, filepath.Join(root, "project"))
 				})
 			}
 			require.Equal(t, before, server.values["test"])
 			require.Equal(t, bindingBefore, string(server.binding))
 			require.Empty(t, server.setKeys)
-			require.Empty(t, workflow.requests)
+			require.Len(t, workflow.requests, 2)
 			after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
 			require.NoError(t, err)
 			require.Equal(t, content, after)

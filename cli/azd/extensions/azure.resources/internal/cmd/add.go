@@ -49,7 +49,7 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			}
 			defer client.Close()
 			ctx := cmd.Context()
-			current, err := loadAddProject(ctx, client.Project())
+			current, err := loadProject(ctx, client.Project())
 			if err != nil {
 				return err
 			}
@@ -58,7 +58,7 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			if cmd.Flags().Changed("layer") {
 				initialLayer = layerName
 			}
-			if _, err := readAddProject(current, initialLayer); err != nil {
+			if _, err := parseProject(current, initialLayer); err != nil {
 				return err
 			}
 			if !cmd.Flags().Changed("layer") {
@@ -70,7 +70,7 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				}
 				layerName = answer.GetValue()
 			}
-			project, err := readAddProject(current, layerName)
+			project, err := parseProject(current, layerName)
 			if err != nil {
 				return err
 			}

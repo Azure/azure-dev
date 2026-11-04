@@ -17,7 +17,7 @@ func readAddTestProject(t *testing.T, source, layer string) *addProject {
 	t.Helper()
 	var raw map[string]any
 	require.NoError(t, yaml.Unmarshal([]byte(source), &raw))
-	project, err := readAddProject(raw, layer)
+	project, err := parseProject(raw, layer)
 	require.NoError(t, err)
 	return project
 }
@@ -171,7 +171,7 @@ func TestAddRejectsUnsupportedProjectShapes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var raw map[string]any
 			require.NoError(t, yaml.Unmarshal([]byte(test.source), &raw))
-			_, err := readAddProject(raw, test.layer)
+			_, err := parseProject(raw, test.layer)
 			require.Error(t, err)
 		})
 	}

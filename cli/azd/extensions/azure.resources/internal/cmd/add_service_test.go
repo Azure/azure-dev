@@ -26,9 +26,9 @@ func TestAddServicesUsesProjectRPC(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 
-	current, err := loadAddProject(t.Context(), client.Project())
+	current, err := loadProject(t.Context(), client.Project())
 	require.NoError(t, err)
-	loaded, err := readAddProject(current, "application")
+	loaded, err := parseProject(current, "application")
 	require.NoError(t, err)
 	service := map[string]any{
 		"host": "containerapp", "language": "python", "project": "./src/api",
@@ -51,9 +51,9 @@ func TestAddServicesUsesProjectRPC(t *testing.T) {
 	require.Equal(t, "services.api", host.project.requests[0].Path)
 	require.Equal(t, service, host.project.requests[0].Section.AsMap())
 
-	current, err = loadAddProject(t.Context(), client.Project())
+	current, err = loadProject(t.Context(), client.Project())
 	require.NoError(t, err)
-	reloaded, err := readAddProject(current, "application")
+	reloaded, err := parseProject(current, "application")
 	require.NoError(t, err)
 	require.Equal(t, service, reloaded.services["api"])
 	require.Equal(t, loaded.services["existing"], reloaded.services["existing"])
@@ -70,9 +70,9 @@ func TestAddServiceRPCFailureRestoresProject(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 
-	original, err := loadAddProject(t.Context(), client.Project())
+	original, err := loadProject(t.Context(), client.Project())
 	require.NoError(t, err)
-	loaded, err := readAddProject(original, "data")
+	loaded, err := parseProject(original, "data")
 	require.NoError(t, err)
 	result := &add.Result{
 		Resources: resources.Config{"cache": {Type: resources.Redis}},
@@ -91,7 +91,7 @@ func TestAddServiceRPCFailureRestoresProject(t *testing.T) {
 	require.ErrorContains(t, err, "azure.yaml was left unchanged")
 	require.Len(t, host.project.requests, 1, "stop after the first failed service write")
 
-	restored, err := loadAddProject(t.Context(), client.Project())
+	restored, err := loadProject(t.Context(), client.Project())
 	require.NoError(t, err)
 	require.Equal(t, original, restored)
 }

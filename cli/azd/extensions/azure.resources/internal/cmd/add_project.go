@@ -30,7 +30,7 @@ type addProject struct {
 	services map[string]map[string]any
 }
 
-func loadAddProject(ctx context.Context, client azdext.ProjectServiceClient) (map[string]any, error) {
+func loadProject(ctx context.Context, client azdext.ProjectServiceClient) (map[string]any, error) {
 	project := map[string]any{}
 	for _, path := range []string{"resources", "layers", "services", "infra"} {
 		response, err := client.GetConfigValue(ctx, &azdext.GetProjectConfigValueRequest{Path: path})
@@ -44,9 +44,12 @@ func loadAddProject(ctx context.Context, client azdext.ProjectServiceClient) (ma
 	return project, nil
 }
 
-func readAddProject(project map[string]any, layerName string) (*addProject, error) {
-	if err := resources.ValidateEntryName(layerName); err != nil || layerName == "" {
-		return nil, errors.New("--layer must be a nonempty infrastructure name starting with a lowercase letter")
+func parseProject(project map[string]any, layerName string) (*addProject, error) {
+	if layerName == "" {
+		return nil, errors.New("infrastructure layer name must not be empty")
+	}
+	if err := resources.ValidateEntryName(layerName); err != nil {
+		return nil, fmt.Errorf("invalid infrastructure layer name: %w", err)
 	}
 	if legacy, ok := project["resources"].(map[string]any); ok && len(legacy) > 0 {
 		return nil, errors.New("azd resources add writes to infra.layers[].config, not top-level resources; " +

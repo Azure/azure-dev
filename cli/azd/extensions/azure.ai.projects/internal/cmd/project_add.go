@@ -962,12 +962,12 @@ func lookupResolvedProject(
 	client *azdext.AzdClient,
 	resourceID string,
 ) (*resolvedProject, error) {
-	defer phasetelemetry.Start(ctx, phasetelemetry.AzureQuery)()
-
 	project, err := projectFromResourceID(resourceID)
 	if err != nil {
 		return nil, err
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.AzureQuery)()
+
 	tenantResponse, err := client.Account().LookupTenant(ctx,
 		&azdext.LookupTenantRequest{SubscriptionId: project.SubscriptionId})
 	if err != nil {

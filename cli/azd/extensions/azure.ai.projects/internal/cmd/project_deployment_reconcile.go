@@ -31,12 +31,11 @@ func reconcileAdoptedDeployments(
 	serviceName string,
 	noPrompt bool,
 ) (string, bool, func() error, error) {
-	defer phasetelemetry.Start(ctx, phasetelemetry.DeploymentReconciliation)()
-
 	if target == nil || target.Mode != projectModeExistingID ||
 		target.ResourceId == "" {
 		return "", false, func() error { return nil }, nil
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.DeploymentReconciliation)()
 
 	section, err := client.Project().GetConfigSection(ctx,
 		&azdext.GetProjectConfigSectionRequest{Path: "services"})

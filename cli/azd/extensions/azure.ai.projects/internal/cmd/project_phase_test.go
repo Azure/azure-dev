@@ -14,7 +14,10 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azure.ai.projects/internal/phasetelemetry"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -67,6 +70,9 @@ func TestProjectAuthoringCommandEmitsInternalSteps(t *testing.T) {
 		locationErr error
 		errorText   string
 		outcome     string
+		projectID   string
+		endpoint    string
+		wantQuery   bool
 	}{
 		{name: "Init delegated headless", noPrompt: true},
 		{name: "interactive project add"},
@@ -74,6 +80,20 @@ func TestProjectAuthoringCommandEmitsInternalSteps(t *testing.T) {
 		{name: "delegated deployment authoring", noPrompt: true, deployment: true},
 		{name: "interactive deployment location", deployment: true, existing: true},
 		{name: "headless deployment existing location", noPrompt: true, deployment: true, existing: true},
+		{
+			name: "invalid explicit project ID", noPrompt: true, projectID: "invalid-resource-id",
+			errorText: "project ID must be a Microsoft.CognitiveServices project resource ID", outcome: "error",
+		},
+		{
+			name: "valid project ID lookup failure", noPrompt: true, wantQuery: true,
+			projectID: "/subscriptions/private-sub/resourceGroups/rg/providers/" +
+				"Microsoft.CognitiveServices/accounts/account/projects/project",
+			errorText: "failed to lookup tenant", outcome: "error",
+		},
+		{
+			name: "endpoint-only project add", noPrompt: true,
+			endpoint: "https://account.services.ai.azure.com/api/projects/project",
+		},
 		{
 			name: "deployment location canceled", deployment: true, existing: true,
 			locationErr: status.Error(codes.Canceled, "selection canceled"),
@@ -131,6 +151,10 @@ func TestProjectAuthoringCommandEmitsInternalSteps(t *testing.T) {
 			args := []string{"add", "--new-project", "--output", "none"}
 			if test.deployment {
 				args = []string{"deployment", "add", "--model", "OpenAI/gpt-4.1", "--output", "none"}
+			} else if test.projectID != "" {
+				args = []string{"add", "--project-id", test.projectID, "--output", "none"}
+			} else if test.endpoint != "" {
+				args = []string{"add", "--project-endpoint", test.endpoint, "--output", "none"}
 			}
 			if test.noPrompt {
 				args = append(args, "--no-prompt")
@@ -180,7 +204,7 @@ func TestProjectAuthoringCommandEmitsInternalSteps(t *testing.T) {
 				}
 			}
 			require.Positive(t, ids["project_resolution"])
-			if test.locationErr == nil {
+			if test.errorText == "" || test.failSave {
 				require.Positive(t, ids["configuration_save"])
 				if test.deployment {
 					require.Positive(t, ids["azure_query"])
@@ -188,7 +212,14 @@ func TestProjectAuthoringCommandEmitsInternalSteps(t *testing.T) {
 				}
 			} else {
 				require.Zero(t, ids["configuration_save"])
-				require.Zero(t, ids["azure_query"])
+				if test.wantQuery {
+					require.Positive(t, ids["azure_query"])
+				} else {
+					require.Zero(t, ids["azure_query"])
+				}
+			}
+			if !test.deployment {
+				require.Zero(t, ids["deployment_reconciliation"], "ineligible project must not report reconciliation")
 			}
 			if !test.noPrompt {
 				require.Positive(t, ids["subscription_selection"])
@@ -197,6 +228,67 @@ func TestProjectAuthoringCommandEmitsInternalSteps(t *testing.T) {
 			} else {
 				require.Zero(t, ids["location_selection"])
 				require.Zero(t, prompts.locationCalls.Load())
+			}
+
+		})
+	}
+}
+
+type projectPhaseEventReporter struct {
+	events []foundryTelemetry.Event
+}
+
+func (r *projectPhaseEventReporter) Report(_ context.Context, event foundryTelemetry.Event) {
+	r.events = append(r.events, event)
+}
+
+func TestAdoptedReconciliationTimingRequiresEligibleTarget(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		target   *resolvedProject
+		eligible bool
+	}{
+		{name: "nil target"},
+		{name: "new project", target: &resolvedProject{Mode: projectModeNew}},
+		{
+			name: "endpoint-only project",
+			target: &resolvedProject{
+				Mode: projectModeExistingEndpoint, Endpoint: "https://account.services.ai.azure.com/api/projects/project",
+			},
+		},
+		{name: "missing resource ID", target: &resolvedProject{Mode: projectModeExistingID}},
+		{
+			name:   "eligible project with no declarations",
+			target: &resolvedProject{Mode: projectModeExistingID, ResourceId: "project-resource-id"}, eligible: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reporter := &projectPhaseEventReporter{}
+			ctx, timing := phasetelemetry.Begin(
+				t.Context(), phasetelemetry.ProjectAuthoring, phasetelemetry.Command, reporter,
+			)
+			var client *azdext.AzdClient
+			root := t.TempDir()
+			if test.eligible {
+				client, _, _, _, _ = newSelfInitializingDeploymentClient(t, root)
+			}
+			deployment, changed, restore, err := reconcileAdoptedDeployments(
+				ctx, client, root, "test", test.target, "project", true,
+			)
+			timing.End(ctx, err)
+			require.NoError(t, err)
+			require.Empty(t, deployment)
+			require.False(t, changed)
+			require.NotNil(t, restore)
+			require.NoError(t, restore())
+			require.NotEmpty(t, reporter.events)
+			require.Equal(t, "agent.phase.completed", reporter.events[0].Name)
+			require.Equal(t, "success", reporter.events[0].Attributes["agent.phase.outcome"])
+			if test.eligible {
+				require.Len(t, reporter.events, 2)
+				require.Equal(t, "deployment_reconciliation", reporter.events[1].Attributes["agent.phase.step.id"])
+			} else {
+				require.Len(t, reporter.events, 1, "ineligible guards must skip all reconciliation work and timing")
 			}
 		})
 	}

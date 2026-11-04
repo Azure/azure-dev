@@ -4284,8 +4284,6 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		localProfile.IsActivity,
 	)
 	var agentResp *agent_api.AgentObject
-	endUpload := phasetelemetry.Start(ctx, phasetelemetry.ArtifactUpload)
-	defer endUpload()
 
 	if getErr != nil {
 		// Only fall back to create on 404; classify every other service response.
@@ -4295,9 +4293,12 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		// Agent doesn't exist — create
 		progress("Creating new agent from code package")
 		_, _ = fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
+		endUpload := phasetelemetry.Start(ctx, phasetelemetry.ArtifactUpload)
+		defer endUpload()
 		agentResp, err = agentClient.CreateAgentFromZip(
 			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
+		endUpload()
 		if err != nil {
 			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
 		}
@@ -4317,9 +4318,12 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		writeExistingAgentVersionWarning(agentDef.Name)
 		updateVersionRequest := *versionRequest
 		updateVersionRequest.DigitalWorkerType = ""
+		endUpload := phasetelemetry.Start(ctx, phasetelemetry.ArtifactUpload)
+		defer endUpload()
 		agentResp, err = agentClient.UpdateAgentFromZip(
 			ctx, agentDef.Name, &updateVersionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
+		endUpload()
 		if err != nil {
 			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
 		}

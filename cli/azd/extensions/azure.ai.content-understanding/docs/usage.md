@@ -154,7 +154,7 @@ azd ai cu analyze \
   --output-file invoice.result.md
 ```
 
-### Optional terminal preview
+### Pretty-print results in the terminal
 
 The default stdout retains the original Markdown, including HTML tables. This
 also applies to redirects and pipes, so GUI viewers and other consumers can do
@@ -164,16 +164,17 @@ their own rendering:
 azd ai cu analyze invoice.pdf > invoice.result.md
 ```
 
-Opt in to a human-readable preview with `--pretty`; use `--pretty=false` or omit
+Pretty-print results in the terminal with `--pretty`; use `--pretty=false` or omit
 the flag to retain original text:
 
 ```bash
 azd ai cu analyze invoice.pdf --pretty
 ```
 
-The preview formats Markdown for easier terminal reading and displays document
+Pretty-printing formats Markdown for easier terminal reading and displays document
 metadata in separate code blocks. Simple HTML tables show all columns, switching
-to labeled cards when a table is too wide.
+to labeled cards when a table is too wide. When color is enabled, headings and
+tables use distinct colors to make them easier to spot.
 
 Keep these limitations in mind:
 

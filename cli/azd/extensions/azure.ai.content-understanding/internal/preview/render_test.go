@@ -67,6 +67,28 @@ func TestWideTableSelectsCardsAndKeepsValues(t *testing.T) {
 	}
 }
 
+func TestPrettyPrintTableColorsPreserveContentAndLayout(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	const source = "<table><caption>Totals</caption><tr><th>Name</th><th>Value</th></tr>" +
+		"<tr><td>Example</td><td>RECORD0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ</td></tr></table>\n"
+	for _, width := range []int{20, 120} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			plain := renderPreview(t, source, width)
+			var colored bytes.Buffer
+			require.NoError(t, Render(t.Context(), &colored, source, width, true))
+			assert.Contains(t, colored.String(), "\x1b[36mTotals")
+			assert.Equal(t, plain, ansi.Strip(colored.String()))
+			if width == 20 {
+				assert.Contains(t, colored.String(), "Row 1")
+			}
+			t.Setenv("NO_COLOR", "1")
+			var disabled bytes.Buffer
+			require.NoError(t, Render(t.Context(), &disabled, source, width, true))
+			assert.Equal(t, plain, disabled.String())
+		})
+	}
+}
+
 func TestUnsupportedTablesPreserveSource(t *testing.T) {
 	for _, source := range []string{
 		"<table><tr><th>A</th><th>B</th></tr><tr><td colspan=\"2\">Merged</td></tr></table>",

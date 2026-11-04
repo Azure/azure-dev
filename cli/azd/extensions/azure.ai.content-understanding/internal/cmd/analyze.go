@@ -39,7 +39,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 		Long: "Analyze local files, directories, or HTTPS URLs using Microsoft Entra authentication.\n\n" +
 			"Uses prebuilt-layout when no analyzer is specified or configured.\n" +
 			"Results use YAML front matter and Markdown by default. Batches save source-relative result files.\n" +
-			"Use --pretty for an opt-in human-readable preview of one streamed LLM-input result.\n" +
+			"Use --pretty to pretty-print one streamed LLM-input result in the terminal.\n" +
 			"Without --pretty, stdout retains the original Markdown and HTML tables, including when redirected.\n" +
 			"Use --output json for complete JSON, or --dry-run to inspect the plan without service calls.",
 		Example: `  azd ai cu analyze invoice.pdf
@@ -61,7 +61,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
     Save YAML front matter and Markdown for generative AI model input.
 
   azd ai cu analyze invoice.pdf --pretty
-    Preview Markdown with supported HTML tables; wide tables use labeled cards.`,
+    Pretty-print Markdown and tables in the terminal; wide tables use labeled cards.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return exterrors.FromError(runAnalyzeCommand(cmd, extCtx, open, options, args))
 		},
@@ -83,7 +83,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 	flags.BoolVar(&options.output.LLMInput, "llm-input", true,
 		"Render YAML front matter and Markdown; set false for complete JSON; true conflicts with --output json")
 	flags.BoolVar(&options.pretty, "pretty", false,
-		"Preview one streamed LLM-input result using Markdown and table/cards layout (default: original text)")
+		"Pretty-print one streamed LLM-input result in the terminal (default: original text)")
 	flags.StringVar(&options.output.File, "output-file", "", "Save one result to this file")
 	flags.StringVarP(&options.output.Directory, "output-dir", "d", "", "Save source-relative result files in this directory")
 	flags.StringVar(&options.output.Existing, "on-existing", "",

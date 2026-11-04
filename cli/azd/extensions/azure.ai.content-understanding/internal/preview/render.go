@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/x/ansi"
+	terminalColor "github.com/fatih/color"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -38,6 +40,9 @@ func Render(ctx context.Context, writer io.Writer, source string, width int, col
 	if width < 1 {
 		return fmt.Errorf("preview width must be positive")
 	}
+	color = color && os.Getenv("NO_COLOR") == ""
+	tableColor := terminalColor.New(terminalColor.FgCyan)
+	tableColor.EnableColor()
 	style := "ascii"
 	if color {
 		style = "dark"
@@ -92,7 +97,10 @@ func Render(ctx context.Context, writer io.Writer, source string, width int, col
 				return ast.WalkStop, err
 			}
 			if parsed.caption != "" {
-				result.WriteString(parsed.caption + "\n")
+				rendered = parsed.caption + "\n" + rendered
+			}
+			if color {
+				rendered = tableColor.Sprint(ansi.Strip(rendered))
 			}
 			result.WriteString(rendered)
 			result.WriteByte('\n')

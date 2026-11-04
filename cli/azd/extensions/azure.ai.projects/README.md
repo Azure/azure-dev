@@ -2,7 +2,7 @@
 
 <!-- cspell:ignore Kata kubelet -->
 
-Manage Microsoft Foundry Project resources from your terminal. (Preview)
+Manage Microsoft Foundry Project resources from your terminal.
 
 Requires azd 1.37.0 or later. Deployment preview uses the stable v1 API.
 

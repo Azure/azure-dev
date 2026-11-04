@@ -11,7 +11,6 @@ import (
 	"azureaiskills/internal/helpformat"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +18,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "skill",
 		Use:   "skill <command> [options]",
-		Short: fmt.Sprintf("Manage Foundry skills from your terminal. %s", color.YellowString("(Preview)")),
+		Short: "Manage Foundry skills from your terminal.",
 		Long: `Manage Foundry skills — reusable behavioral guidelines an agent can attach
 at runtime — from your terminal.
 

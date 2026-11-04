@@ -40,6 +40,7 @@ func TestAgentHelp(t *testing.T) {
 			require.NoError(t, root.Execute())
 			text := buf.String()
 			require.NotContains(t, text, "\x1b")
+			require.NotRegexp(t, `(?i)\((preview|beta)\)`, command.Short+"\n"+command.Long)
 			require.Contains(t, text, "\nUsage\n  azd ai agent")
 			require.Contains(t, text, "\nGlobal Flags\n")
 			require.Contains(t, text, "\nExamples\n")

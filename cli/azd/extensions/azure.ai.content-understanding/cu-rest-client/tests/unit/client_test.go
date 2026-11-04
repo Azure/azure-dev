@@ -296,6 +296,7 @@ func TestDefaultsAndServiceErrors(t *testing.T) {
 		assert.Equal(t, "/contentunderstanding/defaults", r.URL.Path)
 		switch count {
 		case 1:
+			w.Header().Set("x-ms-error-code", "InvalidRequest")
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = io.WriteString(w,
 				`{"error":{"code":"InvalidRequest","message":"DefaultsNotSet","innererror":{"code":"DefaultsNotSet"}}}`)
@@ -323,6 +324,46 @@ func TestDefaultsAndServiceErrors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, value, got.ModelDeployments["gpt-5.2"])
 	assert.Contains(t, string(got.RawJSON), `"gpt-5.2":"deployment"`)
+}
+
+func TestServiceErrorCodePrecedence(t *testing.T) {
+	for _, test := range []struct {
+		name, header, body, expected string
+	}{
+		{"nested overrides header", "InvalidRequest",
+			`{"error":{"code":"InvalidRequest","innererror":{"code":"DefaultsNotSet"}}}`, "DefaultsNotSet"},
+		{"header without body code", "InvalidRequest", `{}`, "InvalidRequest"},
+		{"header over outer body code", "HeaderCode", `{"error":{"code":"BodyCode"}}`, "HeaderCode"},
+		{"unsafe inner code preserves header", "HeaderCode",
+			`{"error":{"code":"BodyCode","innererror":{"code":"private value"}}}`, "HeaderCode"},
+		{"header with malformed body", "InvalidRequest", `not JSON`, "InvalidRequest"},
+		{"header with unsafe body code", "InvalidRequest",
+			`{"error":{"code":"private value"}}`, "InvalidRequest"},
+		{"body without header", "",
+			`{"error":{"code":"InvalidRequest","innererror":{"code":"DefaultsNotSet"}}}`, "DefaultsNotSet"},
+		{"generic invalid request", "InvalidRequest", `{"error":{"code":"InvalidRequest"}}`, "InvalidRequest"},
+		{"unsafe header", "private value", `{}`, "http_400"},
+		{"oversized body", "InvalidRequest", strings.Repeat("x", 65537), "InvalidRequest"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client, _ := testClient(t, "", func(w http.ResponseWriter, _ *http.Request) {
+				if test.header != "" {
+					w.Header().Set("x-ms-error-code", test.header)
+				}
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = io.WriteString(w, test.body)
+			})
+			_, err := client.GetDefaults(t.Context())
+			var responseErr *azcore.ResponseError
+			require.ErrorAs(t, err, &responseErr)
+			assert.Equal(t, test.expected, responseErr.ErrorCode)
+			assert.Equal(t, http.StatusBadRequest, responseErr.StatusCode)
+			assert.NotContains(t, err.Error(), "private value")
+			body, readErr := io.ReadAll(responseErr.RawResponse.Body)
+			require.NoError(t, readErr)
+			assert.Empty(t, body)
+		})
+	}
 }
 
 func TestAnalyzerLifecycleAndPaging(t *testing.T) {

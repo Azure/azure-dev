@@ -22,6 +22,7 @@ import (
 
 	"azure.ai.projects/internal/azure"
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/phasetelemetry"
 	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/synthesis"
 
@@ -94,12 +95,16 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
   # Eject the configured infrastructure as Bicep
   azd ai project add --infra=bicep`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (runErr error) {
+			reporter, closeReporter := phasetelemetry.HostReporter()
+			defer closeReporter()
+			ctx, timing := phasetelemetry.Begin(cmd.Context(), phasetelemetry.ProjectAuthoring, phasetelemetry.Command, reporter)
+			defer func() { timing.End(ctx, runErr) }()
 			flags.output = extCtx.OutputFormat
 			flags.noPrompt = extCtx.NoPrompt
 			flags.forceSet = cmd.Flags().Changed("force")
 			action := &ProjectAddAction{flags: flags, extCtx: extCtx}
-			return action.Run(cmd.Context())
+			return action.Run(ctx)
 		},
 	}
 	cmd.Flags().StringVar(&flags.projectID, "project-id", "", "Existing Foundry project ARM resource ID")
@@ -121,6 +126,9 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 }
 
 func (a *ProjectAddAction) Run(ctx context.Context) error {
+	endValidation := phasetelemetry.Start(ctx, phasetelemetry.Validation)
+	defer endValidation()
+
 	if a.flags == nil {
 		a.flags = &projectAddFlags{}
 	}
@@ -167,6 +175,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		defer client.Close()
 	}
 	a.client = client
+	endValidation()
 
 	projectRoot := projectRootPath()
 	project, _, err := ensureProjectWithEnvironment(
@@ -516,6 +525,8 @@ func resolveProjectTarget(
 	values map[string]string,
 	flags *projectAddFlags,
 ) (*resolvedProject, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ProjectResolution)()
+
 	projectID, endpoint := flags.projectID, flags.projectEndpoint
 	if flags.newProject {
 		return &resolvedProject{Mode: projectModeNew}, nil
@@ -667,6 +678,8 @@ func resolveInteractiveSubscription(
 	client *azdext.AzdClient,
 	values map[string]string,
 ) (string, string, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.SubscriptionSelection)()
+
 	subscriptionID := strings.TrimSpace(values["AZURE_SUBSCRIPTION_ID"])
 	userTenantID := strings.TrimSpace(values["AZURE_TENANT_ID"])
 	if subscriptionID == "" {
@@ -712,6 +725,8 @@ func listFoundryProjects(
 	ctx context.Context,
 	subscriptionID, userTenantID string,
 ) ([]resolvedProject, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AzureQuery)()
+
 	credential, err := azidentity.NewAzureDeveloperCLICredential(
 		&azidentity.AzureDeveloperCLICredentialOptions{
 			TenantID:                   userTenantID,
@@ -865,6 +880,8 @@ func resolveAzureContext(
 		target.UserTenantId = userTenantID
 	}
 	if needLocation {
+		defer phasetelemetry.Start(ctx, phasetelemetry.LocationSelection)()
+
 		azureContext := &azdext.AzureContext{
 			Scope: &azdext.AzureScope{
 				SubscriptionId: target.SubscriptionId,
@@ -950,6 +967,8 @@ func lookupResolvedProject(
 	if err != nil {
 		return nil, err
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.AzureQuery)()
+
 	tenantResponse, err := client.Account().LookupTenant(ctx,
 		&azdext.LookupTenantRequest{SubscriptionId: project.SubscriptionId})
 	if err != nil {
@@ -1014,6 +1033,8 @@ func ensureProjectWithEnvironment(
 	projectRoot string,
 	environment string,
 ) (*azdext.ProjectConfig, bool, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ProjectResolution)()
+
 	exists, err := projectFileExists(projectRoot)
 	if err != nil {
 		return nil, false, err

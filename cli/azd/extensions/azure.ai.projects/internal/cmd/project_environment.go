@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/phasetelemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -226,6 +227,8 @@ func reconcileProjectEnvironmentWithRollback(
 	project *resolvedProject,
 	projectReplaced bool,
 ) (func() error, map[string]string, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ConfigurationSave)()
+
 	response, err := client.Environment().GetValues(ctx,
 		&azdext.GetEnvironmentRequest{Name: envName})
 	if err != nil {

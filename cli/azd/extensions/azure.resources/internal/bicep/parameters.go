@@ -5,26 +5,20 @@ package bicep
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
-	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 var envPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:?=)([^}]*))?\}`)
-var commandPattern = regexp.MustCompile(`\$\(([^()]*)\)`)
-var vaultNamePattern = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
 type parameterDefinition struct {
 	Type         string          `json:"type"`
@@ -240,32 +234,10 @@ func (p *Provider) resolve(ctx context.Context, value any, mapping *[]string) (a
 			}
 			return parts[3]
 		})
-		if strings.Contains(commandPattern.ReplaceAllString(replaced, ""), "$(") {
-			return nil, errors.New("invalid generated parameter command substitution")
+		if strings.Contains(replaced, "$(") {
+			return nil, errors.New("command substitutions are not supported in generated parameters")
 		}
-		var failure error
-		replaced = commandPattern.ReplaceAllStringFunc(replaced, func(match string) string {
-			if failure != nil {
-				return ""
-			}
-			fields := strings.Fields(match[2 : len(match)-1])
-			if len(fields) == 0 || fields[0] != "secretOrRandomPassword" {
-				failure = errors.New("unsupported generated parameter command substitution")
-				return ""
-			}
-			var secret string
-			if len(fields) == 3 {
-				secret, failure = p.secret(ctx, fields[1], fields[2])
-			} else if len(fields) > 3 || len(fields) < 2 {
-				failure = errors.New("secretOrRandomPassword requires a vault and secret name")
-			}
-			// A missing vault on the first deployment leaves only the secret-name argument.
-			if failure == nil && strings.TrimSpace(secret) == "" {
-				secret, failure = randomPassword()
-			}
-			return secret
-		})
-		return replaced, failure
+		return replaced, nil
 	case []any:
 		result := make([]any, len(value))
 		for i, item := range value {
@@ -318,48 +290,4 @@ func coerce(value any, kind string) (any, error) {
 		return nil, errors.New("incompatible parameter type")
 	}
 	return value, nil
-}
-
-func randomPassword() (string, error) {
-	result := []byte{}
-	for _, alphabet := range []string{"abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "0123456789"} {
-		for range 5 {
-			index, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
-			if err != nil {
-				return "", err
-			}
-			result = append(result, alphabet[index.Int64()])
-		}
-	}
-	for i := len(result) - 1; i > 0; i-- {
-		index, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
-		if err != nil {
-			return "", err
-		}
-		result[i], result[index.Int64()] = result[index.Int64()], result[i]
-	}
-	return string(result), nil
-}
-
-func secretReader(credential azcore.TokenCredential) func(context.Context, string, string) (string, error) {
-	return func(ctx context.Context, vault, name string) (string, error) {
-		if !vaultNamePattern.MatchString(vault) {
-			return "", errors.New("invalid generated Key Vault name")
-		}
-		client, err := azsecrets.NewClient("https://"+vault+".vault.azure.net", credential, nil)
-		if err != nil {
-			return "", fmt.Errorf("creating Key Vault client: %w", err)
-		}
-		secret, err := client.GetSecret(ctx, name, "", nil)
-		if isNotFound(err) {
-			return "", nil
-		}
-		if err != nil {
-			return "", fmt.Errorf("reading generated parameter secret: %w", err)
-		}
-		if secret.Value == nil {
-			return "", nil
-		}
-		return *secret.Value, nil
-	}
 }

@@ -17,7 +17,7 @@ func (w *Wizard) configureResource(
 	var name string
 	var err error
 	switch resourceType {
-	case resources.Postgres, resources.MySQL, resources.Mongo, resources.Cosmos:
+	case resources.Mongo, resources.Cosmos:
 		name, err = w.resourceName(ctx, "")
 	case resources.Redis:
 		name = "redis"

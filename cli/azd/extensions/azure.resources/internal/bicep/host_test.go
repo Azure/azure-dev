@@ -7,14 +7,17 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"testing"
 
+	azcloud "github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1 "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type environmentServer struct {
@@ -27,6 +30,9 @@ type environmentServer struct {
 	writes       []*v1.SetEnvRequest
 	reads        []*v1.GetEnvironmentRequest
 	currentCalls int
+	cloudName    *string
+	cloudErr     error
+	cloudReads   []*v1.GetConfigStringRequest
 	selectedErr  error
 }
 
@@ -34,6 +40,20 @@ func (s *environmentServer) Get(
 	_ context.Context, request *v1.GetEnvironmentRequest,
 ) (*v1.EnvironmentResponse, error) {
 	return &v1.EnvironmentResponse{Environment: &v1.Environment{Name: request.Name}}, s.selectedErr
+}
+
+func (s *environmentServer) GetConfigString(
+	_ context.Context, request *v1.GetConfigStringRequest,
+) (*v1.GetConfigStringResponse, error) {
+	s.cloudReads = append(s.cloudReads, request)
+	if request.Path != "cloud.name" {
+		return nil, errors.New("unexpected environment configuration path")
+	}
+	response := &v1.GetConfigStringResponse{}
+	if s.cloudName != nil {
+		response.Value, response.Found = *s.cloudName, true
+	}
+	return response, s.cloudErr
 }
 
 func (s *environmentServer) GetCurrent(context.Context, *v1.EmptyRequest) (*v1.EnvironmentResponse, error) {
@@ -83,8 +103,43 @@ type accountServer struct {
 
 type projectServer struct {
 	v1.UnimplementedProjectServiceServer
-	name *string
-	err  error
+	name             *string
+	err              error
+	cloudName        string
+	cloudErr         error
+	projectCloudName *string
+}
+
+type userConfigServer struct {
+	v1.UnimplementedUserConfigServiceServer
+	project *projectServer
+}
+
+func (s *userConfigServer) GetString(
+	ctx context.Context, request *v1.GetUserConfigStringRequest,
+) (*v1.GetUserConfigStringResponse, error) {
+	return s.project.GetString(ctx, request)
+}
+
+func (s *projectServer) GetConfigValue(
+	_ context.Context, request *v1.GetProjectConfigValueRequest,
+) (*v1.GetProjectConfigValueResponse, error) {
+	if request.Path != "cloud.name" {
+		return nil, errors.New("unexpected project configuration path")
+	}
+	if s.projectCloudName == nil {
+		return &v1.GetProjectConfigValueResponse{}, nil
+	}
+	return &v1.GetProjectConfigValueResponse{Found: true, Value: structpb.NewStringValue(*s.projectCloudName)}, nil
+}
+
+func (s *projectServer) GetString(
+	_ context.Context, request *v1.GetUserConfigStringRequest,
+) (*v1.GetUserConfigStringResponse, error) {
+	if request.Path != "cloud.name" {
+		return nil, errors.New("unexpected configuration path")
+	}
+	return &v1.GetUserConfigStringResponse{Value: s.cloudName}, s.cloudErr
 }
 
 func (s *projectServer) Get(context.Context, *v1.EmptyRequest) (*v1.GetProjectResponse, error) {
@@ -224,6 +279,7 @@ func newHostClientWithIdentity(
 	v1.RegisterAccountServiceServer(server, account)
 	v1.RegisterPromptServiceServer(server, prompts)
 	v1.RegisterProjectServiceServer(server, project)
+	v1.RegisterUserConfigServiceServer(server, &userConfigServer{project: project})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
@@ -318,7 +374,6 @@ func TestEnsureEnvUsesHostScopeAndPrincipal(t *testing.T) {
 	require.Len(t, prompts.locations, 1)
 	require.Equal(t, "sub", prompts.locations[0].AzureContext.Scope.SubscriptionId)
 	require.NotNil(t, p.azure)
-	require.NotNil(t, p.secret)
 
 	p.client = nil
 	require.NoError(t, p.EnsureEnv(t.Context()), "completed setup should not contact the host again")
@@ -352,7 +407,6 @@ func TestEnsureEnvValuePrecedenceAndSavedScope(t *testing.T) {
 	}))
 	backend := &fakeBackend{}
 	p.azure = backend
-	p.secret = func(context.Context, string, string) (string, error) { return "injected-secret", nil }
 
 	require.NoError(t, p.EnsureEnv(t.Context()))
 	for key, value := range map[string]string{
@@ -368,9 +422,6 @@ func TestEnsureEnvValuePrecedenceAndSavedScope(t *testing.T) {
 	require.Len(t, account.lookups, 1)
 	require.Equal(t, "sub", account.lookups[0].SubscriptionId)
 	require.Same(t, backend, p.azure)
-	secret, err := p.secret(t.Context(), "", "")
-	require.NoError(t, err)
-	require.Equal(t, "injected-secret", secret)
 }
 
 func TestEnsureEnvIdentityFailures(t *testing.T) {
@@ -396,7 +447,6 @@ func TestEnsureEnvIdentityFailures(t *testing.T) {
 			require.ErrorContains(t, p.EnsureEnv(t.Context()), test.want)
 			require.Nil(t, p.values)
 			require.Nil(t, p.azure)
-			require.Nil(t, p.secret)
 			require.Empty(t, p.name)
 			require.Empty(t, test.env.writes)
 			require.Zero(t, prompts.subscriptionRequests)
@@ -420,7 +470,8 @@ func TestEnsureEnvSubscriptionFailures(t *testing.T) {
 			want: "no subscription or user access tenant"},
 		{name: "missing access tenant", prompts: promptServer{subscription: &v1.Subscription{Id: "sub", TenantId: "tenant"}},
 			want: "no subscription or user access tenant"},
-		{name: "subscription persistence", setErr: errors.New("save failed"), want: "saving environment value AZURE_SUBSCRIPTION_ID"},
+		{name: "subscription persistence", setErr: errors.New("save failed"),
+			want: "saving environment value AZURE_SUBSCRIPTION_ID"},
 		{name: "tenant lookup", subscription: "sub", account: accountServer{tenantErr: errors.New("lookup failed")},
 			want: "resolving subscription access tenant"},
 		{name: "empty tenant", subscription: "sub", account: accountServer{tenant: new("")},
@@ -429,13 +480,14 @@ func TestEnsureEnvSubscriptionFailures(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("AZURE_SUBSCRIPTION_ID", "")
 			t.Setenv("AZURE_LOCATION", "")
-			env := &environmentServer{values: map[string]string{"AZURE_SUBSCRIPTION_ID": test.subscription}, setErr: test.setErr}
+			env := &environmentServer{
+				values: map[string]string{"AZURE_SUBSCRIPTION_ID": test.subscription}, setErr: test.setErr,
+			}
 			p := New(newHostClientWithIdentity(t, env, &test.prompts, &test.account, &projectServer{}), nil)
 			require.NoError(t, p.Initialize(t.Context(), ".", &azdext.ProvisioningOptions{Path: "testdata"}))
 			require.ErrorContains(t, p.EnsureEnv(t.Context()), test.want)
 			require.Nil(t, p.values)
 			require.Nil(t, p.azure)
-			require.Nil(t, p.secret)
 			require.Empty(t, p.name)
 			require.Empty(t, env.writes)
 			require.Empty(t, test.prompts.locations)
@@ -451,7 +503,8 @@ func TestEnsureEnvLocationFailures(t *testing.T) {
 		setErr  error
 		want    string
 	}{
-		{name: "location prompt", prompts: promptServer{locationErr: errors.New("selection failed")}, want: "selecting location"},
+		{name: "location prompt", prompts: promptServer{locationErr: errors.New("selection failed")},
+			want: "selecting location"},
 		{name: "empty location", prompts: promptServer{location: &v1.Location{}}, want: "empty location"},
 		{name: "location persistence", setErr: errors.New("save failed"), want: "saving environment value AZURE_LOCATION"},
 	} {
@@ -495,7 +548,6 @@ func TestEnsureEnvPrincipalAndCredentialFailures(t *testing.T) {
 			require.ErrorContains(t, p.EnsureEnv(t.Context()), test.want)
 			require.Nil(t, p.values)
 			require.Nil(t, p.azure)
-			require.Nil(t, p.secret)
 			require.Empty(t, p.name)
 			require.Empty(t, env.writes)
 		})
@@ -546,9 +598,63 @@ func TestEnsureEnvUsesSelectedEnvironment(t *testing.T) {
 	require.Zero(t, env.currentCalls)
 	require.Len(t, env.reads, 1)
 	require.Equal(t, "prod", env.reads[0].Name)
+	require.Equal(t, "prod", env.cloudReads[0].EnvName)
 	require.Equal(t, "prod", p.values["AZURE_ENV_NAME"])
 	require.Equal(t, deploymentName("example", "prod", "data"), p.name)
 	for _, write := range env.writes {
 		require.Equal(t, "prod", write.EnvName)
+	}
+}
+
+func TestLoadCloudUsesConfigurationPrecedence(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		environment *string
+		project     *string
+		user        string
+		want        string
+	}{
+		{name: "default", want: "https://management.azure.com"},
+		{name: "user", user: "AzureUSGovernment", want: "https://management.usgovcloudapi.net"},
+		{name: "project", project: new("AzureChinaCloud"), user: "AzureUSGovernment",
+			want: "https://management.chinacloudapi.cn"},
+		{name: "environment", environment: new("AzureCloud"), project: new("AzureChinaCloud"),
+			user: "AzureUSGovernment", want: "https://management.azure.com"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env := &environmentServer{cloudName: test.environment}
+			project := &projectServer{projectCloudName: test.project, cloudName: test.user}
+			p := New(newHostClientWithIdentity(t, env, &promptServer{}, &accountServer{}, project), nil)
+			p.envName = "staging"
+			configured, err := p.loadCloud(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, test.want, strings.TrimSuffix(
+				configured.Configuration.Services[azcloud.ResourceManager].Endpoint, "/"))
+			require.Equal(t, "staging", env.cloudReads[0].EnvName)
+		})
+	}
+}
+
+func TestEnsureEnvRejectsInvalidCloudBeforeAzureCalls(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		cloud string
+		err   error
+		want  string
+	}{
+		{name: "unknown cloud", cloud: "unknown", want: "resolving Azure cloud configuration"},
+		{name: "configuration failure", err: errors.New("config unavailable"), want: "config unavailable"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env := &environmentServer{values: map[string]string{"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_LOCATION": "eastus"}}
+			account := &accountServer{}
+			p := New(newHostClientWithIdentity(t, env, &promptServer{}, account,
+				&projectServer{cloudName: test.cloud, cloudErr: test.err}), nil)
+			require.NoError(t, p.Initialize(t.Context(), ".", &azdext.ProvisioningOptions{Path: "testdata"}))
+			require.ErrorContains(t, p.EnsureEnv(t.Context()), test.want)
+			require.Empty(t, account.lookups)
+			require.Empty(t, account.principals)
+			require.Empty(t, env.writes)
+		})
 	}
 }

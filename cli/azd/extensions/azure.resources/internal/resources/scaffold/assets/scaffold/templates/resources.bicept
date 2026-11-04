@@ -186,67 +186,6 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
 }
 {{- end}}
 
-{{- if .DbPostgres}}
-var postgresDatabaseName = '{{ .DbPostgres.DatabaseName }}'
-var postgresDatabaseUser = 'psqladmin'
-module postgresServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
-  name: 'postgresServer'
-  params: {
-    name: '${abbrs.dBforPostgreSQLServers}${resourceToken}'
-    skuName: 'Standard_B1ms'
-    tier: 'Burstable'
-    administratorLogin: postgresDatabaseUser
-    administratorLoginPassword: postgresDatabasePassword
-    geoRedundantBackup: 'Disabled'
-    passwordAuth:'Enabled'
-    firewallRules: [
-      {
-        name: 'AllowAllIps'
-        startIpAddress: '0.0.0.0'
-        endIpAddress: '255.255.255.255'
-      }
-    ]
-    databases: [
-      {
-        name: postgresDatabaseName
-      }
-    ]
-    location: location
-  }
-}
-{{- end}}
-
-{{- if .DbMySql}}
-var mysqlDatabaseName = '{{ .DbMySql.DatabaseName }}'
-var mysqlDatabaseUser = 'mysqladmin'
-module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.6.1' = {
-  name: 'mysqlServer'
-  params: {
-    name: '${abbrs.dBforMySQLServers}${resourceToken}'
-    skuName: 'Standard_B1ms'
-    tier: 'Burstable'
-    administratorLogin: mysqlDatabaseUser
-    administratorLoginPassword: mysqlDatabasePassword
-    geoRedundantBackup: 'Disabled'
-    publicNetworkAccess: 'Enabled'
-    firewallRules: [
-      {
-        name: 'AllowAllIps'
-        startIpAddress: '0.0.0.0'
-        endIpAddress: '255.255.255.255'
-      }
-    ]
-    databases: [
-      {
-        name: mysqlDatabaseName
-      }
-    ]
-    location: location
-    highAvailability: 'Disabled'
-  }
-}
-{{- end}}
-
 {{- if .StorageAccount }}
 var storageAccountName = '${abbrs.storageStorageAccounts}${resourceToken}'
 module storageAccount 'br/public:avm/res/storage/storage-account:0.17.2' = {
@@ -548,26 +487,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           keyVaultUrl: cosmosMongo.outputs.exportedSecrets['mongodb-url'].secretUri
         }
         {{- end}}
-        {{- if .DbPostgres}}
-        {
-          name: 'postgres-password'
-          value: postgresDatabasePassword
-        }
-        {
-          name: 'db-url'
-          value: 'postgresql://${postgresDatabaseUser}:${postgresDatabasePassword}@${postgresServer.outputs.fqdn}:5432/${postgresDatabaseName}'
-        }
-        {{- end}}
-        {{- if .DbMySql}}
-        {
-          name: 'mysql-password'
-          value: mysqlDatabasePassword
-        }
-        {
-          name: 'mysql-url'
-          value: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
-        }
-        {{- end}}
         {{- if .DbRedis}}
         {
           name: 'redis-pass'
@@ -615,58 +534,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'AZURE_COSMOS_ENDPOINT'
             value: cosmos.outputs.endpoint
-          }
-          {{- end}}
-          {{- if .DbPostgres}}
-          {
-            name: 'POSTGRES_HOST'
-            value: postgresServer.outputs.fqdn
-          }
-          {
-            name: 'POSTGRES_USERNAME'
-            value: postgresDatabaseUser
-          }
-          {
-            name: 'POSTGRES_DATABASE'
-            value: postgresDatabaseName
-          }
-          {
-            name: 'POSTGRES_PASSWORD'
-            secretRef: 'postgres-password'
-          }
-          {
-            name: 'POSTGRES_URL'
-            secretRef: 'db-url'
-          }
-          {
-            name: 'POSTGRES_PORT'
-            value: '5432'
-          }
-          {{- end}}
-          {{- if .DbMySql}}
-          {
-            name: 'MYSQL_HOST'
-            value: mysqlServer.outputs.fqdn
-          }
-          {
-            name: 'MYSQL_USERNAME'
-            value: mysqlDatabaseUser
-          }
-          {
-            name: 'MYSQL_DATABASE'
-            value: mysqlDatabaseName
-          }
-          {
-            name: 'MYSQL_PASSWORD'
-            secretRef: 'mysql-password'
-          }
-          {
-            name: 'MYSQL_URL'
-            secretRef: 'mysql-url'
-          }
-          {
-            name: 'MYSQL_PORT'
-            value: '3306'
           }
           {{- end}}
           {{- if .DbRedis}}
@@ -838,22 +705,6 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
       {{- if .DbCosmos}}
       AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
       {{- end}}
-      {{- if .DbPostgres}}
-      POSTGRES_HOST: postgresServer.outputs.fqdn
-      POSTGRES_USERNAME: postgresDatabaseUser
-      POSTGRES_DATABASE: postgresDatabaseName
-      POSTGRES_PORT: '5432'
-      POSTGRES_PASSWORD: postgresDatabasePassword
-      POSTGRES_URL: 'postgresql://${postgresDatabaseUser}:${postgresDatabasePassword}@${postgresServer.outputs.fqdn}:5432/${postgresDatabaseName}'
-      {{- end}}
-      {{- if .DbMySql}}
-      MYSQL_HOST: mysqlServer.outputs.fqdn
-      MYSQL_USERNAME: mysqlDatabaseUser
-      MYSQL_DATABASE: mysqlDatabaseName
-      MYSQL_PORT: '3306'
-      MYSQL_PASSWORD: mysqlDatabasePassword
-      MYSQL_URL: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
-      {{- end}}
       {{- if .DbRedis}}
       REDIS_HOST: redis.outputs.hostName
       REDIS_PORT: string(redis.outputs.sslPort)
@@ -990,20 +841,6 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.12.0' = {
       }
       {{- end}}
     ]
-    secrets: [
-      {{- if .DbPostgres}}
-      {
-        name: 'postgres-password'
-        value: postgresDatabasePassword
-      }
-      {{- end}}
-      {{- if .DbMySql}}
-      {
-        name: 'mysql-password'
-        value: mysqlDatabasePassword
-      }
-      {{- end}}
-    ]
   }
 }
 {{- end}}
@@ -1033,12 +870,6 @@ output AZURE_RESOURCE_REDIS_ID string = redis.outputs.resourceId
 {{- end}}
 {{- if .DbCosmosMongo}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmosMongo.DatabaseName}}_ID string = '${cosmosMongo.outputs.resourceId}/mongodbDatabases/{{.DbCosmosMongo.DatabaseName}}'
-{{- end}}
-{{- if .DbPostgres}}
-output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '${postgresServer.outputs.resourceId}/databases/{{.DbPostgres.DatabaseName}}'
-{{- end}}
-{{- if .DbMySql}}
-output AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID string = '${mysqlServer.outputs.resourceId}/databases/{{.DbMySql.DatabaseName}}'
 {{- end}}
 {{- if .DbCosmos }}
 output AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID string = '${cosmos.outputs.resourceId}/sqlDatabases/{{.DbCosmos.DatabaseName}}'

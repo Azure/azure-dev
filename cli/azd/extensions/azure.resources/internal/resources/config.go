@@ -21,8 +21,6 @@ import (
 const (
 	ProviderName = "resources"
 	Redis        = "db.redis"
-	Postgres     = "db.postgres"
-	MySQL        = "db.mysql"
 	Mongo        = "db.mongo"
 	Cosmos       = "db.cosmos"
 	ContainerApp = "host.containerapp"
@@ -270,7 +268,7 @@ func (c Config) Validate() error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(c)) {
 		d := c[name]
-		if !d.Existing && (d.Type == Postgres || d.Type == MySQL || d.Type == Mongo || d.Type == Redis) {
+		if !d.Existing && (d.Type == Mongo || d.Type == Redis) {
 			if !hasDeployableKeyVault {
 				if keyVault, exists := c["vault"]; exists && keyVault.Type != KeyVault {
 					return fmt.Errorf("resource %q requires a deployable keyvault resource named vault", name)
@@ -289,7 +287,7 @@ func (c Config) Validate() error {
 
 func validateDefinition(name string, d Definition) error {
 	switch d.Type {
-	case Redis, Postgres, MySQL, Mongo, Cosmos, ContainerApp, AppService, OpenAIModel,
+	case Redis, Mongo, Cosmos, ContainerApp, AppService, OpenAIModel,
 		EventHubs, ServiceBus, Storage, AIProject, AISearch, KeyVault:
 	default:
 		return fmt.Errorf("resource %q has unsupported type %q", name, d.Type)
@@ -403,7 +401,7 @@ func validateDefinition(name string, d Definition) error {
 			}
 			deployments[deployment] = model.Name
 		}
-	case Redis, Postgres, MySQL, Mongo, AISearch, KeyVault:
+	case Redis, Mongo, AISearch, KeyVault:
 		if d.Port != 0 || len(d.Env) > 0 || d.Runtime != (AppServiceRuntime{}) ||
 			d.StartupCommand != "" || d.Model != (AIModelPropsModel{}) ||
 			len(d.Containers) > 0 || len(d.StorageContainers) > 0 ||
@@ -490,19 +488,6 @@ func validateGeneratedHostEnvNames(config Config) error {
 				addGenerated("MONGODB_URL", "MongoDB link")
 			case Cosmos:
 				addGenerated("AZURE_COSMOS_ENDPOINT", "Cosmos DB link")
-			case Postgres:
-				for _, key := range []string{
-					"POSTGRES_HOST", "POSTGRES_USERNAME", "POSTGRES_DATABASE", "POSTGRES_PORT",
-					"POSTGRES_PASSWORD", "POSTGRES_URL",
-				} {
-					addGenerated(key, "PostgreSQL link")
-				}
-			case MySQL:
-				for _, key := range []string{
-					"MYSQL_HOST", "MYSQL_USERNAME", "MYSQL_DATABASE", "MYSQL_PORT", "MYSQL_PASSWORD", "MYSQL_URL",
-				} {
-					addGenerated(key, "MySQL link")
-				}
 			case Redis:
 				for _, key := range []string{
 					"REDIS_HOST", "REDIS_PORT", "REDIS_ENDPOINT", "REDIS_URL", "REDIS_PASSWORD",
@@ -567,7 +552,7 @@ func validateLinks(c Config) error {
 			}
 			if used.Existing {
 				switch used.Type {
-				case Redis, Postgres, MySQL, Mongo:
+				case Redis, Mongo:
 					return fmt.Errorf("resource %q cannot use existing resource %q of type %q: "+
 						"generated database credentials and connection bindings are not supported",
 						name, dependency, used.Type)
@@ -580,7 +565,7 @@ func validateLinks(c Config) error {
 
 func supportedLink(hostType, targetType string) bool {
 	switch targetType {
-	case Redis, Postgres, MySQL, Mongo, Cosmos, OpenAIModel, EventHubs,
+	case Redis, Mongo, Cosmos, OpenAIModel, EventHubs,
 		ServiceBus, Storage, AIProject, AISearch, KeyVault:
 		return hostType == ContainerApp || hostType == AppService
 	case ContainerApp, AppService:
@@ -606,14 +591,6 @@ func validateGeneratedNames(c Config) error {
 			reserved["cosmosMongo"] = struct{}{}
 		case Cosmos:
 			reserved["cosmos"] = struct{}{}
-		case Postgres:
-			reserved["postgresDatabaseName"] = struct{}{}
-			reserved["postgresDatabaseUser"] = struct{}{}
-			reserved["postgresServer"] = struct{}{}
-		case MySQL:
-			reserved["mysqlDatabaseName"] = struct{}{}
-			reserved["mysqlDatabaseUser"] = struct{}{}
-			reserved["mysqlServer"] = struct{}{}
 		case Redis:
 			reserved["redis"] = struct{}{}
 		case Storage:
@@ -634,8 +611,7 @@ func validateGeneratedNames(c Config) error {
 		}
 	}
 	for _, definition := range c {
-		if definition.Type == Postgres || definition.Type == MySQL ||
-			definition.Type == Mongo || definition.Type == Redis {
+		if definition.Type == Mongo || definition.Type == Redis {
 			reserved["keyVault"] = struct{}{}
 		}
 	}
@@ -795,7 +771,7 @@ func reservedOutput(resourceType string) string {
 }
 
 var existingResourceTypes = map[string]bool{
-	Redis: true, Postgres: true, MySQL: true, Mongo: true, Cosmos: true,
+	Redis: true, Mongo: true, Cosmos: true,
 	OpenAIModel: true, EventHubs: true,
 	ServiceBus: true, Storage: true, AIProject: true, AISearch: true, KeyVault: true,
 }

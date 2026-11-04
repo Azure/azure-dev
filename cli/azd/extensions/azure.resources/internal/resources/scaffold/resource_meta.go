@@ -121,16 +121,6 @@ var Resources = []ResourceMeta{
 		ApiVersion:   "2023-06-01-preview",
 	},
 	{
-		ResourceType:       "Microsoft.DBforMySQL/flexibleServers/databases",
-		ApiVersion:         "2023-12-30",
-		ParentResourceType: "Microsoft.DBforMySQL/flexibleServers",
-	},
-	{
-		ResourceType:       "Microsoft.DBforPostgreSQL/flexibleServers/databases",
-		ApiVersion:         "2022-12-01",
-		ParentResourceType: "Microsoft.DBforPostgreSQL/flexibleServers",
-	},
-	{
 		ResourceType:       "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
 		ApiVersion:         "2023-04-15",
 		ParentResourceType: "Microsoft.DocumentDB/databaseAccounts",

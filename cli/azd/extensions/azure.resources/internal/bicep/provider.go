@@ -54,7 +54,6 @@ type Provider struct {
 	resolver    ParameterResolver
 	azure       backend
 	compile     func(context.Context, string) ([]byte, error)
-	secret      func(context.Context, string, string) (string, error)
 }
 
 var _ azdext.ProvisioningProvider = (*Provider)(nil)

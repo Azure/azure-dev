@@ -125,24 +125,6 @@ func preExecExpand(spec *InfraSpec) {
 			Type:  "string",
 		})
 	}
-	if spec.DbPostgres != nil {
-		spec.Parameters = append(spec.Parameters, Parameter{
-			Name: "postgresDatabasePassword",
-			Value: fmt.Sprintf("$(secretOrRandomPassword ${%s} postgres-password)",
-				EntryEnvKey(spec.LayerName, "AZURE_KEY_VAULT_NAME")),
-			Type:   "string",
-			Secret: true,
-		})
-	}
-	if spec.DbMySql != nil {
-		spec.Parameters = append(spec.Parameters, Parameter{
-			Name: "mysqlDatabasePassword",
-			Value: fmt.Sprintf("$(secretOrRandomPassword ${%s} mysql-password)",
-				EntryEnvKey(spec.LayerName, "AZURE_KEY_VAULT_NAME")),
-			Type:   "string",
-			Secret: true,
-		})
-	}
 	for _, service := range spec.Services {
 		if service.Host == ContainerAppKind {
 			spec.Parameters = append(spec.Parameters, containerAppExistsParameter(service.Name))

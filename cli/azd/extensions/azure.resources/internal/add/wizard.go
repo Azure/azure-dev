@@ -117,8 +117,8 @@ func (w *Wizard) selectResourceType(ctx context.Context, category string) (strin
 	switch category {
 	case "Database":
 		message = "Which type of database?"
-		labels = []string{"CosmosDB", "MongoDB", "MySQL", "PostgreSQL", "Redis"}
-		types = []string{resources.Cosmos, resources.Mongo, resources.MySQL, resources.Postgres, resources.Redis}
+		labels = []string{"CosmosDB", "MongoDB", "Redis"}
+		types = []string{resources.Cosmos, resources.Mongo, resources.Redis}
 	case "Host service":
 		message = "Which type of host?"
 		labels = []string{"Container App (default)", "App Service"}
@@ -153,10 +153,10 @@ func canLink(hostType string, definition resources.Definition) bool {
 	if !isHost(hostType) || (isHost(definition.Type) && definition.Type != hostType) {
 		return false
 	}
-	// Existing SQL/Redis/Mongo credentials cannot be synthesized by the provider.
+	// Existing Redis/Mongo credentials cannot be synthesized by the provider.
 	if definition.Existing {
 		switch definition.Type {
-		case resources.Postgres, resources.MySQL, resources.Mongo, resources.Redis:
+		case resources.Mongo, resources.Redis:
 			return false
 		}
 	}
@@ -208,7 +208,7 @@ func (w *Wizard) addDependencies(definition resources.Definition) error {
 		return nil
 	}
 	switch definition.Type {
-	case resources.Postgres, resources.MySQL, resources.Mongo, resources.Redis:
+	case resources.Mongo, resources.Redis:
 		for _, other := range w.Resources {
 			if other.Type == resources.KeyVault && !other.Existing {
 				return nil

@@ -23,8 +23,6 @@ type InfraSpec struct {
 	Existing []ExistingResource
 
 	// Databases to create
-	DbPostgres    *DatabasePostgres
-	DbMySql       *DatabaseMysql
 	DbCosmosMongo *DatabaseCosmosMongo
 	DbCosmos      *DatabaseCosmos
 	DbRedis       *DatabaseRedis
@@ -53,14 +51,6 @@ type Parameter struct {
 	Value  any
 	Type   string
 	Secret bool
-}
-
-type DatabasePostgres struct {
-	DatabaseName string
-}
-
-type DatabaseMysql struct {
-	DatabaseName string
 }
 
 type DatabaseCosmosMongo struct {
@@ -154,8 +144,6 @@ type ServiceSpec struct {
 	KeyVault *KeyVaultReference
 
 	// Connection to a database
-	DbPostgres    *DatabaseReference
-	DbMySql       *DatabaseReference
 	DbCosmosMongo *DatabaseReference
 	DbCosmos      *DatabaseReference
 	DbRedis       *DatabaseReference

@@ -16,6 +16,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestConfigRejectsRemovedDatabases(t *testing.T) {
+	for _, resourceType := range []string{"db.postgres", "db.mysql"} {
+		t.Run(resourceType, func(t *testing.T) {
+			for _, mode := range []struct {
+				name     string
+				existing bool
+			}{{name: "managed"}, {name: "existing", existing: true}} {
+				t.Run(mode.name, func(t *testing.T) {
+					config := Config{"database": {Type: resourceType, Existing: mode.existing}}
+					require.ErrorContains(t, config.Validate(), "unsupported type")
+					raw, err := config.Raw()
+					require.NoError(t, err)
+					_, err = Decode(raw)
+					require.ErrorContains(t, err, "unsupported type")
+					files, err := Generate("data", config)
+					require.ErrorContains(t, err, "unsupported type")
+					require.Nil(t, files)
+				})
+			}
+		})
+	}
+}
+
 func TestConfigRejectsFoundryDeploymentNameCollisions(t *testing.T) {
 	for _, names := range [][]string{
 		{"gpt-4o", "gpt-4o"},
@@ -51,10 +74,10 @@ func TestConfigValidation(t *testing.T) {
 		want string
 	}{
 		{"empty", nil, "at least one"},
-		{"unknown property", map[string]any{"db": map[string]any{"type": Postgres, "typo": true}}, "unknown field"},
+		{"unknown property", map[string]any{"db": map[string]any{"type": Mongo, "typo": true}}, "unknown field"},
 		{"unsupported type", map[string]any{"db": map[string]any{"type": "db.unknown"}}, "unsupported type"},
 		{"nil definition", map[string]any{"db": nil}, "unsupported type"},
-		{"unsafe name", map[string]any{"../db": map[string]any{"type": Postgres}}, "resource name"},
+		{"unsafe name", map[string]any{"../db": map[string]any{"type": Mongo}}, "resource name"},
 		{"unknown Cosmos container property", map[string]any{
 			"db": map[string]any{
 				"type": Cosmos,
@@ -73,7 +96,7 @@ func TestConfigValidation(t *testing.T) {
 		{"unknown link", map[string]any{
 			"api": map[string]any{"type": ContainerApp, "port": 8080, "uses": []string{"elsewhere"}},
 		}, "same entry"},
-		{"wrong type property", map[string]any{"db": map[string]any{"type": Postgres, "port": 5432}}, "not supported"},
+		{"wrong type property", map[string]any{"db": map[string]any{"type": Mongo, "port": 5432}}, "not supported"},
 		{"invalid app service runtime", map[string]any{
 			"web": map[string]any{
 				"type": AppService, "port": 8080,
@@ -81,7 +104,7 @@ func TestConfigValidation(t *testing.T) {
 			},
 		}, "python or node"},
 		{"duplicate singleton", map[string]any{
-			"first": map[string]any{"type": Postgres}, "second": map[string]any{"type": Postgres},
+			"first": map[string]any{"type": Mongo}, "second": map[string]any{"type": Mongo},
 		}, "at most one"},
 		{"invalid environment name", map[string]any{
 			"api": map[string]any{
@@ -132,7 +155,7 @@ func TestConfigValidation(t *testing.T) {
 				"runtime": map[string]any{"stack": "node", "version": "22"}},
 		}, "same output name"},
 		{"implicit key vault collision", map[string]any{
-			"database": map[string]any{"type": Postgres},
+			"database": map[string]any{"type": Mongo},
 			"vault":    map[string]any{"type": ContainerApp, "port": 8080},
 		}, "deployable keyvault resource named vault"},
 	}
@@ -206,7 +229,7 @@ func TestGenerateModelFreeAIProject(t *testing.T) {
 
 func TestConfigAllowsExistingAndDeployableKeyVaults(t *testing.T) {
 	config := Config{
-		"database":       {Type: Postgres},
+		"database":       {Type: Mongo},
 		"existing-vault": {Type: KeyVault, Existing: true},
 		"vault":          {Type: KeyVault},
 	}
@@ -226,7 +249,7 @@ func TestValidateEntryNameAllowsFlatTarget(t *testing.T) {
 		t.Fatalf("ValidateEntryName(\"\") error = %v", err)
 	}
 
-	files, err := Generate("", Config{"database": {Type: Postgres}})
+	files, err := Generate("", Config{"database": {Type: Mongo}})
 	if err != nil {
 		t.Fatalf("Generate with an empty entry name: %v", err)
 	}
@@ -288,11 +311,11 @@ func TestDefinitionJSONProperties(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	postgres := catalogRaw["postgres"].(map[string]any)
-	if _, ok := postgres["runtime"]; ok {
+	mongo := catalogRaw["mongo"].(map[string]any)
+	if _, ok := mongo["runtime"]; ok {
 		t.Fatal("Raw should omit the zero-valued runtime property")
 	}
-	if _, ok := postgres["model"]; ok {
+	if _, ok := mongo["model"]; ok {
 		t.Fatal("Raw should omit the zero-valued model property")
 	}
 	if _, err := Decode(catalogRaw); err != nil {
@@ -305,12 +328,6 @@ func catalogConfig() Config {
 		"cache": {
 			Type: Redis,
 		},
-		"postgres": {
-			Type: Postgres,
-		},
-		"mysql": {
-			Type: MySQL,
-		},
 		"mongo": {
 			Type: Mongo,
 		},
@@ -319,7 +336,7 @@ func catalogConfig() Config {
 		},
 		"api-service": {
 			Type: ContainerApp, Port: 8080,
-			Uses: []string{"cache", "postgres", "mysql", "mongo", "document-db", "chat-model", "embedding",
+			Uses: []string{"cache", "mongo", "document-db", "chat-model", "embedding",
 				"events", "bus", "storage-account", "foundry", "ai-search", "vault"},
 			Env: []ServiceEnvVar{
 				{Name: "WELCOME", Value: "Hello, I'm ${PUBLIC_NAME}"},
@@ -329,7 +346,7 @@ func catalogConfig() Config {
 		"web": {
 			Type: AppService, Port: 8000, Runtime: AppServiceRuntime{Stack: "python", Version: "3.12"},
 			StartupCommand: "python app's entry.py",
-			Uses:           []string{"postgres", "storage-account"},
+			Uses:           []string{"mongo", "storage-account"},
 		},
 		"chat-model": {
 			Type: OpenAIModel, Model: AIModelPropsModel{Name: "gpt-4o", Version: "2024-08-06"},
@@ -373,8 +390,6 @@ func TestGenerateFullResourceCatalog(t *testing.T) {
 
 	for _, expected := range []string{
 		"br/public:avm/res/cache/redis:",
-		"br/public:avm/res/db-for-postgre-sql/flexible-server:",
-		"br/public:avm/res/db-for-my-sql/flexible-server:",
 		"br/public:avm/res/document-db/database-account:",
 		"br/public:avm/res/cognitive-services/account:",
 		"br/public:avm/res/event-hub/namespace:",
@@ -421,9 +436,6 @@ func TestGenerateFullResourceCatalog(t *testing.T) {
 	if strings.Contains(resources, "output SERVICE_WEB_REGISTRY_ENDPOINT") {
 		t.Fatal("App Service must not emit a registry endpoint")
 	}
-	if !strings.Contains(resources, "secretRef: 'postgres-password'") {
-		t.Fatal("database password must be passed through a secret reference")
-	}
 	if !strings.Contains(resources, "param databasePassword string") ||
 		!strings.Contains(resources, "@secure()\nparam databasePassword string") {
 		t.Fatal("secret environment substitutions must use secure Bicep parameters")
@@ -431,8 +443,8 @@ func TestGenerateFullResourceCatalog(t *testing.T) {
 	if strings.Contains(parameters, "top-secret") {
 		t.Fatal("generated parameter values must not contain secret material")
 	}
-	if strings.Contains(main+resources, "output postgresDatabasePassword") {
-		t.Fatal("password must not be a deployment output")
+	if strings.Contains(main+resources, "output databasePassword") {
+		t.Fatal("secret environment parameters must not be deployment outputs")
 	}
 
 	again, err := Generate("backend", config)
@@ -502,7 +514,7 @@ func TestGenerateExistingResourceBindings(t *testing.T) {
 
 func TestGenerateEntryIsolation(t *testing.T) {
 	config := Config{
-		"database": {Type: Postgres},
+		"database": {Type: Mongo},
 		"storage":  {Type: Storage, Existing: true},
 	}
 	first, err := Generate("first", config)
@@ -525,12 +537,11 @@ func TestGenerateEntryIsolation(t *testing.T) {
 	}{{"FIRST", first}, {"SECOND", second}} {
 		prefix := "AZURE_RESOURCES_" + entry.name + "__"
 		parameters := string(entry.files["main.parameters.json"])
-		if !strings.Contains(parameters, "${"+prefix+"KEY_VAULT_NAME}") ||
-			!strings.Contains(parameters, "${"+prefix+"RESOURCE_STORAGE_ID}") {
-			t.Fatal("vault lookups and existing-resource bindings must belong to their entry")
+		if !strings.Contains(parameters, "${"+prefix+"RESOURCE_STORAGE_ID}") {
+			t.Fatal("existing-resource bindings must belong to their entry")
 		}
 		if !strings.Contains(string(entry.files["main.bicep"]), "output "+prefix+"KEY_VAULT_NAME string") {
-			t.Fatal("vault output must match the entry's password lookup key")
+			t.Fatal("vault output must belong to its entry")
 		}
 	}
 }

@@ -42,16 +42,16 @@ type azureBackend struct {
 	groups       *armresources.ResourceGroupsClient
 }
 
-func newBackend(subscription string, credential azcore.TokenCredential) (backend, error) {
-	deployments, err := armresources.NewDeploymentsClient(subscription, credential, nil)
+func newBackend(subscription string, credential azcore.TokenCredential, options *arm.ClientOptions) (backend, error) {
+	deployments, err := armresources.NewDeploymentsClient(subscription, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Azure deployments client: %w", err)
 	}
-	groups, err := armresources.NewResourceGroupsClient(subscription, credential, nil)
+	groups, err := armresources.NewResourceGroupsClient(subscription, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Azure resource groups client: %w", err)
 	}
-	operations, err := armresources.NewDeploymentOperationsClient(subscription, credential, nil)
+	operations, err := armresources.NewDeploymentOperationsClient(subscription, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Azure deployment operations client: %w", err)
 	}

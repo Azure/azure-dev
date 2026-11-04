@@ -134,14 +134,8 @@ output {{entryEnvKey .LayerName "AZURE_RESOURCE_REDIS_ID"}} string = resources.o
 {{- if .DbCosmosMongo }}
 output {{entryEnvKey .LayerName (printf "AZURE_RESOURCE_%s_ID" (alphaSnakeUpper .DbCosmosMongo.DatabaseName))}} string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmosMongo.DatabaseName}}_ID
 {{- end}}
-{{- if .DbPostgres}}
-output {{entryEnvKey .LayerName (printf "AZURE_RESOURCE_%s_ID" (alphaSnakeUpper .DbPostgres.DatabaseName))}} string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID
-{{- end}}
 {{- if .DbCosmos }}
 output {{entryEnvKey .LayerName (printf "AZURE_RESOURCE_%s_ID" (alphaSnakeUpper .DbCosmos.DatabaseName))}} string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID
-{{- end}}
-{{- if .DbMySql}}
-output {{entryEnvKey .LayerName (printf "AZURE_RESOURCE_%s_ID" (alphaSnakeUpper .DbMySql.DatabaseName))}} string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID
 {{- end}}
 {{- if .StorageAccount }}
 output {{entryEnvKey .LayerName "AZURE_RESOURCE_STORAGE_ID"}} string = resources.outputs.AZURE_RESOURCE_STORAGE_ID

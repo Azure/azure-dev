@@ -13,7 +13,10 @@ import (
 
 	"azure.resources/internal/environment"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
 // EnsureEnv resolves the active environment and prompts through the host for missing Azure scope.
@@ -35,6 +38,10 @@ func (p *Provider) ensureEnv(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	azureCloud, err := p.loadCloud(ctx)
+	if err != nil {
+		return err
+	}
 	tenant, err := p.ensureSubscription(ctx, values)
 	if err != nil {
 		return err
@@ -51,18 +58,48 @@ func (p *Provider) ensureEnv(ctx context.Context) error {
 		return fmt.Errorf("creating Azure credential: %w", err)
 	}
 	if p.azure == nil {
-		p.azure, err = newBackend(values["AZURE_SUBSCRIPTION_ID"], credential)
+		p.azure, err = newBackend(values["AZURE_SUBSCRIPTION_ID"], credential,
+			&arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: azureCloud.Configuration}})
 		if err != nil {
 			return err
 		}
 	}
-	if p.secret == nil {
-		p.secret = secretReader(credential)
-	}
-
 	p.values = values
 	p.name = deploymentName(p.projectName, p.envName, p.options.Name)
 	return nil
+}
+
+func (p *Provider) loadCloud(ctx context.Context) (*cloud.Cloud, error) {
+	env, err := p.client.Environment().GetConfigString(ctx,
+		&azdext.GetConfigStringRequest{EnvName: p.envName, Path: "cloud.name"})
+	if err != nil {
+		return nil, fmt.Errorf("reading environment cloud configuration: %w", err)
+	}
+	name := env.GetValue()
+	if !env.GetFound() {
+		project, err := p.client.Project().GetConfigValue(ctx, &azdext.GetProjectConfigValueRequest{Path: "cloud.name"})
+		if err != nil {
+			return nil, fmt.Errorf("reading project cloud configuration: %w", err)
+		}
+		if project.GetFound() {
+			var ok bool
+			name, ok = project.GetValue().AsInterface().(string)
+			if !ok {
+				return nil, errors.New("project cloud.name must be a string")
+			}
+		} else {
+			user, err := p.client.UserConfig().GetString(ctx, &azdext.GetUserConfigStringRequest{Path: "cloud.name"})
+			if err != nil {
+				return nil, fmt.Errorf("reading user cloud configuration: %w", err)
+			}
+			name = user.GetValue()
+		}
+	}
+	configured, err := cloud.NewCloud(&cloud.Config{Name: name})
+	if err != nil {
+		return nil, fmt.Errorf("resolving Azure cloud configuration: %w", err)
+	}
+	return configured, nil
 }
 
 func (p *Provider) loadEnvironment(ctx context.Context) (map[string]string, error) {

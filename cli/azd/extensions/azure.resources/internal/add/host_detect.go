@@ -169,10 +169,6 @@ func hostDependencyTypes(packages []string) []string {
 	for _, name := range packages {
 		var resourceType string
 		switch strings.ToLower(name) {
-		case "mysql", "mysql2", "flask_mysqldb", "mysqlclient", "aiomysql", "asyncmy":
-			resourceType = "db.mysql"
-		case "pg", "pg-promise", "psycopg2", "psycopg2-binary", "psycopg", "psycopgbinary", "asyncpg", "aiopg":
-			resourceType = "db.postgres"
 		case "mongodb", "mongojs", "mongoose", "pymongo", "beanie", "motor":
 			resourceType = "db.mongo"
 		case "redis", "redis-om":

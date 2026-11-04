@@ -24,6 +24,7 @@ import (
 type wizardPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
 	selectAnswers       []string
+	selectRequests      []*azdext.SelectRequest
 	textAnswers         []string
 	multiAnswers        [][]string
 	confirmAnswers      []bool
@@ -44,6 +45,7 @@ type wizardPromptServer struct {
 func (s *wizardPromptServer) Select(
 	_ context.Context, request *azdext.SelectRequest,
 ) (*azdext.SelectResponse, error) {
+	s.selectRequests = append(s.selectRequests, request)
 	if s.promptErr != nil {
 		return nil, s.promptErr
 	}
@@ -229,6 +231,20 @@ func newWizardTestClientWithEnvironmentServer(
 	return client
 }
 
+func TestWizardDatabaseCatalog(t *testing.T) {
+	prompts := &wizardPromptServer{selectAnswers: []string{"MongoDB"}}
+	wizard := &Wizard{Client: newWizardTestClient(t, prompts)}
+	resourceType, err := wizard.selectResourceType(t.Context(), "Database")
+	require.NoError(t, err)
+	require.Equal(t, resources.Mongo, resourceType)
+	require.Len(t, prompts.selectRequests, 1)
+	var choices []string
+	for _, choice := range prompts.selectRequests[0].Options.Choices {
+		choices = append(choices, choice.Value)
+	}
+	require.Equal(t, []string{"CosmosDB", "MongoDB", "Redis"}, choices)
+}
+
 func TestWizardResourceCatalog(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -239,14 +255,6 @@ func TestWizardResourceCatalog(t *testing.T) {
 		definition  resources.Definition
 		expectVault bool
 	}{
-		{
-			name: "postgres", selections: []string{"Database", "PostgreSQL"}, text: []string{"appdb"},
-			resource: "appdb", definition: resources.Definition{Type: resources.Postgres}, expectVault: true,
-		},
-		{
-			name: "mysql", selections: []string{"Database", "MySQL"}, text: []string{"appdb"},
-			resource: "appdb", definition: resources.Definition{Type: resources.MySQL}, expectVault: true,
-		},
 		{
 			name: "mongo", selections: []string{"Database", "MongoDB"}, text: []string{"appdb"},
 			resource: "appdb", definition: resources.Definition{Type: resources.Mongo}, expectVault: true,
@@ -536,14 +544,6 @@ func TestWizardExistingCatalog(t *testing.T) {
 			"Microsoft.Cache/redis/resource", "",
 		},
 		{
-			[]string{"Database", "PostgreSQL"}, resources.Postgres, "Microsoft.DBforPostgreSQL/flexibleServers",
-			"Microsoft.DBforPostgreSQL/flexibleServers/resource", "",
-		},
-		{
-			[]string{"Database", "MySQL"}, resources.MySQL, "Microsoft.DBforMySQL/flexibleServers",
-			"Microsoft.DBforMySQL/flexibleServers/resource", "",
-		},
-		{
 			[]string{"Database", "MongoDB"}, resources.Mongo, "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases",
 			"Microsoft.DocumentDB/databaseAccounts/account/mongodbDatabases/resource", "",
 		},
@@ -768,8 +768,6 @@ func TestWizardLinkEligibility(t *testing.T) {
 		{resources.ContainerApp, resources.Definition{Type: resources.ContainerApp}, true},
 		{resources.AppService, resources.Definition{Type: resources.Storage, Existing: true}, true},
 		{resources.AppService, resources.Definition{Type: resources.Redis, Existing: true}, false},
-		{resources.AppService, resources.Definition{Type: resources.Postgres, Existing: true}, false},
-		{resources.AppService, resources.Definition{Type: resources.MySQL, Existing: true}, false},
 		{resources.AppService, resources.Definition{Type: resources.Mongo, Existing: true}, false},
 		{resources.ContainerApp, resources.Definition{Type: resources.Cosmos, Existing: true}, true},
 		{resources.Storage, resources.Definition{Type: resources.Redis}, false},

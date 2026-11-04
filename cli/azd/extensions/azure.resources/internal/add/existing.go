@@ -17,8 +17,6 @@ import (
 
 var azureResourceTypes = map[string]string{
 	resources.Redis:       "Microsoft.Cache/redis",
-	resources.Postgres:    "Microsoft.DBforPostgreSQL/flexibleServers/databases",
-	resources.MySQL:       "Microsoft.DBforMySQL/flexibleServers/databases",
 	resources.Mongo:       "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases",
 	resources.Cosmos:      "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
 	resources.OpenAIModel: "Microsoft.CognitiveServices/accounts/deployments",

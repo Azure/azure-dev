@@ -31,10 +31,16 @@ azd resources add
 azd resources add --layer application-resources
 ```
 
-The wizard configures databases, storage, messaging, AI models, Key Vault,
+The wizard configures Redis, MongoDB, Cosmos DB, storage, messaging, AI models, Key Vault,
 application hosts, and existing Azure resources. It writes resource declarations
 only to `infra.layers[].config`, with service configuration under `services`.
 Resource links are local to the selected infrastructure entry.
+
+PostgreSQL (`db.postgres`) and MySQL (`db.mysql`) are not supported in this preview,
+including existing-resource declarations. Previously authored configurations using
+those types are rejected rather than silently ignored. Use separately authored
+native Bicep infrastructure for these databases. Removing a declaration does not
+delete an already deployed database; see the teardown behavior below before using `down`.
 
 Without `--layer`, enter a layer name (default `azureresources`). An explicit
 `--layer` takes precedence. An existing resources layer is updated only after
@@ -90,7 +96,7 @@ azd extension install ./bin/azure-resources-dev.zip --force
 
 A Bicep executable is required at runtime for compilation.
 Azure credentials and environment access are requested through the azd SDK.
-ARM and Key Vault clients use the selected environment's cloud configuration,
+ARM clients use the selected environment's cloud configuration,
 falling back to project and user configuration, then Azure Public Cloud.
 Tests use local fixtures and mocks rather than deploying Azure resources.
 
@@ -181,7 +187,7 @@ tool execution is reported explicitly.
 - The catalog and Bicep assets live in [internal/resources](./internal/resources).
 - Existing-resource host bindings are generated directly as Bicep expressions by
   the catalog. They do not use an expression language in `azure.yaml`.
-  Linking hosts to existing Redis, PostgreSQL, MySQL, or MongoDB resources remains
+  Linking hosts to existing Redis or MongoDB resources remains
   unsupported because their database credentials and connection bindings cannot
   be generated.
 - The extension-owned execution subset lives in [internal/bicep](./internal/bicep).
@@ -221,9 +227,7 @@ must remain unique across the project. Application environment variables generat
 inside each resource group are unchanged.
 
 For environments created with earlier preview builds, copy existing-resource ID
-bindings and the Key Vault name into the appropriate entry-scoped keys before
-provisioning. Copying the vault name preserves the existing database password
-lookup; do not share another entry's vault key. Update custom references to the
+bindings into the appropriate entry-scoped keys before provisioning. Update custom references to the
 old output keys. Provision each entry again to replace its deployment's old output
 names before relying on entry-isolated refresh or `down`.
 

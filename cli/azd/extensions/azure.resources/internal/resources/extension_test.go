@@ -15,7 +15,7 @@ func TestGeneratorGenerate(t *testing.T) {
 	request := GenerateRequest{
 		Name: "backend",
 		Config: map[string]any{
-			"database": map[string]any{"type": Postgres},
+			"database": map[string]any{"type": Mongo},
 		},
 	}
 
@@ -34,7 +34,7 @@ func TestGeneratorGenerate(t *testing.T) {
 func TestGeneratorRejectsInvalidConfig(t *testing.T) {
 	_, err := (&Generator{}).Generate(t.Context(), GenerateRequest{
 		Config: map[string]any{
-			"database": map[string]any{"type": Postgres, "unknown": true},
+			"database": map[string]any{"type": Mongo, "unknown": true},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "unknown field") {
@@ -53,7 +53,7 @@ func TestGeneratorHonorsCancellation(t *testing.T) {
 }
 
 func TestGeneratorRejectsUnsupportedExistingDatabaseLinks(t *testing.T) {
-	for _, resourceType := range []string{Redis, Postgres, MySQL, Mongo} {
+	for _, resourceType := range []string{Redis, Mongo} {
 		t.Run(resourceType, func(t *testing.T) {
 			_, err := Decode(map[string]any{
 				"api":      map[string]any{"type": ContainerApp, "port": 8080, "uses": []string{"database"}},

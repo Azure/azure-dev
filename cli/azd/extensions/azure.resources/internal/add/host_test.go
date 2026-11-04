@@ -58,6 +58,10 @@ func TestHostCodeDirectory(t *testing.T) {
 	}
 }
 
+func TestHostDependencyTypesIgnoresRemovedDatabases(t *testing.T) {
+	require.Empty(t, hostDependencyTypes([]string{"pg", "psycopg2-binary", "mysql2", "mysqlclient"}))
+}
+
 func TestDetectHostProject(t *testing.T) {
 	for _, tt := range []struct {
 		name         string
@@ -67,12 +71,12 @@ func TestDetectHostProject(t *testing.T) {
 		dependencies []string
 	}{
 		{"unknown", map[string]string{"main.go": "package main"}, "", nil, nil},
-		{"python", map[string]string{"requirements.txt": "fastapi\npsycopg2-binary==2.9\nredis>=5"},
-			"python", nil, []string{resources.Postgres, resources.Redis}},
+		{"python", map[string]string{"requirements.txt": "fastapi\npymongo>=4\nredis>=5"},
+			"python", nil, []string{resources.Mongo, resources.Redis}},
 		{"python pyproject", map[string]string{"pyproject.toml": "[project]\ndependencies = [\"pymongo>=4\"]"},
 			"python", nil, []string{resources.Mongo}},
-		{"javascript", map[string]string{"package.json": `{"dependencies":{"express":"1","pg":"1","pg-promise":"1"}}`},
-			"js", nil, []string{resources.Postgres}},
+		{"javascript", map[string]string{"package.json": `{"dependencies":{"express":"1","mongodb":"1","mongoose":"1"}}`},
+			"js", nil, []string{resources.Mongo}},
 		{"typescript vite", map[string]string{
 			"package.json": `{"dependencies":{"react":"1"},"devDependencies":{"vite":"1","typescript":"1"}}`,
 		}, "ts", []string{"react", "vite"}, nil},

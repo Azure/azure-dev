@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 var _ azdext.ProvisioningProvider = (*Provider)(nil)
@@ -25,6 +26,13 @@ type initializationHost struct {
 	prompts   int
 	locations int
 	promptErr error
+	project   map[string]any
+}
+
+func (s *initializationHost) GetConfigString(
+	context.Context, *azdext.GetConfigStringRequest,
+) (*azdext.GetConfigStringResponse, error) {
+	return &azdext.GetConfigStringResponse{}, nil
 }
 
 func (s *initializationHost) GetCurrent(context.Context, *azdext.EmptyRequest) (*azdext.EnvironmentResponse, error) {
@@ -102,6 +110,28 @@ func (s *initializationHost) GetCurrentPrincipal(
 
 type initializationProject struct {
 	azdext.UnimplementedProjectServiceServer
+	project map[string]any
+}
+
+func (s *initializationProject) GetConfigValue(
+	_ context.Context, request *azdext.GetProjectConfigValueRequest,
+) (*azdext.GetProjectConfigValueResponse, error) {
+	raw, found := s.project[request.Path]
+	if !found {
+		return &azdext.GetProjectConfigValueResponse{}, nil
+	}
+	value, err := structpb.NewValue(raw)
+	return &azdext.GetProjectConfigValueResponse{Found: true, Value: value}, err
+}
+
+type initializationUserConfig struct {
+	azdext.UnimplementedUserConfigServiceServer
+}
+
+func (s *initializationUserConfig) GetString(
+	context.Context, *azdext.GetUserConfigStringRequest,
+) (*azdext.GetUserConfigStringResponse, error) {
+	return &azdext.GetUserConfigStringResponse{}, nil
 }
 
 func (s *initializationProject) Get(context.Context, *azdext.EmptyRequest) (*azdext.GetProjectResponse, error) {
@@ -115,8 +145,9 @@ func newInitializationClient(t *testing.T, host *initializationHost) *azdext.Azd
 	server := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(server, host)
 	azdext.RegisterAccountServiceServer(server, host)
+	azdext.RegisterUserConfigServiceServer(server, &initializationUserConfig{})
 	azdext.RegisterPromptServiceServer(server, &initializationPrompts{host: host})
-	azdext.RegisterProjectServiceServer(server, &initializationProject{})
+	azdext.RegisterProjectServiceServer(server, &initializationProject{project: host.project})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))

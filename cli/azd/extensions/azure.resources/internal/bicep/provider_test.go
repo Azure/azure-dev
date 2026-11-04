@@ -96,8 +96,9 @@ func readyProvider(azure *fakeBackend) *Provider {
 		values: map[string]string{
 			"AZURE_ENV_NAME": "dev", "AZURE_SUBSCRIPTION_ID": "sub", "AZURE_LOCATION": "eastus",
 			"AZURE_PRINCIPAL_ID": "object-id", "QUOTED": "contains \"quotes\"\nand newlines",
+			"PASSWORD": "saved-password",
 		},
-		azure: azure, secret: func(context.Context, string, string) (string, error) { return "saved-password", nil },
+		azure: azure,
 		template: map[string]any{
 			"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 			"parameters": map[string]any{
@@ -173,13 +174,10 @@ func TestParametersGeneratedSubstitutions(t *testing.T) {
 	if !ok || value["quoted"] != p.values["QUOTED"] {
 		t.Fatal("nested quoted environment value was corrupted")
 	}
-	p.secret = func(context.Context, string, string) (string, error) {
-		t.Fatal("parameters must be cached within a provider session")
-		return "", nil
-	}
-	if _, err := p.Parameters(t.Context()); err != nil {
-		t.Fatal(err)
-	}
+	p.values["PASSWORD"] = "changed-value"
+	repeated, err := p.Parameters(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, parameters, repeated, "parameters must be cached within a provider session")
 }
 
 func TestParametersTemplateDefaults(t *testing.T) {
@@ -273,36 +271,21 @@ func TestResolveEnvironmentDefaults(t *testing.T) {
 	}
 }
 
-func TestResolveCommands(t *testing.T) {
+func TestResolveRejectsCommands(t *testing.T) {
 	tests := []struct {
 		name, input string
-		secretErr   error
-		wantErr     bool
 	}{
-		{name: "first deployment", input: "$(secretOrRandomPassword ${MISSING_VAULT} password)"},
-		{name: "existing secret", input: "$(secretOrRandomPassword vault password)"},
-		{name: "unsupported command", input: "$(shell secret)", wantErr: true},
-		{name: "malformed command", input: "$(secretOrRandomPassword vault password", wantErr: true},
-		{
-			name: "access denied", input: "$(secretOrRandomPassword vault password)",
-			secretErr: errors.New("denied"), wantErr: true,
-		},
+		{name: "former password command", input: "$(secretOrRandomPassword vault password)"},
+		{name: "unknown command", input: "$(shell secret)"},
+		{name: "malformed command", input: "$(shell secret"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := readyProvider(&fakeBackend{})
-			p.secret = func(context.Context, string, string) (string, error) { return "saved$(", tt.secretErr }
 			mapping := []string{}
 			value, err := p.resolve(t.Context(), tt.input, &mapping)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("error = %v; want error %v", err, tt.wantErr)
-			}
-			if !tt.wantErr {
-				text, ok := value.(string)
-				if !ok || len(text) == 0 {
-					t.Fatal("missing resolved password")
-				}
-			}
+			require.ErrorContains(t, err, "command substitutions are not supported")
+			require.Nil(t, value)
 		})
 	}
 }

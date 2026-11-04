@@ -3,6 +3,10 @@
 Migration is optional: legacy top-level `resources` declarations remain supported
 by azd core. The extension is a separate, opt-in provisioning provider.
 
+Do not migrate PostgreSQL (`db.postgres`) or MySQL (`db.mysql`) declarations to this
+preview extension. Both managed and existing declarations of those types are
+unsupported; keep them in separately authored native Bicep infrastructure.
+
 Move top-level `resources` into a named `infra.layers` entry's `config`.
 Resource-to-resource `uses` references must stay within the same entry.
 Core service `uses` references do not resolve extension-owned resources; review
@@ -40,8 +44,6 @@ an existing environment; this YAML edit does not migrate deployed Azure resource
 The extension's provider-owned environment keys are entry-scoped, unlike the
 legacy generator's keys. For entry `resources`, for example, copy an existing
 `AZURE_RESOURCE_STORAGE_ID` binding to
-`AZURE_RESOURCES_RESOURCES__RESOURCE_STORAGE_ID`. Copy `AZURE_KEY_VAULT_NAME` to
-`AZURE_RESOURCES_RESOURCES__KEY_VAULT_NAME` when retaining a database's existing
-vault and password. Update custom output references as described in the
+`AZURE_RESOURCES_RESOURCES__RESOURCE_STORAGE_ID`. Update custom output references as described in the
 [environment-key contract](./README.md#ownership-and-lifecycle).
 Standard `SERVICE_<SERVICE>_*` host-binding keys do not change.

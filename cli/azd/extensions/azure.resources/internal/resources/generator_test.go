@@ -18,12 +18,8 @@ func TestGenerateInfraSpecCatalog(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, spec.DbRedis)
-	require.NotNil(t, spec.DbPostgres)
-	require.NotNil(t, spec.DbMySql)
 	require.NotNil(t, spec.DbCosmosMongo)
 	require.NotNil(t, spec.DbCosmos)
-	assert.Equal(t, "postgres", spec.DbPostgres.DatabaseName)
-	assert.Equal(t, "mysql", spec.DbMySql.DatabaseName)
 	assert.Equal(t, "mongo", spec.DbCosmosMongo.DatabaseName)
 	require.Len(t, spec.DbCosmos.Containers, 1)
 	assert.Equal(t, "items", spec.DbCosmos.Containers[0].ContainerName)
@@ -45,8 +41,6 @@ func TestGenerateInfraSpecCatalog(t *testing.T) {
 	assert.Equal(t, "api-service", api.Name)
 	assert.Equal(t, 8080, api.Port)
 	assert.NotNil(t, api.DbRedis)
-	assert.NotNil(t, api.DbPostgres)
-	assert.NotNil(t, api.DbMySql)
 	assert.NotNil(t, api.DbCosmosMongo)
 	assert.NotNil(t, api.DbCosmos)
 	assert.NotNil(t, api.EventHubs)
@@ -69,7 +63,7 @@ func TestGenerateAIProjectDoesNotEmitPromptMetadata(t *testing.T) {
 }
 
 func TestGenerateInfraSpecAddsImplicitVaultWithoutMutatingConfig(t *testing.T) {
-	for _, resourceType := range []string{Redis, Postgres, MySQL, Mongo} {
+	for _, resourceType := range []string{Redis, Mongo} {
 		t.Run(resourceType, func(t *testing.T) {
 			config := Config{"database": {Type: resourceType}}
 			spec, err := generateInfraSpec(config)
@@ -194,7 +188,7 @@ func TestGenerateValidatesRequiredModelAndRuntimeFields(t *testing.T) {
 
 func TestGenerateRejectsDuplicateSingletonResources(t *testing.T) {
 	for _, resourceType := range []string{
-		Redis, Postgres, MySQL, Mongo, Cosmos, EventHubs, ServiceBus, Storage, AIProject, AISearch, KeyVault,
+		Redis, Mongo, Cosmos, EventHubs, ServiceBus, Storage, AIProject, AISearch, KeyVault,
 	} {
 		t.Run(resourceType, func(t *testing.T) {
 			_, err := Generate("backend", Config{
@@ -284,7 +278,7 @@ func TestGenerateExistingHostBindings(t *testing.T) {
 }
 
 func TestGenerateRejectsUnsupportedExistingDatabaseBindings(t *testing.T) {
-	for _, resourceType := range []string{Redis, Postgres, MySQL, Mongo} {
+	for _, resourceType := range []string{Redis, Mongo} {
 		t.Run(resourceType, func(t *testing.T) {
 			files, err := Generate("backend", Config{
 				"api":    {Type: ContainerApp, Port: 8080, Uses: []string{"shared"}},

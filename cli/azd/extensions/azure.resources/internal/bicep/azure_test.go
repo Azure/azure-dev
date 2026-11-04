@@ -14,9 +14,45 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/stretchr/testify/require"
 )
+
+func TestAzureBackendUsesConfiguredCloudEndpoints(t *testing.T) {
+	for _, configured := range []cloud.Configuration{cloud.AzurePublic, cloud.AzureGovernment, cloud.AzureChina} {
+		endpoint := strings.TrimSuffix(configured.Services[cloud.ResourceManager].Endpoint, "/")
+		t.Run(endpoint, func(t *testing.T) {
+			var requests []string
+			transport := transportFunc(func(request *http.Request) (*http.Response, error) {
+				requests = append(requests, request.URL.String())
+				require.True(t, strings.HasPrefix(request.URL.String(), endpoint+"/"))
+				body := `{"value":[]}`
+				if strings.HasSuffix(request.URL.Path, "/resourcegroups/generated") {
+					body = `{"name":"generated"}`
+				} else if strings.HasSuffix(request.URL.Path, "/deployments/data") {
+					body = `{"name":"data","properties":{"provisioningState":"Succeeded"}}`
+				}
+				return &http.Response{
+					StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}},
+					Body: io.NopCloser(strings.NewReader(body)), Request: request,
+				}, nil
+			})
+			backend, err := newBackend("sub", testCredential{}, &arm.ClientOptions{
+				ClientOptions: azcore.ClientOptions{Cloud: configured, Transport: transport},
+			})
+			require.NoError(t, err)
+			_, err = backend.group(t.Context(), "generated")
+			require.NoError(t, err)
+			_, err = backend.find(t.Context(), "example", "dev", "data")
+			require.NoError(t, err)
+			_, err = backend.get(t.Context(), "data")
+			require.NoError(t, err)
+			require.Len(t, requests, 4, "all three ARM clients must use the configured cloud")
+		})
+	}
+}
 
 type testCredential struct{}
 

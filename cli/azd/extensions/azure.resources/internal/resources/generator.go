@@ -87,10 +87,6 @@ func generateInfraSpec(config Config) (*scaffold.InfraSpec, error) {
 				DatabaseName: resource.Name,
 				Containers:   containers,
 			}
-		case Postgres:
-			spec.DbPostgres = &scaffold.DatabasePostgres{DatabaseName: resource.Name}
-		case MySQL:
-			spec.DbMySql = &scaffold.DatabaseMysql{DatabaseName: resource.Name}
 		case AppService:
 			service := scaffold.ServiceSpec{
 				Name:      resource.Name,
@@ -176,7 +172,7 @@ func generateInfraSpec(config Config) (*scaffold.InfraSpec, error) {
 
 func DependentResourcesOf(resource *resourceConfig) *resourceConfig {
 	switch resource.Type {
-	case Mongo, MySQL, Postgres, Redis:
+	case Mongo, Redis:
 		return &resourceConfig{Name: "vault", Definition: Definition{Type: KeyVault}}
 	default:
 		return nil
@@ -187,10 +183,6 @@ func azureResourceType(resourceType string) string {
 	switch resourceType {
 	case Redis:
 		return "Microsoft.Cache/redis"
-	case Postgres:
-		return "Microsoft.DBforPostgreSQL/flexibleServers/databases"
-	case MySQL:
-		return "Microsoft.DBforMySQL/flexibleServers/databases"
 	case Mongo:
 		return "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases"
 	case Cosmos:
@@ -326,10 +318,6 @@ func mapHostUses(
 			service.DbCosmosMongo = &scaffold.DatabaseReference{DatabaseName: used.Name}
 		case Cosmos:
 			service.DbCosmos = &scaffold.DatabaseReference{DatabaseName: used.Name}
-		case Postgres:
-			service.DbPostgres = &scaffold.DatabaseReference{DatabaseName: used.Name}
-		case MySQL:
-			service.DbMySql = &scaffold.DatabaseReference{DatabaseName: used.Name}
 		case Redis:
 			service.DbRedis = &scaffold.DatabaseReference{DatabaseName: used.Name}
 		case ContainerApp, AppService:

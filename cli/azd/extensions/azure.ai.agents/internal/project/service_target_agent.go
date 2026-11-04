@@ -247,7 +247,10 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 
 func validateRegistryConnectionServiceConfig(serviceConfig *azdext.ServiceConfig) error {
 	props := ServiceConfigProps(serviceConfig)
-	if props == nil || props.GetFields()["registryConnectionId"] == nil {
+	if props == nil {
+		return nil
+	}
+	if connection, _ := lookupFold(props.AsMap(), "registryConnectionId"); connection == nil {
 		return nil
 	}
 

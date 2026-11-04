@@ -184,3 +184,31 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 		})
 	}
 }
+
+func TestPreviewGatesIgnorePropertyCase(t *testing.T) {
+	t.Setenv(featureflags.MemorySnapshot.EnvVar, "false")
+	t.Setenv(featureflags.Voice.EnvVar, "false")
+
+	require.ErrorContains(t,
+		RequireDefinitionFeatures(map[string]any{"kind": "hosted", "EnableMemorySnapshot": true}),
+		featureflags.MemorySnapshot.ID)
+	require.NoError(t,
+		RequireDefinitionFeatures(map[string]any{"kind": "hosted", "EnableMemorySnapshot": false}))
+
+	for _, definition := range []map[string]any{
+		{"kind": "hosted", "Protocols": []any{map[string]any{"protocol": "invocations_ws"}}},
+		{"kind": "hosted", "protocols": []any{map[string]any{"Protocol": "invocations_ws"}}},
+	} {
+		require.ErrorContains(t, RequireDefinitionFeatures(definition), featureflags.Voice.ID)
+	}
+}
+
+func TestRegistryConnectionCheckIgnoresPropertyCase(t *testing.T) {
+	for _, key := range []string{"registryConnectionId", "RegistryConnectionId"} {
+		service := &azdext.ServiceConfig{
+			Name: "agent", Host: foundryAgentHost,
+			AdditionalProperties: mustStruct(t, map[string]any{"kind": "hosted", key: "conn"}),
+		}
+		require.ErrorContains(t, validateRegistryConnectionServiceConfig(service), "imagePassthrough", key)
+	}
+}

@@ -13,6 +13,22 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
+// lookupFold returns the value for key, matching the name the way
+// encoding/json does when it decodes the same map into a struct: exact match
+// first, then case-insensitively. Gates must use it so a differently cased
+// property cannot be skipped by validation and still be decoded later.
+func lookupFold(m map[string]any, key string) (any, bool) {
+	if v, ok := m[key]; ok {
+		return v, true
+	}
+	for k, v := range m {
+		if strings.EqualFold(k, key) {
+			return v, true
+		}
+	}
+	return nil, false
+}
+
 // PreviewFeature identifies a resolved definition's capability.
 // Ordinary definitions return an empty feature.
 func PreviewFeature(definition map[string]any) featureflags.Feature {
@@ -30,10 +46,12 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 		// Manifests use protocols. Foundry API definitions use protocol_versions
 		// or the legacy container_protocol_versions.
 		for _, key := range []string{"protocols", "protocol_versions", "container_protocol_versions"} {
-			protocols, _ := definition[key].([]any)
+			value, _ := lookupFold(definition, key)
+			protocols, _ := value.([]any)
 			for _, entry := range protocols {
 				protocol, _ := entry.(map[string]any)
-				name, _ := protocol["protocol"].(string)
+				value, _ := lookupFold(protocol, "protocol")
+				name, _ := value.(string)
 				if strings.TrimSpace(name) == "invocations_ws" {
 					return featureflags.Voice
 				}
@@ -45,8 +63,10 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 
 // RequireDefinitionFeatures checks the definition's preview opt-in.
 func RequireDefinitionFeatures(definition map[string]any) error {
-	yamlSnapshot, _ := definition["enableMemorySnapshot"].(bool)
-	apiSnapshot, _ := definition["enable_memory_snapshot"].(bool)
+	yamlValue, _ := lookupFold(definition, "enableMemorySnapshot")
+	apiValue, _ := lookupFold(definition, "enable_memory_snapshot")
+	yamlSnapshot, _ := yamlValue.(bool)
+	apiSnapshot, _ := apiValue.(bool)
 	if yamlSnapshot || apiSnapshot {
 		if err := featureflags.Require(featureflags.MemorySnapshot); err != nil {
 			return err

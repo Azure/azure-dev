@@ -232,6 +232,10 @@ These permissions are additional to the applicable resource and role-assignment 
 
 For missing principal bindings declared by the template, the provider reads the effectively selected supplied identities to resolve their principal IDs. A missing federation-role binding is resolved in the effective workload identity's subscription, or the deployment subscription when that identity is omitted. Explicit bindings do not require these lookups. This is deployment binding resolution, not a readiness, networking, or permission preflight. Supplied resources and their existing grants must already be configured for Foundry agent hosting.
 
+After local validation and credential initialization, independent AKS, federation-role,
+and supplied-identity reads run concurrently. All required reads must succeed before
+bindings are merged and ARM deployment or what-if can proceed.
+
 `azd provision --preview` resolves the host bindings and returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives names for omitted supporting resources and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`. Registry outputs are empty when no registry is selected.
 
 `azd down` uses the standard Foundry teardown path, including its confirmation and `--force` behavior. It deletes model deployments and the target resource group with all resources inside it, including pre-existing resources; cleanup is not limited to resources created by the ARM deployment. An existing AKS cluster, network, supplied Storage, or supplied identity in the target resource group is deleted along with the group. Resources in other resource groups are outside this group-deletion scope. Infrastructure layers retain the standard Foundry resource-group ownership checks.

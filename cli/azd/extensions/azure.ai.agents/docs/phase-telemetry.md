@@ -143,15 +143,16 @@ illustrative; the ID is generated anew for each invocation.
 The shared fields registered in
 [#10810](https://github.com/Azure/azure-dev/pull/10810) are emitted by this
 implementation. The [public reference](../../../../../docs/reference/telemetry-data.md),
-[schema](../../../../../docs/specs/metrics-audit/telemetry-schema.md#project-and-provider-phase-timing-contract),
+[registered schema](../../../../../docs/specs/metrics-audit/telemetry-schema.md#reserved-project-and-provider-phase-timing-contract),
 and [feature matrix](../../../../../docs/specs/metrics-audit/feature-telemetry-matrix.md)
-are updated alongside emission, not deferred to a release follow-up.
+retain the prerequisite's pending-emission status. Updating these shared
+inventories is a separate core-review follow-up, outside this extension-only PR.
 Implemented source coverage is separate from release and production adoption.
 
 Approval coverage (maintainer): **pending assessment**. The
-[recorded collection scope](../../../../../docs/specs/metrics-audit/privacy-review-checklist.md#recorded-scope-for-project-and-provider-phase-timings)
-lists sources, handling, examples, and ownership; the PR includes the required
-telemetry checklist. An azd maintainer must record whether existing approval
+[privacy review checklist](../../../../../docs/specs/metrics-audit/privacy-review-checklist.md)
+defines the process; the PR description records sources, handling, examples,
+ownership, and the required telemetry checklist. An azd maintainer must record whether existing approval
 covers this data and handling, or coordinate additional approval if needed.
 No completed signoff is claimed; collection beyond approved scope waits for the
 required approval.

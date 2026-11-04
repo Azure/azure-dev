@@ -294,8 +294,8 @@ First-party fields are declared as exported `AttributeKey` variables in
 field name and may be reused by multiple first-party extensions when the
 meaning, allowed values, classification, and purpose are identical. The
 extension column lists the current emitter, not an exclusive owner. The current
-declarations are listed below. Phase reporting is implemented in the extensions;
-source coverage does not establish a published version or production adoption.
+declarations are listed below; entries marked pending reserve a contract without
+enabling runtime reporting.
 
 The agents extension also supplies `extension.event=agent.init.step` on
 `ext.usage` for completed `azd ai agent init` business steps. It buffers timings
@@ -317,18 +317,18 @@ command completion, per-step outcome, category, or summary event is emitted.
 | `azure.ai.agents` | `ext.agent.init.step.id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Fixed business-step identifier on `agent.init.step`; vocabulary below |
 | `azure.ai.agents` | `ext.agent.init.step.sequence` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded start order, 1–96 within one Init invocation, on `agent.init.step`; repeated calls retain their ID and get new sequence numbers |
 | `azure.ai.agents` | `ext.agent.init.step.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative monotonic elapsed milliseconds, string encoded with three decimal places, on `agent.init.step`; convert to a number for percentiles |
-| `azure.ai.agents` / `azure.ai.projects` | `ext.agent.phase.name` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String enum: `project_authoring`, `model_deployment_authoring`, `provision`, `package`, `publish`, `deploy`; both phase events |
-| `azure.ai.agents` / `azure.ai.projects` | `ext.agent.phase.scope` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String enum: `command` (projects authoring handler) or `provider` (extension method); both phase events |
-| `azure.ai.agents` / `azure.ai.projects` | `ext.agent.phase.attempt_id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Generated opaque random string per invocation, not derived from user/resource identifiers; both phase events |
-| `azure.ai.agents` / `azure.ai.projects` | `ext.agent.phase.start_time` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | UTC RFC3339Nano string at actual phase start; `agent.phase.completed` |
-| `azure.ai.agents` / `azure.ai.projects` | `ext.agent.phase.end_time` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | UTC RFC3339Nano string at actual return, captured before reporting; `agent.phase.completed` |
-| `azure.ai.agents` / `azure.ai.projects` | `ext.agent.phase.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative inclusive monotonic elapsed milliseconds, string encoded with three decimal places; `agent.phase.completed` |
-| `azure.ai.agents` / `azure.ai.projects` | `ext.agent.phase.outcome` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String enum: `success`, `error`, `canceled`, `timeout`, for the observed operation only; `agent.phase.completed` |
-| `azure.ai.agents` / `azure.ai.projects` | `ext.agent.phase.step.id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Fixed string identifier from the phase-step vocabulary below; `agent.phase.step` |
-| `azure.ai.agents` / `azure.ai.projects` | `ext.agent.phase.step.sequence` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded integer start order, 1-24 per attempt; repeated IDs get new sequences; `agent.phase.step` |
-| `azure.ai.agents` / `azure.ai.projects` | `ext.agent.phase.step.start_offset_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative monotonic offset from phase start in milliseconds, string encoded with three decimal places; `agent.phase.step` |
-| `azure.ai.agents` / `azure.ai.projects` | `ext.agent.phase.step.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative inclusive monotonic step elapsed milliseconds, string encoded with three decimal places; `agent.phase.step` |
-| `azure.ai.agents` / `azure.ai.projects` | `ext.agent.phase.step.dropped_count` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded nonnegative integer counting step starts beyond the local 24-step buffer, not transport/host loss; `agent.phase.completed` |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.name` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String enum: `project_authoring`, `model_deployment_authoring`, `provision`, `package`, `publish`, `deploy`; both phase events, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.scope` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String enum: `command` (projects authoring handler) or `provider` (extension method); both phase events, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.attempt_id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Generated opaque random string per invocation, not derived from user/resource identifiers; both phase events, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.start_time` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | UTC RFC3339Nano string at actual phase start; `agent.phase.completed`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.end_time` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | UTC RFC3339Nano string at actual return, captured before reporting; `agent.phase.completed`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative inclusive monotonic elapsed milliseconds, string encoded with three decimal places; `agent.phase.completed`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.outcome` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String enum: `success`, `error`, `canceled`, `timeout`, for the observed operation only; `agent.phase.completed`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Fixed string identifier from the phase-step vocabulary below; `agent.phase.step`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.sequence` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded integer start order, 1-24 per attempt; repeated IDs get new sequences; `agent.phase.step`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.start_offset_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative monotonic offset from phase start in milliseconds, string encoded with three decimal places; `agent.phase.step`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative inclusive monotonic step elapsed milliseconds, string encoded with three decimal places; `agent.phase.step`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.dropped_count` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded nonnegative integer counting step starts beyond the local 24-step buffer, not transport/host loss; `agent.phase.completed`, pending #10811 |
 | `azure.ai.agents` | `ext.route` | SystemMetadata | FeatureInsight | `N/A` | No | No | `inspector`, `playground`, or `suppressed` on `local_client.route.selected` |
 | `azure.ai.inspector` | `ext.stage` | SystemMetadata | FeatureInsight | `N/A` | No | No | `ui_ready` on `inspector.funnel.stage` |
 | `azure.ai.inspector` | `ext.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `succeeded` on `inspector.funnel.stage` |
@@ -363,21 +363,15 @@ operation ID. Event emission and the detailed guide are introduced separately in
 [the agent Init implementation PR](https://github.com/Azure/azure-dev/pull/10548);
 the field declarations alone do not enable reporting.
 
-#### Project and provider phase timing contract
+#### Reserved project and provider phase timing contract
 
 Reporting via `ext.usage` with `extension.event=agent.phase.completed` and
-`agent.phase.step` is implemented by the projects and agents extensions in
-[#10811](https://github.com/Azure/azure-dev/pull/10811), using the shared fields
-registered in [#10810](https://github.com/Azure/azure-dev/pull/10810).
+`agent.phase.step` is **pending [#10811](https://github.com/Azure/azure-dev/pull/10811)**.
 Both events share phase name, scope, and attempt ID. The completion carries actual
 start/end, phase duration/outcome, and local dropped count; steps carry ID,
-sequence, start offset, and duration. See the
-[extension guide](../../../cli/azd/extensions/azure.ai.agents/docs/phase-telemetry.md)
-for exact boundaries and payload examples, and the
-[privacy checklist](privacy-review-checklist.md#recorded-scope-for-project-and-provider-phase-timings)
-for approval coverage status. Implementation does not establish release or signoff.
+sequence, start offset, and duration. Field registration alone emits neither event.
 
-Scopes are `command` for the projects extension's project-add and
+Planned scopes are `command` for the projects extension's project-add and
 deployment-add handlers (`project_authoring`, `model_deployment_authoring`),
 `provider` for Foundry provisioning `Deploy` (`provision`), and `provider` for the
 agents extension's `Package`, `Publish`, and `Deploy` methods. The latter methods
@@ -426,12 +420,12 @@ The following rules define the runtime and source-governance boundaries:
 
 <!-- cspell:ignore byom -->
 
-First-party event contracts:
+First-party event contracts (reserved phase reporting is pending #10811):
 
 | Extension | `extension.event` | Trigger | Extension attributes |
 |-----------|-------------------|---------|----------------------|
-| `azure.ai.agents` / `azure.ai.projects` | `agent.phase.completed` | Observed authoring handler or provider method returns, including error/cancellation/timeout | `ext.agent.phase.name`, `.scope`, `.attempt_id`, `.start_time`, `.end_time`, `.duration_ms`, `.outcome`, `.step.dropped_count`; string properties as declared above, not a core command completion |
-| `azure.ai.agents` / `azure.ai.projects` | `agent.phase.step` | Completed business steps buffered until phase return | `ext.agent.phase.name`, `.scope`, `.attempt_id`, `.step.id`, `.step.sequence`, `.step.start_offset_ms`, `.step.duration_ms`; all strings, no step outcomes or customer content |
+| `azure.ai.agents` / `azure.ai.projects` | `agent.phase.completed` | **Pending #10811**: observed authoring handler or provider method returns, including error/cancellation/timeout | `ext.agent.phase.name`, `.scope`, `.attempt_id`, `.start_time`, `.end_time`, `.duration_ms`, `.outcome`, `.step.dropped_count`; string properties as declared above, not a core command completion |
+| `azure.ai.agents` / `azure.ai.projects` | `agent.phase.step` | **Pending #10811**: completed business steps buffered until phase return | `ext.agent.phase.name`, `.scope`, `.attempt_id`, `.step.id`, `.step.sequence`, `.step.start_offset_ms`, `.step.duration_ms`; all strings, no step outcomes or customer content |
 | `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; one event per distinct kind/harness/container-mode classification in the invocation, before the corresponding operation completes | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, `microsoft_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; optional `ext.agent.container.mode` on hosted agents: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown`. `build` does not distinguish ACR ownership; `passthrough` does not prove an image is public; `passthrough_auth` records a configured Foundry registry connection, not successful authentication. No identifiers or customer content |
 | `azure.ai.agents` | `agent.invoke.selected` | A remote `invoke` passes input and protocol validation and resolves its target; project-backed routes must resolve a hosted agent, while explicit `--agent-endpoint` routes have no project kind to verify. Once per selected route before the invoke request, including later failures. Resolution can authenticate or probe a brownfield agent first, so earlier failures are not counted. Local and non-hosted project routes are excluded | `ext.agent.invoke.protocol`: resolved invocable protocol (currently `responses`, `invocations`, or `a2a`); `ext.agent.invoke.long_running` and `ext.agent.invoke.no_wait`: string-encoded `true` or `false`. Long-running/no-wait modes are remote Responses only; `no_wait=true` requires `long_running=true`. No names, IDs, endpoints, prompts, or outcomes |
 | `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode`: fixed enum `sample`; `ext.demo.outcome`: fixed enum `completed` |

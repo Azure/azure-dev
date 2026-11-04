@@ -95,67 +95,6 @@ Existing global command metadata and telemetry opt-out behavior are unchanged.
 Help and flag-parser failures do not execute the action; action-level validation failures record `failed` with zero counts.
 A maintainer must assess approval coverage before rollout. This records the proposed scope, not completed approval.
 
-## Recorded scope for project and provider phase timings
-
-For [Azure/azure-dev#10811](https://github.com/Azure/azure-dev/pull/10811), the
-projects and agents extensions report `agent.phase.completed` and
-`agent.phase.step` through the existing `ext.usage` / `ReportUsage` channel.
-The question is which internal project-authoring or extension provider operation
-accounts for long Init, provision, package, publish, or deploy elapsed time.
-
-Approval coverage (maintainer): **pending assessment**. This records the author's
-collection scope, not a completed privacy signoff. A general code approval or the
-merged field-registration PR is not an explicit approval-coverage decision.
-An azd maintainer must record the decision and rationale in #10811. Collection
-beyond approved scope waits for any required additional approval; internal
-approval documents must not be attached to the public PR.
-
-| Values | Sources and proposed handling |
-|---|---|
-| Phase name, scope, outcome, step ID | Code-defined phase/scope/step constants and outcome classification of the returned error or an observed polling timeout. No raw error text; invalid input does not become an attribute value. |
-| Attempt ID | New opaque random string per actual invocation, not a hash or copy of a customer, service, project, subscription, or resource identifier. Used only to distinguish attempts within an operation/extension. |
-| UTC start/end | Local clock at method/handler entry and return, before reporting; string-encoded RFC3339Nano. |
-| Duration, step offset/duration | Monotonic clock differences, string-encoded nonnegative milliseconds with three decimals; inclusive, not additive. |
-| Sequence, dropped count | Local bookkeeping only: string-encoded step start order 1-24 and nonnegative count of starts exceeding the local buffer. Not transport loss or customer entity counts. |
-
-All twelve keys remain un-hashed `SystemMetadata` / `PerformanceAndHealth`,
-endpoint `N/A`, `IsMeasurement=false`. The
-[schema](telemetry-schema.md#project-and-provider-phase-timing-contract) lists
-the exact field/event maps and allowed values. The
-[extension guide](../../../cli/azd/extensions/azure.ai.agents/docs/phase-telemetry.md#example-payloads)
-contains made-up success/error payloads.
-
-Before: Init's existing step events measured delegated authoring as a whole, with
-no phase completion/step records from the projects handlers or these provider
-methods. After: a custom-named service may produce `phase.name="deploy"`,
-`phase.scope="provider"`, and `step.id="agent_create_or_update"`, never its name.
-Invalid authoring inputs can produce `phase.outcome="error"` and
-`step.id="validation"`, but omit their values and any later unexecuted steps.
-Picker cancellation produces `phase.outcome="canceled"` with the completed fixed
-`location_selection` step, never the question or selected region text. Headless
-or cached deployment locations produce no picker step. All example properties
-are string values, not new command samples or native measurements.
-
-Opt-out, official-registry eligibility, host identity/correlation, reporting
-destination, and the shared 100-event budget are unchanged. This change does not
-add an exporter, Azure query, credential request, retry, or customer-content path.
-Steps are locally capped at 24 per attempt and reporting has one shared
-one-second deadline. An opaque attempt ID is generated, not a customer hash, so
-no new customer-identifier hashing rule is introduced.
-
-| Work / status | Owner |
-|---|---|
-| Code, emitted/excluded-value regressions, and all shared inventories: included in #10811 | PR author |
-| Shared field registration: merged in #10810; deployed metadata coverage not inferred from that merge | azd maintainers / metadata release owner |
-| Approval coverage: pending assessment; no signoff recorded | azd maintainer, with the service privacy owner if coverage is unclear |
-| Agent/projects artifact publication and version/eligibility validation: not established by this PR | Extension release owners |
-| Production Kusto/LENS Init and provision/deploy queries, derived tables/reports, retained copies and exports: no query changes in this PR; migration and coverage checks outstanding | Query/report owner designated by the author; coordinate with azd maintainers |
-
-No named downstream function, table, or dashboard was supplied with this change.
-The query/report owner must identify consumers before rollout. Continue counting
-existing command records; phase/step rows must not inflate command counts or be
-summed into a command duration.
-
 ## Related references
 
 | Need | Reference |

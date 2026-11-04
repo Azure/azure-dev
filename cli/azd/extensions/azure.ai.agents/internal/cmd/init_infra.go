@@ -1749,11 +1749,8 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 // templates/ root into infraDir, preserving the relative tree, and returns the
 // files written (with sizes). On any error it removes the partial infraDir.
 //
-// Provider-runtime and existing-project files are skipped:
-//   - main.arm.json (the pre-compiled ARM JSON): would be stale once the user
-//     edits main.bicep.
-//   - existing-project.bicep and its modules: emitted only by the dedicated
-//     existing-project writer.
+// Precompiled ARM templates, provider-runtime assets, and existing-project
+// entry points are skipped. Shared modules referenced by main.bicep are included.
 func writeEmbeddedTemplates(
 	infraDir string,
 	artifactRoot string,
@@ -1816,8 +1813,7 @@ func writeEmbeddedTemplates(
 		}
 		switch base {
 		case "main.arm.json", "existing-project.bicep",
-			"existing-project-eject.bicep", "existing-project.arm.json",
-			"container-registry.bicep", "foundry-project.bicep":
+			"existing-project-eject.bicep", "existing-project.arm.json":
 			return nil
 		}
 

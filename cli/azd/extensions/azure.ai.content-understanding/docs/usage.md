@@ -171,42 +171,25 @@ the flag to retain original text:
 azd ai cu analyze invoice.pdf --pretty
 ```
 
-The preview uses the existing Glamour renderer for Markdown, including standard
-bold/italic syntax. Each LLM-input YAML front matter section is displayed as a
-separate Metadata code block, not interpreted as document headings or tables.
-The existing azd table/cards formatter handles supported HTML
-tables. It renders all columns without truncation and selects labeled cards when
-the full table exceeds the terminal width. Individual long values can still
-overflow. This reuses existing dependencies; the HTML extraction adapter is
-extension code.
+The preview formats Markdown for easier terminal reading and displays document
+metadata in separate code blocks. Simple HTML tables show all columns, switching
+to labeled cards when a table is too wide.
 
-Supported tables have one explicit header row, unique nonempty headings, and
-rectangular nonempty plain-text data cells. Whitespace is normalized and captions
-are retained. Merged cells, rich cell markup, empty cells, duplicate headings, and
-unsupported structures show a notice and the table source instead. Markdown
-markers inside plain-text HTML cells remain literal. Native Markdown tables stay
-with Glamour and can shorten long links. The pinned azd cards implementation has
-a known label-alignment limitation with mixed Unicode headings; values are not
-lost.
+Keep these limitations in mind:
 
-Offline preview probes cover Traditional Chinese, Japanese, Korean, French,
-German, Hindi, Arabic, and emoji/combining-character sequences. They check text
-retention, not service language support or visual font/shaping/RTL correctness.
-The Hindi table probe exposes another pinned-formatter limitation: its rune-width
-padding disagrees with ANSI grapheme-width measurements, so columns can lose alignment.
-Neither that issue nor Unicode card-label alignment is fixed by the adapter.
-
-Preview output removes terminal controls and URL credentials, queries, and fragments,
-including in fallback source. It is not a byte-for-byte result representation.
-Colors are used only for terminal writers when color is enabled; explicit
-`--pretty` with a pipe, redirected file, or other writer produces an uncolored
-preview at width 80. The preview does not fetch links or images.
+- Complex HTML tables, such as those with merged cells or formatted cell content,
+  show a notice and their source instead of a formatted table.
+- Long values can overflow, and some Unicode text or emoji may not align correctly.
+  Right-to-left text display depends on your terminal. Markdown tables may shorten
+  long links.
+- Preview text removes terminal controls and URL credentials, queries, and
+  fragments; it is not an exact copy of the result. Links and images are not fetched.
+- Piped or redirected previews are uncolored and use an 80-column layout.
 
 `--pretty` requires a single streamed LLM-input result. It cannot be combined with
 `--output json`, `--output none`, `--llm-input=false`, `--usage`, `--dry-run`,
-`--output-file`, or `--output-dir`; these conflicts are rejected before
-authentication. Saved result files, reports, and the default stdout format are
-unchanged. To save original Markdown/HTML, omit `--pretty`.
+`--output-file`, or `--output-dir`. Saved result files, reports, and the default
+stdout format are unchanged. To save original Markdown/HTML, omit `--pretty`.
 
 ### Complete JSON response
 

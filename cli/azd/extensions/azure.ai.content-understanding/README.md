@@ -190,8 +190,8 @@ azd ai cu analyze invoice.pdf --output-file invoice.result.md
 
 Markdown and HTML tables remain unrendered by default, including when stdout is
 redirected. Opt in to a human-readable preview with `azd ai cu analyze invoice.pdf
---pretty`. Standard Markdown uses Glamour; supported simple HTML tables use the
-existing azd table/cards layout. The flag only applies to one streamed LLM-input
+--pretty`. The preview formats Markdown and displays simple HTML tables as
+tables or labeled cards. The flag only applies to one streamed LLM-input
 result and cannot be combined with saved-output options or JSON. See
 [terminal preview behavior and limitations](docs/usage.md#optional-terminal-preview).
 

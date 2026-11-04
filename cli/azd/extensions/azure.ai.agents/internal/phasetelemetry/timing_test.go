@@ -60,7 +60,7 @@ func TestPhaseAndStepsUseActualTimesAndOneAttempt(t *testing.T) {
 	require.Equal(t, "deploy", complete.Attributes["agent.phase.name"])
 	require.Equal(t, "provider", complete.Attributes["agent.phase.scope"])
 	require.Equal(t, "success", complete.Attributes["agent.phase.outcome"])
-	require.NotContains(t, complete.Attributes, "agent.memory_snapshot")
+	require.NotContains(t, complete.Attributes, "agent.memory.snapshot")
 	require.Equal(t, "10.000", complete.Attributes["agent.phase.duration_ms"])
 	started, err := time.Parse(time.RFC3339Nano, complete.Attributes["agent.phase.start_time"])
 	require.NoError(t, err)
@@ -178,9 +178,9 @@ func TestSnapshotSettingSharesThePhaseOutcome(t *testing.T) {
 			event := reporter.events[0]
 			require.Equal(t, "agent.phase.completed", event.Name)
 			if setting != nil && *setting {
-				require.Equal(t, "true", event.Attributes["agent.memory_snapshot"])
+				require.Equal(t, "true", event.Attributes["agent.memory.snapshot"])
 			} else {
-				require.NotContains(t, event.Attributes, "agent.memory_snapshot")
+				require.NotContains(t, event.Attributes, "agent.memory.snapshot")
 			}
 			want := "success"
 			if errors.Is(cause, context.Canceled) {

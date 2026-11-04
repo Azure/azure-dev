@@ -212,7 +212,7 @@ func (t *Timing) End(ctx context.Context, err error) {
 				"agent.phase.duration_ms":        milliseconds(ended.Sub(t.started)),
 				"agent.phase.outcome":            result,
 				"agent.phase.step.dropped_count": strconv.Itoa(dropped),
-				"agent.memory_snapshot":          "true",
+				"agent.memory.snapshot":          "true",
 			},
 		})
 	} else {

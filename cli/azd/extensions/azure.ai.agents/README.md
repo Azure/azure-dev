@@ -364,13 +364,13 @@ registry connections, image references, paths, URLs, prompts, or other customer 
 ### Snapshot deployment telemetry
 
 Hosted provider Deploy reuses `agent.phase.completed`, adding
-`ext.agent.memory_snapshot=true` only after resolving a hosted definition with
+`ext.agent.memory.snapshot=true` only after resolving a hosted definition with
 snapshots explicitly enabled. Disabled, unspecified, unresolved or non-hosted
-definitions, context events, other phases and steps omit the marker. No `false`,
-`unset` or `unknown` snapshot value is reported. The same record contains `ext.agent.phase.outcome` (`success`,
+definitions, context events, other phases and steps omit the marker.
+The same record contains `ext.agent.phase.outcome` (`success`,
 `error`, `timeout`, `canceled`), elapsed milliseconds and the invocation-local
 attempt ID. Filter `ext.agent.phase.name=deploy`, `ext.agent.phase.scope=provider` and
-`ext.agent.memory_snapshot=true` to count observed snapshot-enabled deployment
+`ext.agent.memory.snapshot=true` to count observed snapshot-enabled deployment
 attempts, not unique users or the whole multi-service command. No extra result event, RPC, queue or shutdown hook
 is added. Existing best-effort reporting, opt-out, official-source admission and
 event limits still apply. Missing reports do not prove non-execution; timeout

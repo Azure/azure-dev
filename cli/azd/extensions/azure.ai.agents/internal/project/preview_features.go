@@ -47,7 +47,7 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 // RequireDefinitionFeatures checks the definition's preview opt-in.
 func RequireDefinitionFeatures(definition map[string]any) error {
 	for key, value := range definition {
-		if strings.EqualFold(key, "enableMemorySnapshot") || strings.EqualFold(key, "enable_memory_snapshot") {
+		if isMemorySnapshotKey(key) {
 			if enabled, _ := value.(bool); enabled {
 				if err := featureflags.Require(featureflags.MemorySnapshot); err != nil {
 					return err

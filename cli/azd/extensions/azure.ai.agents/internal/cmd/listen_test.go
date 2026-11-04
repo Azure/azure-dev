@@ -1603,6 +1603,38 @@ func TestPredownRejectsMalformedAuthoritativeRefBeforeCleanup(t *testing.T) {
 	}
 }
 
+func TestPredownAllowsSnapshotNullVariants(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	for _, field := range []string{"EnableMemorySnapshot", "ENABLEMEMORYSNAPSHOT", "Enable_Memory_Snapshot"} {
+		for _, source := range []string{"direct", "root ref"} {
+			t.Run(field+"/"+source, func(t *testing.T) {
+				root := t.TempDir()
+				props := mustStruct(t, map[string]any{"kind": "hosted", "name": "agent", field: nil})
+				if source == "root ref" {
+					data, err := props.MarshalJSON()
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "definition.json"), data, 0o600))
+					props = mustStruct(t, map[string]any{"$ref": "./definition.json"})
+				}
+				proj := &azdext.ProjectConfig{Path: root, Services: map[string]*azdext.ServiceConfig{
+					"agent": {Name: "agent", Host: AiAgentHost, AdditionalProperties: props},
+				}}
+				before := proto.Clone(proj)
+				require.ErrorContains(t, validateRuntimeAgentServices(proj, true), "must be a boolean")
+				envServer := &testEnvironmentServiceServer{
+					current: &azdext.Environment{Name: "dev"}, values: map[string]map[string]string{"dev": {}},
+				}
+				client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+				require.NoError(t, predownHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: proj}))
+				require.Positive(t, envServer.getCurrentCalls)
+				require.Positive(t, envServer.getValuesCalls)
+				require.Empty(t, envServer.setKeys)
+				require.True(t, proto.Equal(before, proj))
+			})
+		}
+	}
+}
+
 func TestPredownIgnoresPromptDeploymentReadiness(t *testing.T) {
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 	for _, tt := range []struct {

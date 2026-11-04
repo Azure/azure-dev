@@ -3328,14 +3328,14 @@ func TestSnapshotDeployUsesExistingPhaseCompletion(t *testing.T) {
 			completed := 0
 			for _, request := range recorder.requests {
 				if request.EventName != "agent.phase.completed" {
-					require.NotContains(t, request.Attributes, "agent.memory_snapshot")
+					require.NotContains(t, request.Attributes, "agent.memory.snapshot")
 					continue
 				}
 				completed++
 				if setting != nil && *setting {
-					require.Equal(t, "true", request.Attributes["agent.memory_snapshot"])
+					require.Equal(t, "true", request.Attributes["agent.memory.snapshot"])
 				} else {
-					require.NotContains(t, request.Attributes, "agent.memory_snapshot")
+					require.NotContains(t, request.Attributes, "agent.memory.snapshot")
 				}
 				require.Equal(t, want, request.Attributes["agent.phase.outcome"])
 				require.NotEmpty(t, request.Attributes["agent.phase.attempt_id"])

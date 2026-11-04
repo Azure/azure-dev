@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/braydonk/yaml"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -446,6 +447,34 @@ func LoadHostedAgentDefinition(
 	}
 
 	return agentDefinitionFromDisk(svc, projectRoot)
+}
+
+// LoadHostedAgentDefinitionForCleanup treats hosted snapshot nulls as omitted
+// without relaxing runtime source validation or changing the authored service.
+func LoadHostedAgentDefinitionForCleanup(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (agent_yaml.ContainerAgent, bool, AgentDefinitionSource, error) {
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceInline, err
+	}
+	if len(svc.GetAdditionalProperties().GetFields()) == 0 {
+		return LoadHostedAgentDefinition(svc, projectRoot)
+	}
+	props, err := resolveRawServiceProps(svc.GetAdditionalProperties(), svc.GetName(), projectRoot)
+	if err != nil {
+		return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceInline, err
+	}
+	if structKind(props) == string(agent_yaml.AgentKindHosted) {
+		for key, value := range props.GetFields() {
+			if _, null := value.GetKind().(*structpb.Value_NullValue); null && isMemorySnapshotKey(key) {
+				delete(props.Fields, key)
+			}
+		}
+	}
+	resolved := proto.CloneOf(svc)
+	resolved.AdditionalProperties = props
+	return LoadHostedAgentDefinition(resolved, projectRoot)
 }
 
 // AgentDefinitionFromResolvedService expands local file includes.
@@ -981,9 +1010,13 @@ func SetAgentContainerSettings(
 	return nil
 }
 
+func isMemorySnapshotKey(key string) bool {
+	return strings.EqualFold(key, "enableMemorySnapshot") || strings.EqualFold(key, "enable_memory_snapshot")
+}
+
 func validateMemorySnapshotSetting(props *structpb.Struct) error {
 	for key, setting := range props.GetFields() {
-		if !strings.EqualFold(key, "enableMemorySnapshot") && !strings.EqualFold(key, "enable_memory_snapshot") {
+		if !isMemorySnapshotKey(key) {
 			continue
 		}
 		if structKind(props) != string(agent_yaml.AgentKindHosted) {

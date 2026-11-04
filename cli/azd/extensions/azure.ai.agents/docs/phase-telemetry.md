@@ -50,7 +50,7 @@ They are not native measurements.
 | `ext.agent.phase.step.sequence` | Step | Start order within one attempt, beginning at 1. |
 | `ext.agent.phase.step.start_offset_ms` | Step | Monotonic offset from the phase start. |
 | `ext.agent.phase.step.duration_ms` | Step | Inclusive business-step elapsed milliseconds, with three decimals. |
-| `ext.agent.memory_snapshot` | Completed, optional | Fixed `true` marker only after resolving a hosted `deploy` / `provider` definition with snapshots explicitly enabled. All other events omit it. `SystemMetadata` / `FeatureInsight`, endpoint `N/A`, un-hashed, not a native measurement. |
+| `ext.agent.memory.snapshot` | Completed, optional | Fixed `true` marker only after resolving a hosted `deploy` / `provider` definition with snapshots explicitly enabled. All other events omit it. `SystemMetadata` / `FeatureInsight`, endpoint `N/A`, un-hashed, not a native measurement. |
 
 ### Snapshot attribution and Agents outcome precedence
 
@@ -67,8 +67,8 @@ attribution, across all phase types:
 
 The original business error is never replaced. Snapshot attribution does not affect
 outcome classification. Disabled, unspecified, unresolved or non-hosted definitions,
-context events, other phases and steps omit the snapshot field. No `false`, `unset`
-or `unknown` snapshot value is reported. Count observed snapshot-enabled deployment
+context events, other phases and steps omit the snapshot field.
+Count observed snapshot-enabled deployment
 attempts, not unique users; a missing marker does not mean disabled. Read deployment
 outcome, duration and attempt ID from the same provider completion that carries
 the snapshot field, not by joining deduplicated context records to whole-command
@@ -125,9 +125,11 @@ polling loop or retry policy.
 - No answers, question text, configuration contents, paths, names, tenant or
   subscription IDs, URLs, credentials, or error messages are emitted.
 
-The small recorder is mirrored in the two independently released extension
-modules, using only the existing SDK reporter and standard library. No shared
-SDK or new Go module is introduced.
+The independently released extension modules share the event shape and use the
+existing SDK reporter and standard library, not an identical outcome classifier.
+Projects uses returned errors and observed polling timeouts; the Agents-only
+request-termination refinement is described above. No shared SDK or new Go module
+is introduced.
 
 ## Example payloads
 

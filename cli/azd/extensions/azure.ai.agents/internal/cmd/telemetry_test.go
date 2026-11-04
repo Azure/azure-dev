@@ -300,7 +300,7 @@ func TestAgentContextReporterIgnoresMemorySnapshotSettings(t *testing.T) {
 	reporter.reportProjectConfig(t.Context(), client, project, "deploy")
 	require.Len(t, client.requests, 1)
 	for _, request := range client.requests {
-		require.NotContains(t, request.Attributes, "agent.memory_snapshot")
+		require.NotContains(t, request.Attributes, "agent.memory.snapshot")
 		require.NotContains(t, request.Attributes, "name")
 		require.NotContains(t, request.Attributes, "version")
 		require.NotContains(t, request.Attributes, "enableMemorySnapshot")

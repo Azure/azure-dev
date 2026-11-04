@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/featureflags"
+	"azureaiagent/internal/phasetelemetry"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -85,6 +86,8 @@ func RequireAgentFeatures(
 func (p *AgentServiceTargetProvider) prepareGatedOperation(
 	ctx context.Context, serviceConfig *azdext.ServiceConfig,
 ) error {
+	defer phasetelemetry.Start(ctx, phasetelemetry.Validation)()
+
 	if err := p.validateDeploymentServiceConfig(ctx, serviceConfig); err != nil {
 		return err
 	}

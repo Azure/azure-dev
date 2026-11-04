@@ -333,6 +333,12 @@ loading and interaction together. The other events are documented under
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
 
+Package, Publish, and Deploy provider methods also report
+[operation and step timings](docs/phase-telemetry.md). These cover the same
+extension methods called by `azd up` and standalone commands, not whole-command
+durations. The projects extension reports its internal authoring and Provision
+provider timings using the same schema.
+
 ### Agent context telemetry
 
 When azd telemetry is enabled, the extension reports `agent.context.resolved`

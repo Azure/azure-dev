@@ -4669,10 +4669,10 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		}
 	}
 
+	phasetelemetry.Timeout(ctx)
 	if lastPollErr != nil && (enableMemorySnapshot == nil || !*enableMemorySnapshot) {
 		return nil, exterrors.ServiceFromAzure(lastPollErr, exterrors.OpCreateAgent)
 	}
-	phasetelemetry.Timeout(ctx)
 	return nil, agentDeploymentTimeoutError(lastVersion, serviceName, lastPollErr)
 }
 

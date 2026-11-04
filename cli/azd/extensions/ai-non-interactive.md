@@ -79,9 +79,10 @@ Without a selection, provisioning creates a registry only when source builds
 need one. Code deployments and prebuilt images do not need a source-build
 registry. An `image` value alone still defaults to source build, including with
 `--no-prompt`. To select prebuilt deployment, use `docker.imagePassthrough: true`
-or `registryConnectionId` together with a nonempty image. The legacy environment
-value `AZD_AGENT_SKIP_ACR=true` also selects prebuilt deployment when an image is
-configured.
+with a nonempty image. Add `registryConnectionId` when a private registry
+connection is needed; it also requires `docker.imagePassthrough: true`.
+The legacy environment value `AZD_AGENT_SKIP_ACR=true` also selects prebuilt
+deployment when the expanded image is nonempty.
 
 Registry selection uses one complete environment snapshot. A failed environment
 read stops provisioning rather than falling back to registry creation. A

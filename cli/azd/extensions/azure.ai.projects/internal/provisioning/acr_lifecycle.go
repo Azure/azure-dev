@@ -407,12 +407,20 @@ func acrActionMatches(patterns []string, operation string) bool {
 }
 
 func parameterValue(src *templateSource, name string) any {
-	if entry, ok := src.parameters[name].(map[string]any); ok {
-		return entry["value"]
+	for key, value := range src.parameters {
+		if strings.EqualFold(key, name) {
+			if entry, ok := value.(map[string]any); ok {
+				return entry["value"]
+			}
+		}
 	}
 	params, _ := src.armTemplate["parameters"].(map[string]any)
-	if entry, ok := params[name].(map[string]any); ok {
-		return entry["defaultValue"]
+	for key, value := range params {
+		if strings.EqualFold(key, name) {
+			if entry, ok := value.(map[string]any); ok {
+				return entry["defaultValue"]
+			}
+		}
 	}
 	return nil
 }

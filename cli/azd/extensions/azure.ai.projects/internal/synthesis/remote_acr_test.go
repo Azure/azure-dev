@@ -89,8 +89,8 @@ func TestRequiresRemoteACRBuild(t *testing.T) {
 func TestACRBuildIntentMatchesImageSelection(t *testing.T) {
 	for _, shape := range []string{"service", "config", "inline", "referenced service", "referenced config"} {
 		for _, tt := range []struct {
-			name, fields, legacy string
-			want                 bool
+			name, fields, legacy, image string
+			want                        bool
 		}{
 			{name: "image defaults to source", fields: "image: registry/image:v1", want: true},
 			{name: "passthrough", fields: "image: registry/image:v1\ndocker: {imagePassthrough: true, remoteBuild: true}"},
@@ -98,6 +98,10 @@ func TestACRBuildIntentMatchesImageSelection(t *testing.T) {
 			{name: "legacy prebuilt", fields: "image: registry/image:v1", legacy: " TRUE "},
 			{name: "legacy false", fields: "image: registry/image:v1", legacy: "false", want: true},
 			{name: "legacy marker without image", legacy: "true", want: true},
+			{name: "legacy empty substitution", fields: "image: ${AGENT_IMAGE}", legacy: "true", want: true},
+			{name: "legacy prebuilt substitution", fields: "image: ${AGENT_IMAGE}", legacy: "true", image: "reg/img:v1"},
+			{name: "source substitution", fields: "image: ${AGENT_IMAGE}", image: "reg/img:v1", want: true},
+			{name: "legacy default image", fields: "image: ${AGENT_IMAGE:-reg/img:v1}", legacy: "true"},
 		} {
 			t.Run(shape+"/"+tt.name, func(t *testing.T) {
 				root := t.TempDir()
@@ -127,7 +131,7 @@ func TestACRBuildIntentMatchesImageSelection(t *testing.T) {
 				}
 				input := Input{
 					RawAzureYAML: []byte(raw), ProjectRoot: root, ServiceName: "project",
-					Env: map[string]string{"AZD_AGENT_SKIP_ACR": tt.legacy},
+					Env: map[string]string{"AZD_AGENT_SKIP_ACR": tt.legacy, "AGENT_IMAGE": tt.image},
 				}
 				has, needs, err := ACRRequirements(input)
 				require.NoError(t, err)
@@ -139,7 +143,31 @@ func TestACRBuildIntentMatchesImageSelection(t *testing.T) {
 				result, err := Synthesize(input)
 				require.NoError(t, err)
 				assert.Equal(t, tt.want, result.Parameters["includeAcr"])
+				input.PreserveVarRefs = true
+				result, err = Synthesize(input)
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, result.Parameters["includeAcr"])
 			})
+		}
+	}
+}
+
+func TestACRImageExpansionErrors(t *testing.T) {
+	for _, anotherAgent := range []bool{false, true} {
+		raw := "services:\n  project:\n    host: azure.ai.project\n" +
+			"  agent:\n    host: azure.ai.agent\n    image: '${AGENT_IMAGE'\n"
+		if anotherAgent {
+			raw += "  a:\n    host: azure.ai.agent\n    kind: hosted\n"
+		}
+		input := Input{RawAzureYAML: []byte(raw), ServiceName: "project"}
+		_, _, err := ACRRequirements(input)
+		require.ErrorContains(t, err, "expand agent image")
+		_, err = RequiresRemoteACRBuild(input)
+		require.ErrorContains(t, err, "expand agent image")
+		for _, preserve := range []bool{false, true} {
+			input.PreserveVarRefs = preserve
+			_, err = Synthesize(input)
+			require.ErrorContains(t, err, "expand agent image")
 		}
 	}
 }

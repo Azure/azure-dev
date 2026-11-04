@@ -27,6 +27,65 @@ import (
 const testExternalRegistryID = "/subscriptions/subscription/resourceGroups/external/providers/" +
 	"Microsoft.ContainerRegistry/registries/shared"
 
+func TestProjectACRSelectionSpecificGuidance(t *testing.T) {
+	for _, tt := range []struct {
+		name, manifest, want string
+	}{
+		{"hosting", "services:\n  project:\n    host: azure.ai.project\n    agentHosting:\n" +
+			"      clusterResourceId: /subscriptions/sub/resourceGroups/aks/providers/" +
+			"Microsoft.ContainerService/managedClusters/aks\n",
+			"remove agentHosting"},
+		{"unknown scope", "infra:\n  provider: bicep\nservices:\n  project:\n    host: azure.ai.project\n",
+			"Use Foundry-only infrastructure"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := projectACRSelection([]byte(tt.manifest), t.TempDir(), "test",
+				map[string]string{"AZURE_SUBSCRIPTION_ID": "subscription"},
+				&resolvedProject{ACRResourceID: testExternalRegistryID}, nil)
+			require.ErrorContains(t, err, tt.want)
+			assert.Empty(t, azdext.ErrorSuggestion(err))
+		})
+	}
+}
+
+func TestProjectACRStateErrorsDoNotSuggestRegistrySelection(t *testing.T) {
+	const projectID = "/subscriptions/subscription/resourceGroups/project/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project"
+	binding, err := json.Marshal(synthesis.ACRBinding{
+		Version: 1, Mode: "reuse-connect", RegistryResourceID: testExternalRegistryID,
+		ProjectResourceID: projectID, PrincipalID: "principal",
+	})
+	require.NoError(t, err)
+	for _, tt := range []struct {
+		name, want string
+		binding    []byte
+		projectID  string
+	}{
+		{"invalid", "binding", []byte(`{"version":3}`), projectID},
+		{"empty", "binding is empty", []byte{}, projectID},
+		{"identity", "use a new azd environment", binding, projectID + "-other"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := &acrPreflightEnvironmentServer{
+				transactionEnvironmentServer: transactionEnvironmentServer{values: map[string]string{
+					"AZURE_AI_PROJECT_ID": tt.projectID, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testExternalRegistryID,
+					"AZD_FOUNDRY_ACR_MODE": "reuse-connect",
+				}},
+				binding: tt.binding,
+			}
+			action := &ProjectAddAction{
+				client: newProjectEnvironmentClient(t, server),
+				flags:  &projectAddFlags{newProject: true},
+				extCtx: &azdext.ExtensionContext{Environment: "test"},
+			}
+			err := action.preflightProjectACR(t.Context(), t.TempDir())
+			require.ErrorContains(t, err, tt.want)
+			assert.Empty(t, azdext.ErrorSuggestion(err))
+			assert.Zero(t, server.calls)
+		})
+	}
+}
+
 func TestProjectACRSelectionOverridesUndeployedDefaults(t *testing.T) {
 	old := map[string]string{
 		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "old-default",

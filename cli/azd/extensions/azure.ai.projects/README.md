@@ -336,9 +336,11 @@ The scope and `agentHosting` restrictions still apply to the selector.
 
 An `image` value alone does not select a prebuilt deployment: source build is
 the default, including with `--no-prompt`. To use an existing image, set
-`docker.imagePassthrough: true` or `registryConnectionId` together with a
-nonempty image. The legacy environment value `AZD_AGENT_SKIP_ACR=true` also
-selects prebuilt deployment when an image is configured.
+`docker.imagePassthrough: true` together with a nonempty image. Add
+`registryConnectionId` when a private registry connection is needed; it also
+requires `docker.imagePassthrough: true`. The legacy environment value
+`AZD_AGENT_SKIP_ACR=true` also selects prebuilt deployment when the expanded
+image is nonempty.
 
 An authored service-level `docker` block takes precedence over the entire
 `config.docker` block, including through `$ref`. In particular, an explicit

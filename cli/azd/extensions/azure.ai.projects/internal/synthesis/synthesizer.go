@@ -876,8 +876,22 @@ func deriveAgentBuildRequirements(
 	needsACR func(agentBlock) bool,
 ) (bool, bool, error) {
 	hasAgents := len(svc.Agents) > 0
-	includeAcr := slices.ContainsFunc(svc.Agents, needsACR)
+	includeAcr := false
 	lookup := projectConditionLookup(env)
+	checkAgent := func(agent agentBlock) error {
+		image, err := foundry.ExpandEnv(agent.Image, lookup)
+		if err != nil {
+			return fmt.Errorf("expand agent image: %w", err)
+		}
+		agent.Image = image
+		includeAcr = needsACR(agent) || includeAcr
+		return nil
+	}
+	for _, agent := range svc.Agents {
+		if err := checkAgent(agent); err != nil {
+			return false, false, err
+		}
+	}
 	for _, serviceName := range slices.Sorted(maps.Keys(services)) {
 		node := services[serviceName]
 		var selector struct {
@@ -917,7 +931,11 @@ func deriveAgentBuildRequirements(
 			return false, false, fmt.Errorf("decode service %q: %w", serviceName, err)
 		}
 		if len(service.Agents) > 0 {
-			includeAcr = includeAcr || slices.ContainsFunc(service.Agents, needsACR)
+			for _, agent := range service.Agents {
+				if err := checkAgent(agent); err != nil {
+					return false, false, fmt.Errorf("service %q: %w", serviceName, err)
+				}
+			}
 			continue
 		}
 		agent := agentBlock{
@@ -946,7 +964,9 @@ func deriveAgentBuildRequirements(
 				agent.Docker = service.Config.Docker
 			}
 		}
-		includeAcr = includeAcr || needsACR(agent)
+		if err := checkAgent(agent); err != nil {
+			return false, false, fmt.Errorf("service %q: %w", serviceName, err)
+		}
 	}
 	return hasAgents, includeAcr, nil
 }

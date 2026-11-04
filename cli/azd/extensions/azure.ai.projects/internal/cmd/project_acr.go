@@ -23,8 +23,7 @@ func projectACRValidation(message string) error {
 	return exterrors.Validation(
 		exterrors.CodeInvalidParameter,
 		message,
-		"use an external registry in the project's subscription, outside all azd-managed resource groups, "+
-			"with --new-project and Bicep source builds; registry migration is not supported",
+		"",
 	)
 }
 

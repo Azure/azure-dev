@@ -23,6 +23,38 @@ import (
 const testInitACRID = "/subscriptions/sub/resourceGroups/registry-rg/providers/" +
 	"Microsoft.ContainerRegistry/registries/shared"
 
+func TestInitACRSelectionSpecificGuidance(t *testing.T) {
+	for _, tt := range []struct {
+		name, manifest, want string
+	}{
+		{"hosting", "services:\n  project:\n    host: azure.ai.project\n    agentHosting:\n" +
+			"      clusterResourceId: /subscriptions/sub/resourceGroups/aks/providers/" +
+			"Microsoft.ContainerService/managedClusters/aks\n",
+			"remove agentHosting"},
+		{"unknown scope", "infra:\n  provider: bicep\nservices:\n  project:\n    host: azure.ai.project\n",
+			"Use Foundry-only infrastructure"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			content := []byte("name: test\n" + tt.manifest)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
+			server := &initACREnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					values: map[string]map[string]string{"test": {"AZURE_SUBSCRIPTION_ID": "sub"}},
+				},
+			}
+			client := newTestAzdClient(t, server, &recordingProjectWorkflowServer{})
+			err := validateInitACRProject(t.Context(), client, &initFlags{
+				acrResourceIDSet: true, acrResourceID: testInitACRID,
+			})
+			require.ErrorContains(t, err, tt.want)
+			require.Empty(t, azdext.ErrorSuggestion(err))
+			require.Empty(t, server.setKeys)
+		})
+	}
+}
+
 type initACREnvironmentServer struct {
 	testEnvironmentServiceServer
 	binding []byte

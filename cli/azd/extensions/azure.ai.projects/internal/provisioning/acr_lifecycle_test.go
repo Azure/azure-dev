@@ -275,6 +275,58 @@ func TestACRBindingRejectsEjectedMigration(t *testing.T) {
 	require.ErrorContains(t, p.validateACRTemplate(src), "migration")
 }
 
+func TestACRTemplateParameterCasing(t *testing.T) {
+	for _, defaults := range []bool{false, true} {
+		for _, unsafe := range []bool{false, true} {
+			t.Run(fmt.Sprintf("defaults=%t/unsafe=%t", defaults, unsafe), func(t *testing.T) {
+				p, env := acrTestProvider(t)
+				id := testACRID
+				if unsafe {
+					id = strings.Replace(id, "/shared/", "/foundry/", 1)
+				}
+				source := acrTestSource()
+				supplied := map[string]any{
+					"IncludeACR": true, "ExistingAcrResourceId": id, "ResourceGroupName": "foundry",
+				}
+				if defaults {
+					source.parameters = nil
+					params := map[string]any{}
+					for name, value := range supplied {
+						params[name] = map[string]any{"defaultValue": value}
+					}
+					source.armTemplate["parameters"] = params
+				} else {
+					parameters := map[string]any{}
+					for name, value := range supplied {
+						parameters[name] = map[string]any{"value": value}
+					}
+					source.parameters = mergeParameters(parameters, source.parameters)
+				}
+				err := p.validateACRTemplate(source)
+				if unsafe {
+					require.ErrorContains(t, err, "azd down deletes")
+					assert.Empty(t, env.config)
+					assert.Empty(t, env.set)
+					return
+				}
+				require.NoError(t, err)
+				require.Equal(t, "reuse-connect", p.greenfieldAcrMode)
+				p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+					require.Equal(t, http.MethodGet, method)
+					require.Equal(t, testACRProject, path)
+					return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+				}
+				require.NoError(t, p.persistACRBinding(t.Context(), map[string]*azdext.ProvisioningOutputParameter{
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": {Value: id},
+					"AZURE_AI_PROJECT_ID":                  {Value: testACRProject},
+				}))
+				require.NotNil(t, p.acrBinding)
+				assert.Equal(t, "reuse-connect", p.acrBinding.Mode)
+			})
+		}
+	}
+}
+
 func TestACRTemplateSubscriptionValidationBeforeCloudCalls(t *testing.T) {
 	for _, mode := range []string{"embedded", "ejected"} {
 		for _, subscription := range []string{"other", ""} {

@@ -1524,9 +1524,11 @@ prebuilt images with user-managed registry authentication.
 
 An `image` value alone still defaults to a source build, including with
 `--no-prompt`. Explicit prebuilt selection requires
-`docker.imagePassthrough: true` or `registryConnectionId` with a nonempty image.
+`docker.imagePassthrough: true` with a nonempty image. Add `registryConnectionId`
+when a private registry connection is needed; it also requires
+`docker.imagePassthrough: true`.
 The legacy environment value `AZD_AGENT_SKIP_ACR=true` also selects prebuilt
-deployment when an image is configured.
+deployment when the expanded image is nonempty.
 
 A project-only Bicep eject retains a pending registry selection without freezing
 `includeAcr` to `false`; later source-built agents determine demand at provision

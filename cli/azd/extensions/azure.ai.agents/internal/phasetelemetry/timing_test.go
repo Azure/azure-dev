@@ -59,6 +59,7 @@ func TestPhaseAndStepsUseActualTimesAndOneAttempt(t *testing.T) {
 	require.Equal(t, "deploy", complete.Attributes["agent.phase.name"])
 	require.Equal(t, "provider", complete.Attributes["agent.phase.scope"])
 	require.Equal(t, "success", complete.Attributes["agent.phase.outcome"])
+	require.NotContains(t, complete.Attributes, "agent.memory_snapshot")
 	require.Equal(t, "10.000", complete.Attributes["agent.phase.duration_ms"])
 	started, err := time.Parse(time.RFC3339Nano, complete.Attributes["agent.phase.start_time"])
 	require.NoError(t, err)
@@ -154,5 +155,39 @@ func TestObservedPollingTimeoutDoesNotReplaceTheBusinessError(t *testing.T) {
 		phase.End(ctx, test.err)
 		require.Len(t, reporter.events, 1)
 		require.Equal(t, test.outcome, reporter.events[0].Attributes["agent.phase.outcome"])
+	}
+}
+
+func TestSnapshotSettingSharesThePhaseOutcome(t *testing.T) {
+	for _, setting := range []*bool{nil, new(false), new(true)} {
+		for _, cause := range []error{nil, context.Canceled, context.DeadlineExceeded} {
+			reporter := &recordingReporter{}
+			ctx, cancel := context.WithCancelCause(t.Context())
+			ctx, phase := Begin(ctx, Deploy, Provider, reporter)
+			phase.MemorySnapshot(setting)
+			var deploymentErr error
+			if cause != nil {
+				cancel(cause)
+				deploymentErr = &azdext.LocalError{Code: "environment_values_failed"}
+			}
+			phase.End(ctx, deploymentErr)
+			cancel(nil)
+			require.Len(t, reporter.events, 1)
+			event := reporter.events[0]
+			require.Equal(t, "agent.phase.completed", event.Name)
+			settingValue := "unset"
+			if setting != nil {
+				settingValue = strconv.FormatBool(*setting)
+			}
+			require.Equal(t, settingValue, event.Attributes["agent.memory_snapshot"])
+			want := "success"
+			if errors.Is(cause, context.Canceled) {
+				want = "canceled"
+			}
+			if errors.Is(cause, context.DeadlineExceeded) {
+				want = "timeout"
+			}
+			require.Equal(t, want, event.Attributes["agent.phase.outcome"])
+		}
 	}
 }

@@ -329,6 +329,7 @@ for extensions installed from the official registry.
 Init also records [business-step elapsed times](docs/init-telemetry.md), including
 loading and interaction together. The other events are documented under
 [Agent context telemetry](#agent-context-telemetry),
+[Snapshot deployment telemetry](#snapshot-deployment-telemetry),
 [Operation classification markers](#operation-classification-markers),
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
@@ -350,6 +351,7 @@ contains only bounded classifications (including a container mode for hosted age
 | `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, `unknown` | Resolved agent kind. |
 | `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
 | `ext.agent.container.mode` | `build`, `code`, `passthrough`, `passthrough_auth`, `unknown` | Optional for hosted agents. Classifies the configured deployment path; `passthrough_auth` means a registry connection is configured for auth. |
+| `ext.agent.memory_snapshot` | `true`, `false`, `unset`, `unknown` | Optional hosted-agent snapshot configuration intent, not capture or restore success. |
 
 The event is correlated with other telemetry from the same azd invocation by
 the OpenTelemetry operation ID. A project with multiple agent classifications
@@ -359,6 +361,21 @@ both azd-created and existing ACR destinations. Ambiguous legacy or invalid
 hosted configurations, and those with an `AGENT_DEFINITION_PATH` override,
 are reported as `unknown`. The event never includes agent names, service keys,
 registry connections, image references, paths, URLs, prompts, or other customer content.
+
+### Snapshot deployment telemetry
+
+Hosted provider Deploy reuses `agent.phase.completed`, adding
+`ext.agent.memory_snapshot=true`, `false`, or `unset` after its hosted definition
+is resolved. The same record contains `ext.agent.phase.outcome` (`success`,
+`error`, `timeout`, `canceled`), elapsed milliseconds and the invocation-local
+attempt ID. Filter `phase.name=deploy`, `phase.scope=provider` and
+`memory_snapshot=true` to inspect snapshot-enabled service attempts, not the
+whole multi-service command. No extra result event, RPC, queue or shutdown hook
+is added. Existing best-effort reporting, opt-out, official-source admission and
+event limits still apply. Missing reports do not prove non-execution; timeout
+does not establish the final Azure result, and deployment success does not prove
+snapshot capture or restore. See the [telemetry schema](../../../../docs/specs/metrics-audit/telemetry-schema.md)
+for the field contract.
 
 ### Remote invoke adoption telemetry
 

@@ -27,7 +27,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -40,35 +39,14 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 	configureExtensionHostWithTelemetry(host, newAgentContextReporter())
 }
 
-func newAgentListenCommand(configure func(*azdext.ExtensionHost, foundryTelemetry.Reporter)) *cobra.Command {
-	var deploymentReporter *agentTelemetry.DeploymentReporter
-	command := azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
-		deploymentReporter = agentTelemetry.NewDeploymentReporter(foundryTelemetry.NewReporter(host.Client().Telemetry(), nil))
-		configure(host, deploymentReporter)
-	})
-	run := command.RunE
-	command.RunE = func(cmd *cobra.Command, args []string) error {
-		deploymentReporter = nil
-		defer func() {
-			if deploymentReporter != nil {
-				deploymentReporter.Close()
-			}
-		}()
-		return run(cmd, args)
-	}
-	return command
-}
-
-func configureExtensionHostWithTelemetry(
-	host *azdext.ExtensionHost, telemetryReporter *agentContextReporter, reporters ...foundryTelemetry.Reporter,
-) {
+func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryReporter *agentContextReporter) {
 	azdClient := host.Client()
 	operationReporter := newOperationReporter()
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
 	host.
 		WithServiceTargetPreview(AiAgentHost, func() azdext.ServiceTargetProvider {
-			return project.NewAgentServiceTargetProvider(azdClient, reporters...)
+			return project.NewAgentServiceTargetProvider(azdClient)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			telemetryReporter.reportProjectConfig(ctx, azdClient.Telemetry(), args.Project, "provision")
@@ -80,14 +58,6 @@ func configureExtensionHostWithTelemetry(
 		}).
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
-		}).
-		WithProjectEventHandler("postdeploy", func(ctx context.Context, _ *azdext.ProjectEventArgs) error {
-			for _, reporter := range reporters {
-				if flusher, ok := reporter.(interface{ Flush(context.Context) }); ok {
-					flusher.Flush(ctx)
-				}
-			}
-			return nil
 		}).
 		WithBetaServiceEventHandler("predeploy", func(
 			ctx context.Context, args *azdext.ServiceEventArgs,

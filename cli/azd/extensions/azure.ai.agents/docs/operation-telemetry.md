@@ -6,7 +6,9 @@ Reuse existing command completion records for totals, successes and failures.
 The only additional data is bounded text in the existing `extension.event` field
 of `ext.usage`: `agent.operation.v1.<operation>.<category>.<telephony>`.
 There are no new attributes, core spans, result codes, exporters or pipelines.
-Existing `agent.context.resolved` fields and deduplication are unchanged.
+These operation markers do not change `agent.context.resolved` fields or
+deduplication. Separate snapshot intent and deployment attribution are described
+in the [snapshot telemetry reference](../README.md#snapshot-deployment-telemetry).
 
 | Segment | Fixed values |
 |---|---|

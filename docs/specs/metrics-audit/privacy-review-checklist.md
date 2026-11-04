@@ -102,25 +102,19 @@ A maintainer must assess approval coverage before rollout. This records the prop
 `N/A`, not hashed and not a measurement. It describes authored intent, not a
 snapshot capture or restore outcome; non-hosted agents omit it.
 
-`agent.snapshot.deploy.completed` reuses `ext.agent.memory_snapshot=true` and
-adds three `SystemMetadata` / `PerformanceAndHealth` string properties, endpoint
-`N/A`, not hashed and not native measurements:
-
-- `ext.agent.deploy.outcome`: `succeeded`, `failed`, `timeout`, or `cancelled`.
-- `ext.agent.deploy.error_code`: the fixed schema vocabulary; unknown codes
-  become `other`. Raw error text is never reported.
-- `ext.agent.deploy.duration_ms`: nonnegative integer milliseconds from service
-  Deploy entry to return, excluding reporting and Package/Publish.
+The existing `agent.phase.completed` additionally includes
+`ext.agent.memory_snapshot=true`, `false`, or `unset` for resolved hosted provider
+Deploy attempts. Result, duration and invocation-local attempt ID remain the
+existing phase fields on that same event. No extra result event, RPC, queue,
+exporter, client or lifecycle hook is added. No new error-code field is collected.
 
 No agent names, versions, service names, request IDs, paths, URLs, credentials,
 or configuration contents are introduced. Outcomes belong to individual service
 attempts, not the whole command. Timeout/cancellation leave the backend outcome
-unknown. Deploy only enqueues into a 100-event bounded queue; a worker shares
-the SDK client with one-second RPC deadlines. Existing project postdeploy offers
-a one-second flush window outside the service budget. Failure/cancellation skips
-that hook; shutdown cancels pending work without guaranteeing delivery. Full or
-closed queues drop events. Outcome-dependent loss prevents treating received
-events as an authoritative or unbiased deployment-success denominator.
+unknown. Request termination state/cause is used for errored hosted returns
+without replacing the original error. Existing phase reporting boundaries,
+one-second budget and best-effort loss remain applicable; missing events do not
+prove non-execution or define a complete deployment-success denominator.
 
 The official-source gate, opt-out and shared event budget remain unchanged.
 No core shutdown protocol is added. A maintainer must assess approval coverage;

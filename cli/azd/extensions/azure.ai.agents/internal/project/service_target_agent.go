@@ -40,7 +40,6 @@ import (
 	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
-	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -48,7 +47,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
@@ -202,7 +200,6 @@ var _ azdext.ServiceTargetProvider = &AgentServiceTargetProvider{}
 // AgentServiceTargetProvider is a minimal implementation of ServiceTargetProvider for demonstration
 type AgentServiceTargetProvider struct {
 	azdClient           *azdext.AzdClient
-	deploymentReporter  foundryTelemetry.Reporter
 	serviceConfig       *azdext.ServiceConfig
 	agentDefinitionPath string
 	agentDefinitionRef  string
@@ -232,16 +229,10 @@ const (
 )
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
-func NewAgentServiceTargetProvider(
-	azdClient *azdext.AzdClient, reporters ...foundryTelemetry.Reporter,
-) azdext.ServiceTargetProvider {
-	provider := &AgentServiceTargetProvider{
+func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
+	return &AgentServiceTargetProvider{
 		azdClient: azdClient,
 	}
-	if len(reporters) > 0 {
-		provider.deploymentReporter = reporters[0]
-	}
-	return provider
 }
 
 // Initialize stores and validates the service config. Heavy work such as
@@ -1629,15 +1620,14 @@ func (p *AgentServiceTargetProvider) Deploy(
 	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
-) (serviceResult *azdext.ServiceDeployResult, deployErr error) {
-	startedAt := time.Now()
+) (phaseResult0 *azdext.ServiceDeployResult, phaseErr error) {
 	ctx, timing := phasetelemetry.Begin(ctx, phasetelemetry.Deploy, phasetelemetry.Provider, phasetelemetry.Reporter(p.azdClient))
 	defer func() {
 		if r := recover(); r != nil {
 			timing.End(ctx, errors.New("operation panicked"))
 			panic(r)
 		}
-		timing.End(ctx, deployErr)
+		timing.End(ctx, phaseErr)
 	}()
 
 	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
@@ -1680,15 +1670,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 				"use a supported kind: 'hosted'",
 			)
 		}
-		if agentDef.EnableMemorySnapshot != nil && *agentDef.EnableMemorySnapshot && p.deploymentReporter != nil {
-			defer func() {
-				if serviceResult == nil && deployErr == nil {
-					return
-				}
-				p.deploymentReporter.Report(ctx,
-					agentTelemetry.AgentSnapshotDeployCompleted(ctx, deployErr, time.Since(startedAt)))
-			}()
-		}
+		timing.MemorySnapshot(agentDef.EnableMemorySnapshot)
 		if err := validateEnvironmentVariableNames(
 			serviceConfig.GetEnvironment(),
 			agentDef.EnvironmentVariables,

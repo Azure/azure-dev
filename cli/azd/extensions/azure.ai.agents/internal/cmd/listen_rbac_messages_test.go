@@ -8,16 +8,12 @@ import (
 	"errors"
 	"io"
 	"net"
-	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"azureaiagent/internal/featureflags"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
-	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -46,14 +42,9 @@ func (s *rbacMessageAccountServer) GetCurrentPrincipal(
 type rbacMessageStableEvents struct {
 	azdext.UnimplementedEventServiceServer
 	registrations chan *azdext.EventMessage
-	requests      chan *azdext.EventMessage
-	responses     chan *azdext.EventMessage
 }
 
 func (s *rbacMessageStableEvents) EventStream(stream azdext.EventService_EventStreamServer) error {
-	if s.requests != nil {
-		return s.interactiveStream(stream)
-	}
 	for {
 		message, err := stream.Recv()
 		if err != nil {
@@ -63,47 +54,6 @@ func (s *rbacMessageStableEvents) EventStream(stream azdext.EventService_EventSt
 		case s.registrations <- message:
 		case <-stream.Context().Done():
 			return stream.Context().Err()
-		}
-	}
-}
-
-func (s *rbacMessageStableEvents) interactiveStream(stream azdext.EventService_EventStreamServer) error {
-	received := make(chan *azdext.EventMessage)
-	go func() {
-		defer close(received)
-		for {
-			message, err := stream.Recv()
-			if err != nil {
-				return
-			}
-			select {
-			case received <- message:
-			case <-stream.Context().Done():
-				return
-			}
-		}
-	}()
-	for {
-		select {
-		case <-stream.Context().Done():
-			return stream.Context().Err()
-		case request := <-s.requests:
-			if err := stream.Send(request); err != nil {
-				return err
-			}
-		case response, ok := <-received:
-			if !ok {
-				return nil
-			}
-			target := s.responses
-			if response.GetSubscribeProjectEvent() != nil || response.GetSubscribeServiceEvent() != nil {
-				target = s.registrations
-			}
-			select {
-			case target <- response:
-			case <-stream.Context().Done():
-				return stream.Context().Err()
-			}
 		}
 	}
 }
@@ -181,106 +131,6 @@ func (s *rbacMessageExtension) Ready(
 ) (*azdext.ReadyResponse, error) {
 	close(s.ready)
 	return &azdext.ReadyResponse{}, nil
-}
-
-func TestAgentListenerSnapshotReporting(t *testing.T) {
-	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
-	t.Setenv("AGENT_DEFINITION_PATH", "")
-	service := &azdext.ServiceConfig{
-		Name: "worker", Host: AiAgentHost, RelativePath: ".",
-		AdditionalProperties: mustStruct(t, map[string]any{
-			"kind": "hosted", "name": "worker", "enableMemorySnapshot": true,
-			"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}},
-		}),
-		Environment: map[string]string{"INVALID-NAME": "value"},
-	}
-	config := &azdext.ProjectConfig{Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{"worker": service}}
-	env := &testEnvironmentServiceServer{
-		current: &azdext.Environment{Name: "test"},
-		values:  map[string]map[string]string{"test": {"AZURE_SUBSCRIPTION_ID": "sub"}},
-	}
-	stable := &rbacMessageStableEvents{
-		registrations: make(chan *azdext.EventMessage, 8), requests: make(chan *azdext.EventMessage, 1),
-		responses: make(chan *azdext.EventMessage, 2),
-	}
-	beta := &rbacMessageBetaEvents{
-		registrations: make(chan *v1beta.SubscribeServiceEvent, 2),
-		requests:      make(chan *v1beta.EventMessage, 1), responses: make(chan *v1beta.EventMessage, 1),
-	}
-	extension := &rbacMessageExtension{ready: make(chan struct{})}
-	recorder := &containerModeRPCRecorder{}
-	server := grpc.NewServer()
-	azdext.RegisterProjectServiceServer(server, &helpersProjectServer{project: config})
-	azdext.RegisterEnvironmentServiceServer(server, env)
-	azdext.RegisterAccountServiceServer(server, &rbacMessageAccountServer{})
-	azdext.RegisterEventServiceServer(server, stable)
-	v1beta.RegisterEventServiceServer(server, beta)
-	azdext.RegisterServiceTargetServiceServer(server, &rbacMessageTargets{})
-	azdext.RegisterExtensionServiceServer(server, extension)
-	azdext.RegisterTelemetryServiceServer(server, recorder)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	t.Setenv("AZD_SERVER", listener.Addr().String())
-	t.Setenv("AZD_ACCESS_TOKEN", "test-token")
-	configured := make(chan *azdext.ExtensionHost, 1)
-	command := newAgentListenCommand(func(host *azdext.ExtensionHost, reporter foundryTelemetry.Reporter) {
-		configureExtensionHostWithTelemetry(host, newAgentContextReporter(), reporter)
-		configured <- host
-	})
-	command.SetArgs([]string{})
-	command.SetOut(io.Discard)
-	command.SetErr(io.Discard)
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_ = command.ExecuteContext(ctx)
-	}()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Error("listener did not stop")
-		}
-	})
-	select {
-	case <-extension.ready:
-	case <-done:
-		t.Fatal("listener exited before registration")
-	case <-ctx.Done():
-		t.Fatal("listener did not register")
-	}
-	host := <-configured
-	targets := host.ServiceTargets()
-	require.Len(t, targets, 1)
-	_, err = targets[0].Factory().Deploy(ctx, service, nil, nil, func(string) {})
-	require.ErrorContains(t, err, "INVALID-NAME")
-	stable.requests <- &azdext.EventMessage{
-		MessageType: &azdext.EventMessage_InvokeProjectHandler{
-			InvokeProjectHandler: &azdext.InvokeProjectHandler{EventName: "postdeploy", Project: config},
-		},
-	}
-	for {
-		select {
-		case response := <-stable.responses:
-			if result := response.GetProjectHandlerStatus(); result != nil && result.GetStatus() == "completed" {
-				require.Nil(t, result.GetError())
-				requests := slices.DeleteFunc(recorder.snapshot(), func(request *azdext.ReportUsageRequest) bool {
-					return request.EventName != "agent.snapshot.deploy.completed"
-				})
-				require.Len(t, requests, 1)
-				require.Equal(t, "agent.snapshot.deploy.completed", requests[0].EventName)
-				require.Equal(t, "failed", requests[0].Attributes["agent.deploy.outcome"])
-				server.Stop()
-				return
-			}
-		case <-ctx.Done():
-			t.Fatal("project postdeploy did not finish")
-		}
-	}
 }
 
 func TestAgentRBACMessages(t *testing.T) {
@@ -369,7 +219,7 @@ func TestAgentRBACMessages(t *testing.T) {
 	require.Empty(t, registration.GetLanguage())
 	require.Empty(t, beta.registrations)
 	var projectEvents []string
-	for range 6 {
+	for range 5 {
 		select {
 		case registration := <-stable.registrations:
 			if service := registration.GetSubscribeServiceEvent(); service != nil {
@@ -382,7 +232,7 @@ func TestAgentRBACMessages(t *testing.T) {
 			t.Fatal("missing stable registration")
 		}
 	}
-	require.ElementsMatch(t, []string{"preprovision", "postprovision", "postdeploy", "predown", "postdown"}, projectEvents)
+	require.ElementsMatch(t, []string{"preprovision", "postprovision", "predown", "postdown"}, projectEvents)
 	require.Empty(t, stable.registrations)
 	for _, serviceName := range []string{"assistant", "second-assistant"} {
 		wireService := &v1beta.ServiceConfig{}

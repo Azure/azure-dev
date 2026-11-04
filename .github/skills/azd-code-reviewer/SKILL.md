@@ -45,6 +45,10 @@ If added files are under a top-level path in `cli/azd/extensions/` that did not 
 
 Load [reviewers.md](reviewers.md) and apply each of the 9 fixed lenses to the diff. Then scan the changed files for the domain signals listed in `reviewers.md` and apply matching domain lenses. Each lens produces zero or more findings in the structured format defined in `reviewers.md`.
 
+If the diff changes telemetry collection or declarations, read the [privacy checklist's reviewer guidance](../../../docs/specs/metrics-audit/privacy-review-checklist.md#for-reviewers) and the maintainer's coverage decision in the PR.
+This applies even when filenames do not contain `telemetry`, such as changes to `ReportUsage` calls or fixed event values.
+Apply the Observability Expert checks from `reviewers.md`.
+
 **The reviewing agent is the same LLM** — these lenses are _perspectives to apply sequentially or in parallel_, not separate subagents. The host may parallelize lens application if supported, but a single-pass application of all lenses to the same diff is equally valid.
 
 ### Step 4: Triage findings

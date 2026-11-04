@@ -11,8 +11,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
+	"go.opentelemetry.io/otel"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"golang.org/x/tools/go/packages"
 
 	"github.com/stretchr/testify/require"
@@ -21,6 +25,22 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
+
+// tracing caches the first global tracer, so keep its provider alive across tests.
+var commandSpanProvider = sync.OnceValue(func() *tracesdk.TracerProvider {
+	provider := tracesdk.NewTracerProvider()
+	otel.SetTracerProvider(provider)
+	return provider
+})
+
+func recordCommandSpans(t *testing.T) (*tracesdk.TracerProvider, *tracetest.SpanRecorder) {
+	t.Helper()
+	provider := commandSpanProvider()
+	recorder := tracetest.NewSpanRecorder()
+	provider.RegisterSpanProcessor(recorder)
+	t.Cleanup(func() { provider.UnregisterSpanProcessor(recorder) })
+	return provider, recorder
+}
 
 func TestTelemetryEventConstants(t *testing.T) {
 	t.Parallel()
@@ -78,7 +98,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			},
 			{
 				fields.ErrExtensionCauseTypes, "error.extension.cause_types",
-				fields.EndUserPseudonymizedInformation, fields.PerformanceAndHealth,
+				fields.SystemMetadata, fields.PerformanceAndHealth,
 			},
 			{
 				fields.MapperSourceType, "mapper.source.type",
@@ -93,6 +113,33 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			require.Equal(t, tt.expectedName, string(tt.key.Key))
 			require.Equal(t, tt.expectedClass, tt.key.Classification)
 			require.Equal(t, tt.expectedPurpose, tt.key.Purpose)
+		}
+	})
+
+	t.Run("PrivacyClassificationCorrections", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			key             fields.AttributeKey
+			expectedName    string
+			expectedClass   fields.Classification
+			expectedPurpose fields.Purpose
+		}{
+			{fields.TenantIdKey, "ad.tenant.id", fields.OrganizationalIdentifiableInformation, fields.BusinessInsight},
+			{fields.EnvNameKey, "env.name", fields.OrganizationalIdentifiableInformation, fields.FeatureInsight},
+			{fields.ProjectNameKey, "project.name", fields.OrganizationalIdentifiableInformation, fields.FeatureInsight},
+			{fields.ExeGraphStepNameKey, "exegraph.step.name", fields.OrganizationalIdentifiableInformation,
+				fields.PerformanceAndHealth},
+			{fields.ExeGraphStepDepsKey, "exegraph.step.deps", fields.OrganizationalIdentifiableInformation,
+				fields.PerformanceAndHealth},
+		}
+		for _, tt := range tests {
+			t.Run(tt.expectedName, func(t *testing.T) {
+				require.Equal(t, tt.expectedName, string(tt.key.Key))
+				require.Equal(t, tt.expectedClass, tt.key.Classification)
+				require.Equal(t, tt.expectedPurpose, tt.key.Purpose)
+				require.Equal(t, "N/A", tt.key.Endpoint)
+				require.False(t, tt.key.IsMeasurement)
+			})
 		}
 	})
 

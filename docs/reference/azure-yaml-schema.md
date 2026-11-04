@@ -56,7 +56,7 @@ infra:
 
 For layered infrastructure, author each provider's configuration under
 `infra.layers[].config`. Root-level `infra.config` is not merged into layer configs.
-The preview `azd resources add` wizard edits only layered infrastructure; it does
+The preview `azd resources add` command edits only layered infrastructure; it does
 not edit the flat configuration shown above. See the
 [Azure Resources extension reference](../../cli/azd/extensions/azure.resources/README.md).
 

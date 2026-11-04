@@ -45,5 +45,5 @@ The extension's provider-owned environment keys are entry-scoped, unlike the
 legacy generator's keys. For entry `resources`, for example, copy an existing
 `AZURE_RESOURCE_STORAGE_ID` binding to
 `AZURE_RESOURCES_RESOURCES__RESOURCE_STORAGE_ID`. Update custom output references as described in the
-[environment-key contract](./README.md#ownership-and-lifecycle).
+[environment-key contract](./README.md#environment-keys).
 Standard `SERVICE_<SERVICE>_*` host-binding keys do not change.

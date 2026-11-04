@@ -30,7 +30,10 @@ func (s *phaseTelemetryServer) ReportUsage(
 	defer s.mu.Unlock()
 	s.events = append(s.events, req)
 	meta, _ := metadata.FromIncomingContext(ctx)
-	s.parent = meta.Get("traceparent")[0]
+	s.parent = ""
+	if values := meta.Get("traceparent"); len(values) > 0 {
+		s.parent = values[0]
+	}
 	return &azdext.ReportUsageResponse{Accepted: true}, nil
 }
 

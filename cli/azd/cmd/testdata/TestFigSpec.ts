@@ -3765,7 +3765,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['doctor'],
-							description: 'Check azd context, Entra authentication, CU access, and generative readiness',
+							description: 'Check CU configuration, authentication, access, and generative readiness',
 							options: [
 								{
 									name: ['--api-version'],
@@ -3803,7 +3803,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['env-var'],
-							description: 'Inspect supported compatibility process variables safely',
+							description: 'Discover supported environment variables and inspect set values',
 							subcommands: [
 								{
 									name: ['list'],
@@ -3891,7 +3891,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--output', '-o'],
-											description: 'Output format: default (complete JSON), json, or none',
+											description: 'Output format: default (human-readable), json, or none',
 											args: [
 												{
 													name: 'output',
@@ -3905,6 +3905,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'output-dir',
+												},
+											],
+										},
+										{
+											name: ['--subscription'],
+											description: 'Azure subscription name or ID (overrides azd defaults)',
+											args: [
+												{
+													name: 'subscription',
 												},
 											],
 										},

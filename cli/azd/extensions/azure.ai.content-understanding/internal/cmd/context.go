@@ -45,13 +45,16 @@ func newRuntimeContext(
 		logger.Debug("Failed to resolve CU configuration")
 		return nil, exterrors.FromError(err)
 	}
-	credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID: resolved.TenantID,
-	})
-	if err != nil {
-		client.Close()
-		logger.Debug("Failed to initialize azd credential")
-		return nil, exterrors.FromError(err)
+	var credential *azidentity.AzureDeveloperCLICredential
+	if resolved.APIKey == "" {
+		credential, err = azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID: resolved.TenantID,
+		})
+		if err != nil {
+			client.Close()
+			logger.Debug("Failed to initialize azd credential")
+			return nil, exterrors.FromError(err)
+		}
 	}
 	logger.Debug("Initialized azd runtime")
 	return &runtimeContext{

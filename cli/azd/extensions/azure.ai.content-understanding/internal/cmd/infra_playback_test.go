@@ -53,9 +53,26 @@ func (h *infraPlaybackHost) Capabilities(
 }
 
 func TestGeneratedProjectPostprovisionThroughHostAndRESTPlayback(t *testing.T) {
+	for _, selection := range []string{"none", "recommended", "prompt"} {
+		t.Run(selection, func(t *testing.T) {
+			testGeneratedProjectPostprovision(t, selection)
+		})
+	}
+}
+
+func testGeneratedProjectPostprovision(t *testing.T, selection string) {
+	t.Helper()
 	_ = infraCommandFixture(t)
 	rpc := &infraRPC{section: &azdext.GetConfigSectionResponse{}, writes: map[string]json.RawMessage{},
 		subscriptions: []*azdext.Subscription{{Id: "sub", Name: "Subscription", TenantId: "tenant", IsDefault: true}}}
+	rpc.multiSelect = func(request *azdext.MultiSelectRequest) (*azdext.MultiSelectResponse, error) {
+		assert.Len(t, request.GetOptions().GetChoices(), 2)
+		return &azdext.MultiSelectResponse{Values: request.GetOptions().GetChoices()}, nil
+	}
+	rpc.confirm = func(request *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
+		assert.False(t, request.GetOptions().GetDefaultValue())
+		return &azdext.ConfirmResponse{Value: new(true)}, nil
+	}
 	_ = infraRPCClient(t, rpc)
 	models := []string{"gpt-5.2", "text-embedding-3-large"}
 	deployed := map[string]bool{}
@@ -71,6 +88,8 @@ func TestGeneratedProjectPostprovisionThroughHostAndRESTPlayback(t *testing.T) {
 		var body any
 		code := 200
 		if request.URL.Host == "management.azure.com" {
+			assert.True(t, strings.HasPrefix(request.URL.Path,
+				"/subscriptions/sub/resourceGroups/group/providers/Microsoft.CognitiveServices/accounts/foundry/"))
 			assert.Equal(t, "2025-06-01", request.URL.Query().Get("api-version"))
 			switch {
 			case strings.HasSuffix(request.URL.Path, "/models"):
@@ -145,41 +164,79 @@ func TestGeneratedProjectPostprovisionThroughHostAndRESTPlayback(t *testing.T) {
 		return stdout.String(), err
 	}
 	directory := filepath.Join(testutil.TempDir(t), "generated")
-	_, err := execute("infra", "generate", "-d", directory, "-e", "dev", "--models", "recommended", "--no-prompt")
+	_, err := execute("infra", "generate", "--subscription", "Subscription", "--environment", "dev",
+		"--location", "eastus2", "--foundry-prefix", "my-cu", "--no-assign-roles",
+		"--models", selection, "--output-dir", directory, "--no-prompt")
 	require.NoError(t, err)
 	assert.Empty(t, calls)
-	env, err := localio.Read(filepath.Join(directory, ".azure/dev/.env"))
-	require.NoError(t, err)
-	assert.Contains(t, string(env), `CU_MODEL_SELECTION="recommended"`)
 	rpc.mu.Lock()
+	assert.Equal(t, []string{"subscriptions"}, rpc.calls, "generation must not prompt or change user defaults")
+	rpc.mu.Unlock()
+	env, err := localio.Read(filepath.Join(directory, ".azure/dev/config.json"))
+	require.NoError(t, err)
+	var generatedConfig struct {
+		CU map[string]json.RawMessage `json:"cu"`
+	}
+	require.NoError(t, json.Unmarshal(env, &generatedConfig))
+	assert.JSONEq(t, `"`+selection+`"`, string(generatedConfig.CU["modelSelection"]))
+	configWire, err := json.Marshal(generatedConfig.CU)
+	require.NoError(t, err)
+	rpc.mu.Lock()
+	rpc.section = &azdext.GetConfigSectionResponse{Found: true, Section: configWire}
 	rpc.values = []*azdext.KeyValue{
-		{Key: "FOUNDRY_ENDPOINT", Value: "https://foundry.services.ai.azure.com"},
-		{Key: "FOUNDRY_RESOURCE_NAME", Value: "foundry"},
-		{Key: "CU_ENDPOINT", Value: "https://foundry.services.ai.azure.com"},
-		{Key: "AZURE_RESOURCE_GROUP", Value: "group"}, {Key: "AZURE_SUBSCRIPTION_ID", Value: "sub"},
-		{Key: "AZURE_TENANT_ID", Value: "tenant"}, {Key: "CU_MODEL_SELECTION", Value: "recommended"},
+		{Key: "_CU_PROVISIONED_RESOURCE_NAME", Value: "foundry"},
+		{Key: "_CU_PROVISIONED_ENDPOINT", Value: "https://foundry.services.ai.azure.com"},
+		{Key: "_CU_PROVISIONED_RESOURCE_GROUP", Value: "group"}, {Key: "_CU_PROVISIONED_SUBSCRIPTION_ID", Value: "sub"},
+		{Key: "_CU_PROVISIONED_TENANT_ID", Value: "resource-tenant"},
+		{Key: "CU_RESOURCE_NAME", Value: "stale-account"},
+		{Key: "CU_ENDPOINT", Value: "https://stale.services.ai.azure.com"},
+		{Key: "AZURE_RESOURCE_GROUP", Value: "stale-group"}, {Key: "AZURE_SUBSCRIPTION_ID", Value: "stale-sub"},
 	}
 	rpc.mu.Unlock()
 	t.Chdir(directory)
-	stdout, err := execute("infra", "_postprovision-v1", "-e", "dev", "--no-prompt")
+	postArgs := []string{"infra", "_postprovision-v1", "-e", "dev"}
+	if selection == "none" {
+		t.Setenv("AZD_NO_PROMPT", "true")
+	} else if selection != "prompt" {
+		postArgs = append(postArgs, "--no-prompt")
+	}
+	stdout, err := execute(postArgs...)
 	require.NoError(t, err)
 	var result infra.PostResult
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
-	assert.True(t, result.GenerativeReady)
+	assert.Equal(t, selection != "none", result.GenerativeReady)
 	assert.True(t, result.EnvironmentConfigured)
 	assert.Equal(t, "completed", result.ModelSetup)
-	assert.Len(t, deployed, 2)
+	expectedModels := 2
+	if selection == "none" {
+		expectedModels = 0
+		assert.False(t, result.DefaultsConfigured)
+		assert.Empty(t, result.Warnings)
+		assert.Equal(t, []string{
+			"No model deployments selected.",
+			"Available without an LLM or embeddings model: prebuilt-digitalParse, prebuilt-read, prebuilt-layout",
+			"No optional models were configured; content extraction analyzers remain available.",
+		}, result.Messages)
+	}
+	assert.Len(t, deployed, expectedModels)
 	assert.Equal(t, "keep-me", defaultMappings["custom-model"])
 	modelFile, err := localio.Read("infra/models.json")
 	require.NoError(t, err)
 	var saved []infra.Model
 	require.NoError(t, json.Unmarshal(modelFile, &saved))
-	assert.Len(t, saved, 2)
+	assert.Len(t, saved, expectedModels)
 	rpc.mu.Lock()
+	assert.Contains(t, rpc.calls, "env:dev:CU_ENDPOINT:https://foundry.services.ai.azure.com")
 	assert.JSONEq(t, `true`, string(rpc.writes["cu.modelSetupComplete"]))
 	section := map[string]json.RawMessage{
 		"modelSetupComplete": rpc.writes["cu.modelSetupComplete"],
-		"modelDeployments":   rpc.writes["cu.modelDeployments"],
+	}
+	if mappings, exists := rpc.writes["cu.modelDeployments"]; exists {
+		section["modelDeployments"] = mappings
+	}
+	if selection != "prompt" {
+		assert.NotContains(t, rpc.calls, "multi-select")
+		assert.NotContains(t, rpc.calls, "confirm")
 	}
 	wire, err := json.Marshal(section)
 	rpc.mu.Unlock()

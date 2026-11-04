@@ -2,11 +2,14 @@ Check the status of an optimization job by its operation ID.
 
 If no operation ID is provided, uses the last optimization job from this project.
 Use --watch to poll until the job completes.
+Use --candidate to inspect full candidate details, including skill outcomes and files.
+--candidate cannot be combined with --watch.
 
 Usage
   azd ai agent optimize status [operation-id] [flags]
 
 Flags
+      --candidate string        : Inspect this candidate's full details instead of the job
       --endpoint string         : Optimization service endpoint (for local dev)
       --poll-interval int       : Polling interval in seconds (default 10)
   -p, --project-endpoint string : Foundry project endpoint URL
@@ -29,3 +32,6 @@ Examples
 
   Watch until complete
     azd ai agent optimize status opt_abc123 --watch
+
+  Inspect full candidate details as JSON
+    azd ai agent optimize status opt_abc123 --candidate candidate_abc123 --output json

@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore BYOAKS
+
 package cmd
 
 import (
@@ -957,6 +959,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			if !userProvidedTemplate {
 				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 				if projectErr == nil && projectResponse.GetProject() != nil {
+					if err := requireBYOAKSProjectFeature(projectResponse.GetProject()); err != nil {
+						return err
+					}
 					if err := requireProjectPreviewFeatures(projectResponse.GetProject()); err != nil {
 						return err
 					}

@@ -414,7 +414,7 @@ func optimizeTestDirectService(t *testing.T, _ string) *azdext.ServiceConfig {
 func TestOptimizeCommand_HasExpectedSubCommands(t *testing.T) {
 	cmd := newOptimizeCommand(&azdext.ExtensionContext{})
 
-	expected := []string{"status", "list", "cancel", "deploy", "apply"}
+	expected := []string{"status", "list", "cancel", "download", "deploy", "apply"}
 	var actual []string
 	for _, sub := range cmd.Commands() {
 		actual = append(actual, sub.Name())

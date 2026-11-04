@@ -72,12 +72,18 @@ records events from extensions admitted to the official registry.**
   service on the extension gRPC API.
 - Only eligible official-registry installations are recorded. Attribute values
   are authored by the extension and are not inspected at runtime, so admission
-  and privacy review remain separate requirements.
+  and [privacy approval coverage](../specs/metrics-audit/privacy-review-checklist.md) remain separate requirements.
 - A dropped event is not an error. An extension outside the official registry,
   and one past the event budget, get `Accepted: false` and no span. Reporting is
   best effort, so an author runs the same code path during local development as
   in production instead of having to swallow an error that only appears in one
   of them. The reason is written to the `azd` log, visible with `--debug`.
+- Rejected and dropped calls are summarized on the command span as a unique,
+  bounded set of `<extension-id-or-unattributed>@<reason>` values plus a total
+  count. The extension ID appears only after the installed record passes the
+  official-source check; earlier failures use the fixed `unattributed` value.
+  The host chooses the reason from a fixed enum and never copies
+  caller-controlled event or attribute content into the signal.
 - `extension.source` is still recorded on the span. Once the eligibility check
   has passed it is a useful dimension rather than a filter.
 - Accepted events are recorded on an `ext.usage` span rather than being appended
@@ -86,7 +92,9 @@ records events from extensions admitted to the official registry.**
 Removing the runtime allowlist does not remove content responsibility.
 Extension telemetry is subject to the same rules as core telemetry: fields are
 source-declared, documented, correctly classified, never carry customer
-content, and go through privacy review. Repository validation provides the
+content, and stay within approved collection and handling. Follow the
+[privacy checklist](../specs/metrics-audit/privacy-review-checklist.md) for changes.
+Repository validation provides the
 developer hard stop; official-registry admission remains the runtime gate.
 
 ## Consequences
@@ -103,9 +111,7 @@ developer hard stop; official-registry admission remains the runtime gate.
   `extension.event`, then read `ext.*` from `customDimensions`. The previous
   one-key-per-call shape required stitching several spans together to
   reconstruct a single logical event.
-- Everything reaching the pipeline came from an extension that passed registry
-  admission, so the privacy story for `ext.*` is the extension review that
-  admission already requires.
+- Recorded events come from extensions that passed registry admission.
 
 **More difficult**
 
@@ -157,6 +163,19 @@ appears only during local development, which invites either noisy logging or a
 blanket ignore that also hides real bugs. The response already carries an
 `accepted` flag, so the outcome is stated rather than silent, and the drop
 reason goes to the `azd` log.
+
+**Emit one span for every rejected or dropped report.** Rejected because the
+extension controls call volume, and invalid calls deliberately do not spend the
+accepted-event budget. A reporting loop would therefore create an unbounded
+telemetry loop unless drop spans had a second budget, which would need its own
+dropped-signal behavior. Per-drop rows would also make a looping extension
+dominate the signal. A unique extension-and-reason set per invocation measures
+affected users while a separate bounded measurement preserves total volume.
+The extension ID is included only after the installed record passes the
+official-source gate; failures before admission use a fixed `unattributed`
+identity. The aggregate remains on the hosting command span rather than being
+copied to synthetic `azd up` phase spans, workflow step command spans, or VS RPC spans, which prevents one invocation from
+multiplying its count downstream.
 
 **Make telemetry a capability.** Rejected per review feedback: capabilities
 signal "this extension provides a customer-facing feature the host needs to

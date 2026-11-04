@@ -114,7 +114,9 @@ func TestRecordedAnalyzerFieldReport(t *testing.T) {
 								},
 								"samples": []any{map[string]any{
 									"input": "sample_invoice.pdf", "status": "error",
-									"error": "The analysis operation failed.", "fields": map[string]any{},
+									"error": "The analysis operation failed. Service code: InvalidRequest. " +
+										"Check the analyzer configuration, input, and dependencies before retrying.",
+									"fields": map[string]any{},
 								}},
 							})
 							require.NoError(t, err)

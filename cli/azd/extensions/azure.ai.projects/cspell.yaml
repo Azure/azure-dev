@@ -4,6 +4,7 @@ overrides:
     words:
       - phasetelemetry
 words:
+  - ABAC
   - alnum
   - exterrors
   - foundryproject

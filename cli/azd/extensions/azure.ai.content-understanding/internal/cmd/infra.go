@@ -8,7 +8,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
+	"unicode"
 
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
@@ -21,19 +24,29 @@ import (
 
 func newInfraCommand(extCtx *azdext.ExtensionContext, open infraHostFactory) *cobra.Command {
 	group := &cobra.Command{Use: "infra", Short: "Generate infrastructure and complete azd-managed provisioning"}
-	var output, location, api, models, endpoint, prefix string
+	var output, location, api, models, endpoint, prefix, subscription string
 	var roles, noRoles, force bool
 	generate := &cobra.Command{Use: "generate", Short: "Generate the canonical azd/Bicep project", Args: cobra.NoArgs}
+	generate.Long = "Generate an azd/Bicep project without deploying Azure resources.\n" +
+		"Explain the workflow before selecting a subscription, then prompt for omitted deployment choices.\n" +
+		"Explicit inputs take precedence. --no-prompt and --output json use context/defaults without the wizard.\n" +
+		"Use --subscription with a subscription name or ID to bypass subscription selection and defaults.\n" +
+		"Save resource choices in the selected azd environment and postprovision choices in its config.\n" +
+		"Show a readable summary by default; use --output json for the complete structured result."
 	generate.Example = `  azd ai cu infra generate
     Interactively generate an azd/Bicep project without deploying resources.
 
   azd ai cu infra generate --location eastus2 --models recommended --output-dir provision
     Generate a project with recommended models and no role assignments by default.
 
+  azd ai cu infra generate --subscription "<subscription-name-or-id>" --models none --no-prompt
+    Generate without prompts using the specified subscription and default environment/region.
+
   azd ai cu infra generate --foundry-endpoint https://resource.services.ai.azure.com/ --models none
     Generate a project targeting an existing Foundry resource without model deployments.`
 	generate.Flags().StringVarP(&output, "output-dir", "d", "provision", "Generated project directory")
 	generate.Flags().StringVarP(&location, "location", "l", "", "CU-supported Azure region (default: eastus2)")
+	generate.Flags().StringVar(&subscription, "subscription", "", "Azure subscription name or ID (overrides azd defaults)")
 	generate.Flags().StringVar(&api, "api-version", "", "Content Understanding API version (default: GA)")
 	generate.Flags().StringVar(&models, "models", "prompt",
 		"prompt, recommended, none, or comma-separated model@version selectors")
@@ -73,7 +86,11 @@ func newInfraCommand(extCtx *azdext.ExtensionContext, open infraHostFactory) *co
 	post.RunE = func(cmd *cobra.Command, _ []string) error {
 		return exterrors.FromError(runInfraPost(cmd, extCtx, open))
 	}
-	group.AddCommand(jsonCommand(generate), jsonCommand(modelCommand), jsonCommand(post))
+	azdext.RegisterFlagOptions(generate, azdext.FlagOptions{
+		Name: "output", AllowedValues: []string{"default", "json", "none"},
+		Usage: "Output format: default (human-readable), json, or none",
+	})
+	group.AddCommand(generate, jsonCommand(modelCommand), jsonCommand(post))
 	return group
 }
 
@@ -81,6 +98,30 @@ func runInfraGenerate(
 	cmd *cobra.Command, extCtx *azdext.ExtensionContext, open infraHostFactory,
 	output, location, api, models, endpoint, prefix string, roles, force bool,
 ) error {
+	for _, name := range []string{
+		"environment", "location", "subscription", "api-version", "models", "foundry-endpoint", "output-dir",
+	} {
+		if cmd.Flags().Changed(name) {
+			value, err := cmd.Flags().GetString(name)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(value) == "" {
+				return commandError("empty_infra_argument", "--"+name+" cannot be empty.",
+					"Omit the flag to use its default or supply a valid value.")
+			}
+		}
+	}
+	subscriptionSelector, err := cmd.Flags().GetString("subscription")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(subscriptionSelector) != subscriptionSelector ||
+		strings.IndexFunc(subscriptionSelector, unicode.IsControl) >= 0 {
+		return commandError("invalid_subscription",
+			"--subscription must be a name or ID without surrounding whitespace or controls.",
+			"Supply an accessible subscription name or ID.")
+	}
 	environment := extCtx.Environment
 	if environment == "" {
 		environment = "dev"
@@ -89,13 +130,30 @@ func runInfraGenerate(
 	choices := infra.Choices{Environment: environment, Location: firstInfra(location, "eastus2"),
 		APIVersion: firstInfra(api, cuclient.DefaultAPIVersion), ModelSelection: models, FoundryPrefix: prefix,
 		AssignRoles: roles, ForceConfigurationSetup: force}
-	var err error
 	if choices, err = choices.Normalize(); err != nil {
 		return err
 	}
-	if prefix != "" && endpoint != "" {
+	if cmd.Flags().Changed("foundry-prefix") && cmd.Flags().Changed("foundry-endpoint") {
 		return commandError("conflicting_foundry_resource", "Use an existing Foundry resource or a new prefix, not both.",
 			"Remove --foundry-endpoint or --foundry-prefix.")
+	}
+	output, err = expandInfraPath(output)
+	if err != nil {
+		return err
+	}
+	showGuidance := !extCtx.NoPrompt && extCtx.OutputFormat != "json" && extCtx.OutputFormat != "none"
+	if showGuidance {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(),
+			"azd ai cu infra generate -> %s\n\n"+
+				"`azd ai cu infra generate` generates an azd template. After the Microsoft Foundry resource "+
+				"is provisioned, its post-provision script can optionally deploy supported chat completion "+
+				"and embeddings models for prebuilt analyzers such as prebuilt-invoice and for custom analyzers.\n"+
+				"It doesn't create any Azure resources itself - you run azd up afterwards "+
+				"to do the actual provisioning.\n"+
+				"Choose the Azure subscription used to provision resources, then configure the deployment.\n\n",
+			output); err != nil {
+			return fmt.Errorf("write infrastructure introduction: %w", err)
+		}
 	}
 	ctx := azdext.WithAccessToken(cmd.Context())
 	host, err := open(cmd, extCtx)
@@ -103,7 +161,7 @@ func runInfraGenerate(
 		return err
 	}
 	defer host.Close()
-	subscription, err := host.Subscription(ctx, extCtx.NoPrompt)
+	subscription, err := host.Subscription(ctx, extCtx.NoPrompt, subscriptionSelector)
 	if err != nil {
 		return err
 	}
@@ -112,6 +170,12 @@ func runInfraGenerate(
 	}
 	choices.SubscriptionID, choices.SubscriptionName, choices.TenantID =
 		subscription.GetId(), subscription.GetName(), subscription.GetTenantId()
+	if showGuidance {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  Azure subscription: %s (%s)\n\n",
+			choices.SubscriptionName, choices.SubscriptionID); err != nil {
+			return fmt.Errorf("write infrastructure subscription: %w", err)
+		}
+	}
 	if endpoint != "" {
 		resolved, err := host.Resolve(ctx, subscription, endpoint)
 		if err != nil {
@@ -126,15 +190,76 @@ func runInfraGenerate(
 			choices.Location = resolved.Region
 		}
 	}
-	output, err = expandInfraPath(output)
-	if err != nil {
-		return err
+	if !extCtx.NoPrompt && extCtx.OutputFormat != "json" {
+		choices, err = host.PromptGeneration(ctx, choices, generationPrompts{
+			environment: extCtx.Environment == "",
+			location:    !cmd.Flags().Changed("location") && endpoint == "",
+			prefix:      !cmd.Flags().Changed("foundry-prefix") && endpoint == "",
+			roles: !cmd.Flags().Changed("assign-roles") &&
+				!cmd.Flags().Changed("no-assign-roles") && endpoint == "",
+		})
+		if err != nil {
+			return err
+		}
 	}
 	result, err := infra.Materialize(ctx, output, choices, force)
 	if err != nil {
 		return err
 	}
-	return writeServiceResult(cmd, extCtx.OutputFormat, result)
+	if extCtx.OutputFormat == "json" || extCtx.OutputFormat == "none" {
+		return writeServiceResult(cmd, extCtx.OutputFormat, result)
+	}
+	var summary strings.Builder
+	if showGuidance {
+		summary.WriteByte('\n')
+	}
+	action := "Generated"
+	if result.ReusedExistingTemplate {
+		action = "Updated"
+	}
+	fmt.Fprintf(&summary, "%s project: %s\nEnvironment: %s\nRegion: %s\nSubscription: %s (%s)\n",
+		action, result.OutputDirectory, result.Environment, result.Location, result.SubscriptionName, result.SubscriptionID)
+	if result.ReusedExistingTemplate {
+		summary.WriteString("Reused existing templates")
+		if !slices.Contains(result.Files, "infra/models.json") {
+			summary.WriteString("; preserved infra/models.json")
+		}
+		summary.WriteString(".\n")
+	}
+	summary.WriteString("\nFiles written:\n")
+	for _, path := range result.Files {
+		fmt.Fprintf(&summary, "  %s\n", path)
+	}
+	summary.WriteString("\nNo Azure resources were deployed.\n\nNext steps:\n")
+	for index, step := range result.NextSteps {
+		if index == 0 && runtime.GOOS == "windows" {
+			step = "Set-Location -LiteralPath '" + strings.ReplaceAll(result.OutputDirectory, "'", "''") + "'"
+		}
+		comment := ""
+		switch index {
+		case 1:
+			comment = "    # (one-time)"
+		case 2:
+			action := "provisions a Microsoft Foundry resource, optionally deploys selected supported " +
+				"LLMs and embeddings models, and configures Content Understanding defaults"
+			if result.FoundryEndpoint != "" {
+				action = "configures Content Understanding and optionally deploys selected supported " +
+					"LLMs and embeddings models on the existing Microsoft Foundry resource"
+			} else if result.ModelSelection == "none" {
+				action = "provisions a Microsoft Foundry resource without model deployments"
+			}
+			comment = "    # " + action
+		}
+		fmt.Fprintf(&summary, "  %s%s\n", actionText(extCtx.OutputFormat, step),
+			commentText(extCtx.OutputFormat, comment))
+	}
+	summary.WriteString("\nThe post-provision hook prints verified Content Understanding setup and test commands.\n\n")
+	summary.WriteString(actionText(extCtx.OutputFormat,
+		"Run azd ai cu doctor afterwards to check the selected environment.") + "\n")
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), summary.String()); err != nil {
+		return fmt.Errorf("write infrastructure summary: %w", err)
+	}
+	return nil
 }
 
 func runInfraModels(
@@ -207,8 +332,9 @@ func runInfraPost(cmd *cobra.Command, extCtx *azdext.ExtensionContext, open infr
 	}
 	if request.Selection == "prompt" && extCtx.NoPrompt && !request.SetupComplete {
 		// Model setup is optional in postprovision; expose the actionable failure and continue basic configuration.
-		_, err := fmt.Fprintln(cmd.ErrOrStderr(),
-			"Warning: CU_MODEL_SELECTION=prompt cannot run without prompts; set none, recommended, or model@version.")
+		err := writeWarning(cmd, extCtx.OutputFormat,
+			"cu.modelSelection=prompt cannot run without prompts; "+
+				"use azd env config set cu.modelSelection with none, recommended, or model@version.")
 		if err != nil {
 			return err
 		}
@@ -222,7 +348,7 @@ func runInfraPost(cmd *cobra.Command, extCtx *azdext.ExtensionContext, open infr
 		return err
 	}
 	for _, warning := range result.Warnings {
-		if _, err := fmt.Fprintln(cmd.ErrOrStderr(), "Warning:", warning); err != nil {
+		if err := writeWarning(cmd, extCtx.OutputFormat, warning); err != nil {
 			return err
 		}
 	}
@@ -236,13 +362,31 @@ func runInfraPost(cmd *cobra.Command, extCtx *azdext.ExtensionContext, open infr
 
 func postRequest(snapshot infraSnapshot) (infra.PostRequest, error) {
 	request := infra.PostRequest{
-		Endpoint:      snapshot.values["CU_ENDPOINT"],
-		ResourceGroup: snapshot.values["AZURE_RESOURCE_GROUP"], Account: snapshot.values["FOUNDRY_RESOURCE_NAME"],
-		Subscription:         snapshot.values["AZURE_SUBSCRIPTION_ID"],
+		Endpoint:      config.ProvisionedValue(snapshot.values, "ENDPOINT", "CU_ENDPOINT"),
+		ResourceGroup: config.ProvisionedValue(snapshot.values, "RESOURCE_GROUP", "AZURE_RESOURCE_GROUP"),
+		Account: config.ProvisionedValue(snapshot.values, "RESOURCE_NAME",
+			"CU_RESOURCE_NAME", "FOUNDRY_RESOURCE_NAME"),
+		Subscription:         config.ProvisionedValue(snapshot.values, "SUBSCRIPTION_ID", "AZURE_SUBSCRIPTION_ID"),
 		APIVersion:           firstInfra(snapshot.values["CU_API_VERSION"], cuclient.DefaultAPIVersion),
 		Selection:            firstInfra(snapshot.values["CU_MODEL_SELECTION"], "prompt"),
 		ForceConfiguration:   truthyInfra(snapshot.values["CU_CONFIG_SETUP_FORCE"]),
 		DisableConfiguration: truthyInfra(os.Getenv("CU_DISABLE_AUTO_CONFIG")),
+	}
+	if raw, present := snapshot.section["modelSelection"]; present {
+		var selection *string
+		if err := json.Unmarshal(raw, &selection); err != nil || selection == nil || *selection == "" {
+			return request, commandError("invalid_environment_config", "cu.modelSelection must be a nonempty string.",
+				"Use azd env config set cu.modelSelection with prompt, none, recommended, or model@version.")
+		}
+		request.Selection = *selection
+	}
+	if raw, present := snapshot.section["forceConfigurationSetup"]; present {
+		var force *bool
+		if err := json.Unmarshal(raw, &force); err != nil || force == nil {
+			return request, commandError("invalid_environment_config", "cu.forceConfigurationSetup must be a boolean.",
+				"Repair the selected environment configuration.")
+		}
+		request.ForceConfiguration = *force
 	}
 	if raw, exists := snapshot.section["modelSetupComplete"]; exists {
 		if err := json.Unmarshal(raw, &request.SetupComplete); err != nil {
@@ -262,6 +406,10 @@ func postRequest(snapshot infraSnapshot) (infra.PostRequest, error) {
 	}
 	request.Endpoint = strings.TrimSuffix(request.Endpoint, "/contentunderstanding")
 	request.APIVersion, err = cuclient.NormalizeAPIVersion(request.APIVersion)
+	if err != nil {
+		return request, err
+	}
+	request.Selection, err = infra.NormalizeSelection(request.Selection)
 	return request, err
 }
 

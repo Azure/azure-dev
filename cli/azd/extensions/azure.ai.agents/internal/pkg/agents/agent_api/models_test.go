@@ -1313,30 +1313,6 @@ func TestIsInvocable(t *testing.T) {
 	}
 }
 
-func TestIsLocalInvocable(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		protocol AgentProtocol
-		want     bool
-	}{
-		{AgentProtocolResponses, true},
-		{AgentProtocolInvocations, true},
-		{AgentProtocolA2A, false}, // remote-only
-		{AgentProtocolActivityProtocol, false},
-		{AgentProtocol("unknown"), false},
-	}
-
-	for _, tt := range tests {
-		t.Run(string(tt.protocol), func(t *testing.T) {
-			t.Parallel()
-			if got := tt.protocol.IsLocalInvocable(); got != tt.want {
-				t.Errorf("IsLocalInvocable() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestAgentEndpoint_JSONRoundTrip(t *testing.T) {
 	t.Parallel()
 

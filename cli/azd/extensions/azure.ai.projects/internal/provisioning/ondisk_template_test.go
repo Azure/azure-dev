@@ -355,26 +355,39 @@ func TestLoadParametersFile_MalformedJSON(t *testing.T) {
 
 func TestMergeParameters_UserWins(t *testing.T) {
 	t.Parallel()
-	host := map[string]any{
-		"location":    map[string]any{"value": "host-location"},
-		"principalId": map[string]any{"value": "host-pid"},
-	}
-	user := map[string]any{
-		"location":   map[string]any{"value": "user-location"},
-		"includeAcr": map[string]any{"value": true},
-	}
-	got := mergeParameters(user, host)
+	for _, name := range []string{"location", "LOCATION"} {
+		t.Run(name, func(t *testing.T) {
+			host := map[string]any{
+				"location":    map[string]any{"value": "host-location"},
+				"principalId": map[string]any{"value": "host-pid"},
+			}
+			user := map[string]any{
+				name:         map[string]any{"value": "user-location"},
+				"includeAcr": map[string]any{"value": true},
+			}
+			got := mergeParameters(user, host)
 
-	// Same key in both: user wins.
-	loc := got["location"].(map[string]any)
-	assert.Equal(t, "user-location", loc["value"])
-	// Key only in user: present in result.
-	require.Contains(t, got, "includeAcr")
-	// Key only in host: present in result (user's file may not declare
-	// every parameter the embedded host map covers).
-	require.Contains(t, got, "principalId")
-	pid := got["principalId"].(map[string]any)
-	assert.Equal(t, "host-pid", pid["value"])
+			// Same key in both: user wins.
+			loc, ok := got[name].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, "user-location", loc["value"])
+			if name != "location" {
+				assert.NotContains(t, got, "location")
+			}
+			// Key only in user: present in result.
+			require.Contains(t, got, "includeAcr")
+			// Key only in host: present in result (user's file may not declare
+			// every parameter the embedded host map covers).
+			require.Contains(t, got, "principalId")
+			pid, ok := got["principalId"].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, "host-pid", pid["value"])
+			user["Location"] = map[string]any{"value": nil}
+			got = mergeParameters(user, host)
+			assert.Equal(t, user["Location"], got["Location"], "explicit duplicate user parameters are left to ARM")
+			assert.Equal(t, user[name], got[name])
+		})
+	}
 }
 
 func TestMergeParameters_NilInputsAreSafe(t *testing.T) {
@@ -394,7 +407,7 @@ func TestParametersDeclaredByTemplate_FiltersOnlyHostValues(t *testing.T) {
 		"location":          map[string]any{"value": "eastus"},
 	}
 	template := map[string]any{"parameters": map[string]any{
-		"projectResourceId":   map[string]any{"type": "string"},
+		"PROJECTRESOURCEID":   map[string]any{"type": "string"},
 		"existingAcrEndpoint": map[string]any{"type": "string"},
 	}}
 

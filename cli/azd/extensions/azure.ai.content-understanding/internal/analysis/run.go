@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -160,11 +161,31 @@ func Execute(ctx context.Context, client cuclient.Client, plan Plan, options Run
 		}
 	}
 	if summary.Counts.Failed != 0 {
+		var details strings.Builder
+		shown := 0
+		for index, record := range result.Records {
+			if record.Status != "failed" {
+				continue
+			}
+			diagnostic := fmt.Sprintf("\nInput %d: %s", index+1, record.Error)
+			if details.Len()+len(diagnostic) > 1400 && shown != 0 {
+				fmt.Fprintf(&details, "\n%d additional failed input(s).", summary.Counts.Failed-shown)
+				break
+			}
+			if len(diagnostic) > 1400 {
+				runes := []rune(diagnostic)
+				diagnostic = string(runes[:min(len(runes), 300)]) + "..."
+			}
+			details.WriteString(diagnostic)
+			shown++
+		}
 		return result, &cuclient.Error{
 			Kind: cuclient.ErrorService, Code: "analysis_failed",
 			Message: fmt.Sprintf(
-				"%d analysis input(s) failed; successful result files were retained.", summary.Counts.Failed),
-			Suggestion: "Use --report-file to inspect per-input outcomes.",
+				"%d analysis input(s) failed; successful result files were retained.%s",
+				summary.Counts.Failed, details.String()),
+			Suggestion: "Correct the reported input or analyzer problem before retrying. " +
+				"Use --report-file on future runs to save all per-input outcomes.",
 		}
 	}
 	return result, nil
@@ -300,7 +321,11 @@ func safeDiagnostic(err error) string {
 		return "Analysis timed out."
 	}
 	if domain, ok := errors.AsType[*cuclient.Error](err); ok {
-		return exterrors.Redact(domain.Message)
+		message := domain.Message
+		if domain.Suggestion != "" {
+			message += " " + domain.Suggestion
+		}
+		return exterrors.Redact(message)
 	}
 	return "Analysis failed; check the input, authentication, and service availability."
 }

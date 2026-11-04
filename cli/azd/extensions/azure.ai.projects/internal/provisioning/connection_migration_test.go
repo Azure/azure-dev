@@ -263,26 +263,40 @@ func TestValidateProjectTemplateRejectsModifiedSystemAcr(t *testing.T) {
 					t.Parallel()
 					var template map[string]any
 					require.NoError(t, json.Unmarshal(raw, &template))
-					connection := findSystemAcrConnection(t, template)
-					require.True(t, isSystemAcrConnection(connection))
-					object := connection
-					for _, key := range tt.path[:len(tt.path)-1] {
-						child, ok := object[key].(map[string]any)
-						require.True(t, ok, "generated connection must contain object %s", key)
-						object = child
+					connections := findSystemAcrConnections(template)
+					if load.name == "greenfield" {
+						require.Len(t, connections, 2)
+					} else {
+						require.Len(t, connections, 1)
 					}
-					object[tt.path[len(tt.path)-1]] = tt.value
-					requireConnectionMigrationError(t, validateProjectTemplate(template, "project.bicep"))
+
+					for _, connection := range connections {
+						require.True(t, isSystemAcrConnection(connection))
+						object := connection
+						for _, key := range tt.path[:len(tt.path)-1] {
+							child, ok := object[key].(map[string]any)
+							require.True(t, ok, "generated connection must contain object %s", key)
+							object = child
+						}
+						leafKey := tt.path[len(tt.path)-1]
+						original, existed := object[leafKey]
+						object[leafKey] = tt.value
+						requireConnectionMigrationError(t, validateProjectTemplate(template, "project.bicep"))
+						if existed {
+							object[leafKey] = original
+						} else {
+							delete(object, leafKey)
+						}
+					}
 				})
 			}
 		})
 	}
 }
 
-// findSystemAcrConnection locates the actual generated resource inside nested
+// findSystemAcrConnections locates the actual generated resources inside nested
 // deployments without duplicating the shape the migration guard must recognize.
-func findSystemAcrConnection(t *testing.T, template map[string]any) map[string]any {
-	t.Helper()
+func findSystemAcrConnections(template map[string]any) []map[string]any {
 	var connections []map[string]any
 	var visit func(any)
 	visit = func(value any) {
@@ -301,8 +315,7 @@ func findSystemAcrConnection(t *testing.T, template map[string]any) map[string]a
 		}
 	}
 	visit(template)
-	require.Len(t, connections, 1, "each generated template must contain exactly one system ACR connection")
-	return connections[0]
+	return connections
 }
 
 func TestLoadOnDiskTemplateGenericSubstitutionUnaffected(t *testing.T) {

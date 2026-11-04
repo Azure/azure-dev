@@ -305,6 +305,10 @@ func (c *OptimizeClient) GetCandidateConfig(
 	if err != nil {
 		return nil, err
 	}
+	if candidate.Output != nil && candidate.Output.Type == SkillOptimizationType {
+		return nil, fmt.Errorf("skill optimization publishes skill versions, not an agent configuration; " +
+			"inspect the candidate with 'optimize status --candidate' and attach skills explicitly")
+	}
 	for _, file := range candidate.Files {
 		if file.Type != "config" {
 			continue
@@ -443,6 +447,7 @@ func (c *OptimizeClient) GetCandidate(
 	if err := json.Unmarshal(body, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to parse candidate manifest: %w", err)
 	}
+	manifest.raw = body
 	return &manifest, nil
 }
 
@@ -521,6 +526,15 @@ func (c *OptimizeClient) LoadCandidates(ctx context.Context, job *OptimizeJobSta
 		}
 		seen[page.LastID] = true
 		after = page.LastID
+	}
+	if job.OptimizationConfiguration.Type == SkillOptimizationType && IsTerminal(job.Status) {
+		for i := range candidates {
+			detail, err := c.GetCandidate(ctx, job.ID, candidates[i].CandidateID)
+			if err != nil {
+				return fmt.Errorf("loading skill candidate %q: %w", candidates[i].CandidateID, err)
+			}
+			candidates[i] = *detail
+		}
 	}
 	job.CandidateResults = candidates
 	return nil

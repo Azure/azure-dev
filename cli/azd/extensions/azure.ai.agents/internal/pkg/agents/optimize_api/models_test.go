@@ -18,7 +18,7 @@ func testGARequest() *OptimizeRequest {
 		OptimizationConfiguration: OptimizationConfiguration{
 			Type: "agent_optimization", Goal: "improve_quality",
 			EvaluationConfiguration: &EvaluationConfiguration{
-				TrainingSet: SetInput{
+				TrainingSet: &SetInput{
 					Type: "target_completion",
 					Source: Dataset{
 						Type: DatasetTypeInline,

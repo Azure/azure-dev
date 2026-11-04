@@ -158,38 +158,19 @@ func lowerCase(r byte) byte {
 // We allow 2 additional characters for wiggle-room. We've seen failures when container app name is exactly at 32.
 const containerAppNameMaxLen = 30
 
+var containerAppNameSeparatorsRegex = regexp.MustCompile(`[-_]+`)
+var containerAppNameInvalidCharsRegex = regexp.MustCompile(`[^a-zA-Z0-9-]+`)
+
 func containerAppName(name string, maxLen int) string {
 	if len(name) > maxLen {
 		name = name[:maxLen]
 	}
 
-	// trim to allowed characters:
-	// - only alphanumeric and '-'
-	// - no repeated '-'
-	// - no '-' as the first or last character
-	sb := strings.Builder{}
-	i := 0
-	for i < len(name) {
-		if isAsciiAlphaNumeric(name[i]) {
-			sb.WriteByte(lowerCase(name[i]))
-		} else if name[i] == '-' || name[i] == '_' {
-			j := i + 1
-			for j < len(name) && (name[j] == '-' || name[i] == '_') { // find consecutive matches
-				j++
-			}
-
-			if i != 0 && j != len(name) { // only write '-' if not first or last character
-				sb.WriteByte('-')
-			}
-
-			i = j
-			continue
-		}
-
-		i++
-	}
-
-	return sb.String()
+	// Normalize separators before filtering to preserve existing generated names.
+	name = containerAppNameSeparatorsRegex.ReplaceAllString(name, "-")
+	name = strings.Trim(name, "-")
+	name = containerAppNameInvalidCharsRegex.ReplaceAllString(name, "")
+	return strings.ToLower(name)
 }
 
 // ContainerAppName returns a suitable name a container app resource.

@@ -1612,15 +1612,22 @@ func acrTestHTTPReply(t *testing.T, request *http.Request, code int, value any) 
 
 func TestACRProjectOnlyProvisionPreservesPendingSelector(t *testing.T) {
 	for _, tt := range []struct {
-		mode          string
-		down, refresh bool
+		mode               string
+		down, refresh      bool
+		agentBeforeRefresh bool
 	}{
 		{mode: ""}, {mode: "reuse-connect"},
 		{mode: "", down: true}, {mode: "reuse-connect", down: true},
 		{mode: "", refresh: true}, {mode: "reuse-connect", refresh: true},
 		{mode: "", down: true, refresh: true}, {mode: "reuse-connect", down: true, refresh: true},
+		{mode: "", refresh: true, agentBeforeRefresh: true},
+		{mode: "reuse-connect", refresh: true, agentBeforeRefresh: true},
+		{mode: "", down: true, refresh: true, agentBeforeRefresh: true},
+		{mode: "reuse-connect", down: true, refresh: true, agentBeforeRefresh: true},
 	} {
-		t.Run(fmt.Sprintf("%s/down=%t/refresh=%t", tt.mode, tt.down, tt.refresh), func(t *testing.T) {
+		name := fmt.Sprintf("%s/down=%t/refresh=%t/agentBeforeRefresh=%t",
+			tt.mode, tt.down, tt.refresh, tt.agentBeforeRefresh)
+		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			manifest := "services:\n  project:\n    host: azure.ai.project\n"
 			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(manifest), 0o600))
@@ -1696,12 +1703,21 @@ func TestACRProjectOnlyProvisionPreservesPendingSelector(t *testing.T) {
 			assert.Empty(t, env.config)
 			assert.Nil(t, p.acrBinding)
 
+			agentManifest := manifest + "  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
+			if tt.agentBeforeRefresh {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(agentManifest), 0o600))
+			}
 			if tt.refresh {
 				refresher := &FoundryProvisioningProvider{
 					azdClient: p.azdClient, credential: p.credential, armClientOptions: p.armClientOptions,
 				}
 				require.NoError(t, refresher.Initialize(t.Context(), root,
 					&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
+				expectedMode := "none"
+				if tt.agentBeforeRefresh {
+					expectedMode = "reuse-connect"
+				}
+				require.Equal(t, expectedMode, refresher.greenfieldAcrMode)
 				env.configErr = errors.New("refresh must not persist registry lifecycle state")
 				state, err := refresher.State(t.Context(), &azdext.ProvisioningStateOptions{})
 				env.configErr = nil
@@ -1716,6 +1732,7 @@ func TestACRProjectOnlyProvisionPreservesPendingSelector(t *testing.T) {
 				env.get, err = godotenv.Read(envPath)
 				require.NoError(t, err)
 				require.Equal(t, testACRID, env.get["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+				assert.Equal(t, tt.mode, env.get["AZD_FOUNDRY_ACR_MODE"])
 			}
 
 			if tt.down {
@@ -1736,8 +1753,7 @@ func TestACRProjectOnlyProvisionPreservesPendingSelector(t *testing.T) {
 				assert.Nil(t, p.acrBinding)
 			}
 
-			manifest += "  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
-			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(manifest), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(agentManifest), 0o600))
 			next := &FoundryProvisioningProvider{azdClient: p.azdClient}
 			require.NoError(t, next.Initialize(t.Context(), root,
 				&azdext.ProvisioningOptions{Provider: FoundryProviderName}))

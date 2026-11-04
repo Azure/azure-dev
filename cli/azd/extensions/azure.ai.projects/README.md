@@ -369,6 +369,9 @@ replacement registry.
 For a deployed binding, `azd env refresh` also retains its registry ID,
 endpoint, and connection when the latest deployment has empty registry
 outputs. Refreshing does not change the binding or registry access.
+An unused external-registry selection also survives refresh when the latest
+deployment has empty registry outputs, even if a source-built agent was added
+to `azure.yaml` after that deployment.
 The external-registry build checks apply to `reuse-connect` selections, not
 azd-created registries retained through a `create` binding or matching legacy
 outputs. Managed registries can remain inside the Foundry resource group.

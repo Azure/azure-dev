@@ -822,7 +822,7 @@ func (p *FoundryProvisioningProvider) preserveACROutputs(
 		return nil
 	}
 	if registry := outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]; p.acrBinding == nil &&
-		p.greenfieldAcrMode == "none" && p.synthesisEnv["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] != "" &&
+		p.synthesisEnv["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] != "" &&
 		registry != nil && registry.Value == "" {
 		delete(outputs, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
 	}

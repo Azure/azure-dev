@@ -1560,6 +1560,9 @@ An `image` value alone still defaults to a source build, including with
 `docker.imagePassthrough: true` with a nonempty image. Add `registryConnectionId`
 when a private registry connection is needed; it also requires
 `docker.imagePassthrough: true`.
+When importing a template with an ACR selection, init preserves this source-build
+intent instead of converting an image-only service to prebuilt. Without an ACR
+selection, template init retains its existing image-to-prebuilt behavior.
 The legacy environment value `AZD_AGENT_SKIP_ACR=true` also selects prebuilt
 deployment when the expanded image is nonempty.
 

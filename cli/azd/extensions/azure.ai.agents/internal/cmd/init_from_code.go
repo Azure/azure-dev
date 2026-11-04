@@ -11,6 +11,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -288,21 +289,21 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 }
 
 func (a *InitFromCodeAction) resolveACREnvironment(ctx context.Context) error {
-	if !a.flags.acrResourceIDSet || a.flags.env != "" {
+	if !a.flags.acrResourceIDSet || a.flags.env != "" || a.projectTargetDir != "" {
 		return nil
 	}
+	if _, err := azdext.GetProjectDir(); errors.Is(err, azdext.ErrProjectNotFound) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("resolve project before planning the environment: %w", err)
+	}
 	if env := getExistingEnvironment(ctx, "", a.azdClient); env != nil {
-		a.flags.resolvedEnvironmentName = env.Name
 		return nil
 	}
 
 	defaultName := "my-agent"
-	nameDir := a.projectTargetDir
-	if nameDir == "" || nameDir == "." {
-		nameDir, _ = os.Getwd()
-	}
-	if nameDir != "" {
-		defaultName = sanitizeAgentName(filepath.Base(filepath.Clean(nameDir)))
+	if cwd, err := os.Getwd(); err == nil {
+		defaultName = sanitizeAgentName(filepath.Base(cwd))
 	}
 	agentName, err := resolveInitAgentName(ctx, a.azdClient, a.flags, defaultName)
 	if err != nil {

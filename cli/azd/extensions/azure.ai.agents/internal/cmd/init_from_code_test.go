@@ -547,6 +547,22 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 type sourceInitACRPromptServer struct {
 	initACRPromptServer
 	locationCalls int
+	agentName     string
+	nameError     error
+	nameCalls     int
+}
+
+func (s *sourceInitACRPromptServer) Prompt(
+	_ context.Context, req *azdext.PromptRequest,
+) (*azdext.PromptResponse, error) {
+	if req.GetOptions().GetMessage() != "Enter a name for your agent" {
+		return nil, status.Error(codes.FailedPrecondition, "unexpected source init text prompt")
+	}
+	s.nameCalls++
+	if s.nameError != nil {
+		return nil, s.nameError
+	}
+	return &azdext.PromptResponse{Value: s.agentName}, nil
 }
 
 func (s *sourceInitACRPromptServer) PromptLocation(
@@ -707,13 +723,16 @@ func TestInitFromCodeValidatesACRBeforeSetupWrites(t *testing.T) {
 
 func TestInitFromCodePlannedACREnvironmentBeforeScaffolding(t *testing.T) {
 	for _, tt := range []struct {
-		targetDir, envName string
+		targetDir, envName, agentName string
 	}{
-		{"", "my-source-dev"},
-		{".", "my-source-dev"},
-		{"target-folder", "target-folder-dev"},
+		{"", "my-source-dev", ""},
+		{".", "my-source-dev", ""},
+		{"target-folder", "target-folder-dev", ""},
+		{"", "my-source-dev", "chat"},
+		{".", "my-source-dev", "chat"},
+		{"target-folder", "target-folder-dev", "chat"},
 	} {
-		t.Run("target="+tt.targetDir, func(t *testing.T) {
+		t.Run(fmt.Sprintf("target=%s/agent=%s", tt.targetDir, tt.agentName), func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "My Source")
 			require.NoError(t, os.Mkdir(root, 0o700))
 			t.Chdir(root)
@@ -727,6 +746,7 @@ func TestInitFromCodePlannedACREnvironmentBeforeScaffolding(t *testing.T) {
 				azdClient: client,
 				flags: &initFlags{
 					src: ".", protocols: []string{"responses"}, noPrompt: true,
+					agentName:        tt.agentName,
 					acrResourceIDSet: true,
 					acrResourceID:    strings.Replace(testInitACRID, "/registry-rg/", "/rg-"+tt.envName+"/", 1),
 				},
@@ -745,6 +765,98 @@ func TestInitFromCodePlannedACREnvironmentBeforeScaffolding(t *testing.T) {
 			after, err := os.ReadFile("main.py")
 			require.NoError(t, err)
 			require.Equal(t, source, after)
+		})
+	}
+}
+
+func TestInitFromCodeAgentDerivedEnvironmentBeforeWrites(t *testing.T) {
+	for _, tt := range []struct {
+		name, agentName, promptedName, group, wantError string
+		noPrompt, cancelName                            bool
+		wantNameCalls                                   int
+	}{
+		{name: "headless final group", agentName: "chat", group: "rg-chat-dev",
+			noPrompt: true, wantError: "resource group"},
+		{name: "headless external directory group", agentName: "chat", group: "rg-demo-dev", noPrompt: true},
+		{name: "interactive final group", promptedName: "chat", group: "rg-chat-dev",
+			wantError: "resource group", wantNameCalls: 1},
+		{name: "interactive external directory group", promptedName: "chat", group: "rg-demo-dev", wantNameCalls: 1},
+		{name: "cancelled name", group: "registry-rg", cancelName: true,
+			wantError: "cancelled", wantNameCalls: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "demo")
+			require.NoError(t, os.Mkdir(root, 0o700))
+			t.Chdir(root)
+			manifest := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n")
+			source := []byte("print('hello')\n")
+			require.NoError(t, os.WriteFile("azure.yaml", manifest, 0o600))
+			require.NoError(t, os.WriteFile("main.py", source, 0o600))
+			environments := &reuseInitACREnvironmentServer{testEnvironmentServiceServer: testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{},
+				values:       map[string]map[string]string{},
+				configErr:    errors.New("unexpected binding read before environment creation"),
+			}}
+			projects := &recordingProjectServer{projectPath: root}
+			workflow := &recordingProjectWorkflowServer{}
+			workflow.runHook = func(call int) error {
+				args := workflow.requests[call-1].GetWorkflow().GetSteps()[0].GetCommand().GetArgs()
+				if len(args) == 3 && args[0] == "env" && args[1] == "new" {
+					env := &azdext.Environment{Name: args[2]}
+					environments.environments[env.Name] = env
+					environments.current = env
+					environments.values[env.Name] = map[string]string{}
+					environments.configErr = nil
+				}
+				return nil
+			}
+			prompts := &sourceInitACRPromptServer{
+				initACRPromptServer: initACRPromptServer{subscription: &azdext.Subscription{
+					Id: "sub", UserTenantId: "user-tenant",
+				}},
+				agentName: tt.promptedName,
+			}
+			if tt.cancelName {
+				prompts.nameError = status.Error(codes.Canceled, "agent name selection cancelled")
+			}
+			account := &sourceInitACRAccountServer{}
+			registry := strings.Replace(testInitACRID, "/registry-rg/", "/"+tt.group+"/", 1)
+			args := []string{"--src", ".", "--protocol", "responses", "--acr-resource-id", registry}
+			if tt.agentName != "" {
+				args = append(args, "--agent-name", tt.agentName)
+			}
+			err := executeReuseInitACR(
+				t, environments, workflow, prompts, projects, account, tt.noPrompt, "", args...,
+			)
+			require.Equal(t, tt.wantNameCalls, prompts.nameCalls)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				require.Empty(t, workflow.requests)
+				require.Empty(t, projects.added)
+				require.Empty(t, projects.configValues)
+				require.Empty(t, projects.configSections)
+				require.Empty(t, environments.environments)
+				require.Empty(t, environments.values)
+				require.Empty(t, environments.setKeys)
+				require.Zero(t, prompts.calls)
+				require.Zero(t, prompts.locationCalls)
+				require.Empty(t, account.subscriptions)
+				require.NoFileExists(t, ".agentignore")
+			} else {
+				require.NoError(t, err)
+				require.Len(t, workflow.requests, 2)
+				require.Equal(t, []string{"env", "new", "chat-dev"}, workflowArgs(t, workflow, 0))
+				require.Equal(t, "chat-dev", environments.current.GetName())
+				require.Len(t, projects.added, 1)
+				require.Equal(t, "docker", projects.added[0].GetLanguage())
+			}
+			after, err := os.ReadFile("azure.yaml")
+			require.NoError(t, err)
+			require.Equal(t, manifest, after)
+			after, err = os.ReadFile("main.py")
+			require.NoError(t, err)
+			require.Equal(t, source, after)
+			require.NoDirExists(t, ".azure")
 		})
 	}
 }

@@ -165,7 +165,7 @@ func readInitACREnvironment(
 	}
 	if _, err := azdext.GetProjectDir(); errors.Is(err, azdext.ErrProjectNotFound) {
 		envName := deriveEnvName(flags, targetDir)
-		return envName, map[string]string{"AZURE_ENV_NAME": envName}, nil
+		return "", map[string]string{"AZURE_ENV_NAME": envName}, nil
 	} else if err != nil {
 		return "", nil, fmt.Errorf("resolve project before selecting a registry: %w", err)
 	}
@@ -173,26 +173,17 @@ func readInitACREnvironment(
 	if err != nil {
 		return "", nil, fmt.Errorf("read environments before selecting a registry: %w", err)
 	}
+	requestedName := valueOrDefault(flags.env, flags.resolvedEnvironmentName)
 	envName := ""
-	if flags.resolvedEnvironmentName != "" {
-		envName = flags.resolvedEnvironmentName
-	}
 	for _, env := range environments.GetEnvironments() {
-		if flags.env != "" && env.GetName() == flags.env ||
-			flags.env == "" && flags.resolvedEnvironmentName == "" && env.GetDefault() {
+		if requestedName != "" && env.GetName() == requestedName ||
+			requestedName == "" && env.GetDefault() {
 			envName = env.GetName()
 			break
 		}
 	}
 	values := map[string]string{}
-	envExists := false
-	for _, env := range environments.GetEnvironments() {
-		if env.GetName() == envName {
-			envExists = true
-			break
-		}
-	}
-	if envName != "" && envExists {
+	if envName != "" {
 		values, err = getAgentEnvironmentValues(ctx, client, envName)
 		if err != nil {
 			return "", nil, fmt.Errorf("read registry selection: %w", err)
@@ -354,6 +345,15 @@ func validateInitACRProjectContent(
 	}
 	if err := readInitACRBinding(ctx, client, envName, values); err != nil {
 		return err
+	}
+	if !staged && flags.templatePointer == "" && envName == "" &&
+		flags.env == "" && flags.resolvedEnvironmentName == "" {
+		if flags.agentName != "" && flags.noPrompt {
+			values["AZURE_ENV_NAME"] = sanitizeAgentName(flags.agentName + "-dev")
+		} else {
+			// Interactive init resolves its source setup later.
+			delete(values, "AZURE_ENV_NAME")
+		}
 	}
 	selectedID := flags.acrResourceID
 	input := synthesis.Input{RawAzureYAML: content, ProjectRoot: root, Env: values}

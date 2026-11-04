@@ -1799,15 +1799,14 @@ func ensureProject(
 	return projectResponse.Project, nil
 }
 
-// deriveEnvName resolves the azd environment name for a new project: the
-// explicit --environment flag when set, otherwise a sanitized name derived from
-// the target folder (or the current directory when targetDir is ".").
+// deriveEnvName reuses an explicit or planned environment name,
+// otherwise deriving one from the target folder.
 func deriveEnvName(flags *initFlags, targetDir string) string {
-	if flags.resolvedEnvironmentName != "" {
-		return flags.resolvedEnvironmentName
-	}
 	if flags.env != "" {
 		return flags.env
+	}
+	if flags.resolvedEnvironmentName != "" {
+		return flags.resolvedEnvironmentName
 	}
 
 	envBase := targetDir

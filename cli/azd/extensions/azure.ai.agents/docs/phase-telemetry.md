@@ -50,7 +50,7 @@ They are not native measurements.
 | `ext.agent.phase.step.sequence` | Step | Start order within one attempt, beginning at 1. |
 | `ext.agent.phase.step.start_offset_ms` | Step | Monotonic offset from the phase start. |
 | `ext.agent.phase.step.duration_ms` | Step | Inclusive business-step elapsed milliseconds, with three decimals. |
-| `ext.agent.memory_snapshot` | Completed, optional | `true`, `false`, or `unset` only after a hosted `deploy` / `provider` definition is resolved. `SystemMetadata` / `FeatureInsight`, endpoint `N/A`, un-hashed, not a native measurement. |
+| `ext.agent.memory_snapshot` | Completed, optional | Fixed `true` marker only after resolving a hosted `deploy` / `provider` definition with snapshots explicitly enabled. All other events omit it. `SystemMetadata` / `FeatureInsight`, endpoint `N/A`, un-hashed, not a native measurement. |
 
 ### Snapshot attribution and Agents outcome precedence
 
@@ -65,9 +65,11 @@ attribution, across all phase types:
   are `error`. An observed business polling timeout changes only `error` to
   `timeout`.
 
-The original business error is never replaced. Snapshot intent does not affect
-outcome classification. A failure before hosted definition resolution has no
-snapshot field; non-hosted phases and step events also omit it. Read deployment
+The original business error is never replaced. Snapshot attribution does not affect
+outcome classification. Disabled, unspecified, unresolved or non-hosted definitions,
+context events, other phases and steps omit the snapshot field. No `false`, `unset`
+or `unknown` snapshot value is reported. Count observed snapshot-enabled deployment
+attempts, not unique users; a missing marker does not mean disabled. Read deployment
 outcome, duration and attempt ID from the same provider completion that carries
 the snapshot field, not by joining deduplicated context records to whole-command
 results. Reporting remains best effort; neither timeout nor deployment success

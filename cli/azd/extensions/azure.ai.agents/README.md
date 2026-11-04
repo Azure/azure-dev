@@ -351,7 +351,6 @@ contains only bounded classifications (including a container mode for hosted age
 | `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, `unknown` | Resolved agent kind. |
 | `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
 | `ext.agent.container.mode` | `build`, `code`, `passthrough`, `passthrough_auth`, `unknown` | Optional for hosted agents. Classifies the configured deployment path; `passthrough_auth` means a registry connection is configured for auth. |
-| `ext.agent.memory_snapshot` | `true`, `false`, `unset`, `unknown` | Optional hosted-agent snapshot configuration intent, not capture or restore success. |
 
 The event is correlated with other telemetry from the same azd invocation by
 the OpenTelemetry operation ID. A project with multiple agent classifications
@@ -365,12 +364,14 @@ registry connections, image references, paths, URLs, prompts, or other customer 
 ### Snapshot deployment telemetry
 
 Hosted provider Deploy reuses `agent.phase.completed`, adding
-`ext.agent.memory_snapshot=true`, `false`, or `unset` after its hosted definition
-is resolved. The same record contains `ext.agent.phase.outcome` (`success`,
+`ext.agent.memory_snapshot=true` only after resolving a hosted definition with
+snapshots explicitly enabled. Disabled, unspecified, unresolved or non-hosted
+definitions, context events, other phases and steps omit the marker. No `false`,
+`unset` or `unknown` snapshot value is reported. The same record contains `ext.agent.phase.outcome` (`success`,
 `error`, `timeout`, `canceled`), elapsed milliseconds and the invocation-local
 attempt ID. Filter `ext.agent.phase.name=deploy`, `ext.agent.phase.scope=provider` and
-`ext.agent.memory_snapshot=true` to inspect snapshot-enabled service attempts, not the
-whole multi-service command. No extra result event, RPC, queue or shutdown hook
+`ext.agent.memory_snapshot=true` to count observed snapshot-enabled deployment
+attempts, not unique users or the whole multi-service command. No extra result event, RPC, queue or shutdown hook
 is added. Existing best-effort reporting, opt-out, official-source admission and
 event limits still apply. Missing reports do not prove non-execution; timeout
 does not establish the final Azure result, and deployment success does not prove

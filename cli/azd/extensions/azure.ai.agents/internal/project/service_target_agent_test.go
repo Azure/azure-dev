@@ -3289,50 +3289,61 @@ func TestSnapshotDeployUsesExistingPhaseCompletion(t *testing.T) {
 		return &http.Response{StatusCode: code, Header: http.Header{"Content-Type": {"application/json"}},
 			Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
 	})
-	for _, fail := range []bool{false, true} {
-		root := t.TempDir()
-		recorder := &snapshotPhaseProjectServer{stubProjectServer: stubProjectServer{
-			project: &azdext.ProjectConfig{Path: root},
-		}}
-		env := &snapshotPhaseEnvironmentServer{stubEnvServer: stubEnvServer{values: map[string]string{
-			"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_AI_PROJECT_ID": resourceID.String(),
-			"AZURE_LOCATION": "eastus",
-		}}}
-		client := newEnvTestClient(t, env, recorder)
-		provider := &AgentServiceTargetProvider{azdClient: client, projectPath: root, deployContextReady: true,
-			credential: hostedResourceErrorCredential{}, foundryProject: resourceID, env: &azdext.Environment{Name: "test"}}
-		service := &azdext.ServiceConfig{Name: "agent", Host: "azure.ai.agent", AdditionalProperties: mustStruct(t,
-			map[string]any{"kind": "hosted", "name": "worker", "enableMemorySnapshot": true,
-				"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}}})}
-		if fail {
-			service.Environment = map[string]string{"INVALID-NAME": "value"}
-		}
-		result, deploymentErr := provider.Deploy(t.Context(), service,
-			&azdext.ServiceContext{Publish: []*azdext.Artifact{{Kind: azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
-				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE, Location: "registry.example/agent:latest"}}},
-			nil, func(string) {})
-		want := "success"
-		if fail {
-			want = "error"
-			require.ErrorContains(t, deploymentErr, "INVALID-NAME")
-		} else {
-			require.NoError(t, deploymentErr)
-			require.NotNil(t, result)
-		}
-		recorder.mu.Lock()
-		completed := 0
-		for _, request := range recorder.requests {
-			if request.EventName != "agent.phase.completed" {
-				continue
+	for _, setting := range []*bool{nil, new(false), new(true)} {
+		for _, fail := range []bool{false, true} {
+			root := t.TempDir()
+			recorder := &snapshotPhaseProjectServer{stubProjectServer: stubProjectServer{
+				project: &azdext.ProjectConfig{Path: root},
+			}}
+			env := &snapshotPhaseEnvironmentServer{stubEnvServer: stubEnvServer{values: map[string]string{
+				"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_AI_PROJECT_ID": resourceID.String(),
+				"AZURE_LOCATION": "eastus",
+			}}}
+			client := newEnvTestClient(t, env, recorder)
+			provider := &AgentServiceTargetProvider{azdClient: client, projectPath: root, deployContextReady: true,
+				credential: hostedResourceErrorCredential{}, foundryProject: resourceID, env: &azdext.Environment{Name: "test"}}
+			definition := map[string]any{"kind": "hosted", "name": "worker",
+				"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}}}
+			if setting != nil {
+				definition["enableMemorySnapshot"] = *setting
 			}
-			completed++
-			require.Equal(t, "true", request.Attributes["agent.memory_snapshot"])
-			require.Equal(t, want, request.Attributes["agent.phase.outcome"])
-			require.NotEmpty(t, request.Attributes["agent.phase.attempt_id"])
-			require.Contains(t, request.Attributes, "agent.phase.duration_ms")
+			service := &azdext.ServiceConfig{Name: "agent", Host: "azure.ai.agent",
+				AdditionalProperties: mustStruct(t, definition)}
+			if fail {
+				service.Environment = map[string]string{"INVALID-NAME": "value"}
+			}
+			result, deploymentErr := provider.Deploy(t.Context(), service,
+				&azdext.ServiceContext{Publish: []*azdext.Artifact{{Kind: azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+					LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE, Location: "registry.example/agent:latest"}}},
+				nil, func(string) {})
+			want := "success"
+			if fail {
+				want = "error"
+				require.ErrorContains(t, deploymentErr, "INVALID-NAME")
+			} else {
+				require.NoError(t, deploymentErr)
+				require.NotNil(t, result)
+			}
+			recorder.mu.Lock()
+			completed := 0
+			for _, request := range recorder.requests {
+				if request.EventName != "agent.phase.completed" {
+					require.NotContains(t, request.Attributes, "agent.memory_snapshot")
+					continue
+				}
+				completed++
+				if setting != nil && *setting {
+					require.Equal(t, "true", request.Attributes["agent.memory_snapshot"])
+				} else {
+					require.NotContains(t, request.Attributes, "agent.memory_snapshot")
+				}
+				require.Equal(t, want, request.Attributes["agent.phase.outcome"])
+				require.NotEmpty(t, request.Attributes["agent.phase.attempt_id"])
+				require.Contains(t, request.Attributes, "agent.phase.duration_ms")
+			}
+			recorder.mu.Unlock()
+			require.Equal(t, 1, completed)
 		}
-		recorder.mu.Unlock()
-		require.Equal(t, 1, completed)
 	}
 }
 

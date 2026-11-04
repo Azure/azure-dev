@@ -95,20 +95,17 @@ type Timing struct {
 	dropped        int
 	finished       bool
 	timedOut       bool
-	memorySnapshot string
+	memorySnapshot bool
 }
 
-// MemorySnapshot records the resolved hosted setting on this deployment attempt.
+// MemorySnapshot marks a resolved hosted deployment that enables snapshots.
 func (t *Timing) MemorySnapshot(enabled *bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.name != Deploy || t.scope != Provider || t.finished {
 		return
 	}
-	t.memorySnapshot = "unset"
-	if enabled != nil {
-		t.memorySnapshot = strconv.FormatBool(*enabled)
-	}
+	t.memorySnapshot = enabled != nil && *enabled
 }
 
 // Timeout marks an observed business polling deadline without changing its error.
@@ -203,7 +200,7 @@ func (t *Timing) End(ctx context.Context, err error) {
 	if result == "error" && timedOut {
 		result = "timeout"
 	}
-	if memorySnapshot != "" {
+	if memorySnapshot {
 		t.reporter.Report(reportCtx, foundryTelemetry.Event{
 			Name: "agent.phase.completed",
 			Attributes: map[string]string{
@@ -215,7 +212,7 @@ func (t *Timing) End(ctx context.Context, err error) {
 				"agent.phase.duration_ms":        milliseconds(ended.Sub(t.started)),
 				"agent.phase.outcome":            result,
 				"agent.phase.step.dropped_count": strconv.Itoa(dropped),
-				"agent.memory_snapshot":          memorySnapshot,
+				"agent.memory_snapshot":          "true",
 			},
 		})
 	} else {

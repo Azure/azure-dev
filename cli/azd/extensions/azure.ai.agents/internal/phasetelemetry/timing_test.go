@@ -177,11 +177,11 @@ func TestSnapshotSettingSharesThePhaseOutcome(t *testing.T) {
 			require.Len(t, reporter.events, 1)
 			event := reporter.events[0]
 			require.Equal(t, "agent.phase.completed", event.Name)
-			settingValue := "unset"
-			if setting != nil {
-				settingValue = strconv.FormatBool(*setting)
+			if setting != nil && *setting {
+				require.Equal(t, "true", event.Attributes["agent.memory_snapshot"])
+			} else {
+				require.NotContains(t, event.Attributes, "agent.memory_snapshot")
 			}
-			require.Equal(t, settingValue, event.Attributes["agent.memory_snapshot"])
 			want := "success"
 			if errors.Is(cause, context.Canceled) {
 				want = "canceled"

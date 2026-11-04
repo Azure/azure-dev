@@ -231,11 +231,29 @@ func TestAgentDefinitionMemorySnapshotInvalid(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			svc := &azdext.ServiceConfig{AdditionalProperties: mustStruct(t, map[string]any{
-				"kind": test.kind, "name": "snapshot-agent", "enableMemorySnapshot": test.value,
-			})}
-			_, _, _, _, err := AgentDefinitionFromService(svc)
-			require.ErrorContains(t, err, "enableMemorySnapshot "+test.want)
+			for _, field := range []string{
+				"enableMemorySnapshot", "EnableMemorySnapshot", "ENABLEMEMORYSNAPSHOT", "enable_memory_snapshot",
+			} {
+				t.Run(field, func(t *testing.T) {
+					t.Parallel()
+					props := mustStruct(t, map[string]any{
+						"kind": test.kind, "name": "snapshot-agent", field: test.value,
+					})
+					svc := &azdext.ServiceConfig{AdditionalProperties: props}
+					_, _, _, _, err := AgentDefinitionFromService(svc)
+					require.ErrorContains(t, err, "enableMemorySnapshot "+test.want)
+					if test.kind != "hosted" {
+						return
+					}
+					root := t.TempDir()
+					content, err := props.MarshalJSON()
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "agent.json"), content, 0o600))
+					svc.AdditionalProperties = mustStruct(t, map[string]any{"$ref": "agent.json"})
+					_, _, _, err = LoadHostedAgentDefinition(svc, root)
+					require.ErrorContains(t, err, "enableMemorySnapshot "+test.want)
+				})
+			}
 		})
 	}
 }

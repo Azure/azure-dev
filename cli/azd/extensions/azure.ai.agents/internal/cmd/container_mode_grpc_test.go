@@ -82,6 +82,5 @@ func TestAgentContainerModeRequestOverGRPC(t *testing.T) {
 	require.Equal(t, map[string]string{
 		"agent.kind": "hosted", "agent.harness": "none",
 		"agent.operation": "invoke", "agent.container.mode": "passthrough_auth",
-		"agent.memory_snapshot": "true",
 	}, requests[0].GetAttributes())
 }

@@ -94,6 +94,9 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := a.resolveACREnvironment(ctx); err != nil {
+		return err
+	}
 	a.acrSubscription, err = planInitACRSubscription(
 		ctx, a.azdClient, a.flags, valueOrDefault(a.projectTargetDir, "."),
 	)
@@ -284,6 +287,32 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	return projectResponse.Project, nil
 }
 
+func (a *InitFromCodeAction) resolveACREnvironment(ctx context.Context) error {
+	if !a.flags.acrResourceIDSet || a.flags.env != "" {
+		return nil
+	}
+	if env := getExistingEnvironment(ctx, "", a.azdClient); env != nil {
+		a.flags.resolvedEnvironmentName = env.Name
+		return nil
+	}
+
+	defaultName := "my-agent"
+	nameDir := a.projectTargetDir
+	if nameDir == "" || nameDir == "." {
+		nameDir, _ = os.Getwd()
+	}
+	if nameDir != "" {
+		defaultName = sanitizeAgentName(filepath.Base(filepath.Clean(nameDir)))
+	}
+	agentName, err := resolveInitAgentName(ctx, a.azdClient, a.flags, defaultName)
+	if err != nil {
+		return err
+	}
+	a.flags.resolvedAgentName = agentName
+	a.flags.resolvedEnvironmentName = sanitizeAgentName(agentName + "-dev")
+	return nil
+}
+
 // createDefinitionFromLocalAgent creates a ContainerAgent for local agent code
 // This is used when no manifest pointer is provided and we need to scaffold a new agent
 func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
@@ -297,9 +326,14 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		defaultName = sanitizeAgentName(filepath.Base(cwd))
 	}
 
-	agentName, err := resolveInitAgentName(ctx, a.azdClient, a.flags, defaultName)
-	if err != nil {
-		return nil, err
+	agentName := a.flags.resolvedAgentName
+	if agentName == "" {
+		var err error
+		agentName, err = resolveInitAgentName(ctx, a.azdClient, a.flags, defaultName)
+		if err != nil {
+			return nil, err
+		}
+		a.flags.resolvedAgentName = agentName
 	}
 
 	// Create the azd environment now that we have the agent name
@@ -310,7 +344,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		} else {
 			envName := a.flags.env
 			if envName == "" {
-				envName = sanitizeAgentName(agentName + "-dev")
+				envName = valueOrDefault(
+					a.flags.resolvedEnvironmentName,
+					sanitizeAgentName(agentName+"-dev"),
+				)
 			}
 			env, err := createNewEnvironment(ctx, a.azdClient, envName)
 			if err != nil {

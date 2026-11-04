@@ -164,7 +164,8 @@ func readInitACREnvironment(
 		targetDir = "."
 	}
 	if _, err := azdext.GetProjectDir(); errors.Is(err, azdext.ErrProjectNotFound) {
-		return "", map[string]string{"AZURE_ENV_NAME": deriveEnvName(flags, targetDir)}, nil
+		envName := deriveEnvName(flags, targetDir)
+		return envName, map[string]string{"AZURE_ENV_NAME": envName}, nil
 	} else if err != nil {
 		return "", nil, fmt.Errorf("resolve project before selecting a registry: %w", err)
 	}
@@ -173,15 +174,25 @@ func readInitACREnvironment(
 		return "", nil, fmt.Errorf("read environments before selecting a registry: %w", err)
 	}
 	envName := ""
+	if flags.resolvedEnvironmentName != "" {
+		envName = flags.resolvedEnvironmentName
+	}
 	for _, env := range environments.GetEnvironments() {
 		if flags.env != "" && env.GetName() == flags.env ||
-			flags.env == "" && env.GetDefault() {
+			flags.env == "" && flags.resolvedEnvironmentName == "" && env.GetDefault() {
 			envName = env.GetName()
 			break
 		}
 	}
 	values := map[string]string{}
-	if envName != "" {
+	envExists := false
+	for _, env := range environments.GetEnvironments() {
+		if env.GetName() == envName {
+			envExists = true
+			break
+		}
+	}
+	if envName != "" && envExists {
 		values, err = getAgentEnvironmentValues(ctx, client, envName)
 		if err != nil {
 			return "", nil, fmt.Errorf("read registry selection: %w", err)

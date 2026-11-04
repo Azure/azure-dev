@@ -28,6 +28,27 @@ import (
 const testInitACRID = "/subscriptions/sub/resourceGroups/registry-rg/providers/" +
 	"Microsoft.ContainerRegistry/registries/shared"
 
+func TestResolveACREnvironmentUsesActualAgentName(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	server := &testEnvironmentServiceServer{}
+	client := newTestAzdClient(t, server, &testWorkflowServiceServer{})
+	flags := &initFlags{
+		acrResourceIDSet: true,
+		agentName:        "chat",
+	}
+	action := &InitFromCodeAction{azdClient: client, flags: flags}
+
+	require.NoError(t, action.resolveACREnvironment(t.Context()))
+	require.Equal(t, "chat", flags.resolvedAgentName)
+	require.Equal(t, "chat-dev", flags.resolvedEnvironmentName)
+
+	envName, values, err := readInitACREnvironment(t.Context(), client, flags, ".")
+	require.NoError(t, err)
+	require.Equal(t, "chat-dev", envName)
+	require.Equal(t, "chat-dev", values["AZURE_ENV_NAME"])
+}
+
 func TestInitACRSelectionSpecificGuidance(t *testing.T) {
 	for _, tt := range []struct {
 		name, manifest, want string

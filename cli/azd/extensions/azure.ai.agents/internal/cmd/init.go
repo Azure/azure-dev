@@ -62,6 +62,8 @@ type initFlags struct {
 	templatePointer         string
 	agentName               string
 	agentNameExplicit       bool
+	resolvedAgentName       string
+	resolvedEnvironmentName string
 	description             string
 	src                     string
 	env                     string
@@ -1801,6 +1803,9 @@ func ensureProject(
 // explicit --environment flag when set, otherwise a sanitized name derived from
 // the target folder (or the current directory when targetDir is ".").
 func deriveEnvName(flags *initFlags, targetDir string) string {
+	if flags.resolvedEnvironmentName != "" {
+		return flags.resolvedEnvironmentName
+	}
 	if flags.env != "" {
 		return flags.env
 	}

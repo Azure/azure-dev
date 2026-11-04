@@ -96,6 +96,11 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 	}
 	preBuiltService := agentServiceConfig(t, svcName, dockerProps)
 	preBuiltService.Image = "registry.example.com/team/agent:v1"
+	sourceImageService := agentServiceConfig(t, svcName, nil)
+	sourceImageService.Image = "registry.example.com/team/agent:v1"
+	preBuiltPassthroughService := agentServiceConfig(t, svcName, nil)
+	preBuiltPassthroughService.Image = "registry.example.com/team/agent:v1"
+	preBuiltPassthroughService.Docker = &azdext.DockerProjectOptions{ImagePassthrough: true}
 	mixedCodeService := agentServiceConfig(t, svcName, codeProps)
 	mixedCodeService.Image = "registry.example.com/team/agent:v1"
 	legacyImageProps := map[string]any{
@@ -166,6 +171,22 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			wantNeedsACR: false,
 			wantLanguage: "docker",
 			wantDocker:   map[string]any{"imagePassthrough": true},
+		},
+		{
+			name: "ACR selection keeps image source build",
+			flags: &initFlags{
+				acrResourceIDSet: true,
+			},
+			service:      sourceImageService,
+			wantNeedsACR: true,
+		},
+		{
+			name: "ACR selection preserves explicit image passthrough",
+			flags: &initFlags{
+				acrResourceIDSet: true,
+			},
+			service:      preBuiltPassthroughService,
+			wantNeedsACR: false,
 		},
 		{
 			name:         "resolved legacy image is promoted and uses passthrough",

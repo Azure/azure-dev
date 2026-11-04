@@ -30,6 +30,7 @@ type Provider struct {
 	executionProvider
 	generator *resources.Generator
 	resolver  *resources.ParameterResolver
+	client    *azdext.AzdClient
 	tempDir   string
 }
 
@@ -37,7 +38,8 @@ type Provider struct {
 func New(client *azdext.AzdClient) *Provider {
 	resolver := resources.NewParameterResolver(client)
 	return &Provider{
-		executionProvider: bicep.New(client, resolver), generator: &resources.Generator{}, resolver: resolver,
+		executionProvider: bicep.New(client, resolver), generator: &resources.Generator{},
+		resolver: resolver, client: client,
 	}
 }
 
@@ -55,6 +57,21 @@ func (p *Provider) Initialize(
 	if p.resolver != nil {
 		if err := p.resolver.Configure(options); err != nil {
 			return err
+		}
+		if p.client != nil {
+			project := map[string]any{}
+			for _, path := range []string{"infra", "layers"} {
+				response, err := p.client.Project().GetConfigValue(ctx, &azdext.GetProjectConfigValueRequest{Path: path})
+				if err != nil {
+					return fmt.Errorf("reading project %s: %w", path, err)
+				}
+				if response.GetFound() {
+					project[path] = response.GetValue().AsInterface()
+				}
+			}
+			if err := resources.ValidateProjectLayers(project, ""); err != nil {
+				return err
+			}
 		}
 	}
 	if err := p.materializeInfrastructure(ctx, options); err != nil {

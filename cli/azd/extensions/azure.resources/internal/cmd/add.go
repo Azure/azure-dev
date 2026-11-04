@@ -28,6 +28,7 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			"Resources are stored in the selected infra.layers entry's config, never top-level resources.\n" +
 			"A summary is displayed after saving.\n" +
 			"Existing layers require confirmation before they are updated or replaced.\n" +
+			"Only one resources infrastructure entry is supported.\n" +
 			"The layer prompt defaults to " + defaultResourcesLayer + ".",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -72,6 +73,9 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			}
 			project, err := parseProject(current, layerName)
 			if err != nil {
+				return err
+			}
+			if err := resources.ValidateProjectLayers(current, layerName); err != nil {
 				return err
 			}
 			if project.target != nil {

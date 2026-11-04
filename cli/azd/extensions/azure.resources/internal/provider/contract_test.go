@@ -192,3 +192,17 @@ func TestInitializationScopeFailureCleansUp(t *testing.T) {
 	require.Zero(t, host.locations)
 	require.NoError(t, p.Close())
 }
+
+func TestInitializationRejectsMultipleResourcesLayersBeforeAzureCalls(t *testing.T) {
+	host := &initializationHost{values: map[string]string{}, project: map[string]any{
+		"infra": map[string]any{"provider": "resources", "layers": []any{
+			map[string]any{"name": "data"}, map[string]any{"name": "app"},
+		}},
+	}}
+	p := New(newInitializationClient(t, host))
+	require.ErrorContains(t, p.Initialize(t.Context(), t.TempDir(), testOptions(t, "data")),
+		"only one resources infrastructure entry")
+	require.Empty(t, p.tempDir)
+	require.Empty(t, host.values)
+	require.Zero(t, host.prompts)
+}

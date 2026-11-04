@@ -5,10 +5,57 @@ package resources
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestValidateProjectLayers(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		providers []string
+		inherited string
+		selected  string
+		wantError bool
+	}{
+		{name: "single", providers: []string{"resources"}},
+		{name: "mixed providers", providers: []string{"resources", "bicep"}},
+		{name: "updating existing", providers: []string{"resources"}, selected: "layer0"},
+		{name: "adding second", providers: []string{"resources"}, selected: "new", wantError: true},
+		{name: "replacing another", providers: []string{"resources", "bicep"}, selected: "layer1", wantError: true},
+		{name: "two resources", providers: []string{"resources", "resources"}, wantError: true},
+		{name: "inherited provider", providers: []string{"", ""}, inherited: "resources", wantError: true},
+		{name: "explicit override", providers: []string{"", "bicep"}, inherited: "resources"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var layers []any
+			for i, provider := range test.providers {
+				layer := map[string]any{"name": fmt.Sprintf("layer%d", i)}
+				if provider != "" {
+					layer["provider"] = provider
+				}
+				layers = append(layers, layer)
+			}
+			err := ValidateProjectLayers(map[string]any{
+				"infra": map[string]any{"provider": test.inherited, "layers": layers},
+			}, test.selected)
+			if test.wantError {
+				require.ErrorContains(t, err, "only one resources infrastructure entry")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateProjectLayersRejectsRepeatedTopLevelProviders(t *testing.T) {
+	project := map[string]any{"layers": []any{
+		map[string]any{"name": "data", "infra": []any{map[string]any{"name": "storage", "provider": ProviderName}}},
+		map[string]any{"name": "app", "infra": []any{map[string]any{"name": "host", "provider": ProviderName}}},
+	}}
+	require.ErrorContains(t, ValidateProjectLayers(project, ""), "only one resources infrastructure entry")
+}
 
 func TestLayerIdentityAndRepeatability(t *testing.T) {
 	generator := &Generator{}

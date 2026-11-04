@@ -58,6 +58,9 @@ func parseProject(project map[string]any, layerName string) (*addProject, error)
 	if _, exists := project["layers"]; exists {
 		return nil, errors.New("azd resources add currently supports infra.layers, not top-level project layers")
 	}
+	if err := resources.ValidateProjectLayers(project, ""); err != nil {
+		return nil, err
+	}
 	p := &addProject{index: -1, config: resources.Config{}, services: map[string]map[string]any{}}
 	if services, exists := project["services"]; exists {
 		serviceMap, ok := services.(map[string]any)

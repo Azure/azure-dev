@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -447,6 +448,39 @@ func TestAddProvisionFollowUpsUseLocalHostWorkflow(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAddRejectsSecondResourcesLayerWithoutMutations(t *testing.T) {
+	for _, inherited := range []bool{false, true} {
+		t.Run(fmt.Sprint(inherited), func(t *testing.T) {
+			infraProvider, layerProvider := "", "      provider: resources\n"
+			if inherited {
+				infraProvider, layerProvider = "  provider: resources\n", ""
+			}
+			original := "name: example\ninfra:\n" + infraProvider + "  layers:\n    - name: data\n" + layerProvider
+			prompts := &addPromptServer{}
+			saved, _, host, err := runAddTest(t, original, []string{"--layer", "app"}, prompts)
+			require.ErrorContains(t, err, "only one resources infrastructure entry")
+			require.Equal(t, original, saved)
+			require.Empty(t, host.project.layerRequests)
+			require.Empty(t, host.saved)
+			require.Empty(t, prompts.confirmations)
+			require.Zero(t, prompts.layerPrompts)
+		})
+	}
+}
+
+func TestAddFixedDefaultDoesNotSelectExistingResourcesLayer(t *testing.T) {
+	original := "name: example\ninfra:\n  layers:\n    - name: data\n      provider: resources\n"
+	prompts := &addPromptServer{}
+	saved, _, host, err := runAddTest(t, original, nil, prompts)
+	require.ErrorContains(t, err, "only one resources infrastructure entry")
+	require.ErrorContains(t, err, "infra.azureresources")
+	require.Equal(t, original, saved)
+	require.Equal(t, 1, prompts.layerPrompts)
+	require.Empty(t, prompts.confirmations)
+	require.Empty(t, host.project.layerRequests)
+	require.Empty(t, host.saved)
 }
 
 func TestAddRejectsMissingSelectedEnvironmentBeforeMutations(t *testing.T) {

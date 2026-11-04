@@ -375,7 +375,8 @@ func TestBYOPrepareValidatesKubeletIdentityRegardlessOfACR(t *testing.T) {
 						source.parameters["kubeletObjectId"] = map[string]any{"value": suppliedHostingPrincipal}
 					}
 					require.ErrorContains(t, p.prepareBYO(t.Context(), source), test.expected)
-					assert.ElementsMatch(t, []string{
+					assert.Contains(t, fake.requests, "GET "+offlineClusterID)
+					assert.Subset(t, []string{
 						"GET " + offlineClusterID,
 						"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
 					}, fake.requests)

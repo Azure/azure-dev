@@ -75,7 +75,6 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 	identities := []struct {
 		field, binding, id, principal string
 		value                         json.RawMessage
-		err                           error
 	}{
 		{field: "hostingManagementIdentityResourceId", binding: "hostingPrincipalId",
 			value: hosting.HostingManagementIdentityResourceID},
@@ -110,15 +109,25 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
+	readCtx, cancelReads := context.WithCancelCause(ctx)
+	defer cancelReads(nil)
+
 	var reads sync.WaitGroup
 	var kubeletObjectID, federationRoleID string
-	var kubeletErr, federationRoleErr error
 	reads.Go(func() {
-		kubeletObjectID, kubeletErr = p.readBYOKubeletObjectID(ctx, clusterID)
+		var err error
+		kubeletObjectID, err = p.readBYOKubeletObjectID(readCtx, clusterID)
+		if err != nil {
+			cancelReads(err)
+		}
 	})
 	if resolveFederationRole {
 		reads.Go(func() {
-			federationRoleID, federationRoleErr = p.resolveBYOFederationRoleID(ctx, workloadID)
+			var err error
+			federationRoleID, err = p.resolveBYOFederationRoleID(readCtx, workloadID)
+			if err != nil {
+				cancelReads(err)
+			}
 		})
 	}
 	for i := range identities {
@@ -127,17 +136,17 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 			continue
 		}
 		reads.Go(func() {
-			identity.principal, identity.err = p.readBYOIdentityPrincipal(ctx, identity.id)
+			var err error
+			identity.principal, err = p.readBYOIdentityPrincipal(readCtx, identity.id)
+			if err != nil {
+				cancelReads(err)
+			}
 		})
 	}
 	reads.Wait()
 
-	// Preserve error precedence and publish bindings only after every lookup succeeds.
-	if kubeletErr != nil {
-		return kubeletErr
-	}
-	if federationRoleErr != nil {
-		return federationRoleErr
+	if err := context.Cause(readCtx); err != nil {
+		return err
 	}
 	resolvedBindings := map[string]string{
 		"federatedIdentityRoleDefinitionId": federationRoleID,
@@ -146,9 +155,6 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 	for _, identity := range identities {
 		if _, needed := hostBindings[identity.binding]; !needed {
 			continue
-		}
-		if identity.err != nil {
-			return identity.err
 		}
 		resolvedBindings[identity.binding] = identity.principal
 	}

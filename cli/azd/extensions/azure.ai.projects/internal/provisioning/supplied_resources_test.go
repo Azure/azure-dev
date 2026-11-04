@@ -125,9 +125,9 @@ func TestBYOPrepareConcurrentReads(t *testing.T) {
 		{name: "role failure", failures: paths[1:2]},
 		{name: "hosting identity failure", failures: paths[2:3]},
 		{name: "workload identity failure", failures: paths[3:]},
-		{name: "cluster error precedence", failures: paths},
-		{name: "role error precedence", failures: paths[1:]},
-		{name: "identity error precedence", failures: paths[2:]},
+		{name: "all reads fail", failures: paths},
+		{name: "role and identity failures", failures: paths[1:]},
+		{name: "identity failures", failures: paths[2:]},
 		{name: "cancellation", cancel: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -151,6 +151,10 @@ func TestBYOPrepareConcurrentReads(t *testing.T) {
 				case <-release:
 					if slices.Contains(test.failures, request.URL.Path) {
 						return fmt.Errorf("%s: %w", request.URL.Path, readFailure)
+					}
+					if len(test.failures) > 0 {
+						<-request.Context().Done()
+						return request.Context().Err()
 					}
 					return nil
 				}
@@ -193,7 +197,9 @@ func TestBYOPrepareConcurrentReads(t *testing.T) {
 				require.ErrorIs(t, prepareErr, context.Canceled)
 			case len(test.failures) > 0:
 				require.ErrorIs(t, prepareErr, readFailure)
-				assert.ErrorContains(t, prepareErr, test.failures[0])
+				assert.True(t, slices.ContainsFunc(test.failures, func(path string) bool {
+					return strings.Contains(prepareErr.Error(), path)
+				}), "expected the original error from a failed binding read, got %v", prepareErr)
 			default:
 				require.NoError(t, prepareErr)
 				for name, value := range map[string]string{

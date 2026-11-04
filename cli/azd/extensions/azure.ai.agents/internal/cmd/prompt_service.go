@@ -12,6 +12,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -201,15 +202,14 @@ func (p *promptServiceContext) newClient(ctx context.Context) (*agent_api.AgentC
 }
 
 // promptEnvValues returns the selected azd environment as a key/value map.
-// Environment.GetCurrent returns the project default, so an explicit SDK
-// environment override must be used directly.
+// Explicit names win over the command selection and saved default.
 func promptEnvValues(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	environmentName string,
 ) (map[string]string, error) {
 	if environmentName == "" {
-		envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		envResp, err := synthesis.CurrentEnvironment(ctx, azdClient)
 		if err != nil {
 			return nil, err
 		}

@@ -30,6 +30,8 @@ type acrFeatureEnvironment struct {
 	writes        int
 	selected      string
 	currentErr    error
+	namedErr      error
+	valuesErr     error
 	defaultConfig map[string][]byte
 }
 
@@ -45,6 +47,9 @@ func (s *acrFeatureEnvironment) GetCurrent(
 func (s *acrFeatureEnvironment) Get(
 	_ context.Context, request *azdext.GetEnvironmentRequest,
 ) (*azdext.EnvironmentResponse, error) {
+	if s.namedErr != nil {
+		return nil, s.namedErr
+	}
 	if request.GetName() != s.selected {
 		return nil, status.Error(codes.NotFound, "selected environment not found")
 	}
@@ -54,6 +59,9 @@ func (s *acrFeatureEnvironment) Get(
 func (s *acrFeatureEnvironment) GetValues(
 	_ context.Context, request *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
+	if s.valuesErr != nil {
+		return nil, s.valuesErr
+	}
 	if s.selected != "" && request.GetName() == "test-env" {
 		return &azdext.KeyValueListResponse{}, nil
 	}
@@ -79,6 +87,89 @@ func (s *acrFeatureEnvironment) GetConfig(
 	}
 	value, found := s.config[request.GetPath()]
 	return &azdext.GetConfigResponse{Value: value, Found: found}, nil
+}
+
+func TestACRGuardWithoutCurrentEnvironment(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "")
+	for _, test := range []struct {
+		name        string
+		selection   string
+		environment acrFeatureEnvironment
+		code        codes.Code
+	}{
+		{name: "missing default", environment: acrFeatureEnvironment{
+			currentErr: status.Error(codes.Unknown, "default environment not found"),
+		}},
+		{name: "unavailable", code: codes.Unavailable, environment: acrFeatureEnvironment{
+			currentErr: status.Error(codes.Unavailable, "host unavailable"),
+		}},
+		{name: "permission denied", code: codes.PermissionDenied, environment: acrFeatureEnvironment{
+			currentErr: status.Error(codes.PermissionDenied, "access denied"),
+		}},
+		{name: "lookalike message", code: codes.Unknown, environment: acrFeatureEnvironment{
+			currentErr: status.Error(codes.Unknown, "read failed: default environment not found"),
+		}},
+		{name: "different code", code: codes.NotFound, environment: acrFeatureEnvironment{
+			currentErr: status.Error(codes.NotFound, "default environment not found"),
+		}},
+		{name: "named environment", selection: "selected", code: codes.Unknown, environment: acrFeatureEnvironment{
+			namedErr: status.Error(codes.Unknown, "default environment not found"),
+		}},
+		{name: "values read", code: codes.Unknown, environment: acrFeatureEnvironment{
+			valuesErr: status.Error(codes.Unknown, "default environment not found"),
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AZD_ENVIRONMENT", test.selection)
+			client := newEnvTestClient(t, &test.environment)
+			for _, reuse := range []bool{false, true} {
+				t.Run(map[bool]string{false: "clean", true: "on-disk reuse"}[reuse], func(t *testing.T) {
+					root := t.TempDir()
+					id := ""
+					if reuse {
+						id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+					}
+					testutil.ACRParameters(t, root, false, "json", id)
+					project := &azdext.ProjectConfig{Path: root}
+					before := testutil.Snapshot(t, root)
+					for _, stateOnly := range []bool{false, true} {
+						check := synthesis.RequireACRReuseForProject
+						if stateOnly {
+							check = synthesis.RequireACRReuseForProjectState
+						}
+						err := check(t.Context(), client, project)
+						if test.code != codes.OK {
+							require.Equal(t, test.code, status.Code(err), "%v", err)
+						} else if reuse && !stateOnly {
+							local, ok := errors.AsType[*azdext.LocalError](err)
+							require.True(t, ok, "%v", err)
+							require.Equal(t, "feature_not_enabled", local.Code)
+						} else {
+							require.NoError(t, err)
+						}
+					}
+					require.Zero(t, test.environment.writes)
+					require.Equal(t, before, testutil.Snapshot(t, root))
+				})
+			}
+		})
+	}
+}
+
+func TestACRPackageWithoutCurrentEnvironment(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "")
+	t.Setenv("AZD_ENVIRONMENT", "")
+	env := &acrFeatureEnvironment{currentErr: status.Error(codes.Unknown, "default environment not found")}
+	service := &azdext.ServiceConfig{
+		Name: "agent", Host: foundryAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "prompt", "name": "agent", "model": "gpt-4.1", "instructions": "Help.",
+		}),
+	}
+	p := &AgentServiceTargetProvider{azdClient: newEnvTestClient(t, env), projectPath: t.TempDir()}
+	_, err := p.Package(t.Context(), service, &azdext.ServiceContext{}, func(string) {})
+	require.NoError(t, err)
+	require.Zero(t, env.writes)
 }
 
 func TestACRRuntimeSelectedEnvironment(t *testing.T) {

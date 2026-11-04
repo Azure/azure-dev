@@ -79,7 +79,8 @@ func TestACRParametersDisabledJSON(t *testing.T) {
 		{"literal", parameterRegistryID, nil, true},
 		{"substitution", "${SHARED_REGISTRY}", map[string]string{"SHARED_REGISTRY": parameterRegistryID}, true},
 		{"default", "${UNSET_REGISTRY=" + parameterRegistryID + "}", nil, true},
-		{"unset", "${UNSET_REGISTRY}", nil, false},
+		{"process environment", "${UNSET_REGISTRY}", nil, true},
+		{"explicit empty", "${SHARED_REGISTRY}", map[string]string{"SHARED_REGISTRY": ""}, false},
 		{"create", "", nil, false},
 	} {
 		for _, layer := range []bool{false, true} {
@@ -90,6 +91,7 @@ func TestACRParametersDisabledJSON(t *testing.T) {
 				in := parameterInput(t, root)
 				maps.Copy(in.Env, test.env)
 				t.Setenv("UNSET_REGISTRY", parameterRegistryID)
+				t.Setenv("SHARED_REGISTRY", parameterRegistryID)
 				before := testutil.Snapshot(t, root)
 				err := requireACRReuseForOnDiskInput(t.Context(), in, nil)
 				if test.disabled {

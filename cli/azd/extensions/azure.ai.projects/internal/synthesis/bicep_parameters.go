@@ -112,6 +112,7 @@ func CompileBicepParameters(
 }
 
 // LoadARMParametersFile substitutes each parameter independently.
+// Explicit envValues entries take precedence over process environment values.
 // Missing variables drop only strings that resolve to an empty value.
 func LoadARMParametersFile(sourcePath string, envValues map[string]string) (map[string]any, error) {
 	//nolint:gosec // validated project infrastructure parameter path
@@ -155,6 +156,9 @@ func substituteParameter(
 	hasUnsetEnvVar := false
 	substituted, err := envsubst.Eval(string(encoded), func(key string) string {
 		value, found := envValues[key]
+		if !found {
+			value, found = os.LookupEnv(key)
+		}
 		if !found {
 			hasUnsetEnvVar = true
 			return ""

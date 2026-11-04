@@ -112,6 +112,60 @@ func requireACRFeatureDisabled(t *testing.T, err error) {
 	require.Contains(t, local.Message, synthesis.ACRReuseEnvVar+"=true")
 }
 
+func TestProjectACRGuardWithoutCurrentEnvironment(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "")
+	for _, test := range []struct {
+		name      string
+		selection string
+		code      codes.Code
+		message   string
+	}{
+		{name: "missing default", code: codes.Unknown, message: "default environment not found"},
+		{name: "unavailable", code: codes.Unavailable, message: "host unavailable"},
+		{name: "permission denied", code: codes.PermissionDenied, message: "access denied"},
+		{name: "lookalike message", code: codes.Unknown, message: "read failed: default environment not found"},
+		{name: "different code", code: codes.NotFound, message: "default environment not found"},
+		{name: "named environment", selection: "selected", code: codes.Unknown, message: "default environment not found"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AZD_ENVIRONMENT", test.selection)
+			server := &recordingProjectEnvironmentServer{
+				currentErr: status.Error(test.code, test.message),
+				namedErr:   status.Error(test.code, test.message),
+			}
+			client := newProjectEnvironmentClient(t, server)
+			for _, reuse := range []bool{false, true} {
+				t.Run(map[bool]string{false: "clean", true: "on-disk reuse"}[reuse], func(t *testing.T) {
+					root := t.TempDir()
+					id := ""
+					if reuse {
+						id = testExternalRegistryID
+					}
+					testutil.ACRParameters(t, root, false, "json", id)
+					project := &azdext.ProjectConfig{Path: root}
+					before := testutil.Snapshot(t, root)
+					for _, stateOnly := range []bool{false, true} {
+						check := synthesis.RequireACRReuseForProject
+						if stateOnly {
+							check = synthesis.RequireACRReuseForProjectState
+						}
+						err := check(t.Context(), client, project)
+						if test.name != "missing default" {
+							require.Equal(t, test.code, status.Code(err), "%v", err)
+						} else if reuse && !stateOnly {
+							requireACRFeatureDisabled(t, err)
+						} else {
+							require.NoError(t, err)
+						}
+					}
+					require.Empty(t, server.key)
+					require.Equal(t, before, testutil.Snapshot(t, root))
+				})
+			}
+		})
+	}
+}
+
 func TestProjectACRParameterOnlyPrepackageWithoutEnvironment(t *testing.T) {
 	t.Setenv(synthesis.ACRReuseEnvVar, "")
 	for _, tt := range []struct {

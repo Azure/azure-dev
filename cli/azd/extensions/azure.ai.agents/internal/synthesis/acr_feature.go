@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // ACRReuseFeatureID identifies the shared Foundry preview.
@@ -187,17 +189,20 @@ func requireACRReuseForProject(
 	if client != nil {
 		current, err := CurrentEnvironment(ctx, client)
 		if err != nil {
-			return fmt.Errorf("read current environment before checking registry reuse: %w", err)
-		}
-		envName = current.GetEnvironment().GetName()
-		values["AZURE_ENV_NAME"] = envName
-		if envName != "" {
-			response, err := client.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
-			if err != nil {
-				return fmt.Errorf("read environment before checking registry reuse: %w", err)
+			if os.Getenv("AZD_ENVIRONMENT") != "" || !isMissingCurrentEnvironment(err) {
+				return fmt.Errorf("read current environment before checking registry reuse: %w", err)
 			}
-			for _, entry := range response.GetKeyValues() {
-				values[entry.GetKey()] = entry.GetValue()
+		} else {
+			envName = current.GetEnvironment().GetName()
+			values["AZURE_ENV_NAME"] = envName
+			if envName != "" {
+				response, err := client.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
+				if err != nil {
+					return fmt.Errorf("read environment before checking registry reuse: %w", err)
+				}
+				for _, entry := range response.GetKeyValues() {
+					values[entry.GetKey()] = entry.GetValue()
+				}
 			}
 		}
 	}
@@ -241,4 +246,9 @@ func CurrentEnvironment(ctx context.Context, client *azdext.AzdClient) (*azdext.
 		return client.Environment().Get(ctx, &azdext.GetEnvironmentRequest{Name: name})
 	}
 	return client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+}
+
+func isMissingCurrentEnvironment(err error) bool {
+	st, ok := status.FromError(err)
+	return ok && st.Code() == codes.Unknown && st.Message() == "default environment not found"
 }

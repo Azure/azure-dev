@@ -193,6 +193,10 @@ func flagNeedsFeature(flag *pflag.Flag) bool {
 
 type serviceGateKey struct{}
 
+type serviceGateContext struct {
+	noticeWriter io.Writer
+}
+
 var previewValidators sync.Map
 
 // validateBeforePreview registers a pure local check to run only when the gate would reject.
@@ -204,7 +208,9 @@ func validateBeforePreview(cmd *cobra.Command, fn func(*cobra.Command, []string)
 // disabled preview inputs. Local errors take precedence on rejection.
 func enforcePreviewFeatures(cmd *cobra.Command, args []string) error {
 	if cmd.Annotations[serviceGateAnnotation] != "" {
-		cmd.SetContext(context.WithValue(cmd.Context(), serviceGateKey{}, true))
+		cmd.SetContext(context.WithValue(cmd.Context(), serviceGateKey{}, serviceGateContext{
+			noticeWriter: previewNoticeWriter(cmd),
+		}))
 	}
 
 	features := requiredPreviewFeatures(cmd)
@@ -220,11 +226,19 @@ func enforcePreviewFeatures(cmd *cobra.Command, args []string) error {
 		return gateErr
 	}
 	for _, feature := range features {
-		if err := featureflags.RequireWithWriter(feature, cmd.OutOrStdout()); err != nil {
+		if err := featureflags.RequireWithWriter(feature, previewNoticeWriter(cmd)); err != nil {
 			return reject(err)
 		}
 	}
 	return nil
+}
+
+func previewNoticeWriter(cmd *cobra.Command) io.Writer {
+	if flag := cmd.Flag("output"); flag != nil &&
+		(flag.Value.String() == "json" || flag.Value.String() == "raw") {
+		return cmd.ErrOrStderr()
+	}
+	return cmd.OutOrStdout()
 }
 
 // requireSelectedServiceFeatures classifies a selected agent service when the
@@ -232,10 +246,11 @@ func enforcePreviewFeatures(cmd *cobra.Command, args []string) error {
 func requireSelectedServiceFeatures(
 	ctx context.Context, service *azdext.ServiceConfig, projectRoot string,
 ) error {
-	if gated, _ := ctx.Value(serviceGateKey{}).(bool); !gated {
+	gate, gated := ctx.Value(serviceGateKey{}).(serviceGateContext)
+	if !gated {
 		return nil
 	}
-	if err := project.RequireAgentFeatures(service, projectRoot, os.Stdout); err != nil {
+	if err := project.RequireAgentFeatures(service, projectRoot, gate.noticeWriter); err != nil {
 		return &serviceGateError{err: err}
 	}
 	return nil

@@ -358,6 +358,7 @@ func TestPreviewHostedProtocolSelection(t *testing.T) {
 
 func clearPreviewProcess(t *testing.T) {
 	t.Helper()
+	featureflags.ResetNoticesForTesting()
 	setPreviewProcess(t, "")
 }
 
@@ -384,7 +385,7 @@ func executeRoot(t *testing.T, args ...string) (string, error) {
 }
 
 func gatedContext(ctx context.Context) context.Context {
-	return context.WithValue(ctx, serviceGateKey{}, true)
+	return context.WithValue(ctx, serviceGateKey{}, serviceGateContext{noticeWriter: io.Discard})
 }
 
 func TestPersistedConfigCannotUnlockPreviewGates(t *testing.T) {

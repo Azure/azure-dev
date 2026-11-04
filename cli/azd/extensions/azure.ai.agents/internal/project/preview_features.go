@@ -6,7 +6,6 @@ package project
 import (
 	"context"
 	"io"
-	"os"
 	"strings"
 
 	"azureaiagent/internal/featureflags"
@@ -48,18 +47,59 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 
 // RequireDefinitionFeatures checks the definition's preview opt-in.
 func RequireDefinitionFeatures(definition map[string]any, writer io.Writer) error {
-	yamlSnapshot, _ := definition["enableMemorySnapshot"].(bool)
-	apiSnapshot, _ := definition["enable_memory_snapshot"].(bool)
-	if yamlSnapshot || apiSnapshot {
-		if err := featureflags.RequireWithWriter(featureflags.MemorySnapshot, writer); err != nil {
+	for _, feature := range DefinitionFeatures(definition) {
+		if err := featureflags.RequireWithWriter(feature, writer); err != nil {
 			return err
 		}
 	}
-	feature := PreviewFeature(definition)
-	if feature.ID == "" {
-		return nil
+	return nil
+}
+
+// CheckDefinitionFeatures validates preview opt-ins without announcing enabled features.
+func CheckDefinitionFeatures(definition map[string]any) error {
+	for _, feature := range DefinitionFeatures(definition) {
+		if err := featureflags.Check(feature); err != nil {
+			return err
+		}
 	}
-	return featureflags.RequireWithWriter(feature, writer)
+	return nil
+}
+
+// RequireDefinitionFeatureNotices checks enabled features and returns lifecycle notices.
+func RequireDefinitionFeatureNotices(definition map[string]any) ([]string, error) {
+	features := DefinitionFeatures(definition)
+	for _, feature := range features {
+		if err := featureflags.Check(feature); err != nil {
+			return nil, err
+		}
+	}
+
+	var notices []string
+	for _, feature := range features {
+		notice, err := featureflags.RequireWithNotice(feature)
+		if err != nil {
+			return nil, err
+		}
+		if notice != "" {
+			notices = append(notices, notice)
+		}
+	}
+	return notices, nil
+}
+
+// DefinitionFeatures returns the preview features used by a definition.
+func DefinitionFeatures(definition map[string]any) []featureflags.Feature {
+	var features []featureflags.Feature
+	yamlSnapshot, _ := definition["enableMemorySnapshot"].(bool)
+	apiSnapshot, _ := definition["enable_memory_snapshot"].(bool)
+	if yamlSnapshot || apiSnapshot {
+		features = append(features, featureflags.MemorySnapshot)
+	}
+	feature := PreviewFeature(definition)
+	if feature.ID != "" {
+		features = append(features, feature)
+	}
+	return features
 }
 
 // RequireAgentFeatures checks the inline or $ref definition.
@@ -80,6 +120,38 @@ func RequireAgentFeatures(
 		return err
 	}
 	return RequireDefinitionFeatures(resolved.AsMap(), writer)
+}
+
+// CheckAgentFeatures validates an inline or $ref definition without announcing enabled features.
+func CheckAgentFeatures(service *azdext.ServiceConfig, projectRoot string) error {
+	if service.GetHost() != foundryAgentHost {
+		return nil
+	}
+	props := ServiceConfigProps(service)
+	if props == nil {
+		return nil
+	}
+	resolved, err := resolveServiceProps(props, service.GetName(), projectRoot)
+	if err != nil {
+		return err
+	}
+	return CheckDefinitionFeatures(resolved.AsMap())
+}
+
+// RequireAgentFeatureNotices checks an inline or $ref definition and returns lifecycle notices.
+func RequireAgentFeatureNotices(service *azdext.ServiceConfig, projectRoot string) ([]string, error) {
+	if service.GetHost() != foundryAgentHost {
+		return nil, nil
+	}
+	props := ServiceConfigProps(service)
+	if props == nil {
+		return nil, nil
+	}
+	resolved, err := resolveServiceProps(props, service.GetName(), projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	return RequireDefinitionFeatureNotices(resolved.AsMap())
 }
 
 // prepareGatedOperation adopts and resolves the service, then
@@ -104,5 +176,8 @@ func (p *AgentServiceTargetProvider) requirePreviewFeatures(ctx context.Context)
 			return err
 		}
 	}
-	return RequireAgentFeatures(p.serviceConfig, p.projectPath, os.Stdout)
+	if err := CheckAgentFeatures(p.serviceConfig, p.projectPath); err != nil {
+		return err
+	}
+	return nil
 }

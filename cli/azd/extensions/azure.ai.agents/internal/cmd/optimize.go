@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -225,12 +224,13 @@ Legacy agent eval.yaml files are not supported.`,
 
 // OptimizeAction implements the optimize (submit job) command.
 type OptimizeAction struct {
-	flags       *optimizeFlags
-	envName     string
-	noPrompt    bool
-	serviceName string // azd service name for per-agent env key derivation
-	promptAgent bool   // deployed prompt agents use the service-side definition
-	client      *optimize_api.OptimizeClient
+	flags        *optimizeFlags
+	envName      string
+	noPrompt     bool
+	serviceName  string // azd service name for per-agent env key derivation
+	promptAgent  bool   // deployed prompt agents use the service-side definition
+	client       *optimize_api.OptimizeClient
+	noticeWriter io.Writer
 }
 
 // Run resolves inputs, submits a GA optimization job, and optionally polls for results.
@@ -240,6 +240,7 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	if jsonOutput {
 		out = cmd.ErrOrStderr()
 	}
+	a.noticeWriter = out
 
 	cfg, configSource, agentProject, err := a.resolveConfig(ctx)
 	if err != nil {
@@ -324,7 +325,11 @@ func (a *OptimizeAction) resolveConfig(
 			return nil, "", "", resolveErr
 		}
 		if resolveErr == nil && (a.flags.agent != "" || cfg.Agent.Name == resolved.agentName) {
-			if err := projectpkg.RequireAgentFeatures(resolved.service, resolved.project.GetPath(), os.Stdout); err != nil {
+			if err := projectpkg.RequireAgentFeatures(
+				resolved.service,
+				resolved.project.GetPath(),
+				a.noticeWriter,
+			); err != nil {
 				return nil, "", "", err
 			}
 			agentProject = resolved.agentProject
@@ -343,7 +348,7 @@ func (a *OptimizeAction) resolveConfig(
 	if err != nil {
 		return nil, "", "", err
 	}
-	if err := projectpkg.RequireAgentFeatures(resolved.service, resolved.project.GetPath(), os.Stdout); err != nil {
+	if err := projectpkg.RequireAgentFeatures(resolved.service, resolved.project.GetPath(), a.noticeWriter); err != nil {
 		return nil, "", "", err
 	}
 	agentProject = resolved.agentProject

@@ -48,6 +48,8 @@ type Feature struct {
 func IsEnabled(feature Feature) (bool, error)
 func Require(feature Feature) error
 func RequireWithWriter(feature Feature, writer io.Writer) error
+func Check(feature Feature) error
+func RequireWithNotice(feature Feature) (string, error)
 func All() []Feature
 func Lookup(id string) (Feature, bool)
 ```
@@ -62,7 +64,7 @@ if err := featureflags.RequireWithWriter(featureflags.Voice, out); err != nil {
 
 `IsEnabled` rejects an empty `ID` or `EnvVar` before reading the process environment. The function takes no context, azd client, selected-environment, project, or login argument. Values the host already injected are present in the process environment it reads. Command input validation stays with the commands; there is no flag-specific environment validation or init-scope exception.
 
-`Require` delegates to `RequireWithWriter` using stdout. `RequireWithWriter` checks `IsEnabled` and returns the structured `feature_not_enabled` compatibility error when the feature is off. Its suggestion names the canonical variable to set in the shell or CI. When enabled, it prints a notice naming the feature and switch and explaining that preview behavior may change. The notice is printed only when a command checks a feature it uses, and only once for that feature in an extension process. Callers with an injected output writer use `RequireWithWriter`; tests can pass a buffer or `io.Discard`. A nil writer defaults to stdout. `IsEnabled` remains silent and side-effect free. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader.
+`Require` delegates to `RequireWithWriter` using stdout. `RequireWithWriter` returns the structured `feature_not_enabled` compatibility error when the feature is off. Its suggestion names the canonical variable to set in the shell or CI. When enabled, it prints a notice naming the feature and switch and explaining that preview behavior may change. The notice is printed only when a command checks a feature it uses, and only once for that feature in an extension process. Callers with an injected output writer use `RequireWithWriter`; JSON and raw commands route notices to stderr. Passing `io.Discard` validates the feature without consuming its notice. `Check` performs the same enabled/disabled check without announcing or consuming a notice, for lifecycle stages whose output cannot be shown immediately. `RequireWithNotice` returns the plain notice text for a host-visible lifecycle response. A nil writer defaults to stdout. `IsEnabled` remains silent and side-effect free. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader.
 
 ## Feature registry and help
 

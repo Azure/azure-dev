@@ -19,6 +19,13 @@ var enabledNotices = struct {
 	seen map[string]struct{}
 }{seen: make(map[string]struct{})}
 
+// ResetNoticesForTesting clears process notice state between tests.
+func ResetNoticesForTesting() {
+	enabledNotices.Lock()
+	clear(enabledNotices.seen)
+	enabledNotices.Unlock()
+}
+
 // Require announces an enabled preview feature once per process and rejects a disabled feature.
 func Require(feature Feature) error {
 	return RequireWithWriter(feature, os.Stdout)
@@ -30,16 +37,48 @@ func RequireWithWriter(feature Feature, writer io.Writer) error {
 		writer = os.Stdout
 	}
 
+	if err := Check(feature); err != nil {
+		return err
+	}
+	if writer == io.Discard {
+		return nil
+	}
+	if err := announceEnabled(feature, writer); err != nil {
+		return fmt.Errorf("writing preview feature notice: %w", err)
+	}
+	return nil
+}
+
+// Check rejects a disabled feature without announcing enabled features.
+func Check(feature Feature) error {
 	enabled, err := IsEnabled(feature)
 	if err != nil {
 		return err
 	}
-	if enabled {
-		if err := announceEnabled(feature, writer); err != nil {
-			return fmt.Errorf("writing preview feature notice: %w", err)
-		}
-		return nil
+	if !enabled {
+		return disabledFeatureError(feature)
 	}
+	return nil
+}
+
+// RequireWithNotice checks a feature and returns its notice once per process.
+// The returned message is intended for host-visible lifecycle responses.
+func RequireWithNotice(feature Feature) (string, error) {
+	if err := Check(feature); err != nil {
+		return "", err
+	}
+
+	enabledNotices.Lock()
+	defer enabledNotices.Unlock()
+
+	if _, announced := enabledNotices.seen[feature.ID]; announced {
+		return "", nil
+	}
+	enabledNotices.seen[feature.ID] = struct{}{}
+	return noticeText(feature), nil
+}
+
+func disabledFeatureError(feature Feature) error {
 	return exterrors.Compatibility(
 		exterrors.CodeFeatureNotEnabled,
 		fmt.Sprintf("preview feature %q is disabled", feature.ID),
@@ -47,6 +86,14 @@ func RequireWithWriter(feature Feature, writer io.Writer) error {
 			"enable by setting %s=true in your shell or CI before running azd",
 			feature.EnvVar,
 		),
+	)
+}
+
+func noticeText(feature Feature) string {
+	return fmt.Sprintf(
+		"Preview feature enabled: %s (%s=true). Preview behavior may change.",
+		feature.Description,
+		feature.EnvVar,
 	)
 }
 

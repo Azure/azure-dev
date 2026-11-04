@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -144,7 +143,7 @@ func (a *OptimizeDeployAction) runDirect(
 	if err != nil {
 		return err
 	}
-	if err := projectpkg.RequireDefinitionFeatures(latestDef, os.Stdout); err != nil {
+	if err := projectpkg.RequireDefinitionFeatures(latestDef, out); err != nil {
 		return err
 	}
 

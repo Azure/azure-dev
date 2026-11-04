@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.5 (Unreleased)
+
+### Features Added
+
+- Include Azure Content Understanding (`azure.ai.content-understanding` `~0.1.1-preview`) in the Microsoft Foundry bundle.
+
 ## 1.0.0-beta.4 (2026-10-23)
 
 ### Features Added

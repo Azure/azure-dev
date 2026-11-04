@@ -94,6 +94,95 @@ func acrTestReply(out, value any) error {
 	return json.Unmarshal(data, out)
 }
 
+func TestACRManagedProjectOnlyRepeatRetainsCreationEvidence(t *testing.T) {
+	for _, missingEvidence := range []bool{false, true} {
+		t.Run(strconv.FormatBool(missingEvidence), func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			registryID := strings.Replace(testACRID, "/shared/", "/foundry/", 1)
+			rootID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+			creatorID := "/subscriptions/sub/resourceGroups/foundry/providers/Microsoft.Resources/deployments/acr"
+			p.acrBinding = acrTestBinding()
+			p.acrBinding.Mode = "create"
+			p.acrBinding.RegistryResourceID = registryID
+			src := acrTestSource()
+			setParameterValue(src, "includeAcr", false)
+			setParameterValue(src, "existingAcrResourceId", "")
+			tags := map[string]*string{}
+			projectOnly := false
+			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+				require.Equal(t, http.MethodGet, method)
+				switch path {
+				case rootID:
+					id := registryID
+					if projectOnly {
+						id = ""
+					}
+					return acrTestReply(out, map[string]any{
+						"tags": tags, "properties": map[string]any{
+							"provisioningState": "Succeeded",
+							"outputs": map[string]any{
+								"AZURE_AI_PROJECT_ID":                  map[string]any{"value": testACRProject},
+								"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": id},
+							},
+							"parameters": map[string]any{"existingAcrResourceId": map[string]any{"value": ""}},
+						},
+					})
+				case rootID + "/operations":
+					require.False(t, projectOnly, "repeat must use retained nested evidence")
+					return acrTestReply(out, map[string]any{"value": []any{map[string]any{
+						"properties": map[string]any{
+							"targetResource": map[string]any{
+								"id": creatorID, "resourceType": "Microsoft.Resources/deployments",
+							},
+							"provisioningOperation": "Create", "provisioningState": "Succeeded",
+						},
+					}}})
+				case creatorID + "/operations":
+					if missingEvidence && projectOnly {
+						return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+					}
+					return acrTestReply(out, map[string]any{"value": []any{map[string]any{
+						"properties": map[string]any{
+							"targetResource": map[string]any{
+								"id": registryID, "resourceType": "Microsoft.ContainerRegistry/registries",
+							},
+							"provisioningOperation": "Create", "provisioningState": "Succeeded",
+						},
+					}}})
+				case testACRProject:
+					return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+				default:
+					t.Fatalf("unexpected recovery request: %s", path)
+					return errors.New("unexpected recovery request")
+				}
+			}
+			require.NoError(t, p.retainManagedACREvidence(t.Context(), src, tags))
+			require.Equal(t, "registry", *tags[acrManagedRegistryTag])
+			require.Equal(t, "acr", *tags[acrManagedDeploymentTag])
+			projectOnly = true
+			if !missingEvidence {
+				require.NoError(t, p.retainManagedACREvidence(t.Context(), src, tags))
+			}
+			for _, recoverIdentity := range []bool{false, true} {
+				p.acrBinding = nil
+				p.acrBindingRecovered = false
+				err := p.recoverACRBinding(t.Context(), recoverIdentity)
+				if missingEvidence {
+					require.ErrorContains(t, err, "no successful registry creation operation")
+					require.Nil(t, p.acrBinding)
+					continue
+				}
+				require.NoError(t, err)
+				require.NoError(t, p.validateACRCreateBinding(registryID))
+				require.Equal(t, registryID, p.acrBinding.RegistryResourceID)
+				require.Equal(t, "create", p.acrBinding.Mode)
+				require.NoError(t, p.persistRecoveredACRBinding(t.Context()))
+				require.Contains(t, env.config, synthesis.ACRBindingConfigKey)
+			}
+		})
+	}
+}
+
 func TestACREffectivePullAccess(t *testing.T) {
 	for _, tt := range []struct {
 		name, role, scope, condition string
@@ -1372,13 +1461,14 @@ func TestACRAccessRecoveryContractBeforeWrites(t *testing.T) {
 
 func TestACRRepeatProvisionThenStateLossCleanup(t *testing.T) {
 	for _, tt := range []struct {
-		name                                  string
-		abac, changeMode, noAcr, missingGrant bool
+		name                                           string
+		abac, changeMode, noAcr, missingGrant, managed bool
 	}{
 		{name: "classic"},
 		{name: "ABAC", abac: true},
 		{name: "permission mode change", changeMode: true},
 		{name: "project-only repeat", noAcr: true},
+		{name: "managed project-only repeat", noAcr: true, managed: true},
 		{name: "already deleted grant", missingGrant: true},
 	} {
 		for _, layer := range []bool{false, true} {
@@ -1404,12 +1494,19 @@ func TestACRRepeatProvisionThenStateLossCleanup(t *testing.T) {
 				}
 				source.mode = templateModeBicep
 				source.parameters["resourceGroupName"] = map[string]any{"value": group}
+				registryID := testACRID
+				if tt.managed {
+					registryID = strings.Replace(testACRID, "/shared/", "/"+group+"/", 1)
+					source.parameters["existingAcrResourceId"] = map[string]any{"value": ""}
+				}
 				p.onDiskSource = source
 				rootID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+				creatorID := groupID + "/providers/Microsoft.Resources/deployments/acr"
 				groupExists, rootExists := false, false
 				abac := tt.abac
 				var submitted map[string]struct{ Value any }
 				var rootOutputs map[string]any
+				var rootTags map[string]string
 				accessDeployments := map[string]map[string]any{}
 				administrator := acrTestAssignment()
 				administrator.ID += "-administrator"
@@ -1423,6 +1520,26 @@ func TestACRRepeatProvisionThenStateLossCleanup(t *testing.T) {
 					}
 					path := request.URL.Path
 					switch {
+					case request.Method == http.MethodGet && path == rootID+"/operations":
+						require.True(t, tt.managed)
+						return reply(http.StatusOK, map[string]any{"value": []any{map[string]any{
+							"properties": map[string]any{
+								"targetResource": map[string]any{
+									"id": creatorID, "resourceType": "Microsoft.Resources/deployments",
+								},
+								"provisioningOperation": "Create", "provisioningState": "Succeeded",
+							},
+						}}})
+					case request.Method == http.MethodGet && path == creatorID+"/operations":
+						require.True(t, tt.managed)
+						return reply(http.StatusOK, map[string]any{"value": []any{map[string]any{
+							"properties": map[string]any{
+								"targetResource": map[string]any{
+									"id": registryID, "resourceType": "Microsoft.ContainerRegistry/registries",
+								},
+								"provisioningOperation": "Create", "provisioningState": "Succeeded",
+							},
+						}}})
 					case request.Method == http.MethodGet && strings.EqualFold(path, groupID):
 						groupLookups++
 						if !groupExists {
@@ -1455,17 +1572,19 @@ func TestACRRepeatProvisionThenStateLossCleanup(t *testing.T) {
 						return reply(http.StatusOK, assignment)
 					case path == rootID && request.Method == http.MethodPut:
 						var deployment struct {
+							Tags       map[string]string
 							Properties struct {
 								Parameters map[string]struct{ Value any }
 							}
 						}
 						require.NoError(t, json.NewDecoder(request.Body).Decode(&deployment))
 						submitted = deployment.Properties.Parameters
+						rootTags = deployment.Tags
 						assert.Equal(t, group, submitted["resourceGroupName"].Value)
 						include, _ := submitted["includeAcr"].Value.(bool)
 						token, _ := submitted["acrAccessOperationId"].Value.(string)
 						assigned, _ := submitted["acrPullAssigned"].Value.(bool)
-						if include && !assigned {
+						if include && !assigned && !tt.managed {
 							require.NotEmpty(t, token)
 							assignment := acrTestAssignment()
 							assignment.ID = testACRID + "/providers/Microsoft.Authorization/roleAssignments/" + token
@@ -1482,13 +1601,13 @@ func TestACRRepeatProvisionThenStateLossCleanup(t *testing.T) {
 								"accessOperationId": map[string]any{"value": token},
 							}
 						}
-						registryID := testACRID
+						outputRegistryID := registryID
 						if !include {
-							registryID = ""
+							outputRegistryID = ""
 						}
 						rootOutputs = map[string]any{
 							"AZURE_AI_PROJECT_ID":                  map[string]any{"type": "string", "value": projectID},
-							"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"type": "string", "value": registryID},
+							"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"type": "string", "value": outputRegistryID},
 							envKeyFoundryRGOwner:                   map[string]any{"type": "string", "value": groupID},
 						}
 						groupExists, rootExists = true, true
@@ -1501,9 +1620,11 @@ func TestACRRepeatProvisionThenStateLossCleanup(t *testing.T) {
 						if !rootExists {
 							return reply(http.StatusNotFound, nil)
 						}
-						return reply(http.StatusOK, map[string]any{"properties": map[string]any{
-							"provisioningState": "Succeeded", "parameters": submitted, "outputs": rootOutputs,
-						}})
+						return reply(http.StatusOK, map[string]any{
+							"tags": rootTags, "properties": map[string]any{
+								"provisioningState": "Succeeded", "parameters": submitted, "outputs": rootOutputs,
+							},
+						})
 					case strings.Contains(path, "/providers/Microsoft.Resources/deployments/"):
 						if path == rootID {
 							require.Equal(t, http.MethodDelete, request.Method)
@@ -1556,14 +1677,23 @@ func TestACRRepeatProvisionThenStateLossCleanup(t *testing.T) {
 					require.NoError(t, err)
 					require.NotNil(t, deployed)
 					assert.Equal(t, group, p.rgName)
-					assert.Equal(t, groupID, p.foundryRGOwnerID)
+					if !tt.managed || layer {
+						assert.Equal(t, groupID, p.foundryRGOwnerID)
+					}
 					require.Contains(t, deployed.Deployment.Outputs, envKeyFoundryRGOwner)
 					assert.Equal(t, groupID, deployed.Deployment.Outputs[envKeyFoundryRGOwner].Value)
 				}
 				assert.Equal(t, repeats, provisions)
-				assert.Positive(t, groupLookups)
+				if !tt.managed || layer {
+					assert.Positive(t, groupLookups)
+				}
 				assert.Empty(t, submitted["acrAccessOperationId"].Value)
 				wantOwned := 1
+				if tt.managed {
+					wantOwned = 0
+					require.Equal(t, "registry", rootTags[acrManagedRegistryTag])
+					require.Equal(t, "acr", rootTags[acrManagedDeploymentTag])
+				}
 				if tt.changeMode {
 					wantOwned = 2
 				}
@@ -1581,6 +1711,14 @@ func TestACRRepeatProvisionThenStateLossCleanup(t *testing.T) {
 					isLayer: layer, foundryRGOwnerID: deployed.Deployment.Outputs[envKeyFoundryRGOwner].Value,
 					location: p.location, foundryName: p.foundryName,
 					credential: p.credential, armClientOptions: p.armClientOptions,
+				}
+				if tt.managed {
+					next.synthesisEnv = map[string]string{
+						"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_RESOURCE_GROUP": group,
+						"AZURE_AI_PROJECT_ID": projectID, "AZD_FOUNDRY_ACR_MODE": "create",
+						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID,
+						"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "registry.azurecr.io",
+					}
 				}
 				result, err := next.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
 				require.NoError(t, err)

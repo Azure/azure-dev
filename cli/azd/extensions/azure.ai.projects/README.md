@@ -304,6 +304,8 @@ azd ai project add --new-project
 `--project-endpoint`. If the environment already has a deployed registry
 binding, repeating setup preserves that project identity. Use a new azd
 environment to create another project.
+Setup restores a missing subscription from the deployed project binding and
+rejects a conflicting `AZURE_SUBSCRIPTION_ID` before changing configuration.
 
 ### Reuse an external container registry
 
@@ -372,6 +374,11 @@ replacement registry.
 For a deployed binding, `azd env refresh` also retains its registry ID,
 endpoint, and connection when the latest deployment has empty registry
 outputs. Refreshing does not change the binding or registry access.
+Project-only provisioning retains an azd-created registry's name and the
+verified nested creation deployment in root deployment tags. Recovery reads
+that creation operation again; the tags alone never establish ownership.
+Missing creation history blocks recovery and teardown rather than permitting
+an unverified deletion.
 An unused external-registry selection also survives refresh when the latest
 deployment has empty registry outputs, even if a source-built agent was added
 to `azure.yaml` after that deployment.

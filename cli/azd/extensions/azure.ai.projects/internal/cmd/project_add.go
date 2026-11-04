@@ -244,8 +244,17 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		target.ACRResourceID = a.flags.acrResourceID
 	}
 	if a.flags.preserveProjectID != "" && target.Mode == projectModeNew {
+		preserved, err := projectFromResourceID(a.flags.preserveProjectID)
+		if err != nil {
+			return err
+		}
+		if saved := strings.TrimSpace(oldValues["AZURE_SUBSCRIPTION_ID"]); saved != "" &&
+			!strings.EqualFold(saved, preserved.SubscriptionId) {
+			return projectACRValidation("AZURE_SUBSCRIPTION_ID conflicts with the deployed project binding")
+		}
 		target.PreserveDeployed = true
 		target.ResourceId = a.flags.preserveProjectID
+		target.SubscriptionId = preserved.SubscriptionId
 	}
 	if err := confirmExplicitProjectReplacement(
 		ctx, client, target, service, oldValues, a.flags,

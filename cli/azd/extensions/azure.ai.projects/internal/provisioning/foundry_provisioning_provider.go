@@ -1355,6 +1355,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 			"azd-provision-template-source": new(src.mode.String()),
 		},
 	}
+	if err := p.retainManagedACREvidence(ctx, src, dep.Tags); err != nil {
+		return nil, err
+	}
 
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {

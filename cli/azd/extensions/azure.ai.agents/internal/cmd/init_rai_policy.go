@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 
@@ -74,6 +75,8 @@ func resolvePromptRaiPolicy(
 	foundryProject *FoundryProjectInfo,
 	credential azcore.TokenCredential,
 ) (raiPolicySelection, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.RaiPolicyConfiguration)()
+
 	requested := strings.TrimSpace(flags.raiPolicy)
 	switch {
 	case strings.EqualFold(requested, raiPolicyFlagNone):

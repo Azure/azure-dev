@@ -284,3 +284,42 @@ func TestValidateBetaEventMessageModes(t *testing.T) {
 		require.ErrorContains(t, err, "invalid message for a beta event client")
 	})
 }
+
+func TestBetaEventMessageEnvelope_PreserveHandlerContext(t *testing.T) {
+	env := newBetaEventMessageEnvelope()
+	tests := []struct {
+		name string
+		msg  *v1beta.EventMessage
+		want bool
+	}{
+		{
+			name: "project subscription",
+			msg: &v1beta.EventMessage{MessageType: &v1beta.EventMessage_SubscribeProjectEvent{
+				SubscribeProjectEvent: &v1beta.SubscribeProjectEvent{},
+			}},
+			want: true,
+		},
+		{
+			name: "service subscription",
+			msg: &v1beta.EventMessage{MessageType: &v1beta.EventMessage_SubscribeServiceEvent{
+				SubscribeServiceEvent: &v1beta.SubscribeServiceEvent{},
+			}},
+			want: true,
+		},
+		{
+			name: "project invocation",
+			msg: &v1beta.EventMessage{MessageType: &v1beta.EventMessage_InvokeProjectHandler{
+				InvokeProjectHandler: &v1beta.InvokeProjectHandler{},
+			}},
+		},
+		{
+			name: "nil message",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, env.PreserveHandlerContext(t.Context(), tt.msg))
+		})
+	}
+}

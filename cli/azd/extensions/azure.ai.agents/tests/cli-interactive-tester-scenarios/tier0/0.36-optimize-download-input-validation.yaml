@@ -1,0 +1,11 @@
+# Tier 0 (offline) - an explicitly empty candidate must fail before any download.
+name: "optimize-download-input-validation"
+command: "azd ai agent optimize download not-submitted --candidate= --file=trace-analysis-test.json --no-prompt"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:optimize", "negative-path", "parallel-safe"]
+goals:
+  - "Confirm the command exits non-zero with a validation error stating that --candidate must not be empty."
+  - "Confirm no authentication, endpoint resolution prompt, or file download starts."
+  - "Confirm trace-analysis-test.json is not created and no project files or environment values are changed."
+  - "Take a screenshot of the validation output; screenshot capture failure is only an observation."
+  - "Report a finding if an empty candidate is accepted, a request starts, or a destination file is created."

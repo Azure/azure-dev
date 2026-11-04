@@ -30,7 +30,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -914,11 +913,7 @@ func TestUpgradeOneExtension(t *testing.T) {
 }
 
 func TestExtensionLifecycleTelemetrySpans(t *testing.T) {
-	recorder := tracetest.NewSpanRecorder()
-	provider := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(recorder))
-	previousProvider := otel.GetTracerProvider()
-	otel.SetTracerProvider(provider)
-	t.Cleanup(func() { otel.SetTracerProvider(previousProvider) })
+	_, recorder := recordCommandSpans(t)
 
 	t.Run("UnresolvedUpgradeUsesPersistedCategory", func(t *testing.T) {
 		const registryURL = "https://private.example/registry.json"
@@ -966,8 +961,6 @@ func TestExtensionLifecycleTelemetrySpans(t *testing.T) {
 		}
 	})
 
-	// The tracing package wires its tracer to the first provider set in the process, so every
-	// span assertion in this package shares this recorder rather than installing its own.
 	t.Run("UninstallUsesPersistedCategory", func(t *testing.T) {
 		const sourceName = "private-source"
 		action, _ := newUninstallTestAction(t, map[string]*extensions.Extension{

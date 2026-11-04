@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -128,6 +129,8 @@ func (a *modelSelector) updateEnvLocation(ctx context.Context, selectedLocation 
 func (a *modelSelector) getModelDetails(
 	ctx context.Context, modelName string, allowSkip bool,
 ) (*azdext.AiModelDeployment, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ModelSelection)()
+
 	if err := a.loadAiCatalog(ctx); err != nil {
 		return nil, err
 	}
@@ -466,6 +469,8 @@ func (a *modelSelector) promptModelFromCatalog(ctx context.Context) (*azdext.AiM
 // promptExistingDeployment shows the list of existing deployments in the
 // Foundry project and lets the user pick one.
 func (a *modelSelector) promptExistingDeployment(ctx context.Context) (*project.Deployment, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ModelDeploymentSelection)()
+
 	if len(a.allDeployments) == 0 {
 		return nil, fmt.Errorf("no existing deployments available")
 	}

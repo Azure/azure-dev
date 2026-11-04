@@ -18,6 +18,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -466,16 +467,32 @@ func Test_Server_Start(t *testing.T) {
 	})
 
 	t.Run("TelemetryMissingToken", func(t *testing.T) {
-		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
-		require.NoError(t, err)
-
-		_, err = client.Telemetry().ReportUsage(
-			t.Context(),
-			&azdext.ReportUsageRequest{EventName: "deploy.completed"},
+		connection, err := grpc.NewClient(
+			serverInfo.Address,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.Unauthenticated, st.Code())
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, connection.Close()) })
+
+		for name, method := range map[string]string{
+			"stable": azdext.TelemetryService_ReportUsage_FullMethodName,
+			"beta":   v1beta.TelemetryService_ReportUsage_FullMethodName,
+			"legacy": "/azdext.TelemetryService/ReportUsage",
+		} {
+			t.Run(name, func(t *testing.T) {
+				tracing.ResetUsageAttributesForTest()
+				t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+				err := connection.Invoke(t.Context(), method,
+					&azdext.ReportUsageRequest{EventName: "deploy.completed"},
+					new(azdext.ReportUsageResponse))
+				st, ok := status.FromError(err)
+				require.True(t, ok)
+				require.Equal(t, codes.Unauthenticated, st.Code())
+				requireUsageDrop(t, unattributedExtensionId,
+					[]extensionUsageDropReason{extensionUsageDropReasonUnauthenticated}, 1)
+			})
+		}
 	})
 
 	t.Run("TelemetryRoutesShareBehaviorAndBudget", func(t *testing.T) {
@@ -1067,6 +1084,24 @@ func Test_mapHostError(t *testing.T) {
 			wantSameInstance: true,
 		},
 		{
+			name:         "context cancellation returns Canceled",
+			err:          context.Canceled,
+			wantContain:  context.Canceled.Error(),
+			wantGrpcCode: codes.Canceled,
+		},
+		{
+			name:         "wrapped terminal interrupt returns Canceled",
+			err:          fmt.Errorf("prompt failed: %w", terminal.InterruptErr),
+			wantContain:  terminal.InterruptErr.Error(),
+			wantGrpcCode: codes.Canceled,
+		},
+		{
+			name:         "wrapped deadline returns DeadlineExceeded",
+			err:          fmt.Errorf("request failed: %w", context.DeadlineExceeded),
+			wantContain:  context.DeadlineExceeded.Error(),
+			wantGrpcCode: codes.DeadlineExceeded,
+		},
+		{
 			name: "error with suggestion preserves suggestion structurally, not in message",
 			err: &internal.ErrorWithSuggestion{
 				Err:        errors.New("authentication failed"),
@@ -1207,6 +1242,110 @@ func TestMapHostError_ResponseErrorPreservesServiceDetails(t *testing.T) {
 	require.Equal(t, int32(http.StatusTooManyRequests), detail.GetStatusCode())
 	require.Equal(t, "registry.azurecr.io", detail.GetServiceName())
 	require.Empty(t, relayedExtensionErrorDetails(st))
+}
+
+func TestMapHostError_CancellationCarriesRelayedExtensionDetails(t *testing.T) {
+	t.Parallel()
+
+	failedStatus, err := status.New(codes.Unknown, "service failed").WithDetails(
+		azdext.WrapError(&azdext.ServiceError{
+			Message:     "service failed",
+			ErrorCode:   "Conflict",
+			StatusCode:  http.StatusConflict,
+			ServiceName: "management.azure.com",
+		}),
+	)
+	require.NoError(t, err)
+	failedPreviewStatus, err := status.New(codes.Unknown, "preview service failed").WithDetails(
+		&v1beta.ExtensionError{
+			Message: "preview service failed",
+			Origin:  v1beta.ErrorOrigin_ERROR_ORIGIN_SERVICE,
+			Source: &v1beta.ExtensionError_ServiceError{
+				ServiceError: &v1beta.ServiceErrorDetail{
+					ErrorCode:   "Conflict",
+					StatusCode:  http.StatusConflict,
+					ServiceName: "management.azure.com",
+				},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name         string
+		err          error
+		wantGrpcCode codes.Code
+		wantCategory azdext.LocalErrorCategory
+		wantCode     string
+	}{
+		{
+			name:         "Canceled",
+			err:          context.Canceled,
+			wantGrpcCode: codes.Canceled,
+			wantCategory: azdext.LocalErrorCategoryUser,
+			wantCode:     "canceled",
+		},
+		{
+			name:         "GrpcCanceled",
+			err:          status.Error(codes.Canceled, "operation canceled"),
+			wantGrpcCode: codes.Canceled,
+			wantCategory: azdext.LocalErrorCategoryUser,
+			wantCode:     "canceled",
+		},
+		{
+			name:         "DeadlineExceeded",
+			err:          context.DeadlineExceeded,
+			wantGrpcCode: codes.DeadlineExceeded,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     "deadline_exceeded",
+		},
+		{
+			name:         "GrpcDeadlineExceeded",
+			err:          status.Error(codes.DeadlineExceeded, "operation timed out"),
+			wantGrpcCode: codes.DeadlineExceeded,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     "deadline_exceeded",
+		},
+		{
+			name:         "CanceledReplacesRelayedFailure",
+			err:          errors.Join(failedStatus.Err(), context.Canceled),
+			wantGrpcCode: codes.Canceled,
+			wantCategory: azdext.LocalErrorCategoryUser,
+			wantCode:     "canceled",
+		},
+		{
+			name:         "DeadlineReplacesRelayedFailure",
+			err:          errors.Join(failedStatus.Err(), context.DeadlineExceeded),
+			wantGrpcCode: codes.DeadlineExceeded,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     "deadline_exceeded",
+		},
+		{
+			name:         "CanceledReplacesPreviewRelayedFailure",
+			err:          errors.Join(failedPreviewStatus.Err(), context.Canceled),
+			wantGrpcCode: codes.Canceled,
+			wantCategory: azdext.LocalErrorCategoryUser,
+			wantCode:     "canceled",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			st, ok := status.FromError(mapHostError(tt.err))
+			require.True(t, ok)
+			require.Equal(t, tt.wantGrpcCode, st.Code())
+
+			relayed := azdext.ExtensionErrorFromStatus(st)
+			require.NotNil(t, relayed)
+			require.Len(t, relayedExtensionErrorDetails(st), 1)
+			localErr, ok := errors.AsType[*azdext.LocalError](azdext.UnwrapError(relayed))
+			require.True(t, ok)
+			require.Equal(t, tt.wantCategory, localErr.Category)
+			require.Equal(t, tt.wantCode, localErr.Code)
+		})
+	}
 }
 
 func TestMapHostError_RelaysExtensionServiceError(t *testing.T) {

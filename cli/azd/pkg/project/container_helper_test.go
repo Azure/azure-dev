@@ -24,6 +24,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -36,7 +38,99 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+// tracing caches the first global tracer, so reuse its provider across test runs.
+var packBuildSpanRecorder = sync.OnceValue(func() *tracetest.SpanRecorder {
+	recorder := tracetest.NewSpanRecorder()
+	otel.SetTracerProvider(tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(recorder)))
+	return recorder
+})
+
+func TestContainerHelperPackBuildTelemetry(t *testing.T) {
+	recorder := packBuildSpanRecorder()
+
+	for _, tt := range []struct {
+		name    string
+		builder string
+		fail    bool
+	}{
+		{name: "default"},
+		{name: "custom", builder: "private.example.com/customer/builder:customer-tag"},
+		{name: "custom build failure", builder: "private.example.com/customer/builder:customer-tag", fail: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_PACK_TOOL_PATH", "pack-test")
+			t.Setenv("AZD_BUILDER_IMAGE", tt.builder)
+			mockContext := mocks.NewMockContext(t.Context())
+			mockContext.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+				return args.Cmd == "pack-test" && len(args.Args) > 0 && args.Args[0] == "config"
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				return exec.NewRunResult(0, "", ""), nil
+			})
+			mockContext.CommandRunner.When(func(_ exec.RunArgs, command string) bool {
+				return strings.Contains(command, "docker image inspect")
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				return exec.NewRunResult(0, "test-image-id", ""), nil
+			})
+			var buildArgs []string
+			mockContext.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+				return len(args.Args) > 0 && args.Args[0] == "build"
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				buildArgs = args.Args
+				if tt.fail {
+					return exec.NewRunResult(1, "", ""), errors.New("build failed")
+				}
+				return exec.NewRunResult(0, "", ""), nil
+			})
+			dockerCli := docker.NewCli(mockContext.CommandRunner)
+			helper := NewContainerHelper(
+				clock.NewMock(), nil, nil, mockContext.CommandRunner,
+				dockerCli, nil, mockContext.Console, cloud.AzurePublic())
+			svc := createTestServiceConfig("", ContainerAppTarget, ServiceLanguageGo)
+			svc.Project.Path = t.TempDir()
+			before := len(recorder.Ended())
+
+			_, err := helper.packBuild(t.Context(), svc, DockerProjectOptions{}, "test-image")
+			if tt.fail {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			expectedBuilder := tt.builder
+			if expectedBuilder == "" {
+				expectedBuilder = DefaultBuilderImage
+			}
+			require.Contains(t, buildArgs, expectedBuilder)
+
+			var buildSpan tracesdk.ReadOnlySpan
+			for _, span := range recorder.Ended()[before:] {
+				if span.Name() == events.PackBuildEvent {
+					buildSpan = span
+				}
+			}
+			require.NotNil(t, buildSpan)
+			attributes := make(map[attribute.Key]attribute.Value)
+			for _, attr := range buildSpan.Attributes() {
+				attributes[attr.Key] = attr.Value
+			}
+			require.NotContains(t, attributes, attribute.Key("pack.builder.image"))
+			require.NotContains(t, attributes, attribute.Key("pack.builder.tag"))
+			if tt.builder != "" {
+				image, tag := docker.SplitDockerImage(tt.builder)
+				payload := fmt.Sprint(buildSpan.Attributes(), buildSpan.Status())
+				for _, value := range []string{tt.builder, image, tag} {
+					require.NotContains(t, payload, value)
+					require.NotContains(t, payload, fields.CaseInsensitiveHash(value))
+				}
+			}
+		})
+	}
+}
 
 func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())

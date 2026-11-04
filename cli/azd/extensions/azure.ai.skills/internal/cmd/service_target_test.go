@@ -6,18 +6,109 @@ package cmd
 import (
 	"context"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 
 	"azureaiskills/internal/pkg/skill_api"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestManagedDeployARMProgressAndWriteOnlyAccess(t *testing.T) {
+	previousRead := readAzdProjectSourcesFunc
+	readAzdProjectSourcesFunc = func(context.Context) (azdProjectSources, error) {
+		return azdProjectSources{EnvValue: accessTestEndpoint}, nil
+	}
+	t.Cleanup(func() { readAzdProjectSourcesFunc = previousRead })
+
+	t.Run("prepares access and reports progress before upsert", func(t *testing.T) {
+		var events, progress []string
+		access := testSkillAccess(t, func(request *http.Request) (*http.Response, error) {
+			events = append(events, request.Method)
+			if request.Method == http.MethodGet {
+				return accessHTTPResponse(request, 200, map[string]any{"value": []any{}}), nil
+			}
+			return accessHTTPResponse(request, 201, map[string]any{}), nil
+		})
+		access.wait = func(_ context.Context, duration time.Duration) error {
+			assert.Equal(t, 15*time.Second, duration)
+			events = append(events, "settle")
+			return nil
+		}
+		mock := &mockSkillCreateClient{}
+		var markers []string
+		target := &skillServiceTarget{
+			access:     access,
+			currentEnv: func(context.Context) (string, error) { return "test", nil },
+			setEnvValue: func(_ context.Context, _, key, value string) error {
+				markers = append(markers, key+"="+value)
+				return nil
+			},
+			newClient: func(endpoint, tenant string) (skillServiceClient, error) {
+				assert.Equal(t, accessTestEndpoint, endpoint)
+				assert.Equal(t, "user-access-tenant", tenant)
+				return accessProbeClient{skillCreateClient: mock, probe: func(context.Context, string) (*skill_api.Skill, error) {
+					events = append(events, "probe")
+					return nil, notFoundResponseError("skill not found")
+				}}, nil
+			},
+		}
+		props, err := structpb.NewStruct(map[string]any{
+			"description":  "Review code",
+			"instructions": "Review carefully.",
+		})
+		require.NoError(t, err)
+		_, err = target.Deploy(t.Context(), &azdext.ServiceConfig{
+			Name: "triage", AdditionalProperties: props,
+		}, nil, nil, func(message string) { progress = append(progress, message) })
+		require.NoError(t, err)
+		assert.Equal(t, []string{"GET", "PUT", "settle", "probe"}, events)
+		assert.Contains(t, strings.Join(progress, "\n"), "Assigning Foundry User")
+		assert.Contains(t, strings.Join(progress, "\n"), "Waiting for Foundry access")
+		assert.Contains(t, strings.Join(progress, "\n"), "Foundry skill access is ready")
+		assert.Contains(t, strings.Join(progress, "\n"), "Upserting skill")
+		require.Len(t, mock.inlineCalls, 1)
+		require.NotEmpty(t, markers)
+	})
+
+	t.Run("allows write-only custom-role access when ARM is denied", func(t *testing.T) {
+		access := testSkillAccess(t, func(request *http.Request) (*http.Response, error) {
+			return accessHTTPResponse(request, 403, map[string]any{"error": map[string]string{"code": "AuthorizationFailed"}}), nil
+		})
+		mock := &mockSkillCreateClient{}
+		target := &skillServiceTarget{
+			access:     access,
+			currentEnv: func(context.Context) (string, error) { return "test", nil },
+			setEnvValue: func(context.Context, string, string, string) error {
+				return nil
+			},
+			newClient: func(string, string) (skillServiceClient, error) {
+				return accessProbeClient{skillCreateClient: mock, probe: func(context.Context, string) (*skill_api.Skill, error) {
+					return nil, &azcore.ResponseError{StatusCode: 403, ErrorCode: "PermissionDenied"}
+				}}, nil
+			},
+		}
+		props, err := structpb.NewStruct(map[string]any{
+			"description":  "Review code",
+			"instructions": "Review carefully.",
+		})
+		require.NoError(t, err)
+		_, err = target.Deploy(t.Context(), &azdext.ServiceConfig{
+			Name: "triage", AdditionalProperties: props,
+		}, nil, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, mock.inlineCalls, 1)
+	})
+}
 
 func TestPublishSkillMarkers(t *testing.T) {
 	t.Parallel()

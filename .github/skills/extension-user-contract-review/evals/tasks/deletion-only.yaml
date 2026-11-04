@@ -1,0 +1,28 @@
+id: deletion-only
+name: Deleted command files receive LEFT-side spec threads at old-file coordinates
+tags: [positive, deletion, anchoring]
+inputs:
+  prompt: |
+    Review this synthetic fork PR. Complete metadata: title "Remove legacy export command".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/legacy.go, status deleted.
+    Before: this file registered the public legacy-export command, its handler, and its --format flag.
+    After: the entire file is removed, so the legacy-export command and its flags are no longer available.
+    All tests, snapshots, registration, and docs correctly reflect the intentional removal; there is no wiring bug.
+    Complete available anchor: deleted LEFT line 42 in the OLD file:
+    cmd := &cobra.Command{Use: "legacy-export", Short: "Export in the legacy format"}
+    There are no added, modified, or context lines on RIGHT; the file no longer exists there.
+    The command and its flags are one root-cause removal, not separate findings.
+    The host supports LEFT-side deleted-line inline comments.
+    Complete conversation and review history: empty, with no spec links or prior threads.
+graders:
+  - type: code
+    name: old-file-anchor-survives-parent-review
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 1"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].path === 'cli/azd/extensions/example/internal/cmd/legacy.go'"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].side === 'LEFT' && JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].line === 42"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('<!-- extension-user-contract-changes-reviewer -->')"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.')"
+        - "/Extension user-contract review: complete.*1 files? inspected; 1 new contract comments?; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"

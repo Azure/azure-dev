@@ -268,7 +268,9 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{Title: updateTitle(installedBy, versionInfo)})
 
 	stdout := a.console.Handles().Stdout
-	if err := mgr.Update(ctx, versionInfo, stdout); err != nil {
+	err = mgr.Update(ctx, versionInfo, stdout)
+	restartRequired := errors.Is(err, update.ErrRestartRequired)
+	if err != nil && !restartRequired {
 		// UpdateError already has the right code, just track it
 		if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
 			tracing.SetUsageAttributes(fields.UpdateResult.String(updateErr.Code))
@@ -299,11 +301,23 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	update.CleanStagedUpdate()
 
 	return &actions.ActionResult{
-		Message: &actions.ResultMessage{
-			Header:   updatedHeader(installedBy, versionInfo),
-			FollowUp: "Run `azd version` to confirm.",
-		},
+		Message: updatedMessage(installedBy, versionInfo, restartRequired),
 	}, nil
+}
+
+func updatedMessage(
+	installedBy installer.InstallType, target *update.VersionInfo, restartRequired bool,
+) *actions.ResultMessage {
+	if restartRequired {
+		return &actions.ResultMessage{
+			Header:   "Update installed. Restart Windows to complete the update.",
+			FollowUp: "After restarting, run `azd version` to confirm.",
+		}
+	}
+	return &actions.ResultMessage{
+		Header:   updatedHeader(installedBy, target),
+		FollowUp: "Run `azd version` to confirm.",
+	}
 }
 
 // updateTitle returns the progress title shown before an update runs.

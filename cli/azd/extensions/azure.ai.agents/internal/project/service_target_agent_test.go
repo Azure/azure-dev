@@ -5,15 +5,19 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
@@ -24,6 +28,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -77,6 +82,39 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 	require.Equal(t, "telephony-twilio", got.Telephony.Bindings[0].Connection)
 }
 
+func TestVoiceTelephonyTransferTargetsRoundTrip_OmittedVersusEmpty(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		targets []map[string]any
+		isNil   bool
+	}{
+		{name: "omitted", targets: nil, isNil: true},
+		{name: "explicit empty", targets: []map[string]any{}, isNil: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+				AgentDefinition: agent_yaml.AgentDefinition{
+					Kind: agent_yaml.AgentKindPromptVoice, Name: "voice-agent",
+				},
+				ModelType: agent_yaml.VoiceModelTypeManaged,
+				Model:     &agent_yaml.Model{Id: "gpt-realtime"},
+				Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{{
+					Provider: "twilio", Identifier: "+14255550123", Connection: "connection",
+					TransferTargets: test.targets,
+				}}},
+			}, nil)
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{
+				Name: "voice-agent", Host: "azure.ai.agent", AdditionalProperties: props,
+			}
+			got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+			require.NoError(t, err)
+			require.True(t, found)
+			require.Equal(t, test.isNil, got.Telephony.Bindings[0].TransferTargets == nil)
+		})
+	}
+}
+
 func TestAgentDefinitionFromStruct_RejectsTelephonyOnHosted(t *testing.T) {
 	props, err := structpb.NewStruct(map[string]any{
 		"kind":      "hosted",
@@ -114,6 +152,730 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
 	require.Equal(t, "hosted_agent", got.ConversationEngine.Type)
 	require.Equal(t, "voice-target", got.ConversationEngine.Name)
 	require.Equal(t, "deployed", got.ConversationEngine.Version)
+}
+
+func TestVoiceAgentInlineServicePropertiesRoundTrip_GPTLive(t *testing.T) {
+	store := false
+	rate := 24000
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "gpt-live"},
+		SubProtocol:     agent_yaml.VoiceSubProtocolLive,
+		ModelType:       agent_yaml.VoiceModelTypeSelfDeployed,
+		Model:           &agent_yaml.Model{Id: "gpt-live-1"},
+		Store:           &store,
+		Audio: &agent_yaml.VoiceAudio{
+			Format: &agent_yaml.VoiceAudioFormat{Type: "audio/pcm", Rate: &rate},
+			Output: &agent_yaml.VoiceAudioOutput{Voice: &agent_yaml.VoiceConfig{LiveName: "marin"}},
+		},
+		Delegation: &agent_yaml.LiveVoiceDelegation{
+			Type: "foundry_managed_agent", AgentName: "teacher", AgentVersion: "3",
+		},
+	}, nil)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{Name: "gpt-live", Host: "azure.ai.agent", AdditionalProperties: props}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceSubProtocolLive, got.SubProtocol)
+	require.Equal(t, 24000, *got.Audio.Format.Rate)
+	require.Equal(t, "marin", got.Audio.Output.Voice.LiveName)
+	require.Equal(t, "teacher", got.Delegation.AgentName)
+	require.NotNil(t, got.Store)
+	require.False(t, *got.Store)
+}
+
+func TestBuildGPTLiveWSProtocolURL(t *testing.T) {
+	t.Parallel()
+	require.Equal(t,
+		"wss://acct.services.ai.azure.com/api/projects/proj/agents/live/endpoint/protocols/voice/live/sessions?api-version=v1",
+		buildGPTLiveWSProtocolURL("https://acct.services.ai.azure.com/api/projects/proj", "live"))
+	require.Empty(t, buildGPTLiveWSProtocolURL("not-a-url", "live"))
+}
+
+func TestBuildVoiceAgentWSProtocolURL_SelectsSubProtocol(t *testing.T) {
+	t.Parallel()
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+	require.Contains(t, buildVoiceAgentWSProtocolURL(projectEndpoint, "agent", ""), "/protocols/voice?api-version=v1")
+	require.Contains(t, buildVoiceAgentWSProtocolURL(projectEndpoint, "agent", agent_yaml.VoiceSubProtocolRealtime), "/protocols/voice?api-version=v1")
+	require.Contains(t, buildVoiceAgentWSProtocolURL(projectEndpoint, "agent", agent_yaml.VoiceSubProtocolLive), "/protocols/voice/live/sessions?api-version=v1")
+}
+
+func TestResolveVoiceAgentDeploymentEndpoint_GPTLiveRoundTrip(t *testing.T) {
+	t.Parallel()
+	endpoint := buildVoiceAgentWSProtocolURL(
+		"https://acct.services.ai.azure.com/api/projects/proj", "live", agent_yaml.VoiceSubProtocolLive)
+	resolved, err := ResolveVoiceAgentDeploymentEndpoint(
+		map[string]string{"AGENT_LIVE_ENDPOINT": endpoint}, "live")
+	require.NoError(t, err)
+	require.Equal(t, endpoint, resolved)
+}
+
+func TestAgentDefinitionFromService_GPTLiveInline(t *testing.T) {
+	store := false
+	service := inlineAgentService(t, map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+		"store": store,
+		"audio": map[string]any{
+			"format": map[string]any{"type": "audio/pcm", "rate": 24000},
+			"output": map[string]any{"voice": map[string]any{"id": "custom-voice"}},
+		},
+		"delegation": map[string]any{
+			"type": "responses", "responses": map[string]any{"model": "gpt-5.6-terra", "maxOutputTokens": 128},
+		},
+	})
+	voice, found, err := VoiceAgentFromResolvedService(service, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceSubProtocolLive, voice.SubProtocol)
+	require.Equal(t, 24000, *voice.Audio.Format.Rate)
+	require.Equal(t, "gpt-5.6-terra", voice.Delegation.Responses.Model)
+	require.Equal(t, 128, *voice.Delegation.Responses.MaxOutputTokens)
+	require.NotNil(t, voice.Store)
+	require.False(t, *voice.Store)
+}
+
+func TestAgentDefinitionFromService_GPTLiveInlineRaiPolicy(t *testing.T) {
+	service := inlineAgentService(t, map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+		"policies": []any{map[string]any{"type": "rai_policy", "raiPolicyName": raiPolicyID}},
+	})
+	voice, found, err := VoiceAgentFromResolvedService(service, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Len(t, voice.Policies, 1)
+	require.Equal(t, raiPolicyID, voice.Policies[0].RaiPolicyName)
+	req, err := agent_yaml.CreateVoiceAgentAPIRequest(voice)
+	require.NoError(t, err)
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	require.Equal(t, raiPolicyID, def.RaiConfig.RaiPolicyName)
+}
+
+func TestVoiceAgentFromResolvedService_GPTLiveRootRef(t *testing.T) {
+	root := t.TempDir()
+	definition := `kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model:
+  id: gpt-live-1
+store: false
+audio:
+  format: {type: audio/pcm, rate: 24000}
+  output: {voice: marin}
+delegation:
+  type: foundry_managed_agent
+  agent_name: teacher
+  agent_version: "3"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	ref, err := structpb.NewStruct(map[string]any{"$ref": "live.yaml"})
+	require.NoError(t, err)
+	service := &azdext.ServiceConfig{Name: "live", Host: "azure.ai.agent", AdditionalProperties: ref}
+	got, found, err := VoiceAgentFromResolvedService(service, root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceSubProtocolLive, got.SubProtocol)
+	require.Equal(t, agent_yaml.VoiceModelTypeSelfDeployed, got.ModelType)
+	require.Equal(t, "teacher", got.Delegation.AgentName)
+	require.Equal(t, "3", got.Delegation.AgentVersion)
+}
+
+func TestVoiceAgentFromResolvedService_RejectsLiveRawPropertiesAcrossSources(t *testing.T) {
+	base := map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+	}
+	tests := []struct {
+		name    string
+		invalid map[string]any
+	}{
+		{name: "audio output volume", invalid: map[string]any{
+			"audio": map[string]any{"output": map[string]any{"volume": "loud"}},
+		}},
+		{name: "responses reasoning temperature", invalid: map[string]any{
+			"delegation": map[string]any{"type": "responses", "responses": map[string]any{
+				"model": "terra", "reasoning": map[string]any{"temperature": 0.5},
+			}},
+		}},
+		{name: "known forbidden root", invalid: map[string]any{"client": map[string]any{}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			inline := maps.Clone(base)
+			maps.Copy(inline, test.invalid)
+			_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, inline), t.TempDir())
+			require.Error(t, err)
+
+			root := t.TempDir()
+			definition := maps.Clone(base)
+			definition["sub_protocol"] = definition["subProtocol"]
+			definition["model_type"] = definition["modelType"]
+			delete(definition, "subProtocol")
+			delete(definition, "modelType")
+			maps.Copy(definition, test.invalid)
+			encoded, err := yaml.Marshal(definition)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+			service := inlineAgentService(t, map[string]any{"$ref": "live.yaml"})
+			_, _, err = VoiceAgentFromResolvedService(service, root)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsLiveSiblingOverlayRawProperty(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(`kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+`), 0o600))
+	service := inlineAgentService(t, map[string]any{
+		"$ref":  "live.yaml",
+		"audio": map[string]any{"output": map[string]any{"volume": "loud"}},
+	})
+	_, _, err := VoiceAgentFromResolvedService(service, root)
+	require.ErrorContains(t, err, "audio.output.volume")
+}
+
+func TestVoiceAgentFromResolvedService_RejectsLivePolicyModerationAcrossSources(t *testing.T) {
+	const policyID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/" +
+		"providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/policy"
+	for _, key := range []string{"invocationsModeration", "invocations_moderation"} {
+		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+			t.Run(key+"/"+source, func(t *testing.T) {
+				root := t.TempDir()
+				base := map[string]any{
+					"kind": "voice", "name": "live", "subProtocol": "live",
+					"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+				}
+				policy := map[string]any{"type": "rai_policy", "raiPolicyName": policyID, key: map[string]any{}}
+				var service *azdext.ServiceConfig
+				switch source {
+				case "inline":
+					base["policies"] = []any{policy}
+					service = inlineAgentService(t, base)
+				case "root-ref":
+					base["sub_protocol"] = base["subProtocol"]
+					base["model_type"] = base["modelType"]
+					delete(base, "subProtocol")
+					delete(base, "modelType")
+					policy["rai_policy_name"] = policy["raiPolicyName"]
+					delete(policy, "raiPolicyName")
+					base["policies"] = []any{policy}
+					encoded, err := yaml.Marshal(base)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+					service = inlineAgentService(t, map[string]any{"$ref": "live.yaml"})
+				case "sibling-overlay":
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(
+						"kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n"), 0o600))
+					service = inlineAgentService(t, map[string]any{"$ref": "live.yaml", "policies": []any{policy}})
+				}
+				_, _, err := VoiceAgentFromResolvedService(service, root)
+				require.ErrorContains(t, err, "invocationsModeration is not supported for GPT Live")
+			})
+		}
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsLivePresenceAndStructuredTypesAcrossSources(t *testing.T) {
+	tests := map[string]map[string]any{
+		"live config empty":       {"live_config": map[string]any{}},
+		"tools empty":             {"tools": []any{}},
+		"avatar empty":            {"avatar": map[string]any{}},
+		"output modalities empty": {"outputModalities": []any{}},
+		"handoff empty":           {"handoff": map[string]any{}},
+		"include empty":           {"include": []any{}},
+		"greeting empty":          {"greeting": map[string]any{}},
+		"structured entry":        {"structuredInputs": map[string]any{"item": "bad"}},
+		"description type":        {"structuredInputs": map[string]any{"item": map[string]any{"description": 1}}},
+		"schema type":             {"structuredInputs": map[string]any{"item": map[string]any{"schema": []any{}}}},
+		"required type":           {"structuredInputs": map[string]any{"item": map[string]any{"required": "yes"}}},
+	}
+	for name, invalid := range tests {
+		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+			t.Run(name+"/"+source, func(t *testing.T) {
+				root := t.TempDir()
+				base := map[string]any{
+					"kind": "voice", "name": "live", "subProtocol": "live",
+					"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+				}
+				var service *azdext.ServiceConfig
+				if source == "inline" {
+					maps.Copy(base, invalid)
+					service = inlineAgentService(t, base)
+				} else {
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(
+						"kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n"), 0o600))
+					if source == "root-ref" {
+						rootValues := maps.Clone(invalid)
+						if value, found := rootValues["outputModalities"]; found {
+							rootValues["output_modalities"] = value
+							delete(rootValues, "outputModalities")
+						}
+						if value, found := rootValues["structuredInputs"]; found {
+							rootValues["structured_inputs"] = value
+							delete(rootValues, "structuredInputs")
+						}
+						encoded, err := yaml.Marshal(rootValues)
+						require.NoError(t, err)
+						file, err := os.OpenFile(filepath.Join(root, "live.yaml"), os.O_APPEND|os.O_WRONLY, 0o600)
+						require.NoError(t, err)
+						_, err = file.Write(encoded)
+						require.NoError(t, err)
+						require.NoError(t, file.Close())
+						service = inlineAgentService(t, map[string]any{"$ref": "live.yaml"})
+					} else {
+						overlay := maps.Clone(invalid)
+						overlay["$ref"] = "live.yaml"
+						service = inlineAgentService(t, overlay)
+					}
+				}
+				_, _, err := VoiceAgentFromResolvedService(service, root)
+				require.Error(t, err)
+			})
+		}
+	}
+
+	for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+		t.Run("omission/"+source, func(t *testing.T) {
+			root := t.TempDir()
+			base := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n"
+			var service *azdext.ServiceConfig
+			if source == "inline" {
+				service = inlineAgentService(t, map[string]any{
+					"kind": "voice", "name": "live", "subProtocol": "live",
+					"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+				})
+			} else {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(base), 0o600))
+				service = inlineAgentService(t, map[string]any{"$ref": "live.yaml"})
+			}
+			_, found, err := VoiceAgentFromResolvedService(service, root)
+			require.NoError(t, err)
+			require.True(t, found)
+		})
+	}
+}
+
+func TestVoiceAgentFromResolvedService_SubProtocolPresence(t *testing.T) {
+	validBase := map[string]any{"kind": "voice", "name": "voice", "model": map[string]any{"id": "gpt-realtime"}}
+	for name, value := range map[string]any{"null": nil, "blank": "", "unknown": "Live"} {
+		t.Run(name, func(t *testing.T) {
+			inline := maps.Clone(validBase)
+			inline["subProtocol"] = value
+			_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, inline), t.TempDir())
+			require.Error(t, err)
+
+			root := t.TempDir()
+			definition := maps.Clone(validBase)
+			definition["sub_protocol"] = value
+			encoded, err := yaml.Marshal(definition)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "voice.yaml"), encoded, 0o600))
+			_, _, err = VoiceAgentFromResolvedService(
+				inlineAgentService(t, map[string]any{"$ref": "voice.yaml"}), root)
+			require.Error(t, err)
+		})
+	}
+	for name, value := range map[string]any{"omitted": nil, "realtime": "realtime"} {
+		t.Run(name, func(t *testing.T) {
+			definition := maps.Clone(validBase)
+			if name != "omitted" {
+				definition["subProtocol"] = value
+			}
+			_, found, err := VoiceAgentFromResolvedService(inlineAgentService(t, definition), t.TempDir())
+			require.NoError(t, err)
+			require.True(t, found)
+		})
+	}
+	inlineAlias := maps.Clone(validBase)
+	inlineAlias["sub_protocol"] = "live"
+	_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, inlineAlias), t.TempDir())
+	require.ErrorContains(t, err, "sub_protocol is not valid inline")
+}
+
+func TestVoiceAgentFromResolvedService_RootRefRejectsDroppedAndConflictingAliases(t *testing.T) {
+	for name, suffix := range map[string]string{
+		"hosted config":      "code_configuration: {runtime: python_3_13, entry_point: app.py}",
+		"delegation aliases": "delegation: {type: foundry_managed_agent, agent_name: one, agentName: two}",
+		"responses aliases":  "delegation: {type: responses, responses: {model: terra, max_output_tokens: 1, maxOutputTokens: 2}}",
+		"input aliases":      "structured_inputs:\n  name: {default_value: Ada, defaultValue: Grace}",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			definition := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\n" +
+				"model: {id: gpt-live-1}\n" + suffix + "\n"
+			require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+			_, _, err := VoiceAgentFromResolvedService(
+				inlineAgentService(t, map[string]any{"$ref": "live.yaml"}), root)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsRootStyleSiblingOverlay(t *testing.T) {
+	root := t.TempDir()
+	definition := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n"
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	_, _, err := VoiceAgentFromResolvedService(
+		inlineAgentService(t, map[string]any{"$ref": "live.yaml", "structured_inputs": map[string]any{}}), root)
+	require.ErrorContains(t, err, "root-style property")
+}
+
+func TestVoiceAgentFromResolvedService_NormalizesRootMCPServerLabel(t *testing.T) {
+	root := t.TempDir()
+	definition := `kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+delegation:
+  type: responses
+  responses:
+    model: terra
+    tool_choice: {type: mcp, name: lookup, server_label: tools}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	got, found, err := VoiceAgentFromResolvedService(
+		inlineAgentService(t, map[string]any{"$ref": "live.yaml"}), root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "tools", got.Delegation.Responses.ToolChoice.(map[string]any)["serverLabel"])
+}
+
+func TestVoiceAgentFromResolvedService_RejectsInlineLiveSnakeCaseAliases(t *testing.T) {
+	base := map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+	}
+	for name, value := range map[string]any{
+		"responses": map[string]any{"delegation": map[string]any{
+			"type": "responses", "responses": map[string]any{"model": "terra", "max_output_tokens": 1},
+		}},
+		"structured input": map[string]any{"structuredInputs": map[string]any{
+			"name": map[string]any{"default_value": "Ada"},
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			definition := maps.Clone(base)
+			maps.Copy(definition, value.(map[string]any))
+			_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, definition), t.TempDir())
+			require.ErrorContains(t, err, "not valid inline")
+		})
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsEmptyLivePolicies(t *testing.T) {
+	definition := map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+		"policies": []any{},
+	}
+	_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, definition), t.TempDir())
+	require.ErrorContains(t, err, "exactly one named rai_policy")
+}
+
+func TestVoiceAgentFromResolvedService_RejectsExplicitEmptyManagedAgentVersion(t *testing.T) {
+	for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+		for _, version := range []any{"", nil} {
+			t.Run(fmt.Sprintf("%s/%v", source, version), func(t *testing.T) {
+				root := t.TempDir()
+				delegation := map[string]any{
+					"type": "foundry_managed_agent", "agentName": "teacher", "agentVersion": version,
+				}
+				var service *azdext.ServiceConfig
+				switch source {
+				case "inline":
+					service = inlineAgentService(t, map[string]any{
+						"kind": "voice", "name": "live", "subProtocol": "live",
+						"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+						"delegation": delegation,
+					})
+				case "root-ref":
+					definition := map[string]any{
+						"kind": "voice", "name": "live", "sub_protocol": "live",
+						"model_type": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+						"delegation": map[string]any{
+							"type": "foundry_managed_agent", "agent_name": "teacher", "agent_version": version,
+						},
+					}
+					encoded, err := yaml.Marshal(definition)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+					service = inlineAgentService(t, map[string]any{"$ref": "live.yaml"})
+				case "sibling-overlay":
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(
+						"kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n"), 0o600))
+					service = inlineAgentService(t, map[string]any{"$ref": "live.yaml", "delegation": delegation})
+				}
+				_, _, err := VoiceAgentFromResolvedService(service, root)
+				require.ErrorContains(t, err, "agentVersion must be a positive numeric string")
+			})
+		}
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsExplicitNullLiveFields(t *testing.T) {
+	for name, invalid := range map[string]map[string]any{
+		"delegation":         {"delegation": nil},
+		"store":              {"store": nil},
+		"audio":              {"audio": nil},
+		"audio format":       {"audio": map[string]any{"format": nil}},
+		"audio output":       {"audio": map[string]any{"output": nil}},
+		"output voice":       {"audio": map[string]any{"output": map[string]any{"voice": nil}}},
+		"structuredInputs":   {"structuredInputs": nil},
+		"policies":           {"policies": nil},
+		"conversationEngine": {"conversationEngine": nil},
+		"targetAgent":        {"targetAgent": nil},
+		"client agentName":   {"delegation": map[string]any{"type": "client", "agentName": ""}},
+		"client responses":   {"delegation": map[string]any{"type": "client", "responses": nil}},
+		"voice":              {"voice": nil},
+		"inputSchema":        {"inputSchema": nil},
+		"outputSchema":       {"outputSchema": nil},
+		"toolChoice":         {"toolChoice": nil},
+		"parallelToolCalls":  {"parallelToolCalls": nil},
+		"maxOutputTokens":    {"maxOutputTokens": nil},
+		"telephony":          {"telephony": nil},
+		"responses toolChoice": {"delegation": map[string]any{
+			"type": "responses", "responses": map[string]any{"model": "terra", "toolChoice": nil},
+		}},
+		"responses tools": {"delegation": map[string]any{
+			"type": "responses", "responses": map[string]any{"model": "terra", "tools": nil},
+		}},
+	} {
+		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+			t.Run(name+"/"+source, func(t *testing.T) {
+				root := t.TempDir()
+				var service *azdext.ServiceConfig
+				if source == "inline" {
+					definition := map[string]any{
+						"kind": "voice", "name": "live", "subProtocol": "live",
+						"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+					}
+					maps.Copy(definition, invalid)
+					service = inlineAgentService(t, definition)
+				} else {
+					rootDefinition := map[string]any{
+						"kind": "voice", "name": "live", "sub_protocol": "live",
+						"model_type": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+					}
+					if source == "root-ref" {
+						rootInvalid := maps.Clone(invalid)
+						for inline, rootName := range map[string]string{
+							"structuredInputs": "structured_inputs", "inputSchema": "input_schema",
+							"outputSchema": "output_schema", "toolChoice": "tool_choice",
+							"parallelToolCalls": "parallel_tool_calls", "maxOutputTokens": "max_output_tokens",
+						} {
+							if value, found := rootInvalid[inline]; found {
+								rootInvalid[rootName] = value
+								delete(rootInvalid, inline)
+							}
+						}
+						maps.Copy(rootDefinition, rootInvalid)
+					}
+					encoded, err := yaml.Marshal(rootDefinition)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+					overlay := map[string]any{"$ref": "live.yaml"}
+					if source == "sibling-overlay" {
+						maps.Copy(overlay, invalid)
+					}
+					service = inlineAgentService(t, overlay)
+				}
+				_, _, err := VoiceAgentFromResolvedService(service, root)
+				require.Error(t, err)
+			})
+		}
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsExplicitNullResponsesFields(t *testing.T) {
+	fields := map[string]string{
+		"model": "model", "instructions": "instructions", "maxOutputTokens": "max_output_tokens",
+		"parallelToolCalls": "parallel_tool_calls", "serviceTier": "service_tier",
+		"reasoning": "reasoning", "text": "text", "toolChoice": "tool_choice", "tools": "tools",
+	}
+	for inlineName, rootName := range fields {
+		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+			t.Run(inlineName+"/"+source, func(t *testing.T) {
+				root := t.TempDir()
+				responses := map[string]any{"model": "terra", inlineName: nil}
+				if source == "root-ref" {
+					delete(responses, inlineName)
+					responses[rootName] = nil
+				}
+				if inlineName == "model" {
+					responses["model"] = nil
+				}
+				delegation := map[string]any{"type": "responses", "responses": responses}
+				var service *azdext.ServiceConfig
+				if source == "inline" {
+					service = inlineAgentService(t, map[string]any{
+						"kind": "voice", "name": "live", "subProtocol": "live",
+						"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+						"delegation": delegation,
+					})
+				} else {
+					rootDefinition := map[string]any{
+						"kind": "voice", "name": "live", "sub_protocol": "live",
+						"model_type": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+					}
+					if source == "root-ref" {
+						rootDefinition["delegation"] = delegation
+					}
+					encoded, err := yaml.Marshal(rootDefinition)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+					overlay := map[string]any{"$ref": "live.yaml"}
+					if source == "sibling-overlay" {
+						overlay["delegation"] = delegation
+					}
+					service = inlineAgentService(t, overlay)
+				}
+				_, _, err := VoiceAgentFromResolvedService(service, root)
+				require.ErrorContains(t, err, "must not be null for GPT Live")
+			})
+		}
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsExplicitNullResponsesSubfields(t *testing.T) {
+	fields := map[string]map[string]any{
+		"reasoning effort":  {"reasoning": map[string]any{"effort": nil}},
+		"reasoning summary": {"reasoning": map[string]any{"summary": nil}},
+		"text verbosity":    {"text": map[string]any{"verbosity": nil}},
+	}
+	for name, responseField := range fields {
+		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+			t.Run(name+"/"+source, func(t *testing.T) {
+				root := t.TempDir()
+				responses := map[string]any{"model": "terra"}
+				maps.Copy(responses, responseField)
+				delegation := map[string]any{"type": "responses", "responses": responses}
+				var service *azdext.ServiceConfig
+				if source == "inline" {
+					service = inlineAgentService(t, map[string]any{
+						"kind": "voice", "name": "live", "subProtocol": "live",
+						"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+						"delegation": delegation,
+					})
+				} else {
+					definition := map[string]any{
+						"kind": "voice", "name": "live", "sub_protocol": "live",
+						"model_type": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+					}
+					if source == "root-ref" {
+						definition["delegation"] = delegation
+					}
+					encoded, err := yaml.Marshal(definition)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+					overlay := map[string]any{"$ref": "live.yaml"}
+					if source == "sibling-overlay" {
+						overlay["delegation"] = delegation
+					}
+					service = inlineAgentService(t, overlay)
+				}
+				_, _, err := VoiceAgentFromResolvedService(service, root)
+				require.ErrorContains(t, err, "must not be null for GPT Live")
+			})
+		}
+	}
+}
+
+func TestVoiceAgentFromResolvedService_GPTLiveRootRefAfterInPlaceResolution(t *testing.T) {
+	root := t.TempDir()
+	definition := `kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/policy
+delegation:
+  type: responses
+  responses: {model: terra}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	ref, err := structpb.NewStruct(map[string]any{"$ref": "live.yaml"})
+	require.NoError(t, err)
+	service := &azdext.ServiceConfig{Name: "live", Host: "azure.ai.agent", AdditionalProperties: ref}
+	require.NoError(t, ResolveServiceConfigInPlace(service, root))
+	require.NotContains(t, service.GetAdditionalProperties().GetFields(), "$ref")
+	got, found, err := VoiceAgentFromResolvedService(service, root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceSubProtocolLive, got.SubProtocol)
+	require.Equal(t, agent_yaml.VoiceModelTypeSelfDeployed, got.ModelType)
+	require.Equal(t, "terra", got.Delegation.Responses.Model)
+	require.Len(t, got.Policies, 1)
+	require.Contains(t, got.Policies[0].RaiPolicyName, "/raiPolicies/policy")
+}
+
+func TestVoiceAgentFromResolvedService_RootRefResolvesNestedSiblingRef(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(`kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+audio:
+  format: {type: audio/pcm, rate: 16000}
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "audio.yaml"), []byte(`format:
+  type: audio/pcm
+  rate: 24000
+output:
+  voice: marin
+`), 0o600))
+	ref, err := structpb.NewStruct(map[string]any{
+		"$ref":  "live.yaml",
+		"audio": map[string]any{"$ref": "audio.yaml"},
+	})
+	require.NoError(t, err)
+	service := &azdext.ServiceConfig{Name: "live", Host: "azure.ai.agent", AdditionalProperties: ref}
+	require.NoError(t, ResolveServiceConfigInPlace(service, root))
+	got, found, err := VoiceAgentFromResolvedService(service, root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, 24000, *got.Audio.Format.Rate)
+	require.Equal(t, "marin", got.Audio.Output.Voice.LiveName)
+}
+
+func TestVoiceAgentFromResolvedService_GPTLiveRootRefKeepsUnsupportedPolicyModeration(t *testing.T) {
+	root := t.TempDir()
+	definition := `kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/policy
+    invocations_moderation: {enabled: true}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	ref, err := structpb.NewStruct(map[string]any{"$ref": "live.yaml"})
+	require.NoError(t, err)
+	service := &azdext.ServiceConfig{Name: "live", Host: "azure.ai.agent", AdditionalProperties: ref}
+	_, _, err = VoiceAgentFromResolvedService(service, root)
+	require.ErrorContains(t, err, "invocationsModeration is not supported")
+}
+
+func TestVoiceAgentDefinitionMarshalJSON_OmitsNilAudio(t *testing.T) {
+	t.Parallel()
+	encoded, err := json.Marshal(agent_api.VoiceAgentDefinition{
+		AgentDefinition: agent_api.AgentDefinition{Kind: agent_api.AgentKindVoice},
+		SubProtocol:     "live", ModelType: agent_api.VoiceModelTypeSelfDeployed, Model: "gpt-live-1",
+	})
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), `"audio"`)
 }
 
 func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgentVoiceKind(t *testing.T) {
@@ -173,6 +935,18 @@ func TestVoiceAgentInlineServicePropertiesRejectsProtocols(t *testing.T) {
 	require.ErrorContains(t, err, "protocols are not supported on voice agents")
 }
 
+func TestVoiceAgentInlineServicePropertiesRejectsEmptyProtocolsAndPolicies(t *testing.T) {
+	for _, field := range []string{"protocols", "policies"} {
+		t.Run(field, func(t *testing.T) {
+			_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+				"kind": "voice", "name": "voice", "model": map[string]any{"id": "gpt-realtime"},
+				field: []any{},
+			}))
+			require.ErrorContains(t, err, "not supported on voice agents")
+		})
+	}
+}
+
 func TestVoiceAgentInlineServicePropertiesRejectsCodeAndSessionConfig(t *testing.T) {
 	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
 		"kind":              "voice",
@@ -222,6 +996,32 @@ func TestVoiceAgentFromResolvedServiceRejectsInvalidVoiceFields(t *testing.T) {
 	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
 	require.ErrorContains(t, err, "environmentVariables is not supported on voice agents")
 
+}
+
+func TestVoiceAgentFromResolvedServiceRejectsIgnoredServiceFields(t *testing.T) {
+	t.Parallel()
+	for _, source := range []string{"inline", "root-ref"} {
+		for _, field := range []string{"subagent_config", "subagentConfig", "interim_response", "interimResponse"} {
+			t.Run(source+"/"+field, func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				definition := map[string]any{
+					"kind": "voice", "name": "voice", "model": map[string]any{"id": "gpt-realtime"},
+					field: map[string]any{},
+				}
+				props := mustStruct(t, definition)
+				if source == "root-ref" {
+					data, err := yaml.Marshal(definition)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"), data, 0o600))
+					props = mustStruct(t, map[string]any{"$ref": "agent.yaml"})
+				}
+				svc := &azdext.ServiceConfig{Name: "voice", Host: "azure.ai.agent", AdditionalProperties: props}
+				_, _, err := VoiceAgentFromResolvedService(svc, root)
+				require.ErrorContains(t, err, field+" is not supported")
+			})
+		}
+	}
 }
 
 func TestHostedAgentInlineServicePropertiesRejectsHostedVoiceFields(t *testing.T) {
@@ -276,156 +1076,911 @@ func TestApplyAgentMetadata(t *testing.T) {
 	}
 }
 
-func TestTelephonyBindingMatches(t *testing.T) {
-	desired := &agent_api.TelephonyBindingRequest{
-		Provider:        "twilio",
-		Identifier:      "+14255550123",
-		ConnectionName:  "telephony-twilio",
-		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
-	}
-	remote := &agent_api.TelephonyBinding{
-		ID:              "twilio:%2B14255550123",
-		Provider:        "twilio",
-		Identifier:      "+14255550123",
-		ConnectionName:  "telephony-twilio",
-		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
-	}
-	require.True(t, telephonyBindingMatches(remote, desired))
-	remote.ConnectionName = "other"
-	require.False(t, telephonyBindingMatches(remote, desired))
-	remote.ConnectionName = "telephony-twilio"
-	remote.TransferTargets = []map[string]any{}
-	desired.TransferTargets = nil
-	require.True(t, telephonyBindingMatches(remote, desired))
-}
-
-func TestTelephonyBindingMatches_ServiceOmittedFields(t *testing.T) {
-	// ACS binding responses can omit request fields while still returning the stable binding id.
-	desired := &agent_api.TelephonyBindingRequest{
-		Provider:       "azure-communication-service",
-		Identifier:     "28:orgid:00000000-0000-0000-0000-000000000001",
-		ConnectionName: "telephony-acs",
-	}
-	remote := &agent_api.TelephonyBinding{
-		ID:         "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000001",
-		Provider:   "teams_phone_extension",
-		Connection: "telephony-acs",
-		Status:     "active",
-	}
-	require.True(t, telephonyBindingMatches(remote, desired))
-
-	remote.ID = "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000002"
-	require.False(t, telephonyBindingMatches(remote, desired))
-}
-
-func TestTelephonyBindingMatches_NumericTransferTargets(t *testing.T) {
-	desired := &agent_api.TelephonyBindingRequest{
-		Provider:        "twilio",
-		Identifier:      "+14255550123",
-		ConnectionName:  "telephony-twilio",
-		TransferTargets: []map[string]any{{"digits": 1}},
-	}
-	remote := &agent_api.TelephonyBinding{
-		ID:              "twilio:%2B14255550123",
-		Provider:        "twilio",
-		Identifier:      "+14255550123",
-		ConnectionName:  "telephony-twilio",
-		TransferTargets: []map[string]any{{"digits": float64(1)}},
-	}
-	require.True(t, telephonyBindingMatches(remote, desired))
-}
-
 func TestDeployVoiceTelephonyBindings_CreateWhenMissing(t *testing.T) {
-	client := &fakeTelephonyBindingClient{getErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}}
-	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
-	agentObject.Versions.Latest.Version = "1"
-	agent := agent_yaml.VoiceAgent{Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
-		{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
-	}}}
+	client := &fakeTelephonyBindingClient{}
 
 	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
-		t.Context(), client, agent, agentObject, "regional.hyena.example.com")
+		t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
 
 	require.NoError(t, err)
-	require.Equal(t, 1, client.getCalls)
+	require.Equal(t, 2, client.listCalls)
 	require.Equal(t, 1, client.createCalls)
-	require.Equal(t, "twilio:+14255550123", client.bindingID)
-	require.Equal(t, "regional.hyena.example.com", client.overriddenHost)
+	require.IsType(t, &agent_api.CreateTwilioTelephonyBindingRequest{}, client.createRequests[0])
+	request := client.createRequests[0].(*agent_api.CreateTwilioTelephonyBindingRequest)
+	require.Equal(t, "+14255550123", request.PhoneNumber)
+	require.Equal(t, "connection", request.ConnectionName)
+	require.NotEmpty(t, client.repeatability[0].RequestID)
+	require.NotZero(t, client.repeatability[0].FirstSent)
 }
 
 func TestDeployVoiceTelephonyBindings_SkipsMatchingBinding(t *testing.T) {
-	client := &fakeTelephonyBindingClient{remote: &agent_api.TelephonyBinding{
-		ID:             "twilio:%2B14255550123",
-		Provider:       "twilio",
-		Identifier:     "+14255550123",
-		ConnectionName: "telephony-twilio",
-	}}
-	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
-	agentObject.Versions.Latest.Version = "1"
-	agent := agent_yaml.VoiceAgent{Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
-		{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
-	}}}
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{{twilioGABinding("connection")}}}
 
-	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(t.Context(), client, agent, agentObject, "")
+	err := preflightVoiceTelephonyBindings(
+		t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, twilioYAMLBinding()))
 
 	require.NoError(t, err)
-	require.Equal(t, 1, client.getCalls)
+	require.Equal(t, 1, client.listCalls)
 	require.Equal(t, 0, client.createCalls)
 }
 
-func TestDeployVoiceTelephonyBindings_ReturnsNonNotFoundGetError(t *testing.T) {
-	client := &fakeTelephonyBindingClient{getErr: &azcore.ResponseError{StatusCode: http.StatusForbidden}}
-	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
-	agentObject.Versions.Latest.Version = "1"
-	agent := agent_yaml.VoiceAgent{Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
-		{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
-	}}}
+func TestDeployVoiceTelephonyBindings_ConvertsTeamsResourceAccount(t *testing.T) {
+	client := &fakeTelephonyBindingClient{}
+	binding := agent_yaml.VoiceTelephonyBinding{
+		Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-000000000001", Connection: "acs",
+	}
 
-	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(t.Context(), client, agent, agentObject, "")
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, binding), voiceAgentObject())
 
-	require.Error(t, err)
-	require.Equal(t, 1, client.getCalls)
+	require.NoError(t, err)
+	require.Len(t, client.createRequests, 1)
+	request := client.createRequests[0].(*agent_api.CreateTeamsPhoneTelephonyBindingRequest)
+	require.Equal(t, "00000000-0000-0000-0000-000000000001", request.ResourceAccountObjectID)
+	require.Equal(t, "acs", request.ConnectionName)
+}
+
+func TestDeployVoiceTelephonyBindings_TeamsMatchNormalizesUUID(t *testing.T) {
+	remote := agent_api.GATelephonyBinding{
+		ID: "opaque", Provider: agent_api.TelephonyProviderTeamsPhoneExtensibility,
+		ResourceAccountObjectID: "00000000-0000-0000-0000-00000000000A", ConnectionName: "acs",
+		Status: agent_api.TelephonyBindingStatusActive,
+	}
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{{remote}}}
+	binding := agent_yaml.VoiceTelephonyBinding{
+		Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-00000000000a", Connection: "acs",
+	}
+
+	err := preflightVoiceTelephonyBindings(
+		t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, binding))
+
+	require.NoError(t, err)
+	require.Zero(t, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_MatchesLegacyTeamsProviderAlias(t *testing.T) {
+	binding := agent_yaml.VoiceTelephonyBinding{
+		Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-00000000000a", Connection: "acs",
+	}
+	for _, provider := range []string{
+		"teams_phone_extension",
+		" TEAMS_PHONE_EXTENSION ",
+		"teams_phone_extensibility",
+		" TEAMS_PHONE_EXTENSIBILITY ",
+	} {
+		t.Run(provider, func(t *testing.T) {
+			remote := agent_api.GATelephonyBinding{
+				ID: "opaque", Provider: provider,
+				ResourceAccountObjectID: "00000000-0000-0000-0000-00000000000A", ConnectionName: "acs",
+				Status: agent_api.TelephonyBindingStatusActive,
+			}
+			client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{{remote}}}
+			err := preflightVoiceTelephonyBindings(
+				t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, binding))
+			require.NoError(t, err)
+			require.Zero(t, client.createCalls)
+		})
+	}
+}
+
+func TestDeployVoiceTelephonyBindings_DoesNotMatchUnrelatedProvider(t *testing.T) {
+	remote := agent_api.GATelephonyBinding{
+		ID: "opaque", Provider: "teams_phone_extensibility_suffix",
+		ResourceAccountObjectID: "00000000-0000-0000-0000-00000000000A", ConnectionName: "acs",
+		Status: agent_api.TelephonyBindingStatusActive,
+	}
+	desired := mustDesiredTelephonyBindings(t, agent_yaml.VoiceTelephonyBinding{
+		Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-00000000000a", Connection: "acs",
+	})
+	require.Empty(t, matchingGATelephonyBindings([]agent_api.GATelephonyBinding{remote}, desired[0]))
+}
+
+func TestDeployVoiceTelephonyBindings_RejectsDriftAndMultipleBeforeMutation(t *testing.T) {
+	tests := []struct {
+		name   string
+		remote []agent_api.GATelephonyBinding
+		want   string
+	}{
+		{name: "mutable drift", remote: []agent_api.GATelephonyBinding{twilioGABinding("other")}, want: "different mutable"},
+		{name: "multiple", remote: []agent_api.GATelephonyBinding{
+			twilioGABinding("connection"), twilioGABinding("connection"),
+		}, want: "multiple remote telephony bindings"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{test.remote}}
+			err := preflightVoiceTelephonyBindings(
+				t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, twilioYAMLBinding()))
+			require.ErrorContains(t, err, test.want)
+			require.Zero(t, client.createCalls)
+		})
+	}
+}
+
+func TestDeployVoiceTelephonyBindings_MultipleFoundBeforeAnyCreate(t *testing.T) {
+	duplicate := twilioGABinding("second")
+	duplicate.PhoneNumber = "+14255550124"
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{{duplicate, duplicate}}}
+	bindings := []agent_yaml.VoiceTelephonyBinding{
+		twilioYAMLBinding(),
+		{Provider: "twilio", Identifier: "+14255550124", Connection: "second"},
+	}
+
+	err := preflightVoiceTelephonyBindings(
+		t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, bindings...))
+
+	require.ErrorContains(t, err, "multiple remote telephony bindings")
+	require.Zero(t, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_UnknownCreateOutcomeRelistsOnce(t *testing.T) {
+	useFastTelephonyPolling(t)
+	unknown := &agent_api.TelephonyWriteOutcomeUnknownError{Err: errors.New("connection reset")}
+	tests := []struct {
+		name       string
+		relist     []agent_api.GATelephonyBinding
+		wantErr    string
+		shouldPass bool
+	}{
+		{name: "one converged", relist: []agent_api.GATelephonyBinding{twilioGABinding("connection")}, shouldPass: true},
+		{name: "zero", wantErr: "could not confirm"},
+		{name: "one drifted", relist: []agent_api.GATelephonyBinding{twilioGABinding("other")}, wantErr: "ambiguous or drifted"},
+		{name: "multiple", relist: []agent_api.GATelephonyBinding{
+			twilioGABinding("connection"), twilioGABinding("connection"),
+		}, wantErr: "ambiguous or drifted"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeTelephonyBindingClient{
+				listResults: [][]agent_api.GATelephonyBinding{{}, test.relist}, createErr: unknown,
+			}
+			err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+				t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
+			if test.shouldPass {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantErr)
+			}
+			if test.name == "zero" {
+				require.Equal(t, 6, client.listCalls)
+			} else if test.shouldPass {
+				require.Equal(t, 3, client.listCalls)
+			} else {
+				require.Equal(t, 2, client.listCalls)
+			}
+			require.Equal(t, 1, client.createCalls)
+		})
+	}
+}
+
+func TestDeployVoiceTelephonyBindings_RejectsUnsupportedAndAmbiguousYAML(t *testing.T) {
+	tests := []struct {
+		name     string
+		bindings []agent_yaml.VoiceTelephonyBinding
+		want     string
+	}{
+		{name: "legacy ACS", bindings: []agent_yaml.VoiceTelephonyBinding{{
+			Provider: "acs", Identifier: "4:+14255550123", Connection: "acs",
+		}}, want: "28:orgid:<guid>"},
+		{name: "malformed ACS", bindings: []agent_yaml.VoiceTelephonyBinding{{
+			Provider: "acs", Identifier: "28:orgid:not-a-uuid", Connection: "acs",
+		}}, want: "28:orgid:<guid>"},
+		{name: "malformed Twilio", bindings: []agent_yaml.VoiceTelephonyBinding{{
+			Provider: "twilio", Identifier: "14255550123", Connection: "twilio",
+		}}, want: "+<E.164>"},
+		{name: "duplicate", bindings: []agent_yaml.VoiceTelephonyBinding{
+			twilioYAMLBinding(), twilioYAMLBinding(),
+		}, want: "duplicates telephony binding"},
+		{name: "invalid transfer targets", bindings: []agent_yaml.VoiceTelephonyBinding{{
+			Provider: "twilio", Identifier: "+14255550123", Connection: "twilio",
+			TransferTargets: []map[string]any{{"kind": "phone"}},
+		}}, want: "unsupported field"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeTelephonyBindingClient{}
+			_, err := desiredTelephonyBindings(test.bindings)
+			require.ErrorContains(t, err, test.want)
+			require.Zero(t, client.listCalls)
+			require.Zero(t, client.createCalls)
+		})
+	}
+}
+
+func TestDesiredTelephonyTransferTargets(t *testing.T) {
+	first := twilioYAMLBinding()
+	first.TransferTargets = yamlTransferTargets("second", "first")
+	second := agent_yaml.VoiceTelephonyBinding{
+		Provider: "twilio", Identifier: "+14255550124", Connection: "second",
+		TransferTargets: yamlTransferTargets("first", "second"),
+	}
+	desired, targets, managed, err := desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{first, second})
+	require.NoError(t, err)
+	require.Len(t, desired, 2)
+	require.True(t, managed)
+	require.Len(t, targets, 2)
+
+	second.TransferTargets[0]["description"] = "different"
+	_, _, _, err = desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{first, second})
+	require.ErrorContains(t, err, "conflicting transfer targets")
+}
+
+func TestDesiredTelephonyTransferTargets_UnmanagedAndExplicitEmpty(t *testing.T) {
+	binding := twilioYAMLBinding()
+	_, targets, managed, err := desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
+	require.NoError(t, err)
+	require.False(t, managed)
+	require.Nil(t, targets)
+
+	binding.TransferTargets = []map[string]any{}
+	_, targets, managed, err = desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
+	require.NoError(t, err)
+	require.True(t, managed)
+	require.Empty(t, targets)
+	require.NotNil(t, targets)
+}
+
+func TestDesiredTelephonyTransferTargets_RejectsFutureYAMLFields(t *testing.T) {
+	binding := twilioYAMLBinding()
+	binding.TransferTargets = yamlTransferTargets("first")
+	binding.TransferTargets[0]["future_field"] = true
+	_, _, _, err := desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
+	require.ErrorContains(t, err, "unsupported field")
+
+	binding.TransferTargets = yamlTransferTargets("first")
+	binding.TransferTargets[0]["destination"].(map[string]any)["future_field"] = true
+	_, _, _, err = desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
+	require.ErrorContains(t, err, "unsupported field")
+}
+
+func TestDesiredTelephonyTransferTargets_ValidatesTeamsDestinationBeforeMutation(t *testing.T) {
+	for _, value := range []string{
+		"not-a-guid",
+		" 00000000-0000-0000-0000-000000000001 ",
+		"28:orgid:not-a-guid",
+	} {
+		t.Run(value, func(t *testing.T) {
+			binding := agent_yaml.VoiceTelephonyBinding{
+				Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-000000000001", Connection: "acs",
+				TransferTargets: []map[string]any{{
+					"name": "teams", "description": "Teams transfer",
+					"destination": map[string]any{"kind": "teams", "value": value},
+				}},
+			}
+			_, _, _, err := desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
+			require.ErrorContains(t, err, "canonical object GUID")
+			require.NotContains(t, err.Error(), value)
+		})
+	}
+
+	for _, value := range []string{
+		"00000000-0000-0000-0000-000000000000",
+		"00000000-0000-0000-0000-000000000001",
+		"00000000-0000-0000-0000-00000000000A",
+		"28:orgid:00000000-0000-0000-0000-000000000001",
+		"28:ORGID:00000000-0000-0000-0000-000000000001",
+	} {
+		t.Run("valid-"+value, func(t *testing.T) {
+			binding := agent_yaml.VoiceTelephonyBinding{
+				Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-000000000001", Connection: "acs",
+				TransferTargets: []map[string]any{{
+					"name": "teams", "description": "Teams transfer",
+					"destination": map[string]any{"kind": "teams", "value": value},
+				}},
+			}
+			_, targets, _, err := desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
+			require.NoError(t, err)
+			require.Equal(t, value, targets[0].Destination.Value)
+		})
+	}
+}
+
+func TestPreflightVoiceTelephonyState_RejectsUnreconcilableTargetDrift(t *testing.T) {
+	desired := desiredTelephonyState{
+		bindings:        mustDesiredTelephonyBindings(t, twilioYAMLBinding()),
+		transferTargets: typedTransferTargets("first"),
+		targetsManaged:  true,
+	}
+	client := &fakeTelephonyBindingClient{
+		listResults: [][]agent_api.GATelephonyBinding{
+			{twilioGABinding("connection")}, {twilioGABinding("connection")},
+		},
+		targetResults: []*agent_api.TelephonyTransferTargets{{TransferTargets: []agent_api.TelephonyTransferTarget{}}},
+	}
+	err := preflightVoiceTelephonyState(t.Context(), client, "agent", desired)
+	require.ErrorContains(t, err, "differ from the YAML")
+}
+
+func TestPreflightVoiceTelephonyState_Ignores404OnlyForMissingAgent(t *testing.T) {
+	desired := desiredTelephonyState{
+		bindings:        mustDesiredTelephonyBindings(t, twilioYAMLBinding()),
+		transferTargets: typedTransferTargets("first"),
+		targetsManaged:  true,
+	}
+	for _, test := range []struct {
+		name         string
+		agentMissing bool
+		listErr      error
+		targetGetErr error
+		listResults  [][]agent_api.GATelephonyBinding
+		wantErr      bool
+	}{
+		{name: "missing agent binding 404", agentMissing: true,
+			listErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}},
+		{name: "existing agent binding 404", listErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}, wantErr: true},
+		{name: "missing agent targets 404", agentMissing: true, listResults: [][]agent_api.GATelephonyBinding{{}},
+			targetGetErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}},
+		{name: "existing agent targets 404", listResults: [][]agent_api.GATelephonyBinding{{}},
+			targetGetErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeTelephonyBindingClient{
+				listErr: test.listErr, listResults: test.listResults, targetGetErr: test.targetGetErr,
+			}
+			err := preflightVoiceTelephonyState(t.Context(), client, "agent", desired, test.agentMissing)
+			if test.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestVoiceAgentDefinitionToServiceProperties_RejectsInvalidTeamsTargetBeforeConversion(t *testing.T) {
+	va := agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindPromptVoice, Name: "voice-agent"},
+		Model:           &agent_yaml.Model{Id: "gpt-realtime"},
+		Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{{
+			Provider: "twilio", Identifier: "+14255550123", Connection: "connection",
+			TransferTargets: []map[string]any{{
+				"name": "teams", "description": "Teams",
+				"destination": map[string]any{"kind": "teams", "value": "not-a-guid"},
+			}},
+		}}},
+	}
+	props, err := VoiceAgentDefinitionToServiceProperties(va, nil)
+	require.Nil(t, props)
+	require.ErrorContains(t, err, "canonical object GUID")
+}
+
+func TestDeployVoiceTelephonyState_TransferTargetBehavior(t *testing.T) {
+	desiredTargets := typedTransferTargets("first", "second")
+	equalReverse := typedTransferTargets("second", "first")
+	tests := []struct {
+		name             string
+		managed          bool
+		listResults      [][]agent_api.GATelephonyBinding
+		remote           []agent_api.TelephonyTransferTarget
+		wantErr          string
+		wantGets         int
+		wantReplacements int
+	}{
+		{name: "unmanaged", listResults: [][]agent_api.GATelephonyBinding{{twilioGABinding("connection")}}},
+		{name: "equal ignores order", managed: true, listResults: [][]agent_api.GATelephonyBinding{
+			{twilioGABinding("connection")}, {twilioGABinding("connection")},
+		}, remote: equalReverse, wantGets: 2},
+		{name: "existing drift validates only", managed: true, listResults: [][]agent_api.GATelephonyBinding{
+			{twilioGABinding("connection")}, {twilioGABinding("connection")},
+		}, remote: []agent_api.TelephonyTransferTarget{}, wantErr: "differ", wantGets: 2},
+		{name: "created then replaces", managed: true, listResults: [][]agent_api.GATelephonyBinding{
+			{}, {twilioGABinding("connection")},
+		}, remote: []agent_api.TelephonyTransferTarget{}, wantGets: 2, wantReplacements: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeTelephonyBindingClient{listResults: test.listResults}
+			client.targetResults = []*agent_api.TelephonyTransferTargets{{TransferTargets: test.remote, ETag: "current"}}
+			err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyState(t.Context(), client, desiredTelephonyState{
+				bindings:        mustDesiredTelephonyBindings(t, twilioYAMLBinding()),
+				transferTargets: desiredTargets,
+				targetsManaged:  test.managed,
+			}, voiceAgentObject())
+			if test.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantErr)
+			}
+			require.Equal(t, test.wantGets, client.targetGetCalls)
+			require.Equal(t, test.wantReplacements, client.targetReplaceCalls)
+			if test.wantReplacements > 0 {
+				require.Equal(t, []string{"current"}, client.targetIfMatches)
+			}
+		})
+	}
+}
+
+func TestDeployVoiceTelephonyState_TargetDriftAfterInitialPreflightPreventsBindingCreate(t *testing.T) {
+	desiredTargets := typedTransferTargets("first")
+	changedTargets := typedTransferTargets("changed")
+	client := &fakeTelephonyBindingClient{
+		listResults: [][]agent_api.GATelephonyBinding{{}},
+		targetResults: []*agent_api.TelephonyTransferTargets{{
+			TransferTargets: changedTargets, ETag: "changed",
+		}},
+	}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyState(t.Context(), client, desiredTelephonyState{
+		bindings:        mustDesiredTelephonyBindings(t, twilioYAMLBinding()),
+		transferTargets: desiredTargets,
+		targetsManaged:  true,
+	}, voiceAgentObject())
+	require.ErrorContains(t, err, "changed during deployment")
+	require.Zero(t, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyState_ConflictDoesNotAuthorizeTargetReplacement(t *testing.T) {
+	useFastTelephonyPolling(t)
+	desiredTargets := typedTransferTargets("first")
+	client := &fakeTelephonyBindingClient{
+		listResults: [][]agent_api.GATelephonyBinding{{}, {twilioGABinding("connection")}, {twilioGABinding("connection")}},
+		createErr:   &azcore.ResponseError{StatusCode: http.StatusConflict},
+		targetResults: []*agent_api.TelephonyTransferTargets{{
+			TransferTargets: []agent_api.TelephonyTransferTarget{}, ETag: "etag",
+		}},
+	}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyState(t.Context(), client, desiredTelephonyState{
+		bindings:        mustDesiredTelephonyBindings(t, twilioYAMLBinding()),
+		transferTargets: desiredTargets,
+		targetsManaged:  true,
+	}, voiceAgentObject())
+	require.ErrorContains(t, err, "differ from the YAML")
+	require.Zero(t, client.targetReplaceCalls)
+}
+
+func TestReconcileTelephonyTransferTargets_SafetyCases(t *testing.T) {
+	useFastTelephonyPolling(t)
+	desired := typedTransferTargets("first")
+	unknown := typedTransferTargets("remote")[0]
+	unknown.Destination.Kind = "future"
+	tests := []struct {
+		name     string
+		remote   []agent_api.TelephonyTransferTarget
+		etag     string
+		writeErr error
+		after    []*agent_api.TelephonyTransferTargets
+		wantErr  string
+		wantGets int
+	}{
+		{name: "unknown remote kind", remote: []agent_api.TelephonyTransferTarget{unknown}, etag: "etag", wantErr: "cannot be safely replaced", wantGets: 1},
+		{name: "missing etag", remote: []agent_api.TelephonyTransferTarget{}, wantErr: "current ETag", wantGets: 1},
+		{name: "get error", remote: []agent_api.TelephonyTransferTarget{}, etag: "etag",
+			wantErr: "target get failed", wantGets: 1},
+		{name: "precondition converged", remote: []agent_api.TelephonyTransferTarget{}, etag: "etag",
+			writeErr: &azcore.ResponseError{StatusCode: http.StatusPreconditionFailed},
+			after:    []*agent_api.TelephonyTransferTargets{{TransferTargets: desired, ETag: "new"}}, wantGets: 2},
+		{name: "precondition nonconverged", remote: []agent_api.TelephonyTransferTarget{}, etag: "etag",
+			writeErr: &azcore.ResponseError{StatusCode: http.StatusPreconditionFailed},
+			wantErr:  "safely confirmed", wantGets: 6},
+		{name: "unknown converged", remote: []agent_api.TelephonyTransferTarget{}, etag: "etag",
+			writeErr: &agent_api.TelephonyWriteOutcomeUnknownError{Err: errors.New("private")},
+			after:    []*agent_api.TelephonyTransferTargets{{TransferTargets: desired, ETag: "new"}}, wantGets: 2},
+		{name: "stale success response converges", remote: []agent_api.TelephonyTransferTarget{}, etag: "etag",
+			after: []*agent_api.TelephonyTransferTargets{{TransferTargets: desired, ETag: "new"}}, wantGets: 2},
+		{name: "unknown nonconverged", remote: []agent_api.TelephonyTransferTarget{}, etag: "etag",
+			writeErr: &agent_api.TelephonyWriteOutcomeUnknownError{Err: errors.New("private detail")},
+			wantErr:  "safely confirmed", wantGets: 6},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeTelephonyBindingClient{targetReplaceErr: test.writeErr}
+			if test.name == "stale success response converges" {
+				client.targetReplaceResult = &agent_api.TelephonyTransferTargets{
+					TransferTargets: []agent_api.TelephonyTransferTarget{}, ETag: "new",
+				}
+			}
+			if test.name == "get error" {
+				client.targetGetErr = errors.New("target get failed")
+			}
+			client.targetResults = append([]*agent_api.TelephonyTransferTargets{{
+				TransferTargets: test.remote, ETag: test.etag,
+			}}, test.after...)
+			err := reconcileTelephonyTransferTargets(t.Context(), client, "agent", desired, true)
+			if test.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantErr)
+				require.NotContains(t, err.Error(), "private")
+			}
+			require.Equal(t, test.wantGets, client.targetGetCalls)
+		})
+	}
+}
+
+func yamlTransferTargets(names ...string) []map[string]any {
+	targets := make([]map[string]any, 0, len(names))
+	for _, name := range names {
+		targets = append(targets, map[string]any{
+			"name": name, "description": name + " description",
+			"destination": map[string]any{"kind": "pstn", "value": "+14255550123"},
+		})
+	}
+	return targets
+}
+
+func typedTransferTargets(names ...string) []agent_api.TelephonyTransferTarget {
+	targets, err := transferTargetsFromYAML(yamlTransferTargets(names...))
+	if err != nil {
+		panic(err)
+	}
+	return targets
+}
+
+func TestDeployVoiceTelephonyBindings_DelegatesPagingToListAll(t *testing.T) {
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{{twilioGABinding("connection")}}}
+
+	err := preflightVoiceTelephonyBindings(
+		t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, twilioYAMLBinding()))
+
+	require.NoError(t, err)
+	require.Equal(t, []agent_api.TelephonyBindingListOptions{{}}, client.listOptions)
+}
+
+func TestDeployVoiceTelephonyBindings_ReturnsListError(t *testing.T) {
+	client := &fakeTelephonyBindingClient{listErr: errors.New("list failed")}
+
+	err := preflightVoiceTelephonyBindings(
+		t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, twilioYAMLBinding()))
+
+	require.ErrorContains(t, err, "list failed")
+	require.Equal(t, 1, client.listCalls)
 	require.Equal(t, 0, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_ReconcilesCreateConflict(t *testing.T) {
+	useFastTelephonyPolling(t)
+	client := &fakeTelephonyBindingClient{
+		listResults: [][]agent_api.GATelephonyBinding{{}, {twilioGABinding("connection")}},
+		createErr:   &azcore.ResponseError{StatusCode: http.StatusConflict},
+	}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
+	require.NoError(t, err)
+	require.Equal(t, 3, client.listCalls)
+	require.Equal(t, 1, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_ReconcilesConflictWithLegacyTeamsAlias(t *testing.T) {
+	useFastTelephonyPolling(t)
+	binding := agent_yaml.VoiceTelephonyBinding{
+		Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-000000000001", Connection: "acs",
+	}
+	remote := agent_api.GATelephonyBinding{
+		ID: "opaque", Provider: "teams_phone_extension",
+		ResourceAccountObjectID: "00000000-0000-0000-0000-000000000001", ConnectionName: "acs",
+		Status: agent_api.TelephonyBindingStatusActive,
+	}
+	client := &fakeTelephonyBindingClient{
+		listResults: [][]agent_api.GATelephonyBinding{{}, {remote}, {remote}},
+		createErr:   &azcore.ResponseError{StatusCode: http.StatusConflict},
+	}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, binding), voiceAgentObject())
+	require.NoError(t, err)
+	require.Equal(t, 1, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_RejectsInactiveBinding(t *testing.T) {
+	remote := twilioGABinding("connection")
+	remote.Status = agent_api.TelephonyBindingStatusSuspended
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{{remote}}}
+	err := preflightVoiceTelephonyBindings(
+		t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, twilioYAMLBinding()))
+	require.ErrorContains(t, err, "different mutable configuration")
+	require.Zero(t, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_PollsCreatingBindingToActive(t *testing.T) {
+	useFastTelephonyPolling(t)
+	creating := twilioGABinding("connection")
+	creating.Status = "creating"
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{
+		{creating}, {creating}, {twilioGABinding("connection")},
+	}}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
+	require.NoError(t, err)
+	require.Zero(t, client.createCalls)
+	require.Equal(t, 3, client.listCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_FinalRelistDetectsAllExistingDeletion(t *testing.T) {
+	useFastTelephonyPolling(t)
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{
+		{twilioGABinding("connection")}, {}, {}, {}, {}, {},
+	}}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
+	require.ErrorContains(t, err, "final telephony verification")
+	require.Zero(t, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_PartialCompletionCount(t *testing.T) {
+	first := twilioYAMLBinding()
+	second := agent_yaml.VoiceTelephonyBinding{
+		Provider: "twilio", Identifier: "+14255550124", Connection: "second",
+	}
+	client := &fakeTelephonyBindingClient{createErrs: []error{nil, errors.New("second failed")}}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, first, second), voiceAgentObject())
+	require.ErrorContains(t, err, "after confirming 1 binding")
+	require.Contains(t, azdext.WrapError(err).GetSuggestion(), "rerun azd deploy")
+}
+
+func TestTelephonyPartialCompletionPreservesCancellation(t *testing.T) {
+	err := telephonyPartialCompletionError(1, context.Canceled)
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "after confirming 1 binding")
+}
+
+func TestTelephonyPartialCompletionPreservesStructuredGRPCMessage(t *testing.T) {
+	cause := exterrors.Service("create", "forbidden", "service denied the request", "agents", "old suggestion")
+	err := telephonyPartialCompletionError(1, cause)
+	wrapped := azdext.WrapError(err)
+	require.Contains(t, wrapped.GetMessage(), "after confirming 1 binding")
+	require.Contains(t, wrapped.GetMessage(), "service denied")
+	require.Contains(t, wrapped.GetSuggestion(), "rerun azd deploy")
+}
+
+func TestDeployVoiceTelephonyBindings_CancellationStopsBeforeNextCreate(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	first := twilioYAMLBinding()
+	second := agent_yaml.VoiceTelephonyBinding{
+		Provider: "twilio", Identifier: "+14255550124", Connection: "second",
+	}
+	client := &fakeTelephonyBindingClient{cancelAfterSuccess: cancel}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		ctx, client, mustDesiredTelephonyBindings(t, first, second), voiceAgentObject())
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 1, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_CanceledUnknownWriteUsesSafetyRelist(t *testing.T) {
+	useFastTelephonyPolling(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	client := &fakeTelephonyBindingClient{
+		listResults:  [][]agent_api.GATelephonyBinding{{}},
+		createErr:    &agent_api.TelephonyWriteOutcomeUnknownError{Err: context.Canceled},
+		cancelCreate: cancel,
+	}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		ctx, client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
+	var unknown *agent_api.TelephonyWriteOutcomeUnknownError
+	require.ErrorAs(t, err, &unknown)
+	require.Equal(t, 6, client.listCalls)
+}
+
+func TestConfirmAllTelephonyBindings_PreservesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	client := &fakeTelephonyBindingClient{}
+	err := confirmAllTelephonyBindings(
+		ctx, client, "agent", mustDesiredTelephonyBindings(t, twilioYAMLBinding()))
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestTelephonySafetyRelistErrorPreservesBothCauses(t *testing.T) {
+	unknown := &agent_api.TelephonyWriteOutcomeUnknownError{Err: errors.New("secret create detail")}
+	listErr := errors.New("secret list detail")
+	err := &telephonySafetyRelistError{createErr: unknown, listErr: listErr}
+	require.ErrorIs(t, err, unknown)
+	require.ErrorIs(t, err, listErr)
+	require.NotContains(t, err.Error(), "secret create detail")
+	require.NotContains(t, err.Error(), "secret list detail")
+}
+
+func TestDesiredTelephonyBindings_PrevalidatesAllConnections(t *testing.T) {
+	bindings := []agent_yaml.VoiceTelephonyBinding{
+		twilioYAMLBinding(),
+		{Provider: "twilio", Identifier: "+14255550124", Connection: strings.Repeat("界", 257)},
+	}
+	_, err := desiredTelephonyBindings(bindings)
+	require.ErrorContains(t, err, "256")
+}
+
+func TestDeployVoiceTelephonyBindings_RejectsMissingAgentName(t *testing.T) {
+	client := &fakeTelephonyBindingClient{}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), nil)
+	require.ErrorContains(t, err, "deployed agent name")
+	require.Zero(t, client.listCalls)
+}
+
+func TestTelephonyErrorsDoNotExposeBindingIdentity(t *testing.T) {
+	secret := "+14255550123"
+	desired := mustDesiredTelephonyBindings(t, agent_yaml.VoiceTelephonyBinding{
+		Provider: "twilio", Identifier: secret, Connection: "connection",
+	})
+	err := telephonyBindingDriftError(desired[0])
+	require.NotContains(t, err.Error(), secret)
+}
+
+func TestTelephonyTransferTargetsEqual_DistinguishesUnknownRawDestination(t *testing.T) {
+	known := agent_api.TelephonyTransferTarget{
+		Name: "support", Description: "Support",
+		Destination: agent_api.TelephonyTransferDestination{
+			Kind: agent_api.TelephonyTransferDestinationPSTN, Value: "+14255550123",
+		},
+	}
+	unknown := known
+	require.NoError(t, json.Unmarshal(
+		[]byte(`{"type":"pstn","value":"+14255550123"}`),
+		&unknown.Destination,
+	))
+	require.False(t, telephonyTransferTargetsEqual(
+		[]agent_api.TelephonyTransferTarget{known},
+		[]agent_api.TelephonyTransferTarget{unknown},
+	))
 }
 
 type fakeTelephonyBindingClient struct {
-	remote         *agent_api.TelephonyBinding
-	getErr         error
-	createErr      error
-	getCalls       int
-	createCalls    int
-	bindingID      string
-	overriddenHost string
+	listResults         [][]agent_api.GATelephonyBinding
+	listErr             error
+	createErr           error
+	createErrs          []error
+	listCalls           int
+	createCalls         int
+	listOptions         []agent_api.TelephonyBindingListOptions
+	createRequests      []agent_api.TelephonyBindingCreateRequest
+	repeatability       []agent_api.TelephonyRepeatabilityOptions
+	cancelCreate        context.CancelFunc
+	cancelAfterSuccess  context.CancelFunc
+	lastList            []agent_api.GATelephonyBinding
+	targetResults       []*agent_api.TelephonyTransferTargets
+	targetGetErr        error
+	targetGetErrs       []error
+	targetReplaceErr    error
+	targetReplaceResult *agent_api.TelephonyTransferTargets
+	targetGetCalls      int
+	targetReplaceCalls  int
+	targetRequests      []agent_api.TelephonyTransferTargets
+	targetIfMatches     []string
+	lastTarget          *agent_api.TelephonyTransferTargets
 }
 
-func (c *fakeTelephonyBindingClient) GetTelephonyBinding(
+func (c *fakeTelephonyBindingClient) ListAllTelephonyBindings(
 	ctx context.Context,
 	agentName string,
-	bindingID string,
-	apiVersion string,
-	overriddenHost string,
-) (*agent_api.TelephonyBinding, error) {
-	c.getCalls++
-	c.bindingID = bindingID
-	c.overriddenHost = overriddenHost
-	return c.remote, c.getErr
+	options agent_api.TelephonyBindingListOptions,
+) ([]agent_api.GATelephonyBinding, error) {
+	c.listCalls++
+	c.listOptions = append(c.listOptions, options)
+	if c.listErr != nil {
+		return nil, c.listErr
+	}
+	if len(c.listResults) < c.listCalls {
+		return slices.Clone(c.lastList), nil
+	}
+	result := c.listResults[c.listCalls-1]
+	c.lastList = slices.Clone(result)
+	return result, nil
 }
 
-func (c *fakeTelephonyBindingClient) CreateTelephonyBinding(
+func (c *fakeTelephonyBindingClient) CreateGATelephonyBinding(
 	ctx context.Context,
 	agentName string,
-	request *agent_api.TelephonyBindingRequest,
-	apiVersion string,
-	overriddenHost string,
-) (*agent_api.TelephonyBinding, error) {
+	request agent_api.TelephonyBindingCreateRequest,
+	repeatability agent_api.TelephonyRepeatabilityOptions,
+) (*agent_api.GATelephonyBinding, error) {
 	c.createCalls++
-	c.overriddenHost = overriddenHost
-	return &agent_api.TelephonyBinding{ID: request.Provider + ":" + request.Identifier}, c.createErr
+	c.createRequests = append(c.createRequests, request)
+	c.repeatability = append(c.repeatability, repeatability)
+	if c.cancelCreate != nil {
+		c.cancelCreate()
+	}
+	createErr := c.createErr
+	if len(c.createErrs) >= c.createCalls {
+		createErr = c.createErrs[c.createCalls-1]
+	}
+	if createErr != nil {
+		return nil, createErr
+	}
+	created := &agent_api.GATelephonyBinding{
+		ID: "opaque-service-id", Status: agent_api.TelephonyBindingStatusActive,
+	}
+	switch typed := request.(type) {
+	case *agent_api.CreateTwilioTelephonyBindingRequest:
+		created.Provider = agent_api.TelephonyProviderTwilio
+		created.PhoneNumber = typed.PhoneNumber
+		created.ConnectionName = typed.ConnectionName
+	case *agent_api.CreateTeamsPhoneTelephonyBindingRequest:
+		created.Provider = agent_api.TelephonyProviderTeamsPhoneExtensibility
+		created.ResourceAccountObjectID = typed.ResourceAccountObjectID
+		created.ConnectionName = typed.ConnectionName
+	}
+	c.lastList = append(c.lastList, *created)
+	if c.cancelAfterSuccess != nil {
+		c.cancelAfterSuccess()
+	}
+	return created, nil
 }
 
-func TestTelephonyWireProvider(t *testing.T) {
-	require.Equal(t, "azure-communication-service", telephonyWireProvider("acs"))
-	require.Equal(t, "twilio", telephonyWireProvider("twilio"))
+func (c *fakeTelephonyBindingClient) GetTelephonyTransferTargets(
+	ctx context.Context,
+	agentName string,
+) (*agent_api.TelephonyTransferTargets, error) {
+	c.targetGetCalls++
+	err := c.targetGetErr
+	if len(c.targetGetErrs) >= c.targetGetCalls {
+		err = c.targetGetErrs[c.targetGetCalls-1]
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(c.targetResults) >= c.targetGetCalls {
+		result := *c.targetResults[c.targetGetCalls-1]
+		result.TransferTargets = slices.Clone(result.TransferTargets)
+		c.lastTarget = &result
+		return &result, nil
+	}
+	if c.lastTarget != nil {
+		result := *c.lastTarget
+		result.TransferTargets = slices.Clone(result.TransferTargets)
+		return &result, nil
+	}
+	return &agent_api.TelephonyTransferTargets{TransferTargets: []agent_api.TelephonyTransferTarget{}, ETag: "etag"}, nil
+}
+
+func (c *fakeTelephonyBindingClient) ReplaceTelephonyTransferTargets(
+	ctx context.Context,
+	agentName string,
+	request agent_api.TelephonyTransferTargets,
+	ifMatch string,
+) (*agent_api.TelephonyTransferTargets, error) {
+	c.targetReplaceCalls++
+	c.targetRequests = append(c.targetRequests, request)
+	c.targetIfMatches = append(c.targetIfMatches, ifMatch)
+	if c.targetReplaceErr != nil {
+		return nil, c.targetReplaceErr
+	}
+	if c.targetReplaceResult != nil {
+		result := *c.targetReplaceResult
+		result.TransferTargets = slices.Clone(result.TransferTargets)
+		return &result, nil
+	}
+	request.ETag = "new-etag"
+	return &request, nil
+}
+
+func twilioYAMLBinding() agent_yaml.VoiceTelephonyBinding {
+	return agent_yaml.VoiceTelephonyBinding{
+		Provider: "twilio", Identifier: "+14255550123", Connection: "connection",
+	}
+}
+
+func twilioGABinding(connection string) agent_api.GATelephonyBinding {
+	return agent_api.GATelephonyBinding{
+		ID: "opaque", Provider: agent_api.TelephonyProviderTwilio,
+		PhoneNumber: "+14255550123", ConnectionName: connection,
+		Status: agent_api.TelephonyBindingStatusActive,
+	}
+}
+
+func mustDesiredTelephonyBindings(
+	t *testing.T,
+	bindings ...agent_yaml.VoiceTelephonyBinding,
+) []desiredTelephonyBinding {
+	t.Helper()
+	desired, err := desiredTelephonyBindings(bindings)
+	require.NoError(t, err)
+	return desired
+}
+
+func useFastTelephonyPolling(t *testing.T) {
+	t.Helper()
+	previousWait := telephonyPollWait
+	previousAttempts := telephonyPollMaxAttempts
+	telephonyPollWait = func(context.Context) bool { return true }
+	telephonyPollMaxAttempts = 5
+	t.Cleanup(func() {
+		telephonyPollWait = previousWait
+		telephonyPollMaxAttempts = previousAttempts
+	})
+}
+
+func voiceAgentObject() *agent_api.AgentObject {
+	agent := &agent_api.AgentObject{Name: "voice-agent"}
+	agent.Versions.Latest.Version = "1"
+	return agent
 }
 
 type fakeProjectAgentChecker struct {
@@ -477,6 +2032,243 @@ func TestAgentDeploymentFailedErrorPreservesServiceDetails(t *testing.T) {
 	require.Contains(t, serviceErr.Suggestion, "azd ai agent monitor --type system --follow")
 }
 
+type fakeAgentVersionStatusReader struct {
+	statuses []string
+	calls    int
+}
+
+func (reader *fakeAgentVersionStatusReader) GetAgentVersion(
+	context.Context, string, string, string, bool,
+) (*agent_api.AgentVersionObject, error) {
+	status := reader.statuses[min(reader.calls, len(reader.statuses)-1)]
+	reader.calls++
+	if status == "error" {
+		return nil, errors.New("temporary poll failure")
+	}
+	version := &agent_api.AgentVersionObject{Status: status}
+	if status == "failed" {
+		version.Error = &agent_api.AgentVersionError{
+			Code: "SnapshotCreationError", Target: "HooksNotImplemented",
+			Message: "The agent server does not implement the before-snapshot hook.",
+		}
+	}
+	return version, nil
+}
+
+func TestAgentDeploymentSnapshotActivationPolling(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name     string
+		statuses []string
+		want     string
+		calls    int
+	}{
+		{name: "capture pending then active", statuses: []string{"creating", "active", "active"}, want: "active", calls: 3},
+		{name: "capture failed", statuses: []string{"creating", "failed", "failed"}, want: "failed", calls: 3},
+		{name: "transient poll resets confirmation", statuses: []string{"active", "error", "active", "active"}, want: "active", calls: 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			reader := &fakeAgentVersionStatusReader{statuses: test.statuses}
+			provider := &AgentServiceTargetProvider{}
+			version, err := provider.waitForAgentActive(
+				t.Context(), reader, "test.example.com", "snapshot-agent", "1", time.Nanosecond,
+				time.Second, new(true), func(string) {},
+			)
+			if test.want == "failed" {
+				require.ErrorContains(t, err, "HooksNotImplemented")
+				require.Nil(t, version)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, "active", version.Status)
+			}
+			require.Equal(t, test.calls, reader.calls)
+		})
+	}
+}
+
+func TestAgentDeploymentSnapshotActivationCancellationAndTimeout(t *testing.T) {
+	t.Parallel()
+	provider := &AgentServiceTargetProvider{}
+	reader := &fakeAgentVersionStatusReader{statuses: []string{"creating"}}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := provider.waitForAgentActive(
+		ctx, reader, "test.example.com", "snapshot-agent", "1", time.Second, time.Minute, new(true), func(string) {},
+	)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Zero(t, reader.calls)
+	_, err = provider.waitForAgentActive(
+		t.Context(), reader, "test.example.com", "snapshot-agent", "1", time.Second, -time.Nanosecond, new(true), func(string) {},
+	)
+	require.ErrorContains(t, err, "final deployment outcome is unknown")
+	require.Zero(t, reader.calls)
+}
+
+func TestAgentDeploymentSnapshotPollingErrorsTimeout(t *testing.T) {
+	t.Parallel()
+	for _, statuses := range [][]string{{"error"}, {"creating", "error"}} {
+		t.Run(strings.Join(statuses, " then "), func(t *testing.T) {
+			t.Parallel()
+			reader := &fakeAgentVersionStatusReader{statuses: statuses}
+			provider := &AgentServiceTargetProvider{}
+			_, err := provider.waitForAgentActive(
+				t.Context(), reader, "test.example.com", "snapshot-agent", "1",
+				10*time.Millisecond, 100*time.Millisecond, new(true), func(string) {},
+			)
+			serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+			require.True(t, ok)
+			require.Equal(t, "create_agent.timeout", serviceErr.ErrorCode)
+			require.Contains(t, serviceErr.Message, "outcome is unknown")
+			require.Contains(t, serviceErr.Message, "temporary poll failure")
+			if statuses[0] == "creating" {
+				require.Contains(t, serviceErr.Message, "creating")
+			}
+		})
+	}
+}
+
+func TestAgentDeploymentPollTimeout(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, 8*time.Minute, agentDeploymentPollTimeout)
+}
+
+func TestAgentDeploymentNonSnapshotPollingErrorPreservesClassification(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		enabled *bool
+	}{
+		{name: "absent"},
+		{name: "disabled", enabled: new(false)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &AgentServiceTargetProvider{}
+			reader := &fakeAgentVersionStatusReader{statuses: []string{"error"}}
+			_, err := provider.waitForAgentActive(
+				t.Context(), reader, "test.example.com", "ordinary-agent", "1",
+				10*time.Millisecond, 100*time.Millisecond, test.enabled, func(string) {},
+			)
+			expected := exterrors.ServiceFromAzure(errors.New("temporary poll failure"), exterrors.OpCreateAgent)
+			require.Equal(t, expected, err)
+		})
+	}
+}
+
+func TestAgentDeploymentFailedErrorMemorySnapshot(t *testing.T) {
+	t.Parallel()
+	var version agent_api.AgentVersionObject
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"status":"failed",
+		"error":{
+			"code":"SnapshotCreationError",
+			"target":"BeforeSnapshotHookFailed",
+			"message":"The agent's before-snapshot hook failed. The hook returned HTTP status 500."
+		}
+	}`), &version))
+	version.RequestID = "snapshot-request"
+	err := agentDeploymentFailedError(&version, "test.example.com")
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "create_agent.SnapshotCreationError", serviceErr.ErrorCode)
+	require.Contains(t, serviceErr.Message, "BeforeSnapshotHookFailed")
+	require.Contains(t, serviceErr.Message, "HTTP status 500")
+	require.Contains(t, serviceErr.Message, "snapshot-request")
+	require.Contains(t, serviceErr.Suggestion, "agent logs")
+	require.Contains(t, serviceErr.Suggestion, "hosting library")
+}
+
+func TestAgentDeploymentErrorWithVersion(t *testing.T) {
+	t.Parallel()
+	const projectID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg-test/" +
+		"providers/Microsoft.CognitiveServices/accounts/test-account/projects/test-project"
+	for _, test := range []struct {
+		name      string
+		projectID string
+		err       error
+	}{
+		{
+			name: "first deployment capture failure", projectID: projectID,
+			err: agentDeploymentFailedError(&agent_api.AgentVersionObject{
+				Error: &agent_api.AgentVersionError{Code: "SnapshotCreationError", Message: "hook failed"},
+			}, "test.example.com"),
+		},
+		{
+			name: "redeployment polling failure", projectID: projectID,
+			err: agentDeploymentTimeoutError(
+				&agent_api.AgentVersionObject{Name: "old-agent", Version: "1", Status: "creating"},
+				"test.example.com", errors.New("temporary poll failure"),
+			),
+		},
+		{
+			name: "project identity unavailable",
+			err:  agentDeploymentTimeoutError(nil, "test.example.com", nil),
+		},
+		{
+			name: "image failure remediation", projectID: projectID,
+			err: agentDeploymentFailedError(&agent_api.AgentVersionObject{
+				Error: &agent_api.AgentVersionError{Code: "ImageError", Message: "image failed"},
+			}, "test.example.com"),
+		},
+		{
+			name: "code failure remediation", projectID: projectID,
+			err: agentDeploymentFailedError(&agent_api.AgentVersionObject{
+				Error: &agent_api.AgentVersionError{Code: "CodeError", Message: "build failed"},
+			}, "test.example.com"),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := agentDeploymentErrorWithVersion(test.err, test.projectID, "attempted-agent", "7")
+			serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+			require.True(t, ok)
+			require.Contains(t, serviceErr.Suggestion, `agent "attempted-agent" version "7"`)
+			require.NotContains(t, serviceErr.Suggestion, "azd ai agent show")
+			require.NotContains(t, serviceErr.Suggestion, "old-agent")
+			if serviceErr.ErrorCode == "create_agent.timeout" {
+				require.Contains(t, serviceErr.Message, `agent "attempted-agent" version "7"`)
+				require.NotContains(t, serviceErr.Message, "old-agent")
+			}
+			if test.projectID != "" {
+				require.Contains(t, serviceErr.Suggestion, "/build/agents/attempted-agent/build?version=7")
+			}
+			if test.name == "first deployment capture failure" {
+				require.Contains(t, serviceErr.Suggestion, "snapshot hook diagnostics")
+			} else if test.name == "redeployment polling failure" {
+				require.Contains(t, serviceErr.Message, "outcome is unknown")
+				require.Contains(t, serviceErr.Message, "temporary poll failure")
+			} else if test.name == "image failure remediation" || test.name == "code failure remediation" {
+				require.Contains(t, serviceErr.Suggestion, "azd ai agent monitor --type system --follow")
+			}
+		})
+	}
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		err := fmt.Errorf("deployment cancelled: %w", cause)
+		wrapped := agentDeploymentErrorWithVersion(err, projectID, "attempted-agent", "7")
+		require.ErrorIs(t, wrapped, cause)
+		require.ErrorContains(t, wrapped, `agent "attempted-agent" version "7"`)
+		require.ErrorContains(t, wrapped, "/build/agents/attempted-agent/build?version=7")
+	}
+}
+
+func TestAgentDeploymentTimeoutError(t *testing.T) {
+	t.Parallel()
+	for _, version := range []*agent_api.AgentVersionObject{nil, {Status: "creating"}} {
+		err := agentDeploymentTimeoutError(version, "test.example.com", nil)
+		serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+		require.True(t, ok)
+		require.Equal(t, "create_agent.timeout", serviceErr.ErrorCode)
+		require.Contains(t, serviceErr.Message, "outcome is unknown")
+		require.Contains(t, serviceErr.Message, "may still be running")
+		require.Contains(t, serviceErr.Message, "does not mean the deployment failed")
+		require.Contains(t, serviceErr.Message, "before deploying again")
+		require.Contains(t, serviceErr.Message, "another deploy creates a new version")
+		require.Contains(t, serviceErr.Suggestion, "Foundry portal")
+		if version != nil {
+			require.Contains(t, serviceErr.Message, version.Status)
+		}
+	}
+}
+
 func TestAgentDeploymentFailedErrorUsesFallbackCode(t *testing.T) {
 	t.Parallel()
 
@@ -487,9 +2279,26 @@ func TestAgentDeploymentFailedErrorUsesFallbackCode(t *testing.T) {
 	require.Equal(t, "create_agent.failed", serviceErr.ErrorCode)
 	require.Equal(
 		t,
-		"run `azd ai agent show` to inspect the latest deployment status",
+		"inspect the attempted agent version in the Foundry portal",
 		serviceErr.Suggestion,
 	)
+}
+
+func TestAgentDeploymentFailedErrorOmitsNonSnapshotTarget(t *testing.T) {
+	t.Parallel()
+	for _, code := range []string{"ImageError", "CodeError", "failed"} {
+		t.Run(code, func(t *testing.T) {
+			err := agentDeploymentFailedError(&agent_api.AgentVersionObject{
+				Error: &agent_api.AgentVersionError{
+					Code: code, Message: "deployment failed", Target: "non-snapshot-target",
+				},
+			}, "test.example.com")
+			serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+			require.True(t, ok)
+			require.NotContains(t, serviceErr.Message, "non-snapshot-target")
+			require.NotContains(t, serviceErr.Message, "(stage:")
+		})
+	}
 }
 
 func TestClassifyActivityBotErrorUsesMsaAppIDConflictCode(t *testing.T) {
@@ -703,6 +2512,8 @@ func newServiceTargetTestClient(
 	}
 	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
 		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
+	} else {
+		azdext.RegisterProjectServiceServer(srv, &previewProjectServer{})
 	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -1313,6 +3124,36 @@ func TestShouldUpdateVoiceAgent(t *testing.T) {
 		update, err := shouldUpdateVoiceAgent(&agent_api.AgentObject{Name: "voice"}, nil)
 		require.NoError(t, err)
 		require.True(t, update)
+	})
+
+	t.Run("persisted protocol does not prohibit a new protocol version", func(t *testing.T) {
+		for _, transition := range []struct {
+			from agent_yaml.VoiceSubProtocol
+			to   agent_yaml.VoiceSubProtocol
+		}{
+			{from: agent_yaml.VoiceSubProtocolRealtime, to: agent_yaml.VoiceSubProtocolLive},
+			{from: agent_yaml.VoiceSubProtocolLive, to: agent_yaml.VoiceSubProtocolRealtime},
+		} {
+			remote := &agent_api.AgentObject{Name: "voice"}
+			remote.Versions.Latest.Definition = agent_api.VoiceAgentDefinition{SubProtocol: string(transition.from)}
+			update, err := shouldUpdateVoiceAgent(remote, nil)
+			require.NoError(t, err)
+			require.True(t, update)
+
+			voice := agent_yaml.VoiceAgent{
+				AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "voice"},
+				SubProtocol:     transition.to,
+				Model:           &agent_yaml.Model{Id: "gpt-realtime"},
+			}
+			if transition.to == agent_yaml.VoiceSubProtocolLive {
+				voice.ModelType = agent_yaml.VoiceModelTypeSelfDeployed
+				voice.Model.Id = "gpt-live-1"
+			}
+			request, err := agent_yaml.CreateVoiceAgentAPIRequest(voice)
+			require.NoError(t, err)
+			definition := request.Definition.(agent_api.VoiceAgentDefinition)
+			require.Equal(t, string(transition.to), definition.SubProtocol)
+		}
 	})
 
 	t.Run("remote nil creates", func(t *testing.T) {
@@ -4305,6 +6146,31 @@ func TestEndpoints_VoiceRootRef_ResolvesProjectRoot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{endpoint}, got)
 	require.EqualValues(t, 1, projectServer.getCalls.Load())
+}
+
+func TestEndpoints_GPTLiveUsesPersistedLiveEndpoint(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	const endpoint = "wss://proj.services.ai.azure.com/api/projects/project/agents/live/" +
+		"endpoint/protocols/voice/live/sessions?api-version=v1"
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com/api/projects/project",
+		"AGENT_LIVE_NAME":          "live",
+		"AGENT_LIVE_VERSION":       "1",
+		"AGENT_LIVE_ENDPOINT":      endpoint,
+	})
+	provider := &AgentServiceTargetProvider{azdClient: client}
+	service := &azdext.ServiceConfig{
+		Name: "live", Host: foundryAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "voice", "name": "live", "subProtocol": "live",
+			"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+		}),
+	}
+	require.NoError(t, provider.Initialize(t.Context(), service))
+	got, err := provider.Endpoints(t.Context(), service, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{endpoint}, got)
 }
 
 func TestEndpoints_PromptRootRef_ValidatesConventionsBesideDefinition(t *testing.T) {

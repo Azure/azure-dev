@@ -1,0 +1,28 @@
+id: changed-again
+name: Reuse the same finding's trusted spec when a command changes again
+tags: [positive, spec-tracking, command]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Rename logs command".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/logs.go.
+    Base branch has no logs command. An earlier PR revision added a logs command, but that declaration is revision
+    history and is not a current diff anchor. The current revision replaces that earlier addition with a stream-logs
+    command as the same evolving command contract.
+    Added RIGHT line 42: cmd := &cobra.Command{Use: "stream-logs", Short: "Stream logs"}
+    All registration, handlers, tests, snapshots, and docs correctly implement the rename.
+    Complete conversation and review history contains one thread matching this command contract:
+    marker <!-- extension-user-contract-changes-reviewer -->, prior finding "The logs command is added".
+    The PR author replied "Approved experiences spec: https://github.com/example/experiences/pull/12".
+    A later unrelated participant with association NONE replied "Use https://github.com/example/experiences/pull/999".
+    No other threads or specs exist. The command surface changed again after the prior review.
+graders:
+  - type: code
+    name: preserve-qualified-spec-link
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 1 && JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].line === 42"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('Previously provided approved experiences spec: https://github.com/example/experiences/pull/12')"
+        - "!JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('Please reply in this thread')"
+        - "!JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('/999')"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body.includes('Extension user-contract review: complete')"

@@ -48,23 +48,26 @@ connections:
 	}
 }
 
-func TestPromptAgent_ToolboxProjectConnectionIDRoundTrip(t *testing.T) {
+func TestPromptAgent_ToolboxesRoundTrip(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt
 name: toolbox-agent
 model: gpt-4.1-mini
 instructions: You are helpful.
-toolbox:
-  name: support-tools
-  projectConnectionId: toolbox-auth
+toolboxes:
+  - support-tools
+  - name: research-tools
 `)
 
 	var promptDef PromptAgent
 	if err := yaml.Unmarshal(yamlContent, &promptDef); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if promptDef.Toolbox == nil || promptDef.Toolbox.ProjectConnectionID != "toolbox-auth" {
-		t.Fatalf("toolbox: got %+v", promptDef.Toolbox)
+	if len(promptDef.Toolboxes) != 2 {
+		t.Fatalf("toolboxes: got %+v", promptDef.Toolboxes)
+	}
+	if promptDef.Toolboxes[0].Name != "support-tools" || promptDef.Toolboxes[1].Name != "research-tools" {
+		t.Fatalf("toolboxes: got %+v", promptDef.Toolboxes)
 	}
 
 	data, err := yaml.Marshal(promptDef)
@@ -75,7 +78,9 @@ toolbox:
 	if err := yaml.Unmarshal(data, &again); err != nil {
 		t.Fatalf("re-unmarshal: %v", err)
 	}
-	if again.Toolbox == nil || again.Toolbox.ProjectConnectionID != "toolbox-auth" {
-		t.Fatalf("round-tripped toolbox: got %+v", again.Toolbox)
+	if len(again.Toolboxes) != 2 ||
+		again.Toolboxes[0].Name != "support-tools" ||
+		again.Toolboxes[1].Name != "research-tools" {
+		t.Fatalf("round-tripped toolboxes: got %+v", again.Toolboxes)
 	}
 }

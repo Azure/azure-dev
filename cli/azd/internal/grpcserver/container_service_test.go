@@ -413,7 +413,15 @@ func TestMapContainerPublishError_LocalFallbackFailure(t *testing.T) {
 			detail := requireServiceErrorDetail(t, st)
 			require.Equal(t, "TasksOperationsNotAllowed", detail.GetErrorCode())
 			require.Equal(t, int32(http.StatusForbidden), detail.GetStatusCode())
-			require.Empty(t, relayedExtensionErrorDetails(st))
+			if tt.name == "Canceled" {
+				relayed := requireRelayedExtensionError(t, st)
+				localErr, ok := errors.AsType[*azdext.LocalError](azdext.UnwrapError(relayed))
+				require.True(t, ok)
+				require.Equal(t, azdext.LocalErrorCategoryUser, localErr.Category)
+				require.Equal(t, "canceled", localErr.Code)
+			} else {
+				require.Empty(t, relayedExtensionErrorDetails(st))
+			}
 		})
 	}
 }

@@ -4,13 +4,17 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -498,7 +502,11 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 	var definition *agent_yaml.ContainerAgent
 	output, err := captureStdout(t, func() error {
 		var runErr error
-		definition, runErr = action.createDefinitionFromLocalAgent(t.Context())
+		protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil)
+		if err != nil {
+			return err
+		}
+		definition, runErr = action.createDefinitionFromLocalAgent(t.Context(), protocols)
 		return runErr
 	})
 	if err != nil {
@@ -528,6 +536,56 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 	}
 }
 
+func TestCreateDefinitionFromLocalAgent_NativeA2A(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		protocols []string
+	}{
+		{"native only", []string{"a2a"}},
+		{"coexisting", []string{"responses", "invocations", "a2a"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			source := []byte("# Existing agent implementation; init must not generate an A2A server.\n")
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), source, 0600))
+			const envName = "agent-dev"
+			envServer := &testEnvironmentServiceServer{values: map[string]map[string]string{envName: {}}}
+			action := &InitFromCodeAction{
+				azdClient:   newTestAzdClient(t, envServer, &testWorkflowServiceServer{}),
+				environment: &azdext.Environment{Name: envName},
+				flags: &initFlags{
+					noPrompt: true, env: envName, agentName: "native-agent", src: dir,
+					protocols: tt.protocols, deployMode: "code", runtime: "python_3_13",
+					entryPoint: "app.py", depResolution: "remote",
+				},
+			}
+			t.Setenv(featureflags.A2A.EnvVar, "true")
+			protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, tt.protocols)
+			require.NoError(t, err)
+			definition, err := action.createDefinitionFromLocalAgent(t.Context(), protocols)
+			require.NoError(t, err)
+			require.Equal(t, tt.protocols, definition.AgentEndpoint.Protocols)
+			require.Contains(t, definition.Protocols, agent_yaml.ProtocolVersionRecord{Protocol: "a2a", Version: "1.0.0"})
+			properties, err := project.AgentDefinitionToServiceProperties(*definition, nil)
+			require.NoError(t, err)
+			endpoint := properties.Fields["agentEndpoint"].GetStructValue()
+			require.NotNil(t, endpoint)
+			endpointProtocols := endpoint.Fields["protocols"].GetListValue().Values
+			require.Len(t, endpointProtocols, len(tt.protocols))
+			for i, protocol := range tt.protocols {
+				require.Equal(t, protocol, endpointProtocols[i].GetStringValue())
+			}
+			contents, err := os.ReadFile(filepath.Join(dir, "app.py"))
+			require.NoError(t, err)
+			require.Equal(t, source, contents)
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			require.Len(t, entries, 1, "creating the definition must not generate an agent implementation")
+		})
+	}
+}
+
 func TestCreateDefinitionFromLocalAgent_PreBuiltImageIsDirect(t *testing.T) {
 	t.Chdir(t.TempDir())
 
@@ -551,7 +609,9 @@ func TestCreateDefinitionFromLocalAgent_PreBuiltImageIsDirect(t *testing.T) {
 		},
 	}
 
-	definition, err := action.createDefinitionFromLocalAgent(t.Context())
+	protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil)
+	require.NoError(t, err)
+	definition, err := action.createDefinitionFromLocalAgent(t.Context(), protocols)
 	require.NoError(t, err)
 	require.Equal(t, image, definition.Image)
 	require.Equal(t, "private-registry", definition.RegistryConnectionID)
@@ -587,7 +647,9 @@ func TestCreateDefinitionFromLocalAgent_LoadsPersistedProjectBeforeAcrValidation
 		},
 	}
 
-	_, err := action.createDefinitionFromLocalAgent(t.Context())
+	protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil)
+	require.NoError(t, err)
+	_, err = action.createDefinitionFromLocalAgent(t.Context(), protocols)
 
 	require.ErrorContains(t, err, "invalid --project-id value")
 	require.Equal(t, "invalid-project-id", action.flags.projectResourceId)
@@ -661,6 +723,132 @@ func stringSlicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestNativeA2AInitProtocols(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		noPrompt bool
+		flags    []string
+		want     []agent_yaml.ProtocolVersionRecord
+	}{
+		{"explicit", false, []string{"a2a"}, []agent_yaml.ProtocolVersionRecord{{Protocol: "a2a", Version: "1.0.0"}}},
+		{"noninteractive", true, []string{"a2a"}, []agent_yaml.ProtocolVersionRecord{{Protocol: "a2a", Version: "1.0.0"}}},
+		{"default", true, nil, []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}},
+		{"coexisting", true, []string{"responses", "a2a", "a2a"}, []agent_yaml.ProtocolVersionRecord{
+			{Protocol: "responses", Version: "2.0.0"}, {Protocol: "a2a", Version: "1.0.0"},
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := promptProtocols(t.Context(), nil, tt.noPrompt, tt.flags, true, true)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestNativeA2AInitInteractive(t *testing.T) {
+	t.Parallel()
+	for _, nativeOnly := range []bool{true, false} {
+		name := "native only"
+		if !nativeOnly {
+			name = "native and responses"
+		}
+		t.Run(name, func(t *testing.T) {
+			client := &fakePromptClient{multiSelectFn: func(
+				_ context.Context, request *azdext.MultiSelectRequest, _ ...grpc.CallOption,
+			) (*azdext.MultiSelectResponse, error) {
+				require.Equal(t, "Use arrow keys to move, space to toggle, enter to confirm", request.Options.HelpMessage)
+				choices := request.Options.Choices
+				require.Len(t, choices, 5)
+				for i, expected := range []struct{ value, label string }{
+					{"responses", "responses"}, {"invocations", "invocations"},
+					{"invocations_ws", "invocations_ws"}, {"activity", "activity"},
+					{"a2a", "a2a"},
+				} {
+					require.Equal(t, expected.value, choices[i].Value)
+					require.Equal(t, expected.label, choices[i].Label)
+					require.Equal(t, expected.value == "responses", choices[i].Selected)
+					choices[i].Selected = expected.value == "a2a" || (!nativeOnly && expected.value == "responses")
+				}
+				return &azdext.MultiSelectResponse{Values: choices}, nil
+			}}
+			got, err := promptProtocols(t.Context(), client, false, nil, true, true)
+			require.NoError(t, err)
+			want := []agent_yaml.ProtocolVersionRecord{{Protocol: "a2a", Version: "1.0.0"}}
+			if !nativeOnly {
+				want = append([]agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}, want...)
+			}
+			require.Equal(t, want, got)
+		})
+	}
+}
+
+func TestComposeLocalAgentEndpoint(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name      string
+		protocols []string
+		existing  bool
+	}{
+		{"native only", []string{"a2a"}, false},
+		{"coexisting", []string{"responses", "invocations", "invocations_ws", "a2a"}, false},
+		{"preserve endpoint", []string{"responses", "a2a"}, true},
+		{"preserve activity auth", []string{"activity", "responses", "a2a"}, true},
+		{"activity defaults", []string{"activity", "a2a"}, false},
+		{"no native", []string{"responses"}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			protocols, err := validateExplicitProtocols(tt.protocols)
+			require.NoError(t, err)
+			definition := &agent_yaml.ContainerAgent{Protocols: protocols}
+			selector := &agent_yaml.VersionSelector{
+				VersionSelectionRules: []agent_yaml.VersionSelectionRule{
+					{Type: "fixed_ratio", AgentVersion: "7", TrafficPercentage: new(int32(100))},
+				},
+			}
+			auth := []agent_yaml.AuthorizationScheme{{
+				Type: "AgentUserRbac", IsolationKeySource: &agent_yaml.IsolationKeySource{Kind: "user"},
+			}}
+			want := slices.Clone(tt.protocols)
+			if tt.existing {
+				definition.AgentEndpoint = &agent_yaml.AgentEndpoint{
+					Protocols: []string{"invocations"}, AuthorizationSchemes: auth, VersionSelector: selector,
+				}
+				want = append([]string{"invocations"}, want...)
+			}
+			composeLocalAgentEndpoint(definition)
+			if tt.name == "no native" {
+				require.Nil(t, definition.AgentEndpoint)
+				return
+			}
+			require.Equal(t, want, definition.AgentEndpoint.Protocols)
+			if tt.existing {
+				require.Equal(t, auth, definition.AgentEndpoint.AuthorizationSchemes)
+				require.Same(t, selector, definition.AgentEndpoint.VersionSelector)
+			} else if tt.name == "activity defaults" {
+				require.Equal(t, "BotServiceRbac", definition.AgentEndpoint.AuthorizationSchemes[0].Type)
+			} else {
+				require.Empty(t, definition.AgentEndpoint.AuthorizationSchemes)
+			}
+			// Composition is idempotent and does not add Responses to native-only init.
+			composeLocalAgentEndpoint(definition)
+			require.Equal(t, want, definition.AgentEndpoint.Protocols)
+			var writer bytes.Buffer
+			printNativeA2AGuidance(&writer, definition)
+			require.Contains(t, writer.String(),
+				"A2A hosted agent (1.0) configured; init does not generate an A2A server.")
+			for _, route := range []string{
+				"POST /a2a", "POST /invocations/a2a", "GET /invocations/a2a/.well-known/agent-card.json", "GET /readiness",
+			} {
+				require.Contains(t, writer.String(), route)
+			}
+		})
+	}
+	var writer bytes.Buffer
+	printNativeA2AGuidance(&writer, &agent_yaml.ContainerAgent{})
+	require.Empty(t, writer.String())
 }
 
 func TestPromptProtocols_FlagValues(t *testing.T) {
@@ -737,7 +925,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := promptProtocols(t.Context(), nil, false, tt.flagProtocols)
+			got, err := promptProtocols(t.Context(), nil, false, tt.flagProtocols, true, true)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -768,7 +956,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 func TestPromptProtocols_NoPromptDefault(t *testing.T) {
 	t.Parallel()
 
-	got, err := promptProtocols(t.Context(), nil, true, nil)
+	got, err := promptProtocols(t.Context(), nil, true, nil, false, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -922,7 +1110,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 			t.Parallel()
 
 			client := &fakePromptClient{multiSelectFn: tt.multiSelectFn}
-			got, err := promptProtocols(t.Context(), client, false, nil)
+			got, err := promptProtocols(t.Context(), client, false, nil, true, true)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -975,7 +1163,7 @@ func TestPromptProtocols_ChoicesIncludeInvocationsWsWithoutChangingDefault(t *te
 		return &azdext.MultiSelectResponse{Values: choices}, nil
 	}}
 
-	got, err := promptProtocols(t.Context(), client, false, nil)
+	got, err := promptProtocols(t.Context(), client, false, nil, true, true)
 	require.NoError(t, err)
 	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "2.0.0"},

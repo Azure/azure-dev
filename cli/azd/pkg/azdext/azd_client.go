@@ -23,8 +23,9 @@ import (
 
 type AzdClientOption func(*AzdClient) error
 
-// BetaServiceTarget returns the experimental v1beta service target client.
-// Preview capabilities are not available through the stable ServiceTarget client.
+// BetaServiceTarget returns the v1beta service target client.
+//
+// Deprecated: deployment preview is available through ServiceTarget in azd 1.37.0 or later.
 func (c *AzdClient) BetaServiceTarget() v1beta.ServiceTargetServiceClient {
 	return v1beta.NewServiceTargetServiceClient(c.connection)
 }

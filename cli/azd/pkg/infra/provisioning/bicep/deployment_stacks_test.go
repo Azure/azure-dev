@@ -134,6 +134,56 @@ func TestResolveDeploymentStacksMap_UnsetVarErrors(t *testing.T) {
 	require.Contains(t, err.Error(), "DOES_NOT_EXIST")
 }
 
+func TestResolveDeploymentStacksMap_UnsetVarInCompositeValueErrors(t *testing.T) {
+	for _, testCase := range []struct {
+		name               string
+		excludedActions    []osutil.ExpandableString
+		excludedPrincipals []osutil.ExpandableString
+		virtualEnv         map[string]string
+		unsetVariable      string
+	}{
+		{
+			name:            "excluded action",
+			excludedActions: expandableStrings("Microsoft.Authorization/${UNSET_SCOPE}/write"),
+			unsetVariable:   "UNSET_SCOPE",
+		},
+		{
+			name:            "transformed excluded action",
+			excludedActions: expandableStrings("Microsoft.Authorization/${UNSET_SCOPE,,}/write"),
+			unsetVariable:   "UNSET_SCOPE",
+		},
+		{
+			name:               "excluded principal",
+			excludedPrincipals: expandableStrings("principal-${UNSET_PRINCIPAL}-suffix"),
+			unsetVariable:      "UNSET_PRINCIPAL",
+		},
+		{
+			name:               "empty plan-time value",
+			excludedPrincipals: expandableStrings("principal-${EMPTY_PRINCIPAL}-suffix"),
+			virtualEnv:         map[string]string{"EMPTY_PRINCIPAL": ""},
+			unsetVariable:      "EMPTY_PRINCIPAL",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+			provider.options.VirtualEnv = testCase.virtualEnv
+			provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+				DenySettings: &provisioning.DenySettingsConfig{
+					Mode:               "denyDelete",
+					ExcludedActions:    testCase.excludedActions,
+					ExcludedPrincipals: testCase.excludedPrincipals,
+				},
+			}
+
+			_, err := provider.resolveDeploymentStacksMap(true)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "unset environment variable")
+			require.Contains(t, err.Error(), testCase.unsetVariable)
+		})
+	}
+}
+
 // TestResolveDeploymentStacksMap_OmitsDenySettingsOnDestroy verifies that the destroy path
 // (includeDenySettings=false) never resolves the deny lists, so an unavailable ${VAR} referenced
 // only by denySettings can't fail `azd down`. The stack delete APIs consume only actionOnUnmanage.
@@ -269,17 +319,128 @@ func TestResolveDeploymentStacksMap_DefaultExpression(t *testing.T) {
 
 	provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
 		DenySettings: &provisioning.DenySettingsConfig{
-			Mode:               "denyDelete",
-			ExcludedPrincipals: expandableStrings("${UNSET_PRINCIPAL:-55555555-5555-5555-5555-555555555555}"),
+			Mode: "denyDelete",
+			ExcludedPrincipals: expandableStrings(
+				"${UNSET_PRINCIPAL:-55555555-5555-5555-5555-555555555555}",
+				"prefix-${ANOTHER_UNSET_PRINCIPAL:-66666666-6666-6666-6666-666666666666}-suffix",
+			),
 		},
 	}
 
 	stacks, err := provider.resolveDeploymentStacksMap(true)
 	require.NoError(t, err)
-
 	denySettings, ok := stacks["denySettings"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, []string{"55555555-5555-5555-5555-555555555555"}, denySettings["excludedPrincipals"])
+	require.Equal(t, []string{
+		"55555555-5555-5555-5555-555555555555",
+		"prefix-66666666-6666-6666-6666-666666666666-suffix",
+	}, denySettings["excludedPrincipals"])
+}
+
+func TestResolveDeploymentStacksMap_NestedDefaultExpressions(t *testing.T) {
+	const principal = "55555555-5555-5555-5555-555555555555"
+	for _, tt := range []struct {
+		name          string
+		value         string
+		env           map[string]string
+		virtualEnv    map[string]string
+		want          string
+		unsetVariable string
+	}{
+		{
+			name:  "unused fallback",
+			value: "${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL}}",
+			env:   map[string]string{"PRIMARY_PRINCIPAL": principal},
+			want:  principal,
+		},
+		{
+			name:       "unused fallback with plan-time primary",
+			value:      "${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL}}",
+			virtualEnv: map[string]string{"PRIMARY_PRINCIPAL": principal},
+			want:       principal,
+		},
+		{
+			name:  "unused assignment fallback",
+			value: "${PRIMARY_PRINCIPAL:=${FALLBACK_PRINCIPAL}}",
+			env:   map[string]string{"PRIMARY_PRINCIPAL": principal},
+			want:  principal,
+		},
+		{
+			name:  "unused equals fallback",
+			value: "${PRIMARY_PRINCIPAL=${FALLBACK_PRINCIPAL}}",
+			env:   map[string]string{"PRIMARY_PRINCIPAL": principal},
+			want:  principal,
+		},
+		{
+			name:  "selected fallback",
+			value: "${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL}}",
+			env:   map[string]string{"FALLBACK_PRINCIPAL": principal},
+			want:  principal,
+		},
+		{
+			name:       "empty plan-time primary selects fallback",
+			value:      "${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL}}",
+			env:        map[string]string{"PRIMARY_PRINCIPAL": "ignored", "FALLBACK_PRINCIPAL": principal},
+			virtualEnv: map[string]string{"PRIMARY_PRINCIPAL": ""},
+			want:       principal,
+		},
+		{
+			name:  "nested literal default",
+			value: "${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL:-" + principal + "}}",
+			want:  principal,
+		},
+		{
+			name:          "missing selected fallback in composite",
+			value:         "prefix-${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL}}-suffix",
+			unsetVariable: "FALLBACK_PRINCIPAL",
+		},
+		{
+			name:          "missing reference outside unused fallback",
+			value:         "${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL}}-${FALLBACK_PRINCIPAL}",
+			env:           map[string]string{"PRIMARY_PRINCIPAL": principal},
+			unsetVariable: "FALLBACK_PRINCIPAL",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), tt.env)
+			provider.options.VirtualEnv = tt.virtualEnv
+			provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+				DenySettings: &provisioning.DenySettingsConfig{
+					Mode:               "denyDelete",
+					ExcludedPrincipals: expandableStrings(tt.value),
+				},
+			}
+
+			stacks, err := provider.resolveDeploymentStacksMap(true)
+			if tt.unsetVariable != "" {
+				require.ErrorContains(t, err, tt.unsetVariable)
+				return
+			}
+			require.NoError(t, err)
+			denySettings, ok := stacks["denySettings"].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, []string{tt.want}, denySettings["excludedPrincipals"])
+		})
+	}
+}
+
+func TestResolveDeploymentStacksMap_EscapedUnsetVarIsLiteral(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+	provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+		DenySettings: &provisioning.DenySettingsConfig{
+			Mode:            "denyDelete",
+			ExcludedActions: expandableStrings("Microsoft.Authorization/$${UNSET_SCOPE}/write"),
+		},
+	}
+
+	stacks, err := provider.resolveDeploymentStacksMap(true)
+	require.NoError(t, err)
+	denySettings, ok := stacks["denySettings"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(
+		t, []string{"Microsoft.Authorization/${UNSET_SCOPE}/write"}, denySettings["excludedActions"])
 }
 
 // TestUseDeploymentStateShortcut exercises every branch of the shortcut decision: it is disabled

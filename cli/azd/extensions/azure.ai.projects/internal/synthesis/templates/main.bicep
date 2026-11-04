@@ -30,6 +30,16 @@ type deploymentType = {
   }
 }
 
+type agentHostingType = {
+  enabled: bool
+  hostingType: 'ManagedCluster' | ''
+  name: string
+  clusterResourceId: string
+  hostingManagementIdentityResourceId: string?
+  storageAccountResourceId: string?
+  workloadIdentityResourceId: string?
+}
+
 // Parameters
 
 @description('Azure region for all resources.')
@@ -56,6 +66,38 @@ param deployments deploymentsType = []
 
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
+
+@description('Existing AKS hosting with independently optional Storage and managed identity references.')
+param agentHosting agentHostingType = {
+  enabled: false
+  hostingType: ''
+  name: ''
+  clusterResourceId: ''
+  hostingManagementIdentityResourceId: ''
+  storageAccountResourceId: ''
+  workloadIdentityResourceId: ''
+}
+
+@description('AKS kubelet principal ID for registry access; resolved by microsoft.foundry when omitted.')
+param kubeletObjectId string = ''
+
+@description('Federation-management role; resolved by microsoft.foundry when omitted.')
+param federatedIdentityRoleDefinitionId string = ''
+
+@description('Full ARM ID of an existing container registry to reuse instead of creating one.')
+param existingAcrResourceId string = ''
+
+@description('Project already has effective registry pull access.')
+param acrPullAssigned bool = false
+
+@description('Unique access operation ID persisted by azd before deployment.')
+param acrAccessOperationId string = ''
+
+@description('Principal ID of the supplied hosting-management identity; resolved by microsoft.foundry when omitted.')
+param hostingPrincipalId string = ''
+
+@description('Principal ID of the supplied workload identity; resolved by microsoft.foundry when omitted.')
+param workloadPrincipalId string = ''
 
 // Network isolation parameters (see modules/resources.bicep for semantics).
 // All default off so an absent network: block yields a public account.
@@ -114,6 +156,14 @@ module resources 'modules/resources.bicep' = {
     foundryProjectName: foundryProjectName
     deployments: deployments
     includeAcr: includeAcr
+    agentHosting: agentHosting
+    kubeletObjectId: kubeletObjectId
+    federatedIdentityRoleDefinitionId: federatedIdentityRoleDefinitionId
+    existingAcrResourceId: existingAcrResourceId
+    acrPullAssigned: acrPullAssigned
+    acrAccessOperationId: acrAccessOperationId
+    hostingPrincipalId: hostingPrincipalId
+    workloadPrincipalId: workloadPrincipalId
     enableNetworkIsolation: enableNetworkIsolation
     useManagedEgress: useManagedEgress
     vnetId: vnetId

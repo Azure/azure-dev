@@ -18,6 +18,8 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
+	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -1045,13 +1047,14 @@ services:
 		wantMain       string
 		wantRegistry   string
 		expectRegistry bool
+		wantAccess     bool
 	}{
 		{name: "create", env: map[string]string{"AZD_FOUNDRY_ACR_MODE": "create"}, wantMode: "create", wantMain: "resource adjunctResourceGroup", wantRegistry: "resource registry ", expectRegistry: true},
 		{name: "reuse connect", env: map[string]string{
 			"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
 			"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "registry.azurecr.io",
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/registry",
-		}, wantMode: "reuse-connect", wantMain: "scope: resourceGroup(split(existingAcrResourceId", wantRegistry: "existing =", expectRegistry: true},
+		}, wantMode: "reuse-connect", wantMain: "scope: resourceGroup(split(existingAcrResourceId", wantRegistry: "existing =", expectRegistry: true, wantAccess: true},
 		{name: "reuse connect with AcrPull", env: map[string]string{
 			"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
 			"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
@@ -1089,6 +1092,12 @@ services:
 				assert.Contains(t, string(registry), tt.wantRegistry)
 			} else {
 				assert.NoFileExists(t, registryPath)
+			}
+			accessPath := filepath.Join(dir, "infra", "modules", "acr-pull-role-assignment.bicep")
+			if tt.wantAccess {
+				assert.FileExists(t, accessPath)
+			} else {
+				assert.NoFileExists(t, accessPath)
 			}
 
 			params, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec
@@ -1702,6 +1711,7 @@ func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 			Value any `json:"value"`
 		} `json:"parameters"`
 	}
+
 	require.NoError(t, json.Unmarshal(raw, &doc),
 		"main.parameters.json must be valid JSON")
 
@@ -1728,6 +1738,61 @@ func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 	} {
 		assert.NotContains(t, doc.Parameters, k,
 			"%s is supplied at provision time and must not be hard-coded in the ejected file", k)
+	}
+}
+
+func TestEjectInfraPreservesAdoptionChoices(t *testing.T) {
+	for _, provider := range []string{"bicep", "terraform"} {
+		t.Run(provider, func(t *testing.T) {
+			dir := t.TempDir()
+			endpoint := "https://acct.services.ai.azure.com/api/projects/p1"
+			template, _, _ := strings.Cut(validFoundryAzureYAML, "    agents:")
+			template = strings.Replace(template, "host: azure.ai.project",
+				"host: azure.ai.project\n    endpoint: "+endpoint, 1)
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), template)
+			env := map[string]string{
+				projectDeploymentsEnvKey:   "[]",
+				"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+				"AZURE_AI_PROJECT_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+					"Microsoft.CognitiveServices/accounts/acct/projects/p1",
+				synthesis.DeploymentBindingsEnvKey: `{"gpt-4-1-mini":"selected-existing"}`,
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME":   "unrelated-default",
+			}
+			withCapturedStdout(t, func() {
+				require.NoError(t, ejectInfra(dir, provider, env))
+			})
+			filename := "main.parameters.json"
+			if provider == "terraform" {
+				filename = "main.tfvars.json"
+			}
+			raw, err := os.ReadFile(filepath.Join(dir, "infra", filename))
+			require.NoError(t, err)
+			var doc map[string]any
+			require.NoError(t, json.Unmarshal(raw, &doc))
+			var value any
+			if provider == "bicep" {
+				parameters, ok := doc["parameters"].(map[string]any)
+				require.True(t, ok)
+				deployments, ok := parameters["deployments"].(map[string]any)
+				require.True(t, ok)
+				value = deployments["value"]
+			} else {
+				value = doc["deployments"]
+			}
+			require.Equal(t, []any{}, value)
+			agent := &azdext.ServiceConfig{Uses: []string{"my-foundry"}}
+			services := map[string]*azdext.ServiceConfig{
+				"my-foundry": {
+					Host: project.FoundryProjectHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"deployments": []any{map[string]any{"name": "gpt-4-1-mini"}},
+					}),
+				},
+			}
+			model, err := project.ResolvePromptAgentModel("gpt-4-1-mini", agent, services, dir, env)
+			require.NoError(t, err)
+			require.Equal(t, "selected-existing", model)
+		})
 	}
 }
 
@@ -2179,6 +2244,80 @@ func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {
 	assert.Equal(t, "this is a file, not a dir", string(got))
 }
 
+func TestEjectInfra_BYOAKS(t *testing.T) {
+	const config = `name: byo-aks
+infra:
+  provider: microsoft.foundry
+services:
+  project:
+    host: azure.ai.project
+    agentHosting:
+      clusterResourceId: ${CLUSTER_ID}
+    network:
+      agentSubnet: {vnet: "${VNET_ID}", name: agents}
+      peSubnet: {vnet: "${VNET_ID}", name: endpoints}
+`
+	t.Run("Bicep preserves the provider and unresolved inputs", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWriteFile(t, filepath.Join(dir, "azure.yaml"), config)
+		withCapturedStdout(t, func() {
+			require.NoError(t, ejectInfra(dir, "bicep"))
+		})
+		raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json"))
+		require.NoError(t, err)
+		var parameters struct {
+			Parameters map[string]struct {
+				Value any `json:"value"`
+			} `json:"parameters"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &parameters))
+		hosting, ok := parameters.Parameters["agentHosting"].Value.(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "${CLUSTER_ID}", hosting["clusterResourceId"])
+		assert.Empty(t, hosting["storageAccountResourceId"])
+		assert.Equal(t, false, parameters.Parameters["includeAcr"].Value)
+		assert.NotContains(t, parameters.Parameters, "byoOnboarding")
+		require.FileExists(t, filepath.Join(dir, "infra", "modules", "byo-prerequisites.bicep"))
+		raw, err = os.ReadFile(filepath.Join(dir, "azure.yaml"))
+		require.NoError(t, err)
+		assert.Contains(t, string(raw), "provider: microsoft.foundry")
+	})
+	t.Run("Terraform fails before changing any files", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "azure.yaml")
+		mustWriteFile(t, path, config)
+		err := ejectInfra(dir, "terraform")
+		require.ErrorContains(t, err, "BYO AKS requires the microsoft.foundry provisioning provider")
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, config, string(raw))
+		require.NoDirExists(t, filepath.Join(dir, "infra"))
+	})
+	t.Run("Bicep preserves supplied-resource references", func(t *testing.T) {
+		dir := t.TempDir()
+		supplied := strings.Replace(config, "    network:",
+			"      storageAccountResourceId: ${STORAGE_ID}\n"+
+				"      hostingManagementIdentityResourceId: ${HOSTING_ID}\n"+
+				"      workloadIdentityResourceId: ${WORKLOAD_ID}\n    network:", 1)
+		mustWriteFile(t, filepath.Join(dir, "azure.yaml"), supplied)
+		withCapturedStdout(t, func() {
+			require.NoError(t, ejectInfra(dir, "bicep"))
+		})
+		raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json"))
+		require.NoError(t, err)
+		var parameters struct {
+			Parameters map[string]struct{ Value any }
+		}
+		require.NoError(t, json.Unmarshal(raw, &parameters))
+		hosting, ok := parameters.Parameters["agentHosting"].Value.(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "${STORAGE_ID}", hosting["storageAccountResourceId"])
+		assert.Equal(t, "${HOSTING_ID}", hosting["hostingManagementIdentityResourceId"])
+		assert.Equal(t, "${WORKLOAD_ID}", hosting["workloadIdentityResourceId"])
+		assert.Equal(t, "${CLUSTER_ID}", hosting["clusterResourceId"])
+	})
+}
+
 func TestEjectInfra_RefusesSymlinkedFoundryPath(t *testing.T) {
 	t.Parallel()
 	projectRoot := t.TempDir()
@@ -2399,10 +2538,14 @@ func TestEjectInfraAfterInit_UsesActiveEnvironmentForCondition(t *testing.T) {
 		},
 	}
 	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+	ctx, timing := inittelemetry.NewContext(t.Context())
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfraAfterInit(t.Context(), "bicep", azdClient))
+		require.NoError(t, ejectInfraAfterInit(ctx, "bicep", azdClient))
 	})
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Len(t, recordedStepDurations(t, recorder, inittelemetry.InfraGeneration), 1)
 
 	// G304: the test path comes from t.TempDir.
 	//nolint:gosec
@@ -2458,7 +2601,11 @@ func TestEjectInfraAfterInit_NoProject(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
 	t.Chdir(t.TempDir())
 
-	assert.NoError(t, ejectInfraAfterInit(t.Context(), "bicep"))
+	ctx, timing := inittelemetry.NewContext(t.Context())
+	assert.NoError(t, ejectInfraAfterInit(ctx, "bicep"))
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Empty(t, recordedStepDurations(t, recorder, inittelemetry.InfraGeneration))
 }
 
 func TestEjectInfraAfterInit_SkipsProjectWithoutFoundryService(t *testing.T) {
@@ -2471,8 +2618,32 @@ services:
 `), 0600))
 	t.Chdir(projectRoot)
 
-	assert.NoError(t, ejectInfraAfterInit(t.Context(), "bicep"))
+	ctx, timing := inittelemetry.NewContext(t.Context())
+	assert.NoError(t, ejectInfraAfterInit(ctx, "bicep"))
 	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Empty(t, recordedStepDurations(t, recorder, inittelemetry.InfraGeneration))
+}
+
+func TestEjectInfraAfterInit_EnvironmentFailureIsNotGeneration(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+		"name: test\nservices:\n  project:\n    host: azure.ai.project\n",
+	), 0o600))
+	t.Chdir(root)
+	environment := &helpersFailingEnvironmentServer{
+		testEnvironmentServiceServer: testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}},
+		getValuesErr:                 errors.New("environment loading stopped"),
+	}
+	client := newTestAzdClient(t, environment, nil)
+	ctx, timing := inittelemetry.NewContext(t.Context())
+	require.ErrorContains(t, ejectInfraAfterInit(ctx, "bicep", client), "environment loading stopped")
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Empty(t, recordedStepDurations(t, recorder, inittelemetry.InfraGeneration))
+	require.NoDirExists(t, filepath.Join(root, "infra"))
 }
 
 func TestEjectInfraAfterInit_PropagatesInvalidFoundryConfiguration(t *testing.T) {

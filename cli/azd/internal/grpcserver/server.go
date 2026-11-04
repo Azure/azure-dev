@@ -190,7 +190,7 @@ func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 	) (any, error) {
 		resp, err := handler(ctx, req)
 		if err != nil {
-			err = mapHostError(err)
+			err = mapHostErrorForMethod(info.FullMethod, err)
 			if strings.HasPrefix(info.FullMethod, "/azd.extensions.v1beta.") {
 				err = translateBetaStatusDetails(err)
 			} else if legacybridge.IsLegacyMethod(info.FullMethod) {
@@ -255,6 +255,11 @@ func (s *Server) tokenAuthInterceptor(serverInfo *ServerInfo) grpc.UnaryServerIn
 	) (any, error) {
 		ctx, err := s.validateAuthToken(ctx, serverInfo)
 		if err != nil {
+			if info.FullMethod == azdext.TelemetryService_ReportUsage_FullMethodName ||
+				info.FullMethod == v1beta.TelemetryService_ReportUsage_FullMethodName ||
+				info.FullMethod == "/azdext.TelemetryService/ReportUsage" {
+				recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonUnauthenticated)
+			}
 			return nil, err
 		}
 

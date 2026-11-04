@@ -17,13 +17,17 @@ import (
 
 type Asker func(p survey.Prompt, response any) error
 
+type confirmWithRequiredResponse struct {
+	*survey.Confirm
+}
+
 func NewAsker(noPrompt bool, isTerminal bool, w io.Writer, r io.Reader) Asker {
 	if noPrompt {
 		return askOneNoPrompt
 	}
 
 	return func(p survey.Prompt, response any) error {
-		return askOnePrompt(p, response, isTerminal, w, r)
+		return askOnePrompt(p, response, isTerminal, w, r, false)
 	}
 }
 
@@ -89,7 +93,13 @@ func withShowCursor(o *survey.AskOptions) error {
 	return nil
 }
 
-func askOnePrompt(p survey.Prompt, response any, isTerminal bool, stdout io.Writer, stdin io.Reader) error {
+func askOnePrompt(
+	p survey.Prompt, response any, isTerminal bool, stdout io.Writer, stdin io.Reader, requireInput bool,
+) error {
+	if confirmation, ok := p.(*confirmWithRequiredResponse); ok {
+		p = confirmation.Confirm
+		requireInput = true
+	}
 	// Like (*bufio.Reader).ReadString(byte) except that it does not buffer input from the input stream.
 	// Instead, it reads a byte at a time until a delimiter is found or EOF is encountered,
 	// returning bytes read with no extra characters consumed.
@@ -185,7 +195,7 @@ func askOnePrompt(p survey.Prompt, response any, isTerminal bool, stdout io.Writ
 			err := askOnePrompt(&survey.Confirm{
 				Message: fmt.Sprintf("\n  select %s?", item),
 				Default: itemResponse,
-			}, &itemResponse, isTerminal, stdout, stdin)
+			}, &itemResponse, isTerminal, stdout, stdin, false)
 			if err != nil {
 				return err
 			}
@@ -256,17 +266,19 @@ func askOnePrompt(p survey.Prompt, response any, isTerminal bool, stdout io.Writ
 				*pResponse = false
 				return nil
 			case "":
-				// An empty line (the user pressed Enter) or EOF (piped stdin exhausted) accepts
-				// the prompt's default value, consistent with how Input and Select fall back to
-				// their defaults. Real CI/agent runs auto-enable no-prompt mode (askOneNoPrompt),
-				// so this interactive path is only reached when input is piped in.
+				if requireInput && errors.Is(err, io.EOF) && !strings.HasSuffix(result, "\n") {
+					break
+				}
+				// Enter accepts the default. Unanswered EOF does too unless input is required.
 				*pResponse = defaultValue
 				return nil
 			}
 
-			// A final invalid token immediately followed by EOF has no further input to reprocess;
-			// fall back to the default rather than looping forever.
+			// EOF leaves no further answer to read. Preserve the legacy default unless input is required.
 			if errors.Is(err, io.EOF) {
+				if requireInput {
+					return io.EOF
+				}
 				*pResponse = defaultValue
 				return nil
 			}

@@ -104,6 +104,13 @@ ERROR: initializing service '...', getting framework service: language 'logicapp
 
 ## Local Development
 
+### Dependency versions
+
+Keep dependencies shared with azd core aligned with the versions in `cli/azd/go.mod`,
+including the indirect gRPC and OpenTelemetry requirements. See the
+[dependency synchronization policy](../../docs/dependency-version-sync.md) for the
+shared direct dependency check.
+
 ### Prerequisites
 
 1. **Install developer kit extension** (if not already installed):

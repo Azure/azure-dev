@@ -240,6 +240,7 @@ func (x *ServiceTargetMessage) GetEndpointsResponse() *ServiceTargetEndpointsRes
 	return nil
 }
 
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/service_target.proto.
 func (x *ServiceTargetMessage) GetPreviewRequest() *ServiceTargetPreviewRequest {
 	if x != nil {
 		if x, ok := x.MessageType.(*ServiceTargetMessage_PreviewRequest); ok {
@@ -249,6 +250,7 @@ func (x *ServiceTargetMessage) GetPreviewRequest() *ServiceTargetPreviewRequest 
 	return nil
 }
 
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/service_target.proto.
 func (x *ServiceTargetMessage) GetPreviewResponse() *ServiceTargetPreviewResponse {
 	if x != nil {
 		if x, ok := x.MessageType.(*ServiceTargetMessage_PreviewResponse); ok {
@@ -323,10 +325,16 @@ type ServiceTargetMessage_EndpointsResponse struct {
 }
 
 type ServiceTargetMessage_PreviewRequest struct {
+	// Deprecated: use the v1 preview_request in azd 1.37.0 or later.
+	//
+	// Deprecated: Marked as deprecated in azd/extensions/v1beta/service_target.proto.
 	PreviewRequest *ServiceTargetPreviewRequest `protobuf:"bytes,21,opt,name=preview_request,json=previewRequest,proto3,oneof"`
 }
 
 type ServiceTargetMessage_PreviewResponse struct {
+	// Deprecated: use the v1 preview_response in azd 1.37.0 or later.
+	//
+	// Deprecated: Marked as deprecated in azd/extensions/v1beta/service_target.proto.
 	PreviewResponse *ServiceTargetPreviewResponse `protobuf:"bytes,22,opt,name=preview_response,json=previewResponse,proto3,oneof"`
 }
 
@@ -692,6 +700,9 @@ type RegisterServiceTargetRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Host  string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"` // unique identifier for the provider
 	// Explicit opt-in; older extensions do not support deployment preview.
+	// Deprecated: use the v1 supports_preview in azd 1.37.0 or later.
+	//
+	// Deprecated: Marked as deprecated in azd/extensions/v1beta/service_target.proto.
 	SupportsPreview bool `protobuf:"varint,2,opt,name=supports_preview,json=supportsPreview,proto3" json:"supports_preview,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -734,6 +745,7 @@ func (x *RegisterServiceTargetRequest) GetHost() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/service_target.proto.
 func (x *RegisterServiceTargetRequest) GetSupportsPreview() bool {
 	if x != nil {
 		return x.SupportsPreview
@@ -1077,6 +1089,9 @@ func (x *ServiceTargetDeployResponse) GetResult() *ServiceDeployResult {
 }
 
 // ServiceTargetPreviewRequest requests a read-only preview without initialization or deployment preparation.
+// Deprecated: use azd.extensions.v1.ServiceTargetPreviewRequest in azd 1.37.0 or later.
+//
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/service_target.proto.
 type ServiceTargetPreviewRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ServiceConfig *ServiceConfig         `protobuf:"bytes,1,opt,name=service_config,json=serviceConfig,proto3" json:"service_config,omitempty"`
@@ -1122,6 +1137,9 @@ func (x *ServiceTargetPreviewRequest) GetServiceConfig() *ServiceConfig {
 }
 
 // ServiceTargetPreviewResponse contains the read-only deployment preview.
+// Deprecated: use azd.extensions.v1.ServiceTargetPreviewResponse in azd 1.37.0 or later.
+//
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/service_target.proto.
 type ServiceTargetPreviewResponse struct {
 	state         protoimpl.MessageState      `protogen:"open.v1"`
 	Result        *ServiceDeployPreviewResult `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
@@ -1167,6 +1185,9 @@ func (x *ServiceTargetPreviewResponse) GetResult() *ServiceDeployPreviewResult {
 }
 
 // ServiceDeployPreviewResult describes a deployment without performing it.
+// Deprecated: use azd.extensions.v1.ServiceDeployPreviewResult in azd 1.37.0 or later.
+//
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/service_target.proto.
 type ServiceDeployPreviewResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
@@ -1772,7 +1793,7 @@ var File_azd_extensions_v1beta_service_target_proto protoreflect.FileDescriptor
 
 const file_azd_extensions_v1beta_service_target_proto_rawDesc = "" +
 	"\n" +
-	"*azd/extensions/v1beta/service_target.proto\x12\x15azd.extensions.v1beta\x1a\x1cgoogle/protobuf/struct.proto\x1a\"azd/extensions/v1beta/models.proto\x1a\"azd/extensions/v1beta/errors.proto\"\xe8\x0e\n" +
+	"*azd/extensions/v1beta/service_target.proto\x12\x15azd.extensions.v1beta\x1a\x1cgoogle/protobuf/struct.proto\x1a\"azd/extensions/v1beta/models.proto\x1a\"azd/extensions/v1beta/errors.proto\"\xf0\x0e\n" +
 	"\x14ServiceTargetMessage\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12;\n" +
@@ -1792,9 +1813,9 @@ const file_azd_extensions_v1beta_service_target_proto_rawDesc = "" +
 	"\x0fpublish_request\x18\x11 \x01(\v22.azd.extensions.v1beta.ServiceTargetPublishRequestH\x00R\x0epublishRequest\x12`\n" +
 	"\x10publish_response\x18\x12 \x01(\v23.azd.extensions.v1beta.ServiceTargetPublishResponseH\x00R\x0fpublishResponse\x12c\n" +
 	"\x11endpoints_request\x18\x13 \x01(\v24.azd.extensions.v1beta.ServiceTargetEndpointsRequestH\x00R\x10endpointsRequest\x12f\n" +
-	"\x12endpoints_response\x18\x14 \x01(\v25.azd.extensions.v1beta.ServiceTargetEndpointsResponseH\x00R\x11endpointsResponse\x12]\n" +
-	"\x0fpreview_request\x18\x15 \x01(\v22.azd.extensions.v1beta.ServiceTargetPreviewRequestH\x00R\x0epreviewRequest\x12`\n" +
-	"\x10preview_response\x18\x16 \x01(\v23.azd.extensions.v1beta.ServiceTargetPreviewResponseH\x00R\x0fpreviewResponseB\x0e\n" +
+	"\x12endpoints_response\x18\x14 \x01(\v25.azd.extensions.v1beta.ServiceTargetEndpointsResponseH\x00R\x11endpointsResponse\x12a\n" +
+	"\x0fpreview_request\x18\x15 \x01(\v22.azd.extensions.v1beta.ServiceTargetPreviewRequestB\x02\x18\x01H\x00R\x0epreviewRequest\x12d\n" +
+	"\x10preview_response\x18\x16 \x01(\v23.azd.extensions.v1beta.ServiceTargetPreviewResponseB\x02\x18\x01H\x00R\x0fpreviewResponseB\x0e\n" +
 	"\fmessage_type\"l\n" +
 	"\x1bServiceTargetInputParameter\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12#\n" +
@@ -1817,10 +1838,10 @@ const file_azd_extensions_v1beta_service_target_proto_rawDesc = "" +
 	"\x06config\x18\x06 \x01(\v2\x17.google.protobuf.StructR\x06config\x1aC\n" +
 	"\x15DeploymentStacksEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"]\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"a\n" +
 	"\x1cRegisterServiceTargetRequest\x12\x12\n" +
-	"\x04host\x18\x01 \x01(\tR\x04host\x12)\n" +
-	"\x10supports_preview\x18\x02 \x01(\bR\x0fsupportsPreview\"\x1f\n" +
+	"\x04host\x18\x01 \x01(\tR\x04host\x12-\n" +
+	"\x10supports_preview\x18\x02 \x01(\bB\x02\x18\x01R\x0fsupportsPreview\"\x1f\n" +
 	"\x1dRegisterServiceTargetResponse\"\x94\x02\n" +
 	"\x18GetTargetResourceRequest\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12K\n" +
@@ -1843,14 +1864,14 @@ const file_azd_extensions_v1beta_service_target_proto_rawDesc = "" +
 	"\x0fservice_context\x18\x02 \x01(\v2%.azd.extensions.v1beta.ServiceContextR\x0eserviceContext\x12N\n" +
 	"\x0ftarget_resource\x18\x03 \x01(\v2%.azd.extensions.v1beta.TargetResourceR\x0etargetResource\"a\n" +
 	"\x1bServiceTargetDeployResponse\x12B\n" +
-	"\x06result\x18\x01 \x01(\v2*.azd.extensions.v1beta.ServiceDeployResultR\x06result\"j\n" +
+	"\x06result\x18\x01 \x01(\v2*.azd.extensions.v1beta.ServiceDeployResultR\x06result\"n\n" +
 	"\x1bServiceTargetPreviewRequest\x12K\n" +
-	"\x0eservice_config\x18\x01 \x01(\v2$.azd.extensions.v1beta.ServiceConfigR\rserviceConfig\"i\n" +
+	"\x0eservice_config\x18\x01 \x01(\v2$.azd.extensions.v1beta.ServiceConfigR\rserviceConfig:\x02\x18\x01\"m\n" +
 	"\x1cServiceTargetPreviewResponse\x12I\n" +
-	"\x06result\x18\x01 \x01(\v21.azd.extensions.v1beta.ServiceDeployPreviewResultR\x06result\"c\n" +
+	"\x06result\x18\x01 \x01(\v21.azd.extensions.v1beta.ServiceDeployPreviewResultR\x06result:\x02\x18\x01\"g\n" +
 	"\x1aServiceDeployPreviewResult\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12+\n" +
-	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data\"U\n" +
+	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data:\x02\x18\x01\"U\n" +
 	"\x14ServicePackageResult\x12=\n" +
 	"\tartifacts\x18\x01 \x03(\v2\x1f.azd.extensions.v1beta.ArtifactR\tartifacts\"U\n" +
 	"\x14ServicePublishResult\x12=\n" +

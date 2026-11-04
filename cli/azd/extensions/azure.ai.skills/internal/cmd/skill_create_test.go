@@ -38,7 +38,7 @@ func TestCreateAction_NoPromptWithNoInput(t *testing.T) {
 	require.Equal(t, exterrors.CodeMissingRequiredField, le.Code)
 }
 
-// TestCreateAction_ConflictingFlagsViRun exercises the full Run path (not just
+// TestCreateAction_ConflictingFlagsViaRun exercises the full Run path (not just
 // selectCreateMode) so that the validation is also reached via the command
 // entry-point.
 func TestCreateAction_ConflictingFlagsViaRun(t *testing.T) {
@@ -54,6 +54,57 @@ func TestCreateAction_ConflictingFlagsViaRun(t *testing.T) {
 	var le *azdext.LocalError
 	require.True(t, errors.As(err, &le))
 	require.Equal(t, exterrors.CodeConflictingArguments, le.Code)
+}
+
+func TestCreateAction_LocalValidationBeforeEndpointAndAuth(t *testing.T) {
+	previousRead := readAzdProjectSourcesFunc
+	readAzdProjectSourcesFunc = func(context.Context) (azdProjectSources, error) {
+		t.Fatal("local validation must precede endpoint lookup and authentication")
+		return azdProjectSources{}, nil
+	}
+	t.Cleanup(func() { readAzdProjectSourcesFunc = previousRead })
+
+	for _, tc := range []struct {
+		name  string
+		flags createFlags
+		code  string
+	}{
+		{
+			name:  "empty inline description",
+			flags: createFlags{name: "my-skill", instructionsSet: true, instructions: "body", noPrompt: true},
+			code:  exterrors.CodeMissingRequiredField,
+		},
+		{
+			name:  "empty inline instructions",
+			flags: createFlags{name: "my-skill", descriptionSet: true, description: "desc", noPrompt: true},
+			code:  exterrors.CodeMissingRequiredField,
+		},
+		{
+			name:  "explicit empty file flag",
+			flags: createFlags{name: "my-skill", fileSet: true, file: "   ", noPrompt: true},
+			code:  exterrors.CodeInvalidParameter,
+		},
+		{
+			name:  "explicit empty project-endpoint flag",
+			flags: createFlags{name: "my-skill", descriptionSet: true, description: "d", instructionsSet: true, instructions: "i", projectEndpointSet: true, projectEndpoint: " "},
+			code:  exterrors.CodeInvalidParameter,
+		},
+		{
+			name:  "missing markdown file",
+			flags: createFlags{name: "my-skill", file: filepath.Join(t.TempDir(), "missing.md"), noPrompt: true},
+			code:  exterrors.CodeInvalidSkillFile,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags := tc.flags
+			a := &createAction{flags: &flags}
+			err := a.Run(t.Context())
+			require.Error(t, err)
+			var le *azdext.LocalError
+			require.ErrorAs(t, err, &le)
+			require.Equal(t, tc.code, le.Code)
+		})
+	}
 }
 
 // --- verifyPackageNameMatches ---

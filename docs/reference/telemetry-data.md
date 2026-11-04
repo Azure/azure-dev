@@ -574,6 +574,10 @@ and `service_target.get_target_resource`.
 The dropped-report summary fields described below are `SystemMetadata` for
 `PerformanceAndHealth`.
 
+`ext.agent.memory_snapshot` is registered here as a contract; its emission is
+implemented separately in [the agents extension PR](https://github.com/Azure/azure-dev/pull/10825).
+Registration alone does not enable reporting.
+
 Each concrete first-party field has its own classification, purpose, and
 endpoint declaration. Current declarations use `SystemMetadata` with endpoint
 `N/A`. Product classification enums use `FeatureInsight`; agent Init and all

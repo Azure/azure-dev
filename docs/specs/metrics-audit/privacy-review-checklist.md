@@ -97,6 +97,10 @@ A maintainer must assess approval coverage before rollout. This records the prop
 
 ## Recorded scope for hosted-agent memory snapshots
 
+This core change registers the field contract only. Runtime emission is supplied
+by extension PR [#10825](https://github.com/Azure/azure-dev/pull/10825); registration
+alone does not enable collection or change extension hosting behavior.
+
 `agent.context.resolved` adds `ext.agent.memory_snapshot`: `true`, `false`,
 `unset`, or `unknown`, classified `SystemMetadata` / `FeatureInsight`, endpoint
 `N/A`, not hashed and not a measurement. It describes authored intent, not a

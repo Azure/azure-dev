@@ -659,6 +659,9 @@ overrides:
       - principalid
       - principaltype
       - aifoundryprojectendpoint
+  - filename: extensions/azure.resources/{README.md,internal/cmd/add_project.go}
+    words:
+      - azureresources
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

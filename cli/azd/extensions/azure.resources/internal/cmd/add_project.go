@@ -19,7 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-const defaultResourcesLayer = "default-resources"
+const defaultResourcesLayer = "azureresources"
 
 type addProject struct {
 	layers   []any

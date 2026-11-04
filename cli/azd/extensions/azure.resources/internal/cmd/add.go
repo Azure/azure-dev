@@ -26,7 +26,8 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: "Interactively configure a resource or service and save changes to azure.yaml.\n" +
 			"Resources are stored in the selected infra.layers entry's config, never top-level resources.\n" +
 			"A summary is displayed after saving.\n" +
-			"Existing layers require confirmation before they are updated or replaced.",
+			"Existing layers require confirmation before they are updated or replaced.\n" +
+			"The layer prompt defaults to " + defaultResourcesLayer + ".",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if cmd.Flags().Changed("layer") {
@@ -135,7 +136,8 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			return followUpAdd(ctx, client, result.HasService, layerName, cmd.OutOrStdout())
 		},
 	}
-	cmd.Flags().StringVar(&layerName, "layer", "", "Infrastructure layer name (prompt default: default-resources)")
+	cmd.Flags().StringVar(&layerName, "layer", "",
+		"Infrastructure layer name (prompt default: "+defaultResourcesLayer+")")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{Name: "output", AllowedValues: []string{"default"}})
 	return cmd
 }

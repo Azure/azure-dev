@@ -342,7 +342,7 @@ func TestAddWizardSavesAfterPromptingForLayer(t *testing.T) {
 	require.NoError(t, err)
 	project := readAddTestProject(t, saved, defaultResourcesLayer)
 	require.Len(t, project.config, 2)
-	require.Contains(t, output, "Added resources layer \"default-resources\".")
+	require.Contains(t, output, "Added resources layer \"azureresources\".")
 	require.Equal(t, 1, prompts.layerPrompts)
 	require.Empty(t, prompts.confirmations)
 }

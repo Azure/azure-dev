@@ -36,8 +36,7 @@ application hosts, and existing Azure resources. It writes resource declarations
 only to `infra.layers[].config`, with service configuration under `services`.
 Resource links are local to the selected infrastructure entry.
 
-Without `--layer`, enter a layer name (defaulting to the existing resources layer,
-or `default-resources` for a new project). An explicit
+Without `--layer`, enter a layer name (default `azureresources`). An explicit
 `--layer` takes precedence. An existing resources layer is updated only after
 confirmation; choosing a layer owned by another provider requires confirmation
 to replace that entry. Both confirmations default to No. Unrelated layers and

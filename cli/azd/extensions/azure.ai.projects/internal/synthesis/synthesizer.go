@@ -69,6 +69,10 @@ type Input struct {
 	// provision path), ${VAR} is resolved here and a missing variable fails.
 	PreserveVarRefs bool
 
+	// DeferACRNetworkValidation leaves registry/network policy checks
+	// to the caller after on-disk deployment inputs are resolved.
+	DeferACRNetworkValidation bool
+
 	// ProjectRoot is the directory holding azure.yaml. When set, $ref file
 	// includes in the service entry (and its deployment items) are resolved
 	// against it before synthesis, so refs become the actual content rather
@@ -284,12 +288,12 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if includeAcr && existingAcrResourceID == "" && netMode != NetworkModeNone && hosting == nil {
-		return nil, errors.New(
-			"synthesis: private networking does not support an auto-created Azure Container Registry; " +
-				"use docker.imagePassthrough: true with a prebuilt image, remove source-build demand, " +
-				"or set AZURE_CONTAINER_REGISTRY_RESOURCE_ID for Foundry-only reuse without agentHosting",
-		)
+	if !in.DeferACRNetworkValidation {
+		if err := ValidateACRNetworking(
+			includeAcr, existingAcrResourceID, netMode != NetworkModeNone, hosting != nil,
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	params := map[string]any{

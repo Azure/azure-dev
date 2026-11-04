@@ -24,14 +24,15 @@ func TestSynthesizeExistingRegistry(t *testing.T) {
     kind: hosted
 `
 	tests := []struct {
-		name       string
-		mode       string
-		selector   string
-		group      string
-		network    bool
-		wantError  string
-		outputOnly bool
-		preserve   bool
+		name         string
+		mode         string
+		selector     string
+		group        string
+		network      bool
+		wantError    string
+		outputOnly   bool
+		preserve     bool
+		deferNetwork bool
 	}{
 		{name: "unset"},
 		{name: "environment selector", selector: id},
@@ -68,6 +69,11 @@ func TestSynthesizeExistingRegistry(t *testing.T) {
 			selector: strings.Replace(id, subscription, "other-sub", 1), wantError: "same subscription"},
 		{name: "private networking reuse", mode: "reuse-connect", selector: id, network: true},
 		{name: "private networking creation", network: true, wantError: "auto-created Azure Container Registry"},
+		{name: "eject private networking creation", network: true, preserve: true,
+			wantError: "auto-created Azure Container Registry"},
+		{name: "on-disk deferred networking", network: true, deferNetwork: true},
+		{name: "on-disk selector validation", network: true, deferNetwork: true, selector: "sharedregistry",
+			wantError: "full ARM ID"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -94,7 +100,8 @@ func TestSynthesizeExistingRegistry(t *testing.T) {
 			result, err := Synthesize(Input{
 				RawAzureYAML: []byte(yaml), ServiceName: "my-project",
 				Env: env, ResourceGroupName: tt.group,
-				PreserveVarRefs: tt.preserve,
+				PreserveVarRefs:           tt.preserve,
+				DeferACRNetworkValidation: tt.deferNetwork,
 			})
 			if tt.wantError != "" {
 				require.ErrorContains(t, err, tt.wantError)

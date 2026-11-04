@@ -157,6 +157,7 @@ func (c *ACRRemoteBuildCheck) ValidateProject(
 	}
 	onDisk := p.onDiskTemplatePresent()
 	if onDisk {
+		in.DeferACRNetworkValidation = true
 		result, err := synthesis.Synthesize(in)
 		if err != nil {
 			return err

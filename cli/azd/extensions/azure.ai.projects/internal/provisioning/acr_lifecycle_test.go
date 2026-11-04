@@ -327,6 +327,142 @@ func TestACRTemplateParameterCasing(t *testing.T) {
 	}
 }
 
+func TestACRParameterWritesReplaceCaseAliases(t *testing.T) {
+	p, _ := acrTestProvider(t)
+	p.acrBinding = acrTestBinding()
+	assigned := false
+	p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+		require.Equal(t, http.MethodGet, method)
+		switch {
+		case path == testACRID:
+			return acrTestReply(out, map[string]any{"properties": map[string]any{}})
+		case path == testACRProject:
+			return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+		case strings.Contains(path, "/roleAssignments?"):
+			grants := []acrRoleAssignment{}
+			if assigned {
+				grant := acrTestAssignment()
+				grant.Properties.Description = ""
+				grants = append(grants, grant)
+			}
+			return acrTestReply(out, map[string]any{"value": grants})
+		case strings.Contains(path, "/roleAssignments/"):
+			return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+		default:
+			t.Fatalf("unexpected registry request: %s", path)
+			return errors.New("unexpected registry request")
+		}
+	}
+	src := acrTestSource()
+	submittedParameters := src.parameters
+	for _, present := range []bool{false, true} {
+		assigned = present
+		maps.Copy(src.parameters, map[string]any{
+			"AcrPullAssigned":         map[string]any{"value": !present},
+			"ACRPullRoleDefinitionId": map[string]any{"value": "stale-role"},
+			"AcrAccessOperationId":    map[string]any{"value": "stale-operation"},
+			"ACROwnedAssignments":     map[string]any{"value": []string{"stale-assignment"}},
+		})
+		require.NoError(t, p.prepareACRAccess(t.Context(), src))
+		require.NotNil(t, p.acrPending)
+		for name, want := range map[string]any{
+			"acrPullAssigned":         present,
+			"acrPullRoleDefinitionId": p.acrPending.RoleDefinitionID,
+			"acrAccessOperationId":    p.acrPending.Token,
+			"acrOwnedAssignments":     []synthesis.ACRAssignment{},
+		} {
+			names := []string{}
+			for key := range submittedParameters {
+				if strings.EqualFold(key, name) {
+					names = append(names, key)
+				}
+			}
+			require.Equal(t, []string{name}, names)
+			assert.Equal(t, map[string]any{"value": want}, submittedParameters[name])
+			assert.Equal(t, want, parameterValue(src, name))
+		}
+	}
+}
+
+func TestACRRetainedParameterWritesReplaceCaseAliases(t *testing.T) {
+	for _, empty := range []bool{false, true} {
+		t.Run(strconv.FormatBool(empty), func(t *testing.T) {
+			p, _ := acrTestProvider(t)
+			p.acrBinding = acrTestBinding()
+			src := acrTestSource()
+			src.parameters = nil
+			if !empty {
+				src.parameters = map[string]any{
+					"ExistingACRResourceId": map[string]any{"value": ""},
+					"ACROwnedAssignments":   map[string]any{"value": []string{"stale-assignment"}},
+				}
+			}
+			plan, err := p.planACRAccess(t.Context(), src)
+			require.NoError(t, err)
+			assert.Nil(t, plan)
+			assert.Equal(t, map[string]any{
+				"existingAcrResourceId": map[string]any{"value": testACRID},
+				"acrOwnedAssignments":   map[string]any{"value": []synthesis.ACRAssignment{}},
+			}, src.parameters)
+		})
+	}
+}
+
+func TestACRTemplateNetworkingUsesEffectiveValues(t *testing.T) {
+	for _, defaults := range []bool{false, true} {
+		for _, tt := range []struct {
+			name, wantError  string
+			network, hosting any
+			external, noACR  bool
+		}{
+			{name: "private auto-created registry", network: true,
+				wantError: "auto-created Azure Container Registry"},
+			{name: "public auto-created registry", network: false},
+			{name: "private external registry", network: true, external: true},
+			{name: "private without registry", network: true, noACR: true},
+			{name: "private AKS hosting", network: true,
+				hosting: map[string]any{"enabled": true, "clusterResourceId": offlineClusterID}},
+			{name: "disabled AKS hosting", network: true, hosting: map[string]any{"enabled": false},
+				wantError: "auto-created Azure Container Registry"},
+			{name: "invalid network value", network: "true", wantError: "enableNetworkIsolation must be a literal boolean"},
+			{name: "null network value", wantError: "enableNetworkIsolation must be a literal boolean"},
+			{name: "invalid hosting value", network: true, hosting: "invalid",
+				wantError: "invalid agentHosting deployment parameters"},
+		} {
+			t.Run(fmt.Sprintf("%s/defaults=%t", tt.name, defaults), func(t *testing.T) {
+				p, env := acrTestProvider(t)
+				src := acrTestSource()
+				src.parameters["includeAcr"] = map[string]any{"value": !tt.noACR}
+				id := ""
+				if tt.external {
+					id = testACRID
+				}
+				src.parameters["existingAcrResourceId"] = map[string]any{"value": id}
+				declared, ok := src.armTemplate["parameters"].(map[string]any)
+				require.True(t, ok)
+				declared["EnableNetworkIsolation"] = map[string]any{"type": "bool", "defaultValue": tt.network}
+				declared["AgentHosting"] = map[string]any{"type": "object", "defaultValue": tt.hosting}
+				if !defaults {
+					declared["EnableNetworkIsolation"] = map[string]any{"type": "bool", "defaultValue": false}
+					declared["AgentHosting"] = map[string]any{
+						"type": "object", "defaultValue": map[string]any{"enabled": true},
+					}
+					src.parameters["ENABLENETWORKISOLATION"] = map[string]any{"value": tt.network}
+					src.parameters["AGENTHOSTING"] = map[string]any{"value": tt.hosting}
+				}
+				err := p.validateACRTemplate(src)
+				if tt.wantError != "" {
+					require.ErrorContains(t, err, tt.wantError)
+				} else {
+					require.NoError(t, err)
+				}
+				assert.Empty(t, env.set)
+				assert.Empty(t, env.config)
+			})
+		}
+	}
+}
+
 func TestACRTemplateSubscriptionValidationBeforeCloudCalls(t *testing.T) {
 	for _, mode := range []string{"embedded", "ejected"} {
 		for _, subscription := range []string{"other", ""} {

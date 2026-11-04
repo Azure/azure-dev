@@ -188,7 +188,7 @@ services:
       clusterResourceId: ${AKS_CLUSTER_ID}
 ```
 
-`agentHosting` does not require a `network` block or additional subnets. Omit `network` for public networking, or supply it to use the standard account network injection and private-endpoint resources. Existing AKS hosting supports an automatically created ACR with private account networking. Without `agentHosting`, private networking requires an Agent configuration that does not require building a container image.
+`agentHosting` does not require a `network` block or additional subnets. Omit `network` for public networking, or supply it to use the standard account network injection and private-endpoint resources. Existing AKS hosting supports an automatically created ACR with private account networking. Without `agentHosting`, private networking supports prebuilt images, code/ZIP deployments, and source builds using an external registry; it does not support an automatically created ACR.
 
 Use an existing AKS cluster configured for Foundry agent hosting. When effective hosting is enabled, the provider always reads and validates the selected cluster's kubelet principal object ID, regardless of `includeAcr` or an explicit kubelet binding. It resolves the built-in federation role when that deployment binding is needed. It does not validate AKS or network readiness or reconfigure the cluster.
 
@@ -392,6 +392,15 @@ This applies to embedded and on-disk Bicep, local and remote builds, JSON
 parameter files, and `.bicepparam` files, including custom root and
 infrastructure-layer routes. An invalid final selection leaves those choices
 unpersisted.
+
+On-disk Bicep registry/network compatibility is checked after merging authored
+parameters and resolving effective template defaults. Registry selectors supplied
+only in JSON, `.bicepparam`, or a template default are honored. Setting
+`includeAcr` or `enableNetworkIsolation` to `false` in the effective deployment
+parameters remains authoritative.
+When creating an ACR, a declared `enableNetworkIsolation` parameter must have a
+literal boolean value for local compatibility checks; ARM expressions are not
+evaluated locally.
 
 You can select a registry before adding agents; the selection remains pending
 until a source-built agent requires it, including across project-only provisioning,

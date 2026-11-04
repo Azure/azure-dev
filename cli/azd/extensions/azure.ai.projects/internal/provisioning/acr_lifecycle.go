@@ -425,6 +425,16 @@ func parameterValue(src *templateSource, name string) any {
 	return nil
 }
 
+func setParameterValue(src *templateSource, name string, value any) {
+	if src.parameters == nil {
+		src.parameters = map[string]any{}
+	}
+	maps.DeleteFunc(src.parameters, func(key string, _ any) bool {
+		return strings.EqualFold(key, name)
+	})
+	src.parameters[name] = map[string]any{"value": value}
+}
+
 func (p *FoundryProvisioningProvider) validateACRTeardownScopes(id, group string) error {
 	env := map[string]string{"AZURE_ENV_NAME": p.envName}
 	maps.Copy(env, p.synthesisEnv)
@@ -481,6 +491,25 @@ func (p *FoundryProvisioningProvider) validateACRTemplate(src *templateSource) e
 		salt, _ := parameterValue(src, "resourceTokenSalt").(string)
 		if salt != p.acrBinding.DeploymentSalt {
 			return errors.New("registry migration is not supported: retain the deployed resourceTokenSalt")
+		}
+	}
+	if include && id == "" {
+		value := parameterValue(src, "enableNetworkIsolation")
+		isolated, literal := value.(bool)
+		networkParameters := parametersDeclaredByTemplate(
+			map[string]any{"enableNetworkIsolation": nil}, src.armTemplate,
+		)
+		if !literal && (value != nil || len(networkParameters) > 0) {
+			return errors.New("enableNetworkIsolation must be a literal boolean for registry networking validation")
+		}
+		if isolated {
+			hosting, err := byoHostingParameter(src)
+			if err != nil {
+				return err
+			}
+			if err := synthesis.ValidateACRNetworking(include, id, isolated, hosting.Enabled); err != nil {
+				return err
+			}
 		}
 	}
 	if include {
@@ -613,8 +642,8 @@ func (p *FoundryProvisioningProvider) prepareACRAccess(ctx context.Context, src 
 		}
 		p.acrPending = pending
 	}
-	src.parameters["acrAccessOperationId"] = map[string]any{"value": p.acrPending.Token}
-	src.parameters["acrPullRoleDefinitionId"] = map[string]any{"value": p.acrPending.RoleDefinitionID}
+	setParameterValue(src, "acrAccessOperationId", p.acrPending.Token)
+	setParameterValue(src, "acrPullRoleDefinitionId", p.acrPending.RoleDefinitionID)
 	return nil
 }
 
@@ -632,7 +661,7 @@ func (p *FoundryProvisioningProvider) planACRAccess(
 		owned = append(owned, p.acrBinding.OwnedAssignments...)
 		if p.acrBinding.Mode == "reuse-connect" && id == "" {
 			id = p.acrBinding.RegistryResourceID
-			src.parameters["existingAcrResourceId"] = map[string]any{"value": id}
+			setParameterValue(src, "existingAcrResourceId", id)
 		}
 	}
 	if include && id != "" &&
@@ -643,7 +672,7 @@ func (p *FoundryProvisioningProvider) planACRAccess(
 			"re-eject the Foundry Bicep templates before provisioning an external registry")
 	}
 	if declared["acrOwnedAssignments"] != nil {
-		src.parameters["acrOwnedAssignments"] = map[string]any{"value": owned}
+		setParameterValue(src, "acrOwnedAssignments", owned)
 	}
 	group, _ := parameterValue(src, "resourceGroupName").(string)
 	if group == "" {
@@ -734,12 +763,12 @@ func (p *FoundryProvisioningProvider) planACRAccess(
 		}
 		plan.pullAssigned = assigned
 	}
-	src.parameters["acrPullAssigned"] = map[string]any{"value": plan.pullAssigned}
-	src.parameters["acrPullRoleDefinitionId"] = map[string]any{"value": plan.roleDefinitionID}
+	setParameterValue(src, "acrPullAssigned", plan.pullAssigned)
+	setParameterValue(src, "acrPullRoleDefinitionId", plan.roleDefinitionID)
 	if pendingMatches && strings.EqualFold(p.acrPending.RoleDefinitionID, plan.roleDefinitionID) {
-		src.parameters["acrAccessOperationId"] = map[string]any{"value": p.acrPending.Token}
+		setParameterValue(src, "acrAccessOperationId", p.acrPending.Token)
 	} else {
-		src.parameters["acrAccessOperationId"] = map[string]any{"value": ""}
+		setParameterValue(src, "acrAccessOperationId", "")
 	}
 	return plan, nil
 }

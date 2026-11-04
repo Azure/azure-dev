@@ -338,13 +338,14 @@ func (p *FoundryProvisioningProvider) Initialize(
 		}
 		// Validate greenfield config before any interactive prompts.
 		validationInput := synthesis.Input{
-			RawAzureYAML:    rawYAML,
-			ServiceName:     svcName,
-			AcceptedHosts:   FoundryProvisioningServiceHosts,
-			Env:             env,
-			PreserveVarRefs: true,
-			ProjectRoot:     projectRoot,
-			ACRBinding:      p.acrBinding,
+			RawAzureYAML:              rawYAML,
+			ServiceName:               svcName,
+			AcceptedHosts:             FoundryProvisioningServiceHosts,
+			Env:                       env,
+			PreserveVarRefs:           true,
+			ProjectRoot:               projectRoot,
+			ACRBinding:                p.acrBinding,
+			DeferACRNetworkValidation: onDisk,
 		}
 		p.acrRemoteBuild, err = synthesis.RequiresRemoteACRBuild(validationInput)
 		if err != nil {
@@ -412,13 +413,14 @@ func (p *FoundryProvisioningProvider) initializeInfrastructure(
 	}
 
 	input := synthesis.Input{
-		RawAzureYAML:      rawYAML,
-		ServiceName:       svcName,
-		AcceptedHosts:     FoundryProvisioningServiceHosts,
-		Env:               maps.Clone(p.synthesisEnv),
-		ProjectRoot:       projectRoot,
-		ResourceGroupName: p.rgName,
-		ACRBinding:        p.acrBinding,
+		RawAzureYAML:              rawYAML,
+		ServiceName:               svcName,
+		AcceptedHosts:             FoundryProvisioningServiceHosts,
+		Env:                       maps.Clone(p.synthesisEnv),
+		ProjectRoot:               projectRoot,
+		ResourceGroupName:         p.rgName,
+		ACRBinding:                p.acrBinding,
+		DeferACRNetworkValidation: onDisk,
 	}
 	input.Env[envKeySubscriptionID] = p.subID
 	input.Env[envKeyLocation] = p.location

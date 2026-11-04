@@ -227,6 +227,194 @@ func TestACRRemoteBuildPreflightUsesOnDiskSelection(t *testing.T) {
 	}
 }
 
+func TestACROnDiskNetworkingUsesEffectiveInputs(t *testing.T) {
+	for _, route := range []struct {
+		name, path, module string
+		layer              bool
+	}{
+		{name: "root", path: "infra", module: "main"},
+		{name: "custom root", path: "iac/custom", module: "selected"},
+		{name: "layer", path: "infra/foundry", module: "main", layer: true},
+		{name: "custom layer", path: "iac/foundry", module: "project", layer: true},
+	} {
+		for _, selection := range []string{"JSON", "Bicepparam", "template default"} {
+			for _, tt := range []struct {
+				name, registryID, wantError string
+				noACR, public, abac, local  bool
+			}{
+				{name: "external registry", registryID: testACRID},
+				{name: "auto-created registry", wantError: "auto-created Azure Container Registry"},
+				{name: "disabled registry", noACR: true},
+				{name: "disabled network", public: true},
+				{name: "remote ABAC", registryID: testACRID, abac: true, wantError: "does not authenticate"},
+				{name: "local ABAC", registryID: testACRID, abac: true, local: true},
+			} {
+				for _, action := range []string{"deploy", "preview", "preflight"} {
+					t.Run(route.name+"/"+selection+"/"+tt.name+"/"+action, func(t *testing.T) {
+						root := t.TempDir()
+						raw := "infra:\n  provider: microsoft.foundry\n" +
+							"  path: " + route.path + "\n  module: " + route.module + "\n"
+						options := &azdext.ProvisioningOptions{
+							Provider: FoundryProviderName, Path: filepath.FromSlash(route.path), Module: route.module,
+						}
+						if route.layer {
+							raw = "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
+								"      path: " + route.path + "\n      module: " + route.module + "\n"
+							options.Name = "foundry"
+						}
+						raw += "services:\n  project:\n    host: azure.ai.project\n" +
+							"    network:\n      peSubnet:\n" +
+							"        vnet: /subscriptions/sub/resourceGroups/network/" +
+							"providers/Microsoft.Network/virtualNetworks/vnet\n        name: pe-subnet\n" +
+							"  agent:\n    host: azure.ai.agent\n    kind: hosted\n" +
+							"    docker: {remoteBuild: " + strconv.FormatBool(!tt.local) + "}\n"
+						infra := filepath.Join(root, filepath.FromSlash(route.path))
+						require.NoError(t, os.MkdirAll(infra, 0o750))
+						template := acrTestSource().armTemplate
+						declared, ok := template["parameters"].(map[string]any)
+						require.True(t, ok)
+						declared["includeAcr"] = map[string]any{"type": "bool", "defaultValue": true}
+						declared["existingAcrResourceId"] = map[string]any{"type": "string", "defaultValue": ""}
+						declared["enableNetworkIsolation"] = map[string]any{"type": "bool", "defaultValue": false}
+						values := map[string]any{"includeAcr": !tt.noACR, "existingAcrResourceId": tt.registryID}
+						if selection == "template default" {
+							declared["existingAcrResourceId"] = map[string]any{
+								"type": "string", "defaultValue": tt.registryID,
+							}
+							delete(values, "existingAcrResourceId")
+						}
+						if tt.public {
+							values["enableNetworkIsolation"] = false
+						}
+						body, err := json.Marshal(template)
+						require.NoError(t, err)
+						paramFile := minimalARMParametersFile(t, values)
+						bicepFile := filepath.Join(infra, route.module+".bicep")
+						files := map[string]string{
+							filepath.Join(root, "azure.yaml"): raw,
+							bicepFile:                         "targetScope = 'subscription'\n",
+							filepath.Join(infra, route.module+".parameters.json"): paramFile,
+						}
+						compiler := &stubCompiler{buildResult: bicep.BuildResult{Compiled: string(body)}}
+						paramPath := filepath.Join(infra, route.module+".bicepparam")
+						if selection == "Bicepparam" {
+							files[paramPath] = "using './" + route.module + ".bicep'\n"
+							envelope, err := json.Marshal(map[string]string{
+								"templateJson": string(body), "parametersJson": paramFile,
+							})
+							require.NoError(t, err)
+							compiler.buildParamResult = bicep.BuildResult{Compiled: string(envelope)}
+						}
+						for path, content := range files {
+							require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+						}
+						env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
+							envKeySubscriptionID: "sub", envKeyLocation: "eastus2", envKeyResourceGroup: "foundry",
+						}, config: map[string][]byte{"unrelated": []byte(`{"keep":true}`)}}
+						beforeValues, beforeConfig := maps.Clone(env.get), maps.Clone(env.config)
+						client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+						reads := 0
+						readRegistry := func(_ context.Context, method, path, _ string, out any) error {
+							reads++
+							require.Equal(t, http.MethodGet, method)
+							if path != testACRID {
+								return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+							}
+							mode := "LegacyRegistryPermissions"
+							if tt.abac {
+								mode = "AbacRepositoryPermissions"
+							}
+							return acrTestReply(out, map[string]any{"properties": map[string]any{
+								"roleAssignmentMode": mode,
+							}})
+						}
+						submitted := false
+						if action == "preflight" {
+							check := NewACRRemoteBuildCheck(client)
+							check.compiler, check.acrRequest = compiler, readRegistry
+							err = check.ValidateProject(t.Context(), &azdext.ProjectConfig{Path: root}, "test", env.get)
+						} else {
+							p := &FoundryProvisioningProvider{azdClient: client, bicepCliInstance: compiler}
+							require.NoError(t, p.Initialize(t.Context(), root, options))
+							assert.Empty(t, env.set)
+							assert.Equal(t, beforeConfig, env.config)
+							p.credential, p.acrRequest = acrTestCredential{}, readRegistry
+							p.resourceGroupState = func(context.Context) (map[string]*string, bool, error) {
+								return nil, true, nil
+							}
+							p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+								Retry: policy.RetryOptions{MaxRetries: -1},
+								Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+									require.Empty(t, tt.wantError)
+									method := http.MethodPut
+									if action == "preview" {
+										method = http.MethodPost
+										assert.True(t, strings.HasSuffix(request.URL.Path, "/whatIf"))
+									}
+									assert.Equal(t, method, request.Method)
+									var payload struct {
+										Properties struct {
+											Parameters map[string]any `json:"parameters"`
+										} `json:"properties"`
+									}
+									require.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
+									source := &templateSource{
+										armTemplate: template, parameters: payload.Properties.Parameters,
+									}
+									assert.Equal(t, tt.registryID, parameterValue(source, "existingAcrResourceId"))
+									assert.Equal(t, !tt.noACR, parameterValue(source, "includeAcr"))
+									assert.Equal(t, !tt.public, parameterValue(source, "enableNetworkIsolation"))
+									submitted = true
+									return nil, errors.New("stop at ARM submission")
+								}),
+							}}
+							if action == "preview" {
+								_, err = p.Preview(t.Context(), func(string) {})
+							} else {
+								_, err = p.Deploy(t.Context(), func(string) {})
+							}
+						}
+						switch {
+						case tt.wantError != "":
+							require.ErrorContains(t, err, tt.wantError)
+							assert.False(t, submitted)
+							if !tt.abac {
+								assert.Zero(t, reads)
+							}
+						case action == "preflight":
+							require.NoError(t, err)
+						default:
+							require.ErrorContains(t, err, "stop at ARM submission")
+							assert.True(t, submitted)
+						}
+						if action != "deploy" || tt.wantError != "" {
+							assert.Empty(t, env.set)
+							assert.Equal(t, beforeConfig, env.config)
+						}
+						assert.Equal(t, beforeValues, env.get)
+						if action != "preflight" || !tt.local {
+							if selection == "Bicepparam" {
+								assert.Equal(t, []string{paramPath}, compiler.buildParamCalls)
+								assert.Empty(t, compiler.buildCalls)
+							} else {
+								assert.Equal(t, []string{bicepFile}, compiler.buildCalls)
+								assert.Empty(t, compiler.buildParamCalls)
+							}
+						}
+						for path, content := range files {
+							//nolint:gosec // Test-owned path.
+							actual, readErr := os.ReadFile(path)
+							require.NoError(t, readErr)
+							assert.Equal(t, content, string(actual))
+						}
+						assert.NoDirExists(t, filepath.Join(root, ".azure"))
+					})
+				}
+			}
+		}
+	}
+}
+
 func TestACRBuildFailurePreservesOnlyActualSuggestions(t *testing.T) {
 	for _, tt := range []struct {
 		name, want string

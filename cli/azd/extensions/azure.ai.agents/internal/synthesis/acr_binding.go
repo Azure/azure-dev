@@ -141,6 +141,18 @@ func ValidateACRBinding(binding *ACRBinding, mode, registryID string) error {
 	return nil
 }
 
+// ValidateACRNetworking checks registry and network compatibility.
+func ValidateACRNetworking(includeACR bool, registryID string, isolated, hosting bool) error {
+	if includeACR && registryID == "" && isolated && !hosting {
+		return errors.New(
+			"synthesis: private networking does not support an auto-created Azure Container Registry; " +
+				"use docker.imagePassthrough: true with a prebuilt image, remove source-build demand, " +
+				"or set AZURE_CONTAINER_REGISTRY_RESOURCE_ID for Foundry-only reuse without agentHosting",
+		)
+	}
+	return nil
+}
+
 // ValidateACRSelector validates a registry before writes.
 func ValidateACRSelector(registryID, subscriptionID, resourceGroup string) error {
 	if !containerRegistryIDPattern.MatchString(registryID) {

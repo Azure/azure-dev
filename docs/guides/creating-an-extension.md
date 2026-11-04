@@ -6,11 +6,11 @@ This guide covers how to create, build, and publish an extension for the Azure D
 
 ## Design before implementation
 
-Start with the [guiding principles](../../cli/azd/docs/style-guidelines/guiding-principles.md#choose-between-core-and-an-extension) to decide whether your change belongs in core or an extension. For service-specific workflows, first consider an extension that uses existing lifecycle events or providers. This lets users keep using familiar commands such as `azd provision` and `azd deploy`.
+Start with the [extension-versus-core decision framework](../../cli/azd/docs/style-guidelines/guiding-principles.md#choose-between-core-and-an-extension), the authoritative home for choosing a boundary, reusing the extension host, and designing composable public APIs. Record your proposal using its [design and PR review checklist](../../cli/azd/docs/style-guidelines/guiding-principles.md#design-and-pr-review-checklist) before implementation.
 
 Use the [extensions style guide](../../cli/azd/docs/extensions/extensions-style-guide.md) to plan commands, flags, help, and errors. Read [contract versioning](../../cli/azd/docs/extensions/contract-versioning.md) before choosing APIs for calling azd, and identify the published software development kit (SDK) and minimum azd version your extension needs.
 
-You can develop an external extension in your own repository. First-party extension development happens in `Azure/azure-dev`; the repository directory and CI instructions below apply to that work. Discuss missing host APIs or proposed core changes with maintainers on an issue before committing to an approach.
+You can develop an external extension in your own repository. First-party extension development happens in `Azure/azure-dev`; the repository directory and CI instructions below apply to that work. The [root contribution guide](../../CONTRIBUTING.md) routes repository contributors to build, test, submission, and agent guidance.
 
 ## Overview
 

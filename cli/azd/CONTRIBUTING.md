@@ -186,7 +186,7 @@ Launch `azd` separately, then attach:
 
 ## Submitting a change
 
-Consider the [guiding principles](./docs/style-guidelines/guiding-principles.md), including whether new functionality belongs in core or an extension. Use the linked issue to discuss design choices and any exceptions with maintainers.
+Use the [guiding principles](./docs/style-guidelines/guiding-principles.md#choose-between-core-and-an-extension) to consider an extension before adding functionality to core. Record design choices and any exceptions in the linked issue, and use the canonical [design and PR review checklist](./docs/style-guidelines/guiding-principles.md#design-and-pr-review-checklist) when preparing or reviewing the change.
 
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change, add tests, and ensure tests pass

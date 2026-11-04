@@ -2,6 +2,8 @@
 
 This guide walks through adding a new command to the Azure Developer CLI.
 
+Before adding a core command, use the [extension-versus-core decision framework](../../cli/azd/docs/style-guidelines/guiding-principles.md#choose-between-core-and-an-extension) and record the boundary decision with the [design and PR review checklist](../../cli/azd/docs/style-guidelines/guiding-principles.md#design-and-pr-review-checklist). For an extension-owned command, follow [creating an extension](creating-an-extension.md) instead of the core registration steps below.
+
 ## Overview
 
 azd uses an **ActionDescriptor** pattern to define commands. Each command consists of:

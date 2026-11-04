@@ -6,6 +6,8 @@ For end-user documentation, see [aka.ms/azd](https://aka.ms/azd). For template e
 
 Before designing a change, read the [guiding principles](../cli/azd/docs/style-guidelines/guiding-principles.md) for command design and choosing between core and extensions. For extension user experience and code standards, use the [extensions style guide](../cli/azd/docs/extensions/extensions-style-guide.md).
 
+The principles page owns the [extension-versus-core decision framework](../cli/azd/docs/style-guidelines/guiding-principles.md#choose-between-core-and-an-extension) and [design and PR review checklist](../cli/azd/docs/style-guidelines/guiding-principles.md#design-and-pr-review-checklist). The [contract versioning guide](../cli/azd/docs/extensions/contract-versioning.md) owns host API compatibility policy; the [CLI contribution guide](../cli/azd/CONTRIBUTING.md) owns contribution mechanics. Link these sources rather than copying their rules into new guides.
+
 ---
 
 ## Concepts

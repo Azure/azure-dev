@@ -10,6 +10,8 @@ Extensions are external processes that communicate with azd via gRPC. They allow
 
 The extension framework itself is **generally available (GA)** and considered stable. See the [Azure Developer CLI extension framework is GA](https://devblogs.microsoft.com/azure-sdk/azd-extension-framework-ga/) announcement for release context. Individual extensions, registries, or specific capabilities may still carry their own experimental or pre-release status independent of the framework's GA status.
 
+For boundary decisions and new extension points, use the authoritative [extension-versus-core decision framework](../../cli/azd/docs/style-guidelines/guiding-principles.md#choose-between-core-and-an-extension). For host API stability and migration policy, use [extension contract versioning](../../cli/azd/docs/extensions/contract-versioning.md).
+
 ## Architecture
 
 ```text

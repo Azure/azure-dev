@@ -11,4 +11,8 @@ Thanks for helping improve the Azure Developer CLI. Start with the path that fit
 
 ## Working with coding agents
 
-Humans and coding agents can use the same contributor guides. If you use an agent, start with [AGENTS.md](AGENTS.md) and read the instructions that apply to the files you plan to change. Review the agent's changes and validation results before submitting them.
+Humans and coding agents can use the same contributor guides. If you use an agent, start with [AGENTS.md](AGENTS.md) and read the instructions that apply to the files you plan to change. If your checkout shows only a path in that file, open the linked [CLI handbook](cli/azd/AGENTS.md) directly. Review the agent's changes and validation results before submitting them.
+
+## Proposing and reviewing a design
+
+Use the [extension-versus-core decision framework](cli/azd/docs/style-guidelines/guiding-principles.md#choose-between-core-and-an-extension) before choosing an implementation. Record the decision in the issue or design discussion and use its [design and PR review checklist](cli/azd/docs/style-guidelines/guiding-principles.md#design-and-pr-review-checklist) when preparing or reviewing a PR. Keep build, test, and submission details in the [CLI contribution guide](cli/azd/CONTRIBUTING.md).

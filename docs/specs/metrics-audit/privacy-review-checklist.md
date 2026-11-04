@@ -101,20 +101,20 @@ This core change registers the field contract only. Runtime emission is supplied
 by extension PR [#10825](https://github.com/Azure/azure-dev/pull/10825); registration
 alone does not enable collection or change extension hosting behavior.
 
-`agent.context.resolved` adds `ext.agent.memory_snapshot`: `true`, `false`,
-`unset`, or `unknown`, classified `SystemMetadata` / `FeatureInsight`, endpoint
-`N/A`, not hashed and not a measurement. It describes authored intent, not a
-snapshot capture or restore outcome; non-hosted agents omit it.
-
-The existing `agent.phase.completed` additionally includes
-`ext.agent.memory_snapshot=true`, `false`, or `unset` for resolved hosted provider
-Deploy attempts. Result, duration and invocation-local attempt ID remain the
-existing phase fields on that same event. No extra result event, RPC, queue,
-exporter, client or lifecycle hook is added. No new error-code field is collected.
+The existing `agent.phase.completed` includes the fixed marker
+`ext.agent.memory_snapshot=true` only for resolved hosted provider Deploy attempts
+with snapshots explicitly enabled. It is classified `SystemMetadata` /
+`FeatureInsight`, endpoint `N/A`, not hashed and not a measurement. Disabled,
+unspecified, unresolved or non-hosted definitions, context events, other phases
+and steps omit the marker. No `false`, `unset` or `unknown` value is collected.
+Result, duration and invocation-local attempt ID remain the existing phase fields
+on that same event. No extra result event, RPC, queue, exporter, client or lifecycle
+hook is added. No new error-code field is collected.
 
 No agent names, versions, service names, request IDs, paths, URLs, credentials,
-or configuration contents are introduced. Outcomes belong to individual service
-attempts, not the whole command. Timeout/cancellation leave the backend outcome
+or configuration contents are introduced. Outcomes belong to individual deployment
+attempts, not unique users or the whole command. Snapshot capture or restore is
+not measured, and missing markers do not mean disabled. Timeout/cancellation leave the backend outcome
 unknown. Request termination state/cause is used for errored hosted returns
 without replacing the original error. Existing phase reporting boundaries,
 one-second budget and best-effort loss remain applicable; missing events do not

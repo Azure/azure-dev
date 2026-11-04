@@ -21,6 +21,7 @@ import (
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
+	"azureaiagent/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/pflag"
@@ -1257,10 +1258,7 @@ func TestNormalizeContainerRegistryEndpointRejectsMalformedURL(t *testing.T) {
 }
 
 func TestEjectInfra_NewProjectBicepCompiles(t *testing.T) {
-	bicep := lookupInstalledBicep()
-	if bicep == "" {
-		t.Skip("Bicep CLI not found; skipping generated Bicep compilation")
-	}
+	bicep := testutil.LookupBicep(t)
 
 	for _, tt := range []struct {
 		name         string
@@ -1313,10 +1311,7 @@ services:
 
 func TestEjectInfra_ExistingProjectBicepModesCompile(t *testing.T) {
 	t.Parallel()
-	bicep := lookupInstalledBicep()
-	if bicep == "" {
-		t.Skip("Bicep CLI not found; skipping generated Bicep compilation")
-	}
+	bicep := testutil.LookupBicep(t)
 
 	const projectYAML = `name: my-project
 services:
@@ -1370,26 +1365,6 @@ services:
 			require.NoErrorf(t, err, "generated %s Bicep failed to compile: %s", mode, output)
 		})
 	}
-}
-
-func lookupInstalledBicep() string {
-	if override := os.Getenv("AZD_BICEP_TOOL_PATH"); override != "" {
-		return override
-	}
-	if path, err := exec.LookPath("bicep"); err == nil {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	for _, name := range []string{"bicep", "bicep.exe"} {
-		path := filepath.Join(home, ".azure", "bin", name)
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-	return ""
 }
 
 func TestEjectInfra_ExistingProjectAddsBicepLayerBesideExistingInfra(t *testing.T) {

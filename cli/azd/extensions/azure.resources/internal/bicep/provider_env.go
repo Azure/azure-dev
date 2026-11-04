@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 
+	"azure.resources/internal/environment"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -64,14 +66,11 @@ func (p *Provider) ensureEnv(ctx context.Context) error {
 }
 
 func (p *Provider) loadEnvironment(ctx context.Context) (map[string]string, error) {
-	current, err := p.client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	name, err := environment.ResolveName(ctx, p.client.Environment(), "")
 	if err != nil {
 		return nil, fmt.Errorf("getting active environment: %w", err)
 	}
-	p.envName = current.GetEnvironment().GetName()
-	if p.envName == "" {
-		return nil, errors.New("an active azd environment is required")
-	}
+	p.envName = name
 
 	project, err := p.client.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {

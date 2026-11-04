@@ -26,6 +26,9 @@ type Wizard struct {
 	// EntryName identifies the infrastructure layer and namespaces its resource environment keys.
 	EntryName string
 
+	// Environment selects the azd environment; empty uses the project's default.
+	Environment string
+
 	// Resources contains the selected layer's resource definitions to extend.
 	Resources resources.Config
 

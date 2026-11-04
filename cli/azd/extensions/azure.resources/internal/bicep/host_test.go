@@ -13,19 +13,31 @@ import (
 	v1 "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type environmentServer struct {
 	v1.UnimplementedEnvironmentServiceServer
-	values     map[string]string
-	name       *string
-	currentErr error
-	valuesErr  error
-	setErr     error
-	writes     []*v1.SetEnvRequest
+	values       map[string]string
+	name         *string
+	currentErr   error
+	valuesErr    error
+	setErr       error
+	writes       []*v1.SetEnvRequest
+	reads        []*v1.GetEnvironmentRequest
+	currentCalls int
+	selectedErr  error
+}
+
+func (s *environmentServer) Get(
+	_ context.Context, request *v1.GetEnvironmentRequest,
+) (*v1.EnvironmentResponse, error) {
+	return &v1.EnvironmentResponse{Environment: &v1.Environment{Name: request.Name}}, s.selectedErr
 }
 
 func (s *environmentServer) GetCurrent(context.Context, *v1.EmptyRequest) (*v1.EnvironmentResponse, error) {
+	s.currentCalls++
 	if s.currentErr != nil {
 		return nil, s.currentErr
 	}
@@ -36,7 +48,10 @@ func (s *environmentServer) GetCurrent(context.Context, *v1.EmptyRequest) (*v1.E
 	return &v1.EnvironmentResponse{Environment: &v1.Environment{Name: name}}, nil
 }
 
-func (s *environmentServer) GetValues(context.Context, *v1.GetEnvironmentRequest) (*v1.KeyValueListResponse, error) {
+func (s *environmentServer) GetValues(
+	_ context.Context, request *v1.GetEnvironmentRequest,
+) (*v1.KeyValueListResponse, error) {
+	s.reads = append(s.reads, request)
 	if s.valuesErr != nil {
 		return nil, s.valuesErr
 	}
@@ -504,4 +519,36 @@ func TestEnsureEnvRetriesAfterPersistenceFailure(t *testing.T) {
 	require.Equal(t, "eastus", p.values["AZURE_LOCATION"])
 	require.Equal(t, "eastus", env.values["AZURE_LOCATION"])
 	require.Len(t, prompts.locations, 2)
+}
+
+func TestEnsureEnvRejectsMissingSelectedEnvironment(t *testing.T) {
+	t.Setenv("AZD_ENVIRONMENT", "missing")
+	env := &environmentServer{selectedErr: status.Error(codes.NotFound, "environment not found")}
+	p := New(newHostClient(t, env, &promptServer{}), nil)
+	require.NoError(t, p.Initialize(t.Context(), ".", &azdext.ProvisioningOptions{Path: "testdata", Name: "data"}))
+	require.ErrorContains(t, p.EnsureEnv(t.Context()), `getting environment "missing"`)
+	require.Zero(t, env.currentCalls)
+	require.Empty(t, env.reads)
+	require.Empty(t, env.writes)
+	require.Nil(t, p.values)
+	require.Nil(t, p.azure)
+}
+
+func TestEnsureEnvUsesSelectedEnvironment(t *testing.T) {
+	t.Setenv("AZD_ENVIRONMENT", "prod")
+	env := &environmentServer{
+		values:     map[string]string{"AZURE_SUBSCRIPTION_ID": "sub"},
+		currentErr: errors.New("default environment must not be read"),
+	}
+	p := New(newHostClient(t, env, &promptServer{}), nil)
+	require.NoError(t, p.Initialize(t.Context(), ".", &azdext.ProvisioningOptions{Path: "testdata", Name: "data"}))
+	require.NoError(t, p.EnsureEnv(t.Context()))
+	require.Zero(t, env.currentCalls)
+	require.Len(t, env.reads, 1)
+	require.Equal(t, "prod", env.reads[0].Name)
+	require.Equal(t, "prod", p.values["AZURE_ENV_NAME"])
+	require.Equal(t, deploymentName("example", "prod", "data"), p.name)
+	for _, write := range env.writes {
+		require.Equal(t, "prod", write.EnvName)
+	}
 }

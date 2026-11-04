@@ -18,22 +18,26 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 )
 
 type addPromptServer struct {
 	v1.UnimplementedPromptServiceServer
-	acceptExisting  bool
-	acceptProvision bool
-	confirmations   []*v1.ConfirmRequest
-	layerPrompts    int
-	followUp        string
-	commands        [][]string
-	hostProject     string
-	serviceError    error
-	layerError      error
-	readError       error
+	acceptExisting     bool
+	acceptProvision    bool
+	confirmations      []*v1.ConfirmRequest
+	layerPrompts       int
+	followUp           string
+	commands           [][]string
+	hostProject        string
+	serviceError       error
+	layerError         error
+	readError          error
+	existingResourceID string
+	environmentError   error
 }
 
 func (s *addPromptServer) Prompt(_ context.Context, req *v1.PromptRequest) (*v1.PromptResponse, error) {
@@ -80,6 +84,9 @@ func (s *addPromptServer) Select(_ context.Context, req *v1.SelectRequest) (*v1.
 	if s.hostProject != "" {
 		needles = []string{"host service", "app service"}
 	}
+	if s.existingResourceID != "" {
+		needles = []string{"existing resource", "storage account", "later"}
+	}
 	for _, needle := range needles {
 		for i, choice := range req.Options.Choices {
 			if strings.Contains(strings.ToLower(choice.Label), needle) {
@@ -88,6 +95,22 @@ func (s *addPromptServer) Select(_ context.Context, req *v1.SelectRequest) (*v1.
 		}
 	}
 	return nil, errors.New("unexpected selection: " + req.Options.Message)
+}
+
+func (s *addPromptServer) PromptSubscriptionResource(
+	context.Context, *v1.PromptSubscriptionResourceRequest,
+) (*v1.PromptSubscriptionResourceResponse, error) {
+	return &v1.PromptSubscriptionResourceResponse{Resource: &v1.ResourceExtended{Id: s.existingResourceID}}, nil
+}
+
+type addAccountServer struct {
+	v1.UnimplementedAccountServiceServer
+}
+
+func (s *addAccountServer) LookupTenant(
+	context.Context, *v1.LookupTenantRequest,
+) (*v1.LookupTenantResponse, error) {
+	return &v1.LookupTenantResponse{TenantId: "access-tenant"}, nil
 }
 
 type addWorkflowServer struct {
@@ -110,8 +133,12 @@ func (s *addPromptServer) MultiSelect(
 
 type addEnvironmentServer struct {
 	v1.UnimplementedEnvironmentServiceServer
-	writes  int
-	project *addProjectServer
+	writes       int
+	project      *addProjectServer
+	reads        []*v1.GetEnvironmentRequest
+	saved        []*v1.SetEnvRequest
+	currentCalls int
+	selectedErr  error
 }
 
 type addProjectServer struct {
@@ -195,17 +222,28 @@ func (s *addProjectServer) UnsetConfig(
 }
 
 func (s *addEnvironmentServer) GetCurrent(context.Context, *v1.EmptyRequest) (*v1.EnvironmentResponse, error) {
+	s.currentCalls++
 	return &v1.EnvironmentResponse{Environment: &v1.Environment{Name: "dev"}}, nil
 }
 
-func (s *addEnvironmentServer) GetValues(context.Context, *v1.GetEnvironmentRequest) (*v1.KeyValueListResponse, error) {
+func (s *addEnvironmentServer) Get(
+	_ context.Context, request *v1.GetEnvironmentRequest,
+) (*v1.EnvironmentResponse, error) {
+	return &v1.EnvironmentResponse{Environment: &v1.Environment{Name: request.Name}}, s.selectedErr
+}
+
+func (s *addEnvironmentServer) GetValues(
+	_ context.Context, request *v1.GetEnvironmentRequest,
+) (*v1.KeyValueListResponse, error) {
+	s.reads = append(s.reads, request)
 	return &v1.KeyValueListResponse{KeyValues: []*v1.KeyValue{
 		{Key: "AZURE_SUBSCRIPTION_ID", Value: "sub"}, {Key: "AZURE_LOCATION", Value: "eastus"},
 	}}, nil
 }
 
-func (s *addEnvironmentServer) SetValue(context.Context, *v1.SetEnvRequest) (*v1.EmptyResponse, error) {
+func (s *addEnvironmentServer) SetValue(_ context.Context, request *v1.SetEnvRequest) (*v1.EmptyResponse, error) {
 	s.writes++
+	s.saved = append(s.saved, request)
 	return &v1.EmptyResponse{}, nil
 }
 
@@ -214,7 +252,7 @@ func startAddTestHost(t *testing.T, prompts *addPromptServer) *addEnvironmentSer
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	server := grpc.NewServer()
-	environment := &addEnvironmentServer{project: &addProjectServer{
+	environment := &addEnvironmentServer{selectedErr: prompts.environmentError, project: &addProjectServer{
 		config: config.NewEmptyConfig(), err: prompts.serviceError,
 		layerErr: prompts.layerError, readErr: prompts.readError,
 	}}
@@ -222,6 +260,7 @@ func startAddTestHost(t *testing.T, prompts *addPromptServer) *addEnvironmentSer
 	v1.RegisterEnvironmentServiceServer(server, environment)
 	v1.RegisterWorkflowServiceServer(server, &addWorkflowServer{prompts: prompts})
 	v1.RegisterProjectServiceServer(server, environment.project)
+	v1.RegisterAccountServiceServer(server, &addAccountServer{})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	t.Setenv("AZD_SERVER", listener.Addr().String())
@@ -398,7 +437,7 @@ func TestAddProvisionFollowUpsUseLocalHostWorkflow(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(client.Close)
 			var output bytes.Buffer
-			require.NoError(t, followUpAdd(t.Context(), client, test.hasService, "data", &output))
+			require.NoError(t, followUpAdd(t.Context(), client, test.hasService, "data", "", &output))
 			require.Equal(t, test.want, prompts.commands)
 			if test.followUp == "Yes (preview changes)" {
 				require.Len(t, prompts.confirmations, 1)
@@ -406,6 +445,57 @@ func TestAddProvisionFollowUpsUseLocalHostWorkflow(t *testing.T) {
 			} else {
 				require.Empty(t, prompts.confirmations)
 			}
+		})
+	}
+}
+
+func TestAddRejectsMissingSelectedEnvironmentBeforeMutations(t *testing.T) {
+	original := "name: example\n"
+	prompts := &addPromptServer{
+		environmentError:   status.Error(codes.NotFound, "environment not found"),
+		existingResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/shared",
+	}
+	saved, _, host, err := runAddTest(t, original, []string{"--layer", "data", "--environment", "missing"}, prompts)
+	require.ErrorContains(t, err, `getting environment "missing"`)
+	require.Equal(t, original, saved)
+	require.Zero(t, host.currentCalls)
+	require.Empty(t, host.reads)
+	require.Empty(t, host.saved)
+	require.Empty(t, host.project.layerRequests)
+	require.Empty(t, host.project.requests)
+	require.Empty(t, prompts.commands)
+}
+
+func TestAddUsesSelectedEnvironmentForDiscoverySavingAndWorkflow(t *testing.T) {
+	for _, selection := range []string{"flag", "environment variable"} {
+		t.Run(selection, func(t *testing.T) {
+			t.Setenv("AZD_ENVIRONMENT", "")
+			args := []string{"--layer", "data"}
+			if selection == "flag" {
+				args = append(args, "--environment", "staging")
+			} else {
+				t.Setenv("AZD_ENVIRONMENT", "staging")
+			}
+			prompts := &addPromptServer{
+				followUp: "Yes (preview changes)", acceptProvision: true,
+				existingResourceID: "/subscriptions/sub/resourceGroups/rg/providers/" +
+					"Microsoft.Storage/storageAccounts/shared",
+			}
+			_, _, host, err := runAddTest(t, "name: example\n", args, prompts)
+			require.NoError(t, err)
+			require.Zero(t, host.currentCalls)
+			require.NotEmpty(t, host.reads)
+			for _, read := range host.reads {
+				require.Equal(t, "staging", read.Name)
+			}
+			require.NotEmpty(t, host.saved)
+			for _, write := range host.saved {
+				require.Equal(t, "staging", write.EnvName)
+			}
+			require.Equal(t, [][]string{
+				{"provision", "data", "--preview", "--environment", "staging"},
+				{"provision", "data", "--environment", "staging"},
+			}, prompts.commands)
 		})
 	}
 }

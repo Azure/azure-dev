@@ -10,26 +10,19 @@ import (
 	"slices"
 	"strings"
 
+	"azure.resources/internal/environment"
 	"azure.resources/internal/resources"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 func (w *Wizard) environmentValues(ctx context.Context) (map[string]string, error) {
-	current, err := w.Client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if status.Code(err) == codes.NotFound {
-		return nil, fmt.Errorf("no active azd environment; run 'azd env new' before selecting Azure resources: %w", err)
-	}
+	name, err := environment.ResolveName(ctx, w.Client.Environment(), w.Environment)
 	if err != nil {
-		return nil, fmt.Errorf("getting current environment: %w", err)
-	}
-	if current.GetEnvironment().GetName() == "" {
-		return nil, fmt.Errorf("no active azd environment; run 'azd env new' before selecting Azure resources")
+		return nil, err
 	}
 	response, err := w.Client.Environment().GetValues(ctx,
-		&azdext.GetEnvironmentRequest{Name: current.Environment.Name})
+		&azdext.GetEnvironmentRequest{Name: name})
 	if err != nil {
 		return nil, fmt.Errorf("reading environment values: %w", err)
 	}

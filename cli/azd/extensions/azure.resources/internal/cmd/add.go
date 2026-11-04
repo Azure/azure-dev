@@ -12,6 +12,7 @@ import (
 	"slices"
 
 	"azure.resources/internal/add"
+	"azure.resources/internal/environment"
 	"azure.resources/internal/resources"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -87,6 +88,7 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			wizard := &add.Wizard{
 				Client: client, Writer: cmd.OutOrStdout(), ProjectDir: projectDir,
 				Resources: project.config, Services: project.services, EntryName: layerName,
+				Environment: extCtx.Environment,
 			}
 			result, err := wizard.Run(ctx)
 			if err != nil {
@@ -102,15 +104,11 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			}
 			// Resolve the environment before touching azure.yaml so a missing environment
 			// can't leave the project saved without its resource values.
-			var envName string
+			envName := extCtx.Environment
 			if len(result.Environment) > 0 {
-				env, err := client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+				envName, err = environment.ResolveName(ctx, client.Environment(), extCtx.Environment)
 				if err != nil {
 					return fmt.Errorf("getting the environment: %w", err)
-				}
-				envName = env.GetEnvironment().GetName()
-				if envName == "" {
-					return errors.New("no active environment is available to save resource values")
 				}
 			}
 
@@ -133,7 +131,7 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			if _, err := fmt.Fprintln(cmd.OutOrStdout(), project.summary(layerName, result)); err != nil {
 				return fmt.Errorf("displaying project changes: %w", err)
 			}
-			return followUpAdd(ctx, client, result.HasService, layerName, cmd.OutOrStdout())
+			return followUpAdd(ctx, client, result.HasService, layerName, envName, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&layerName, "layer", "",
@@ -156,7 +154,7 @@ func confirmAdd(ctx context.Context, client *azdext.AzdClient, message string, d
 }
 
 func followUpAdd(
-	ctx context.Context, client *azdext.AzdClient, hasService bool, layerName string, writer io.Writer,
+	ctx context.Context, client *azdext.AzdClient, hasService bool, layerName, environment string, writer io.Writer,
 ) error {
 	verb := "provision"
 	if hasService {
@@ -177,6 +175,9 @@ func followUpAdd(
 		return errors.New("provisioning selection returned an invalid answer")
 	}
 	run := func(args []string) error {
+		if environment != "" {
+			args = append(args, "--environment", environment)
+		}
 		_, err := client.Workflow().Run(ctx, &azdext.RunWorkflowRequest{Workflow: &azdext.Workflow{
 			Name: "resources-add", Steps: []*azdext.WorkflowStep{{Command: &azdext.WorkflowCommand{Args: args}}},
 		}})
@@ -186,6 +187,9 @@ func followUpAdd(
 		command := "azd provision " + layerName
 		if hasService {
 			command = "azd up"
+		}
+		if environment != "" {
+			command += fmt.Sprintf(" --environment %q", environment)
 		}
 		_, err := fmt.Fprintf(writer, "Run '%s' to apply these changes later.\n", command)
 		return err

@@ -6,6 +6,7 @@ package add
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net"
 	"strings"
 	"testing"
@@ -149,6 +150,14 @@ type wizardEnvironmentServer struct {
 	values           map[string]string
 	currentErr       error
 	emptyEnvironment bool
+	reads            []*azdext.GetEnvironmentRequest
+	selectedErr      error
+}
+
+func (s *wizardEnvironmentServer) Get(
+	_ context.Context, request *azdext.GetEnvironmentRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: request.Name}}, s.selectedErr
 }
 
 func (s *wizardEnvironmentServer) GetCurrent(
@@ -164,8 +173,9 @@ func (s *wizardEnvironmentServer) GetCurrent(
 }
 
 func (s *wizardEnvironmentServer) GetValues(
-	context.Context, *azdext.GetEnvironmentRequest,
+	_ context.Context, request *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
+	s.reads = append(s.reads, request)
 	response := &azdext.KeyValueListResponse{}
 	for key, value := range s.values {
 		response.KeyValues = append(response.KeyValues, &azdext.KeyValue{Key: key, Value: value})
@@ -714,6 +724,37 @@ func TestWizardFoundryDuplicateDeployment(t *testing.T) {
 	_, err := wizard.Run(t.Context())
 	require.ErrorContains(t, err, "already configured")
 	assert.Len(t, original["ai-project"].Models, 1)
+}
+
+func TestWizardRejectsMissingSelectedEnvironmentBeforeAzureSelection(t *testing.T) {
+	environment := &wizardEnvironmentServer{selectedErr: status.Error(codes.NotFound, "environment not found")}
+	prompts := wizardAIPrompts()
+	prompts.selectAnswers = []string{"AI", "Microsoft Foundry model"}
+	wizard := &Wizard{
+		Client: newWizardTestClientWithEnvironmentServer(t, prompts, environment), Environment: "missing",
+	}
+	_, err := wizard.Run(t.Context())
+	require.ErrorContains(t, err, `getting environment "missing"`)
+	require.Empty(t, environment.reads)
+	require.Nil(t, prompts.subscriptionRequest)
+	require.Nil(t, prompts.modelRequest)
+}
+
+func TestWizardReadsSelectedEnvironment(t *testing.T) {
+	environment := &wizardEnvironmentServer{
+		currentErr: errors.New("default environment must not be read"),
+		values:     map[string]string{"AZURE_SUBSCRIPTION_ID": "selected-sub", "AZURE_LOCATION": "eastus"},
+	}
+	prompts := wizardAIPrompts()
+	prompts.selectAnswers = []string{"AI", "Microsoft Foundry model"}
+	wizard := &Wizard{
+		Client: newWizardTestClientWithEnvironmentServer(t, prompts, environment), Environment: "staging",
+	}
+	_, err := wizard.Run(t.Context())
+	require.NoError(t, err)
+	require.Len(t, environment.reads, 1)
+	require.Equal(t, "staging", environment.reads[0].Name)
+	require.Equal(t, "selected-sub", prompts.modelRequest.AzureContext.Scope.SubscriptionId)
 }
 
 func TestWizardLinkEligibility(t *testing.T) {

@@ -230,6 +230,7 @@ func TestProjectAddACRDisabledBeforeDaemon(t *testing.T) {
 	t.Chdir(root)
 	t.Setenv("AZD_SERVER", "")
 	command := newProjectAddCommand(&azdext.ExtensionContext{NoPrompt: true})
+	command.SetContext(t.Context())
 	require.NoError(t, command.ParseFlags([]string{"--new-project", "--acr-resource-id", testExternalRegistryID}))
 	requireACRFeatureDisabled(t, command.RunE(command, nil))
 	require.NoFileExists(t, filepath.Join(root, "azure.yaml"))

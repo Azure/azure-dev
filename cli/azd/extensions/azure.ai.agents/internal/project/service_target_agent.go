@@ -31,6 +31,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/phasetelemetry"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -403,6 +404,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	if p.deployContextReady || p.agentDefinitionPath != "" {
 		return p.resolveServiceConfig()
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.DeployContextResolution)()
 	if p.serviceConfig == nil {
 		return exterrors.Internal(
 			exterrors.CodeInvalidServiceConfig,
@@ -475,6 +477,8 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	}
 
 	// Get the tenant ID
+	endCredential := phasetelemetry.Start(ctx, phasetelemetry.CredentialAcquisition)
+	defer endCredential()
 	tenantResponse, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 		SubscriptionId: subscriptionId,
 	})
@@ -500,6 +504,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 		)
 	}
 	p.credential = cred
+	endCredential()
 
 	return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath, declaredRef)
 }
@@ -961,7 +966,10 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
-) (*azdext.ServicePackageResult, error) {
+) (phaseResult0 *azdext.ServicePackageResult, phaseErr error) {
+	ctx, timing := phasetelemetry.Begin(ctx, phasetelemetry.Package, phasetelemetry.Provider, phasetelemetry.Reporter(p.azdClient))
+	defer func() { timing.End(ctx, phaseErr) }()
+
 	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
@@ -1062,9 +1070,11 @@ func (p *AgentServiceTargetProvider) Package(
 				ServiceName:    serviceConfig.Name,
 				ServiceContext: serviceContext,
 			}
+			endBuild := phasetelemetry.Start(ctx, phasetelemetry.ImageBuild)
 			buildResponse, err := p.azdClient.
 				Container().
 				Build(ctx, buildRequest)
+			endBuild()
 			if err != nil {
 				return nil, exterrors.FromHost(err, exterrors.OpContainerBuild, "container build failed")
 			}
@@ -1090,6 +1100,8 @@ func (p *AgentServiceTargetProvider) packageContainer(
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
 ) ([]*azdext.Artifact, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ImagePackaging)()
+
 	packageResponse, err := p.azdClient.Container().Package(ctx, &azdext.ContainerPackageRequest{
 		ServiceName:    serviceConfig.Name,
 		ServiceContext: serviceContext,
@@ -1109,7 +1121,10 @@ func (p *AgentServiceTargetProvider) Publish(
 	targetResource *azdext.TargetResource,
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
-) (*azdext.ServicePublishResult, error) {
+) (phaseResult0 *azdext.ServicePublishResult, phaseErr error) {
+	ctx, timing := phasetelemetry.Begin(ctx, phasetelemetry.Publish, phasetelemetry.Provider, phasetelemetry.Reporter(p.azdClient))
+	defer func() { timing.End(ctx, phaseErr) }()
+
 	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
@@ -1146,9 +1161,11 @@ func (p *AgentServiceTargetProvider) Publish(
 		ServiceName:    serviceConfig.Name,
 		ServiceContext: serviceContext,
 	}
+	endPush := phasetelemetry.Start(ctx, phasetelemetry.ImagePush)
 	publishResponse, err := p.azdClient.
 		Container().
 		Publish(ctx, publishRequest)
+	endPush()
 
 	if err != nil {
 		return nil, classifyContainerPublishError(err)
@@ -1605,7 +1622,16 @@ func (p *AgentServiceTargetProvider) Deploy(
 	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
-) (*azdext.ServiceDeployResult, error) {
+) (phaseResult0 *azdext.ServiceDeployResult, phaseErr error) {
+	ctx, timing := phasetelemetry.Begin(ctx, phasetelemetry.Deploy, phasetelemetry.Provider, phasetelemetry.Reporter(p.azdClient))
+	defer func() {
+		if r := recover(); r != nil {
+			timing.End(ctx, errors.New("operation panicked"))
+			panic(r)
+		}
+		timing.End(ctx, phaseErr)
+	}()
+
 	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
@@ -1665,6 +1691,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	// Get environment variables from azd
 	progress("Loading deployment environment")
+	endConfiguration := phasetelemetry.Start(ctx, phasetelemetry.ConfigurationLoading)
+	defer endConfiguration()
 	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
 		Name: p.env.Name,
 	})
@@ -1681,6 +1709,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		azdEnv[kval.Key] = kval.Value
 	}
 	p.dependencyEnv = azdEnv
+	endConfiguration()
 
 	activityBotName := ""
 	activityBotResourceGroup := ""
@@ -1711,6 +1740,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Fprintln(os.Stderr, warning)
 	}
 	progress("Validating service dependencies")
+	endDependencies := phasetelemetry.Start(ctx, phasetelemetry.DependencyValidation)
+	defer endDependencies()
 	if err := validateRegistryConnectionDependency(
 		ctx, serviceConfig, agentDef.RegistryConnectionID, p.projectServices, p.projectPath, p.dependencyEnabled,
 	); err != nil {
@@ -1721,6 +1752,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	); err != nil {
 		return nil, err
 	}
+	endDependencies()
 
 	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
 
@@ -2751,6 +2783,8 @@ func (p *AgentServiceTargetProvider) registerVoiceAgentEnvironmentVariables(
 	agentObject *agent_api.AgentObject,
 	hostedTarget *hostedVoiceTarget,
 ) error {
+	defer phasetelemetry.Start(ctx, phasetelemetry.EndpointUpdate)()
+
 	serviceKey := agentServiceKey(serviceConfig.Name)
 	protocolVersionKey := envkey.AgentProtocolEndpointsVersion(serviceConfig.Name)
 	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
@@ -2930,6 +2964,8 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 	desired []desiredTelephonyBinding,
 	agentObject *agent_api.AgentObject,
 ) error {
+	defer phasetelemetry.Start(ctx, phasetelemetry.VoiceTelephonyConfiguration)()
+
 	_, err := p.deployVoiceTelephonyBindingState(ctx, agentClient, desired, agentObject)
 	return err
 }
@@ -3762,6 +3798,8 @@ func (p *AgentServiceTargetProvider) deployVoiceAgentRemote(
 	progress azdext.ProgressReporter,
 	shouldUpdate bool,
 ) (*agent_api.AgentObject, string, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AgentCreateOrUpdate)()
+
 	overriddenHost := azdEnv[voiceOverriddenHostEnvKey]
 	if shouldUpdate {
 		progress("Updating voice agent using unified API")
@@ -3794,6 +3832,8 @@ func shouldUpdateVoiceAgent(remoteAgent *agent_api.AgentObject, getErr error) (b
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
 // and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
 func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serviceConfig *azdext.ServiceConfig) (string, string, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.CodePackaging)()
+
 	// Source directory is the service's directory.
 	srcDir := p.servicePath
 	if srcDir == "" {
@@ -4255,9 +4295,12 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		// Agent doesn't exist — create
 		progress("Creating new agent from code package")
 		_, _ = fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
+		endUpload := phasetelemetry.Start(ctx, phasetelemetry.ArtifactUpload)
+		defer endUpload()
 		agentResp, err = agentClient.CreateAgentFromZip(
 			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
+		endUpload()
 		if err != nil {
 			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
 		}
@@ -4277,9 +4320,12 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		writeExistingAgentVersionWarning(agentDef.Name)
 		updateVersionRequest := *versionRequest
 		updateVersionRequest.DigitalWorkerType = ""
+		endUpload := phasetelemetry.Start(ctx, phasetelemetry.ArtifactUpload)
+		defer endUpload()
 		agentResp, err = agentClient.UpdateAgentFromZip(
 			ctx, agentDef.Name, &updateVersionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
+		endUpload()
 		if err != nil {
 			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
 		}
@@ -4618,6 +4664,8 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	enableMemorySnapshot *bool,
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentVersionObject, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AgentActivationWait)()
+
 	const confirmCount = 2 // consecutive times a terminal status must be seen
 
 	deadline := time.Now().Add(pollTimeout)
@@ -4675,6 +4723,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		}
 	}
 
+	phasetelemetry.Timeout(ctx)
 	if lastPollErr != nil && (enableMemorySnapshot == nil || !*enableMemorySnapshot) {
 		return nil, exterrors.ServiceFromAzure(lastPollErr, exterrors.OpCreateAgent)
 	}
@@ -4858,6 +4907,8 @@ func (p *AgentServiceTargetProvider) createAgent(
 	request *agent_api.CreateAgentRequest,
 	azdEnv map[string]string,
 ) (*agent_api.AgentVersionObject, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AgentCreateOrUpdate)()
+
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(
 		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
@@ -4981,6 +5032,8 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	activityProfile ActivityProfile,
 	activitySettings *ActivitySettings,
 ) error {
+	defer phasetelemetry.Start(ctx, phasetelemetry.EndpointUpdate)()
+
 	if agentVersionResponse.Name == "" {
 		return fmt.Errorf("agent name is empty; cannot register environment variables")
 	}
@@ -5119,6 +5172,7 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 	if p.foundryProject != nil {
 		return nil
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.ResourceLookup)()
 	if err := p.ensureEnv(ctx); err != nil {
 		return err
 	}

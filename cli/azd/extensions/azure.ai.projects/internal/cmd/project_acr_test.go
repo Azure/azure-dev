@@ -28,6 +28,53 @@ import (
 const testExternalRegistryID = "/subscriptions/subscription/resourceGroups/external/providers/" +
 	"Microsoft.ContainerRegistry/registries/shared"
 
+func TestProjectAddRestoresBoundSubscription(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+	for _, mode := range []string{"create", "reuse-connect"} {
+		for _, saved := range []string{"", "subscription", "other"} {
+			t.Run(mode+"/"+saved, func(t *testing.T) {
+				root := t.TempDir()
+				t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+				raw := []byte("name: test\ninfra:\n  provider: microsoft.foundry\nservices:\n" +
+					"  project:\n    host: azure.ai.project\n")
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), raw, 0o600))
+				client, project, env, _, _ := newSelfInitializingDeploymentClient(t, root)
+				project.project.Infra = &azdext.InfraOptions{Provider: "microsoft.foundry"}
+				project.project.Services["project"] = &azdext.ServiceConfig{Name: "project", Host: aiProjectHost}
+				project.services["project"] = map[string]any{"host": aiProjectHost}
+				env.values["AZURE_SUBSCRIPTION_ID"] = saved
+				binding := synthesis.ACRBinding{
+					Version: 1, Mode: mode, RegistryResourceID: testExternalRegistryID,
+					ProjectResourceID: "/subscriptions/subscription/resourceGroups/project/providers/" +
+						"Microsoft.CognitiveServices/accounts/account/projects/project",
+					PrincipalID: "principal",
+				}
+				if mode == "create" {
+					binding.RegistryResourceID = strings.Replace(testExternalRegistryID, "/external/", "/project/", 1)
+				}
+				data, err := json.Marshal(binding)
+				require.NoError(t, err)
+				env.config = map[string][]byte{synthesis.ACRBindingConfigKey: data}
+				before := maps.Clone(env.values)
+				action := &ProjectAddAction{
+					client: client, flags: &projectAddFlags{output: "none"},
+					extCtx: &azdext.ExtensionContext{Environment: "test"},
+				}
+				err = action.Run(t.Context())
+				if saved == "other" {
+					require.ErrorContains(t, err, "AZURE_SUBSCRIPTION_ID conflicts")
+					require.Equal(t, before, env.values)
+					require.Empty(t, env.setLog)
+				} else {
+					require.NoError(t, err)
+					require.Equal(t, "subscription", env.values["AZURE_SUBSCRIPTION_ID"])
+				}
+				require.Equal(t, data, env.config[synthesis.ACRBindingConfigKey])
+			})
+		}
+	}
+}
+
 func TestProjectACRSelectionSpecificGuidance(t *testing.T) {
 	for _, tt := range []struct {
 		name, manifest, want string

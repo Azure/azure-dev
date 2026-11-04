@@ -49,6 +49,11 @@ func (p *FoundryProvisioningProvider) requireACRReuse() error {
 }
 
 const (
+	acrManagedRegistryTag   = "azd-managed-acr-name"
+	acrManagedDeploymentTag = "azd-managed-acr-deployment"
+)
+
+const (
 	acrPullRole          = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
 	acrRepositoryReader  = "b93aa761-3e63-49ed-ac28-beffa264f7ac"
 	acrRepositoryWriter  = "2a1e307c-b015-4ebd-883e-5b7698a07328"
@@ -1145,6 +1150,7 @@ func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, rec
 		return nil
 	}
 	var deployment struct {
+		Tags       map[string]string `json:"tags"`
 		Properties struct {
 			Outputs           map[string]struct{ Value any } `json:"outputs"`
 			Parameters        map[string]struct{ Value any } `json:"parameters"`
@@ -1171,6 +1177,20 @@ func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, rec
 		outputs[strings.ToUpper(name)] = &azdext.ProvisioningOutputParameter{Type: "string", Value: value}
 	}
 	registry := outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+	creationDeployment := ""
+	if name := deployment.Tags[acrManagedRegistryTag]; name != "" {
+		deploymentName := deployment.Tags[acrManagedDeploymentTag]
+		if strings.ContainsAny(name+deploymentName, "/\\?#%") || deploymentName == "" {
+			return errors.New("invalid retained managed registry creation evidence")
+		}
+		groupID := "/subscriptions/" + p.subID + "/resourceGroups/" + p.rgName
+		id := groupID + "/providers/Microsoft.ContainerRegistry/registries/" + name
+		if registry != nil && registry.Value != "" && !strings.EqualFold(registry.Value, id) {
+			return errors.New("retained managed registry identity differs from deployment outputs")
+		}
+		registry = &azdext.ProvisioningOutputParameter{Type: "string", Value: id}
+		creationDeployment = groupID + "/providers/Microsoft.Resources/deployments/" + deploymentName
+	}
 	salt := ""
 	var selectedRegistry string
 	for name, parameter := range deployment.Properties.Parameters {
@@ -1183,6 +1203,9 @@ func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, rec
 	retained, err := retainedACRAssignments(deployment.Properties.Parameters)
 	if err != nil {
 		return err
+	}
+	if creationDeployment != "" && selectedRegistry != "" {
+		return errors.New("retained managed registry evidence conflicts with an external registry selector")
 	}
 	if (registry == nil || registry.Value == "") && len(retained) > 0 && selectedRegistry != "" {
 		project := outputs["AZURE_AI_PROJECT_ID"]
@@ -1227,7 +1250,11 @@ func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, rec
 			!strings.EqualFold(id.ResourceGroupName, p.rgName) {
 			return errors.New("cannot establish the previous registry ownership from deployed facts")
 		}
-		created, err := p.deploymentCreatedACR(ctx, path, registry.Value, map[string]bool{})
+		evidence := path
+		if creationDeployment != "" {
+			evidence = creationDeployment
+		}
+		created, err := p.deploymentCreatedACR(ctx, evidence, registry.Value, map[string]bool{})
 		if err != nil {
 			return fmt.Errorf("verify previous registry ownership: %w", err)
 		}
@@ -1434,16 +1461,23 @@ func (p *FoundryProvisioningProvider) acrDeploymentOperations(
 func (p *FoundryProvisioningProvider) deploymentCreatedACR(
 	ctx context.Context, deploymentID, registryID string, visited map[string]bool,
 ) (bool, error) {
+	id, err := p.acrCreationDeployment(ctx, deploymentID, registryID, visited)
+	return id != "", err
+}
+
+func (p *FoundryProvisioningProvider) acrCreationDeployment(
+	ctx context.Context, deploymentID, registryID string, visited map[string]bool,
+) (string, error) {
 	key := strings.ToLower(deploymentID)
 	if visited[key] {
-		return false, errors.New("repeated deployment prevents safe registry ownership recovery")
+		return "", errors.New("repeated deployment prevents safe registry ownership recovery")
 	}
 	visited[key] = true
 	operations, err := p.acrDeploymentOperations(ctx, deploymentID)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	created := false
+	created := ""
 	for _, operation := range operations {
 		if operation == nil || operation.Properties == nil || operation.Properties.TargetResource == nil {
 			continue
@@ -1453,15 +1487,15 @@ func (p *FoundryProvisioningProvider) deploymentCreatedACR(
 		if target.ID == nil || target.ResourceType == nil {
 			continue
 		}
-		ownsRegistry := false
+		ownsRegistry := ""
 		if strings.EqualFold(*target.ID, registryID) {
 			if !strings.EqualFold(*target.ResourceType, "Microsoft.ContainerRegistry/registries") ||
 				properties.ProvisioningOperation == nil ||
 				*properties.ProvisioningOperation != armresources.ProvisioningOperationCreate ||
 				properties.ProvisioningState == nil || !strings.EqualFold(*properties.ProvisioningState, "Succeeded") {
-				return false, errors.New("registry has no successful creation operation in the owning deployment")
+				return "", errors.New("registry has no successful creation operation in the owning deployment")
 			}
-			ownsRegistry = true
+			ownsRegistry = deploymentID
 		} else if strings.EqualFold(*target.ResourceType, "Microsoft.Resources/deployments") &&
 			properties.ProvisioningOperation != nil &&
 			*properties.ProvisioningOperation == armresources.ProvisioningOperationCreate {
@@ -1470,19 +1504,64 @@ func (p *FoundryProvisioningProvider) deploymentCreatedACR(
 				(id.ResourceGroupName != "" && !strings.EqualFold(id.ResourceGroupName, p.rgName)) {
 				continue
 			}
-			ownsRegistry, err = p.deploymentCreatedACR(ctx, *target.ID, registryID, visited)
+			ownsRegistry, err = p.acrCreationDeployment(ctx, *target.ID, registryID, visited)
 			if err != nil {
-				return false, err
+				return "", err
 			}
 		}
-		if ownsRegistry {
-			if created {
-				return false, errors.New("multiple registry creation operations prevent safe ownership recovery")
+		if ownsRegistry != "" {
+			if created != "" {
+				return "", errors.New("multiple registry creation operations prevent safe ownership recovery")
 			}
-			created = true
+			created = ownsRegistry
 		}
 	}
 	return created, ctx.Err()
+}
+
+func (p *FoundryProvisioningProvider) retainManagedACREvidence(
+	ctx context.Context, src *templateSource, tags map[string]*string,
+) error {
+	include, _ := parameterValue(src, "includeAcr").(bool)
+	if include || p.acrBinding == nil || p.acrBinding.Mode != "create" {
+		return nil
+	}
+	registry, err := arm.ParseResourceID(p.acrBinding.RegistryResourceID)
+	if err != nil || !strings.EqualFold(registry.SubscriptionID, p.subID) ||
+		!strings.EqualFold(registry.ResourceGroupName, p.rgName) {
+		return errors.New("managed registry creation evidence has a different deployment scope")
+	}
+	root := "/subscriptions/" + p.subID + "/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+	var previous struct {
+		Tags map[string]string `json:"tags"`
+	}
+	if err := p.acrARM(ctx, http.MethodGet, root, "2022-09-01", &previous); err != nil {
+		return fmt.Errorf("read managed registry creation evidence: %w", err)
+	}
+	evidence := root
+	if name := previous.Tags[acrManagedDeploymentTag]; name != "" {
+		if strings.ContainsAny(name, "/\\?#%") ||
+			!strings.EqualFold(previous.Tags[acrManagedRegistryTag], registry.Name) {
+			return errors.New("retained managed registry creation evidence does not match the binding")
+		}
+		evidence = "/subscriptions/" + p.subID + "/resourceGroups/" + p.rgName +
+			"/providers/Microsoft.Resources/deployments/" + name
+	}
+	creator, err := p.acrCreationDeployment(ctx, evidence, registry.String(), map[string]bool{})
+	if err != nil {
+		return fmt.Errorf("verify retained managed registry creation evidence: %w", err)
+	}
+	if creator == "" {
+		return errors.New("cannot retain managed registry ownership without a successful creation operation")
+	}
+	deployment, err := arm.ParseResourceID(creator)
+	if err != nil || !strings.EqualFold(deployment.SubscriptionID, p.subID) ||
+		!strings.EqualFold(deployment.ResourceGroupName, p.rgName) {
+		return errors.New("managed registry creation evidence must be in the Foundry resource group")
+	}
+	tags[acrManagedRegistryTag] = new(registry.Name)
+	tags[acrManagedDeploymentTag] = new(deployment.Name)
+	return nil
 }
 
 func (p *FoundryProvisioningProvider) recoverPartialACRBinding(

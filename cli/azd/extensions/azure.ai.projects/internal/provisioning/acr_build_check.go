@@ -103,7 +103,7 @@ func (c *ACRRemoteBuildCheck) ValidateProject(
 	if err != nil {
 		return err
 	}
-	endpoint, err := foundryServiceEndpointAtRoot(raw, project.Path, in.ServiceName)
+	endpoint, err := resolvedFoundryServiceEndpointAtRoot(raw, project.Path, in.ServiceName, snapshot)
 	if err != nil || endpoint != "" {
 		return err
 	}

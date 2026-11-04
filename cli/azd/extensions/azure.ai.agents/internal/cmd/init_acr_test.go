@@ -28,6 +28,67 @@ import (
 const testInitACRID = "/subscriptions/sub/resourceGroups/registry-rg/providers/" +
 	"Microsoft.ContainerRegistry/registries/shared"
 
+func TestResolveACREnvironmentUsesActualAgentName(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	require.NoError(t, os.WriteFile("azure.yaml", []byte("name: test\n"), 0o600))
+	server := &reuseInitACREnvironmentServer{}
+	client := newTestAzdClient(t, server, &testWorkflowServiceServer{})
+	flags := &initFlags{
+		acrResourceIDSet: true,
+		agentName:        "chat",
+	}
+	action := &InitFromCodeAction{azdClient: client, flags: flags}
+
+	require.NoError(t, action.resolveACREnvironment(t.Context()))
+	require.Equal(t, "chat", flags.resolvedAgentName)
+	require.Equal(t, "chat-dev", flags.resolvedEnvironmentName)
+
+	envName, values, err := readInitACREnvironment(t.Context(), client, flags, ".")
+	require.NoError(t, err)
+	require.Empty(t, envName)
+	require.Equal(t, "chat-dev", values["AZURE_ENV_NAME"])
+}
+
+func TestInitACRPlannedEnvironmentDoesNotReadBinding(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+	for _, tt := range []struct {
+		name, explicit, planned, wantName string
+		existingProject                   bool
+	}{
+		{name: "fresh project", wantName: "demo-dev"},
+		{name: "planned environment", existingProject: true, planned: "chat-dev", wantName: "chat-dev"},
+		{name: "explicit environment", existingProject: true, explicit: "explicit", wantName: "explicit"},
+		{name: "explicit overrides plan", existingProject: true,
+			explicit: "explicit", planned: "chat-dev", wantName: "explicit"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "demo")
+			require.NoError(t, os.Mkdir(root, 0o700))
+			t.Chdir(root)
+			if tt.existingProject {
+				require.NoError(t, os.WriteFile("azure.yaml", []byte("name: test\n"), 0o600))
+			}
+			server := &reuseInitACREnvironmentServer{testEnvironmentServiceServer: testEnvironmentServiceServer{
+				configErr: errors.New("unexpected binding read for a missing environment"),
+			}}
+			client := newTestAzdClient(t, server, &testWorkflowServiceServer{})
+			flags := &initFlags{
+				env: tt.explicit, resolvedEnvironmentName: tt.planned,
+				acrResourceIDSet: true, acrResourceID: testInitACRID, noPrompt: true,
+			}
+			envName, values, err := readInitACREnvironment(t.Context(), client, flags, ".")
+			require.NoError(t, err)
+			require.Empty(t, envName)
+			require.Equal(t, tt.wantName, values["AZURE_ENV_NAME"])
+			_, err = planInitACRSubscription(t.Context(), client, flags, ".")
+			require.NoError(t, err)
+			require.Zero(t, server.getValuesCalls)
+			require.Empty(t, server.setKeys)
+		})
+	}
+}
+
 func TestInitACRSelectionSpecificGuidance(t *testing.T) {
 	for _, tt := range []struct {
 		name, manifest, want string

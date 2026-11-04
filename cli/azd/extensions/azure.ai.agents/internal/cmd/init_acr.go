@@ -173,7 +173,8 @@ func readInitACREnvironment(
 		targetDir = "."
 	}
 	if _, err := azdext.GetProjectDir(); errors.Is(err, azdext.ErrProjectNotFound) {
-		return "", map[string]string{"AZURE_ENV_NAME": deriveEnvName(flags, targetDir)}, nil
+		envName := deriveEnvName(flags, targetDir)
+		return "", map[string]string{"AZURE_ENV_NAME": envName}, nil
 	} else if err != nil {
 		return "", nil, fmt.Errorf("resolve project before selecting a registry: %w", err)
 	}
@@ -181,10 +182,11 @@ func readInitACREnvironment(
 	if err != nil {
 		return "", nil, fmt.Errorf("read environments before selecting a registry: %w", err)
 	}
+	requestedName := valueOrDefault(flags.env, flags.resolvedEnvironmentName)
 	envName := ""
 	for _, env := range environments.GetEnvironments() {
-		if flags.env != "" && env.GetName() == flags.env ||
-			flags.env == "" && env.GetDefault() {
+		if requestedName != "" && env.GetName() == requestedName ||
+			requestedName == "" && env.GetDefault() {
 			envName = env.GetName()
 			break
 		}
@@ -364,6 +366,15 @@ func validateInitACRProjectContent(
 	}
 	if err := readInitACRBinding(ctx, client, envName, values); err != nil {
 		return err
+	}
+	if !staged && flags.templatePointer == "" && envName == "" &&
+		flags.env == "" && flags.resolvedEnvironmentName == "" {
+		if flags.agentName != "" && flags.noPrompt {
+			values["AZURE_ENV_NAME"] = sanitizeAgentName(flags.agentName + "-dev")
+		} else {
+			// Interactive init resolves its source setup later.
+			delete(values, "AZURE_ENV_NAME")
+		}
 	}
 	selectedID := flags.acrResourceID
 	if !flags.acrResourceIDSet {

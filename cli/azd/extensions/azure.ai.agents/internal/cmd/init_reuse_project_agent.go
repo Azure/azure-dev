@@ -275,6 +275,9 @@ func runReuseProjectAgentServices(
 	var subscription *azdext.AzureScope
 	projectRoot := ""
 	if registryID != "" {
+		if env == nil {
+			flags.resolvedEnvironmentName = envName
+		}
 		var err error
 		subscription, err = planInitACRSubscription(ctx, azdClient, flags, ".")
 		if err != nil {

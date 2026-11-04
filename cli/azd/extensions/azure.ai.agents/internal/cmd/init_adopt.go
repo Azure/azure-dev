@@ -2443,6 +2443,10 @@ func applyDeployModeToService(
 	// may carry the image in extension properties, so promote the resolved value
 	// to the core service image field. An explicit code mode overrides a leftover image.
 	if effectiveImage != "" && flags.deployMode != "code" {
+		if (flags.acrResourceIDSet || flags.effectiveACRResourceID != "") && !hasCodeConfig {
+			return !svc.GetDocker().GetImagePassthrough() &&
+				strings.TrimSpace(probe.definition.RegistryConnectionID) == "", nil
+		}
 		if err := validateHostedContainerImage(effectiveImage); err != nil {
 			return false, err
 		}

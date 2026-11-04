@@ -98,6 +98,7 @@ func TestInitACRReusePlansBeforeEnvironmentCreation(t *testing.T) {
 		promptError        error
 		existing, noPrompt bool
 		wantPrompts        int
+		directoryGroup     bool
 	}{
 		{name: "prompted mismatch", envName: "fresh", prompted: "other",
 			wantError: "same subscription", wantPrompts: 1},
@@ -106,7 +107,10 @@ func TestInitACRReusePlansBeforeEnvironmentCreation(t *testing.T) {
 			wantError:   "cancelled", wantPrompts: 1},
 		{name: "derived teardown group", prompted: "sub",
 			registry:  strings.Replace(testInitACRID, "/registry-rg/", "/rg-test-agent-dev/", 1),
-			wantError: "azd down deletes", wantPrompts: 1},
+			wantError: "resource group"},
+		{name: "configured teardown group", existing: true, envName: "test-agent-dev", subscription: "sub",
+			registry:  strings.Replace(testInitACRID, "/registry-rg/", "/rg-test-agent-dev/", 1),
+			wantError: "azd down deletes"},
 		{name: "headless teardown group", noPrompt: true,
 			registry:  strings.Replace(testInitACRID, "/registry-rg/", "/rg-test-agent-dev/", 1),
 			wantError: "resource group"},
@@ -114,6 +118,8 @@ func TestInitACRReusePlansBeforeEnvironmentCreation(t *testing.T) {
 			wantError: "same subscription"},
 		{name: "matching prompted subscription", envName: "fresh", prompted: "SUB", wantPrompts: 1},
 		{name: "matching derived environment", prompted: "sub", wantPrompts: 1},
+		{name: "unused directory group", prompted: "sub", wantPrompts: 1, directoryGroup: true},
+		{name: "headless unused directory group", noPrompt: true, directoryGroup: true},
 		{name: "existing environment without subscription", existing: true, envName: "test",
 			prompted: "sub", wantPrompts: 1},
 		{name: "matching configured subscription", existing: true, envName: "test", subscription: "sub"},
@@ -164,6 +170,7 @@ func TestInitACRReusePlansBeforeEnvironmentCreation(t *testing.T) {
 			workflow.runHook = func(call int) error {
 				args := workflow.requests[call-1].Workflow.Steps[0].Command.Args
 				if len(args) >= 2 && args[0] == "env" && args[1] == "new" {
+					require.Equal(t, []string{"env", "new", envName}, args)
 					environment := &azdext.Environment{Name: envName}
 					environments.environments[envName] = environment
 					environments.current = environment
@@ -184,6 +191,11 @@ func TestInitACRReusePlansBeforeEnvironmentCreation(t *testing.T) {
 			registry := tt.registry
 			if registry == "" {
 				registry = testInitACRID
+			}
+			if tt.directoryGroup {
+				group := "rg-" + deriveEnvName(&initFlags{}, ".")
+				require.NotEqual(t, "rg-"+envName, group)
+				registry = strings.Replace(testInitACRID, "/registry-rg/", "/"+group+"/", 1)
 			}
 			args := []string{"--acr-resource-id", registry}
 			err := executeReuseInitACR(t, environments, workflow, prompts, project, account, tt.noPrompt, tt.envName, args...)

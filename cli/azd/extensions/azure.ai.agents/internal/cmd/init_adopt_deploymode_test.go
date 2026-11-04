@@ -96,6 +96,11 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 	}
 	preBuiltService := agentServiceConfig(t, svcName, dockerProps)
 	preBuiltService.Image = "registry.example.com/team/agent:v1"
+	sourceImageService := agentServiceConfig(t, svcName, nil)
+	sourceImageService.Image = "registry.example.com/team/agent:v1"
+	preBuiltPassthroughService := agentServiceConfig(t, svcName, nil)
+	preBuiltPassthroughService.Image = "registry.example.com/team/agent:v1"
+	preBuiltPassthroughService.Docker = &azdext.DockerProjectOptions{ImagePassthrough: true}
 	mixedCodeService := agentServiceConfig(t, svcName, codeProps)
 	mixedCodeService.Image = "registry.example.com/team/agent:v1"
 	legacyImageProps := map[string]any{
@@ -166,6 +171,49 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			wantNeedsACR: false,
 			wantLanguage: "docker",
 			wantDocker:   map[string]any{"imagePassthrough": true},
+		},
+		{
+			name: "ACR selection keeps image source build",
+			flags: &initFlags{
+				acrResourceIDSet: true,
+			},
+			service:      sourceImageService,
+			wantNeedsACR: true,
+		},
+		{
+			name:         "saved ACR selection keeps image source build",
+			flags:        &initFlags{effectiveACRResourceID: testInitACRID},
+			service:      sourceImageService,
+			wantNeedsACR: true,
+		},
+		{
+			name:         "ACR selection preserves authored source docker config",
+			flags:        &initFlags{acrResourceIDSet: true},
+			service:      preBuiltService,
+			wantNeedsACR: true,
+		},
+		{
+			name: "ACR selection preserves explicit image passthrough",
+			flags: &initFlags{
+				acrResourceIDSet: true,
+			},
+			service:      preBuiltPassthroughService,
+			wantNeedsACR: false,
+		},
+		{
+			name:         "saved ACR selection preserves explicit image passthrough",
+			flags:        &initFlags{effectiveACRResourceID: testInitACRID},
+			service:      preBuiltPassthroughService,
+			wantNeedsACR: false,
+		},
+		{
+			name:  "ACR selection preserves image registry connection",
+			flags: &initFlags{acrResourceIDSet: true},
+			service: agentServiceConfig(t, svcName, map[string]any{
+				"kind": "hosted", "name": svcName, "image": "registry.example.com/agent:v1",
+				"registryConnectionId": "private-registry",
+			}),
+			wantNeedsACR: false,
 		},
 		{
 			name:         "resolved legacy image is promoted and uses passthrough",
@@ -277,6 +325,56 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 				assert.Empty(t, sets)
 			}
 		})
+	}
+}
+
+func TestApplyDeployModeToAdoptedProject_ACRSelectionPreservesMixedBuilds(t *testing.T) {
+	for _, referenced := range []bool{false, true} {
+		for _, saved := range []bool{false, true} {
+			name := "inline"
+			if referenced {
+				name = "referenced"
+			}
+			if saved {
+				name += "/saved"
+			} else {
+				name += "/flag"
+			}
+			t.Run(name, func(t *testing.T) {
+				root := t.TempDir()
+				source := agentServiceConfig(t, "source", nil)
+				if referenced {
+					require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
+						[]byte("kind: hosted\nname: source\n"), 0o600))
+					source = agentServiceConfig(t, "source", map[string]any{"$ref": "agent.yaml"})
+				}
+				source.Image = "registry.example.com/source:v1"
+				prebuilt := agentServiceConfig(t, "prebuilt", nil)
+				prebuilt.Image = "registry.example.com/prebuilt:v1"
+				prebuilt.Docker = &azdext.DockerProjectOptions{ImagePassthrough: true}
+				server := &deployModeProjectServer{
+					path: root,
+					services: map[string]*azdext.ServiceConfig{
+						"source": source, "prebuilt": prebuilt,
+					},
+				}
+				client := newProjectRecorderClient(t, server)
+				flags := &initFlags{acrResourceIDSet: true, acrResourceID: testInitACRID}
+				if saved {
+					flags.acrResourceIDSet = false
+					flags.acrResourceID = ""
+					flags.effectiveACRResourceID = testInitACRID
+				}
+
+				needsACR, sources, err := applyDeployModeToAdoptedProjectWithSources(t.Context(), flags, client)
+				require.NoError(t, err)
+				require.True(t, needsACR)
+				require.Equal(t, []string{"source"}, sources)
+				require.Empty(t, server.sets)
+				require.Empty(t, server.unsets)
+				require.True(t, prebuilt.GetDocker().GetImagePassthrough())
+			})
+		}
 	}
 }
 

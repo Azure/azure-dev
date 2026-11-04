@@ -67,6 +67,52 @@ func TestWideTableSelectsCardsAndKeepsValues(t *testing.T) {
 	}
 }
 
+func TestReferenceLinksAcrossHTMLTables(t *testing.T) {
+	const table = "<table><tr><th>Name</th></tr><tr><td>Example</td></tr></table>\n\n"
+	for _, sample := range []struct {
+		name, source, destination string
+	}{
+		{"definition-after", "See [the report][report].\n\n" + table +
+			"[report]: https://example.com/report\n", "https://example.com/report"},
+		{"definition-before", "[report]: https://example.com/report\n\n" + table +
+			"See [the report][report].\n", "https://example.com/report"},
+		{"first-definition-wins", "[report]: https://example.com/first\n\n" + table +
+			"See [the report][report].\n\n[report]: https://example.com/second\n", "https://example.com/first"},
+		{"multiline", "See [the report][report].\n\n" + table +
+			"[report]:\n  <https://example.com/report>\n  \"Report title\"\n", "https://example.com/report"},
+		{"multiple-tables", "See [the report][report].\n\n" + table + table +
+			"[report]: https://example.com/report\n", "https://example.com/report"},
+		{"collapsed-reference", "See [report][].\n\n" + table +
+			"[report]: https://example.com/report\n", "https://example.com/report"},
+		{"shortcut-reference", "See [report].\n\n" + table +
+			"[report]: https://example.com/report\n", "https://example.com/report"},
+		{"image-reference", "![Report image][report]\n\n" + table +
+			"[report]: https://example.com/report\n", "https://example.com/report"},
+		{"nested-definition", "> [report]: https://example.com/report\n\n" + table +
+			"See [the report][report].\n", "https://example.com/report"},
+		{"escaped-label", "See [the report][report\\]].\n\n" + table +
+			"[report\\]]: <https://example.com/report>\n", "https://example.com/report"},
+		{"fenced-definition-is-literal", "```markdown\n[report]: https://example.com/literal\n```\n\n" +
+			"See [the report][report].\n\n" + table + "[report]: https://example.com/report\n",
+			"https://example.com/report"},
+		{"unrendered-table", "See [the report][report].\n\n" +
+			"<table><tr><th colspan=\"2\">Name</th></tr><tr><td>Example</td></tr></table>\n\n" +
+			"[report]: https://example.com/report\n", "https://example.com/report"},
+	} {
+		t.Run(sample.name, func(t *testing.T) {
+			for _, color := range []bool{false, true} {
+				var result bytes.Buffer
+				require.NoError(t, Render(t.Context(), &result, sample.source, 120, color))
+				plain := ansi.Strip(result.String())
+				assert.Contains(t, plain, sample.destination)
+				assert.NotContains(t, plain, "[the report][report]")
+				assert.NotContains(t, plain, "https://example.com/second")
+				assert.Contains(t, plain, "Example")
+			}
+		})
+	}
+}
+
 func TestPrettyPrintTableColorsPreserveContentAndLayout(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	const source = "<table><caption>Totals</caption><tr><th>Name</th><th>Value</th></tr>" +

@@ -58,6 +58,25 @@ func Render(ctx context.Context, writer io.Writer, source string, width int, col
 	}
 	data := []byte(source)
 	document := goldmark.New(goldmark.WithExtensions(extension.GFM)).Parser().Parse(text.NewReader(data))
+	var references strings.Builder
+	err = ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if err := ctx.Err(); err != nil {
+			return ast.WalkStop, err
+		}
+		if _, ok := node.(*ast.LinkReferenceDefinition); entering && ok {
+			references.Write(node.Lines().Value(data))
+			references.WriteString("\n\n")
+		}
+		return ast.WalkContinue, nil
+	})
+	if err != nil {
+		return err
+	}
+	// Each fragment needs the document's definitions in source order so links
+	// resolve across tables and duplicate labels retain their first definition.
+	renderMarkdown := func(fragment string) (string, error) {
+		return renderer.Render(references.String() + fragment)
+	}
 	var result strings.Builder
 	result.WriteString("Preview only; original Markdown/HTML is unchanged. " +
 		"URLs omit credentials, queries and fragments.\n\n")
@@ -79,7 +98,7 @@ func Render(ctx context.Context, writer io.Writer, source string, width int, col
 		if !strings.Contains(strings.ToLower(raw), "<table") {
 			return ast.WalkSkipChildren, nil
 		}
-		before, err := renderer.Render(source[cursor:start])
+		before, err := renderMarkdown(source[cursor:start])
 		if err != nil {
 			return ast.WalkStop, fmt.Errorf("render Markdown: %w", err)
 		}
@@ -111,7 +130,7 @@ func Render(ctx context.Context, writer io.Writer, source string, width int, col
 	if err != nil {
 		return err
 	}
-	after, err := renderer.Render(source[cursor:])
+	after, err := renderMarkdown(source[cursor:])
 	if err != nil {
 		return fmt.Errorf("render Markdown: %w", err)
 	}

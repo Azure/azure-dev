@@ -20,10 +20,56 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	tm "github.com/buger/goterm"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/theckman/yacspin"
 	"go.uber.org/atomic"
 )
+
+func TestAskerConsole_BufferedPreviewerOutput(t *testing.T) {
+	for _, discard := range []bool{false, true} {
+		t.Run(fmt.Sprint(discard), func(t *testing.T) {
+			var stderr bytes.Buffer
+			var destination io.Writer = &stderr
+			if discard {
+				destination = io.Discard
+			}
+			console := NewConsole(false, false,
+				Writers{Output: io.Discard, Spinner: io.Discard},
+				ConsoleHandles{Stderr: destination}, nil, nil).(*AskerConsole)
+			require.Equal(t, destination, console.previewerOutputDestination())
+			console.PausePreviewer()
+			writer := console.PreviewerOutputWriter()
+			var wg sync.WaitGroup
+			for range 10 {
+				wg.Go(func() {
+					_, err := writer.Write([]byte("hook\n"))
+					assert.NoError(t, err)
+				})
+			}
+			wg.Wait()
+			require.Empty(t, stderr.String())
+			console.ResumePreviewer()
+			_, err := writer.Write([]byte("before-final\n"))
+			require.NoError(t, err)
+			require.Empty(t, stderr.String())
+			console.FlushPreviewerOutput()
+			if !discard {
+				require.Equal(t, strings.Repeat("hook\n", 10)+"before-final\n", stderr.String())
+			}
+			before := stderr.String()
+			console.FlushPreviewerOutput()
+			require.Equal(t, before, stderr.String())
+			_, err = writer.Write([]byte("after-final\n"))
+			require.NoError(t, err)
+			if discard {
+				require.Empty(t, stderr.String())
+			} else {
+				require.Equal(t, before+"after-final\n", stderr.String())
+			}
+		})
+	}
+}
 
 func TestAskerConsole_Confirm_RequireInput(t *testing.T) {
 	tests := []struct {

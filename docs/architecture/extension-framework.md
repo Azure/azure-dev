@@ -56,6 +56,17 @@ before starting the extension. Inherited parent-process environment variables
 and azd launch/protocol variables are still passed. Explicit Environment gRPC
 calls are unaffected.
 
+### Lifecycle hook output
+
+Host builds containing [the buffered hook-output fix](https://github.com/Azure/azure-dev/pull/10813)
+buffer extension stdout while deployment progress owns the terminal, then
+deliver it to the caller's configured stderr stream after preview teardown
+and final table rendering. Overlapping hooks share one reference-counted
+output registration per extension. Explicit discard streams remain discarded.
+This is unstructured hook output, not retained beta event `messages`.
+Released azd 1.37.0 hosts do not contain this fix and can discard hook output
+while the previewer is suppressed.
+
 ### Lifecycle follow-up contributions
 
 The beta event stream supplies an invocation ID to each subscribed project

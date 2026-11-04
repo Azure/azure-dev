@@ -5,6 +5,7 @@ package input
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -68,6 +69,12 @@ type ShowPreviewerOptions struct {
 type PreviewerPauser interface {
 	PausePreviewer()
 	ResumePreviewer()
+}
+
+// PreviewerOutput buffers hooks while progress owns the terminal.
+type PreviewerOutput interface {
+	PreviewerOutputWriter() io.Writer
+	FlushPreviewerOutput()
 }
 
 type PromptDialog struct {
@@ -175,11 +182,13 @@ type AskerConsole struct {
 	spinnerTerminalMode yacspin.TerminalMode
 	spinnerCurrentTitle string
 
-	previewer            syncatomic.Pointer[progressLog]
-	previewerRefCount    int // tracks concurrent ShowPreviewer callers; only stop when it reaches 0
-	previewerSuppressed  syncatomic.Bool
-	previewerStopPending bool
-	previewerKeepLogs    bool
+	previewer             syncatomic.Pointer[progressLog]
+	previewerRefCount     int // tracks concurrent ShowPreviewer callers; only stop when it reaches 0
+	previewerSuppressed   syncatomic.Bool
+	previewerStopPending  bool
+	previewerKeepLogs     bool
+	previewerOutput       bytes.Buffer
+	previewerOutputPaused bool
 
 	currentIndent *atomic.String
 	// consoleWidth is the width of the underlying console window. The value is updated as the window resized. Nil when
@@ -452,9 +461,47 @@ func (c *AskerConsole) PausePreviewer() {
 	defer c.showProgressMu.Unlock()
 
 	c.previewerSuppressed.Store(true)
+	c.previewerOutputPaused = true
+}
+
+// PreviewerOutputWriter uses the injected stderr handle.
+func (c *AskerConsole) PreviewerOutputWriter() io.Writer {
+	return &previewerOutputWriter{console: c}
+}
+
+type previewerOutputWriter struct {
+	console *AskerConsole
+}
+
+func (w *previewerOutputWriter) Write(p []byte) (int, error) {
+	c := w.console
+	c.showProgressMu.Lock()
+	defer c.showProgressMu.Unlock()
+	if c.previewerOutputPaused {
+		return c.previewerOutput.Write(p)
+	}
+	return c.previewerOutputDestination().Write(p)
+}
+
+func (c *AskerConsole) previewerOutputDestination() io.Writer {
+	if c.handles.Stderr != nil {
+		return c.handles.Stderr
+	}
+	return os.Stderr
+}
+
+// FlushPreviewerOutput drains hook output after final rendering.
+func (c *AskerConsole) FlushPreviewerOutput() {
+	c.showProgressMu.Lock()
+	defer c.showProgressMu.Unlock()
+	c.previewerOutputPaused = false
+	if _, err := c.previewerOutput.WriteTo(c.previewerOutputDestination()); err != nil {
+		log.Printf("flushing buffered extension output: %v", err)
+	}
 }
 
 // ResumePreviewer re-enables previewer rendering.
+// Flush buffered output after rendering the final progress table.
 func (c *AskerConsole) ResumePreviewer() {
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()

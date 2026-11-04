@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -44,6 +45,13 @@ type eventService struct {
 
 	// Stable event messages lack per-invocation IDs, so identical broker keys must not overlap.
 	stableInvocations stableEventInvocationGate
+	outputMu          sync.Mutex
+	outputs           map[*extensions.Extension]*extensionOutputRegistration
+}
+
+type extensionOutputRegistration struct {
+	writer io.Writer
+	refs   int
 }
 
 // ExtensionLookup resolves an installed extension.
@@ -367,9 +375,35 @@ func (s *eventService) syncExtensionOutput(
 	previewWriter := s.console.ShowPreviewer(ctx, previewOptions)
 	outputWriter := previewWriter
 	if previewWriter == io.Discard {
-		outputWriter = s.console.Handles().Stderr
-		if outputWriter == nil || outputWriter == io.Discard {
-			outputWriter = os.Stderr
+		s.outputMu.Lock()
+		if registration := s.outputs[extension]; registration != nil {
+			registration.refs++
+		} else {
+			outputWriter = s.console.Handles().Stderr
+			if buffered, ok := s.console.(input.PreviewerOutput); ok {
+				outputWriter = buffered.PreviewerOutputWriter()
+			} else if outputWriter == nil {
+				outputWriter = os.Stderr
+			}
+			if s.outputs == nil {
+				s.outputs = make(map[*extensions.Extension]*extensionOutputRegistration)
+			}
+			s.outputs[extension] = &extensionOutputRegistration{writer: outputWriter, refs: 1}
+			extOut.AddWriter(outputWriter)
+		}
+		s.outputMu.Unlock()
+		var once sync.Once
+		return func() {
+			once.Do(func() {
+				s.outputMu.Lock()
+				defer s.outputMu.Unlock()
+				registration := s.outputs[extension]
+				registration.refs--
+				if registration.refs == 0 {
+					extOut.RemoveWriter(registration.writer)
+					delete(s.outputs, extension)
+				}
+			})
 		}
 	}
 	extOut.AddWriter(outputWriter)

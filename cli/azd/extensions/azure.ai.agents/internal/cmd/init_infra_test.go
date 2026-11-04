@@ -1805,6 +1805,7 @@ func TestEjectInfra_RecordedRegistryMode(t *testing.T) {
 }
 
 func TestEjectInfra_ProjectOnlyRegistrySelectionRejectsTerraform(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const registryID = "/subscriptions/sub/resourceGroups/shared/" +
 		"providers/Microsoft.ContainerRegistry/registries/registry"
 	for _, mode := range []string{"", "create", "reuse-connect"} {
@@ -1833,6 +1834,7 @@ func TestEjectInfra_ProjectOnlyRegistrySelectionRejectsTerraform(t *testing.T) {
 }
 
 func TestEjectInfra_ProjectOnlyRegistrySelectionPreservesDemand(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const registryID = "/subscriptions/sub/resourceGroups/shared/" +
 		"providers/Microsoft.ContainerRegistry/registries/registry"
 	dir := t.TempDir()

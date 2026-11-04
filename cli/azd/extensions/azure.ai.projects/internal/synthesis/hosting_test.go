@@ -138,7 +138,11 @@ func TestHostingPreservesACRSelection(t *testing.T) {
 				if test.canonical || !test.create {
 					t.Setenv(ACRReuseEnvVar, "false")
 					disabledResult, disabledErr := Synthesize(input)
-					requireACRDisabled(t, disabledErr)
+					if test.canonical {
+						requireACRDisabled(t, disabledErr)
+					} else {
+						require.ErrorIs(t, disabledErr, ErrACRReuseAgentHosting)
+					}
 					require.Nil(t, disabledResult)
 					t.Setenv(ACRReuseEnvVar, "true")
 				}

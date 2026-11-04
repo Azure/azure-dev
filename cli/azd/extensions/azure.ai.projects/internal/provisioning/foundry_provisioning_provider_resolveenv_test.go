@@ -344,6 +344,7 @@ func TestInitializeUsesPromptedLocationInSynthesis(t *testing.T) {
 }
 
 func TestInitializeRecalculatesRemoteBuildAfterLocationPrompt(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	root := t.TempDir()
 	// Condition expands to the prompted location value. Use a truthy location so
 	// the agent is disabled before the prompt and enabled afterward.

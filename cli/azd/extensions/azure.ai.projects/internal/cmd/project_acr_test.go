@@ -82,6 +82,7 @@ func TestProjectAddACRInvalidFlagsBeforeDaemon(t *testing.T) {
 }
 
 func TestProjectACRStateErrorsDoNotSuggestRegistrySelection(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const projectID = "/subscriptions/subscription/resourceGroups/project/providers/" +
 		"Microsoft.CognitiveServices/accounts/account/projects/project"
 	binding, err := json.Marshal(synthesis.ACRBinding{
@@ -1045,6 +1046,7 @@ func TestProjectAddCanonicalBindingWithoutLegacyAliases(t *testing.T) {
 }
 
 func TestProjectAddRejectsOwnedProjectAdoptionBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const projectID = "/subscriptions/subscription/resourceGroups/project/providers/" +
 		"Microsoft.CognitiveServices/accounts/account/projects/project"
 	for _, legacy := range []bool{false, true} {

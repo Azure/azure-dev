@@ -21,8 +21,7 @@ func ACRParameters(t testing.TB, root string, layer bool, format, id string) {
 	manifest := "infra:\n  provider: microsoft.foundry\n"
 	dir, module := filepath.Join(root, "infra"), "main"
 	if layer {
-		manifest = "infra:\n  provider: bicep\n  layers:\n" +
-			"    - name: app\n      path: infra/app\n" +
+		manifest = "infra:\n  layers:\n" +
 			"    - name: foundry\n      provider: microsoft.foundry\n" +
 			"      path: infra/foundry\n      module: project\n"
 		dir, module = filepath.Join(dir, "foundry"), "project"

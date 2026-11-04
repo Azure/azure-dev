@@ -324,6 +324,7 @@ func TestGreenfieldACRSelectionForInput(t *testing.T) {
 }
 
 func TestACRSelectionChecksEveryManagedResourceGroup(t *testing.T) {
+	t.Setenv(ACRReuseEnvVar, "true")
 	const registryID = "/subscriptions/sub/resourceGroups/application/" +
 		"providers/Microsoft.ContainerRegistry/registries/registry"
 	for _, tt := range []struct {

@@ -101,6 +101,9 @@ func TestSynthesizeACRReuseOptIn(t *testing.T) {
 		{name: "code without reuse", agent: "    kind: hosted\n    codeConfiguration: {runtime: python}\n",
 			enabledMode: "none"},
 		{name: "image without reuse", agent: "    kind: hosted\n    image: registry.example/agent:v1\n",
+			enabledMode: "create"},
+		{name: "prebuilt image without reuse", agent: "    kind: hosted\n    image: registry.example/agent:v1\n" +
+			"    docker: {imagePassthrough: true}\n",
 			enabledMode: "none"},
 		{name: "environment selector", values: map[string]string{
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID,

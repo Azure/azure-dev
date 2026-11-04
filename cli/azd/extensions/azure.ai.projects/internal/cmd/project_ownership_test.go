@@ -1864,6 +1864,7 @@ func TestEjectProjectInfraRecordedRegistryMode(t *testing.T) {
 }
 
 func TestEjectProjectOnlyRegistrySelectionPreservesDemand(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const registryID = "/subscriptions/sub/resourceGroups/shared/" +
 		"providers/Microsoft.ContainerRegistry/registries/registry"
 	for _, layer := range []bool{false, true} {

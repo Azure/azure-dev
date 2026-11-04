@@ -7,11 +7,12 @@ inputs:
     Complete changed-file list: cli/azd/extensions/example/internal/cmd/list.go.
     Before, the list command has no --format flag. After, it adds a working --format flag at RIGHT line 42.
     All surrounding behavior, tests, and docs are correct. Complete review history is empty.
-    The shared review-shape grader also tests that it selects the final review object after an earlier diagnostic object.
+    The shared review-shape grader also tests leading diagnostics, trailing logs, nested objects, and escaped strings.
 graders:
-  - type: code
+  - type: program
     name: final-review-json-is-selected
     config:
-      language: javascript
-      assertions:
-        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/list.go' && c.line === 42 && c.side === 'RIGHT' && c.body.includes('--format') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/list.go' && c.line === 42 && c.side === 'RIGHT' && c.body.includes('--format') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"

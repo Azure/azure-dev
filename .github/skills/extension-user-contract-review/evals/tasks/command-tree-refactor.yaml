@@ -15,10 +15,11 @@ inputs:
     and flags are identical. The diff contains the changed registration call and extracted helper. Complete review
     history is empty.
 graders:
-  - type: code
+  - type: program
     name: no-false-positive-for-preserved-tree
     config:
-      language: javascript
-      assertions:
-        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.length === 0"
-        - "/complete.*2 files? inspected; 0 new contract comments; 0 existing threads/.test(JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).body)"
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 0"
+        - "/complete.*2 files? inspected; 0 new contract comments; 0 existing threads/.test(review.body)"

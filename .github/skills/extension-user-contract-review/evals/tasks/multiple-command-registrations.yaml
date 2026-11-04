@@ -15,12 +15,13 @@ inputs:
     corresponding name and has no positional arguments, aliases, or flags. The paths are "azd data archive" and
     "azd data restore". Tests, help snapshots, and docs are updated. Complete review history is empty.
 graders:
-  - type: code
+  - type: program
     name: one-comment-per-new-command
     config:
-      language: javascript
-      assertions:
-        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.length === 2"
-        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/root.go' && c.line === 70 && c.side === 'RIGHT' && c.body.includes('archive') && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"
-        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/root.go' && c.line === 71 && c.side === 'RIGHT' && c.body.includes('restore') && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"
-        - "/complete.*3 files? inspected; 2 new contract comments?; 0 existing threads/.test(JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).body)"
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 2"
+        - "review.comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/root.go' && c.line === 70 && c.side === 'RIGHT' && c.body.includes('archive') && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"
+        - "review.comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/root.go' && c.line === 71 && c.side === 'RIGHT' && c.body.includes('restore') && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"
+        - "/complete.*3 files? inspected; 2 new contract comments?; 0 existing threads/.test(review.body)"

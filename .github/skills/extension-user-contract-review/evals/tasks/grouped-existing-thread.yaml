@@ -21,10 +21,11 @@ inputs:
     This round can anchor the command registration in optimize.go rather than its constructor.
     No other threads or spec replies exist.
 graders:
-  - type: code
+  - type: program
     name: grouped-thread-covers-all-named-items
     config:
-      language: javascript
-      assertions:
-        - "JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).comments.length === 0"
-        - "/complete.*2 files? inspected; 0 new contract comments; 1 existing threads?/.test(JSON.parse(output.slice([...output.matchAll(/\\{\\s*\"body\"\\s*:/g)].pop().index)).body)"
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 0"
+        - "/complete.*2 files? inspected; 0 new contract comments; 1 existing threads?/.test(review.body)"

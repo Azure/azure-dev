@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -97,7 +98,8 @@ func monitoringPlanCases(t *testing.T) string {
 	workspace := monitoringPlanGroup + "/providers/Microsoft.OperationalInsights/workspaces/log-" + token
 	ownedTags := map[string]any{
 		"azd-created-by": "azure.ai.projects", "azd-environment": "guard-test",
-		"azd-monitoring-project": monitoringPlanProject,
+		"azd-monitoring-project": uuid.NewSHA1(uuid.MustParse("11fb06fb-712d-4ddd-98c7-e71bbd588830"),
+			[]byte(strings.ToLower(monitoringPlanProject))).String(),
 	}
 	connection := func(name, target, auth string, shared bool) map[string]any {
 		return map[string]any{

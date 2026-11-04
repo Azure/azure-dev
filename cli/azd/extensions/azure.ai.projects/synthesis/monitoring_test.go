@@ -5,11 +5,25 @@ package synthesis
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// Azure tag values are limited to 256 characters and a valid project resource ID can exceed that.
+func TestMonitoringOwnershipTagIsBounded(t *testing.T) {
+	bicep, err := os.ReadFile("templates/modules/monitoring.bicep")
+	require.NoError(t, err)
+	assert.Contains(t, string(bicep), "'azd-monitoring-project': guid(toLower(projectResourceId))")
+
+	tf, err := os.ReadFile("templates/terraform/monitoring.tf.tmpl")
+	require.NoError(t, err)
+	assert.Contains(t, string(tf), `"azd-monitoring-project" = local.monitoring_project_tag`)
+	assert.NotContains(t, strings.ReplaceAll(string(tf), "\r\n", "\n"), `"azd-monitoring-project" = local.monitoring_project_id`)
+}
 
 func TestSynthesizeMonitoring(t *testing.T) {
 	const component = "/subscriptions/00000000-0000-0000-0000-000000000001" +

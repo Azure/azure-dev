@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "11625777883654081427"
+      "templateHash": "1719455477080304736"
     }
   },
   "definitions": {
@@ -795,7 +795,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "13442955573686093057"
+              "templateHash": "3471042481280362115"
             }
           },
           "parameters": {
@@ -844,7 +844,7 @@
             "projectParts": "[split(parameters('projectResourceId'), '/')]",
             "componentParts": "[split(parameters('applicationInsightsResourceId'), '/')]",
             "connectionName": "[format('azd-appinsights-{0}', take(replace(guid(toLower(variables('projectParts')[10])), '-', ''), 13))]",
-            "monitoringTags": "[union(parameters('tags'), createObject('azd-created-by', 'azure.ai.projects', 'azd-environment', parameters('environmentName'), 'azd-monitoring-project', parameters('projectResourceId')))]",
+            "monitoringTags": "[union(parameters('tags'), createObject('azd-created-by', 'azure.ai.projects', 'azd-environment', parameters('environmentName'), 'azd-monitoring-project', guid(toLower(parameters('projectResourceId')))))]",
             "effectiveComponentId": "[if(equals(parameters('mode'), 'none'), '', if(variables('createResources'), resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token'))), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])))]"
           },
           "resources": [

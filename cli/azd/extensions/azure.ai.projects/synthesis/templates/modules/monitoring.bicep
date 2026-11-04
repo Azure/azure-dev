@@ -24,7 +24,8 @@ var connectionName = 'azd-appinsights-${take(replace(guid(toLower(projectParts[1
 var monitoringTags = union(tags, {
   'azd-created-by': 'azure.ai.projects'
   'azd-environment': environmentName
-  'azd-monitoring-project': projectResourceId
+  // A bounded hash: the raw project ID can exceed the 256-character tag value limit.
+  'azd-monitoring-project': guid(toLower(projectResourceId))
 })
 
 resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (createResources) {

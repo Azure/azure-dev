@@ -37,10 +37,13 @@ locals {
   monitoring_token        = substr(sha1(lower("${local.monitoring_project_id}|${local.monitoring_group_id}|${var.resource_token_salt}")), 0, 13)
   monitoring_component_id = var.monitoring_mode == "create" ? "${local.monitoring_group_id}/providers/Microsoft.Insights/components/appi-${local.monitoring_token}" : var.application_insights_resource_id
   monitoring_workspace_id = "${local.monitoring_group_id}/providers/Microsoft.OperationalInsights/workspaces/log-${local.monitoring_token}"
+  # A bounded hash: the raw project ID can exceed the 256-character tag value limit.
+  # Same namespace as the Bicep guid() so ejected Bicep and Terraform agree.
+  monitoring_project_tag = uuidv5("11fb06fb-712d-4ddd-98c7-e71bbd588830", lower(local.monitoring_project_id))
   monitoring_tags = merge(var.tags, {
     "azd-created-by"         = "azure.ai.projects"
     "azd-environment"        = var.environment_name
-    "azd-monitoring-project" = local.monitoring_project_id
+    "azd-monitoring-project" = local.monitoring_project_tag
   })
   monitoring_policy_fields = {
     present              = "properties != `null`"
@@ -258,13 +261,13 @@ resource "terraform_data" "monitoring_safety" {
         (data.azapi_resource.monitoring_component[0].exists ? (
           try(data.azapi_resource.monitoring_component[0].tags["azd-created-by"], "") == "azure.ai.projects" &&
           try(data.azapi_resource.monitoring_component[0].tags["azd-environment"], "") == var.environment_name &&
-          try(lower(data.azapi_resource.monitoring_component[0].tags["azd-monitoring-project"]), "") == lower(local.monitoring_project_id) &&
+          try(lower(data.azapi_resource.monitoring_component[0].tags["azd-monitoring-project"]), "") == local.monitoring_project_tag &&
           try(lower(data.azapi_resource.monitoring_component[0].output.workspace_id), "") == lower(local.monitoring_workspace_id)
         ) : true) &&
         (data.azapi_resource.monitoring_owned_workspace[0].exists ? (
           try(data.azapi_resource.monitoring_owned_workspace[0].tags["azd-created-by"], "") == "azure.ai.projects" &&
           try(data.azapi_resource.monitoring_owned_workspace[0].tags["azd-environment"], "") == var.environment_name &&
-          try(lower(data.azapi_resource.monitoring_owned_workspace[0].tags["azd-monitoring-project"]), "") == lower(local.monitoring_project_id) &&
+          try(lower(data.azapi_resource.monitoring_owned_workspace[0].tags["azd-monitoring-project"]), "") == local.monitoring_project_tag &&
           try(lower(data.azapi_resource.monitoring_owned_workspace[0].output.resource_id), "") == lower(local.monitoring_workspace_id)
         ) : true)
       ) : true

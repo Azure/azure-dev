@@ -18,19 +18,48 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
 type acrFeatureEnvironment struct {
 	stubInitializeEnvServer
-	values map[string]string
-	config map[string][]byte
-	writes int
+	values        map[string]string
+	config        map[string][]byte
+	writes        int
+	selected      string
+	currentErr    error
+	defaultConfig map[string][]byte
+}
+
+func (s *acrFeatureEnvironment) GetCurrent(
+	ctx context.Context, request *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	if s.currentErr != nil {
+		return nil, s.currentErr
+	}
+	return s.stubInitializeEnvServer.GetCurrent(ctx, request)
+}
+
+func (s *acrFeatureEnvironment) Get(
+	_ context.Context, request *azdext.GetEnvironmentRequest,
+) (*azdext.EnvironmentResponse, error) {
+	if request.GetName() != s.selected {
+		return nil, status.Error(codes.NotFound, "selected environment not found")
+	}
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: s.selected}}, nil
 }
 
 func (s *acrFeatureEnvironment) GetValues(
-	context.Context, *azdext.GetEnvironmentRequest,
+	_ context.Context, request *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
+	if s.selected != "" && request.GetName() == "test-env" {
+		return &azdext.KeyValueListResponse{}, nil
+	}
+	if s.selected != "" && request.GetName() != s.selected {
+		return nil, status.Error(codes.FailedPrecondition, "read the wrong environment")
+	}
 	result := &azdext.KeyValueListResponse{}
 	for key, value := range s.values {
 		result.KeyValues = append(result.KeyValues, &azdext.KeyValue{Key: key, Value: value})
@@ -41,8 +70,72 @@ func (s *acrFeatureEnvironment) GetValues(
 func (s *acrFeatureEnvironment) GetConfig(
 	_ context.Context, request *azdext.GetConfigRequest,
 ) (*azdext.GetConfigResponse, error) {
+	if s.selected != "" && request.GetEnvName() == "test-env" {
+		value, found := s.defaultConfig[request.GetPath()]
+		return &azdext.GetConfigResponse{Value: value, Found: found}, nil
+	}
+	if s.selected != "" && request.GetEnvName() != s.selected {
+		return nil, status.Error(codes.FailedPrecondition, "read the wrong lifecycle state")
+	}
 	value, found := s.config[request.GetPath()]
 	return &azdext.GetConfigResponse{Value: value, Found: found}, nil
+}
+
+func TestACRRuntimeSelectedEnvironment(t *testing.T) {
+	const registryID = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+	binding, err := json.Marshal(synthesis.ACRBinding{
+		Version: 1, Mode: "reuse-connect", RegistryResourceID: registryID,
+		ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry/" +
+			"providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+		PrincipalID: "principal",
+	})
+	require.NoError(t, err)
+	for _, state := range []string{"clean", "pending", "binding", "selector"} {
+		for _, noDefault := range []bool{false, true} {
+			t.Run(state+"/"+map[bool]string{false: "other default", true: "no default"}[noDefault], func(t *testing.T) {
+				t.Setenv(synthesis.ACRReuseEnvVar, "")
+				t.Setenv("AZD_ENVIRONMENT", "selected")
+				env := &acrFeatureEnvironment{
+					selected: "selected", config: map[string][]byte{},
+				}
+				if noDefault {
+					env.currentErr = status.Error(codes.Unknown, "default environment not found")
+				}
+				switch state {
+				case "pending":
+					env.config[synthesis.ACRPendingConfigKey] = []byte(`{"version":1}`)
+				case "binding":
+					env.config[synthesis.ACRBindingConfigKey] = binding
+				case "selector":
+					env.values = map[string]string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID}
+				case "clean":
+					env.defaultConfig = map[string][]byte{
+						synthesis.ACRBindingConfigKey: binding,
+					}
+				}
+				service := &azdext.ServiceConfig{
+					Name: "agent", Host: foundryAgentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "prompt", "name": "agent", "model": "gpt-4.1", "instructions": "Help.",
+					}),
+				}
+				p := &AgentServiceTargetProvider{
+					azdClient: newEnvTestClient(t, env), projectPath: t.TempDir(),
+				}
+				_, err := p.Package(t.Context(), service, &azdext.ServiceContext{}, func(string) {})
+				if state != "clean" {
+					local, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok, "%v", err)
+					require.Equal(t, "feature_not_enabled", local.Code)
+				} else {
+					require.NoError(t, err)
+					require.NoError(t, p.ensureEnv(t.Context()))
+					require.Equal(t, "selected", p.env.GetName())
+				}
+				require.Zero(t, env.writes)
+			})
+		}
+	}
 }
 
 func (s *acrFeatureEnvironment) SetValue(

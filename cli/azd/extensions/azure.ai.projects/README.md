@@ -329,6 +329,11 @@ switch to clean up; turning it off does not delete or convert ownership.
 Ordinary automatic registry creation and existing project connection workflows
 without new reuse intent remain available.
 
+Guards and lifecycle operations honor `--environment` (forwarded by the host
+as `AZD_ENVIRONMENT`) before the saved default. Environment values, registry
+bindings, and pending operations come from that same selected environment.
+An unreadable explicit selection is an error, not a fallback to the default.
+
 Project hooks also check `existingAcrResourceId` in the active on-disk
 `main.parameters.json` or `main.bicepparam`, using the configured Foundry
 path and module for a root or named layer. Removing environment aliases,

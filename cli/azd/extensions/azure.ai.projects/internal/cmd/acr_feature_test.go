@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"maps"
@@ -22,6 +23,85 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestProjectACRSelectedEnvironmentHooks(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "")
+	for _, state := range []string{"clean", "pending", "binding"} {
+		t.Run(state, func(t *testing.T) {
+			t.Setenv("AZD_ENVIRONMENT", "selected")
+			root := t.TempDir()
+			raw := []byte("infra:\n  provider: microsoft.foundry\nservices:\n  project:\n    host: azure.ai.project\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), raw, 0o600))
+			server := &recordingProjectEnvironmentServer{
+				envName: "selected", values: map[string]string{"AZURE_SUBSCRIPTION_ID": "sub"},
+				currentErr: status.Error(codes.Unknown, "default environment not found"),
+				config:     map[string][]byte{},
+			}
+			switch state {
+			case "pending":
+				server.config[synthesis.ACRPendingConfigKey] = []byte(`{"version":1}`)
+			case "binding":
+				binding, err := json.Marshal(synthesis.ACRBinding{
+					Version: 1, Mode: "reuse-connect", RegistryResourceID: testExternalRegistryID,
+					ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry/" +
+						"providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+					PrincipalID: "principal",
+				})
+				require.NoError(t, err)
+				server.config[synthesis.ACRBindingConfigKey] = binding
+			}
+			client := newProjectEnvironmentClient(t, server)
+			project := &azdext.ProjectConfig{Path: root, Services: map[string]*azdext.ServiceConfig{
+				"project": {Name: "project", Host: aiProjectHost},
+			}}
+			for _, check := range []func(context.Context, *azdext.AzdClient, *azdext.ProjectConfig) error{
+				synthesis.RequireACRReuseForProject, synthesis.RequireACRReuseForProjectState,
+				func(ctx context.Context, client *azdext.AzdClient, project *azdext.ProjectConfig) error {
+					return validateProjectACRBuilds(ctx, client, &azdext.ProjectEventArgs{Project: project})
+				},
+			} {
+				err := check(t.Context(), client, project)
+				if state == "clean" {
+					require.NoError(t, err)
+				} else {
+					requireACRFeatureDisabled(t, err)
+				}
+			}
+			if state == "clean" {
+				require.NoError(t, projectLifecycleHandler(t.Context(), client,
+					&azdext.ProjectEventArgs{Project: project}))
+				require.Equal(t, "selected", server.envNameSet)
+			} else {
+				require.Empty(t, server.key)
+			}
+		})
+	}
+}
+
+func TestProjectSelectedEnvironmentFailureDoesNotUseDefault(t *testing.T) {
+	t.Setenv("AZD_ENVIRONMENT", "missing")
+	for _, code := range []codes.Code{codes.NotFound, codes.Unavailable, codes.PermissionDenied} {
+		t.Run(code.String(), func(t *testing.T) {
+			server := &recordingProjectEnvironmentServer{
+				envName: "default", namedErr: status.Error(code, "selected environment read failed"),
+			}
+			client := newProjectEnvironmentClient(t, server)
+			_, err := synthesis.CurrentEnvironment(t.Context(), client)
+			require.Equal(t, code, status.Code(err))
+			project := &azdext.ProjectConfig{Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+				"project": {Name: "project", Host: aiProjectHost},
+			}}
+			err = validateProjectACRBuilds(t.Context(), client, &azdext.ProjectEventArgs{Project: project})
+			require.Equal(t, code, status.Code(err))
+			require.Empty(t, server.key)
+		})
+	}
+	t.Setenv("AZD_ENVIRONMENT", "")
+	client := newProjectEnvironmentClient(t, &recordingProjectEnvironmentServer{envName: "default"})
+	current, err := synthesis.CurrentEnvironment(t.Context(), client)
+	require.NoError(t, err)
+	require.Equal(t, "default", current.GetEnvironment().GetName())
+}
 
 func requireACRFeatureDisabled(t *testing.T, err error) {
 	t.Helper()

@@ -103,6 +103,11 @@ legacy reuse bindings, unfinished access operations, template/source init,
 project setup, synthesis, provision, preview, down, recovery, eject, and agent
 package/publish/deploy operations that encounter new reuse intent.
 
+Lifecycle guards honor the command's `--environment` selection, forwarded by
+the host as `AZD_ENVIRONMENT`, before consulting the saved default. Values,
+registry bindings, and pending operations are read from that same environment.
+An unreadable explicit selection is an error, not a fallback to the default.
+
 Off means an explicit `feature_not_enabled` compatibility error naming the
 enabling variable, before changes to project files, environment/config values,
 saved context, or Azure resources. Bicep tool installation and module

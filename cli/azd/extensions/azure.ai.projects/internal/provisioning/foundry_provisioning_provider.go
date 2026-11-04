@@ -1051,7 +1051,7 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 }
 
 func (p *FoundryProvisioningProvider) resolveEnvName(ctx context.Context) error {
-	currEnv, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	currEnv, err := synthesis.CurrentEnvironment(ctx, p.azdClient)
 	if err != nil || currEnv.GetEnvironment().GetName() == "" {
 		message := "current azd environment is empty"
 		if err != nil {

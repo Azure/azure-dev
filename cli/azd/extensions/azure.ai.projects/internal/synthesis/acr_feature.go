@@ -185,7 +185,7 @@ func requireACRReuseForProject(
 	// Direct service-target callers may construct a provider without an azd client.
 	// Still inspect project/on-disk reuse intent with empty host values.
 	if client != nil {
-		current, err := client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		current, err := CurrentEnvironment(ctx, client)
 		if err != nil {
 			return fmt.Errorf("read current environment before checking registry reuse: %w", err)
 		}
@@ -233,4 +233,12 @@ func requireACRReuseForProject(
 		}
 	}
 	return requireACRReuseForEnvironment(ctx, client, envName, in, includeParameters)
+}
+
+// CurrentEnvironment honors the host's explicit environment selection.
+func CurrentEnvironment(ctx context.Context, client *azdext.AzdClient) (*azdext.EnvironmentResponse, error) {
+	if name := os.Getenv("AZD_ENVIRONMENT"); name != "" {
+		return client.Environment().Get(ctx, &azdext.GetEnvironmentRequest{Name: name})
+	}
+	return client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 }

@@ -557,10 +557,12 @@ func resolveDeploymentAzureContext(
 		if noPrompt {
 			return nil, missingDeploymentLocationError()
 		}
+		endLocation := phasetelemetry.Start(ctx, phasetelemetry.LocationSelection)
 		response, promptErr := client.Prompt().PromptLocation(
 			ctx,
 			&azdext.PromptLocationRequest{AzureContext: azureContext},
 		)
+		endLocation()
 		if promptErr != nil {
 			if exterrors.IsCancellation(promptErr) {
 				return nil, exterrors.Cancelled(

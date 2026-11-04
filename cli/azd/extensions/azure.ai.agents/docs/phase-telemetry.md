@@ -65,7 +65,7 @@ sequence number. Cached credential/context guards do not add a synthetic wait.
 | Area | Step IDs / boundaries |
 |---|---|
 | Project resolution | `project_resolution`: ensure/select the project, discover its service, or resolve the target. Target resolution can include nested choices and Azure queries. |
-| Subscription/location | `subscription_selection`: resolve subscription and user-access tenant. `location_selection`: actual project location picker and validation. Automatically resolved project values remain part of project resolution/configuration. |
+| Subscription/location | `subscription_selection`: resolve subscription and user-access tenant. `location_selection`: project location resolution, including its picker and validation, or the deployment-add `PromptLocation` call when a location is missing. Deployment picker timing closes before response validation and subsequent authoring, including on picker error/cancellation; cached/headless deployment paths add no picker timing. Automatically resolved project values remain part of project resolution/configuration. |
 | Azure lookups | `azure_query`: project enumeration/lookup, deployment candidate resolution, or live deployment enumeration. |
 | Deployment checks | `deployment_reconciliation`: compare declared/live deployments and select candidates. A successful no-change result means reconciliation succeeded, not that a deployment was submitted. |
 | Project persistence | `configuration_save`: compare/reconcile project service, environment, or deployment configuration, including any existing no-change return and internal rollback. |
@@ -138,12 +138,26 @@ illustrative; the ID is generated anew for each invocation.
 }
 ```
 
-## Release follow-up
+## Inventory, approval coverage, and rollout
 
-New fields/events still require privacy approval before release. Shared
-inventories outside `cli/azd/extensions/` must be updated by the owner:
-`docs/reference/telemetry-data.md`,
-`docs/specs/metrics-audit/telemetry-schema.md`, and
-`docs/specs/metrics-audit/feature-telemetry-matrix.md`.
-Those changes and the production query/coverage rollout are outside the approved
-implementation scope and remain release prerequisites, not completed work.
+The shared fields registered in
+[#10810](https://github.com/Azure/azure-dev/pull/10810) are emitted by this
+implementation. The [public reference](../../../../../docs/reference/telemetry-data.md),
+[schema](../../../../../docs/specs/metrics-audit/telemetry-schema.md#project-and-provider-phase-timing-contract),
+and [feature matrix](../../../../../docs/specs/metrics-audit/feature-telemetry-matrix.md)
+are updated alongside emission, not deferred to a release follow-up.
+Implemented source coverage is separate from release and production adoption.
+
+Approval coverage (maintainer): **pending assessment**. The
+[recorded collection scope](../../../../../docs/specs/metrics-audit/privacy-review-checklist.md#recorded-scope-for-project-and-provider-phase-timings)
+lists sources, handling, examples, and ownership; the PR includes the required
+telemetry checklist. An azd maintainer must record whether existing approval
+covers this data and handling, or coordinate additional approval if needed.
+No completed signoff is claimed; collection beyond approved scope waits for the
+required approval.
+
+The author owns source/tests/inventories. Maintainers and release owners own
+approval coverage and metadata/artifact rollout; the query owner coordinates
+production query/table/report validation. Existing command counts and duration
+queries remain unchanged. These downstream and release checks are separate
+statuses, not evidence inferred from code completion.

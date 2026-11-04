@@ -8,14 +8,18 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 type projectPhaseServer struct {
@@ -36,18 +40,50 @@ func (s *projectPhaseServer) ReportUsage(
 	return &azdext.ReportUsageResponse{Accepted: true}, nil
 }
 
+type projectPhasePromptServer struct {
+	*selfInitializingProjectServer
+	locationCalls atomic.Int32
+	locationErr   error
+}
+
+func (s *projectPhasePromptServer) PromptLocation(
+	ctx context.Context, req *azdext.PromptLocationRequest,
+) (*azdext.PromptLocationResponse, error) {
+	s.locationCalls.Add(1)
+	if s.locationErr != nil {
+		return nil, s.locationErr
+	}
+	return s.selfInitializingProjectServer.PromptLocation(ctx, req)
+}
+
 func TestProjectAuthoringCommandEmitsInternalSteps(t *testing.T) {
 	const parent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 	for _, test := range []struct {
-		name       string
-		noPrompt   bool
-		failSave   bool
-		deployment bool
+		name        string
+		noPrompt    bool
+		failSave    bool
+		deployment  bool
+		existing    bool
+		locationErr error
+		errorText   string
+		outcome     string
 	}{
 		{name: "Init delegated headless", noPrompt: true},
 		{name: "interactive project add"},
 		{name: "configuration failure", noPrompt: true, failSave: true},
 		{name: "delegated deployment authoring", noPrompt: true, deployment: true},
+		{name: "interactive deployment location", deployment: true, existing: true},
+		{name: "headless deployment existing location", noPrompt: true, deployment: true, existing: true},
+		{
+			name: "deployment location canceled", deployment: true, existing: true,
+			locationErr: status.Error(codes.Canceled, "selection canceled"),
+			errorText:   "Azure location selection was cancelled", outcome: "canceled",
+		},
+		{
+			name: "deployment location failure", deployment: true, existing: true,
+			locationErr: status.Error(codes.Unavailable, "picker unavailable"),
+			errorText:   "select Azure location", outcome: "error",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("NO_COLOR", "1")
@@ -63,6 +99,13 @@ func TestProjectAuthoringCommandEmitsInternalSteps(t *testing.T) {
 				subscription: &azdext.Subscription{Id: "private-sub", UserTenantId: "user-tenant"},
 				location:     &azdext.Location{Name: "eastus"},
 			}
+			if test.existing {
+				projects.project.Services["project"] = &azdext.ServiceConfig{Name: "project", Host: aiProjectHost}
+				projects.services["project"] = map[string]any{}
+			}
+			prompts := &projectPhasePromptServer{
+				selfInitializingProjectServer: projects, locationErr: test.locationErr,
+			}
 			env := &selfInitializingEnvironmentServer{current: "dev", values: map[string]string{}}
 			if test.noPrompt {
 				env.values["AZURE_SUBSCRIPTION_ID"] = "private-sub"
@@ -75,7 +118,7 @@ func TestProjectAuthoringCommandEmitsInternalSteps(t *testing.T) {
 			server := grpc.NewServer()
 			azdext.RegisterProjectServiceServer(server, projects)
 			azdext.RegisterEnvironmentServiceServer(server, env)
-			azdext.RegisterPromptServiceServer(server, projects)
+			azdext.RegisterPromptServiceServer(server, prompts)
 			azdext.RegisterTelemetryServiceServer(server, reporting)
 			azdext.RegisterAiModelServiceServer(server, &selfInitializingAIService{location: "eastus", respectRequest: true})
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -96,6 +139,8 @@ func TestProjectAuthoringCommandEmitsInternalSteps(t *testing.T) {
 			err = cmd.ExecuteContext(t.Context())
 			if test.failSave {
 				require.ErrorContains(t, err, "environment write failed")
+			} else if test.errorText != "" {
+				require.ErrorContains(t, err, test.errorText)
 			} else {
 				require.NoError(t, err)
 			}
@@ -113,28 +158,45 @@ func TestProjectAuthoringCommandEmitsInternalSteps(t *testing.T) {
 			expected := "success"
 			if test.failSave {
 				expected = "error"
+			} else if test.outcome != "" {
+				expected = test.outcome
 			}
 			require.Equal(t, expected, complete.Attributes["agent.phase.outcome"])
 			require.Equal(t, parent, reporting.parent)
-			ids := map[string]bool{}
+			ids := map[string]int{}
 			for _, event := range reporting.events[1:] {
 				require.Equal(t, "agent.phase.step", event.EventName)
 				require.Equal(t, complete.Attributes["agent.phase.attempt_id"], event.Attributes["agent.phase.attempt_id"])
-				ids[event.Attributes["agent.phase.step.id"]] = true
+				id := event.Attributes["agent.phase.step.id"]
+				ids[id]++
+				if id == "location_selection" {
+					duration, parseErr := strconv.ParseFloat(event.Attributes["agent.phase.step.duration_ms"], 64)
+					require.NoError(t, parseErr)
+					require.GreaterOrEqual(t, duration, float64(0))
+				}
 				for _, value := range event.Attributes {
 					require.NotContains(t, value, "private-sub")
 					require.NotContains(t, value, root)
 				}
 			}
-			require.True(t, ids["project_resolution"])
-			require.True(t, ids["configuration_save"])
-			if test.deployment {
-				require.True(t, ids["azure_query"])
-				require.True(t, ids["deployment_reconciliation"])
+			require.Positive(t, ids["project_resolution"])
+			if test.locationErr == nil {
+				require.Positive(t, ids["configuration_save"])
+				if test.deployment {
+					require.Positive(t, ids["azure_query"])
+					require.Positive(t, ids["deployment_reconciliation"])
+				}
+			} else {
+				require.Zero(t, ids["configuration_save"])
+				require.Zero(t, ids["azure_query"])
 			}
 			if !test.noPrompt {
-				require.True(t, ids["subscription_selection"])
-				require.True(t, ids["location_selection"])
+				require.Positive(t, ids["subscription_selection"])
+				require.Equal(t, 1, ids["location_selection"])
+				require.Equal(t, int32(1), prompts.locationCalls.Load())
+			} else {
+				require.Zero(t, ids["location_selection"])
+				require.Zero(t, prompts.locationCalls.Load())
 			}
 		})
 	}

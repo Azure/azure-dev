@@ -206,9 +206,10 @@ var (
 		Endpoint:       "N/A",
 	}
 
-	// AgentMemorySnapshot records the project-authored hosted-agent snapshot setting.
+	// AgentMemorySnapshot is the fixed "true" marker for snapshot-enabled hosted
+	// provider Deploy completions; all other events omit it.
 	AgentMemorySnapshot = fields.AttributeKey{
-		Key:            attribute.Key("ext.agent.memory_snapshot"),
+		Key:            attribute.Key("ext.agent.memory.snapshot"),
 		Classification: fields.SystemMetadata,
 		Purpose:        fields.FeatureInsight,
 		Endpoint:       "N/A",

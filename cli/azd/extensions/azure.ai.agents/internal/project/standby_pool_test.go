@@ -21,6 +21,7 @@ import (
 	"azureaiagent/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -173,6 +174,8 @@ func TestStandbyPoolRequiresOptedInHosting(t *testing.T) {
 			{name: "empty switch", want: "disabled", uses: []string{"project"}},
 			{name: "invalid switch", optIn: "invalid", want: "disabled", uses: []string{"project"}},
 			{name: "BYO AKS", optIn: "true", uses: []string{"project"}},
+			{name: "existing project needs live verification", optIn: "true", uses: []string{"project"},
+				props: map[string]any{"endpoint": "https://example.test"}},
 			{name: "unbound", optIn: "true", want: "requires BYO AKS hosting"},
 			{name: "unrelated dependency", optIn: "true", uses: []string{"other"}, want: "requires BYO AKS hosting"},
 			{name: "ADC", optIn: "true", uses: []string{"project"},
@@ -211,6 +214,63 @@ func TestStandbyPoolRequiresOptedInHosting(t *testing.T) {
 		nil, {}, {StandbyPool: &agent_yaml.StandbyPool{}}, {Protocols: []string{"responses"}},
 	} {
 		require.NoError(t, RequireStandbyPoolHosting(endpoint, nil, nil, ""))
+	}
+}
+
+func TestStandbyPoolExistingARMHosting(t *testing.T) {
+	const projectID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj"
+	const endpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+	const clusterID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/aks"
+	for _, test := range []struct {
+		name, projectEndpoint, hostingType, clusterID, want string
+		status                                              int
+	}{
+		{name: "AKS", projectEndpoint: endpoint, hostingType: "ManagedCluster", clusterID: clusterID},
+		{name: "ADC", projectEndpoint: endpoint, want: "no verified ManagedCluster"},
+		{name: "mismatched project", projectEndpoint: endpoint + "-other", want: "does not identify"},
+		{name: "wrong hosting", projectEndpoint: endpoint, hostingType: "ADC", clusterID: clusterID,
+			want: "no verified ManagedCluster"},
+		{name: "invalid cluster", projectEndpoint: endpoint, hostingType: "ManagedCluster", clusterID: "/invalid",
+			want: "no verified ManagedCluster"},
+		{name: "denied", projectEndpoint: endpoint, status: http.StatusForbidden, want: "read project"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var calls []string
+			transport := hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
+				calls = append(calls, request.Method+" "+request.URL.Path)
+				require.Equal(t, http.MethodGet, request.Method)
+				properties := map[string]any{}
+				if strings.HasSuffix(request.URL.Path, "/projects/proj") {
+					require.Equal(t, "2025-06-01", request.URL.Query().Get("api-version"))
+					properties["endpoints"] = map[string]any{"AI Foundry API": test.projectEndpoint}
+				} else {
+					require.Equal(t, "2026-07-15-preview", request.URL.Query().Get("api-version"))
+					properties["agentHostingConfigurations"] = []any{map[string]any{
+						"hostingType": test.hostingType, "clusterResourceId": test.clusterID,
+					}}
+				}
+				data, err := json.Marshal(map[string]any{"properties": properties})
+				require.NoError(t, err)
+				status := test.status
+				if status == 0 {
+					status = http.StatusOK
+				}
+				return &http.Response{StatusCode: status,
+					Header: http.Header{"Content-Type": {"application/json"}},
+					Body:   io.NopCloser(strings.NewReader(string(data))), Request: request}, nil
+			})
+			options := &arm.ClientOptions{ClientOptions: policy.ClientOptions{Transport: &http.Client{Transport: transport}}}
+			err := verifyStandbyPoolARMHosting(t.Context(), hostedResourceErrorCredential{}, options, projectID, endpoint)
+			if test.want == "" {
+				require.NoError(t, err)
+				require.Len(t, calls, 2)
+			} else {
+				require.ErrorContains(t, err, test.want)
+				if test.name == "mismatched project" || test.name == "denied" {
+					require.Len(t, calls, 1)
+				}
+			}
+		})
 	}
 }
 

@@ -79,7 +79,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Deployment Preview (`deploy --preview`) | Beta |
 | Deployment Stacks | Alpha |
 | Extensions | Stable |
-| [Foundry hosted agent standby pool target](../../cli/azd/extensions/azure.ai.agents/README.md#standby-pool-target-preview) | Preview; requires BYO AKS opt-in, a used project declaring existing-AKS hosting, and supporting service deployment; other hosting is rejected |
+| [Foundry hosted agent standby pool target](../../cli/azd/extensions/azure.ai.agents/README.md#standby-pool-target-preview) | Preview; requires BYO AKS opt-in, a used project declaring AKS hosting or an existing endpoint with ARM-verified AKS hosting, and supporting service deployment |
 
 ## Extension gRPC Contracts
 

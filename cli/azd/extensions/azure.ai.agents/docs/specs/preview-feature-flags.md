@@ -86,9 +86,13 @@ An absent variable disables BYO AKS project initialization and adoption, while a
 An explicit `agentEndpoint.standbyPool.size`, including zero, also requires this
 switch during agent package, publish, deploy, and endpoint update. The agent must
 use exactly one `azure.ai.project` service declaring `agentHosting.clusterResourceId`
-without an existing `endpoint:`. The binding is checked after inline and `$ref`
-resolution, before credentials or remote mutations; ADC and unknown or ambiguous
-bindings are rejected. Missing, null, or empty pool/size sends no standby change
+without `endpoint:`, or an existing `endpoint:` without `agentHosting`. Local
+bindings are checked after inline and `$ref` resolution before credentials or
+remote mutations. Existing endpoint bindings additionally require authenticated,
+read-only ARM verification before agent writes: the configured project ARM ID must
+match the actual deployment endpoint and its account must declare `ManagedCluster`
+hosting with an AKS resource ID. Denied/failed verification, ADC and unknown or
+ambiguous bindings are rejected. Missing, null, or empty pool/size sends no standby change
 and does not require the standby gate. Other endpoint settings and read/cleanup
 paths remain unchanged.
 

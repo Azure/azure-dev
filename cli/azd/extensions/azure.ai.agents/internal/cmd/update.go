@@ -166,6 +166,13 @@ func runEndpointUpdate(
 		return err
 	}
 
+	if err := project.VerifyStandbyPoolExistingHosting(
+		ctx, azdClient, agentDef.AgentEndpoint, svc, proj.Services, proj.Path,
+		agentContext.ProjectEndpoint, extCtx.Environment,
+	); err != nil {
+		return err
+	}
+
 	agentClient, err := newEndpointUpdateClient(agentContext)
 	if err != nil {
 		return err

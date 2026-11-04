@@ -1724,6 +1724,15 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 	p.dependencyEnv = azdEnv
 
+	if !isVoice {
+		if err := VerifyStandbyPoolExistingHosting(
+			ctx, p.azdClient, agentDef.AgentEndpoint, serviceConfig, p.projectServices,
+			p.projectPath, azdEnv["FOUNDRY_PROJECT_ENDPOINT"], p.env.Name,
+		); err != nil {
+			return nil, err
+		}
+	}
+
 	activityBotName := ""
 	activityBotResourceGroup := ""
 	activityBotOwned := false

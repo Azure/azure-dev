@@ -130,6 +130,34 @@ func TestStandbyPoolEndpointUpdateRequiresHostingBeforeClient(t *testing.T) {
 	}
 }
 
+func TestStandbyPoolEndpointUpdateExistingHostingFailsClosed(t *testing.T) {
+	t.Setenv(featureflags.BYOAKS.EnvVar, "true")
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	service := &azdext.ServiceConfig{
+		Name: "agent", Host: AiAgentHost, Uses: []string{"project"},
+		AdditionalProperties: mustEndpointUpdateProperties(t, 1),
+	}
+	props, err := structpb.NewStruct(map[string]any{"endpoint": endpoint})
+	require.NoError(t, err)
+	client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+			"agent": service, "project": {Name: "project", Host: AiProjectHost, AdditionalProperties: props},
+		},
+	}}, &helpersPromptServer{})
+	previousFactory, previousSources := newEndpointUpdateClient, readAzdHostedSourcesFunc
+	t.Cleanup(func() { newEndpointUpdateClient, readAzdHostedSourcesFunc = previousFactory, previousSources })
+	readAzdHostedSourcesFunc = func(context.Context) (azdHostedSources, error) {
+		return azdHostedSources{EnvValue: endpoint, EnvName: "test"}, nil
+	}
+	newEndpointUpdateClient = func(*AgentContext) (*agent_api.AgentClient, error) {
+		t.Fatal("unavailable hosting verification must not construct an agent client or write to the agent API")
+		return nil, nil
+	}
+	// No EnvironmentService is registered: verification must fail, not trust the endpoint declaration.
+	require.Error(t, runEndpointUpdate(t.Context(), client,
+		&endpointUpdateFlags{name: "agent"}, &azdext.ExtensionContext{NoPrompt: true}))
+}
+
 func mustEndpointUpdateProperties(t *testing.T, size int) *structpb.Struct {
 	t.Helper()
 	props, err := structpb.NewStruct(map[string]any{

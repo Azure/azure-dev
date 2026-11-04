@@ -78,8 +78,9 @@ The Foundry agents extension keeps endpoint configuration separate from agent
 versions. Its [preview standby pool target](../../cli/azd/extensions/azure.ai.agents/README.md#standby-pool-target-preview)
 is applied through management PATCH after deployment, or through endpoint update
 without creating a version. Explicit standby targets require the BYO AKS preview
-switch and a single used project declaring existing-AKS hosting; other hosting
-scenarios are rejected before remote changes. Invocation and session API versions
+switch and a single used project declaring existing-AKS hosting or an existing
+endpoint with read-only ARM-verified AKS hosting. Other hosting scenarios are
+rejected before agent writes. Invocation and session API versions
 are unchanged.
 
 Extensions declare their capabilities in `extension.yaml`:

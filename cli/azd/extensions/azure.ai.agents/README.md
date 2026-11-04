@@ -667,13 +667,32 @@ services:
 independently to every serving version, including canaries, not a ready count
 or a concurrency limit. Successful configuration saves the target; it does not
 wait for warm-up. Explicit sizes, including zero, require the preview switch
-and exactly one `azure.ai.project` dependency with `agentHosting.clusterResourceId`
-and no existing `endpoint:`. ADC, unbound agents, ambiguous project dependencies
-and existing endpoint adoption are rejected before authentication or remote
-changes. Inline and `$ref` project declarations are supported. The declaration
-identifies the intended BYO AKS binding; it does not verify live cluster readiness.
+and exactly one `azure.ai.project` dependency. For a new project, declare
+`agentHosting.clusterResourceId` without `endpoint:`. For an existing project,
+declare `endpoint:` without `agentHosting`: before agent writes, azd verifies
+that `AZURE_AI_PROJECT_ID` identifies the actual deployment endpoint and reads
+the parent account's `agentHostingConfigurations` to require `ManagedCluster`
+hosting with an AKS resource ID. This needs ARM read access to the project and
+account; denied or failed verification returns an error, never a fallback.
+ADC, unbound agents and ambiguous project dependencies are rejected.
+Inline and `$ref` project declarations are supported. Live cluster readiness is
+not verified. Existing-project deployment does not require `azd provision`.
 See [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting)
 for provisioning prerequisites.
+
+For an already provisioned BYO AKS project, retain the agent settings above and
+replace the project declaration with:
+
+```yaml
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: ${FOUNDRY_PROJECT_ENDPOINT}
+```
+
+Set `FOUNDRY_PROJECT_ENDPOINT` and `AZURE_AI_PROJECT_ID` in the active azd
+environment to the same existing project. Do not add `agentHosting` to an adopted
+endpoint or provision the account again to enable standby.
 
 `azd deploy` applies the endpoint settings after deploying the agent version.
 To change capacity without creating a version, edit `size` and run

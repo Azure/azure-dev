@@ -17,12 +17,12 @@ pre:
     name: "reset the dedicated offline directory"
   - run: >-
       mkdir -p -- "$HOME/working/azd-agents-standby-preview-{instance}" &&
-      printf 'name: standby-preview\nservices:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: standby-agent\n    agentEndpoint:\n      standbyPool:\n        size: 0\n'
+      printf 'name: standby-preview\nservices:\n  ai-project:\n    host: azure.ai.project\n    endpoint: https://standby-offline.services.ai.azure.com/api/projects/offline\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: standby-agent\n    uses:\n      - ai-project\n    agentEndpoint:\n      standbyPool:\n        size: 0\n'
       > "$HOME/working/azd-agents-standby-preview-{instance}/azure.yaml" &&
       cp -- "$HOME/working/azd-agents-standby-preview-{instance}/azure.yaml"
       "$HOME/working/azd-agents-standby-preview-{instance}/azure.yaml.before"
     cwd: "~/working"
-    name: "seed an explicit zero target with the preview disabled"
+    name: "seed an existing endpoint and explicit zero target with the preview disabled"
   - run: "azd env new standby-preview-{instance} --no-prompt && cp -a .azure .azure.before"
     cwd: "~/working/azd-agents-standby-preview-{instance}"
     name: "create and snapshot an isolated local environment"
@@ -37,10 +37,11 @@ goals:
     Wait for endpoint update to exit with a non-zero code. Confirm the error
     identifies preview feature agents.byo_aks as disabled and suggests setting
     AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true. Explicit size zero must not bypass
-    the preview requirement.
+    the preview requirement, even when an existing project endpoint is declared.
   - >-
     Confirm no credential lookup, project-endpoint lookup, version creation,
-    standby refill, or remote endpoint update occurs before this local error.
+    ARM hosting verification, standby refill, or remote endpoint update occurs
+    before this local error.
   - >-
     Compare azure.yaml byte-for-byte with azure.yaml.before and compare .azure
     recursively with .azure.before. Confirm project configuration and persisted

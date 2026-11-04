@@ -368,8 +368,8 @@ Hosted provider Deploy reuses `agent.phase.completed`, adding
 `ext.agent.memory_snapshot=true`, `false`, or `unset` after its hosted definition
 is resolved. The same record contains `ext.agent.phase.outcome` (`success`,
 `error`, `timeout`, `canceled`), elapsed milliseconds and the invocation-local
-attempt ID. Filter `phase.name=deploy`, `phase.scope=provider` and
-`memory_snapshot=true` to inspect snapshot-enabled service attempts, not the
+attempt ID. Filter `ext.agent.phase.name=deploy`, `ext.agent.phase.scope=provider` and
+`ext.agent.memory_snapshot=true` to inspect snapshot-enabled service attempts, not the
 whole multi-service command. No extra result event, RPC, queue or shutdown hook
 is added. Existing best-effort reporting, opt-out, official-source admission and
 event limits still apply. Missing reports do not prove non-execution; timeout

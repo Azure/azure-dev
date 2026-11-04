@@ -298,6 +298,9 @@ func TestTelemetryMemorySnapshotClassification(t *testing.T) {
 		{"disabled", "enableMemorySnapshot", false, "false"},
 		{"case variant", "EnableMemorySnapshot", true, "true"},
 		{"invalid", "enableMemorySnapshot", "customer-secret", "unknown"},
+		{"null", "enableMemorySnapshot", nil, "unknown"},
+		{"case variant null", "EnableMemorySnapshot", nil, "unknown"},
+		{"case variant invalid", "ENABLEMEMORYSNAPSHOT", "customer-secret", "unknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			properties := map[string]any{

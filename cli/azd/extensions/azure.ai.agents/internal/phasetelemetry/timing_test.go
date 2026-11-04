@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"sync"
 	"testing"
@@ -83,9 +84,10 @@ func TestOutcomesAndCancellationPreserveBusinessErrorsAndTrace(t *testing.T) {
 		err     error
 		outcome string
 	}{
-		{nil, "success"}, {errors.New("secret contents"), "error"},
+		{nil, "success"}, {errors.New("secret contents"), "canceled"},
 		{fmt.Errorf("private URL: %w", context.Canceled), "canceled"},
 		{context.DeadlineExceeded, "timeout"},
+		{&net.DNSError{Err: "private name", IsTimeout: true}, "timeout"},
 		{status.Error(codes.Canceled, "private name"), "canceled"},
 		{status.Error(codes.DeadlineExceeded, "private name"), "timeout"},
 		{&azdext.LocalError{Code: "cancelled", Category: azdext.LocalErrorCategoryUser}, "canceled"},
@@ -188,6 +190,27 @@ func TestSnapshotSettingSharesThePhaseOutcome(t *testing.T) {
 				want = "timeout"
 			}
 			require.Equal(t, want, event.Attributes["agent.phase.outcome"])
+		}
+	}
+}
+
+func TestDeployTerminationDoesNotDependOnSnapshotAttribution(t *testing.T) {
+	for _, attributed := range []bool{false, true} {
+		for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+			reporter := &recordingReporter{}
+			ctx, cancel := context.WithCancelCause(t.Context())
+			ctx, phase := Begin(ctx, Deploy, Provider, reporter)
+			if attributed {
+				phase.MemorySnapshot(new(true))
+			}
+			cancel(cause)
+			phase.End(ctx, errors.New("converted dependency error"))
+			require.Len(t, reporter.events, 1)
+			want := "canceled"
+			if errors.Is(cause, context.DeadlineExceeded) {
+				want = "timeout"
+			}
+			require.Equal(t, want, reporter.events[0].Attributes["agent.phase.outcome"])
 		}
 	}
 }

@@ -194,17 +194,14 @@ func (t *Timing) End(ctx context.Context, err error) {
 	reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 	defer cancel()
 	result := outcome(err)
-	if result == "canceled" && errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
-		result = "timeout"
-	}
-	if result == "error" && timedOut {
-		result = "timeout"
-	}
-	if memorySnapshot != "" && err != nil && ctx.Err() != nil {
+	if err != nil && ctx.Err() != nil && result != "timeout" {
 		result = "canceled"
 		if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
 			result = "timeout"
 		}
+	}
+	if result == "error" && timedOut {
+		result = "timeout"
 	}
 	if memorySnapshot != "" {
 		t.reporter.Report(reportCtx, foundryTelemetry.Event{

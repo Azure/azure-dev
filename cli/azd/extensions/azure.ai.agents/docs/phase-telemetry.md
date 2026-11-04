@@ -32,7 +32,7 @@ be summed with, the projects command's phase and internal timings.
 
 Both events use the existing `ext.usage` channel, with `extension.event` equal to
 `agent.phase.completed` or `agent.phase.step`. The host supplies extension ID,
-extension version, and trace correlation. All new properties are string encoded,
+extension version, and trace correlation. Phase timing properties are string encoded,
 un-hashed `SystemMetadata` / `PerformanceAndHealth`, with endpoint `N/A`.
 They are not native measurements.
 
@@ -44,12 +44,34 @@ They are not native measurements.
 | `ext.agent.phase.start_time` | Completed | Actual UTC start, RFC3339Nano. |
 | `ext.agent.phase.end_time` | Completed | Actual UTC return, captured before telemetry reporting. |
 | `ext.agent.phase.duration_ms` | Completed | Inclusive monotonic elapsed milliseconds, with three decimals. |
-| `ext.agent.phase.outcome` | Completed | `success`, `error`, `canceled`, `timeout`, from the operation's returned error. |
+| `ext.agent.phase.outcome` | Completed | `success`, `error`, `canceled`, `timeout`; the Agents extension also considers request termination as described below. |
 | `ext.agent.phase.step.dropped_count` | Completed | Steps exceeding the local 24-step limit; **not** host rejection, reporting loss, or overall completeness. |
 | `ext.agent.phase.step.id` | Step | Fixed business identifier from the coverage table below. |
 | `ext.agent.phase.step.sequence` | Step | Start order within one attempt, beginning at 1. |
 | `ext.agent.phase.step.start_offset_ms` | Step | Monotonic offset from the phase start. |
 | `ext.agent.phase.step.duration_ms` | Step | Inclusive business-step elapsed milliseconds, with three decimals. |
+| `ext.agent.memory_snapshot` | Completed, optional | `true`, `false`, or `unset` only after a hosted `deploy` / `provider` definition is resolved. `SystemMetadata` / `FeatureInsight`, endpoint `N/A`, un-hashed, not a native measurement. |
+
+### Snapshot attribution and Agents outcome precedence
+
+For `azure.ai.agents`, the same outcome rules apply before and after snapshot
+attribution, across all phase types:
+
+1. A nil returned error is `success`, even if the request later becomes canceled.
+2. A returned deadline or network timeout is `timeout`.
+3. For any other errored return on a terminated request, a deadline cause is
+  `timeout`; otherwise request termination is `canceled`.
+4. Remaining returned cancellation errors are `canceled`, and ordinary errors
+  are `error`. An observed business polling timeout changes only `error` to
+  `timeout`.
+
+The original business error is never replaced. Snapshot intent does not affect
+outcome classification. A failure before hosted definition resolution has no
+snapshot field; non-hosted phases and step events also omit it. Read deployment
+outcome, duration and attempt ID from the same provider completion that carries
+the snapshot field, not by joining deduplicated context records to whole-command
+results. Reporting remains best effort; neither timeout nor deployment success
+establishes a backend snapshot capture or restore outcome.
 
 There are no started events, lifecycle pre/post matching, entity hashes, parent
 attempt matching across processes, step outcomes/categories, retry/429 counters,

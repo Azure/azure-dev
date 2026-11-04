@@ -5,6 +5,13 @@ development. Start with the [README](https://github.com/Azure/azure-dev/blob/mai
 For resource creation, permissions, model deployment, and service defaults, use
 the separate [Microsoft Foundry provisioning guide](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/provisioning.md).
 
+## Check the installed extension version
+
+Run `azd ai cu version` to display the extension title, version, and extension
+name. The text output includes surrounding blank lines to separate it from azd
+update notices. For scripts, use `azd ai cu version --output json`, which returns
+the extension ID as `name` and the installed version as `version`.
+
 ## Connect to Microsoft Foundry and check setup
 
 You need a Microsoft Foundry resource endpoint and an identity with access to

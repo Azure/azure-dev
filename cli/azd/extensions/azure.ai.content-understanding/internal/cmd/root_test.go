@@ -188,6 +188,14 @@ func TestMetadataUsesRuntimeTree(t *testing.T) {
 	assert.Error(t, extensions.ValidateAgainstSchema(schema, document))
 }
 
+func TestVersionTextOutput(t *testing.T) {
+	stdout, stderr, err := executeRoot(t, "version")
+	require.NoError(t, err)
+	assert.Empty(t, stderr)
+	assert.Equal(t, "\nAzure Content Understanding Extension for azd\nVersion: "+Version+
+		"\nExtension name: "+extensionID+"\n\n", stdout)
+}
+
 func TestVersionJSONShape(t *testing.T) {
 	stdout, stderr, err := executeRoot(t, "version", "--output", "json")
 	require.NoError(t, err)

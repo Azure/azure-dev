@@ -50,7 +50,7 @@ func TestRootWithoutHostOrProject(t *testing.T) {
 		want string
 	}{
 		{"help", []string{"--help"}, "Azure Content Understanding"},
-		{"version", []string{"version"}, extensionID + " " + Version + "\n"},
+		{"version", []string{"version"}, "Version: " + Version + "\nExtension name: " + extensionID + "\n\n"},
 		{"version flag", []string{"--version"}, Version},
 		{"json version", []string{"version", "--output", "json"}, `"name":"` + extensionID + `"`},
 		{"metadata", []string{"metadata"}, `"id": "` + extensionID + `"`},

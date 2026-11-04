@@ -18,9 +18,13 @@ function parseReview(output) {
             } else if (char === "{") {
                 depth++;
             } else if (char === "}" && --depth === 0) {
-                const review = JSON.parse(output.slice(start, end + 1));
-                if (typeof review.body === "string" && Array.isArray(review.comments)) {
-                    return review;
+                try {
+                    const review = JSON.parse(output.slice(start, end + 1));
+                    if (typeof review.body === "string" && Array.isArray(review.comments)) {
+                        return review;
+                    }
+                } catch {
+                    // A malformed diagnostic candidate should not hide an earlier review.
                 }
                 break;
             }
@@ -41,6 +45,7 @@ function testParser() {
         expected,
     );
     assert.deepEqual(parseReview(json + '\n{"status":"done"}'), expected);
+    assert.deepEqual(parseReview(json + '\n{"body": <invalid>}'), expected);
     assert.throws(() => parseReview("no review object"), /No complete review object/);
     assert.throws(() => parseReview('{"body":"incomplete"'), /No complete review object/);
 }

@@ -29,7 +29,7 @@ type analyzeOptions struct {
 	usage       bool
 	dryRun      bool
 	yes         bool
-	render      bool
+	pretty      bool
 }
 
 func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *cobra.Command {
@@ -39,8 +39,8 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 		Long: "Analyze local files, directories, or HTTPS URLs using Microsoft Entra authentication.\n\n" +
 			"Uses prebuilt-layout when no analyzer is specified or configured.\n" +
 			"Results use YAML front matter and Markdown by default. Batches save source-relative result files.\n" +
-			"Use --render for an opt-in human-readable preview of one streamed LLM-input result.\n" +
-			"Without --render, stdout retains the original Markdown and HTML tables, including when redirected.\n" +
+			"Use --pretty for an opt-in human-readable preview of one streamed LLM-input result.\n" +
+			"Without --pretty, stdout retains the original Markdown and HTML tables, including when redirected.\n" +
 			"Use --output json for complete JSON, or --dry-run to inspect the plan without service calls.",
 		Example: `  azd ai cu analyze invoice.pdf
     Analyze one file using the configured analyzer, or prebuilt-layout if unset.
@@ -60,7 +60,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
   azd ai cu analyze invoice.pdf --llm-input --output-file invoice.md
     Save YAML front matter and Markdown for generative AI model input.
 
-  azd ai cu analyze invoice.pdf --render
+  azd ai cu analyze invoice.pdf --pretty
     Preview Markdown with supported HTML tables; wide tables use labeled cards.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return exterrors.FromError(runAnalyzeCommand(cmd, extCtx, open, options, args))
@@ -82,7 +82,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 	flags.BoolVar(&options.usage, "usage", false, "Include usage metadata in streamed results or per-input summaries")
 	flags.BoolVar(&options.output.LLMInput, "llm-input", true,
 		"Render YAML front matter and Markdown; set false for complete JSON; true conflicts with --output json")
-	flags.BoolVar(&options.render, "render", false,
+	flags.BoolVar(&options.pretty, "pretty", false,
 		"Preview one streamed LLM-input result using Markdown and table/cards layout (default: original text)")
 	flags.StringVar(&options.output.File, "output-file", "", "Save one result to this file")
 	flags.StringVarP(&options.output.Directory, "output-dir", "d", "", "Save source-relative result files in this directory")
@@ -114,7 +114,7 @@ func runAnalyzeCommand(
 		}
 		options.output.LLMInput = false
 	}
-	if options.render {
+	if options.pretty {
 		for _, conflict := range []struct {
 			set  bool
 			name string
@@ -128,8 +128,8 @@ func runAnalyzeCommand(
 		} {
 			if conflict.set {
 				return commandError("conflicting_analyze_options",
-					"--render cannot be combined with "+conflict.name+".",
-					"Omit --render to keep original text, saved results, or structured output.")
+					"--pretty cannot be combined with "+conflict.name+".",
+					"Omit --pretty to keep original text, saved results, or structured output.")
 			}
 		}
 	}
@@ -170,10 +170,10 @@ func runAnalyzeCommand(
 	if err != nil {
 		return err
 	}
-	if options.render && len(plan.Outputs) != 1 {
+	if options.pretty && len(plan.Outputs) != 1 {
 		return commandError("conflicting_analyze_options",
-			"--render requires one input and cannot preview a batch.",
-			"Select one input, or omit --render to save batch results.")
+			"--pretty requires one input and cannot preview a batch.",
+			"Select one input, or omit --pretty to save batch results.")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -228,7 +228,7 @@ func runAnalyzeCommand(
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if options.render {
+			if options.pretty {
 				width, useColor := 80, false
 				if file, ok := cmd.OutOrStdout().(*os.File); ok && azdext.IsInteractiveTerminal(file) {
 					var err error

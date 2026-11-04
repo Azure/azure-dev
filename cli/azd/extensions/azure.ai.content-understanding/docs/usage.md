@@ -164,11 +164,11 @@ their own rendering:
 azd ai cu analyze invoice.pdf > invoice.result.md
 ```
 
-Opt in to a human-readable preview with `--render`; use `--render=false` or omit
+Opt in to a human-readable preview with `--pretty`; use `--pretty=false` or omit
 the flag to retain original text:
 
 ```bash
-azd ai cu analyze invoice.pdf --render
+azd ai cu analyze invoice.pdf --pretty
 ```
 
 The preview uses the existing Glamour renderer for Markdown, including standard
@@ -199,14 +199,14 @@ Neither that issue nor Unicode card-label alignment is fixed by the adapter.
 Preview output removes terminal controls and URL credentials, queries, and fragments,
 including in fallback source. It is not a byte-for-byte result representation.
 Colors are used only for terminal writers when color is enabled; explicit
-`--render` with a pipe, redirected file, or other writer produces an uncolored
+`--pretty` with a pipe, redirected file, or other writer produces an uncolored
 preview at width 80. The preview does not fetch links or images.
 
-`--render` requires a single streamed LLM-input result. It cannot be combined with
+`--pretty` requires a single streamed LLM-input result. It cannot be combined with
 `--output json`, `--output none`, `--llm-input=false`, `--usage`, `--dry-run`,
 `--output-file`, or `--output-dir`; these conflicts are rejected before
 authentication. Saved result files, reports, and the default stdout format are
-unchanged. To save original Markdown/HTML, omit `--render`.
+unchanged. To save original Markdown/HTML, omit `--pretty`.
 
 ### Complete JSON response
 

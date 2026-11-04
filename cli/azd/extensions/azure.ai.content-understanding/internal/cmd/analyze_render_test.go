@@ -36,8 +36,22 @@ func previewResponse(t *testing.T, fixture *analyzeFixture) json.RawMessage {
 	return body
 }
 
+func TestAnalyzePrettyFlagContract(t *testing.T) {
+	root := NewRootCommand()
+	command, _, err := root.Find([]string{"analyze"})
+	require.NoError(t, err)
+	require.NotNil(t, command.Flags().Lookup("pretty"))
+	assert.Nil(t, command.Flags().Lookup("render"))
+
+	fixture := newAnalyzeFixture(t)
+	_, _, err = fixture.execute(t.Context(), "https://example.com/doc.pdf", "--render")
+	require.Error(t, err)
+	assert.Zero(t, fixture.opens)
+	assert.Zero(t, fixture.client.calls.Load())
+}
+
 func TestAnalyzeRenderingIsOptIn(t *testing.T) {
-	for _, flags := range [][]string{nil, {"--render=false"}, {"--render"}} {
+	for _, flags := range [][]string{nil, {"--pretty=false"}, {"--pretty"}} {
 		t.Run(strings.Join(flags, " "), func(t *testing.T) {
 			fixture := newAnalyzeFixture(t)
 			body := previewResponse(t, fixture)
@@ -46,7 +60,7 @@ func TestAnalyzeRenderingIsOptIn(t *testing.T) {
 			assert.Empty(t, stderr)
 			assert.NotContains(t, stdout, "\x1b", "injected/redirected output must not contain ANSI")
 			assert.EqualValues(t, 1, fixture.client.calls.Load())
-			if len(flags) != 0 && flags[0] == "--render" {
+			if len(flags) != 0 && flags[0] == "--pretty" {
 				assert.Contains(t, stdout, "Preview only")
 				assert.Contains(t, stdout, "Important")
 				assert.Contains(t, stdout, "Example")
@@ -72,9 +86,9 @@ func TestAnalyzeRenderRejectsConflictsBeforeAuthentication(t *testing.T) {
 		t.Run(strings.Join(flags, " "), func(t *testing.T) {
 			fixture := newAnalyzeFixture(t)
 			t.Chdir(testutil.TempDir(t))
-			args := append([]string{"https://example.com/doc.pdf", "--render"}, flags...)
+			args := append([]string{"https://example.com/doc.pdf", "--pretty"}, flags...)
 			stdout, stderr, err := fixture.execute(t.Context(), args...)
-			require.ErrorContains(t, err, "--render")
+			require.ErrorContains(t, err, "--pretty")
 			assert.Empty(t, stdout)
 			assert.Empty(t, stderr)
 			assert.Zero(t, fixture.opens)
@@ -86,7 +100,7 @@ func TestAnalyzeRenderRejectsConflictsBeforeAuthentication(t *testing.T) {
 	}
 	fixture := newAnalyzeFixture(t)
 	first, second := schemaFile(t, "first"), schemaFile(t, "second")
-	_, _, err := fixture.execute(t.Context(), first, second, "--render")
+	_, _, err := fixture.execute(t.Context(), first, second, "--pretty")
 	require.ErrorContains(t, err, "batch")
 	assert.Zero(t, fixture.opens)
 	assert.Zero(t, fixture.client.calls.Load())
@@ -98,7 +112,7 @@ func TestAnalyzeOriginalFilesAndJSONRemainUnchanged(t *testing.T) {
 		body := previewResponse(t, fixture)
 		path := filepath.Join(testutil.TempDir(t), "result.md")
 		_, stderr, err := fixture.execute(t.Context(), "https://example.com/doc.pdf",
-			"--render=false", "--output-file", path, "--output", format)
+			"--pretty=false", "--output-file", path, "--output", format)
 		require.NoError(t, err)
 		assert.Empty(t, stderr)
 		saved, err := os.ReadFile(path) // #nosec G304 -- Fixed filename inside the test's private temporary directory.
@@ -128,7 +142,7 @@ func TestAnalyzeRedirectedStdout(t *testing.T) {
 		root.SetErr(&stderr)
 		flags := []string{"analyze", "https://example.com/doc.pdf"}
 		if render {
-			flags = append(flags, "--render")
+			flags = append(flags, "--pretty")
 		}
 		root.SetArgs(flags)
 		runErr := root.ExecuteContext(t.Context())
@@ -155,7 +169,7 @@ func TestAnalyzeRenderedPreviewKeepsReportContract(t *testing.T) {
 	fixture := newAnalyzeFixture(t)
 	previewResponse(t, fixture)
 	path := filepath.Join(testutil.TempDir(t), "report.json")
-	stdout, stderr, err := fixture.execute(t.Context(), "https://example.com/doc.pdf", "--render", "--report-file", path)
+	stdout, stderr, err := fixture.execute(t.Context(), "https://example.com/doc.pdf", "--pretty", "--report-file", path)
 	require.NoError(t, err)
 	assert.Empty(t, stderr)
 	assert.Contains(t, stdout, "Preview only")

@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "microsoft-foundry/content-understanding-cli",
+    "commit": "25d39b30116a840491b7b6f393d6db792b38d4a4",
+    "license": "MIT",
+    "files": {
+      "tests/parity/test_generated_projects.py": "e526333b83398222c2b4ea52ee354518aad679d6bcccb18a41ec283cf97a68de",
+      "packages/core/src/cu_cli_core/infra.py": "cc8509a8c7d7f385c353c5c2b6befefaa5fd41177211c97bd05de82c5e06cd51",
+      "packages/azure-cli-extension/azext_content_understanding/_infra.py": "3d14ee5f74c95db9ae8b55ddef67daaf26860fdb2fe6b5aa70db435d9f2506dc",
+      "tests/parity/generated_projects/canonical.json": "96164cb2d82fff0deb60db1e6d6c785b85757a6df7c3c5fa0068c38860e5b99f"
+    },
+    "adaptations": [
+      "Native README documents Go/Entra-only operation rather than Python/key setup. This complete-tree content replacement remains unapproved; retain the source README hash.",
+      "Native Go JSON sorts keys; source preserves version/defaultEnvironment insertion order. Retain both byte-level hashes and compare complete parsed JSON separately, not filtered keys.",
+      "Native hooks pass AZURE_ENV_NAME explicitly as --environment and reject missing names. Retain the source hook hashes and arguments alongside native expectations."
+    ]
+  },
+  "data": {
+    "choices": {
+      "environment": "dev",
+      "location": "eastus2",
+      "subscriptionId": "00000000-0000-0000-0000-000000000000",
+      "subscriptionName": "Development",
+      "tenantId": "11111111-1111-1111-1111-111111111111",
+      "api_version": "2025-11-01",
+      "foundry_prefix": "contoso-cu",
+      "foundry_endpoint": "",
+      "foundry_resource_group": "",
+      "model_selection": "recommended",
+      "assign_roles": false,
+      "force_configuration_setup": false
+    },
+    "hashes": {
+      ".azure/config.json": "af4828d45c4063f3219e00ff63aa5bbeb2f152e7f988428d53b0a014b9f4a6d4",
+      ".azure/dev/.env": "b19cbf5b83950292d79c8676901a3a32987012103ff7ba2b341ac1fbac3abaab",
+      "README.md": "d62bb410c7538009fef47b59faf0236a2fe6a4066cbbeff5167da0e7301d921b",
+      "azure.yaml": "1d88ddc6e2fecf9e4ac03e277c401a7db6417c43dee3b4fc2d7b3a4a719f73d8",
+      "hooks/postprovision.ps1": "b711730b50b36d2213f1a727c63f9250ce0c119151a349cd9b79145fdddab519",
+      "hooks/postprovision.sh": "79034239fd255cfefae4e8b6f7da26ee8da5e1ce4964db9adb31dcfde362e009",
+      "infra/main.bicep": "b0482c22955e88706f9c4c5f709d553507627d7c8d39a94655c68bb3b66ade86",
+      "infra/main.parameters.json": "c6a46f4caa1468b7c04a14f4ad15fabeda362dc16043be9f94a4b4e7b91bcf79",
+      "infra/models.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "infra/modules/foundry.bicep": "18fd2b5d1ca12e75946ae317a08857f61fc5cdb05b329337036345521630c212"
+    },
+    "native_hashes": {
+      "hooks/postprovision.ps1": "c52122fa5d528fc481c8d28a41ce652abad9c0562bfa707d4a8c83718cffead6",
+      "hooks/postprovision.sh": "8929a55610183fd0400af38463d7812a17c979a207de8d346068f721e07f59f8"
+    },
+    "hook_arguments": [
+      "ai",
+      "cu",
+      "infra",
+      "_postprovision-v1"
+    ],
+    "native_hook_arguments": [
+      "ai",
+      "cu",
+      "infra",
+      "_postprovision-v1",
+      "--environment",
+      "prod"
+    ],
+    "config": {
+      "version": 1,
+      "defaultEnvironment": "dev"
+    }
+  }
+}

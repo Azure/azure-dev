@@ -4,6 +4,7 @@
 package project
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -96,14 +97,17 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 			"context": map[string]any{"required": false},
 		},
 		Connections: []string{"search"},
+		Toolboxes:   []agent_yaml.ToolboxReference{{Name: "research-tools"}},
 	}
 
 	props, err := PromptAgentDefinitionToServiceProperties(original)
 	require.NoError(t, err)
-	for _, key := range []string{"toolChoice", "temperature", "topP", "text", "reasoning", "structuredInputs"} {
+	for _, key := range []string{
+		"toolChoice", "temperature", "topP", "text", "reasoning", "structuredInputs", "toolboxes",
+	} {
 		require.Contains(t, props.AsMap(), key)
 	}
-	for _, key := range []string{"tool_choice", "top_p", "structured_inputs"} {
+	for _, key := range []string{"tool_choice", "top_p", "structured_inputs", "toolbox"} {
 		require.NotContains(t, props.AsMap(), key)
 	}
 
@@ -127,6 +131,7 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 	require.Equal(t, original.StructuredInputs, got.StructuredInputs)
 	require.Len(t, got.Connections, 1)
 	require.Equal(t, "search", got.Connections[0])
+	require.Equal(t, []agent_yaml.ToolboxReference{{Name: "research-tools"}}, got.Toolboxes)
 
 	// Never authored: the deploy graph resolves it from the skills/ folder.
 }
@@ -324,6 +329,83 @@ func TestPromptAgentFromResolvedServiceSkillReferences(t *testing.T) {
 		{Name: "local-skill"},
 		{Name: "microsoft-foundry", Version: "1"},
 	}, got.Skills)
+}
+
+func TestPromptAgentFromResolvedServiceToolboxReferences(t *testing.T) {
+	svc := &azdext.ServiceConfig{
+		Name: "toolbox-agent",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind":         "prompt",
+			"model":        "gpt-4.1-mini",
+			"instructions": "Be helpful.",
+			"harness":      map[string]any{"type": "microsoft_copilot_preview"},
+			"toolboxes": []any{
+				"research-tools",
+				map[string]any{"name": "support-tools"},
+			},
+		}),
+	}
+	got, found, err := PromptAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []agent_yaml.ToolboxReference{
+		{Name: "research-tools"},
+		{Name: "support-tools"},
+	}, got.Toolboxes)
+}
+
+func TestPromptAgentFromResolvedServiceRejectsSingularAndMalformedToolboxes(t *testing.T) {
+	tests := []struct {
+		name  string
+		props map[string]any
+		want  string
+	}{
+		{
+			name:  "singular toolbox",
+			props: map[string]any{"toolbox": map[string]any{"name": "research-tools"}},
+			want:  `field "toolbox" is no longer supported; use "toolboxes"`,
+		},
+		{
+			name: "mixed toolbox and toolboxes",
+			props: map[string]any{
+				"toolbox":   map[string]any{"name": "research-tools"},
+				"toolboxes": []any{"research-tools"},
+			},
+			want: `cannot specify both "toolbox" and "toolboxes"`,
+		},
+		{
+			name:  "unknown field on toolbox reference",
+			props: map[string]any{"toolboxes": []any{map[string]any{"name": "foo", "version": "1"}}},
+			want:  `unknown field "version"`,
+		},
+		{
+			name:  "empty toolbox name",
+			props: map[string]any{"toolboxes": []any{""}},
+			want:  "toolbox reference requires a non-empty name",
+		},
+		{
+			name:  "blank toolbox name",
+			props: map[string]any{"toolboxes": []any{map[string]any{"name": "   "}}},
+			want:  "toolbox reference requires a non-empty name",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			props := map[string]any{
+				"kind":         "prompt",
+				"model":        "test-model",
+				"instructions": "Be helpful.",
+				"harness":      map[string]any{"type": "microsoft_copilot_preview"},
+			}
+			maps.Copy(props, tt.props)
+			svc := &azdext.ServiceConfig{
+				Name:                 "toolbox-agent",
+				AdditionalProperties: mustStruct(t, props),
+			}
+			_, _, err := PromptAgentFromResolvedService(svc, t.TempDir())
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
 }
 
 func TestPromptAgentFromResolvedServiceRejectsMalformedSkills(t *testing.T) {

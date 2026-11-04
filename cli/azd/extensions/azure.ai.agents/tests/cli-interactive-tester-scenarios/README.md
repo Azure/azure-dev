@@ -216,6 +216,11 @@ advantage of both where it's safe.
   - **Tier 1 resource names** are suffixed with `-{instance}` too (via the
     RESOURCE NAMING goal and the `--agent-name` flag), so parallel workers do not collide on
     Azure resource names. Each Tier 1b verifier reuses its prerequisite's exact instance.
+  - **`0.35-run-invoke-local-a2a`** is an offline, terminal-only two-session
+    local fixture flow. It declares `allocate_ports: [agent]` and uses the same
+    `scenario_path`, `instance_id`, and `session_vars.instance` for both sessions
+    so each parallel instance shares only its own allocated port. Python 3 must
+    already be installed; no Azure auth, model, browser UI, or packages are needed.
   - **`2.12-run-local-and-invoke-local`** declares `allocate_ports: [agent]` and
     binds `azd ai agent run`/`invoke --local` to `--port {agent}`. A port pool is
     shared across every `start_session` with the same `scenario_path`, so the
@@ -306,8 +311,9 @@ command(s) under test — see [Tags](#tags) for the full taxonomy and how to
 filter via `list_scenarios`.
 
 ### Tier 0 — Offline (`tier0/`)
-No Azure auth, no network resource creation (except `sample list`, which fetches
-the public template catalog). Fast and mostly deterministic. Safe to run
+No Azure auth or cloud resource creation. `sample list` fetches the public
+template catalog; the local A2A fixture uses localhost HTTP only. Fast and mostly
+deterministic. Safe to run
 in any order, any time.
 
 | File | Targets |
@@ -323,7 +329,7 @@ in any order, any time.
 | `tier0/0.09-init-validate-no-prompt-missing.yaml` | `init --no-prompt` missing-input error |
 | `tier0/0.10-init-picker-navigation.yaml` | `init` interactive picker UX (abort before Azure) |
 | `tier0/0.11-invoke-validate-protocol.yaml` | `invoke --protocol` unsupported-value error |
-| `tier0/0.12-eval-context-required.yaml` | `eval list` outside a project requires a Foundry endpoint |
+| `tier0/0.12-eval-migration-guidance.yaml` | Deprecated `eval list` gives migration guidance and exits non-zero without prompts or service requests, including with old flags |
 | `tier0/0.13-optimize-apply-requires-candidate.yaml` | `optimize apply` missing required `--candidate` |
 | `tier0/0.14-endpoint-show-help.yaml` | `endpoint show --help` |
 | `tier0/0.15-code-download-help.yaml` | `code download --help` |
@@ -345,15 +351,47 @@ in any order, any time.
 | `tier0/0.28-agent-add-multiple-projects.yaml` | `agent add` rejects multiple Project services before mutation |
 | `tier0/0.29-agent-add-path-safety.yaml` | `agent add` rejects definition and source paths outside the project |
 | `tier0/0.30-agent-add-wrong-host-collision.yaml` | `agent add` rejects a target service key owned by a non-Agent host without mutating `azure.yaml` |
+| `tier0/0.31-init-adopt-headless-replacement.yaml` | Ambiguous `init --no-prompt --model-deployment` fails before copying files or creating an environment |
+| `tier0/0.32-init-adopt-cancel-replacement.yaml` | Cancelling the template replacement picker leaves no project files or environment |
+| `tier0/0.33-invoke-a2a-version-validation.yaml` | A2A preview help and gating, explicit file versions when enabled, unsupported/empty versions, rejection on non-A2A protocols, and local A2A discovery |
+| `tier0/0.34-init-byo-aks-infra.yaml` | BYO AKS Terraform rejection without mutations and local standard Bicep eject; no Azure or Kubernetes operations |
+| `tier0/0.35-run-invoke-local-a2a.yaml` | Terminal-only A2A-only `run` and local 1.0 invoke: text, unchanged file bytes, raw JSON/SSE, allocated port, fixed `POST /a2a` route, no Foundry headers/state, and unsupported flags |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
 lifecycle behavior is covered by the extension's Go tests with scripted local servers; no successful
 cloud create/follow/cancel flow is claimed by these scenarios.
 
+The Tier 0 A2A version scenario checks offline validation and help explanations
+of A2A implementation-version inference versus public endpoint enablement,
+the translation convenience rationale, explicit file versions, and service-controlled
+affinity caveats. It does not exercise translation or A2A hosted agent execution,
+verify file bytes on the wire, or establish session/task lifecycle support. The
+shared Tier 2 agent is Responses-only and cannot validate A2A translation behavior.
+
+`0.35-run-invoke-local-a2a` seeds a minimal Python standard-library JSON-RPC echo
+server and complete A2A 1.0 request files in its own instance directory. It drives
+`run` without `--no-client` to verify automatic graphical-client suppression,
+checks ready-time local invoke guidance, then invokes from a second terminal.
+This is local CLI transport/rendering coverage, not an A2A SDK conformance test,
+Foundry deployment, translation, task lifecycle, or mixed-protocol client test.
+Version-selection policy is unchanged locally: preview off uses 0.3 without the
+version flag; preview on defaults messages to 1.0 and requires explicit file
+versions. `0.35` exercises preview-on 1.0 only; `0.33` and Go tests cover policy
+validation. Neither scenario claims timeout or task-cancellation coverage.
+The local fixture has no cloud cleanup; always stop the foreground run and finish
+both tester sessions, including on failure. Keep its files for inspection and
+pre-wipe only that instance directory on the next run. These scenarios remain
+opt-in through `foundry-extension-scenario-orchestrator`; they are not run automatically.
+
 The Tier 0 State Store scenario is limited to offline help and invalid-input checks. It does not
 read or mutate stores, exercise a live store picker, or provision a hosted agent. A separate opt-in
 Tier 2 scenario checks the item lifecycle against an externally seeded store (see below).
+
+The two replacement-preflight scenarios use the local
+`fixtures/adopt-model-replacement/azure.yaml` fixture and abort before Azure
+authentication or scaffolding. They need no externally seeded deployment and
+never provision the fixture.
 
 ### Tier 1 — Auth, scaffold only (`tier1/`)
 Requires Azure login (reads subscriptions/Foundry projects) but **does not
@@ -373,12 +411,34 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.09-init-from-code-eval-companion.yaml` | `init` → from-code, dedicated producer for `tier1b/1b.08`'s eval-service-declared deploy-note check |
 | `tier1/1.09-init-env-prompts.yaml` | Local `azure.yaml` adoption: storage guidance, unavailable hint suppression, literal `?` values, and secret masking/persistence |
 | `tier1/1.10-init-harness-region-restrictions.yaml` | Microsoft Copilot harness region filtering, explicit-project validation, model-recovery guard, and plain prompt non-regression (opt-in `manual-seed`) |
+| `tier1/1.11-init-adopt-existing-model.yaml` | Adopt a template using a differently named live deployment; verify the empty managed list and explicit binding (opt-in `manual-seed`) |
+| `tier1/1.12-init-adopt-catalog-model.yaml` | Adopt a template with a catalog replacement; verify the selected tuple and retained template name (opt-in `manual-seed`) |
+| `tier1/1.11-init-native-a2a.yaml` | Existing-code init: A2A hosted agent (1.0) picker label, A2A-only configuration, and required application-route guidance; no server generation or cloud execution |
+
+The A2A hosted agent init scenario is a configuration-only specification. It is not
+an A2A server sample, deployment verifier, or execution test. Service onboarding
+and region support are required. The init picker has Go unit/mock coverage;
+this interactive scenario has **not** been executed. Do not run it without separate approval.
+Even after approval, stop after local init; do not provision, deploy, invoke, or delete
+retained resources. Init does not enable a subscription-level A2A service feature.
+Application `protocols` declare implementation capabilities; public
+`agentEndpoint.protocols` enablement alone does not establish an A2A implementation.
 
 `1.10` requires externally prepared, readable Foundry projects in both supported and
 unsupported harness regions, with a usable model deployment in the unsupported project.
 Set `{region}` to a supported region and `{model}` to a catalog model unavailable there
 but available with quota in an unsupported recovery region. The scenario does not create
 these fixtures; missing prerequisites fail setup rather than skipping recovery coverage.
+
+The two adoption-model scenarios require an externally prepared
+`~/working/azd-agents-adoption-seed-{run_id}.json` containing `project_id` (the
+full resource ID of a readable Foundry project in the configured subscription)
+and `existing_deployment` (a live deployment on its account using a model other
+than the fixture's gpt-4o). For the catalog case, the profile's `{model}` must
+differ from gpt-4o and have deployment quota in that project's location. The
+scenarios read this seed and Azure metadata but never create or modify cloud
+resources. They are opt-in `manual-seed` scenarios; missing fixtures fail setup.
+The external seed owner retains cleanup responsibility.
 
 ### Tier 1b — Deploy-verify (`tier1b/`) — ⚠️ incurs Azure cost
 Verifies that Tier 1 scaffolds actually **deploy** and produce a working agent.
@@ -463,9 +523,28 @@ checks the original shared files' checksums; it never deploys the fixture.
 | `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
 | `tier2/2.17a-deploy-preview.yaml` | `azd deploy --preview` (isolated authored diffs, readable/JSON values and credential protection; no deployment writes) |
+| `tier2/2.17b-deploy-rbac-warnings.yaml` | Opt-in: final readable/JSON RBAC warning retention with a restricted identity and a declared deployment outcome |
 | `tier2/2.18-delete.yaml` | `delete` (destroys the shared agent — run before teardown) |
 | `tier2/2.19-invoke-session-bound-metadata.yaml` | Opt-in: successful Invocations calls and 404 metadata routing in a separate externally seeded project |
 | `tier2/2.99-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
+
+**Opt-in RBAC prerequisite:** After `2.00` deploys the shared agent, an operator
+must prepare a restricted azd test identity and write `rbac-warning-seed.json`
+in that shared project. Include `runId`, `agentName`, `service`, `principalId`,
+project/registry identities, current-run ownership and read-only role evidence,
+`expectedMessage`, `expectedSuggestion`, and `expectedExitCode`; for a later
+failure also include `expectedDeploymentError`. The identity must reliably
+produce that warning without successfully auto-assigning itself a role.
+Do not remove roles or modify cloud permissions to manufacture a warning.
+Missing prerequisites are blocked coverage, not a passing skip.
+
+Scenario `2.17b` is `manual-seed` and excluded from ordinary sweeps. When opted in,
+it runs in the shared-agent serial lane before `2.18` deletes the shared agent.
+It reuses `2.00` / `2.99` resource ownership and
+cleanup, rather than creating another infrastructure lifecycle. Arrange
+authorized teardown with the original setup identity even if restricted deploy
+fails. Each seed declares one exact success or later-failure outcome. Coverage
+of both outcomes needs separate prepared runs and explicit Azure cost consent.
 
 The shared Tier 2 agent supports the Responses protocol only. Scenario `2.19` tests successful
 Invocations and metadata-session routing against a separate externally prepared agent, not that
@@ -824,8 +903,9 @@ be run back to back in any order within a tier:
 - `files` and `sessions` are exercised as one lifecycle scenario per command
   group (rather than one file per subcommand) to avoid cross-scenario ordering
   dependencies — still one command at a time.
-- `azd ai agent run` blocks the terminal; `2.12-run-local-and-invoke-local.yaml`
-  uses two sessions (one to run, one to invoke `--local`) that share an
+- `azd ai agent run` blocks the terminal; `0.35-run-invoke-local-a2a.yaml` and
+  `2.12-run-local-and-invoke-local.yaml` use two sessions (one to run, one to
+  invoke `--local`) that share an
   allocated `{agent}` port (see
   [Parallel-readiness](#parallel-readiness--port-allocation)).
 - Run artifacts (screenshots, HTML reports) land in `.reports/`, which is

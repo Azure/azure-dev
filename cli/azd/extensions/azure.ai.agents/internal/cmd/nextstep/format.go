@@ -190,15 +190,12 @@ func renderRows(suggestions []Suggestion, limit int) string {
 	return b.String()
 }
 
-// highlightedCommandPrefixes lists the prefixes of suggestion commands that
-// are runnable shell commands and should be rendered in the highlight color.
-// "cd " covers the post-init "cd <folder>" step, which the user runs before
-// the azd commands that follow it.
-var highlightedCommandPrefixes = []string{"azd ", "cd "}
+// highlightedCommandPrefixes identifies runnable suggestions,
+// including shell-specific navigation steps before the azd commands.
+var highlightedCommandPrefixes = []string{"azd ", "cd ", "Set-Location "}
 
-// highlightCommand returns cmd wrapped in the highlight (blue) color when
-// it is a runnable command (an azd command or the post-init "cd <folder>"
-// step; see highlightedCommandPrefixes), and cmd unchanged otherwise.
+// highlightCommand colors runnable azd and navigation commands.
+// Other suggestions are returned unchanged.
 // Non-command suggestions — "see <path>/README.md" pointers and
 // "edit azure.yaml: ..." instructions — stay plain.
 //

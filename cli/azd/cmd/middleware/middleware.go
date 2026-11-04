@@ -45,9 +45,10 @@ func (m *CancellationMiddleware) Run(
 	defer controller.close()
 
 	result, err := nextFn(commandCtx)
+	interrupted := processWasInterrupted(err)
 	// A nested controller includes its context termination cause after it owns
 	// the interrupt, so only a bare interrupted exit can have a host signal pending.
-	awaitHostInterrupt := processWasInterrupted(err) &&
+	awaitHostInterrupt := interrupted &&
 		!errors.Is(err, context.Canceled) &&
 		!errors.Is(err, context.DeadlineExceeded)
 	controller.finish(awaitHostInterrupt)
@@ -60,7 +61,11 @@ func (m *CancellationMiddleware) Run(
 		case err == commandCtx.Err(): //nolint:errorlint
 			err = ctxCause
 		case !errors.Is(err, ctxCause):
-			err = errors.Join(err, ctxCause)
+			if interrupted && errors.Is(ctxCause, context.Canceled) {
+				err = &interruptedErrorWithCause{err: err, cause: ctxCause}
+			} else {
+				err = errors.Join(err, ctxCause)
+			}
 		}
 	}
 
@@ -143,6 +148,19 @@ func processWasInterrupted(err error) bool {
 
 	interruptErr, ok := errors.AsType[interruptedError](err)
 	return ok && interruptErr.Interrupted()
+}
+
+type interruptedErrorWithCause struct {
+	err   error
+	cause error
+}
+
+func (e *interruptedErrorWithCause) Error() string {
+	return e.err.Error()
+}
+
+func (e *interruptedErrorWithCause) Unwrap() []error {
+	return []error{e.err, e.cause}
 }
 
 type childActionKeyType string

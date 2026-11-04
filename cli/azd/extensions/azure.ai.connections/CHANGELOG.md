@@ -1,5 +1,17 @@
 # Release History
 
+## 1.0.0-beta.11 (2026-10-23)
+
+### Features Added
+
+- [[#10483]](https://github.com/Azure/azure-dev/pull/10483) Add `azd ai connection add <name> --file <path>` to add or update local Connection services without creating remote resources, with explicit project selection and JSON output.
+- [[#10480]](https://github.com/Azure/azure-dev/pull/10480) Add local Connection definition validation for nested file references, project boundaries, authentication fields, and environment references without resolving secret values.
+
+### Other Changes
+
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+- [[#10482]](https://github.com/Azure/azure-dev/pull/10482) Preserve unrelated project settings and literal environment bindings during Connection authoring, validate the complete candidate before writing, and avoid writes for unchanged declarations.
+
 ## 1.0.0-beta.10 (2026-10-15)
 
 ### Bugs Fixed

@@ -50,11 +50,11 @@ func TestAdoptedDeploymentChoicesPersistEffectiveList(t *testing.T) {
 		failKey  string
 	}{
 		{name: "reuse retains environment-only entry", override: true, extra: true},
-		{name: "skip all persists empty", override: true, choice: 2},
+		{name: "skip all persists empty", override: true, choice: 3},
 		{name: "deploy preserves environment tuple", override: true, choice: 1},
 		{name: "no prompt reuses existing", override: true, noPrompt: true},
 		{name: "YAML fallback reuse preserves portable declarations"},
-		{name: "YAML fallback skip preserves portable declarations", choice: 2},
+		{name: "YAML fallback skip preserves portable declarations", choice: 3},
 		{name: "YAML fallback deploy seeds environment", choice: 1},
 		{name: "YAML fallback no prompt preserves portable declarations", noPrompt: true},
 		{name: "YAML fallback deployment write rollback", failKey: projectDeploymentsEnvKey},
@@ -62,6 +62,7 @@ func TestAdoptedDeploymentChoicesPersistEffectiveList(t *testing.T) {
 		{name: "YAML fallback default write rollback", failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
 		{name: "deployment write rollback", override: true, failKey: projectDeploymentsEnvKey},
 		{name: "default write rollback", override: true, failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
+		{name: "bindings write rollback", override: true, failKey: synthesis.DeploymentBindingsEnvKey},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			client, project, env, _, _ := newSelfInitializingDeploymentClient(
@@ -86,7 +87,7 @@ func TestAdoptedDeploymentChoicesPersistEffectiveList(t *testing.T) {
 			env.failKey = test.failKey
 			live := []liveProjectDeployment{{Name: "existing", Model: effective[0].Model}}
 			defaultName, changed, restore, err := reconcileAdoptedDeploymentChoices(
-				t.Context(), client, "test", []synthesis.Deployment{yamlDeployment},
+				t.Context(), client, "test", nil, []synthesis.Deployment{yamlDeployment},
 				live, original, test.noPrompt,
 			)
 			assert.Equal(t, service, project.services["project"])
@@ -112,7 +113,7 @@ func TestAdoptedDeploymentChoicesPersistEffectiveList(t *testing.T) {
 				want = []synthesis.Deployment{extra}
 			}
 			assert.Equal(t, want, got)
-			if test.choice == 2 {
+			if test.choice == 3 {
 				assert.Empty(t, defaultName)
 				assert.Empty(t, env.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
 			} else if test.choice != 1 {

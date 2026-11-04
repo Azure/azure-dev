@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: content-understanding-starter
+metadata:
+  template: content-understanding-starter@0.1.0
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+# No `services:` block on purpose — this template is infra-only.
+# The Azure Content Understanding azd extension is the developer surface;
+# provisioning the Foundry account, project, and selected models is all this template does.
+
+hooks:
+  postprovision:
+    posix:
+      shell: sh
+      run: ./hooks/postprovision.sh
+      continueOnError: false
+      interactive: true
+    windows:
+      shell: pwsh
+      run: ./hooks/postprovision.ps1
+      continueOnError: false
+      interactive: true

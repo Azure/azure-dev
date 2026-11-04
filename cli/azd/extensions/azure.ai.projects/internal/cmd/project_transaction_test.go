@@ -8,7 +8,9 @@ import (
 	"errors"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
@@ -84,6 +86,51 @@ func TestReconcileProjectEnvironmentRollbackRestoresValues(t *testing.T) {
 	assert.Equal(t, "true", envServer.values["USE_EXISTING_AI_PROJECT"])
 	assert.Equal(t, "", envServer.values["AZURE_AI_DEPLOYMENTS_LOCATION"])
 	assert.Equal(t, 5, envServer.calls)
+}
+
+func TestReconcileProjectEnvironmentRollbackRestoresReplacedDeployments(t *testing.T) {
+	const (
+		oldDeployments = `[{"name":"old-model"}]`
+		oldBindings    = `{"template-model":"old-model"}`
+		oldProjectID   = "/subscriptions/sub/resourceGroups/old-rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/old-account/projects/old-project"
+	)
+	envServer := &transactionEnvironmentServer{
+		values: map[string]string{
+			"AZURE_AI_PROJECT_NAME":          "old-project",
+			"FOUNDRY_PROJECT_ENDPOINT":       "https://old.services.ai.azure.com/api/projects/old-project",
+			"AZURE_AI_ACCOUNT_NAME":          "old-account",
+			"AZURE_AI_PROJECT_ID":            oldProjectID,
+			projectDeploymentsEnvKey:         oldDeployments,
+			"AI_PROJECT_DEPLOYMENT_BINDINGS": oldBindings,
+		},
+		failKey: "AZURE_AI_ACCOUNT_NAME",
+	}
+	client := newProjectEnvironmentClient(t, envServer)
+
+	_, _, err := reconcileProjectEnvironmentWithRollback(
+		t.Context(),
+		client,
+		"test",
+		projectModeExistingEndpoint,
+		&resolvedProject{
+			ProjectName: "new-project",
+			Endpoint:    "https://new.services.ai.azure.com/api/projects/new-project",
+		},
+		true,
+	)
+
+	require.ErrorContains(t, err, "clear project environment value AZURE_AI_ACCOUNT_NAME")
+	failureIndex := slices.Index(envServer.setLog, "AZURE_AI_ACCOUNT_NAME=")
+	require.NotEqual(t, -1, failureIndex)
+	beforeFailure := envServer.setLog[:failureIndex]
+	afterFailure := envServer.setLog[failureIndex+1:]
+	assert.Contains(t, beforeFailure, projectDeploymentsEnvKey+"=")
+	assert.Contains(t, beforeFailure, "AI_PROJECT_DEPLOYMENT_BINDINGS=")
+	assert.Contains(t, afterFailure, projectDeploymentsEnvKey+"="+oldDeployments)
+	assert.Contains(t, afterFailure, "AI_PROJECT_DEPLOYMENT_BINDINGS="+oldBindings)
+	assert.Equal(t, oldDeployments, envServer.values[projectDeploymentsEnvKey])
+	assert.Equal(t, oldBindings, envServer.values["AI_PROJECT_DEPLOYMENT_BINDINGS"])
 }
 
 func TestReconcileProjectServiceRollbackRestoresSection(t *testing.T) {
@@ -833,10 +880,11 @@ func TestWriteExistingProjectBicepAcrModes(t *testing.T) {
 		"deployments": []synthesis.Deployment{},
 	}
 	tests := []struct {
-		name     string
-		mode     projectEjectAcrMode
-		values   map[string]string
-		wantFile bool
+		name       string
+		mode       projectEjectAcrMode
+		values     map[string]string
+		wantFile   bool
+		wantAccess bool
 	}{
 		{name: "none", mode: projectEjectAcrNone, wantFile: false},
 		{name: "create", mode: projectEjectAcrCreate, wantFile: true},
@@ -847,7 +895,17 @@ func TestWriteExistingProjectBicepAcrModes(t *testing.T) {
 				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "https://registry.azurecr.io",
 				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/registry",
 			},
-			wantFile: true,
+			wantFile:   true,
+			wantAccess: true,
+		},
+		{
+			name: "reuse with AcrPull",
+			mode: projectEjectAcrReuseConnect,
+			values: map[string]string{
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "https://registry.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/registry",
+			},
 		},
 		{
 			name: "already connected",
@@ -874,6 +932,24 @@ func TestWriteExistingProjectBicepAcrModes(t *testing.T) {
 			} else {
 				assert.NoFileExists(t, registryPath)
 			}
+			accessPath := filepath.Join(dir, "modules", "acr-pull-role-assignment.bicep")
+			if test.wantAccess {
+				assert.FileExists(t, accessPath)
+			} else {
+				assert.NoFileExists(t, accessPath)
+			}
+			t.Run("compile", func(t *testing.T) {
+				bicep, err := exec.LookPath("bicep")
+				if err != nil {
+					t.Skip("Bicep CLI not found; skipping ejected Bicep compilation")
+				}
+				out := filepath.Join(t.TempDir(), "main.json")
+				//nolint:gosec // test-controlled Bicep
+				build := exec.CommandContext(t.Context(), bicep, "build",
+					filepath.Join(dir, "main.bicep"), "--outfile", out)
+				output, err := build.CombinedOutput()
+				require.NoErrorf(t, err, "ejected Bicep failed to compile: %s", output)
+			})
 			assert.FileExists(t, filepath.Join(dir, "main.bicep"))
 			assert.FileExists(t, filepath.Join(dir, "main.parameters.json"))
 			assert.FileExists(t, filepath.Join(
@@ -956,9 +1032,11 @@ const provisioningFoundryProvider = "microsoft.foundry"
 
 type transactionEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	values map[string]string
-	failAt int
-	calls  int
+	values  map[string]string
+	failAt  int
+	failKey string
+	calls   int
+	setLog  []string
 }
 
 func (s *transactionEnvironmentServer) Select(
@@ -986,6 +1064,11 @@ func (s *transactionEnvironmentServer) SetValue(
 	request *azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.calls++
+	s.setLog = append(s.setLog, request.GetKey()+"="+request.GetValue())
+	if s.failKey != "" && s.failKey == request.GetKey() {
+		s.failKey = ""
+		return nil, errors.New("environment write failed")
+	}
 	if s.failAt == s.calls {
 		return nil, errors.New("environment write failed")
 	}

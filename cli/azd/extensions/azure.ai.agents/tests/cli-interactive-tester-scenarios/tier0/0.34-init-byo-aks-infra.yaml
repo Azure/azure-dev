@@ -1,0 +1,41 @@
+# Tier 0: local BYO AKS eject validation only; never provision or connect to a cluster.
+name: "init-byo-aks-infra"
+command: "azd ai agent init --infra=terraform --no-prompt"
+cwd: "~/working/azd-agents-byo-aks-infra-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+env:
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_CHECK_VERSION: "false"
+  AZD_ALPHA_ENABLE_AGENTS_BYO_AKS: "true"
+pre:
+  - run: |
+      set -eu
+      work="$HOME/working/azd-agents-byo-aks-infra-{instance}"
+      mkdir -p "$work"
+      cat > "$work/azure.yaml" <<'YAML'
+      name: byo-aks-eject
+      infra:
+        provider: microsoft.foundry
+      services:
+        ai-project:
+          host: azure.ai.project
+          agentHosting:
+            clusterResourceId: ${AKS_CLUSTER_ID}
+          network:
+            agentSubnet:
+              vnet: ${AZURE_VNET_ID}
+              name: agents
+            peSubnet:
+              vnet: ${AZURE_VNET_ID}
+              name: endpoints
+      YAML
+      cp "$work/azure.yaml" "$work/azure.yaml.original"
+    cwd: "~/working"
+    name: "seed a local project with unresolved cluster and VNet references"
+goals:
+  - "Confirm Terraform eject fails with a validation error saying BYO AKS requires microsoft.foundry. It must not authenticate, prompt, create an azd environment, generate infra files, or change azure.yaml."
+  - "Compare azure.yaml to azure.yaml.original and confirm the bytes are unchanged and no infra directory exists."
+  - "Run azd ai agent init --infra=bicep --no-prompt. Confirm local Bicep generation succeeds without authenticating or querying Azure."
+  - "Confirm azure.yaml retains microsoft.foundry, main.parameters.json preserves the cluster and VNet ${VAR} references, includeAcr is false because no Agent requires a container build, the three supporting-resource ID fields remain empty, and no explicit byoOnboarding parameter is authored."
+  - "Confirm the generated modules include byo-prerequisites.bicep and a single native acr.bicep; prerequisites must not create another registry."
+  - "Stop after local file verification. Do not run provision, deploy, invoke, down, kubectl, or any Azure command in this offline scenario."

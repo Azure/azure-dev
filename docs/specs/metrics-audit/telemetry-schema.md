@@ -259,6 +259,8 @@ tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `er
 | Extension version | `extension.version` | SystemMetadata | FeatureInsight | |
 | Extension event | `extension.event` | SystemMetadata | FeatureInsight | Extension-defined usage event or failed-invocation event |
 | Legacy gRPC call count | `extension.grpc.legacy_call_count` | SystemMetadata | FeatureInsight | **Measurement** — number of unary calls or streams opened through the temporary `/azdext.*` compatibility bridge during one command |
+| Dropped extension usage reports | `extension.usage.dropped` | SystemMetadata | PerformanceAndHealth | Not hashed. Unique `<extension-id-or-unattributed>@<reason>` entries per invocation. The extension ID is included only after official-source admission; earlier failures use fixed `unattributed`, and reasons are host-defined: `event_name_invalid`, `attribute_count_exceeded`, `attribute_key_invalid`, `attribute_value_too_long`, `not_installed`, `lookup_failed`, `source_check_failed`, `source_ineligible`, `budget_exhausted`, `unauthenticated` |
+| Dropped extension usage report count | `extension.usage.dropped.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total dropped reports in the invocation |
 | Extension installed | `extension.installed` | SystemMetadata | FeatureInsight | List of installed extensions, each formatted `id@version` |
 | Installed extension source category | `extension.installed.source.category` | SystemMetadata | FeatureInsight | List formatted `id@category`; categories: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
 | Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an update |
@@ -292,6 +294,12 @@ meaning, allowed values, classification, and purpose are identical. The
 extension column lists the current emitter, not an exclusive owner. The current
 declarations are:
 
+The agents extension also supplies `extension.event=agent.init.step` on
+`ext.usage` for completed `azd ai agent init` business steps. It buffers timings
+and reports on return, including error and cancellation returns. The host span's
+duration measures reporting, while `ext.agent.init.step.duration_ms` measures the step. No new
+command completion, per-step outcome, category, or summary event is emitted.
+
 | Current extension | OTel Key | Classification | Purpose | Endpoint | Hashed | Measurement | Allowed values / event |
 |-----------|----------|----------------|---------|----------|--------|-------------|------------------------|
 | `microsoft.azd.demo` | `ext.demo.mode` | SystemMetadata | FeatureInsight | `N/A` | No | No | `sample` on `demo.telemetry.reported` |
@@ -303,27 +311,53 @@ declarations are:
 | `azure.ai.agents` | `ext.agent.invoke.protocol` | SystemMetadata | FeatureInsight | `N/A` | No | No | Currently `responses`, `invocations`, or `a2a` on `agent.invoke.selected`; emitted from the resolved invocable protocol, with no separate telemetry allowlist |
 | `azure.ai.agents` | `ext.agent.invoke.long_running` | SystemMetadata | FeatureInsight | `N/A` | No | No | String-encoded boolean `true` or `false` on `agent.invoke.selected` |
 | `azure.ai.agents` | `ext.agent.invoke.no_wait` | SystemMetadata | FeatureInsight | `N/A` | No | No | String-encoded boolean `true` or `false` on `agent.invoke.selected` |
+| `azure.ai.agents` | `ext.agent.init.step.id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Fixed business-step identifier on `agent.init.step`; vocabulary below |
+| `azure.ai.agents` | `ext.agent.init.step.sequence` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded start order, 1–96 within one Init invocation, on `agent.init.step`; repeated calls retain their ID and get new sequence numbers |
+| `azure.ai.agents` | `ext.agent.init.step.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative monotonic elapsed milliseconds, string encoded with three decimal places, on `agent.init.step`; convert to a number for percentiles |
 | `azure.ai.agents` | `ext.route` | SystemMetadata | FeatureInsight | `N/A` | No | No | `inspector`, `playground`, or `suppressed` on `local_client.route.selected` |
 | `azure.ai.inspector` | `ext.stage` | SystemMetadata | FeatureInsight | `N/A` | No | No | `ui_ready` on `inspector.funnel.stage` |
 | `azure.ai.inspector` | `ext.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `succeeded` on `inspector.funnel.stage` |
 | `azure.ai.dataset` | `ext.operation` | SystemMetadata | FeatureInsight | `N/A` | No | No | `create`, `update`, or `unknown` on `dataset.published` |
 | `azure.ai.evaluations` | `ext.source` | SystemMetadata | FeatureInsight | `N/A` | No | No | `traces`, `dataset`, or `unknown` on `init.completed` |
 
-These fields share a classification because their reviewed values are bounded
-product enums. `SystemMetadata` and `FeatureInsight` are not defaults for an
-unknown or future `ext.*` field.
+Product classification fields are bounded enums for `FeatureInsight`. Init timing
+fields use `PerformanceAndHealth`: the step ID is a fixed identifier and sequence
+and duration are string-encoded numbers, not enums or native measurements.
+`SystemMetadata` and `FeatureInsight` are not defaults for an unknown or future
+`ext.*` field.
+
+The `ext.agent.init.step.id` vocabulary is: `input_validation`, `ai_service_check`,
+`authentication`, `init_mode_selection`, `template_selection`, `template_loading`,
+`template_staging`, `project_scaffolding`, `agent_name_selection`,
+`agent_configuration`, `deploy_mode_selection`, `code_configuration`,
+`protocol_selection`, `subscription_selection`, `location_selection`,
+`foundry_project_selection`, `model_selection`, `model_deployment_selection`,
+`prompt_agent_configuration`, `rai_policy_configuration`,
+`environment_configuration`, `project_configuration`, `project_authoring`,
+`model_deployment_authoring`, `file_generation`, and `infra_generation`.
+Steps include loading, interaction, validation, and internal retries. Nested
+durations are inclusive and must not be summed to calculate Init duration.
+Project authoring delegated to the projects extension is measured from Init;
+standalone project commands do not emit these events. Reporting is bounded by a
+96-step local buffer, a one-second batch deadline, and the host's shared 100-event
+invocation budget. Missing rows do not establish non-execution. Full command
+success and duration remain on the existing completion record, correlated by
+operation ID. Event emission and the detailed guide are introduced separately in
+[the agent Init implementation PR](https://github.com/Azure/azure-dev/pull/10548);
+the field declarations alone do not enable reporting.
 
 The following rules define the runtime and source-governance boundaries:
 
 | Rule | Enforcement |
 |------|-------------|
-| Eligibility | Only eligible official-registry installations produce `ext.usage` spans; other installations receive a normal response without recording an event |
+| Eligibility | Only eligible official-registry installations produce `ext.usage` spans. A valid call from any other source succeeds without producing an `ext.usage` span, while the command-span drop fields are still recorded |
 | Key namespace | Every caller-supplied key is prefixed with `ext.` by the host, so it can never overwrite a host-owned attribute |
 | Size | At most 32 attributes per event; event name and keys at most 128 UTF-8 bytes; values at most 512 UTF-8 bytes |
-| Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that are dropped without recording |
+| Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that produce no `ext.usage` span, while the command-span drop fields are still recorded |
+| Drop observability | Rejected and dropped calls append one unique `<extension-id-or-unattributed>@<reason>` value to `extension.usage.dropped` on the hosting command span and increment `extension.usage.dropped.count`. IDs appear only after official-source admission; earlier failures use fixed `unattributed`. Synthetic `azd up` phase spans, workflow step command spans, and VS RPC spans do not copy these fields. Reasons are fixed by the host, and no caller-controlled event or attribute content is copied |
 | Values | Not enumerated or pattern-checked. The extension author owns what a value means and is responsible for keeping it low cardinality and free of customer content |
 | Classification | Each first-party field has an explicit source declaration based on its actual semantics; the runtime does not assign one classification to the whole `ext.*` class |
-| Purpose | Each first-party field declares its actual collection purpose; `FeatureInsight` is not applied automatically |
+| Purpose | Each first-party field declares its actual collection purpose; `FeatureInsight` is not applied automatically. Command-span drop fields use `PerformanceAndHealth` |
 | Identity | The host supplies extension identity and source context; the request cannot override those fields |
 | Repository validation | `go test ./extensions/telemetry` rejects undeclared fields, dynamic keys, invalid metadata, and unsupported classifications before release |
 | Review | Extension telemetry follows the same documented classification and content rules as core fields. Official-registry admission remains the runtime boundary |
@@ -474,8 +508,8 @@ remain defined to support a possible future redesign without changing the teleme
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Outcome | `validation.provision.outcome` | SystemMetadata | FeatureInsight | Values: `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `skipped`, `error` |
-| Diagnostic IDs | `validation.provision.diagnostics` | SystemMetadata | FeatureInsight | List of diagnostic IDs emitted by provision validation checks (fixed code-defined enum, e.g. `role_assignment_missing`, `role_assignment_conditional`) |
+| Outcome | `validation.provision.outcome` | SystemMetadata | FeatureInsight | Values: `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `canceled_by_no_prompt` (critical warnings require interactive confirmation; command fails), `skipped`, `error` |
+| Diagnostic IDs | `validation.provision.diagnostics` | SystemMetadata | FeatureInsight | List of diagnostic IDs emitted by provision validation checks (fixed code-defined enum, e.g. `role_assignment_missing`, `role_assignment_scope_unverified`, `role_assignment_conditional`) |
 | Rule IDs | `validation.provision.rules` | SystemMetadata | FeatureInsight | List of rule IDs that were executed (fixed code-defined enum, e.g. `role_assignment_permissions`) |
 | Extension rule IDs | `validation.provision.extension_rules` | SystemMetadata | FeatureInsight | List of rule IDs from extension-provided validation checks (fixed code-defined enum) |
 | Check type | `validation.provision.check_type` | SystemMetadata | FeatureInsight | Dispatch site: `arm-provision` (Bicep provider) or `provision` (provider-agnostic). Both share `validation.provision`; on Bicep provisions both fire, so consumers must group/filter by this to avoid double-counting |

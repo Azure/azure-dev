@@ -324,6 +324,14 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, "extension.grpc.legacy_call_count", string(kv.Key))
 		require.Equal(t, int64(2), kv.Value.AsInt64())
 
+		dropped := fields.ExtensionUsageDropped.StringSlice(
+			[]string{"contoso.tools@attribute_value_too_long"},
+		)
+		require.Equal(t, "extension.usage.dropped", string(dropped.Key))
+
+		droppedCount := fields.ExtensionUsageDroppedCount.Int64(2)
+		require.Equal(t, "extension.usage.dropped.count", string(droppedCount.Key))
+
 		category := fields.ExtensionSourceCategory.String("local")
 		require.Equal(t, "extension.source.category", string(category.Key))
 
@@ -356,6 +364,10 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		kvOutcome := fields.ProvisionValidationOutcomeKey.String("passed")
 		require.Equal(t, "validation.provision.outcome", string(kvOutcome.Key))
 		require.Equal(t, "passed", kvOutcome.Value.AsString())
+
+		kvNoPromptOutcome := fields.ProvisionValidationOutcomeKey.String("canceled_by_no_prompt")
+		require.Equal(t, "validation.provision.outcome", string(kvNoPromptOutcome.Key))
+		require.Equal(t, "canceled_by_no_prompt", kvNoPromptOutcome.Value.AsString())
 
 		kvDiagnostics := fields.ProvisionValidationDiagnosticsKey.StringSlice([]string{"BCP081"})
 		require.Equal(t, "validation.provision.diagnostics", string(kvDiagnostics.Key))

@@ -1,4 +1,4 @@
-List recent optimization and evaluation runs.
+List recent optimization runs.
 
 Use --status to filter by job status and --limit to control page size.
 
@@ -9,7 +9,7 @@ Flags
       --endpoint string         : Optimization service endpoint (for local dev)
       --limit int               : Maximum number of results (default 20)
   -p, --project-endpoint string : Foundry project endpoint URL
-      --status string           : Filter by status (pending/running/completed/failed/cancelled)
+      --status string           : Filter by status (queued/in_progress/succeeded/failed/cancelled/skipped)
 
 Global Flags
   -C, --cwd string         : Sets the current working directory
@@ -17,14 +17,14 @@ Global Flags
   -e, --environment string : The name of the environment to use
   -h, --help               : help for list
       --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
-  -o, --output string      : The output format (default "default")
+  -o, --output string      : The output format (supported: json, table) (default "table")
 
 Examples
   List all recent runs
     azd ai agent optimize list
 
-  List only completed runs
-    azd ai agent optimize list --status completed
+  List only successful runs
+    azd ai agent optimize list --status succeeded
 
   Show last 5 runs
     azd ai agent optimize list --limit 5

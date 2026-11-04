@@ -6,10 +6,13 @@ package agent_yaml
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf16"
 
+	"github.com/google/uuid"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -18,6 +21,9 @@ var e164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
 var acsTpeRawIDPattern = regexp.MustCompile(
 	`^28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-` +
 		`[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var telephonyTargetNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+var canonicalUUIDPattern = regexp.MustCompile(
+	`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // ValidateAgentDefinition validates a direct agent definition.
 func ValidateAgentDefinition(templateBytes []byte) error {
@@ -42,6 +48,13 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 
 			var fields map[string]yaml.Node
 			if fieldErr := yaml.Unmarshal(templateBytes, &fields); fieldErr == nil {
+				if setting, exists := fields["enableMemorySnapshot"]; exists {
+					if agentDef.Kind != AgentKindHosted {
+						errors = append(errors, "enableMemorySnapshot is only supported on hosted agents")
+					} else if setting.Tag != "!!bool" {
+						errors = append(errors, "enableMemorySnapshot must be a boolean")
+					}
+				}
 				if modelType, ok := fields["model_type"]; ok &&
 					modelType.Kind == yaml.ScalarNode && modelType.Value == string(VoiceModelTypeHostedAgent) &&
 					!IsVoiceAgentKind(agentDef.Kind) {
@@ -55,6 +68,15 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				if _, ok := fields["conversation_engine"]; ok && !IsVoiceAgentKind(agentDef.Kind) {
 					errors = append(errors,
 						"conversationEngine is only valid for voice agents")
+				}
+				if _, hasToolbox := fields["toolbox"]; hasToolbox && !IsVoiceAgentKind(agentDef.Kind) {
+					if _, hasToolboxes := fields["toolboxes"]; hasToolboxes {
+						errors = append(errors,
+							"cannot specify both 'toolbox' and 'toolboxes'; remove 'toolbox' and use 'toolboxes'")
+					} else {
+						errors = append(errors,
+							"field 'toolbox' is no longer supported; use 'toolboxes'")
+					}
 				}
 			}
 
@@ -153,6 +175,22 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
 					var fields map[string]yaml.Node
 					if fieldErr := yaml.Unmarshal(templateBytes, &fields); fieldErr == nil {
+						for _, field := range []string{
+							"subagent_config", "subagentConfig", "interim_response", "interimResponse",
+						} {
+							if _, ok := fields[field]; ok {
+								errors = append(errors,
+									field+" is not supported by this azd version; remove it or upgrade azd")
+							}
+						}
+						if _, hasInlineAlias := fields["subProtocol"]; hasInlineAlias {
+							errors = append(errors,
+								"subProtocol is not valid in a direct/root-$ref definition; use sub_protocol")
+						}
+						var raw map[string]any
+						if rawErr := yaml.Unmarshal(templateBytes, &raw); rawErr == nil {
+							errors = append(errors, ValidateVoiceRawProperties(raw)...)
+						}
 						if _, hasCodeConfig := fields["code_configuration"]; hasCodeConfig {
 							errors = append(errors,
 								"codeConfiguration is not supported for a prompt-voice agent; "+
@@ -173,30 +211,45 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								"toolbox is not supported for a prompt-voice agent; "+
 									"remove it from the agent definition")
 						}
+						if _, hasToolboxes := fields["toolboxes"]; hasToolboxes {
+							errors = append(errors,
+								"toolboxes is not supported for a prompt-voice agent; "+
+									"remove it from the agent definition")
+						}
 						if _, hasProtocols := fields["protocols"]; hasProtocols {
 							errors = append(errors,
 								"protocols is not supported for a prompt-voice agent; "+
 									"configure protocols on the hosted target")
 						}
-					}
-					var policyEnvelope struct {
-						Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
-					}
-					if err := yaml.Unmarshal(templateBytes, &policyEnvelope); err != nil {
-						errors = append(errors, fmt.Sprintf("policies is not valid: %v", err))
-					} else if len(policyEnvelope.Policies) > 0 {
-						hasModeration := false
-						for _, policy := range policyEnvelope.Policies {
-							hasModeration = hasModeration || policy.InvocationsModeration != nil
-						}
-						if !hasModeration {
-							errors = append(errors,
-								"policies is not supported for prompt-voice agents; "+
-									"move target-owned policies to the hosted target")
+						if _, hasPolicies := fields["policies"]; hasPolicies {
+							if agent.SubProtocol != VoiceSubProtocolLive {
+								errors = append(errors,
+									"policies is not supported for prompt-voice agents; "+
+										"move target-owned policies to the hosted target")
+							} else if rawPolicies, found := raw["policies"]; !found || rawPolicies != nil {
+								var policyEnvelope struct {
+									Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
+								}
+								if err := yaml.Unmarshal(templateBytes, &policyEnvelope); err != nil {
+									errors = append(errors, fmt.Sprintf("policies is not valid: %v", err))
+								} else {
+									agent.Policies = policyEnvelope.Policies
+									if len(policyEnvelope.Policies) == 0 {
+										errors = append(errors,
+											"GPT Live policies must contain exactly one named rai_policy")
+									}
+									errors = append(errors, validateLivePolicies(policyEnvelope.Policies)...)
+								}
+							}
 						}
 					}
 					_, hasLegacyTarget := fields["target_agent"]
-					if isHostedVoiceWrapper(agent) || hasLegacyTarget {
+					if agent.SubProtocol == VoiceSubProtocolLive {
+						errors = append(errors, validateLiveVoiceAgent(agent)...)
+					} else if agent.SubProtocol != "" && agent.SubProtocol != VoiceSubProtocolRealtime {
+						errors = append(errors, fmt.Sprintf(
+							"subProtocol '%s' is not supported; omit it for realtime or use 'live'", agent.SubProtocol))
+					} else if isHostedVoiceWrapper(agent) || hasLegacyTarget {
 						if agent.ModelType == VoiceModelTypeHostedAgent || hasLegacyTarget {
 							errors = append(errors,
 								"modelType hosted_agent and targetAgent are not supported; "+
@@ -222,15 +275,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						if agent.Model != nil {
 							errors = append(errors, "model is not allowed for hosted voice wrappers")
 						}
-						if agent.InputSchema != nil || agent.OutputSchema != nil || agent.Instructions != nil ||
-							len(agent.StructuredInputs) > 0 || len(agent.Tools) > 0 ||
-							agent.ToolChoice != nil || agent.ParallelToolCalls != nil ||
-							agent.MaxOutputTokens != nil ||
-							len(agent.Include) > 0 || len(agent.Handoff) > 0 {
+						if agent.Instructions != nil || len(agent.Tools) > 0 || agent.ToolChoice != nil {
 							errors = append(errors,
-								"inputSchema, outputSchema, instructions, structuredInputs, tools, toolChoice, "+
-									"parallelToolCalls, maxOutputTokens, include, and handoff belong to the "+
-									"target hosted agent")
+								"model, modelType, instructions, tools, and toolChoice belong to the target hosted agent")
 						}
 					} else {
 						if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
@@ -248,7 +295,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								"For hosted voice, use conversationEngine.",
 							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed))
 					}
-					errors = append(errors, validateVoiceAgentAdvancedConfig(agent)...)
+					if agent.SubProtocol != VoiceSubProtocolLive {
+						errors = append(errors, validateVoiceAgentAdvancedConfig(agent)...)
+					}
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to VoiceAgent: %v", err))
 				}
@@ -268,6 +317,493 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 	return nil
 }
 
+// ValidateVoiceRawProperties validates protocol discriminators and sealed GPT
+// Live objects before typed decoding can discard properties it does not model.
+// It intentionally leaves non-Live payloads open for forward compatibility.
+func ValidateVoiceRawProperties(values map[string]any) []string {
+	value, present := rawProperty(values, "subProtocol", "sub_protocol")
+	if present {
+		protocol, ok := value.(string)
+		if !ok || (protocol != string(VoiceSubProtocolRealtime) && protocol != string(VoiceSubProtocolLive)) {
+			return []string{"subProtocol must be exactly 'realtime' or 'live' when specified"}
+		}
+		if protocol != string(VoiceSubProtocolLive) {
+			return nil
+		}
+	} else {
+		return nil
+	}
+
+	var errors []string
+	for _, key := range []string{
+		"input", "client", "reasoning", "reasoningEffort", "reasoning_effort",
+		"soundscape", "subagentConfig", "subagent_config", "interimResponse", "interim_response",
+		"live_config", "tools", "avatar", "outputModalities", "output_modalities", "handoff", "include",
+		"conversationEngine", "conversation_engine", "targetAgent", "target_agent",
+		"voice", "inputSchema", "input_schema", "outputSchema", "output_schema",
+		"toolChoice", "tool_choice", "parallelToolCalls", "parallel_tool_calls",
+		"maxOutputTokens", "max_output_tokens", "telephony",
+	} {
+		if _, found := values[key]; found {
+			errors = append(errors, fmt.Sprintf("%s is not supported for GPT Live", key))
+		}
+	}
+	validateRawObject := func(path string, value any, allowed []string) {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return
+		}
+		for key := range object {
+			if !slices.Contains(allowed, key) {
+				errors = append(errors, fmt.Sprintf("%s.%s is not supported for GPT Live", path, key))
+			}
+		}
+	}
+	if model, found := values["model"]; found {
+		validateRawObject("model", model, []string{"id"})
+	}
+	if store, found := values["store"]; found {
+		if _, ok := store.(bool); !ok {
+			errors = append(errors, "store must be a boolean for GPT Live")
+		}
+	}
+
+	if audioValue, found := values["audio"]; found {
+		audio, ok := audioValue.(map[string]any)
+		if !ok {
+			errors = append(errors, "audio must be an object for GPT Live")
+		} else {
+			validateRawObject("audio", audio, []string{"format", "output"})
+			if format, found := audio["format"]; found {
+				if _, ok := format.(map[string]any); !ok {
+					errors = append(errors, "audio.format must be an object for GPT Live")
+				}
+				validateRawObject("audio.format", format, []string{"type", "rate"})
+			}
+			if outputValue, found := audio["output"]; found {
+				output, ok := outputValue.(map[string]any)
+				if !ok {
+					errors = append(errors, "audio.output must be an object for GPT Live")
+				} else {
+					validateRawObject("audio.output", output, []string{"voice"})
+					if voice, found := output["voice"]; found {
+						if _, stringOK := voice.(string); !stringOK {
+							if _, objectOK := voice.(map[string]any); !objectOK {
+								errors = append(errors, "audio.output.voice must be a voice name or custom voice object")
+							}
+						}
+						validateRawObject("audio.output.voice", voice, []string{"id"})
+					}
+				}
+			}
+		}
+	}
+	if greeting, found := values["greeting"]; found {
+		object, ok := greeting.(map[string]any)
+		if !ok {
+			errors = append(errors, "greeting must be an object for GPT Live")
+		} else {
+			validateRawObject("greeting", object, []string{"type", "text"})
+			typ, typeOK := object["type"].(string)
+			text, textOK := object["text"].(string)
+			if !typeOK || typ != "template" || !textOK || strings.TrimSpace(text) == "" {
+				errors = append(errors, "GPT Live greeting requires type 'template' and nonblank text")
+			}
+		}
+	}
+	inputsValue, inputsFound := rawProperty(values, "structuredInputs", "structured_inputs")
+	if inputs, ok := inputsValue.(map[string]any); inputsFound && !ok {
+		errors = append(errors, "structuredInputs must be an object for GPT Live")
+	} else if ok {
+		for name, input := range inputs {
+			if _, ok := input.(map[string]any); !ok {
+				errors = append(errors, fmt.Sprintf("structuredInputs.%s must be an object for GPT Live", name))
+				continue
+			}
+			inputObject := input.(map[string]any)
+			validateRawObject("structuredInputs."+name, inputObject,
+				[]string{"description", "defaultValue", "default_value", "schema", "required"})
+			if description, found := inputObject["description"]; found {
+				if _, ok := description.(string); !ok {
+					errors = append(errors, fmt.Sprintf("structuredInputs.%s.description must be a string for GPT Live", name))
+				}
+			}
+			if schema, found := inputObject["schema"]; found {
+				if _, ok := schema.(map[string]any); !ok {
+					errors = append(errors, fmt.Sprintf("structuredInputs.%s.schema must be an object for GPT Live", name))
+				}
+			}
+			if required, found := inputObject["required"]; found {
+				if _, ok := required.(bool); !ok {
+					errors = append(errors, fmt.Sprintf("structuredInputs.%s.required must be a boolean for GPT Live", name))
+				}
+			}
+		}
+	}
+	if delegationValue, found := values["delegation"]; found {
+		delegation, ok := delegationValue.(map[string]any)
+		if !ok {
+			errors = append(errors, "delegation must be an object for GPT Live")
+		} else {
+			validateRawObject("delegation", delegation,
+				[]string{"type", "responses", "agentName", "agent_name", "agentVersion", "agent_version"})
+			typ, typeOK := delegation["type"].(string)
+			if !typeOK || !slices.Contains([]string{"client", "responses", "foundry_managed_agent"}, typ) {
+				errors = append(errors, "delegation.type must be exactly client, responses, or foundry_managed_agent")
+			}
+			for _, key := range []string{"agentName", "agent_name", "agentVersion", "agent_version"} {
+				if _, found := delegation[key]; found && typ != "foundry_managed_agent" {
+					errors = append(errors, fmt.Sprintf("delegation.%s is supported only for foundry_managed_agent", key))
+				}
+			}
+			if _, found := delegation["responses"]; found && typ != "responses" {
+				errors = append(errors, "delegation.responses is supported only for responses delegation")
+			}
+			if version, found := rawProperty(delegation, "agentVersion", "agent_version"); typ == "foundry_managed_agent" && found {
+				value, ok := version.(string)
+				if !ok || !regexp.MustCompile(`^[1-9][0-9]{0,19}$`).MatchString(value) {
+					errors = append(errors, "delegation.agentVersion must be a positive numeric string when provided")
+				}
+			}
+			if responses, ok := delegation["responses"].(map[string]any); ok {
+				validateRawObject("delegation.responses", responses, []string{
+					"model", "instructions", "maxOutputTokens", "max_output_tokens",
+					"parallelToolCalls", "parallel_tool_calls", "serviceTier", "service_tier",
+					"reasoning", "text", "toolChoice", "tool_choice", "tools",
+				})
+				for _, names := range [][]string{
+					{"model"}, {"instructions"}, {"maxOutputTokens", "max_output_tokens"},
+					{"parallelToolCalls", "parallel_tool_calls"}, {"serviceTier", "service_tier"},
+					{"reasoning"}, {"text"}, {"toolChoice", "tool_choice"}, {"tools"},
+				} {
+					if value, found := rawProperty(responses, names...); found && value == nil {
+						errors = append(errors, fmt.Sprintf(
+							"delegation.responses.%s must not be null for GPT Live", names[0]))
+					}
+				}
+				if reasoning, found := responses["reasoning"]; found {
+					validateRawObject("delegation.responses.reasoning", reasoning, []string{"effort", "summary"})
+					if object, ok := reasoning.(map[string]any); ok {
+						for _, key := range []string{"effort", "summary"} {
+							if value, found := object[key]; found && value == nil {
+								errors = append(errors, fmt.Sprintf(
+									"delegation.responses.reasoning.%s must not be null for GPT Live", key))
+							}
+						}
+					}
+				}
+				if text, found := responses["text"]; found {
+					validateRawObject("delegation.responses.text", text, []string{"verbosity"})
+					if object, ok := text.(map[string]any); ok {
+						if value, found := object["verbosity"]; found && value == nil {
+							errors = append(errors,
+								"delegation.responses.text.verbosity must not be null for GPT Live")
+						}
+					}
+				}
+				choice, found := rawProperty(responses, "toolChoice", "tool_choice")
+				if found && choice != nil {
+					if _, stringOK := choice.(string); !stringOK {
+						if _, objectOK := choice.(map[string]any); !objectOK {
+							errors = append(errors,
+								"delegation.responses.toolChoice must be a string or object for GPT Live")
+						}
+					}
+					validateRawObject("delegation.responses.toolChoice", choice, []string{"type", "name", "serverLabel", "server_label"})
+				}
+				if toolsValue, found := responses["tools"]; found && toolsValue != nil {
+					tools, ok := toolsValue.([]any)
+					if !ok {
+						errors = append(errors, "delegation.responses.tools must be an array for GPT Live")
+					} else {
+						for i, tool := range tools {
+							validateRawObject(fmt.Sprintf("delegation.responses.tools[%d]", i), tool,
+								[]string{"type", "name", "description", "parameters", "strict"})
+						}
+					}
+				}
+			}
+		}
+	}
+	if policiesValue, found := values["policies"]; found {
+		policies, ok := policiesValue.([]any)
+		if !ok {
+			errors = append(errors, "policies must be an array for GPT Live")
+		} else {
+			for i, policy := range policies {
+				validateRawObject(fmt.Sprintf("policies[%d]", i), policy,
+					[]string{"type", "raiPolicyName", "rai_policy_name", "invocationsModeration", "invocations_moderation"})
+				if object, ok := policy.(map[string]any); ok {
+					if _, found := rawProperty(object, "invocationsModeration", "invocations_moderation"); found {
+						errors = append(errors, fmt.Sprintf(
+							"policies[%d].invocationsModeration is not supported for GPT Live", i))
+					}
+				}
+			}
+		}
+	}
+	return errors
+}
+
+func rawProperty(values map[string]any, names ...string) (any, bool) {
+	for _, name := range names {
+		if value, found := values[name]; found {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
+func validateLiveVoiceAgent(agent VoiceAgent) []string {
+	var errors []string
+	if agent.Kind != AgentKindVoice {
+		errors = append(errors, "GPT Live requires kind 'voice'")
+	}
+	if agent.ModelType != VoiceModelTypeSelfDeployed {
+		errors = append(errors, "GPT Live requires modelType 'self_deployed'")
+	}
+	if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
+		errors = append(errors, "model.id is required for a GPT Live voice agent")
+	}
+	if agent.Voice != nil || agent.InputSchema != nil || agent.OutputSchema != nil ||
+		len(agent.OutputModalities) > 0 || len(agent.Tools) > 0 || len(agent.Avatar) > 0 ||
+		len(agent.Handoff) > 0 || agent.ToolChoice != nil || agent.ParallelToolCalls != nil ||
+		agent.MaxOutputTokens != nil || len(agent.Include) > 0 || agent.Telephony != nil {
+		errors = append(errors,
+			"voice, inputSchema, outputSchema, outputModalities, tools, avatar, handoff, toolChoice, "+
+				"parallelToolCalls, maxOutputTokens, include, and telephony are not supported for GPT Live")
+	}
+	if agent.Audio != nil {
+		if agent.Audio.Input != nil {
+			errors = append(errors, "audio.input is not supported for GPT Live")
+		}
+		if agent.Audio.Format != nil {
+			errors = append(errors, validateLiveAudioFormat(agent.Audio.Format)...)
+		}
+		if output := agent.Audio.Output; output != nil {
+			if output.Format != nil || output.Speed != nil {
+				errors = append(errors, "audio.output.format and audio.output.speed are not supported for GPT Live")
+			}
+			if output.Voice != nil {
+				errors = append(errors, validateLiveVoice(output.Voice)...)
+			}
+		}
+	}
+	if len(agent.Greeting) > 0 {
+		typ, typeOK := agent.Greeting["type"].(string)
+		text, textOK := agent.Greeting["text"].(string)
+		if !typeOK || typ != "template" || !textOK || strings.TrimSpace(text) == "" {
+			errors = append(errors, "GPT Live greeting requires type 'template' and nonblank text")
+		}
+		for key := range agent.Greeting {
+			if key != "type" && key != "text" {
+				errors = append(errors, fmt.Sprintf("greeting.%s is not supported for GPT Live", key))
+			}
+		}
+	}
+	errors = append(errors, validateLiveDelegation(agent.Delegation)...)
+	errors = append(errors, validateLivePolicies(agent.Policies)...)
+	return errors
+}
+
+func validateLivePolicies(policies []Policy) []string {
+	var errors []string
+	if len(policies) > 1 {
+		errors = append(errors, "GPT Live supports at most one RAI policy")
+	}
+	for i, policy := range policies {
+		if policy.Type != PolicyTypeRai || strings.TrimSpace(policy.RaiPolicyName) == "" {
+			errors = append(errors, fmt.Sprintf("policies[%d] must be a named rai_policy", i))
+			continue
+		}
+		if policy.InvocationsModeration != nil {
+			errors = append(errors, fmt.Sprintf("policies[%d].invocationsModeration is not supported for GPT Live", i))
+		}
+	}
+	return errors
+}
+
+func validateLiveAudioFormat(format *VoiceAudioFormat) []string {
+	typ := strings.TrimSpace(format.Type)
+	if typ == "" {
+		return []string{"audio.format.type is required for GPT Live"}
+	}
+	rate := 0
+	if format.Rate != nil {
+		rate = *format.Rate
+	}
+	switch typ {
+	case "audio/pcm":
+		if rate != 16000 && rate != 24000 {
+			return []string{"audio.format.rate must be 16000 or 24000 for audio/pcm"}
+		}
+	case "audio/pcmu", "audio/pcma":
+		if rate != 8000 {
+			return []string{fmt.Sprintf("audio.format.rate must be 8000 for %s", typ)}
+		}
+	default:
+		return []string{"audio.format.type must be audio/pcm, audio/pcmu, or audio/pcma for GPT Live"}
+	}
+	return nil
+}
+
+func validateLiveVoice(value any) []string {
+	voice, ok := value.(*VoiceConfig)
+	if !ok || voice == nil {
+		return []string{"audio.output.voice must be a voice name or custom voice object"}
+	}
+	if voice.LiveName != "" {
+		if strings.TrimSpace(voice.LiveName) == "" {
+			return []string{"audio.output.voice must not be blank"}
+		}
+		return nil
+	}
+	if strings.TrimSpace(voice.ID) == "" {
+		return []string{"audio.output.voice custom object requires a nonblank id"}
+	}
+	if voice.Type != "" || voice.Name != "" || voice.Style != nil || voice.Pitch != nil ||
+		voice.Rate != nil || voice.Locale != nil || voice.Volume != nil {
+		return []string{"audio.output.voice custom object supports only id"}
+	}
+	if len(voice.ID) > 128 {
+		return []string{"audio.output.voice.id must be at most 128 characters"}
+	}
+	return nil
+}
+
+func validateLiveDelegation(delegation *LiveVoiceDelegation) []string {
+	if delegation == nil {
+		return nil
+	}
+	switch delegation.Type {
+	case "client":
+		if delegation.Responses != nil || delegation.AgentName != "" || delegation.AgentVersion != "" {
+			return []string{"client delegation supports only type"}
+		}
+	case "responses":
+		if delegation.Responses == nil || strings.TrimSpace(delegation.Responses.Model) == "" {
+			return []string{"responses delegation requires responses.model"}
+		}
+		if delegation.AgentName != "" || delegation.AgentVersion != "" {
+			return []string{"responses delegation cannot include agentName or agentVersion"}
+		}
+		return validateLiveResponses(delegation.Responses)
+	case "foundry_managed_agent":
+		if delegation.Responses != nil || strings.TrimSpace(delegation.AgentName) == "" {
+			return []string{"foundry_managed_agent delegation requires agentName and cannot include responses"}
+		}
+		if !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$`).MatchString(delegation.AgentName) {
+			return []string{"delegation.agentName is not a valid same-project agent name"}
+		}
+		if delegation.AgentVersion != "" && !regexp.MustCompile(`^[1-9][0-9]{0,19}$`).MatchString(delegation.AgentVersion) {
+			return []string{"delegation.agentVersion must be a positive numeric string"}
+		}
+	default:
+		return []string{"delegation.type must be client, responses, or foundry_managed_agent"}
+	}
+	return nil
+}
+
+func validateLiveResponses(responses *LiveResponsesDelegation) []string {
+	var errors []string
+	if responses.MaxOutputTokens != nil && *responses.MaxOutputTokens < 1 {
+		errors = append(errors, "delegation.responses.maxOutputTokens must be positive")
+	}
+	if responses.ServiceTier != nil && !slices.Contains(
+		[]string{"auto", "default", "fast_tier_temp_pilot", "flex", "priority", "ultrafast"}, *responses.ServiceTier) {
+		errors = append(errors, "delegation.responses.serviceTier is not supported")
+	}
+	if responses.Reasoning != nil {
+		if responses.Reasoning.Effort != nil && !slices.Contains(
+			[]string{"none", "minimal", "low", "medium", "high", "xhigh"}, *responses.Reasoning.Effort) {
+			errors = append(errors, "delegation.responses.reasoning.effort is not supported")
+		}
+		if responses.Reasoning.Summary != nil && !slices.Contains(
+			[]string{"concise", "detailed", "auto"}, *responses.Reasoning.Summary) {
+			errors = append(errors, "delegation.responses.reasoning.summary is not supported")
+		}
+	}
+	if responses.Text != nil && responses.Text.Verbosity != nil && !slices.Contains(
+		[]string{"low", "medium", "high"}, *responses.Text.Verbosity) {
+		errors = append(errors, "delegation.responses.text.verbosity is not supported")
+	}
+	errors = append(errors, validateLiveToolChoice(responses.ToolChoice)...)
+	for i, tool := range responses.Tools {
+		typ, _ := tool["type"].(string)
+		switch typ {
+		case "web_search":
+			if len(tool) != 1 {
+				errors = append(errors, fmt.Sprintf("delegation.responses.tools[%d] web_search supports only type", i))
+			}
+		case "function":
+			name, ok := tool["name"].(string)
+			if !ok || strings.TrimSpace(name) == "" {
+				errors = append(errors, fmt.Sprintf("delegation.responses.tools[%d] function requires name", i))
+			}
+			for key := range tool {
+				if !slices.Contains([]string{"type", "name", "description", "parameters", "strict"}, key) {
+					errors = append(errors, fmt.Sprintf("delegation.responses.tools[%d].%s is not supported", i, key))
+				}
+			}
+			if value, found := tool["description"]; found {
+				if _, ok := value.(string); !ok {
+					errors = append(errors, fmt.Sprintf("delegation.responses.tools[%d].description must be a string", i))
+				}
+			}
+			if value, found := tool["parameters"]; found && value != nil {
+				if _, ok := value.(map[string]any); !ok {
+					errors = append(errors, fmt.Sprintf("delegation.responses.tools[%d].parameters must be an object", i))
+				}
+			}
+			if value, found := tool["strict"]; found && value != nil {
+				if _, ok := value.(bool); !ok {
+					errors = append(errors, fmt.Sprintf("delegation.responses.tools[%d].strict must be a boolean", i))
+				}
+			}
+		default:
+			errors = append(errors, fmt.Sprintf(
+				"delegation.responses.tools[%d].type must be function or web_search", i))
+		}
+	}
+	return errors
+}
+
+func validateLiveToolChoice(choice any) []string {
+	if choice == nil {
+		return nil
+	}
+	if text, ok := choice.(string); ok {
+		if slices.Contains([]string{"auto", "none", "required"}, text) {
+			return nil
+		}
+		return []string{"delegation.responses.toolChoice must be auto, none, required, or a named tool choice"}
+	}
+	object, ok := choice.(map[string]any)
+	if !ok {
+		return []string{"delegation.responses.toolChoice must be a string or object"}
+	}
+	typ, _ := object["type"].(string)
+	switch typ {
+	case "function":
+		name, ok := object["name"].(string)
+		if !ok || strings.TrimSpace(name) == "" || len(object) != 2 {
+			return []string{"function toolChoice requires only type and nonblank name"}
+		}
+	case "mcp":
+		name, nameOK := object["name"].(string)
+		label, labelOK := object["serverLabel"].(string)
+		if !labelOK {
+			label, labelOK = object["server_label"].(string)
+		}
+		if !nameOK || !labelOK || strings.TrimSpace(name) == "" || strings.TrimSpace(label) == "" || len(object) != 3 {
+			return []string{"mcp toolChoice requires only type, name, and serverLabel"}
+		}
+	default:
+		return []string{"named toolChoice type must be function or mcp"}
+	}
+	return nil
+}
+
 func isHostedVoiceWrapper(agent VoiceAgent) bool {
 	return agent.ModelType == VoiceModelTypeHostedAgent || agent.TargetAgent != nil ||
 		(agent.ConversationEngine != nil &&
@@ -276,6 +812,16 @@ func isHostedVoiceWrapper(agent VoiceAgent) bool {
 
 func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 	var errors []string
+	if agent.InputSchema != nil || agent.OutputSchema != nil {
+		errors = append(errors,
+			"inputSchema and outputSchema are not properties of the GA voice agent definition; remove them")
+	}
+	if agent.Audio != nil && agent.Audio.Format != nil {
+		errors = append(errors, "audio.format is only supported for GPT Live; realtime voice uses audio.input.format and audio.output.format")
+	}
+	if agent.Delegation != nil {
+		errors = append(errors, "delegation is only supported for GPT Live")
+	}
 	if agent.OutputModalities != nil && len(agent.OutputModalities) == 0 {
 		errors = append(errors, "outputModalities must not be empty when specified")
 	}
@@ -284,10 +830,9 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 			errors = append(errors, fmt.Sprintf("outputModalities[%d] must not be blank", i))
 		}
 	}
-	if agent.ParallelToolCalls != nil {
+	if len(agent.Handoff) > 0 {
 		errors = append(errors,
-			"parallelToolCalls is not currently supported by the prompt voice runtime; "+
-				"remove it from the agent definition")
+			"handoff is not supported by the GA voice agent API; remove it and use telephony transferTargets where applicable")
 	}
 	if err := validateVoiceMaxOutputTokens(agent.MaxOutputTokens); err != nil {
 		errors = append(errors, err.Error())
@@ -326,12 +871,23 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 	}
 	if agent.Audio.Output != nil {
 		errors = append(errors, validateVoiceAudioFormat("audio.output.format", agent.Audio.Output.Format)...)
-		if voice := agent.Audio.Output.Voice; voice != nil {
-			if strings.TrimSpace(voice.Type) == "" {
-				errors = append(errors, "audio.output.voice.type must not be blank")
+		if value := agent.Audio.Output.Voice; value != nil {
+			voice, err := realtimeVoiceConfig(value)
+			if err != nil {
+				errors = append(errors, err.Error())
+				voice = nil
 			}
-			if strings.TrimSpace(voice.Name) == "" {
-				errors = append(errors, "audio.output.voice.name must not be blank")
+			if voice != nil {
+				if strings.TrimSpace(voice.Type) == "" {
+					errors = append(errors, "audio.output.voice.type must not be blank")
+				}
+				if strings.TrimSpace(voice.Name) == "" {
+					errors = append(errors, "audio.output.voice.name must not be blank")
+				}
+			}
+			if voice.Rate != nil && strings.TrimSpace(*voice.Rate) != "" {
+				errors = append(errors,
+					"audio.output.voice.rate is not supported by the GA voice agent API; use audio.output.speed")
 			}
 		}
 		if speed := agent.Audio.Output.Speed; speed != nil && (!isFinite(*speed) || *speed < 0.25 || *speed > 1.5) {
@@ -380,12 +936,8 @@ func validateVoiceTelephony(telephony *VoiceTelephony) []string {
 			if identifier == "" {
 				continue
 			}
-			if after, ok := strings.CutPrefix(identifier, "4:"); ok {
-				if !e164Pattern.MatchString(after) {
-					errors = append(errors, path+".identifier must be 4:+<E.164> for acs-purchased numbers")
-				}
-			} else if !acsTpeRawIDPattern.MatchString(identifier) {
-				errors = append(errors, path+".identifier must be 28:orgid:<guid> or 4:+<E.164> for acs")
+			if !acsTpeRawIDPattern.MatchString(identifier) {
+				errors = append(errors, path+".identifier must be 28:orgid:<guid> for acs")
 			}
 		case "twilio":
 			if identifier != "" && !e164Pattern.MatchString(identifier) {
@@ -395,8 +947,139 @@ func validateVoiceTelephony(telephony *VoiceTelephony) []string {
 		default:
 			errors = append(errors, path+".provider must be acs or twilio")
 		}
+		errors = append(errors, validateVoiceTransferTargets(path, binding.TransferTargets)...)
 	}
 	return errors
+}
+
+// ValidateVoiceTelephony validates authored telephony configuration before it is converted or deployed.
+func ValidateVoiceTelephony(telephony *VoiceTelephony) error {
+	errors := validateVoiceTelephony(telephony)
+	if len(errors) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s", strings.Join(errors, "; "))
+}
+
+func validateVoiceTransferTargets(bindingPath string, targets []map[string]any) []string {
+	if targets == nil {
+		return nil
+	}
+	var errors []string
+	names := map[string]struct{}{}
+	for i, target := range targets {
+		path := fmt.Sprintf("%s.transferTargets[%d]", bindingPath, i)
+		for key := range target {
+			if key != "name" && key != "description" && key != "destination" {
+				errors = append(errors, path+" contains unsupported field "+fmt.Sprintf("%q", key))
+			}
+		}
+		name, nameOK := target["name"].(string)
+		description, descriptionOK := target["description"].(string)
+		if !nameOK || !telephonyTargetNamePattern.MatchString(name) {
+			errors = append(errors, path+".name must be 1-64 ASCII letters, digits, underscores, or hyphens and start with a letter or digit")
+		} else if _, duplicate := names[strings.ToLower(name)]; duplicate {
+			errors = append(errors, path+".name duplicates transfer target "+name)
+		} else {
+			names[strings.ToLower(name)] = struct{}{}
+		}
+		if !descriptionOK || strings.TrimSpace(description) == "" {
+			errors = append(errors, path+".description is required")
+		} else if len(utf16.Encode([]rune(description))) > 1024 {
+			errors = append(errors, path+".description is too long")
+		}
+		destination, ok := target["destination"].(map[string]any)
+		if !ok {
+			errors = append(errors, path+".destination must be an object")
+			continue
+		}
+		for key := range destination {
+			if key != "kind" && key != "value" {
+				errors = append(errors, path+".destination contains unsupported field "+fmt.Sprintf("%q", key))
+			}
+		}
+		kind, kindOK := destination["kind"].(string)
+		value, valueOK := destination["value"].(string)
+		if !kindOK || !valueOK || value == "" {
+			errors = append(errors, path+".destination.kind and value are required strings")
+			continue
+		}
+		if len(utf16.Encode([]rune(value))) > 2048 {
+			errors = append(errors, path+".destination.value is too long")
+			continue
+		}
+		switch kind {
+		case "pstn":
+			if !e164Pattern.MatchString(value) {
+				errors = append(errors, path+".destination.value must be +<E.164> for pstn")
+			}
+		case "teams":
+			if !isTeamsTransferTarget(value) {
+				errors = append(errors, path+".destination.value must be a canonical object GUID or 28:orgid:<guid> for teams")
+			}
+		case "sip":
+			if !isAuthoredSIPUri(value) {
+				errors = append(errors, path+".destination.value must be a sip or sips URI with user@host")
+			}
+		default:
+			errors = append(errors, path+".destination.kind must be pstn, teams, or sip")
+		}
+	}
+	return errors
+}
+
+func isTeamsTransferTarget(value string) bool {
+	const prefix = "28:orgid:"
+	if len(value) >= len(prefix) && strings.EqualFold(value[:len(prefix)], prefix) {
+		value = value[len(prefix):]
+	}
+	if !canonicalUUIDPattern.MatchString(value) {
+		return false
+	}
+	_, err := uuid.Parse(value)
+	return err == nil
+}
+
+func isAuthoredSIPUri(value string) bool {
+	if strings.ContainsAny(value, " \t\r\n") || strings.Contains(value, "#") || hasMalformedPercentEscape(value) {
+		return false
+	}
+	parsed, err := url.ParseRequestURI(value)
+	if err != nil || parsed == nil {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "sip" && scheme != "sips" {
+		return false
+	}
+	address := value[strings.Index(value, ":")+1:]
+	if suffix := strings.IndexAny(address, ";?"); suffix >= 0 {
+		address = address[:suffix]
+	}
+	at := strings.LastIndex(address, "@")
+	if strings.Count(address, "@") != 1 || at <= 0 || at == len(address)-1 {
+		return false
+	}
+	hostURI, err := url.Parse("https://" + address[at+1:])
+	return err == nil && hostURI.Hostname() != "" && hostURI.User == nil &&
+		(hostURI.Path == "" || hostURI.Path == "/")
+}
+
+func hasMalformedPercentEscape(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] != '%' {
+			continue
+		}
+		if i+2 >= len(value) || !isHex(value[i+1]) || !isHex(value[i+2]) {
+			return true
+		}
+		i += 2
+	}
+	return false
+}
+
+func isHex(value byte) bool {
+	return value >= '0' && value <= '9' || value >= 'a' && value <= 'f' || value >= 'A' && value <= 'F'
 }
 
 func telephonyValidationProvider(provider string) string {
@@ -490,8 +1173,15 @@ func validateVoiceAudioFormat(path string, format *VoiceAudioFormat) []string {
 	} else if formatType != "audio/pcm" && formatType != "audio/pcmu" && formatType != "audio/pcma" {
 		errors = append(errors, path+".type must be 'audio/pcm', 'audio/pcmu', or 'audio/pcma'")
 	}
-	if format.Rate != nil && *format.Rate <= 0 {
-		errors = append(errors, path+".rate must be greater than 0")
+	if format.Rate != nil {
+		switch formatType {
+		case "audio/pcm":
+			if *format.Rate != 24000 {
+				errors = append(errors, path+".rate must be 24000 for audio/pcm")
+			}
+		case "audio/pcmu", "audio/pcma":
+			errors = append(errors, path+".rate must be omitted for G.711 audio/pcmu and audio/pcma")
+		}
 	}
 	return errors
 }

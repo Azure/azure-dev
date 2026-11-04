@@ -5,13 +5,15 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"slices"
 	"strings"
 
 	"azure.ai.toolboxes/internal/definition"
 	"azure.ai.toolboxes/internal/exterrors"
-	"azure.ai.toolboxes/internal/foundry/projectctx"
 	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -37,6 +39,13 @@ The Foundry service requires the initial version to ship with at least one
 tool entry, so 'create' takes its inputs from a JSON or YAML file via
 --from-file.
 
+For a verified matching active-environment project, create checks ARM roles
+before its first Foundry request and may assign project-scoped Foundry User.
+This can add the built-in role even when custom-role access already works.
+Set AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true to opt out. Provisioning, toolbox
+reuse, local authoring, reads, and other write commands do not assign roles.
+Custom-subdomain endpoints with an unverified ARM binding use existing access.
+
 ` + fileShapeBlurb(true) + `
 
 On success the toolbox's runtime MCP endpoint is written to the active azd
@@ -51,9 +60,16 @@ non-alphanumeric character runs replaced by underscores.`,
 `,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runToolboxCreate(
-				cmd.Context(), args[0], *flags, readToolboxFlags(cmd, extCtx),
-				defaultConnectionResolver{},
+			parent := readToolboxFlags(cmd, extCtx)
+			if cmd.Flags().Changed("project-endpoint") && strings.TrimSpace(parent.projectEndpoint) == "" {
+				return exterrors.Validation(exterrors.CodeInvalidParameter,
+					"--project-endpoint must not be empty", "omit --project-endpoint to use the configured endpoint")
+			}
+			return runToolboxCreateReporting(
+				cmd.Context(), args[0], *flags, parent,
+				defaultConnectionResolver{runner: azdConnectionDescriptorRunner{stderr: cmd.ErrOrStderr()}},
+				cmd.OutOrStdout(),
+				func(message string) { fmt.Fprintln(cmd.ErrOrStderr(), message) },
 			)
 		},
 	}
@@ -74,25 +90,80 @@ func runToolboxCreate(
 	ctx context.Context, name string, verb toolboxCreateFlags,
 	parent toolboxFlags, resolver connectionResolver,
 ) error {
-	if err := validateToolboxName(name); err != nil {
-		return err
-	}
-	if err := validateOutputFormat(parent.output); err != nil {
+	return runToolboxCreateReporting(ctx, name, verb, parent, resolver, os.Stdout, nil)
+}
+
+func runToolboxCreateReporting(
+	ctx context.Context, name string, verb toolboxCreateFlags,
+	parent toolboxFlags, resolver connectionResolver, out io.Writer, report func(string),
+) error {
+	input, err := loadToolboxCreateInput(name, verb, parent)
+	if err != nil {
 		return err
 	}
 
-	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: parent.projectEndpoint})
+	resolved, err := resolveToolboxWriteEndpoint(ctx, parent.projectEndpoint)
 	if err != nil {
 		return err
 	}
 	logResolvedEndpoint("toolbox create", resolved)
 
-	client, err := newToolboxClient(resolved.Endpoint)
+	var access *toolboxAccess
+	host, hostErr := azdext.NewAzdClient()
+	if cancelErr := toolboxAccessCancellation(ctx, hostErr); cancelErr != nil {
+		return cancelErr
+	}
+	if hostErr == nil {
+		defer host.Close()
+		access = newToolboxAccess(host)
+	}
+	scope, err := access.resolve(ctx, resolved.Endpoint)
 	if err != nil {
 		return err
 	}
+	tenantID := ""
+	if scope != nil {
+		tenantID = scope.tenantID
+	}
+	client, err := newToolboxClientForTenant(resolved.Endpoint, tenantID)
+	if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
+		return cancelErr
+	}
+	if err != nil {
+		return exterrors.Auth(exterrors.CodeCredentialCreationFailed,
+			"could not create the Foundry credential", "run 'azd auth login' and retry")
+	}
+	return createToolboxFromInput(ctx, client, resolver, resolved.Endpoint, name, input, parent, access, scope, out, report)
+}
 
-	return runToolboxCreateWith(ctx, client, resolver, resolved.Endpoint, name, verb, parent)
+func loadToolboxCreateInput(
+	name string, verb toolboxCreateFlags, parent toolboxFlags,
+) (*definition.Definition, error) {
+	if err := validateToolboxName(name); err != nil {
+		return nil, err
+	}
+	if err := validateOutputFormat(parent.output); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(verb.fromFile) == "" {
+		return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
+			"--from-file must not be empty", "provide a JSON or YAML toolbox definition with --from-file")
+	}
+	input, err := loadLocalToolboxDefinition(verb.fromFile)
+	if err != nil {
+		return nil, err
+	}
+	if input.Name != "" && input.Name != name {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidToolboxName,
+			fmt.Sprintf("toolbox name %q in %q does not match command name %q", input.Name, verb.fromFile, name),
+			"use the same toolbox name in the definition and command, or remove 'name' from the definition",
+		)
+	}
+	if err := validateLocalToolboxDefinition(input); err != nil {
+		return nil, err
+	}
+	return input, nil
 }
 
 // runToolboxCreateWith is the testable core. It accepts injected client and
@@ -105,30 +176,28 @@ func runToolboxCreateWith(
 	verb toolboxCreateFlags,
 	parent toolboxFlags,
 ) error {
-	if _, err := client.GetToolbox(ctx, name); err == nil {
+	input, err := loadToolboxCreateInput(name, verb, parent)
+	if err != nil {
+		return err
+	}
+	return createToolboxFromInput(ctx, client, resolver, endpoint, name, input, parent, nil, nil, os.Stdout, nil)
+}
+
+func createToolboxFromInput(
+	ctx context.Context, client toolboxClient, resolver connectionResolver, endpoint, name string,
+	input *definition.Definition, parent toolboxFlags, access *toolboxAccess, scope *toolboxAccessScope,
+	out io.Writer, report func(string),
+) error {
+	existing, err := access.ensure(ctx, scope, client, name, toolboxReadRequired, report)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidToolboxName,
 			fmt.Sprintf("toolbox %q already exists", name),
 			"use 'connection add/remove' or 'skill add/remove' to create a new version, "+
 				"then 'azd ai toolbox publish <name> <version>' to promote it",
-		)
-	} else if !isAzureNotFound(err) {
-		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)
-	}
-
-	input := &definition.Definition{}
-	if strings.TrimSpace(verb.fromFile) != "" {
-		loaded, err := loadLocalToolboxDefinition(verb.fromFile)
-		if err != nil {
-			return err
-		}
-		input = loaded
-	}
-	if input.Name != "" && input.Name != name {
-		return exterrors.Validation(
-			exterrors.CodeInvalidToolboxName,
-			fmt.Sprintf("toolbox name %q in %q does not match command name %q", input.Name, verb.fromFile, name),
-			"use the same toolbox name in the definition and command, or remove 'name' from the definition",
 		)
 	}
 	req, err := buildToolboxVersionRequest(ctx, resolver, endpoint, input)
@@ -137,7 +206,11 @@ func runToolboxCreateWith(
 	}
 	created, err := client.CreateToolboxVersion(ctx, name, req)
 	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
+		return toolboxWriteError(ctx, err, exterrors.OpCreateToolboxVersion, scope, "", "")
+	}
+
+	if cancelErr := toolboxAccessCancellation(ctx, nil); cancelErr != nil {
+		return cancelErr
 	}
 
 	mcpURL := buildToolboxMcpURL(endpoint, name, created.Version)
@@ -147,7 +220,82 @@ func runToolboxCreateWith(
 		return err
 	}
 
-	return emitCreateResult(name, created.Version, parent.output, mcpURL)
+	return emitCreateResult(name, created.Version, parent.output, mcpURL, out)
+}
+
+// validateLocalToolboxDefinition checks local invariants before credentials or grants.
+func validateLocalToolboxDefinition(input *definition.Definition) error {
+	raw, err := validateRawToolEntries(input.Tools)
+	if err != nil {
+		return err
+	}
+	names := slices.Clone(raw)
+	connections := make(map[string]bool)
+	for _, spec := range input.Connections {
+		name := strings.TrimSpace(spec.Name)
+		if name == "" {
+			return exterrors.Validation(exterrors.CodeInvalidParameter,
+				"connection name must not be empty", "set connections[].name in the input file")
+		}
+		if err := validateToolName(name); err != nil {
+			return err
+		}
+		if connections[name] {
+			return exterrors.Validation(exterrors.CodeDuplicateConnection,
+				fmt.Sprintf("connection %q appears more than once in the input", name), "remove duplicate connection entries")
+		}
+		if strings.TrimSpace(spec.Index) != "" && strings.TrimSpace(spec.InstanceName) != "" {
+			return exterrors.Validation(exterrors.CodeConflictingArguments,
+				"connections[].index conflicts with connections[].instanceName",
+				"use index for CognitiveSearch or instanceName for GroundingWithCustomSearch, not both")
+		}
+		connections[name] = true
+		names = append(names, map[string]any{"name": name})
+	}
+	for _, tool := range raw {
+		if value, present := tool["connection"]; present {
+			name, ok := value.(string)
+			if !ok || strings.TrimSpace(name) == "" {
+				return exterrors.Validation(exterrors.CodeInvalidParameter,
+					"tools[].connection must be a non-empty name", "set a connection name or omit the connection property")
+			}
+			if _, present := tool["project_connection_id"]; present {
+				return exterrors.Validation(exterrors.CodeConflictingArguments,
+					"tools[].connection conflicts with tools[].project_connection_id",
+					"specify the connection name or its project_connection_id, not both")
+			}
+			name = strings.TrimSpace(name)
+			if connections[name] {
+				return exterrors.Validation(exterrors.CodeDuplicateConnection,
+					fmt.Sprintf("connection %q appears more than once in the input", name), "remove duplicate connection entries")
+			}
+			connections[name] = true
+		}
+	}
+	skills := make([]map[string]any, 0, len(input.Skills))
+	for _, spec := range input.Skills {
+		if err := validateSkillName(spec.Name); err != nil {
+			return err
+		}
+		skills = append(skills, buildSkillEntry(skillSpec{
+			Name: strings.TrimSpace(spec.Name), Version: strings.TrimSpace(spec.Version),
+		}))
+	}
+	if _, err := buildToolboxPolicies(input.Policies); err != nil {
+		return err
+	}
+	if len(raw)+len(input.Connections)+len(skills) == 0 {
+		return exterrors.Validation(exterrors.CodeInvalidToolboxName,
+			"toolbox definition requires at least one tool or skill entry",
+			"add a connection, skill, or raw tool to the toolbox definition")
+	}
+	if err := validateNoDuplicateConnectionIDs(raw); err != nil {
+		return err
+	}
+	if err := validateNoDuplicateSkills(skills); err != nil {
+		return err
+	}
+	return validateNoDuplicateToolNames(names)
 }
 
 func buildToolboxVersionRequest(
@@ -209,18 +357,19 @@ func buildToolboxVersionRequest(
 	}, nil
 }
 
-func emitCreateResult(name, version, output, mcpURL string) error {
+func emitCreateResult(name, version, output, mcpURL string, out io.Writer) error {
 	if output == "json" {
-		return emitJSON(map[string]any{
+		encoder := json.NewEncoder(out)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(map[string]any{
 			"toolbox":  name,
 			"version":  version,
 			"endpoint": mcpURL,
 		})
 	}
 
-	fmt.Printf("Created toolbox %s at version %s.\n", name, version)
-	fmt.Printf("Endpoint: %s\n", mcpURL)
-	return nil
+	_, err := fmt.Fprintf(out, "Created toolbox %s at version %s.\nEndpoint: %s\n", name, version, mcpURL)
+	return err
 }
 
 // resolveConnectionSpecs walks the file's connection list and converts each

@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "id": "hello-1",
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "messageId": "hello-message-1",
+      "role": "ROLE_USER",
+      "parts": [{"text": "Hello!"}]
+    },
+    "configuration": {
+      "acceptedOutputModes": ["text/plain"],
+      "returnImmediately": false
+    }
+  }
+}

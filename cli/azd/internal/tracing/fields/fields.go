@@ -718,7 +718,7 @@ var (
 	// ProvisionValidationOutcomeKey records the outcome of provision validation.
 	//
 	// Example: "passed", "warnings_accepted", "canceled_by_errors",
-	//          "canceled_by_user", "skipped", "error"
+	//          "canceled_by_user", "canceled_by_no_prompt", "skipped", "error"
 	ProvisionValidationOutcomeKey = AttributeKey{
 		Key:            attribute.Key("validation.provision.outcome"),
 		Classification: SystemMetadata,
@@ -728,7 +728,7 @@ var (
 	// ProvisionValidationDiagnosticsKey records the list of diagnostic IDs emitted by provision
 	// validation checks.
 	//
-	// Example: ["role_assignment_missing", "role_assignment_conditional"]
+	// Example: ["role_assignment_missing", "role_assignment_scope_unverified", "role_assignment_conditional"]
 	ProvisionValidationDiagnosticsKey = AttributeKey{
 		Key:            attribute.Key("validation.provision.diagnostics"),
 		Classification: SystemMetadata,
@@ -1304,6 +1304,21 @@ var (
 		Key:            attribute.Key("extension.event"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
+	}
+	// ExtensionUsageDropped records each extension and fixed reason for which
+	// at least one usage report was dropped during the invocation.
+	ExtensionUsageDropped = AttributeKey{
+		Key:            attribute.Key("extension.usage.dropped"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+	// ExtensionUsageDroppedCount is the total number of extension usage reports
+	// dropped during the invocation.
+	ExtensionUsageDroppedCount = AttributeKey{
+		Key:            attribute.Key("extension.usage.dropped.count"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
 	}
 	// The list of installed extensions, each formatted as "id@version".
 	ExtensionsInstalled = AttributeKey{

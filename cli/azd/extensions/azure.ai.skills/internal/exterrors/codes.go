@@ -25,6 +25,8 @@ const (
 const (
 	//nolint:gosec // error code identifier, not a credential
 	CodeCredentialCreationFailed = "credential_creation_failed"
+	CodeAuthFailed               = "auth_failed"
+	CodeAzdClientFailed          = "azd_client_failed"
 )
 
 // Operation names for ServiceFromAzure errors. Prefixed to the Azure code,

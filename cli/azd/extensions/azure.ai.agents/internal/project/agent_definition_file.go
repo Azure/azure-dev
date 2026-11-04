@@ -134,6 +134,9 @@ func LoadAgentDefinitionFile(
 	if err := validateAgentDefinitionDocumentShape(effectiveProperties); err != nil {
 		return AgentDefinitionFile{}, invalidAgentDefinitionFile(relativePath, err)
 	}
+	if err := validateDefinitionOverlayKind(resolved); err != nil {
+		return AgentDefinitionFile{}, invalidAgentDefinitionFile(relativePath, err)
+	}
 	if err := validateAgentDefinitionSchema(relativePath, effectiveProperties); err != nil {
 		return AgentDefinitionFile{}, err
 	}

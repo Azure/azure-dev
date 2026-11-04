@@ -17,6 +17,10 @@ import (
 
 type Asker func(p survey.Prompt, response any) error
 
+type confirmWithRequiredResponse struct {
+	*survey.Confirm
+}
+
 func NewAsker(noPrompt bool, isTerminal bool, w io.Writer, r io.Reader) Asker {
 	if noPrompt {
 		return askOneNoPrompt
@@ -92,6 +96,10 @@ func withShowCursor(o *survey.AskOptions) error {
 func askOnePrompt(
 	p survey.Prompt, response any, isTerminal bool, stdout io.Writer, stdin io.Reader, requireInput bool,
 ) error {
+	if confirmation, ok := p.(*confirmWithRequiredResponse); ok {
+		p = confirmation.Confirm
+		requireInput = true
+	}
 	// Like (*bufio.Reader).ReadString(byte) except that it does not buffer input from the input stream.
 	// Instead, it reads a byte at a time until a delimiter is found or EOF is encountered,
 	// returning bytes read with no extra characters consumed.

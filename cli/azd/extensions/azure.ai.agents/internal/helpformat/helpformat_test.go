@@ -121,8 +121,8 @@ func TestExamplesPreserveShellText(t *testing.T) {
 		},
 		{
 			name: "no captions",
-			raw:  "  azd ai agent eval generate\n  azd ai agent eval run",
-			want: "    azd ai agent eval generate\n    azd ai agent eval run",
+			raw:  "  azd ai eval generate\n  azd ai eval run start",
+			want: "    azd ai eval generate\n    azd ai eval run start",
 		},
 		{
 			name: "multiline quoting and templates",

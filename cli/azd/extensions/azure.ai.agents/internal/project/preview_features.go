@@ -5,6 +5,8 @@ package project
 
 import (
 	"context"
+	"io"
+	"os"
 	"strings"
 
 	"azureaiagent/internal/featureflags"
@@ -45,11 +47,11 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 }
 
 // RequireDefinitionFeatures checks the definition's preview opt-in.
-func RequireDefinitionFeatures(definition map[string]any) error {
+func RequireDefinitionFeatures(definition map[string]any, writer io.Writer) error {
 	yamlSnapshot, _ := definition["enableMemorySnapshot"].(bool)
 	apiSnapshot, _ := definition["enable_memory_snapshot"].(bool)
 	if yamlSnapshot || apiSnapshot {
-		if err := featureflags.Require(featureflags.MemorySnapshot); err != nil {
+		if err := featureflags.RequireWithWriter(featureflags.MemorySnapshot, writer); err != nil {
 			return err
 		}
 	}
@@ -57,13 +59,14 @@ func RequireDefinitionFeatures(definition map[string]any) error {
 	if feature.ID == "" {
 		return nil
 	}
-	return featureflags.Require(feature)
+	return featureflags.RequireWithWriter(feature, writer)
 }
 
 // RequireAgentFeatures checks the inline or $ref definition.
 func RequireAgentFeatures(
 	service *azdext.ServiceConfig,
 	projectRoot string,
+	writer io.Writer,
 ) error {
 	if service.GetHost() != foundryAgentHost {
 		return nil
@@ -76,7 +79,7 @@ func RequireAgentFeatures(
 	if err != nil {
 		return err
 	}
-	return RequireDefinitionFeatures(resolved.AsMap())
+	return RequireDefinitionFeatures(resolved.AsMap(), writer)
 }
 
 // prepareGatedOperation adopts and resolves the service, then
@@ -101,5 +104,5 @@ func (p *AgentServiceTargetProvider) requirePreviewFeatures(ctx context.Context)
 			return err
 		}
 	}
-	return RequireAgentFeatures(p.serviceConfig, p.projectPath)
+	return RequireAgentFeatures(p.serviceConfig, p.projectPath, os.Stdout)
 }

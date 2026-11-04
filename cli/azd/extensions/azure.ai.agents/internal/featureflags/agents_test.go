@@ -5,6 +5,7 @@ package featureflags
 
 import (
 	"errors"
+	"io"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -18,7 +19,7 @@ func TestRequireUsesProcessSwitch(t *testing.T) {
 		t.Run(feature.ID, func(t *testing.T) {
 			for _, value := range []string{"", "false", "on", "true"} {
 				t.Setenv(feature.EnvVar, value)
-				err := Require(feature)
+				err := RequireWithWriter(feature, io.Discard)
 				if value == "true" {
 					require.NoError(t, err)
 					continue

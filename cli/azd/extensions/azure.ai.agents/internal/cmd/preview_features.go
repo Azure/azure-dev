@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -219,7 +220,7 @@ func enforcePreviewFeatures(cmd *cobra.Command, args []string) error {
 		return gateErr
 	}
 	for _, feature := range features {
-		if err := featureflags.Require(feature); err != nil {
+		if err := featureflags.RequireWithWriter(feature, cmd.OutOrStdout()); err != nil {
 			return reject(err)
 		}
 	}
@@ -234,7 +235,7 @@ func requireSelectedServiceFeatures(
 	if gated, _ := ctx.Value(serviceGateKey{}).(bool); !gated {
 		return nil
 	}
-	if err := project.RequireAgentFeatures(service, projectRoot); err != nil {
+	if err := project.RequireAgentFeatures(service, projectRoot, os.Stdout); err != nil {
 		return &serviceGateError{err: err}
 	}
 	return nil
@@ -326,7 +327,7 @@ func removeHelpBlocks(text, joined string) string {
 	return text
 }
 
-func requireBYOAKSProjectFeature(config *azdext.ProjectConfig) error {
+func requireBYOAKSProjectFeature(config *azdext.ProjectConfig, writer io.Writer) error {
 	for _, service := range config.GetServices() {
 		if service.GetHost() != AiProjectHost {
 			continue
@@ -340,7 +341,7 @@ func requireBYOAKSProjectFeature(config *azdext.ProjectConfig) error {
 			return err
 		}
 		if hosting := props.GetFields()["agentHosting"]; hosting != nil && hosting.AsInterface() != nil {
-			if err := featureflags.Require(featureflags.BYOAKS); err != nil {
+			if err := featureflags.RequireWithWriter(featureflags.BYOAKS, writer); err != nil {
 				return err
 			}
 		}
@@ -348,9 +349,9 @@ func requireBYOAKSProjectFeature(config *azdext.ProjectConfig) error {
 	return nil
 }
 
-func requireProjectPreviewFeatures(config *azdext.ProjectConfig) error {
+func requireProjectPreviewFeatures(config *azdext.ProjectConfig, writer io.Writer) error {
 	for _, service := range config.GetServices() {
-		if err := project.RequireAgentFeatures(service, config.GetPath()); err != nil {
+		if err := project.RequireAgentFeatures(service, config.GetPath(), writer); err != nil {
 			return err
 		}
 	}
@@ -358,7 +359,7 @@ func requireProjectPreviewFeatures(config *azdext.ProjectConfig) error {
 }
 
 func requireManifestPreviewFeatures(
-	content []byte, projectRoot string,
+	content []byte, projectRoot string, writer io.Writer,
 ) error {
 	var document struct {
 		Services map[string]*agentServiceAddRawService `yaml:"services"`
@@ -371,18 +372,18 @@ func requireManifestPreviewFeatures(
 		return err
 	}
 	config := &azdext.ProjectConfig{Services: services, Path: projectRoot}
-	if err := requireBYOAKSProjectFeature(config); err != nil {
+	if err := requireBYOAKSProjectFeature(config, writer); err != nil {
 		return err
 	}
-	return requireProjectPreviewFeatures(config)
+	return requireProjectPreviewFeatures(config, writer)
 }
 
-func requireStagedPreviewFeatures(root string) error {
+func requireStagedPreviewFeatures(root string, writer io.Writer) error {
 	content, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
 	if err != nil {
 		return err
 	}
-	return requireManifestPreviewFeatures(content, root)
+	return requireManifestPreviewFeatures(content, root, writer)
 }
 
 // selectLocalService selects a service for local preview checks.

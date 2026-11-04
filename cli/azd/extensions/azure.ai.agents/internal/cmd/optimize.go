@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -323,7 +324,7 @@ func (a *OptimizeAction) resolveConfig(
 			return nil, "", "", resolveErr
 		}
 		if resolveErr == nil && (a.flags.agent != "" || cfg.Agent.Name == resolved.agentName) {
-			if err := projectpkg.RequireAgentFeatures(resolved.service, resolved.project.GetPath()); err != nil {
+			if err := projectpkg.RequireAgentFeatures(resolved.service, resolved.project.GetPath(), os.Stdout); err != nil {
 				return nil, "", "", err
 			}
 			agentProject = resolved.agentProject
@@ -342,7 +343,7 @@ func (a *OptimizeAction) resolveConfig(
 	if err != nil {
 		return nil, "", "", err
 	}
-	if err := projectpkg.RequireAgentFeatures(resolved.service, resolved.project.GetPath()); err != nil {
+	if err := projectpkg.RequireAgentFeatures(resolved.service, resolved.project.GetPath(), os.Stdout); err != nil {
 		return nil, "", "", err
 	}
 	agentProject = resolved.agentProject

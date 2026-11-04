@@ -864,7 +864,7 @@ func runInitFromAzureYaml(
 	if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 		return err
 	}
-	if err := requireStagedPreviewFeatures(stagingDir); err != nil {
+	if err := requireStagedPreviewFeatures(stagingDir, os.Stdout); err != nil {
 		return err
 	}
 	//nolint:gosec // trusted staging directory
@@ -1036,7 +1036,7 @@ func preflightAzdTemplate(
 	if err := validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource)); err != nil {
 		return "", err
 	}
-	if err := requireStagedPreviewFeatures(stagingDir); err != nil {
+	if err := requireStagedPreviewFeatures(stagingDir, os.Stdout); err != nil {
 		return "", err
 	}
 	return preflightAdoptedDeploymentReplacement(ctx, azdClient, stagingDir, flags)

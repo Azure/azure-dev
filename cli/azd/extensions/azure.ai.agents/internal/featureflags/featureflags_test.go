@@ -4,6 +4,7 @@
 package featureflags
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,41 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestRequireAnnouncesEnabledFeatureOnce(t *testing.T) {
+	feature := Feature{
+		ID:          "agents.test_notice",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_TEST_NOTICE",
+		Description: "Test preview behavior",
+	}
+	t.Setenv(feature.EnvVar, "true")
+	var output bytes.Buffer
+
+	require.NoError(t, RequireWithWriter(feature, &output))
+	require.Contains(t, output.String(), "Preview feature enabled:")
+	require.Contains(t, output.String(), "Test preview behavior")
+	require.Contains(t, output.String(), feature.EnvVar+"=true")
+	require.Contains(t, output.String(), "Preview behavior may change.")
+
+	output.Reset()
+	require.NoError(t, RequireWithWriter(feature, &output))
+	require.Empty(t, output.String())
+}
+
+func TestRequireDoesNotAnnounceDisabledFeature(t *testing.T) {
+	feature := Feature{
+		ID:          "agents.test_disabled_notice",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_TEST_DISABLED_NOTICE",
+		Description: "Disabled test preview behavior",
+	}
+	t.Setenv(feature.EnvVar, "false")
+	var output bytes.Buffer
+
+	err := RequireWithWriter(feature, &output)
+
+	require.ErrorContains(t, err, feature.ID)
+	require.Empty(t, output.String())
+}
 
 func TestIsEnabledValidation(t *testing.T) {
 	for _, feature := range []Feature{

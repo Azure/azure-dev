@@ -863,7 +863,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 				if cached {
 					root := filepath.Dir(flags.templatePointer)
-					if err := requireManifestPreviewFeatures(content, root); err != nil {
+					if err := requireManifestPreviewFeatures(content, root, os.Stdout); err != nil {
 						return err
 					}
 				} else {
@@ -891,7 +891,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 						return err
 					}
-					if err := requireStagedPreviewFeatures(stagingDir); err != nil {
+					if err := requireStagedPreviewFeatures(stagingDir, os.Stdout); err != nil {
 						return err
 					}
 					endLoading()
@@ -959,10 +959,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			if !userProvidedTemplate {
 				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 				if projectErr == nil && projectResponse.GetProject() != nil {
-					if err := requireBYOAKSProjectFeature(projectResponse.GetProject()); err != nil {
+					if err := requireBYOAKSProjectFeature(projectResponse.GetProject(), os.Stdout); err != nil {
 						return err
 					}
-					if err := requireProjectPreviewFeatures(projectResponse.GetProject()); err != nil {
+					if err := requireProjectPreviewFeatures(projectResponse.GetProject(), os.Stdout); err != nil {
 						return err
 					}
 					if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {

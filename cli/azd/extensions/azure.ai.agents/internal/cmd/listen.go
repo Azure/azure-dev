@@ -82,7 +82,7 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	if err := requireProjectPreviewFeatures(args.Project); err != nil {
+	if err := requireProjectPreviewFeatures(args.Project, os.Stdout); err != nil {
 		return err
 	}
 	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
@@ -352,7 +352,7 @@ func predeployHandler(
 		return nil, err
 	}
 
-	if err := project.RequireAgentFeatures(svc, args.Project.GetPath()); err != nil {
+	if err := project.RequireAgentFeatures(svc, args.Project.GetPath(), os.Stdout); err != nil {
 		return nil, err
 	}
 

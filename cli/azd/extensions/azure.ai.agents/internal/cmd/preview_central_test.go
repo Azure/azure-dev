@@ -63,6 +63,7 @@ func TestPreviewHelpEmptyEnvironmentUsesOnlyProcess(t *testing.T) {
 			text, err := executeRoot(t, "invoke", "--environment", value, "--help")
 			require.NoError(t, err)
 			require.Contains(t, text, "Voice Agents")
+			require.NotContains(t, text, "Preview feature enabled")
 			require.NotContains(t, text, "--long-running")
 			require.Zero(t, env.reads.Load())
 		})

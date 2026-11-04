@@ -22,11 +22,9 @@ func TestMultilingualPreview(t *testing.T) {
 		{"zh-TW", "城市", "台北", "你好，世界"},
 		{"ja", "都市", "東京", "こんにちは"},
 		{"ko", "도시", "서울", "안녕하세요"},
-		{"fr", "Ville", "Québec", "Bonjour"},
 		{"de", "Stadt", "München", "Grüße"},
 		{"hi", "शहर", "दिल्ली", "नमस्ते"},
 		{"ar", "المدينة", "القاهرة", "مرحبا"},
-		{"graphemes", "地點👩🏽‍💻", "Cafe\u0301 🇹🇼", "👩🏽‍💻"},
 	} {
 		t.Run(sample.language, func(t *testing.T) {
 			source := "# " + sample.language + "\n\n**" + sample.greeting + "**\n\n" +

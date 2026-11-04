@@ -109,6 +109,8 @@ registry bindings, and pending operations are read from that same environment.
 An unreadable explicit selection is an error, not a fallback to the default.
 Prompt-agent cleanup during down reads its deployment target and ownership
 markers from that selected environment as well, never from another default.
+Infrastructure eject uses the same resolved environment for reuse checks and
+the values supplied to generated files.
 
 Off means an explicit `feature_not_enabled` compatibility error naming the
 enabling variable, before changes to project files, environment/config values,

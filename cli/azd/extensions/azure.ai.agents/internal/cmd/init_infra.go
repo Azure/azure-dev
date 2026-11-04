@@ -2214,7 +2214,7 @@ func writeExistingProjectTfvarsFile(
 }
 
 func readInfraEjectEnvironment(ctx context.Context, azdClient *azdext.AzdClient) (map[string]string, error) {
-	current, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	current, err := synthesis.CurrentEnvironment(ctx, azdClient)
 	if err != nil {
 		return nil, fmt.Errorf("read active azd environment for infrastructure eject: %w", err)
 	}

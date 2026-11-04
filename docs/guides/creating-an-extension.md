@@ -68,6 +68,8 @@ the Foundry agents extension maps
 to a scoped preview management request and uses endpoint PATCH for capacity-only
 updates, without changing invocation APIs or creating another version. Preserve
 omitted settings and explicit zero values when mapping optional configuration.
+Explicit standby targets also require the existing BYO AKS preview switch and
+a declared project-hosting binding; validate both before authentication or mutations.
 
 ### 4. Build
 

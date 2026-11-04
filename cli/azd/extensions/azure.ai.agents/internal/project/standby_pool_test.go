@@ -7,6 +7,7 @@ package project
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -150,6 +151,100 @@ func TestStandbyPoolDoesNotInferHostingOrCapacity(t *testing.T) {
 	}
 }
 
+func standbyPoolProjectService(t *testing.T) *azdext.ServiceConfig {
+	t.Helper()
+	return &azdext.ServiceConfig{
+		Name: "project", Host: foundryProjectHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"agentHosting": map[string]any{"clusterResourceId": "${AKS_CLUSTER_ID}"},
+		}),
+	}
+}
+
+func TestStandbyPoolRequiresOptedInHosting(t *testing.T) {
+	for _, size := range []int32{0, 3} {
+		for _, test := range []struct {
+			name, optIn, want string
+			uses              []string
+			props             map[string]any
+			secondProject     bool
+		}{
+			{name: "disabled", optIn: "false", want: "disabled", uses: []string{"project"}},
+			{name: "empty switch", want: "disabled", uses: []string{"project"}},
+			{name: "invalid switch", optIn: "invalid", want: "disabled", uses: []string{"project"}},
+			{name: "BYO AKS", optIn: "true", uses: []string{"project"}},
+			{name: "unbound", optIn: "true", want: "requires BYO AKS hosting"},
+			{name: "unrelated dependency", optIn: "true", uses: []string{"other"}, want: "requires BYO AKS hosting"},
+			{name: "ADC", optIn: "true", uses: []string{"project"},
+				props: map[string]any{}, want: "requires BYO AKS hosting"},
+			{name: "empty hosting", optIn: "true", uses: []string{"project"},
+				props: map[string]any{"agentHosting": map[string]any{}}, want: "requires BYO AKS hosting"},
+			{name: "adopted endpoint", optIn: "true", uses: []string{"project"}, props: map[string]any{
+				"endpoint": "https://example.test", "agentHosting": map[string]any{"clusterResourceId": "cluster"},
+			}, want: "requires BYO AKS hosting"},
+			{name: "ambiguous projects", optIn: "true", uses: []string{"project", "second"},
+				secondProject: true, want: "requires BYO AKS hosting"},
+		} {
+			t.Run(fmt.Sprintf("%s/size=%d", test.name, size), func(t *testing.T) {
+				t.Setenv(synthesis.BYOAKSEnvVar, test.optIn)
+				service := &azdext.ServiceConfig{Name: "agent", Uses: test.uses}
+				projectService := standbyPoolProjectService(t)
+				if test.props != nil {
+					projectService.AdditionalProperties = mustStruct(t, test.props)
+				}
+				services := map[string]*azdext.ServiceConfig{"project": projectService}
+				if test.secondProject {
+					services["second"] = standbyPoolProjectService(t)
+				}
+				endpoint := &agent_yaml.AgentEndpoint{StandbyPool: &agent_yaml.StandbyPool{Size: new(size)}}
+				err := RequireStandbyPoolHosting(endpoint, service, services, t.TempDir())
+				if test.want != "" {
+					require.ErrorContains(t, err, test.want)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	}
+	t.Setenv(synthesis.BYOAKSEnvVar, "false")
+	for _, endpoint := range []*agent_yaml.AgentEndpoint{
+		nil, {}, {StandbyPool: &agent_yaml.StandbyPool{}}, {Protocols: []string{"responses"}},
+	} {
+		require.NoError(t, RequireStandbyPoolHosting(endpoint, nil, nil, ""))
+	}
+}
+
+func TestStandbyPoolHostingProjectReference(t *testing.T) {
+	t.Setenv(synthesis.BYOAKSEnvVar, "true")
+	root := t.TempDir()
+	path := filepath.Join(root, "project.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("agentHosting:\n  clusterResourceId: ${AKS_CLUSTER_ID}\n"), 0o600))
+	service := &azdext.ServiceConfig{Name: "agent", Uses: []string{"project"}}
+	dependency := &azdext.ServiceConfig{
+		Name: "project", Host: foundryProjectHost,
+		AdditionalProperties: mustStruct(t, map[string]any{"$ref": "project.yaml"}),
+	}
+	endpoint := &agent_yaml.AgentEndpoint{StandbyPool: &agent_yaml.StandbyPool{Size: new(int32(3))}}
+	require.NoError(t, RequireStandbyPoolHosting(
+		endpoint, service, map[string]*azdext.ServiceConfig{"project": dependency}, root,
+	))
+
+	agentPath := filepath.Join(root, "agent.json")
+	agentData := []byte(`{"kind":"hosted","name":"agent","agentEndpoint":{"standbyPool":{"size":0}}}`)
+	require.NoError(t, os.WriteFile(agentPath, agentData, 0o600))
+	service.Host = foundryAgentHost
+	service.AdditionalProperties = mustStruct(t, map[string]any{"$ref": "agent.json"})
+	client, projectServer := newEndpointsTestClientWithProjectServer(t, root, nil)
+	projectServer.project.Services = map[string]*azdext.ServiceConfig{"agent": service, "project": dependency}
+	provider := &AgentServiceTargetProvider{azdClient: client}
+	require.NoError(t, provider.validateDeploymentServiceConfig(t.Context(), service))
+	require.Nil(t, provider.credential)
+	require.Nil(t, provider.env)
+	after, err := os.ReadFile(agentPath)
+	require.NoError(t, err)
+	require.Equal(t, agentData, after)
+}
+
 func TestStandbyPoolDeploymentPatch(t *testing.T) {
 	for _, status := range []int{http.StatusOK, http.StatusBadRequest} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
@@ -186,6 +281,7 @@ func TestStandbyPoolDeploymentPatch(t *testing.T) {
 }
 
 func TestStandbyPoolDeployReportsPartialSuccess(t *testing.T) {
+	t.Setenv(synthesis.BYOAKSEnvVar, "true")
 	for _, mode := range []string{"container", "code"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
@@ -210,6 +306,7 @@ func TestStandbyPoolDeployReportsPartialSuccess(t *testing.T) {
 			}
 			service := &azdext.ServiceConfig{
 				Name: "agent", Host: foundryAgentHost, AdditionalProperties: mustStruct(t, fields),
+				Uses: []string{"project"},
 			}
 			resource, err := arm.ParseResourceID("/subscriptions/sub/resourceGroups/rg/providers/" +
 				"Microsoft.CognitiveServices/accounts/account/projects/project")
@@ -222,6 +319,7 @@ func TestStandbyPoolDeployReportsPartialSuccess(t *testing.T) {
 				projectPath: root, servicePath: root, serviceConfig: service,
 				deployContextReady: true, env: &azdext.Environment{Name: "test-env"},
 				foundryProject: resource, credential: hostedResourceErrorCredential{},
+				projectServices: map[string]*azdext.ServiceConfig{"project": standbyPoolProjectService(t)},
 			}
 			var calls []string
 			original := recordproxy.Transport
@@ -279,6 +377,41 @@ func TestStandbyPoolDeployReportsPartialSuccess(t *testing.T) {
 				"GET /agents/agent", "POST " + postPath, "GET /agents/agent/versions/2", "PATCH /agents/agent",
 			}, calls)
 		})
+	}
+}
+
+func TestStandbyPoolRejectedBeforeDeploymentMutations(t *testing.T) {
+	for _, entry := range []string{"package", "publish", "deploy"} {
+		for _, enabled := range []string{"false", "true"} {
+			t.Run(entry+"/"+enabled, func(t *testing.T) {
+				t.Setenv(synthesis.BYOAKSEnvVar, enabled)
+				service := &azdext.ServiceConfig{
+					Name: "agent", Host: foundryAgentHost, AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "hosted", "name": "agent",
+						"agentEndpoint": map[string]any{"standbyPool": map[string]any{"size": 0}},
+					}),
+				}
+				before := proto.CloneOf(service)
+				provider := &AgentServiceTargetProvider{projectServices: map[string]*azdext.ServiceConfig{}}
+				var err error
+				switch entry {
+				case "package":
+					_, err = provider.Package(t.Context(), service, nil, func(string) {})
+				case "publish":
+					_, err = provider.Publish(t.Context(), service, nil, nil, nil, func(string) {})
+				case "deploy":
+					_, err = provider.Deploy(t.Context(), service, nil, nil, func(string) {})
+				}
+				if enabled == "true" {
+					require.ErrorContains(t, err, "requires BYO AKS hosting")
+				} else {
+					require.ErrorContains(t, err, "disabled")
+				}
+				require.Nil(t, provider.credential)
+				require.Nil(t, provider.env)
+				require.True(t, proto.Equal(before, service))
+			})
+		}
 	}
 }
 

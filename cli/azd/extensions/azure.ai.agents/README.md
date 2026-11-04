@@ -11,7 +11,7 @@ All six preview capabilities are off by default. Each switch is controlled indep
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 | `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
-| `agents.byo_aks` | [Existing AKS project initialization and adoption](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
+| `agents.byo_aks` | [Existing AKS project initialization and adoption](../azure.ai.projects/README.md#existing-aks-hosting), and [endpoint standby targets](#standby-pool-target-preview) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
 
 Override a switch in your shell or CI before running azd:
 
@@ -636,13 +636,26 @@ capabilities do not change the agent kind and follow the hosted behavior above.
 
 ### Standby pool target (preview)
 
-For hosted agents on AKS, configure standby capacity on the **agent endpoint**,
-not the version definition:
+For hosted agents using BYO AKS, enable the existing preview switch in your shell
+or CI before running azd:
+
+```powershell
+$env:AZD_ALPHA_ENABLE_AGENTS_BYO_AKS = "true"
+```
+
+Declare the existing cluster on a project service and bind the agent with `uses`.
+Configure standby capacity on the **agent endpoint**, not the version definition:
 
 ```yaml
 services:
+  ai-project:
+    host: azure.ai.project
+    agentHosting:
+      clusterResourceId: ${AKS_CLUSTER_ID}
   my-agent:
     host: azure.ai.agent
+    uses:
+      - ai-project
     kind: hosted
     name: my-agent
     agentEndpoint:
@@ -653,9 +666,14 @@ services:
 `size` is an integer from **0 to 50**, inclusive. This is a target applied
 independently to every serving version, including canaries, not a ready count
 or a concurrency limit. Successful configuration saves the target; it does not
-wait for warm-up. ADC accepts and ignores this configuration: azd passes the
-endpoint setting through and the service uses its infrastructure capabilities
-to decide whether standby work applies.
+wait for warm-up. Explicit sizes, including zero, require the preview switch
+and exactly one `azure.ai.project` dependency with `agentHosting.clusterResourceId`
+and no existing `endpoint:`. ADC, unbound agents, ambiguous project dependencies
+and existing endpoint adoption are rejected before authentication or remote
+changes. Inline and `$ref` project declarations are supported. The declaration
+identifies the intended BYO AKS binding; it does not verify live cluster readiness.
+See [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting)
+for provisioning prerequisites.
 
 `azd deploy` applies the endpoint settings after deploying the agent version.
 To change capacity without creating a version, edit `size` and run
@@ -667,7 +685,9 @@ the deployed version; resources are not deleted. Retry the endpoint update.
 JSON output includes `agent_endpoint.standby_pool.size`.
 
 Omitting the pool or size, setting either to `null`, or using `standbyPool: {}`
-sends no pool change. On creation the server supplies the default of 0; on PATCH
+sends no pool change and does not require the standby opt-in or hosting binding.
+Other endpoint fields remain available without this standby gate.
+On creation the server supplies the default of 0; on PATCH
 the existing target is preserved. An explicit `size: 0` is sent and stops refill,
 but does not disable remaining claims or expiry. No refill controls or separate
 pool command are exposed.
@@ -678,9 +698,7 @@ currently proposed). Management writes containing an explicit size use
 `2025-11-15-preview`; other requests, including invocation and sessions, keep
 their existing API versions. There is no standby feature header. Public gateway
 and regional rollout must be confirmed before relying on this preview.
-Existing BYO AKS initialization/adoption still requires
-`AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true`; that opt-in does not set a positive pool
-target automatically.
+The BYO AKS opt-in does not set a positive pool target automatically.
 
 ## Initializing an A2A hosted agent
 

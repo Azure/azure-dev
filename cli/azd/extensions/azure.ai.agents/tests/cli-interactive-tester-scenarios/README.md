@@ -319,6 +319,9 @@ in any order, any time.
 `tier0/0.36-endpoint-standby-validation.yaml` checks that an out-of-range
 `agentEndpoint.standbyPool.size` is rejected by endpoint update before
 authentication or remote writes, without changing project or environment files.
+`tier0/0.37-endpoint-standby-preview-gate.yaml` checks that an explicit zero
+target is rejected with BYO AKS enablement guidance when its preview is disabled,
+also before authentication or remote writes and without changing local state.
 
 | File | Targets |
 |------|---------|

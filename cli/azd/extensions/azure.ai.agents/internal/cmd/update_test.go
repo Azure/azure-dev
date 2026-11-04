@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore BYOAKS
+
 package cmd
 
 import (
@@ -16,6 +18,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/project"
@@ -33,14 +36,23 @@ func (f endpointUpdateTransport) RoundTrip(request *http.Request) (*http.Respons
 }
 
 func TestStandbyPoolEndpointUpdateCommand(t *testing.T) {
+	t.Setenv(featureflags.BYOAKS.EnvVar, "true")
 	for _, size := range []int{0, 3} {
 		t.Run(fmt.Sprintf("size=%d", size), func(t *testing.T) {
 			svc := &azdext.ServiceConfig{
 				Name: "agent", Host: AiAgentHost,
 				AdditionalProperties: mustEndpointUpdateProperties(t, size),
+				Uses:                 []string{"project"},
 			}
+			hosting, err := structpb.NewStruct(map[string]any{
+				"agentHosting": map[string]any{"clusterResourceId": "${AKS_CLUSTER_ID}"},
+			})
+			require.NoError(t, err)
 			client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
-				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{svc.Name: svc},
+				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+					svc.Name:  svc,
+					"project": {Name: "project", Host: AiProjectHost, AdditionalProperties: hosting},
+				},
 			}}, &helpersPromptServer{})
 			previousFactory := newEndpointUpdateClient
 			previousSources := readAzdHostedSourcesFunc
@@ -87,6 +99,33 @@ func TestStandbyPoolEndpointUpdateCommand(t *testing.T) {
 			require.NoError(t, runEndpointUpdate(t.Context(), client,
 				&endpointUpdateFlags{name: svc.Name}, &azdext.ExtensionContext{NoPrompt: true}))
 			require.Equal(t, []string{http.MethodGet, http.MethodPatch}, calls, "must not create a version")
+		})
+	}
+}
+
+func TestStandbyPoolEndpointUpdateRequiresHostingBeforeClient(t *testing.T) {
+	for _, enabled := range []string{"false", "true"} {
+		t.Run(enabled, func(t *testing.T) {
+			t.Setenv(featureflags.BYOAKS.EnvVar, enabled)
+			svc := &azdext.ServiceConfig{
+				Name: "agent", Host: AiAgentHost, AdditionalProperties: mustEndpointUpdateProperties(t, 0),
+			}
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{svc.Name: svc},
+			}}, &helpersPromptServer{})
+			previous := newEndpointUpdateClient
+			t.Cleanup(func() { newEndpointUpdateClient = previous })
+			newEndpointUpdateClient = func(*AgentContext) (*agent_api.AgentClient, error) {
+				t.Fatal("standby gate must run before creating an authenticated client")
+				return nil, nil
+			}
+			err := runEndpointUpdate(t.Context(), client,
+				&endpointUpdateFlags{name: svc.Name}, &azdext.ExtensionContext{NoPrompt: true})
+			if enabled == "true" {
+				require.ErrorContains(t, err, "requires BYO AKS hosting")
+			} else {
+				require.ErrorContains(t, err, "disabled")
+			}
 		})
 	}
 }

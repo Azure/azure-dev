@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore BYOAKS
+
 package project
 
 import (
@@ -31,6 +33,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -360,7 +363,23 @@ func (p *AgentServiceTargetProvider) validateDeploymentServiceConfig(
 	if err := UnmarshalStruct(resolved, &fields); err != nil {
 		return invalidAgentDefinitionError(p.serviceConfig, err)
 	}
-	return nil
+	if fields.AgentEndpoint == nil || fields.AgentEndpoint.StandbyPool == nil ||
+		fields.AgentEndpoint.StandbyPool.Size == nil {
+		return nil
+	}
+	// Check opt-in before loading project bindings, and bindings before credentials or mutations.
+	if err := featureflags.Require(featureflags.BYOAKS); err != nil {
+		return err
+	}
+	services, root := p.projectServices, p.projectPath
+	if services == nil {
+		proj, err := p.azdClient.Project().Get(ctx, nil)
+		if err != nil {
+			return exterrors.FromHost(err, "get project", "validating standby pool hosting")
+		}
+		services, root = proj.GetProject().GetServices(), proj.GetProject().GetPath()
+	}
+	return RequireStandbyPoolHosting(fields.AgentEndpoint, p.serviceConfig, services, root)
 }
 
 func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error {

@@ -298,7 +298,7 @@
       "properties": {
         "standbyPool": {
           "type": ["object", "null"],
-          "description": "Preview standby capacity target per serving version on AKS. ADC ignores this configuration. Omit to keep the service default or existing value.",
+          "description": "Preview standby capacity target per serving version. Explicit size requires AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true and a single used project with agentHosting.clusterResourceId, without endpoint adoption. Other hosting scenarios are rejected. Omit to keep the service default or existing value.",
           "properties": {
             "size": {
               "type": ["integer", "null"],

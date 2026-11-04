@@ -1,0 +1,52 @@
+# Tier 0: explicit standby targets require BYO AKS opt-in before authentication or remote writes.
+name: "endpoint-standby-preview-gate"
+command: "azd ai agent endpoint update agent --no-prompt"
+cwd: "~/working/azd-agents-standby-preview-{instance}"
+tags: ["tier:0", "cmd:endpoint", "negative-path", "parallel-safe"]
+
+env:
+  AZD_ALPHA_ENABLE_AGENTS_BYO_AKS: "false"
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-standby-preview-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- "$HOME/working/azd-agents-standby-preview-{instance}" &&
+      printf 'name: standby-preview\nservices:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: standby-agent\n    agentEndpoint:\n      standbyPool:\n        size: 0\n'
+      > "$HOME/working/azd-agents-standby-preview-{instance}/azure.yaml" &&
+      cp -- "$HOME/working/azd-agents-standby-preview-{instance}/azure.yaml"
+      "$HOME/working/azd-agents-standby-preview-{instance}/azure.yaml.before"
+    cwd: "~/working"
+    name: "seed an explicit zero target with the preview disabled"
+  - run: "azd env new standby-preview-{instance} --no-prompt && cp -a .azure .azure.before"
+    cwd: "~/working/azd-agents-standby-preview-{instance}"
+    name: "create and snapshot an isolated local environment"
+
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Run only the declared
+    endpoint update command and read-only inspection of the dedicated directory.
+    Do not sign in, contact Azure, install extensions, repair the fixture, enable
+    the preview, or run init, provision, up, deploy, or down.
+  - >-
+    Wait for endpoint update to exit with a non-zero code. Confirm the error
+    identifies preview feature agents.byo_aks as disabled and suggests setting
+    AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true. Explicit size zero must not bypass
+    the preview requirement.
+  - >-
+    Confirm no credential lookup, project-endpoint lookup, version creation,
+    standby refill, or remote endpoint update occurs before this local error.
+  - >-
+    Compare azure.yaml byte-for-byte with azure.yaml.before and compare .azure
+    recursively with .azure.before. Confirm project configuration and persisted
+    environment values are unchanged.
+  - "Take a best-effort screenshot; capture failure must not block the remaining goals."
+  - >-
+    Report a finding if the target is ignored or accepted, the enablement
+    suggestion is absent, a product prompt appears, an authentication or network
+    operation runs, or project/environment files change. Do not retry a failed goal.

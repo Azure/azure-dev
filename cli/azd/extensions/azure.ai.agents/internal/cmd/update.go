@@ -141,6 +141,10 @@ func runEndpointUpdate(
 		)
 	}
 
+	if err := project.RequireStandbyPoolHosting(agentDef.AgentEndpoint, svc, proj.Services, proj.Path); err != nil {
+		return err
+	}
+
 	// Map YAML endpoint/card fields to API models (skips full definition validation).
 	apiEndpoint, apiCard, err := agent_yaml.MapEndpointAndCard(agentDef.AgentEndpoint, agentDef.AgentCard)
 	if err != nil {

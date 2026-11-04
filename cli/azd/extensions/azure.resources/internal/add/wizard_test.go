@@ -726,6 +726,22 @@ func TestWizardFoundryDuplicateDeployment(t *testing.T) {
 	assert.Len(t, original["ai-project"].Models, 1)
 }
 
+func TestWizardFoundryRejectsAnotherVersionOfSameDeployment(t *testing.T) {
+	prompts := wizardAIPrompts()
+	prompts.selectAnswers = []string{"AI", "Microsoft Foundry model"}
+	original := resources.Config{"ai-project": {
+		Type: resources.AIProject,
+		Models: []resources.AiServicesModel{{
+			Name: "model", Format: "OpenAI", Version: "older",
+			Sku: resources.AiServicesModelSku{Name: "GlobalStandard", UsageName: "model-global", Capacity: 10},
+		}},
+	}}
+	wizard := &Wizard{Client: newWizardTestClient(t, prompts), Resources: original}
+	_, err := wizard.Run(t.Context())
+	require.ErrorContains(t, err, "already configured")
+	assert.Len(t, original["ai-project"].Models, 1)
+}
+
 func TestWizardRejectsMissingSelectedEnvironmentBeforeAzureSelection(t *testing.T) {
 	environment := &wizardEnvironmentServer{selectedErr: status.Error(codes.NotFound, "environment not found")}
 	prompts := wizardAIPrompts()

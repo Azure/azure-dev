@@ -12,6 +12,7 @@ import (
 
 	"azure.resources/internal/environment"
 	"azure.resources/internal/resources"
+	"azure.resources/internal/resources/scaffold"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -183,8 +184,7 @@ func (w *Wizard) configureAI(
 		},
 	}
 	if slices.ContainsFunc(definition.Models, func(other resources.AiServicesModel) bool {
-		return other.Name == added.Name && other.Version == added.Version &&
-			other.Format == added.Format && other.Sku.Name == added.Sku.Name
+		return strings.EqualFold(scaffold.BicepName(other.Name), scaffold.BicepName(added.Name))
 	}) {
 		return "", definition, fmt.Errorf("the selected model deployment is already configured in %s", name)
 	}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -267,7 +268,9 @@ func TestAgentListenerSnapshotReporting(t *testing.T) {
 		case response := <-stable.responses:
 			if result := response.GetProjectHandlerStatus(); result != nil && result.GetStatus() == "completed" {
 				require.Nil(t, result.GetError())
-				requests := recorder.snapshot()
+				requests := slices.DeleteFunc(recorder.snapshot(), func(request *azdext.ReportUsageRequest) bool {
+					return request.EventName != "agent.snapshot.deploy.completed"
+				})
 				require.Len(t, requests, 1)
 				require.Equal(t, "agent.snapshot.deploy.completed", requests[0].EventName)
 				require.Equal(t, "failed", requests[0].Attributes["agent.deploy.outcome"])

@@ -254,7 +254,7 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if includeAcr && netMode != NetworkModeNone {
+	if includeAcr && netMode != NetworkModeNone && hosting == nil {
 		return nil, errors.New(
 			"synthesis: private networking does not support an auto-created Azure Container Registry; specify an image instead",
 		)
@@ -268,7 +268,10 @@ func Synthesize(in Input) (*Result, error) {
 	if hosting != nil {
 		params["agentHosting"] = agentHostingParameter{
 			Enabled: true, HostingType: "ManagedCluster", Name: "default",
-			ClusterResourceID: hosting.ClusterResourceID,
+			ClusterResourceID:                   hosting.ClusterResourceID,
+			StorageAccountResourceID:            hosting.StorageAccountResourceID,
+			HostingManagementIdentityResourceID: hosting.HostingManagementIdentityResourceID,
+			WorkloadIdentityResourceID:          hosting.WorkloadIdentityResourceID,
 		}
 	}
 
@@ -500,7 +503,7 @@ func loadProjectService(
 	}
 
 	var svc projectService
-	if err := validateAgentHostingInputs(node, serviceName); err != nil {
+	if err := ValidateAgentHostingInputs(node, serviceName); err != nil {
 		return svc, err
 	}
 	if err := node.Decode(&svc); err != nil {

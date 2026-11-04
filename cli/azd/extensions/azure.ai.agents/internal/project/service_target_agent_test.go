@@ -2556,7 +2556,7 @@ type snapshotDeployTelemetryServer struct {
 func (server *snapshotDeployTelemetryServer) ReportUsage(
 	ctx context.Context, request *azdext.ReportUsageRequest,
 ) (*azdext.ReportUsageResponse, error) {
-	if server.blockReport {
+	if server.blockReport && request.EventName == "agent.snapshot.deploy.completed" {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
@@ -2569,7 +2569,13 @@ func (server *snapshotDeployTelemetryServer) ReportUsage(
 func (server *snapshotDeployTelemetryServer) recordedRequests() []*azdext.ReportUsageRequest {
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	return append([]*azdext.ReportUsageRequest(nil), server.requests...)
+	requests := make([]*azdext.ReportUsageRequest, 0, len(server.requests))
+	for _, request := range server.requests {
+		if request.EventName == "agent.snapshot.deploy.completed" {
+			requests = append(requests, request)
+		}
+	}
+	return requests
 }
 
 type snapshotDeployEnvironmentServer struct {

@@ -69,7 +69,7 @@ func Postprovision(ctx context.Context, request PostRequest, capabilities PostCa
 		if err != nil {
 			result.ModelSetup = "failed"
 			warn("Optional model setup failed. Check azd sign-in, CU access, model quota, " +
-				"and CU_MODEL_SELECTION; rerun azd up.")
+				"and cu.modelSelection (azd env config get cu); rerun azd up.")
 		} else {
 			result.ModelSetup = "completed"
 			if strings.EqualFold(request.Selection, "none") {

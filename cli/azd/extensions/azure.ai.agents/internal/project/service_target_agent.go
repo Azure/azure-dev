@@ -5115,11 +5115,10 @@ func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(
 // ensureFoundryProject ensures the Foundry project resource ID is parsed and stored.
 // Checks for AZURE_AI_PROJECT_ID environment variable.
 func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) error {
-	defer phasetelemetry.Start(ctx, phasetelemetry.ResourceLookup)()
-
 	if p.foundryProject != nil {
 		return nil
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.ResourceLookup)()
 	if err := p.ensureEnv(ctx); err != nil {
 		return err
 	}

@@ -29,8 +29,9 @@ const (
 )
 
 type queuedDeploymentEvent struct {
-	ctx   context.Context
-	event foundryTelemetry.Event
+	ctx     context.Context
+	event   foundryTelemetry.Event
+	flushed chan struct{}
 }
 
 // DeploymentReporter sends bounded best-effort events outside service return paths.
@@ -53,6 +54,10 @@ func NewDeploymentReporter(reporter foundryTelemetry.Reporter) *DeploymentReport
 		for pending := range result.queue {
 			if ctx.Err() != nil {
 				return
+			}
+			if pending.flushed != nil {
+				close(pending.flushed)
+				continue
 			}
 			reportCtx, cancelReport := context.WithTimeout(context.WithoutCancel(pending.ctx), time.Second)
 			stop := context.AfterFunc(ctx, cancelReport)
@@ -77,7 +82,30 @@ func (reporter *DeploymentReporter) Report(ctx context.Context, event foundryTel
 	}
 }
 
-// Close drains for at most one second, then cancels outstanding reporting before returning.
+// Flush waits briefly for queued events while the host still accepts telemetry.
+func (reporter *DeploymentReporter) Flush(ctx context.Context) {
+	flushed := make(chan struct{})
+	reporter.mu.Lock()
+	if reporter.closed {
+		reporter.mu.Unlock()
+		return
+	}
+	select {
+	case reporter.queue <- queuedDeploymentEvent{flushed: flushed}:
+	default:
+		reporter.mu.Unlock()
+		return
+	}
+	reporter.mu.Unlock()
+	flushCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	select {
+	case <-flushed:
+	case <-flushCtx.Done():
+	}
+}
+
+// Close cancels pending work; delivery after the host closes is not guaranteed.
 func (reporter *DeploymentReporter) Close() {
 	reporter.mu.Lock()
 	if !reporter.closed {
@@ -85,15 +113,8 @@ func (reporter *DeploymentReporter) Close() {
 		close(reporter.queue)
 	}
 	reporter.mu.Unlock()
-	timer := time.NewTimer(time.Second)
-	defer timer.Stop()
-	select {
-	case <-reporter.done:
-	case <-timer.C:
-		reporter.cancel()
-		<-reporter.done
-	}
 	reporter.cancel()
+	<-reporter.done
 }
 
 // AgentInvokeSelected creates the adoption event for a resolved remote hosted-agent invoke.

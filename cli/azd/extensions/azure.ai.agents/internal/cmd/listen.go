@@ -40,21 +40,20 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 	configureExtensionHostWithTelemetry(host, newAgentContextReporter())
 }
 
-func newAgentListenCommand(telemetryReporter *agentContextReporter) *cobra.Command {
-	var deploymentReporter foundryTelemetry.Reporter
+func newAgentListenCommand(configure func(*azdext.ExtensionHost, foundryTelemetry.Reporter)) *cobra.Command {
+	var deploymentReporter *agentTelemetry.DeploymentReporter
 	command := azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
-		configureExtensionHostWithTelemetry(host, telemetryReporter, deploymentReporter)
+		deploymentReporter = agentTelemetry.NewDeploymentReporter(foundryTelemetry.NewReporter(host.Client().Telemetry(), nil))
+		configure(host, deploymentReporter)
 	})
 	run := command.RunE
 	command.RunE = func(cmd *cobra.Command, args []string) error {
 		deploymentReporter = nil
-		client, err := azdext.NewAzdClient()
-		if err == nil {
-			defer client.Close()
-			queue := agentTelemetry.NewDeploymentReporter(foundryTelemetry.NewReporter(client.Telemetry(), nil))
-			deploymentReporter = queue
-			defer queue.Close()
-		}
+		defer func() {
+			if deploymentReporter != nil {
+				deploymentReporter.Close()
+			}
+		}()
 		return run(cmd, args)
 	}
 	return command
@@ -81,6 +80,14 @@ func configureExtensionHostWithTelemetry(
 		}).
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
+		}).
+		WithProjectEventHandler("postdeploy", func(ctx context.Context, _ *azdext.ProjectEventArgs) error {
+			for _, reporter := range reporters {
+				if flusher, ok := reporter.(interface{ Flush(context.Context) }); ok {
+					flusher.Flush(ctx)
+				}
+			}
+			return nil
 		}).
 		WithBetaServiceEventHandler("predeploy", func(
 			ctx context.Context, args *azdext.ServiceEventArgs,

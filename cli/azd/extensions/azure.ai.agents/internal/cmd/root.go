@@ -11,6 +11,7 @@ import (
 	"azureaiagent/internal/inittelemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -84,7 +85,9 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
-	rootCmd.AddCommand(newAgentListenCommand(telemetryReporter))
+	rootCmd.AddCommand(newAgentListenCommand(func(host *azdext.ExtensionHost, reporter foundryTelemetry.Reporter) {
+		configureExtensionHostWithTelemetry(host, telemetryReporter, reporter)
+	}))
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(extCtx))
 	rootCmd.AddCommand(newAgentServiceAddCommand(extCtx))

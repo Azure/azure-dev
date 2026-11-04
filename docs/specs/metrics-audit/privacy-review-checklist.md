@@ -82,9 +82,13 @@ introduced. Completion events are not configuration-deduplicated; a whole-comman
 failure is never applied to every service. Timeout/cancellation leave the final
 backend outcome unknown. Errored returns use request termination state and cause
 without replacing the original error. Deploy only enqueues into a 100-event
-bounded queue. A single listen-owned worker sends with one-second RPC deadlines
-and drains for at most one second at listen exit before closing its client;
-full or closed queues drop events. Earlier gate/definition/context failures
+bounded queue. A listen-owned worker shares the SDK client and sends with
+one-second RPC deadlines. Existing project postdeploy offers a one-second flush
+window outside the service deployment budget; failure/cancellation skips it.
+Shutdown cancels pending work without guaranteeing delivery. Full or closed
+queues drop events. Outcome-dependent loss means received events cannot serve
+as an authoritative or unbiased deployment-success denominator. No core
+shutdown protocol or delivery guarantee is introduced. Earlier gate/definition/context failures
 and process termination are not covered; missing events do not prove non-execution.
 
 Deduplication includes snapshot configuration so mixed settings are retained.

@@ -2623,6 +2623,7 @@ func TestSnapshotDeployReportsPerServiceResult(t *testing.T) {
 				require.ErrorContains(t, err, "INVALID-NAME")
 				require.NotContains(t, err.Error(), "Unavailable")
 			}
+			usage.Flush(t.Context())
 			usage.Close()
 			requests := recorder.recordedRequests()
 			require.Len(t, requests, 2, "one result per snapshot service attempt, not per configuration")
@@ -2664,6 +2665,7 @@ func TestSnapshotDeployRequestTermination(t *testing.T) {
 		localErr, ok := errors.AsType[*azdext.LocalError](err)
 		require.True(t, ok)
 		require.Equal(t, exterrors.CodeEnvironmentValuesFailed, localErr.Code)
+		usage.Flush(t.Context())
 		usage.Close()
 		requests := server.recordedRequests()
 		require.Len(t, requests, 1)

@@ -162,7 +162,7 @@ func followUpAdd(
 ) error {
 	verb := "provision"
 	if hasService {
-		verb = "provision and deploy"
+		verb = "provision and deploy the project"
 	}
 	response, err := client.Prompt().Select(ctx, &azdext.SelectRequest{Options: &azdext.SelectOptions{
 		Message: fmt.Sprintf("Do you want to %s these changes?", verb),
@@ -199,7 +199,11 @@ func followUpAdd(
 		return err
 	}
 	if response.GetValue() == 0 {
-		if err := run([]string{"provision", layerName, "--preview"}); err != nil {
+		args := []string{"provision", layerName, "--preview"}
+		if hasService {
+			args = []string{"provision", "--preview"}
+		}
+		if err := run(args); err != nil {
 			return err
 		}
 		accepted, err := confirmAdd(ctx, client, fmt.Sprintf("Proceed to %s these changes to Azure?", verb), true)

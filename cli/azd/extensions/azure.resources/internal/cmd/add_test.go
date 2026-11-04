@@ -429,7 +429,7 @@ func TestAddProvisionFollowUpsUseLocalHostWorkflow(t *testing.T) {
 		{name: "preview accepted", followUp: "Yes (preview changes)", accept: true,
 			want: [][]string{{"provision", "data", "--preview"}, {"provision", "data"}}},
 		{name: "preview and deploy", followUp: "Yes (preview changes)", accept: true, hasService: true,
-			want: [][]string{{"provision", "data", "--preview"}, {"up"}}},
+			want: [][]string{{"provision", "--preview"}, {"up"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			prompts := &addPromptServer{followUp: test.followUp, acceptProvision: test.accept}

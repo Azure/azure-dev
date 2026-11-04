@@ -1256,6 +1256,61 @@ func TestNormalizeContainerRegistryEndpointRejectsMalformedURL(t *testing.T) {
 	assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
 }
 
+func TestEjectInfra_NewProjectBicepCompiles(t *testing.T) {
+	bicep := lookupInstalledBicep()
+	if bicep == "" {
+		t.Skip("Bicep CLI not found; skipping generated Bicep compilation")
+	}
+
+	for _, tt := range []struct {
+		name         string
+		azureYAML    string
+		templatePath string
+	}{
+		{
+			name:         "container_agent",
+			azureYAML:    validFoundryAzureYAML,
+			templatePath: filepath.Join("infra", "main.bicep"),
+		},
+		{
+			name: "without_registry",
+			azureYAML: `name: my-project
+services:
+  my-foundry:
+    host: azure.ai.project
+`,
+			templatePath: filepath.Join("infra", "main.bicep"),
+		},
+		{
+			name: "custom_module",
+			azureYAML: strings.Replace(validFoundryAzureYAML, "  provider: microsoft.foundry", `  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: foundry
+      path: custom/foundry
+      module: project
+      provider: microsoft.foundry`, 1),
+			templatePath: filepath.Join("custom", "foundry", "project.bicep"),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), tt.azureYAML)
+			withCapturedStdout(t, func() {
+				require.NoError(t, ejectInfra(dir, "bicep"))
+			})
+
+			out := filepath.Join(t.TempDir(), "main.json")
+			cmd := exec.CommandContext(t.Context(), bicep, "build",
+				filepath.Join(dir, tt.templatePath), "--outfile", out)
+			output, err := cmd.CombinedOutput()
+			require.NoErrorf(t, err, "generated %s Bicep failed to compile: %s", tt.name, output)
+			require.FileExists(t, out)
+		})
+	}
+}
+
 func TestEjectInfra_ExistingProjectBicepModesCompile(t *testing.T) {
 	t.Parallel()
 	bicep := lookupInstalledBicep()
@@ -1318,6 +1373,9 @@ services:
 }
 
 func lookupInstalledBicep() string {
+	if override := os.Getenv("AZD_BICEP_TOOL_PATH"); override != "" {
+		return override
+	}
 	if path, err := exec.LookPath("bicep"); err == nil {
 		return path
 	}

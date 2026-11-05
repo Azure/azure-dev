@@ -1,0 +1,25 @@
+id: command-tree-refactor
+name: Do not report a command-tree-preserving registration refactor
+tags: [negative, command, registration, refactor]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Extract command registration helper".
+    Complete changed-file list:
+    cli/azd/extensions/example/internal/cmd/root.go
+    cli/azd/extensions/example/internal/cmd/commands.go
+    Before, root.go directly registers the public commands "azd data archive" and "azd data restore":
+    root.AddCommand(newArchiveCommand())
+    root.AddCommand(newRestoreCommand())
+    After, root.go calls registerDataCommands(root), and the new helper in commands.go registers those same two
+    constructors under the same parent. The full before and after command trees, aliases, positional arguments,
+    and flags are identical. The diff contains the changed registration call and extracted helper. Complete review
+    history is empty.
+graders:
+  - type: program
+    name: no-false-positive-for-preserved-tree
+    config:
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 0"
+        - "/complete.*2 files? inspected; 0 new contract comments; 0 existing threads/.test(review.body)"

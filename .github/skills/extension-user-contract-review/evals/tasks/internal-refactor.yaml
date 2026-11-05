@@ -13,10 +13,11 @@ inputs:
     Callers, returned values, ordering, help, validation, defaults, and output are unchanged.
     Complete conversation and review history: empty.
 graders:
-  - type: code
+  - type: program
     name: inspected-without-false-positive
     config:
-      language: javascript
-      assertions:
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 0"
-        - "/complete.*1 files? inspected; 0 new contract comments; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 0"
+        - "/complete.*1 files? inspected; 0 new contract comments; 0 existing threads/.test(review.body)"

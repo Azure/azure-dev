@@ -1,6 +1,6 @@
 # Foundry Connections
 
-Manage Microsoft Foundry Connections from your terminal. (Preview)
+Manage Microsoft Foundry Connections from your terminal.
 
 Built with azd SDK 1.37.0; requires azd 1.37.0 or later.
 

@@ -1,4 +1,8 @@
 import: ../../.vscode/cspell.yaml
+overrides:
+  - filename: ["internal/phasetelemetry/*.go", "internal/cmd/*.go", "internal/provisioning/*.go"]
+    words:
+      - phasetelemetry
 words:
   - ABAC
   - alnum
@@ -8,5 +12,6 @@ words:
   - ondisk
   - purgeable
   - recordproxy
+  - testutil
   # Contributors
   - hemarina

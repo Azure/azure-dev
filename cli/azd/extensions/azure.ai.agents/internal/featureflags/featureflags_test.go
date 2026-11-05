@@ -4,6 +4,7 @@
 package featureflags
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,70 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestRequireAnnouncesEnabledFeatureOnce(t *testing.T) {
+	feature := Feature{
+		ID:          "agents.test_notice",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_TEST_NOTICE",
+		Description: "Test preview behavior",
+	}
+	t.Setenv(feature.EnvVar, "true")
+	t.Cleanup(func() {
+		enabledNotices.Lock()
+		delete(enabledNotices.seen, feature.ID)
+		enabledNotices.Unlock()
+	})
+	var output bytes.Buffer
+
+	require.NoError(t, RequireWithWriter(feature, &output))
+	require.Contains(t, output.String(), "Preview feature enabled:")
+	require.Contains(t, output.String(), "Test preview behavior")
+	require.Contains(t, output.String(), feature.EnvVar+"=true")
+	require.Contains(t, output.String(), "Preview behavior may change.")
+
+	output.Reset()
+	require.NoError(t, RequireWithWriter(feature, &output))
+	require.Empty(t, output.String())
+}
+
+func TestRequireDoesNotAnnounceDisabledFeature(t *testing.T) {
+	feature := Feature{
+		ID:          "agents.test_disabled_notice",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_TEST_DISABLED_NOTICE",
+		Description: "Disabled test preview behavior",
+	}
+	t.Setenv(feature.EnvVar, "false")
+	var output bytes.Buffer
+
+	err := RequireWithWriter(feature, &output)
+
+	require.ErrorContains(t, err, feature.ID)
+	require.Empty(t, output.String())
+}
+
+func TestCheckDoesNotConsumeNotice(t *testing.T) {
+	feature := Feature{
+		ID:          "agents.test_check_notice",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_TEST_CHECK_NOTICE",
+		Description: "Test check-only behavior",
+	}
+	t.Setenv(feature.EnvVar, "true")
+	t.Cleanup(func() {
+		enabledNotices.Lock()
+		delete(enabledNotices.seen, feature.ID)
+		enabledNotices.Unlock()
+	})
+
+	require.NoError(t, Check(feature))
+	notice, err := RequireWithNotice(feature)
+	require.NoError(t, err)
+	require.Contains(t, notice, "Test check-only behavior")
+	require.Contains(t, notice, "Preview behavior may change.")
+
+	notice, err = RequireWithNotice(feature)
+	require.NoError(t, err)
+	require.Empty(t, notice)
+}
 
 func TestIsEnabledValidation(t *testing.T) {
 	for _, feature := range []Feature{
@@ -128,9 +193,8 @@ func TestIsEnabledIgnoresAliases(t *testing.T) {
 }
 
 func TestIsEnabledDoesNotLoadLocalConfiguration(t *testing.T) {
-	// Direct calls do not open azd config or dotenv files on disk.
-	// A value already in the process environment still enables the feature.
-	// That is how a value the azd host injected from the selected environment is observed.
+	// Disk config and dotenv files are ignored; enabling requires a process value
+	// from the shell/CI or, here, t.Setenv, not selected-environment dotenv flattening.
 	// This test does not launch through the host.
 	root := t.TempDir()
 	t.Chdir(root)

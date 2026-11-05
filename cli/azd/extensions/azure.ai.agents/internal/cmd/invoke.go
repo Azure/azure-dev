@@ -91,6 +91,7 @@ type InvokeAction struct {
 	a2aTransport          http.RoundTripper
 	a2aWriter             io.Writer
 	a2aErrorWriter        io.Writer
+	noticeWriter          io.Writer
 	protocolServiceName   string
 	resolvedRemoteContext *remoteContext
 	resolvedBody          []byte
@@ -230,6 +231,7 @@ Raw output includes the returned headers without a formatted latency summary.` +
 				flags:                flags,
 				noPrompt:             extCtx.NoPrompt,
 				debugLatencyExplicit: cmd.Flags().Changed("debug-latency"),
+				noticeWriter:         previewNoticeWriter(cmd),
 			}
 			if flags.agentEndpoint != "" {
 				parsed, err := parseAgentEndpoint(flags.agentEndpoint)
@@ -742,6 +744,10 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		a.closeResolvedRemoteContextClient()
 		return err
 	}
+	if err := requireInvocationPreviewNotice(protocol, a2aPreview, a.noticeWriter); err != nil {
+		a.closeResolvedRemoteContextClient()
+		return err
+	}
 
 	if a.flags.local {
 		if err := a.selectLocalService(ctx); err != nil {
@@ -766,6 +772,17 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	default:
 		return a.responsesRemote(ctx)
 	}
+}
+
+func requireInvocationPreviewNotice(
+	protocol agent_api.AgentProtocol,
+	a2aPreview bool,
+	writer io.Writer,
+) error {
+	if protocol != agent_api.AgentProtocolA2A || !a2aPreview {
+		return nil
+	}
+	return featureflags.RequireWithWriter(featureflags.A2A, writer)
 }
 
 func (a *InvokeAction) reportInvokeUsageForRemote(

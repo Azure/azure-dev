@@ -1603,6 +1603,48 @@ func TestPredownRejectsMalformedAuthoritativeRefBeforeCleanup(t *testing.T) {
 	}
 }
 
+func TestPredownAllowsSnapshotNullVariants(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	for _, kind := range []string{"hosted", "prompt", "voice", "prompt-voice", "workflow"} {
+		for _, field := range []string{"EnableMemorySnapshot", "ENABLEMEMORYSNAPSHOT", "Enable_Memory_Snapshot"} {
+			for _, source := range []string{"direct", "root ref"} {
+				t.Run(kind+"/"+field+"/"+source, func(t *testing.T) {
+					root := t.TempDir()
+					definition := map[string]any{"kind": kind, "name": "agent", field: nil}
+					if kind == "voice" || kind == "prompt-voice" {
+						definition["model"] = map[string]any{"id": "voice-model"}
+					}
+					props := mustStruct(t, definition)
+					if source == "root ref" {
+						data, err := props.MarshalJSON()
+						require.NoError(t, err)
+						require.NoError(t, os.WriteFile(filepath.Join(root, "definition.json"), data, 0o600))
+						props = mustStruct(t, map[string]any{"$ref": "./definition.json"})
+					}
+					proj := &azdext.ProjectConfig{Path: root, Services: map[string]*azdext.ServiceConfig{
+						"agent": {Name: "agent", Host: AiAgentHost, AdditionalProperties: props},
+					}}
+					before := proto.Clone(proj)
+					wantError := "must be a boolean"
+					if kind != "hosted" {
+						wantError = "only supported on hosted agents"
+					}
+					require.ErrorContains(t, validateRuntimeAgentServices(proj, true), wantError)
+					envServer := &testEnvironmentServiceServer{
+						current: &azdext.Environment{Name: "dev"}, values: map[string]map[string]string{"dev": {}},
+					}
+					client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+					require.NoError(t, predownHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: proj}))
+					require.Positive(t, envServer.getCurrentCalls)
+					require.Positive(t, envServer.getValuesCalls)
+					require.Empty(t, envServer.setKeys)
+					require.True(t, proto.Equal(before, proj))
+				})
+			}
+		}
+	}
+}
+
 func TestPredownIgnoresPromptDeploymentReadiness(t *testing.T) {
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 	for _, tt := range []struct {

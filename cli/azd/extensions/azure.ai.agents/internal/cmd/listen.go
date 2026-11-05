@@ -714,7 +714,7 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig, validateDeployment
 			_, err = project.ValidateAgentServiceDefinition(svc, proj.GetPath())
 		} else {
 			// Down requires safe runtime sources, not deployable instructions or skills.
-			_, _, _, err = project.LoadHostedAgentDefinition(svc, proj.GetPath())
+			_, _, _, err = project.LoadHostedAgentDefinitionForCleanup(svc, proj.GetPath())
 		}
 		if err != nil {
 			return err

@@ -42,7 +42,8 @@ func (r *containerModeRPCRecorder) snapshot() []*azdext.ReportUsageRequest {
 func TestAgentContainerModeRequestOverGRPC(t *testing.T) {
 	props, err := structpb.NewStruct(map[string]any{
 		"kind": "hosted", "name": "worker", "registryConnectionId": "secret-connection",
-		"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}},
+		"enableMemorySnapshot": true,
+		"protocols":            []any{map[string]any{"protocol": "responses", "version": "1.0.0"}},
 	})
 	require.NoError(t, err)
 	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{

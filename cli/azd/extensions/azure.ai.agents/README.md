@@ -329,6 +329,7 @@ for extensions installed from the official registry.
 Init also records [business-step elapsed times](docs/init-telemetry.md), including
 loading and interaction together. The other events are documented under
 [Agent context telemetry](#agent-context-telemetry),
+[Snapshot deployment telemetry](#snapshot-deployment-telemetry),
 [Operation classification markers](#operation-classification-markers),
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
@@ -359,6 +360,23 @@ both azd-created and existing ACR destinations. Ambiguous legacy or invalid
 hosted configurations, and those with an `AGENT_DEFINITION_PATH` override,
 are reported as `unknown`. The event never includes agent names, service keys,
 registry connections, image references, paths, URLs, prompts, or other customer content.
+
+### Snapshot deployment telemetry
+
+Hosted provider Deploy reuses `agent.phase.completed`, adding
+`ext.agent.memory.snapshot=true` only after resolving a hosted definition with
+snapshots explicitly enabled. Disabled, unspecified, unresolved or non-hosted
+definitions, context events, other phases and steps omit the marker.
+The same record contains `ext.agent.phase.outcome` (`success`,
+`error`, `timeout`, `canceled`), elapsed milliseconds and the invocation-local
+attempt ID. Filter `ext.agent.phase.name=deploy`, `ext.agent.phase.scope=provider` and
+`ext.agent.memory.snapshot=true` to count observed snapshot-enabled deployment
+attempts, not unique users or the whole multi-service command. No extra result event, RPC, queue or shutdown hook
+is added. Existing best-effort reporting, opt-out, official-source admission and
+event limits still apply. Missing reports do not prove non-execution; timeout
+does not establish the final Azure result, and deployment success does not prove
+snapshot capture or restore. See the [telemetry schema](../../../../docs/specs/metrics-audit/telemetry-schema.md)
+for the field contract.
 
 ### Remote invoke adoption telemetry
 

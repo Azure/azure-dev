@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net"
 	"net/http"
@@ -15,18 +16,22 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/botservice"
 	"azureaiagent/internal/pkg/envkey"
+	"azureaiagent/internal/pkg/recordproxy"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
@@ -3215,6 +3220,9 @@ func newEnvTestClient(
 	azdext.RegisterEnvironmentServiceServer(srv, envSrv)
 	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
 		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
+		if telemetrySrv, ok := projectSrvs[0].(azdext.TelemetryServiceServer); ok {
+			azdext.RegisterTelemetryServiceServer(srv, telemetrySrv)
+		}
 	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -3233,6 +3241,110 @@ func newEnvTestClient(
 	t.Cleanup(func() { client.Close() })
 
 	return client
+}
+
+type snapshotPhaseProjectServer struct {
+	stubProjectServer
+	azdext.UnimplementedTelemetryServiceServer
+	mu       sync.Mutex
+	requests []*azdext.ReportUsageRequest
+}
+
+func (server *snapshotPhaseProjectServer) ReportUsage(
+	_ context.Context, request *azdext.ReportUsageRequest,
+) (*azdext.ReportUsageResponse, error) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	server.requests = append(server.requests, request)
+	return &azdext.ReportUsageResponse{Accepted: false}, nil
+}
+
+type snapshotPhaseEnvironmentServer struct {
+	stubEnvServer
+}
+
+func (server *snapshotPhaseEnvironmentServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	values := make([]*azdext.KeyValue, 0, len(server.values))
+	for key, value := range server.values {
+		values = append(values, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: values}, nil
+}
+
+func TestSnapshotDeployUsesExistingPhaseCompletion(t *testing.T) {
+	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	resourceID, err := arm.ParseResourceID("/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project")
+	require.NoError(t, err)
+	transport := recordproxy.Transport
+	t.Cleanup(func() { recordproxy.Transport = transport })
+	recordproxy.Transport = hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
+		code, body := http.StatusOK, `{"name":"worker","version":"1","status":"active"}`
+		if request.Method == http.MethodGet && !strings.Contains(request.URL.Path, "/versions/") {
+			code, body = http.StatusNotFound, `{"error":{"code":"not_found"}}`
+		}
+		return &http.Response{StatusCode: code, Header: http.Header{"Content-Type": {"application/json"}},
+			Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+	})
+	for _, setting := range []*bool{nil, new(false), new(true)} {
+		for _, fail := range []bool{false, true} {
+			root := t.TempDir()
+			recorder := &snapshotPhaseProjectServer{stubProjectServer: stubProjectServer{
+				project: &azdext.ProjectConfig{Path: root},
+			}}
+			env := &snapshotPhaseEnvironmentServer{stubEnvServer: stubEnvServer{values: map[string]string{
+				"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_AI_PROJECT_ID": resourceID.String(),
+				"AZURE_LOCATION": "eastus",
+			}}}
+			client := newEnvTestClient(t, env, recorder)
+			provider := &AgentServiceTargetProvider{azdClient: client, projectPath: root, deployContextReady: true,
+				credential: hostedResourceErrorCredential{}, foundryProject: resourceID, env: &azdext.Environment{Name: "test"}}
+			definition := map[string]any{"kind": "hosted", "name": "worker",
+				"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}}}
+			if setting != nil {
+				definition["enableMemorySnapshot"] = *setting
+			}
+			service := &azdext.ServiceConfig{Name: "agent", Host: "azure.ai.agent",
+				AdditionalProperties: mustStruct(t, definition)}
+			if fail {
+				service.Environment = map[string]string{"INVALID-NAME": "value"}
+			}
+			result, deploymentErr := provider.Deploy(t.Context(), service,
+				&azdext.ServiceContext{Publish: []*azdext.Artifact{{Kind: azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+					LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE, Location: "registry.example/agent:latest"}}},
+				nil, func(string) {})
+			want := "success"
+			if fail {
+				want = "error"
+				require.ErrorContains(t, deploymentErr, "INVALID-NAME")
+			} else {
+				require.NoError(t, deploymentErr)
+				require.NotNil(t, result)
+			}
+			recorder.mu.Lock()
+			completed := 0
+			for _, request := range recorder.requests {
+				if request.EventName != "agent.phase.completed" {
+					require.NotContains(t, request.Attributes, "agent.memory.snapshot")
+					continue
+				}
+				completed++
+				if setting != nil && *setting {
+					require.Equal(t, "true", request.Attributes["agent.memory.snapshot"])
+				} else {
+					require.NotContains(t, request.Attributes, "agent.memory.snapshot")
+				}
+				require.Equal(t, want, request.Attributes["agent.phase.outcome"])
+				require.NotEmpty(t, request.Attributes["agent.phase.attempt_id"])
+				require.Contains(t, request.Attributes, "agent.phase.duration_ms")
+			}
+			recorder.mu.Unlock()
+			require.Equal(t, 1, completed)
+		}
+	}
 }
 
 func TestRegisterAgentEnvironmentVariables(t *testing.T) {

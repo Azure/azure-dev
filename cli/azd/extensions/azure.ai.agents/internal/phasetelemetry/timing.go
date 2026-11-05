@@ -84,17 +84,28 @@ type step struct {
 
 // Timing owns one invocation-local attempt; provider instances never store it.
 type Timing struct {
-	mu       sync.Mutex
-	now      func() time.Time
-	started  time.Time
-	name     Name
-	scope    Scope
-	attempt  string
-	reporter foundryTelemetry.Reporter
-	steps    []step
-	dropped  int
-	finished bool
-	timedOut bool
+	mu             sync.Mutex
+	now            func() time.Time
+	started        time.Time
+	name           Name
+	scope          Scope
+	attempt        string
+	reporter       foundryTelemetry.Reporter
+	steps          []step
+	dropped        int
+	finished       bool
+	timedOut       bool
+	memorySnapshot bool
+}
+
+// MemorySnapshot marks a resolved hosted deployment that enables snapshots.
+func (t *Timing) MemorySnapshot(enabled *bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.name != Deploy || t.scope != Provider || t.finished {
+		return
+	}
+	t.memorySnapshot = enabled != nil && *enabled
 }
 
 // Timeout marks an observed business polling deadline without changing its error.
@@ -172,6 +183,7 @@ func (t *Timing) End(ctx context.Context, err error) {
 	steps := append([]step(nil), t.steps...)
 	dropped := t.dropped
 	timedOut := t.timedOut
+	memorySnapshot := t.memorySnapshot
 	t.mu.Unlock()
 	if t.reporter == nil {
 		return
@@ -179,25 +191,45 @@ func (t *Timing) End(ctx context.Context, err error) {
 	reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 	defer cancel()
 	result := outcome(err)
-	if result == "canceled" && errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
-		result = "timeout"
+	if err != nil && ctx.Err() != nil && result != "timeout" {
+		result = "canceled"
+		if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+			result = "timeout"
+		}
 	}
 	if result == "error" && timedOut {
 		result = "timeout"
 	}
-	t.reporter.Report(reportCtx, foundryTelemetry.Event{
-		Name: "agent.phase.completed",
-		Attributes: map[string]string{
-			"agent.phase.name":               string(t.name),
-			"agent.phase.scope":              string(t.scope),
-			"agent.phase.attempt_id":         t.attempt,
-			"agent.phase.start_time":         t.started.UTC().Format(time.RFC3339Nano),
-			"agent.phase.end_time":           ended.UTC().Format(time.RFC3339Nano),
-			"agent.phase.duration_ms":        milliseconds(ended.Sub(t.started)),
-			"agent.phase.outcome":            result,
-			"agent.phase.step.dropped_count": strconv.Itoa(dropped),
-		},
-	})
+	if memorySnapshot {
+		t.reporter.Report(reportCtx, foundryTelemetry.Event{
+			Name: "agent.phase.completed",
+			Attributes: map[string]string{
+				"agent.phase.name":               string(t.name),
+				"agent.phase.scope":              string(t.scope),
+				"agent.phase.attempt_id":         t.attempt,
+				"agent.phase.start_time":         t.started.UTC().Format(time.RFC3339Nano),
+				"agent.phase.end_time":           ended.UTC().Format(time.RFC3339Nano),
+				"agent.phase.duration_ms":        milliseconds(ended.Sub(t.started)),
+				"agent.phase.outcome":            result,
+				"agent.phase.step.dropped_count": strconv.Itoa(dropped),
+				"agent.memory.snapshot":          "true",
+			},
+		})
+	} else {
+		t.reporter.Report(reportCtx, foundryTelemetry.Event{
+			Name: "agent.phase.completed",
+			Attributes: map[string]string{
+				"agent.phase.name":               string(t.name),
+				"agent.phase.scope":              string(t.scope),
+				"agent.phase.attempt_id":         t.attempt,
+				"agent.phase.start_time":         t.started.UTC().Format(time.RFC3339Nano),
+				"agent.phase.end_time":           ended.UTC().Format(time.RFC3339Nano),
+				"agent.phase.duration_ms":        milliseconds(ended.Sub(t.started)),
+				"agent.phase.outcome":            result,
+				"agent.phase.step.dropped_count": strconv.Itoa(dropped),
+			},
+		})
+	}
 	for i, step := range steps {
 		if reportCtx.Err() != nil {
 			azdext.NewLogger("phase.telemetry").Debug("phase timing reporting deadline reached")

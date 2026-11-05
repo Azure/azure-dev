@@ -282,3 +282,30 @@ func TestTelemetryClassificationsBoundCustomerValues(t *testing.T) {
 	require.Equal(t, "files.upload", telemetryOperation("agent files upload"))
 	require.Equal(t, string(agent_yaml.AgentKindVoice), telemetryAgentKind(string(agent_yaml.AgentKindVoice)))
 }
+
+func TestAgentContextReporterIgnoresMemorySnapshotSettings(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	project := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{}}
+	for name, enabled := range map[string]bool{"enabled": true, "disabled": false} {
+		props, err := structpb.NewStruct(map[string]any{
+			"kind": "hosted", "name": "customer-secret", "enableMemorySnapshot": enabled,
+			"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}},
+		})
+		require.NoError(t, err)
+		project.Services[name] = &azdext.ServiceConfig{Name: name, Host: AiAgentHost, AdditionalProperties: props}
+	}
+	reporter := newAgentContextReporter()
+	client := &telemetryRecordingClient{}
+	reporter.reportProjectConfig(t.Context(), client, project, "deploy")
+	reporter.reportProjectConfig(t.Context(), client, project, "deploy")
+	require.Len(t, client.requests, 1)
+	for _, request := range client.requests {
+		require.NotContains(t, request.Attributes, "agent.memory.snapshot")
+		require.NotContains(t, request.Attributes, "name")
+		require.NotContains(t, request.Attributes, "version")
+		require.NotContains(t, request.Attributes, "enableMemorySnapshot")
+		for value := range maps.Values(request.Attributes) {
+			require.NotContains(t, value, "customer-secret")
+		}
+	}
+}

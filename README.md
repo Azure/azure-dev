@@ -118,7 +118,7 @@ See the [Microsoft Privacy Statement](https://go.microsoft.com/fwlink/?LinkId=52
 
 ## Contributing
 
-We welcome contributions! Please see our [contributing guide](cli/azd/CONTRIBUTING.md) for details.
+We welcome contributions! Please see our [contributing guide](CONTRIBUTING.md) for details.
 
 Most contributions require a [Contributor License Agreement (CLA)](https://cla.microsoft.com). A bot will guide you through this when you open a PR.
 

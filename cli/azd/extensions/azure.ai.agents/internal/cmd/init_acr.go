@@ -42,6 +42,20 @@ func initACRConflict(input string) error {
 }
 
 func validateInitACRInput(cmd *cobra.Command, flags *initFlags) error {
+	flags.acrConflictingFlag = ""
+	for _, name := range []string{
+		"project-id", "acr-connection", "image", "registry-connection",
+		"runtime", "entry-point", "dep-resolution",
+	} {
+		if cmd.Flags().Changed(name) {
+			flags.acrConflictingFlag = name
+			break
+		}
+	}
+	return validateResolvedInitACRInput(flags)
+}
+
+func validateResolvedInitACRInput(flags *initFlags) error {
 	if !flags.acrResourceIDSet && flags.effectiveACRResourceID == "" {
 		return nil
 	}
@@ -56,13 +70,8 @@ func validateInitACRInput(cmd *cobra.Command, flags *initFlags) error {
 			"use /subscriptions/<id>/resourceGroups/<group>/providers/Microsoft.ContainerRegistry/registries/<name>",
 		)
 	}
-	for _, name := range []string{
-		"project-id", "acr-connection", "image", "registry-connection",
-		"runtime", "entry-point", "dep-resolution",
-	} {
-		if cmd.Flags().Changed(name) {
-			return initACRConflict("--" + name)
-		}
+	if flags.acrConflictingFlag != "" {
+		return initACRConflict("--" + flags.acrConflictingFlag)
 	}
 	if strings.EqualFold(flags.deployMode, "code") {
 		return initACRConflict("--deploy-mode code")
@@ -485,8 +494,8 @@ func validateInitACRProjectContent(
 		return err
 	}
 	flags.effectiveACRResourceID = selectedID
-	if strings.EqualFold(flags.deployMode, "code") {
-		return initACRConflict("--deploy-mode code")
+	if err := validateResolvedInitACRInput(flags); err != nil {
+		return err
 	}
 	if flags.templatePointer == "" && !flags.acrTemplateTarget {
 		if err := validateInitACRInfrastructure(content, root); err != nil {

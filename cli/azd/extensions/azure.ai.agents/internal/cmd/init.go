@@ -53,6 +53,7 @@ type initFlags struct {
 	projectResourceId       string
 	acrResourceID           string
 	acrResourceIDSet        bool
+	acrConflictingFlag      string
 	effectiveACRResourceID  string
 	acrTemplateTarget       bool
 	acrConnection           string

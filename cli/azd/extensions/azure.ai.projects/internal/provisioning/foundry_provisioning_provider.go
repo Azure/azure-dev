@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"log"
 	"maps"
 	"net/url"
@@ -69,8 +68,7 @@ const (
 // after `azd ai agent init --infra`), it compiles that Bicep at runtime instead
 // and the user owns the parameter contract. See ondisk_template.go.
 type FoundryProvisioningProvider struct {
-	azdClient    *azdext.AzdClient
-	noticeWriter io.Writer
+	azdClient *azdext.AzdClient
 
 	// Populated by Initialize.
 	projectPath      string

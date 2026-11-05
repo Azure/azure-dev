@@ -7,7 +7,7 @@
 - **Component:** `cli/azd/extensions/azure.ai.agents`
 - **Scope:** Independent managed-harness, voice, long-running invocation, A2A version-selection, memory snapshot, and BYO AKS switches. All switches default to off.
 
-Keep preview opt-in decisions inside the Microsoft Foundry agents extension until the extension framework supports discovery and evaluation. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
+Keep preview opt-in decisions inside the owning extensions until the extension framework supports discovery and evaluation. The Agents extension owns its private preview evaluator; the Projects extension independently checks the shared BYO AKS switch for provisioning and provisioning preview when effective AKS hosting is enabled. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
 
 Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws`. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
 
@@ -198,7 +198,7 @@ Extension metadata and shell completion are built from the complete static tree.
 
 An explicit HTTP `--agent-endpoint` carries no kind or harness information. It remains unclassified, with no additional authenticated definition lookup, so managed-harness enforcement cannot cover that route. The deterministic long-running check applies to every endpoint before invocation, authentication, or conversation/session persistence. Text invoke does not accept voice WebSocket endpoints.
 
-Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. BYO AKS infrastructure operations do not require its switch to be enabled; infrastructure teardown follows the standard Foundry `azd down` path and deletes the target resource group with all resources inside it. There is no state migration or persisted flag update. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
+Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. BYO AKS infrastructure state and parameter queries, Bicep eject, and teardown do not require its switch to be enabled; infrastructure teardown follows the standard Foundry `azd down` path and deletes the target resource group with all resources inside it. There is no state migration or persisted flag update. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
 
 ## Compatibility and future framework adoption
 

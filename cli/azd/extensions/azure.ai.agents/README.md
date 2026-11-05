@@ -35,8 +35,11 @@ When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feat
 False, empty, and invalid values disable it, including BYO AKS.
 The evaluator reads the current
 process environment without querying azd config or loading environment files.
-Values already injected by the azd host count; the selected azd environment
-can override the same key from the shell or CI.
+For ordinary Agents extension commands, the azd host may inject selected-environment
+values that override the same key from the shell or CI.
+The Projects provisioning listener does not receive that injection. For
+`azd provision` and `azd provision --preview`, set the BYO AKS switch in the current
+shell or CI process environment; `azd env set` alone does not enable it.
 
 User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
 `AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary

@@ -6,7 +6,6 @@
 package provisioning
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -186,9 +185,8 @@ func offlineBYOProvider(t *testing.T) (*FoundryProvisioningProvider, *byoARMFake
 	var template map[string]any
 	require.NoError(t, json.Unmarshal(raw, &template))
 	p := &FoundryProvisioningProvider{
-		noticeWriter: io.Discard,
-		azdClient:    newResolveEnvTestClient(t, &resolveEnvStubEnvServer{}, &resolveEnvStubPromptServer{}),
-		projectPath:  t.TempDir(), envName: "test", subID: "target-sub", rgName: "target-rg", location: "westus",
+		azdClient:   newResolveEnvTestClient(t, &resolveEnvStubEnvServer{}, &resolveEnvStubPromptServer{}),
+		projectPath: t.TempDir(), envName: "test", subID: "target-sub", rgName: "target-rg", location: "westus",
 		foundryName: "project", synthResult: result, armTemplate: template, credential: byoTestCredential{},
 		tenantID: "user-access-tenant", virtualEnv: map[string]string{},
 	}
@@ -213,54 +211,6 @@ func requireBYOFeatureNotEnabled(t *testing.T, err error) {
 	assert.Equal(t, azdext.LocalErrorCategoryCompatibility, local.Category)
 	assert.Equal(t, fmt.Sprintf("preview feature %q is disabled", synthesis.BYOAKSFeatureID), local.Message)
 	assert.Contains(t, local.Suggestion, synthesis.BYOAKSEnvVar+"=true")
-}
-
-func resetBYOPreviewNotice(t *testing.T) {
-	t.Helper()
-	reset := func() {
-		byoPreviewNotice.Lock()
-		defer byoPreviewNotice.Unlock()
-		byoPreviewNotice.announced = false
-	}
-	reset()
-	t.Cleanup(reset)
-}
-
-func TestBYOPreviewNoticeOncePerProcess(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	resetBYOPreviewNotice(t)
-	var first, second bytes.Buffer
-	require.NoError(t, announceBYOPreview(io.Discard))
-	require.NoError(t, announceBYOPreview(&first))
-	require.NoError(t, announceBYOPreview(&second))
-	assert.Equal(t,
-		"(!) Preview feature enabled: Existing AKS project initialization and adoption "+
-			"(AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true). Preview behavior may change.\n", first.String())
-	assert.Empty(t, second.String())
-}
-
-type failingBYONoticeWriter struct {
-	err error
-}
-
-func (w failingBYONoticeWriter) Write([]byte) (int, error) {
-	return 0, w.err
-}
-
-func TestBYOPreviewNoticeFailureStopsReadsAndAllowsRetry(t *testing.T) {
-	resetBYOPreviewNotice(t)
-	p, fake := offlineBYOProvider(t)
-	writeErr := errors.New("notice output unavailable")
-	p.noticeWriter = failingBYONoticeWriter{err: writeErr}
-	source, err := p.resolveTemplate(t.Context(), func(string) {})
-	require.NoError(t, err)
-	err = p.prepareBYO(t.Context(), source)
-	require.ErrorIs(t, err, writeErr)
-	require.ErrorContains(t, err, "writing preview feature notice")
-	assert.Empty(t, fake.requests)
-	var retry bytes.Buffer
-	require.NoError(t, announceBYOPreview(&retry))
-	assert.Contains(t, retry.String(), "Preview feature enabled:")
 }
 
 func TestBYOPrepareFeatureGateUsesProcessEnvironment(t *testing.T) {
@@ -289,10 +239,7 @@ func TestBYOPrepareFeatureGateUsesProcessEnvironment(t *testing.T) {
 		{"True", "True", false, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			resetBYOPreviewNotice(t)
 			p, fake := suppliedProvider(t, 7)
-			var notice bytes.Buffer
-			p.noticeWriter = &notice
 			t.Setenv(synthesis.BYOAKSEnvVar, test.value)
 			if test.unset {
 				require.NoError(t, os.Unsetenv(synthesis.BYOAKSEnvVar))
@@ -309,8 +256,6 @@ func TestBYOPrepareFeatureGateUsesProcessEnvironment(t *testing.T) {
 			err = p.prepareBYO(t.Context(), source)
 			if test.enabled {
 				require.NoError(t, err)
-				assert.Contains(t, notice.String(), "Preview feature enabled:")
-				assert.Contains(t, notice.String(), synthesis.BYOAKSEnvVar+"=true")
 				assert.ElementsMatch(t, []string{
 					offlineClusterID,
 					"/subscriptions/workload-sub/providers/Microsoft.Authorization/roleDefinitions",
@@ -322,7 +267,6 @@ func TestBYOPrepareFeatureGateUsesProcessEnvironment(t *testing.T) {
 				assert.Contains(t, source.parameters, "federatedIdentityRoleDefinitionId")
 			} else {
 				requireBYOFeatureNotEnabled(t, err)
-				assert.Empty(t, notice.String())
 				assert.Nil(t, p.credential)
 				assert.Empty(t, fake.reads)
 				assert.Empty(t, fake.base.requests)
@@ -356,8 +300,6 @@ func TestBYOProvisioningFeatureGateUsesEffectiveParameters(t *testing.T) {
 		} {
 			t.Run(fmt.Sprintf("preview=%t/%s", preview, test.name), func(t *testing.T) {
 				p, fake := offlineBYOProvider(t)
-				var notice bytes.Buffer
-				p.noticeWriter = &notice
 				t.Setenv(synthesis.BYOAKSEnvVar, "false")
 				p.virtualEnv[synthesis.BYOAKSEnvVar] = "true"
 				server := &resolveEnvStubEnvServer{get: map[string]string{synthesis.BYOAKSEnvVar: "true"}}
@@ -421,7 +363,6 @@ func TestBYOProvisioningFeatureGateUsesEffectiveParameters(t *testing.T) {
 				assert.Zero(t, fake.writes)
 				assert.Zero(t, fake.previews)
 				requireBYOFeatureNotEnabled(t, err)
-				assert.Empty(t, notice.String(), "disabled features must not announce")
 				current, err := json.Marshal(p.synthResult)
 				require.NoError(t, err)
 				assert.JSONEq(t, string(original), string(current), "the gate must not rewrite hosting configuration")
@@ -433,17 +374,13 @@ func TestBYOProvisioningFeatureGateUsesEffectiveParameters(t *testing.T) {
 }
 
 func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
-	resetBYOPreviewNotice(t)
 	p, fake := offlineBYOProvider(t)
-	var notice bytes.Buffer
-	p.noticeWriter = &notice
 	server := &resolveEnvStubEnvServer{get: map[string]string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": offlineRegistryID}}
 	p.azdClient = newResolveEnvTestClient(t, server, &resolveEnvStubPromptServer{})
 	compiler := &stubCompiler{}
 	p.bicepCliInstance = compiler
 	result, err := p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
-	assert.Contains(t, notice.String(), "Preview feature enabled:")
 	require.NotNil(t, result.Deployment)
 	for name, value := range map[string]string{
 		"AZURE_AI_PROJECT_ID": offlineProjectID, "FOUNDRY_PROJECT_ENDPOINT": offlineProjectEndpoint,
@@ -473,13 +410,9 @@ func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
 }
 
 func TestBYOPreviewReturnsARMWhatIfChangesWithoutResourceWrites(t *testing.T) {
-	resetBYOPreviewNotice(t)
 	p, fake := offlineBYOProvider(t)
-	var notice bytes.Buffer
-	p.noticeWriter = &notice
 	result, err := p.Preview(t.Context(), func(string) {})
 	require.NoError(t, err)
-	assert.Contains(t, notice.String(), "Preview feature enabled:")
 	require.NotNil(t, result.Preview)
 	require.Len(t, result.Preview.Changes, 1)
 	assert.Equal(t, offlineProjectID, result.Preview.Changes[0].ResourceId)

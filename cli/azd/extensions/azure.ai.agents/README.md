@@ -1592,6 +1592,20 @@ defaulting to a new registry. A same-group registry ID alone is not evidence
 that azd owns the registry. A deployed registry binding remains authoritative
 when legacy registry output variables are missing.
 
+Registry selection requires a Projects extension that accepts
+`project add --new-project --acr-resource-id`. Init checks these flags with
+captured command help before changing project files or environment values.
+The check does not print help into quiet or JSON output. An unsupported
+extension or a failed capability check stops setup; flows without a selector
+continue to work with older Projects versions.
+
+Conflict messages identify the explicit flag, saved environment selector, or
+deployed binding. Saved selectors also prevent selecting voice initialization
+interactively. Use source builds or a separate environment for an incompatible
+configuration; do not remove a deployed binding to bypass validation.
+Source initialization checks the planned environment's local `.azure` state
+even when a previous partial init did not leave an `azure.yaml` file.
+
 The selector cannot be combined with `--image`, `--registry-connection`,
 `--acr-connection`, `--project-id`, or code/prompt/voice deployment. Existing
 connection-selection flows keep their meanings. Repeated provisioning retains

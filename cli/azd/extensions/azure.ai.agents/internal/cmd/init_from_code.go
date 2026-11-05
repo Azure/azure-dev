@@ -98,7 +98,9 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := validateInitACRProject(ctx, a.azdClient, a.flags); err != nil {
+	if err := validateInitACRProjectContent(
+		ctx, a.azdClient, a.flags, nil, "", valueOrDefault(a.projectTargetDir, "."),
+	); err != nil {
 		return err
 	}
 	protocols, err := selectHostedProtocols(ctx, a.azdClient, a.flags.noPrompt, a.flags.protocols, a.noticeWriter)
@@ -112,6 +114,9 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		ctx, a.azdClient, a.flags, valueOrDefault(a.projectTargetDir, "."),
 	)
 	if err != nil {
+		return err
+	}
+	if err := ensureInitACRProjectsCapability(ctx, a.flags); err != nil {
 		return err
 	}
 	a.projectConfig, err = a.ensureProject(ctx)

@@ -6,12 +6,14 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -79,7 +81,9 @@ func executeReuseInitACR(
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 	t.Setenv("AZD_SERVER", listener.Addr().String())
-	command := newInitCommand(&azdext.ExtensionContext{NoPrompt: noPrompt, Environment: envName})
+	command := newInitCommand(
+		&azdext.ExtensionContext{NoPrompt: noPrompt, Environment: envName}, testProjectsACRHelp(workflow),
+	)
 	command.SetOut(io.Discard)
 	command.SetErr(io.Discard)
 	command.SetArgs(args)
@@ -170,7 +174,9 @@ func TestInitACRReusePlansBeforeEnvironmentCreation(t *testing.T) {
 			workflow.runHook = func(call int) error {
 				args := workflow.requests[call-1].Workflow.Steps[0].Command.Args
 				if len(args) >= 2 && args[0] == "env" && args[1] == "new" {
-					require.Equal(t, []string{"env", "new", envName}, args)
+					if !slices.Equal(args, []string{"env", "new", envName}) {
+						return fmt.Errorf("unexpected environment creation arguments: %v", args)
+					}
 					environment := &azdext.Environment{Name: envName}
 					environments.environments[envName] = environment
 					environments.current = environment

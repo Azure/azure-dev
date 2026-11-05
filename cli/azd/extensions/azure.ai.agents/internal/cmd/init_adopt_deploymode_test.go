@@ -142,6 +142,7 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 		wantCodeUnset bool
 		wantRegistry  string
 		wantImage     string
+		wantProject   string
 		wantErr       string
 	}{
 		{
@@ -195,18 +196,25 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			},
 			service:      sourceImageService,
 			wantNeedsACR: true,
+			wantLanguage: "docker",
+			wantDocker:   map[string]any{"remoteBuild": true},
+			wantProject:  ".",
 		},
 		{
 			name:         "saved ACR selection keeps image source build",
 			flags:        &initFlags{effectiveACRResourceID: testInitACRID},
 			service:      sourceImageService,
 			wantNeedsACR: true,
+			wantLanguage: "docker",
+			wantDocker:   map[string]any{"remoteBuild": true},
+			wantProject:  ".",
 		},
 		{
 			name:         "ACR selection preserves authored source docker config",
 			flags:        &initFlags{acrResourceIDSet: true},
 			service:      preBuiltService,
 			wantNeedsACR: true,
+			wantProject:  ".",
 		},
 		{
 			name: "ACR selection preserves explicit image passthrough",
@@ -335,9 +343,12 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			if tc.wantImage != "" {
 				assert.Equal(t, tc.wantImage, sets["image"])
 			}
+			if tc.wantProject != "" {
+				assert.Equal(t, tc.wantProject, sets["project"])
+			}
 			// A respected sample config must not be rewritten.
 			if tc.wantDocker == nil && !tc.wantCodeSet && tc.wantLanguage == nil &&
-				tc.wantRegistry == "" && tc.wantImage == "" {
+				tc.wantRegistry == "" && tc.wantImage == "" && tc.wantProject == "" {
 				assert.Empty(t, sets)
 			}
 		})
@@ -386,7 +397,10 @@ func TestApplyDeployModeToAdoptedProject_ACRSelectionPreservesMixedBuilds(t *tes
 				require.NoError(t, err)
 				require.True(t, needsACR)
 				require.Equal(t, []string{"source"}, sources)
-				require.Empty(t, server.sets)
+				require.Equal(t, map[string]any{
+					"project": ".", "language": "docker", "docker": map[string]any{"remoteBuild": true},
+				}, server.sets["source"])
+				require.Empty(t, server.sets["prebuilt"])
 				require.Empty(t, server.unsets)
 				require.True(t, prebuilt.GetDocker().GetImagePassthrough())
 			})

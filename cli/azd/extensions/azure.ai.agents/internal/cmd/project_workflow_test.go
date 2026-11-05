@@ -24,10 +24,13 @@ import (
 type recordingProjectWorkflowServer struct {
 	azdext.UnimplementedWorkflowServiceServer
 
-	mu       sync.Mutex
-	requests []*azdext.RunWorkflowRequest
-	err      error
-	runHook  func(int) error
+	mu        sync.Mutex
+	requests  []*azdext.RunWorkflowRequest
+	err       error
+	runHook   func(int) error
+	probes    []*azdext.RunWorkflowRequest
+	probeErr  error
+	probeHelp []byte
 }
 
 func (s *recordingProjectWorkflowServer) Run(
@@ -46,6 +49,25 @@ func (s *recordingProjectWorkflowServer) Run(
 		return nil, s.err
 	}
 	return &azdext.EmptyResponse{}, nil
+}
+
+func testProjectsACRHelp(s *recordingProjectWorkflowServer) func(context.Context) ([]byte, error) {
+	return func(context.Context) ([]byte, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.probes = append(s.probes, &azdext.RunWorkflowRequest{Workflow: &azdext.Workflow{
+			Steps: []*azdext.WorkflowStep{{Command: &azdext.WorkflowCommand{
+				Args: []string{"ai", "project", "add", "--help", "--no-prompt"},
+			}}},
+		}})
+		if s.probeErr != nil {
+			return nil, s.probeErr
+		}
+		if s.probeHelp != nil {
+			return s.probeHelp, nil
+		}
+		return []byte("Flags:\n      --new-project\n      --acr-resource-id string\n"), nil
+	}
 }
 
 func newProjectWorkflowClient(

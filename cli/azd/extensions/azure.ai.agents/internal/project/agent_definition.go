@@ -449,7 +449,7 @@ func LoadHostedAgentDefinition(
 	return agentDefinitionFromDisk(svc, projectRoot)
 }
 
-// LoadHostedAgentDefinitionForCleanup treats hosted snapshot nulls as omitted
+// LoadHostedAgentDefinitionForCleanup treats snapshot nulls as omitted
 // without relaxing runtime source validation or changing the authored service.
 func LoadHostedAgentDefinitionForCleanup(
 	svc *azdext.ServiceConfig,
@@ -465,11 +465,9 @@ func LoadHostedAgentDefinitionForCleanup(
 	if err != nil {
 		return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceInline, err
 	}
-	if structKind(props) == string(agent_yaml.AgentKindHosted) {
-		for key, value := range props.GetFields() {
-			if _, null := value.GetKind().(*structpb.Value_NullValue); null && isMemorySnapshotKey(key) {
-				delete(props.Fields, key)
-			}
+	for key, value := range props.GetFields() {
+		if _, null := value.GetKind().(*structpb.Value_NullValue); null && isMemorySnapshotKey(key) {
+			delete(props.Fields, key)
 		}
 	}
 	resolved := proto.CloneOf(svc)

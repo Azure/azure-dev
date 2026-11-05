@@ -19,7 +19,7 @@ type Feature struct {
 	// EnvVar is the process environment key for this feature.
 	// A value already in the process counts, including one the azd host injected.
 	EnvVar string
-	// Description is an optional short summary for help.
+	// Description is an optional short summary for help and enabled-feature notices.
 	Description string
 	// DefaultEnabled applies only when EnvVar is absent.
 	DefaultEnabled bool

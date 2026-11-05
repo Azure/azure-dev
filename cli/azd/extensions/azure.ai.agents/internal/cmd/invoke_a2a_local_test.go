@@ -144,7 +144,7 @@ func TestLocalA2ASelectedVersionAndProtocol(t *testing.T) {
 					flags.protocol = ""
 				}
 				sends := 0
-				action := &InvokeAction{flags: flags, noPrompt: true, a2aWriter: &output, a2aErrorWriter: io.Discard,
+				action := &InvokeAction{noticeWriter: io.Discard, flags: flags, noPrompt: true, a2aWriter: &output, a2aErrorWriter: io.Discard,
 					credential: invokeUsageFailingCredential{},
 					a2aTransport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 						sends++
@@ -222,7 +222,7 @@ func TestLocalA2AValidationAfterAutodetect(t *testing.T) {
 				captureLocalA2AExplicitFlags(command, &flags)
 			}
 			sends := 0
-			a := &InvokeAction{flags: &flags, noPrompt: true, a2aWriter: io.Discard,
+			a := &InvokeAction{noticeWriter: io.Discard, flags: &flags, noPrompt: true, a2aWriter: io.Discard,
 				credential: invokeUsageFailingCredential{},
 				a2aTransport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 					sends++
@@ -244,7 +244,7 @@ func TestLocalA2AFileBytes(t *testing.T) {
 			content := []byte(" \r\nopaque JSON-RPC\x00\xff\n")
 			file := filepath.Join(t.TempDir(), "request.bin")
 			require.NoError(t, os.WriteFile(file, content, 0600))
-			a := &InvokeAction{flags: &invokeFlags{local: true, port: 12345, inputFile: file},
+			a := &InvokeAction{noticeWriter: io.Discard, flags: &invokeFlags{local: true, port: 12345, inputFile: file},
 				a2aWriter: io.Discard, a2aErrorWriter: io.Discard,
 				a2aTransport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					body, err := io.ReadAll(r.Body)
@@ -282,7 +282,7 @@ func TestLocalA2AResponses(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var output bytes.Buffer
 			sends := 0
-			a := &InvokeAction{flags: &invokeFlags{local: true, port: 8080, message: "hi"}, a2aWriter: &output,
+			a := &InvokeAction{noticeWriter: io.Discard, flags: &invokeFlags{local: true, port: 8080, message: "hi"}, a2aWriter: &output,
 				a2aTransport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					sends++
 					if tc.raw {
@@ -330,7 +330,7 @@ func TestLocalA2ARetryAndErrorChains(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
 			var firstBody []byte
-			a := &InvokeAction{flags: &invokeFlags{local: true, port: 8080, message: "hi"},
+			a := &InvokeAction{noticeWriter: io.Discard, flags: &invokeFlags{local: true, port: 8080, message: "hi"},
 				a2aWriter: io.Discard, a2aErrorWriter: io.Discard,
 				a2aTransport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					calls++
@@ -375,7 +375,7 @@ func TestLocalA2ACancelAndTimeout(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			calls := 0
-			a := &InvokeAction{flags: &invokeFlags{local: true, port: 8080, message: "hi", timeout: tc.timeout},
+			a := &InvokeAction{noticeWriter: io.Discard, flags: &invokeFlags{local: true, port: 8080, message: "hi", timeout: tc.timeout},
 				a2aWriter: io.Discard, a2aErrorWriter: io.Discard,
 				a2aTransport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					calls++
@@ -408,7 +408,7 @@ func TestLocalA2ANeverFollowsRedirects(t *testing.T) {
 		for _, location := range []string{"/other", "http://example.com/execute"} {
 			t.Run(fmt.Sprintf("%d/%s", code, location), func(t *testing.T) {
 				calls := 0
-				a := &InvokeAction{flags: &invokeFlags{local: true, port: 8080, message: "hi"}, a2aWriter: io.Discard,
+				a := &InvokeAction{noticeWriter: io.Discard, flags: &invokeFlags{local: true, port: 8080, message: "hi"}, a2aWriter: io.Discard,
 					a2aTransport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 						calls++
 						resp := localA2ATestResponse(r, code, "redirect")
@@ -439,7 +439,7 @@ func TestLocalA2AActualLocalhostPort(t *testing.T) {
 	require.NoError(t, err)
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
 	var output bytes.Buffer
-	a := &InvokeAction{flags: &invokeFlags{local: true, port: port, message: "hi", timeout: 5},
+	a := &InvokeAction{noticeWriter: io.Discard, flags: &invokeFlags{local: true, port: port, message: "hi", timeout: 5},
 		a2aWriter: &output}
 	require.NoError(t, a.a2aLocal(t.Context(), "1.0"))
 	require.Equal(t, 1, calls)
@@ -470,7 +470,7 @@ func TestLocalA2AStreamingCancellation(t *testing.T) {
 				defer cancel()
 				var output bytes.Buffer
 				sends := 0
-				a := &InvokeAction{flags: &invokeFlags{local: true, port: 8080, message: "hi", timeout: timeout},
+				a := &InvokeAction{noticeWriter: io.Discard, flags: &invokeFlags{local: true, port: 8080, message: "hi", timeout: timeout},
 					a2aWriter: &output, a2aTransport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 						sends++
 						resp := localA2ATestResponse(r, 200, "")
@@ -509,7 +509,7 @@ func TestLocalA2AReadAndWriteErrors(t *testing.T) {
 	failure := errors.New("test I/O failure")
 	for _, raw := range []bool{false, true} {
 		t.Run(strconv.FormatBool(raw), func(t *testing.T) {
-			a := &InvokeAction{flags: &invokeFlags{local: true, port: 8080, message: "hi"}, a2aWriter: io.Discard,
+			a := &InvokeAction{noticeWriter: io.Discard, flags: &invokeFlags{local: true, port: 8080, message: "hi"}, a2aWriter: io.Discard,
 				a2aTransport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					resp := localA2ATestResponse(r, 200, "")
 					resp.Body = io.NopCloser(localA2AFailingReader{failure})

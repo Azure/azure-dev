@@ -98,6 +98,8 @@ Preview Feature Switches
     Existing AKS project initialization and adoption.
 
   All preview switches default to off.
+  A notice appears only when a command uses an enabled preview feature.
+  Preview behavior may change.
   When set, only 1, t, T, true, TRUE, or True enable a switch.
   False, empty, and invalid values disable a switch.
   The extension reads these switches from its process environment, including

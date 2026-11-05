@@ -62,10 +62,10 @@ func TestInitACRTemplateUsesTargetScope(t *testing.T) {
 				client := newTestAzdClient(t, server, workflow)
 				var err error
 				if route == "azure.yaml" {
-					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, staging)
+					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, staging, io.Discard)
 				} else {
 					_, err = scaffoldAzdTemplateProject(
-						t.Context(), client, http.DefaultClient, "child", staging, "child-dev", flags,
+						t.Context(), client, http.DefaultClient, "child", staging, "child-dev", flags, io.Discard,
 					)
 				}
 				if conflict {
@@ -197,10 +197,10 @@ func TestInitACRTemplateRejectsSavedSelectorInputsBeforeWrites(t *testing.T) {
 					require.NoError(t, validateInitACRInput(cmd, flags))
 					var err error
 					if route == "azure.yaml" {
-						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, staging)
+						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, staging, io.Discard)
 					} else {
 						_, err = scaffoldAzdTemplateProject(
-							t.Context(), client, http.DefaultClient, "child", staging, "child-dev", flags,
+							t.Context(), client, http.DefaultClient, "child", staging, "child-dev", flags, io.Discard,
 						)
 					}
 					if selection != "absent" && tt.flag != "" {
@@ -597,10 +597,10 @@ func TestInitACRManifestValidatesPlannedEnvironmentBeforeScaffolding(t *testing.
 				case "manifest":
 					err = validateInitACRManifest(t.Context(), client, content, templateDir, flags, "project")
 				case "azure.yaml":
-					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, templateDir)
+					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, templateDir, io.Discard)
 				case "repository":
 					_, err = scaffoldAzdTemplateProject(
-						t.Context(), client, http.DefaultClient, "project", templateDir, "demo", flags,
+						t.Context(), client, http.DefaultClient, "project", templateDir, "demo", flags, io.Discard,
 					)
 				}
 				if tt.wantError != "" {
@@ -661,7 +661,7 @@ func TestPreflightAzdTemplateRejectsUnsupportedACRBeforeScaffolding(t *testing.T
 			replaced, err := preflightAzdTemplate(
 				t.Context(), client, http.DefaultClient, templateDir,
 				&initFlags{acrResourceIDSet: true, acrResourceID: testInitACRID},
-				".",
+				".", io.Discard,
 			)
 			require.ErrorContains(t, err, "without hosted-container source builds")
 			require.Empty(t, replaced)
@@ -721,10 +721,10 @@ func TestInitACRTemplateRejectsExistingProjectBeforeWrites(t *testing.T) {
 
 				var err error
 				if route == "azure.yaml" {
-					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, templateDir)
+					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, templateDir, io.Discard)
 				} else {
 					_, err = scaffoldAzdTemplateProject(
-						t.Context(), client, http.DefaultClient, "project", templateDir, "test", flags,
+						t.Context(), client, http.DefaultClient, "project", templateDir, "test", flags, io.Discard,
 					)
 				}
 				require.ErrorContains(t, err, "only supported for a new Foundry project")
@@ -779,10 +779,10 @@ func TestInitACRTemplateValidatesSubscriptionBeforeScaffolding(t *testing.T) {
 
 				var err error
 				if route == "azure.yaml" {
-					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, templateDir)
+					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, templateDir, io.Discard)
 				} else {
 					_, err = scaffoldAzdTemplateProject(
-						t.Context(), client, http.DefaultClient, "project", templateDir, "test", flags,
+						t.Context(), client, http.DefaultClient, "project", templateDir, "test", flags, io.Discard,
 					)
 				}
 				require.ErrorContains(t, err, tt.wantError)
@@ -813,7 +813,7 @@ func TestInitACRTemplateRetainsPlannedSubscriptionWithoutWrites(t *testing.T) {
 
 	plan, err := preflightAzdTemplate(t.Context(), client, http.DefaultClient, templateDir, &initFlags{
 		acrResourceIDSet: true, acrResourceID: testInitACRID,
-	}, ".")
+	}, ".", io.Discard)
 	require.NoError(t, err)
 	require.NotNil(t, plan.subscription)
 	require.Equal(t, "sub", plan.subscription.SubscriptionId)
@@ -1068,11 +1068,11 @@ func TestInitACRExplicitSelectionChecksDeployedStateBeforeWrites(t *testing.T) {
 						"--acr-resource-id", selector, "--src", ".", "--agent-name", "agent", "--protocol", "responses")
 				case "azure.yaml":
 					flags.templatePointer, flags.src = filepath.Join(templateDir, "azure.yaml"), "project"
-					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, stagedContent, templateDir)
+					err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, stagedContent, templateDir, io.Discard)
 				case "repository":
 					flags.templatePointer, flags.src = filepath.Join(templateDir, "azure.yaml"), "project"
 					_, err = scaffoldAzdTemplateProject(
-						t.Context(), client, http.DefaultClient, "project", templateDir, "test", flags,
+						t.Context(), client, http.DefaultClient, "project", templateDir, "test", flags, io.Discard,
 					)
 				}
 				targetIsFresh := route == "azure.yaml" || route == "repository"
@@ -1433,10 +1433,10 @@ func TestInitACRStagedEnvironmentSelectorPreflight(t *testing.T) {
 					var err error
 					switch route {
 					case "azure.yaml":
-						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, stagedContent, stagingDir)
+						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, stagedContent, stagingDir, io.Discard)
 					case "repository":
 						_, err = scaffoldAzdTemplateProject(
-							t.Context(), client, http.DefaultClient, "project", stagingDir, "test", flags,
+							t.Context(), client, http.DefaultClient, "project", stagingDir, "test", flags, io.Discard,
 						)
 					}
 					require.ErrorContains(t, err, "stopped at core init")

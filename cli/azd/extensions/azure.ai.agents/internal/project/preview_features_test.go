@@ -42,7 +42,7 @@ func TestPreviewNestedHarnessReference(t *testing.T) {
 			"kind": "prompt", "harness": map[string]any{"$ref": "harness.yaml"},
 		})}
 	before := proto.CloneOf(service)
-	require.ErrorContains(t, RequireAgentFeatures(service, root), "agents.managed_harness")
+	require.ErrorContains(t, RequireAgentFeatures(service, root, io.Discard), "agents.managed_harness")
 	provider := &AgentServiceTargetProvider{projectPath: root}
 	_, err := provider.Package(t.Context(), service, nil, nil)
 	require.ErrorContains(t, err, "agents.managed_harness")
@@ -56,7 +56,7 @@ func TestMemorySnapshotFeatureSwitch(t *testing.T) {
 			for _, field := range []string{"enableMemorySnapshot", "enable_memory_snapshot"} {
 				t.Run(field, func(t *testing.T) {
 					for _, enabled := range []bool{false, true} {
-						err := RequireDefinitionFeatures(map[string]any{"kind": "hosted", field: enabled})
+						err := RequireDefinitionFeatures(map[string]any{"kind": "hosted", field: enabled}, io.Discard)
 						if !enabled || value == "true" || value == "1" || value == "T" || value == "TRUE" {
 							require.NoError(t, err)
 						} else {
@@ -73,7 +73,7 @@ func TestMemorySnapshotFeatureSwitch(t *testing.T) {
 		{"kind": "hosted", "enableMemorySnapshot": false, "enable_memory_snapshot": true},
 		{"kind": "hosted", "enableMemorySnapshot": true, "enable_memory_snapshot": false},
 	} {
-		require.ErrorContains(t, RequireDefinitionFeatures(definition), featureflags.MemorySnapshot.ID)
+		require.ErrorContains(t, RequireDefinitionFeatures(definition, io.Discard), featureflags.MemorySnapshot.ID)
 	}
 	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
 	t.Setenv(featureflags.Voice.EnvVar, "false")
@@ -81,9 +81,9 @@ func TestMemorySnapshotFeatureSwitch(t *testing.T) {
 		"kind": "hosted", "enableMemorySnapshot": true,
 		"protocols": []any{map[string]any{"protocol": "invocations_ws"}},
 	}
-	require.ErrorContains(t, RequireDefinitionFeatures(definition), featureflags.Voice.ID)
+	require.ErrorContains(t, RequireDefinitionFeatures(definition, io.Discard), featureflags.Voice.ID)
 	t.Setenv(featureflags.Voice.EnvVar, "true")
-	require.NoError(t, RequireDefinitionFeatures(definition))
+	require.NoError(t, RequireDefinitionFeatures(definition, io.Discard))
 }
 
 func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
@@ -151,7 +151,7 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 					}
 					before := proto.CloneOf(service)
 					ctx := t.Context()
-					err := RequireAgentFeatures(service, root)
+					err := RequireAgentFeatures(service, root, io.Discard)
 					if tc.feature.ID == "" {
 						require.NoError(t, err)
 					} else {
@@ -175,7 +175,7 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 							require.Equal(t, "eastus", target.Metadata["location"])
 						}
 						t.Setenv(tc.feature.EnvVar, "true")
-						require.NoError(t, RequireAgentFeatures(service, root))
+						require.NoError(t, RequireAgentFeatures(service, root, io.Discard))
 						t.Setenv(tc.feature.EnvVar, "")
 					}
 					require.True(t, proto.Equal(before, service))

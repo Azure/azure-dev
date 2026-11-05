@@ -177,7 +177,8 @@ func compileBicep(ctx context.Context, path string) ([]byte, error) {
 			return nil, ctx.Err()
 		}
 		kind := azdext.ToolErrorKindFailed
-		if errors.Is(err, os.ErrNotExist) {
+		// Windows reports a missing extensionless path as ErrNotFound after trying PATHEXT suffixes.
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, exec.ErrNotFound) {
 			kind = azdext.ToolErrorKindMissing
 		}
 		return nil, &azdext.ToolError{

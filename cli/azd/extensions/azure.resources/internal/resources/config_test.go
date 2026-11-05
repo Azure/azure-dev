@@ -170,16 +170,44 @@ func TestConfigValidation(t *testing.T) {
 	}
 }
 
-func TestGenerateRejectsGeneratedParameterCollisions(t *testing.T) {
+func TestGeneratePrefixesHostEnvParameterNames(t *testing.T) {
+	// LOCATION, RESOURCE_TOKEN, and API camel-case into the generated location parameter, the resourceToken
+	// variable, and the api service module, so unprefixed parameters would be declared twice.
 	config := Config{
 		"api": {
 			Type: ContainerApp, Port: 8080,
-			Env: []ServiceEnvVar{{Name: "LOCATION", Value: "${LOCATION}"}},
+			Env: []ServiceEnvVar{
+				{Name: "LOCATION", Value: "${LOCATION}"},
+				{Name: "TOKEN_NAME", Value: "${RESOURCE_TOKEN}"},
+				{Name: "SELF", Value: "${API}"},
+			},
 		},
 	}
-	if _, err := Generate("backend", config); err == nil ||
-		!strings.Contains(err.Error(), "collides with a generated parameter") {
-		t.Fatalf("Generate error = %v, want generated parameter collision", err)
+	files, err := Generate("backend", config)
+	require.NoError(t, err)
+
+	main := string(files["main.bicep"])
+	resources := string(files["resources.bicep"])
+	for _, name := range []string{"hostEnv_location", "hostEnv_resourceToken", "hostEnv_api"} {
+		require.Contains(t, main, "param "+name+" string")
+		require.Contains(t, resources, "param "+name+" string")
+	}
+	require.Contains(t, resources, "var resourceToken = uniqueString(")
+
+	// The value is still the original reference so provision-time substitution reads RESOURCE_TOKEN.
+	var parameters struct {
+		Parameters map[string]struct {
+			Value string `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(files["main.parameters.json"], &parameters))
+	require.Equal(t, "${RESOURCE_TOKEN}", parameters.Parameters["hostEnv_resourceToken"].Value)
+
+	declaration := regexp.MustCompile(`(?m)^(?:param|var|module|resource)\s+([A-Za-z_][A-Za-z0-9_]*)\b`)
+	seen := map[string]bool{}
+	for _, match := range declaration.FindAllStringSubmatch(resources, -1) {
+		require.False(t, seen[match[1]], "identifier %q is declared more than once in resources.bicep", match[1])
+		seen[match[1]] = true
 	}
 }
 
@@ -200,15 +228,15 @@ func TestGenerateEmitsHostSecretsAsSecretReferences(t *testing.T) {
 	main := string(files["main.bicep"])
 	resources := string(files["resources.bicep"])
 	for _, expected := range []string{
-		"@secure()\nparam apiToken string",
-		"name: '" + scaffold.SecretName("TOKEN") + "'\n          value: apiToken",
+		"@secure()\nparam hostEnv_apiToken string",
+		"name: '" + scaffold.SecretName("TOKEN") + "'\n          value: hostEnv_apiToken",
 		"name: 'TOKEN'\n            secretRef: '" + scaffold.SecretName("TOKEN") + "'",
 	} {
 		if !strings.Contains(main+resources, expected) {
 			t.Errorf("generated secret configuration is missing %q", expected)
 		}
 	}
-	if strings.Contains(resources, "name: 'TOKEN'\n            value: apiToken") {
+	if strings.Contains(resources, "name: 'TOKEN'\n            value: hostEnv_apiToken") {
 		t.Fatal("secret host environment variables must not be emitted as readable values")
 	}
 }
@@ -401,7 +429,7 @@ func TestGenerateFullResourceCatalog(t *testing.T) {
 		"br/public:avm/res/web/site:",
 		"linuxFxVersion: 'python|3.12'",
 		"appCommandLine: 'python app\\u{27}s entry.py'",
-		"value: 'Hello, I\\u{27}m ${publicName}'",
+		"value: 'Hello, I\\u{27}m ${hostEnv_publicName}'",
 		"PYTHON_ENABLE_GUNICORN_MULTIWORKERS",
 		"name: 'items'",
 		"name: 'assets'",
@@ -436,14 +464,14 @@ func TestGenerateFullResourceCatalog(t *testing.T) {
 	if strings.Contains(resources, "output SERVICE_WEB_REGISTRY_ENDPOINT") {
 		t.Fatal("App Service must not emit a registry endpoint")
 	}
-	if !strings.Contains(resources, "param databasePassword string") ||
-		!strings.Contains(resources, "@secure()\nparam databasePassword string") {
+	if !strings.Contains(resources, "param hostEnv_databasePassword string") ||
+		!strings.Contains(resources, "@secure()\nparam hostEnv_databasePassword string") {
 		t.Fatal("secret environment substitutions must use secure Bicep parameters")
 	}
 	if strings.Contains(parameters, "top-secret") {
 		t.Fatal("generated parameter values must not contain secret material")
 	}
-	if strings.Contains(main+resources, "output databasePassword") {
+	if strings.Contains(main+resources, "output hostEnv_databasePassword") {
 		t.Fatal("secret environment parameters must not be deployment outputs")
 	}
 

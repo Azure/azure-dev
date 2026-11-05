@@ -132,23 +132,25 @@ func TestGenerateEnvironmentSubstitutions(t *testing.T) {
 	}{
 		{"literal", "foo", false, "'foo'", nil},
 		{"multiline literal", "first\r\nsecond", false, "'first\\r\\nsecond'", nil},
-		{"multiline interpolation", "first\n${WORLD}\r", false, "'first\\n${world}\\r'",
-			[]scaffold.Parameter{{Name: "world", Value: "${WORLD}", Type: "string"}}},
-		{"parameter", "${MY_VAR}", false, "myVar",
-			[]scaffold.Parameter{{Name: "myVar", Value: "${MY_VAR}", Type: "string"}}},
-		{"secure parameter", "${MY_SECRET}", true, "mySecret",
-			[]scaffold.Parameter{{Name: "mySecret", Value: "${MY_SECRET}", Type: "string", Secret: true}}},
-		{"embedded default", "Hello, ${WORLD:=okay}!", false, "'Hello, ${world}!'", []scaffold.Parameter{
-			{Name: "world", Value: "${WORLD:=okay}", Type: "string"},
+		{"multiline interpolation", "first\n${WORLD}\r", false, "'first\\n${hostEnv_world}\\r'",
+			[]scaffold.Parameter{{Name: "hostEnv_world", Value: "${WORLD}", Type: "string"}}},
+		{"parameter", "${MY_VAR}", false, "hostEnv_myVar",
+			[]scaffold.Parameter{{Name: "hostEnv_myVar", Value: "${MY_VAR}", Type: "string"}}},
+		{"secure parameter", "${MY_SECRET}", true, "hostEnv_mySecret",
+			[]scaffold.Parameter{{Name: "hostEnv_mySecret", Value: "${MY_SECRET}", Type: "string", Secret: true}}},
+		{"embedded default", "Hello, ${WORLD:=okay}!", false, "'Hello, ${hostEnv_world}!'", []scaffold.Parameter{
+			{Name: "hostEnv_world", Value: "${WORLD:=okay}", Type: "string"},
 		}},
-		{"multiple parameters", "${CAT} and ${DOG}", false, "'${cat} and ${dog}'", []scaffold.Parameter{
-			{Name: "cat", Value: "${CAT}", Type: "string"},
-			{Name: "dog", Value: "${DOG}", Type: "string"},
-		}},
-		{"secure defaults", "${DB_HOST:='local'}:${DB_USERNAME:='okay'}", true, "'${dbHost}:${dbUsername}'",
+		{"multiple parameters", "${CAT} and ${DOG}", false, "'${hostEnv_cat} and ${hostEnv_dog}'",
 			[]scaffold.Parameter{
-				{Name: "dbHost", Value: "${DB_HOST:='local'}", Type: "string", Secret: true},
-				{Name: "dbUsername", Value: "${DB_USERNAME:='okay'}", Type: "string", Secret: true},
+				{Name: "hostEnv_cat", Value: "${CAT}", Type: "string"},
+				{Name: "hostEnv_dog", Value: "${DOG}", Type: "string"},
+			}},
+		{"secure defaults", "${DB_HOST:='local'}:${DB_USERNAME:='okay'}", true,
+			"'${hostEnv_dbHost}:${hostEnv_dbUsername}'",
+			[]scaffold.Parameter{
+				{Name: "hostEnv_dbHost", Value: "${DB_HOST:='local'}", Type: "string", Secret: true},
+				{Name: "hostEnv_dbUsername", Value: "${DB_USERNAME:='okay'}", Type: "string", Secret: true},
 			}},
 	}
 	for _, tt := range tests {
@@ -167,7 +169,7 @@ func TestGenerateReusesParametersAndPreservesSecrecy(t *testing.T) {
 	for _, secret := range []bool{false, true, false} {
 		value, err := genBicepParamsFromEnvSubst("${TOKEN}", secret, spec)
 		require.NoError(t, err)
-		assert.Equal(t, "token", value)
+		assert.Equal(t, "hostEnv_token", value)
 	}
 	require.Len(t, spec.Parameters, 1)
 	assert.True(t, spec.Parameters[0].Secret)

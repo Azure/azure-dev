@@ -363,7 +363,7 @@ func genBicepParamsFromEnvSubst(value string, secret bool, spec *scaffold.InfraS
 		return "", fmt.Errorf("secret values must be supplied through an environment substitution")
 	}
 	for _, variable := range variables {
-		if err := setParameter(spec, scaffold.BicepName(variable.name),
+		if err := setParameter(spec, hostEnvParameterName(variable.name),
 			value[variable.start:variable.end], secret); err != nil {
 			return "", err
 		}
@@ -372,7 +372,7 @@ func genBicepParamsFromEnvSubst(value string, secret bool, spec *scaffold.InfraS
 		return "'" + scaffold.BicepString(value) + "'", nil
 	}
 	if len(variables) == 1 && variables[0].start == 0 && variables[0].end == len(value) {
-		return scaffold.BicepName(variables[0].name), nil
+		return hostEnvParameterName(variables[0].name), nil
 	}
 
 	var result strings.Builder
@@ -381,13 +381,19 @@ func genBicepParamsFromEnvSubst(value string, secret bool, spec *scaffold.InfraS
 	for _, variable := range variables {
 		result.WriteString(scaffold.BicepString(value[previous:variable.start]))
 		result.WriteString("${")
-		result.WriteString(scaffold.BicepName(variable.name))
+		result.WriteString(hostEnvParameterName(variable.name))
 		result.WriteByte('}')
 		previous = variable.end
 	}
 	result.WriteString(scaffold.BicepString(value[previous:]))
 	result.WriteByte('\'')
 	return result.String(), nil
+}
+
+// hostEnvParameterName returns the Bicep parameter name for a ${VAR} reference in a host resource's env setting.
+func hostEnvParameterName(variable string) string {
+	// The '_' distinguishes host-env parameters from identifiers generated for the templates.
+	return "hostEnv_" + scaffold.BicepName(variable)
 }
 
 func setParameter(spec *scaffold.InfraSpec, name string, value string, secret bool) error {

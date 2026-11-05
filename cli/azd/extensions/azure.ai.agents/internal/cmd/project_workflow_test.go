@@ -24,10 +24,13 @@ import (
 type recordingProjectWorkflowServer struct {
 	azdext.UnimplementedWorkflowServiceServer
 
-	mu       sync.Mutex
-	requests []*azdext.RunWorkflowRequest
-	err      error
-	runHook  func(int) error
+	mu        sync.Mutex
+	requests  []*azdext.RunWorkflowRequest
+	err       error
+	runHook   func(int) error
+	probes    []*azdext.RunWorkflowRequest
+	probeErr  error
+	probeHelp []byte
 }
 
 func (s *recordingProjectWorkflowServer) Run(
@@ -46,6 +49,25 @@ func (s *recordingProjectWorkflowServer) Run(
 		return nil, s.err
 	}
 	return &azdext.EmptyResponse{}, nil
+}
+
+func testProjectsACRHelp(s *recordingProjectWorkflowServer) func(context.Context) ([]byte, error) {
+	return func(context.Context) ([]byte, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.probes = append(s.probes, &azdext.RunWorkflowRequest{Workflow: &azdext.Workflow{
+			Steps: []*azdext.WorkflowStep{{Command: &azdext.WorkflowCommand{
+				Args: []string{"ai", "project", "add", "--help", "--no-prompt"},
+			}}},
+		}})
+		if s.probeErr != nil {
+			return nil, s.probeErr
+		}
+		if s.probeHelp != nil {
+			return s.probeHelp, nil
+		}
+		return []byte("Flags:\n      --new-project\n      --acr-resource-id string\n"), nil
+	}
 }
 
 func newProjectWorkflowClient(
@@ -116,7 +138,7 @@ func TestAuthorFoundryProjectUsesPublicCommand(t *testing.T) {
 	}
 	projectRoot := t.TempDir()
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, target, projectRoot, projectAuthoringExisting, true,
+		t.Context(), client, target, projectRoot, projectAuthoringExisting, true, "",
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -148,7 +170,7 @@ func TestAuthorFoundryProjectUsesEndpointFlag(t *testing.T) {
 
 	projectRoot := t.TempDir()
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, target, projectRoot, projectAuthoringExisting, true,
+		t.Context(), client, target, projectRoot, projectAuthoringExisting, true, "",
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -178,7 +200,7 @@ func TestAuthorFoundryProjectPreservesPromptMode(t *testing.T) {
 	projectRoot := t.TempDir()
 
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, target, projectRoot, projectAuthoringExisting, false,
+		t.Context(), client, target, projectRoot, projectAuthoringExisting, false, "",
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -201,7 +223,7 @@ func TestAuthorFoundryProjectUsesNewProjectFlag(t *testing.T) {
 	projectRoot := t.TempDir()
 
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, nil, projectRoot, projectAuthoringNew, true,
+		t.Context(), client, nil, projectRoot, projectAuthoringNew, true, "",
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -580,7 +602,7 @@ func TestProjectWorkflowPropagatesFailures(t *testing.T) {
 	)
 
 	err := authorFoundryProject(
-		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent, true,
+		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent, true, "",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project failed")
@@ -600,7 +622,7 @@ func TestProjectWorkflowPreservesCancellation(t *testing.T) {
 	)
 
 	err := authorFoundryProject(
-		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent, true,
+		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent, true, "",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project was cancelled")
@@ -631,7 +653,7 @@ func TestAuthorCurrentFoundryProjectPreservesDeferredValues(t *testing.T) {
 	client := newTestAzdClient(t, envServer, workflowServer)
 
 	require.NoError(t, authorSelectedFoundryProject(
-		t.Context(), client, "test", nil, t.TempDir(), projectAuthoringCurrent, true,
+		t.Context(), client, "test", nil, t.TempDir(), projectAuthoringCurrent, true, "",
 	))
 
 	assert.Equal(t, "deferred-project",
@@ -672,7 +694,7 @@ func TestAdoptedProjectAddNoPromptWithModelDeployment(t *testing.T) {
 			flags := test.flags
 			require.NoError(t, authorFoundryProject(
 				t.Context(), client, target, projectRoot, projectAuthoringExisting,
-				adoptedProjectAddNoPrompt(&flags),
+				adoptedProjectAddNoPrompt(&flags), "",
 			))
 
 			args := []string{"ai", "project", "add"}

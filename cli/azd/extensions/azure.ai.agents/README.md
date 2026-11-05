@@ -1521,17 +1521,74 @@ the whole body is then moderated and no paths are needed for that direction.
 
 ### Reuse a source-build registry
 
-To reuse a source-build registry, set its full ARM resource ID in the active
-azd environment:
+For hosted-container source builds in a new Foundry project, select an existing
+registry during setup:
+
+```powershell
+azd ai agent init --src . --acr-resource-id "<registry-arm-id>"
+```
+
+Alternatively, save the registry in the active azd environment:
 
 ```sh
 azd env set AZURE_CONTAINER_REGISTRY_RESOURCE_ID "<full-registry-arm-id>"
 ```
 
-This selection uses the same validation, persisted reuse mode, and ownership
-output as `--acr-resource-id` during source initialization. An unreadable
-environment stops selection rather than defaulting to a new registry.
-A same-group registry ID alone is not evidence that azd owns the registry.
+The projects extension saves the selection in the active azd environment.
+`azd ai project add --new-project --acr-resource-id "<registry-arm-id>"` provides
+the same project-level setup. Before provisioning, a setup flag overrides the environment's
+`AZURE_CONTAINER_REGISTRY_RESOURCE_ID`; without either input, provisioning creates
+a registry only when source builds need one. Setup displays the selected registry
+as externally owned without introducing a registry picker.
+
+Environment-only selections use the same validation, persisted reuse mode, and
+ownership output. When reusing agent configuration, explicit and retained
+selections require hosted-container source builds and supported Bicep
+infrastructure before setup changes any files or environment values.
+An unreadable environment stops selection rather than
+defaulting to a new registry. A same-group registry ID alone is not evidence
+that azd owns the registry. A deployed registry binding remains authoritative
+when legacy registry output variables are missing.
+
+Registry selection requires a Projects extension that accepts
+`project add --new-project --acr-resource-id`. Init checks these flags with
+captured command help before changing project files or environment values.
+The help probe runs the Projects executable registered with the invoking
+azd host, not another `azd` found on `PATH`.
+The check does not print help into quiet or JSON output. An unsupported
+extension or a failed capability check stops setup; flows without a selector
+continue to work with older Projects versions.
+
+Conflict messages identify the explicit flag, saved environment selector, or
+deployed binding. Saved selectors also prevent selecting voice initialization
+interactively. Use source builds or a separate environment for an incompatible
+configuration; do not remove a deployed binding to bypass validation.
+Source initialization checks the planned environment's local `.azure` state
+even when a previous partial init did not leave an `azure.yaml` file.
+
+The selector cannot be combined with `--image`, `--registry-connection`,
+`--acr-connection`, `--project-id`, or code/prompt/voice deployment. Existing
+connection-selection flows keep their meanings. Repeated provisioning retains
+the deployed registry; switching an already provisioned project's registry is
+not supported.
+
+When adopting a template, init rejects an existing Foundry project endpoint
+before scaffolding. Interactive source, template, and existing-configuration
+setup check the chosen subscription against the registry before creating
+project files or saving environment values. The new environment name, whether
+explicitly requested or derived from the target directory (the current directory
+for source init without a new folder), also determines the root or Foundry-layer
+teardown group during preflight.
+A successful preflight carries that subscription into setup without asking again.
+Headless setup with missing Azure context continues to defer configuration.
+Template adoption resolves the planned environment in the target directory,
+including any retained target state from a partial initialization; it does not
+inherit a different project's active environment or registry selection.
+Saved registry selections receive the same input validation and subscription
+preflight as an explicit flag. Template adoption rejects conflicting CLI inputs,
+including explicit empty values, before scaffolding. Saved selections retain
+container source-build mode when adopting a service without deployment
+configuration.
 
 Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
 be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside
@@ -1557,6 +1614,9 @@ An `image` value alone still defaults to a source build, including with
 `docker.imagePassthrough: true` with a nonempty image. Add `registryConnectionId`
 when a private registry connection is needed; it also requires
 `docker.imagePassthrough: true`.
+When importing a template with an ACR selection, init preserves this source-build
+intent instead of converting an image-only service to prebuilt. Without an ACR
+selection, template init retains its existing image-to-prebuilt behavior.
 The legacy environment value `AZD_AGENT_SKIP_ACR=true` also selects prebuilt
 deployment when the expanded image is nonempty.
 
@@ -1569,6 +1629,8 @@ preserved.
 For an external ABAC registry, source builds require local Docker:
 set `docker.remoteBuild: false` on each source-built agent service and grant the
 image publisher Container Registry Repository Writer push permission.
+Template adoption preserves an authored Docker block, including a block
+containing only `remoteBuild: false`, and adds `project: .` when it is missing.
 Hosted source initialization normally sets `docker.remoteBuild: true` unless
 network injection requires local builds. That remote Quick Build path is not
 supported with ABAC registry reuse: its current request does not authenticate the

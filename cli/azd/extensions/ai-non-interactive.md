@@ -25,6 +25,7 @@ no non-interactive equivalent is a bug.
 | `ai agent init` | Protocols | Repeatable `--protocol` | Uses the documented default protocol set. |
 | `ai agent init` | Existing model deployment or new model | `--model-deployment`, `--model`, and `--project-id` | Uses the supplied deployment/model; required unresolved model choices return guidance. |
 | `ai agent init` | Azure Container Registry connection | `--acr-connection` with `--project-id` or a persisted `AZURE_AI_PROJECT_ID`; persisted `AZURE_AI_PROJECT_ACR_CONNECTION_NAME`; or persisted `AZURE_CONTAINER_REGISTRY_ENDPOINT` / `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` | Reuses persisted state. With multiple remaining connections, selects the first connection alphabetically. With none, creates a registry during provisioning. |
+| `ai agent init` | Source-build registry for a new Foundry project | `--acr-resource-id` or persisted `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` | Creates a registry when source builds need one. An explicit selector is saved by project setup without a registry picker. |
 | `ai agent init` | Application Insights | Foundry project service configuration | The current init flow delegates creation or reconciliation to the provisioning provider without prompting. |
 | `ai agent init` | Values referenced by `${NAME}` in `azure.yaml` | `azd env set NAME value` before running init, or existing azd environment values | Leaves unresolved optional references for explicit configuration and reports required missing values. |
 | `ai agent add` | Current project, Agent service key, and definition | Positional `<name>` and required `--file`; optional `--project` and `--source` | Accepts YAML or JSON definitions and writes a service-level root `$ref` to `--file`, relative to the directory containing `azure.yaml`. Runs without prompts or Azure authentication and rejects missing or multiple `azure.ai.project` services before writing. |
@@ -41,7 +42,12 @@ are not forwarded; `--help` remains available. Use the standalone
 
 ## `azure.ai.projects`
 
-Scripts can set `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` to the full
+For a new Foundry project that builds hosted-agent images from source, pass
+`--acr-resource-id "<registry-arm-id>"` to `azd ai agent init`, or use
+`azd ai project add --new-project --acr-resource-id "<registry-arm-id>"`.
+The projects extension saves the choice in the active environment. An explicit
+flag takes precedence over the environment's selection before provisioning. Scripts can
+also set `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` to the full
 ARM ID of an existing `Microsoft.ContainerRegistry/registries` resource.
 Provisioning reuses it, grants the project identity pull access, and creates the
 project connection without changing the registry's networking. Classic registries
@@ -83,13 +89,17 @@ with a nonempty image. Add `registryConnectionId` when a private registry
 connection is needed; it also requires `docker.imagePassthrough: true`.
 The legacy environment value `AZD_AGENT_SKIP_ACR=true` also selects prebuilt
 deployment when the expanded image is nonempty.
+Explicit empty or malformed IDs, code/prebuilt-only configurations,
+conflicting connection selectors, and Terraform reuse fail rather than silently
+ignoring the selection. No registry picker is added.
 
 Registry selection uses one complete environment snapshot. A failed environment
 read stops provisioning rather than falling back to registry creation. A
 registry in the Foundry teardown group is rejected even during project-only
 setup, unless a deployed binding or matching legacy deployment outputs identify
 an azd-created registry. Legacy ownership is verified against Azure deployment
-state before provisioning or deleting the group.
+state before provisioning or deleting the group. Environment-only selections
+are reported as externally owned just like flag-based selections.
 Source initialization validates the retained Foundry group and rejects unknown
 application teardown scopes before changing project files or environment values.
 Prompted subscription and location choices are applied to final service
@@ -104,6 +114,9 @@ retains the selector without authoring `includeAcr: false`, so later source-buil
 agents can enable registry access. In an older project-only parameters file,
 remove the generated `parameters.includeAcr` object if it only reflects the
 earlier lack of demand; retain deliberate user-authored overrides.
+Interactive setup revalidates
+the selector after resolving the subscription, before saving project services
+or environment values.
 Provisioning preview checks the same existing pull access as deployment without
 creating grants or persisting pending access operations.
 
@@ -114,6 +127,11 @@ without skipping the other recovery operation.
 A deployed project keeps its registry choice across repeated provisioning.
 Registry migration is not supported: changing the selector or resetting
 `AZD_FOUNDRY_ACR_MODE` cannot switch a deployed project to another registry.
+Setup rejects incompatible explicit selectors before changing project files,
+environments, or services, including source init and template adoption. This
+also protects legacy deployments with corroborating project and registry
+outputs but no canonical binding. A mode or prior selector alone, without a
+binding or corroborating outputs, remains mutable setup intent.
 Use a separate environment for a different deployment. After a successful
 `azd down`, a new deployment can select another registry. Down preserves the
 external registry and its images, and removes only access grants and related

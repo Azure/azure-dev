@@ -44,6 +44,69 @@ func TestACRBindingSelection(t *testing.T) {
 	}
 }
 
+func TestValidateDeployedACRReuse(t *testing.T) {
+	const registryID = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+	const projectID = "/subscriptions/sub/resourceGroups/foundry/" +
+		"providers/Microsoft.CognitiveServices/accounts/account/projects/project"
+	for _, tt := range []struct {
+		name, mode, output                    string
+		changed, native, noProject, wantError bool
+	}{
+		{name: "create matching", mode: "create", output: "AZURE_CONTAINER_REGISTRY_ENDPOINT", wantError: true},
+		{name: "create changed", mode: "create", output: "AZURE_CONTAINER_REGISTRY_ENDPOINT", changed: true, wantError: true},
+		{name: "reuse changed", mode: "reuse-connect", output: "AZURE_CONTAINER_REGISTRY_ENDPOINT", changed: true, wantError: true},
+		{name: "connection output", mode: "reuse-connect", output: "AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+			changed: true, wantError: true},
+		{name: "pull output", mode: "reuse-connect", output: "AZD_FOUNDRY_ACR_PULL_ASSIGNED", changed: true, wantError: true},
+		{name: "stable reuse", mode: "reuse-connect", output: "AZURE_CONTAINER_REGISTRY_ENDPOINT"},
+		{name: "inferred reuse", output: "AZURE_CONTAINER_REGISTRY_ENDPOINT"},
+		{name: "inferred create", native: true, output: "AZURE_CONTAINER_REGISTRY_ENDPOINT", wantError: true},
+		{name: "pending create intent", mode: "create", changed: true},
+		{name: "pending reuse intent", mode: "reuse-connect", changed: true},
+		{name: "registry output alone", mode: "create", output: "AZURE_CONTAINER_REGISTRY_ENDPOINT", noProject: true, changed: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			env := map[string]string{
+				"AZURE_SUBSCRIPTION_ID":                "sub",
+				"AZURE_RESOURCE_GROUP":                 "foundry",
+				"AZURE_AI_PROJECT_ID":                  projectID,
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID,
+				"AZD_FOUNDRY_ACR_MODE":                 tt.mode,
+			}
+			if tt.noProject {
+				delete(env, "AZURE_AI_PROJECT_ID")
+			}
+			if tt.output != "" {
+				env[tt.output] = map[string]string{
+					"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "registry.azurecr.io",
+					"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "project-registry",
+					"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
+				}[tt.output]
+			}
+			if tt.native {
+				env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = strings.Replace(registryID, "/shared/", "/foundry/", 1)
+			}
+			selectedID := strings.ToUpper(env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+			if tt.changed {
+				selectedID += "other"
+			}
+			before := maps.Clone(env)
+			assert.Equal(t, tt.output != "" && !tt.noProject, HasLegacyACRDeployment(env))
+			err := ValidateDeployedACRReuse(Input{Env: env}, selectedID)
+			if tt.wantError {
+				require.ErrorContains(t, err, "provisioned Foundry project")
+				require.Error(t, ValidateGreenfieldACRSelectionForInput(Input{Env: env}, selectedID))
+				require.Error(t, ValidateGreenfieldACRSelection(env, selectedID))
+			} else {
+				require.NoError(t, err)
+				require.NoError(t, ValidateGreenfieldACRSelectionForInput(Input{Env: env}, selectedID))
+				require.NoError(t, ValidateGreenfieldACRSelection(env, selectedID))
+			}
+			assert.Equal(t, before, env)
+		})
+	}
+}
+
 func TestACRBindingSynthesisGuard(t *testing.T) {
 	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
 	in := Input{

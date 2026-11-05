@@ -358,6 +358,7 @@ in any order, any time.
 | `tier0/0.34-init-env-acr-same-group.yaml` | Environment-only registry selection in a Foundry teardown group fails before prompts or mutations |
 | `tier0/0.34-optimize-skills-help.yaml` | Offline skill optimization guidance and report download discovery |
 | `tier0/0.35-optimize-candidate-watch-conflict.yaml` | Candidate inspection and job watch conflict rejected before authentication |
+| `tier0/0.35-init-acr-existing-project-template.yaml` | `init --acr-resource-id` rejects a template's referenced existing project endpoint before creating project files or an environment |
 | `tier0/0.35-run-invoke-local-a2a.yaml` | Terminal-only A2A-only `run` and local 1.0 invoke: text, unchanged file bytes, raw JSON/SSE, allocated port, fixed `POST /a2a` route, no Foundry headers/state, and unsupported flags |
 | `tier0/0.36-init-acr-unverified-scopes.yaml` | External registry reuse with custom application teardown groups fails before authentication or local writes |
 | `tier0/0.36-optimize-download-input-validation.yaml` | Empty download candidate rejected before authentication or file creation |
@@ -818,6 +819,10 @@ the orchestrator auto-derives from the scenarios directory path:
 ```sh
 cp -r "{fixtures_dir}/from-code/." "$cwd"
 ```
+
+`fixtures/acr-existing-project/` contains a source-build template whose project
+service references an existing endpoint. The Tier 0 ACR validation scenario
+asserts that init rejects this combination without authentication or local writes.
 
 The orchestrator computes `fixtures_dir` as the tester-side absolute path of the
 `fixtures/` subdirectory inside the scenarios directory (WSL-translated on Windows,

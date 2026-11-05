@@ -52,6 +52,12 @@ type initFlags struct {
 	projectResourceId       string
 	acrResourceID           string
 	acrResourceIDSet        bool
+	acrConflictingFlag      string
+	effectiveACRResourceID  string
+	acrSelectionSource      string
+	acrCapabilityChecked    bool
+	projectsAddHelp         func(context.Context) ([]byte, error)
+	acrTemplateTarget       bool
 	acrConnection           string
 	modelDeployment         string
 	model                   string
@@ -60,6 +66,8 @@ type initFlags struct {
 	templatePointer         string
 	agentName               string
 	agentNameExplicit       bool
+	resolvedAgentName       string
+	resolvedEnvironmentName string
 	description             string
 	src                     string
 	env                     string
@@ -682,8 +690,13 @@ func canReuseExistingAgentConfiguration(
 		!agentDefiningFlagsSet(flags, srcBlocksReuse)
 }
 
-func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+func newInitCommand(
+	extCtx *azdext.ExtensionContext, projectsHelp ...func(context.Context) ([]byte, error),
+) *cobra.Command {
 	flags := &initFlags{}
+	if len(projectsHelp) > 0 {
+		flags.projectsAddHelp = projectsHelp[0]
+	}
 	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
@@ -694,6 +707,13 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 Use 'azd ai agent add <name> --file <path>' to add one file-backed Agent
 service to the current project. Use --template / -t to adopt an azure.yaml
 project document as the project manifest.
+
+Use --acr-resource-id to select an externally owned Azure Container Registry
+for source builds in a new Foundry project. Project setup saves the selection
+for azd up. This requires Bicep, cannot be used with code deploy or a prebuilt
+image, and does not migrate an already deployed project's registry.
+The registry must be in the project's subscription and outside its resource
+group. Cross-subscription reuse is not supported.
 
 Azure.yaml projects:
 When -t points at an azure.yaml project document that declares
@@ -759,6 +779,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if runErr != nil {
 					reportInitOperation(ctx)
 				}
+				printInitACROwnershipSummary(cmd, flags, extCtx.OutputFormat, runErr)
 			}()
 			endValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation)
 			defer func() { endValidation() }()
@@ -782,6 +803,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if err := applyPositionalArg(args[0], flags, cmd); err != nil {
 					return err
 				}
+			}
+			flags.acrResourceIDSet = cmd.Flags().Changed("acr-resource-id")
+			if err := validateInitACRInput(cmd, flags); err != nil {
+				return err
 			}
 			if flags.templatePointer == "" && flags.kind != "" {
 				recordInitProperties(ctx, map[string]any{"kind": flags.kind})
@@ -843,6 +868,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			if err := validateInitACRProject(ctx, azdClient, flags); err != nil {
 				return err
 			}
+			if err := validateInitACRInput(cmd, flags); err != nil {
+				return err
+			}
 			if err := validateInitHarnessFlag(cmd, flags.harness); err != nil {
 				return err
 			}
@@ -900,6 +928,18 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return err
 					}
 					endLoading()
+				}
+				root := explicitTemplateDir
+				if root == "" {
+					root = filepath.Dir(flags.templatePointer)
+				}
+				agentNameOverride, err := adoptedAgentNameOverride(flags)
+				if err != nil {
+					return err
+				}
+				targetDir, _ := adoptTargetDir(flags, valueOrDefault(agentNameOverride, foundryProjectName(content)))
+				if err := validateInitACRManifest(ctx, azdClient, content, root, flags, targetDir); err != nil {
+					return err
 				}
 				cachedExplicitAzureYaml = content
 			}
@@ -1291,6 +1331,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
+	cmd.Flags().StringVar(
+		&flags.acrResourceID, "acr-resource-id", "",
+		"Existing ACR ARM resource ID for source builds in a new Foundry project (same subscription only)",
+	)
 	acrConnectionUsage := "Foundry Azure Container Registry connection name to use for an existing project; " +
 		"incompatible with code deploy"
 	cmd.Flags().StringVar(&flags.acrConnection, "acr-connection", "",
@@ -1580,7 +1624,7 @@ func validateVoiceInitOptions(cmd *cobra.Command, positionalSource bool) error {
 	}
 	for _, name := range []string{
 		"src", "protocol", "deploy-mode", "runtime", "entry-point", "dep-resolution",
-		"image", "acr-connection", "registry-connection", "harness", "instructions",
+		"image", "acr-connection", "acr-resource-id", "registry-connection", "harness", "instructions",
 		"description", "rai-policy", "model-deployment",
 	} {
 		if cmd.Flags().Changed(name) {
@@ -1765,12 +1809,14 @@ func ensureProject(
 	return projectResponse.Project, nil
 }
 
-// deriveEnvName resolves the azd environment name for a new project: the
-// explicit --environment flag when set, otherwise a sanitized name derived from
-// the target folder (or the current directory when targetDir is ".").
+// deriveEnvName reuses an explicit or planned environment name,
+// otherwise deriving one from the target folder.
 func deriveEnvName(flags *initFlags, targetDir string) string {
 	if flags.env != "" {
 		return flags.env
+	}
+	if flags.resolvedEnvironmentName != "" {
+		return flags.resolvedEnvironmentName
 	}
 
 	envBase := targetDir
@@ -2138,6 +2184,7 @@ func (a *InitAction) addVoiceAgentToProject(
 			return projectAuthoringCurrent
 		}(),
 		a.flags.noPrompt,
+		"",
 	); err != nil {
 		return err
 	}

@@ -109,6 +109,7 @@ const (
 // These are usually paired with [Compatibility] for version mismatches.
 const (
 	CodeIncompatibleAzdVersion          = "incompatible_azd_version"
+	CodeIncompatibleProjectsExtension   = "incompatible_projects_extension"
 	CodeIncompleteAgentProtocolMetadata = "incomplete_agent_protocol_metadata"
 	CodeLegacyAgentProtocolMetadata     = "legacy_agent_protocol_metadata"
 	CodeDeprecatedEvalCommand           = "deprecated_eval_command"

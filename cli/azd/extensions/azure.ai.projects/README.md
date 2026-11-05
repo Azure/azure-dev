@@ -470,7 +470,9 @@ outputs. Managed registries can remain inside the Foundry resource group.
 Legacy full outputs and partial-deployment project connections do not establish
 registry ownership on their own: recovery requires a successful creation
 operation for that exact registry in the environment's owning deployment
-history, including nested deployments. Missing or ambiguous evidence stops
+history, including nested deployments and all operation pages. Read operations
+do not establish ownership and do not invalidate a successful creation operation
+elsewhere in that history. Missing or ambiguous evidence stops
 recovery and teardown before ownership is saved or resources or access grants
 are deleted.
 

@@ -1112,16 +1112,31 @@ func TestACRFullOutputRecoveryRequiresCreationEvidence(t *testing.T) {
 		"providers/Microsoft.ContainerRegistry/registries/registry"
 	const nestedID = "/subscriptions/sub/resourceGroups/foundry/" +
 		"providers/Microsoft.Resources/deployments/acr"
+	const referenceID = "/subscriptions/sub/resourceGroups/foundry/" +
+		"providers/Microsoft.Resources/deployments/registry-reference"
 	for _, tt := range []struct {
 		name, kind, state, wantError string
 		nested, different, duplicate bool
+		readBefore, readAfter        bool
+		readOnlyNested, paginated    bool
 	}{
 		{name: "exact creation", kind: "Create", state: "Succeeded"},
 		{name: "nested creation", kind: "Create", state: "Succeeded", nested: true},
+		{name: "read before creation", kind: "Create", state: "Succeeded", readBefore: true},
+		{name: "read after creation", kind: "Create", state: "Succeeded", readAfter: true},
+		{name: "read before nested creation", kind: "Create", state: "Succeeded", nested: true, readBefore: true},
+		{name: "read after nested creation", kind: "Create", state: "Succeeded", nested: true, readAfter: true},
+		{name: "read-only nested deployment", kind: "Create", state: "Succeeded", readOnlyNested: true},
+		{name: "read on previous page", kind: "Create", state: "Succeeded", paginated: true},
 		{name: "outputs only", wantError: "cannot establish ownership"},
-		{name: "read existing registry", kind: "Read", state: "Succeeded", wantError: "no successful creation operation"},
-		{name: "failed creation", kind: "Create", state: "Failed", wantError: "no successful creation operation"},
-		{name: "untyped operation", state: "Succeeded", wantError: "no successful creation operation"},
+		{name: "read existing registry", kind: "Read", state: "Succeeded",
+			wantError: "no successful registry creation operation"},
+		{name: "read-only nested history", kind: "Read", state: "Succeeded", readOnlyNested: true,
+			wantError: "no successful registry creation operation"},
+		{name: "failed creation", kind: "Create", state: "Failed", wantError: "no successful registry creation operation"},
+		{name: "read before failed creation", kind: "Create", state: "Failed", readBefore: true,
+			wantError: "no successful registry creation operation"},
+		{name: "untyped operation", state: "Succeeded", wantError: "no successful registry creation operation"},
 		{name: "other registry", kind: "Create", state: "Succeeded", different: true, wantError: "cannot establish ownership"},
 		{name: "ambiguous creation", kind: "Create", state: "Succeeded", duplicate: true,
 			wantError: "multiple registry creation operations"},
@@ -1181,7 +1196,8 @@ func TestACRFullOutputRecoveryRequiresCreationEvidence(t *testing.T) {
 						}})
 					case testACRProject:
 						return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
-					case rootID + "/operations", nestedID + "/operations":
+					case rootID + "/operations", nestedID + "/operations", referenceID + "/operations",
+						rootID + "/operations?after=reads":
 						if tt.name == "outputs only" {
 							return &azcore.ResponseError{StatusCode: http.StatusNotFound}
 						}
@@ -1198,7 +1214,35 @@ func TestACRFullOutputRecoveryRequiresCreationEvidence(t *testing.T) {
 							"targetResource":        map[string]any{"id": id, "resourceType": resourceType},
 							"provisioningOperation": tt.kind, "provisioningState": tt.state,
 						}}
+						read := map[string]any{"properties": map[string]any{
+							"targetResource": map[string]any{
+								"id": registryID, "resourceType": "Microsoft.ContainerRegistry/registries",
+							},
+							"provisioningOperation": "Read", "provisioningState": "Succeeded",
+						}}
+						if path == referenceID+"/operations" {
+							return acrTestReply(out, map[string]any{"value": []any{read}})
+						}
+						if tt.paginated && path == rootID+"/operations" {
+							return acrTestReply(out, map[string]any{
+								"value": []any{read}, "nextLink": rootID + "/operations?after=reads",
+							})
+						}
 						operations := []any{operation}
+						if tt.readBefore {
+							operations = append([]any{read}, operations...)
+						}
+						if tt.readAfter {
+							operations = append(operations, read)
+						}
+						if tt.readOnlyNested && path == rootID+"/operations" {
+							operations = append([]any{map[string]any{"properties": map[string]any{
+								"targetResource": map[string]any{
+									"id": referenceID, "resourceType": "Microsoft.Resources/deployments",
+								},
+								"provisioningOperation": "Create", "provisioningState": "Succeeded",
+							}}}, operations...)
+						}
 						if tt.duplicate {
 							operations = append(operations, operation)
 						}
@@ -1264,16 +1308,18 @@ func TestACRPartialConnectionRecoveryRequiresCreationEvidence(t *testing.T) {
 	}{
 		{name: "owned legacy", wantMode: "create"},
 		{name: "owned partial", pending: true, wantMode: "create"},
+		{name: "read before partial creation", pending: true, wantMode: "create"},
+		{name: "read after partial creation", pending: true, wantMode: "create"},
 		{name: "canceled deployment", pending: true, wantMode: "create"},
 		{name: "paginated evidence", wantMode: "create"},
 		{name: "external other group", pending: true, wantMode: "reuse-connect"},
-		{name: "external same group", pending: true, wantError: "no successful creation operation"},
+		{name: "external same group", pending: true, wantError: "no successful registry creation operation"},
 		{name: "missing evidence", pending: true, wantError: "cannot establish ownership"},
 		{name: "missing history", wantError: "cannot establish ownership"},
 		{name: "missing evidence page", wantError: "verify partially deployed registry ownership"},
 		{name: "repeated evidence page", wantError: "pagination repeated a page"},
-		{name: "missing operation kind", wantError: "no successful creation operation"},
-		{name: "failed creation", wantError: "no successful creation operation"},
+		{name: "missing operation kind", wantError: "no successful registry creation operation"},
+		{name: "failed creation", wantError: "no successful registry creation operation"},
 		{name: "different registry", wantError: "cannot establish ownership"},
 		{name: "ambiguous evidence", wantError: "multiple registry creation operations"},
 		{name: "ambiguous connections", wantError: "multiple deployed registry connections"},
@@ -1380,6 +1426,13 @@ func TestACRPartialConnectionRecoveryRequiresCreationEvidence(t *testing.T) {
 						}
 						created := operation(registryID, "Microsoft.ContainerRegistry/registries", kind, state)
 						operations := []any{created}
+						read := operation(registryID, "Microsoft.ContainerRegistry/registries", "Read", "Succeeded")
+						if tt.name == "read before partial creation" {
+							operations = append([]any{read}, operations...)
+						}
+						if tt.name == "read after partial creation" {
+							operations = append(operations, read)
+						}
 						if tt.name == "ambiguous evidence" {
 							operations = append(operations, created)
 						}

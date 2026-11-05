@@ -943,14 +943,23 @@ func TestACRCreateRolloutRecoveredDestroy(t *testing.T) {
 					if owned {
 						operation = "Create"
 					}
-					return acrTestReply(out, map[string]any{"value": []any{map[string]any{
+					operations := []any{map[string]any{
 						"properties": map[string]any{
 							"targetResource": map[string]any{
 								"id": offlineRegistryID, "resourceType": "Microsoft.ContainerRegistry/registries",
 							},
 							"provisioningOperation": operation, "provisioningState": "Succeeded",
 						},
-					}}})
+					}}
+					if owned {
+						operations = append(operations, map[string]any{"properties": map[string]any{
+							"targetResource": map[string]any{
+								"id": offlineRegistryID, "resourceType": "Microsoft.ContainerRegistry/registries",
+							},
+							"provisioningOperation": "Read", "provisioningState": "Succeeded",
+						}})
+					}
+					return acrTestReply(out, map[string]any{"value": operations})
 				case offlineProjectID:
 					return acrTestReply(out, map[string]any{"identity": map[string]any{
 						"principalId": "22222222-2222-4222-8222-222222222222",
@@ -970,7 +979,7 @@ func TestACRCreateRolloutRecoveredDestroy(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, result)
 			} else {
-				require.ErrorContains(t, err, "no successful creation operation")
+				require.ErrorContains(t, err, "no successful registry creation operation")
 			}
 			require.Equal(t, owned, deletedGroup)
 			require.Equal(t, owned, deletedRecord)

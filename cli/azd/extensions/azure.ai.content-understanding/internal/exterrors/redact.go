@@ -6,9 +6,8 @@ package exterrors
 import (
 	"errors"
 	"regexp"
-	"strings"
-	"unicode"
-	"unicode/utf8"
+
+	"azure.ai.content-understanding/internal/cuclient"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc/status"
@@ -16,46 +15,12 @@ import (
 
 const MaxDiagnosticBytes = 2048
 
-var (
-	authorization = regexp.MustCompile(`(?im)\b(?:proxy-)?authorization\s*[:=]\s*[^\r\n]*`)
-	secretValue   = regexp.MustCompile(
-		`(?im)\b(?:[a-z_]*token|api[-_]?key|ocp-apim-subscription-key|accountkey|client_secret|` +
-			`password|secret|sas|sig|schema|content|text|payload|body|path)\s*[:=]\s*[^\r\n]*`)
-	diagnosticURL  = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>]+`)
-	windowsPath    = regexp.MustCompile(`(?i)(?:[a-z]:[\\/]|\\\\)[^\s"'<>]+`)
-	posixPath      = regexp.MustCompile(`(^|[\s"'=(])(?:/|~/|\.\.?/)[^\s"'<>]+`)
-	quotedValue    = regexp.MustCompile(`"[^"\r\n]*"|'[^'\r\n]*'`)
-	fieldPath      = regexp.MustCompile(`\b(fieldSchema\.fields|fields|properties)\.[^\s:]+`)
-	diagnosticCode = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
-)
+var diagnosticCode = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
 
 // Redact is for diagnostics only, never command results or service payloads.
 // Unknown unstructured errors must still use FromError's fixed fallback message.
 func Redact(message string) string {
-	if len(message) > 64*1024 || !utf8.ValidString(message) {
-		return "Diagnostic omitted because it exceeds the safe text limit."
-	}
-	if start := strings.IndexByte(message, '{'); start >= 0 {
-		message = message[:start] + "[redacted payload]"
-	}
-	message = authorization.ReplaceAllString(message, "Authorization: [redacted]")
-	message = secretValue.ReplaceAllString(message, "[redacted value]")
-	message = diagnosticURL.ReplaceAllString(message, "[redacted URL]")
-	message = windowsPath.ReplaceAllString(message, "[redacted path]")
-	message = posixPath.ReplaceAllString(message, "${1}[redacted path]")
-	message = quotedValue.ReplaceAllString(message, "[redacted value]")
-	message = fieldPath.ReplaceAllString(message, "${1}.[redacted]")
-	message = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) && r != '\n' && r != '\t' {
-			return -1
-		}
-		return r
-	}, message)
-	message = strings.TrimSpace(message)
-	if len(message) > MaxDiagnosticBytes {
-		return "Diagnostic omitted because it exceeds the safe text limit."
-	}
-	return message
+	return cuclient.RedactDiagnostic(message)
 }
 
 func safeCode(value string) string {

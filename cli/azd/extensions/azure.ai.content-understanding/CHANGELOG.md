@@ -9,6 +9,16 @@
   displayed as tables or labeled cards. Default output and saved results remain
   unchanged.
 
+### Bugs Fixed
+
+- Show sanitized service failure reasons and nested error codes in terminal
+  diagnostics and per-input reports, including HTTP, polling, and inline failures.
+  Keep useful model names and provide actionable guidance for `ModelNotSupported`
+  instead of replacing the root cause with a generic error. Redact credentials
+  and sensitive diagnostic values, and explicitly mark missing or shortened details.
+  Show accurate success/failure/skip counts and only mention retained result files
+  when files were actually saved.
+
 ### Other Changes
 
 - Make `azd ai cu version` easier to read with a descriptive title, labeled

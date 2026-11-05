@@ -4,7 +4,7 @@
 
 ## Preview feature switches
 
-All seven preview capabilities are off by default. Each switch is controlled independently.
+All eight preview capabilities are off by default. Each switch is controlled independently.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |

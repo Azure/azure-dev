@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -57,12 +58,12 @@ func TestInitProtocolPreviewCombinations(t *testing.T) {
 				require.NoError(t, err)
 				want := []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}
 				require.Equal(t, want, got)
-				got, err = selectHostedProtocols(t.Context(), nil, true, nil)
+				got, err = selectHostedProtocols(t.Context(), nil, true, nil, io.Discard)
 				require.NoError(t, err)
 				require.Equal(t, want, got, "no-prompt default must not require any RPC or preview")
 
 				for _, protocol := range []string{"a2a", "invocations_ws"} {
-					_, err := selectHostedProtocols(t.Context(), nil, true, []string{protocol})
+					_, err := selectHostedProtocols(t.Context(), nil, true, []string{protocol}, io.Discard)
 					enabled := a2a
 					if protocol == "invocations_ws" {
 						enabled = voice

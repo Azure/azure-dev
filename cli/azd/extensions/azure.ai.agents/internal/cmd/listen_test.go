@@ -1402,10 +1402,14 @@ func TestPredeployAgentRBACRunsPerService(t *testing.T) {
 }
 
 func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
+	clearPreviewProcess(t)
 	t.Setenv(featureflags.Voice.EnvVar, "true")
 	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
 	for _, kind := range []string{"voice", "prompt-voice"} {
 		t.Run(kind, func(t *testing.T) {
+			clearPreviewProcess(t)
+			t.Setenv(featureflags.Voice.EnvVar, "true")
+			t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
 			svc := &azdext.ServiceConfig{
 				Name: "voice-agent",
 				Host: AiAgentHost,
@@ -1426,10 +1430,43 @@ func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
 				Project: proj, Service: svc,
 			})
 			require.NoError(t, err)
-			require.Empty(t, response.Messages)
+			require.Len(t, response.Messages, 1)
+			require.Contains(t, response.Messages[0].Message, "Preview feature enabled:")
 			require.GreaterOrEqual(t, envServer.getCurrentCalls, 2)
 		})
 	}
+}
+
+func TestPredeployReturnsPreviewFeatureNotice(t *testing.T) {
+	clearPreviewProcess(t)
+	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
+	service := &azdext.ServiceConfig{
+		Name: "snapshot-agent",
+		Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "hosted", "name": "snapshot-agent", "enableMemorySnapshot": true,
+		}),
+	}
+	project := &azdext.ProjectConfig{
+		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{"snapshot-agent": service},
+	}
+	client := newTestAzdClient(
+		t,
+		&testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}},
+		&testWorkflowServiceServer{},
+	)
+
+	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+		Project: project,
+		Service: service,
+	})
+	require.NoError(t, err)
+	require.Len(t, response.Messages, 1)
+	require.Equal(t, azdext.BetaServiceEventMessageWarning, response.Messages[0].Kind)
+	require.Contains(t, response.Messages[0].Message, "Preview feature enabled:")
+	require.Contains(t, response.Messages[0].Message, featureflags.MemorySnapshot.EnvVar+"=true")
+	require.Contains(t, response.Messages[0].Message, "Preview behavior may change.")
 }
 
 func TestPredeployRejectsDisabledVoiceBeforeMutation(t *testing.T) {

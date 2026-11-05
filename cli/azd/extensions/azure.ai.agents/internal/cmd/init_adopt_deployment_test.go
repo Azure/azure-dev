@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"io"
 	"maps"
 	"net/http"
 	"os"
@@ -392,10 +393,10 @@ func TestAdoptedDeploymentPreflightBeforeScaffolding(t *testing.T) {
 					}
 					var err error
 					if templateType == TemplateTypeAzureYaml {
-						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, "")
+						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, "", io.Discard)
 					} else {
 						err = runInitFromAzdTemplate(t.Context(), flags, client, http.DefaultClient,
-							&AgentTemplate{Source: source})
+							&AgentTemplate{Source: source}, io.Discard)
 					}
 					localErr, ok := errors.AsType[*azdext.LocalError](err)
 					require.True(t, ok, "expected a selection error, got %v", err)

@@ -821,6 +821,7 @@ func runInitFromAzureYaml(
 	httpClient *http.Client,
 	content []byte,
 	stagingDir string,
+	noticeWriter io.Writer,
 ) error {
 	if err := validateInitModelSelectors(flags, true); err != nil {
 		return err
@@ -864,7 +865,7 @@ func runInitFromAzureYaml(
 	if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 		return err
 	}
-	if err := requireStagedPreviewFeatures(stagingDir, flags.noticeWriter); err != nil {
+	if err := requireStagedPreviewFeatures(stagingDir, noticeWriter); err != nil {
 		return err
 	}
 	//nolint:gosec // trusted staging directory
@@ -919,6 +920,7 @@ func runInitFromAzdTemplate(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 	selectedTemplate *AgentTemplate,
+	noticeWriter io.Writer,
 ) error {
 	if err := validateInitModelSelectors(flags, true); err != nil {
 		return err
@@ -948,6 +950,7 @@ func runInitFromAzdTemplate(
 		selectedTemplate.Source,
 		envName,
 		flags,
+		noticeWriter,
 	)
 	if err != nil {
 		return err
@@ -996,8 +999,9 @@ func scaffoldAzdTemplateProject(
 	templateSource string,
 	envName string,
 	flags *initFlags,
+	noticeWriter io.Writer,
 ) (string, error) {
-	replaced, err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource, flags)
+	replaced, err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource, flags, noticeWriter)
 	if err != nil {
 		return "", err
 	}
@@ -1017,6 +1021,7 @@ func preflightAzdTemplate(
 	httpClient *http.Client,
 	templateSource string,
 	flags *initFlags,
+	noticeWriter io.Writer,
 ) (string, error) {
 	stagingDir, cleanup, err := stageAzdTemplateRepository(
 		ctx,
@@ -1036,7 +1041,7 @@ func preflightAzdTemplate(
 	if err := validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource)); err != nil {
 		return "", err
 	}
-	if err := requireStagedPreviewFeatures(stagingDir, flags.noticeWriter); err != nil {
+	if err := requireStagedPreviewFeatures(stagingDir, noticeWriter); err != nil {
 		return "", err
 	}
 	return preflightAdoptedDeploymentReplacement(ctx, azdClient, stagingDir, flags)

@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,8 +27,9 @@ func runInitVoice(
 	azdClient *azdext.AzdClient,
 	projectTargetDir string,
 	createdFolderDisplay string,
+	noticeWriter io.Writer,
 ) error {
-	if err := featureflags.RequireWithWriter(featureflags.Voice, flags.noticeWriter); err != nil {
+	if err := featureflags.RequireWithWriter(featureflags.Voice, noticeWriter); err != nil {
 		return err
 	}
 	defer inittelemetry.Start(ctx, inittelemetry.AgentConfiguration)()

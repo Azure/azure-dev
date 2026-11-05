@@ -42,6 +42,7 @@ type InitFromCodeAction struct {
 	createdFolderPath   string
 	serviceNameOverride string
 	sourceValidated     bool
+	noticeWriter        io.Writer // preview notices; nil means stdout
 
 	// selectedFoundryProject holds the existing Foundry project resolved during
 	// init (nil when creating a new project). It carries NetworkInjected so
@@ -89,7 +90,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	); err != nil {
 		return err
 	}
-	protocols, err := selectHostedProtocols(ctx, a.azdClient, a.flags.noPrompt, a.flags.protocols, a.flags.noticeWriter)
+	protocols, err := selectHostedProtocols(ctx, a.azdClient, a.flags.noPrompt, a.flags.protocols, a.noticeWriter)
 	if err != nil {
 		return err
 	}

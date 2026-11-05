@@ -44,6 +44,39 @@ func TestACRBindingSelection(t *testing.T) {
 	}
 }
 
+func TestACRBindingSynthesisGuard(t *testing.T) {
+	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+	in := Input{
+		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n" +
+			"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"),
+		ServiceName: "project",
+		Env: map[string]string{
+			"AZD_FOUNDRY_ACR_MODE": "reuse-connect", "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": id,
+		},
+		ACRBinding: &ACRBinding{
+			Version: 1, Mode: "reuse-connect", RegistryResourceID: id, PrincipalID: "principal",
+			ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry/" +
+				"providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+		},
+	}
+	_, err := Synthesize(in)
+	require.NoError(t, err)
+	in.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = id + "other"
+	_, err = Synthesize(in)
+	require.ErrorContains(t, err, "migration")
+	in.Env["AZD_FOUNDRY_ACR_MODE"] = "create"
+	_, err = Synthesize(in)
+	require.ErrorContains(t, err, "migration")
+	in.ACRBinding = nil
+	in.Env["AZD_FOUNDRY_ACR_MODE"] = "none"
+	mode, err := GreenfieldACRMode(in)
+	require.NoError(t, err)
+	assert.Equal(t, "reuse-connect", mode)
+	in.Env[ACRBindingEnvKey] = "{}"
+	_, err = GreenfieldACRMode(in)
+	require.ErrorContains(t, err, "invalid deployed ACR binding")
+}
+
 func TestResolveGreenfieldACRSelectionUsesBinding(t *testing.T) {
 	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
 	for _, mode := range []string{"create", "reuse-connect"} {
@@ -155,12 +188,17 @@ func TestACRRequirementsBeforeProjectSetup(t *testing.T) {
 		{"empty", "services: {}", false, false},
 		{"project only", "services:\n  project:\n    host: azure.ai.project", false, false},
 		{"source", "services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted", true, true},
-		{"image", "services:\n  agent:\n    host: azure.ai.agent\n    image: registry/image:v1", true, false},
+		{"image defaults to source", "services:\n  agent:\n    host: azure.ai.agent\n    image: registry/image:v1", true, true},
+		{"image passthrough", "services:\n  agent:\n    host: azure.ai.agent\n    image: registry/image:v1\n" +
+			"    docker: {imagePassthrough: true}", true, false},
 		{"code", "services:\n  agent:\n    host: azure.ai.agent\n    codeConfiguration: {}", true, false},
 		{"prompt", "services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt", true, false},
 		{"disabled", "services:\n  agent:\n    host: azure.ai.agent\n    condition: false", false, false},
 		{"legacy image", "services:\n  agent:\n    host: azure.ai.agent\n    agents:\n" +
-			"      - name: agent\n        image: registry/image:v1", true, false},
+			"      - name: agent\n        image: registry/image:v1", true, true},
+		{"legacy passthrough", "services:\n  agent:\n    host: azure.ai.agent\n    agents:\n" +
+			"      - name: agent\n        image: registry/image:v1\n" +
+			"        docker: {imagePassthrough: true}", true, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			has, needs, err := ACRRequirements(Input{RawAzureYAML: []byte(tt.service)})

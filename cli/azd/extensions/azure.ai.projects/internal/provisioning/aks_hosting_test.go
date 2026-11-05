@@ -81,6 +81,16 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 		}}}), nil
 	}
 	path := "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + f.provider.deploymentName()
+	if request.Method == http.MethodGet && request.URL.Path == path {
+		return f.response(request, http.StatusNotFound, map[string]any{
+			"error": map[string]string{"code": "DeploymentNotFound", "message": "no previous deployment"},
+		}), nil
+	}
+	if request.Method == http.MethodGet && request.URL.Path == offlineProjectID {
+		return f.response(request, http.StatusOK, map[string]any{
+			"identity": map[string]string{"principalId": "22222222-2222-4222-8222-222222222222"},
+		}), nil
+	}
 	require.NotNil(f.t, request.Body, "unexpected ARM request: %s %s", request.Method, request.URL.Path)
 	var submitted struct {
 		Properties struct {
@@ -203,13 +213,15 @@ func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
 		assert.Equal(t, value, result.Deployment.Outputs[name].Value)
 	}
 	assert.Equal(t, 1, fake.writes)
-	require.Len(t, fake.requests, 3)
+	require.Len(t, fake.requests, 4)
 	assert.ElementsMatch(t, []string{
 		"GET " + offlineClusterID,
 		"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
 	}, fake.requests[:2])
-	assert.Equal(t, "PUT /subscriptions/target-sub/providers/Microsoft.Resources/deployments/"+p.deploymentName(),
+	assert.Equal(t, "GET /subscriptions/target-sub/providers/Microsoft.Resources/deployments/"+p.deploymentName(),
 		fake.requests[2])
+	assert.Equal(t, "PUT /subscriptions/target-sub/providers/Microsoft.Resources/deployments/"+p.deploymentName(),
+		fake.requests[3])
 	assert.Empty(t, server.set)
 	assert.Empty(t, compiler.buildCalls)
 	assert.Empty(t, compiler.buildParamCalls, "embedded provisioning must not invoke a Bicep naming probe")
@@ -229,6 +241,91 @@ func TestBYOPreviewReturnsARMWhatIfChangesWithoutResourceWrites(t *testing.T) {
 	assert.Empty(t, p.virtualEnv)
 }
 
+func TestBYORegistryValidationBeforeLifecycleWrites(t *testing.T) {
+	const registryID = "/subscriptions/target-sub/resourceGroups/shared/providers/" +
+		"Microsoft.ContainerRegistry/registries/registry"
+	for _, test := range []struct {
+		name, expectedError   string
+		abac, remote, invalid bool
+	}{
+		{name: "ABAC remote", abac: true, remote: true, expectedError: "does not authenticate"},
+		{name: "ABAC local", abac: true, expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "classic remote", remote: true, expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "invalid hosting", invalid: true, expectedError: "registry reuse is not supported with agentHosting"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p, fake := offlineBYOProvider(t)
+			env := &resolveEnvStubEnvServer{envName: "test"}
+			p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+			p.acrRemoteBuild = test.remote
+			p.acrPromptedEnv = map[string]string{envKeySubscriptionID: p.subID, envKeyLocation: p.location}
+			p.synthResult.Parameters["includeAcr"] = true
+			p.synthResult.Parameters["existingAcrResourceId"] = registryID
+			if test.invalid {
+				p.synthResult.Hosting.ClusterResourceID += "-other"
+			}
+			p.resourceGroupState = func(context.Context) (map[string]*string, bool, error) {
+				return nil, true, nil
+			}
+			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+				require.Equal(t, http.MethodGet, method)
+				if path != registryID {
+					return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+				}
+				mode := "LegacyRegistryPermissions"
+				if test.abac {
+					mode = "AbacRepositoryPermissions"
+				}
+				return acrTestReply(out, map[string]any{"properties": map[string]any{"roleAssignmentMode": mode}})
+			}
+			fake.failWrite = true
+			_, err := p.Deploy(t.Context(), func(string) {})
+			require.ErrorContains(t, err, test.expectedError)
+			assert.Empty(t, fake.requests)
+			assert.Zero(t, fake.writes)
+			assert.Empty(t, env.set)
+			assert.Empty(t, env.config)
+			assert.Nil(t, p.acrPending)
+			assert.Len(t, p.acrPromptedEnv, 2)
+		})
+	}
+}
+
+func TestBYORegistryPreviewRejectsReuseWithoutWrites(t *testing.T) {
+	const registryID = "/subscriptions/target-sub/resourceGroups/shared/providers/" +
+		"Microsoft.ContainerRegistry/registries/registry"
+	for _, abac := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ABAC=%t", abac), func(t *testing.T) {
+			p, fake := offlineBYOProvider(t)
+			env := &resolveEnvStubEnvServer{envName: "test"}
+			p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+			p.acrRemoteBuild = !abac
+			p.synthResult.Parameters["includeAcr"] = true
+			p.synthResult.Parameters["existingAcrResourceId"] = registryID
+			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+				require.Equal(t, http.MethodGet, method)
+				if path != registryID {
+					return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+				}
+				mode := "LegacyRegistryPermissions"
+				if abac {
+					mode = "AbacRepositoryPermissions"
+				}
+				return acrTestReply(out, map[string]any{"properties": map[string]any{"roleAssignmentMode": mode}})
+			}
+			_, err := p.Preview(t.Context(), func(string) {})
+			require.ErrorIs(t, err, synthesis.ErrACRReuseAgentHosting)
+			assert.Zero(t, fake.previews)
+			assert.Zero(t, fake.writes)
+			assert.Empty(t, fake.requests)
+			assert.Empty(t, env.set)
+			assert.Empty(t, env.config)
+			assert.Nil(t, p.acrPending)
+			assert.Empty(t, fake.parameters)
+		})
+	}
+}
+
 func TestBYOFailedDeploymentCanBeRetried(t *testing.T) {
 	p, fake := offlineBYOProvider(t)
 	fake.failWrite = true
@@ -238,7 +335,7 @@ func TestBYOFailedDeploymentCanBeRetried(t *testing.T) {
 	_, err = p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
 	assert.Equal(t, 2, fake.writes)
-	assert.Len(t, fake.requests, 6)
+	assert.Len(t, fake.requests, 8)
 	assert.Empty(t, p.virtualEnv)
 }
 
@@ -262,8 +359,14 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 	assert.Contains(t, fake.requests, "GET "+offlineClusterID)
 	p.onDiskSource.parameters["resourceTokenSalt"] = map[string]any{"value": "updated"}
 	_, err = p.Deploy(t.Context(), func(string) {})
+	require.ErrorContains(t, err, "retain the deployed resourceTokenSalt")
+	assert.Equal(t, 1, fake.writes)
+	p.onDiskSource.parameters["resourceTokenSalt"] = map[string]any{"value": "custom"}
+	p.onDiskSource.parameters["tags"] = map[string]any{"value": map[string]string{"team": "updated"}}
+	_, err = p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
-	assert.Equal(t, map[string]any{"value": "updated"}, fake.parameters["resourceTokenSalt"])
+	assert.Equal(t, map[string]any{"value": "custom"}, fake.parameters["resourceTokenSalt"])
+	assert.Equal(t, map[string]any{"value": map[string]any{"team": "updated"}}, fake.parameters["tags"])
 	assert.Equal(t, 2, fake.writes)
 }
 
@@ -297,13 +400,20 @@ func TestBYONonBooleanIncludeAcrReachesARM(t *testing.T) {
 				require.ErrorContains(t, err, "offline ARM includeAcr type validation")
 				assert.Equal(t, map[string]any{"value": test.value}, fake.parameters["includeAcr"])
 				assert.NotContains(t, fake.parameters, "kubeletObjectId")
-				require.Len(t, fake.requests, 3)
+				expectedRequests := []string{}
+				if operation == "deploy" {
+					expectedRequests = append(expectedRequests,
+						"GET /subscriptions/target-sub/providers/Microsoft.Resources/deployments/"+p.deploymentName())
+				}
+				expectedRequests = append(expectedRequests,
+					method+" /subscriptions/target-sub/providers/Microsoft.Resources/deployments/"+
+						p.deploymentName()+suffix)
+				require.Len(t, fake.requests, len(expectedRequests)+2)
 				assert.ElementsMatch(t, []string{
 					"GET " + offlineClusterID,
 					"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
 				}, fake.requests[:2])
-				assert.Equal(t, method+" /subscriptions/target-sub/providers/Microsoft.Resources/deployments/"+
-					p.deploymentName()+suffix, fake.requests[2])
+				assert.Equal(t, expectedRequests, fake.requests[2:])
 			})
 		}
 	}
@@ -320,7 +430,7 @@ func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSReads(t *testing.T) {
 	require.NotNil(t, deployed.Deployment)
 	require.Contains(t, deployed.Deployment.Outputs, "AZURE_AI_PROJECT_ID")
 	assert.Equal(t, offlineProjectID, deployed.Deployment.Outputs["AZURE_AI_PROJECT_ID"].Value)
-	assert.Len(t, fake.requests, 1, "native Foundry only submits the ARM deployment")
+	assert.Len(t, fake.requests, 2, "native Foundry reads deployment recovery state before submitting")
 	assert.NotContains(t, fake.parameters, "agentHosting")
 	assert.NotContains(t, fake.parameters, "kubeletObjectId")
 	assert.Equal(t, 1, fake.writes)
@@ -343,6 +453,29 @@ func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
 	assert.NotContains(t, source.parameters, "hostingPrincipalId")
 	assert.NotContains(t, source.parameters, "workloadPrincipalId")
 	assert.Equal(t, []string{offlineClusterID}, fake.reads, "the actual kubelet identity is always checked")
+}
+
+func TestBYORejectsExternalRegistryBeforeAuthentication(t *testing.T) {
+	for _, selectedBy := range []string{"parameter", "template default", "binding"} {
+		t.Run(selectedBy, func(t *testing.T) {
+			p, fake := offlineBYOProvider(t)
+			source, err := p.resolveTemplate(t.Context(), func(string) {})
+			require.NoError(t, err)
+			switch selectedBy {
+			case "parameter":
+				source.parameters["existingAcrResourceId"] = map[string]any{"value": testACRID}
+			case "template default":
+				definitions, ok := source.armTemplate["parameters"].(map[string]any)
+				require.True(t, ok)
+				definitions["existingAcrResourceId"] = map[string]any{"defaultValue": testACRID}
+			case "binding":
+				p.acrBinding = acrTestBinding()
+			}
+			p.credential = nil
+			require.ErrorIs(t, p.prepareBYO(t.Context(), source), synthesis.ErrACRReuseAgentHosting)
+			assert.Empty(t, fake.requests)
+		})
+	}
 }
 
 func TestBYOPrepareValidatesKubeletIdentityRegardlessOfACR(t *testing.T) {

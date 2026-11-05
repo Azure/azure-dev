@@ -873,6 +873,9 @@ func runInitFromAzureYaml(
 	if err != nil {
 		return fmt.Errorf("reading staged azure.yaml: %w", err)
 	}
+	if err := validateInitACRProjectContent(ctx, azdClient, flags, stagedContent, stagingDir); err != nil {
+		return err
+	}
 	stagedInfo, err := inspectAzureYaml(stagedContent, stagingDir)
 	if err != nil {
 		return err
@@ -1042,6 +1045,14 @@ func preflightAzdTemplate(
 		return "", err
 	}
 	if err := requireStagedPreviewFeatures(stagingDir, noticeWriter); err != nil {
+		return "", err
+	}
+	//nolint:gosec // trusted staging directory
+	content, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
+	if err != nil {
+		return "", fmt.Errorf("reading staged azure.yaml: %w", err)
+	}
+	if err := validateInitACRProjectContent(ctx, azdClient, flags, content, stagingDir); err != nil {
 		return "", err
 	}
 	return preflightAdoptedDeploymentReplacement(ctx, azdClient, stagingDir, flags)

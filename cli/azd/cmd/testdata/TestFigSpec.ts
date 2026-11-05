@@ -8577,7 +8577,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['toolbox'],
-					description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry Toolboxes from your terminal.',
 					subcommands: [
 						{
 							name: ['add'],

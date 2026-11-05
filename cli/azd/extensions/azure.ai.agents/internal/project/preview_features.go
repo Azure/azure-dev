@@ -49,10 +49,14 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 	kind, _ := definition["kind"].(string)
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "prompt":
-		harness, _ := definition["harness"].(map[string]any)
-		harnessType, _ := harness["type"].(string)
-		if agent_api.IsCopilotHarness(strings.TrimSpace(harnessType)) {
-			return featureflags.ManagedHarness
+		for _, value := range foldValues(definition, "harness") {
+			harness, _ := value.(map[string]any)
+			for _, name := range foldValues(harness, "type") {
+				harnessType, _ := name.(string)
+				if agent_api.IsCopilotHarness(strings.TrimSpace(harnessType)) {
+					return featureflags.ManagedHarness
+				}
+			}
 		}
 	case "voice", "prompt-voice":
 		return featureflags.Voice

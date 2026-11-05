@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,6 +45,7 @@ func (byoTestCredential) GetToken(context.Context, policy.TokenRequestOptions) (
 }
 
 type byoARMFake struct {
+	mu                sync.Mutex
 	t                 *testing.T
 	provider          *FoundryProvisioningProvider
 	requests          []string
@@ -63,6 +65,8 @@ func (f *byoARMFake) response(request *http.Request, status int, body any) *http
 }
 
 func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.requests = append(f.requests, request.Method+" "+request.URL.Path)
 	if request.Method == http.MethodGet && request.URL.Path == offlineClusterID {
 		return f.response(request, 200, map[string]any{"properties": f.clusterProperties}), nil
@@ -199,11 +203,13 @@ func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
 		assert.Equal(t, value, result.Deployment.Outputs[name].Value)
 	}
 	assert.Equal(t, 1, fake.writes)
-	assert.Equal(t, []string{
+	require.Len(t, fake.requests, 3)
+	assert.ElementsMatch(t, []string{
 		"GET " + offlineClusterID,
 		"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
-		"PUT /subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + p.deploymentName(),
-	}, fake.requests)
+	}, fake.requests[:2])
+	assert.Equal(t, "PUT /subscriptions/target-sub/providers/Microsoft.Resources/deployments/"+p.deploymentName(),
+		fake.requests[2])
 	assert.Empty(t, server.set)
 	assert.Empty(t, compiler.buildCalls)
 	assert.Empty(t, compiler.buildParamCalls, "embedded provisioning must not invoke a Bicep naming probe")
@@ -291,12 +297,13 @@ func TestBYONonBooleanIncludeAcrReachesARM(t *testing.T) {
 				require.ErrorContains(t, err, "offline ARM includeAcr type validation")
 				assert.Equal(t, map[string]any{"value": test.value}, fake.parameters["includeAcr"])
 				assert.NotContains(t, fake.parameters, "kubeletObjectId")
-				assert.Equal(t, []string{
+				require.Len(t, fake.requests, 3)
+				assert.ElementsMatch(t, []string{
 					"GET " + offlineClusterID,
 					"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
-					method + " /subscriptions/target-sub/providers/Microsoft.Resources/deployments/" +
-						p.deploymentName() + suffix,
-				}, fake.requests)
+				}, fake.requests[:2])
+				assert.Equal(t, method+" /subscriptions/target-sub/providers/Microsoft.Resources/deployments/"+
+					p.deploymentName()+suffix, fake.requests[2])
 			})
 		}
 	}
@@ -368,7 +375,11 @@ func TestBYOPrepareValidatesKubeletIdentityRegardlessOfACR(t *testing.T) {
 						source.parameters["kubeletObjectId"] = map[string]any{"value": suppliedHostingPrincipal}
 					}
 					require.ErrorContains(t, p.prepareBYO(t.Context(), source), test.expected)
-					assert.Equal(t, []string{"GET " + offlineClusterID}, fake.requests)
+					assert.Contains(t, fake.requests, "GET "+offlineClusterID)
+					assert.Subset(t, []string{
+						"GET " + offlineClusterID,
+						"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
+					}, fake.requests)
 				})
 			}
 		}
@@ -406,7 +417,7 @@ func TestBYOPreparePreservesSuppliedKubeletRegardlessOfACR(t *testing.T) {
 					source.parameters["KUBELETOBJECTID"] = map[string]any{"value": test.value}
 				}
 				require.NoError(t, p.prepareBYO(t.Context(), source))
-				assert.Equal(t, []string{
+				assert.ElementsMatch(t, []string{
 					"GET " + offlineClusterID,
 					"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
 				}, fake.requests)

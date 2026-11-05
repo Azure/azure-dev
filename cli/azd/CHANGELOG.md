@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[#10696]](https://github.com/Azure/azure-dev/pull/10696) Add support for stable-to-stable `azd update` from an elevated terminal for machine-wide Windows x64 MSI installations, preserving custom installation directories. Thanks @JeffreyCA for the contribution!
+- [[#10696]](https://github.com/Azure/azure-dev/pull/10696) Add support for stable-to-stable `azd update` from an elevated terminal for machine-wide Windows x64 MSI installations, preserving custom installation directories.
 
 ### Bugs Fixed
 

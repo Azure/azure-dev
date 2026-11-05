@@ -442,10 +442,7 @@ func (da *DeployAction) deployServicesGraph(
 				resumed = true
 				ps.ResumePreviewer()
 			}
-			defer func() {
-				resumePreviewer()
-				flushPreviewerOutput(origConsole)
-			}()
+			defer resumePreviewer()
 		}
 	} else {
 		// Still wrap the console for thread-safety without suppressing spinners.
@@ -552,7 +549,6 @@ func (da *DeployAction) deployServicesGraph(
 	if da.progressTracker != nil {
 		da.progressTracker.RenderFinal()
 	}
-	flushPreviewerOutput(origConsole)
 	messages := messageCollector.Snapshot(serviceOrder)
 	if da.formatter.Kind() != output.JsonFormat {
 		displayServiceEventMessages(ctx, origConsole, messages)
@@ -625,12 +621,6 @@ func (da *DeployAction) deployServicesGraph(
 			),
 		},
 	}, nil
-}
-
-func flushPreviewerOutput(console input.Console) {
-	if buffered, ok := console.(input.PreviewerOutput); ok {
-		buffered.FlushPreviewerOutput()
-	}
 }
 
 func (da *DeployAction) resolveDeployTimeout() (time.Duration, error) {

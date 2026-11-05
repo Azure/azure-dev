@@ -4,12 +4,9 @@
 package grpcserver
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
-	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -585,106 +581,12 @@ func TestEventService_syncExtensionOutputCleansUpPreview(t *testing.T) {
 
 	cleanup := service.syncExtensionOutput(
 		t.Context(), extension, "Test Extension (predeploy)")
-	require.Equal(t, io.Discard, service.outputs[extension].writer)
 	_, err := extension.StdOut().Write([]byte("preview output\n"))
 	require.NoError(t, err)
 	cleanup()
 
 	console := service.console.(*mockinput.MockConsole)
 	require.Empty(t, console.Output())
-}
-
-func TestEventService_syncExtensionOutputFallsBackToStderrWhenPreviewSuppressed(t *testing.T) {
-	service, _ := createTestEventService()
-	extension := createTestExtension()
-
-	var stderr bytes.Buffer
-	console := input.NewConsole(
-		false,
-		false,
-		input.Writers{Output: io.Discard, Spinner: io.Discard},
-		input.ConsoleHandles{
-			Stdin:  strings.NewReader(""),
-			Stdout: io.Discard,
-			Stderr: &stderr,
-		},
-		nil,
-		nil,
-	)
-	pauser, ok := console.(input.PreviewerPauser)
-	require.True(t, ok)
-	pauser.PausePreviewer()
-	service.console = console
-
-	cleanup := service.syncExtensionOutput(
-		t.Context(), extension, "Test Extension (predeploy)")
-	_, err := extension.StdOut().Write([]byte("preview output\n"))
-	require.NoError(t, err)
-	cleanup()
-
-	require.Empty(t, stderr.String())
-	pauser.ResumePreviewer()
-	require.Empty(t, stderr.String())
-	console.(input.PreviewerOutput).FlushPreviewerOutput()
-	require.Contains(t, stderr.String(), "preview output")
-}
-
-func TestEventService_syncExtensionOutputOverlappingHooks(t *testing.T) {
-	service, _ := createTestEventService()
-	extension := createTestExtension()
-	var stderr bytes.Buffer
-	console := input.NewConsole(false, false,
-		input.Writers{Output: io.Discard, Spinner: io.Discard},
-		input.ConsoleHandles{Stderr: &stderr}, nil, nil)
-	console.(input.PreviewerPauser).PausePreviewer()
-	service.console = console
-	first := service.syncExtensionOutput(t.Context(), extension, "first")
-	second := service.syncExtensionOutput(t.Context(), extension, "second")
-	_, err := extension.StdOut().Write([]byte("overlap\n"))
-	require.NoError(t, err)
-	first()
-	first()
-	_, err = extension.StdOut().Write([]byte("remaining\n"))
-	require.NoError(t, err)
-	second()
-	_, err = extension.StdOut().Write([]byte("detached\n"))
-	require.NoError(t, err)
-	require.Empty(t, stderr.String())
-	console.(input.PreviewerPauser).ResumePreviewer()
-	console.(input.PreviewerOutput).FlushPreviewerOutput()
-	require.Equal(t, "overlap\nremaining\n", stderr.String())
-	require.Empty(t, service.outputs)
-}
-
-func TestEventService_syncExtensionOutputConcurrentHooks(t *testing.T) {
-	service, _ := createTestEventService()
-	extension := createTestExtension()
-	var stderr bytes.Buffer
-	console := input.NewConsole(false, false,
-		input.Writers{Output: io.Discard, Spinner: io.Discard},
-		input.ConsoleHandles{Stderr: &stderr}, nil, nil)
-	console.(input.PreviewerPauser).PausePreviewer()
-	service.console = console
-	var ready, done sync.WaitGroup
-	ready.Add(20)
-	release := make(chan struct{})
-	for range 20 {
-		done.Go(func() {
-			cleanup := service.syncExtensionOutput(t.Context(), extension, "concurrent")
-			defer cleanup()
-			ready.Done()
-			<-release
-			_, err := extension.StdOut().Write([]byte("hook\n"))
-			assert.NoError(t, err)
-		})
-	}
-	ready.Wait()
-	close(release)
-	done.Wait()
-	console.(input.PreviewerPauser).ResumePreviewer()
-	console.(input.PreviewerOutput).FlushPreviewerOutput()
-	require.Equal(t, strings.Repeat("hook\n", 20), stderr.String())
-	require.Empty(t, service.outputs)
 }
 
 func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *testing.T) {

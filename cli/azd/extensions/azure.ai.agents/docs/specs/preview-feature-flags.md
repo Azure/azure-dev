@@ -95,14 +95,9 @@ while it is on. `postdeploy` and project listeners remain stable.
 Both paths share the existing predeploy validation, telemetry, environment
 updates, RBAC checks, automatic assignment, and skip rules. The stable path
 prints the returned safe warning messages and suggestions in temporary hook
-output. Host builds containing the
-[buffered hook-output fix](https://github.com/Azure/azure-dev/pull/10813)
-deliver suppressed hook stdout to the configured stderr stream after deploy
-progress finishes. The host retains the first 1 MiB per progress interval and
-reports discarded output with a truncation warning. This does not limit
-structured beta event messages.
-Released azd 1.37.0 hosts do not contain this fix and can
-hide stable hook output while the previewer is suppressed. The beta path
+output. The host can discard that output while deployment progress suppresses
+the previewer; the stable path does not guarantee warning visibility or
+retention after deployment. Host output handling is unchanged. The beta path
 returns messages to the host without also printing them.
 Both preserve handler errors. This switch gates retention, not deployment or
 RBAC checking, so a disabled switch does not reject ordinary deployment.

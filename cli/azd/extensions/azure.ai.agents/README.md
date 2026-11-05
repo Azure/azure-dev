@@ -77,13 +77,9 @@ eject do not check the BYO AKS switch. Ordinary Foundry provisioning is unchange
 
 The RBAC warnings switch controls retention only, not whether checks run.
 With it off, `predeploy` uses the stable event API and prints warnings and
-suggestions in hook output. Host builds containing the
-[buffered hook-output fix](https://github.com/Azure/azure-dev/pull/10813)
-deliver that stdout to the configured stderr stream after deploy progress
-finishes. The host retains the first 1 MiB of hook output per progress interval
-and reports truncation if additional output is discarded.
-Released azd 1.37.0 hosts do not contain this fix and can hide
-stable hook output while the previewer is suppressed.
+suggestions in hook output. The host can discard that output while deployment
+progress suppresses the previewer; the stable path does not guarantee warning
+visibility or retention after deployment.
 With it on, `predeploy` uses the beta event API so the host can retain warnings
 in final output and JSON `messages`.
 
@@ -553,10 +549,9 @@ including when a later deployment step fails. In PowerShell, use
 `$env:AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS = 'true'`.
 This preview is off by default; absent, false, empty, or invalid values keep
 the stable event API and warnings in hook output only, without retained JSON
-`messages`. Hosts containing the buffered hook-output fix linked above deliver
-suppressed hook output to configured stderr after deploy progress finishes;
-the first 1 MiB is retained, with a warning if further output is discarded.
-Released azd 1.37.0 hosts can hide it while the previewer is suppressed.
+`messages`. The host can discard stable hook output while deployment progress
+suppresses the previewer. Enable the switch to retain warnings in final output
+and JSON `messages`; this extension does not change host output handling.
 RBAC checks, automatic role assignment, and skip
 rules still run as before. Warnings are non-blocking: a warning does not
 change the deployment exit code, and deployment errors still fail the command.

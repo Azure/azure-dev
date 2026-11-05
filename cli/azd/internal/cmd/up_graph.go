@@ -528,7 +528,6 @@ func (u *UpGraphAction) Run(
 			resumePreviewer,
 			&deployProgressFinalized,
 		)
-		flushPreviewerOutput(u.console)
 		if !wasFinalized && u.formatter.Kind() != output.JsonFormat {
 			displayServiceEventMessages(ctx, safeCon, messageCollector.Snapshot(serviceOrder))
 		}

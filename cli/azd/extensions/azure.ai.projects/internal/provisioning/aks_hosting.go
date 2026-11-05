@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -21,8 +22,36 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/google/uuid"
 )
+
+var byoPreviewNotice = struct {
+	sync.Mutex
+	announced bool
+}{}
+
+func announceBYOPreview(writer io.Writer) error {
+	if writer == nil {
+		writer = os.Stdout
+	}
+	if writer == io.Discard {
+		return nil
+	}
+	byoPreviewNotice.Lock()
+	defer byoPreviewNotice.Unlock()
+	if byoPreviewNotice.announced {
+		return nil
+	}
+	if _, err := fmt.Fprintf(writer,
+		"%s Existing AKS project initialization and adoption (%s=true). Preview behavior may change.\n",
+		output.WithWarningFormat("(!) Preview feature enabled:"), synthesis.BYOAKSEnvVar,
+	); err != nil {
+		return fmt.Errorf("writing preview feature notice: %w", err)
+	}
+	byoPreviewNotice.announced = true
+	return nil
+}
 
 func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *templateSource) error {
 	value, err := byoHostingParameter(source)
@@ -116,6 +145,9 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 			fmt.Sprintf("preview feature %q is disabled", synthesis.BYOAKSFeatureID),
 			fmt.Sprintf("enable by setting %s=true in your shell or CI before running azd", synthesis.BYOAKSEnvVar),
 		)
+	}
+	if err := announceBYOPreview(p.noticeWriter); err != nil {
+		return err
 	}
 	if err := p.ensureCredential(ctx); err != nil {
 		return err

@@ -177,6 +177,8 @@ Agents init/adoption checks inline and referenced project configuration. The Pro
 
 Provision and preview inspect the template's effective `agentHosting` value after parameter merging, including template defaults when no value is supplied. On-disk deployment parameters can override the hosting selections from `azure.yaml`, enable hosting without a YAML declaration, or disable hosting. Local binding lookups require a literal hosting object with a readable `enabled` flag and cluster resource ID; managed identity IDs are read only when needed for an automatic binding. Additional object properties are passed to ARM unchanged. YAML configuration retains its own field and resource-ID validation.
 
+When effective AKS hosting is enabled and the switch is on, provision and preview display the same preview-feature reminder as Agents initialization, once per Projects extension process.
+
 Set `agentHosting.clusterResourceId` on the `azure.ai.project` service to use an existing AKS cluster when creating a **new** Foundry account and project:
 
 ```yaml

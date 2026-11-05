@@ -155,7 +155,7 @@ User-authored on-disk Bicep templates can still declare their own role assignmen
 
 ### Existing AKS hosting
 
-The Agents init/adoption switch for this preview is **disabled by default**. To enable BYO AKS project initialization and adoption in your shell or CI:
+The BYO AKS preview is **disabled by default**. To enable project initialization, adoption, provisioning, and provisioning preview in your shell or CI:
 
 ```bash
 export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
@@ -167,13 +167,13 @@ In PowerShell:
 $env:AZD_ALPHA_ENABLE_AGENTS_BYO_AKS = 'true'
 ```
 
-The independent `agents.byo_aks` switch uses the process environment. If the variable is absent, BYO AKS project initialization and adoption are disabled. When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable them; empty, false, and invalid values disable them. `alpha.all`, other preview switches, and service `env:` entries do not override this switch. Values already injected into the process by the azd host count. Foundry projects without `agentHosting` do not require this switch.
+The independent `agents.byo_aks` switch uses the process environment. If the variable is absent, BYO AKS use is disabled. When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable it; empty, false, and invalid values disable it. `alpha.all`, other preview switches, and service `env:` entries do not override this switch. Values already injected into the process by the azd host count. Foundry provisioning without effective AKS hosting does not require this switch.
 
 The generated account, project and model deployment resources use API `2025-06-01` without AKS hosting. Only the BYO AKS path uses `2026-07-15-preview`; both paths return the same standard project, endpoint and registry outputs.
 
 Accounts use `cog-<resourceToken>` without AKS hosting and `aks-cog-<resourceToken>` with AKS hosting. The selected account name is also its custom subdomain and is used in Project IDs, endpoints, registry connections, and private endpoints. Storage, managed identity, and registry names are derived from the shared resource token.
 
-Agents init/adoption checks inline and referenced project configuration. A disabled preview returns `feature_not_enabled` with the variable to set. Foundry provider initialization, provision, preview, lifecycle hooks, and Bicep eject do not check this switch.
+Agents init/adoption checks inline and referenced project configuration. The Projects provider also requires this switch for `azd provision` and `azd provision --preview` when effective `agentHosting.enabled=true`. A disabled preview returns the `feature_not_enabled` compatibility error with the variable to set, before credential initialization or BYO AKS, role, or identity reads. Foundry provider initialization, infrastructure state and parameter queries, synthesis, lifecycle hooks, Bicep eject, and `azd down` do not check this switch.
 
 Provision and preview inspect the template's effective `agentHosting` value after parameter merging, including template defaults when no value is supplied. On-disk deployment parameters can override the hosting selections from `azure.yaml`, enable hosting without a YAML declaration, or disable hosting. Local binding lookups require a literal hosting object with a readable `enabled` flag and cluster resource ID; managed identity IDs are read only when needed for an automatic binding. Additional object properties are passed to ARM unchanged. YAML configuration retains its own field and resource-ID validation.
 
@@ -232,7 +232,7 @@ These permissions are additional to the applicable resource and role-assignment 
 
 For missing principal bindings declared by the template, the provider reads the effectively selected supplied identities to resolve their principal IDs. A missing federation-role binding is resolved in the effective workload identity's subscription, or the deployment subscription when that identity is omitted. Explicit bindings do not require these lookups. This is deployment binding resolution, not a readiness, networking, or permission preflight. Supplied resources and their existing grants must already be configured for Foundry agent hosting.
 
-After local validation and credential initialization, independent AKS, federation-role,
+After local validation, preview opt-in, and credential initialization, independent AKS, federation-role,
 and supplied-identity reads run concurrently. The first failed read cancels outstanding
 reads and returns its original error; errors are selected by completion order.
 All required reads must succeed before bindings are merged and ARM deployment or what-if can proceed.

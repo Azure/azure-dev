@@ -4,10 +4,10 @@
 
 ## Status and goal
 
-- **Component:** `cli/azd/extensions/azure.ai.agents`
+- **Component:** `cli/azd/extensions/azure.ai.agents` and BYO AKS provisioning in `cli/azd/extensions/azure.ai.projects`
 - **Scope:** Independent managed-harness, voice, long-running invocation, A2A version-selection, and BYO AKS switches. All switches default to off.
 
-Keep preview opt-in decisions inside the Microsoft Foundry agents extension until the extension framework supports discovery and evaluation. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
+Keep preview opt-in decisions inside the Microsoft Foundry extensions until the extension framework supports discovery and evaluation. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
 
 Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws`. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
 
@@ -73,17 +73,19 @@ if err := featureflags.Require(featureflags.Voice); err != nil {
 | `Voice` | `agents.voice` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` | Voice, prompt-voice, and hosted voice agents |
 | `LongRunning` | `agents.long_running` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations |
 | `A2A` | `agents.a2a` | `AZD_ALPHA_ENABLE_AGENTS_A2A` | A2A init selection, explicit wire versions, and the 1.0 message default |
-| `BYOAKS` | `agents.byo_aks` | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Existing AKS project initialization and adoption |
+| `BYOAKS` | `agents.byo_aks` | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Existing AKS project initialization, adoption, provisioning, and provisioning preview |
 
 Each ID starts with `agents.`. Its canonical key is `AZD_ALPHA_ENABLE_` plus the ID in upper case with dots replaced by underscores. Registry tests enforce the identities, naming rule, unique IDs and keys, and nonempty descriptions. The evaluator reads the declared `EnvVar` rather than deriving a key at run time.
 
-### BYO AKS initialization and adoption
+### BYO AKS initialization, adoption, and provisioning
 
 The BYO AKS identity and environment key are declared in the aligned synthesis copies. Agents uses the existing `Require` evaluator for project init/adoption. Project classification resolves inline and `$ref` configuration using the existing service resolver. A service `env:` entry does not control this switch.
 
-An absent variable disables BYO AKS project initialization and adoption, while an explicit value uses `strconv.ParseBool`. Disabled checks return the `feature_not_enabled` compatibility error and shell/CI suggestion. Foundry projects without `agentHosting` do not require this switch.
+An absent variable disables BYO AKS use, while an explicit value uses `strconv.ParseBool`. Disabled checks return the `feature_not_enabled` compatibility error and shell/CI suggestion. Foundry provisioning without effective AKS hosting does not require this switch.
 
-The Projects extension owns `microsoft.foundry`. Provider initialization, infrastructure state queries, provision, preview, lifecycle hooks, and Bicep eject do not check the BYO AKS switch. Provision and preview still validate effective hosting parameters and resolve required identity bindings. BYO AKS infrastructure uses the standard Foundry `azd down` path, including its confirmation, `--force` behavior, and target resource-group deletion.
+The Projects extension owns `microsoft.foundry`. Its `Deploy` and `Preview` methods call `prepareBYO`, which validates the effective `agentHosting` value after parameter merging, including template defaults and case-insensitive parameter names with value envelopes. When effective `enabled=true`, it checks the current process value of the shared synthesis environment key with `strconv.ParseBool` after local resource-ID validation and before credential initialization or BYO AKS, role, or identity reads. This covers embedded provisioning, on-disk `.parameters.json`, `.bicepparam`, and template defaults, including hosting enabled without an `azure.yaml` declaration. Effective `enabled=false` skips the gate and binding reads. Structured gate errors are returned unchanged.
+
+Provider initialization, infrastructure state and parameter queries, synthesis, lifecycle hooks, and Bicep eject do not check the BYO AKS switch. BYO AKS infrastructure uses the standard Foundry `azd down` path without requiring the switch, including its confirmation, `--force` behavior, and target resource-group deletion.
 
 ### A2A compatibility policy
 
@@ -177,6 +179,7 @@ These entry points classify content that only exists at run time, so an annotati
 | `invoke --local` | The local path uses the gated selector when an agent service exists. A web-only project retains ordinary local invocation |
 | `optimize` submission | The actual target is resolved before checking its local service. Matching config-file targets are checked; independent remote targets retain their authored identity and version |
 | `optimize deploy` remote definition | The definition is already fetched before creating a new version |
+| `microsoft.foundry` provision and provisioning preview | Effective hosting comes from the merged deployment parameters or template defaults, not only the project YAML |
 
 Manifest decoding reuses the service decoder used by `agent add`. Inline definitions and root/field `$ref` includes use the existing resolver. Template catalogs lack capability metadata, so entries remain visible; staged definitions are checked instead of inferring features from names.
 
@@ -192,7 +195,7 @@ Extension metadata and shell completion are built from the complete static tree.
 
 An explicit HTTP `--agent-endpoint` carries no kind or harness information. It remains unclassified, with no additional authenticated definition lookup, so managed-harness enforcement cannot cover that route. The deterministic long-running check applies to every endpoint before invocation, authentication, or conversation/session persistence. Text invoke does not accept voice WebSocket endpoints.
 
-Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. BYO AKS infrastructure operations do not require its switch to be enabled; infrastructure teardown follows the standard Foundry `azd down` path and deletes the target resource group with all resources inside it. There is no state migration or persisted flag update. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
+Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. BYO AKS infrastructure state queries, Bicep eject, and teardown do not require its switch to be enabled; infrastructure teardown follows the standard Foundry `azd down` path and deletes the target resource group with all resources inside it. There is no state migration or persisted flag update. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package.
 
 ## Compatibility and future framework adoption
 
@@ -215,6 +218,6 @@ Root-command regressions cover parsed flags, local-validation precedence, indepe
 
 Remote-template regressions cover inline and `$ref` previews, rejection before Azure authentication, retained authentication when enabled, single-download adoption, and temporary-directory cleanup on failure.
 
-BYO AKS regressions cover default-off and boolean-value semantics and inline and referenced project configuration during init/adoption. Infrastructure tests cover Bicep eject, Terraform rejection without file changes, standard Project and registry outputs, and the ARM what-if path.
+BYO AKS regressions cover default-off and boolean-value semantics and inline and referenced project configuration during init/adoption. Projects provisioning tests cover process-only enablement, rejection before credentials or BYO resource reads, unchanged structured errors and parameters, and the effective embedded, on-disk JSON, Bicep parameter, and template-default paths for both provision and preview. Disabled effective hosting and ordinary Foundry provisioning remain available without opt-in. Infrastructure tests also cover Bicep eject, Terraform rejection without file changes, standard Project and registry outputs, and the ARM what-if path.
 
 Run offline tests, the full agents module build, and scoped static checks with Go 1.26.4. Tier 0 scenarios cover switch discovery and enabled/disabled help. Scenario execution remains opt-in through the `foundry-extension-scenario-orchestrator` agent; no Azure scenarios are required for this integration.

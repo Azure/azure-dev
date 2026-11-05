@@ -565,12 +565,12 @@
     {
       "id": "azure.ai.toolboxes",
       "namespace": "ai.toolbox",
-      "displayName": "Foundry Toolboxes (Beta)",
-      "description": "Manage Microsoft Foundry Toolboxes from your terminal. (Beta)",
+      "displayName": "Foundry Toolboxes",
+      "description": "Manage Microsoft Foundry Toolboxes from your terminal.",
       "versions": [
         {
-          "version": "1.0.0-beta.11.nightly.6972724",
-          "requiredAzdVersion": ">=1.27.1",
+          "version": "1.0.0-nightly.7041563",
+          "requiredAzdVersion": ">=1.37.0",
           "capabilities": [
             "custom-commands",
             "service-target-provider",
@@ -589,7 +589,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "a857847297c0830e5bd4b4a1ab71e34b1a8c353c21c8650472c37a2c2e956736"
+                "value": "b138a4c1ae9ca12a4737f8b878038e142a5a5b16f9fa36f21a593a0d1b8d2fed"
               },
               "entryPoint": "azure-ai-toolboxes-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-toolboxes/nightly/azure-ai-toolboxes-darwin-amd64.zip"
@@ -597,7 +597,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "48bc8adc93fb2d2366bbf13d353db8308617332391c78c18cb096b817c904dff"
+                "value": "e91ba4273f95346a5e1c761b8da6d58356aefce611ad36014042ca689c7cec04"
               },
               "entryPoint": "azure-ai-toolboxes-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-toolboxes/nightly/azure-ai-toolboxes-darwin-arm64.zip"
@@ -605,7 +605,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e14fb353393ae2fad65b124328ee476ee097aa67ecafe01038513f20c5a8e65b"
+                "value": "c547e51bcb3b7110e6217728aca8f4ba5b6ade4ce2ea6def438d811d91cff21e"
               },
               "entryPoint": "azure-ai-toolboxes-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-toolboxes/nightly/azure-ai-toolboxes-linux-amd64.tar.gz"
@@ -613,7 +613,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "43efb2df3dd1a00092dc4018b58cf46dee697703a79ba91ddfc4d44dddfea872"
+                "value": "d3f3e8781e384f9c3924325462f826c08a0b8ff83561ea6a31d6ba8731c48a06"
               },
               "entryPoint": "azure-ai-toolboxes-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-toolboxes/nightly/azure-ai-toolboxes-linux-arm64.tar.gz"
@@ -621,7 +621,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "2c25ddc7b7853269a9deea1de108da2923d1496ae5bbe4e9ff7dcdcf605fc1cd"
+                "value": "49c507f6793b6a4d4bce667279cdeb26d027f42a327b55fcee764332e3eab1d7"
               },
               "entryPoint": "azure-ai-toolboxes-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-toolboxes/nightly/azure-ai-toolboxes-windows-amd64.zip"
@@ -629,7 +629,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "39e13f2f96f6e08798507ad491fedd994acab6dcdb3985a12c489f26edac9646"
+                "value": "bda9b52dd33af7bb0f55fb98dc6d057d1de154243c75b3136f1a6ac15922a6c9"
               },
               "entryPoint": "azure-ai-toolboxes-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-toolboxes/nightly/azure-ai-toolboxes-windows-arm64.zip"
@@ -638,7 +638,7 @@
           "dependencies": [
             {
               "id": "azure.ai.connections",
-              "version": "~1.0.0-beta.6"
+              "version": "~1.0.0"
             }
           ]
         }

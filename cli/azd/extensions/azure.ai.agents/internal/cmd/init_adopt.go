@@ -908,7 +908,7 @@ func runInitFromAzureYaml(
 	if err != nil {
 		return err
 	}
-	if err := ensureInitACRProjectsCapability(ctx, flags); err != nil {
+	if err := ensureInitACRProjectsCapability(ctx, flags, azdClient); err != nil {
 		return err
 	}
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
@@ -1085,7 +1085,7 @@ func preflightAzdTemplate(
 	if err != nil {
 		return adoptedProjectPreflight{}, err
 	}
-	if err := ensureInitACRProjectsCapability(ctx, flags); err != nil {
+	if err := ensureInitACRProjectsCapability(ctx, flags, azdClient); err != nil {
 		return adoptedProjectPreflight{}, err
 	}
 	return adoptedProjectPreflight{replacedDeployment: replaced, subscription: subscription}, nil
@@ -2227,7 +2227,10 @@ func applyDeployModeToAdoptedProjectWithSources(
 		}
 		hadDockerConfig := adoptedServiceHasDocker(agent.svc)
 		if flags.acrResourceIDSet || flags.effectiveACRResourceID != "" {
-			hadDockerConfig = adoptedServiceHasSourceDocker(agent.svc)
+			hadDockerConfig, err = adoptedServiceHasSourceDocker(ctx, azdClient, agent.name, agent.svc)
+			if err != nil {
+				return false, nil, err
+			}
 		}
 		serviceNeedsACR, err := applyDeployModeToService(
 			ctx,
@@ -2241,7 +2244,11 @@ func applyDeployModeToAdoptedProjectWithSources(
 			return false, nil, err
 		}
 		projectNeedsACR = projectNeedsACR || serviceNeedsACR
-		if serviceNeedsACR && (flags.deployMode != "" || !hadDockerConfig) {
+		configuredSource := flags.deployMode != "" || !hadDockerConfig
+		if initACRResourceID(flags) != "" && hadDockerConfig {
+			configuredSource = false
+		}
+		if serviceNeedsACR && configuredSource {
 			configuredSourceContainers = append(configuredSourceContainers, agent.name)
 		}
 	}
@@ -2452,6 +2459,12 @@ func applyDeployModeToService(
 	// takes precedence over stale image or docker properties when no override
 	// is requested.
 	hasDocker := adoptedServiceHasDocker(svc)
+	if initACRResourceID(flags) != "" {
+		hasDocker, err = adoptedServiceHasSourceDocker(ctx, azdClient, serviceName, svc)
+		if err != nil {
+			return false, err
+		}
+	}
 	if flags.deployMode == "" && hasCodeConfig {
 		return false, nil
 	}
@@ -2466,7 +2479,7 @@ func applyDeployModeToService(
 				strings.TrimSpace(probe.definition.RegistryConnectionID) != "" {
 				return false, nil
 			}
-			if !adoptedServiceHasSourceDocker(svc) {
+			if !hasDocker {
 				if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, ""); err != nil {
 					return false, err
 				}
@@ -2502,7 +2515,10 @@ func applyDeployModeToService(
 
 	// When no explicit --deploy-mode flag is passed and the service is already
 	// configured for a source-container build, respect that configuration.
-	if flags.deployMode == "" && hasDocker {
+	if (flags.deployMode == "" || initACRResourceID(flags) != "") && hasDocker {
+		if initACRResourceID(flags) != "" {
+			return true, ensureSourceBuildProjectPath(ctx, azdClient, serviceName, svc)
+		}
 		return true, nil
 	}
 
@@ -2583,9 +2599,23 @@ func adoptedServiceHasDocker(svc *azdext.ServiceConfig) bool {
 	return v != nil && v.GetStructValue() != nil
 }
 
-func adoptedServiceHasSourceDocker(svc *azdext.ServiceConfig) bool {
-	return adoptedServiceHasDocker(svc) ||
-		svc.GetDocker() != nil && !proto.Equal(svc.GetDocker(), &azdext.DockerProjectOptions{})
+func adoptedServiceHasSourceDocker(
+	ctx context.Context, azdClient *azdext.AzdClient, serviceName string, svc *azdext.ServiceConfig,
+) (bool, error) {
+	if adoptedServiceHasDocker(svc) ||
+		svc.GetDocker() != nil && !proto.Equal(svc.GetDocker(), &azdext.DockerProjectOptions{}) {
+		return true, nil
+	}
+	// The typed mapper loses a false-only Docker block's presence.
+	// This API reads the raw service mapping from azure.yaml.
+	resp, err := azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "docker",
+	})
+	if err != nil {
+		return false, fmt.Errorf("reading authored docker configuration for service %q: %w", serviceName, err)
+	}
+	return resp.GetFound() && resp.GetValue().GetStructValue() != nil, nil
 }
 
 // applyCodeDeployToService writes codeConfiguration onto the adopted agent

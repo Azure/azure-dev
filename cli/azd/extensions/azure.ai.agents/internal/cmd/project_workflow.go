@@ -21,19 +21,22 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
 const projectWorkflowRollbackTimeout = 30 * time.Second
 
 func ensureInitACRProjectsCapability(
-	ctx context.Context, flags *initFlags,
+	ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient,
 ) error {
 	if initACRResourceID(flags) == "" || flags.acrCapabilityChecked {
 		return nil
 	}
 	getHelp := flags.projectsAddHelp
 	if getHelp == nil {
-		getHelp = projectsAddHelpFromCLI
+		getHelp = func(ctx context.Context) ([]byte, error) {
+			return projectsAddHelpFromCLI(ctx, azdClient)
+		}
 	}
 	help, err := getHelp(ctx)
 	if ctx.Err() != nil {
@@ -65,9 +68,44 @@ func ensureInitACRProjectsCapability(
 	return nil
 }
 
-func projectsAddHelpFromCLI(ctx context.Context) ([]byte, error) {
+func projectsAddHelpFromCLI(ctx context.Context, azdClient *azdext.AzdClient) ([]byte, error) {
+	helper, err := azdext.NewConfigHelper(azdClient)
+	if err != nil {
+		return nil, err
+	}
+	var installed map[string]*struct {
+		Id   string `json:"id"`
+		Path string `json:"path"`
+	}
+	// Read the invoking host's installation records, not a PATH azd.
+	found, err := helper.GetUserJSON(ctx, "extension.installed", &installed)
+	if err != nil {
+		return nil, fmt.Errorf("reading installed Projects extension: %w", err)
+	}
+	extension := installed["azure.ai.projects"]
+	if extension == nil {
+		for _, candidate := range installed {
+			if candidate != nil && strings.EqualFold(candidate.Id, "azure.ai.projects") {
+				extension = candidate
+				break
+			}
+		}
+	}
+	if !found || extension == nil ||
+		!strings.EqualFold(extension.Id, "azure.ai.projects") || strings.TrimSpace(extension.Path) == "" {
+		return nil, errors.New("installed azure.ai.projects executable is unavailable")
+	}
+	configDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolving installed Projects extension directory: %w", err)
+	}
+	// Match the host Runner's installed executable path resolution.
+	path, err := filepath.Abs(filepath.Join(configDir, extension.Path))
+	if err != nil {
+		return nil, fmt.Errorf("resolving installed Projects executable: %w", err)
+	}
 	// Capture help; Workflow.Run cannot return or hide output.
-	cmd := exec.CommandContext(ctx, "azd", "ai", "project", "add", "--help", "--no-prompt")
+	cmd := exec.CommandContext(ctx, path, "add", "--help", "--no-prompt")
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 	return cmd.Output()
 }

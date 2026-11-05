@@ -105,7 +105,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := ensureInitACRProjectsCapability(ctx, a.flags); err != nil {
+	if err := ensureInitACRProjectsCapability(ctx, a.flags, a.azdClient); err != nil {
 		return err
 	}
 	a.projectConfig, err = a.ensureProject(ctx)

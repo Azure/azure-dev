@@ -1529,6 +1529,8 @@ when legacy registry output variables are missing.
 Registry selection requires a Projects extension that accepts
 `project add --new-project --acr-resource-id`. Init checks these flags with
 captured command help before changing project files or environment values.
+The help probe runs the Projects executable registered with the invoking
+azd host, not another `azd` found on `PATH`.
 The check does not print help into quiet or JSON output. An unsupported
 extension or a failed capability check stops setup; flows without a selector
 continue to work with older Projects versions.
@@ -1603,6 +1605,8 @@ preserved.
 For an external ABAC registry, source builds require local Docker:
 set `docker.remoteBuild: false` on each source-built agent service and grant the
 image publisher Container Registry Repository Writer push permission.
+Template adoption preserves an authored Docker block, including a block
+containing only `remoteBuild: false`, and adds `project: .` when it is missing.
 Hosted source initialization normally sets `docker.remoteBuild: true` unless
 network injection requires local builds. That remote Quick Build path is not
 supported with ABAC registry reuse: its current request does not authenticate the

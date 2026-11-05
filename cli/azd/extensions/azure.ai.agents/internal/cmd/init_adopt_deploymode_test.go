@@ -11,9 +11,11 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
+	"gopkg.in/yaml.v3"
 )
 
 // deployModeProjectServer is a minimal ProjectService stub that
@@ -56,6 +58,33 @@ func (s *deployModeProjectServer) SetServiceConfigValue(
 	}
 	s.sets[req.ServiceName][req.Path] = v
 	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *deployModeProjectServer) GetServiceConfigValue(
+	_ context.Context, req *azdext.GetServiceConfigValueRequest,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	path := filepath.Join(s.path, "azure.yaml")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return &azdext.GetServiceConfigValueResponse{}, nil
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var raw map[string]any
+	if err := yaml.Unmarshal(content, &raw); err != nil {
+		return nil, err
+	}
+	cfg := config.NewConfig(raw)
+	value, found := cfg.Get("services." + req.ServiceName + "." + req.Path)
+	if !found {
+		return &azdext.GetServiceConfigValueResponse{}, nil
+	}
+	protoValue, err := structpb.NewValue(value)
+	if err != nil {
+		return nil, err
+	}
+	return &azdext.GetServiceConfigValueResponse{Found: true, Value: protoValue}, nil
 }
 
 func (s *deployModeProjectServer) UnsetServiceConfig(

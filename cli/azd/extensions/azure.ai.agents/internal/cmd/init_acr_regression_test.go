@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
@@ -252,7 +254,7 @@ func TestInitACROrphanedSourceEnvironmentBeforeWrites(t *testing.T) {
 }
 
 func TestInitACRImageOnlyEffectiveSourceBuild(t *testing.T) {
-	for _, authored := range []string{"none", "properties", "typed"} {
+	for _, authored := range []string{"none", "properties", "typed", "false-only"} {
 		t.Run(authored, func(t *testing.T) {
 			svc := agentServiceConfig(t, "agent", nil)
 			svc.Image = "registry.example.com/agent:v1"
@@ -266,6 +268,16 @@ func TestInitACRImageOnlyEffectiveSourceBuild(t *testing.T) {
 				svc.Docker = &azdext.DockerProjectOptions{Path: "Dockerfile.custom", Context: "./src"}
 			}
 			server := &deployModeProjectServer{path: t.TempDir(), services: map[string]*azdext.ServiceConfig{"agent": svc}}
+			if authored == "false-only" {
+				svc.Docker = &azdext.DockerProjectOptions{}
+				content := "name: test\nservices:\n  agent:\n    host: azure.ai.agent\n" +
+					"    kind: hosted\n    name: agent\n    language: docker\n" +
+					"    image: registry.example.com/agent:v1\n    docker:\n      remoteBuild: false\n"
+				require.NoError(t, os.WriteFile(filepath.Join(server.path, "azure.yaml"), []byte(content), 0o600))
+				require.Nil(t, svc.AdditionalProperties)
+				require.False(t, svc.Docker.RemoteBuild)
+				svc.Language = "docker"
+			}
 			client := newProjectRecorderClient(t, server)
 			needsACR, sources, err := applyDeployModeToAdoptedProjectWithSources(
 				t.Context(), &initFlags{effectiveACRResourceID: testInitACRID}, client,
@@ -284,6 +296,24 @@ func TestInitACRImageOnlyEffectiveSourceBuild(t *testing.T) {
 				require.Empty(t, sources)
 				require.NotContains(t, sets, "docker")
 				require.NotContains(t, sets, "language")
+			}
+			if authored == "false-only" {
+				require.NoError(t, finalizeAdoptedSourceContainerNetwork(t.Context(), client, sources, false))
+				content, err := os.ReadFile(filepath.Join(server.path, "azure.yaml"))
+				require.NoError(t, err)
+				var document map[string]any
+				require.NoError(t, yaml.Unmarshal(content, &document))
+				services, ok := document["services"].(map[string]any)
+				require.True(t, ok)
+				agent, ok := services["agent"].(map[string]any)
+				require.True(t, ok)
+				require.Equal(t, map[string]any{"remoteBuild": false}, agent["docker"])
+				directNeedsACR, err := applyDeployModeToService(t.Context(),
+					&initFlags{acrResourceIDSet: true, acrResourceID: testInitACRID, deployMode: "container"},
+					client, server.path, "agent", svc)
+				require.NoError(t, err)
+				require.True(t, directNeedsACR)
+				require.NotContains(t, server.sets["agent"], "docker")
 			}
 			raw, err := yaml.Marshal(effective)
 			require.NoError(t, err)
@@ -326,6 +356,47 @@ func TestInitACRImagePassthroughOnlyRejectedBeforeWrites(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, content, actual)
 		})
+	}
+}
+
+func TestInitACRFalseOnlyDockerPreserved(t *testing.T) {
+	for _, image := range []bool{false, true} {
+		for _, mode := range []string{"", "container"} {
+			for _, explicit := range []bool{false, true} {
+				t.Run(fmt.Sprintf("image=%t/mode=%s/explicit=%t", image, mode, explicit), func(t *testing.T) {
+					root := t.TempDir()
+					content := "name: test\nservices:\n  agent:\n    host: azure.ai.agent\n" +
+						"    kind: hosted\n    name: agent\n    language: docker\n    docker:\n      remoteBuild: false\n"
+					svc := agentServiceConfig(t, "agent", map[string]any{"kind": "hosted", "name": "agent"})
+					svc.Language = "docker"
+					svc.Docker = &azdext.DockerProjectOptions{}
+					if image {
+						svc.Image = "registry.example.com/agent:v1"
+						content += "    image: " + svc.Image + "\n"
+					}
+					path := filepath.Join(root, "azure.yaml")
+					require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+					server := &deployModeProjectServer{path: root, services: map[string]*azdext.ServiceConfig{"agent": svc}}
+					client := newProjectRecorderClient(t, server)
+					flags := &initFlags{deployMode: mode}
+					if explicit {
+						flags.acrResourceIDSet, flags.acrResourceID = true, testInitACRID
+					} else {
+						flags.effectiveACRResourceID = testInitACRID
+					}
+					needsACR, sources, err := applyDeployModeToAdoptedProjectWithSources(t.Context(), flags, client)
+					require.NoError(t, err)
+					require.True(t, needsACR)
+					require.Empty(t, sources)
+					require.Equal(t, map[string]any{"project": "."}, server.sets["agent"])
+					require.NoError(t, finalizeAdoptedSourceContainerNetwork(t.Context(), client, sources, false))
+					require.Equal(t, map[string]any{"project": "."}, server.sets["agent"])
+					actual, err := os.ReadFile(path)
+					require.NoError(t, err)
+					require.Equal(t, []byte(content), actual)
+				})
+			}
+		}
 	}
 }
 
@@ -591,23 +662,142 @@ func TestInitACRHelpProbeRejectsUnsupportedFlagsWithoutRun(t *testing.T) {
 
 func TestInitACRProjectsHelpIsCaptured(t *testing.T) {
 	bin := t.TempDir()
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	name := "azd"
+	t.Setenv("AZD_CONFIG_DIR", bin)
+	t.Setenv("PATH", bin)
+	t.Setenv("NoDefaultCurrentDirectoryInExePath", "1")
+	name := "projects"
 	script := "#!/bin/sh\nprintf 'Flags:\\n      --new-project bool\\n      --acr-resource-id string\\n'\n"
 	if runtime.GOOS == "windows" {
-		name = "azd.cmd"
+		name = "projects.cmd"
 		script = "@echo Flags:\r\n@echo       --new-project bool\r\n@echo       --acr-resource-id string\r\n"
 	}
 	path := filepath.Join(bin, name)
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o600))
 	//nolint:gosec // Only this test-owned helper is executable.
 	require.NoError(t, os.Chmod(path, 0o700))
-	help, err := projectsAddHelpFromCLI(t.Context())
+	config := &initProjectsCapabilityConfig{installed: map[string]map[string]string{
+		"AZURE.AI.PROJECTS": {"id": "Azure.AI.Projects", "path": name, "version": "0.0.0"},
+	}}
+	client := newInstalledProjectsCapabilityClient(t, config, &recordingProjectServer{},
+		&recordingProjectWorkflowServer{})
+	help, err := projectsAddHelpFromCLI(t.Context(), client)
 	require.NoError(t, err)
 	require.Contains(t, string(help), "--acr-resource-id")
 	flags := &initFlags{acrResourceIDSet: true, acrResourceID: testInitACRID}
-	require.NoError(t, ensureInitACRProjectsCapability(t.Context(), flags))
+	require.NoError(t, ensureInitACRProjectsCapability(t.Context(), flags, client))
 	require.True(t, flags.acrCapabilityChecked)
+	config.err = errors.New("must not probe twice")
+	require.NoError(t, ensureInitACRProjectsCapability(t.Context(), flags, client))
+}
+
+type initProjectsCapabilityConfig struct {
+	azdext.UnimplementedUserConfigServiceServer
+	installed map[string]map[string]string
+	err       error
+}
+
+func (s *initProjectsCapabilityConfig) Get(
+	_ context.Context, req *azdext.GetUserConfigRequest,
+) (*azdext.GetUserConfigResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if req.Path != "extension.installed" {
+		return nil, errors.New("unexpected user config lookup")
+	}
+	value, err := json.Marshal(s.installed)
+	return &azdext.GetUserConfigResponse{Found: s.installed != nil, Value: value}, err
+}
+
+func newInstalledProjectsCapabilityClient(
+	t *testing.T, config *initProjectsCapabilityConfig,
+	projects *recordingProjectServer, workflow *recordingProjectWorkflowServer,
+) *azdext.AzdClient {
+	t.Helper()
+	server := grpc.NewServer()
+	azdext.RegisterUserConfigServiceServer(server, config)
+	azdext.RegisterProjectServiceServer(server, projects)
+	azdext.RegisterWorkflowServiceServer(server, workflow)
+	azdext.RegisterEnvironmentServiceServer(server, &testEnvironmentServiceServer{})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+	return client
+}
+
+func TestInitACRInstalledProjectsCapabilityBeforeWrites(t *testing.T) {
+	for _, boundary := range []string{"absent", "lookup error", "missing executable", "unsupported", "similar flags"} {
+		t.Run(boundary, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			t.Setenv("AZD_CONFIG_DIR", root)
+			t.Setenv("PATH", root)
+			t.Setenv("NoDefaultCurrentDirectoryInExePath", "1")
+			source := []byte("print('hello')\n")
+			require.NoError(t, os.WriteFile("main.py", source, 0o600))
+			name := "projects"
+			azdName := "azd"
+			help := "Flags:\\n      --new-project\\n"
+			if boundary == "similar flags" {
+				help = "Flags:\\n      --new-project-other\\n      --acr-resource-id-other string\\n"
+			}
+			script := "#!/bin/sh\nprintf '" + help + "'\n"
+			decoy := "#!/bin/sh\nprintf 'Flags:\\n      --new-project\\n      --acr-resource-id string\\n'\n"
+			if runtime.GOOS == "windows" {
+				name, azdName = "projects.cmd", "azd.cmd"
+				script = "@echo " + strings.ReplaceAll(help, "\\n", "\r\n@echo ") + "\r\n"
+				decoy = "@echo Flags:\r\n@echo       --new-project\r\n@echo       --acr-resource-id string\r\n"
+			}
+			require.NoError(t, os.WriteFile(azdName, []byte(decoy), 0o600))
+			//nolint:gosec // Only this test-owned helper is executable.
+			require.NoError(t, os.Chmod(azdName, 0o700))
+			config := &initProjectsCapabilityConfig{installed: map[string]map[string]string{
+				"azure.ai.projects": {"id": "azure.ai.projects", "path": name, "version": "999.0.0"},
+			}}
+			switch boundary {
+			case "absent":
+				config.installed = nil
+			case "lookup error":
+				config.err = errors.New("host configuration unavailable")
+			case "missing executable":
+			default:
+				require.NoError(t, os.WriteFile(name, []byte(script), 0o600))
+				//nolint:gosec // Only this test-owned helper is executable.
+				require.NoError(t, os.Chmod(name, 0o700))
+			}
+			projects := &recordingProjectServer{getProjectErr: status.Error(codes.NotFound, "no project")}
+			workflow := &recordingProjectWorkflowServer{}
+			client := newInstalledProjectsCapabilityClient(t, config, projects, workflow)
+			flags := &initFlags{noPrompt: true, src: ".", env: "test", protocols: []string{"responses"},
+				acrResourceIDSet: true, acrResourceID: testInitACRID}
+			action := &InitFromCodeAction{
+				azdClient: client, flags: flags, sourceValidated: true, noticeWriter: io.Discard,
+			}
+			err := action.Run(t.Context())
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "%v", err)
+			require.Equal(t, exterrors.CodeIncompatibleProjectsExtension, localErr.Code)
+			if boundary == "unsupported" || boundary == "similar flags" {
+				require.ErrorContains(t, err, "does not support")
+			} else {
+				require.ErrorContains(t, err, "cannot verify")
+			}
+			require.False(t, flags.acrCapabilityChecked)
+			require.Empty(t, workflow.requests)
+			require.Empty(t, projects.added)
+			require.Empty(t, projects.configValues)
+			require.NoFileExists(t, "azure.yaml")
+			require.NoFileExists(t, ".agentignore")
+			require.NoDirExists(t, ".azure")
+			actual, err := os.ReadFile("main.py")
+			require.NoError(t, err)
+			require.Equal(t, source, actual)
+		})
+	}
 }
 
 func TestInitACRProjectsCapabilityPreservesCancellation(t *testing.T) {
@@ -620,6 +810,6 @@ func TestInitACRProjectsCapabilityPreservesCancellation(t *testing.T) {
 		},
 	}
 	defer cancel()
-	require.ErrorIs(t, ensureInitACRProjectsCapability(ctx, flags), context.Canceled)
+	require.ErrorIs(t, ensureInitACRProjectsCapability(ctx, flags, nil), context.Canceled)
 	require.False(t, flags.acrCapabilityChecked)
 }

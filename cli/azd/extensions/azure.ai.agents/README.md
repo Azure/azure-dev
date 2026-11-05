@@ -67,11 +67,8 @@ Explicit remote `--template` inputs are staged and checked before Azure
 authentication, including `$ref` definitions. Adoption reuses that directory.
 
 BYO AKS checks cover inline and referenced project configuration during init/adoption.
-The Projects provider also checks the effective `agentHosting` deployment parameters
-for `azd provision` and `azd provision --preview`. When `enabled=true`, the switch
-is required before credentials or BYO AKS, role, and identity reads. Foundry provider
-initialization, infrastructure state and parameter queries, synthesis, lifecycle hooks,
-and Bicep eject do not check the switch. Provisioning without effective AKS hosting is unchanged.
+Foundry provider initialization, provision, preview, lifecycle hooks, and Bicep
+eject do not check the BYO AKS switch. Ordinary Foundry provisioning is unchanged.
 
 ### Enforcement limits
 

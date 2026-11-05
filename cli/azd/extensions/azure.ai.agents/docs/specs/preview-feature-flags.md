@@ -4,10 +4,10 @@
 
 ## Status and goal
 
-- **Component:** `cli/azd/extensions/azure.ai.agents` and BYO AKS provisioning in `cli/azd/extensions/azure.ai.projects`
+- **Component:** `cli/azd/extensions/azure.ai.agents`
 - **Scope:** Independent managed-harness, voice, long-running invocation, A2A version-selection, memory snapshot, and BYO AKS switches. All switches default to off.
 
-Keep preview opt-in decisions inside the Microsoft Foundry extensions until the extension framework supports discovery and evaluation. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
+Keep preview opt-in decisions inside the Microsoft Foundry agents extension until the extension framework supports discovery and evaluation. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
 
 Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws`. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
 
@@ -183,7 +183,6 @@ These entry points classify content that only exists at run time, so an annotati
 | `invoke --local` | The local path uses the gated selector when an agent service exists. A web-only project retains ordinary local invocation |
 | `optimize` submission | The actual target is resolved before checking its local service. Matching config-file targets are checked; independent remote targets retain their authored identity and version |
 | `optimize deploy` remote definition | The definition is already fetched before creating a new version |
-| `microsoft.foundry` provision and provisioning preview | Effective hosting comes from the merged deployment parameters or template defaults, not only the project YAML |
 
 Manifest decoding reuses the service decoder used by `agent add`. Inline definitions and root/field `$ref` includes use the existing resolver. Template catalogs lack capability metadata, so entries remain visible; staged definitions are checked instead of inferring features from names.
 

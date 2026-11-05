@@ -6252,7 +6252,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['inspector'],
-					description: 'Browser-based inspector UI for locally running Foundry agents. (Beta)',
+					description: 'Browser-based inspector UI for locally running Foundry agents.',
 					subcommands: [
 						{
 							name: ['launch'],

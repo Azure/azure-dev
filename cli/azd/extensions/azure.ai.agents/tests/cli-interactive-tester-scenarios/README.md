@@ -550,6 +550,7 @@ Missing prerequisites are blocked coverage, not a passing skip.
 
 Scenario `2.17b` is `manual-seed` and excluded from ordinary sweeps. When opted in,
 it runs in the shared-agent serial lane before `2.18` deletes the shared agent.
+It enables `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true` for the scenario process.
 It reuses `2.00` / `2.99` resource ownership and
 cleanup, rather than creating another infrastructure lifecycle. Arrange
 authorized teardown with the original setup identity even if restricted deploy

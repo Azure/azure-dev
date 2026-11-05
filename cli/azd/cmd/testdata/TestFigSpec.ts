@@ -2506,7 +2506,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['connection'],
-					description: 'Manage Microsoft Foundry Connections from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry Connections from your terminal.',
 					subcommands: [
 						{
 							name: ['add'],

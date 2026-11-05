@@ -8239,7 +8239,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['skill'],
-					description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal.',
 					subcommands: [
 						{
 							name: ['add'],

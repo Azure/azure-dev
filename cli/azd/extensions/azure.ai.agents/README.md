@@ -704,8 +704,9 @@ endpoint or provision the account again to enable standby.
 To change capacity without creating a version, edit `size` and run
 `azd ai agent endpoint update my-agent`. Undeclared selector, authorization,
 and protocol fields are not sent by a capacity-only update. If endpoint
-configuration fails after deployment, the command returns an error and reports
-the deployed version; resources are not deleted. Retry the endpoint update.
+configuration fails after deployment, the command returns an error whose normal
+output identifies the deployed version and endpoint-only recovery command, even
+without `--debug`; resources are not deleted. Retry the endpoint update.
 `azd ai agent endpoint show` displays the target when the service returns it;
 JSON output includes `agent_endpoint.standby_pool.size`.
 

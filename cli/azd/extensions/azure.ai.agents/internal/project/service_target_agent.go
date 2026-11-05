@@ -1861,12 +1861,28 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err := p.patchAgentEndpointFields(
 		ctx, result.agentName, result.request.AgentEndpoint, result.request.AgentCard, azdEnv,
 	); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr,
+		message := fmt.Sprintf(
 			"Agent %q version %s deployed, but endpoint/card configuration was not saved. "+
-				"No deployed resources were deleted; retry with `azd ai agent endpoint update`.\n",
+				"No deployed resources were deleted.",
 			result.agentName, result.agentVersion.Version,
 		)
-		return nil, err
+		suggestion := fmt.Sprintf(
+			"Resolve the endpoint update error, then run `azd ai agent endpoint update %q` without deploying another version.",
+			serviceConfig.Name,
+		)
+		if serviceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
+			copy := *serviceErr
+			copy.Message = message + "\n" + serviceErr.Message
+			copy.Suggestion = strings.TrimSpace(serviceErr.Suggestion + " " + suggestion)
+			return nil, &copy
+		}
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+			copy := *localErr
+			copy.Message = message + "\n" + localErr.Message
+			copy.Suggestion = strings.TrimSpace(localErr.Suggestion + " " + suggestion)
+			return nil, &copy
+		}
+		return nil, fmt.Errorf("%s: %w", message, err)
 	}
 
 	if activityProfile.IsActivity && activityProfile.UseCase == ActivityUseCaseSimple {

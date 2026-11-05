@@ -7,6 +7,7 @@ package project
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -486,8 +487,8 @@ func TestStandbyPoolDeployVerifiesHostingAndReportsPartialSuccess(t *testing.T) 
 						payload, readErr := io.ReadAll(request.Body)
 						require.NoError(t, readErr)
 						require.JSONEq(t, `{"agent_endpoint":{"standby_pool":{"size":3}}}`, string(payload))
-						status = http.StatusBadRequest
-						body = `{"error":{"code":"invalid_request","message":"standby not deployed"}}`
+						status = http.StatusForbidden
+						body = `{"error":{"code":"forbidden","message":"standby not deployed"}}`
 					case request.Method == http.MethodPost:
 						require.Equal(t, "v1", request.URL.Query().Get("api-version"))
 						if mode == "code" {
@@ -523,12 +524,18 @@ func TestStandbyPoolDeployVerifiesHostingAndReportsPartialSuccess(t *testing.T) 
 				}
 				require.ErrorContains(t, err, "standby not deployed")
 				require.Nil(t, result)
-				data, err := os.ReadFile(stderr.Name())
-				require.NoError(t, err)
-				require.Contains(t, string(data), `Agent "agent" version 2 deployed`)
-				require.Contains(t, string(data), "endpoint/card configuration was not saved")
-				require.Contains(t, string(data), "No deployed resources were deleted")
-				require.Contains(t, string(data), "azd ai agent endpoint update")
+				relayed := azdext.UnwrapError(azdext.WrapError(err))
+				message := azdext.ErrorMessage(relayed)
+				require.Contains(t, message, `Agent "agent" version 2 deployed`)
+				require.Contains(t, message, "endpoint/card configuration was not saved")
+				require.Contains(t, message, "No deployed resources were deleted")
+				require.Contains(t, message, "standby not deployed")
+				require.Contains(t, azdext.ErrorSuggestion(relayed), `azd ai agent endpoint update "agent"`)
+				serviceErr, ok := errors.AsType[*azdext.ServiceError](relayed)
+				require.True(t, ok)
+				require.Equal(t, "update_agent.forbidden", serviceErr.ErrorCode)
+				require.Equal(t, http.StatusForbidden, serviceErr.StatusCode)
+				require.Equal(t, "example.test", serviceErr.ServiceName)
 				postPath := "/agents/agent/versions"
 				if mode == "code" {
 					postPath = "/agents/agent"

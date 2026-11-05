@@ -11,7 +11,7 @@ Available Commands
   dataset   	: Register and version Foundry datasets from your terminal. (Beta)
   eval      	: Define and run Foundry evaluations from your terminal. (Beta)
   finetuning	: Extension for Foundry Fine Tuning. (Preview)
-  inspector 	: Browser-based inspector UI for locally running Foundry agents. (Beta)
+  inspector 	: Browser-based inspector UI for locally running Foundry agents.
   models    	: Extension for managing custom models in Azure AI Foundry. (Preview)
   project   	: Manage Microsoft Foundry Project resources from your terminal. (Beta)
   routine   	: Manage Microsoft Foundry Routines from your terminal. (Beta)

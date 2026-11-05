@@ -28,13 +28,15 @@ func TestValidateInitLocation(t *testing.T) {
 	for _, location := range []string{
 		"australiaeast", "brazilsouth", "canadacentral", "canadaeast", "centralus",
 		"eastus", "francecentral", "germanywestcentral", "italynorth", "japaneast", " JapanEast ",
-		"koreacentral", "northcentralus", "norwayeast", "polandcentral", "southafricanorth",
-		"southeastasia", "southindia", "spaincentral", "swedencentral", "switzerlandnorth",
+		"koreacentral", "northcentralus", "norwayeast", "polandcentral",
+		"southeastasia", "southindia", "spaincentral", "swedencentral",
 		"uksouth", "westeurope", "westus", "westus3",
 	} {
 		require.NoError(t, validateInitLocation(t.Context(), location, allowed))
 	}
-	for _, location := range []string{"eastus2", "eastus2euap", "japanwest", "southcentralus", "westus2", ""} {
+	for _, location := range []string{
+		"eastus2", "eastus2euap", "japanwest", "southafricanorth", "southcentralus", "switzerlandnorth", "westus2", "",
+	} {
 		err := validateInitLocation(t.Context(), location, allowed)
 		require.ErrorContains(t, err, "not supported for this agent setup")
 		require.NoError(t, validateInitLocation(t.Context(), location, nil), "plain prompt must remain unrestricted")
@@ -42,31 +44,39 @@ func TestValidateInitLocation(t *testing.T) {
 }
 
 func TestInternalHarnessRegions(t *testing.T) {
-	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2euap"})
+	internal, err := parseAgentRegionsManifest(embeddedInternalHarnessRegionsJSON)
+	require.NoError(t, err)
+	resetAgentRegionsCache(t, &internalHarnessRegionsCache, internal)
 	allowed, err := parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
 	require.NoError(t, err)
 	for _, harness := range []string{"microsoft_copilot_preview", "github_copilot_preview", "", "other_harness"} {
 		t.Run(harness, func(t *testing.T) {
 			ctx := withHarnessRegionPolicy(t.Context(), harness)
-			err := validateInitLocation(ctx, " EastUS2EUAP ", allowed)
-			if harness == "microsoft_copilot_preview" || harness == "github_copilot_preview" {
-				require.NoError(t, err)
-			} else {
-				require.Error(t, err, "internal regions must not broaden other restricted init flows")
+			for _, region := range []string{" EastUS2EUAP ", " WestUS2 "} {
+				err := validateInitLocation(ctx, region, allowed)
+				if harness == "microsoft_copilot_preview" || harness == "github_copilot_preview" {
+					require.NoError(t, err)
+				} else {
+					require.Error(t, err, "internal regions must not broaden other restricted init flows")
+				}
 			}
 			err = validateInitLocation(ctx, "unsupported", allowed)
 			require.Error(t, err)
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
-			require.NotContains(t, localErr.Message, "eastus2euap")
-			require.NotContains(t, localErr.Suggestion, "eastus2euap")
-			require.NotContains(t, allowed, "eastus2euap")
+			for _, region := range internal {
+				require.NotContains(t, localErr.Message, region)
+				require.NotContains(t, localErr.Suggestion, region)
+				require.NotContains(t, allowed, region)
+			}
 		})
 	}
 }
 
 func TestSelectPromptFoundryProject_Regions(t *testing.T) {
-	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2euap"})
+	internal, err := parseAgentRegionsManifest(embeddedInternalHarnessRegionsJSON)
+	require.NoError(t, err)
+	resetAgentRegionsCache(t, &internalHarnessRegionsCache, internal)
 	const projectID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/"
 	tests := []struct {
 		name           string
@@ -78,10 +88,11 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 	}{
 		{name: "picker filters unsupported", restricted: true, location: "eastus2"},
 		{name: "picker includes internal", restricted: true, location: "eastus2euap"},
+		{name: "picker includes westus2 internal", restricted: true, location: "westus2"},
 		{name: "picker excludes unknown", restricted: true},
 		{name: "picker with no eligible projects", restricted: true, location: "eastus2", allUnsupported: true},
 		{name: "plain picker unchanged", location: "eastus2"},
-		{name: "explicit unsupported rejected", explicitID: true, restricted: true, location: "westus2", wantError: true},
+		{name: "explicit unsupported rejected", explicitID: true, restricted: true, location: "japanwest", wantError: true},
 		{name: "explicit unknown rejected", explicitID: true, restricted: true, wantError: true},
 		{name: "explicit eastus2 rejected", explicitID: true, restricted: true, location: "eastus2", wantError: true},
 		{name: "explicit westus accepted", explicitID: true, restricted: true, location: "westus"},
@@ -89,6 +100,7 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 		{name: "explicit eastus accepted", explicitID: true, restricted: true, location: "eastus"},
 		{name: "explicit westus3 accepted", explicitID: true, restricted: true, location: "westus3"},
 		{name: "explicit internal accepted", explicitID: true, restricted: true, location: "eastus2euap"},
+		{name: "explicit westus2 internal accepted", explicitID: true, restricted: true, location: "westus2"},
 		{name: "explicit eastus2-euap rejected", explicitID: true, restricted: true, location: "eastus2-euap", wantError: true},
 		{name: "explicit supported accepted", explicitID: true, restricted: true, location: "japaneast"},
 		{name: "plain explicit unchanged", explicitID: true, location: "eastus2"},
@@ -101,7 +113,7 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 				if !tt.explicitID {
 					secondLocation := "japaneast"
 					if tt.allUnsupported {
-						secondLocation = "westus2"
+						secondLocation = "japanwest"
 					}
 					projectJSON = fmt.Sprintf(`{"value":[%s,{"id":%q,"location":%q}]}`,
 						projectJSON, projectID+"supported", secondLocation)
@@ -141,7 +153,7 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			if tt.location == "eastus2euap" {
+			if tt.location == "eastus2euap" || tt.location == "westus2" {
 				promptSelection := prompts.lastSelect
 				sharedProject, err := selectFoundryProject(ctx, client, responseTestCredential{},
 					&azdext.AzureContext{Scope: &azdext.AzureScope{SubscriptionId: "sub"}},
@@ -167,7 +179,7 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 				require.EqualValues(t, 1, prompts.selectCalls.Load(), "shared selector must not add a Select call")
 				return
 			}
-			if tt.restricted && !tt.explicitID && tt.location != "eastus2euap" {
+			if tt.restricted && !tt.explicitID && tt.location != "eastus2euap" && tt.location != "westus2" {
 				require.Equal(t, "supported", proj.ProjectName)
 				require.Len(t, prompts.lastSelect.Options.Choices, 1)
 			} else {
@@ -193,10 +205,12 @@ func (s *harnessLocationPromptServer) PromptLocation(
 }
 
 func TestEnsureLocationWithAllowedLocations_Harness(t *testing.T) {
-	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2euap"})
+	internal, err := parseAgentRegionsManifest(embeddedInternalHarnessRegionsJSON)
+	require.NoError(t, err)
+	resetAgentRegionsCache(t, &internalHarnessRegionsCache, internal)
 	allowed, err := parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
 	require.NoError(t, err)
-	for _, location := range []string{"", "eastus2", "westus2", "eastus2-euap", "japaneast", "eastus2euap"} {
+	for _, location := range []string{"", "eastus2", "japanwest", "eastus2-euap", "japaneast", "eastus2euap", "westus2"} {
 		t.Run(location, func(t *testing.T) {
 			const envName = "test"
 			envServer := &testEnvironmentServiceServer{values: map[string]map[string]string{envName: {}}}
@@ -207,17 +221,18 @@ func TestEnsureLocationWithAllowedLocations_Harness(t *testing.T) {
 				withHarnessRegionPolicy(t.Context(), "microsoft_copilot_preview"), client, azureContext, envName, allowed,
 			))
 			expectedLocation := "japaneast"
-			if location == "eastus2euap" {
+			if location == "eastus2euap" || location == "westus2" {
 				expectedLocation = location
 			}
 			require.Equal(t, expectedLocation, envServer.values[envName]["AZURE_LOCATION"])
 			require.Equal(t, expectedLocation, envServer.values[envName]["AZURE_AI_DEPLOYMENTS_LOCATION"])
-			if location == "japaneast" || location == "eastus2euap" {
+			if location == "japaneast" || location == "eastus2euap" || location == "westus2" {
 				require.Nil(t, prompts.request)
 			} else {
 				require.NotNil(t, prompts.request)
 				require.Equal(t, allowed, prompts.request.AllowedLocations)
 				require.NotContains(t, prompts.request.AllowedLocations, "eastus2euap")
+				require.NotContains(t, prompts.request.AllowedLocations, "westus2")
 			}
 		})
 	}

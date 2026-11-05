@@ -7,7 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,6 +24,53 @@ import (
 )
 
 const projectWorkflowRollbackTimeout = 30 * time.Second
+
+func ensureInitACRProjectsCapability(
+	ctx context.Context, flags *initFlags,
+) error {
+	if initACRResourceID(flags) == "" || flags.acrCapabilityChecked {
+		return nil
+	}
+	getHelp := flags.projectsAddHelp
+	if getHelp == nil {
+		getHelp = projectsAddHelpFromCLI
+	}
+	help, err := getHelp(ctx)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("Projects capability check was cancelled")
+		}
+		return exterrors.Compatibility(
+			exterrors.CodeIncompatibleProjectsExtension,
+			fmt.Sprintf("cannot verify azure.ai.projects supports source-build registry selection: %s", err),
+			"use an azure.ai.projects build supporting project add --new-project --acr-resource-id, "+
+				"or use a separate azd environment without a registry selector",
+		)
+	}
+	for _, name := range []string{"new-project", "acr-resource-id"} {
+		pattern := `(?m)^\s+(?:-[A-Za-z0-9], )?--` + name + `(?:[ =]|$)`
+		if !regexp.MustCompile(pattern).Match(help) {
+			return exterrors.Compatibility(
+				exterrors.CodeIncompatibleProjectsExtension,
+				"installed azure.ai.projects does not support project add --new-project --acr-resource-id",
+				"use an azure.ai.projects build supporting source-build registry selection, "+
+					"or use a separate azd environment without a registry selector",
+			)
+		}
+	}
+	flags.acrCapabilityChecked = true
+	return nil
+}
+
+func projectsAddHelpFromCLI(ctx context.Context) ([]byte, error) {
+	// Capture help; Workflow.Run cannot return or hide output.
+	cmd := exec.CommandContext(ctx, "azd", "ai", "project", "add", "--help", "--no-prompt")
+	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	return cmd.Output()
+}
 
 type projectAuthoringMode string
 

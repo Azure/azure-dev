@@ -54,6 +54,9 @@ type initFlags struct {
 	acrResourceIDSet        bool
 	acrConflictingFlag      string
 	effectiveACRResourceID  string
+	acrSelectionSource      string
+	acrCapabilityChecked    bool
+	projectsAddHelp         func(context.Context) ([]byte, error)
 	acrTemplateTarget       bool
 	acrConnection           string
 	modelDeployment         string
@@ -687,8 +690,13 @@ func canReuseExistingAgentConfiguration(
 		!agentDefiningFlagsSet(flags, srcBlocksReuse)
 }
 
-func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+func newInitCommand(
+	extCtx *azdext.ExtensionContext, projectsHelp ...func(context.Context) ([]byte, error),
+) *cobra.Command {
 	flags := &initFlags{}
+	if len(projectsHelp) > 0 {
+		flags.projectsAddHelp = projectsHelp[0]
+	}
 	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
@@ -770,10 +778,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			defer func() {
 				if runErr != nil {
 					reportInitOperation(ctx)
-				} else if flags.acrResourceIDSet &&
-					extCtx.OutputFormat != "none" && extCtx.OutputFormat != "json" {
-					fmt.Fprintf(cmd.OutOrStdout(), "Source-build registry: %s (externally owned).\n", flags.acrResourceID)
 				}
+				printInitACROwnershipSummary(cmd, flags, extCtx.OutputFormat, runErr)
 			}()
 			endValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation)
 			defer func() { endValidation() }()

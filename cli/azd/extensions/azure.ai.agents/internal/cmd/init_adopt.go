@@ -39,6 +39,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 )
@@ -907,6 +908,9 @@ func runInitFromAzureYaml(
 	if err != nil {
 		return err
 	}
+	if err := ensureInitACRProjectsCapability(ctx, flags); err != nil {
+		return err
+	}
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 
 	envName := deriveEnvName(flags, targetDir)
@@ -1079,6 +1083,9 @@ func preflightAzdTemplate(
 	}
 	subscription, err := planInitACRSubscription(ctx, azdClient, flags, targetDir)
 	if err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	if err := ensureInitACRProjectsCapability(ctx, flags); err != nil {
 		return adoptedProjectPreflight{}, err
 	}
 	return adoptedProjectPreflight{replacedDeployment: replaced, subscription: subscription}, nil
@@ -2219,6 +2226,9 @@ func applyDeployModeToAdoptedProjectWithSources(
 			continue
 		}
 		hadDockerConfig := adoptedServiceHasDocker(agent.svc)
+		if flags.acrResourceIDSet || flags.effectiveACRResourceID != "" {
+			hadDockerConfig = adoptedServiceHasSourceDocker(agent.svc)
+		}
 		serviceNeedsACR, err := applyDeployModeToService(
 			ctx,
 			flags,
@@ -2452,8 +2462,18 @@ func applyDeployModeToService(
 	// to the core service image field. An explicit code mode overrides a leftover image.
 	if effectiveImage != "" && flags.deployMode != "code" {
 		if (flags.acrResourceIDSet || flags.effectiveACRResourceID != "") && !hasCodeConfig {
-			return !svc.GetDocker().GetImagePassthrough() &&
-				strings.TrimSpace(probe.definition.RegistryConnectionID) == "", nil
+			if svc.GetDocker().GetImagePassthrough() ||
+				strings.TrimSpace(probe.definition.RegistryConnectionID) != "" {
+				return false, nil
+			}
+			if !adoptedServiceHasSourceDocker(svc) {
+				if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, ""); err != nil {
+					return false, err
+				}
+			} else if err := ensureSourceBuildProjectPath(ctx, azdClient, serviceName, svc); err != nil {
+				return false, err
+			}
+			return true, nil
 		}
 		if err := validateHostedContainerImage(effectiveImage); err != nil {
 			return false, err
@@ -2563,6 +2583,11 @@ func adoptedServiceHasDocker(svc *azdext.ServiceConfig) bool {
 	return v != nil && v.GetStructValue() != nil
 }
 
+func adoptedServiceHasSourceDocker(svc *azdext.ServiceConfig) bool {
+	return adoptedServiceHasDocker(svc) ||
+		svc.GetDocker() != nil && !proto.Equal(svc.GetDocker(), &azdext.DockerProjectOptions{})
+}
+
 // applyCodeDeployToService writes codeConfiguration onto the adopted agent
 // service and updates the service language from "docker" to the appropriate
 // language for the selected runtime.
@@ -2652,6 +2677,11 @@ func applyContainerDeployToService(
 	if err != nil {
 		return err
 	}
+	if image == "" {
+		if err := ensureSourceBuildProjectPath(ctx, azdClient, serviceName, svc); err != nil {
+			return err
+		}
+	}
 	dockerValue, err := structpb.NewValue(dockerMap)
 	if err != nil {
 		return fmt.Errorf("encoding docker configuration: %w", err)
@@ -2689,5 +2719,23 @@ func applyContainerDeployToService(
 	}
 
 	log.Printf("Applied container deploy configuration to service %q", serviceName)
+	return nil
+}
+
+func ensureSourceBuildProjectPath(
+	ctx context.Context, client *azdext.AzdClient, serviceName string, svc *azdext.ServiceConfig,
+) error {
+	if strings.TrimSpace(svc.GetRelativePath()) != "" {
+		return nil
+	}
+	value, err := structpb.NewValue(".")
+	if err != nil {
+		return fmt.Errorf("encoding source build project path: %w", err)
+	}
+	if _, err := client.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName, Path: "project", Value: value,
+	}); err != nil {
+		return fmt.Errorf("writing source build project path: %w", err)
+	}
 	return nil
 }

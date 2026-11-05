@@ -666,6 +666,7 @@ func TestInitFromCodeValidatesACRBeforeSetupWrites(t *testing.T) {
 				src: ".", env: "test", agentName: "test-agent",
 				protocols: []string{"responses"}, noPrompt: tt.noPrompt,
 				acrResourceIDSet: !tt.withoutSelector,
+				projectsAddHelp:  testProjectsACRHelp(workflow),
 			}
 			if !tt.withoutSelector {
 				flags.acrResourceID = testInitACRID
@@ -1049,7 +1050,11 @@ func TestInitFromCodeEffectiveACRSelection(t *testing.T) {
 					t, environments, workflow, prompts, projects, account, tt.noPrompt, "test", args...,
 				)
 				if tt.wantError != "" {
-					require.ErrorContains(t, err, tt.wantError)
+					selector := "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"
+					if canonical {
+						selector = "saved ACR binding"
+					}
+					require.ErrorContains(t, err, strings.Replace(tt.wantError, "--acr-resource-id", selector, 1))
 					localErr, ok := errors.AsType[*azdext.LocalError](err)
 					require.True(t, ok)
 					require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)

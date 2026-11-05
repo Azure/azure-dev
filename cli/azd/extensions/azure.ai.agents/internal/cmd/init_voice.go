@@ -29,6 +29,9 @@ func runInitVoice(
 	createdFolderDisplay string,
 	noticeWriter io.Writer,
 ) error {
+	if initACRResourceID(flags) != "" {
+		return initACRConflict("interactive voice initialization", initACRSelectorSource(flags))
+	}
 	if err := featureflags.RequireWithWriter(featureflags.Voice, noticeWriter); err != nil {
 		return err
 	}

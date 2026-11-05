@@ -59,6 +59,7 @@ func TestInitACRTemplateUsesTargetScope(t *testing.T) {
 					flags.templatePointer = ""
 				}
 				workflow := &recordingProjectWorkflowServer{err: errors.New("stopped at core init")}
+				flags.projectsAddHelp = testProjectsACRHelp(workflow)
 				client := newTestAzdClient(t, server, workflow)
 				var err error
 				if route == "azure.yaml" {
@@ -190,6 +191,7 @@ func TestInitACRTemplateRejectsSavedSelectorInputsBeforeWrites(t *testing.T) {
 					}
 					server := &initACREnvironmentServer{}
 					workflow := &recordingProjectWorkflowServer{err: errors.New("stopped at core init")}
+					flags.projectsAddHelp = testProjectsACRHelp(workflow)
 					client := newTestAzdClient(t, server, workflow)
 					require.NoError(t, validateInitACRInput(cmd, flags))
 					require.NoError(t, validateInitACRProject(t.Context(), client, flags))
@@ -204,7 +206,11 @@ func TestInitACRTemplateRejectsSavedSelectorInputsBeforeWrites(t *testing.T) {
 						)
 					}
 					if selection != "absent" && tt.flag != "" {
-						require.ErrorContains(t, err, "--acr-resource-id cannot be combined with --"+tt.flag)
+						selector := "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"
+						if selection == "binding" {
+							selector = "saved ACR binding"
+						}
+						require.ErrorContains(t, err, selector+" cannot be combined with --"+tt.flag)
 						require.Empty(t, workflow.requests)
 					} else {
 						require.ErrorContains(t, err, "stopped at core init")
@@ -585,6 +591,7 @@ func TestInitACRManifestValidatesPlannedEnvironmentBeforeScaffolding(t *testing.
 					acrResourceID:    strings.Replace(testInitACRID, "/registry-rg/", "/"+tt.group+"/", 1),
 					env:              "demo", src: "project", noPrompt: true,
 					templatePointer: filepath.Join(templateDir, "azure.yaml"),
+					projectsAddHelp: testProjectsACRHelp(workflow),
 				}
 				if tt.defaultEnv {
 					flags.env = ""
@@ -775,6 +782,7 @@ func TestInitACRTemplateValidatesSubscriptionBeforeScaffolding(t *testing.T) {
 				flags := &initFlags{
 					acrResourceIDSet: true, acrResourceID: testInitACRID, noPrompt: tt.noPrompt,
 					src: "project", templatePointer: filepath.Join(templateDir, "azure.yaml"),
+					projectsAddHelp: testProjectsACRHelp(&recordingProjectWorkflowServer{}),
 				}
 
 				var err error
@@ -813,6 +821,7 @@ func TestInitACRTemplateRetainsPlannedSubscriptionWithoutWrites(t *testing.T) {
 
 	plan, err := preflightAzdTemplate(t.Context(), client, http.DefaultClient, templateDir, &initFlags{
 		acrResourceIDSet: true, acrResourceID: testInitACRID,
+		projectsAddHelp: testProjectsACRHelp(&recordingProjectWorkflowServer{}),
 	}, ".", io.Discard)
 	require.NoError(t, err)
 	require.NotNil(t, plan.subscription)
@@ -1053,6 +1062,7 @@ func TestInitACRExplicitSelectionChecksDeployedStateBeforeWrites(t *testing.T) {
 				selector := valueOrDefault(tt.selector, testInitACRID)
 				flags := &initFlags{
 					acrResourceIDSet: true, acrResourceID: selector, env: "test", noPrompt: true,
+					projectsAddHelp: testProjectsACRHelp(workflow),
 				}
 				var err error
 				switch route {

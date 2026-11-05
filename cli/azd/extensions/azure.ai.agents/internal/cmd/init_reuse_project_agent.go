@@ -306,6 +306,9 @@ func runReuseProjectAgentServices(
 		if err := validateInitACRManifestInEnvironment(content, projectRoot, registryID, values); err != nil {
 			return err
 		}
+		if err := ensureInitACRProjectsCapability(ctx, flags); err != nil {
+			return err
+		}
 		if subscription != nil {
 			if err := resolveSubscription(
 				ctx, azdClient, &azdext.AzureContext{Scope: subscription}, initACRSubscriptionMessage,

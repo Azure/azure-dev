@@ -19,6 +19,7 @@
 /.vscode/cspell-github-user-aliases.txt                  @Azure/azure-dev-core @JerryYangKai @Siglud @XiaofuHuang @Yimin-Jin @achauhan-scc @anchenyi @aprilk-ms @chienyuanchang @davidm00 @eriolchan @glharper @hizixin @huimiu @hund030 @kingernupur @lc48t @m5i-work @m7md7sien @omkarmore83 @saanikaguptamicrosoft @sakoll @shrutiyer @smulumbi @sujit-kamireddy @therealjohn @trangevi @v1212 @valangar @wanglliwang @yungshinlintw
 
 # ── CLI extensions (AI) ──────────────────────────────────────────────────────
+/cli/shared/foundry/                                     @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 /cli/azd/extensions/ai-non-interactive.md                @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 /cli/azd/extensions/azure.ai.agents/                     @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 /cli/azd/test/functional/ai_agents/                      @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin

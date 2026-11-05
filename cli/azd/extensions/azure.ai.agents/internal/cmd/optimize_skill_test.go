@@ -92,7 +92,7 @@ func TestSkillOptimizeConfigRoundTrip(t *testing.T) {
 				request.TargetConfiguration = nil
 				request.OptimizationConfiguration.Context[0].TraceConnectionConfiguration =
 					&optimize_api.SkillTraceConnectionConfiguration{
-						Type: "appinsights", AgentName: new("namespace/service"),
+						Type: "application_insights", AgentName: new("namespace/service"),
 						ResourceID: "/subscriptions/00000000-0000-0000-0000-000000000000" +
 							"/resourceGroups/test/providers/Microsoft.Insights/components/traces",
 					}
@@ -280,10 +280,24 @@ func TestSkillOptimizeInvalidConfigs(t *testing.T) {
 		}, "lookback_hours"},
 		{"agentless without source", func(r *optimize_api.OptimizeRequest) { r.TargetConfiguration = nil },
 			"trace_connection_configuration"},
+		{"legacy trace provider", func(r *optimize_api.OptimizeRequest) {
+			r.OptimizationConfiguration.Context[0].TraceConnectionConfiguration =
+				&optimize_api.SkillTraceConnectionConfiguration{
+					Type:       "appinsights",
+					ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Insights/components/traces",
+				}
+		}, "requires type application_insights"},
+		{"abbreviated trace provider", func(r *optimize_api.OptimizeRequest) {
+			r.OptimizationConfiguration.Context[0].TraceConnectionConfiguration =
+				&optimize_api.SkillTraceConnectionConfiguration{
+					Type:       "app_insights",
+					ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Insights/components/traces",
+				}
+		}, "requires type application_insights"},
 		{"target with service name", func(r *optimize_api.OptimizeRequest) {
 			r.OptimizationConfiguration.Context[0].TraceConnectionConfiguration =
 				&optimize_api.SkillTraceConnectionConfiguration{
-					Type: "appinsights", AgentName: new("service"),
+					Type: "application_insights", AgentName: new("service"),
 					ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Insights/components/traces",
 				}
 		}, "cannot be combined"},
@@ -301,7 +315,7 @@ func TestSkillOptimizeInvalidConfigs(t *testing.T) {
 			r.TargetConfiguration = nil
 			r.OptimizationConfiguration.Context[0].TraceConnectionConfiguration =
 				&optimize_api.SkillTraceConnectionConfiguration{
-					Type: "appinsights", AgentName: new("service*"),
+					Type: "application_insights", AgentName: new("service*"),
 					ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Insights/components/traces",
 				}
 		}, "without wildcards or KQL"},
@@ -364,7 +378,7 @@ func TestSkillOptimizeAgentlessResolveAndFlagConflict(t *testing.T) {
 	request.TargetConfiguration = nil
 	request.OptimizationConfiguration.Context[0].TraceConnectionConfiguration =
 		&optimize_api.SkillTraceConnectionConfiguration{
-			Type: "appinsights", AgentName: new("service"),
+			Type: "application_insights", AgentName: new("service"),
 			ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Insights/components/traces",
 		}
 	data, err := json.Marshal(request)
@@ -596,7 +610,7 @@ func TestSkillOptimizePreservesAgentJobState(t *testing.T) {
 					request.TargetConfiguration = nil
 					request.OptimizationConfiguration.Context[0].TraceConnectionConfiguration =
 						&optimize_api.SkillTraceConnectionConfiguration{
-							Type: "appinsights", AgentName: new("service"),
+							Type: "application_insights", AgentName: new("service"),
 							ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Insights/components/traces",
 						}
 				}
@@ -629,6 +643,12 @@ func TestSkillOptimizePreservesAgentJobState(t *testing.T) {
 						return
 					}
 					assert.Equal(t, tc.kind, request.OptimizationConfiguration.Type)
+					if tc.agentless && assert.NotEmpty(t, request.OptimizationConfiguration.Context) {
+						connection := request.OptimizationConfiguration.Context[0].TraceConnectionConfiguration
+						if assert.NotNil(t, connection) {
+							assert.Equal(t, "application_insights", connection.Type)
+						}
+					}
 					w.WriteHeader(http.StatusAccepted)
 					_, _ = w.Write([]byte(`{"id":"job-new","status":"queued"}`))
 				case "/agent_optimization_jobs/job-agent/candidates/candidate-agent:promote":

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net"
 	"os"
@@ -510,7 +511,7 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 	var definition *agent_yaml.ContainerAgent
 	output, err := captureStdout(t, func() error {
 		var runErr error
-		protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil)
+		protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil, io.Discard)
 		if err != nil {
 			return err
 		}
@@ -1071,6 +1072,8 @@ func TestInitFromCodeEffectiveACRSelection(t *testing.T) {
 					require.Empty(t, projects.added[0].Image)
 					require.Equal(t, "false", values["AZD_AGENT_SKIP_ACR"])
 					require.Len(t, workflow.requests, 1)
+					require.Contains(t, workflow.requests[0].Workflow.Steps[0].Command.Args, "--acr-resource-id")
+					require.Contains(t, workflow.requests[0].Workflow.Steps[0].Command.Args, testInitACRID)
 					require.FileExists(t, filepath.Join(root, ".agentignore"))
 				}
 				require.Zero(t, prompts.calls)
@@ -1114,7 +1117,7 @@ func TestCreateDefinitionFromLocalAgent_NativeA2A(t *testing.T) {
 				},
 			}
 			t.Setenv(featureflags.A2A.EnvVar, "true")
-			protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, tt.protocols)
+			protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, tt.protocols, io.Discard)
 			require.NoError(t, err)
 			definition, err := action.createDefinitionFromLocalAgent(t.Context(), protocols)
 			require.NoError(t, err)
@@ -1162,7 +1165,7 @@ func TestCreateDefinitionFromLocalAgent_PreBuiltImageIsDirect(t *testing.T) {
 		},
 	}
 
-	protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil)
+	protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil, io.Discard)
 	require.NoError(t, err)
 	definition, err := action.createDefinitionFromLocalAgent(t.Context(), protocols)
 	require.NoError(t, err)
@@ -1200,7 +1203,7 @@ func TestCreateDefinitionFromLocalAgent_LoadsPersistedProjectBeforeAcrValidation
 		},
 	}
 
-	protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil)
+	protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil, io.Discard)
 	require.NoError(t, err)
 	_, err = action.createDefinitionFromLocalAgent(t.Context(), protocols)
 

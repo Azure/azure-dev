@@ -451,6 +451,16 @@ func setParameterValue(src *templateSource, name string, value any) {
 	src.parameters[name] = map[string]any{"value": value}
 }
 
+func templateDeclaresParameter(src *templateSource, name string) bool {
+	declared, _ := src.armTemplate["parameters"].(map[string]any)
+	for key, value := range declared {
+		if strings.EqualFold(key, name) {
+			return value != nil
+		}
+	}
+	return false
+}
+
 func (p *FoundryProvisioningProvider) validateACRTeardownScopes(id, group string) error {
 	env := map[string]string{"AZURE_ENV_NAME": p.envName}
 	maps.Copy(env, p.synthesisEnv)
@@ -683,7 +693,6 @@ func (p *FoundryProvisioningProvider) planACRAccess(
 	}
 	include, _ := parameterValue(src, "includeAcr").(bool)
 	id, _ := parameterValue(src, "existingAcrResourceId").(string)
-	declared, _ := src.armTemplate["parameters"].(map[string]any)
 	owned := []synthesis.ACRAssignment{}
 	if p.acrBinding != nil {
 		owned = append(owned, p.acrBinding.OwnedAssignments...)
@@ -693,13 +702,16 @@ func (p *FoundryProvisioningProvider) planACRAccess(
 		}
 	}
 	if include && id != "" &&
-		(declared["acrPullAssigned"] == nil || declared["acrAccessOperationId"] == nil ||
-			declared["acrPullRoleDefinitionId"] == nil || declared["acrOwnedAssignments"] == nil) ||
-		len(owned) > 0 && (declared["acrOwnedAssignments"] == nil || declared["existingAcrResourceId"] == nil) {
+		(!templateDeclaresParameter(src, "acrPullAssigned") ||
+			!templateDeclaresParameter(src, "acrAccessOperationId") ||
+			!templateDeclaresParameter(src, "acrPullRoleDefinitionId") ||
+			!templateDeclaresParameter(src, "acrOwnedAssignments")) ||
+		len(owned) > 0 && (!templateDeclaresParameter(src, "acrOwnedAssignments") ||
+			!templateDeclaresParameter(src, "existingAcrResourceId")) {
 		return nil, errors.New("the ejected Bicep registry access contract is outdated; " +
 			"re-eject the Foundry Bicep templates before provisioning an external registry")
 	}
-	if declared["acrOwnedAssignments"] != nil {
+	if templateDeclaresParameter(src, "acrOwnedAssignments") {
 		setParameterValue(src, "acrOwnedAssignments", owned)
 	}
 	group, _ := parameterValue(src, "resourceGroupName").(string)

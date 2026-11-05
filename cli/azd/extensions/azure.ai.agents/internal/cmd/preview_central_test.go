@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
+	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
@@ -20,6 +22,43 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPreviewNoticeWriterUsesStderrForMachineOutput(t *testing.T) {
+	for _, format := range []string{"default", "json", "raw"} {
+		t.Run(format, func(t *testing.T) {
+			cmd := &cobra.Command{Use: "check"}
+			cmd.Flags().String("output", format, "")
+			var stdout, stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+
+			writer := previewNoticeWriter(cmd)
+			_, err := writer.Write([]byte("notice"))
+			require.NoError(t, err)
+			if format == "json" || format == "raw" {
+				require.Empty(t, stdout.String())
+				require.Equal(t, "notice", stderr.String())
+			} else {
+				require.Equal(t, "notice", stdout.String())
+				require.Empty(t, stderr.String())
+			}
+		})
+	}
+}
+
+func TestRequireInvocationPreviewNoticeForA2A(t *testing.T) {
+	clearPreviewProcess(t)
+	t.Setenv(featureflags.A2A.EnvVar, "true")
+	var notice bytes.Buffer
+
+	require.NoError(t, requireInvocationPreviewNotice(agent_api.AgentProtocolA2A, true, &notice))
+	require.Contains(t, notice.String(), "A2A init selection")
+	require.Contains(t, notice.String(), "Preview behavior may change.")
+
+	notice.Reset()
+	require.NoError(t, requireInvocationPreviewNotice(agent_api.AgentProtocolResponses, true, &notice))
+	require.Empty(t, notice.String())
+}
 
 func TestPreviewEnforcementIgnoresEnvironmentSelection(t *testing.T) {
 	for _, environment := range []string{"", " \t ", "selected", "missing"} {
@@ -63,6 +102,7 @@ func TestPreviewHelpEmptyEnvironmentUsesOnlyProcess(t *testing.T) {
 			text, err := executeRoot(t, "invoke", "--environment", value, "--help")
 			require.NoError(t, err)
 			require.Contains(t, text, "Voice Agents")
+			require.NotContains(t, text, "Preview feature enabled")
 			require.NotContains(t, text, "--long-running")
 			require.Zero(t, env.reads.Load())
 		})

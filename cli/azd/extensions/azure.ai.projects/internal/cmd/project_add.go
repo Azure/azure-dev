@@ -279,7 +279,12 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		}
 		if saved := strings.TrimSpace(oldValues["AZURE_SUBSCRIPTION_ID"]); saved != "" &&
 			!strings.EqualFold(saved, preserved.SubscriptionId) {
-			return projectACRValidation("AZURE_SUBSCRIPTION_ID conflicts with the deployed project binding")
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"AZURE_SUBSCRIPTION_ID conflicts with the deployed project binding",
+				fmt.Sprintf("restore AZURE_SUBSCRIPTION_ID to %q to match the deployed project, "+
+					"or use a new azd environment", preserved.SubscriptionId),
+			)
 		}
 		target.PreserveDeployed = true
 		target.ResourceId = a.flags.preserveProjectID

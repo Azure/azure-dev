@@ -59,6 +59,9 @@ type Feature struct {
 
 func IsEnabled(feature Feature) (bool, error)
 func Require(feature Feature) error
+func RequireWithWriter(feature Feature, writer io.Writer) error
+func Check(feature Feature) error
+func RequireWithNotice(feature Feature) (string, error)
 func All() []Feature
 func Lookup(id string) (Feature, bool)
 ```
@@ -66,14 +69,14 @@ func Lookup(id string) (Feature, bool)
 `ID` is a capability identity, not a user-config contract. `EnvVar` is the process environment key to read, including a value the azd host has already injected. `Description` is optional for evaluation and supplies a short scope summary in help. `DefaultEnabled` applies only when the variable is absent; all declared features default to `false`.
 
 ```go
-if err := featureflags.Require(featureflags.Voice); err != nil {
+if err := featureflags.RequireWithWriter(featureflags.Voice, out); err != nil {
     return err
 }
 ```
 
 `IsEnabled` rejects an empty `ID` or `EnvVar` before reading the process environment. The function takes no context, azd client, selected-environment, project, or login argument. Values the host already injected are present in the process environment it reads. Command input validation stays with the commands; there is no flag-specific environment validation or init-scope exception.
 
-`Require` delegates to `IsEnabled` and returns the structured `feature_not_enabled` compatibility error when the feature is off. Its suggestion names the canonical variable to set in the shell or CI. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader.
+`Require` delegates to `RequireWithWriter` using stdout. `RequireWithWriter` returns the structured `feature_not_enabled` compatibility error when the feature is off. Its suggestion names the canonical variable to set in the shell or CI. When enabled, it prints a notice naming the feature and switch and explaining that preview behavior may change. The notice is printed only when a command checks a feature it uses, and only once for that feature in an extension process. Callers with an injected output writer use `RequireWithWriter`; JSON and raw commands route notices to stderr. Passing `io.Discard` validates the feature without consuming its notice. `Check` performs the same enabled/disabled check without announcing or consuming a notice, for lifecycle stages whose output cannot be shown immediately. `RequireWithNotice` returns the plain notice text for a host-visible lifecycle response. A nil writer defaults to stdout. `IsEnabled` remains silent and side-effect free. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader.
 
 ## Feature registry and help
 
@@ -85,6 +88,7 @@ if err := featureflags.Require(featureflags.Voice); err != nil {
 | `Voice` | `agents.voice` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` | Voice, prompt-voice, and hosted voice agents |
 | `LongRunning` | `agents.long_running` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations |
 | `A2A` | `agents.a2a` | `AZD_ALPHA_ENABLE_AGENTS_A2A` | A2A init selection, explicit wire versions, and the 1.0 message default |
+| `MemorySnapshot` | `agents.memory_snapshot` | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` | Hosted agent memory snapshots |
 | `BYOAKS` | `agents.byo_aks` | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Existing AKS project initialization and adoption |
 | `FoundryACRReuse` | `foundry.acr_reuse` | `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE` | External source-build ACR reuse in new Foundry projects, including preview and cleanup |
 
@@ -311,7 +315,7 @@ Discoverability through `azd config list-alpha`, a public SDK API, and framework
 
 Evaluator tests cover canonical keys, feature defaults, accepted boolean forms, non-enabling values, all independent combinations, ignored old/global/unrelated keys, optional descriptions, fresh reads, and no input mutation. Temporary local fixtures verify that direct calls do not load configuration or dotenv files. These tests do not launch through the host.
 
-Root-command regressions cover parsed flags, local-validation precedence, independent gates, ignored persisted config, no host reads for evaluation/help, fresh and existing init scopes, preserved SDK-selected creation names, disabled no-auth/no-write rejection, protocol pickers, staged manifests, local invocation, fallback error propagation, and retained read access. Project tests cover inline and referenced definitions, harness whitespace normalization, and lifecycle entry points. Help tests preserve the always-visible switch list while checking conditional command discovery; snapshots cover enabled and disabled states.
+Feature gate tests verify that enabled previews are announced once when used and disabled previews remain silent. Root-command regressions cover parsed flags, local-validation precedence, independent gates, ignored persisted config, no host reads for evaluation/help, fresh and existing init scopes, preserved SDK-selected creation names, disabled no-auth/no-write rejection, protocol pickers, staged manifests, local invocation, fallback error propagation, and retained read access. Project tests cover inline and referenced definitions, harness whitespace normalization, and lifecycle entry points. Help tests preserve the always-visible switch list while checking conditional command discovery; snapshots cover enabled and disabled states.
 
 Remote-template regressions cover inline and `$ref` previews, rejection before Azure authentication, retained authentication when enabled, single-download adoption, and temporary-directory cleanup on failure.
 

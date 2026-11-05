@@ -1593,6 +1593,14 @@ for source init without a new folder), also determines the root or Foundry-layer
 teardown group during preflight.
 A successful preflight carries that subscription into setup without asking again.
 Headless setup with missing Azure context continues to defer configuration.
+Template adoption resolves the planned environment in the target directory,
+including any retained target state from a partial initialization; it does not
+inherit a different project's active environment or registry selection.
+Saved registry selections receive the same input validation and subscription
+preflight as an explicit flag. Template adoption rejects conflicting CLI inputs,
+including explicit empty values, before scaffolding. Saved selections retain
+container source-build mode when adopting a service without deployment
+configuration.
 
 Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
 be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside
@@ -2059,7 +2067,7 @@ and supply this field alongside `trace_window` in the `agent_traces` context:
 
 ```yaml
 trace_connection_configuration:
-  type: appinsights
+  type: application_insights
   resource_id: /subscriptions/<subscription>/resourceGroups/<group>/providers/Microsoft.Insights/components/<component>
   agent_name: exact-emitted-telemetry-service-name
 ```

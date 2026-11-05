@@ -826,6 +826,7 @@ func runInitFromAzureYaml(
 	httpClient *http.Client,
 	content []byte,
 	stagingDir string,
+	noticeWriter io.Writer,
 ) error {
 	if err := validateInitModelSelectors(flags, true); err != nil {
 		return err
@@ -869,7 +870,7 @@ func runInitFromAzureYaml(
 	if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 		return err
 	}
-	if err := requireStagedPreviewFeatures(stagingDir); err != nil {
+	if err := requireStagedPreviewFeatures(stagingDir, noticeWriter); err != nil {
 		return err
 	}
 	//nolint:gosec // trusted staging directory
@@ -877,6 +878,7 @@ func runInitFromAzureYaml(
 	if err != nil {
 		return fmt.Errorf("reading staged azure.yaml: %w", err)
 	}
+	flags.acrTemplateTarget = true
 	if err := validateInitACRManifest(ctx, azdClient, stagedContent, stagingDir, flags, targetDir); err != nil {
 		return err
 	}
@@ -934,6 +936,7 @@ func runInitFromAzdTemplate(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 	selectedTemplate *AgentTemplate,
+	noticeWriter io.Writer,
 ) error {
 	if err := validateInitModelSelectors(flags, true); err != nil {
 		return err
@@ -963,6 +966,7 @@ func runInitFromAzdTemplate(
 		selectedTemplate.Source,
 		envName,
 		flags,
+		noticeWriter,
 	)
 	if err != nil {
 		return err
@@ -1011,8 +1015,9 @@ func scaffoldAzdTemplateProject(
 	templateSource string,
 	envName string,
 	flags *initFlags,
+	noticeWriter io.Writer,
 ) (adoptedProjectPreflight, error) {
-	plan, err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource, flags, targetDir)
+	plan, err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource, flags, targetDir, noticeWriter)
 	if err != nil {
 		return adoptedProjectPreflight{}, err
 	}
@@ -1033,7 +1038,9 @@ func preflightAzdTemplate(
 	templateSource string,
 	flags *initFlags,
 	targetDir string,
+	noticeWriter io.Writer,
 ) (adoptedProjectPreflight, error) {
+	flags.acrTemplateTarget = true
 	stagingDir, cleanup, err := stageAzdTemplateRepository(
 		ctx,
 		templateSource,
@@ -1052,14 +1059,15 @@ func preflightAzdTemplate(
 	if err := validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource)); err != nil {
 		return adoptedProjectPreflight{}, err
 	}
+	if err := requireStagedPreviewFeatures(stagingDir, noticeWriter); err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	//nolint:gosec // trusted staging directory
 	content, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
 	if err != nil {
 		return adoptedProjectPreflight{}, fmt.Errorf("read template registry configuration: %w", err)
 	}
 	if err := validateInitACRManifest(ctx, azdClient, content, stagingDir, flags, targetDir); err != nil {
-		return adoptedProjectPreflight{}, err
-	}
-	if err := requireStagedPreviewFeatures(stagingDir); err != nil {
 		return adoptedProjectPreflight{}, err
 	}
 	if err := validateInitACRProjectContent(ctx, azdClient, flags, content, stagingDir, targetDir); err != nil {
@@ -1331,7 +1339,7 @@ func finalizeAdoptedProject(
 		azureContext.Scope.SubscriptionId = plan.subscription.SubscriptionId
 		azureContext.Scope.TenantId = plan.subscription.TenantId
 	}
-	if err := validateInitACRSubscription(flags.acrResourceID, azureContext.Scope.SubscriptionId); err != nil {
+	if err := validateInitACRSubscription(initACRResourceID(flags), azureContext.Scope.SubscriptionId); err != nil {
 		return err
 	}
 	// Defensive: the sample should already declare `infra.provider:
@@ -1410,7 +1418,7 @@ func finalizeAdoptedProject(
 		filterHostedRegions && !promptOnly,
 		preserveDeferredProjectState,
 		allowedLocations,
-		flags.acrResourceID,
+		initACRResourceID(flags),
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -1460,7 +1468,7 @@ func finalizeAdoptedProject(
 			projectRoot,
 			projectAuthoringExisting,
 			adoptedProjectAddNoPrompt(flags),
-			flags.acrResourceID,
+			initACRResourceID(flags),
 		); err != nil {
 			return err
 		}
@@ -1511,7 +1519,7 @@ func finalizeAdoptedProject(
 			projectRoot,
 			result.AuthoringMode,
 			flags.noPrompt,
-			flags.acrResourceID,
+			initACRResourceID(flags),
 		); err != nil {
 			return err
 		}
@@ -2494,7 +2502,7 @@ func applyDeployModeToService(
 	showCodeDeploy := supportsCodeDeploy(serviceDir)
 	// The final argument is true because -t supplied unified project input.
 	requestedMode := flags.deployMode
-	if flags.acrResourceIDSet {
+	if initACRResourceID(flags) != "" {
 		requestedMode = "container"
 	}
 	deployMode, err := promptDeployMode(

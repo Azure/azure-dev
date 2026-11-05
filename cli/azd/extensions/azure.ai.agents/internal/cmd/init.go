@@ -41,7 +41,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -53,7 +52,9 @@ type initFlags struct {
 	projectResourceId       string
 	acrResourceID           string
 	acrResourceIDSet        bool
+	acrConflictingFlag      string
 	effectiveACRResourceID  string
+	acrTemplateTarget       bool
 	acrConnection           string
 	modelDeployment         string
 	model                   string
@@ -692,7 +693,7 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-t <azure.yaml pointer>] [--src <source directory>]",
-		Short: fmt.Sprintf("Initialize a new prompt, hosted, or voice agent project. %s", color.YellowString("(Preview)")),
+		Short: "Initialize a new prompt, hosted, or voice agent project.",
 		Long: `Initialize a new prompt, hosted, or voice agent project.
 
 Use 'azd ai agent add <name> --file <path>' to add one file-backed Agent
@@ -770,6 +771,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			endValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation)
 			defer func() { endValidation() }()
 			flags.noPrompt = extCtx.NoPrompt
+			noticeWriter := previewNoticeWriter(cmd)
 			flags.modelDeploymentExplicit = cmd.Flags().Changed("model-deployment")
 			flags.modelExplicit = cmd.Flags().Changed("model")
 			if err := validateInitModelSelectors(flags, false); err != nil {
@@ -840,7 +842,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 
 			if len(flags.protocols) > 0 {
-				if _, err := selectExplicitHostedProtocols(flags.protocols); err != nil {
+				if _, err := selectExplicitHostedProtocols(flags.protocols, noticeWriter); err != nil {
 					return err
 				}
 			}
@@ -883,7 +885,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 				if cached {
 					root := filepath.Dir(flags.templatePointer)
-					if err := requireManifestPreviewFeatures(content, root); err != nil {
+					if err := requireManifestPreviewFeatures(content, root, noticeWriter); err != nil {
 						return err
 					}
 				} else {
@@ -911,7 +913,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 						return err
 					}
-					if err := requireStagedPreviewFeatures(stagingDir); err != nil {
+					if err := requireStagedPreviewFeatures(stagingDir, noticeWriter); err != nil {
 						return err
 					}
 					endLoading()
@@ -991,10 +993,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			if !userProvidedTemplate {
 				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 				if projectErr == nil && projectResponse.GetProject() != nil {
-					if err := requireBYOAKSProjectFeature(projectResponse.GetProject()); err != nil {
+					if err := requireBYOAKSProjectFeature(projectResponse.GetProject(), noticeWriter); err != nil {
 						return err
 					}
-					if err := requireProjectPreviewFeatures(projectResponse.GetProject()); err != nil {
+					if err := requireProjectPreviewFeatures(projectResponse.GetProject(), noticeWriter); err != nil {
 						return err
 					}
 					if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {
@@ -1022,7 +1024,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// Explicit YAML input is authoritative and must be a unified azure.yaml.
 			if userProvidedTemplate {
 				if err := runInitFromAzureYaml(
-					ctx, flags, azdClient, httpClient, cachedExplicitAzureYaml, explicitTemplateDir,
+					ctx, flags, azdClient, httpClient, cachedExplicitAzureYaml, explicitTemplateDir, noticeWriter,
 				); err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
@@ -1100,6 +1102,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					projectTargetDir:  targetDir,
 					createdFolderPath: folderDisplay,
 					sourceValidated:   sourceValidated,
+					noticeWriter:      noticeWriter,
 				}
 				if err := action.Run(ctx); err != nil {
 					return err
@@ -1110,7 +1113,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				targetDir, folderDisplay := fastPathProjectTarget(
 					projectResponse.GetProject(), projectErr, flags.agentName,
 				)
-				if err := runInitVoice(ctx, flags, azdClient, targetDir, folderDisplay); err != nil {
+				if err := runInitVoice(ctx, flags, azdClient, targetDir, folderDisplay, noticeWriter); err != nil {
 					return err
 				}
 				return ejectInfraAfterInit(ctx, infraProvider, azdClient)
@@ -1236,7 +1239,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							flags.src = sanitizeAgentName(resolvedName)
 						}
 
-						if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content, ""); err != nil {
+						if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content, "", noticeWriter); err != nil {
 							if exterrors.IsCancellation(err) {
 								return exterrors.Cancelled("initialization was cancelled")
 							}
@@ -1250,7 +1253,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 						endValidation()
 						if err := runInitFromAzdTemplate(
-							ctx, flags, azdClient, httpClient, selectedTemplate,
+							ctx, flags, azdClient, httpClient, selectedTemplate, noticeWriter,
 						); err != nil {
 							if exterrors.IsCancellation(err) {
 								return exterrors.Cancelled("initialization was cancelled")
@@ -1280,7 +1283,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					targetDir, folderDisplay := fastPathProjectTarget(
 						projectResponse.GetProject(), projectErr, resolvedName,
 					)
-					if err := runInitVoice(ctx, flags, azdClient, targetDir, folderDisplay); err != nil {
+					if err := runInitVoice(ctx, flags, azdClient, targetDir, folderDisplay, noticeWriter); err != nil {
 						if exterrors.IsCancellation(err) {
 							return exterrors.Cancelled("initialization was cancelled")
 						}
@@ -1294,6 +1297,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						flags:           flags,
 						httpClient:      httpClient,
 						sourceValidated: sourceValidated,
+						noticeWriter:    noticeWriter,
 					}
 
 					if err := action.Run(ctx); err != nil {

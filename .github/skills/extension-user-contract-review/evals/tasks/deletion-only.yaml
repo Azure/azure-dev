@@ -15,14 +15,15 @@ inputs:
     The host supports LEFT-side deleted-line inline comments.
     Complete conversation and review history: empty, with no spec links or prior threads.
 graders:
-  - type: code
+  - type: program
     name: old-file-anchor-survives-parent-review
     config:
-      language: javascript
-      assertions:
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 1"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].path === 'cli/azd/extensions/example/internal/cmd/legacy.go'"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].side === 'LEFT' && JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].line === 42"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('<!-- extension-user-contract-changes-reviewer -->')"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.')"
-        - "/Extension user-contract review: complete.*1 files? inspected; 1 new contract comments?; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 1"
+        - "review.comments[0].path === 'cli/azd/extensions/example/internal/cmd/legacy.go'"
+        - "review.comments[0].side === 'LEFT' && review.comments[0].line === 42"
+        - "review.comments[0].body.includes('<!-- extension-user-contract-changes-reviewer -->')"
+        - "review.comments[0].body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.')"
+        - "/Extension user-contract review: complete.*1 files? inspected; 1 new contract comments?; 0 existing threads/.test(review.body)"

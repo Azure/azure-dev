@@ -3,8 +3,8 @@ capabilities:
     - custom-commands
     - service-target-provider
     - metadata
-description: Manage Microsoft Foundry Toolboxes from your terminal. (Beta)
-displayName: Foundry Toolboxes (Beta)
+description: Manage Microsoft Foundry Toolboxes from your terminal.
+displayName: Foundry Toolboxes
 id: azure.ai.toolboxes
 language: go
 namespace: ai.toolbox

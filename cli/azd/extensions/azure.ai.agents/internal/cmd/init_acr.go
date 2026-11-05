@@ -5,8 +5,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +18,9 @@ import (
 	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -30,6 +35,13 @@ group. Cross-subscription reuse is not supported.
 
 `
 
+func initACRResourceID(flags *initFlags) string {
+	if flags.acrResourceIDSet {
+		return flags.acrResourceID
+	}
+	return flags.effectiveACRResourceID
+}
+
 func initACRConflict(input string) error {
 	return exterrors.Validation(
 		exterrors.CodeConflictingArguments,
@@ -39,6 +51,20 @@ func initACRConflict(input string) error {
 }
 
 func validateInitACRInput(cmd *cobra.Command, flags *initFlags) error {
+	flags.acrConflictingFlag = ""
+	for _, name := range []string{
+		"project-id", "acr-connection", "image", "registry-connection",
+		"runtime", "entry-point", "dep-resolution",
+	} {
+		if cmd.Flags().Changed(name) {
+			flags.acrConflictingFlag = name
+			break
+		}
+	}
+	return validateResolvedInitACRInput(flags)
+}
+
+func validateResolvedInitACRInput(flags *initFlags) error {
 	if !flags.acrResourceIDSet && flags.effectiveACRResourceID == "" {
 		return nil
 	}
@@ -53,13 +79,8 @@ func validateInitACRInput(cmd *cobra.Command, flags *initFlags) error {
 			"use /subscriptions/<id>/resourceGroups/<group>/providers/Microsoft.ContainerRegistry/registries/<name>",
 		)
 	}
-	for _, name := range []string{
-		"project-id", "acr-connection", "image", "registry-connection",
-		"runtime", "entry-point", "dep-resolution",
-	} {
-		if cmd.Flags().Changed(name) {
-			return initACRConflict("--" + name)
-		}
+	if flags.acrConflictingFlag != "" {
+		return initACRConflict("--" + flags.acrConflictingFlag)
 	}
 	if strings.EqualFold(flags.deployMode, "code") {
 		return initACRConflict("--deploy-mode code")
@@ -172,6 +193,21 @@ func readInitACREnvironment(
 	if targetDir == "" {
 		targetDir = "."
 	}
+	if flags.templatePointer != "" || flags.acrTemplateTarget {
+		flags.resolvedEnvironmentName = deriveEnvName(flags, targetDir)
+		root, projectErr := azdext.GetProjectDir()
+		target, err := filepath.Abs(targetDir)
+		if err != nil {
+			return "", nil, err
+		}
+		if projectErr != nil && !errors.Is(projectErr, azdext.ErrProjectNotFound) {
+			return "", nil, projectErr
+		}
+		relative, relativeErr := filepath.Rel(root, target)
+		if projectErr != nil || relativeErr != nil || relative != "." {
+			return readInitACRTargetEnvironment(flags, targetDir)
+		}
+	}
 	if _, err := azdext.GetProjectDir(); errors.Is(err, azdext.ErrProjectNotFound) {
 		envName := deriveEnvName(flags, targetDir)
 		return "", map[string]string{"AZURE_ENV_NAME": envName}, nil
@@ -200,6 +236,46 @@ func readInitACREnvironment(
 	}
 	values["AZURE_ENV_NAME"] = valueOrDefault(envName, deriveEnvName(flags, targetDir))
 	return envName, values, nil
+}
+
+func readInitACRTargetEnvironment(flags *initFlags, targetDir string) (string, map[string]string, error) {
+	envName := deriveEnvName(flags, targetDir)
+	flags.resolvedEnvironmentName = envName
+	root, err := filepath.Abs(targetDir)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve template target: %w", err)
+	}
+	target := azdcontext.NewAzdContextWithDirectory(root)
+	envPath, err := target.EnvironmentFilePath(envName, ".env")
+	if err != nil {
+		return "", nil, err
+	}
+	values, err := godotenv.Read(envPath)
+	if errors.Is(err, os.ErrNotExist) {
+		values = map[string]string{}
+	} else if err != nil {
+		return "", nil, fmt.Errorf("read target registry selection: %w", err)
+	}
+	configPath, err := target.EnvironmentFilePath(envName, "config.json")
+	if err != nil {
+		return "", nil, err
+	}
+	cfg, err := config.NewFileConfigManager(config.NewManager()).Load(configPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", nil, fmt.Errorf("read target registry binding: %w", err)
+	}
+	if err == nil {
+		if binding, found := cfg.Get(synthesis.ACRBindingConfigKey); found {
+			encoded, err := json.Marshal(binding)
+			if err != nil {
+				return "", nil, fmt.Errorf("encode target registry binding: %w", err)
+			}
+			values[synthesis.ACRBindingEnvKey] = string(encoded)
+		}
+	}
+	values["AZURE_ENV_NAME"] = envName
+	// Target state is local, not an environment in the caller's host.
+	return "", values, nil
 }
 
 func readInitACRBinding(
@@ -246,7 +322,8 @@ func validateInitACRSelection(input synthesis.Input, registryID string) error {
 func planInitACRSubscription(
 	ctx context.Context, client *azdext.AzdClient, flags *initFlags, targetDir string,
 ) (*azdext.AzureScope, error) {
-	if !flags.acrResourceIDSet {
+	registryID := initACRResourceID(flags)
+	if registryID == "" {
 		return nil, nil
 	}
 	if err := synthesis.RequireACRReuse(); err != nil {
@@ -260,11 +337,11 @@ func planInitACRSubscription(
 		SubscriptionId: values["AZURE_SUBSCRIPTION_ID"],
 		TenantId:       values["AZURE_TENANT_ID"],
 	}
-	if err := validateInitACRSubscription(flags.acrResourceID, scope.SubscriptionId); err != nil {
+	if err := validateInitACRSubscription(registryID, scope.SubscriptionId); err != nil {
 		return nil, err
 	}
 	input := synthesis.Input{Env: values}
-	if flags.templatePointer == "" {
+	if flags.templatePointer == "" && !flags.acrTemplateTarget {
 		root, err := azdext.GetProjectDir()
 		if err != nil && !errors.Is(err, azdext.ErrProjectNotFound) {
 			return nil, fmt.Errorf("resolve project before selecting a registry: %w", err)
@@ -279,7 +356,7 @@ func planInitACRSubscription(
 		if err := readInitACRBinding(ctx, client, envName, values); err != nil {
 			return nil, err
 		}
-		if err := validateInitACRSelection(input, flags.acrResourceID); err != nil {
+		if err := validateInitACRSelection(input, registryID); err != nil {
 			return nil, err
 		}
 	}
@@ -292,12 +369,12 @@ func planInitACRSubscription(
 		); err != nil {
 			return nil, err
 		}
-		if err := validateInitACRSubscription(flags.acrResourceID, scope.SubscriptionId); err != nil {
+		if err := validateInitACRSubscription(registryID, scope.SubscriptionId); err != nil {
 			return nil, err
 		}
-		if flags.templatePointer == "" {
+		if flags.templatePointer == "" && !flags.acrTemplateTarget {
 			values["AZURE_SUBSCRIPTION_ID"] = scope.SubscriptionId
-			if err := validateInitACRSelection(input, flags.acrResourceID); err != nil {
+			if err := validateInitACRSelection(input, registryID); err != nil {
 				return nil, err
 			}
 		}
@@ -319,6 +396,10 @@ func validateInitACRProjectContent(
 			return exterrors.Validation(exterrors.CodeConflictingArguments,
 				"--acr-resource-id: "+err.Error(), "provide an external registry ARM resource ID")
 		}
+		if !staged && flags.templatePointer != "" {
+			// The target and its environment are resolved after staging.
+			return nil
+		}
 	}
 	if !staged {
 		var err error
@@ -338,7 +419,6 @@ func validateInitACRProjectContent(
 	if err != nil {
 		return err
 	}
-	values["AZURE_ENV_NAME"] = valueOrDefault(envName, flags.env)
 	if !flags.acrResourceIDSet && flags.projectResourceId != "" &&
 		values["AZD_FOUNDRY_ACR_MODE"] != "reuse-connect" {
 		values["USE_EXISTING_AI_PROJECT"] = "true"
@@ -433,7 +513,10 @@ func validateInitACRProjectContent(
 		return err
 	}
 	flags.effectiveACRResourceID = selectedID
-	if staged || flags.templatePointer == "" {
+	if err := validateResolvedInitACRInput(flags); err != nil {
+		return err
+	}
+	if staged || flags.templatePointer == "" && !flags.acrTemplateTarget {
 		if err := validateInitACRInfrastructure(content, root); err != nil {
 			return err
 		}

@@ -16,12 +16,13 @@ inputs:
     81: download.Flags().StringVar(&outputDir, "output-dir", ".", "Download destination")
     All option values are honored; validation runs before mutations and existing behavior remains unchanged by default.
 graders:
-  - type: code
+  - type: program
     name: all-independent-comments
     config:
-      language: javascript
-      assertions:
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 4"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.map(c => c.line).sort((a,b) => a-b).join(',') === '21,41,61,81'"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.every(c => c.path === 'cli/azd/extensions/example/internal/cmd/options.go' && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread'))"
-        - "/complete.*1 files? inspected; 4 new contract comments; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 4"
+        - "review.comments.map(c => c.line).sort((a,b) => a-b).join(',') === '21,41,61,81'"
+        - "review.comments.every(c => c.path === 'cli/azd/extensions/example/internal/cmd/options.go' && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread'))"
+        - "/complete.*1 files? inspected; 4 new contract comments; 0 existing threads/.test(review.body)"

@@ -94,7 +94,10 @@ prints the returned safe warning messages and suggestions in temporary hook
 output. Host builds containing the
 [buffered hook-output fix](https://github.com/Azure/azure-dev/pull/10813)
 deliver suppressed hook stdout to the configured stderr stream after deploy
-progress finishes. Released azd 1.37.0 hosts do not contain this fix and can
+progress finishes. The host retains the first 1 MiB per progress interval and
+reports discarded output with a truncation warning. This does not limit
+structured beta event messages.
+Released azd 1.37.0 hosts do not contain this fix and can
 hide stable hook output while the previewer is suppressed. The beta path
 returns messages to the host without also printing them.
 Both preserve handler errors. This switch gates retention, not deployment or

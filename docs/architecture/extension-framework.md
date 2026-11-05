@@ -63,7 +63,12 @@ buffer extension stdout while deployment progress owns the terminal, then
 deliver it to the caller's configured stderr stream after preview teardown
 and final table rendering. Overlapping hooks share one reference-counted
 output registration per extension. Explicit discard streams remain discarded.
-This is unstructured hook output, not retained beta event `messages`.
+The console retains the first 1 MiB of stdout across all hooks and extensions
+per deployment progress interval, discards additional output, and appends one
+`WARNING:` truncation notice when flushing. Discard streams are not buffered.
+The buffer is released after delivery. This limit applies only to deferred
+console output; command-runner capture is unchanged. Structured beta event
+`messages` are unaffected.
 Released azd 1.37.0 hosts do not contain this fix and can discard hook output
 while the previewer is suppressed.
 

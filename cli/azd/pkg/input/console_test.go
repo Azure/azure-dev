@@ -6,6 +6,7 @@ package input
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -69,6 +70,156 @@ func TestAskerConsole_BufferedPreviewerOutput(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAskerConsole_BufferedPreviewerOutputLimit(t *testing.T) {
+	require.Equal(t, 1<<20, maxPreviewerOutputBytes)
+	notice := "\n" + output.WithWarningFormat(
+		"WARNING: Extension hook output truncated after 1048576 bytes; additional output was discarded.",
+	) + "\n"
+	for _, test := range []struct {
+		name   string
+		chunks []string
+	}{
+		{name: "empty", chunks: []string{""}},
+		{name: "below limit", chunks: []string{strings.Repeat("a", maxPreviewerOutputBytes-1)}},
+		{name: "exact limit", chunks: []string{strings.Repeat("a", maxPreviewerOutputBytes)}},
+		{name: "one byte over", chunks: []string{strings.Repeat("a", maxPreviewerOutputBytes+1)}},
+		{name: "oversized write", chunks: []string{strings.Repeat("a", 4*maxPreviewerOutputBytes)}},
+		{
+			name: "chunked overflow",
+			chunks: []string{
+				"warning\n", strings.Repeat("b", maxPreviewerOutputBytes), "discarded\n", "discarded again\n", "",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			console := NewConsole(false, false,
+				Writers{Output: io.Discard, Spinner: io.Discard},
+				ConsoleHandles{Stderr: &stderr}, nil, nil).(*AskerConsole)
+			console.PausePreviewer()
+			writer := console.PreviewerOutputWriter()
+			for _, chunk := range test.chunks {
+				n, err := io.WriteString(writer, chunk)
+				require.NoError(t, err)
+				require.Equal(t, len(chunk), n)
+				require.LessOrEqual(t, console.previewerOutput.Len(), maxPreviewerOutputBytes)
+				require.LessOrEqual(t, console.previewerOutput.Cap(), 2*maxPreviewerOutputBytes)
+			}
+			payload := strings.Join(test.chunks, "")
+			retained := min(len(payload), maxPreviewerOutputBytes)
+			require.Equal(t, payload[:retained], console.previewerOutput.String())
+			require.Equal(t, len(payload) > retained, console.previewerOutputTruncated)
+			require.Empty(t, stderr.String())
+			console.ResumePreviewer()
+			require.Empty(t, stderr.String())
+			console.FlushPreviewerOutput()
+			expected := payload[:retained]
+			if len(payload) > retained {
+				expected += notice
+			}
+			require.Equal(t, expected, stderr.String())
+			require.Zero(t, console.previewerOutput.Cap())
+			require.False(t, console.previewerOutputTruncated)
+			console.FlushPreviewerOutput()
+			require.Equal(t, expected, stderr.String())
+			console.PausePreviewer()
+			_, err := io.WriteString(writer, "next interval\n")
+			require.NoError(t, err)
+			console.ResumePreviewer()
+			console.FlushPreviewerOutput()
+			require.Equal(t, expected+"next interval\n", stderr.String())
+		})
+	}
+}
+
+func TestAskerConsole_BufferedPreviewerOutputLimitConcurrent(t *testing.T) {
+	notice := "\n" + output.WithWarningFormat(
+		"WARNING: Extension hook output truncated after 1048576 bytes; additional output was discarded.",
+	) + "\n"
+	for _, discard := range []bool{false, true} {
+		t.Run(fmt.Sprint(discard), func(t *testing.T) {
+			var stderr bytes.Buffer
+			var destination io.Writer = &stderr
+			if discard {
+				destination = io.Discard
+			}
+			console := NewConsole(false, false,
+				Writers{Output: io.Discard, Spinner: io.Discard},
+				ConsoleHandles{Stderr: destination}, nil, nil).(*AskerConsole)
+			console.PausePreviewer()
+			chunk := []byte(strings.Repeat("c", 32<<10))
+			var wg sync.WaitGroup
+			for range 16 {
+				writer := console.PreviewerOutputWriter()
+				wg.Go(func() {
+					for range 8 {
+						n, err := writer.Write(chunk)
+						assert.NoError(t, err)
+						assert.Equal(t, len(chunk), n)
+					}
+				})
+			}
+			wg.Wait()
+			if discard {
+				require.Zero(t, console.previewerOutput.Len())
+				require.Zero(t, console.previewerOutput.Cap())
+				require.False(t, console.previewerOutputTruncated)
+			} else {
+				require.Equal(t, maxPreviewerOutputBytes, console.previewerOutput.Len())
+				require.LessOrEqual(t, console.previewerOutput.Cap(), 2*maxPreviewerOutputBytes)
+				require.True(t, console.previewerOutputTruncated)
+			}
+			require.Empty(t, stderr.String())
+			console.ResumePreviewer()
+			console.FlushPreviewerOutput()
+			if discard {
+				require.Empty(t, stderr.String())
+			} else {
+				require.Equal(t, strings.Repeat("c", maxPreviewerOutputBytes)+notice, stderr.String())
+			}
+			require.Zero(t, console.previewerOutput.Cap())
+		})
+	}
+}
+
+func TestAskerConsole_BufferedPreviewerOutputFlushRetry(t *testing.T) {
+	notice := "\n" + output.WithWarningFormat(
+		"WARNING: Extension hook output truncated after 1048576 bytes; additional output was discarded.",
+	) + "\n"
+	for _, failAt := range []int{1, 2} {
+		t.Run(fmt.Sprint(failAt), func(t *testing.T) {
+			stderr := &previewerOutputErrorWriter{failAt: failAt}
+			console := NewConsole(false, false,
+				Writers{Output: io.Discard, Spinner: io.Discard},
+				ConsoleHandles{Stderr: stderr}, nil, nil).(*AskerConsole)
+			console.PausePreviewer()
+			_, err := io.WriteString(console.PreviewerOutputWriter(), strings.Repeat("a", maxPreviewerOutputBytes+1))
+			require.NoError(t, err)
+			console.ResumePreviewer()
+			console.FlushPreviewerOutput()
+			require.True(t, console.previewerOutputTruncated)
+			console.FlushPreviewerOutput()
+			require.Equal(t, strings.Repeat("a", maxPreviewerOutputBytes)+notice, stderr.String())
+			require.Zero(t, console.previewerOutput.Cap())
+			require.False(t, console.previewerOutputTruncated)
+		})
+	}
+}
+
+type previewerOutputErrorWriter struct {
+	bytes.Buffer
+	failAt int
+	writes int
+}
+
+func (w *previewerOutputErrorWriter) Write(p []byte) (int, error) {
+	w.writes++
+	if w.writes == w.failAt {
+		return 0, errors.New("stderr write failed")
+	}
+	return w.Buffer.Write(p)
 }
 
 func TestAskerConsole_Confirm_RequireInput(t *testing.T) {

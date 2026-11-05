@@ -182,13 +182,15 @@ type AskerConsole struct {
 	spinnerTerminalMode yacspin.TerminalMode
 	spinnerCurrentTitle string
 
-	previewer             syncatomic.Pointer[progressLog]
-	previewerRefCount     int // tracks concurrent ShowPreviewer callers; only stop when it reaches 0
-	previewerSuppressed   syncatomic.Bool
-	previewerStopPending  bool
-	previewerKeepLogs     bool
-	previewerOutput       bytes.Buffer
-	previewerOutputPaused bool
+	previewer syncatomic.Pointer[progressLog]
+	// Stop only after the last concurrent ShowPreviewer caller exits.
+	previewerRefCount        int
+	previewerSuppressed      syncatomic.Bool
+	previewerStopPending     bool
+	previewerKeepLogs        bool
+	previewerOutput          bytes.Buffer
+	previewerOutputPaused    bool
+	previewerOutputTruncated bool
 
 	currentIndent *atomic.String
 	// consoleWidth is the width of the underlying console window. The value is updated as the window resized. Nil when
@@ -464,10 +466,12 @@ func (c *AskerConsole) PausePreviewer() {
 	c.previewerOutputPaused = true
 }
 
-// PreviewerOutputWriter uses the injected stderr handle.
+// PreviewerOutputWriter caps paused output on the injected stderr.
 func (c *AskerConsole) PreviewerOutputWriter() io.Writer {
 	return &previewerOutputWriter{console: c}
 }
+
+const maxPreviewerOutputBytes = 1 << 20
 
 type previewerOutputWriter struct {
 	console *AskerConsole
@@ -478,7 +482,16 @@ func (w *previewerOutputWriter) Write(p []byte) (int, error) {
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 	if c.previewerOutputPaused {
-		return c.previewerOutput.Write(p)
+		if c.previewerOutputDestination() == io.Discard || len(p) == 0 {
+			return len(p), nil
+		}
+		retained := min(len(p), maxPreviewerOutputBytes-c.previewerOutput.Len())
+		if retained < len(p) {
+			c.previewerOutputTruncated = true
+		}
+		_, err := c.previewerOutput.Write(p[:retained])
+		// Acknowledge dropped bytes so the extension can keep streaming.
+		return len(p), err
 	}
 	return c.previewerOutputDestination().Write(p)
 }
@@ -495,9 +508,22 @@ func (c *AskerConsole) FlushPreviewerOutput() {
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 	c.previewerOutputPaused = false
-	if _, err := c.previewerOutput.WriteTo(c.previewerOutputDestination()); err != nil {
+	destination := c.previewerOutputDestination()
+	if _, err := c.previewerOutput.WriteTo(destination); err != nil {
 		log.Printf("flushing buffered extension output: %v", err)
+		return
 	}
+	if c.previewerOutputTruncated {
+		if _, err := fmt.Fprintln(destination, "\n"+output.WithWarningFormat(
+			"WARNING: Extension hook output truncated after %d bytes; additional output was discarded.",
+			maxPreviewerOutputBytes,
+		)); err != nil {
+			log.Printf("flushing extension output truncation notice: %v", err)
+			return
+		}
+	}
+	c.previewerOutput = bytes.Buffer{}
+	c.previewerOutputTruncated = false
 }
 
 // ResumePreviewer re-enables previewer rendering.

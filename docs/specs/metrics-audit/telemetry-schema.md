@@ -3,6 +3,8 @@
 This document is the authoritative reference for all telemetry events, fields, classifications,
 and data pipeline details in the Azure Developer CLI (`azd`).
 
+For contributor steps and approval coverage, use the [privacy review checklist](privacy-review-checklist.md).
+
 ## Events
 
 Events are defined in `cli/azd/internal/tracing/events/events.go`. Each event is emitted as an
@@ -44,8 +46,8 @@ OpenTelemetry span name or event name.
 
 ## Fields
 
-Core fields are defined in `cli/azd/internal/tracing/fields/fields.go`. Each field has a classification
-and purpose that governs how it may be stored, queried, and retained. First-party extension usage
+Core fields are defined in `cli/azd/internal/tracing/fields/fields.go`. Each field has classification
+and purpose metadata used by the data pipeline. First-party extension usage
 fields are declared separately in `cli/azd/extensions/telemetry/fields.go` and are documented under
 [Extension-contributed usage attributes](#extension-contributed-usage-attributes).
 
@@ -107,7 +109,7 @@ metadata rather than declarations in the azd source:
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Object ID | `user_AuthenticatedId` | — | — | From Application Insights contracts |
-| Tenant ID | `ad.tenant.id` | SystemMetadata | BusinessInsight | Entra ID tenant |
+| Tenant ID | `ad.tenant.id` | OrganizationalIdentifiableInformation | BusinessInsight | Entra ID tenant |
 | Account type | `ad.account.type` | SystemMetadata | BusinessInsight | `"User"` or `"Service Principal"` |
 | Subscription ID | `ad.subscription.id` | OrganizationalIdentifiableInformation | PerformanceAndHealth | Azure subscription |
 
@@ -117,7 +119,7 @@ metadata rather than declarations in the azd source:
 |-------|----------|----------------|---------|-------|
 | Template ID | `project.template.id` | SystemMetadata | FeatureInsight | **Hashed** |
 | Template version | `project.template.version` | SystemMetadata | FeatureInsight | **Hashed** |
-| Project name | `project.name` | SystemMetadata | FeatureInsight | **Hashed** |
+| Project name | `project.name` | OrganizationalIdentifiableInformation | FeatureInsight | **Hashed** |
 | Service hosts | `project.service.hosts` | SystemMetadata | FeatureInsight | List of host types |
 | Service targets | `project.service.targets` | SystemMetadata | FeatureInsight | List of deploy targets |
 | Service languages | `project.service.languages` | SystemMetadata | FeatureInsight | List of languages |
@@ -129,7 +131,7 @@ metadata rather than declarations in the azd source:
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Feature flags | `config.features` | SystemMetadata | FeatureInsight | Active feature flags |
-| Environment name | `env.name` | SystemMetadata | FeatureInsight | **Hashed** |
+| Environment name | `env.name` | OrganizationalIdentifiableInformation | FeatureInsight | **Hashed** |
 
 ### Command Entry-Point
 
@@ -147,7 +149,7 @@ metadata rather than declarations in the azd source:
 | Error code | `error.code` | SystemMetadata | PerformanceAndHealth | |
 | Error type | `error.type` | SystemMetadata | PerformanceAndHealth | ResultCode or Go type for the classified error |
 | Error chain types | `error.chain.types` | SystemMetadata | PerformanceAndHealth | At most 16 host-reflected Go error type names, outermost first |
-| Extension cause types | `error.extension.cause_types` | EndUserPseudonymizedInformation | PerformanceAndHealth | Case-insensitive hashes of at most 16 normalized extension-provided cause labels received through `v1beta`; never used as `error.type` |
+| Extension cause types | `error.extension.cause_types` | SystemMetadata | PerformanceAndHealth | Case-insensitive hashes of at most 16 normalized extension-provided diagnostic type labels received through `v1beta`; not an end-user identifier and never used as `error.type`. Syntax/length bounds are not a content allowlist |
 | Mapper source type | `error.mapper.source.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go source type on a mapper conversion failure |
 | Mapper destination type | `error.mapper.destination.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go destination type on a mapper conversion failure |
 
@@ -193,10 +195,10 @@ tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `er
 
 ### Pack (Buildpacks)
 
-| Field | OTel Key | Classification | Purpose |
-|-------|----------|----------------|---------|
-| Builder image | `pack.builder.image` | SystemMetadata | FeatureInsight |
-| Builder tag | `pack.builder.tag` | SystemMetadata | FeatureInsight |
+`tools.pack.build` records service language, duration, and status. Builder image/tag
+values are not recorded, including built-in defaults and hashes of custom values.
+Custom builder selection still works. Older clients and historical copies need
+separate ingestion and retention handling.
 
 ### Aspire
 
@@ -259,6 +261,8 @@ tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `er
 | Extension version | `extension.version` | SystemMetadata | FeatureInsight | |
 | Extension event | `extension.event` | SystemMetadata | FeatureInsight | Extension-defined usage event or failed-invocation event |
 | Legacy gRPC call count | `extension.grpc.legacy_call_count` | SystemMetadata | FeatureInsight | **Measurement** — number of unary calls or streams opened through the temporary `/azdext.*` compatibility bridge during one command |
+| Dropped extension usage reports | `extension.usage.dropped` | SystemMetadata | PerformanceAndHealth | Not hashed. Unique `<extension-id-or-unattributed>@<reason>` entries per invocation. The extension ID is included only after official-source admission; earlier failures use fixed `unattributed`, and reasons are host-defined: `event_name_invalid`, `attribute_count_exceeded`, `attribute_key_invalid`, `attribute_value_too_long`, `not_installed`, `lookup_failed`, `source_check_failed`, `source_ineligible`, `budget_exhausted`, `unauthenticated` |
+| Dropped extension usage report count | `extension.usage.dropped.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total dropped reports in the invocation |
 | Extension installed | `extension.installed` | SystemMetadata | FeatureInsight | List of installed extensions, each formatted `id@version` |
 | Installed extension source category | `extension.installed.source.category` | SystemMetadata | FeatureInsight | List formatted `id@category`; categories: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
 | Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an update |
@@ -290,7 +294,8 @@ First-party fields are declared as exported `AttributeKey` variables in
 field name and may be reused by multiple first-party extensions when the
 meaning, allowed values, classification, and purpose are identical. The
 extension column lists the current emitter, not an exclusive owner. The current
-declarations are:
+declarations are listed below; entries marked pending reserve a contract without
+enabling runtime reporting.
 
 The agents extension also supplies `extension.event=agent.init.step` on
 `ext.usage` for completed `azd ai agent init` business steps. It buffers timings
@@ -312,15 +317,29 @@ command completion, per-step outcome, category, or summary event is emitted.
 | `azure.ai.agents` | `ext.agent.init.step.id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Fixed business-step identifier on `agent.init.step`; vocabulary below |
 | `azure.ai.agents` | `ext.agent.init.step.sequence` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded start order, 1–96 within one Init invocation, on `agent.init.step`; repeated calls retain their ID and get new sequence numbers |
 | `azure.ai.agents` | `ext.agent.init.step.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative monotonic elapsed milliseconds, string encoded with three decimal places, on `agent.init.step`; convert to a number for percentiles |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.name` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String enum: `project_authoring`, `model_deployment_authoring`, `provision`, `package`, `publish`, `deploy`; both phase events, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.scope` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String enum: `command` (projects authoring handler) or `provider` (extension method); both phase events, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.attempt_id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Generated opaque random string per invocation, not derived from user/resource identifiers; both phase events, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.start_time` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | UTC RFC3339Nano string at actual phase start; `agent.phase.completed`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.end_time` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | UTC RFC3339Nano string at actual return, captured before reporting; `agent.phase.completed`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative inclusive monotonic elapsed milliseconds, string encoded with three decimal places; `agent.phase.completed`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.outcome` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String enum: `success`, `error`, `canceled`, `timeout`, for the observed operation only; `agent.phase.completed`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Fixed string identifier from the phase-step vocabulary below; `agent.phase.step`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.sequence` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded integer start order, 1-24 per attempt; repeated IDs get new sequences; `agent.phase.step`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.start_offset_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative monotonic offset from phase start in milliseconds, string encoded with three decimal places; `agent.phase.step`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative inclusive monotonic step elapsed milliseconds, string encoded with three decimal places; `agent.phase.step`, pending #10811 |
+| `azure.ai.agents` / `azure.ai.projects` (pending) | `ext.agent.phase.step.dropped_count` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded nonnegative integer counting step starts beyond the local 24-step buffer, not transport/host loss; `agent.phase.completed`, pending #10811 |
 | `azure.ai.agents` | `ext.route` | SystemMetadata | FeatureInsight | `N/A` | No | No | `inspector`, `playground`, or `suppressed` on `local_client.route.selected` |
 | `azure.ai.inspector` | `ext.stage` | SystemMetadata | FeatureInsight | `N/A` | No | No | `ui_ready` on `inspector.funnel.stage` |
 | `azure.ai.inspector` | `ext.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `succeeded` on `inspector.funnel.stage` |
 | `azure.ai.dataset` | `ext.operation` | SystemMetadata | FeatureInsight | `N/A` | No | No | `create`, `update`, or `unknown` on `dataset.published` |
 | `azure.ai.evaluations` | `ext.source` | SystemMetadata | FeatureInsight | `N/A` | No | No | `traces`, `dataset`, or `unknown` on `init.completed` |
 
-Product classification fields are bounded enums for `FeatureInsight`. Init timing
-fields use `PerformanceAndHealth`: the step ID is a fixed identifier and sequence
-and duration are string-encoded numbers, not enums or native measurements.
+Product classification fields are bounded enums for `FeatureInsight`. Init and
+phase timing fields use `PerformanceAndHealth`. All twelve `ext.agent.phase.*`
+properties are un-hashed strings with endpoint `N/A` and `IsMeasurement=false`,
+including numeric-looking counts, offsets, and durations. Convert those strings
+to numbers for analysis; they are not native measurements.
 `SystemMetadata` and `FeatureInsight` are not defaults for an unknown or future
 `ext.*` field.
 
@@ -344,27 +363,69 @@ operation ID. Event emission and the detailed guide are introduced separately in
 [the agent Init implementation PR](https://github.com/Azure/azure-dev/pull/10548);
 the field declarations alone do not enable reporting.
 
+#### Reserved project and provider phase timing contract
+
+Reporting via `ext.usage` with `extension.event=agent.phase.completed` and
+`agent.phase.step` is **pending [#10811](https://github.com/Azure/azure-dev/pull/10811)**.
+Both events share phase name, scope, and attempt ID. The completion carries actual
+start/end, phase duration/outcome, and local dropped count; steps carry ID,
+sequence, start offset, and duration. Field registration alone emits neither event.
+
+Planned scopes are `command` for the projects extension's project-add and
+deployment-add handlers (`project_authoring`, `model_deployment_authoring`),
+`provider` for Foundry provisioning `Deploy` (`provision`), and `provider` for the
+agents extension's `Package`, `Publish`, and `Deploy` methods. The latter methods
+are shared by `up` and standalone workflows; they do not measure whole core
+commands, provider initialization, or subsequent hooks.
+
+The `ext.agent.phase.step.id` vocabulary is: `project_resolution`,
+`subscription_selection`, `location_selection`, `azure_query`,
+`deployment_reconciliation`, `configuration_save`, `configuration_loading`,
+`validation`, `credential_acquisition`, `template_resolution`,
+`template_compilation`, `resource_lookup`, `resource_deployment_submit`,
+`resource_deployment_wait`, `code_packaging`, `image_build`, `image_packaging`,
+`image_push`, `artifact_upload`, `deploy_context_resolution`,
+`dependency_validation`, `agent_create_or_update`, `agent_activation_wait`,
+`endpoint_update`, and `voice_telephony_configuration`.
+
+Durations include loading, interaction, validation, and retries within the measured
+operation. Nested intervals are inclusive, not additive, including nesting under
+existing Init authoring steps. Join by operation ID, extension ID, and attempt ID;
+there is no cross-command journey or started-event contract. A successful provider
+no-op can produce a completion without a generation/deployment step. Completion
+reporting precedes buffered steps, within a shared one-second deadline per attempt.
+The local 24-step buffer and host-wide 100-event budget can lose rows;
+`step.dropped_count` describes only local clipping. Missing rows are unknown, not
+zero. Use actual times and string-encoded durations, not reporting span timing.
+Existing command records remain authoritative for counts, success, and duration.
+
+#### Extension usage rules and event contracts
+
+
 The following rules define the runtime and source-governance boundaries:
 
 | Rule | Enforcement |
 |------|-------------|
-| Eligibility | Only eligible official-registry installations produce `ext.usage` spans; other installations receive a normal response without recording an event |
+| Eligibility | Only eligible official-registry installations produce `ext.usage` spans. A valid call from any other source succeeds without producing an `ext.usage` span, while the command-span drop fields are still recorded |
 | Key namespace | Every caller-supplied key is prefixed with `ext.` by the host, so it can never overwrite a host-owned attribute |
 | Size | At most 32 attributes per event; event name and keys at most 128 UTF-8 bytes; values at most 512 UTF-8 bytes |
-| Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that are dropped without recording |
+| Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that produce no `ext.usage` span, while the command-span drop fields are still recorded |
+| Drop observability | Rejected and dropped calls append one unique `<extension-id-or-unattributed>@<reason>` value to `extension.usage.dropped` on the hosting command span and increment `extension.usage.dropped.count`. IDs appear only after official-source admission; earlier failures use fixed `unattributed`. Synthetic `azd up` phase spans, workflow step command spans, and VS RPC spans do not copy these fields. Reasons are fixed by the host, and no caller-controlled event or attribute content is copied |
 | Values | Not enumerated or pattern-checked. The extension author owns what a value means and is responsible for keeping it low cardinality and free of customer content |
 | Classification | Each first-party field has an explicit source declaration based on its actual semantics; the runtime does not assign one classification to the whole `ext.*` class |
-| Purpose | Each first-party field declares its actual collection purpose; `FeatureInsight` is not applied automatically |
+| Purpose | Each first-party field declares its actual collection purpose; `FeatureInsight` is not applied automatically. Command-span drop fields use `PerformanceAndHealth` |
 | Identity | The host supplies extension identity and source context; the request cannot override those fields |
 | Repository validation | `go test ./extensions/telemetry` rejects undeclared fields, dynamic keys, invalid metadata, and unsupported classifications before release |
 | Review | Extension telemetry follows the same documented classification and content rules as core fields. Official-registry admission remains the runtime boundary |
 
 <!-- cspell:ignore byom -->
 
-Reviewed first-party event contracts:
+First-party event contracts (reserved phase reporting is pending #10811):
 
 | Extension | `extension.event` | Trigger | Extension attributes |
 |-----------|-------------------|---------|----------------------|
+| `azure.ai.agents` / `azure.ai.projects` | `agent.phase.completed` | **Pending #10811**: observed authoring handler or provider method returns, including error/cancellation/timeout | `ext.agent.phase.name`, `.scope`, `.attempt_id`, `.start_time`, `.end_time`, `.duration_ms`, `.outcome`, `.step.dropped_count`; string properties as declared above, not a core command completion |
+| `azure.ai.agents` / `azure.ai.projects` | `agent.phase.step` | **Pending #10811**: completed business steps buffered until phase return | `ext.agent.phase.name`, `.scope`, `.attempt_id`, `.step.id`, `.step.sequence`, `.step.start_offset_ms`, `.step.duration_ms`; all strings, no step outcomes or customer content |
 | `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; one event per distinct kind/harness/container-mode classification in the invocation, before the corresponding operation completes | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, `microsoft_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; optional `ext.agent.container.mode` on hosted agents: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown`. `build` does not distinguish ACR ownership; `passthrough` does not prove an image is public; `passthrough_auth` records a configured Foundry registry connection, not successful authentication. No identifiers or customer content |
 | `azure.ai.agents` | `agent.invoke.selected` | A remote `invoke` passes input and protocol validation and resolves its target; project-backed routes must resolve a hosted agent, while explicit `--agent-endpoint` routes have no project kind to verify. Once per selected route before the invoke request, including later failures. Resolution can authenticate or probe a brownfield agent first, so earlier failures are not counted. Local and non-hosted project routes are excluded | `ext.agent.invoke.protocol`: resolved invocable protocol (currently `responses`, `invocations`, or `a2a`); `ext.agent.invoke.long_running` and `ext.agent.invoke.no_wait`: string-encoded `true` or `false`. Long-running/no-wait modes are remote Responses only; `no_wait=true` requires `long_running=true`. No names, IDs, endpoints, prompts, or outcomes |
 | `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode`: fixed enum `sample`; `ext.demo.outcome`: fixed enum `completed` |
@@ -444,7 +505,7 @@ The following fields are defined in `fields.go`.
 | Env unset outcome | `env.unset.outcome` | SystemMetadata | FeatureInsight | Fixed enum: `success`, `no_change`, `user_declined`, `failed`. `success` requires a fully successful removal save. Not hashed; not a measurement. Emitted on `cmd.env.unset` when the action runs, including validation failures. |
 | Env unset removed count | `env.unset.removed_count` | SystemMetadata | FeatureInsight | **Measurement** — distinct keys removed by a fully successful save; zero for declined, no-change, or failed commands. Not hashed; contains no key names or values. |
 | Env unset missing count | `env.unset.missing_count` | SystemMetadata | FeatureInsight | **Measurement** — distinct requested keys observed missing before or after confirmation. Zero before keys are inspected. Not hashed; contains no key names or values. |
-| Hooks name | `hooks.name` | SystemMetadata | FeatureInsight | Built-in hook name (raw) or SHA-256 hash for extension/custom hooks. Known values: `prebuild`, `postbuild`, `predeploy`, `postdeploy`, `predown`, `postdown`, `prepackage`, `postpackage`, `preprovision`, `postprovision`, `prepublish`, `postpublish`, `prerestore`, `postrestore`, `preup`, `postup` |
+| Hooks name | `hooks.name` | SystemMetadata | FeatureInsight | Raw, matched built-in lifecycle name only. Unknown arguments and their hashes are omitted. Known values: `prebuild`, `postbuild`, `predeploy`, `postdeploy`, `predown`, `postdown`, `preinfracreate`, `postinfracreate`, `preinfradelete`, `postinfradelete`, `prepackage`, `postpackage`, `preprovision`, `postprovision`, `prepublish`, `postpublish`, `prerestore`, `postrestore`, `preup`, `postup` |
 | Hooks type | `hooks.type` | SystemMetadata | FeatureInsight | `project`, `service`, `layer` |
 | Hooks kind | `hooks.kind` | SystemMetadata | FeatureInsight | Executor used to run the hook. Values: `sh`, `pwsh`, `python`, `js`, `ts`, `dotnet` |
 | Pipeline provider | `pipeline.provider` | SystemMetadata | FeatureInsight | Resolved provider display name after auto-detection: `GitHub`, `Azure DevOps` |
@@ -531,10 +592,12 @@ The execution graph powers the parallel `up` / `provision` / `deploy` engine.
 | Provision concurrency | `exegraph.provision_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — resolved provision phase concurrency limit; `0` means no dedicated phase limit |
 | Deploy concurrency | `exegraph.deploy_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — resolved deploy phase concurrency limit; `0` means no dedicated phase limit |
 | Error policy | `exegraph.error_policy` | SystemMetadata | PerformanceAndHealth | `fail_fast` or `continue_on_error` |
-| Step name | `exegraph.step.name` | SystemMetadata | PerformanceAndHealth | **Hashed** via `fields.StringHashed` — step names embed user-chosen service / layer names from `azure.yaml` (e.g., `deploy-<svc.Name>`, `<layer.Name>`) |
-| Step deps | `exegraph.step.deps` | SystemMetadata | PerformanceAndHealth | **Hashed slice** via `fields.StringSliceHashed` — each entry is another step name that embeds user-chosen identifiers |
+| Step name | `exegraph.step.name` | OrganizationalIdentifiableInformation | PerformanceAndHealth | **Hashed** via `fields.StringHashed`. Structured service/layer object identifier from `azure.yaml`, not script or configuration contents |
+| Step deps | `exegraph.step.deps` | OrganizationalIdentifiableInformation | PerformanceAndHealth | **Hashed slice** via `fields.StringSliceHashed`. References to other service/layer steps |
 | Step tags | `exegraph.step.tags` | SystemMetadata | PerformanceAndHealth | Fixed internal vocabulary set by azd code (e.g., `provision`, `deploy`, `package`, `cmdhook`, `event`); emitted raw because it does not contain user input |
 | Step timeout | `exegraph.step.timeout_s` | SystemMetadata | PerformanceAndHealth | **Measurement** — per-step timeout in seconds, when set |
+
+Step names and dependencies continue to be emitted as hashes. Their classification correction does not activate client-side filtering; downstream metadata deployment is a separate step. Counts, tags, concurrency and timing remain SystemMetadata.
 
 ### Multi-Layer Provision
 
@@ -547,24 +610,25 @@ Telemetry for the `infra.layers[]` parallel provisioning feature, emitted from `
 | Safe-fallback count | `provision.layer.safe_fallback_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that triggered the safe-by-default detector fallback (forced to depend on all earlier layers) |
 | Explicit dependsOn count | `provision.layer.explicit_dependson_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that used the explicit `infra.layers[].dependsOn` schema |
 
-## Data Classifications
+## Privacy concepts
 
-Agent operation markers add only fixed values to the existing `extension.event`
-SystemMetadata / FeatureInsight field on `ext.usage`, not new fields or span names.
-Format: `agent.operation.v1.<operation>.<category>.<telephony>`; the allowlisted
-vocabulary and coverage are defined in the [extension operation reference](../../../cli/azd/extensions/azure.ai.agents/docs/operation-telemetry.md).
-No customer strings, dynamic attributes or hashing changes are introduced; existing
-agent-context and completion-result semantics remain unchanged.
+These concepts help describe a proposed field. Use the [privacy review checklist](privacy-review-checklist.md) to confirm approval coverage with a maintainer.
 
-Classifications are defined in `cli/azd/internal/tracing/fields/fields.go` and control how data
-is stored, retained, and who may access it.
+- **Classify the data, not just its name or type.** A fixed event name does not make all its properties SystemMetadata. Describe what each value means, where it comes from, and the full range of supported inputs. A package identifier, an organization identifier, and a prompt are not interchangeable just because all three are strings.
+- **Opaque does not mean anonymous.** A GUID or hash can still be linked to a person or organization through other data. A stable hash can also be matched against known values.
+- **An endpoint tag is an identifier type, not a network address.** `AttributeKey.Endpoint` tells the data pipeline what kind of identifier a value represents, such as `AzureSubscriptionId`. Use an existing tag that matches the identifier, and ask a maintainer when the type is unclear.
+- **Client hashing and platform handling are separate.** Record the client-side hashing rule and confirm the platform's identifier handling with its owner.
+
+## Data classifications
+
+Classifications are defined in `cli/azd/internal/tracing/fields/fields.go` and describe the metadata used to configure downstream handling. The declaration alone does not filter exports or establish storage, retention, or access controls.
 
 | Classification | Description |
 |----------------|-------------|
 | `PublicPersonalData` | Data the user has made public (e.g. GitHub username) |
 | `SystemMetadata` | Non-personal system/environment metadata |
 | `CallstackOrException` | Stack traces and exception details |
-| `CustomerContent` | User-created content (files, messages) — highest sensitivity |
+| `CustomerContent` | Customer-authored content such as files, prompts, or messages. Avoid collecting it; GDPR processing drops it |
 | `EndUserPseudonymizedInformation` | Pseudonymized user identifiers (hashed MACs, device IDs) |
 | `OrganizationalIdentifiableInformation` | Organization-level identifiers (subscription IDs, tenant IDs) |
 
@@ -580,7 +644,9 @@ Each field is tagged with one or more purposes that govern its permitted use.
 
 ## Hashing
 
-Sensitive values are hashed before emission using functions in `cli/azd/internal/tracing/fields/key.go`.
+Follow each field's value-handling rules below. Hashing helpers are in `cli/azd/internal/tracing/fields/key.go`.
+Hashing changes representation, not classification.
+Some fields record fixed values or validated identifiers raw. Unknown values may need to be omitted rather than hashed.
 
 | Function | Behavior |
 |----------|----------|
@@ -596,8 +662,14 @@ Fields that are hashed:
 - `env.name`
 - `exegraph.step.name` (embeds user-chosen service / layer names from `azure.yaml`)
 - `exegraph.step.deps` (each entry is another step name and therefore embeds user-chosen identifiers)
-- `hooks.name` is hashed **only when** the value comes from an extension or custom hook (the built-in hook names are emitted raw)
-- `pack.builder.image`, `pack.builder.tag` are hashed when a user-defined image is used
+
+`hooks.name` is never hashed. Matched built-in lifecycle names are recorded raw, and unknown or unmatched manual-command arguments are omitted.
+
+Builder image/tag values are not emitted, either raw or hashed.
+The builder setting still controls the build.
+
+The environment data stores record a UUID-valued `ad.subscription.id` raw and hash a value that does not parse as a UUID.
+Preserve this conditional handling in `pkg/environment/local_file_data_store.go` and `pkg/environment/storage_blob_data_store.go`.
 
 ## Data Pipeline
 
@@ -629,6 +701,12 @@ arbitrary instrumentation calls. Raw attribute keys bypass that declaration
 contract and are rejected by `TestNoRawTelemetryAttributes`
 (`cli/azd/cmd/telemetry_test.go`).
 
+### Resource attributes
+
+Core azd telemetry has a fixed resource schema. Do not add fields through `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_SERVICE_NAME`, or another OpenTelemetry resource detector.
+The exporter boundary removes environment-provided resource fields from Application Insights, trace-file, and OTLP exports.
+It does not filter span attributes or inspect extension `ReportUsage` values. Declare and validate those fields through their own contracts below.
+
 ### Field declaration contract
 
 For a field to participate in telemetry metadata it must be:
@@ -651,6 +729,11 @@ extension declarations live in `extensions/telemetry/fields.go` and use the
 same `AttributeKey` metadata model. Follow the declaration style in the owning
 package; repository tests enforce the supported source forms. Field
 declarations apply across events and are not tied to a single event.
+
+An explicitly declared `Endpoint: "N/A"` is valid for `OrganizationalIdentifiableInformation`
+when the field owner's identifier-handling assessment supports it. Structural acceptance does not establish approval coverage.
+
+Track declaration changes, metadata deployment, and downstream verification separately using the [audit process](audit-process.md#retained-copies-and-rollout).
 
 ### Event declaration contract
 

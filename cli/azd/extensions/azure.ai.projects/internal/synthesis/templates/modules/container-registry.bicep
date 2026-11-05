@@ -11,6 +11,7 @@ param registryName string
 param projectPrincipalId string
 param pullAssigned bool = false
 param accessOperationId string = ''
+param pullRoleDefinitionId string = ''
 
 var acrPullRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
@@ -65,11 +66,13 @@ module existingRegistryAccess 'acr-pull-role-assignment.bicep' = if (mode == 're
     principalId: projectPrincipalId
     assignmentName: accessOperationId
     ownershipDescription: empty(accessOperationId) ? '' : 'azd-foundry:${accessOperationId}'
-    roleDefinitionId: mode == 'reuse-connect'
-      ? (existingRegistry!.properties.roleAssignmentMode == 'AbacRepositoryPermissions'
-        ? repositoryReaderRoleId
+    roleDefinitionId: !empty(accessOperationId)
+      ? pullRoleDefinitionId
+      : (mode == 'reuse-connect'
+        ? (existingRegistry!.properties.roleAssignmentMode == 'AbacRepositoryPermissions'
+          ? repositoryReaderRoleId
+          : acrPullRoleId)
         : acrPullRoleId)
-      : acrPullRoleId
   }
 }
 

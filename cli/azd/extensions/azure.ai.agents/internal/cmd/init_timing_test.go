@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -141,7 +142,7 @@ func TestInitStepTimingAzureYamlScaffoldingFailure(t *testing.T) {
 			ctx, timing := inittelemetry.NewContext(t.Context())
 			err := runInitFromAzureYaml(ctx, &initFlags{
 				templatePointer: pointer, src: "project",
-			}, client, http.DefaultClient, content, "")
+			}, client, http.DefaultClient, content, "", io.Discard)
 			require.Error(t, err)
 			require.Equal(t, 1, workflow.runCalls)
 			recorder := &initTimingRecorder{}

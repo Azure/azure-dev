@@ -40,6 +40,7 @@ func TestAgentHelp(t *testing.T) {
 			require.NoError(t, root.Execute())
 			text := buf.String()
 			require.NotContains(t, text, "\x1b")
+			require.NotRegexp(t, `(?i)\((preview|beta)\)`, command.Short+"\n"+command.Long)
 			require.Contains(t, text, "\nUsage\n  azd ai agent")
 			require.Contains(t, text, "\nGlobal Flags\n")
 			require.Contains(t, text, "\nExamples\n")
@@ -60,6 +61,8 @@ func TestAgentHelp(t *testing.T) {
 					require.Contains(t, text, feature.Description+".")
 				}
 				require.Contains(t, text, "All preview switches default to off.")
+				require.Contains(t, text, "A notice appears only when a command uses an enabled preview feature.")
+				require.Contains(t, text, "Preview behavior may change.")
 				require.Contains(t, text, "When set, only 1, t, T, true, TRUE, or True enable a switch.")
 				require.Contains(t, text, "False, empty, and invalid values disable a switch.")
 				require.Contains(t, text, "We recommend setting overrides in your shell or CI before running azd:")

@@ -46,6 +46,8 @@ Preview Feature Switches:
 	}
 	footer.WriteString(`
   All preview switches default to off.
+  A notice appears only when a command uses an enabled preview feature.
+  Preview behavior may change.
   When set, only 1, t, T, true, TRUE, or True enable a switch.
   False, empty, and invalid values disable a switch.
   Set these switches in your shell or CI before running azd.

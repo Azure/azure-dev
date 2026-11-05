@@ -15,7 +15,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "inspector",
 		Use:   "inspector <command> [options]",
-		Short: "Inspect locally running Foundry agents in a browser. (Preview)",
+		Short: "Inspect locally running Foundry agents in a browser.",
 	})
 	rootCmd.SilenceUsage = true
 	rootCmd.SilenceErrors = true

@@ -6,8 +6,8 @@ capabilities:
     - provisioning-provider
     - validation-provider
     - metadata
-description: Manage Microsoft Foundry Project resources from your terminal. (Beta)
-displayName: Foundry Projects (Beta)
+description: Manage Microsoft Foundry Project resources from your terminal.
+displayName: Foundry Projects
 id: azure.ai.projects
 language: go
 namespace: ai.project

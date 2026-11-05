@@ -6,11 +6,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
@@ -25,7 +27,11 @@ func runInitVoice(
 	azdClient *azdext.AzdClient,
 	projectTargetDir string,
 	createdFolderDisplay string,
+	noticeWriter io.Writer,
 ) error {
+	if err := featureflags.RequireWithWriter(featureflags.Voice, noticeWriter); err != nil {
+		return err
+	}
 	defer inittelemetry.Start(ctx, inittelemetry.AgentConfiguration)()
 
 	projectConfig, err := ensureProject(ctx, flags, azdClient, projectTargetDir)

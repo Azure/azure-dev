@@ -35,6 +35,9 @@ type agentHostingType = {
   hostingType: 'ManagedCluster' | ''
   name: string
   clusterResourceId: string
+  hostingManagementIdentityResourceId: string?
+  storageAccountResourceId: string?
+  workloadIdentityResourceId: string?
 }
 
 // Parameters
@@ -64,18 +67,21 @@ param deployments deploymentsType = []
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
 
-@description('Existing AKS cluster hosting. Supporting resources are created automatically.')
+@description('Existing AKS hosting with independently optional Storage and managed identity references.')
 param agentHosting agentHostingType = {
   enabled: false
   hostingType: ''
   name: ''
   clusterResourceId: ''
+  hostingManagementIdentityResourceId: ''
+  storageAccountResourceId: ''
+  workloadIdentityResourceId: ''
 }
 
-@description('AKS kubelet principal ID, resolved by microsoft.foundry for registry access.')
+@description('AKS kubelet principal ID for registry access; resolved by microsoft.foundry when omitted.')
 param kubeletObjectId string = ''
 
-@description('Built-in federation-management role, resolved by microsoft.foundry.')
+@description('Federation-management role; resolved by microsoft.foundry when omitted.')
 param federatedIdentityRoleDefinitionId string = ''
 
 @description('Full ARM ID of an existing container registry to reuse instead of creating one.')
@@ -86,6 +92,19 @@ param acrPullAssigned bool = false
 
 @description('Unique access operation ID persisted by azd before deployment.')
 param acrAccessOperationId string = ''
+
+@description('Principal ID of the supplied hosting-management identity; resolved by microsoft.foundry when omitted.')
+param hostingPrincipalId string = ''
+
+@description('Principal ID of the supplied workload identity; resolved by microsoft.foundry when omitted.')
+param workloadPrincipalId string = ''
+
+@description('Registry pull role persisted with the access operation.')
+param acrPullRoleDefinitionId string = ''
+
+@description('Owned registry grants retained for recovery after local state loss.')
+#disable-next-line no-unused-params
+param acrOwnedAssignments array = []
 
 // Network isolation parameters (see modules/resources.bicep for semantics).
 // All default off so an absent network: block yields a public account.
@@ -150,6 +169,9 @@ module resources 'modules/resources.bicep' = {
     existingAcrResourceId: existingAcrResourceId
     acrPullAssigned: acrPullAssigned
     acrAccessOperationId: acrAccessOperationId
+    hostingPrincipalId: hostingPrincipalId
+    workloadPrincipalId: workloadPrincipalId
+    acrPullRoleDefinitionId: acrPullRoleDefinitionId
     enableNetworkIsolation: enableNetworkIsolation
     useManagedEgress: useManagedEgress
     vnetId: vnetId

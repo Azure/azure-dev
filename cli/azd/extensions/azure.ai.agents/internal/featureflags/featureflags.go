@@ -19,7 +19,7 @@ type Feature struct {
 	// EnvVar is the process environment key for this feature.
 	// Set it in the shell or CI before running azd.
 	EnvVar string
-	// Description is an optional short summary for help.
+	// Description is an optional short summary for help and enabled-feature notices.
 	Description string
 	// DefaultEnabled applies only when EnvVar is absent.
 	DefaultEnabled bool

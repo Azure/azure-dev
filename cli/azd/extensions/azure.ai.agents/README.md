@@ -112,9 +112,11 @@ Overlay references have the same trust boundary and relative-path behavior as
 existing `$ref` references; only reference files you trust.
 The overlay can only add missing keys; objects recurse, while existing scalar or
 array keys conflict even when values match. New arrays are allowed. Null values
-and the reserved root keys `kind`, `model_type`, `model`, and
-`conversation_engine` are rejected. The overlay is not OpenAPI-validated and
-must use GA wire names. Prompt and hosted agents do not accept this property.
+and the reserved root keys `kind`, `model_type`, `model`,
+`conversation_engine`, and `sub_protocol` (`subProtocol`, case-insensitively)
+are rejected. Protocol selection must use the typed `subProtocol` field. The
+overlay is not OpenAPI-validated and must use GA wire names. Prompt and hosted
+agents do not accept this property.
 
 ## Hosted agent deployment preview
 
@@ -349,6 +351,12 @@ loading and interaction together. The other events are documented under
 [Operation classification markers](#operation-classification-markers),
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
+
+Package, Publish, and Deploy provider methods also report
+[operation and step timings](docs/phase-telemetry.md). These cover the same
+extension methods called by `azd up` and standalone commands, not whole-command
+durations. The projects extension reports its internal authoring and Provision
+provider timings using the same schema.
 
 ### Agent context telemetry
 
@@ -821,9 +829,35 @@ azd ai agent invoke -p a2a --a2a-version 0.3 --input-file a2a-request-0.3.json
 
 `--a2a-version` is valid only for A2A; do not use it with Responses or
 Invocations. It is separate from `--version`, which continues to select a
-**deployed agent version**, not an A2A protocol version. This CLI does not
-support A2A invocation with `--local`; this is a CLI limitation, not a
-restriction of the A2A protocol.
+**deployed agent version**, not an A2A protocol version. `--version` is not
+supported for local A2A invocation.
+
+### Local A2A invocation
+
+Run your A2A server with `azd ai agent run`, then invoke it from another terminal:
+
+```bash
+azd ai agent run --port 9090
+# In another terminal, with AZD_ALPHA_ENABLE_AGENTS_A2A=true:
+azd ai agent invoke --local -p a2a --port 9090 --a2a-version 1.0 "Hello!"
+azd ai agent invoke --local -p a2a --port 9090 --a2a-version 1.0 -f a2a-request-1.0.json
+```
+
+Requests go directly to `http://localhost:<port>/a2a` (default port `8088`,
+configurable with `--port`). Your local server must expose `POST /a2a`.
+This fixed route is an azd local transport convention, not a path mandated by
+the A2A specification. Redirects and alternate routes are not followed.
+
+Existing A2A version rules apply locally, and request files are sent unchanged.
+Local A2A sends no Foundry authentication or routing headers and persists no
+session state. For continuity, provide A2A `contextId`/`taskId` in a request file.
+These flags are unsupported: `--session-id`, `--new-session`, `--conversation-id`,
+`--new-conversation`, `--version`, `--user-identity`, `--call-id`, and `--client-header`.
+Platform diagnostics are unavailable; omit `--debug-latency` or set it to `false`.
+
+Use `--output raw` for streaming replies. `--timeout` covers the request and response
+(default 1800 seconds; `0` disables it); startup connection retries have a separate
+60-second limit. Timeout or Ctrl+C stops the HTTP request, not the A2A task.
 
 For completed Tasks in **both A2A 0.3 and 1.0**, default output prefers answer
 artifacts over generic status messages such as “Done.” Other Tasks prefer status
@@ -875,15 +909,20 @@ trailers or change SSE termination.
 
 ## Running Local Agents
 
-`azd ai agent run` starts the selected agent locally and, by default, opens the
-Agent Inspector after the local agent port is accepting connections. The
-inspector launch is best-effort: if `azure.ai.inspector` is not installed or
-fails to start, the agent process keeps running and azd prints install guidance.
+`azd ai agent run` starts the selected agent locally. A2A-only agents open no
+browser client; once ready, azd suggests a local invocation command with the
+selected port and preview-compatible wire version. `--inspector-port` is rejected
+because no Inspector is opened.
 
-Use `--no-inspector` to run only the local agent process:
+Other agents retain their existing client routing: Activity uses Microsoft 365
+Agents Playground; other profiles use Agent Inspector. Client launch is
+best-effort: if unavailable, the agent keeps running.
+
+Use `--no-client` to run only the local agent process for any profile
+(`--no-inspector` remains a deprecated alias):
 
 ```bash
-azd ai agent run --no-inspector
+azd ai agent run --no-client
 ```
 
 ## Publishing a Digital Worker
@@ -959,14 +998,16 @@ azd ai agent run --port 9091 --inspector-port 9002
 `--inspector-port` is rejected when it cannot be honored:
 
 - with `--no-client` (or the deprecated `--no-inspector`), since no local client
-  is opened and the port would go unused; and
+  is opened and the port would go unused;
+- for A2A-only agents, which never open Agent Inspector; and
 - for agents that use Agent Inspector, when it matches `--port`, since the agent
   binds that address first and the inspector would then fail to bind it.
 
 azd also warns, without failing the run, when `--inspector-port` cannot take
-effect: activity-protocol agents open the Microsoft 365 Agents Playground rather
-than the Agent Inspector, and `--port 8087` on its own collides with the
-inspector's own default UI port.
+effect: activity-protocol agents open the Microsoft 365 Agents Playground
+rather than the Agent Inspector.
+For Inspector profiles, `--port 8087` on its own also warns about a collision
+with the inspector's default UI port.
 
 ### Local client route telemetry
 
@@ -974,9 +1015,10 @@ When installed from the official registry, the extension reports the
 `local_client.route.selected` usage event after `azd ai agent run` resolves the
 service and protocol profile. Its `ext.route` attribute is exactly one of:
 
-- `inspector` for a non-activity agent;
+- `inspector` for a non-activity agent that is not A2A-only;
 - `playground` for an activity-protocol agent; or
-- `suppressed` when `--no-client` or the deprecated `--no-inspector` is set.
+- `suppressed` for A2A-only agents, or when `--no-client` or the deprecated
+  `--no-inspector` is set.
 
 The event is emitted before checking client availability, starting the local
 agent, or launching a client. It records route selection, not successful client
@@ -1258,6 +1300,67 @@ implement voice conversations; recognized voice services receive portal guidance
 Programmatic clients use the voice WebSocket endpoint with a Voice Live client.
 Use the project-level `azd deploy` workflow above for voice services.
 
+### GPT Live voice agent (preview)
+
+GPT Live is an advanced native Live protocol under the same service `kind: voice`.
+It is initialized from a complete manifest, like Hosted Voice, so the existing
+prompt voice init flow and flags remain unchanged:
+
+```bash
+azd ai agent init -t ./schemas/examples/gpt-live.azure.yaml
+azd provision
+azd deploy
+```
+
+The manifest references an **existing compatible GPT Live model deployment**.
+The deployment and the subscription-scoped GPT Live service gate must already be
+available; azd does not infer Live from a model name or provision the model in
+this example.
+
+```yaml
+name: gpt-live-agent
+services:
+  ai-project:
+    host: azure.ai.project
+  gpt-live-agent:
+    host: azure.ai.agent
+    kind: voice
+    name: gpt-live-agent
+    uses:
+      - ai-project
+    subProtocol: live
+    modelType: self_deployed
+    model:
+      id: gpt-live-1
+    instructions: You are a concise spoken English teacher. Always delegate grammar correction requests before answering.
+    store: false
+    audio:
+      format:
+        type: audio/pcm
+        rate: 24000
+      output:
+        voice: marin
+    delegation:
+      type: responses
+      responses:
+        model: gpt-5.6-terra
+        instructions: Return concise grammar guidance for the spoken teacher.
+infra:
+  provider: microsoft.foundry
+```
+
+The persisted definition uses the service discriminator `sub_protocol: live`.
+GPT Live is self-deployed only and uses native audio, template greeting, structured
+inputs, and `client`, `responses`, or `foundry_managed_agent` delegation. It is
+mutually exclusive with Voice Live-only fields such as `conversationEngine`,
+avatar, telephony, STT/VAD settings, root tools, handoff, and output modalities.
+
+GPT Live clients connect to
+`/agents/{name}/endpoint/protocols/voice/live/sessions?api-version=v1` and use the
+native Live event protocol. `azd ai agent invoke` is not a native audio client;
+use a GPT Live-compatible client or Dashboard. Do not use the ordinary
+`/endpoint/protocols/voice` route for this definition.
+
 ## Prompt voice telephony bindings
 
 Prompt voice agents can declare Foundry-side telephony bindings in `azure.yaml`.
@@ -1420,6 +1523,66 @@ proxy — fails validation rather than silently deploying a policy that never ru
 
 Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
 the whole body is then moderated and no paths are needed for that direction.
+
+### Reuse a source-build registry
+
+To reuse a source-build registry, set its full ARM resource ID in the active
+azd environment:
+
+```sh
+azd env set AZURE_CONTAINER_REGISTRY_RESOURCE_ID "<full-registry-arm-id>"
+```
+
+This selection uses the same validation, persisted reuse mode, and ownership
+output as `--acr-resource-id` during source initialization. An unreadable
+environment stops selection rather than defaulting to a new registry.
+A same-group registry ID alone is not evidence that azd owns the registry.
+
+Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
+be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside
+every resource group managed by azd, including the Foundry group and application
+groups, because `azd down` deletes them. `AZURE_RESOURCE_GROUP` cannot establish
+all groups managed by another provider's templates. Reuse therefore requires
+Foundry-only infrastructure; a non-Foundry root deployment or any non-Foundry
+infrastructure layer is rejected even if the registry is outside the groups
+named in environment values. Cross-subscription registry reuse is not supported.
+azd preserves the external registry, images, and
+administrator-managed grants, and cleans up only
+access grants and related resources it can establish it owns. Customers manage
+network reachability and image-publisher push permissions. See
+[non-interactive configuration](../ai-non-interactive.md#azureaiprojects).
+
+Do not combine an external source-build registry selection with `agentHosting`,
+even for a project-only configuration: reuse does not manage AKS node pull
+access. Remove the selector to use an azd-created registry, or use explicit
+prebuilt images with user-managed registry authentication.
+
+An `image` value alone still defaults to a source build, including with
+`--no-prompt`. Explicit prebuilt selection requires
+`docker.imagePassthrough: true` with a nonempty image. Add `registryConnectionId`
+when a private registry connection is needed; it also requires
+`docker.imagePassthrough: true`.
+The legacy environment value `AZD_AGENT_SKIP_ACR=true` also selects prebuilt
+deployment when the expanded image is nonempty.
+
+A project-only Bicep eject retains a pending registry selection without freezing
+`includeAcr` to `false`; later source-built agents determine demand at provision
+time. Remove an older generated `parameters.includeAcr` object if it only records
+the absence of agents at eject time. Deliberate user-authored overrides are
+preserved.
+
+For an external ABAC registry, source builds require local Docker:
+set `docker.remoteBuild: false` on each source-built agent service and grant the
+image publisher Container Registry Repository Writer push permission.
+Hosted source initialization normally sets `docker.remoteBuild: true` unless
+network injection requires local builds. That remote Quick Build path is not
+supported with ABAC registry reuse: its current request does not authenticate the
+source registry, and Repository Writer permission alone does not fix the request.
+Provisioning rejects this combination. Use local Docker, a prebuilt image, or a
+classic RBAC registry instead. Prebuilt images, code deployments, legacy project
+connections, and unused project-only selections do not trigger the ABAC
+remote-build restriction; selector scope and `agentHosting` validation still
+apply.
 
 ### Hosted voice wrapper (preview)
 
@@ -1753,7 +1916,144 @@ deployment.
 
 Foundry project services can be provisioned as network-secured, VNet-bound accounts by adding a `network:` block to the `host: azure.ai.project` service in `azure.yaml`. The `azure.ai.projects` extension owns that service and the `microsoft.foundry` provider; this extension still authors the block during agent init. See [Private networking for `host: azure.ai.project`](docs/private-networking.md) for the schema reference, BYO-image requirements, and VNet deployment cheatsheet.
 
-For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes the default Storage, separate managed identities, required permissions, and lifecycle limitations. A native registry is created only when an Agent requires building a container image, following the standard Foundry rules. Foundry networking is optional through `network:`, but cannot be combined with an automatically created registry. This mode does not accept supplied supporting resources through `agentHosting` or Terraform eject.
+For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes default or independently supplied Storage and hosting/workload identities, required grants, and lifecycle limitations. A native registry is created only when an Agent requires building a container image, following the standard Foundry rules. Foundry networking is optional through `network:` and can be combined with an automatically created registry when using AKS hosting. Terraform eject is not supported for this mode.
+
+## Skill optimization from traces
+
+Use the existing optimization job API to learn reusable skills from recorded agent
+traces. This flow publishes skill versions; it does not automatically attach them
+to an agent, deploy an agent version, or update your local agent baseline.
+Skill runs update the global last-job shortcut for `optimize status`, but preserve
+the per-agent job/candidate state used by agent apply, deploy, and promotion.
+
+Copy [examples/skill-optimization.yaml](examples/skill-optimization.yaml), then
+set your deployed agent name/version, optimizer deployment, and trace window.
+The window is half-open (`start_time` inclusive, `end_time` exclusive). Use integer
+Unix timestamps in **seconds**, not milliseconds or quoted numbers, and set
+`max_traces` from 1 to 100. Omitting `max_traces` retains the service default.
+New fixed-window requests accept only integer Unix seconds; ISO strings,
+floating-point values, and quoted numeric strings are rejected before authentication.
+Job responses can contain ISO strings or Unix seconds; both formats are
+preserved when reading jobs and listing results. Unix input requires the backend
+Unix-timestamp compatibility update to be deployed; it does not require the later
+Unix-response format change.
+
+```powershell
+azd ai agent optimize --config skill-optimization.yaml `
+  --project-endpoint "https://<resource>.services.ai.azure.com/api/projects/<project>" `
+  --no-wait
+
+azd ai agent optimize status <job-id> --watch --project-endpoint <project-endpoint>
+```
+
+In an initialized azd project, the project endpoint can be resolved from the
+environment instead. Explicit identities and version pins in the request remain
+authoritative unless you supply an agent override.
+
+The service owns trace selection, conversation context, and attribution of existing
+human annotations and automated/rubric assessments. These recorded assessments do
+not require `--eval`, a new evaluation run, or a dataset supplied by azd.
+Skill requests reject the agent-search flags `--dataset`, `--eval-model`,
+`--evaluator`, and `--max-candidates`. To explicitly request fresh assessment,
+author `evaluation_configuration` with an `evaluation_model` and either existing
+`evaluators` or `evaluator_generation_configuration` (`type: agent_traces`,
+optional `prompt`). This requires a registered target agent; `training_set` is
+not accepted. The CLI never injects evaluation into skill requests.
+
+### Other trace and baseline inputs
+
+For explicit trace selection, replace the fixed window with:
+
+```yaml
+trace_window:
+  type: trace_ids
+  trace_ids: ["trace-operation-id-1", "trace-operation-id-2"]
+  lookback_hours: 168
+```
+
+The service resolves the selected conversations within the lookback horizon.
+The IDs must be unique, with 1 to 100 IDs; do not combine this variant with fixed
+timestamps or `max_traces`.
+
+Optional `skill_references` context supplies exact existing skill versions:
+
+```yaml
+type: skill_references
+skill_references:
+  - type: foundry_skill
+    name: existing-procedure
+    version: "2"
+```
+
+The top-level `optimization_configuration.additional_skills` array remains
+supported. References from both forms are combined; conflicting versions and
+more than 20 distinct explicit skill references are rejected.
+
+For traces without a registered Foundry target, omit `target_configuration`
+and supply this field alongside `trace_window` in the `agent_traces` context:
+
+```yaml
+trace_connection_configuration:
+  type: application_insights
+  resource_id: /subscriptions/<subscription>/resourceGroups/<group>/providers/Microsoft.Insights/components/<component>
+  agent_name: exact-emitted-telemetry-service-name
+```
+
+The component must be authorized and linked to the project. `agent_name` is the
+exact emitted telemetry service identity, not a KQL expression. Omit it when
+`target_configuration` is present. Agentless requests do not support new
+evaluation execution.
+
+### Inspect outcomes and download the report
+
+Candidate lists contain summaries. Inspect the full candidate to get individual
+skill outcomes, rationale, execution steps, resolved context, and declared files:
+
+```powershell
+azd ai agent optimize status <job-id> --candidate <candidate-id> `
+  --project-endpoint <project-endpoint> --output json
+
+azd ai agent optimize download <job-id> --candidate <candidate-id> `
+  --file <files-path> --target-path trace-analysis.json `
+  --project-endpoint <project-endpoint>
+```
+
+Pass `files[].path` from candidate details unchanged; do not prepend a storage
+directory. The default local filename is the basename of that path. Downloads
+never overwrite existing files, including files created after input validation.
+Use another `--target-path` if the destination already exists.
+
+Each `output.skill_results` entry reports `created`, `no_change`, `rejected`,
+`pending`, `failed`, or `publication_unknown`. Only `created` confirms a published
+output version; `no_change` retains the input baseline rather than inventing a new
+version. Inspect individual outcomes even when the overall job succeeds. An
+uncertain publication must be verified before retrying.
+
+`optimize apply` and `optimize deploy` do not treat skill results as agent
+configuration files. Attach the desired published skill versions explicitly.
+`status --candidate` is a one-time detail read and cannot be combined with `--watch`.
+Human-readable output escapes terminal control characters in service-provided text,
+preserving ordinary text, newlines, and tabs. JSON output retains the original values.
+
+### Local verification
+
+From the extension directory, the focused offline tests exercise request
+serialization, validation before authentication, a local HTTP job lifecycle,
+skill publication outcomes, and report download:
+
+```powershell
+go test .\internal\pkg\agents\optimize_api .\internal\cmd -run 'Skill|OptimizeDownload'
+```
+
+Build and register the extension using the local development workflow below.
+Use a dedicated `AZD_CONFIG_DIR` when testing installs or configuration changes.
+The existing `--endpoint` flag can target a local optimization API's complete
+route base instead of `--project-endpoint`; use trusted HTTPS and the normal
+authorized development credentials.
+
+Testing a local CLI against a cloud project exercises that project's deployed
+backend, not an unreleased local backend branch. The offline tests do not invoke
+agents, submit live optimization jobs, or publish skills to Azure.
 
 ## Local Development
 

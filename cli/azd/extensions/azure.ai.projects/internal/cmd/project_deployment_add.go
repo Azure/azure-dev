@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/phasetelemetry"
 	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
 
@@ -62,10 +63,16 @@ func newProjectDeploymentAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
   # Apply the project's managed infrastructure
   azd provision`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) (runErr error) {
+			reporter, closeReporter := phasetelemetry.HostReporter()
+			defer closeReporter()
+			ctx, timing := phasetelemetry.Begin(
+				cmd.Context(), phasetelemetry.ModelDeploymentAuthoring, phasetelemetry.Command, reporter,
+			)
+			defer func() { timing.End(ctx, runErr) }()
 			flags.output = extCtx.OutputFormat
 			action := &ProjectDeploymentAddAction{flags: flags, extCtx: extCtx}
-			return action.Run(cmd.Context())
+			return action.Run(ctx)
 		},
 	}
 	cmd.Flags().StringVar(&flags.model, "model", "", "Model name or publisher/model")
@@ -85,6 +92,9 @@ func newProjectDeploymentAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 }
 
 func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
+	endValidation := phasetelemetry.Start(ctx, phasetelemetry.Validation)
+	defer endValidation()
+
 	if a.flags == nil {
 		a.flags = &projectDeploymentFlags{}
 	}
@@ -131,6 +141,7 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		}
 	}
 
+	endValidation()
 	projectRoot := projectRootPath()
 	project, _, err := ensureProjectWithEnvironment(
 		ctx,
@@ -546,10 +557,12 @@ func resolveDeploymentAzureContext(
 		if noPrompt {
 			return nil, missingDeploymentLocationError()
 		}
+		endLocation := phasetelemetry.Start(ctx, phasetelemetry.LocationSelection)
 		response, promptErr := client.Prompt().PromptLocation(
 			ctx,
 			&azdext.PromptLocationRequest{AzureContext: azureContext},
 		)
+		endLocation()
 		if promptErr != nil {
 			if exterrors.IsCancellation(promptErr) {
 				return nil, exterrors.Cancelled(

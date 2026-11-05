@@ -7,11 +7,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -105,6 +110,12 @@ var sufficientRoleAssignWriteRoles = []string{
 	roleFoundryOwner, // c883944f-...: includes Microsoft.Authorization/roleAssignments/write
 }
 
+// developerFoundryRBACMu serializes the Foundry User role check, auto-assignment,
+// and data-plane readiness wait across concurrent predeploy handlers so a parallel
+// service does not observe the new ARM assignment and probe before the 15-second
+// settling period completes.
+var developerFoundryRBACMu sync.Mutex
+
 type developerRBACOperations struct {
 	hasAnyRoleAssignment func(
 		context.Context, *azidentity.AzureDeveloperCLICredential, string, []string, string,
@@ -119,6 +130,12 @@ type developerRBACOperations struct {
 	resolveACRInfoByResourceID func(
 		context.Context, *azidentity.AzureDeveloperCLICredential, string,
 	) (string, bool, error)
+	probeFoundryAccess func(
+		context.Context, *azidentity.AzureDeveloperCLICredential, string,
+	) error
+	wait     func(context.Context, time.Duration) error
+	attempts int
+	timeout  time.Duration
 }
 
 // CheckDeveloperRBAC returns non-blocking RBAC warnings.
@@ -130,6 +147,8 @@ func CheckDeveloperRBAC(
 		assignRoleToIdentity:       assignRoleToIdentity,
 		resolveACRInfo:             resolveACRInfo,
 		resolveACRInfoByResourceID: resolveACRInfoByResourceID,
+		probeFoundryAccess:         probeFoundryAccess,
+		wait:                       waitDeveloperRBAC,
 	})
 }
 
@@ -207,6 +226,9 @@ func checkDeveloperRBAC(
 	fmt.Printf("  Developer: %s (%s)\n", principalID, principalType)
 
 	// Check 1: Foundry User (or a superset) is sufficient to use the agent data plane.
+	developerFoundryRBACMu.Lock()
+	confirmed := false
+	assigned := false
 	hasAIAccess, err := ops.hasAnyRoleAssignment(ctx, cred, principalID, sufficientAIUserRoles, info.ProjectScope)
 	if err != nil {
 		warn("Could not check Foundry User role: "+developerRBACErrorSummary(err)+".",
@@ -236,10 +258,26 @@ func checkDeveloperRBAC(
 					"Ask a subscription Owner or User Access Administrator to assign Foundry User on the Foundry Project.")
 			}
 		} else {
+			confirmed = true
+			assigned = true
 			fmt.Println("  ✓ Foundry User auto-assigned to developer identity")
 		}
 	} else {
+		confirmed = true
 		fmt.Println("  ✓ Foundry User on Foundry Project")
+	}
+
+	projectEndpoint := developerRBACProjectEndpoint(ctx, envClient, envName)
+	probeErr := ensureFoundryAccess(ctx, cred, projectEndpoint, confirmed, assigned, ops)
+	developerFoundryRBACMu.Unlock()
+	if probeErr != nil {
+		if ctx.Err() != nil {
+			return messages, ctx.Err()
+		}
+		log.Printf(
+			"developer RBAC: Foundry access readiness check did not succeed: %s",
+			developerRBACErrorSummary(probeErr),
+		)
 	}
 	if !hasHosted {
 		return messages, nil
@@ -358,6 +396,150 @@ func checkDeveloperRBAC(
 	}
 	fmt.Println()
 	return messages, nil
+}
+
+func developerRBACProjectEndpoint(
+	ctx context.Context,
+	envClient azdext.EnvironmentServiceClient,
+	envName string,
+) string {
+	resp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     promptProjectEndpointEnvKey,
+	})
+	if err != nil || resp == nil {
+		return ""
+	}
+	endpoint := strings.TrimSpace(resp.GetValue())
+	if endpoint == "" || validateAuthenticatedPromptEndpoint(endpoint) != nil {
+		return ""
+	}
+	return strings.TrimRight(endpoint, "/")
+}
+
+func probeFoundryAccess(
+	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
+	projectEndpoint string,
+) error {
+	client := agent_api.NewAgentClient(strings.TrimRight(strings.TrimSpace(projectEndpoint), "/"), cred)
+	_, err := client.ListAgents(
+		ctx,
+		&agent_api.ListAgentQueryParameters{Limit: new(int32(1))},
+		agent_api.AgentEndpointAPIVersion,
+	)
+	return err
+}
+
+func foundryAccessDenied(err error) bool {
+	response, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok || response.StatusCode != http.StatusForbidden {
+		return false
+	}
+	// cspell:ignore permissiondenied authorizationfailed authorizationpermissionmismatch aiservices
+	switch strings.ToLower(response.ErrorCode) {
+	case "permissiondenied", "authorizationfailed", "authorizationpermissionmismatch":
+		return true
+	default:
+		return strings.Contains(strings.ToLower(response.Error()), "microsoft.cognitiveservices/accounts/aiservices/agents/")
+	}
+}
+
+func isFoundryNotFound(err error) bool {
+	response, ok := errors.AsType[*azcore.ResponseError](err)
+	return ok && response.StatusCode == http.StatusNotFound
+}
+
+func waitDeveloperRBAC(ctx context.Context, duration time.Duration) error {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func ensureFoundryAccess(
+	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
+	projectEndpoint string,
+	confirmed bool,
+	assigned bool,
+	ops developerRBACOperations,
+) (resultErr error) {
+	if ops.probeFoundryAccess == nil || strings.TrimSpace(projectEndpoint) == "" {
+		return nil
+	}
+	parent := ctx
+	timeout := 5 * time.Minute
+	if ops.timeout > 0 {
+		timeout = ops.timeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	var lastProbeError error
+	defer func() {
+		if parent.Err() != nil {
+			resultErr = parent.Err()
+		} else if errors.Is(resultErr, context.DeadlineExceeded) && ctx.Err() != nil && lastProbeError != nil {
+			resultErr = lastProbeError
+		}
+		cancel()
+	}()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	wait := waitDeveloperRBAC
+	if ops.wait != nil {
+		wait = ops.wait
+	}
+	attempts := 60
+	if ops.attempts > 0 {
+		attempts = ops.attempts
+	}
+	waitMessage := ""
+	if assigned {
+		waitMessage = "Waiting for Foundry access to propagate."
+		fmt.Println("  " + waitMessage)
+		if err := wait(ctx, 15*time.Second); err != nil {
+			return err
+		}
+	}
+	for attempt := range attempts {
+		err := ops.probeFoundryAccess(ctx, cred, projectEndpoint)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		projectMissing := isFoundryNotFound(err)
+		if err == nil {
+			if assigned || waitMessage != "" {
+				fmt.Println("  ✓ Foundry access is ready")
+			}
+			return nil
+		}
+		// A custom role may allow the deployment write without granting agents/read.
+		if !confirmed && foundryAccessDenied(err) {
+			return nil
+		}
+		lastProbeError = err
+		retry := projectMissing || (confirmed && foundryAccessDenied(err))
+		if !retry || attempt == attempts-1 {
+			return err
+		}
+		message := "Waiting for Foundry access to propagate."
+		if projectMissing {
+			message = "Waiting for the Foundry project to synchronize."
+		}
+		if message != waitMessage {
+			fmt.Println("  " + message)
+			waitMessage = message
+		}
+		if err := wait(ctx, 5*time.Second); err != nil {
+			return err
+		}
+	}
+	return lastProbeError
 }
 
 // Retained messages must not include raw HTTP bodies or credentials.

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -223,7 +224,7 @@ func TestOptimizePreviewTargets(t *testing.T) {
 						flags.configFile = writeTestFile(t, root, "optimization.json", content)
 						args = append(args, "--config", flags.configFile)
 					}
-					action := &OptimizeAction{flags: flags, envName: "dev", noPrompt: true}
+					action := &OptimizeAction{flags: flags, envName: "dev", noPrompt: true, noticeWriter: io.Discard}
 					cfg, _, project, err := action.resolveConfig(t.Context())
 					if tc.feature.ID != "" && !enabled && (!mode.remote || mode.explicit) {
 						localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -414,7 +415,7 @@ func optimizeTestDirectService(t *testing.T, _ string) *azdext.ServiceConfig {
 func TestOptimizeCommand_HasExpectedSubCommands(t *testing.T) {
 	cmd := newOptimizeCommand(&azdext.ExtensionContext{})
 
-	expected := []string{"status", "list", "cancel", "deploy", "apply"}
+	expected := []string{"status", "list", "cancel", "download", "deploy", "apply"}
 	var actual []string
 	for _, sub := range cmd.Commands() {
 		actual = append(actual, sub.Name())

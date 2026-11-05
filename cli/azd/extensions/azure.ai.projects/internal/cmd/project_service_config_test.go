@@ -22,8 +22,57 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestValidateProjectACRBuildsWithoutEnvironment(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		envName    string
+		currentErr error
+		readErr    error
+		wantErr    string
+	}{
+		{name: "empty environment"},
+		{name: "not found", currentErr: status.Error(codes.NotFound, "environment not found")},
+		{name: "no default", currentErr: status.Error(codes.Unknown, "default environment not found")},
+		{name: "unavailable", currentErr: status.Error(codes.Unavailable, "service unavailable"),
+			wantErr: "service unavailable"},
+		{name: "corrupt", currentErr: status.Error(codes.Unknown, "invalid environment metadata"),
+			wantErr: "invalid environment metadata"},
+		{name: "canceled", currentErr: status.Error(codes.Canceled, "request canceled"), wantErr: "request canceled"},
+		{name: "values read failure", envName: "test", readErr: status.Error(codes.NotFound, "values missing"),
+			wantErr: "values missing"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			client, _, env, _, _ := newSelfInitializingDeploymentClient(t, root)
+			env.current = tt.envName
+			env.currentErr = tt.currentErr
+			env.readErr = tt.readErr
+			args := &azdext.ProjectEventArgs{Project: &azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					"project": {Host: aiProjectHost},
+					"agent": {Host: "azure.ai.agent", AdditionalProperties: mustProjectProperties(t, map[string]any{
+						"kind": "hosted", "docker": map[string]any{"remoteBuild": true},
+					})},
+				},
+			}}
+			err := validateProjectACRBuilds(t.Context(), client, args)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Empty(t, env.setLog)
+			require.Error(t, projectLifecycleHandler(t.Context(), client, args))
+			require.Empty(t, env.setLog)
+		})
+	}
+}
 
 func TestLoadProjectServiceConfig(t *testing.T) {
 	t.Parallel()

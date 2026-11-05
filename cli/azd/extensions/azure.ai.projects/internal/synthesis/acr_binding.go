@@ -21,6 +21,12 @@ const ACRBindingConfigKey = "extensions.ai-projects.acrBinding"
 // ACRBindingEnvKey carries a binding in a synthesis snapshot.
 const ACRBindingEnvKey = "AZD_FOUNDRY_ACR_BINDING"
 
+// ErrACRReuseAgentHosting rejects unmanaged AKS pull access.
+var ErrACRReuseAgentHosting = errors.New(
+	"existing registry reuse is not supported with agentHosting; " +
+		"use an azd-created registry or remove agentHosting",
+)
+
 var projectResourceIDPattern = regexp.MustCompile(
 	`(?i)^/subscriptions/[^/\s?#\\%]+/resourceGroups/[^/\s?#\\%]+/providers/` +
 		`Microsoft\.CognitiveServices/accounts/[^/\s?#\\%]+/projects/[^/\s?#\\%]+$`,
@@ -135,6 +141,18 @@ func ValidateACRBinding(binding *ACRBinding, mode, registryID string) error {
 	return nil
 }
 
+// ValidateACRNetworking checks registry and network compatibility.
+func ValidateACRNetworking(includeACR bool, registryID string, isolated, hosting bool) error {
+	if includeACR && registryID == "" && isolated && !hosting {
+		return errors.New(
+			"synthesis: private networking does not support an auto-created Azure Container Registry; " +
+				"use docker.imagePassthrough: true with a prebuilt image, remove source-build demand, " +
+				"or set AZURE_CONTAINER_REGISTRY_RESOURCE_ID for Foundry-only reuse without agentHosting",
+		)
+	}
+	return nil
+}
+
 // ValidateACRSelector validates a registry before writes.
 func ValidateACRSelector(registryID, subscriptionID, resourceGroup string) error {
 	if !containerRegistryIDPattern.MatchString(registryID) {
@@ -148,8 +166,8 @@ func ValidateACRSelector(registryID, subscriptionID, resourceGroup string) error
 	}
 	if subscriptionID != "" && resourceGroup != "" &&
 		strings.EqualFold(parts[2], subscriptionID) && strings.EqualFold(parts[4], resourceGroup) {
-		return errors.New("AZURE_CONTAINER_REGISTRY_RESOURCE_ID must be outside the Foundry " +
-			"resource group because azd down deletes that group")
+		return errors.New("AZURE_CONTAINER_REGISTRY_RESOURCE_ID must be outside the Foundry resource group " +
+			"and every other resource group managed by azd because azd down deletes those groups")
 	}
 	return nil
 }
@@ -170,11 +188,16 @@ func ValidateGreenfieldACRSelection(env map[string]string, selectedID string) er
 	return ValidateACRBinding(binding, "reuse-connect", selectedID)
 }
 
-// GreenfieldACRResourceGroup resolves the actual teardown group.
+// GreenfieldACRResourceGroup resolves the Foundry teardown group.
 func GreenfieldACRResourceGroup(in Input) (string, error) {
-	if in.ResourceGroupName != "" {
-		return in.ResourceGroupName, nil
+	groups, _, err := greenfieldACRResourceGroups(in)
+	if err != nil {
+		return "", err
 	}
+	return groups[0], nil
+}
+
+func greenfieldACRResourceGroups(in Input) ([]string, bool, error) {
 	var doc struct {
 		Infra struct {
 			Provider string `yaml:"provider"`
@@ -185,19 +208,23 @@ func GreenfieldACRResourceGroup(in Input) (string, error) {
 		} `yaml:"infra"`
 	}
 	if err := yaml.Unmarshal(in.RawAzureYAML, &doc); err != nil {
-		return "", fmt.Errorf("parse infrastructure scope in azure.yaml: %w", err)
+		return nil, false, fmt.Errorf("parse infrastructure scope in azure.yaml: %w", err)
 	}
 	layered := false
+	rootManaged := len(doc.Infra.Layers) == 0 &&
+		strings.TrimSpace(doc.Infra.Provider) != "" &&
+		strings.TrimSpace(doc.Infra.Provider) != "microsoft.foundry"
 	for _, layer := range doc.Infra.Layers {
 		provider := strings.TrimSpace(layer.Provider)
 		if provider == "" {
 			provider = strings.TrimSpace(doc.Infra.Provider)
 		}
 		if provider != "microsoft.foundry" {
+			rootManaged = true
 			continue
 		}
 		if strings.TrimSpace(layer.Name) == "" || layered {
-			return "", errors.New("registry selection requires one named Foundry infrastructure layer")
+			return nil, false, errors.New("registry selection requires one named Foundry infrastructure layer")
 		}
 		layered = true
 	}
@@ -205,13 +232,57 @@ func GreenfieldACRResourceGroup(in Input) (string, error) {
 	if layered {
 		key, suffix = "AZURE_FOUNDRY_RESOURCE_GROUP", "-foundry"
 	}
-	if group := in.Env[key]; group != "" {
-		return group, nil
+	group := in.ResourceGroupName
+	if group == "" {
+		group = in.Env[key]
 	}
-	if name := in.Env["AZURE_ENV_NAME"]; name != "" {
-		return "rg-" + name + suffix, nil
+	if group == "" && in.Env["AZURE_ENV_NAME"] != "" {
+		group = "rg-" + in.Env["AZURE_ENV_NAME"] + suffix
 	}
-	return "", nil
+	groups := []string{group}
+	if rootManaged {
+		root := in.Env["AZURE_RESOURCE_GROUP"]
+		if root == "" && in.Env["AZURE_ENV_NAME"] != "" {
+			root = "rg-" + in.Env["AZURE_ENV_NAME"]
+		}
+		if root != "" && !strings.EqualFold(root, group) {
+			groups = append(groups, root)
+		}
+	}
+	return groups, rootManaged, nil
+}
+
+// ValidateACRSelectorForInput requires separate teardown scopes.
+func ValidateACRSelectorForInput(in Input, selectedID string) error {
+	groups, otherInfrastructure, err := greenfieldACRResourceGroups(in)
+	if err != nil {
+		return err
+	}
+	subscription := in.Env["AZURE_SUBSCRIPTION_ID"]
+	for _, group := range groups {
+		if err := ValidateACRSelector(selectedID, subscription, group); err != nil {
+			return err
+		}
+		if subscription == "" && group != "" && strings.EqualFold(strings.Split(selectedID, "/")[4], group) {
+			return errors.New("cannot establish that the registry is outside the environment's resource groups; " +
+				"configure AZURE_SUBSCRIPTION_ID before selecting a registry with the same resource-group name")
+		}
+	}
+	if otherInfrastructure {
+		return errors.New("cannot establish application infrastructure teardown scopes for external registry reuse; " +
+			"AZURE_RESOURCE_GROUP does not describe every group deleted by azd down. " +
+			"Use Foundry-only infrastructure, or an azd-created registry in a new environment")
+	}
+	_, projects, err := acrProjectServices(in)
+	if err != nil {
+		return err
+	}
+	for _, project := range projects {
+		if project.AgentHosting != nil {
+			return ErrACRReuseAgentHosting
+		}
+	}
+	return nil
 }
 
 // ValidateGreenfieldACRSelectionForInput guards setup and eject.
@@ -226,17 +297,8 @@ func ValidateGreenfieldACRSelectionForInput(in Input, selectedID string) error {
 				"use the existing project's registry connection instead of a source-build selector", ErrEndpointBrownfield)
 		}
 	}
-	group, err := GreenfieldACRResourceGroup(in)
-	if err != nil {
+	if err := ValidateACRSelectorForInput(in, selectedID); err != nil {
 		return err
-	}
-	subscription := in.Env["AZURE_SUBSCRIPTION_ID"]
-	if err := ValidateACRSelector(selectedID, subscription, group); err != nil {
-		return err
-	}
-	if subscription == "" && group != "" && strings.EqualFold(strings.Split(selectedID, "/")[4], group) {
-		return errors.New("cannot establish that the registry is outside the Foundry resource group; " +
-			"configure AZURE_SUBSCRIPTION_ID before selecting a registry with the same resource-group name")
 	}
 	binding := in.ACRBinding
 	if binding == nil {

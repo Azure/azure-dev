@@ -5,6 +5,7 @@ package synthesis
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,10 @@ import (
 const hostingClusterID = "/subscriptions/cluster-sub/resourceGroups/aks-rg/providers/" +
 	"Microsoft.ContainerService/managedClusters/aks"
 const hostingVNetID = "/subscriptions/network-sub/resourceGroups/network-rg/providers/Microsoft.Network/virtualNetworks/vnet"
+const hostingStorageID = "/subscriptions/resources-sub/resourceGroups/data-rg/providers/" +
+	"Microsoft.Storage/storageAccounts/data"
+const hostingIdentityID = "/subscriptions/resources-sub/resourceGroups/identity-rg/providers/" +
+	"Microsoft.ManagedIdentity/userAssignedIdentities/"
 
 func hostingYAML() string {
 	return `services:
@@ -52,19 +57,126 @@ func TestHostingDefaultSynthesis(t *testing.T) {
 	}
 }
 
+func TestHostingAllowsAutoCreatedAcrWithPrivateNetworking(t *testing.T) {
+	for _, test := range []struct{ name, raw, mode string }{
+		{"byo egress", hostingYAML(), NetworkModeByo},
+		{"managed egress", strings.Replace(hostingYAML(),
+			"      agentSubnet: {vnet: "+hostingVNetID+", name: agents}\n", "", 1), NetworkModeManaged},
+	} {
+		for _, preserve := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/preserve=%t", test.name, preserve), func(t *testing.T) {
+				raw := test.raw + `  assistant:
+    host: azure.ai.agent
+    kind: hosted
+`
+				result, err := Synthesize(Input{
+					RawAzureYAML: []byte(raw),
+					ServiceName:  "project", PreserveVarRefs: preserve,
+				})
+				require.NoError(t, err)
+				require.NotNil(t, result.Hosting)
+				assert.Equal(t, hostingClusterID, result.Hosting.ClusterResourceID)
+				assert.Equal(t, true, result.Parameters["includeAcr"])
+				assert.Equal(t, true, result.Parameters["enableNetworkIsolation"])
+				assert.Equal(t, test.mode, result.NetworkMode)
+			})
+		}
+	}
+}
+
+func TestHostingPreservesACRSelection(t *testing.T) {
+	const registryID = "/subscriptions/sub/resourceGroups/shared/providers/" +
+		"Microsoft.ContainerRegistry/registries/registry"
+	for _, test := range []struct {
+		name, agent, mode, expectedError string
+		create, canonical, network       bool
+		remote                           bool
+	}{
+		{name: "project only reuse", expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "project only", create: true, mode: "none"},
+		{name: "create local", agent: "docker: {remoteBuild: false}", create: true, mode: "create"},
+		{name: "reuse local", agent: "docker: {remoteBuild: false}",
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "reuse remote", agent: "docker: {remoteBuild: true}",
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "canonical reuse", agent: "docker: {remoteBuild: false}", canonical: true,
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "private reuse", agent: "docker: {remoteBuild: false}", network: true,
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "private create", agent: "docker: {remoteBuild: false}", network: true, create: true,
+			mode: "create"},
+		{name: "prebuilt", agent: "image: registry/image:v1\n    docker: {imagePassthrough: true}",
+			create: true, mode: "none"},
+		{name: "code", agent: "codeConfiguration: {}", create: true, mode: "none"},
+	} {
+		for _, preserve := range []bool{false, true} {
+			t.Run(test.name+map[bool]string{false: "/deploy", true: "/eject"}[preserve], func(t *testing.T) {
+				raw := hostingYAML()
+				if !test.network {
+					raw = strings.Split(raw, "    network:")[0]
+				}
+				if test.agent != "" {
+					raw += "  agent:\n    host: azure.ai.agent\n    kind: hosted\n    " + test.agent + "\n"
+				}
+				input := Input{
+					RawAzureYAML: []byte(raw), ServiceName: "project", PreserveVarRefs: preserve,
+					ResourceGroupName: "foundry", Env: map[string]string{"AZURE_SUBSCRIPTION_ID": "sub"},
+				}
+				if test.canonical {
+					input.ACRBinding = &ACRBinding{
+						Version: 1, Mode: "reuse-connect", RegistryResourceID: registryID,
+						ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry/" +
+							"providers/Microsoft.CognitiveServices/accounts/aks-account/projects/project",
+						PrincipalID: "principal",
+					}
+				} else if !test.create {
+					input.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = registryID
+				}
+				if test.expectedError == "registry reuse is not supported with agentHosting" {
+					require.ErrorIs(t, ValidateGreenfieldACRSelectionForInput(input, registryID), ErrACRReuseAgentHosting)
+				}
+				result, err := Synthesize(input)
+				if test.expectedError != "" {
+					require.ErrorContains(t, err, test.expectedError)
+					assert.Nil(t, result)
+					return
+				}
+				require.NoError(t, err)
+				require.NotNil(t, result.Hosting)
+				assert.Equal(t, hostingClusterID, result.Hosting.ClusterResourceID)
+				assert.Equal(t, test.mode, result.ACRMode)
+				assert.Equal(t, test.mode != "none", result.Parameters["includeAcr"])
+				if test.mode == "reuse-connect" {
+					expected := registryID
+					if preserve && !test.canonical {
+						expected = "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"
+					}
+					assert.Equal(t, expected, result.Parameters["existingAcrResourceId"])
+				} else {
+					assert.NotContains(t, result.Parameters, "existingAcrResourceId")
+				}
+				remote, err := RequiresRemoteACRBuild(input)
+				require.NoError(t, err)
+				assert.Equal(t, test.remote, remote)
+			})
+		}
+	}
+}
+
 func TestHostingRejectsUnsupportedSelections(t *testing.T) {
-	for _, test := range []struct{ field, value string }{
-		{"storageAccountResourceId", `""`},
-		{"hostingManagementIdentityResourceId", "null"},
-		{"workloadIdentityResourceId", `""`},
-		{"registryResourceId", "/subscriptions/s/resourceGroups/r/providers/Microsoft.ContainerRegistry/registries/r"},
-		{"unknown", "null"},
+	for _, test := range []struct{ field, value, expected string }{
+		{"storageAccountResourceId", "[]", "expected a nonempty resource ID"},
+		{"hostingManagementIdentityResourceId", "[]", "expected a nonempty resource ID"},
+		{"workloadIdentityResourceId", "{}", "expected a nonempty resource ID"},
+		{"registryResourceId", "/subscriptions/s/resourceGroups/r/providers/Microsoft.ContainerRegistry/registries/r",
+			"unsupported property"},
+		{"unknown", "null", "unsupported property"},
 	} {
 		t.Run(test.field, func(t *testing.T) {
 			raw := strings.Replace(hostingYAML(), "    network:",
 				"      "+test.field+": "+test.value+"\n    network:", 1)
 			result, err := Synthesize(Input{RawAzureYAML: []byte(raw), ServiceName: "project"})
-			require.ErrorContains(t, err, "unsupported property")
+			require.ErrorContains(t, err, test.expected)
 			assert.Nil(t, result)
 		})
 	}
@@ -78,7 +190,7 @@ func TestHostingRejectsUnsupportedSelections(t *testing.T) {
 
 func TestHostingValidatesClusterAndNetwork(t *testing.T) {
 	for _, test := range []struct{ name, raw, expected string }{
-		{"empty cluster", strings.Replace(hostingYAML(), hostingClusterID, `""`, 1), "required"},
+		{"empty cluster", strings.Replace(hostingYAML(), hostingClusterID, `""`, 1), "expected a nonempty resource ID"},
 		{"wrong type", strings.Replace(hostingYAML(), hostingClusterID, hostingVNetID, 1), "managedClusters resource ID"},
 		{"credential URL", strings.Replace(hostingYAML(), hostingClusterID,
 			"https://username:secret@host.test/cluster?sig=private#fragment", 1), "managedClusters resource ID"},
@@ -117,13 +229,14 @@ func TestHostingFileReferencesAndEnvironmentResolution(t *testing.T) {
 	result, err = Synthesize(input)
 	require.NoError(t, err)
 	assert.Equal(t, "${CLUSTER_ID}", result.Hosting.ClusterResourceID)
-	config = strings.Replace(config, "    network:", "      storageAccountResourceId: ''\n    network:", 1)
+	config = strings.Replace(config, "    network:", "      hostingManagementIdentityResourceId: ''\n    network:", 1)
 	require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
-	_, err = Synthesize(input)
-	require.ErrorContains(t, err, "storageAccountResourceId: unsupported property")
+	result, err = Synthesize(input)
+	require.NoError(t, err)
+	assert.Empty(t, result.Hosting.HostingManagementIdentityResourceID)
 }
 
-func TestHostingSchemaMatchesRuntimeSelections(t *testing.T) {
+func TestHostingSchemaValidatesResourceSelections(t *testing.T) {
 	raw, err := os.ReadFile(schemaPath)
 	require.NoError(t, err)
 	var schemaDocument any
@@ -135,9 +248,24 @@ func TestHostingSchemaMatchesRuntimeSelections(t *testing.T) {
 	hosting := map[string]any{"clusterResourceId": hostingClusterID}
 	service := map[string]any{"agentHosting": hosting}
 	require.NoError(t, schema.Validate(service))
-	hosting["storageAccountResourceId"] = ""
+	for field, id := range map[string]string{
+		"storageAccountResourceId":            hostingStorageID,
+		"hostingManagementIdentityResourceId": hostingIdentityID + "hosting",
+		"workloadIdentityResourceId":          hostingIdentityID + "workload",
+	} {
+		for _, value := range []any{id, "", nil} {
+			hosting[field] = value
+			require.NoError(t, schema.Validate(service))
+		}
+		for _, invalid := range []any{1, []any{}} {
+			hosting[field] = invalid
+			require.Error(t, schema.Validate(service))
+		}
+		hosting[field] = id
+	}
+	hosting["containerRegistryResourceId"] = "unsupported"
 	require.Error(t, schema.Validate(service))
-	delete(hosting, "storageAccountResourceId")
+	delete(hosting, "containerRegistryResourceId")
 	for _, endpoint := range []string{"", "${EMPTY}"} {
 		service["endpoint"] = endpoint
 		require.NoError(t, schema.Validate(service))
@@ -147,6 +275,27 @@ func TestHostingSchemaMatchesRuntimeSelections(t *testing.T) {
 	}
 	service["endpoint"] = "https://existing.services.ai.azure.com/api/projects/project"
 	require.Error(t, schema.Validate(service))
+}
+
+func TestHostingEmptySupportingSelectionsRetainDefaultCompatibility(t *testing.T) {
+	for _, field := range []string{
+		"storageAccountResourceId", "hostingManagementIdentityResourceId", "workloadIdentityResourceId",
+	} {
+		for _, value := range []string{`""`, "null"} {
+			raw := strings.Replace(hostingYAML(), "    network:",
+				"      "+field+": "+value+"\n    network:", 1)
+			result, err := Synthesize(Input{RawAzureYAML: []byte(raw), ServiceName: "project"})
+			require.NoError(t, err)
+			assert.Empty(t, result.Hosting.StorageAccountResourceID)
+			assert.Empty(t, result.Hosting.HostingManagementIdentityResourceID)
+			assert.Empty(t, result.Hosting.WorkloadIdentityResourceID)
+			parameter, ok := result.Parameters["agentHosting"].(agentHostingParameter)
+			require.True(t, ok)
+			assert.Empty(t, parameter.StorageAccountResourceID)
+			assert.Empty(t, parameter.HostingManagementIdentityResourceID)
+			assert.Empty(t, parameter.WorkloadIdentityResourceID)
+		}
+	}
 }
 
 func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
@@ -304,9 +453,9 @@ func TestHostingGraphBindsDefaultsBeforeAccountCreation(t *testing.T) {
 	var properties string
 	require.NoError(t, json.Unmarshal(account.Properties, &properties))
 	for _, binding := range []string{
-		"resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName'))",
-		"resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('workloadIdentityName'))",
-		"resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))",
+		"variables('hostingIdentityResourceId')",
+		"variables('workloadIdentityResourceId')",
+		"variables('storageAccountResourceId')",
 	} {
 		assert.Contains(t, properties, binding, "account preflight must receive concrete IDs, not module output references")
 	}
@@ -320,6 +469,167 @@ func TestHostingGraphBindsDefaultsBeforeAccountCreation(t *testing.T) {
 	}
 	assert.Contains(t, graph.Parameters, "kubeletObjectId")
 	assert.Contains(t, graph.Parameters, "federatedIdentityRoleDefinitionId")
+	assert.Contains(t, graph.Parameters, "hostingPrincipalId")
+	assert.Contains(t, graph.Parameters, "workloadPrincipalId")
+}
+
+func TestHostingSupportingSelectionsAreIndependent(t *testing.T) {
+	for mask := range 8 {
+		t.Run(fmt.Sprint(mask), func(t *testing.T) {
+			var raw strings.Builder
+			raw.WriteString("services:\n  project:\n    host: azure.ai.project\n    agentHosting:\n" +
+				"      clusterResourceId: " + hostingClusterID + "\n")
+			expected := AgentHostingInput{ClusterResourceID: hostingClusterID}
+			for i, selection := range []struct {
+				field, value string
+				output       *string
+			}{
+				{"storageAccountResourceId", hostingStorageID, &expected.StorageAccountResourceID},
+				{"hostingManagementIdentityResourceId", hostingIdentityID + "hosting",
+					&expected.HostingManagementIdentityResourceID},
+				{"workloadIdentityResourceId", hostingIdentityID + "workload", &expected.WorkloadIdentityResourceID},
+			} {
+				if mask&(1<<i) != 0 {
+					raw.WriteString("      " + selection.field + ": " + selection.value + "\n")
+					*selection.output = selection.value
+				}
+			}
+			result, err := Synthesize(Input{RawAzureYAML: []byte(raw.String()), ServiceName: "project"})
+			require.NoError(t, err)
+			assert.Equal(t, expected, *result.Hosting)
+			assert.Equal(t, false, result.Parameters["includeAcr"])
+			parameter, ok := result.Parameters["agentHosting"].(agentHostingParameter)
+			require.True(t, ok)
+			assert.Equal(t, expected.StorageAccountResourceID, parameter.StorageAccountResourceID)
+			assert.Equal(t, expected.HostingManagementIdentityResourceID, parameter.HostingManagementIdentityResourceID)
+			assert.Equal(t, expected.WorkloadIdentityResourceID, parameter.WorkloadIdentityResourceID)
+		})
+	}
+}
+
+func TestHostingSupportingReferencesValidateLikeInline(t *testing.T) {
+	for _, field := range []string{
+		"storageAccountResourceId", "hostingManagementIdentityResourceId", "workloadIdentityResourceId",
+	} {
+		for _, reference := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/ref=%t", field, reference), func(t *testing.T) {
+				root := t.TempDir()
+				config := "host: azure.ai.project\nagentHosting:\n  clusterResourceId: " + hostingClusterID +
+					"\n  " + field + ": ${SUPPLIED_ID}\n"
+				value := hostingIdentityID + "identity"
+				if field == "storageAccountResourceId" {
+					value = hostingStorageID
+				}
+				raw := "services:\n  project:\n    " + strings.ReplaceAll(config, "\n", "\n    ")
+				if reference {
+					require.NoError(t, os.WriteFile(filepath.Join(root, "project.yaml"), []byte(config), 0o600))
+					raw = "services:\n  project:\n    $ref: project.yaml\n"
+				}
+				input := Input{RawAzureYAML: []byte(raw), ServiceName: "project", ProjectRoot: root,
+					Env: map[string]string{"SUPPLIED_ID": value}}
+				result, err := Synthesize(input)
+				require.NoError(t, err)
+				encoded, err := json.Marshal(result.Parameters["agentHosting"])
+				require.NoError(t, err)
+				assert.Contains(t, string(encoded), value)
+				input.PreserveVarRefs = true
+				result, err = Synthesize(input)
+				require.NoError(t, err)
+				encoded, err = json.Marshal(result.Parameters["agentHosting"])
+				require.NoError(t, err)
+				assert.Contains(t, string(encoded), "${SUPPLIED_ID}")
+				input.PreserveVarRefs = false
+				for _, invalid := range []string{"", hostingClusterID, "https://user:private@host/path?sig=private"} {
+					input.Env["SUPPLIED_ID"] = invalid
+					result, err := Synthesize(input)
+					if invalid == "" {
+						require.NoError(t, err)
+						encoded, err := json.Marshal(result.Parameters["agentHosting"])
+						require.NoError(t, err)
+						assert.Contains(t, string(encoded), `"`+field+`":""`)
+						continue
+					}
+					require.Error(t, err)
+					assert.Contains(t, err.Error(), field)
+					assert.NotContains(t, err.Error(), "private")
+				}
+			})
+		}
+	}
+	raw := strings.Replace(hostingYAML(), "    network:",
+		"      hostingManagementIdentityResourceId: "+hostingIdentityID+"same\n"+
+			"      workloadIdentityResourceId: "+strings.ToUpper(hostingIdentityID+"same")+"\n    network:", 1)
+	_, err := Synthesize(Input{RawAzureYAML: []byte(raw), ServiceName: "project"})
+	require.NoError(t, err)
+}
+
+func TestHostingGraphIndependentlyReferencesSuppliedResources(t *testing.T) {
+	raw, err := ARMTemplate()
+	require.NoError(t, err)
+	var top struct {
+		Resources map[string]struct {
+			Properties struct{ Template json.RawMessage }
+		}
+	}
+	require.NoError(t, json.Unmarshal(raw, &top))
+	resourcesRaw := top.Resources["resources"].Properties.Template
+	var resources struct {
+		Variables map[string]json.RawMessage
+		Resources map[string]json.RawMessage
+	}
+	require.NoError(t, json.Unmarshal(resourcesRaw, &resources))
+	for name, selector := range map[string]string{
+		"hostingIdentityResourceId":  "suppliedHostingIdentityResourceId",
+		"workloadIdentityResourceId": "suppliedWorkloadIdentityResourceId",
+		"storageAccountResourceId":   "suppliedStorageAccountResourceId",
+	} {
+		var expression string
+		require.NoError(t, json.Unmarshal(resources.Variables[name], &expression))
+		assert.Contains(t, expression, "empty(variables('"+selector+"'))")
+		assert.Contains(t, expression, "resourceId(")
+		assert.Contains(t, expression, "variables('"+selector+"')")
+	}
+	var prerequisites struct {
+		Resources []struct {
+			Name           string
+			Condition      string
+			SubscriptionID string
+			ResourceGroup  string
+			Copy           struct{ Name string }
+		}
+	}
+	var deployment struct {
+		Properties struct{ Template json.RawMessage }
+	}
+	require.NoError(t, json.Unmarshal(resources.Resources["prerequisites"], &deployment))
+	require.NoError(t, json.Unmarshal(deployment.Properties.Template, &prerequisites))
+	const federationGrantName = "[if(empty(parameters('workloadIdentityResourceId')), 'byo-federation-access', " +
+		"format('byo-federation-access-{0}', uniqueString(resourceGroup().id, parameters('hostingIdentityName'))))]"
+	const storageGrantName = "[if(empty(parameters('storageAccountResourceId')), 'byo-storage-access', " +
+		"format('byo-storage-access-{0}', uniqueString(resourceGroup().id, parameters('workloadIdentityName'))))]"
+	expected := map[string]string{
+		"[parameters('hostingIdentityName')]":  "[empty(parameters('hostingIdentityResourceId'))]",
+		"[parameters('workloadIdentityName')]": "[empty(parameters('workloadIdentityResourceId'))]",
+		"[parameters('storageAccountName')]":   "[empty(parameters('storageAccountResourceId'))]",
+		"clusterGrants":                        "[empty(parameters('hostingIdentityResourceId'))]",
+		federationGrantName: "[or(empty(parameters('hostingIdentityResourceId')), " +
+			"empty(parameters('workloadIdentityResourceId')))]",
+		storageGrantName: "[or(empty(parameters('workloadIdentityResourceId')), " +
+			"empty(parameters('storageAccountResourceId')))]",
+	}
+	require.Len(t, prerequisites.Resources, len(expected))
+	for _, resource := range prerequisites.Resources {
+		name := resource.Name
+		if resource.Copy.Name != "" {
+			name = resource.Copy.Name
+		}
+		require.Contains(t, expected, name)
+		assert.Equal(t, expected[name], resource.Condition)
+		if name == federationGrantName || name == storageGrantName {
+			assert.NotEmpty(t, resource.SubscriptionID)
+			assert.NotEmpty(t, resource.ResourceGroup)
+		}
+	}
 }
 
 func TestBicepToolVersionAndExplicitOverride(t *testing.T) {

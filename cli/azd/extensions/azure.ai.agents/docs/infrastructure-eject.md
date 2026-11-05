@@ -102,6 +102,11 @@ Eject preserves the registry choice made during init:
 - Existing project connection selected: reference its registry and connection
   without managing either one.
 
+New-project Bicep exports include `modules/container-registry.bicep` and
+`modules/foundry-project.bicep` even when no existing registry is selected.
+Bicep requires all referenced modules to compile; deployment parameters
+determine whether those modules deploy any resources.
+
 The generated files never import or take ownership of an existing registry.
 When registry work is required, the generated file is consistently named
 `modules/container-registry.bicep` or `container-registry.tf`, whether the

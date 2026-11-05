@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/phasetelemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -44,6 +45,9 @@ func projectIdentityChanged(
 	project *resolvedProject,
 ) bool {
 	if project == nil {
+		return false
+	}
+	if project.PreserveDeployed {
 		return false
 	}
 
@@ -162,6 +166,10 @@ func planProjectEnvironment(
 		}
 	case projectModeNew:
 		sets["USE_EXISTING_AI_PROJECT"] = "false"
+		if project.ACRResourceID != "" {
+			sets["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = project.ACRResourceID
+			sets["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
+		}
 		if project.Location != "" {
 			sets["AZURE_LOCATION"] = project.Location
 			sets["AZURE_AI_DEPLOYMENTS_LOCATION"] = project.Location
@@ -171,13 +179,15 @@ func planProjectEnvironment(
 	deleteKeys := map[string]struct{}{}
 	switch mode {
 	case projectModeNew:
-		for _, key := range []string{
-			"AZURE_AI_PROJECT_ID", "AZURE_RESOURCE_GROUP", "AZURE_AI_ACCOUNT_NAME",
-			"AZURE_AI_PROJECT_NAME", "FOUNDRY_PROJECT_ENDPOINT",
-			"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT", "AZURE_OPENAI_ENDPOINT",
-			"AZURE_AI_DEPLOYMENTS_LOCATION",
-		} {
-			deleteKeys[key] = struct{}{}
+		if !project.PreserveDeployed {
+			for _, key := range []string{
+				"AZURE_AI_PROJECT_ID", "AZURE_RESOURCE_GROUP", "AZURE_AI_ACCOUNT_NAME",
+				"AZURE_AI_PROJECT_NAME", "FOUNDRY_PROJECT_ENDPOINT",
+				"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT", "AZURE_OPENAI_ENDPOINT",
+				"AZURE_AI_DEPLOYMENTS_LOCATION",
+			} {
+				deleteKeys[key] = struct{}{}
+			}
 		}
 	case projectModeExistingEndpoint:
 		for _, key := range []string{
@@ -226,6 +236,8 @@ func reconcileProjectEnvironmentWithRollback(
 	project *resolvedProject,
 	projectReplaced bool,
 ) (func() error, map[string]string, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ConfigurationSave)()
+
 	response, err := client.Environment().GetValues(ctx,
 		&azdext.GetEnvironmentRequest{Name: envName})
 	if err != nil {

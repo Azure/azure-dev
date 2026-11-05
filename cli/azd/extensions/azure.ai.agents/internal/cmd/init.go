@@ -41,7 +41,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -51,6 +50,14 @@ import (
 
 type initFlags struct {
 	projectResourceId       string
+	acrResourceID           string
+	acrResourceIDSet        bool
+	acrConflictingFlag      string
+	effectiveACRResourceID  string
+	acrSelectionSource      string
+	acrCapabilityChecked    bool
+	projectsAddHelp         func(context.Context) ([]byte, error)
+	acrTemplateTarget       bool
 	acrConnection           string
 	modelDeployment         string
 	model                   string
@@ -59,6 +66,8 @@ type initFlags struct {
 	templatePointer         string
 	agentName               string
 	agentNameExplicit       bool
+	resolvedAgentName       string
+	resolvedEnvironmentName string
 	description             string
 	src                     string
 	env                     string
@@ -681,18 +690,30 @@ func canReuseExistingAgentConfiguration(
 		!agentDefiningFlagsSet(flags, srcBlocksReuse)
 }
 
-func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+func newInitCommand(
+	extCtx *azdext.ExtensionContext, projectsHelp ...func(context.Context) ([]byte, error),
+) *cobra.Command {
 	flags := &initFlags{}
+	if len(projectsHelp) > 0 {
+		flags.projectsAddHelp = projectsHelp[0]
+	}
 	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-t <azure.yaml pointer>] [--src <source directory>]",
-		Short: fmt.Sprintf("Initialize a new prompt, hosted, or voice agent project. %s", color.YellowString("(Preview)")),
+		Short: "Initialize a new prompt, hosted, or voice agent project.",
 		Long: `Initialize a new prompt, hosted, or voice agent project.
 
 Use 'azd ai agent add <name> --file <path>' to add one file-backed Agent
 service to the current project. Use --template / -t to adopt an azure.yaml
 project document as the project manifest.
+
+Use --acr-resource-id to select an externally owned Azure Container Registry
+for source builds in a new Foundry project. Project setup saves the selection
+for azd up. This requires Bicep, cannot be used with code deploy or a prebuilt
+image, and does not migrate an already deployed project's registry.
+The registry must be in the project's subscription and outside its resource
+group. Cross-subscription reuse is not supported.
 
 Azure.yaml projects:
 When -t points at an azure.yaml project document that declares
@@ -758,10 +779,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if runErr != nil {
 					reportInitOperation(ctx)
 				}
+				printInitACROwnershipSummary(cmd, flags, extCtx.OutputFormat, runErr)
 			}()
 			endValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation)
 			defer func() { endValidation() }()
 			flags.noPrompt = extCtx.NoPrompt
+			noticeWriter := previewNoticeWriter(cmd)
 			flags.modelDeploymentExplicit = cmd.Flags().Changed("model-deployment")
 			flags.modelExplicit = cmd.Flags().Changed("model")
 			if err := validateInitModelSelectors(flags, false); err != nil {
@@ -780,6 +803,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if err := applyPositionalArg(args[0], flags, cmd); err != nil {
 					return err
 				}
+			}
+			flags.acrResourceIDSet = cmd.Flags().Changed("acr-resource-id")
+			if err := validateInitACRInput(cmd, flags); err != nil {
+				return err
 			}
 			if flags.templatePointer == "" && flags.kind != "" {
 				recordInitProperties(ctx, map[string]any{"kind": flags.kind})
@@ -828,7 +855,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 
 			if len(flags.protocols) > 0 {
-				if _, err := selectExplicitHostedProtocols(flags.protocols); err != nil {
+				if _, err := selectExplicitHostedProtocols(flags.protocols, noticeWriter); err != nil {
 					return err
 				}
 			}
@@ -838,6 +865,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
 			}
 			defer azdClient.Close()
+			if err := validateInitACRProject(ctx, azdClient, flags); err != nil {
+				return err
+			}
+			if err := validateInitACRInput(cmd, flags); err != nil {
+				return err
+			}
 			if err := validateInitHarnessFlag(cmd, flags.harness); err != nil {
 				return err
 			}
@@ -863,7 +896,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 				if cached {
 					root := filepath.Dir(flags.templatePointer)
-					if err := requireManifestPreviewFeatures(content, root); err != nil {
+					if err := requireManifestPreviewFeatures(content, root, noticeWriter); err != nil {
 						return err
 					}
 				} else {
@@ -891,10 +924,22 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 						return err
 					}
-					if err := requireStagedPreviewFeatures(stagingDir); err != nil {
+					if err := requireStagedPreviewFeatures(stagingDir, noticeWriter); err != nil {
 						return err
 					}
 					endLoading()
+				}
+				root := explicitTemplateDir
+				if root == "" {
+					root = filepath.Dir(flags.templatePointer)
+				}
+				agentNameOverride, err := adoptedAgentNameOverride(flags)
+				if err != nil {
+					return err
+				}
+				targetDir, _ := adoptTargetDir(flags, valueOrDefault(agentNameOverride, foundryProjectName(content)))
+				if err := validateInitACRManifest(ctx, azdClient, content, root, flags, targetDir); err != nil {
+					return err
 				}
 				cachedExplicitAzureYaml = content
 			}
@@ -959,10 +1004,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			if !userProvidedTemplate {
 				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 				if projectErr == nil && projectResponse.GetProject() != nil {
-					if err := requireBYOAKSProjectFeature(projectResponse.GetProject()); err != nil {
+					if err := requireBYOAKSProjectFeature(projectResponse.GetProject(), noticeWriter); err != nil {
 						return err
 					}
-					if err := requireProjectPreviewFeatures(projectResponse.GetProject()); err != nil {
+					if err := requireProjectPreviewFeatures(projectResponse.GetProject(), noticeWriter); err != nil {
 						return err
 					}
 					if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {
@@ -990,7 +1035,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// Explicit YAML input is authoritative and must be a unified azure.yaml.
 			if userProvidedTemplate {
 				if err := runInitFromAzureYaml(
-					ctx, flags, azdClient, httpClient, cachedExplicitAzureYaml, explicitTemplateDir,
+					ctx, flags, azdClient, httpClient, cachedExplicitAzureYaml, explicitTemplateDir, noticeWriter,
 				); err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
@@ -1068,6 +1113,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					projectTargetDir:  targetDir,
 					createdFolderPath: folderDisplay,
 					sourceValidated:   sourceValidated,
+					noticeWriter:      noticeWriter,
 				}
 				if err := action.Run(ctx); err != nil {
 					return err
@@ -1078,7 +1124,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				targetDir, folderDisplay := fastPathProjectTarget(
 					projectResponse.GetProject(), projectErr, flags.agentName,
 				)
-				if err := runInitVoice(ctx, flags, azdClient, targetDir, folderDisplay); err != nil {
+				if err := runInitVoice(ctx, flags, azdClient, targetDir, folderDisplay, noticeWriter); err != nil {
 					return err
 				}
 				return ejectInfraAfterInit(ctx, infraProvider, azdClient)
@@ -1204,7 +1250,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							flags.src = sanitizeAgentName(resolvedName)
 						}
 
-						if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content, ""); err != nil {
+						if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content, "", noticeWriter); err != nil {
 							if exterrors.IsCancellation(err) {
 								return exterrors.Cancelled("initialization was cancelled")
 							}
@@ -1218,7 +1264,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 						endValidation()
 						if err := runInitFromAzdTemplate(
-							ctx, flags, azdClient, httpClient, selectedTemplate,
+							ctx, flags, azdClient, httpClient, selectedTemplate, noticeWriter,
 						); err != nil {
 							if exterrors.IsCancellation(err) {
 								return exterrors.Cancelled("initialization was cancelled")
@@ -1248,7 +1294,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					targetDir, folderDisplay := fastPathProjectTarget(
 						projectResponse.GetProject(), projectErr, resolvedName,
 					)
-					if err := runInitVoice(ctx, flags, azdClient, targetDir, folderDisplay); err != nil {
+					if err := runInitVoice(ctx, flags, azdClient, targetDir, folderDisplay, noticeWriter); err != nil {
 						if exterrors.IsCancellation(err) {
 							return exterrors.Cancelled("initialization was cancelled")
 						}
@@ -1262,6 +1308,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						flags:           flags,
 						httpClient:      httpClient,
 						sourceValidated: sourceValidated,
+						noticeWriter:    noticeWriter,
 					}
 
 					if err := action.Run(ctx); err != nil {
@@ -1284,6 +1331,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
+	cmd.Flags().StringVar(
+		&flags.acrResourceID, "acr-resource-id", "",
+		"Existing ACR ARM resource ID for source builds in a new Foundry project (same subscription only)",
+	)
 	acrConnectionUsage := "Foundry Azure Container Registry connection name to use for an existing project; " +
 		"incompatible with code deploy"
 	cmd.Flags().StringVar(&flags.acrConnection, "acr-connection", "",
@@ -1573,7 +1624,7 @@ func validateVoiceInitOptions(cmd *cobra.Command, positionalSource bool) error {
 	}
 	for _, name := range []string{
 		"src", "protocol", "deploy-mode", "runtime", "entry-point", "dep-resolution",
-		"image", "acr-connection", "registry-connection", "harness", "instructions",
+		"image", "acr-connection", "acr-resource-id", "registry-connection", "harness", "instructions",
 		"description", "rai-policy", "model-deployment",
 	} {
 		if cmd.Flags().Changed(name) {
@@ -1758,12 +1809,14 @@ func ensureProject(
 	return projectResponse.Project, nil
 }
 
-// deriveEnvName resolves the azd environment name for a new project: the
-// explicit --environment flag when set, otherwise a sanitized name derived from
-// the target folder (or the current directory when targetDir is ".").
+// deriveEnvName reuses an explicit or planned environment name,
+// otherwise deriving one from the target folder.
 func deriveEnvName(flags *initFlags, targetDir string) string {
 	if flags.env != "" {
 		return flags.env
+	}
+	if flags.resolvedEnvironmentName != "" {
+		return flags.resolvedEnvironmentName
 	}
 
 	envBase := targetDir
@@ -2131,6 +2184,7 @@ func (a *InitAction) addVoiceAgentToProject(
 			return projectAuthoringCurrent
 		}(),
 		a.flags.noPrompt,
+		"",
 	); err != nil {
 		return err
 	}

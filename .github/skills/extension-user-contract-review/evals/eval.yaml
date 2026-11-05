@@ -1,4 +1,5 @@
 name: extension-user-contract-review-eval
+# Run from the repository root so program graders can locate review-grader.cjs.
 description: Exercise the parent PR reviewer so contract invocation, triage, and final comments are tested together.
 skill: azd-code-reviewer
 schemaVersion: "1.4"
@@ -28,15 +29,17 @@ graders:
     name: bounded-review
     config:
       max_tool_calls: 60
-  - type: code
+  - type: program
     name: review-shape
     config:
-      language: javascript
-      # SDK output includes progress messages; grade the final host review object.
-      assertions:
-        - "typeof JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body === 'string'"
-        - "Array.isArray(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments)"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.every(c => typeof c.path === 'string' && Number.isInteger(c.line) && typeof c.body === 'string')"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.every(c => c.side === 'RIGHT' || c.side === 'LEFT')"
+      command: node
+      # Extract a complete review object despite leading diagnostics and trailing logs.
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - --self-test
+        - "typeof review.body === 'string'"
+        - "Array.isArray(review.comments)"
+        - "review.comments.every(c => typeof c.path === 'string' && Number.isInteger(c.line) && typeof c.body === 'string')"
+        - "review.comments.every(c => c.side === 'RIGHT' || c.side === 'LEFT')"
 tasks:
   - "tasks/*.yaml"

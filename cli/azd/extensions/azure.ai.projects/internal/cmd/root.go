@@ -18,7 +18,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "project",
 		Use:   "project <command> [options]",
-		Short: "Manage Microsoft Foundry Project resources from your terminal. (Preview)",
+		Short: "Manage Microsoft Foundry Project resources from your terminal.",
 	})
 
 	rootCmd.SilenceUsage = true
@@ -69,6 +69,13 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		).
 		WithValidationCheck(azdext.ValidationCheckRegistration{
 			CheckType: azdext.ValidationCheckTypeProvision,
+			RuleID:    provisioning.ACRRemoteBuildRuleID,
+			Factory: func() azdext.ValidationCheckProvider {
+				return provisioning.NewACRRemoteBuildCheck(azdClient)
+			},
+		}).
+		WithValidationCheck(azdext.ValidationCheckRegistration{
+			CheckType: azdext.ValidationCheckTypeProvision,
 			RuleID:    provisioning.ResourceGroupLocationRuleID,
 			Factory: func() azdext.ValidationCheckProvider {
 				return provisioning.NewResourceGroupLocationCheck(
@@ -76,6 +83,12 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 				)
 			},
 		}).
+		WithProjectEventHandler(
+			"prepackage",
+			func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+				return validateProjectACRBuilds(ctx, azdClient, args)
+			},
+		).
 		WithProjectEventHandler(
 			"preprovision",
 			func(

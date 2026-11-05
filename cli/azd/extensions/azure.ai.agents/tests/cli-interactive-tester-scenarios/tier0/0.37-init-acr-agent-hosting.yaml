@@ -1,0 +1,52 @@
+# Tier 0: reject external source-build registries with agentHosting.
+# Offline only; no Azure authentication or resource creation.
+name: "init-acr-agent-hosting"
+command: "azd ai agent init --src ./src --no-prompt"
+cwd: "~/working/azd-agents-acr-agent-hosting-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZURE_ENV_NAME: "acr-env"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-acr-agent-hosting-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- .azure/acr-env src &&
+      cp -- "{fixtures_dir}/acr-agent-hosting/azure.yaml" ./azure.yaml &&
+      cp -- "{fixtures_dir}/acr-env-preflight/config.json" .azure/config.json &&
+      cp -- "{fixtures_dir}/acr-agent-hosting/environment.env" .azure/acr-env/.env &&
+      cp -r -- "{fixtures_dir}/from-code/." ./src
+    name: "seed a pending external registry with AKS agent hosting"
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Fail without answering any
+    prompt. Do not obtain credentials, contact Azure or Kubernetes, fetch files,
+    install or update extensions, or create cloud resources. Run only the literal
+    init command and read-only inspections; do not repair fixtures or retry.
+  - >-
+    Wait for 'azd ai agent init --src ./src --no-prompt' to exit non-zero.
+    Confirm the error says existing registry reuse is not supported with
+    agentHosting and says to use an azd-created registry or remove agentHosting.
+    The registry selector comes only from the seeded environment, with no active
+    Agent service required to trigger validation.
+  - >-
+    Confirm no authentication, subscription, location, project, registry, or agent
+    wizard prompt appears. An AI capability, credential, network, or cluster
+    lookup error does not satisfy the required unsupported-combination error.
+  - >-
+    Confirm azure.yaml and .azure/acr-env/.env remain byte-for-byte identical to
+    their files in '{fixtures_dir}/acr-agent-hosting', .azure/config.json matches
+    '{fixtures_dir}/acr-env-preflight/config.json', and src matches
+    '{fixtures_dir}/from-code'. No files beyond the seeded tree may be added,
+    including infrastructure, agent configuration, or deployment state.
+  - >-
+    Take a best-effort screenshot of the error; capture failure must not block
+    later product assertions.
+  - >-
+    Report a finding if init succeeds, prompts, authenticates, reaches Azure or
+    Kubernetes, reports another error, changes seeded files, or adds artifacts.
+    Do not work around a failed goal.

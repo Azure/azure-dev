@@ -25,6 +25,7 @@ type Options struct {
 }
 
 type Resolved struct {
+	APIKey           string `json:"-"`
 	Environment      string
 	Endpoint         string
 	APIVersion       string
@@ -39,7 +40,7 @@ type Resolved struct {
 func ProcessValues() map[string]string {
 	values := make(map[string]string)
 	for _, key := range []string{
-		"CU_ENDPOINT", "CU_API_VERSION", "CU_DEFAULT_ANALYZER", "CU_AUTH_MODE", "CU_API_KEY",
+		"CU_ENDPOINT", "CU_API_VERSION", "CU_DEFAULT_ANALYZER", "CU_API_KEY",
 		"AZD_ENVIRONMENT", "AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID", "AZURE_RESOURCE_GROUP",
 	} {
 		if value, present := os.LookupEnv(key); present {
@@ -53,6 +54,9 @@ func resolve(
 	options Options, process, values map[string]string, section []byte, user map[string]json.RawMessage,
 ) (Resolved, error) {
 	var result Resolved
+	if err := validateRuntime(process); err != nil {
+		return result, err
+	}
 	settings := make(map[string]json.RawMessage)
 	if len(section) != 0 {
 		if err := json.Unmarshal(section, &settings); err != nil || settings == nil {
@@ -60,16 +64,14 @@ func resolve(
 		}
 	}
 	for key := range settings {
-		if strings.EqualFold(strings.ReplaceAll(key, "_", ""), "apiKey") {
+		if isAPIKeySetting(key) {
 			return result, persistedKey()
 		}
 	}
 	if _, present := values["CU_API_KEY"]; present {
 		return result, persistedKey()
 	}
-	if mode := values["CU_AUTH_MODE"]; mode != "" && mode != "login" {
-		return result, unsupportedKey()
-	}
+	result.APIKey = process["CU_API_KEY"]
 	var err error
 	result.Sources = make(map[string]string)
 	setting := func(name, flag, flagName, fallback string) (string, error) {
@@ -126,8 +128,10 @@ func resolve(
 	}
 	result.TenantID = first(options.TenantID, process["AZURE_TENANT_ID"], values["AZURE_TENANT_ID"])
 	result.Scope, err = ResolveResourceScope(options.Resource, options.SubscriptionID, options.ResourceGroup, ResourceScope{
-		SubscriptionID: first(process["AZURE_SUBSCRIPTION_ID"], values["AZURE_SUBSCRIPTION_ID"]),
-		ResourceGroup:  first(process["AZURE_RESOURCE_GROUP"], values["AZURE_RESOURCE_GROUP"]),
+		SubscriptionID: first(process["AZURE_SUBSCRIPTION_ID"],
+			ProvisionedValue(values, "SUBSCRIPTION_ID", "AZURE_SUBSCRIPTION_ID")),
+		ResourceGroup: first(process["AZURE_RESOURCE_GROUP"],
+			ProvisionedValue(values, "RESOURCE_GROUP", "AZURE_RESOURCE_GROUP")),
 	})
 	if err != nil {
 		return result, err
@@ -155,13 +159,24 @@ func resolve(
 }
 
 func validateRuntime(process map[string]string) error {
-	if _, present := process["CU_API_KEY"]; present {
-		return unsupportedKey()
-	}
-	if mode := process["CU_AUTH_MODE"]; mode != "" && mode != "login" {
-		return unsupportedKey()
+	if key, present := process["CU_API_KEY"]; present {
+		if key == "" || strings.ContainsFunc(key, func(r rune) bool {
+			return unicode.IsSpace(r) || unicode.IsControl(r)
+		}) {
+			return invalid("invalid_api_key", "Process CU_API_KEY must be nonempty and contain no whitespace or controls.")
+		}
 	}
 	return nil
+}
+
+// ProvisionedValue uses saved deployment metadata before legacy names, including explicitly empty values.
+func ProvisionedValue(values map[string]string, name string, legacy ...string) string {
+	for _, key := range append([]string{"_CU_PROVISIONED_" + name}, legacy...) {
+		if value, present := values[key]; present {
+			return value
+		}
+	}
+	return ""
 }
 
 func first(values ...string) string {
@@ -179,11 +194,11 @@ func invalid(code, message string) error {
 
 func persistedKey() error {
 	return invalid("persisted_api_key",
-		"Remove plaintext CU_API_KEY and cu.apiKey from the selected azd environment; "+
-			"only Entra authentication is supported.")
+		"Remove persisted CU_API_KEY and API-key settings from azd configuration and environments; "+
+			"API keys are supported only through the process CU_API_KEY environment variable.")
 }
 
-func unsupportedKey() error {
-	return invalid("unsupported_authentication",
-		"API-key authentication is not enabled. Remove CU_API_KEY and use CU_AUTH_MODE=login with azd auth login.")
+func isAPIKeySetting(name string) bool {
+	normalized := strings.TrimPrefix(strings.ToLower(name), "cu_")
+	return strings.EqualFold(strings.ReplaceAll(normalized, "_", ""), "apiKey")
 }

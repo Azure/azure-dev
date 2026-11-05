@@ -11,6 +11,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -42,6 +43,8 @@ type InitFromCodeAction struct {
 	createdFolderPath   string
 	serviceNameOverride string
 	sourceValidated     bool
+	acrSubscription     *azdext.AzureScope
+	noticeWriter        io.Writer // preview notices; nil means stdout
 
 	// selectedFoundryProject holds the existing Foundry project resolved during
 	// init (nil when creating a new project). It carries NetworkInjected so
@@ -89,8 +92,20 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	); err != nil {
 		return err
 	}
-	protocols, err := selectHostedProtocols(ctx, a.azdClient, a.flags.noPrompt, a.flags.protocols)
+	protocols, err := selectHostedProtocols(ctx, a.azdClient, a.flags.noPrompt, a.flags.protocols, a.noticeWriter)
 	if err != nil {
+		return err
+	}
+	if err := a.resolveACREnvironment(ctx); err != nil {
+		return err
+	}
+	a.acrSubscription, err = planInitACRSubscription(
+		ctx, a.azdClient, a.flags, valueOrDefault(a.projectTargetDir, "."),
+	)
+	if err != nil {
+		return err
+	}
+	if err := ensureInitACRProjectsCapability(ctx, a.flags, a.azdClient); err != nil {
 		return err
 	}
 	a.projectConfig, err = a.ensureProject(ctx)
@@ -277,6 +292,32 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	return projectResponse.Project, nil
 }
 
+func (a *InitFromCodeAction) resolveACREnvironment(ctx context.Context) error {
+	if !a.flags.acrResourceIDSet || a.flags.env != "" || a.projectTargetDir != "" {
+		return nil
+	}
+	if _, err := azdext.GetProjectDir(); errors.Is(err, azdext.ErrProjectNotFound) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("resolve project before planning the environment: %w", err)
+	}
+	if env := getExistingEnvironment(ctx, "", a.azdClient); env != nil {
+		return nil
+	}
+
+	defaultName := "my-agent"
+	if cwd, err := os.Getwd(); err == nil {
+		defaultName = sanitizeAgentName(filepath.Base(cwd))
+	}
+	agentName, err := resolveInitAgentName(ctx, a.azdClient, a.flags, defaultName)
+	if err != nil {
+		return err
+	}
+	a.flags.resolvedAgentName = agentName
+	a.flags.resolvedEnvironmentName = sanitizeAgentName(agentName + "-dev")
+	return nil
+}
+
 // createDefinitionFromLocalAgent creates a ContainerAgent for local agent code
 // This is used when no manifest pointer is provided and we need to scaffold a new agent
 func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
@@ -290,9 +331,14 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		defaultName = sanitizeAgentName(filepath.Base(cwd))
 	}
 
-	agentName, err := resolveInitAgentName(ctx, a.azdClient, a.flags, defaultName)
-	if err != nil {
-		return nil, err
+	agentName := a.flags.resolvedAgentName
+	if agentName == "" {
+		var err error
+		agentName, err = resolveInitAgentName(ctx, a.azdClient, a.flags, defaultName)
+		if err != nil {
+			return nil, err
+		}
+		a.flags.resolvedAgentName = agentName
 	}
 
 	// Create the azd environment now that we have the agent name
@@ -303,7 +349,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		} else {
 			envName := a.flags.env
 			if envName == "" {
-				envName = sanitizeAgentName(agentName + "-dev")
+				envName = valueOrDefault(
+					a.flags.resolvedEnvironmentName,
+					sanitizeAgentName(agentName+"-dev"),
+				)
 			}
 			env, err := createNewEnvironment(ctx, a.azdClient, envName)
 			if err != nil {
@@ -324,6 +373,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		}
 		a.azureContext = azureContext
 	}
+	if a.acrSubscription != nil {
+		a.azureContext.Scope.SubscriptionId = a.acrSubscription.SubscriptionId
+		a.azureContext.Scope.TenantId = a.acrSubscription.TenantId
+	}
 	// TODO: Prompt user for agent kind
 	agentKind := agent_yaml.AgentKindHosted
 
@@ -335,7 +388,8 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 	}
 	showCodeDeploy := supportsCodeDeploy(srcDir)
 	requestedDeployMode := a.flags.deployMode
-	if strings.TrimSpace(a.flags.image) != "" {
+	if strings.TrimSpace(a.flags.image) != "" ||
+		a.flags.acrResourceIDSet || a.flags.effectiveACRResourceID != "" {
 		requestedDeployMode = "container"
 	}
 	deployMode, err := promptDeployMode(
@@ -350,7 +404,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		return nil, err
 	}
 
-	if a.flags.projectResourceId == "" {
+	if a.flags.projectResourceId == "" && initACRResourceID(a.flags) == "" {
 		projectResourceId, err := getEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_PROJECT_ID")
 		if err != nil {
 			return nil, fmt.Errorf("failed to read AZURE_AI_PROJECT_ID: %w", err)
@@ -432,10 +486,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 			return nil, err
 		}
 		deferredAzureContext = true
-	} else if a.flags.noPrompt {
+	} else if a.flags.noPrompt || initACRResourceID(a.flags) != "" {
 		newCred, err := configureNewProjectForNoPrompt(
 			ctx, a.azdClient, a.environment.Name, a.azureContext,
-			"Select an Azure subscription to look up available models and provision your Foundry project resources.",
+			initACRResourceID(a.flags),
 		)
 		if err != nil {
 			return nil, err
@@ -1017,6 +1071,7 @@ func (a *InitFromCodeAction) addToProject(
 			return projectAuthoringCurrent
 		}(),
 		a.flags.noPrompt,
+		initACRResourceID(a.flags),
 	); err != nil {
 		return err
 	}
@@ -1125,10 +1180,10 @@ func protocolNames(voiceEnabled, a2aEnabled bool) []string {
 }
 
 func selectHostedProtocols(
-	ctx context.Context, client *azdext.AzdClient, noPrompt bool, explicit []string,
+	ctx context.Context, client *azdext.AzdClient, noPrompt bool, explicit []string, writer io.Writer,
 ) ([]agent_yaml.ProtocolVersionRecord, error) {
 	if len(explicit) > 0 {
-		return selectExplicitHostedProtocols(explicit)
+		return selectExplicitHostedProtocols(explicit, writer)
 	}
 	if noPrompt {
 		return promptProtocols(ctx, nil, true, nil, false, false)
@@ -1141,28 +1196,43 @@ func selectHostedProtocols(
 	if err != nil {
 		return nil, err
 	}
-	return promptProtocols(ctx, client.Prompt(), false, nil, voiceEnabled, a2aEnabled)
+	records, err := promptProtocols(ctx, client.Prompt(), false, nil, voiceEnabled, a2aEnabled)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireProtocolPreviewFeatures(records, writer); err != nil {
+		return nil, err
+	}
+	return records, nil
 }
 
 // selectExplicitHostedProtocols validates parsed selections before authentication or writes.
-func selectExplicitHostedProtocols(explicit []string) ([]agent_yaml.ProtocolVersionRecord, error) {
+func selectExplicitHostedProtocols(explicit []string, writer io.Writer) ([]agent_yaml.ProtocolVersionRecord, error) {
 	records, err := validateExplicitProtocols(explicit)
 	if err != nil {
 		return nil, err
 	}
+	if err := requireProtocolPreviewFeatures(records, writer); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+// requireProtocolPreviewFeatures announces the preview switch for each selected preview protocol.
+func requireProtocolPreviewFeatures(records []agent_yaml.ProtocolVersionRecord, writer io.Writer) error {
 	for _, record := range records {
 		switch record.Protocol {
 		case "invocations_ws":
-			if err := featureflags.Require(featureflags.Voice); err != nil {
-				return nil, err
+			if err := featureflags.RequireWithWriter(featureflags.Voice, writer); err != nil {
+				return err
 			}
 		case "a2a":
-			if err := featureflags.Require(featureflags.A2A); err != nil {
-				return nil, err
+			if err := featureflags.RequireWithWriter(featureflags.A2A, writer); err != nil {
+				return err
 			}
 		}
 	}
-	return records, nil
+	return nil
 }
 
 // promptProtocols asks the user which protocols their agent supports.

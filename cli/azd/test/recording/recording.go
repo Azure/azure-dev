@@ -28,8 +28,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/test/cmdrecord"
 	"github.com/braydonk/yaml"
-	"gopkg.in/dnaeon/go-vcr.v3/cassette"
-	"gopkg.in/dnaeon/go-vcr.v3/recorder"
+	"gopkg.in/dnaeon/go-vcr.v4/pkg/cassette"
+	"gopkg.in/dnaeon/go-vcr.v4/pkg/recorder"
 )
 
 type recordOptions struct {
@@ -157,42 +157,12 @@ func Start(t *testing.T, opts ...Options) *Session {
 		Level: level,
 	}))
 
-	recorderOptions := &recorder.Options{
-		CassetteName:       name,
-		Mode:               opt.mode,
-		SkipRequestLatency: true,
+	recorderOptions := []recorder.Option{
+		recorder.WithMode(opt.mode),
+		recorder.WithSkipRequestLatency(true),
 	}
-
-	// This also automatically loads the recording.
-	vcr, err := recorder.NewWithOptions(recorderOptions)
-	if errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("failed to load recordings: %v: %s",
-			err,
-			"to record this test, re-run the test with AZURE_RECORD_MODE='record'")
-	} else if err != nil {
-		t.Fatalf("failed to load recordings: %v", err)
-	}
-
+	var vcr *recorder.Recorder
 	session := &Session{}
-	if opt.mode == recorder.ModeReplayOnly {
-		session.Playback = true
-	} else if opt.mode == recorder.ModeRecordOnce && !vcr.IsNewCassette() {
-		session.Playback = true
-	}
-
-	if session.Playback {
-		variables, err := loadVariables(name + ".yaml")
-		if err != nil {
-			t.Fatalf("failed to load variables: %v", err)
-		}
-		session.Variables = variables
-		if session.Variables == nil { // prefer empty map over nil
-			session.Variables = map[string]string{}
-		}
-	} else {
-		session.Variables = map[string]string{}
-		session.Variables[TimeKey] = fmt.Sprintf("%d", time.Now().Unix())
-	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 
@@ -201,9 +171,9 @@ func Start(t *testing.T, opts ...Options) *Session {
 		transport: transport,
 	})
 
-	vcr.SetRealTransport(resilientTransport)
+	recorderOptions = append(recorderOptions, recorder.WithRealTransport(resilientTransport))
 
-	vcr.SetMatcher(func(r *http.Request, i cassette.Request) bool {
+	recorderOptions = append(recorderOptions, recorder.WithMatcher(func(r *http.Request, i cassette.Request) bool {
 		// Ignore query parameter 's=...' in containerappOperationResults
 		if strings.Contains(r.URL.Path, "/providers/Microsoft.App/") &&
 			strings.Contains(r.URL.Path, "/containerappOperationResults") {
@@ -237,19 +207,20 @@ func Start(t *testing.T, opts ...Options) *Session {
 			}
 		}
 
-		return cassette.DefaultMatcher(r, i)
-	})
+		// Existing cassettes use v3's method/URL matching and sanitize transient request metadata.
+		return r.Method == i.Method && r.URL.String() == i.URL
+	}))
 
 	// Fast-forward polling operations
 	discarder := httpPollDiscarder{}
-	vcr.AddHook(discarder.BeforeSave, recorder.BeforeSaveHook)
+	recorderOptions = append(recorderOptions, recorder.WithHook(discarder.BeforeSave, recorder.BeforeSaveHook))
 
 	// Trim GET subscriptions-level deployment responses
-	vcr.AddHook(func(i *cassette.Interaction) error {
+	recorderOptions = append(recorderOptions, recorder.WithHook(func(i *cassette.Interaction) error {
 		return TrimSubscriptionsDeployment(i, session.Variables)
-	}, recorder.BeforeSaveHook)
+	}, recorder.BeforeSaveHook))
 
-	vcr.AddHook(func(i *cassette.Interaction) error {
+	recorderOptions = append(recorderOptions, recorder.WithHook(func(i *cassette.Interaction) error {
 		if opt.hostMapping == nil {
 			return nil
 		}
@@ -264,10 +235,10 @@ func Start(t *testing.T, opts ...Options) *Session {
 		}
 
 		return nil
-	}, recorder.AfterCaptureHook)
+	}, recorder.AfterCaptureHook))
 
 	// Sanitize
-	vcr.AddHook(func(i *cassette.Interaction) error {
+	recorderOptions = append(recorderOptions, recorder.WithHook(func(i *cassette.Interaction) error {
 		i.Request.Headers.Set("Authorization", "SANITIZED")
 
 		err := sanitizeContainerAppTokenExchange(i)
@@ -301,26 +272,26 @@ func Start(t *testing.T, opts ...Options) *Session {
 		}
 
 		return nil
-	}, recorder.BeforeSaveHook)
+	}, recorder.BeforeSaveHook))
 
-	vcr.AddHook(func(i *cassette.Interaction) error {
+	recorderOptions = append(recorderOptions, recorder.WithHook(func(i *cassette.Interaction) error {
 		if i.DiscardOnSave {
 			log.Debug("recorderProxy: discarded response", "url", i.Request.URL, "status", i.Response.Code)
 		}
 		return nil
-	}, recorder.BeforeSaveHook)
+	}, recorder.BeforeSaveHook))
 
-	vcr.AddHook(func(i *cassette.Interaction) error {
+	recorderOptions = append(recorderOptions, recorder.WithHook(func(i *cassette.Interaction) error {
 		if vcr.IsRecording() {
 			log.Debug("recorderProxy: recording response", "url", i.Request.URL, "status", i.Response.Code)
 		} else {
 			log.Debug("recorderProxy: replaying response", "url", i.Request.URL, "status", i.Response.Code)
 		}
 		return nil
-	}, recorder.BeforeResponseReplayHook)
+	}, recorder.BeforeResponseReplayHook))
 
 	// Add passthrough for services that return personal data and need not be recorded
-	vcr.AddPassthrough(func(req *http.Request) bool {
+	recorderOptions = append(recorderOptions, recorder.WithPassthrough(func(req *http.Request) bool {
 		return strings.Contains(req.URL.Host, "login.microsoftonline.com") ||
 			strings.Contains(req.URL.Host, "graph.microsoft.com") ||
 			strings.Contains(req.URL.Host, "applicationinsights.azure.com") ||
@@ -337,7 +308,31 @@ func Start(t *testing.T, opts ...Options) *Session {
 			// In playback mode, RemoteCredential calls this server for tokens.
 			(strings.Contains(req.URL.Host, "127.0.0.1") &&
 				req.URL.Path == "/token")
-	})
+	}))
+
+	// Configure all hooks before loading the cassette; callbacks run after initialization.
+	vcr, err := recorder.New(name, recorderOptions...)
+	if errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed to load recordings: %v: %s",
+			err,
+			"to record this test, re-run the test with AZURE_RECORD_MODE='record'")
+	} else if err != nil {
+		t.Fatalf("failed to load recordings: %v", err)
+	}
+	session.Playback = opt.mode == recorder.ModeReplayOnly ||
+		(opt.mode == recorder.ModeRecordOnce && !vcr.IsNewCassette())
+	if session.Playback {
+		variables, err := loadVariables(name + ".yaml")
+		if err != nil {
+			t.Fatalf("failed to load variables: %v", err)
+		}
+		session.Variables = variables
+		if session.Variables == nil {
+			session.Variables = map[string]string{}
+		}
+	} else {
+		session.Variables = map[string]string{TimeKey: fmt.Sprintf("%d", time.Now().Unix())}
+	}
 
 	proxy := &connectHandler{
 		Log: log,
@@ -402,7 +397,7 @@ func Start(t *testing.T, opts ...Options) *Session {
 			}
 
 			if shouldSave {
-				err = saveVariables(recorderOptions.CassetteName+".yaml", session.Variables)
+				err = saveVariables(name+".yaml", session.Variables)
 				if err != nil {
 					t.Fatalf("failed to save variables: %v", err)
 				}

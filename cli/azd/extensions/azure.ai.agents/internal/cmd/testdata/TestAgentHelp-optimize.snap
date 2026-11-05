@@ -1,9 +1,12 @@
-Evaluate and optimize AI agents — baseline scoring and iterative improvement.
+Optimize AI agents and prompts, or learn skills from agent traces.
 
 When run without a subcommand, submits an optimization job.
 Use --eval to reuse an agent-targeted evaluation from an azure.ai.eval service,
 or --eval-config to select an evaluation configuration file.
 Use --config for an optimization request file (YAML or JSON).
+Skill optimization requires --config with type skill_optimization and a trace window.
+It uses recorded feedback without requiring a dataset or a new evaluation run.
+Generated skill versions are not automatically attached or deployed to an agent.
 Omitted optional optimization settings use service defaults.
 Legacy agent eval.yaml files are not supported.
 
@@ -12,11 +15,12 @@ Usage
   azd ai agent optimize [command]
 
 Available Commands
-  apply  : Apply optimized candidate configuration locally to your azd project.
-  cancel : Cancel a running optimization job.
-  deploy : Deploy a winning optimization candidate as a new agent version via the API.
-  list   : List recent optimization runs.
-  status : Check the status of an optimization job.
+  apply    : Apply optimized candidate configuration locally to your azd project.
+  cancel   : Cancel a running optimization job.
+  deploy   : Deploy a winning optimization candidate as a new agent version via the API.
+  download : Download a published optimization candidate file.
+  list     : List recent optimization runs.
+  status   : Check the status of an optimization job.
 
 Flags
   -a, --agent string            : Agent service name from azure.yaml, or Foundry agent name outside a project
@@ -25,7 +29,7 @@ Flags
       --endpoint string         : Optimization service endpoint (for local dev)
       --eval string             : Evaluation name to reuse from the selected evaluation configuration
       --eval-config string      : Evaluation configuration from 'azd ai eval init'
-  -m, --eval-model string       : Model for evaluation (required)
+  -m, --eval-model string       : Model for evaluation-driven agent optimization
       --evaluator stringArray   : Built-in or custom evaluator name (repeatable; required when not set in config)
       --max-candidates int      : Maximum number of optimization candidates to generate (must be >= 1; service default when omitted)
       --no-wait                 : Submit job and return immediately without waiting for completion
@@ -50,6 +54,9 @@ Examples
 
   Full control via config file
     azd ai agent optimize --config spec.yaml
+
+  Learn skills from traces using a skill_optimization request
+    azd ai agent optimize --config skill-optimize.yaml
 
   Reuse an evaluation from the new evaluation workflow
     azd ai agent optimize --eval quality --optimize-model optimizer-deployment

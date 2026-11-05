@@ -1,0 +1,31 @@
+id: grouped-existing-thread
+name: Do not split an existing command spec request into duplicate input threads
+tags: [negative, deduplication, command, spec-tracking]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Optimization downloads".
+    Complete changed-file list:
+    cli/azd/extensions/example/internal/cmd/optimize.go
+    cli/azd/extensions/example/internal/cmd/download.go
+    Base has no download command. Head registers newDownloadCommand under optimize at optimize.go RIGHT line 88.
+    The constructor in download.go exposes "azd ai agent optimize download <operation-id>" at RIGHT line 35,
+    with --candidate at 96, --file/-f at 97, and --target-path/-t at 98. No other inputs or aliases are added.
+    Tests, snapshots, documentation, and handlers correctly implement these inputs.
+    Complete review history: an earlier unresolved, unanswered thread at download.go original line 35 says:
+    "[low] User contract change: adds optimize download <operation-id> with required --candidate and --file,
+    optional --target-path, no-overwrite behavior, and JSON results. Please reply in this thread with a link to
+    the approved experiences spec pull request that covers this contract change."
+    It contains <!-- extension-user-contract-changes-reviewer -->.
+    That comment is now outdated after a merge moved lines. The public command and all named inputs are identical
+    to the reviewed revision. Later commits only escape terminal text and update help; no structural changes.
+    This round can anchor the command registration in optimize.go rather than its constructor.
+    No other threads or spec replies exist.
+graders:
+  - type: program
+    name: grouped-thread-covers-all-named-items
+    config:
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 0"
+        - "/complete.*2 files? inspected; 0 new contract comments; 1 existing threads?/.test(review.body)"

@@ -86,6 +86,85 @@ func TestHostingAllowsAutoCreatedAcrWithPrivateNetworking(t *testing.T) {
 	}
 }
 
+func TestHostingPreservesACRSelection(t *testing.T) {
+	const registryID = "/subscriptions/sub/resourceGroups/shared/providers/" +
+		"Microsoft.ContainerRegistry/registries/registry"
+	for _, test := range []struct {
+		name, agent, mode, expectedError string
+		create, canonical, network       bool
+		remote                           bool
+	}{
+		{name: "project only reuse", expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "project only", create: true, mode: "none"},
+		{name: "create local", agent: "docker: {remoteBuild: false}", create: true, mode: "create"},
+		{name: "reuse local", agent: "docker: {remoteBuild: false}",
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "reuse remote", agent: "docker: {remoteBuild: true}",
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "canonical reuse", agent: "docker: {remoteBuild: false}", canonical: true,
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "private reuse", agent: "docker: {remoteBuild: false}", network: true,
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "private create", agent: "docker: {remoteBuild: false}", network: true, create: true,
+			mode: "create"},
+		{name: "prebuilt", agent: "image: registry/image:v1\n    docker: {imagePassthrough: true}",
+			create: true, mode: "none"},
+		{name: "code", agent: "codeConfiguration: {}", create: true, mode: "none"},
+	} {
+		for _, preserve := range []bool{false, true} {
+			t.Run(test.name+map[bool]string{false: "/deploy", true: "/eject"}[preserve], func(t *testing.T) {
+				raw := hostingYAML()
+				if !test.network {
+					raw = strings.Split(raw, "    network:")[0]
+				}
+				if test.agent != "" {
+					raw += "  agent:\n    host: azure.ai.agent\n    kind: hosted\n    " + test.agent + "\n"
+				}
+				input := Input{
+					RawAzureYAML: []byte(raw), ServiceName: "project", PreserveVarRefs: preserve,
+					ResourceGroupName: "foundry", Env: map[string]string{"AZURE_SUBSCRIPTION_ID": "sub"},
+				}
+				if test.canonical {
+					input.ACRBinding = &ACRBinding{
+						Version: 1, Mode: "reuse-connect", RegistryResourceID: registryID,
+						ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry/" +
+							"providers/Microsoft.CognitiveServices/accounts/aks-account/projects/project",
+						PrincipalID: "principal",
+					}
+				} else if !test.create {
+					input.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = registryID
+				}
+				if test.expectedError == "registry reuse is not supported with agentHosting" {
+					require.ErrorIs(t, ValidateGreenfieldACRSelectionForInput(input, registryID), ErrACRReuseAgentHosting)
+				}
+				result, err := Synthesize(input)
+				if test.expectedError != "" {
+					require.ErrorContains(t, err, test.expectedError)
+					assert.Nil(t, result)
+					return
+				}
+				require.NoError(t, err)
+				require.NotNil(t, result.Hosting)
+				assert.Equal(t, hostingClusterID, result.Hosting.ClusterResourceID)
+				assert.Equal(t, test.mode, result.ACRMode)
+				assert.Equal(t, test.mode != "none", result.Parameters["includeAcr"])
+				if test.mode == "reuse-connect" {
+					expected := registryID
+					if preserve && !test.canonical {
+						expected = "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"
+					}
+					assert.Equal(t, expected, result.Parameters["existingAcrResourceId"])
+				} else {
+					assert.NotContains(t, result.Parameters, "existingAcrResourceId")
+				}
+				remote, err := RequiresRemoteACRBuild(input)
+				require.NoError(t, err)
+				assert.Equal(t, test.remote, remote)
+			})
+		}
+	}
+}
+
 func TestHostingRejectsUnsupportedSelections(t *testing.T) {
 	for _, test := range []struct{ field, value, expected string }{
 		{"storageAccountResourceId", "[]", "expected a nonempty resource ID"},

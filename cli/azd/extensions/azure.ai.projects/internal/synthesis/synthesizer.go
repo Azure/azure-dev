@@ -69,6 +69,10 @@ type Input struct {
 	// provision path), ${VAR} is resolved here and a missing variable fails.
 	PreserveVarRefs bool
 
+	// DeferACRNetworkValidation leaves registry/network policy checks
+	// to the caller after on-disk deployment inputs are resolved.
+	DeferACRNetworkValidation bool
+
 	// ProjectRoot is the directory holding azure.yaml. When set, $ref file
 	// includes in the service entry (and its deployment items) are resolved
 	// against it before synthesis, so refs become the actual content rather
@@ -131,20 +135,29 @@ type codeConfigBlock struct {
 // agentBlock is the subset of an agent entry we inspect — both the legacy inline
 // agents[] shape and the unified azure.ai.agent service shape.
 type agentBlock struct {
-	Name              string           `yaml:"name,omitempty"`
-	Kind              string           `yaml:"kind,omitempty"`
-	Image             string           `yaml:"image,omitempty"`
-	CodeConfiguration *codeConfigBlock `yaml:"codeConfiguration,omitempty"`
+	Name                 string           `yaml:"name,omitempty"`
+	Kind                 string           `yaml:"kind,omitempty"`
+	Image                string           `yaml:"image,omitempty"`
+	RegistryConnectionID string           `yaml:"registryConnectionId,omitempty"`
+	CodeConfiguration    *codeConfigBlock `yaml:"codeConfiguration,omitempty"`
+	Docker               dockerBuildBlock `yaml:"docker,omitempty"`
+}
+
+type dockerBuildBlock struct {
+	RemoteBuild      bool `yaml:"remoteBuild,omitempty"`
+	ImagePassthrough bool `yaml:"imagePassthrough,omitempty"`
 }
 
 // serviceBlock is the subset of a service entry we inspect for cross-service provisioning inputs.
 type serviceBlock struct {
-	Host              string           `yaml:"host"`
-	Kind              string           `yaml:"kind,omitempty"`
-	Image             string           `yaml:"image,omitempty"`
-	CodeConfiguration *codeConfigBlock `yaml:"codeConfiguration,omitempty"`
-	Config            *agentBlock      `yaml:"config,omitempty"`
-	Agents            []agentBlock     `yaml:"agents,omitempty"`
+	Host                 string            `yaml:"host"`
+	Kind                 string            `yaml:"kind,omitempty"`
+	Image                string            `yaml:"image,omitempty"`
+	RegistryConnectionID string            `yaml:"registryConnectionId,omitempty"`
+	CodeConfiguration    *codeConfigBlock  `yaml:"codeConfiguration,omitempty"`
+	Config               *agentBlock       `yaml:"config,omitempty"`
+	Agents               []agentBlock      `yaml:"agents,omitempty"`
+	Docker               *dockerBuildBlock `yaml:"docker,omitempty"`
 }
 
 // projectService is the subset of a host: azure.ai.project service body the synthesizer reads.
@@ -230,7 +243,6 @@ func Synthesize(in Input) (*Result, error) {
 		}
 		return nil, ErrEndpointBrownfield
 	}
-
 	includeAcr, err := deriveIncludeAcr(
 		root.Services,
 		svc,
@@ -239,6 +251,28 @@ func Synthesize(in Input) (*Result, error) {
 	)
 	if err != nil {
 		return nil, err
+	}
+	mode, err := GreenfieldACRMode(in)
+	if err != nil {
+		return nil, err
+	}
+	var existingAcrResourceID string
+	switch mode {
+	case "create", "none":
+	case "reuse-connect":
+		existingAcrResourceID, err = existingContainerRegistry(in)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("synthesis: AZD_FOUNDRY_ACR_MODE has unsupported greenfield value %q", mode)
+	}
+	pendingRegistry := !includeAcr && mode == "reuse-connect" && in.PreserveVarRefs
+	if !includeAcr {
+		mode = "none"
+		if !pendingRegistry {
+			existingAcrResourceID = ""
+		}
 	}
 
 	deployments := svc.Deployments
@@ -254,15 +288,27 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if includeAcr && netMode != NetworkModeNone && hosting == nil {
-		return nil, errors.New(
-			"synthesis: private networking does not support an auto-created Azure Container Registry; specify an image instead",
-		)
+	if !in.DeferACRNetworkValidation {
+		if err := ValidateACRNetworking(
+			includeAcr, existingAcrResourceID, netMode != NetworkModeNone, hosting != nil,
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	params := map[string]any{
 		"deployments": deployments,
 		"includeAcr":  includeAcr,
+	}
+	if pendingRegistry {
+		// Leave includeAcr demand-driven until provision.
+		delete(params, "includeAcr")
+	}
+	if existingAcrResourceID != "" {
+		params["existingAcrResourceId"] = existingAcrResourceID
+		if in.PreserveVarRefs && in.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] != "" {
+			params["existingAcrResourceId"] = "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"
+		}
 	}
 	maps.Copy(params, netParams)
 	if hosting != nil {
@@ -278,6 +324,7 @@ func Synthesize(in Input) (*Result, error) {
 	return &Result{
 		Parameters:  params,
 		NetworkMode: netMode,
+		ACRMode:     mode,
 		Hosting:     hosting,
 	}, nil
 }
@@ -359,6 +406,21 @@ var containerRegistryIDPattern = regexp.MustCompile(
 	`(?i)^/subscriptions/[^/\s?#\\%]+/resourceGroups/[^/\s?#\\%]+/providers/` +
 		`Microsoft\.ContainerRegistry/registries/[a-z0-9]+$`,
 )
+
+func existingContainerRegistry(in Input) (string, error) {
+	_, id, err := ResolveGreenfieldACRSelection(in)
+	if err != nil {
+		return "", err
+	}
+	if id == "" {
+		return "", errors.New("synthesis: AZD_FOUNDRY_ACR_MODE reuse-connect requires " +
+			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID; set it to an external registry ARM ID or use create mode")
+	}
+	if err := ValidateACRSelectorForInput(in, id); err != nil {
+		return "", fmt.Errorf("synthesis: %w", err)
+	}
+	return id, nil
+}
 
 // SynthesizeExistingProject derives parameters for editable infrastructure that
 // augments an existing Foundry project without taking ownership of it.
@@ -693,83 +755,23 @@ func validateAgentRootRefCoreFields(
 	return nil
 }
 
-// deriveIncludeAcr reports whether provisioning should create an ACR. An ACR is
+// deriveIncludeAcr reports whether provisioning needs an ACR. An ACR is
 // needed when any agent is a hosted, build-from-source agent: azd builds its
 // image and pushes it to the registry. Agents live on sibling azure.ai.agent
 // services in the split shape, or under agents[] in the legacy inline shape;
 // both are scanned. The decision mirrors the deploy-time contract:
 //
 //   - codeConfiguration present -> code (ZIP) deploy, no ACR
-//   - image present             -> pre-built image (BYO registry), no ACR
-//   - otherwise (hosted)        -> container build from source, needs ACR
-//
-// Keying on image/codeConfiguration rather than the optional docker: block is
-// deliberate: docker: is not in the agent schema and is dropped by omitempty
-// when remoteBuild is false, so it is not a reliable build signal.
+//   - explicit pre-built image selection -> no ACR
+//   - otherwise (hosted) -> source build, even with image set
 func deriveIncludeAcr(
 	services map[string]yaml.Node,
 	svc projectService,
 	projectRoot string,
 	env map[string]string,
 ) (bool, error) {
-	includeAcr := slices.ContainsFunc(svc.Agents, agentNeedsAcr)
-	lookup := projectConditionLookup(env)
-	for _, serviceName := range slices.Sorted(maps.Keys(services)) {
-		node := services[serviceName]
-		var selector struct {
-			Host string `yaml:"host"`
-			Ref  string `yaml:"$ref"`
-		}
-		if err := node.Decode(&selector); err != nil {
-			continue
-		}
-		// Other service targets own their payloads, refs and conditions.
-		if selector.Host != "azure.ai.agent" && (selector.Host != "" || selector.Ref == "") {
-			continue
-		}
-		enabled, err := serviceNodeEnabled(node, lookup)
-		if err != nil {
-			return false, fmt.Errorf("services.%s.condition: %w", serviceName, err)
-		}
-		if !enabled {
-			continue
-		}
-		if err := rejectBundledDeclarations(node, serviceName, projectRoot != ""); err != nil {
-			return false, err
-		}
-		node, matches, err := serviceForHost(node, projectRoot, serviceName, "azure.ai.agent")
-		if err != nil {
-			return false, err
-		}
-		if !matches {
-			continue
-		}
-		if err := rejectBundledDeclarations(node, serviceName, false); err != nil {
-			return false, err
-		}
-		var service serviceBlock
-		if err := node.Decode(&service); err != nil {
-			return false, fmt.Errorf("decode service %q: %w", serviceName, err)
-		}
-		agent := agentBlock{
-			Kind:              service.Kind,
-			Image:             service.Image,
-			CodeConfiguration: service.CodeConfiguration,
-		}
-		if service.Config != nil {
-			if agent.Kind == "" {
-				agent.Kind = service.Config.Kind
-			}
-			if agent.Image == "" {
-				agent.Image = service.Config.Image
-			}
-			if agent.CodeConfiguration == nil {
-				agent.CodeConfiguration = service.Config.CodeConfiguration
-			}
-		}
-		includeAcr = includeAcr || agentNeedsAcr(agent)
-	}
-	return includeAcr, nil
+	_, needed, err := deriveACRRequirements(services, svc, projectRoot, env)
+	return needed, err
 }
 
 // RequiresACR reports source-build demand using synthesis rules.
@@ -781,6 +783,20 @@ func RequiresACR(in Input) (bool, error) {
 // ACRRequirements resolves enabled agents, including inline and $ref.
 // A project-only manifest has no agents and permits setup intent.
 func ACRRequirements(in Input) (bool, bool, error) {
+	return acrRequirements(in, func(agent agentBlock) bool {
+		return agentNeedsAcr(agent, in.Env)
+	})
+}
+
+// RequiresRemoteACRBuild reports enabled remote source builds.
+func RequiresRemoteACRBuild(in Input) (bool, error) {
+	_, needed, err := acrRequirements(in, func(agent agentBlock) bool {
+		return agentNeedsAcr(agent, in.Env) && agent.Docker.RemoteBuild
+	})
+	return needed, err
+}
+
+func acrRequirements(in Input, needsACR func(agentBlock) bool) (bool, bool, error) {
 	root, projects, err := acrProjectServices(in)
 	if err != nil {
 		return false, false, err
@@ -789,7 +805,7 @@ func ACRRequirements(in Input) (bool, bool, error) {
 	for _, svc := range projects {
 		combined.Agents = append(combined.Agents, svc.Agents...)
 	}
-	return deriveACRRequirements(root.Services, combined, in.ProjectRoot, in.Env)
+	return deriveAgentBuildRequirements(root.Services, combined, in.ProjectRoot, in.Env, needsACR)
 }
 
 func acrProjectServices(in Input) (projectFile, []projectService, error) {
@@ -851,9 +867,35 @@ func deriveACRRequirements(
 	projectRoot string,
 	env map[string]string,
 ) (bool, bool, error) {
+	return deriveAgentBuildRequirements(services, svc, projectRoot, env, func(agent agentBlock) bool {
+		return agentNeedsAcr(agent, env)
+	})
+}
+
+func deriveAgentBuildRequirements(
+	services map[string]yaml.Node,
+	svc projectService,
+	projectRoot string,
+	env map[string]string,
+	needsACR func(agentBlock) bool,
+) (bool, bool, error) {
 	hasAgents := len(svc.Agents) > 0
-	includeAcr := slices.ContainsFunc(svc.Agents, agentNeedsAcr)
+	includeAcr := false
 	lookup := projectConditionLookup(env)
+	checkAgent := func(agent agentBlock) error {
+		image, err := foundry.ExpandEnv(agent.Image, lookup)
+		if err != nil {
+			return fmt.Errorf("expand agent image: %w", err)
+		}
+		agent.Image = image
+		includeAcr = needsACR(agent) || includeAcr
+		return nil
+	}
+	for _, agent := range svc.Agents {
+		if err := checkAgent(agent); err != nil {
+			return false, false, err
+		}
+	}
 	for _, serviceName := range slices.Sorted(maps.Keys(services)) {
 		node := services[serviceName]
 		var selector struct {
@@ -863,8 +905,7 @@ func deriveACRRequirements(
 		if err := node.Decode(&selector); err != nil {
 			continue
 		}
-		// Other service targets own their payloads,
-		// refs and conditions.
+		// Other service targets own their payloads, refs and conditions.
 		if selector.Host != "azure.ai.agent" && (selector.Host != "" || selector.Ref == "") {
 			continue
 		}
@@ -894,13 +935,21 @@ func deriveACRRequirements(
 			return false, false, fmt.Errorf("decode service %q: %w", serviceName, err)
 		}
 		if len(service.Agents) > 0 {
-			includeAcr = includeAcr || slices.ContainsFunc(service.Agents, agentNeedsAcr)
+			for _, agent := range service.Agents {
+				if err := checkAgent(agent); err != nil {
+					return false, false, fmt.Errorf("service %q: %w", serviceName, err)
+				}
+			}
 			continue
 		}
 		agent := agentBlock{
-			Kind:              service.Kind,
-			Image:             service.Image,
-			CodeConfiguration: service.CodeConfiguration,
+			Kind:                 service.Kind,
+			Image:                service.Image,
+			RegistryConnectionID: service.RegistryConnectionID,
+			CodeConfiguration:    service.CodeConfiguration,
+		}
+		if service.Docker != nil {
+			agent.Docker = *service.Docker
 		}
 		if service.Config != nil {
 			if agent.Kind == "" {
@@ -909,20 +958,29 @@ func deriveACRRequirements(
 			if agent.Image == "" {
 				agent.Image = service.Config.Image
 			}
+			if agent.RegistryConnectionID == "" {
+				agent.RegistryConnectionID = service.Config.RegistryConnectionID
+			}
 			if agent.CodeConfiguration == nil {
 				agent.CodeConfiguration = service.Config.CodeConfiguration
 			}
+			if service.Docker == nil {
+				agent.Docker = service.Config.Docker
+			}
 		}
-		includeAcr = includeAcr || agentNeedsAcr(agent)
+		if err := checkAgent(agent); err != nil {
+			return false, false, fmt.Errorf("service %q: %w", serviceName, err)
+		}
 	}
 	return hasAgents, includeAcr, nil
 }
 
-// agentNeedsAcr reports whether a single agent entry builds a container image
-// from source (and therefore requires an ACR). Pre-built images and code/ZIP
-// deploys do not; any other hosted agent does.
-func agentNeedsAcr(a agentBlock) bool {
-	if a.CodeConfiguration != nil || strings.TrimSpace(a.Image) != "" {
+// agentNeedsAcr follows explicit prebuilt selection.
+func agentNeedsAcr(a agentBlock, env map[string]string) bool {
+	if a.CodeConfiguration != nil || a.Docker.ImagePassthrough || a.RegistryConnectionID != "" {
+		return false
+	}
+	if strings.TrimSpace(a.Image) != "" && strings.EqualFold(strings.TrimSpace(env["AZD_AGENT_SKIP_ACR"]), "true") {
 		return false
 	}
 	// "hosted" is the only container kind; an empty kind defaults to hosted for

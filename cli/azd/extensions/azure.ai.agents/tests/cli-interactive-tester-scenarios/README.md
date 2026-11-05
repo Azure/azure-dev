@@ -355,7 +355,18 @@ in any order, any time.
 | `tier0/0.32-init-adopt-cancel-replacement.yaml` | Cancelling the template replacement picker leaves no project files or environment |
 | `tier0/0.33-invoke-a2a-version-validation.yaml` | A2A preview help and gating, explicit file versions when enabled, unsupported/empty versions, rejection on non-A2A protocols, and local A2A discovery |
 | `tier0/0.34-init-byo-aks-infra.yaml` | BYO AKS Terraform rejection without mutations and local standard Bicep eject; no Azure or Kubernetes operations |
+| `tier0/0.34-init-env-acr-same-group.yaml` | Environment-only registry selection in a Foundry teardown group fails before prompts or mutations |
+| `tier0/0.34-optimize-skills-help.yaml` | Offline skill optimization guidance and report download discovery |
+| `tier0/0.35-optimize-candidate-watch-conflict.yaml` | Candidate inspection and job watch conflict rejected before authentication |
+| `tier0/0.35-init-acr-existing-project-template.yaml` | `init --acr-resource-id` rejects a template's referenced existing project endpoint before creating project files or an environment |
 | `tier0/0.35-run-invoke-local-a2a.yaml` | Terminal-only A2A-only `run` and local 1.0 invoke: text, unchanged file bytes, raw JSON/SSE, allocated port, fixed `POST /a2a` route, no Foundry headers/state, and unsupported flags |
+| `tier0/0.36-init-acr-unverified-scopes.yaml` | External registry reuse with custom application teardown groups fails before authentication or local writes |
+| `tier0/0.36-optimize-download-input-validation.yaml` | Empty download candidate rejected before authentication or file creation |
+| `tier0/0.37-init-acr-agent-hosting.yaml` | External source-build registry selection with AKS agent hosting fails before authentication or local writes |
+
+The skill optimization scenarios are offline help and invalid-input checks.
+The Go tests cover submission, polling, candidate details, and file downloads
+against synthetic local HTTP servers; these scenarios do not submit Foundry jobs.
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
@@ -540,6 +551,7 @@ Missing prerequisites are blocked coverage, not a passing skip.
 
 Scenario `2.17b` is `manual-seed` and excluded from ordinary sweeps. When opted in,
 it runs in the shared-agent serial lane before `2.18` deletes the shared agent.
+It enables `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true` for the scenario process.
 It reuses `2.00` / `2.99` resource ownership and
 cleanup, rather than creating another infrastructure lifecycle. Arrange
 authorized teardown with the original setup identity even if restricted deploy
@@ -807,6 +819,10 @@ the orchestrator auto-derives from the scenarios directory path:
 ```sh
 cp -r "{fixtures_dir}/from-code/." "$cwd"
 ```
+
+`fixtures/acr-existing-project/` contains a source-build template whose project
+service references an existing endpoint. The Tier 0 ACR validation scenario
+asserts that init rejects this combination without authentication or local writes.
 
 The orchestrator computes `fixtures_dir` as the tester-side absolute path of the
 `fixtures/` subdirectory inside the scenarios directory (WSL-translated on Windows,

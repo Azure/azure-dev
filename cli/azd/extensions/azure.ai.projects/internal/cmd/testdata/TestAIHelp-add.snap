@@ -1,9 +1,18 @@
 Add or update a Microsoft Foundry project.
 
+Use --new-project --acr-resource-id to reuse an external registry for
+source-built agents with Bicep. Project-only setup saves the selection
+until agents are added. Code, prebuilt-image, and non-container-only
+projects cannot use the selector. A deployed registry binding cannot
+be changed; repeating the same selection preserves the project.
+The registry must be in the project's subscription and outside its
+resource group. Cross-subscription reuse is not supported.
+
 Usage
   azd ai project add [flags]
 
 Flags
+      --acr-resource-id string  : External registry ARM resource ID for --new-project source builds (same subscription; Bicep only; no migration)
       --force                   : Replace a different configured project
       --infra string[="bicep"]  : Eject Bicep or Terraform infrastructure (optional value)
       --new-project             : Create a new Foundry project
@@ -24,6 +33,9 @@ Examples
 
   Connect an existing project by its ARM resource ID
     azd ai project add --project-id "<project-resource-id>"
+
+  Reuse an externally owned registry for source-built agents (Bicep only)
+    azd ai project add --new-project --acr-resource-id "<registry-resource-id>"
 
   Eject the configured infrastructure as Bicep
     azd ai project add --infra=bicep

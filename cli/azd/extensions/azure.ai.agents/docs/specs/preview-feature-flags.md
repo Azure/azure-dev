@@ -5,9 +5,9 @@
 ## Status and goal
 
 - **Component:** `cli/azd/extensions/azure.ai.agents`
-- **Scope:** Independent managed-harness, voice, long-running invocation, A2A version-selection, and BYO AKS switches. All switches default to off.
+- **Scope:** Independent managed-harness, voice, long-running invocation, A2A version-selection, memory snapshot, BYO AKS, and retained RBAC warning switches. All switches default to off.
 
-Keep preview opt-in decisions inside the Microsoft Foundry agents extension until the extension framework supports discovery and evaluation. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
+Keep preview opt-in decisions inside the owning extensions until the extension framework supports discovery and evaluation. The Agents extension owns its private preview evaluator; the Projects extension independently checks the shared BYO AKS switch for provisioning and provisioning preview when effective AKS hosting is enabled. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
 
 Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws`. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
 
@@ -47,21 +47,24 @@ type Feature struct {
 
 func IsEnabled(feature Feature) (bool, error)
 func Require(feature Feature) error
+func RequireWithWriter(feature Feature, writer io.Writer) error
+func Check(feature Feature) error
+func RequireWithNotice(feature Feature) (string, error)
 func All() []Feature
 func Lookup(id string) (Feature, bool)
 ```
 
-`ID` is a capability identity, not a user-config contract. `EnvVar` is the process environment key to read, including a value the azd host has already injected. `Description` is optional for evaluation and supplies a short scope summary in help. `DefaultEnabled` applies only when the variable is absent; all declared features default to `false`.
+`ID` is a capability identity, not a user-config contract. `EnvVar` is the process environment key to read, set in the shell or CI before running azd (or through scenario `env:`). `Description` is optional for evaluation and supplies a short scope summary in help. `DefaultEnabled` applies only when the variable is absent; all declared features default to `false`.
 
 ```go
-if err := featureflags.Require(featureflags.Voice); err != nil {
+if err := featureflags.RequireWithWriter(featureflags.Voice, out); err != nil {
     return err
 }
 ```
 
-`IsEnabled` rejects an empty `ID` or `EnvVar` before reading the process environment. The function takes no context, azd client, selected-environment, project, or login argument. Values the host already injected are present in the process environment it reads. Command input validation stays with the commands; there is no flag-specific environment validation or init-scope exception.
+`IsEnabled` rejects an empty `ID` or `EnvVar` before reading only the current process environment with `os.LookupEnv`. The function takes no context, azd client, selected-environment, project, or login argument. The extension inherits shell/CI process values. Lifecycle listeners do not receive selected-environment dotenv flattening for these switches, while direct `azd ai agent ...` commands still receive selected-environment values after shell/CI values. Command input validation stays with the commands; there is no flag-specific environment validation or init-scope exception.
 
-`Require` delegates to `IsEnabled` and returns the structured `feature_not_enabled` compatibility error when the feature is off. Its suggestion names the canonical variable to set in the shell or CI. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader.
+`Require` delegates to `RequireWithWriter` using stdout. `RequireWithWriter` returns the structured `feature_not_enabled` compatibility error when the feature is off. Its suggestion names the canonical variable to set in the shell or CI. When enabled, it prints a notice naming the feature and switch and explaining that preview behavior may change. The notice is printed only when a command checks a feature it uses, and only once for that feature in an extension process. Callers with an injected output writer use `RequireWithWriter`; JSON and raw commands route notices to stderr. Passing `io.Discard` validates the feature without consuming its notice. `Check` performs the same enabled/disabled check without announcing or consuming a notice, for lifecycle stages whose output cannot be shown immediately. `RequireWithNotice` returns the plain notice text for a host-visible lifecycle response. A nil writer defaults to stdout. `IsEnabled` remains silent and side-effect free. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader.
 
 ## Feature registry and help
 
@@ -73,17 +76,41 @@ if err := featureflags.Require(featureflags.Voice); err != nil {
 | `Voice` | `agents.voice` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` | Voice, prompt-voice, and hosted voice agents |
 | `LongRunning` | `agents.long_running` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations |
 | `A2A` | `agents.a2a` | `AZD_ALPHA_ENABLE_AGENTS_A2A` | A2A init selection, explicit wire versions, and the 1.0 message default |
-| `BYOAKS` | `agents.byo_aks` | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Existing AKS project initialization and adoption |
+| `MemorySnapshot` | `agents.memory_snapshot` | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` | Hosted agent memory snapshots |
+| `BYOAKS` | `agents.byo_aks` | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Existing AKS project initialization, adoption, provisioning, and provisioning preview |
+| `RBACWarnings` | `agents.rbac_warnings` | `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS` | Retained developer RBAC deployment warnings through beta service events |
 
 Each ID starts with `agents.`. Its canonical key is `AZD_ALPHA_ENABLE_` plus the ID in upper case with dots replaced by underscores. Registry tests enforce the identities, naming rule, unique IDs and keys, and nonempty descriptions. The evaluator reads the declared `EnvVar` rather than deriving a key at run time.
 
-### BYO AKS initialization and adoption
+### Retained RBAC deployment warnings
+
+The listener reads `RBACWarnings` during host configuration, before opening event
+streams. With the switch off, it registers `predeploy` with the stable
+`WithServiceEventHandler` API. With the switch on, it registers that handler
+only with `WithBetaServiceEventHandler` so the host can collect structured
+warnings in final output and JSON `messages`. There is no beta event
+subscription while the switch is off, and no duplicate stable subscription
+while it is on. `postdeploy` and project listeners remain stable.
+
+Both paths share the existing predeploy validation, telemetry, environment
+updates, RBAC checks, automatic assignment, and skip rules. The stable path
+prints the returned safe warning messages and suggestions in temporary hook
+output. The host can discard that output while deployment progress suppresses
+the previewer; the stable path does not guarantee warning visibility or
+retention after deployment. Host output handling is unchanged. The beta path
+returns messages to the host without also printing them.
+Both preserve handler errors. This switch gates retention, not deployment or
+RBAC checking, so a disabled switch does not reject ordinary deployment.
+
+### BYO AKS initialization, adoption, and provisioning
 
 The BYO AKS identity and environment key are declared in the aligned synthesis copies. Agents uses the existing `Require` evaluator for project init/adoption. Project classification resolves inline and `$ref` configuration using the existing service resolver. A service `env:` entry does not control this switch.
 
-An absent variable disables BYO AKS project initialization and adoption, while an explicit value uses `strconv.ParseBool`. Disabled checks return the `feature_not_enabled` compatibility error and shell/CI suggestion. Foundry projects without `agentHosting` do not require this switch.
+An absent variable disables BYO AKS use, while an explicit value uses `strconv.ParseBool`. Disabled checks return the `feature_not_enabled` compatibility error and shell/CI suggestion. Foundry provisioning without effective AKS hosting does not require this switch.
 
-The Projects extension owns `microsoft.foundry`. Provider initialization, infrastructure state queries, provision, preview, lifecycle hooks, and Bicep eject do not check the BYO AKS switch. Provision and preview still validate effective hosting parameters and resolve required identity bindings. BYO AKS infrastructure uses the standard Foundry `azd down` path, including its confirmation, `--force` behavior, and target resource-group deletion.
+The Projects extension owns `microsoft.foundry`. Its `Deploy` and `Preview` methods call `prepareBYO`, which validates the effective `agentHosting` value after parameter merging, including template defaults and case-insensitive parameter names with value envelopes. When effective `enabled=true`, it checks the current process value of the shared synthesis environment key with `strconv.ParseBool` after local resource-ID validation and before credential initialization or BYO AKS, role, or identity reads. This covers embedded provisioning, on-disk `.parameters.json`, `.bicepparam`, and template defaults, including hosting enabled without an `azure.yaml` declaration. Effective `enabled=false` skips the gate and binding reads. Structured gate errors are returned unchanged.
+
+Provider initialization, infrastructure state and parameter queries, synthesis, lifecycle hooks, and Bicep eject do not check the BYO AKS switch. BYO AKS infrastructure uses the standard Foundry `azd down` path without requiring the switch, including its confirmation, `--force` behavior, and target resource-group deletion.
 
 ### A2A compatibility policy
 
@@ -136,7 +163,9 @@ Each feature is independent. There is no global toggle, experimentation default,
 
 ### Evaluator source boundary
 
-`IsEnabled` reads the declared key from the process environment with `os.LookupEnv`, using `DefaultEnabled` only when the key is absent. That environment includes variables set in the shell or CI before azd starts and values the azd host has already placed there. On a normal agents command, the host appends the selected azd environment before it launches the extension. These commands do not opt out of that injection, so a value saved with `azd env set` is visible on the next `azd` invocation. The host appends those values after the parent process environment. When the same key appears twice, the child process keeps the last value, so the selected environment overrides the parent process for that key.
+`IsEnabled` reads only the declared key from the current process environment with `os.LookupEnv`, using `DefaultEnabled` only when the key is absent. Set switches in the shell or CI before running azd, or through scenario YAML `env:`. The extension inherits those process values at startup.
+
+The azd host listen/extension startup path does not flatten `.azure/<env>/.env` into the extension process for these switches. It may set `AZD_ENVIRONMENT` to the selected environment name, but that does not load its dotenv values. Persisting `AZD_ALPHA_ENABLE_*` with `azd env set` therefore does not enable or override these switches for the listener. Direct `azd ai agent ...` command launches still append selected-environment values after shell/CI values, so persisted dotenv values can override shell opt-ins there. This boundary is the same for Voice, A2A, RBAC warnings, and the other Agents preview switches.
 
 The evaluator does not query azd user config (including `alpha.all`), open selected or default environment files, or read project/service environment mappings. It does not filter process values by where they came from.
 
@@ -192,14 +221,14 @@ Extension metadata and shell completion are built from the complete static tree.
 
 An explicit HTTP `--agent-endpoint` carries no kind or harness information. It remains unclassified, with no additional authenticated definition lookup, so managed-harness enforcement cannot cover that route. The deterministic long-running check applies to every endpoint before invocation, authentication, or conversation/session persistence. Text invoke does not accept voice WebSocket endpoints.
 
-Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. BYO AKS infrastructure operations do not require its switch to be enabled; infrastructure teardown follows the standard Foundry `azd down` path and deletes the target resource group with all resources inside it. There is no state migration or persisted flag update. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
+Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. BYO AKS infrastructure state and parameter queries, Bicep eject, and teardown do not require its switch to be enabled; infrastructure teardown follows the standard Foundry `azd down` path and deletes the target resource group with all resources inside it. There is no state migration or persisted flag update. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
 
 ## Compatibility and future framework adoption
 
 This intentionally adopts the process-only mechanism in place of the earlier multi-source implementation:
 
 - `AZD_FOUNDRY_EXT_ENABLE_*` names are no longer recognized; there is no legacy alias.
-- The evaluator no longer reads user config or opens selected/default azd environment files. The host may still inject selected-environment values before launch.
+- The evaluator no longer reads user config or opens selected/default azd environment files. The extension inherits shell/CI process values at launch. Lifecycle listeners do not receive selected-environment dotenv flattening for preview switches, while direct command launches still append selected-environment values after shell/CI values.
 - Feature evaluation no longer loads project/service scopes or calls the host.
 - Old context/client/environment parameters, host-error sentinels, and flag-specific scope validation are removed.
 
@@ -211,10 +240,17 @@ Discoverability through `azd config list-alpha`, a public SDK API, and framework
 
 Evaluator tests cover canonical keys, feature defaults, accepted boolean forms, non-enabling values, all independent combinations, ignored old/global/unrelated keys, optional descriptions, fresh reads, and no input mutation. Temporary local fixtures verify that direct calls do not load configuration or dotenv files. These tests do not launch through the host.
 
-Root-command regressions cover parsed flags, local-validation precedence, independent gates, ignored persisted config, no host reads for evaluation/help, fresh and existing init scopes, preserved SDK-selected creation names, disabled no-auth/no-write rejection, protocol pickers, staged manifests, local invocation, fallback error propagation, and retained read access. Project tests cover inline and referenced definitions, harness whitespace normalization, and lifecycle entry points. Help tests preserve the always-visible switch list while checking conditional command discovery; snapshots cover enabled and disabled states.
+Feature gate tests verify that enabled previews are announced once when used and disabled previews remain silent. Root-command regressions cover parsed flags, local-validation precedence, independent gates, ignored persisted config, no host reads for evaluation/help, fresh and existing init scopes, preserved SDK-selected creation names, disabled no-auth/no-write rejection, protocol pickers, staged manifests, local invocation, fallback error propagation, and retained read access. Project tests cover inline and referenced definitions, harness whitespace normalization, and lifecycle entry points. Help tests preserve the always-visible switch list while checking conditional command discovery; snapshots cover enabled and disabled states.
 
 Remote-template regressions cover inline and `$ref` previews, rejection before Azure authentication, retained authentication when enabled, single-download adoption, and temporary-directory cleanup on failure.
 
-BYO AKS regressions cover default-off and boolean-value semantics and inline and referenced project configuration during init/adoption. Infrastructure tests cover Bicep eject, Terraform rejection without file changes, standard Project and registry outputs, and the ARM what-if path.
+BYO AKS regressions cover default-off and boolean-value semantics and inline and referenced project configuration during init/adoption. Projects provisioning tests cover process-only enablement, rejection before credentials or BYO resource reads, unchanged structured errors and parameters, and the effective embedded, on-disk JSON, Bicep parameter, and template-default paths for both provision and preview. Disabled effective hosting and ordinary Foundry provisioning remain available without opt-in. Infrastructure tests also cover Bicep eject, Terraform rejection without file changes, standard Project and registry outputs, and the ARM what-if path.
+
+RBAC listener regressions exercise stable-only hosts with the switch absent,
+false, empty, or invalid, and beta hosts with true and `1` values. They check
+exclusive registration, per-service warning and suggestion delivery, preserved
+validation failures, and non-disclosure of transport credentials. The opt-in
+`tier2/2.17b-deploy-rbac-warnings.yaml` scenario enables the switch through scenario process `env:` for its
+readable and JSON retention checks.
 
 Run offline tests, the full agents module build, and scoped static checks with Go 1.26.4. Tier 0 scenarios cover switch discovery and enabled/disabled help. Scenario execution remains opt-in through the `foundry-extension-scenario-orchestrator` agent; no Azure scenarios are required for this integration.

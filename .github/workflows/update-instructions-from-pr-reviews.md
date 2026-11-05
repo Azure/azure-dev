@@ -47,6 +47,9 @@ on:
         default: "3"
         type: string
 
+concurrency:
+  job-discriminator: ${{ github.run_id }}
+
 # The agent only needs to read the repo and its PR history. All writes happen
 # through the create-pull-request safe output in a separate, permission-scoped job.
 permissions:

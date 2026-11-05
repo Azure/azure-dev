@@ -21,6 +21,9 @@ overrides:
   - filename: "cu-rest-client/polling.go"
     words:
       - notstarted
+  - filename: "internal/cuclient/rest.go"
+    words:
+      - restclient
   - filename: "internal/schema/author.go"
     words:
       - epub

@@ -994,7 +994,9 @@ func TestPreflightAzdTemplateIsReadOnly(t *testing.T) {
 			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
 			before, cwdErr := os.Getwd()
 			require.NoError(t, cwdErr)
-			replaced, err := preflightAzdTemplate(t.Context(), client, http.DefaultClient, templateDir, &initFlags{})
+			replaced, err := preflightAzdTemplate(
+				t.Context(), client, http.DefaultClient, templateDir, &initFlags{}, ".", io.Discard,
+			)
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 			} else {
@@ -1070,7 +1072,7 @@ func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
 
 			replaced, err := scaffoldAzdTemplateProject(
 				ctx, client, http.DefaultClient,
-				"project", templateDir, "dev", &initFlags{},
+				"project", templateDir, "dev", &initFlags{}, io.Discard,
 			)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)

@@ -5,14 +5,50 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"sync"
 
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/exterrors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
+
+func warningText(format, text string) string {
+	if format == "json" || format == "none" || os.Getenv("NO_COLOR") != "" {
+		return text
+	}
+	return output.WithWarningFormat("%s", text)
+}
+
+func errorText(format, text string) string {
+	if format == "json" || format == "none" || os.Getenv("NO_COLOR") != "" {
+		return text
+	}
+	return output.WithErrorFormat("%s", text)
+}
+
+func actionText(format, text string) string {
+	if format == "json" || format == "none" || os.Getenv("NO_COLOR") != "" {
+		return text
+	}
+	return output.WithHighLightFormat("%s", text)
+}
+
+func commentText(format, text string) string {
+	if format == "json" || format == "none" || os.Getenv("NO_COLOR") != "" {
+		return text
+	}
+	return output.WithGrayFormat("%s", text)
+}
+
+func writeWarning(cmd *cobra.Command, format, message string) error {
+	_, err := fmt.Fprintln(cmd.ErrOrStderr(), warningText(format, "Warning: "+message))
+	return err
+}
 
 // ValidateInvocation prevents Cobra's unknown-command errors from echoing argument values.
 func ValidateInvocation(root *cobra.Command, args []string) error {

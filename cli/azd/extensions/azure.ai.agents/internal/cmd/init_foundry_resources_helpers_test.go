@@ -415,6 +415,30 @@ type testEnvironmentServiceServer struct {
 	setKeys         []string
 	getCurrentCalls int
 	getValuesCalls  int
+	config          map[string][]byte
+	configErr       error
+}
+
+func (s *testEnvironmentServiceServer) GetConfig(
+	_ context.Context, req *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	if s.configErr != nil {
+		return nil, s.configErr
+	}
+	value, found := s.config[req.GetPath()]
+	return &azdext.GetConfigResponse{Value: value, Found: found}, nil
+}
+
+func (s *testEnvironmentServiceServer) List(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentListResponse, error) {
+	result := &azdext.EnvironmentListResponse{}
+	for name := range s.environments {
+		result.Environments = append(result.Environments, &azdext.EnvironmentDescription{
+			Name: name, Default: name == s.current.GetName(),
+		})
+	}
+	return result, nil
 }
 
 func (s *testEnvironmentServiceServer) GetCurrent(context.Context, *azdext.EmptyRequest) (*azdext.EnvironmentResponse, error) {

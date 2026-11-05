@@ -262,6 +262,7 @@ type declaredInfraConfig struct {
 		Name     string `yaml:"name"`
 		Provider string `yaml:"provider"`
 		Path     string `yaml:"path"`
+		Module   string `yaml:"module"`
 	} `yaml:"layers"`
 }
 
@@ -591,6 +592,42 @@ func prepareInfraEject(
 		// on-disk provision flow resolves them from the azd environment.
 		PreserveVarRefs: true,
 	}
+	if err := synthesis.RequireACRReuseForEnvironment(context.Background(), nil, "", synthesisInput); err != nil {
+		return nil, err
+	}
+	if !existingProject {
+		environment = maps.Clone(environment)
+		if environment == nil {
+			environment = map[string]string{}
+		}
+		groupKey := "AZURE_RESOURCE_GROUP"
+		if plan.layer {
+			groupKey = "AZURE_FOUNDRY_RESOURCE_GROUP"
+		}
+		group := environment[groupKey]
+		if group == "" && environment["AZURE_ENV_NAME"] != "" {
+			group = "rg-" + environment["AZURE_ENV_NAME"]
+			if plan.layer {
+				group += "-foundry"
+			}
+		}
+		synthesisInput.Env = environment
+		synthesisInput.ResourceGroupName = group
+	}
+	if !existingProject && provider == project.TerraformProviderName {
+		mode, err := synthesis.GreenfieldACRMode(synthesisInput)
+		if err != nil {
+			return nil, err
+		}
+		if mode == "reuse-connect" {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"reuse mode with AZURE_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
+				"eject Bicep instead with `azd ai agent init --infra=bicep`, "+
+					"or use a new azd environment without an external registry selection",
+			)
+		}
+	}
 	var res *synthesis.Result
 	if existingProject {
 		res, err = synthesis.SynthesizeExistingProject(synthesisInput)
@@ -598,6 +635,9 @@ func prepareInfraEject(
 		res, err = synthesis.Synthesize(synthesisInput)
 	}
 	if err != nil {
+		if local, ok := errors.AsType[*azdext.LocalError](err); ok {
+			return nil, local
+		}
 		// Reuse the provider's vocabulary so eject and provision report
 		// consistent codes for the same azure.yaml problems.
 		return nil, exterrors.Validation(
@@ -1836,11 +1876,8 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 // templates/ root into infraDir, preserving the relative tree, and returns the
 // files written (with sizes). On any error it removes the partial infraDir.
 //
-// Provider-runtime and existing-project files are skipped:
-//   - main.arm.json (the pre-compiled ARM JSON): would be stale once the user
-//     edits main.bicep.
-//   - existing-project.bicep and its modules: emitted only by the dedicated
-//     existing-project writer.
+// Precompiled ARM templates and provider-runtime assets are skipped.
+// Existing-project entry points are skipped; shared modules are included.
 func writeEmbeddedTemplates(
 	infraDir string,
 	artifactRoot string,
@@ -1903,8 +1940,7 @@ func writeEmbeddedTemplates(
 		}
 		switch base {
 		case "main.arm.json", "existing-project.bicep",
-			"existing-project-eject.bicep", "existing-project.arm.json",
-			"container-registry.bicep", "foundry-project.bicep":
+			"existing-project-eject.bicep", "existing-project.arm.json":
 			return nil
 		}
 
@@ -2274,7 +2310,7 @@ func writeExistingProjectTfvarsFile(
 }
 
 func readInfraEjectEnvironment(ctx context.Context, azdClient *azdext.AzdClient) (map[string]string, error) {
-	current, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	current, err := synthesis.CurrentEnvironment(ctx, azdClient)
 	if err != nil {
 		return nil, fmt.Errorf("read active azd environment for infrastructure eject: %w", err)
 	}
@@ -2288,6 +2324,20 @@ func readInfraEjectEnvironment(ctx context.Context, azdClient *azdext.AzdClient)
 	result := make(map[string]string, len(values.KeyValues))
 	for _, item := range values.KeyValues {
 		result[item.Key] = item.Value
+	}
+	result["AZURE_ENV_NAME"] = current.Environment.Name
+	binding, err := azdClient.Environment().GetConfig(ctx, &azdext.GetConfigRequest{
+		EnvName: current.Environment.Name, Path: synthesis.ACRBindingConfigKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read deployed registry binding for infrastructure eject: %w", err)
+	}
+	if binding.GetFound() {
+		result[synthesis.ACRBindingEnvKey] = string(binding.GetValue())
+	}
+	if err := synthesis.RequireACRReuseForEnvironment(ctx, azdClient, current.Environment.Name,
+		synthesis.Input{Env: result}); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

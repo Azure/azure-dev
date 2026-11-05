@@ -16,6 +16,9 @@ ignorePaths:
 
     - eng # not required
 overrides:
+    - filename: .github/skills/extension-user-contract-review/evals/**/*.yaml
+      words:
+          - evals
     - filename: docs/guides/releasing-azd.md
       words:
           - ESRP

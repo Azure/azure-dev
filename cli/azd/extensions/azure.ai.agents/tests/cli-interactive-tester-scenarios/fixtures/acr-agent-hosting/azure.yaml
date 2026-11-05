@@ -1,0 +1,15 @@
+name: acr-agent-hosting
+infra:
+  provider: microsoft.foundry
+services:
+  ai-project:
+    host: azure.ai.project
+    agentHosting:
+      clusterResourceId: /subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/cluster/providers/Microsoft.ContainerService/managedClusters/cluster
+    network:
+      agentSubnet:
+        vnet: /subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/network/providers/Microsoft.Network/virtualNetworks/vnet
+        name: agents
+      peSubnet:
+        vnet: /subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/network/providers/Microsoft.Network/virtualNetworks/vnet
+        name: endpoints

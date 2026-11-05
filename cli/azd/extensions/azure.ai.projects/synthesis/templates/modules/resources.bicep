@@ -79,6 +79,7 @@ param existingAcrResourceId string = ''
 
 param acrPullAssigned bool = false
 param acrAccessOperationId string = ''
+param acrPullRoleDefinitionId string = ''
 
 // Network isolation parameters. All default off so an absent network: block in
 // azure.yaml yields a public account identical to the pre-network template.
@@ -397,6 +398,7 @@ module existingAcr 'container-registry.bicep' = if (includeAcr && !empty(existin
       : foundryAccount::project!.identity.principalId
     pullAssigned: acrPullAssigned
     accessOperationId: acrAccessOperationId
+    pullRoleDefinitionId: acrPullRoleDefinitionId
   }
 }
 

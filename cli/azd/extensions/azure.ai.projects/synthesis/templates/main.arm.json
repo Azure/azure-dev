@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "10056195470861368533"
+      "templateHash": "8956748682766475904"
     }
   },
   "definitions": {
@@ -229,6 +229,20 @@
         "description": "Principal ID of the supplied workload identity; resolved by microsoft.foundry when omitted."
       }
     },
+    "acrPullRoleDefinitionId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Registry pull role persisted with the access operation."
+      }
+    },
+    "acrOwnedAssignments": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Owned registry grants retained for recovery after local state loss."
+      }
+    },
     "enableNetworkIsolation": {
       "type": "bool",
       "defaultValue": false,
@@ -375,6 +389,9 @@
           "workloadPrincipalId": {
             "value": "[parameters('workloadPrincipalId')]"
           },
+          "acrPullRoleDefinitionId": {
+            "value": "[parameters('acrPullRoleDefinitionId')]"
+          },
           "enableNetworkIsolation": {
             "value": "[parameters('enableNetworkIsolation')]"
           },
@@ -420,7 +437,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "12875653734830163232"
+              "templateHash": "9059128905136687232"
             }
           },
           "definitions": {
@@ -587,6 +604,10 @@
               "defaultValue": false
             },
             "acrAccessOperationId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "acrPullRoleDefinitionId": {
               "type": "string",
               "defaultValue": ""
             },
@@ -1765,6 +1786,9 @@
                   },
                   "accessOperationId": {
                     "value": "[parameters('acrAccessOperationId')]"
+                  },
+                  "pullRoleDefinitionId": {
+                    "value": "[parameters('acrPullRoleDefinitionId')]"
                   }
                 },
                 "template": {
@@ -1774,7 +1798,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.48.1.52935",
-                      "templateHash": "15235048848214962716"
+                      "templateHash": "11513645951317576548"
                     }
                   },
                   "parameters": {
@@ -1803,6 +1827,10 @@
                       "defaultValue": false
                     },
                     "accessOperationId": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "pullRoleDefinitionId": {
                       "type": "string",
                       "defaultValue": ""
                     }
@@ -1867,7 +1895,7 @@
                             "value": "[parameters('accessOperationId')]"
                           },
                           "ownershipDescription": "[if(empty(parameters('accessOperationId')), createObject('value', ''), createObject('value', format('azd-foundry:{0}', parameters('accessOperationId'))))]",
-                          "roleDefinitionId": "[if(equals(parameters('mode'), 'reuse-connect'), if(equals(reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').roleAssignmentMode, 'AbacRepositoryPermissions'), createObject('value', variables('repositoryReaderRoleId')), createObject('value', variables('acrPullRoleId'))), createObject('value', variables('acrPullRoleId')))]"
+                          "roleDefinitionId": "[if(not(empty(parameters('accessOperationId'))), createObject('value', parameters('pullRoleDefinitionId')), if(equals(parameters('mode'), 'reuse-connect'), if(equals(reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').roleAssignmentMode, 'AbacRepositoryPermissions'), createObject('value', variables('repositoryReaderRoleId')), createObject('value', variables('acrPullRoleId'))), createObject('value', variables('acrPullRoleId'))))]"
                         },
                         "template": {
                           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",

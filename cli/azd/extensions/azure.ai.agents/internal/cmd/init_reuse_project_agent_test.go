@@ -4,19 +4,248 @@
 package cmd
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"io"
+	"maps"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"testing"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+type reuseInitACREnvironmentServer struct {
+	testEnvironmentServiceServer
+}
+
+func (s *reuseInitACREnvironmentServer) List(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentListResponse, error) {
+	response := &azdext.EnvironmentListResponse{}
+	for name := range s.environments {
+		response.Environments = append(response.Environments, &azdext.EnvironmentDescription{
+			Name: name, Default: s.current.GetName() == name,
+		})
+	}
+	return response, nil
+}
+
+type reuseInitACRPromptServer struct {
+	initACRPromptServer
+}
+
+func (s *reuseInitACRPromptServer) Confirm(
+	context.Context, *azdext.ConfirmRequest,
+) (*azdext.ConfirmResponse, error) {
+	return &azdext.ConfirmResponse{Value: new(true)}, nil
+}
+
+func executeReuseInitACR(
+	t *testing.T,
+	environments *reuseInitACREnvironmentServer,
+	workflow *recordingProjectWorkflowServer,
+	prompts azdext.PromptServiceServer,
+	project azdext.ProjectServiceServer,
+	account *sourceInitACRAccountServer,
+	noPrompt bool,
+	envName string,
+	args ...string,
+) error {
+	t.Helper()
+	setTimedInitAuth(t)
+	server := grpc.NewServer()
+	azdext.RegisterEnvironmentServiceServer(server, environments)
+	azdext.RegisterWorkflowServiceServer(server, workflow)
+	azdext.RegisterProjectServiceServer(server, project)
+	azdext.RegisterPromptServiceServer(server, prompts)
+	azdext.RegisterAccountServiceServer(server, account)
+	azdext.RegisterAiModelServiceServer(server, &initAuthOrderingAiServer{})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	command := newInitCommand(
+		&azdext.ExtensionContext{NoPrompt: noPrompt, Environment: envName}, testProjectsACRHelp(workflow),
+	)
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs(args)
+	return command.Execute()
+}
+
+func TestInitACRReusePlansBeforeEnvironmentCreation(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+	for _, tt := range []struct {
+		name               string
+		prompted           string
+		subscription       string
+		envName            string
+		registry           string
+		wantError          string
+		promptError        error
+		existing, noPrompt bool
+		wantPrompts        int
+		directoryGroup     bool
+	}{
+		{name: "prompted mismatch", envName: "fresh", prompted: "other",
+			wantError: "same subscription", wantPrompts: 1},
+		{name: "cancelled subscription", envName: "fresh",
+			promptError: status.Error(codes.Canceled, "subscription selection cancelled"),
+			wantError:   "cancelled", wantPrompts: 1},
+		{name: "derived teardown group", prompted: "sub",
+			registry:  strings.Replace(testInitACRID, "/registry-rg/", "/rg-test-agent-dev/", 1),
+			wantError: "resource group"},
+		{name: "configured teardown group", existing: true, envName: "test-agent-dev", subscription: "sub",
+			registry:  strings.Replace(testInitACRID, "/registry-rg/", "/rg-test-agent-dev/", 1),
+			wantError: "azd down deletes"},
+		{name: "headless teardown group", noPrompt: true,
+			registry:  strings.Replace(testInitACRID, "/registry-rg/", "/rg-test-agent-dev/", 1),
+			wantError: "resource group"},
+		{name: "configured mismatch", existing: true, envName: "test", subscription: "other",
+			wantError: "same subscription"},
+		{name: "matching prompted subscription", envName: "fresh", prompted: "SUB", wantPrompts: 1},
+		{name: "matching derived environment", prompted: "sub", wantPrompts: 1},
+		{name: "unused directory group", prompted: "sub", wantPrompts: 1, directoryGroup: true},
+		{name: "headless unused directory group", noPrompt: true, directoryGroup: true},
+		{name: "existing environment without subscription", existing: true, envName: "test",
+			prompted: "sub", wantPrompts: 1},
+		{name: "matching configured subscription", existing: true, envName: "test", subscription: "sub"},
+		{name: "headless missing scope defers", envName: "fresh", noPrompt: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n" +
+				"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: test-agent\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
+			project := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					"agent": inlineAgentService(t, "agent", "test-agent"),
+				},
+			}}
+			beforeProject := proto.Clone(project.project)
+			environments := &reuseInitACREnvironmentServer{testEnvironmentServiceServer: testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{},
+				values:       map[string]map[string]string{},
+				config:       map[string][]byte{},
+			}}
+			if tt.existing {
+				environments.current = &azdext.Environment{Name: tt.envName}
+				environments.environments[tt.envName] = environments.current
+				environments.values[tt.envName] = map[string]string{
+					"AZURE_SUBSCRIPTION_ID": tt.subscription,
+					"AZURE_TENANT_ID":       "resource-tenant",
+				}
+			}
+			beforeValues := maps.Clone(environments.values[tt.envName])
+			beforeCurrent := proto.Clone(environments.current)
+			beforeConfig := maps.Clone(environments.config)
+			beforeEnvironmentCount := len(environments.environments)
+			prompts := &reuseInitACRPromptServer{initACRPromptServer: initACRPromptServer{
+				subscription: &azdext.Subscription{
+					Id: tt.prompted, TenantId: "resource-tenant", UserTenantId: "user-tenant",
+				},
+				err: tt.promptError,
+			}}
+			account := &sourceInitACRAccountServer{}
+			envName := tt.envName
+			if envName == "" {
+				envName = "test-agent-dev"
+			}
+			workflow := &recordingProjectWorkflowServer{}
+			workflow.runHook = func(call int) error {
+				args := workflow.requests[call-1].Workflow.Steps[0].Command.Args
+				if len(args) >= 2 && args[0] == "env" && args[1] == "new" {
+					if !slices.Equal(args, []string{"env", "new", envName}) {
+						return fmt.Errorf("unexpected environment creation arguments: %v", args)
+					}
+					environment := &azdext.Environment{Name: envName}
+					environments.environments[envName] = environment
+					environments.current = environment
+					environments.values[envName] = map[string]string{}
+					return nil
+				}
+				if tt.wantError != "" {
+					return errors.New("authoring reached before registry scope preflight")
+				}
+				if !tt.noPrompt {
+					values := environments.values[envName]
+					if values["AZURE_SUBSCRIPTION_ID"] == "" || values["AZURE_TENANT_ID"] != "user-tenant" {
+						return errors.New("authoring would require another subscription selection")
+					}
+				}
+				return nil
+			}
+			registry := tt.registry
+			if registry == "" {
+				registry = testInitACRID
+			}
+			if tt.directoryGroup {
+				group := "rg-" + deriveEnvName(&initFlags{}, ".")
+				require.NotEqual(t, "rg-"+envName, group)
+				registry = strings.Replace(testInitACRID, "/registry-rg/", "/"+group+"/", 1)
+			}
+			args := []string{"--acr-resource-id", registry}
+			err := executeReuseInitACR(t, environments, workflow, prompts, project, account, tt.noPrompt, tt.envName, args...)
+			require.Equal(t, tt.wantPrompts, prompts.calls)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				require.Empty(t, workflow.requests)
+				require.Empty(t, environments.setKeys)
+				require.Equal(t, beforeValues, environments.values[tt.envName])
+				require.Equal(t, beforeConfig, environments.config)
+				require.True(t, proto.Equal(beforeCurrent, environments.current))
+				require.Empty(t, account.subscriptions)
+				require.Len(t, environments.environments, beforeEnvironmentCount)
+			} else {
+				require.NoError(t, err)
+				wantCalls := 2
+				if tt.existing {
+					wantCalls = 1
+				}
+				require.Len(t, workflow.requests, wantCalls)
+				projectArgs := []string{"ai", "project", "add"}
+				if tt.noPrompt {
+					projectArgs = append(projectArgs, "--no-prompt")
+					require.Empty(t, environments.setKeys)
+					require.Empty(t, account.subscriptions)
+				} else {
+					values := environments.values[envName]
+					require.True(t, strings.EqualFold("sub", values["AZURE_SUBSCRIPTION_ID"]))
+					require.Equal(t, "user-tenant", values["AZURE_TENANT_ID"])
+					require.Equal(t, []string{values["AZURE_SUBSCRIPTION_ID"]}, account.subscriptions)
+				}
+				projectArgs = append(projectArgs, "--output", "none", "--new-project", "--acr-resource-id", registry)
+				require.Equal(t, expectedProjectWorkflowArgs(t, root, projectArgs...),
+					workflowArgs(t, workflow, wantCalls-1))
+				require.Equal(t, envName, environments.current.GetName())
+			}
+			require.True(t, proto.Equal(beforeProject, project.project))
+			after, readErr := os.ReadFile(filepath.Join(root, "azure.yaml"))
+			require.NoError(t, readErr)
+			require.Equal(t, content, after)
+			require.NoDirExists(t, filepath.Join(root, ".azure"))
+		})
+	}
+}
 
 // legacyConfigAgentService builds the deprecated shape, where the agent
 // definition is nested under config: rather than inline on the service entry.

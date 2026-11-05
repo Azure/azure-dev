@@ -4,25 +4,19 @@
 package cmd
 
 import (
-	"fmt"
-
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/helpformat"
 	"azureaiagent/internal/inittelemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
 func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
-		Name: "agent",
-		Use:  "agent <command> [options]",
-		Short: fmt.Sprintf(
-			"Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. %s",
-			color.YellowString("(Preview)"),
-		),
+		Name:  "agent",
+		Use:   "agent <command> [options]",
+		Short: "Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal.",
 	})
 	previewHelpText(rootCmd, featureflags.Voice, "Ship prompt, hosted, and voice agents", "Ship agents")
 	rootCmd.SilenceUsage = true

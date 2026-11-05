@@ -330,7 +330,7 @@ func (a *agentServiceAddAction) Run(ctx context.Context) (runErr error) {
 	if err != nil {
 		return err
 	}
-	if err := projectpkg.RequireDefinitionFeatures(definition.ResolvedProperties); err != nil {
+	if err := projectpkg.RequireDefinitionFeatures(definition.ResolvedProperties, a.errOut); err != nil {
 		return err
 	}
 	dependencies, err := planAgentServiceUses(

@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0 (2026-11-05)
+
+### Other Changes
+
+- [[#10836]](https://github.com/Azure/azure-dev/pull/10836) Remove Preview labels from command help and extension descriptions.
+
 ## 1.0.0-beta.11 (2026-10-23)
 
 ### Features Added

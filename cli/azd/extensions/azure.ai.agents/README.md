@@ -1,5 +1,6 @@
 # Azure Developer CLI (azd) Agents Extension
 
+<!-- cspell:ignore strconv -->
 ## Project monitoring
 
 New Foundry projects created for agents automatically provision and connect
@@ -16,7 +17,7 @@ requirements, and Bicep/Terraform ejection and cleanup semantics.
 
 ## Preview feature switches
 
-All six preview capabilities are off by default. Each switch is controlled independently.
+All eight preview capabilities are off by default. Each switch is controlled independently.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
@@ -25,7 +26,9 @@ All six preview capabilities are off by default. Each switch is controlled indep
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 | `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
-| `agents.byo_aks` | [Existing AKS project initialization and adoption](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
+| `agents.byo_aks` | [Existing AKS project initialization, adoption, provisioning, and provisioning preview](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
+| `foundry.acr_reuse` | External ACR reuse in new Foundry projects, including preview and cleanup | `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE` |
+| `agents.rbac_warnings` | Retained developer RBAC deployment warnings through the beta event API | `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS` |
 
 Override a switch in your shell or CI before running azd:
 
@@ -36,6 +39,8 @@ export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
 export AZD_ALPHA_ENABLE_AGENTS_A2A=true
 export AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
 export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
+export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true
+export AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true
 ```
 
 In PowerShell, for example:
@@ -47,14 +52,21 @@ $env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
 When a variable is absent, its feature is off.
 When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature.
 False, empty, and invalid values disable it, including BYO AKS.
-The evaluator reads the current
-process environment without querying azd config or loading environment files.
-Values already injected by the azd host count; the selected azd environment
-can override the same key from the shell or CI.
+The evaluator reads only the current process environment, without querying
+azd config or loading dotenv files. For lifecycle listeners, the host does
+not flatten the selected environment's `.azure/<env>/.env` into the extension
+for these switches, so persisted `azd env set` values do not enable or
+override the listener. Direct `azd ai agent ...` commands still receive
+selected-environment values after shell/CI values, so a persisted dotenv value
+can override a shell opt-in for those commands.
+The Projects provisioning listener likewise requires the BYO AKS switch in
+the current shell or CI process environment for `azd provision` and
+`azd provision --preview`; `azd env set` alone does not enable it.
 
 User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
 `AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary
-hosted and plain prompt agents without BYO AKS hosting need no opt-in.
+hosted and plain prompt agents without BYO AKS hosting or new ACR reuse intent
+need no opt-in.
 
 Root help always lists the canonical switches and their scopes. While a
 feature is off, its command-specific flags and help sections are hidden.
@@ -81,8 +93,18 @@ Explicit remote `--template` inputs are staged and checked before Azure
 authentication, including `$ref` definitions. Adoption reuses that directory.
 
 BYO AKS checks cover inline and referenced project configuration during init/adoption.
-Foundry provider initialization, provision, preview, lifecycle hooks, and Bicep
-eject do not check the BYO AKS switch. Ordinary Foundry provisioning is unchanged.
+The Projects provider also requires the BYO AKS switch for `azd provision` and
+`azd provision --preview` when effective `agentHosting.enabled=true`.
+Foundry provider initialization, lifecycle hooks, and Bicep eject do not check
+the BYO AKS switch. Ordinary Foundry provisioning without AKS hosting is unchanged.
+
+The RBAC warnings switch controls retention only, not whether checks run.
+With it off, `predeploy` uses the stable event API and prints warnings and
+suggestions in hook output. The host can discard that output while deployment
+progress suppresses the previewer; the stable path does not guarantee warning
+visibility or retention after deployment.
+With it on, `predeploy` uses the beta event API so the host can retain warnings
+in final output and JSON `messages`.
 
 ### Enforcement limits
 
@@ -90,11 +112,13 @@ eject do not check the BYO AKS switch. Ordinary Foundry provisioning is unchange
   not query its remote definition, so the managed harness check does not cover
   that route. The long-running check still applies. Text invoke does not
   accept voice WebSocket endpoints.
-- Agent read and cleanup commands stay available with features off. This includes
+- Agent read and cleanup commands stay available with agent-kind previews off. This includes
   show, endpoint show, invocations show, follow, and cancel, delete, and down.
-  BYO AKS infrastructure operations do not require its switch to be enabled.
+  BYO AKS infrastructure state queries, Bicep eject, and teardown do not require its switch to be enabled.
   BYO AKS infrastructure uses the standard Foundry `azd down`
   path, which deletes the target resource group and all resources inside it.
+  External ACR reuse is stricter: preview, down, recovery, and eject require
+  `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true`, including for a BYO AKS project.
 - These checks do not govern requests from the evaluations or routines
   extensions.
 
@@ -316,8 +340,10 @@ cost and is not run automatically.
 
 Requires azd 1.37.0 or later. Telemetry, deployment preview, and developer RBAC
 principal lookup use stable v1 APIs, including `Account().GetCurrentPrincipal`.
-The service `predeploy` listener uses the existing beta structured-message API
-to retain RBAC warnings; `postdeploy` and project listeners remain stable.
+The service `predeploy` listener uses the stable event API by default. Enabling
+`AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true` opts it into the beta
+structured-message API to retain RBAC warnings; `postdeploy` and project
+listeners remain stable.
 
 Extension code reports best-effort usage events through the shared
 `pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
@@ -541,10 +567,19 @@ Deploy Agents through the normal azd project lifecycle:
 
 ### Retained developer RBAC warnings
 
-With azd 1.37.0 or later, developer RBAC warnings from the service `predeploy`
-check remain in the final `azd deploy` / `azd up` output, including when a later
-deployment step fails. They are non-blocking: a warning does not change the
-deployment exit code, and deployment errors still fail the command.
+With azd 1.37.0 or later, enable `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true`
+in your shell or CI before deploying to retain developer RBAC warnings from
+the service `predeploy` check in the final `azd deploy` / `azd up` output,
+including when a later deployment step fails. In PowerShell, use
+`$env:AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS = 'true'`.
+This preview is off by default; absent, false, empty, or invalid values keep
+the stable event API and warnings in hook output only, without retained JSON
+`messages`. The host can discard stable hook output while deployment progress
+suppresses the previewer. Enable the switch to retain warnings in final output
+and JSON `messages`; this extension does not change host output handling.
+RBAC checks, automatic role assignment, and skip
+rules still run as before. Warnings are non-blocking: a warning does not
+change the deployment exit code, and deployment errors still fail the command.
 
 This covers Foundry User checks and failed automatic assignment, hosted-agent
 role-assignment-write checks, and Container Registry access checks (including
@@ -554,8 +589,8 @@ are also retained. Early exits for missing or invalid `AZURE_AI_PROJECT_ID`,
 Prompt and voice agents keep only the applicable Foundry
 checks; hosted-only checks and the existing skip behavior are unchanged.
 
-For automation, use `--no-prompt --output json` and consume the host's `messages`
-entries. Each retained warning has `kind: warning`, `extensionId:
+With the preview enabled, automation can use `--no-prompt --output json`
+and consume the host's `messages` entries. Each retained warning has `kind: warning`, `extensionId:
 azure.ai.agents`, the service key, `event: predeploy`, a `message`, and any
 `suggestion`. Messages are scoped to each service invocation, not deduplicated
 across services. No new prompt is introduced. Transport diagnostics include only
@@ -1509,6 +1544,193 @@ proxy — fails validation rather than silently deploying a policy that never ru
 Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
 the whole body is then moderated and no paths are needed for that direction.
 
+### Reuse a source-build registry
+
+Existing ACR reuse is a **default-off preview**, shared with the projects
+extension. Set `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true` in the process running
+azd. For PowerShell:
+
+```powershell
+$env:AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE = 'true'
+```
+
+For POSIX shells use `export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true`; set the
+same variable in CI jobs. Only `strconv.ParseBool` true forms enable it, not
+`on`, `yes`, or core `azd config` alpha settings. Host-injected process values
+are honored; the evaluator does not open dotenv files.
+
+When disabled, `--acr-resource-id` and its help examples are hidden but still
+parse and return explicit enablement guidance. Greenfield environment-only selections,
+saved reuse bindings without legacy aliases, and unfinished access operations
+also require the switch. Re-enable it for **preview, down, recovery, and
+eject**, as well as setup, provision, package, publish, and deploy using reuse.
+Disabled operations leave project files, environment values, saved context,
+and Azure resources unchanged; they never fall back to creating a registry.
+Automatic registry creation and code, prebuilt-image, and old connection
+workflows without new reuse intent remain available. Other preview switches
+cannot enable ACR reuse.
+
+A bare `image` still defaults to source build and requests automatic registry
+provisioning with the switch off; the provision/deploy consistency correction
+is always on. Fresh create preserves normal outputs without a binding-only
+project identity lookup, canonical binding creation, or new mode write off.
+Saved create bindings retain identity validation and maintenance. Recovered
+create ownership remains usable for safe operations, but is not newly
+serialized or unset as persisted state while off.
+
+Legacy existing-project `reuse-connect` environments without canonical reuse
+bindings or pending operations retain their existing behavior without opt-in.
+Canonical reuse and pending operations are checked before this exemption.
+Template initialization checks the destination environment's pending state
+without inheriting unrelated state from the caller's environment.
+
+For greenfield reuse, the pre-operation check includes `existingAcrResourceId` present only in
+generated/ejected `main.parameters.json` or `main.bicepparam` on a supported
+`microsoft.foundry` root or layer, including custom paths and module names.
+It runs before project hooks or independent package, publish, and deploy
+handlers mutate state. JSON `${VAR}` substitutions use the host environment;
+`.bicepparam` takes precedence and Bicep resolves its expressions. Parameter
+checks retain normal Bicep installation and module restoration. Dependency
+caches may be populated, but rejected reuse does not change project files,
+environment/config values, saved context, or Azure resources. Invalid
+parameters remain errors rather than being treated as non-reuse.
+
+Provider initialization and `azd down` remain compiler-free. Down uses
+recorded environment selectors, bindings, pending cleanup, and recovered
+deployment facts instead of current parameter files. Recorded reuse still
+requires the switch; a source-only selector that has not been deployed does
+not block teardown. Non-reuse provisioning retains automatic Bicep setup.
+
+The provision validation rule also honors this switch before registry
+lookups. Mandatory lifecycle hooks, including prepackage, and independent
+agent operations still enforce it when optional validation is skipped.
+
+For hosted-container source builds in a new Foundry project, select an existing
+registry during setup:
+
+```powershell
+azd ai agent init --src . --acr-resource-id "<registry-arm-id>"
+```
+
+Alternatively, save the registry in the active azd environment:
+
+```sh
+azd env set AZURE_CONTAINER_REGISTRY_RESOURCE_ID "<full-registry-arm-id>"
+```
+
+The projects extension saves the selection in the active azd environment.
+`azd ai project add --new-project --acr-resource-id "<registry-arm-id>"` provides
+the same project-level setup. Before provisioning, a setup flag overrides the environment's
+`AZURE_CONTAINER_REGISTRY_RESOURCE_ID`; without either input, provisioning creates
+a registry only when source builds need one. Setup displays the selected registry
+as externally owned without introducing a registry picker.
+
+Environment-only selections use the same validation, persisted reuse mode, and
+ownership output. When reusing agent configuration, explicit and retained
+selections require hosted-container source builds and supported Bicep
+infrastructure before setup changes any files or environment values.
+An unreadable environment stops selection rather than
+defaulting to a new registry. A same-group registry ID alone is not evidence
+that azd owns the registry. A deployed registry binding remains authoritative
+when legacy registry output variables are missing.
+
+Registry selection requires a Projects extension that accepts
+`project add --new-project --acr-resource-id`. Init checks these flags with
+captured command help before changing project files or environment values.
+The help probe runs the Projects executable registered with the invoking
+azd host, not another `azd` found on `PATH`.
+The check does not print help into quiet or JSON output. An unsupported
+extension or a failed capability check stops setup; flows without a selector
+continue to work with older Projects versions.
+
+Conflict messages identify the explicit flag, saved environment selector, or
+deployed binding. Saved selectors also prevent selecting voice initialization
+interactively. Use source builds or a separate environment for an incompatible
+configuration; do not remove a deployed binding to bypass validation.
+Source initialization checks the planned environment's local `.azure` state
+even when a previous partial init did not leave an `azure.yaml` file.
+
+The selector cannot be combined with `--image`, `--registry-connection`,
+`--acr-connection`, `--project-id`, or code/prompt/voice deployment. Existing
+connection-selection flows keep their meanings. Repeated provisioning retains
+the deployed registry; switching an already provisioned project's registry is
+not supported.
+
+When adopting a template, init rejects an existing Foundry project endpoint
+before scaffolding. Interactive source, template, and existing-configuration
+setup check the chosen subscription against the registry before creating
+project files or saving environment values. The new environment name, whether
+explicitly requested or derived from the target directory (the current directory
+for source init without a new folder), also determines the root or Foundry-layer
+teardown group during preflight.
+A successful preflight carries that subscription into setup without asking again.
+Headless setup with missing Azure context continues to defer configuration.
+Template adoption resolves the planned environment in the target directory,
+including any retained target state from a partial initialization; it does not
+inherit a different project's active environment or registry selection.
+Saved registry selections receive the same input validation and subscription
+preflight as an explicit flag. Template adoption rejects conflicting CLI inputs,
+including explicit empty values, before scaffolding. Saved selections retain
+container source-build mode when adopting a service without deployment
+configuration.
+
+Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
+be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside
+every resource group managed by azd, including the Foundry group and application
+groups, because `azd down` deletes them. `AZURE_RESOURCE_GROUP` cannot establish
+all groups managed by another provider's templates. Reuse therefore requires
+Foundry-only infrastructure; a non-Foundry root deployment or any non-Foundry
+infrastructure layer is rejected even if the registry is outside the groups
+named in environment values. Cross-subscription registry reuse is not supported.
+azd preserves the external registry, images, and
+administrator-managed grants, and cleans up only
+access grants and related resources it can establish it owns. Customers manage
+network reachability and image-publisher push permissions. See
+[non-interactive configuration](../ai-non-interactive.md#azureaiprojects).
+
+Do not combine an external source-build registry selection with `agentHosting`,
+even for a project-only configuration: reuse does not manage AKS node pull
+access. Remove the selector to use an azd-created registry, or use explicit
+prebuilt images with user-managed registry authentication.
+
+An `image` value alone still defaults to a source build, including with
+`--no-prompt`. Explicit prebuilt selection requires
+`docker.imagePassthrough: true` with a nonempty image. Add `registryConnectionId`
+when a private registry connection is needed; it also requires
+`docker.imagePassthrough: true`.
+When importing a template with an ACR selection, init preserves this source-build
+intent instead of converting an image-only service to prebuilt. Without an ACR
+selection, template init retains its existing image-to-prebuilt behavior.
+The legacy environment value `AZD_AGENT_SKIP_ACR=true` also selects prebuilt
+deployment when the expanded image is nonempty.
+
+A project-only Bicep eject retains a pending registry selection without freezing
+`includeAcr` to `false`; later source-built agents determine demand at provision
+time. Remove an older generated `parameters.includeAcr` object if it only records
+the absence of agents at eject time. Deliberate user-authored overrides are
+preserved.
+
+Keep the generated Foundry layer on `microsoft.foundry`, including after
+Bicep eject. Manually switching it to core `infra.provider: bicep` is
+unsupported and outside this flag's enforcement contract, as is running
+external IaC directly. Core Bicep preview does not run extension lifecycle
+hooks; it cannot provide this extension's mandatory gate.
+
+For an external ABAC registry, source builds require local Docker:
+set `docker.remoteBuild: false` on each source-built agent service and grant the
+image publisher Container Registry Repository Writer push permission.
+Template adoption preserves an authored Docker block, including a block
+containing only `remoteBuild: false`, and adds `project: .` when it is missing.
+Hosted source initialization normally sets `docker.remoteBuild: true` unless
+network injection requires local builds. That remote Quick Build path is not
+supported with ABAC registry reuse: its current request does not authenticate the
+source registry, and Repository Writer permission alone does not fix the request.
+Provisioning rejects this combination. Use local Docker, a prebuilt image, or a
+classic RBAC registry instead. Prebuilt images, code deployments, legacy project
+connections, and unused project-only selections do not trigger the ABAC
+remote-build restriction; selector scope and `agentHosting` validation still
+apply.
+
 ### Hosted voice wrapper (preview)
 
 A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
@@ -1919,7 +2141,7 @@ and supply this field alongside `trace_window` in the `agent_traces` context:
 
 ```yaml
 trace_connection_configuration:
-  type: appinsights
+  type: application_insights
   resource_id: /subscriptions/<subscription>/resourceGroups/<group>/providers/Microsoft.Insights/components/<component>
   agent_name: exact-emitted-telemetry-service-name
 ```

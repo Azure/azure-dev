@@ -7,20 +7,109 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
 const projectWorkflowRollbackTimeout = 30 * time.Second
+
+func ensureInitACRProjectsCapability(
+	ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient,
+) error {
+	if initACRResourceID(flags) == "" || flags.acrCapabilityChecked {
+		return nil
+	}
+	getHelp := flags.projectsAddHelp
+	if getHelp == nil {
+		getHelp = func(ctx context.Context) ([]byte, error) {
+			return projectsAddHelpFromCLI(ctx, azdClient)
+		}
+	}
+	help, err := getHelp(ctx)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("Projects capability check was cancelled")
+		}
+		return exterrors.Compatibility(
+			exterrors.CodeIncompatibleProjectsExtension,
+			fmt.Sprintf("cannot verify azure.ai.projects supports source-build registry selection: %s", err),
+			"use an azure.ai.projects build supporting project add --new-project --acr-resource-id, "+
+				"or use a separate azd environment without a registry selector",
+		)
+	}
+	for _, name := range []string{"new-project", "acr-resource-id"} {
+		pattern := `(?m)^\s+(?:-[A-Za-z0-9], )?--` + name + `(?:[ =]|$)`
+		if !regexp.MustCompile(pattern).Match(help) {
+			return exterrors.Compatibility(
+				exterrors.CodeIncompatibleProjectsExtension,
+				"installed azure.ai.projects does not support project add --new-project --acr-resource-id",
+				"use an azure.ai.projects build supporting source-build registry selection, "+
+					"or use a separate azd environment without a registry selector",
+			)
+		}
+	}
+	flags.acrCapabilityChecked = true
+	return nil
+}
+
+func projectsAddHelpFromCLI(ctx context.Context, azdClient *azdext.AzdClient) ([]byte, error) {
+	helper, err := azdext.NewConfigHelper(azdClient)
+	if err != nil {
+		return nil, err
+	}
+	var installed map[string]*struct {
+		Id   string `json:"id"`
+		Path string `json:"path"`
+	}
+	// Read the invoking host's installation records, not a PATH azd.
+	found, err := helper.GetUserJSON(ctx, "extension.installed", &installed)
+	if err != nil {
+		return nil, fmt.Errorf("reading installed Projects extension: %w", err)
+	}
+	extension := installed["azure.ai.projects"]
+	if extension == nil {
+		for _, candidate := range installed {
+			if candidate != nil && strings.EqualFold(candidate.Id, "azure.ai.projects") {
+				extension = candidate
+				break
+			}
+		}
+	}
+	if !found || extension == nil ||
+		!strings.EqualFold(extension.Id, "azure.ai.projects") || strings.TrimSpace(extension.Path) == "" {
+		return nil, errors.New("installed azure.ai.projects executable is unavailable")
+	}
+	configDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolving installed Projects extension directory: %w", err)
+	}
+	// Match the host Runner's installed executable path resolution.
+	path, err := filepath.Abs(filepath.Join(configDir, extension.Path))
+	if err != nil {
+		return nil, fmt.Errorf("resolving installed Projects executable: %w", err)
+	}
+	// Capture help; Workflow.Run cannot return or hide output.
+	cmd := exec.CommandContext(ctx, path, "add", "--help", "--no-prompt")
+	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	return cmd.Output()
+}
 
 type projectAuthoringMode string
 
@@ -40,6 +129,7 @@ func authorFoundryProject(
 	projectRoot string,
 	mode projectAuthoringMode,
 	noPrompt bool,
+	acrResourceID string,
 ) error {
 	if mode != projectAuthoringCurrent &&
 		mode != projectAuthoringExisting &&
@@ -57,12 +147,20 @@ func authorFoundryProject(
 			"select an existing Foundry project and retry",
 		)
 	}
+	if acrResourceID != "" && mode == projectAuthoringExisting {
+		return initACRConflict("--project-id")
+	}
 	if mode != projectAuthoringExisting && target != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"an existing Foundry project target cannot be used in this mode",
 			"select an existing project or create a new one",
 		)
+	}
+	if acrResourceID != "" {
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
+		}
 	}
 	args := []string{
 		"ai",
@@ -73,8 +171,11 @@ func authorFoundryProject(
 		args = append(args, "--no-prompt")
 	}
 	args = append(args, "--output", "none")
-	if mode == projectAuthoringNew {
+	if mode == projectAuthoringNew || acrResourceID != "" {
 		args = append(args, "--new-project")
+	}
+	if acrResourceID != "" {
+		args = append(args, "--acr-resource-id", acrResourceID)
 	}
 	if mode == projectAuthoringExisting {
 		if resourceID := strings.TrimSpace(target.ResourceId); resourceID != "" {
@@ -101,18 +202,20 @@ func authorSelectedFoundryProject(
 	projectRoot string,
 	mode projectAuthoringMode,
 	noPrompt bool,
+	acrResourceID string,
 ) error {
 	if mode == projectAuthoringNew || mode == projectAuthoringCurrent {
 		return authorFoundryProjectPreservingEnvironment(
-			ctx, azdClient, envName, projectRoot, mode, noPrompt,
+			ctx, azdClient, envName, projectRoot, mode, noPrompt, acrResourceID,
 		)
 	}
-	return authorFoundryProject(ctx, azdClient, target, projectRoot, mode, noPrompt)
+	return authorFoundryProject(ctx, azdClient, target, projectRoot, mode, noPrompt, acrResourceID)
 }
 
 var newProjectEnvironmentKeys = []string{
 	"AZURE_AI_PROJECT_NAME",
 	"AZURE_RESOURCE_GROUP",
+	"AZURE_FOUNDRY_RESOURCE_GROUP",
 	"AZURE_AI_ACCOUNT_NAME",
 	"AZURE_LOCATION",
 	"AZURE_AI_DEPLOYMENTS_LOCATION",
@@ -125,7 +228,7 @@ func authorNewFoundryProject(
 	projectRoot string,
 ) error {
 	return authorFoundryProjectPreservingEnvironment(
-		ctx, azdClient, envName, projectRoot, projectAuthoringNew, true,
+		ctx, azdClient, envName, projectRoot, projectAuthoringNew, true, "",
 	)
 }
 
@@ -136,13 +239,42 @@ func authorFoundryProjectPreservingEnvironment(
 	projectRoot string,
 	mode projectAuthoringMode,
 	noPrompt bool,
+	acrResourceID string,
 ) error {
+	if acrResourceID != "" {
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
+		}
+	}
 	response, err := azdClient.Environment().GetValues(
 		ctx,
 		&azdext.GetEnvironmentRequest{Name: envName},
 	)
 	if err != nil {
 		return fmt.Errorf("reading new Foundry project environment: %w", err)
+	}
+	if !synthesis.ACRReuseEnabled() {
+		allValues := make(map[string]string, len(response.GetKeyValues()))
+		for _, entry := range response.GetKeyValues() {
+			allValues[entry.GetKey()] = entry.GetValue()
+		}
+		var raw []byte
+		for _, name := range []string{"azure.yaml", "azure.yml"} {
+			// #nosec G304 -- projectRoot is the selected project.
+			content, err := os.ReadFile(filepath.Join(projectRoot, name))
+			if err == nil {
+				raw = content
+				break
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("read project before registry authoring: %w", err)
+			}
+		}
+		if err := synthesis.RequireACRReuseForEnvironment(ctx, azdClient, envName, synthesis.Input{
+			RawAzureYAML: raw, ProjectRoot: projectRoot, Env: allValues,
+		}); err != nil {
+			return err
+		}
 	}
 
 	values := make(map[string]string, len(newProjectEnvironmentKeys))
@@ -156,7 +288,7 @@ func authorFoundryProjectPreservingEnvironment(
 	}
 
 	authorErr := authorFoundryProject(
-		ctx, azdClient, nil, projectRoot, mode, noPrompt,
+		ctx, azdClient, nil, projectRoot, mode, noPrompt, acrResourceID,
 	)
 	rollbackCtx, cancel := context.WithTimeout(
 		context.WithoutCancel(ctx),

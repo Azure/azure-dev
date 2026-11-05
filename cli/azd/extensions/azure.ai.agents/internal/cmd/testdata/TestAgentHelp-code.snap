@@ -4,7 +4,7 @@ Usage
   azd ai agent code [command]
 
 Available Commands
-  download : Download agent source code from Foundry. (Preview)
+  download : Download agent source code from Foundry.
 
 Global Flags
   -C, --cwd string         : Sets the current working directory

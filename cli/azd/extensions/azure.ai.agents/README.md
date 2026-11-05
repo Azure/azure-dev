@@ -1545,7 +1545,8 @@ Template adoption resolves the planned environment in the target directory,
 including any retained target state from a partial initialization; it does not
 inherit a different project's active environment or registry selection.
 Saved registry selections receive the same subscription preflight as an explicit
-flag and retain container source-build mode when adopting an unconfigured service.
+flag and retain container source-build mode when adopting a service without
+deployment configuration.
 
 Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
 be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside

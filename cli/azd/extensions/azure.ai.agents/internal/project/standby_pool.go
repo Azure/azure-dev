@@ -79,9 +79,13 @@ func standbyPoolProject(
 	return projectService, nil
 }
 
-// VerifyStandbyPoolExistingHosting verifies adopted project identity and its
-// account's managed-cluster hosting through read-only ARM calls before agent writes.
-func VerifyStandbyPoolExistingHosting(
+var newStandbyPoolCredential = func(tenant string) (azcore.TokenCredential, error) {
+	return azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{TenantID: tenant})
+}
+
+// VerifyStandbyPoolHosting verifies the provisioned project's actual ARM hosting
+// before agent writes; a local declaration is not proof of provider support.
+func VerifyStandbyPoolHosting(
 	ctx context.Context, client *azdext.AzdClient, endpoint *agent_yaml.AgentEndpoint,
 	service *azdext.ServiceConfig, services map[string]*azdext.ServiceConfig,
 	projectRoot, runtimeEndpoint, envName string,
@@ -101,9 +105,6 @@ func VerifyStandbyPoolExistingHosting(
 		return err
 	}
 	declaredEndpoint, _ := props.AsMap()["endpoint"].(string)
-	if declaredEndpoint == "" {
-		return nil
-	}
 	values, err := client.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
 	if err != nil {
 		return exterrors.FromHost(err, "get environment", "validating standby pool hosting")
@@ -112,12 +113,14 @@ func VerifyStandbyPoolExistingHosting(
 	for _, entry := range values.GetKeyValues() {
 		env[entry.Key] = entry.Value
 	}
-	declaredEndpoint, err = ExpandEnv(declaredEndpoint, func(key string) string { return env[key] })
-	if err != nil {
-		return err
-	}
-	if !sameStandbyProjectEndpoint(declaredEndpoint, runtimeEndpoint) {
-		return standbyPoolHostingError(service.GetName())
+	if declaredEndpoint != "" {
+		declaredEndpoint, err = ExpandEnv(declaredEndpoint, func(key string) string { return env[key] })
+		if err != nil {
+			return err
+		}
+		if !sameStandbyProjectEndpoint(declaredEndpoint, runtimeEndpoint) {
+			return standbyPoolHostingError(service.GetName())
+		}
 	}
 	info, err := storageProjectInfo(env["AZURE_AI_PROJECT_ID"])
 	if err != nil {
@@ -132,15 +135,13 @@ func VerifyStandbyPoolExistingHosting(
 	if tenant.GetTenantId() == "" {
 		return errors.New("project user access tenant is unavailable for standby pool verification")
 	}
-	credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID: tenant.GetTenantId(),
-	})
+	credential, err := newStandbyPoolCredential(tenant.GetTenantId())
 	if err != nil {
 		return err
 	}
 	if err := verifyStandbyPoolARMHosting(ctx, credential, azure.NewArmClientOptions(),
 		info.ProjectScope, runtimeEndpoint); err != nil {
-		return fmt.Errorf("verify existing project BYO AKS hosting for standby pool: %w", err)
+		return fmt.Errorf("verify project BYO AKS hosting for standby pool: %w", err)
 	}
 	return nil
 }

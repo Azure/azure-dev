@@ -20,6 +20,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/project"
 
@@ -55,19 +56,30 @@ func TestStandbyPoolEndpointUpdateCommand(t *testing.T) {
 				},
 			}}, &helpersPromptServer{})
 			previousFactory := newEndpointUpdateClient
+			previousVerification := verifyEndpointUpdateStandbyHosting
 			previousSources := readAzdHostedSourcesFunc
 			previousTransport := recordproxy.Transport
 			t.Cleanup(func() {
 				newEndpointUpdateClient = previousFactory
+				verifyEndpointUpdateStandbyHosting = previousVerification
 				readAzdHostedSourcesFunc = previousSources
 				recordproxy.Transport = previousTransport
 			})
+			verified := false
+			verifyEndpointUpdateStandbyHosting = func(
+				context.Context, *azdext.AzdClient, *agent_yaml.AgentEndpoint,
+				*azdext.ServiceConfig, map[string]*azdext.ServiceConfig, string, string, string,
+			) error {
+				verified = true
+				return nil
+			}
 			readAzdHostedSourcesFunc = func(context.Context) (azdHostedSources, error) {
 				return azdHostedSources{
 					EnvValue: "https://account.services.ai.azure.com/api/projects/project", EnvName: "test",
 				}, nil
 			}
 			newEndpointUpdateClient = func(ac *AgentContext) (*agent_api.AgentClient, error) {
+				require.True(t, verified, "verify actual ARM hosting before constructing the agent client")
 				return agent_api.NewAgentClient(ac.ProjectEndpoint, responseTestCredential{}), nil
 			}
 			var calls []string
@@ -131,31 +143,39 @@ func TestStandbyPoolEndpointUpdateRequiresHostingBeforeClient(t *testing.T) {
 }
 
 func TestStandbyPoolEndpointUpdateExistingHostingFailsClosed(t *testing.T) {
-	t.Setenv(featureflags.BYOAKS.EnvVar, "true")
-	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
-	service := &azdext.ServiceConfig{
-		Name: "agent", Host: AiAgentHost, Uses: []string{"project"},
-		AdditionalProperties: mustEndpointUpdateProperties(t, 1),
+	for _, binding := range []string{"adopted", "new project declaration"} {
+		t.Run(binding, func(t *testing.T) {
+			t.Setenv(featureflags.BYOAKS.EnvVar, "true")
+			const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+			service := &azdext.ServiceConfig{
+				Name: "agent", Host: AiAgentHost, Uses: []string{"project"},
+				AdditionalProperties: mustEndpointUpdateProperties(t, 1),
+			}
+			fields := map[string]any{"endpoint": endpoint}
+			if binding == "new project declaration" {
+				fields = map[string]any{"agentHosting": map[string]any{"clusterResourceId": "${AKS_CLUSTER_ID}"}}
+			}
+			props, err := structpb.NewStruct(fields)
+			require.NoError(t, err)
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+					"agent": service, "project": {Name: "project", Host: AiProjectHost, AdditionalProperties: props},
+				},
+			}}, &helpersPromptServer{})
+			previousFactory, previousSources := newEndpointUpdateClient, readAzdHostedSourcesFunc
+			t.Cleanup(func() { newEndpointUpdateClient, readAzdHostedSourcesFunc = previousFactory, previousSources })
+			readAzdHostedSourcesFunc = func(context.Context) (azdHostedSources, error) {
+				return azdHostedSources{EnvValue: endpoint, EnvName: "test"}, nil
+			}
+			newEndpointUpdateClient = func(*AgentContext) (*agent_api.AgentClient, error) {
+				t.Fatal("unavailable hosting verification must not construct an agent client or write to the agent API")
+				return nil, nil
+			}
+			// No provisioned project identity is available: neither declaration can authorize agent writes.
+			require.Error(t, runEndpointUpdate(t.Context(), client,
+				&endpointUpdateFlags{name: "agent"}, &azdext.ExtensionContext{NoPrompt: true}))
+		})
 	}
-	props, err := structpb.NewStruct(map[string]any{"endpoint": endpoint})
-	require.NoError(t, err)
-	client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
-		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
-			"agent": service, "project": {Name: "project", Host: AiProjectHost, AdditionalProperties: props},
-		},
-	}}, &helpersPromptServer{})
-	previousFactory, previousSources := newEndpointUpdateClient, readAzdHostedSourcesFunc
-	t.Cleanup(func() { newEndpointUpdateClient, readAzdHostedSourcesFunc = previousFactory, previousSources })
-	readAzdHostedSourcesFunc = func(context.Context) (azdHostedSources, error) {
-		return azdHostedSources{EnvValue: endpoint, EnvName: "test"}, nil
-	}
-	newEndpointUpdateClient = func(*AgentContext) (*agent_api.AgentClient, error) {
-		t.Fatal("unavailable hosting verification must not construct an agent client or write to the agent API")
-		return nil, nil
-	}
-	// No EnvironmentService is registered: verification must fail, not trust the endpoint declaration.
-	require.Error(t, runEndpointUpdate(t.Context(), client,
-		&endpointUpdateFlags{name: "agent"}, &azdext.ExtensionContext{NoPrompt: true}))
 }
 
 func mustEndpointUpdateProperties(t *testing.T, size int) *structpb.Struct {

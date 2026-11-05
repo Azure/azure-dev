@@ -20,6 +20,7 @@ import (
 	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -274,6 +275,83 @@ func TestStandbyPoolExistingARMHosting(t *testing.T) {
 	}
 }
 
+func TestStandbyPoolProvisionedHosting(t *testing.T) {
+	t.Setenv(synthesis.BYOAKSEnvVar, "true")
+	const projectID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj"
+	const endpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+	const clusterID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/aks"
+	previousCredential, previousTransport := newStandbyPoolCredential, recordproxy.Transport
+	t.Cleanup(func() {
+		newStandbyPoolCredential, recordproxy.Transport = previousCredential, previousTransport
+	})
+	newStandbyPoolCredential = func(tenant string) (azcore.TokenCredential, error) {
+		require.Equal(t, "00000000-0000-0000-0000-000000000000", tenant)
+		return hostedResourceErrorCredential{}, nil
+	}
+	for _, adopted := range []bool{false, true} {
+		for _, size := range []int32{0, 1} {
+			for _, test := range []struct {
+				name, want string
+				aks        bool
+				deniedPath string
+			}{
+				{name: "verified AKS", aks: true},
+				{name: "older provider silently created ADC", want: "no verified ManagedCluster"},
+				{name: "project read denied", deniedPath: projectID, want: "read project"},
+				{name: "account read denied", deniedPath: strings.TrimSuffix(projectID, "/projects/proj"),
+					want: "read account hosting configuration"},
+			} {
+				t.Run(fmt.Sprintf("adopted=%t/size=%d/%s", adopted, size, test.name), func(t *testing.T) {
+					service := &azdext.ServiceConfig{Name: "agent", Uses: []string{"project"}}
+					dependency := standbyPoolProjectService(t)
+					if adopted {
+						dependency.AdditionalProperties = mustStruct(t, map[string]any{"endpoint": endpoint})
+					}
+					client := newEndpointsTestClient(t, t.TempDir(), map[string]string{
+						"AZURE_AI_PROJECT_ID": projectID,
+					}, &stubAccountServer{})
+					var calls []string
+					recordproxy.Transport = hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
+						require.Equal(t, http.MethodGet, request.Method, "hosting verification must be read-only")
+						calls = append(calls, request.URL.Path)
+						properties := map[string]any{"endpoints": map[string]any{"AI Foundry API": endpoint}}
+						if request.URL.Path != projectID {
+							properties = map[string]any{}
+							if test.aks {
+								properties["agentHostingConfigurations"] = []any{map[string]any{
+									"hostingType": "ManagedCluster", "clusterResourceId": clusterID,
+								}}
+							}
+						}
+						status := http.StatusOK
+						if request.URL.Path == test.deniedPath {
+							status = http.StatusForbidden
+						}
+						data, err := json.Marshal(map[string]any{"properties": properties})
+						require.NoError(t, err)
+						return &http.Response{StatusCode: status,
+							Header: http.Header{"Content-Type": {"application/json"}},
+							Body:   io.NopCloser(strings.NewReader(string(data))), Request: request}, nil
+					})
+					err := VerifyStandbyPoolHosting(t.Context(), client,
+						&agent_yaml.AgentEndpoint{StandbyPool: &agent_yaml.StandbyPool{Size: new(size)}},
+						service, map[string]*azdext.ServiceConfig{"project": dependency}, t.TempDir(), endpoint, "test",
+					)
+					if test.want == "" {
+						require.NoError(t, err)
+					} else {
+						require.ErrorContains(t, err, test.want)
+					}
+					require.NotEmpty(t, calls, "a local hosting declaration cannot bypass ARM verification")
+				})
+			}
+		}
+	}
+	for _, endpoint := range []*agent_yaml.AgentEndpoint{nil, {}, {StandbyPool: &agent_yaml.StandbyPool{}}} {
+		require.NoError(t, VerifyStandbyPoolHosting(t.Context(), nil, endpoint, nil, nil, "", "", ""))
+	}
+}
+
 func TestStandbyPoolHostingProjectReference(t *testing.T) {
 	t.Setenv(synthesis.BYOAKSEnvVar, "true")
 	root := t.TempDir()
@@ -340,103 +418,127 @@ func TestStandbyPoolDeploymentPatch(t *testing.T) {
 	}
 }
 
-func TestStandbyPoolDeployReportsPartialSuccess(t *testing.T) {
+func TestStandbyPoolDeployVerifiesHostingAndReportsPartialSuccess(t *testing.T) {
 	t.Setenv(synthesis.BYOAKSEnvVar, "true")
-	for _, mode := range []string{"container", "code"} {
-		t.Run(mode, func(t *testing.T) {
-			root := t.TempDir()
-			fields := map[string]any{
-				"kind": "hosted", "name": "agent",
-				"agentEndpoint": map[string]any{"standbyPool": map[string]any{"size": 3}},
-			}
-			serviceContext := &azdext.ServiceContext{Publish: []*azdext.Artifact{{
-				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
-				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
-				Location:     "registry.example/agent:latest",
-			}}}
-			if mode == "code" {
-				fields["codeConfiguration"] = map[string]any{
-					"runtime": "python_3_13", "entryPoint": "agent.py",
+	originalCredential := newStandbyPoolCredential
+	t.Cleanup(func() { newStandbyPoolCredential = originalCredential })
+	newStandbyPoolCredential = func(string) (azcore.TokenCredential, error) {
+		return hostedResourceErrorCredential{}, nil
+	}
+	for _, verified := range []bool{false, true} {
+		for _, mode := range []string{"container", "code"} {
+			t.Run(fmt.Sprintf("%s/verified=%t", mode, verified), func(t *testing.T) {
+				root := t.TempDir()
+				fields := map[string]any{
+					"kind": "hosted", "name": "agent",
+					"agentEndpoint": map[string]any{"standbyPool": map[string]any{"size": 3}},
 				}
-				path := filepath.Join(root, "agent.zip")
-				require.NoError(t, os.WriteFile(path, []byte("test-zip"), 0o600))
-				serviceContext.Package = []*azdext.Artifact{{
-					Location: path, Metadata: map[string]string{"type": "code-zip", "sha256": "test-sha"},
-				}}
-			}
-			service := &azdext.ServiceConfig{
-				Name: "agent", Host: foundryAgentHost, AdditionalProperties: mustStruct(t, fields),
-				Uses: []string{"project"},
-			}
-			resource, err := arm.ParseResourceID("/subscriptions/sub/resourceGroups/rg/providers/" +
-				"Microsoft.CognitiveServices/accounts/account/projects/project")
-			require.NoError(t, err)
-			provider := &AgentServiceTargetProvider{
-				azdClient: newEndpointsTestClient(t, root, map[string]string{
-					"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_AI_PROJECT_ID": resource.String(),
-					"AZURE_LOCATION": "eastus",
-				}),
-				projectPath: root, servicePath: root, serviceConfig: service,
-				deployContextReady: true, env: &azdext.Environment{Name: "test-env"},
-				foundryProject: resource, credential: hostedResourceErrorCredential{},
-				projectServices: map[string]*azdext.ServiceConfig{"project": standbyPoolProjectService(t)},
-			}
-			var calls []string
-			original := recordproxy.Transport
-			t.Cleanup(func() { recordproxy.Transport = original })
-			recordproxy.Transport = hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
-				calls = append(calls, request.Method+" "+request.URL.Path)
-				status := http.StatusOK
-				body := `{"name":"agent","version":"2","status":"active","definition":{"kind":"hosted"}}`
-				switch {
-				case request.Method == http.MethodPatch:
-					require.Equal(t, agent_api.StandbyPoolAPIVersion, request.URL.Query().Get("api-version"))
-					payload, readErr := io.ReadAll(request.Body)
-					require.NoError(t, readErr)
-					require.JSONEq(t, `{"agent_endpoint":{"standby_pool":{"size":3}}}`, string(payload))
-					status = http.StatusBadRequest
-					body = `{"error":{"code":"invalid_request","message":"standby not deployed"}}`
-				case request.Method == http.MethodPost:
-					require.Equal(t, "v1", request.URL.Query().Get("api-version"))
-					if mode == "code" {
-						body = `{"name":"agent","versions":{"latest":{"version":"2","status":"active"}}}`
+				serviceContext := &azdext.ServiceContext{Publish: []*azdext.Artifact{{
+					Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+					LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+					Location:     "registry.example/agent:latest",
+				}}}
+				if mode == "code" {
+					fields["codeConfiguration"] = map[string]any{
+						"runtime": "python_3_13", "entryPoint": "agent.py",
 					}
-				case request.Method == http.MethodGet && request.URL.Path == "/agents/agent":
-					body = `{"name":"agent","versions":{"latest":{"version":"1","status":"active"}}}`
-				default:
-					require.Equal(t, http.MethodGet, request.Method, "no cleanup after a failed endpoint PATCH")
-					require.Equal(t, "/agents/agent/versions/2", request.URL.Path)
+					path := filepath.Join(root, "agent.zip")
+					require.NoError(t, os.WriteFile(path, []byte("test-zip"), 0o600))
+					serviceContext.Package = []*azdext.Artifact{{
+						Location: path, Metadata: map[string]string{"type": "code-zip", "sha256": "test-sha"},
+					}}
 				}
-				return &http.Response{
-					StatusCode: status,
-					Header:     http.Header{"Content-Type": {"application/json"}},
-					Body:       io.NopCloser(strings.NewReader(body)), Request: request,
-				}, nil
+				service := &azdext.ServiceConfig{
+					Name: "agent", Host: foundryAgentHost, AdditionalProperties: mustStruct(t, fields),
+					Uses: []string{"project"},
+				}
+				resource, err := arm.ParseResourceID("/subscriptions/sub/resourceGroups/rg/providers/" +
+					"Microsoft.CognitiveServices/accounts/account/projects/project")
+				require.NoError(t, err)
+				provider := &AgentServiceTargetProvider{
+					azdClient: newEndpointsTestClient(t, root, map[string]string{
+						"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_AI_PROJECT_ID": resource.String(),
+						"AZURE_LOCATION": "eastus",
+					}, &stubAccountServer{}),
+					projectPath: root, servicePath: root, serviceConfig: service,
+					deployContextReady: true, env: &azdext.Environment{Name: "test-env"},
+					foundryProject: resource, credential: hostedResourceErrorCredential{},
+					projectServices: map[string]*azdext.ServiceConfig{"project": standbyPoolProjectService(t)},
+				}
+				var calls []string
+				original := recordproxy.Transport
+				t.Cleanup(func() { recordproxy.Transport = original })
+				recordproxy.Transport = hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
+					calls = append(calls, request.Method+" "+request.URL.Path)
+					status := http.StatusOK
+					body := `{"name":"agent","version":"2","status":"active","definition":{"kind":"hosted"}}`
+					switch {
+					case strings.HasSuffix(request.URL.Path, "/accounts/account/projects/project"):
+						body = `{"properties":{"endpoints":{"AI Foundry API":"https://example.test"}}}`
+					case strings.HasSuffix(request.URL.Path, "/accounts/account"):
+						body = `{"properties":{"agentHostingConfigurations":[{"hostingType":"ManagedCluster",
+						"clusterResourceId":"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/aks"}]}}`
+						if !verified {
+							body = `{"properties":{}}`
+						}
+					case request.Method == http.MethodPatch:
+						require.Equal(t, agent_api.StandbyPoolAPIVersion, request.URL.Query().Get("api-version"))
+						payload, readErr := io.ReadAll(request.Body)
+						require.NoError(t, readErr)
+						require.JSONEq(t, `{"agent_endpoint":{"standby_pool":{"size":3}}}`, string(payload))
+						status = http.StatusBadRequest
+						body = `{"error":{"code":"invalid_request","message":"standby not deployed"}}`
+					case request.Method == http.MethodPost:
+						require.Equal(t, "v1", request.URL.Query().Get("api-version"))
+						if mode == "code" {
+							body = `{"name":"agent","versions":{"latest":{"version":"2","status":"active"}}}`
+						}
+					case request.Method == http.MethodGet && request.URL.Path == "/agents/agent":
+						body = `{"name":"agent","versions":{"latest":{"version":"1","status":"active"}}}`
+					default:
+						require.Equal(t, http.MethodGet, request.Method, "no cleanup after a failed endpoint PATCH")
+						require.Equal(t, "/agents/agent/versions/2", request.URL.Path)
+					}
+					return &http.Response{
+						StatusCode: status,
+						Header:     http.Header{"Content-Type": {"application/json"}},
+						Body:       io.NopCloser(strings.NewReader(body)), Request: request,
+					}, nil
+				})
+				stderr, err := os.CreateTemp(root, "stderr-*.txt")
+				require.NoError(t, err)
+				originalStderr := os.Stderr
+				os.Stderr = stderr
+				t.Cleanup(func() { os.Stderr = originalStderr; require.NoError(t, stderr.Close()) })
+
+				result, err := provider.Deploy(t.Context(), service, serviceContext, nil, func(string) {})
+
+				if !verified {
+					require.ErrorContains(t, err, "no verified ManagedCluster")
+					require.Nil(t, result)
+					require.Equal(t, []string{
+						"GET " + resource.String(), "GET " + strings.TrimSuffix(resource.String(), "/projects/project"),
+					}, calls, "an older provider's ADC project must not receive agent management writes")
+					return
+				}
+				require.ErrorContains(t, err, "standby not deployed")
+				require.Nil(t, result)
+				data, err := os.ReadFile(stderr.Name())
+				require.NoError(t, err)
+				require.Contains(t, string(data), `Agent "agent" version 2 deployed`)
+				require.Contains(t, string(data), "endpoint/card configuration was not saved")
+				require.Contains(t, string(data), "No deployed resources were deleted")
+				require.Contains(t, string(data), "azd ai agent endpoint update")
+				postPath := "/agents/agent/versions"
+				if mode == "code" {
+					postPath = "/agents/agent"
+				}
+				require.Equal(t, []string{
+					"GET " + resource.String(), "GET " + strings.TrimSuffix(resource.String(), "/projects/project"),
+					"GET /agents/agent", "POST " + postPath, "GET /agents/agent/versions/2", "PATCH /agents/agent",
+				}, calls)
 			})
-			stderr, err := os.CreateTemp(root, "stderr-*.txt")
-			require.NoError(t, err)
-			originalStderr := os.Stderr
-			os.Stderr = stderr
-			t.Cleanup(func() { os.Stderr = originalStderr; require.NoError(t, stderr.Close()) })
-
-			result, err := provider.Deploy(t.Context(), service, serviceContext, nil, func(string) {})
-
-			require.ErrorContains(t, err, "standby not deployed")
-			require.Nil(t, result)
-			data, err := os.ReadFile(stderr.Name())
-			require.NoError(t, err)
-			require.Contains(t, string(data), `Agent "agent" version 2 deployed`)
-			require.Contains(t, string(data), "endpoint/card configuration was not saved")
-			require.Contains(t, string(data), "No deployed resources were deleted")
-			require.Contains(t, string(data), "azd ai agent endpoint update")
-			postPath := "/agents/agent/versions"
-			if mode == "code" {
-				postPath = "/agents/agent"
-			}
-			require.Equal(t, []string{
-				"GET /agents/agent", "POST " + postPath, "GET /agents/agent/versions/2", "PATCH /agents/agent",
-			}, calls)
-		})
+		}
 	}
 }
 

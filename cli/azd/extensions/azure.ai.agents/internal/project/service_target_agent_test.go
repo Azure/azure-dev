@@ -6078,14 +6078,16 @@ func (s *endpointsTestEnvServer) GetValues(
 
 func newEndpointsTestClient(
 	t *testing.T, projectRoot string, envValues map[string]string,
+	accountServers ...azdext.AccountServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
-	client, _ := newEndpointsTestClientWithProjectServer(t, projectRoot, envValues)
+	client, _ := newEndpointsTestClientWithProjectServer(t, projectRoot, envValues, accountServers...)
 	return client
 }
 
 func newEndpointsTestClientWithProjectServer(
 	t *testing.T, projectRoot string, envValues map[string]string,
+	accountServers ...azdext.AccountServiceServer,
 ) (*azdext.AzdClient, *stubProjectServer) {
 	t.Helper()
 
@@ -6095,6 +6097,9 @@ func newEndpointsTestClientWithProjectServer(
 	}
 	azdext.RegisterProjectServiceServer(srv, projectServer)
 	azdext.RegisterEnvironmentServiceServer(srv, &endpointsTestEnvServer{values: envValues})
+	if len(accountServers) > 0 {
+		azdext.RegisterAccountServiceServer(srv, accountServers[0])
+	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

@@ -669,7 +669,8 @@ or a concurrency limit. Successful configuration saves the target; it does not
 wait for warm-up. Explicit sizes, including zero, require the preview switch
 and exactly one `azure.ai.project` dependency. For a new project, declare
 `agentHosting.clusterResourceId` without `endpoint:`. For an existing project,
-declare `endpoint:` without `agentHosting`: before agent writes, azd verifies
+declare `endpoint:` without `agentHosting`. For both newly provisioned and adopted
+projects, before agent writes azd verifies
 that `AZURE_AI_PROJECT_ID` identifies the actual deployment endpoint and reads
 the parent account's `agentHostingConfigurations` to require `ManagedCluster`
 hosting with an AKS resource ID. This needs ARM read access to the project and
@@ -679,6 +680,11 @@ Inline and `$ref` project declarations are supported. Live cluster readiness is
 not verified. Existing-project deployment does not require `azd provision`.
 See [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting)
 for provisioning prerequisites.
+
+A local cluster declaration alone is not proof of BYO AKS hosting. New projects
+need a Projects provider build that actually provisions the account's
+`ManagedCluster` binding; no minimum compatible published version is established.
+An older provider that ignores `agentHosting` must not enable standby on ADC.
 
 For an already provisioned BYO AKS project, retain the agent settings above and
 replace the project declaration with:

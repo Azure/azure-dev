@@ -42,6 +42,7 @@ type endpointUpdateFlags struct {
 }
 
 var newEndpointUpdateClient = (*AgentContext).NewClient
+var verifyEndpointUpdateStandbyHosting = project.VerifyStandbyPoolHosting
 
 func newEndpointUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &endpointUpdateFlags{}
@@ -166,7 +167,7 @@ func runEndpointUpdate(
 		return err
 	}
 
-	if err := project.VerifyStandbyPoolExistingHosting(
+	if err := verifyEndpointUpdateStandbyHosting(
 		ctx, azdClient, agentDef.AgentEndpoint, svc, proj.Services, proj.Path,
 		agentContext.ProjectEndpoint, extCtx.Environment,
 	); err != nil {

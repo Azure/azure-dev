@@ -1,6 +1,29 @@
 # Release History
 
-<!-- cspell:ignore Deeksharma JerryYangKai Yimin -->
+<!-- cspell:ignore Deeksharma JerryYangKai vebudumu yiliuTo Yimin -->
+
+## 1.0.0 (2026-11-05)
+
+### Breaking Changes
+
+- [[#10813]](https://github.com/Azure/azure-dev/pull/10813) Require `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true` to retain developer RBAC warnings in final deployment output and JSON messages while keeping role checks and automatic role assignment enabled.
+- [[#10792]](https://github.com/Azure/azure-dev/pull/10792) Align registry provisioning with source-build behavior: a bare `image` no longer suppresses registry creation, so use `docker.imagePassthrough: true` or the supported `AZD_AGENT_SKIP_ACR=true` setting with a nonempty image for prebuilt deployment.
+
+### Features Added
+
+- [[#10809]](https://github.com/Azure/azure-dev/pull/10809) Add terminal-only local A2A 0.3 agent execution and invocation without launching Inspector, including custom ports and JSON or streaming output.
+- [[#10760]](https://github.com/Azure/azure-dev/pull/10760) Add config-driven skill optimization from traces, candidate inspection, per-skill publication outcomes, and report downloads without automatically applying or deploying generated skills. Thanks @vebudumu for the contribution!
+
+### Bugs Fixed
+
+- [[#10559]](https://github.com/Azure/azure-dev/pull/10559) Reject invalid hosted-agent resource settings before deployment or local startup instead of silently substituting defaults.
+- [[#10815]](https://github.com/Azure/azure-dev/pull/10815) Fix agent deployment failing with HTTP 403 on newly provisioned projects by waiting for Foundry User role assignments to propagate.
+- [[#10832]](https://github.com/Azure/azure-dev/pull/10832) Fix new-project Bicep exports failing to compile because referenced registry and Foundry project modules were missing. Thanks @yiliuTo for the contribution!
+- [[#10838]](https://github.com/Azure/azure-dev/pull/10838) Fix skill optimization trace connections to use the service-supported `application_insights` type. Thanks @vebudumu for the contribution!
+
+### Other Changes
+
+- [[#10836]](https://github.com/Azure/azure-dev/pull/10836) Remove extension-wide Preview and Beta labels from command help and extension descriptions while preserving notices for independently gated features.
 
 ## 1.0.0-beta.23 (2026-10-29)
 

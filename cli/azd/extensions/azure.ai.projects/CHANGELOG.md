@@ -1,5 +1,19 @@
 # Release History
 
+## 1.0.0 (2026-11-05)
+
+### Breaking Changes
+
+- [[#10792]](https://github.com/Azure/azure-dev/pull/10792) Align registry provisioning with source-build behavior: a bare `image` no longer suppresses registry creation, so use `docker.imagePassthrough: true` or the supported `AZD_AGENT_SKIP_ACR=true` setting with a nonempty image for prebuilt deployment.
+
+### Bugs Fixed
+
+- [[#10844]](https://github.com/Azure/azure-dev/pull/10844) Fix `azd down` rejecting azd-created container registries when deployment history also contains read operations.
+
+### Other Changes
+
+- [[#10836]](https://github.com/Azure/azure-dev/pull/10836) Remove Preview labels from command help and extension descriptions.
+
 ## 1.0.0-beta.16 (2026-10-29)
 
 ### Bugs Fixed

@@ -1522,7 +1522,8 @@ func (p *FoundryProvisioningProvider) acrCreationDeployment(
 				properties.ProvisioningOperation == nil ||
 				*properties.ProvisioningOperation != armresources.ProvisioningOperationCreate ||
 				properties.ProvisioningState == nil || !strings.EqualFold(*properties.ProvisioningState, "Succeeded") {
-				return "", errors.New("registry has no successful creation operation in the owning deployment")
+				// Reads do not disprove creation elsewhere in ARM history.
+				continue
 			}
 			ownsRegistry = deploymentID
 		} else if strings.EqualFold(*target.ResourceType, "Microsoft.Resources/deployments") &&

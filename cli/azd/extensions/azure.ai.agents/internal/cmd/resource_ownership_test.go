@@ -6,6 +6,8 @@ package cmd
 import (
 	"bytes"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/project"
@@ -78,6 +80,10 @@ func TestAgentCoreDeployServiceTargetRemainsRegistered(t *testing.T) {
 }
 
 type resourceExtensionManifest struct {
+	ID           string `yaml:"id"`
+	Version      string `yaml:"version"`
+	DisplayName  string `yaml:"displayName"`
+	Description  string `yaml:"description"`
 	Dependencies []struct {
 		ID      string `yaml:"id"`
 		Version string `yaml:"version"`
@@ -95,15 +101,57 @@ func TestFoundryResourceOwnershipMetadata(t *testing.T) {
 	connections := readResourceExtensionManifest(t, "../../../azure.ai.connections/extension.yaml")
 	toolboxes := readResourceExtensionManifest(t, "../../../azure.ai.toolboxes/extension.yaml")
 
-	assert.True(t, hasResourceDependency(agents, "azure.ai.projects", "~1.0.0-beta.12"))
-	assert.True(t, hasResourceDependency(agents, "azure.ai.connections", "~1.0.0-beta.7"))
-	assert.True(t, hasResourceDependency(agents, "azure.ai.toolboxes", "~1.0.0-beta.6"))
+	assert.True(t, hasResourceDependency(agents, "azure.ai.inspector", "~1.0.0"))
+	assert.True(t, hasResourceDependency(agents, "azure.ai.projects", "~1.0.0"))
+	assert.True(t, hasResourceDependency(agents, "azure.ai.connections", "~1.0.0"))
+	assert.True(t, hasResourceDependency(agents, "azure.ai.toolboxes", "~1.0.0"))
 	assert.True(t, hasResourceProvider(agents, "azure.ai.agent", "service-target"))
 	assert.False(t, hasResourceProvider(agents, "azure.ai.connection", "service-target"))
 	assert.False(t, hasResourceProvider(agents, "azure.ai.toolbox", "service-target"))
 	assert.True(t, hasResourceProvider(connections, "azure.ai.connection", "service-target"))
 	assert.True(t, hasResourceProvider(toolboxes, "azure.ai.toolbox", "service-target"))
-	assert.True(t, hasResourceDependency(toolboxes, "azure.ai.connections", "~1.0.0-beta.6"))
+	assert.True(t, hasResourceDependency(toolboxes, "azure.ai.connections", "~1.0.0"))
+}
+
+func TestFoundryReleaseMetadata(t *testing.T) {
+	t.Parallel()
+
+	extensions := []string{
+		"azure.ai.agents",
+		"azure.ai.connections",
+		"azure.ai.inspector",
+		"azure.ai.projects",
+		"azure.ai.routines",
+		"azure.ai.skills",
+		"azure.ai.toolboxes",
+	}
+	bundle := readResourceExtensionManifest(t, "../../../microsoft.foundry/extension.yaml")
+	require.Len(t, bundle.Dependencies, len(extensions))
+	for _, id := range extensions {
+		assert.True(t, hasResourceDependency(bundle, id, "~1.0.0"), id)
+	}
+
+	for _, id := range append(extensions, "microsoft.foundry") {
+		t.Run(id, func(t *testing.T) {
+			t.Parallel()
+
+			dir := filepath.Join("..", "..", "..", id)
+			manifest := readResourceExtensionManifest(t, filepath.Join(dir, "extension.yaml"))
+			assert.Equal(t, id, manifest.ID)
+			assert.Regexp(t, `^\d+\.\d+\.\d+$`, manifest.Version)
+			assert.NotRegexp(t, `(?i)\b(preview|beta)\b`, manifest.DisplayName+"\n"+manifest.Description)
+
+			stamped, err := os.ReadFile(filepath.Join(dir, "version.txt"))
+			require.NoError(t, err)
+			assert.Equal(t, manifest.Version, strings.TrimSpace(string(stamped)))
+
+			changelog, err := os.ReadFile(filepath.Join(dir, "CHANGELOG.md"))
+			require.NoError(t, err)
+			_, latest, found := strings.Cut(string(changelog), "\n## ")
+			require.True(t, found)
+			assert.True(t, strings.HasPrefix(latest, manifest.Version+" ("), "latest changelog must match version")
+		})
+	}
 }
 
 func readResourceExtensionManifest(t *testing.T, path string) resourceExtensionManifest {

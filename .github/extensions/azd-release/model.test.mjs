@@ -101,7 +101,10 @@ test("tracking can precede changelog preparation and driver linking is shared, n
     assert.deepEqual(releaseState(tracking, [linked]), releaseState(tracking, [linked]));
     assert.equal(releaseState(tracking, [{ ...linked, user: { login: "observer" } }]).changelogPr, null);
     assert.throws(() => releaseState(tracking, [event(1, { type: "changelog", changelogPr: 0 })]), /positive integer/);
-    assert.throws(() => releaseState(tracking, [linked, event(2, { type: "changelog", changelogPr: 10662 })]), /different changelog/);
+    const competing = releaseState(tracking, [event(2, { type: "changelog", changelogPr: 10662 }), linked]);
+    assert.equal(competing.changelogPr, 10661);
+    assert.deepEqual(competing.changelogConflicts, [10662]);
+    assert.equal(releaseState(issue(), [linked]).changelogPr, 100, "The original body link wins over later events");
     assert.throws(() => releaseState(tracking, [event(1, { type: "run", runId: 200 })]), /linked changelog/);
 });
 

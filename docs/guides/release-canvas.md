@@ -110,6 +110,10 @@ real release/run state, logs, tokens, signed URLs, or user-local request artifac
    private issue, so other viewers and sessions see the same linked PR. Discovery
    alone never writes tracking state. GitHub search indexing can delay discovery;
    entering the existing PR number also works from a different conversation.
+   If two driver sessions link different PRs concurrently, the first link in
+   GitHub comment-ID order wins. The losing request reports a conflict, and the
+   canvas warns about ignored competing links without making tracking unreadable.
+   An existing link in the issue body takes precedence over later link events.
    Preparation/linking controls disappear once a PR is linked. Observers cannot
    prepare or link PRs. Neither action queues publishing.
 
@@ -182,7 +186,7 @@ read has been saved. Package gates need a separate **Check package readiness**.
 | --- | --- |
 | Open / Refresh | Fresh private GitHub authorization, tracking, and saved observations only. No Azure login, live status queries, or snapshot writes. |
 | Refresh live data / PR checks, driver | Read current PR/pipeline evidence, revalidate identity and tracking, and append a sanitized observation comment to the private issue. No pipeline or publication mutations. |
-| Refresh live data / PR checks, observer | The same live reads, but local display only; never writes the driver's issue snapshots. Refresh returns to the shared view. |
+| Refresh live data / PR checks, observer | The same live reads, but local display only; never writes the driver's issue snapshots. Failed retries retain earlier local evidence with its original provenance and a failed-attempt timestamp. Refresh returns to the shared view and clears retained local sections. |
 | Check package readiness | Fresh Azure run verification and independent package checks. Drivers share sanitized gates; observers retain local results. WinGet refreshes the checking machine's catalog. |
 | Preview, link, queue, or analyze | Perform their own current authorization and identity checks. Saved snapshots are never proof of permission or current run validity. |
 
@@ -192,6 +196,10 @@ attempt. Changelog, run metadata, timeline, WinGet PR, version PR, and package g
 have independent receipts. Refreshing pipeline status does not make an older
 package check or failed PR read appear new. Shared WinGet evidence describes the
 driver's machine, not the current viewer's local catalog.
+Retained local sections are bound to the GitHub account and release identity;
+access loss or identity changes prevent their reuse. Build observations taken
+before a slow package check keep their original timestamp, so they cannot replace
+newer shared pipeline evidence just because the package check finished later.
 
 Observations become stale after ten minutes, evaluated when rendering a response;
 there is no freshness timer. Older pipeline/PR evidence remains visible as
@@ -260,7 +268,7 @@ the operator can recheck immediately before approval.
 | --- | --- |
 | WinGet | Refresh the local `winget` source and find the exact `Microsoft.Azd` MSI/package version in its available-version list. A newer version or merged PR does not substitute. |
 | Chocolatey | The exact `azd` MSI/package version has `IsApproved=true`, passing validation, and passing installation verification in public feed metadata. Submission or exact-version query success alone is insufficient. |
-| Homebrew cask | Public `Azure/homebrew-azd` main has the exact CLI version, expected versioned macOS/Linux download definitions, and active checksums for all four architecture keys in `Casks/azd.rb`. |
+| Homebrew cask | Public `Azure/homebrew-azd` main has the exact CLI version, the active ARM → `arm64` / Intel → `amd64` mapping, expected versioned macOS/Linux download definitions, and active checksums for all four architecture keys in `Casks/azd.rb`. |
 | Homebrew formula | The same checks for `Formula/azd.rb`, including all four platform/architecture download URLs with active checksum declarations in their corresponding branches. |
 | Standalone, MSI, DEB and RPM | The public, non-draft GA GitHub release contains all 11 expected assets, including the Windows ARM64 alpha archive. Each corresponding immutable, versioned public-storage URL responds to HEAD with the same positive size. |
 

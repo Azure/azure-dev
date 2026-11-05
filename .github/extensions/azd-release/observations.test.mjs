@@ -280,6 +280,122 @@ test("local package provenance survives a local live read, but cannot cross a Gi
     assert.equal(f.writes.length, 0);
 });
 
+test("a slow package check cannot overwrite a newer shared build status", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    const f = fixture();
+    const service = f.make();
+    const read = service.read;
+    let advanced = false;
+    service.read = async (...args) => {
+        if (!advanced) {
+            advanced = true;
+            t.mock.timers.tick(1000);
+            f.comments.push(cached({ run: { ...run(), status: "completed", result: "succeeded" } }).comment);
+            t.mock.timers.tick(1000);
+        }
+        return read(...args);
+    };
+    await service.checkPackages({ issueNumber: 42 });
+    const saved = await f.make().snapshot(42);
+    assert.equal(saved.pipeline.status, "completed");
+    assert.equal(saved.pipeline.result, "succeeded");
+    assert.ok(Date.parse(saved.observations.find((entry) => entry.key === "run").observedAt) <
+        Date.parse(saved.checkedAt));
+});
+
+test("competing driver sessions retain the first changelog link and report the losing request", async () => {
+    const f = fixture();
+    f.tracking.body = block("state", { schema: 1, version: "1.2.3", changelogPr: null });
+    f.comments.length = 0;
+    const clients = [f.make(), f.make()];
+    let waiting = 0;
+    let proceed;
+    const barrier = new Promise((resolve) => { proceed = resolve; });
+    for (const service of clients) {
+        const gh = service.gh.bind(service);
+        service.gh = async (path, ...args) => path.startsWith("Azure/azure-dev/pulls/") ? {
+            state: "open", base: { ref: "main", repo: { full_name: "Azure/azure-dev" } }, head: { sha: source },
+        } : gh(path, ...args);
+        service.verifyVersionFiles = async () => {};
+        const event = service.event.bind(service);
+        service.event = async (...args) => {
+            if (++waiting === 2) proceed();
+            await barrier;
+            return event(...args);
+        };
+    }
+    const results = await Promise.allSettled(clients.map((service, index) =>
+        service.linkChangelog({ issueNumber: 42, changelogPr: 100 + index })));
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    const rejected = results.find((result) => result.status === "rejected");
+    assert.equal(rejected.reason.code, "changelog_conflict");
+    assert.match(rejected.reason.message, /linked changelog PR #100 first/);
+    const snapshot = await f.make().snapshot(42);
+    assert.equal(snapshot.release.changelogPr, 100);
+    assert.deepEqual(snapshot.release.changelogConflicts, [101]);
+    assert.ok(snapshot.errors.some((error) => /Competing links.*#101/.test(error.message)));
+    assert.equal(f.comments.length, 2, "Keep competing comments as history; no manual repair needed");
+});
+
+test("failed local refreshes retain newer observer evidence and its provenance without sharing", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    const f = fixture();
+    f.comments.push(cached({ run: { ...run(), status: "notStarted" },
+        changelog: { state: "open", merged: false } }).comment);
+    t.mock.timers.tick(1000);
+    f.login("observer");
+    const service = f.make();
+    const first = await service.refreshLive({ issueNumber: 42 });
+    assert.equal(first.pipeline.status, "inProgress");
+    const receipt = first.observations.find((entry) => entry.key === "run");
+    t.mock.timers.tick(1000);
+    service.azureAccess = async () => { throw new Error("Offline"); };
+    const gh = service.gh.bind(service);
+    service.gh = async (path, ...args) => {
+        if (path === "Azure/azure-dev/pulls/100") throw new Error("Offline");
+        return gh(path, ...args);
+    };
+    const failed = await service.refreshLive({ issueNumber: 42 });
+    assert.equal(failed.pipeline.status, "inProgress", "Do not replace local evidence with the old shared status");
+    assert.equal(failed.changelog.merged, true);
+    const after = failed.observations.find((entry) => entry.key === "run");
+    assert.equal(after.observedAt, receipt.observedAt);
+    assert.equal(after.observedBy, "observer");
+    assert.equal(after.local, true);
+    assert.equal(after.stale, true);
+    assert.equal(after.lastAttempt.failed, true);
+    assert.equal(f.writes.length, 0);
+    const saved = await service.snapshot(42);
+    assert.equal(saved.pipeline.status, "notStarted");
+    assert.equal(service.localObservations.size, 0, "Explicit saved refresh clears local sections");
+    assert.equal((await service.refreshLive({ issueNumber: 42 })).pipeline.status, "notStarted");
+});
+
+test("retained local sections cannot survive access loss, account changes or release changes", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    for (const change of ["access", "account", "release"]) {
+        const f = fixture();
+        f.login("observer");
+        const service = f.make();
+        await service.refreshLive({ issueNumber: 42 });
+        assert.equal(service.localObservations.size, 1);
+        t.mock.timers.tick(1000);
+        service.azureAccess = async () => { throw new Error("Offline"); };
+        if (change === "access") {
+            service.githubAccess = async () => { throw new Error("Access revoked"); };
+            await assert.rejects(service.refreshLive({ issueNumber: 42 }), /requires access/);
+            assert.equal(service.localObservations.size, 0);
+        } else {
+            if (change === "account") f.login("another-observer");
+            else f.comments.push({ id: 2, user: { login: "driver" }, body: block("event", { schema: 1, type: "run", runId: 201 }) });
+            const next = await service.refreshLive({ issueNumber: 42 });
+            assert.equal(next.pipeline, undefined);
+            assert.equal(next.changelog.merged, true, "Fresh public reads may still be shown");
+            assert.equal(next.observations.find((entry) => entry.key === "run").observedAt, null);
+        }
+    }
+});
+
 test("package snapshot save failure is attempted once and cannot retain a local success", async () => {
     const f = fixture();
     const service = f.make();

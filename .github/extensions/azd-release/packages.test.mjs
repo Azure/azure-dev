@@ -82,6 +82,9 @@ test("Homebrew requires active checksums in each expected platform and architect
             cliVersion, cask).status, "ready");
     }
     for (const change of [
+        (content) => content.replace('arch arm: "arm64", intel: "amd64"', ""),
+        (content) => content.replace('arch arm: "arm64", intel: "amd64"', '# arch arm: "arm64", intel: "amd64"'),
+        (content) => content.replace('arch arm: "arm64", intel: "amd64"', 'arch arm: "amd64", intel: "arm64"'),
         (content) => content.replace("arm64_linux:", "arm:"),
         (content) => content.replace("x86_64_linux:", "other:"),
         (content) => content.replace("on_linux do", "on_macos do"),

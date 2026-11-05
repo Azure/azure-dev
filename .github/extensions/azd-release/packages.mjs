@@ -97,6 +97,7 @@ export function homebrewReadiness(content, cliVersion, cask) {
     const lines = content.split(/\r?\n/).map((line) => line.trim())
         .filter((line) => line && !line.startsWith("#"));
     const downloads = cask ? [
+        'arch arm: "arm64", intel: "amd64"',
         `version "${cliVersion}"`,
         /^sha256 arm: "[a-f0-9]{64}",$/,
         /^intel: "[a-f0-9]{64}",$/,

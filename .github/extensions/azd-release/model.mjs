@@ -99,6 +99,7 @@ export function releaseState(issue, comments) {
     version(state.version);
     if (state.changelogPr !== null) positiveInt(state.changelogPr, "Changelog PR");
     let changelogPr = state.changelogPr;
+    const changelogConflicts = [];
     const milestones = Object.fromEntries(MILESTONES.map(([key]) => [key, null]));
     let runId = null;
     let intent = null;
@@ -110,8 +111,8 @@ export function releaseState(issue, comments) {
         requireValue(event.schema === 1, "Unsupported release event schema.");
         if (event.type === "changelog") {
             const linked = positiveInt(event.changelogPr, "Changelog PR");
-            requireValue(changelogPr === null || changelogPr === linked, "A different changelog PR is already linked.");
-            changelogPr = linked;
+            if (changelogPr === null) changelogPr = linked;
+            else if (changelogPr !== linked) changelogConflicts.push(linked);
         } else if (event.type === "queue-intent") {
             requireValue(typeof event.token === "string", "Invalid queue reservation.");
             intent ??= { ...event, commentId: comment.id };
@@ -138,7 +139,7 @@ export function releaseState(issue, comments) {
     }
     requireValue(changelogPr !== null || (!runId && !intent), "Publishing requires a linked changelog PR.");
     return {
-        version: state.version, changelogPr, runId, intent, milestones, outcome,
+        version: state.version, changelogPr, changelogConflicts, runId, intent, milestones, outcome,
         issueNumber: issue.number, title: `[azd-release] ${state.version}`, issueState: issue.state,
         closureReason: issue.state_reason ?? null,
         author: issue.user.login, url: `https://github.com/${PRIVATE_REPO}/issues/${issue.number}`,

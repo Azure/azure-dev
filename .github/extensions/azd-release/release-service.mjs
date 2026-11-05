@@ -24,6 +24,7 @@ export class ReleaseService {
         this.read = read;
         this.tickets = new Map();
         this.packageChecks = new Map();
+        this.localObservations = new Map();
         this.busy = false;
     }
 
@@ -58,6 +59,7 @@ export class ReleaseService {
         catch (error) {
             this.tickets.clear();
             this.packageChecks.clear();
+            this.localObservations.clear();
             const blocked = new ReleaseError("access_required", ACCESS_REQUIRED);
             blocked.cause = error;
             throw blocked;
@@ -202,6 +204,10 @@ export class ReleaseService {
             requireValue(!current.changelogPr && !current.runId && !current.intent,
                 "Another client linked a changelog PR or started publishing. Refresh before continuing.");
             await this.event(issueNumber, { type: "changelog", changelogPr });
+            const linked = await this.driver(issueNumber);
+            requireValue(linked.changelogPr === changelogPr,
+                `Another session linked changelog PR #${linked.changelogPr} first. Your PR #${changelogPr} was not selected. Refresh and follow the existing link.`,
+                "changelog_conflict");
             return { changelogPr };
         });
     }
@@ -464,6 +470,7 @@ export class ReleaseService {
         try {
             const access = await this.azureAccess();
             const build = await this.build(release, access.definitionId, release.runId);
+            const buildObservedAt = new Date().toISOString();
             const metadata = await this.metadata(release.runId);
             requireValue(metadata.available && metadata.cliVersion === release.version && metadata.isPublishingGa === true,
                 "Package readiness requires verified GA release metadata matching this tracked version. Review preview-release policy separately.");
@@ -481,7 +488,7 @@ export class ReleaseService {
             const updates = {
                 run: observationUpdate(release, "run", {
                     id: build.id, source: build.sourceVersion, status: build.status, result: build.result, metadata,
-                }),
+                }, buildObservedAt),
                 packages: observationUpdate(release, "packages", result, result.checkedAt),
             };
             const shared = identityIsDriver(current, identity);
@@ -536,7 +543,8 @@ export class ReleaseService {
         return result;
     }
 
-    async snapshot(issueNumber) {
+    async snapshot(issueNumber, { preserveLocal = false } = {}) {
+        if (!preserveLocal) this.localObservations.clear();
         const access = {
             github: { ready: false, message: ACCESS_REQUIRED },
             azure: { ready: false, skipped: true },
@@ -560,6 +568,10 @@ export class ReleaseService {
         if (!selected) return snapshot;
         const { observations = { sections: {}, warnings: [] }, ...release } = await this.load(selected, { observations: true });
         snapshot.release = release;
+        if (release.changelogConflicts?.length) {
+            errors.push({ source: "tracking",
+                message: `Changelog PR #${release.changelogPr} was linked first. Competing links (${release.changelogConflicts.map((pr) => `#${pr}`).join(", ")}) were ignored.` });
+        }
         snapshot.isDriver = release.author.toLowerCase() === access.github.login.toLowerCase() &&
             release.issueState === "open" && release.outcome?.status !== "partial";
         snapshot.productStatus = publicationStatus(release);
@@ -599,7 +611,7 @@ export class ReleaseService {
 
     async refreshLive({ issueNumber }, { share = true } = {}) {
         if (issueNumber !== undefined) positiveInt(issueNumber, "Tracking issue");
-        const snapshot = await this.snapshot(issueNumber);
+        const snapshot = await this.snapshot(issueNumber, { preserveLocal: true });
         requireValue(!snapshot.restricted, ACCESS_REQUIRED, "access_required");
         if (!snapshot.release) return snapshot;
         const release = snapshot.release;
@@ -673,9 +685,21 @@ export class ReleaseService {
         const current = await this.load(release.issueNumber, { observations: true });
         requireValue(sameRelease(current, release), "Tracking changed during the live read. Refresh before continuing.");
         const shared = share && identityIsDriver(current, identity) && Object.keys(updates).length > 0;
-        const previous = shared
+        let previous = shared
             ? await this.saveObservations(release, updates, identity.login) : current.observations?.sections ?? {};
+        const local = this.localObservations.get(release.issueNumber);
+        if (!shared && local?.login === identity.login.toLowerCase() && sameRelease(local.release, release)) {
+            previous = structuredClone(previous);
+            for (const [key, section] of Object.entries(local.sections)) {
+                if (!previous[key] || Date.parse(section.lastAttempt.at) > Date.parse(previous[key].lastAttempt.at)) {
+                    previous[key] = section;
+                }
+            }
+        } else this.localObservations.delete(release.issueNumber);
         let sections = mergeObservations(previous, updates, identity.login);
+        for (const [key, update] of Object.entries(updates)) {
+            if (sections[key].lastAttempt.at === update.at) sections[key].local = !shared;
+        }
         const localPackages = this.packageChecks.get(release.issueNumber);
         const useLocalPackages = localPackages?.observedBy?.toLowerCase() === identity.login.toLowerCase() &&
             Date.parse(localPackages.checkedAt) > Date.parse(sections.packages?.lastAttempt.at ?? "1970-01-01T00:00:00.000Z") &&
@@ -684,13 +708,19 @@ export class ReleaseService {
             sections = mergeObservations(sections, {
                 packages: observationUpdate(release, "packages", localPackages, localPackages.checkedAt),
             }, identity.login);
+            sections.packages.local = true;
+        }
+        if (!shared) {
+            this.localObservations.set(release.issueNumber, {
+                login: identity.login.toLowerCase(), release, sections: structuredClone(sections),
+            });
         }
         for (const key of ["changelog", "pipeline", "followups", "packageReadiness"]) delete snapshot[key];
         Object.assign(snapshot, observationView(sections, release));
         snapshot.observationSource = shared ? "shared" : "local";
         snapshot.sharing = shared ? "saved" : "not-shared";
         for (const observation of snapshot.observations) {
-            observation.local = Boolean(updates[observation.key] && !shared || observation.key === "packages" && useLocalPackages);
+            observation.local = sections[observation.key].local === true;
         }
         if (useLocalPackages) snapshot.packageReadiness = localPackages;
         this.finishView(snapshot);

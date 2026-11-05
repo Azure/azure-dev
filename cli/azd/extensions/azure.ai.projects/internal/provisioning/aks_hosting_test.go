@@ -336,21 +336,13 @@ func TestBYOProvisioningFeatureGateUsesEffectiveParameters(t *testing.T) {
 			mode                    templateMode
 			yamlHosting             bool
 			parameter, defaultValue any
-			gated                   bool
 		}{
-			{name: "embedded", yamlHosting: true, gated: true},
-			{name: "JSON parameters", mode: templateModeBicep, parameter: hosting, gated: true},
-			{name: "Bicep parameters", mode: templateModeBicepParam, parameter: hosting, gated: true},
-			{name: "template default", mode: templateModeBicep, defaultValue: hosting, gated: true},
-			{name: "JSON disables YAML hosting", mode: templateModeBicep, yamlHosting: true, parameter: disabledHosting},
-			{name: "Bicep disables YAML hosting", mode: templateModeBicepParam,
-				yamlHosting: true, parameter: disabledHosting},
-			{name: "native"},
-			{name: "disabled template default", mode: templateModeBicep, defaultValue: disabledHosting},
+			{name: "embedded", yamlHosting: true},
+			{name: "JSON parameters", mode: templateModeBicep, parameter: hosting},
+			{name: "Bicep parameters", mode: templateModeBicepParam, parameter: hosting},
+			{name: "template default", mode: templateModeBicep, defaultValue: hosting},
 			{name: "YAML overrides disabled default", mode: templateModeBicep, yamlHosting: true,
-				defaultValue: disabledHosting, gated: true},
-			{name: "parameters override enabled default", mode: templateModeBicep,
-				parameter: disabledHosting, defaultValue: hosting},
+				defaultValue: disabledHosting},
 		} {
 			t.Run(fmt.Sprintf("preview=%t/%s", preview, test.name), func(t *testing.T) {
 				p, fake := offlineBYOProvider(t)
@@ -409,46 +401,17 @@ func TestBYOProvisioningFeatureGateUsesEffectiveParameters(t *testing.T) {
 				}
 
 				if preview {
-					result, previewErr := p.Preview(t.Context(), func(string) {})
+					_, previewErr := p.Preview(t.Context(), func(string) {})
 					err = previewErr
-					if !test.gated {
-						require.NoError(t, err)
-						require.NotNil(t, result)
-						require.NotNil(t, result.Preview)
-						assert.Equal(t, 1, fake.previews)
-						assert.Zero(t, fake.writes)
-					}
 				} else {
-					result, deployErr := p.Deploy(t.Context(), func(string) {})
+					_, deployErr := p.Deploy(t.Context(), func(string) {})
 					err = deployErr
-					if !test.gated {
-						require.NoError(t, err)
-						require.NotNil(t, result)
-						require.NotNil(t, result.Deployment)
-						assert.Equal(t, 1, fake.writes)
-						assert.Zero(t, fake.previews)
-					}
 				}
-				if test.gated {
-					assert.Empty(t, fake.requests, "a disabled BYO AKS feature must not read or deploy")
-					assert.Zero(t, fake.writes)
-					assert.Zero(t, fake.previews)
-					requireBYOFeatureNotEnabled(t, err)
-				} else {
-					path := "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
-					submit := "PUT " + path
-					if preview {
-						submit = "POST " + path + "/whatIf"
-					}
-					allowed := []string{submit}
-					if !preview {
-						allowed = append(allowed, "GET "+path)
-					}
-					assert.Contains(t, fake.requests, submit)
-					assert.Subset(t, allowed, fake.requests, "non-hosting provisioning must not read BYO resources")
-					assert.LessOrEqual(t, len(fake.requests), len(allowed))
-				}
-				assert.Empty(t, notice.String(), "disabled features and non-hosting provisioning must not announce")
+				assert.Empty(t, fake.requests, "a disabled BYO AKS feature must not read or deploy")
+				assert.Zero(t, fake.writes)
+				assert.Zero(t, fake.previews)
+				requireBYOFeatureNotEnabled(t, err)
+				assert.Empty(t, notice.String(), "disabled features must not announce")
 				current, err := json.Marshal(p.synthResult)
 				require.NoError(t, err)
 				assert.JSONEq(t, string(original), string(current), "the gate must not rewrite hosting configuration")

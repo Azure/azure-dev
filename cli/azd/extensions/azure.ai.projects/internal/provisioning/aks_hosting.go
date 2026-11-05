@@ -10,6 +10,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -102,6 +104,14 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 		if identity.binding == "workloadPrincipalId" {
 			workloadID = identity.id
 		}
+	}
+	enabled, err := strconv.ParseBool(os.Getenv(synthesis.BYOAKSEnvVar))
+	if err != nil || !enabled {
+		return exterrors.Compatibility(
+			exterrors.CodeFeatureNotEnabled,
+			fmt.Sprintf("preview feature %q is disabled", synthesis.BYOAKSFeatureID),
+			fmt.Sprintf("enable by setting %s=true in your shell or CI before running azd", synthesis.BYOAKSEnvVar),
+		)
 	}
 	if err := p.ensureCredential(ctx); err != nil {
 		return err

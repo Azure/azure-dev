@@ -11,7 +11,7 @@ All seven preview capabilities are off by default. Each switch is controlled ind
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 | `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
-| `agents.byo_aks` | [Existing AKS project initialization and adoption](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
+| `agents.byo_aks` | [Existing AKS project initialization, adoption, provisioning, and provisioning preview](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
 | `agents.rbac_warnings` | Retained developer RBAC deployment warnings through the beta event API | `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS` |
 
 Override a switch in your shell or CI before running azd:
@@ -42,6 +42,9 @@ for these switches, so persisted `azd env set` values do not enable or
 override the listener. Direct `azd ai agent ...` commands still receive
 selected-environment values after shell/CI values, so a persisted dotenv value
 can override a shell opt-in for those commands.
+The Projects provisioning listener likewise requires the BYO AKS switch in
+the current shell or CI process environment for `azd provision` and
+`azd provision --preview`; `azd env set` alone does not enable it.
 
 User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
 `AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary
@@ -72,8 +75,10 @@ Explicit remote `--template` inputs are staged and checked before Azure
 authentication, including `$ref` definitions. Adoption reuses that directory.
 
 BYO AKS checks cover inline and referenced project configuration during init/adoption.
-Foundry provider initialization, provision, preview, lifecycle hooks, and Bicep
-eject do not check the BYO AKS switch. Ordinary Foundry provisioning is unchanged.
+The Projects provider also requires the BYO AKS switch for `azd provision` and
+`azd provision --preview` when effective `agentHosting.enabled=true`.
+Foundry provider initialization, lifecycle hooks, and Bicep eject do not check
+the BYO AKS switch. Ordinary Foundry provisioning without AKS hosting is unchanged.
 
 The RBAC warnings switch controls retention only, not whether checks run.
 With it off, `predeploy` uses the stable event API and prints warnings and
@@ -91,7 +96,7 @@ in final output and JSON `messages`.
   accept voice WebSocket endpoints.
 - Agent read and cleanup commands stay available with features off. This includes
   show, endpoint show, invocations show, follow, and cancel, delete, and down.
-  BYO AKS infrastructure operations do not require its switch to be enabled.
+  BYO AKS infrastructure state queries, Bicep eject, and teardown do not require its switch to be enabled.
   BYO AKS infrastructure uses the standard Foundry `azd down`
   path, which deletes the target resource group and all resources inside it.
 - These checks do not govern requests from the evaluations or routines

@@ -61,22 +61,20 @@ func (byoTestCredential) GetToken(ctx context.Context, options policy.TokenReque
 }
 
 type byoARMFake struct {
-	mu                        sync.Mutex
-	t                         *testing.T
-	provider                  *FoundryProvisioningProvider
-	requests                  []string
-	parameters                map[string]any
-	template                  map[string]any
-	writes                    int
-	previews                  int
-	failWrite                 bool
-	clusterVersion            string
-	clusterID                 string
-	kubeletID                 string
-	nodeSubnetID              string
-	nodePrefix                string
-	clusterProperties         map[string]any
-	overrideClusterProperties bool
+	mu             sync.Mutex
+	t              *testing.T
+	provider       *FoundryProvisioningProvider
+	requests       []string
+	parameters     map[string]any
+	template       map[string]any
+	writes         int
+	previews       int
+	failWrite      bool
+	clusterVersion string
+	clusterID      string
+	kubeletID      string
+	nodeSubnetID   string
+	nodePrefix     string
 }
 
 func (f *byoARMFake) response(request *http.Request, status int, body any) *http.Response {
@@ -91,11 +89,6 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, request.Method+" "+request.URL.Path)
 	if request.Method == http.MethodGet && request.URL.Path == f.clusterID {
-		if f.overrideClusterProperties {
-			return f.response(request, 200, map[string]any{
-				"id": f.clusterID, "properties": f.clusterProperties,
-			}), nil
-		}
 		return f.response(request, 200, map[string]any{
 			"id": f.clusterID, "location": "westus", "sku": map[string]any{"name": "Base"},
 			"identity": map[string]any{"type": "SystemAssigned"},

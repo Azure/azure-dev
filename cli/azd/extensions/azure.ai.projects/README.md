@@ -228,12 +228,11 @@ The user or automation identity running the deployment also needs the following 
 
 These permissions are additional to the applicable resource and role-assignment permissions above. Resource-scoped role-assignment write permission alone does not authorize the resource-group-scoped nested deployments, including in another subscription.
 
-For missing principal bindings declared by the template, the provider reads the effectively selected supplied identities to resolve their principal IDs. A missing federation-role binding is resolved in the actual workload identity's subscription when the compiled plan identifies that scope, including when its name is unresolved. Otherwise, it uses the effective supplied workload identity's subscription, or the deployment subscription when that identity is omitted. Explicit bindings do not require these automatic binding lookups; applicable preflight evidence reads still run. Supplied resources and their existing grants must already be configured for Foundry agent hosting.
+For missing principal bindings declared by the template, the provider uses matching supplied-identity metadata collected by preflight. The kubelet binding uses preflight's AKS metadata. Required bindings fail if matching preflight evidence is unavailable or the principal ID is not a GUID. A missing federation-role binding is resolved in the actual workload identity's subscription when the compiled plan identifies that scope, including when its name is unresolved. Otherwise, it uses the effective supplied workload identity's subscription, or the deployment subscription when that identity is omitted. Explicit bindings take precedence; applicable preflight evidence reads still run. Supplied resources and their existing grants must already be configured for Foundry agent hosting.
 
-After local validation, preview opt-in, and credential initialization, independent AKS, federation-role,
-and supplied-identity reads run concurrently. The first failed read cancels outstanding
-reads and returns its original error; errors are selected by completion order.
-All required reads must succeed before bindings are merged and ARM deployment or what-if can proceed.
+After local validation, preview opt-in, and credential initialization, preflight collects resource
+and authorization evidence. Required bindings must resolve successfully before they are merged
+and ARM deployment or what-if can proceed.
 
 `azd provision --preview` resolves the host bindings and returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives names for omitted supporting resources and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`. Registry outputs are empty when no registry is selected.
 

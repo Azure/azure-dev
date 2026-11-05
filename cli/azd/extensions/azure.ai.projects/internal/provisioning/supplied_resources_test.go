@@ -7,13 +7,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -58,18 +55,10 @@ type suppliedARMFake struct {
 	missingGrant     string
 	requests         []string
 	selection        *synthesis.AgentHostingInput
-	beforeRead       func(*http.Request) error
 	reads            []string
-	identityReply    map[string]any
-	replies          map[string]any
 }
 
 func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
-	if request.Method == http.MethodGet && f.beforeRead != nil {
-		if err := f.beforeRead(request); err != nil {
-			return nil, err
-		}
-	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, request.Method+" "+request.URL.Path)
@@ -77,9 +66,6 @@ func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
 		return f.base.Do(request)
 	}
 	f.reads = append(f.reads, request.URL.Path)
-	if reply, ok := f.replies[request.URL.Path]; ok {
-		return f.base.response(request, 200, reply), nil
-	}
 	path := request.URL.Path
 	lower := strings.ToLower(path)
 	respond := func(status int, body any) (*http.Response, error) { return f.base.response(request, status, body), nil }
@@ -115,9 +101,6 @@ func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
 		{selection.WorkloadIdentityResourceID, suppliedWorkloadPrincipal},
 	} {
 		if identity.id != "" && strings.EqualFold(path, identity.id) {
-			if f.identityReply != nil {
-				return respond(200, f.identityReply)
-			}
 			return respond(200, map[string]any{"id": path, "properties": map[string]any{
 				"principalId": identity.principal, "clientId": identity.principal, "tenantId": "tenant",
 			}})
@@ -202,124 +185,6 @@ func suppliedProvider(t *testing.T, mask int) (*FoundryProvisioningProvider, *su
 	compiler := &stubCompiler{buildParamResult: bicep.BuildResult{Compiled: string(outer)}}
 	p.bicepCliInstance = compiler
 	return p, fake, compiler
-}
-
-func TestBYOPrepareConcurrentReads(t *testing.T) {
-	paths := []string{
-		offlineClusterID,
-		"/subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
-		suppliedHostingID,
-		suppliedWorkloadID,
-	}
-	for _, test := range []struct {
-		name     string
-		failures []string
-		cancel   bool
-	}{
-		{name: "success"},
-		{name: "cluster failure", failures: paths[:1]},
-		{name: "role failure", failures: paths[1:2]},
-		{name: "hosting identity failure", failures: paths[2:3]},
-		{name: "workload identity failure", failures: paths[3:]},
-		{name: "all reads fail", failures: paths},
-		{name: "role and identity failures", failures: paths[1:]},
-		{name: "identity failures", failures: paths[2:]},
-		{name: "cancellation", cancel: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			p, fake, _ := suppliedProvider(t, 7)
-			source, err := p.resolveTemplate(t.Context(), func(string) {})
-			require.NoError(t, err)
-			source.parameters["includeAcr"] = map[string]any{"value": true}
-			original, err := json.Marshal(source.parameters)
-			require.NoError(t, err)
-
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-			started := make(chan string, len(paths))
-			release := make(chan struct{})
-			releaseReads := sync.OnceFunc(func() { close(release) })
-			readFailure := errors.New("offline binding read failure")
-			var bindingReads atomic.Bool
-			fake.beforeRead = func(request *http.Request) error {
-				if !bindingReads.Load() {
-					return nil
-				}
-				started <- request.URL.Path
-				select {
-				case <-request.Context().Done():
-					return request.Context().Err()
-				case <-release:
-					if slices.Contains(test.failures, request.URL.Path) {
-						return fmt.Errorf("%s: %w", request.URL.Path, readFailure)
-					}
-					if len(test.failures) > 0 {
-						<-request.Context().Done()
-						return request.Context().Err()
-					}
-					return nil
-				}
-			}
-			done := make(chan struct{})
-			var prepareErr error
-			go func() {
-				defer close(done)
-				prepareErr = p.prepareBYO(ctx, source, func(string) { bindingReads.Store(true) })
-			}()
-			t.Cleanup(func() {
-				cancel()
-				releaseReads()
-				<-done
-			})
-
-			var observed []string
-			for range paths {
-				select {
-				case path := <-started:
-					observed = append(observed, path)
-				case <-ctx.Done():
-					t.Fatalf("binding reads did not start concurrently: %v", observed)
-				}
-			}
-			assert.ElementsMatch(t, paths, observed)
-			if test.cancel {
-				cancel()
-			} else {
-				releaseReads()
-			}
-			select {
-			case <-done:
-			case <-time.After(5 * time.Second):
-				t.Fatal("binding reads did not finish")
-			}
-
-			switch {
-			case test.cancel:
-				require.ErrorIs(t, prepareErr, context.Canceled)
-			case len(test.failures) > 0:
-				require.ErrorIs(t, prepareErr, readFailure)
-				assert.True(t, slices.ContainsFunc(test.failures, func(path string) bool {
-					return strings.Contains(prepareErr.Error(), path)
-				}), "expected the original error from a failed binding read, got %v", prepareErr)
-			default:
-				require.NoError(t, prepareErr)
-				for name, value := range map[string]string{
-					"kubeletObjectId":                   offlineKubeletObjectID,
-					"hostingPrincipalId":                suppliedHostingPrincipal,
-					"workloadPrincipalId":               suppliedWorkloadPrincipal,
-					"federatedIdentityRoleDefinitionId": paths[1] + "/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-				} {
-					assert.Equal(t, map[string]any{"value": value}, source.parameters[name])
-				}
-			}
-			if prepareErr != nil {
-				current, err := json.Marshal(source.parameters)
-				require.NoError(t, err)
-				assert.JSONEq(t, string(original), string(current), "failed reads must not publish partial bindings")
-			}
-			assert.Zero(t, fake.base.writes)
-			assert.Zero(t, fake.base.previews)
-		})
-	}
 }
 
 func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {

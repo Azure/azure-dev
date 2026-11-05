@@ -14,7 +14,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/onboarding"
@@ -22,7 +21,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
@@ -77,8 +75,9 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	}
 	_, resolveFederationRole := hostBindings["federatedIdentityRoleDefinitionId"]
 	identities := []struct {
-		field, binding, id, principal string
-		value                         json.RawMessage
+		field, binding, id string
+		value              json.RawMessage
+		fact               onboarding.Identity
 	}{
 		{field: "hostingManagementIdentityResourceId", binding: "hostingPrincipalId",
 			value: hosting.HostingManagementIdentityResourceID},
@@ -130,12 +129,18 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions),
 		Access:    onboarding.NewAuthorizer(p.credential, p.armClientOptions),
 	}
-	_, report, preflightErr := pipeline.Preflight(ctx, plan)
+	facts, report, preflightErr := pipeline.Preflight(ctx, plan)
 	if err := writeBYOPreflight(report, preflightErr, progress); err != nil {
 		return err
 	}
-	if plan.Cluster.ID != "" && plan.Cluster.Missing == "" {
-		clusterID = plan.Cluster.ID
+	_, needsKubelet := hostBindings["kubeletObjectId"]
+	if facts.KubeletObjectID == "" && (plan.Cluster.Missing == "" || needsKubelet) {
+		return fmt.Errorf("BYO AKS requires a kubelet principal object ID from preflight")
+	}
+	if facts.KubeletObjectID != "" {
+		if _, err := uuid.Parse(facts.KubeletObjectID); err != nil {
+			return fmt.Errorf("AKS kubelet principal object ID must be a GUID: %w", err)
+		}
 	}
 	workloadScope := plan.Workload.ID
 	if workloadScope == "" {
@@ -146,54 +151,28 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 			roleSubscription = scope.SubscriptionID
 		}
 	}
-	readCtx, cancelReads := context.WithCancelCause(ctx)
-	defer cancelReads(nil)
-
-	var reads sync.WaitGroup
-	var kubeletObjectID, federationRoleID string
-	reads.Go(func() {
-		var err error
-		kubeletObjectID, err = p.readBYOKubeletObjectID(readCtx, clusterID)
-		if err != nil {
-			cancelReads(err)
-		}
-	})
-	if resolveFederationRole {
-		reads.Go(func() {
-			var err error
-			federationRoleID, err = p.resolveBYOFederationRoleID(readCtx, roleSubscription)
-			if err != nil {
-				cancelReads(err)
-			}
-		})
-	}
+	identities[0].fact, identities[1].fact = facts.HostingIdentity, facts.WorkloadIdentity
+	resolvedBindings := map[string]string{"kubeletObjectId": facts.KubeletObjectID}
 	for i := range identities {
 		identity := &identities[i]
 		if _, needed := hostBindings[identity.binding]; !needed {
 			continue
 		}
-		reads.Go(func() {
-			var err error
-			identity.principal, err = p.readBYOIdentityPrincipal(readCtx, identity.id)
-			if err != nil {
-				cancelReads(err)
-			}
-		})
-	}
-	reads.Wait()
-
-	if err := context.Cause(readCtx); err != nil {
-		return err
-	}
-	resolvedBindings := map[string]string{
-		"federatedIdentityRoleDefinitionId": federationRoleID,
-		"kubeletObjectId":                   kubeletObjectID,
-	}
-	for _, identity := range identities {
-		if _, needed := hostBindings[identity.binding]; !needed {
-			continue
+		if !strings.EqualFold(identity.id, identity.fact.ID) || identity.fact.PrincipalID == "" {
+			return fmt.Errorf("%s deployment binding requires matching resource ID and principal ID from preflight",
+				identity.field)
 		}
-		resolvedBindings[identity.binding] = identity.principal
+		if _, err := uuid.Parse(identity.fact.PrincipalID); err != nil {
+			return fmt.Errorf("supplied identity principal ID must be a GUID: %w", err)
+		}
+		resolvedBindings[identity.binding] = identity.fact.PrincipalID
+	}
+	if resolveFederationRole {
+		roleID, err := p.resolveBYOFederationRoleID(ctx, roleSubscription)
+		if err != nil {
+			return err
+		}
+		resolvedBindings["federatedIdentityRoleDefinitionId"] = roleID
 	}
 	for name := range hostBindings {
 		hostBindings[name] = map[string]any{"value": resolvedBindings[name]}
@@ -236,33 +215,6 @@ func parseBYOResourceID(value, kind string) (*arm.ResourceID, error) {
 		return nil, fmt.Errorf("expected a complete %s resource ID", kind)
 	}
 	return id, nil
-}
-
-func (p *FoundryProvisioningProvider) readBYOKubeletObjectID(
-	ctx context.Context, clusterID string,
-) (string, error) {
-	id, err := parseBYOResourceID(clusterID, "Microsoft.ContainerService/managedClusters")
-	if err != nil {
-		return "", err
-	}
-	options := byoARMOptions(p.armClientOptions)
-	clusters, err := armcontainerservice.NewManagedClustersClient(id.SubscriptionID, p.credential, options)
-	if err != nil {
-		return "", fmt.Errorf("create AKS client: %w", err)
-	}
-	cluster, err := clusters.Get(ctx, id.ResourceGroupName, id.Name, nil)
-	if err != nil {
-		return "", fmt.Errorf("read AKS kubelet identity: %w", err)
-	}
-	if cluster.Properties == nil || cluster.Properties.IdentityProfile["kubeletidentity"] == nil ||
-		cluster.Properties.IdentityProfile["kubeletidentity"].ObjectID == nil {
-		return "", fmt.Errorf("BYO AKS requires a kubelet principal object ID")
-	}
-	kubeletObjectID := *cluster.Properties.IdentityProfile["kubeletidentity"].ObjectID
-	if _, err := uuid.Parse(kubeletObjectID); err != nil {
-		return "", fmt.Errorf("AKS kubelet principal object ID must be a GUID: %w", err)
-	}
-	return kubeletObjectID, nil
 }
 
 func (p *FoundryProvisioningProvider) resolveBYOFederationRoleID(

@@ -61,9 +61,6 @@ func (w *Wizard) configureExisting(
 			Message: "Select an existing Azure resource", AllowNewResource: new(false),
 		},
 	}
-	if ok && meta.ResourceKind != "" {
-		options.Kinds = []string{meta.ResourceKind}
-	}
 	if resourceType == resources.OpenAIModel {
 		options.Kinds = []string{"OpenAI"}
 	}

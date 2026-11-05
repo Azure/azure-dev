@@ -557,7 +557,7 @@ func TestWizardExistingCatalog(t *testing.T) {
 		},
 		{
 			[]string{"AI", "Microsoft Foundry model"}, resources.AIProject, "Microsoft.CognitiveServices/accounts/projects",
-			"Microsoft.CognitiveServices/accounts/account/projects/resource", "AIServices",
+			"Microsoft.CognitiveServices/accounts/account/projects/resource", "",
 		},
 		{
 			[]string{"AI", "Azure AI Search"}, resources.AISearch, "Microsoft.Search/searchServices",
@@ -596,6 +596,8 @@ func TestWizardExistingCatalog(t *testing.T) {
 			assert.Equal(t, test.discoverType, prompts.findRequest.Options.ResourceType)
 			if test.kind != "" {
 				assert.Equal(t, []string{test.kind}, prompts.findRequest.Options.Kinds)
+			} else {
+				assert.Empty(t, prompts.findRequest.Options.Kinds)
 			}
 		})
 	}

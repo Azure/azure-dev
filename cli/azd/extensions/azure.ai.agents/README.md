@@ -1905,7 +1905,7 @@ and supply this field alongside `trace_window` in the `agent_traces` context:
 
 ```yaml
 trace_connection_configuration:
-  type: appinsights
+  type: application_insights
   resource_id: /subscriptions/<subscription>/resourceGroups/<group>/providers/Microsoft.Insights/components/<component>
   agent_name: exact-emitted-telemetry-service-name
 ```

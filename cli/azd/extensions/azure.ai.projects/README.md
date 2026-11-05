@@ -2,7 +2,7 @@
 
 <!-- cspell:ignore Kata kubelet -->
 
-Manage Microsoft Foundry Project resources from your terminal. (Preview)
+Manage Microsoft Foundry Project resources from your terminal.
 
 Requires azd 1.37.0 or later. Deployment preview uses the stable v1 API.
 
@@ -231,6 +231,11 @@ The user or automation identity running the deployment also needs the following 
 These permissions are additional to the applicable resource and role-assignment permissions above. Resource-scoped role-assignment write permission alone does not authorize the resource-group-scoped nested deployments, including in another subscription.
 
 For missing principal bindings declared by the template, the provider reads the effectively selected supplied identities to resolve their principal IDs. A missing federation-role binding is resolved in the effective workload identity's subscription, or the deployment subscription when that identity is omitted. Explicit bindings do not require these lookups. This is deployment binding resolution, not a readiness, networking, or permission preflight. Supplied resources and their existing grants must already be configured for Foundry agent hosting.
+
+After local validation and credential initialization, independent AKS, federation-role,
+and supplied-identity reads run concurrently. The first failed read cancels outstanding
+reads and returns its original error; errors are selected by completion order.
+All required reads must succeed before bindings are merged and ARM deployment or what-if can proceed.
 
 `azd provision --preview` resolves the host bindings and returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives names for omitted supporting resources and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`. Registry outputs are empty when no registry is selected.
 

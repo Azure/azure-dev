@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"os"
@@ -181,6 +182,12 @@ func TestACRReuseDisabledProviderEntrypoints(t *testing.T) {
 		},
 		"cleanup": func(p *FoundryProvisioningProvider) error {
 			return p.cleanupACRAccess(t.Context())
+		},
+		"persist recovery": func(p *FoundryProvisioningProvider) error {
+			return p.persistRecoveredACRBinding(t.Context())
+		},
+		"clear lifecycle": func(p *FoundryProvisioningProvider) error {
+			return p.clearACRLifecycle(t.Context())
 		},
 	}
 	for _, state := range []string{"selector", "binding without aliases", "pending without aliases"} {
@@ -572,5 +579,450 @@ func TestACRReuseCompilerSelectionPreservesNormalAndInjectedBehavior(t *testing.
 		injected := &stubCompiler{}
 		p.bicepCliInstance = injected
 		require.Same(t, injected, p.bicepCli())
+	}
+}
+
+func acrRolloutProvider(
+	t *testing.T, agent string,
+) (*FoundryProvisioningProvider, *resolveEnvStubEnvServer, *byoARMFake) {
+	t.Helper()
+	p, fake := offlineBYOProvider(t)
+	env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
+		envKeySubscriptionID: p.subID, envKeyResourceGroup: p.rgName, envKeyLocation: p.location,
+		"AZURE_AI_PROJECT_NAME": "project",
+	}, config: map[string][]byte{"sentinel": []byte(`{"keep":true}`)}}
+	p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	raw := "name: test\nservices:\n  project:\n    host: azure.ai.project\n"
+	if agent != "" {
+		raw += "  agent:\n    host: azure.ai.agent\n" + agent
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(p.projectPath, "azure.yaml"), []byte(raw), 0o600))
+	return p, env, fake
+}
+
+func TestACRCreateRolloutDeploy(t *testing.T) {
+	for _, tt := range []struct {
+		name, agent string
+		acr         bool
+	}{
+		{"source", "    kind: hosted\n", true},
+		{"bare image", "    kind: hosted\n    image: registry.example/agent:v1\n", true},
+		{"prebuilt", "    kind: hosted\n    image: registry.example/agent:v1\n" +
+			"    docker: {imagePassthrough: true}\n", false},
+		{"code", "    kind: hosted\n    codeConfiguration: {runtime: python}\n", false},
+	} {
+		for _, enabled := range []string{"false", "true"} {
+			t.Run(tt.name+"/"+enabled, func(t *testing.T) {
+				t.Setenv(synthesis.ACRReuseEnvVar, enabled)
+				p, env, fake := acrRolloutProvider(t, tt.agent)
+				require.NoError(t, p.Initialize(t.Context(), p.projectPath, &azdext.ProvisioningOptions{
+					Provider: FoundryProviderName,
+				}))
+				before := testutil.Snapshot(t, p.projectPath)
+				result, err := p.Deploy(t.Context(), func(string) {})
+				require.NoError(t, err)
+				require.Equal(t, offlineProjectID, result.Deployment.Outputs["AZURE_AI_PROJECT_ID"].Value)
+				require.Equal(t, offlineProjectEndpoint, result.Deployment.Outputs["FOUNDRY_PROJECT_ENDPOINT"].Value)
+				registryID := ""
+				if tt.acr {
+					registryID = offlineRegistryID
+				}
+				require.Equal(t, registryID, result.Deployment.Outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"].Value)
+				require.Equal(t, 1, fake.writes)
+				wantBinding := tt.acr && enabled == "true"
+				require.Equal(t, map[bool]int{false: 0, true: 1}[wantBinding], env.configSetN)
+				require.Zero(t, env.configUnsetN)
+				if wantBinding {
+					require.Contains(t, env.config, synthesis.ACRBindingConfigKey)
+					require.Equal(t, "create", env.set["AZD_FOUNDRY_ACR_MODE"])
+					require.NotNil(t, p.acrBinding)
+					require.False(t, p.acrBindingRecovered)
+					require.Contains(t, fake.requests, "GET "+offlineProjectID)
+				} else {
+					require.NotContains(t, env.config, synthesis.ACRBindingConfigKey)
+					require.NotContains(t, env.set, "AZD_FOUNDRY_ACR_MODE")
+					require.Nil(t, p.acrBinding)
+					require.NotContains(t, fake.requests, "GET "+offlineProjectID)
+				}
+				require.Equal(t, []byte(`{"keep":true}`), env.config["sentinel"])
+				require.Equal(t, before, testutil.Snapshot(t, p.projectPath))
+			})
+		}
+	}
+}
+
+func TestACRCreateRolloutIdentityFailure(t *testing.T) {
+	for _, enabled := range []string{"false", "true"} {
+		t.Run(enabled, func(t *testing.T) {
+			t.Setenv(synthesis.ACRReuseEnvVar, enabled)
+			p, env, fake := acrRolloutProvider(t, "    kind: hosted\n")
+			require.NoError(t, p.Initialize(t.Context(), p.projectPath, &azdext.ProvisioningOptions{
+				Provider: FoundryProviderName,
+			}))
+			identityCalls := 0
+			p.acrRequest = func(_ context.Context, method, path, _ string, _ any) error {
+				require.Equal(t, http.MethodGet, method)
+				if path == offlineProjectID {
+					identityCalls++
+					return errors.New("offline identity failure")
+				}
+				deployment := "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+				require.Equal(t, deployment, path)
+				return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+			}
+			result, err := p.Deploy(t.Context(), func(string) {})
+			if enabled == "false" {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				require.Zero(t, identityCalls)
+			} else {
+				require.ErrorContains(t, err, "read deployed project identity for registry binding")
+				require.ErrorContains(t, err, "offline identity failure")
+				require.Equal(t, 1, identityCalls)
+			}
+			require.Equal(t, 1, fake.writes)
+			require.Zero(t, env.configSetN)
+			require.NotContains(t, env.set, "AZD_FOUNDRY_ACR_MODE")
+		})
+	}
+}
+
+func TestACRCreateRolloutExistingBinding(t *testing.T) {
+	for _, agent := range []string{"    kind: hosted\n", ""} {
+		for _, recovered := range []bool{false, true} {
+			for _, enabled := range []string{"false", "true"} {
+				for _, fault := range []string{"", "identity drift", "identity error"} {
+					name := fmt.Sprintf("project-only=%t/recovered=%t/%s/%s", agent == "", recovered, enabled, fault)
+					t.Run(name, func(t *testing.T) {
+						t.Setenv(synthesis.ACRReuseEnvVar, enabled)
+						p, env, _ := acrRolloutProvider(t, agent)
+						env.get["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = offlineRegistryID
+						registryName := offlineRegistryID[strings.LastIndexByte(offlineRegistryID, '/')+1:]
+						env.get["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = registryName + ".azurecr.io"
+						env.get["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"] = registryName + "-conn"
+						env.get["AZURE_AI_PROJECT_ID"] = offlineProjectID
+						env.get["AZD_FOUNDRY_ACR_MODE"] = "create"
+						binding := &synthesis.ACRBinding{
+							Version: 1, Mode: "create", RegistryResourceID: offlineRegistryID,
+							ProjectResourceID: offlineProjectID, PrincipalID: "22222222-2222-4222-8222-222222222222",
+							DeploymentSalt: "test",
+						}
+						if !recovered {
+							data, err := json.Marshal(binding)
+							require.NoError(t, err)
+							env.config[synthesis.ACRBindingConfigKey] = data
+						}
+						require.NoError(t, p.Initialize(t.Context(), p.projectPath, &azdext.ProvisioningOptions{
+							Provider: FoundryProviderName,
+						}))
+						identityCalls := 0
+						p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+							require.Equal(t, http.MethodGet, method)
+							deployment := "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/" +
+								p.deploymentName()
+							creator := "/subscriptions/target-sub/resourceGroups/target-rg/providers/" +
+								"Microsoft.Resources/deployments/acr"
+							switch path {
+							case deployment:
+								return acrTestReply(out, map[string]any{"properties": map[string]any{
+									"provisioningState": "Succeeded",
+									"parameters": map[string]any{
+										"resourceTokenSalt": map[string]any{"value": "test"},
+									},
+									"outputs": map[string]any{
+										"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": offlineRegistryID},
+										"AZURE_AI_PROJECT_ID":                  map[string]any{"value": offlineProjectID},
+									},
+								}})
+							case deployment + "/operations":
+								return acrTestReply(out, map[string]any{"value": []any{map[string]any{
+									"properties": map[string]any{
+										"targetResource": map[string]any{
+											"id": creator, "resourceType": "Microsoft.Resources/deployments",
+										},
+										"provisioningOperation": "Create", "provisioningState": "Succeeded",
+									},
+								}}})
+							case creator + "/operations":
+								return acrTestReply(out, map[string]any{"value": []any{map[string]any{
+									"properties": map[string]any{
+										"targetResource": map[string]any{
+											"id":           offlineRegistryID,
+											"resourceType": "Microsoft.ContainerRegistry/registries",
+										},
+										"provisioningOperation": "Create", "provisioningState": "Succeeded",
+									},
+								}}})
+							case offlineProjectID:
+								identityCalls++
+								if !recovered || identityCalls > 1 {
+									if fault == "identity error" {
+										return errors.New("offline identity failure")
+									}
+									if fault == "identity drift" {
+										return acrTestReply(out, map[string]any{"identity": map[string]any{
+											"principalId": "changed",
+										}})
+									}
+								}
+								return acrTestReply(out, map[string]any{"identity": map[string]any{
+									"principalId": binding.PrincipalID,
+								}})
+							default:
+								t.Fatalf("unexpected ARM request: %s", path)
+								return errors.New("unexpected ARM request")
+							}
+						}
+						result, err := p.Deploy(t.Context(), func(string) {})
+						if fault == "" {
+							require.NoError(t, err)
+							require.Equal(t, offlineRegistryID,
+								result.Deployment.Outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"].Value)
+						} else {
+							require.Error(t, err)
+							require.Contains(t, err.Error(), map[string]string{
+								"identity drift": "immutable registry binding", "identity error": "offline identity failure",
+							}[fault])
+						}
+						require.Equal(t, map[bool]int{false: 1, true: 2}[recovered], identityCalls)
+						wantSaved := !recovered || enabled == "true"
+						require.Equal(t, map[bool]int{false: 0, true: 1}[recovered && enabled == "true"], env.configSetN)
+						_, saved := env.config[synthesis.ACRBindingConfigKey]
+						require.Equal(t, wantSaved, saved)
+						require.Equal(t, recovered && enabled == "false", p.acrBindingRecovered)
+						require.Equal(t, binding, p.acrBinding)
+						require.NotContains(t, env.set, "AZD_FOUNDRY_ACR_MODE")
+						require.Zero(t, env.configUnsetN)
+					})
+				}
+			}
+		}
+	}
+}
+
+func TestACRCreateRolloutLoadedMarker(t *testing.T) {
+	p, env := acrTestProvider(t)
+	t.Setenv(synthesis.ACRReuseEnvVar, "false")
+	binding := acrTestBinding()
+	binding.Mode = "create"
+	data, err := json.Marshal(binding)
+	require.NoError(t, err)
+	env.config = map[string][]byte{synthesis.ACRBindingConfigKey: data}
+	p.acrBindingRecovered = true
+	require.NoError(t, p.loadACRLifecycle(t.Context()))
+	require.False(t, p.acrBindingRecovered)
+	require.NoError(t, p.clearACRLifecycle(t.Context()))
+	require.Equal(t, 1, env.configUnsetN)
+	require.Nil(t, p.acrBinding)
+}
+
+func TestACRCreateRolloutTransientClear(t *testing.T) {
+	p, env := acrTestProvider(t)
+	t.Setenv(synthesis.ACRReuseEnvVar, "false")
+	p.acrBinding = acrTestBinding()
+	p.acrBinding.Mode = "create"
+	p.acrBindingRecovered = true
+	require.NoError(t, p.persistRecoveredACRBinding(t.Context()))
+	require.True(t, p.acrBindingRecovered)
+	require.Zero(t, env.configSetN)
+	require.NoError(t, p.clearACRLifecycle(t.Context()))
+	require.Nil(t, p.acrBinding)
+	require.False(t, p.acrBindingRecovered)
+	require.Zero(t, env.configUnsetN)
+}
+
+func TestACRCreateRolloutOffOnOff(t *testing.T) {
+	p, env, _ := acrRolloutProvider(t, "    kind: hosted\n")
+	deployed := false
+	p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+		require.Equal(t, http.MethodGet, method)
+		deployment := "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+		switch path {
+		case deployment:
+			if !deployed {
+				return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+			}
+			return acrTestReply(out, map[string]any{"properties": map[string]any{
+				"provisioningState": "Succeeded",
+				"parameters":        map[string]any{"resourceTokenSalt": map[string]any{"value": "test"}},
+				"outputs": map[string]any{
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": offlineRegistryID},
+					"AZURE_AI_PROJECT_ID":                  map[string]any{"value": offlineProjectID},
+				},
+			}})
+		case deployment + "/operations":
+			return acrTestReply(out, map[string]any{"value": []any{map[string]any{
+				"properties": map[string]any{
+					"targetResource": map[string]any{
+						"id": offlineRegistryID, "resourceType": "Microsoft.ContainerRegistry/registries",
+					},
+					"provisioningOperation": "Create", "provisioningState": "Succeeded",
+				},
+			}}})
+		case offlineProjectID:
+			return acrTestReply(out, map[string]any{"identity": map[string]any{
+				"principalId": "22222222-2222-4222-8222-222222222222",
+			}})
+		default:
+			t.Fatalf("unexpected ARM request: %s", path)
+			return errors.New("unexpected ARM request")
+		}
+	}
+	for i, enabled := range []string{"false", "true", "false"} {
+		t.Setenv(synthesis.ACRReuseEnvVar, enabled)
+		p.acrBinding = nil
+		p.acrBindingRecovered = false
+		require.NoError(t, p.Initialize(t.Context(), p.projectPath, &azdext.ProvisioningOptions{
+			Provider: FoundryProviderName,
+		}))
+		result, err := p.Deploy(t.Context(), func(string) {})
+		require.NoError(t, err)
+		for key, output := range result.Deployment.Outputs {
+			env.get[key] = output.Value
+		}
+		deployed = true
+		require.Equal(t, []int{0, 1, 1}[i], env.configSetN)
+		require.Zero(t, env.configUnsetN)
+		_, saved := env.config[synthesis.ACRBindingConfigKey]
+		require.Equal(t, i > 0, saved)
+		require.False(t, p.acrBindingRecovered)
+		if i > 0 {
+			require.NotNil(t, p.acrBinding)
+			require.Equal(t, "create", p.acrBinding.Mode)
+		}
+	}
+}
+
+func TestACRCreateRolloutRecoveredDestroy(t *testing.T) {
+	for _, owned := range []bool{false, true} {
+		t.Run(fmt.Sprint(owned), func(t *testing.T) {
+			t.Setenv(synthesis.ACRReuseEnvVar, "false")
+			p, env, _ := acrRolloutProvider(t, "")
+			deletedGroup, deletedRecord := false, false
+			groupID := "/subscriptions/target-sub/resourceGroups/target-rg"
+			p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+				Retry: policy.RetryOptions{MaxRetries: -1},
+				Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+					switch {
+					case request.Method == http.MethodGet &&
+						strings.HasSuffix(request.URL.Path, "/Microsoft.CognitiveServices/accounts"):
+						return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{"value": []any{}})
+					case request.Method == http.MethodDelete && strings.EqualFold(request.URL.Path, groupID):
+						deletedGroup = true
+						return &http.Response{
+							StatusCode: http.StatusOK, Request: request, Header: http.Header{}, Body: http.NoBody,
+						}, nil
+					default:
+						t.Fatalf("unexpected ARM request: %s %s", request.Method, request.URL.Path)
+						return nil, errors.New("unexpected ARM request")
+					}
+				}),
+			}}
+			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+				deployment := "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/" +
+					p.deploymentName()
+				if method == http.MethodDelete {
+					require.Equal(t, deployment, path)
+					require.True(t, deletedGroup)
+					deletedRecord = true
+					return nil
+				}
+				require.Equal(t, http.MethodGet, method)
+				switch path {
+				case deployment:
+					return acrTestReply(out, map[string]any{"properties": map[string]any{
+						"provisioningState": "Succeeded",
+						"parameters":        map[string]any{"resourceTokenSalt": map[string]any{"value": "test"}},
+						"outputs": map[string]any{
+							"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": offlineRegistryID},
+							"AZURE_AI_PROJECT_ID":                  map[string]any{"value": offlineProjectID},
+						},
+					}})
+				case deployment + "/operations":
+					operation := "Read"
+					if owned {
+						operation = "Create"
+					}
+					return acrTestReply(out, map[string]any{"value": []any{map[string]any{
+						"properties": map[string]any{
+							"targetResource": map[string]any{
+								"id": offlineRegistryID, "resourceType": "Microsoft.ContainerRegistry/registries",
+							},
+							"provisioningOperation": operation, "provisioningState": "Succeeded",
+						},
+					}}})
+				case offlineProjectID:
+					return acrTestReply(out, map[string]any{"identity": map[string]any{
+						"principalId": "22222222-2222-4222-8222-222222222222",
+					}})
+				default:
+					t.Fatalf("unexpected ARM request: %s", path)
+					return errors.New("unexpected ARM request")
+				}
+			}
+			require.NoError(t, p.Initialize(t.Context(), p.projectPath, &azdext.ProvisioningOptions{
+				Provider: FoundryProviderName,
+			}))
+			beforeValues, beforeConfig := maps.Clone(env.get), maps.Clone(env.config)
+			beforeFiles := testutil.Snapshot(t, p.projectPath)
+			result, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+			if owned {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+			} else {
+				require.ErrorContains(t, err, "no successful creation operation")
+			}
+			require.Equal(t, owned, deletedGroup)
+			require.Equal(t, owned, deletedRecord)
+			require.Nil(t, p.acrBinding)
+			require.False(t, p.acrBindingRecovered)
+			require.Zero(t, env.configSetN)
+			require.Zero(t, env.configUnsetN)
+			require.Equal(t, beforeValues, env.get)
+			require.Equal(t, beforeConfig, env.config)
+			require.Empty(t, env.set)
+			require.Equal(t, beforeFiles, testutil.Snapshot(t, p.projectPath))
+		})
+	}
+}
+
+func TestACRLegacyExistingProjectInitialize(t *testing.T) {
+	for _, state := range []string{"legacy", "canonical", "pending"} {
+		t.Run(state, func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			t.Setenv(synthesis.ACRReuseEnvVar, "false")
+			root := t.TempDir()
+			raw := "services:\n  project:\n    host: azure.ai.project\n" +
+				"    endpoint: https://account.services.ai.azure.com/api/projects/project\n"
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
+			env.get = map[string]string{
+				"AZD_FOUNDRY_ACR_MODE": "reuse-connect", "USE_EXISTING_AI_PROJECT": "true",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
+				envKeySubscriptionID:                   "sub", envKeyResourceGroup: "foundry", envKeyLocation: "eastus2",
+			}
+			env.config = map[string][]byte{}
+			if state != "legacy" {
+				key, value := synthesis.ACRBindingConfigKey, any(acrTestBinding())
+				if state == "pending" {
+					key, value = acrPendingConfigKey, acrTestPending()
+				}
+				data, err := json.Marshal(value)
+				require.NoError(t, err)
+				env.config[key] = data
+			}
+			beforeValues, beforeConfig := maps.Clone(env.get), maps.Clone(env.config)
+			err := p.Initialize(t.Context(), root, &azdext.ProvisioningOptions{Provider: FoundryProviderName})
+			if state == "legacy" {
+				require.NoError(t, err)
+				require.NotEmpty(t, p.brownfieldEndpoint)
+			} else {
+				requireReuseDisabled(t, err)
+			}
+			require.Equal(t, beforeValues, env.get)
+			require.Equal(t, beforeConfig, env.config)
+			require.Zero(t, env.configSetN)
+			require.Zero(t, env.configUnsetN)
+			require.NotContains(t, env.set, "AZD_FOUNDRY_ACR_MODE")
+		})
 	}
 }

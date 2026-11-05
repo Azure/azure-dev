@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/synthesis"
+	"azureaiagent/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -897,11 +898,13 @@ func (s *initACREnvironmentServer) GetConfig(
 func TestInitACRTemplateIgnoresCallerReuseState(t *testing.T) {
 	for _, route := range []string{"azure.yaml", "repository"} {
 		for _, tt := range []struct {
-			name, group      string
-			enabled, binding bool
+			name, group               string
+			enabled, binding, pending bool
 		}{
 			{name: "disabled aliases"},
 			{name: "disabled binding", binding: true},
+			{name: "disabled pending", pending: true},
+			{name: "enabled pending", enabled: true, pending: true},
 			{name: "retained group aliases", enabled: true, group: "registry-rg"},
 			{name: "retained group binding", enabled: true, binding: true,
 				group: "registry-rg"},
@@ -942,6 +945,9 @@ func TestInitACRTemplateIgnoresCallerReuseState(t *testing.T) {
 					delete(values, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
 					delete(values, "AZD_FOUNDRY_ACR_MODE")
 				}
+				if tt.pending {
+					environments.pending = []byte(`{"version":1}`)
+				}
 				before := maps.Clone(values)
 				workflow := &testWorkflowServiceServer{runErr: errors.New("stopped at core init")}
 				prompts := &initACRPromptServer{}
@@ -976,6 +982,96 @@ func TestInitACRTemplateIgnoresCallerReuseState(t *testing.T) {
 				require.Equal(t, content, after)
 			})
 		}
+	}
+}
+
+func TestInitACRTemplatePendingTargetBeforeWrites(t *testing.T) {
+	for _, route := range []string{"azure.yaml", "repository", "interactive repository"} {
+		for _, pending := range []string{"{}", "null"} {
+			for _, enabled := range []string{"false", "true"} {
+				t.Run(route+"/"+pending+"/"+enabled, func(t *testing.T) {
+					t.Setenv(synthesis.ACRReuseEnvVar, enabled)
+					root := t.TempDir()
+					t.Chdir(root)
+					require.NoError(t, os.WriteFile("azure.yaml", []byte("name: caller\n"), 0o600))
+					target := filepath.Join(root, "child", ".azure", "child-dev")
+					require.NoError(t, os.MkdirAll(target, 0o750))
+					require.NoError(t, os.WriteFile(filepath.Join(target, ".env"),
+						[]byte("AZURE_SUBSCRIPTION_ID=sub\n"), 0o600))
+					state := []byte(`{"extensions":{"ai-projects":{"acrPending":` + pending + `}}}`)
+					require.NoError(t, os.WriteFile(filepath.Join(target, "config.json"), state, 0o600))
+					staging := t.TempDir()
+					content := []byte("name: child\nservices:\n  project:\n    host: azure.ai.project\n" +
+						"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: agent\n")
+					require.NoError(t, os.WriteFile(filepath.Join(staging, "azure.yaml"), content, 0o600))
+					flags := &initFlags{src: "child", noPrompt: true}
+					if route != "interactive repository" {
+						flags.templatePointer = filepath.Join(staging, "azure.yaml")
+					}
+					environments := &initACREnvironmentServer{}
+					workflow := &recordingProjectWorkflowServer{err: errors.New("stopped at core init")}
+					prompts := &initACRPromptServer{}
+					client := newTestAzdClient(t, environments, workflow, prompts)
+					before := testutil.Snapshot(t, root)
+					var err error
+					if route == "azure.yaml" {
+						err = runInitFromAzureYaml(
+							t.Context(), flags, client, http.DefaultClient, content, staging, io.Discard,
+						)
+					} else {
+						_, err = scaffoldAzdTemplateProject(
+							t.Context(), client, http.DefaultClient, "child", staging, "child-dev", flags, io.Discard,
+						)
+					}
+					if enabled == "false" {
+						requireACRFeatureDisabled(t, err)
+						require.Empty(t, workflow.requests)
+					} else {
+						require.ErrorContains(t, err, "stopped at core init")
+						require.Len(t, workflow.requests, 1)
+					}
+					require.Zero(t, prompts.calls)
+					require.Empty(t, environments.setKeys)
+					require.Equal(t, "child-dev", flags.resolvedEnvironmentName)
+					require.Equal(t, before, testutil.Snapshot(t, root))
+				})
+			}
+		}
+	}
+}
+
+func TestInitACRExplicitExistingProjectLegacyMode(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "false")
+	for _, state := range []string{"legacy", "canonical", "pending"} {
+		t.Run(state, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			content := []byte("name: test\nservices:\n  project:\n    host: azure.ai.project\n")
+			require.NoError(t, os.WriteFile("azure.yaml", content, 0o600))
+			environments := acrFeatureEnvironment(t, state)
+			environments.values["test"]["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
+			environments.values["test"]["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = testInitACRID
+			workflow := &recordingProjectWorkflowServer{}
+			prompts := &initACRPromptServer{}
+			client := newTestAzdClient(t, environments, workflow, prompts)
+			flags := &initFlags{env: "test", projectResourceId: "/subscriptions/sub/resourceGroups/foundry-rg/" +
+				"providers/Microsoft.CognitiveServices/accounts/account/projects/project"}
+			before := maps.Clone(environments.values["test"])
+			err := validateInitACRProject(t.Context(), client, flags)
+			if state == "legacy" {
+				require.NoError(t, err)
+			} else {
+				requireACRFeatureDisabled(t, err)
+			}
+			require.Empty(t, flags.effectiveACRResourceID)
+			require.Zero(t, prompts.calls)
+			require.Empty(t, workflow.requests)
+			require.Empty(t, environments.setKeys)
+			require.Equal(t, before, environments.values["test"])
+			after, err := os.ReadFile("azure.yaml")
+			require.NoError(t, err)
+			require.Equal(t, content, after)
+		})
 	}
 }
 

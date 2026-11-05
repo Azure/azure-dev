@@ -31,16 +31,18 @@ import (
 // empty, which is what triggers the prompt path), and records SetValue writes.
 type resolveEnvStubEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	envName    string
-	get        map[string]string
-	getErr     map[string]error
-	set        map[string]string
-	process    map[string]string
-	config     map[string][]byte
-	configErr  error
-	currentErr error
-	valuesErr  error
-	valuesN    int
+	envName      string
+	get          map[string]string
+	getErr       map[string]error
+	set          map[string]string
+	process      map[string]string
+	config       map[string][]byte
+	configErr    error
+	currentErr   error
+	valuesErr    error
+	valuesN      int
+	configSetN   int
+	configUnsetN int
 }
 
 func (s *resolveEnvStubEnvServer) GetConfig(
@@ -56,6 +58,7 @@ func (s *resolveEnvStubEnvServer) GetConfig(
 func (s *resolveEnvStubEnvServer) SetConfig(
 	_ context.Context, req *azdext.SetConfigRequest,
 ) (*azdext.EmptyResponse, error) {
+	s.configSetN++
 	if s.configErr != nil {
 		return nil, s.configErr
 	}
@@ -69,6 +72,7 @@ func (s *resolveEnvStubEnvServer) SetConfig(
 func (s *resolveEnvStubEnvServer) UnsetConfig(
 	_ context.Context, req *azdext.UnsetConfigRequest,
 ) (*azdext.EmptyResponse, error) {
+	s.configUnsetN++
 	if s.configErr != nil {
 		return nil, s.configErr
 	}

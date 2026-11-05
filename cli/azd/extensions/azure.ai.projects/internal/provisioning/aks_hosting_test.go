@@ -342,6 +342,7 @@ func TestBYOFailedDeploymentCanBeRetried(t *testing.T) {
 }
 
 func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	p, fake := offlineBYOProvider(t)
 	p.armTemplate["contentVersion"] = "2.0.0.0"
 	p.onDiskSource = &templateSource{

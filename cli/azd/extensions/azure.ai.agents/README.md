@@ -1518,17 +1518,31 @@ same variable in CI jobs. Only `strconv.ParseBool` true forms enable it, not
 are honored; the evaluator does not open dotenv files.
 
 When disabled, `--acr-resource-id` and its help examples are hidden but still
-parse and return explicit enablement guidance. Environment-only selections,
+parse and return explicit enablement guidance. Greenfield environment-only selections,
 saved reuse bindings without legacy aliases, and unfinished access operations
 also require the switch. Re-enable it for **preview, down, recovery, and
 eject**, as well as setup, provision, package, publish, and deploy using reuse.
 Disabled operations leave project files, environment values, saved context,
 and Azure resources unchanged; they never fall back to creating a registry.
 Automatic registry creation and code, prebuilt-image, and old connection
-workflows without new reuse intent are unchanged. Other preview switches
+workflows without new reuse intent remain available. Other preview switches
 cannot enable ACR reuse.
 
-The pre-operation check includes `existingAcrResourceId` present only in
+A bare `image` still defaults to source build and requests automatic registry
+provisioning with the switch off; the provision/deploy consistency correction
+is always on. Fresh create preserves normal outputs without a binding-only
+project identity lookup, canonical binding creation, or new mode write off.
+Saved create bindings retain identity validation and maintenance. Recovered
+create ownership remains usable for safe operations, but is not newly
+serialized or unset as persisted state while off.
+
+Legacy existing-project `reuse-connect` environments without canonical reuse
+bindings or pending operations retain their existing behavior without opt-in.
+Canonical reuse and pending operations are checked before this exemption.
+Template initialization checks the destination environment's pending state
+without inheriting unrelated state from the caller's environment.
+
+For greenfield reuse, the pre-operation check includes `existingAcrResourceId` present only in
 generated/ejected `main.parameters.json` or `main.bicepparam` on a supported
 `microsoft.foundry` root or layer, including custom paths and module names.
 It runs before project hooks or independent package, publish, and deploy

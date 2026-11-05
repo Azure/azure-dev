@@ -265,6 +265,11 @@ func readInitACRTargetEnvironment(flags *initFlags, targetDir string) (string, m
 		return "", nil, fmt.Errorf("read target registry binding: %w", err)
 	}
 	if err == nil {
+		if _, found := cfg.Get(synthesis.ACRPendingConfigKey); found {
+			if err := synthesis.RequireACRReuse(); err != nil {
+				return "", nil, err
+			}
+		}
 		if binding, found := cfg.Get(synthesis.ACRBindingConfigKey); found {
 			encoded, err := json.Marshal(binding)
 			if err != nil {
@@ -419,8 +424,7 @@ func validateInitACRProjectContent(
 	if err != nil {
 		return err
 	}
-	if !flags.acrResourceIDSet && flags.projectResourceId != "" &&
-		values["AZD_FOUNDRY_ACR_MODE"] != "reuse-connect" {
+	if !flags.acrResourceIDSet && flags.projectResourceId != "" {
 		values["USE_EXISTING_AI_PROJECT"] = "true"
 	}
 	input := synthesis.Input{RawAzureYAML: content, ProjectRoot: root, Env: values}

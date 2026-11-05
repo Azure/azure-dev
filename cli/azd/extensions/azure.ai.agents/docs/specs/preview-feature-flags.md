@@ -102,8 +102,8 @@ the declared `EnvVar` rather than deriving a key at run time.
 
 `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE` is one default-off rollout switch for both
 extensions, independent of all agent-kind previews. It gates both
-`--acr-resource-id` entrypoints, environment-only selections, canonical or
-legacy reuse bindings, unfinished access operations, template/source init,
+`--acr-resource-id` entrypoints, greenfield environment-only selections,
+canonical reuse bindings, unfinished access operations, template/source init,
 project setup, synthesis, provision, preview, down, recovery, eject, and agent
 package/publish/deploy operations that encounter new reuse intent.
 
@@ -115,8 +115,11 @@ Prompt-agent cleanup during down reads its deployment target and ownership
 markers from that selected environment as well, never from another default.
 Infrastructure eject uses the same resolved environment for reuse checks and
 the values supplied to generated files.
+Template and repository initialization read only the destination project's
+selected environment, not the caller's saved default. A pending operation in
+that destination is gated even without mode, registry, or binding aliases.
 
-Off means an explicit `feature_not_enabled` compatibility error naming the
+Attempting gated reuse while off returns a `feature_not_enabled` error naming the
 enabling variable, before changes to project files, environment/config values,
 saved context, or Azure resources. Bicep tool installation and module
 restoration may populate dependency caches before parameter evaluation.
@@ -135,7 +138,8 @@ access operations, and recovered deployment facts. It does not compile
 current infrastructure or evaluate current parameter files. A source-only
 selector that has not been deployed does not block teardown.
 
-Other pre-operation guards inspect the active `existingAcrResourceId` even when it
+For greenfield reuse, other pre-operation guards inspect the active
+`existingAcrResourceId` even when it
 exists only in an on-disk parameter file and all aliases, bindings, and
 pending state are absent. Discovery follows the configured
 `microsoft.foundry` root or layer path and module; unrelated root/layer
@@ -164,6 +168,29 @@ Demand-driven automatic `none`/`create`, verified legacy CREATE outputs, code,
 prebuilt images, and old existing-project connection workflows without new
 reuse intent remain available. Existing create ownership and teardown safety
 checks stay active even while the preview is off.
+
+The source-build demand consistency correction is intentionally **always on**.
+A bare `image` still requires automatic ACR provisioning when package/deploy
+would build from source, including no-prompt flows. Explicit
+`docker.imagePassthrough`, registry connections, code configuration, and the
+legacy prebuilt-image marker retain their no-ACR behavior. The rollout switch
+does not restore the older provision/deploy mismatch.
+
+New canonical binding creation is preview-only. Fresh automatic create with
+the switch off returns normal provisioning outputs without a binding-only
+project identity lookup, `acrBinding` config write, or new
+`AZD_FOUNDRY_ACR_MODE` write. A previously saved create binding remains subject
+to immutable identity validation and normal maintenance. Create ownership
+recovered from deployment evidence remains available for safe provisioning
+and teardown, but stays transient off: it is neither serialized as a new
+binding nor unset as if a persisted binding existed. Ownership evidence,
+custom resource identities, and safe cleanup checks are not disabled.
+
+Legacy existing-project `reuse-connect` environments without canonical reuse
+bindings or pending operations remain supported without the switch. Binding
+validation and the canonical reuse/pending gate run before that exemption;
+adding `USE_EXISTING_AI_PROJECT=true` or an endpoint cannot bypass them.
+Greenfield `reuse-connect` intent still requires the preview.
 
 The supported paths are embedded and currently generated ejected Bicep using
 `microsoft.foundry`. Manually changing the Foundry layer to core

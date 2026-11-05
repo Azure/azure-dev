@@ -225,6 +225,7 @@ func (p *FoundryProvisioningProvider) loadACRLifecycle(ctx context.Context) erro
 		if err != nil {
 			return err
 		}
+		p.acrBindingRecovered = false
 	}
 	var pending acrPendingOperation
 	found, err = p.readACRConfig(ctx, acrPendingConfigKey, &pending)
@@ -942,6 +943,9 @@ func (p *FoundryProvisioningProvider) persistACRBinding(
 	if err := p.preserveACROutputs(ctx, outputs); err != nil {
 		return err
 	}
+	if p.acrBinding == nil && !synthesis.ACRReuseEnabled() {
+		return nil
+	}
 	registry := outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 	project := outputs["AZURE_AI_PROJECT_ID"]
 	if registry == nil || registry.Value == "" || project == nil || project.Value == "" {
@@ -968,7 +972,10 @@ func (p *FoundryProvisioningProvider) persistACRBinding(
 			return errors.New("deployed project identity no longer matches the immutable registry binding")
 		}
 		binding.OwnedAssignments = slices.Clone(p.acrBinding.OwnedAssignments)
-		if p.acrPending == nil && reflect.DeepEqual(binding, p.acrBinding) {
+		if p.acrBindingRecovered && !synthesis.ACRReuseEnabled() {
+			return nil
+		}
+		if !p.acrBindingRecovered && p.acrPending == nil && reflect.DeepEqual(binding, p.acrBinding) {
 			return nil
 		}
 	}
@@ -1012,6 +1019,7 @@ func (p *FoundryProvisioningProvider) persistACRBinding(
 		return err
 	}
 	p.acrBinding = binding
+	p.acrBindingRecovered = false
 	if p.acrPending != nil {
 		if err := p.clearACRConfig(ctx, acrPendingConfigKey); err != nil {
 			return err
@@ -1062,7 +1070,10 @@ func (p *FoundryProvisioningProvider) cleanupACRAccess(ctx context.Context) erro
 }
 
 func (p *FoundryProvisioningProvider) persistRecoveredACRBinding(ctx context.Context) error {
-	if !p.acrBindingRecovered {
+	if err := p.requireACRReuse(); err != nil {
+		return err
+	}
+	if !p.acrBindingRecovered || !synthesis.ACRReuseEnabled() {
 		return nil
 	}
 	if err := p.writeACRConfig(ctx, synthesis.ACRBindingConfigKey, p.acrBinding); err != nil {
@@ -1134,6 +1145,9 @@ func (p *FoundryProvisioningProvider) completeDestroy(ctx context.Context) (*azd
 }
 
 func (p *FoundryProvisioningProvider) clearACRLifecycle(ctx context.Context) error {
+	if err := p.requireACRReuse(); err != nil {
+		return err
+	}
 	if p.acrPending != nil {
 		if err := p.clearACRConfig(ctx, acrPendingConfigKey); err != nil {
 			return err
@@ -1142,11 +1156,14 @@ func (p *FoundryProvisioningProvider) clearACRLifecycle(ctx context.Context) err
 	}
 	if p.acrBinding != nil {
 		p.greenfieldAcrMode = p.acrBinding.Mode
-		if err := p.clearACRConfig(ctx, synthesis.ACRBindingConfigKey); err != nil {
-			return err
+		if !p.acrBindingRecovered {
+			if err := p.clearACRConfig(ctx, synthesis.ACRBindingConfigKey); err != nil {
+				return err
+			}
 		}
 		p.acrBinding = nil
 	}
+	p.acrBindingRecovered = false
 	return nil
 }
 

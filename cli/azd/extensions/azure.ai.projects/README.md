@@ -337,12 +337,25 @@ switch to clean up; turning it off does not delete or convert ownership.
 Ordinary automatic registry creation and existing project connection workflows
 without new reuse intent remain available.
 
+The source-build demand consistency correction is always on: a bare `image`
+still requests automatic registry provisioning when package/deploy would build
+from source. Without opt-in, fresh create returns normal outputs without a
+binding-only project identity lookup, canonical binding config write, or new
+mode write. Saved create bindings retain immutable identity validation and
+maintenance. Recovered create ownership remains available for safe operations
+without newly persisting or unsetting a transient binding while off.
+
+Legacy existing-project `reuse-connect` environments without canonical reuse
+bindings or pending operations remain supported without the switch. Canonical
+reuse and pending operations are checked before the existing-project exemption.
+New greenfield reuse intent still requires opt-in.
+
 Guards and lifecycle operations honor `--environment` (forwarded by the host
 as `AZD_ENVIRONMENT`) before the saved default. Environment values, registry
 bindings, and pending operations come from that same selected environment.
 An unreadable explicit selection is an error, not a fallback to the default.
 
-Project hooks also check `existingAcrResourceId` in the active on-disk
+For greenfield reuse, project hooks also check `existingAcrResourceId` in the active on-disk
 `main.parameters.json` or `main.bicepparam`, using the configured Foundry
 path and module for a root or named layer. Removing environment aliases,
 saved bindings, and pending state does not bypass this check. JSON values

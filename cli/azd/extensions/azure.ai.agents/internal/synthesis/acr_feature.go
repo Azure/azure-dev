@@ -64,8 +64,7 @@ func RequireACRReuseForInput(in Input) error {
 		in.Env["AZD_FOUNDRY_ACR_MODE"], in.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]); err != nil {
 		return err
 	}
-	if in.ACRPending || binding != nil && binding.Mode == "reuse-connect" ||
-		in.Env["AZD_FOUNDRY_ACR_MODE"] == "reuse-connect" {
+	if in.ACRPending || binding != nil && binding.Mode == "reuse-connect" {
 		return RequireACRReuse()
 	}
 	// Existing-project connection workflows predate this preview.
@@ -79,6 +78,9 @@ func RequireACRReuseForInput(in Input) error {
 	existing, err := acrExistingProject(in)
 	if err != nil || existing {
 		return err
+	}
+	if in.Env["AZD_FOUNDRY_ACR_MODE"] == "reuse-connect" {
+		return RequireACRReuse()
 	}
 	mode, id, err := ResolveGreenfieldACRSelection(in)
 	if err != nil {

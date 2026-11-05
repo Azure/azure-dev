@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -175,5 +176,131 @@ func TestACRReuseBindingCannotBecomeBrownfieldWhileDisabled(t *testing.T) {
 	requireACRDisabled(t, err)
 	in.ACRBinding = nil
 	in.Env["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
+	require.NoError(t, RequireACRReuseForInput(in))
+	in.ACRPending = true
 	requireACRDisabled(t, RequireACRReuseForInput(in))
+}
+
+func TestACRDemandConsistencyAcrossFeatureStates(t *testing.T) {
+	for _, tt := range []struct {
+		name, body  string
+		legacy, acr bool
+	}{
+		{"bare image", "image: registry.example/agent:v1\n", false, true},
+		{"source without image", "", false, true},
+		{"prebuilt", "image: registry.example/agent:v1\n" +
+			"docker: {imagePassthrough: true, remoteBuild: true}\n", false, false},
+		{"code", "codeConfiguration: {runtime: python}\n", false, false},
+		{"connection", "registryConnectionId: private-registry\n", false, false},
+		{"legacy prebuilt", "image: registry.example/agent:v1\n", true, false},
+		{"legacy without image", "", true, true},
+	} {
+		for _, style := range []string{"inline", "service", "ref"} {
+			for _, enabled := range []string{"false", "true"} {
+				t.Run(tt.name+"/"+style+"/"+enabled, func(t *testing.T) {
+					t.Setenv(ACRReuseEnvVar, enabled)
+					root := t.TempDir()
+					body := "kind: hosted\n" + tt.body
+					if !strings.Contains(body, "docker:") {
+						body += "docker: {remoteBuild: true}\n"
+					}
+					raw := "services:\n  project:\n    host: azure.ai.project\n"
+					switch style {
+					case "inline":
+						raw += "    agents:\n      - " +
+							strings.ReplaceAll(strings.TrimSuffix(body, "\n"), "\n", "\n        ") + "\n"
+					case "service":
+						raw += "  agent:\n    host: azure.ai.agent\n    " +
+							strings.ReplaceAll(body, "\n", "\n    ")
+					case "ref":
+						raw += "    $ref: project.yaml\n"
+						referenced := "agents:\n  - " +
+							strings.ReplaceAll(strings.TrimSuffix(body, "\n"), "\n", "\n    ") + "\n"
+						require.NoError(t, os.WriteFile(filepath.Join(root, "project.yaml"), []byte(referenced), 0o600))
+					}
+					values := map[string]string{}
+					if tt.legacy {
+						values["AZD_AGENT_SKIP_ACR"] = "true"
+					}
+					in := Input{RawAzureYAML: []byte(raw), ServiceName: "project", ProjectRoot: root, Env: values}
+					hasAgents, needed, err := ACRRequirements(in)
+					require.NoError(t, err)
+					require.True(t, hasAgents)
+					require.Equal(t, tt.acr, needed)
+					needed, err = RequiresACR(in)
+					require.NoError(t, err)
+					require.Equal(t, tt.acr, needed)
+					remote, err := RequiresRemoteACRBuild(in)
+					require.NoError(t, err)
+					require.Equal(t, tt.acr, remote)
+					result, err := Synthesize(in)
+					require.NoError(t, err)
+					require.Equal(t, tt.acr, result.Parameters["includeAcr"])
+					require.Equal(t, map[bool]string{false: "none", true: "create"}[tt.acr], result.ACRMode)
+				})
+			}
+		}
+	}
+}
+
+func TestACRLegacyExistingProjectModeBoundary(t *testing.T) {
+	t.Setenv(ACRReuseEnvVar, "false")
+	const registryID = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+	binding := &ACRBinding{
+		Version: 1, Mode: "reuse-connect", RegistryResourceID: registryID,
+		ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry/providers/" +
+			"Microsoft.CognitiveServices/accounts/account/projects/project",
+		PrincipalID: "principal",
+	}
+	encoded, err := json.Marshal(binding)
+	require.NoError(t, err)
+	for _, project := range []string{"greenfield", "explicit existing", "endpoint", "ref endpoint"} {
+		for _, state := range []string{"legacy", "binding", "saved binding", "pending", "invalid binding"} {
+			t.Run(project+"/"+state, func(t *testing.T) {
+				root := t.TempDir()
+				raw := "services:\n  project:\n    host: azure.ai.project\n"
+				endpoint := "endpoint: https://account.services.ai.azure.com/api/projects/project\n"
+				values := map[string]string{
+					"AZD_FOUNDRY_ACR_MODE": "reuse-connect", "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID,
+				}
+				switch project {
+				case "explicit existing":
+					values["USE_EXISTING_AI_PROJECT"] = "true"
+				case "endpoint":
+					raw += "    " + endpoint
+				case "ref endpoint":
+					raw += "    $ref: project.yaml\n"
+					require.NoError(t, os.WriteFile(filepath.Join(root, "project.yaml"), []byte(endpoint), 0o600))
+				}
+				in := Input{RawAzureYAML: []byte(raw), ServiceName: "project", ProjectRoot: root, Env: values}
+				switch state {
+				case "binding":
+					in.ACRBinding = binding
+				case "saved binding":
+					values[ACRBindingEnvKey] = string(encoded)
+				case "pending":
+					in.ACRPending = true
+				case "invalid binding":
+					values[ACRBindingEnvKey] = "{"
+				}
+				before := maps.Clone(values)
+				err := RequireACRReuseForInput(in)
+				switch {
+				case state == "invalid binding":
+					require.Error(t, err)
+					require.NotContains(t, err.Error(), ACRReuseEnvVar)
+				case state != "legacy" || project == "greenfield":
+					requireACRDisabled(t, err)
+				default:
+					require.NoError(t, err)
+					if project == "endpoint" || project == "ref endpoint" {
+						result, err := SynthesizeExistingProject(in)
+						require.NoError(t, err)
+						require.NotNil(t, result)
+					}
+				}
+				require.Equal(t, before, values)
+			})
+		}
+	}
 }

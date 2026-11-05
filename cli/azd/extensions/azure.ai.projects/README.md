@@ -406,6 +406,8 @@ parameters and resolving effective template defaults. Registry selectors supplie
 only in JSON, `.bicepparam`, or a template default are honored. Setting
 `includeAcr` or `enableNetworkIsolation` to `false` in the effective deployment
 parameters remains authoritative.
+Registry access parameter declarations are matched ignoring case, including
+the owned-grant recovery metadata, consistent with ARM parameter matching.
 When creating an ACR, a declared `enableNetworkIsolation` parameter must have a
 literal boolean value for local compatibility checks; ARM expressions are not
 evaluated locally.

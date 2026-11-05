@@ -474,13 +474,39 @@ func TestACRParameterWritesReplaceCaseAliases(t *testing.T) {
 }
 
 func TestACRRetainedParameterWritesReplaceCaseAliases(t *testing.T) {
-	for _, empty := range []bool{false, true} {
-		t.Run(strconv.FormatBool(empty), func(t *testing.T) {
+	for _, tt := range []struct {
+		name                 string
+		empty, casing, owned bool
+	}{
+		{name: "aliases"},
+		{name: "empty parameters", empty: true},
+		{name: "alternate declarations", casing: true},
+		{name: "retained grants alternate declarations", casing: true, owned: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			p, _ := acrTestProvider(t)
 			p.acrBinding = acrTestBinding()
+			owned := []synthesis.ACRAssignment{}
+			if tt.owned {
+				owned = append(owned, synthesis.ACRAssignment{
+					ID: acrTestAssignment().ID, PrincipalID: "principal", OwnershipToken: testACRToken,
+					RoleDefinitionID: acrTestPending().RoleDefinitionID,
+					DeploymentIDs:    acrAccessDeploymentIDs(testACRID, testACRToken),
+				})
+				p.acrBinding.OwnedAssignments = owned
+			}
 			src := acrTestSource()
+			if tt.casing {
+				declared, ok := src.armTemplate["parameters"].(map[string]any)
+				require.True(t, ok)
+				renamed := map[string]any{}
+				for name, value := range declared {
+					renamed[strings.ToUpper(name)] = value
+				}
+				src.armTemplate["parameters"] = renamed
+			}
 			src.parameters = nil
-			if !empty {
+			if !tt.empty {
 				src.parameters = map[string]any{
 					"ExistingACRResourceId": map[string]any{"value": ""},
 					"ACROwnedAssignments":   map[string]any{"value": []string{"stale-assignment"}},
@@ -491,7 +517,7 @@ func TestACRRetainedParameterWritesReplaceCaseAliases(t *testing.T) {
 			assert.Nil(t, plan)
 			assert.Equal(t, map[string]any{
 				"existingAcrResourceId": map[string]any{"value": testACRID},
-				"acrOwnedAssignments":   map[string]any{"value": []synthesis.ACRAssignment{}},
+				"acrOwnedAssignments":   map[string]any{"value": owned},
 			}, src.parameters)
 		})
 	}
@@ -2373,9 +2399,9 @@ func TestACRFailedDeploymentRecoversIndependentOwnership(t *testing.T) {
 
 func TestACRPreviewUsesReadOnlyAccessPlan(t *testing.T) {
 	for _, tt := range []struct {
-		name                                         string
-		history                                      string
-		abac, granted, pending, newProject, embedded bool
+		name                                                 string
+		history                                              string
+		abac, granted, pending, newProject, embedded, casing bool
 	}{
 		{name: "classic existing access", granted: true},
 		{name: "ABAC existing access", abac: true, granted: true},
@@ -2387,6 +2413,8 @@ func TestACRPreviewUsesReadOnlyAccessPlan(t *testing.T) {
 		{name: "new project", newProject: true},
 		{name: "embedded existing access", granted: true, embedded: true},
 		{name: "embedded missing access", embedded: true},
+		{name: "on-disk alternate declarations", casing: true},
+		{name: "on-disk alternate declarations with ABAC access", casing: true, abac: true, granted: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			p, env := acrTestProvider(t)
@@ -2394,6 +2422,26 @@ func TestACRPreviewUsesReadOnlyAccessPlan(t *testing.T) {
 			p.location = "eastus2"
 			p.credential = acrTestCredential{}
 			p.onDiskSource = acrTestSource()
+			if tt.casing {
+				declared, ok := p.onDiskSource.armTemplate["parameters"].(map[string]any)
+				require.True(t, ok)
+				renamed := map[string]any{}
+				for name, value := range declared {
+					renamed[strings.ToUpper(name)] = value
+				}
+				p.onDiskSource.armTemplate["parameters"] = renamed
+				compiled, err := json.Marshal(p.onDiskSource.armTemplate)
+				require.NoError(t, err)
+				params := minimalARMParametersFile(t, map[string]any{
+					"includeAcr": true, "existingAcrResourceId": testACRID,
+				})
+				infraDir := filepath.Join(p.projectPath, onDiskInfraDir)
+				require.NoError(t, os.MkdirAll(infraDir, 0o750))
+				require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte("// bicep\n"), 0o600))
+				require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskParamsFile), []byte(params), 0o600))
+				p.bicepCliInstance = &stubCompiler{buildResult: bicep.BuildResult{Compiled: string(compiled)}}
+				p.onDiskSource = nil
+			}
 			if tt.embedded {
 				p.armTemplate = p.onDiskSource.armTemplate
 				p.onDiskSource = nil

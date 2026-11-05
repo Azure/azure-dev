@@ -1407,6 +1407,9 @@ func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
 	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
 	for _, kind := range []string{"voice", "prompt-voice"} {
 		t.Run(kind, func(t *testing.T) {
+			clearPreviewProcess(t)
+			t.Setenv(featureflags.Voice.EnvVar, "true")
+			t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
 			svc := &azdext.ServiceConfig{
 				Name: "voice-agent",
 				Host: AiAgentHost,
@@ -1427,12 +1430,8 @@ func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
 				Project: proj, Service: svc,
 			})
 			require.NoError(t, err)
-			if kind == "voice" {
-				require.Len(t, response.Messages, 1)
-				require.Contains(t, response.Messages[0].Message, "Preview feature enabled:")
-			} else {
-				require.Empty(t, response.Messages)
-			}
+			require.Len(t, response.Messages, 1)
+			require.Contains(t, response.Messages[0].Message, "Preview feature enabled:")
 			require.GreaterOrEqual(t, envServer.getCurrentCalls, 2)
 		})
 	}

@@ -50,6 +50,7 @@ import (
 )
 
 type initFlags struct {
+	noticeWriter            io.Writer // preview notices; nil means stdout
 	projectResourceId       string
 	acrConnection           string
 	modelDeployment         string
@@ -762,6 +763,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			endValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation)
 			defer func() { endValidation() }()
 			flags.noPrompt = extCtx.NoPrompt
+			flags.noticeWriter = previewNoticeWriter(cmd)
 			flags.modelDeploymentExplicit = cmd.Flags().Changed("model-deployment")
 			flags.modelExplicit = cmd.Flags().Changed("model")
 			if err := validateInitModelSelectors(flags, false); err != nil {
@@ -828,7 +830,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 
 			if len(flags.protocols) > 0 {
-				if _, err := selectExplicitHostedProtocols(flags.protocols); err != nil {
+				if _, err := selectExplicitHostedProtocols(flags.protocols, flags.noticeWriter); err != nil {
 					return err
 				}
 			}
@@ -863,7 +865,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 				if cached {
 					root := filepath.Dir(flags.templatePointer)
-					if err := requireManifestPreviewFeatures(content, root, os.Stdout); err != nil {
+					if err := requireManifestPreviewFeatures(content, root, flags.noticeWriter); err != nil {
 						return err
 					}
 				} else {
@@ -891,7 +893,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 						return err
 					}
-					if err := requireStagedPreviewFeatures(stagingDir, os.Stdout); err != nil {
+					if err := requireStagedPreviewFeatures(stagingDir, flags.noticeWriter); err != nil {
 						return err
 					}
 					endLoading()
@@ -959,10 +961,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			if !userProvidedTemplate {
 				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 				if projectErr == nil && projectResponse.GetProject() != nil {
-					if err := requireBYOAKSProjectFeature(projectResponse.GetProject(), os.Stdout); err != nil {
+					if err := requireBYOAKSProjectFeature(projectResponse.GetProject(), flags.noticeWriter); err != nil {
 						return err
 					}
-					if err := requireProjectPreviewFeatures(projectResponse.GetProject(), os.Stdout); err != nil {
+					if err := requireProjectPreviewFeatures(projectResponse.GetProject(), flags.noticeWriter); err != nil {
 						return err
 					}
 					if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {

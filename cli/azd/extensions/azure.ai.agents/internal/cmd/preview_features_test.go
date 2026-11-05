@@ -191,6 +191,7 @@ func TestPreviewHostedProtocolPreRun(t *testing.T) {
 	clearPreviewProcess(t)
 	for _, enabled := range []bool{false, true} {
 		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+			clearPreviewProcess(t)
 			t.Setenv(featureflags.Voice.EnvVar, strconv.FormatBool(enabled))
 			_, env := startPreviewCommandServer(t, nil, nil, nil)
 			for _, protocols := range [][]string{
@@ -309,12 +310,13 @@ func TestPreviewHostedProtocolPickerBeforeMutation(t *testing.T) {
 func TestPreviewHostedProtocolSelection(t *testing.T) {
 	clearPreviewProcess(t)
 	for _, explicit := range [][]string{nil, {"responses"}, {"invocations"}, {"activity"}, {"responses", "invocations"}} {
-		records, err := selectHostedProtocols(t.Context(), nil, true, explicit)
+		records, err := selectHostedProtocols(t.Context(), nil, true, explicit, io.Discard)
 		require.NoError(t, err, "ordinary explicit/default protocols need no feature reads")
 		require.NotEmpty(t, records)
 	}
 	for _, enabled := range []bool{false, true} {
 		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+			clearPreviewProcess(t)
 			t.Setenv(featureflags.Voice.EnvVar, strconv.FormatBool(enabled))
 			prompts := &protocolSelectionServer{selectProtocols: func(*azdext.MultiSelectRequest) (
 				*azdext.MultiSelectResponse, error,
@@ -324,17 +326,20 @@ func TestPreviewHostedProtocolSelection(t *testing.T) {
 				}}, nil
 			}}
 			client, env := startPreviewCommandServer(t, nil, nil, prompts)
-			records, err := selectHostedProtocols(t.Context(), client, false, nil)
+			var notice bytes.Buffer
+			records, err := selectHostedProtocols(t.Context(), client, false, nil, &notice)
 			if enabled {
 				require.NoError(t, err)
+				require.Contains(t, notice.String(), featureflags.Voice.EnvVar)
 				require.Equal(t, []agent_yaml.ProtocolVersionRecord{
 					{Protocol: "invocations_ws", Version: "2.0.0"},
 				}, records)
 			} else {
 				require.ErrorContains(t, err, "unexpected protocol")
+				require.Empty(t, notice.String())
 			}
 			before := env.reads.Load()
-			_, err = selectHostedProtocols(t.Context(), client, true, []string{"responses", "invocations_ws"})
+			_, err = selectHostedProtocols(t.Context(), client, true, []string{"responses", "invocations_ws"}, io.Discard)
 			if enabled {
 				require.NoError(t, err)
 			} else {
@@ -345,7 +350,7 @@ func TestPreviewHostedProtocolSelection(t *testing.T) {
 			require.Empty(t, env.selected)
 			env.err = status.Error(codes.PermissionDenied, "selection source failure")
 			env.mu.Unlock()
-			_, err = selectHostedProtocols(t.Context(), client, false, nil)
+			_, err = selectHostedProtocols(t.Context(), client, false, nil, io.Discard)
 			if enabled {
 				require.NoError(t, err)
 			} else {

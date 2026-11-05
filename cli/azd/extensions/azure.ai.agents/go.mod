@@ -5,7 +5,6 @@ go 1.26.4
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3 v3.0.0-beta.3
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2 v2.0.0
 	// armcontainerregistry v1.3.0-beta.3 is required for RoleAssignmentMode (ABAC detection).
 	// Upgrade to GA once the property is available in a stable release.
@@ -13,6 +12,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
 	github.com/azure/azure-dev/cli/azd v1.37.0
+	github.com/azure/azure-dev/cli/shared/foundry v0.0.0
 	github.com/braydonk/yaml v0.9.0
 	github.com/distribution/reference v0.6.0
 	github.com/drone/envsubst v1.0.3 // indirect
@@ -34,6 +34,7 @@ require (
 require github.com/denormal/go-gitignore v0.0.0-20180930084346-ae8ad1d07817
 
 require (
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/botservice/armbotservice v1.2.0
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
 	github.com/creack/pty/v2 v2.0.1
@@ -128,3 +129,5 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 )
+
+replace github.com/azure/azure-dev/cli/shared/foundry => ../../../shared/foundry

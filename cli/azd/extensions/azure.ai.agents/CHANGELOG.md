@@ -6,8 +6,8 @@
 
 ### Breaking Changes
 
-- [[#10813]](https://github.com/Azure/azure-dev/pull/10813) Require `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true` to retain developer RBAC warnings in final deployment output and JSON messages; role checks and automatic role assignment remain enabled.
-- [[#10792]](https://github.com/Azure/azure-dev/pull/10792) Align registry provisioning with source-build behavior: a bare `image` no longer suppresses registry creation; use `docker.imagePassthrough: true` or the supported `AZD_AGENT_SKIP_ACR=true` setting with a nonempty image for prebuilt deployment.
+- [[#10813]](https://github.com/Azure/azure-dev/pull/10813) Require `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true` to retain developer RBAC warnings in final deployment output and JSON messages while keeping role checks and automatic role assignment enabled.
+- [[#10792]](https://github.com/Azure/azure-dev/pull/10792) Align registry provisioning with source-build behavior: a bare `image` no longer suppresses registry creation, so use `docker.imagePassthrough: true` or the supported `AZD_AGENT_SKIP_ACR=true` setting with a nonempty image for prebuilt deployment.
 
 ### Features Added
 

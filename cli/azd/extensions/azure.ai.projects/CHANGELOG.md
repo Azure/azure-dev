@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- [[#10792]](https://github.com/Azure/azure-dev/pull/10792) Align registry provisioning with source-build behavior: a bare `image` no longer suppresses registry creation; use `docker.imagePassthrough: true` or the supported `AZD_AGENT_SKIP_ACR=true` setting with a nonempty image for prebuilt deployment.
+- [[#10792]](https://github.com/Azure/azure-dev/pull/10792) Align registry provisioning with source-build behavior: a bare `image` no longer suppresses registry creation, so use `docker.imagePassthrough: true` or the supported `AZD_AGENT_SKIP_ACR=true` setting with a nonempty image for prebuilt deployment.
 
 ### Other Changes
 

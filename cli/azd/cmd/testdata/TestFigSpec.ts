@@ -7115,12 +7115,21 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['project'],
-					description: 'Manage Microsoft Foundry Project resources from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry Project resources from your terminal.',
 					subcommands: [
 						{
 							name: ['add'],
 							description: 'Add or update a Microsoft Foundry project.',
 							options: [
+								{
+									name: ['--acr-resource-id'],
+									description: 'External registry ARM resource ID for --new-project source builds (same subscription; Bicep only; no migration)',
+									args: [
+										{
+											name: 'acr-resource-id',
+										},
+									],
+								},
 								{
 									name: ['--force'],
 									description: 'Replace a different configured project',

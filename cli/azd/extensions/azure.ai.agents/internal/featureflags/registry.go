@@ -45,11 +45,12 @@ var (
 		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT",
 		Description: "Hosted agent memory snapshots",
 	}
-	// BYOAKS controls existing-AKS project initialization and adoption.
+	// BYOAKS controls existing-AKS initialization and adoption,
+	// provisioning, and provisioning preview.
 	BYOAKS = Feature{
 		ID:             synthesis.BYOAKSFeatureID,
 		EnvVar:         synthesis.BYOAKSEnvVar,
-		Description:    "Existing AKS project initialization and adoption",
+		Description:    "Existing AKS project initialization, adoption, provisioning, and provisioning preview",
 		DefaultEnabled: false,
 	}
 	// RBACWarnings controls retained warnings via beta events.

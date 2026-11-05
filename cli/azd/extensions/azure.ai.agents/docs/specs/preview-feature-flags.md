@@ -5,9 +5,9 @@
 ## Status and goal
 
 - **Component:** `cli/azd/extensions/azure.ai.agents`
-- **Scope:** Independent, default-off agent previews, BYO AKS initialization/adoption, retained RBAC warnings, and the shared Foundry existing-ACR-reuse gate.
+- **Scope:** Independent, default-off agent previews, BYO AKS initialization/adoption/provisioning/preview, retained RBAC warnings, and the shared Foundry existing-ACR-reuse gate.
 
-Keep preview opt-in decisions inside the extensions until the extension framework supports discovery and evaluation. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality without new ACR reuse intent are not gated.
+Keep preview opt-in decisions inside the owning extensions until the extension framework supports discovery and evaluation. The Agents extension owns its private preview evaluator; the Projects extension independently checks the shared BYO AKS switch for provisioning and provisioning preview when effective AKS hosting is enabled. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality without new ACR reuse intent are not gated.
 
 Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws`. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
 
@@ -89,7 +89,7 @@ if err := featureflags.RequireWithWriter(featureflags.Voice, out); err != nil {
 | `LongRunning` | `agents.long_running` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations |
 | `A2A` | `agents.a2a` | `AZD_ALPHA_ENABLE_AGENTS_A2A` | A2A init selection, explicit wire versions, and the 1.0 message default |
 | `MemorySnapshot` | `agents.memory_snapshot` | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` | Hosted agent memory snapshots |
-| `BYOAKS` | `agents.byo_aks` | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Existing AKS project initialization and adoption |
+| `BYOAKS` | `agents.byo_aks` | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Existing AKS project initialization, adoption, provisioning, and provisioning preview |
 | `FoundryACRReuse` | `foundry.acr_reuse` | `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE` | External source-build ACR reuse in new Foundry projects, including preview and cleanup |
 | `RBACWarnings` | `agents.rbac_warnings` | `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS` | Retained developer RBAC deployment warnings through beta service events |
 
@@ -219,13 +219,15 @@ returns messages to the host without also printing them.
 Both preserve handler errors. This switch gates retention, not deployment or
 RBAC checking, so a disabled switch does not reject ordinary deployment.
 
-### BYO AKS initialization and adoption
+### BYO AKS initialization, adoption, and provisioning
 
 The BYO AKS identity and environment key are declared in the aligned synthesis copies. Agents uses the existing `Require` evaluator for project init/adoption. Project classification resolves inline and `$ref` configuration using the existing service resolver. A service `env:` entry does not control this switch.
 
-An absent variable disables BYO AKS project initialization and adoption, while an explicit value uses `strconv.ParseBool`. Disabled checks return the `feature_not_enabled` compatibility error and shell/CI suggestion. Foundry projects without `agentHosting` do not require this switch.
+An absent variable disables BYO AKS use, while an explicit value uses `strconv.ParseBool`. Disabled checks return the `feature_not_enabled` compatibility error and shell/CI suggestion. Foundry provisioning without effective AKS hosting does not require this switch.
 
-The Projects extension owns `microsoft.foundry`. Provider initialization, infrastructure state queries, provision, preview, lifecycle hooks, and Bicep eject do not check the BYO AKS switch. Provision and preview still validate effective hosting parameters and resolve required identity bindings. BYO AKS infrastructure uses the standard Foundry `azd down` path, including its confirmation, `--force` behavior, and target resource-group deletion.
+The Projects extension owns `microsoft.foundry`. Its `Deploy` and `Preview` methods call `prepareBYO`, which validates the effective `agentHosting` value after parameter merging, including template defaults and case-insensitive parameter names with value envelopes. When effective `enabled=true`, it checks the current process value of the shared synthesis environment key with `strconv.ParseBool` after local resource-ID validation and before credential initialization or BYO AKS, role, or identity reads. This covers embedded provisioning, on-disk `.parameters.json`, `.bicepparam`, and template defaults, including hosting enabled without an `azure.yaml` declaration. Effective `enabled=false` skips the gate and binding reads. Structured gate errors are returned unchanged.
+
+Provider initialization, infrastructure state and parameter queries, synthesis, lifecycle hooks, and Bicep eject do not check the BYO AKS switch. BYO AKS infrastructure uses the standard Foundry `azd down` path without requiring the switch, including its confirmation, `--force` behavior, and target resource-group deletion.
 
 ### A2A compatibility policy
 
@@ -338,7 +340,8 @@ An explicit HTTP `--agent-endpoint` carries no kind or harness information. It r
 
 Read, show, endpoint discovery, invocation show/follow/cancel, delete, and down
 retain access when agent-kind opt-ins are disabled. BYO AKS infrastructure
-operations do not require its switch; teardown follows the standard Foundry
+state and parameter queries, Bicep eject, and teardown do not require its
+switch; teardown follows the standard Foundry
 `azd down` path and deletes the target resource group with all resources inside
 it. **The shared ACR preview
 is stricter:** down and recovery for a new reuse binding also require its
@@ -369,7 +372,7 @@ Feature gate tests verify that enabled previews are announced once when used and
 
 Remote-template regressions cover inline and `$ref` previews, rejection before Azure authentication, retained authentication when enabled, single-download adoption, and temporary-directory cleanup on failure.
 
-BYO AKS regressions cover default-off and boolean-value semantics and inline and referenced project configuration during init/adoption. Infrastructure tests cover Bicep eject, Terraform rejection without file changes, standard Project and registry outputs, and the ARM what-if path.
+BYO AKS regressions cover default-off and boolean-value semantics and inline and referenced project configuration during init/adoption. Projects provisioning tests cover process-only enablement, rejection before credentials or BYO resource reads, unchanged structured errors and parameters, and the effective embedded, on-disk JSON, Bicep parameter, and template-default paths for both provision and preview. Disabled effective hosting and ordinary Foundry provisioning remain available without opt-in. Infrastructure tests also cover Bicep eject, Terraform rejection without file changes, standard Project and registry outputs, and the ARM what-if path.
 
 RBAC listener regressions exercise stable-only hosts with the switch absent,
 false, empty, or invalid, and beta hosts with true and `1` values. They check

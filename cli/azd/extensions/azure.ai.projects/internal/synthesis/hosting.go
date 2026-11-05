@@ -16,7 +16,8 @@ import (
 // BYOAKSFeatureID identifies the existing-AKS hosting preview.
 const BYOAKSFeatureID = "agents.byo_aks"
 
-// BYOAKSEnvVar is the process-environment switch for Agents project initialization and adoption.
+// BYOAKSEnvVar is the process-environment switch for existing-AKS
+// initialization, adoption, provisioning, and provisioning preview.
 const BYOAKSEnvVar = "AZD_ALPHA_ENABLE_AGENTS_BYO_AKS"
 
 // AgentHostingInput selects the existing cluster and optional supporting resources.

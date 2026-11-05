@@ -94,7 +94,7 @@ Preview Feature Switches
   AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
     Hosted agent memory snapshots.
   AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
-    Existing AKS project initialization and adoption.
+    Existing AKS project initialization, adoption, provisioning, and provisioning preview.
   AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true
     External ACR reuse for new Foundry projects, including cleanup.
   AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true

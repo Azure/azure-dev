@@ -15,6 +15,7 @@ All seven preview capabilities are off by default. Each switch is controlled ind
 | `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
 | `agents.byo_aks` | [Existing AKS project initialization and adoption](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
 | `foundry.acr_reuse` | External ACR reuse in new Foundry projects, including preview and cleanup | `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE` |
+| `agents.rbac_warnings` | Retained developer RBAC deployment warnings through the beta event API | `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS` |
 
 Override a switch in your shell or CI before running azd:
 
@@ -26,6 +27,7 @@ export AZD_ALPHA_ENABLE_AGENTS_A2A=true
 export AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
 export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
 export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true
+export AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true
 ```
 
 In PowerShell, for example:
@@ -37,10 +39,13 @@ $env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
 When a variable is absent, its feature is off.
 When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature.
 False, empty, and invalid values disable it, including BYO AKS.
-The evaluator reads the current
-process environment without querying azd config or loading environment files.
-Values already injected by the azd host count; the selected azd environment
-can override the same key from the shell or CI.
+The evaluator reads only the current process environment, without querying
+azd config or loading dotenv files. For lifecycle listeners, the host does
+not flatten the selected environment's `.azure/<env>/.env` into the extension
+for these switches, so persisted `azd env set` values do not enable or
+override the listener. Direct `azd ai agent ...` commands still receive
+selected-environment values after shell/CI values, so a persisted dotenv value
+can override a shell opt-in for those commands.
 
 User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
 `AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary
@@ -74,6 +79,14 @@ authentication, including `$ref` definitions. Adoption reuses that directory.
 BYO AKS checks cover inline and referenced project configuration during init/adoption.
 Foundry provider initialization, provision, preview, lifecycle hooks, and Bicep
 eject do not check the BYO AKS switch. Ordinary Foundry provisioning is unchanged.
+
+The RBAC warnings switch controls retention only, not whether checks run.
+With it off, `predeploy` uses the stable event API and prints warnings and
+suggestions in hook output. The host can discard that output while deployment
+progress suppresses the previewer; the stable path does not guarantee warning
+visibility or retention after deployment.
+With it on, `predeploy` uses the beta event API so the host can retain warnings
+in final output and JSON `messages`.
 
 ### Enforcement limits
 
@@ -309,8 +322,10 @@ cost and is not run automatically.
 
 Requires azd 1.37.0 or later. Telemetry, deployment preview, and developer RBAC
 principal lookup use stable v1 APIs, including `Account().GetCurrentPrincipal`.
-The service `predeploy` listener uses the existing beta structured-message API
-to retain RBAC warnings; `postdeploy` and project listeners remain stable.
+The service `predeploy` listener uses the stable event API by default. Enabling
+`AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true` opts it into the beta
+structured-message API to retain RBAC warnings; `postdeploy` and project
+listeners remain stable.
 
 Extension code reports best-effort usage events through the shared
 `pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
@@ -534,10 +549,19 @@ Deploy Agents through the normal azd project lifecycle:
 
 ### Retained developer RBAC warnings
 
-With azd 1.37.0 or later, developer RBAC warnings from the service `predeploy`
-check remain in the final `azd deploy` / `azd up` output, including when a later
-deployment step fails. They are non-blocking: a warning does not change the
-deployment exit code, and deployment errors still fail the command.
+With azd 1.37.0 or later, enable `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true`
+in your shell or CI before deploying to retain developer RBAC warnings from
+the service `predeploy` check in the final `azd deploy` / `azd up` output,
+including when a later deployment step fails. In PowerShell, use
+`$env:AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS = 'true'`.
+This preview is off by default; absent, false, empty, or invalid values keep
+the stable event API and warnings in hook output only, without retained JSON
+`messages`. The host can discard stable hook output while deployment progress
+suppresses the previewer. Enable the switch to retain warnings in final output
+and JSON `messages`; this extension does not change host output handling.
+RBAC checks, automatic role assignment, and skip
+rules still run as before. Warnings are non-blocking: a warning does not
+change the deployment exit code, and deployment errors still fail the command.
 
 This covers Foundry User checks and failed automatic assignment, hosted-agent
 role-assignment-write checks, and Container Registry access checks (including
@@ -547,8 +571,8 @@ are also retained. Early exits for missing or invalid `AZURE_AI_PROJECT_ID`,
 Prompt and voice agents keep only the applicable Foundry
 checks; hosted-only checks and the existing skip behavior are unchanged.
 
-For automation, use `--no-prompt --output json` and consume the host's `messages`
-entries. Each retained warning has `kind: warning`, `extensionId:
+With the preview enabled, automation can use `--no-prompt --output json`
+and consume the host's `messages` entries. Each retained warning has `kind: warning`, `extensionId:
 azure.ai.agents`, the service key, `event: predeploy`, a `message`, and any
 `suggestion`. Messages are scoped to each service invocation, not deduplicated
 across services. No new prompt is introduced. Transport diagnostics include only
@@ -1595,6 +1619,8 @@ when legacy registry output variables are missing.
 Registry selection requires a Projects extension that accepts
 `project add --new-project --acr-resource-id`. Init checks these flags with
 captured command help before changing project files or environment values.
+The help probe runs the Projects executable registered with the invoking
+azd host, not another `azd` found on `PATH`.
 The check does not print help into quiet or JSON output. An unsupported
 extension or a failed capability check stops setup; flows without a selector
 continue to work with older Projects versions.
@@ -1675,6 +1701,8 @@ hooks; it cannot provide this extension's mandatory gate.
 For an external ABAC registry, source builds require local Docker:
 set `docker.remoteBuild: false` on each source-built agent service and grant the
 image publisher Container Registry Repository Writer push permission.
+Template adoption preserves an authored Docker block, including a block
+containing only `remoteBuild: false`, and adds `project: .` when it is missing.
 Hosted source initialization normally sets `docker.remoteBuild: true` unless
 network injection requires local builds. That remote Quick Build path is not
 supported with ABAC registry reuse: its current request does not authenticate the

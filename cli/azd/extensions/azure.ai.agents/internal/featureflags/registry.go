@@ -52,12 +52,18 @@ var (
 		Description:    "Existing AKS project initialization and adoption",
 		DefaultEnabled: false,
 	}
+	// RBACWarnings controls retained warnings via beta events.
+	RBACWarnings = Feature{
+		ID:          "agents.rbac_warnings",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS",
+		Description: "Retained developer RBAC deployment warnings",
+	}
 )
 
 // All returns every declared feature in a stable order.
 // The slice is a fresh copy, so callers may change it.
 func All() []Feature {
-	return []Feature{ManagedHarness, Voice, LongRunning, A2A, MemorySnapshot, BYOAKS, FoundryACRReuse}
+	return []Feature{ManagedHarness, Voice, LongRunning, A2A, MemorySnapshot, BYOAKS, FoundryACRReuse, RBACWarnings}
 }
 
 // Lookup returns the declared feature with the given ID.

@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/envkey"
@@ -43,6 +44,20 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryReporter *agentContextReporter) {
 	azdClient := host.Client()
 	operationReporter := newOperationReporter()
+	retainRBACWarnings, err := featureflags.IsEnabled(featureflags.RBACWarnings)
+	if err != nil {
+		panic(err)
+	}
+	predeploy := func(
+		ctx context.Context, args *azdext.ServiceEventArgs,
+	) (*azdext.BetaServiceEventResponse, error) {
+		telemetryReporter.reportService(ctx, azdClient.Telemetry(), args.Project, args.Service, "deploy")
+		usage := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+		operationReporter.report(ctx, usage, "deploy", []agentTelemetry.OperationClass{
+			operationServiceClass(args.Service),
+		})
+		return predeployHandler(ctx, azdClient, args)
+	}
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
 	host.
@@ -60,16 +75,6 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
 		}).
-		WithBetaServiceEventHandler("predeploy", func(
-			ctx context.Context, args *azdext.ServiceEventArgs,
-		) (*azdext.BetaServiceEventResponse, error) {
-			telemetryReporter.reportService(ctx, azdClient.Telemetry(), args.Project, args.Service, "deploy")
-			usage := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
-			operationReporter.report(ctx, usage, "deploy", []agentTelemetry.OperationClass{
-				operationServiceClass(args.Service),
-			})
-			return predeployHandler(ctx, azdClient, args)
-		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return postdeployHandler(ctx, azdClient, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
@@ -80,6 +85,23 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		WithProjectEventHandler("postdown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postdownHandler(ctx, azdClient, args)
 		})
+
+	if retainRBACWarnings {
+		host.WithBetaServiceEventHandler("predeploy", predeploy, &azdext.ServiceEventOptions{Host: AiAgentHost})
+		return
+	}
+	host.WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+		response, err := predeploy(ctx, args)
+		if response != nil {
+			for _, message := range response.Messages {
+				fmt.Println(output.WithWarningFormat("%s", message.Message))
+				if message.Suggestion != "" {
+					fmt.Println(message.Suggestion)
+				}
+			}
+		}
+		return err
+	}, &azdext.ServiceEventOptions{Host: AiAgentHost})
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {

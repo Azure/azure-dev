@@ -1,0 +1,28 @@
+# Tier 0: the shared ACR switch controls discovery, not static parsing.
+name: "acr-feature-help"
+command: "azd ai agent init --help"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:init", "cmd:help", "parallel-safe"]
+env:
+  AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE: "false"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+goals:
+  - >-
+    Confirm help exits with code zero, without authentication, network calls,
+    prompts, extension installation, or local mutation. Confirm init help does
+    not list --acr-resource-id or its source-build-registry help paragraph.
+  - >-
+    Run exactly 'AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true azd ai agent init --help'.
+    Confirm help exits with code zero and shows --acr-resource-id and its
+    existing-registry help paragraph, including the same-subscription and
+    no-migration restrictions.
+  - >-
+    Run exactly 'azd ai agent --help'. Confirm the Preview Feature Switches
+    section lists AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true for external ACR
+    reuse and cleanup even though the feature is disabled.
+  - >-
+    Take best-effort screenshots of disabled and enabled help. Capture failure
+    does not block product assertions. Report a finding if discovery is wrong
+    or any command prompts, contacts Azure, or mutates a project.

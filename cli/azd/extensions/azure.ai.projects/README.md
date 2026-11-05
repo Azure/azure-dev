@@ -1,6 +1,6 @@
 # Foundry Projects
 
-<!-- cspell:ignore Kata kubelet -->
+<!-- cspell:ignore strconv Kata kubelet -->
 
 Manage Microsoft Foundry Project resources from your terminal.
 
@@ -314,6 +314,69 @@ rejects a conflicting `AZURE_SUBSCRIPTION_ID` before changing configuration.
 
 ### Reuse an external container registry
 
+This preview is **off by default**. Enable the shared process switch before
+running either the projects or agents extension:
+
+```sh
+export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true
+```
+
+In PowerShell, use `$env:AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE = 'true'`.
+Set the same variable in each CI job that operates on the reused registry.
+The switch uses `strconv.ParseBool`; `on` and `yes` do not enable it.
+Core `azd config` alpha settings do not enable this preview. The evaluator
+reads the current process, including values already injected by the azd host;
+it does not open dotenv files itself.
+
+With the switch off, reuse setup and all reuse lifecycle operations fail with
+enablement guidance before changing project files, environment values, saved
+context, or Azure resources. This includes **preview, down, recovery, and
+eject**, even if the environment already has a reuse binding or unfinished
+access cleanup and its legacy registry variables are absent. Re-enable the
+switch to clean up; turning it off does not delete or convert ownership.
+Ordinary automatic registry creation and existing project connection workflows
+without new reuse intent remain available.
+
+The source-build demand consistency correction is always on: a bare `image`
+still requests automatic registry provisioning when package/deploy would build
+from source. Without opt-in, fresh create returns normal outputs without a
+binding-only project identity lookup, canonical binding config write, or new
+mode write. Saved create bindings retain immutable identity validation and
+maintenance. Recovered create ownership remains available for safe operations
+without newly persisting or unsetting a transient binding while off.
+
+Legacy existing-project `reuse-connect` environments without canonical reuse
+bindings or pending operations remain supported without the switch. Canonical
+reuse and pending operations are checked before the existing-project exemption.
+New greenfield reuse intent still requires opt-in.
+
+Guards and lifecycle operations honor `--environment` (forwarded by the host
+as `AZD_ENVIRONMENT`) before the saved default. Environment values, registry
+bindings, and pending operations come from that same selected environment.
+An unreadable explicit selection is an error, not a fallback to the default.
+
+For greenfield reuse, project hooks also check `existingAcrResourceId` in the active on-disk
+`main.parameters.json` or `main.bicepparam`, using the configured Foundry
+path and module for a root or named layer. Removing environment aliases,
+saved bindings, and pending state does not bypass this check. JSON values
+use the host environment's `${VAR}` substitutions; `.bicepparam` takes
+precedence and its expressions are resolved by Bicep. Disabled preflight
+retains normal Bicep installation and module restoration. Dependency caches
+may be populated before evaluation, but rejected reuse does not change
+project files, environment/config values, saved context, or Azure resources.
+Invalid parameters remain errors rather than being treated as non-reuse.
+
+Provider initialization and `azd down` do not compile infrastructure.
+Down checks recorded environment selectors, bindings, pending cleanup, and
+recovered deployment facts instead of current parameter files. Recorded
+reuse still requires the switch; a source-only selector that has not been
+deployed does not block teardown. On-disk provisioning keeps automatic Bicep setup,
+even while the preview is off.
+
+The registry build validation rule reports the same enablement guidance
+before registry lookups. The prepackage, preprovision, and predeploy hooks
+enforce the gate independently of optional provision validation.
+
 For source-built hosted agents in a new Foundry project, select an existing
 Azure Container Registry by its full ARM resource ID:
 
@@ -336,6 +399,13 @@ An external source-build registry selection cannot be combined with
 manage AKS node pull access. Remove the selector and let azd create a registry
 when a source build needs one, or use explicit prebuilt images with
 user-managed registry authentication.
+
+Embedded and currently generated ejected Bicep keep the
+`microsoft.foundry` provider, which enforces the switch for provision, preview,
+and down. **Manually changing `infra.provider` to core `bicep` is unsupported**:
+its preview skips extension lifecycle hooks, so it is outside this enforcement
+contract. Arbitrary direct Bicep/ARM execution is also outside the contract.
+Do not change the provider to bypass the switch.
 
 For an ABAC registry (`AbacRepositoryPermissions`), source-built hosted agents
 must use local Docker builds with `docker.remoteBuild: false`. Hosted source

@@ -10,6 +10,7 @@ import (
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
+	"azureaiagent/internal/synthesis"
 	"context"
 	"errors"
 	"fmt"
@@ -89,6 +90,16 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 
 	if err := validateCodeDeployInput(
 		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution,
+	); err != nil {
+		return err
+	}
+	if a.flags.acrResourceIDSet {
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
+		}
+	}
+	if err := validateInitACRProjectContent(
+		ctx, a.azdClient, a.flags, nil, "", valueOrDefault(a.projectTargetDir, "."),
 	); err != nil {
 		return err
 	}

@@ -8,10 +8,13 @@ import (
 	"os"
 	"testing"
 
+	"azure.ai.projects/internal/synthesis"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestProjectAddACRCapabilityHelpBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	root := t.TempDir()
 	t.Chdir(root)
 	t.Setenv("AZD_SERVER", "invalid-address")

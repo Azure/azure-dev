@@ -22,6 +22,7 @@ import (
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
+	"azureaiagent/internal/synthesis"
 	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -108,6 +109,9 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 		return err
 	}
 	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
+		return err
+	}
+	if err := synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project); err != nil {
 		return err
 	}
 
@@ -240,11 +244,11 @@ func postprovisionHandler(
 
 // currentEnvName returns the name of the currently selected azd
 // environment, or empty string + error when no environment is
-// selected. Wraps Environment().GetCurrent so callers (notably
+// selected. Honors the host's explicit environment selection so
 // postprovisionHandler) can read the current env name without
 // duplicating the request shape.
 func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
-	resp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	resp, err := synthesis.CurrentEnvironment(ctx, azdClient)
 	if err != nil {
 		return "", err
 	}
@@ -388,6 +392,9 @@ func predeployHandler(
 	response := &azdext.BetaServiceEventResponse{Messages: messages}
 	fail := func(err error) (*azdext.BetaServiceEventResponse, error) {
 		return response, err
+	}
+	if err := synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project); err != nil {
+		return fail(err)
 	}
 
 	// Warn (once) when multiple agent services resolve to the same Foundry agent
@@ -718,7 +725,7 @@ func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.Serv
 // postdownHandler cleans up available saved agent context for services that were torn down.
 // This is best-effort — failures are logged but do not block azd down.
 func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	envResp, err := synthesis.CurrentEnvironment(ctx, azdClient)
 	if err != nil {
 		log.Printf("postdown: failed to get current environment: %v", err)
 		return nil
@@ -778,6 +785,9 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig, validateDeployment
 // Best-effort throughout — a harness failure is logged but never blocks down.
 func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	if err := validateRuntimeAgentServices(args.Project, false); err != nil {
+		return err
+	}
+	if err := synthesis.RequireACRReuseForProjectState(ctx, azdClient, args.Project); err != nil {
 		return err
 	}
 

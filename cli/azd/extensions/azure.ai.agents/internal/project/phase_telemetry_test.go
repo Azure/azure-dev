@@ -18,6 +18,7 @@ import (
 	"azureaiagent/internal/phasetelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/recordproxy"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
@@ -49,6 +50,7 @@ func (s *phaseTelemetryServer) ReportUsage(
 }
 
 func TestAgentProviderTimingsUseSharedUpAndStandaloneEntryPoints(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, entry := range []string{"up", "standalone"} {
 		t.Run(entry, func(t *testing.T) {
 			t.Setenv("NO_COLOR", "1")

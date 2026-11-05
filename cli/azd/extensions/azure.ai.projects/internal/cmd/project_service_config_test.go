@@ -374,6 +374,34 @@ type recordingProjectEnvironmentServer struct {
 	deployments []*azdext.PromptAiDeploymentRequest
 	failAt      int
 	failKey     string
+	currentErr  error
+	namedErr    error
+	config      map[string][]byte
+}
+
+func (s *recordingProjectEnvironmentServer) GetConfig(
+	_ context.Context, request *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	if s.config != nil {
+		if request.GetEnvName() != s.envName {
+			return nil, fmt.Errorf("unexpected config environment %q", request.GetEnvName())
+		}
+		value, found := s.config[request.GetPath()]
+		return &azdext.GetConfigResponse{Value: value, Found: found}, nil
+	}
+	return &azdext.GetConfigResponse{}, nil
+}
+
+func (s *recordingProjectEnvironmentServer) Get(
+	_ context.Context, request *azdext.GetEnvironmentRequest,
+) (*azdext.EnvironmentResponse, error) {
+	if s.namedErr != nil {
+		return nil, s.namedErr
+	}
+	if request.GetName() != s.envName {
+		return nil, fmt.Errorf("unexpected named environment %q", request.GetName())
+	}
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: s.envName}}, nil
 }
 
 func (s *recordingProjectEnvironmentServer) GetValues(
@@ -427,6 +455,9 @@ func (s *recordingProjectEnvironmentServer) GetCurrent(
 	context.Context,
 	*azdext.EmptyRequest,
 ) (*azdext.EnvironmentResponse, error) {
+	if s.currentErr != nil {
+		return nil, s.currentErr
+	}
 	return &azdext.EnvironmentResponse{
 		Environment: &azdext.Environment{Name: s.envName},
 	}, nil

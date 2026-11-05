@@ -1,7 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore BYOAKS kubelet kubeletidentity crnative AGENTHOSTING INCLUDEACR KUBELETOBJECTID
+// cspell:ignore BYOAKS kubelet kubeletidentity crnative AGENTHOSTING
+// cspell:ignore INCLUDEACR KUBELETOBJECTID
 
 package provisioning
 
@@ -434,6 +435,7 @@ func TestBYORegistryValidationBeforeLifecycleWrites(t *testing.T) {
 		{name: "invalid hosting", invalid: true, expectedError: "registry reuse is not supported with agentHosting"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(synthesis.ACRReuseEnvVar, "true")
 			p, fake := offlineBYOProvider(t)
 			env := &resolveEnvStubEnvServer{envName: "test"}
 			p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
@@ -476,6 +478,7 @@ func TestBYORegistryPreviewRejectsReuseWithoutWrites(t *testing.T) {
 		"Microsoft.ContainerRegistry/registries/registry"
 	for _, abac := range []bool{false, true} {
 		t.Run(fmt.Sprintf("ABAC=%t", abac), func(t *testing.T) {
+			t.Setenv(synthesis.ACRReuseEnvVar, "true")
 			p, fake := offlineBYOProvider(t)
 			env := &resolveEnvStubEnvServer{envName: "test"}
 			p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
@@ -520,6 +523,7 @@ func TestBYOFailedDeploymentCanBeRetried(t *testing.T) {
 }
 
 func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	p, fake := offlineBYOProvider(t)
 	p.armTemplate["contentVersion"] = "2.0.0.0"
 	p.onDiskSource = &templateSource{

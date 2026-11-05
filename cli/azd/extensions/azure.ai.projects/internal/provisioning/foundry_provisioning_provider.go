@@ -30,11 +30,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.yaml.in/yaml/v3"
@@ -330,13 +327,14 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	onDisk := p.onDiskTemplatePresent()
+	p.acrDeferPromptedEnv = onDisk
 	p.greenfieldAcrResourceID = ""
-	if endpoint == "" {
-		if p.azdClient != nil {
-			if err := p.loadACRLifecycle(ctx); err != nil {
-				return err
-			}
+	if p.azdClient != nil {
+		if err := p.loadACRLifecycle(ctx); err != nil {
+			return err
 		}
+	}
+	if endpoint == "" {
 		// Validate greenfield config before any interactive prompts.
 		validationInput := synthesis.Input{
 			RawAzureYAML:              rawYAML,
@@ -346,6 +344,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 			PreserveVarRefs:           true,
 			ProjectRoot:               projectRoot,
 			ACRBinding:                p.acrBinding,
+			ACRPending:                p.acrPending != nil,
 			DeferACRNetworkValidation: onDisk,
 		}
 		p.acrRemoteBuild, err = synthesis.RequiresRemoteACRBuild(validationInput)
@@ -421,6 +420,7 @@ func (p *FoundryProvisioningProvider) initializeInfrastructure(
 		ProjectRoot:               projectRoot,
 		ResourceGroupName:         p.rgName,
 		ACRBinding:                p.acrBinding,
+		ACRPending:                p.acrPending != nil,
 		DeferACRNetworkValidation: onDisk,
 	}
 	input.Env[envKeySubscriptionID] = p.subID
@@ -675,6 +675,9 @@ func (p *FoundryProvisioningProvider) inferExistingProjectAcrMode() string {
 }
 
 func foundrySynthesisError(serviceName string, err error) error {
+	if local, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return local
+	}
 	if errors.Is(err, synthesis.ErrServiceNotFound) {
 		return exterrors.Dependency(
 			exterrors.CodeProvisioningServiceNotFound,
@@ -1052,7 +1055,7 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 }
 
 func (p *FoundryProvisioningProvider) resolveEnvName(ctx context.Context) error {
-	currEnv, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	currEnv, err := synthesis.CurrentEnvironment(ctx, p.azdClient)
 	if err != nil || currEnv.GetEnvironment().GetName() == "" {
 		message := "current azd environment is empty"
 		if err != nil {
@@ -1248,6 +1251,9 @@ func (p *FoundryProvisioningProvider) State(
 	ctx context.Context,
 	options *azdext.ProvisioningStateOptions,
 ) (*azdext.ProvisioningStateResult, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}
@@ -1300,6 +1306,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 	ctx, timing := phasetelemetry.Begin(ctx, phasetelemetry.Provision, phasetelemetry.Provider, phasetelemetry.Reporter(p.azdClient))
 	defer func() { timing.End(ctx, phaseErr) }()
 
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}
@@ -1603,26 +1612,12 @@ func (p *FoundryProvisioningProvider) projectDeployments(
 	return ReadProjectDeployments(ctx, p.azdClient, p.envName)
 }
 
-// bicepCli lazily constructs a *bicep.Cli using azd-core's download-on-demand
-// wrapper. The first call on a machine without bicep triggers a download under
-// a spinner; subsequent calls reuse the cached binary.
+// bicepCli lazily constructs the normal download-on-demand compiler.
 func (p *FoundryProvisioningProvider) bicepCli() bicepCompiler {
 	if p.bicepCliInstance != nil {
 		return p.bicepCliInstance
 	}
-	console := input.NewConsole(
-		false, // noPrompt
-		true,  // isTerminal
-		input.Writers{Output: os.Stdout},
-		input.ConsoleHandles{
-			Stderr: os.Stderr,
-			Stdin:  os.Stdin,
-			Stdout: os.Stdout,
-		},
-		nil, // formatter
-		nil, // externalPromptCfg
-	)
-	p.bicepCliInstance = bicep.NewCli(console, exec.NewCommandRunner(nil))
+	p.bicepCliInstance = synthesis.NewBicepCompiler()
 	return p.bicepCliInstance
 }
 
@@ -1662,6 +1657,9 @@ func (p *FoundryProvisioningProvider) Preview(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}
@@ -1763,6 +1761,9 @@ func (p *FoundryProvisioningProvider) Destroy(
 	options *azdext.ProvisioningDestroyOptions,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDestroyResult, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if p.brownfieldEndpoint != "" {
 		if p.existingProjectReuseOnly {
 			progress("Existing Foundry project is not owned by azd; leaving it in place")
@@ -2292,6 +2293,9 @@ func invalidatedEnvKeysResult() *azdext.ProvisioningDestroyResult {
 func (p *FoundryProvisioningProvider) Parameters(
 	ctx context.Context,
 ) ([]*azdext.ProvisioningParameter, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if p.brownfieldEndpoint != "" {
 		return []*azdext.ProvisioningParameter{
 			{
@@ -2350,6 +2354,9 @@ func (p *FoundryProvisioningProvider) Parameters(
 func (p *FoundryProvisioningProvider) PlannedOutputs(
 	ctx context.Context,
 ) ([]*azdext.ProvisioningPlannedOutput, error) {
+	if err := p.requireACRReuse(); err != nil {
+		return nil, err
+	}
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}

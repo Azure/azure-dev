@@ -88,8 +88,16 @@ func (c *ACRRemoteBuildCheck) ValidateProject(
 		AcceptedHosts: FoundryProvisioningServiceHosts, PreserveVarRefs: true,
 	}
 	remote, err := synthesis.RequiresRemoteACRBuild(in)
-	if err != nil || !remote {
+	if err != nil {
 		return err
+	}
+	if err := synthesis.RequireACRReuseForEnvironment(ctx, c.azdClient, envName, synthesis.Input{
+		RawAzureYAML: raw, Env: snapshot, ProjectRoot: project.Path,
+	}); err != nil {
+		return err
+	}
+	if !remote {
+		return nil
 	}
 	in.ServiceName, err = findFoundryProjectService(raw)
 	if err != nil {
@@ -211,6 +219,9 @@ func (p *FoundryProvisioningProvider) validateACRRemoteBuild(ctx context.Context
 	}
 	if !p.acrRemoteBuild || p.brownfieldEndpoint != "" || id == "" {
 		return nil
+	}
+	if err := synthesis.RequireACRReuse(); err != nil {
+		return err
 	}
 	group, _ := parameterValue(src, "resourceGroupName").(string)
 	if group == "" {

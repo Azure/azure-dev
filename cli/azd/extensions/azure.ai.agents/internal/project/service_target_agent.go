@@ -40,6 +40,7 @@ import (
 	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -352,6 +353,7 @@ func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error 
 		)
 	}
 	p.projectPath = proj.GetProject().GetPath()
+	p.projectServices = proj.GetProject().GetServices()
 	return nil
 }
 
@@ -649,7 +651,7 @@ func (p *AgentServiceTargetProvider) ensureEnv(ctx context.Context) error {
 	if p.env != nil {
 		return nil
 	}
-	currEnv, err := p.azdClient.Environment().GetCurrent(ctx, nil)
+	currEnv, err := synthesis.CurrentEnvironment(ctx, p.azdClient)
 	if err != nil {
 		return exterrors.Dependency(
 			exterrors.CodeEnvironmentNotFound,

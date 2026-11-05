@@ -1025,7 +1025,7 @@ func TestValidateExistingProjectEjectEnvironment(t *testing.T) {
 }
 
 func TestEjectInfra_ExistingProjectBicepSelectsAcrModule(t *testing.T) {
-	t.Parallel()
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 
 	const projectYAML = `name: my-project
 infra:
@@ -1311,7 +1311,7 @@ services:
 }
 
 func TestEjectInfra_ExistingProjectBicepModesCompile(t *testing.T) {
-	t.Parallel()
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	bicep := testutil.LookupBicep(t)
 
 	const projectYAML = `name: my-project
@@ -1733,6 +1733,7 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 }
 
 func TestEjectInfra_ExistingRegistry(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const id = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/shared/" +
 		"providers/Microsoft.ContainerRegistry/registries/sharedregistry"
 	for _, provider := range []string{"bicep", "terraform"} {
@@ -1785,6 +1786,7 @@ func TestEjectInfra_ExistingRegistry(t *testing.T) {
 }
 
 func TestEjectInfra_RecordedRegistryMode(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
 	for _, provider := range []string{"bicep", "terraform"} {
 		for _, mode := range []string{"create", "reuse-connect", "already-connected"} {
@@ -1840,6 +1842,7 @@ func TestEjectInfra_RecordedRegistryMode(t *testing.T) {
 }
 
 func TestEjectInfra_ProjectOnlyRegistrySelectionRejectsTerraform(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const registryID = "/subscriptions/sub/resourceGroups/shared/" +
 		"providers/Microsoft.ContainerRegistry/registries/registry"
 	for _, mode := range []string{"", "create", "reuse-connect"} {
@@ -1868,6 +1871,7 @@ func TestEjectInfra_ProjectOnlyRegistrySelectionRejectsTerraform(t *testing.T) {
 }
 
 func TestEjectInfra_ProjectOnlyRegistrySelectionPreservesDemand(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const registryID = "/subscriptions/sub/resourceGroups/shared/" +
 		"providers/Microsoft.ContainerRegistry/registries/registry"
 	dir := t.TempDir()
@@ -2767,6 +2771,7 @@ func TestEjectInfraAfterInit_UsesActiveEnvironmentForCondition(t *testing.T) {
 }
 
 func TestEjectInfraAfterInit_RegistryBinding(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const registryID = "/subscriptions/sub/resourceGroups/foundry/" +
 		"providers/Microsoft.ContainerRegistry/registries/registry"
 	for _, tt := range []struct {
@@ -2849,6 +2854,7 @@ func TestEjectInfraAfterInit_RegistryBinding(t *testing.T) {
 }
 
 func TestEjectInfraAfterInit_RegistryDefaultGroupWithoutDotenvName(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, layer := range []bool{false, true} {
 		t.Run(strconv.FormatBool(layer), func(t *testing.T) {
 			root := t.TempDir()

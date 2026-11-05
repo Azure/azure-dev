@@ -5,9 +5,9 @@
 ## Status and goal
 
 - **Component:** `cli/azd/extensions/azure.ai.agents`
-- **Scope:** Independent managed-harness, voice, long-running invocation, A2A version-selection, memory snapshot, BYO AKS, and retained RBAC warning switches. All switches default to off.
+- **Scope:** Independent, default-off agent previews, BYO AKS initialization/adoption/provisioning/preview, retained RBAC warnings, and the shared Foundry existing-ACR-reuse gate.
 
-Keep preview opt-in decisions inside the owning extensions until the extension framework supports discovery and evaluation. The Agents extension owns its private preview evaluator; the Projects extension independently checks the shared BYO AKS switch for provisioning and provisioning preview when effective AKS hosting is enabled. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
+Keep preview opt-in decisions inside the owning extensions until the extension framework supports discovery and evaluation. The Agents extension owns its private preview evaluator; the Projects extension independently checks the shared BYO AKS switch for provisioning and provisioning preview when effective AKS hosting is enabled. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality without new ACR reuse intent are not gated.
 
 Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws`. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
 
@@ -32,6 +32,18 @@ azure.ai.agents/
 ```
 
 The package belongs to the `azureaiagent` module and is imported as `azureaiagent/internal/featureflags`. Go's `internal` boundary excludes other extension modules. The evaluator uses only the Go standard library; it has no azd client, config, project, environment-loader, gRPC, or authentication dependency.
+
+Shared Foundry ACR evaluation and read-only lifecycle-intent checks live in
+`internal/synthesis/acr_feature.go`, mirrored byte-for-byte in agents and
+projects. The agents registry references that shared capability's constants;
+neither extension imports the other's internal packages. The boolean reader
+only uses the process environment. Separate operation guards read host-provided
+environment snapshots and canonical/pending lifecycle state to prevent
+alias-free bindings from bypassing the gate.
+`acr_parameters.go` also checks the configured Foundry on-disk parameter
+source. `bicep_parameters.go` shares ARM parameter parsing, substitution,
+compiled Bicep parameter envelopes, and value/default precedence with the
+projects provider. Both files remain mirrored in the two extensions.
 
 Keep the registry as a plain list, not a listing framework or plugin system. The extension stays on its pinned azd dependency, `v1.37.0`, without a local module replacement or dependency upgrade.
 
@@ -78,9 +90,114 @@ if err := featureflags.RequireWithWriter(featureflags.Voice, out); err != nil {
 | `A2A` | `agents.a2a` | `AZD_ALPHA_ENABLE_AGENTS_A2A` | A2A init selection, explicit wire versions, and the 1.0 message default |
 | `MemorySnapshot` | `agents.memory_snapshot` | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` | Hosted agent memory snapshots |
 | `BYOAKS` | `agents.byo_aks` | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Existing AKS project initialization, adoption, provisioning, and provisioning preview |
+| `FoundryACRReuse` | `foundry.acr_reuse` | `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE` | External source-build ACR reuse in new Foundry projects, including preview and cleanup |
 | `RBACWarnings` | `agents.rbac_warnings` | `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS` | Retained developer RBAC deployment warnings through beta service events |
 
-Each ID starts with `agents.`. Its canonical key is `AZD_ALPHA_ENABLE_` plus the ID in upper case with dots replaced by underscores. Registry tests enforce the identities, naming rule, unique IDs and keys, and nonempty descriptions. The evaluator reads the declared `EnvVar` rather than deriving a key at run time.
+Agent-specific IDs start with `agents.`; the shared ACR capability uses
+`foundry.acr_reuse`. Each canonical key is `AZD_ALPHA_ENABLE_` plus the ID in
+upper case with dots replaced by underscores. Registry tests enforce those
+namespaces, unique IDs and keys, and nonempty descriptions. The evaluator reads
+the declared `EnvVar` rather than deriving a key at run time.
+
+### Shared Foundry ACR reuse policy
+
+`AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE` is one default-off rollout switch for both
+extensions, independent of all agent-kind previews. It gates both
+`--acr-resource-id` entrypoints, greenfield environment-only selections,
+canonical reuse bindings, unfinished access operations, template/source init,
+project setup, synthesis, provision, preview, down, recovery, eject, and agent
+package/publish/deploy operations that encounter new reuse intent.
+
+Lifecycle guards honor the command's `--environment` selection, forwarded by
+the host as `AZD_ENVIRONMENT`, before consulting the saved default. Values,
+registry bindings, and pending operations are read from that same environment.
+An unreadable explicit selection is an error, not a fallback to the default.
+Prompt-agent cleanup during down reads its deployment target and ownership
+markers from that selected environment as well, never from another default.
+Infrastructure eject uses the same resolved environment for reuse checks and
+the values supplied to generated files.
+Template and repository initialization read only the destination project's
+selected environment, not the caller's saved default. A pending operation in
+that destination is gated even without mode, registry, or binding aliases.
+
+Attempting gated reuse while off returns a `feature_not_enabled` error naming the
+enabling variable, before changes to project files, environment/config values,
+saved context, or Azure resources. Bicep tool installation and module
+restoration may populate dependency caches before parameter evaluation.
+Pure local flag validation still takes precedence, including explicit empty
+values. Help and examples hide the selector off, while full static metadata
+retains it. There is no auto-enable, ignored selector, create fallback,
+ownership conversion, or deployed-registry migration.
+
+Unlike the older agent-kind previews, **cleanup is also gated**. An
+already-reuse-bound environment needs the switch enabled for down, preview,
+recovery, and eject, even if its legacy mode/registry aliases were removed.
+Re-enable the switch in the shell or CI before cleanup. Turning it off leaves
+the resources, grants, files, and saved state intact.
+Down checks recorded environment selectors, canonical bindings, unfinished
+access operations, and recovered deployment facts. It does not compile
+current infrastructure or evaluate current parameter files. A source-only
+selector that has not been deployed does not block teardown.
+
+For greenfield reuse, other pre-operation guards inspect the active
+`existingAcrResourceId` even when it
+exists only in an on-disk parameter file and all aliases, bindings, and
+pending state are absent. Discovery follows the configured
+`microsoft.foundry` root or layer path and module; unrelated root/layer
+files are not selected. `.bicepparam` takes precedence over
+`.bicep` plus `.parameters.json`. JSON substitutions use host-provided
+environment values, while Bicep resolves expressions before hook or
+independent agent-operation writes. Parameter evaluation and deployment
+retain normal Bicep installation, version checks, and module restoration
+with the switch either off or on. Dependency caches may change, but project
+files, environment/config values, saved context, and Azure resources remain
+unchanged when reuse is rejected. Invalid parameters are errors, not a
+non-reuse fallback. An invalid explicit `AZD_BICEP_TOOL_PATH` fails rather
+than falling back to another tool.
+
+Provider initialization remains compiler-free. For on-disk infrastructure,
+prompted subscription and location values remain staged until deployment
+has compiled and validated the effective template. Preview and deployment
+still reject disabled parameter-only reuse before Azure mutations.
+
+The `azure.ai.projects.acr_remote_build` provision validation rule uses the
+same gate before querying registry permissions. Its diagnostic preserves
+structured enablement guidance. Mandatory prepackage, preprovision, and
+predeploy hooks do not depend on that optional validation rule running.
+
+Demand-driven automatic `none`/`create`, verified legacy CREATE outputs, code,
+prebuilt images, and old existing-project connection workflows without new
+reuse intent remain available. Existing create ownership and teardown safety
+checks stay active even while the preview is off.
+
+The source-build demand consistency correction is intentionally **always on**.
+A bare `image` still requires automatic ACR provisioning when package/deploy
+would build from source, including no-prompt flows. Explicit
+`docker.imagePassthrough`, registry connections, code configuration, and the
+legacy prebuilt-image marker retain their no-ACR behavior. The rollout switch
+does not restore the older provision/deploy mismatch.
+
+New canonical binding creation is preview-only. Fresh automatic create with
+the switch off returns normal provisioning outputs without a binding-only
+project identity lookup, `acrBinding` config write, or new
+`AZD_FOUNDRY_ACR_MODE` write. A previously saved create binding remains subject
+to immutable identity validation and normal maintenance. Create ownership
+recovered from deployment evidence remains available for safe provisioning
+and teardown, but stays transient off: it is neither serialized as a new
+binding nor unset as if a persisted binding existed. Ownership evidence,
+custom resource identities, and safe cleanup checks are not disabled.
+
+Legacy existing-project `reuse-connect` environments without canonical reuse
+bindings or pending operations remain supported without the switch. Binding
+validation and the canonical reuse/pending gate run before that exemption;
+adding `USE_EXISTING_AI_PROJECT=true` or an endpoint cannot bypass them.
+Greenfield `reuse-connect` intent still requires the preview.
+
+The supported paths are embedded and currently generated ejected Bicep using
+`microsoft.foundry`. Manually changing the Foundry layer to core
+`infra.provider: bicep` is unsupported: its preview skips extension hooks,
+and optional validation cannot enforce a mandatory gate. Such native-provider
+runs and arbitrary direct external IaC execution are outside this contract.
 
 ### Retained RBAC deployment warnings
 
@@ -179,7 +296,7 @@ Normal project configuration, deployment environments, runtime settings, and com
 
 | Annotation | Placed on | Effect |
 | --- | --- | --- |
-| `previewFlag(cmd, name, feature)` | `invoke --long-running`, `invoke --no-wait`, `invoke --a2a-version`, `init --voice` | Setting the flag requires the feature (a bool only when true). The flag is hidden while the feature is off |
+| `previewFlag(cmd, name, feature)` | `invoke --long-running`, `invoke --no-wait`, `invoke --a2a-version`, `init --voice`, `init --acr-resource-id` | Setting the flag requires the feature (a bool only when true). The flag is hidden while the feature is off |
 | `previewFlag(cmd, name, feature, values...)` | `init --kind prompt-voice`, `init --harness microsoft_copilot_preview` or `github_copilot_preview`, `init --protocol invocations_ws` | Only the listed values require the feature, including repeated or comma-separated slice values. The flag stays visible |
 | `previewCommand(cmd, feature)` | none today | The command and its children require the feature and are hidden while off |
 | `discoverCommand(cmd, feature)` | `invocations` | Hidden from help while off. The group and its subcommands still run |
@@ -221,7 +338,18 @@ Extension metadata and shell completion are built from the complete static tree.
 
 An explicit HTTP `--agent-endpoint` carries no kind or harness information. It remains unclassified, with no additional authenticated definition lookup, so managed-harness enforcement cannot cover that route. The deterministic long-running check applies to every endpoint before invocation, authentication, or conversation/session persistence. Text invoke does not accept voice WebSocket endpoints.
 
-Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. BYO AKS infrastructure state and parameter queries, Bicep eject, and teardown do not require its switch to be enabled; infrastructure teardown follows the standard Foundry `azd down` path and deletes the target resource group with all resources inside it. There is no state migration or persisted flag update. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
+Read, show, endpoint discovery, invocation show/follow/cancel, delete, and down
+retain access when agent-kind opt-ins are disabled. BYO AKS infrastructure
+state and parameter queries, Bicep eject, and teardown do not require its
+switch; teardown follows the standard Foundry
+`azd down` path and deletes the target resource group with all resources inside
+it. **The shared ACR preview
+is stricter:** down and recovery for a new reuse binding also require its
+switch, as described above. There is no state migration or automatic
+enablement. Agents-private kind checks do not intercept evaluations or routines
+sending generic requests to existing agents. Those extensions cannot import
+this package; only the explicitly shared Foundry ACR policy spans agents and
+projects.
 
 ## Compatibility and future framework adoption
 

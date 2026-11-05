@@ -429,6 +429,18 @@ func (s *testEnvironmentServiceServer) GetConfig(
 	return &azdext.GetConfigResponse{Value: value, Found: found}, nil
 }
 
+func (s *testEnvironmentServiceServer) List(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentListResponse, error) {
+	result := &azdext.EnvironmentListResponse{}
+	for name := range s.environments {
+		result.Environments = append(result.Environments, &azdext.EnvironmentDescription{
+			Name: name, Default: name == s.current.GetName(),
+		})
+	}
+	return result, nil
+}
+
 func (s *testEnvironmentServiceServer) GetCurrent(context.Context, *azdext.EmptyRequest) (*azdext.EnvironmentResponse, error) {
 	s.getCurrentCalls++
 	if s.current == nil {

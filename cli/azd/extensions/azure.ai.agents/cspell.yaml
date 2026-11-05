@@ -146,6 +146,7 @@ words:
   - testdir
   # Test infrastructure
   - recordproxy
+  - testutil
   # Activity protocol local run (Playground)
   - agentsplayground
   - winget

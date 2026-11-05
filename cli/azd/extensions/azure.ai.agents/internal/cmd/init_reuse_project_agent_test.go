@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -90,6 +91,7 @@ func executeReuseInitACR(
 }
 
 func TestInitACRReusePlansBeforeEnvironmentCreation(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name               string
 		prompted           string

@@ -39,6 +39,9 @@ type addPromptServer struct {
 	readError          error
 	existingResourceID string
 	environmentError   error
+	workflowError      error
+	confirmError       error
+	commandsAtConfirm  int
 }
 
 func (s *addPromptServer) Prompt(_ context.Context, req *v1.PromptRequest) (*v1.PromptResponse, error) {
@@ -62,6 +65,10 @@ func (s *addPromptServer) Confirm(_ context.Context, req *v1.ConfirmRequest) (*v
 	case strings.Contains(req.Options.Message, "existing layer"), strings.HasPrefix(req.Options.Message, "Replace"):
 		value = s.acceptExisting
 	case strings.HasPrefix(req.Options.Message, "Proceed to "):
+		s.commandsAtConfirm = len(s.commands)
+		if s.confirmError != nil {
+			return nil, s.confirmError
+		}
 		value = s.acceptProvision
 	default:
 		return nil, errors.New("unexpected confirmation: " + req.Options.Message)
@@ -122,6 +129,9 @@ type addWorkflowServer struct {
 func (s *addWorkflowServer) Run(_ context.Context, req *v1.RunWorkflowRequest) (*v1.EmptyResponse, error) {
 	for _, step := range req.GetWorkflow().GetSteps() {
 		s.prompts.commands = append(s.prompts.commands, step.GetCommand().GetArgs())
+		if s.prompts.workflowError != nil {
+			return nil, s.prompts.workflowError
+		}
 	}
 	return &v1.EmptyResponse{}, nil
 }
@@ -429,7 +439,7 @@ func TestAddProvisionFollowUpsUseLocalHostWorkflow(t *testing.T) {
 		{name: "preview accepted", followUp: "Yes (preview changes)", accept: true,
 			want: [][]string{{"provision", "data", "--preview"}, {"provision", "data"}}},
 		{name: "preview and deploy", followUp: "Yes (preview changes)", accept: true, hasService: true,
-			want: [][]string{{"provision", "--preview"}, {"up"}}},
+			want: [][]string{{"provision", "data", "--preview"}, {"up"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			prompts := &addPromptServer{followUp: test.followUp, acceptProvision: test.accept}
@@ -446,6 +456,87 @@ func TestAddProvisionFollowUpsUseLocalHostWorkflow(t *testing.T) {
 			} else {
 				require.Empty(t, prompts.confirmations)
 			}
+		})
+	}
+}
+
+func TestAddPreviewTargetsSelectedLayerInMultiLayerProject(t *testing.T) {
+	original := `name: example
+infra:
+  layers:
+    - name: platform
+      provider: bicep
+      path: infra/platform
+`
+	for _, test := range []struct {
+		name       string
+		hasService bool
+		wantApply  []string
+	}{
+		{name: "host", hasService: true, wantApply: []string{"up", "--environment", "staging"}},
+		{name: "resource", wantApply: []string{"provision", "application", "--environment", "staging"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prompts := &addPromptServer{followUp: "Yes (preview changes)", acceptProvision: true}
+			if test.hasService {
+				dir := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("fastapi\n"), 0o600))
+				prompts.hostProject = dir
+			}
+			_, _, _, err := runAddTest(t, original, []string{"--layer", "application", "--environment", "staging"}, prompts)
+			require.NoError(t, err)
+			require.Equal(t, [][]string{
+				{"provision", "application", "--preview", "--environment", "staging"},
+				test.wantApply,
+			}, prompts.commands)
+			require.Equal(t, 1, prompts.commandsAtConfirm)
+			require.Len(t, prompts.confirmations, 1)
+			require.Equal(t, new(true), prompts.confirmations[0].Options.DefaultValue)
+		})
+	}
+}
+
+func TestAddHostPreviewDoesNotDeployWithoutSuccessfulConfirmation(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		workflowError error
+		confirmError  error
+		wantError     string
+	}{
+		{name: "declined"},
+		{name: "preview failed", workflowError: status.Error(codes.Internal, "preview failed"), wantError: "preview failed"},
+		{name: "preview canceled", workflowError: status.Error(codes.Canceled, "preview canceled"),
+			wantError: "preview canceled"},
+		{name: "confirmation failed", confirmError: status.Error(codes.Canceled, "confirmation canceled"),
+			wantError: "confirmation canceled"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prompts := &addPromptServer{
+				followUp:      "Yes (preview changes)",
+				workflowError: test.workflowError, confirmError: test.confirmError,
+			}
+			startAddTestHost(t, prompts)
+			client, err := azdext.NewAzdClient()
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+
+			var output bytes.Buffer
+			err = followUpAdd(t.Context(), client, true, "application", "staging", &output)
+			if test.wantError == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantError)
+			}
+			want := [][]string{
+				{"provision", "application", "--preview", "--environment", "staging"},
+			}
+			if test.workflowError == nil {
+				require.Len(t, prompts.confirmations, 1)
+				require.Equal(t, 1, prompts.commandsAtConfirm)
+			} else {
+				require.Empty(t, prompts.confirmations)
+			}
+			require.Equal(t, want, prompts.commands)
 		})
 	}
 }

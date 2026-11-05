@@ -199,11 +199,7 @@ func followUpAdd(
 		return err
 	}
 	if response.GetValue() == 0 {
-		args := []string{"provision", layerName, "--preview"}
-		if hasService {
-			args = []string{"provision", "--preview"}
-		}
-		if err := run(args); err != nil {
+		if err := run([]string{"provision", layerName, "--preview"}); err != nil {
 			return err
 		}
 		accepted, err := confirmAdd(ctx, client, fmt.Sprintf("Proceed to %s these changes to Azure?", verb), true)

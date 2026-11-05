@@ -1,25 +1,51 @@
 # Azure Resources extension (Preview)
 
-`azure.resources` provides the `resources` infrastructure provider. It reads
-resource declarations from `azure.yaml`, generates Bicep for them, and provisions
-them to Azure.
+Add Azure resources and application hosting to your azd project interactively,
+or declare them in `azure.yaml`.
 
-```yaml
-name: example
-infra:
-  layers:
-    - name: data
-      provider: resources
-      config:
-        cache:
-          type: db.redis
+## Get started
+
+You need azd 1.38.0 or later, an Azure subscription, and Bicep. Install Bicep
+and make `bicep` available on your `PATH`, or set `AZD_BICEP_TOOL_PATH` to its
+executable. The extension does not install Bicep for you.
+
+Install the preview extension package, replacing the example path with your
+package's location:
+
+```sh
+azd extension install ./azure-resources.zip
 ```
 
-Install the extension, then run `azd resources add` or write the provider
-configuration directly in `azure.yaml`. Use `azd provision` or `azd up` to deploy.
-Core `azd add` and `azd infra gen` do not support this provider's configuration.
-The existing top-level `resources` format and its core commands are unaffected and
-do not use this extension.
+From a project containing `azure.yaml`, sign in, create an environment if you
+don't already have one, and add your first resource:
+
+```sh
+azd auth login
+azd env new dev
+azd resources add --layer data --environment dev
+```
+
+Follow the prompts to choose and configure a resource or application host.
+
+## Supported resources
+
+| Resource | Configuration type |
+| --- | --- |
+| Redis | `db.redis` |
+| Azure Cosmos DB for MongoDB | `db.mongo` |
+| Azure Cosmos DB for NoSQL | `db.cosmos` |
+| Storage account | `storage` |
+| Event Hubs | `messaging.eventhubs` |
+| Service Bus | `messaging.servicebus` |
+| Key Vault | `keyvault` |
+| Microsoft Foundry project | `ai.project` |
+| Azure OpenAI model | `ai.openai.model` |
+| Azure AI Search | `ai.search` |
+| Azure Container Apps host | `host.containerapp` |
+| App Service host | `host.appservice` |
+
+You can also select existing Azure resources instead of creating new ones;
+see [current limitations](#current-limitations) for restrictions.
 
 ## Add resources interactively
 
@@ -28,91 +54,115 @@ azd resources add
 azd resources add --layer application-resources
 ```
 
-`azd resources add` configures Redis, MongoDB, Cosmos DB, storage, messaging, AI models,
-Key Vault, application hosts, and existing Azure resources. Resource declarations
-are saved to `infra.layers[].config`, and service configuration to `services`.
-Resources can only link to other resources in the same infrastructure layer.
-
 Without `--layer`, you are prompted for a layer name (default `azureresources`).
 Updating an existing resources layer, or replacing a layer that uses another
 provider, requires confirmation; both confirmations default to No. Other layers
 and configuration are preserved.
 
-Only one `resources` layer is supported per project. Adding a second one is
-rejected, as is provisioning a project that declares more than one.
-
-When the command finishes, changes are saved and a short summary of the added or
-updated layer, resources, and services is shown. Canceling before then leaves
-the project and environment unchanged. You can then provision now, preview first,
-or apply the changes later. When you add a host, the follow-up runs `azd up` for
-the whole project, so the preview covers all infrastructure layers; resource-only
-additions preview and provision just the selected layer.
+After saving, the command summarizes your changes and offers to apply them,
+preview them first, or leave deployment for later. Preview reviews only the
+selected layer. Adding a host can then provision and deploy the whole project;
+resource-only additions provision just the selected layer.
 
 The `--environment` flag (or `AZD_ENVIRONMENT`) selects the environment used for
-resource discovery, saved values, and follow-up commands.
+resource discovery, saved settings, and deployment. Canceling before saving leaves
+your project and environment unchanged. Declining deployment after saving keeps
+your changes for later.
 
-The command requires interactive input and rejects `--no-prompt`. Existing flat
-`infra` configuration must first be moved into `infra.layers`; top-level project
-`layers` are not supported by this command.
+## Configure resources in azure.yaml
 
-Saving through azd may reformat `azure.yaml` and remove comments.
+You can edit declarations directly under the selected layer's `config`. For
+example, this `data` layer creates a storage account with a blob container and a
+Service Bus namespace with a queue:
 
-## Provisioning and teardown
+```yaml
+name: example
+infra:
+  layers:
+    - name: data
+      provider: resources
+      config:
+        files:
+          type: storage
+          containers:
+            - uploads
+        jobs:
+          type: messaging.servicebus
+          queues:
+            - pending
+```
 
-- Deployments are incremental: removing a resource from configuration does not
-  delete it from Azure.
-- `azd provision --preview` shows the changes Azure Resource Manager would make.
-- `azd down` deletes the resource groups recorded by the deployment and **all
-  resources inside them**, including resources added by other layers or tools.
-  `azd down <layer>` selects that layer's deployment, not a subset of a shared
-  resource group. Use separate resource groups when layers need independent
-  teardown. Confirmation defaults to No; `--force` skips it.
-- For Foundry AI models, you're prompted once for a location with sufficient
-  quota. The choice is saved in the environment and reused, including with
-  `--no-prompt`.
-- Layer names affect generated resource and resource group names. Keep them
-  stable for existing deployments; renaming a layer creates a new deployment.
-- The selected environment's `cloud` configuration is used (falling back to the
-  project, then user configuration, then Azure Public Cloud).
+Preview and provision this layer when you are ready:
+
+```sh
+azd provision data --preview --environment dev
+azd provision data --environment dev
+```
+
+Use `azd up --environment dev` to provision infrastructure and deploy your
+project's application services.
+
+For Foundry models, you are prompted for a location with sufficient quota. Your
+choice is saved in the environment and reused on later deployments. Deployments
+use your selected environment's cloud configuration, falling back to project
+settings, user settings, then Azure Public Cloud.
+
+## Delete resources safely
+
+Removing a resource from `azure.yaml` does **not** delete it from Azure.
+
+`azd down` deletes deployed resource groups and **all resources inside them**,
+including resources added by other layers or tools. `azd down <layer>` selects
+that layer's deployment, not a subset of a shared resource group. Use separate
+resource groups when layers need independent teardown. Deletion confirmation
+defaults to No; `--force` skips it.
 
 ## Environment keys
 
-Provider outputs and existing-resource bindings are saved as
-`AZURE_RESOURCES_<LAYER>__<KEY>`. The layer name is converted to uppercase with
+Resource settings, including existing-resource IDs, are saved in the selected
+azd environment as `AZURE_RESOURCES_<LAYER>__<KEY>`. The layer name is uppercase with
 hyphens replaced by underscores, and the key omits the `AZURE_` prefix. For
 example, layer `data` produces `AZURE_RESOURCES_DATA__RESOURCE_STORAGE_ID`,
 `AZURE_RESOURCES_DATA__KEY_VAULT_NAME`, and
 `AZURE_RESOURCES_DATA__AI_DEPLOYMENTS_LOCATION`.
 
-Standard `SERVICE_<SERVICE>_*` outputs are unchanged, so service names must be
-unique across the project.
+Application hosting settings use `SERVICE_<SERVICE>_*` keys. Service names must
+be unique across the project.
 
 Environments created with earlier preview builds used unscoped keys. Copy
 existing-resource ID bindings to the layer-scoped keys and update any custom
 references before provisioning, then provision each layer again. See the
 [migration guide](./migration.md) before moving existing declarations.
 
-## Requirements
+## Current limitations
 
-A Bicep executable is required. Set `AZD_BICEP_TOOL_PATH` to choose one;
-otherwise the extension uses `<AZD_CONFIG_DIR>/bin/bicep` (default
-`~/.azd/bin/bicep`), then `bicep` on `PATH` (`bicep.exe` on Windows). The
-extension does not download Bicep.
-
-## Development
-
-```sh
-cd cli/azd
-go build
-cd extensions/azure.resources
-go build
-go test ./...
-```
-
-To install a local build:
-
-```sh
-azd x build --skip-install
-azd x pack --bundle --output ./bin/azure-resources-dev.zip
-azd extension install ./bin/azure-resources-dev.zip --force
-```
+- Only one `resources` infrastructure entry is supported per project. Other
+  infrastructure layers can use Bicep, Terraform, or other providers.
+- For newly created resources, only one of each resource type is supported,
+  except application hosts and Azure OpenAI models.
+- PostgreSQL (`db.postgres`) and MySQL (`db.mysql`) are not supported, including
+  existing databases. Manage these through separately authored infrastructure.
+- App Service hosts support Python and Node.js. Both host types require a port
+  from 1 to 65535; App Service also requires a runtime stack and version.
+- Only hosts can declare resource links with `uses`, and linked resources must
+  be in the same infrastructure layer. Service-level `uses` does not link to
+  resources declared by this extension.
+- Existing resources cannot be application hosts or include deployment options
+  such as containers, queues, or model settings. Linking a host to an existing
+  Redis or MongoDB resource is not supported. Selecting an existing resource
+  references it rather than creating it; the teardown warning above still
+  applies to anything in a resource group being deleted.
+- Resource options are type-specific; unsupported or unknown properties are
+  rejected. Use the interactive command to configure supported options.
+- `azd resources add` requires interactive input and does not support
+  `--no-prompt`. Use saved configuration with `azd provision` for automation.
+- Use `azd resources add`, not `azd add`, for these declarations.
+  `azd infra gen` does not support them.
+- Before using `azd resources add`, move flat `infra` settings into named
+  `infra.layers` entries. Top-level project `layers` are not supported by this
+  command. Existing top-level `resources` declarations remain supported by
+  azd separately; see the [migration guide](./migration.md) before moving them.
+- Keep layer names stable after deployment: renaming a layer changes Azure
+  resource names and creates a new deployment.
+- Saving changes may reformat `azure.yaml` and remove comments. Review your
+  changes in source control before deploying.

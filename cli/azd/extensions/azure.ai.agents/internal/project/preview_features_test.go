@@ -189,26 +189,62 @@ func TestPreviewGatesIgnorePropertyCase(t *testing.T) {
 	t.Setenv(featureflags.MemorySnapshot.EnvVar, "false")
 	t.Setenv(featureflags.Voice.EnvVar, "false")
 
-	require.ErrorContains(t,
-		RequireDefinitionFeatures(map[string]any{"kind": "hosted", "EnableMemorySnapshot": true}),
-		featureflags.MemorySnapshot.ID)
-	require.NoError(t,
-		RequireDefinitionFeatures(map[string]any{"kind": "hosted", "EnableMemorySnapshot": false}))
-
-	for _, definition := range []map[string]any{
-		{"kind": "hosted", "Protocols": []any{map[string]any{"protocol": "invocations_ws"}}},
-		{"kind": "hosted", "protocols": []any{map[string]any{"Protocol": "invocations_ws"}}},
+	ws := []any{map[string]any{"protocol": "invocations_ws"}}
+	for _, tc := range []struct {
+		name       string
+		definition map[string]any
+		feature    featureflags.Feature
+	}{
+		{"snapshot upper", map[string]any{"kind": "hosted", "EnableMemorySnapshot": true}, featureflags.MemorySnapshot},
+		{"snapshot colliding", map[string]any{"kind": "hosted",
+			"enableMemorySnapshot": false, "enablememorysnapshot": true}, featureflags.MemorySnapshot},
+		{"snapshot off", map[string]any{"kind": "hosted", "EnableMemorySnapshot": false}, featureflags.Feature{}},
+		{"protocols upper", map[string]any{"kind": "hosted", "Protocols": ws}, featureflags.Voice},
+		{"protocol key upper", map[string]any{"kind": "hosted",
+			"protocols": []any{map[string]any{"Protocol": "invocations_ws"}}}, featureflags.Voice},
+		{"protocol null collision", map[string]any{"kind": "hosted",
+			"protocols": []any{map[string]any{"protocol": nil, "Protocol": "invocations_ws"}}}, featureflags.Voice},
+		{"protocols collision", map[string]any{"kind": "hosted",
+			"protocols": []any{}, "Protocols": ws}, featureflags.Voice},
 	} {
-		require.ErrorContains(t, RequireDefinitionFeatures(definition), featureflags.Voice.ID)
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			content, err := json.Marshal(tc.definition)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "agent.json"), content, 0600))
+			for name, props := range map[string]map[string]any{
+				"inline": tc.definition,
+				"ref":    {"$ref": "agent.json"},
+			} {
+				service := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost,
+					AdditionalProperties: mustStruct(t, props)}
+				err := RequireAgentFeatures(service, root)
+				if tc.feature.ID == "" {
+					require.NoError(t, err, name)
+				} else {
+					require.ErrorContains(t, err, tc.feature.ID, name)
+				}
+			}
+		})
 	}
 }
 
 func TestRegistryConnectionCheckIgnoresPropertyCase(t *testing.T) {
-	for _, key := range []string{"registryConnectionId", "RegistryConnectionId"} {
-		service := &azdext.ServiceConfig{
-			Name: "agent", Host: foundryAgentHost,
-			AdditionalProperties: mustStruct(t, map[string]any{"kind": "hosted", key: "conn"}),
-		}
-		require.ErrorContains(t, validateRegistryConnectionServiceConfig(service), "imagePassthrough", key)
+	for name, props := range map[string]map[string]any{
+		"exact":     {"registryConnectionId": "conn"},
+		"upper":     {"RegistryConnectionId": "conn"},
+		"null":      {"registryConnectionId": nil},
+		"collision": {"registryConnectionId": nil, "RegistryConnectionId": "conn"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			props["kind"] = "hosted"
+			service := &azdext.ServiceConfig{
+				Name: "agent", Host: foundryAgentHost, AdditionalProperties: mustStruct(t, props),
+			}
+			require.ErrorContains(t, validateRegistryConnectionServiceConfig(service), "imagePassthrough")
+
+			service.Docker = &azdext.DockerProjectOptions{ImagePassthrough: true, RemoteBuild: true}
+			require.ErrorContains(t, validateRegistryConnectionServiceConfig(service), "remoteBuild")
+		})
 	}
 }

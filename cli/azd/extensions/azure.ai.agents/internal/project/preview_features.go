@@ -13,20 +13,34 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// lookupFold returns the value for key, matching the name the way
-// encoding/json does when it decodes the same map into a struct: exact match
-// first, then case-insensitively. Gates must use it so a differently cased
-// property cannot be skipped by validation and still be decoded later.
-func lookupFold(m map[string]any, key string) (any, bool) {
-	if v, ok := m[key]; ok {
-		return v, true
-	}
+// foldValues returns the values of every key that matches name
+// case-insensitively. encoding/json decodes any of them into the same struct
+// field, and a null or false under one spelling does not cancel a value under
+// another, so gates must consider all of them, not just the first match.
+func foldValues(m map[string]any, name string) []any {
+	var values []any
 	for k, v := range m {
-		if strings.EqualFold(k, key) {
-			return v, true
+		if strings.EqualFold(k, name) {
+			values = append(values, v)
 		}
 	}
-	return nil, false
+	return values
+}
+
+// hasFold reports whether any key matches name case-insensitively,
+// including keys whose value is null.
+func hasFold(m map[string]any, name string) bool {
+	return len(foldValues(m, name)) > 0
+}
+
+// anyFoldTrue reports whether any spelling of name is set to true.
+func anyFoldTrue(m map[string]any, name string) bool {
+	for _, v := range foldValues(m, name) {
+		if b, _ := v.(bool); b {
+			return true
+		}
+	}
+	return false
 }
 
 // PreviewFeature identifies a resolved definition's capability.
@@ -46,14 +60,16 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 		// Manifests use protocols. Foundry API definitions use protocol_versions
 		// or the legacy container_protocol_versions.
 		for _, key := range []string{"protocols", "protocol_versions", "container_protocol_versions"} {
-			value, _ := lookupFold(definition, key)
-			protocols, _ := value.([]any)
-			for _, entry := range protocols {
-				protocol, _ := entry.(map[string]any)
-				value, _ := lookupFold(protocol, "protocol")
-				name, _ := value.(string)
-				if strings.TrimSpace(name) == "invocations_ws" {
-					return featureflags.Voice
+			for _, value := range foldValues(definition, key) {
+				protocols, _ := value.([]any)
+				for _, entry := range protocols {
+					protocol, _ := entry.(map[string]any)
+					for _, name := range foldValues(protocol, "protocol") {
+						text, _ := name.(string)
+						if strings.TrimSpace(text) == "invocations_ws" {
+							return featureflags.Voice
+						}
+					}
 				}
 			}
 		}
@@ -63,11 +79,7 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 
 // RequireDefinitionFeatures checks the definition's preview opt-in.
 func RequireDefinitionFeatures(definition map[string]any) error {
-	yamlValue, _ := lookupFold(definition, "enableMemorySnapshot")
-	apiValue, _ := lookupFold(definition, "enable_memory_snapshot")
-	yamlSnapshot, _ := yamlValue.(bool)
-	apiSnapshot, _ := apiValue.(bool)
-	if yamlSnapshot || apiSnapshot {
+	if anyFoldTrue(definition, "enableMemorySnapshot") || anyFoldTrue(definition, "enable_memory_snapshot") {
 		if err := featureflags.Require(featureflags.MemorySnapshot); err != nil {
 			return err
 		}

@@ -250,7 +250,7 @@ func validateRegistryConnectionServiceConfig(serviceConfig *azdext.ServiceConfig
 	if props == nil {
 		return nil
 	}
-	if connection, _ := lookupFold(props.AsMap(), "registryConnectionId"); connection == nil {
+	if !hasFold(props.AsMap(), "registryConnectionId") {
 		return nil
 	}
 

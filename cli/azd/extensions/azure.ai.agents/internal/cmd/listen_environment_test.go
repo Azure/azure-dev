@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -12,12 +13,112 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPostdownCleansOnlySelectedEnvironment(t *testing.T) {
+	for _, tt := range []struct {
+		name, selected, want string
+	}{
+		{name: "explicit non-default", selected: "dev", want: "dev"},
+		{name: "explicit default", selected: "prod", want: "prod"},
+		{name: "saved default", want: "prod"},
+		{name: "unreadable selection", selected: "missing"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_ENVIRONMENT", tt.selected)
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+			t.Setenv("AGENT_DEFINITION_PATH", "")
+			env := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "prod"},
+				environments: map[string]*azdext.Environment{
+					"dev": {Name: "dev"}, "prod": {Name: "prod"},
+				},
+				values: map[string]map[string]string{},
+			}
+			tracked := &postdownEnvironmentServer{testEnvironmentServiceServer: env}
+			client := newTestAzdClient(t, tracked, &testWorkflowServiceServer{})
+			store, err := newAgentStateStoreForClient(client)
+			require.NoError(t, err)
+			store.client = nil
+			keys := map[string]string{}
+			for _, name := range []string{"dev", "prod"} {
+				endpoint := "https://" + name + ".services.ai.azure.com/api/projects/" + name +
+					"/agents/agent/versions/1"
+				keys[name] = buildRemoteAgentKeyFromEndpoint(endpoint)
+				saveAgentStateForTest(t, client, keys[name], agentStateRecord{SessionID: name + "-session"})
+				env.values[name] = map[string]string{
+					"AGENT_AGENT_ENDPOINT":                endpoint,
+					"AZURE_SUBSCRIPTION_ID":               "00000000-0000-0000-0000-000000000001",
+					"AZURE_TENANT_ID":                     "00000000-0000-0000-0000-000000000002",
+					envkey.AgentBotName("agent"):          name + "-custom-bot",
+					envkey.AgentBotResourceGroup("agent"): name + "-bots",
+					envkey.AgentBotOwned("agent"):         "false",
+				}
+			}
+			proj := &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"agent": {
+						Name: "agent", Host: AiAgentHost,
+						AdditionalProperties: mustStruct(t, map[string]any{
+							"kind": "hosted", "name": "agent", "image": "example.azurecr.io/agent:latest",
+							"protocols": []any{map[string]any{"protocol": "activity", "version": "v1"}},
+						}),
+					},
+				},
+			}
+			_, err = captureStdout(t, func() error {
+				return postdownHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: proj})
+			})
+			require.NoError(t, err)
+			for name, key := range keys {
+				record, err := store.get(t.Context(), key)
+				require.NoError(t, err)
+				if name == tt.want {
+					require.Nil(t, record)
+				} else {
+					require.NotNil(t, record)
+					require.Equal(t, name+"-session", record.SessionID)
+				}
+			}
+			if tt.want == "" {
+				require.Empty(t, tracked.requests)
+			} else {
+				var keys []string
+				for _, request := range tracked.requests {
+					require.Equal(t, tt.want, request.EnvName)
+					keys = append(keys, request.Key)
+				}
+				require.ElementsMatch(t, []string{
+					"AGENT_AGENT_ENDPOINT", "AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID",
+					envkey.AgentBotName("agent"), envkey.AgentBotResourceGroup("agent"), envkey.AgentBotOwned("agent"),
+				}, keys)
+			}
+			if tt.selected != "" {
+				require.Zero(t, env.getCurrentCalls)
+			}
+			require.Empty(t, env.setKeys)
+		})
+	}
+}
+
+type postdownEnvironmentServer struct {
+	*testEnvironmentServiceServer
+	requests []*azdext.GetEnvRequest
+}
+
+func (s *postdownEnvironmentServer) GetValue(
+	ctx context.Context, req *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	s.requests = append(s.requests, req)
+	return s.testEnvironmentServiceServer.GetValue(ctx, req)
+}
 
 func TestPredownDeletesOnlySelectedEnvironmentAgent(t *testing.T) {
 	for _, tt := range []struct {

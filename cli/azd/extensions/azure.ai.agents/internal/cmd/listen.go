@@ -725,7 +725,7 @@ func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.Serv
 // postdownHandler cleans up available saved agent context for services that were torn down.
 // This is best-effort — failures are logged but do not block azd down.
 func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	envResp, err := synthesis.CurrentEnvironment(ctx, azdClient)
 	if err != nil {
 		log.Printf("postdown: failed to get current environment: %v", err)
 		return nil

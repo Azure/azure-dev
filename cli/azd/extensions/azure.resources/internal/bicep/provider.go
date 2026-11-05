@@ -45,7 +45,6 @@ type Provider struct {
 	module      string
 	envName     string
 	projectName string
-	legacy      bool
 	scope       *scope
 	name        string
 	template    map[string]any
@@ -92,7 +91,6 @@ func (p *Provider) Initialize(_ context.Context, projectPath string, options *az
 	}
 	p.options = proto.Clone(options).(*azdext.ProvisioningOptions)
 	p.path, p.module = absolute, module
-	p.legacy = false
 	p.template, p.params, p.metadata, p.scope, p.azure = nil, nil, nil, nil, nil
 	return nil
 }
@@ -204,7 +202,7 @@ func (p *Provider) PlannedOutputs(ctx context.Context) ([]*azdext.ProvisioningPl
 	return result, nil
 }
 
-// State returns this project's environment/entry deployment, including tagged legacy deployments.
+// State returns this project's environment/entry deployment, or the hinted deployment when it is tagged for them.
 func (p *Provider) State(
 	ctx context.Context, options *azdext.ProvisioningStateOptions,
 ) (*azdext.ProvisioningStateResult, error) {
@@ -235,37 +233,19 @@ func (p *Provider) loadDeployment(ctx context.Context, hint string) (armresource
 		name = hint
 	}
 	deployment, err := p.azure.get(ctx, name)
-	if isNotFound(err) && hint == "" {
-		missing := err
-		name, err = p.azure.find(ctx, p.projectName, p.envName, p.options.Name)
-		if err != nil {
-			return armresources.DeploymentExtended{}, err
-		}
-		if name == "" {
-			return armresources.DeploymentExtended{}, missing
-		}
-		deployment, err = p.azure.get(ctx, name)
-	}
 	if err != nil {
 		return armresources.DeploymentExtended{}, err
 	}
-	legacy := name != deploymentName(p.projectName, p.envName, p.options.Name)
-	if legacy && !deploymentTagsMatch(deployment.Tags, p.projectName, p.envName, p.options.Name) {
+	// A hint can name any subscription deployment, so don't hand back another project's state.
+	if name != p.name && !deploymentTagsMatch(deployment.Tags, p.projectName, p.envName, p.options.Name) {
 		return armresources.DeploymentExtended{},
 			errors.New("deployment does not belong to this project, environment, and entry")
 	}
-	p.name, p.legacy = name, legacy
 	return deployment, nil
 }
 
 func (p *Provider) ownsGroup(group armresources.ResourceGroup) bool {
-	owner := pointerValue(group.Tags[ownerTag])
-	if owner == p.name {
-		return true
-	}
-	// Legacy adoption requires both a matching deployment's recorded group and
-	// its environment tag; an explicit owner from another instance always wins.
-	return p.legacy && owner == "" && pointerValue(group.Tags["azd-env-name"]) == p.envName
+	return pointerValue(group.Tags[ownerTag]) == p.name
 }
 
 func deploymentState(deployment armresources.DeploymentExtended) (*azdext.ProvisioningStateResult, error) {

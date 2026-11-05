@@ -45,11 +45,9 @@ func TestAzureBackendUsesConfiguredCloudEndpoints(t *testing.T) {
 			require.NoError(t, err)
 			_, err = backend.group(t.Context(), "generated")
 			require.NoError(t, err)
-			_, err = backend.find(t.Context(), "example", "dev", "data")
-			require.NoError(t, err)
 			_, err = backend.get(t.Context(), "data")
 			require.NoError(t, err)
-			require.Len(t, requests, 4, "all three ARM clients must use the configured cloud")
+			require.Len(t, requests, 3, "all three ARM clients must use the configured cloud")
 		})
 	}
 }
@@ -101,42 +99,6 @@ func TestAzureBackendMissingNestedDeployment(t *testing.T) {
 				t.Fatal("authorization failure was ignored")
 			}
 		})
-	}
-}
-
-func TestAzureBackendFindsOnlyMatchingTerminalDeployments(t *testing.T) {
-	body := `{"value":[
-		{"name":"old","tags":{"azd-project-name":"example","azd-env-name":"dev","azd-layer-name":"data"},
-		 "properties":{"provisioningState":"Succeeded","timestamp":"2026-10-25T00:00:00Z"}},
-		{"name":"latest","tags":{"azd-project-name":"example","azd-env-name":"dev","azd-layer-name":"data"},
-		 "properties":{"provisioningState":"Failed","timestamp":"2026-10-26T00:00:00Z"}},
-		{"name":"foreign","tags":{"azd-project-name":"other","azd-env-name":"dev","azd-layer-name":"data"},
-		 "properties":{"provisioningState":"Succeeded","timestamp":"2026-10-27T00:00:00Z"}},
-		{"name":"running","tags":{"azd-project-name":"example","azd-env-name":"dev","azd-layer-name":"data"},
-		 "properties":{"provisioningState":"Running","timestamp":"2026-10-28T00:00:00Z"}},
-		{"name":"other-layer","tags":{"azd-project-name":"example","azd-env-name":"dev","azd-layer-name":"app"},
-		 "properties":{"provisioningState":"Succeeded","timestamp":"2026-10-28T00:00:00Z"}}]}`
-	transport := transportFunc(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}},
-			Body: io.NopCloser(strings.NewReader(body)), Request: request,
-		}, nil
-	})
-	options := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{
-		Transport: transport, Retry: policy.RetryOptions{MaxRetries: -1},
-	}}
-	deployments, err := armresources.NewDeploymentsClient("sub", testCredential{}, options)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := &azureBackend{deployments: deployments}
-	name, err := a.find(t.Context(), "example", "dev", "data")
-	if err != nil || name != "latest" {
-		t.Fatalf("matching legacy deployment = %q, error %v", name, err)
-	}
-	name, err = a.find(t.Context(), "example", "missing", "data")
-	if err != nil || name != "" {
-		t.Fatalf("unrelated environment accepted: %q, %v", name, err)
 	}
 }
 

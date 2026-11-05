@@ -23,7 +23,6 @@ import (
 
 type backend interface {
 	get(context.Context, string) (armresources.DeploymentExtended, error)
-	find(context.Context, string, string, string) (string, error)
 	deploy(
 		context.Context, string, armresources.Deployment, grpcbroker.ProgressFunc,
 	) (armresources.DeploymentExtended, error)
@@ -79,36 +78,6 @@ func (a *azureBackend) get(ctx context.Context, name string) (armresources.Deplo
 		)
 	}
 	return result.DeploymentExtended, nil
-}
-
-func (a *azureBackend) find(ctx context.Context, project, environment, layer string) (string, error) {
-	var latest *armresources.DeploymentExtended
-	pager := a.deployments.NewListAtSubscriptionScopePager(nil)
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return "", fmt.Errorf("finding previous resources deployment: %w", err)
-		}
-		for _, deployment := range page.Value {
-			if deployment == nil || deployment.Name == nil || deployment.Properties == nil ||
-				!deploymentTagsMatch(deployment.Tags, project, environment, layer) {
-				continue
-			}
-			state := pointerValue(deployment.Properties.ProvisioningState)
-			if !strings.EqualFold(state, "Succeeded") && !strings.EqualFold(state, "Failed") {
-				continue
-			}
-			newer := deployment.Properties.Timestamp != nil && latest != nil && latest.Properties.Timestamp != nil &&
-				deployment.Properties.Timestamp.After(*latest.Properties.Timestamp)
-			if latest == nil || latest.Properties.Timestamp == nil || newer {
-				latest = deployment
-			}
-		}
-	}
-	if latest == nil {
-		return "", nil
-	}
-	return *latest.Name, nil
 }
 
 func (a *azureBackend) collectResources(
@@ -321,10 +290,6 @@ func (p *Provider) Deploy(ctx context.Context, progress grpcbroker.ProgressFunc)
 	if err := p.ensureEnv(ctx); err != nil {
 		return nil, err
 	}
-	previous, err := p.loadDeployment(ctx, "")
-	if err != nil && !isNotFound(err) {
-		return nil, fmt.Errorf("finding previous deployment: %w", err)
-	}
 	request, err := p.request(ctx)
 	if err != nil {
 		return nil, err
@@ -356,16 +321,7 @@ func (p *Provider) Deploy(ctx context.Context, progress grpcbroker.ProgressFunc)
 		if err != nil {
 			return nil, fmt.Errorf("checking generated resource group: %w", err)
 		}
-		legacyGroup := false
-		if p.legacy && previous.Properties != nil {
-			for _, resource := range previous.Properties.OutputResources {
-				if resource != nil && resource.ID != nil && strings.EqualFold(*resource.ID, *change.ResourceID) {
-					legacyGroup = true
-					break
-				}
-			}
-		}
-		if !p.ownsGroup(group) || p.legacy && pointerValue(group.Tags[ownerTag]) == "" && !legacyGroup {
+		if !p.ownsGroup(group) {
 			return nil, fmt.Errorf(
 				"refusing to adopt existing resource group %q without matching ownership", id.ResourceGroupName,
 			)

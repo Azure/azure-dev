@@ -39,19 +39,15 @@ type fakeBackend struct {
 	deployed      bool
 	deletedGroups []string
 	deletedRecord bool
-	legacyName    string
-	legacy        armresources.DeploymentExtended
+	hintName      string
+	hinted        armresources.DeploymentExtended
 }
 
 func (f *fakeBackend) get(_ context.Context, name string) (armresources.DeploymentExtended, error) {
-	if f.legacyName != "" && name == f.legacyName {
-		return f.legacy, nil
+	if f.hintName != "" && name == f.hintName {
+		return f.hinted, nil
 	}
 	return f.deployment, f.getErr
-}
-
-func (f *fakeBackend) find(context.Context, string, string, string) (string, error) {
-	return f.legacyName, nil
 }
 
 func (f *fakeBackend) deploy(
@@ -349,41 +345,49 @@ func TestStateStringOutputsAndResourceIDs(t *testing.T) {
 	}
 }
 
-func TestLegacyDeploymentStateAndDown(t *testing.T) {
-	legacy := deployedFixture()
-	legacy.Name = new("dev-data-1793000000")
-	legacy.Tags = map[string]*string{
+func TestHintedStateKeepsDeploymentIdentity(t *testing.T) {
+	hinted := deployedFixture()
+	hinted.Tags = map[string]*string{
 		"azd-project-name": new("example"), "azd-env-name": new("dev"), "azd-layer-name": new("data"),
 	}
 	azure := &fakeBackend{
-		legacyName: *legacy.Name, legacy: legacy, getErr: &azcore.ResponseError{StatusCode: 404},
+		hintName: "dev-data-1793000000", hinted: hinted, getErr: &azcore.ResponseError{StatusCode: 404},
+	}
+	p := readyProvider(t, azure)
+	name := p.name
+
+	state, err := p.State(t.Context(), &azdext.ProvisioningStateOptions{Hint: azure.hintName})
+	require.NoError(t, err)
+	require.NotEmpty(t, state.State.Outputs)
+	require.Equal(t, name, p.name)
+
+	// Destroy still targets our own deployment, which doesn't exist, so nothing is deleted.
+	_, err = p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, nil)
+	require.NoError(t, err)
+	require.False(t, azure.deletedRecord)
+	require.Empty(t, azure.deletedGroups)
+}
+
+func TestHintedStateRejectsAnotherProject(t *testing.T) {
+	hinted := deployedFixture()
+	hinted.Tags = map[string]*string{
+		"azd-project-name": new("other"), "azd-env-name": new("dev"), "azd-layer-name": new("data"),
+	}
+	p := readyProvider(t, &fakeBackend{hintName: "dev-data-1793000000", hinted: hinted})
+	_, err := p.State(t.Context(), &azdext.ProvisioningStateOptions{Hint: "dev-data-1793000000"})
+	require.Error(t, err)
+}
+
+func TestDeployRefusesUntaggedGroupWithMatchingEnvironment(t *testing.T) {
+	azure := &fakeBackend{
+		deployment: deployedFixture(),
+		changes:    []*armresources.WhatIfChange{{ResourceID: new(groupID), ChangeType: new(armresources.ChangeTypeModify)}},
 		groupValue: armresources.ResourceGroup{Tags: map[string]*string{"azd-env-name": new("dev")}},
 	}
 	p := readyProvider(t, azure)
-	state, err := p.State(t.Context(), nil)
-	if err != nil || len(state.State.Outputs) == 0 {
-		t.Fatalf("legacy state lost: %v", err)
-	}
-	if _, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, nil); err != nil {
-		t.Fatal(err)
-	}
-	if !azure.deletedRecord || len(azure.deletedGroups) != 1 {
-		t.Fatal("legacy resources were stranded")
-	}
-}
-
-func TestLegacyDeploymentDoesNotAdoptAnotherProject(t *testing.T) {
-	legacy := deployedFixture()
-	legacy.Name = new("dev-data-1793000000")
-	legacy.Tags = map[string]*string{
-		"azd-project-name": new("other"), "azd-env-name": new("dev"), "azd-layer-name": new("data"),
-	}
-	p := readyProvider(t, &fakeBackend{
-		legacyName: *legacy.Name, legacy: legacy, getErr: &azcore.ResponseError{StatusCode: 404},
-	})
-	if _, err := p.State(t.Context(), nil); err == nil {
-		t.Fatal("legacy state from another project was accepted")
-	}
+	_, err := p.Deploy(t.Context(), nil)
+	require.ErrorContains(t, err, "refusing to adopt existing resource group")
+	require.False(t, azure.deployed)
 }
 
 func TestPlannedOutputsCompileOnce(t *testing.T) {

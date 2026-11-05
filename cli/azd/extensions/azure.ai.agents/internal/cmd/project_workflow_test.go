@@ -266,6 +266,7 @@ func TestAuthorNewFoundryProjectRestoresValuesAfterProjectsMutation(t *testing.T
 			"test": {
 				"AZURE_AI_PROJECT_NAME":         "new-project",
 				"AZURE_RESOURCE_GROUP":          "new-rg",
+				"AZURE_FOUNDRY_RESOURCE_GROUP":  "foundry-rg",
 				"AZURE_AI_ACCOUNT_NAME":         "new-account",
 				"AZURE_LOCATION":                "eastus",
 				"AZURE_AI_DEPLOYMENTS_LOCATION": "eastus",
@@ -277,6 +278,7 @@ func TestAuthorNewFoundryProjectRestoresValuesAfterProjectsMutation(t *testing.T
 			for _, key := range newProjectEnvironmentKeys {
 				delete(envServer.values["test"], key)
 			}
+			delete(envServer.values["test"], "AZURE_FOUNDRY_RESOURCE_GROUP")
 			return nil
 		},
 	}
@@ -288,6 +290,7 @@ func TestAuthorNewFoundryProjectRestoresValuesAfterProjectsMutation(t *testing.T
 
 	assert.Equal(t, "new-project", envServer.values["test"]["AZURE_AI_PROJECT_NAME"])
 	assert.Equal(t, "new-rg", envServer.values["test"]["AZURE_RESOURCE_GROUP"])
+	assert.Equal(t, "foundry-rg", envServer.values["test"]["AZURE_FOUNDRY_RESOURCE_GROUP"])
 	assert.Equal(t, "new-account", envServer.values["test"]["AZURE_AI_ACCOUNT_NAME"])
 	assert.Equal(t, "eastus", envServer.values["test"]["AZURE_LOCATION"])
 	assert.Equal(

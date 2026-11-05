@@ -26,6 +26,13 @@ import (
 	"github.com/google/uuid"
 )
 
+type byoHostingParameters struct {
+	Enabled                             bool            `json:"enabled"`
+	ClusterResourceID                   json.RawMessage `json:"clusterResourceId"`
+	HostingManagementIdentityResourceID json.RawMessage `json:"hostingManagementIdentityResourceId"`
+	WorkloadIdentityResourceID          json.RawMessage `json:"workloadIdentityResourceId"`
+}
+
 var byoPreviewNotice = struct {
 	sync.Mutex
 	announced bool
@@ -54,25 +61,14 @@ func announceBYOPreview(writer io.Writer) error {
 }
 
 func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *templateSource) error {
-	value, err := byoHostingParameter(source)
+	hosting, err := byoHostingParameter(source)
 	if err != nil {
 		return err
 	}
-	// Read only inputs needed for local lookups; preserve the original deployment object.
-	var hosting struct {
-		Enabled                             bool            `json:"enabled"`
-		ClusterResourceID                   json.RawMessage `json:"clusterResourceId"`
-		HostingManagementIdentityResourceID json.RawMessage `json:"hostingManagementIdentityResourceId"`
-		WorkloadIdentityResourceID          json.RawMessage `json:"workloadIdentityResourceId"`
-	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Errorf("encode agentHosting deployment parameters: %w", err)
-	}
-	if err := json.Unmarshal(raw, &hosting); err != nil {
-		return exterrors.Validation(exterrors.CodeInvalidParameter,
-			fmt.Sprintf("invalid agentHosting deployment parameters: %s", err),
-			"supply agentHosting as a literal object with the values needed for local AKS binding lookups")
+	registryID, _ := parameterValue(source, "existingAcrResourceId").(string)
+	if hosting.Enabled && (registryID != "" ||
+		p.acrBinding != nil && p.acrBinding.Mode == "reuse-connect") {
+		return synthesis.ErrACRReuseAgentHosting
 	}
 	if !hosting.Enabled {
 		return nil
@@ -306,7 +302,8 @@ func (p *FoundryProvisioningProvider) resolveBYOFederationRoleID(
 	return "", fmt.Errorf("required built-in role %q is unavailable", roleName)
 }
 
-func byoHostingParameter(source *templateSource) (any, error) {
+func byoHostingParameter(source *templateSource) (byoHostingParameters, error) {
+	var hosting byoHostingParameters
 	var value any
 	declared := false
 	definitions, _ := source.armTemplate["parameters"].(map[string]any)
@@ -319,7 +316,7 @@ func byoHostingParameter(source *templateSource) (any, error) {
 		}
 	}
 	if !declared {
-		return nil, nil
+		return hosting, nil
 	}
 	supplied := false
 	for name, parameter := range source.parameters {
@@ -327,7 +324,7 @@ func byoHostingParameter(source *templateSource) (any, error) {
 			continue
 		}
 		if supplied {
-			return nil, exterrors.Validation(exterrors.CodeConflictingArguments,
+			return hosting, exterrors.Validation(exterrors.CodeConflictingArguments,
 				"multiple agentHosting deployment parameters differ only by case",
 				"supply agentHosting only once using the template's parameter name")
 		}
@@ -335,13 +332,22 @@ func byoHostingParameter(source *templateSource) (any, error) {
 		envelope, ok := parameter.(map[string]any)
 		literal, present := envelope["value"]
 		if !ok || !present || len(envelope) != 1 {
-			return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
+			return hosting, exterrors.Validation(exterrors.CodeInvalidParameter,
 				"agentHosting deployment parameter must use a value envelope",
 				"supply agentHosting as a literal object with the values needed for local AKS binding lookups")
 		}
 		value = literal
 	}
-	return value, nil
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return hosting, fmt.Errorf("encode agentHosting deployment parameters: %w", err)
+	}
+	if err := json.Unmarshal(raw, &hosting); err != nil {
+		return hosting, exterrors.Validation(exterrors.CodeInvalidParameter,
+			fmt.Sprintf("invalid agentHosting deployment parameters: %s", err),
+			"supply agentHosting as a literal object with the values needed for local AKS binding lookups")
+	}
+	return hosting, nil
 }
 
 func byoParameterValue(source *templateSource, key string) any {

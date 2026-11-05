@@ -103,7 +103,7 @@ func TestARMTemplate_MatchesBicepBuild(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "main.arm.json")
 	//nolint:gosec // bicep comes from PATH or the Azure CLI
 	cmd := exec.CommandContext(t.Context(), bicep, "build",
-		filepath.Join(templatesDir, "main.bicep"), "--outfile", out)
+		filepath.Join(templatesDir, "main.bicep"), "--no-restore", "--outfile", out)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	require.NoErrorf(t, cmd.Run(), "bicep build failed: %s", stderr.String())
@@ -133,7 +133,7 @@ func TestExistingProjectARMTemplate_MatchesBicepBuild(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "existing-project.arm.json")
 	//nolint:gosec // bicep comes from PATH or the Azure CLI
 	cmd := exec.CommandContext(t.Context(), bicep, "build",
-		filepath.Join(templatesDir, "existing-project.bicep"), "--outfile", out)
+		filepath.Join(templatesDir, "existing-project.bicep"), "--no-restore", "--outfile", out)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	require.NoErrorf(t, cmd.Run(), "bicep build failed: %s", stderr.String())

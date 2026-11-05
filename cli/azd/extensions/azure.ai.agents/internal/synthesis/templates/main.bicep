@@ -99,6 +99,13 @@ param hostingPrincipalId string = ''
 @description('Principal ID of the supplied workload identity; resolved by microsoft.foundry when omitted.')
 param workloadPrincipalId string = ''
 
+@description('Registry pull role persisted with the access operation.')
+param acrPullRoleDefinitionId string = ''
+
+@description('Owned registry grants retained for recovery after local state loss.')
+#disable-next-line no-unused-params
+param acrOwnedAssignments array = []
+
 // Network isolation parameters (see modules/resources.bicep for semantics).
 // All default off so an absent network: block yields a public account.
 
@@ -164,6 +171,7 @@ module resources 'modules/resources.bicep' = {
     acrAccessOperationId: acrAccessOperationId
     hostingPrincipalId: hostingPrincipalId
     workloadPrincipalId: workloadPrincipalId
+    acrPullRoleDefinitionId: acrPullRoleDefinitionId
     enableNetworkIsolation: enableNetworkIsolation
     useManagedEgress: useManagedEgress
     vnetId: vnetId

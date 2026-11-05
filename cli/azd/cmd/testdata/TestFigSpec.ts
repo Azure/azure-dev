@@ -7323,7 +7323,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['routine'],
-					description: 'Manage Microsoft Foundry Routines from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry Routines from your terminal.',
 					subcommands: [
 						{
 							name: ['add'],

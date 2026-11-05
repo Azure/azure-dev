@@ -11874,8 +11874,8 @@
     {
       "id": "azure.ai.routines",
       "namespace": "ai.routine",
-      "displayName": "Foundry Routines (Beta)",
-      "description": "Manage Microsoft Foundry Routines from your terminal. (Beta)",
+      "displayName": "Foundry Routines",
+      "description": "Manage Microsoft Foundry Routines from your terminal.",
       "versions": [
         {
           "version": "0.1.0-preview",
@@ -12681,6 +12681,74 @@
               },
               "entryPoint": "azure-ai-routines-windows-arm64.exe",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0-beta.11/azure-ai-routines-windows-arm64.zip"
+            }
+          }
+        },
+        {
+          "version": "1.0.0",
+          "requiredAzdVersion": ">=1.37.0",
+          "capabilities": [
+            "custom-commands",
+            "service-target-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.routine",
+              "type": "service-target",
+              "description": "Upserts Foundry routines declared as azure.ai.routine services in azure.yaml"
+            }
+          ],
+          "usage": "azd ai routine <command> [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5cc5c2ae18ac063ecdaa2a5dc80a8d581f4c1fb32b81c7c7b9b836589de2c396"
+              },
+              "entryPoint": "azure-ai-routines-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0/azure-ai-routines-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "14ade571408b92080b0536c024419e647b203af97dce9aa9ee4ed354b3a679ea"
+              },
+              "entryPoint": "azure-ai-routines-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0/azure-ai-routines-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5d868a1c4e2e8561c94d6444d91198e590976ae72ae4c0fbbfc7d75f63730287"
+              },
+              "entryPoint": "azure-ai-routines-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0/azure-ai-routines-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "0db12bad4238354ac81e2c7c7e5d2dbc149ed95617cc36e37cb89cb57bf64afe"
+              },
+              "entryPoint": "azure-ai-routines-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0/azure-ai-routines-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9f7ca101c10f7e3d4b267617d95fdc2100f58dc85b9018c374a733034206b9c1"
+              },
+              "entryPoint": "azure-ai-routines-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0/azure-ai-routines-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5ee6bfd57b29ded2d9eff463747b378fd8e09f40d39fb81ea2e543b7674efe23"
+              },
+              "entryPoint": "azure-ai-routines-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0/azure-ai-routines-windows-arm64.zip"
             }
           }
         }

@@ -19,6 +19,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
+type scope struct {
+	subscriptionID string
+	tenantID       string
+	location       string
+	principalID    string
+	principalType  string
+}
+
 // EnsureEnv resolves the active environment and prompts through the host for missing Azure scope.
 func (p *Provider) EnsureEnv(ctx context.Context) error {
 	p.mu.Lock()
@@ -30,7 +38,7 @@ func (p *Provider) ensureEnv(ctx context.Context) error {
 	if p.options == nil {
 		return errors.New("azure.resources provider is not initialized")
 	}
-	if p.values != nil {
+	if p.scope != nil {
 		return nil
 	}
 
@@ -49,22 +57,25 @@ func (p *Provider) ensureEnv(ctx context.Context) error {
 	if err := p.ensureLocation(ctx, values, tenant); err != nil {
 		return err
 	}
-	if err := p.resolvePrincipal(ctx, values); err != nil {
+	resolved := &scope{
+		subscriptionID: values["AZURE_SUBSCRIPTION_ID"], tenantID: tenant, location: values["AZURE_LOCATION"],
+	}
+	if err := p.resolvePrincipal(ctx, resolved); err != nil {
 		return err
 	}
 
-	credential, err := azdext.NewTokenProvider(ctx, p.client, &azdext.TokenProviderOptions{TenantID: tenant})
+	credential, err := azdext.NewTokenProvider(ctx, p.client, &azdext.TokenProviderOptions{TenantID: resolved.tenantID})
 	if err != nil {
 		return fmt.Errorf("creating Azure credential: %w", err)
 	}
 	if p.azure == nil {
-		p.azure, err = newBackend(values["AZURE_SUBSCRIPTION_ID"], credential,
+		p.azure, err = newBackend(resolved.subscriptionID, credential,
 			&arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: azureCloud.Configuration}})
 		if err != nil {
 			return err
 		}
 	}
-	p.values = values
+	p.scope = resolved
 	p.name = deploymentName(p.projectName, p.envName, p.options.Name)
 	return nil
 }
@@ -118,6 +129,10 @@ func (p *Provider) loadEnvironment(ctx context.Context) (map[string]string, erro
 		return nil, errors.New("a project name is required for deployment identity")
 	}
 
+	return p.loadEnvironmentValues(ctx)
+}
+
+func (p *Provider) loadEnvironmentValues(ctx context.Context) (map[string]string, error) {
 	response, err := p.client.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: p.envName})
 	if err != nil {
 		return nil, fmt.Errorf("reading environment values: %w", err)
@@ -184,22 +199,22 @@ func (p *Provider) ensureLocation(ctx context.Context, values map[string]string,
 	return p.setEnv(ctx, "AZURE_LOCATION", values["AZURE_LOCATION"])
 }
 
-func (p *Provider) resolvePrincipal(ctx context.Context, values map[string]string) error {
+func (p *Provider) resolvePrincipal(ctx context.Context, resolved *scope) error {
 	principal, err := p.client.Account().GetCurrentPrincipal(ctx,
-		&azdext.GetCurrentPrincipalRequest{SubscriptionId: values["AZURE_SUBSCRIPTION_ID"]})
+		&azdext.GetCurrentPrincipalRequest{SubscriptionId: resolved.subscriptionID})
 	if err != nil {
 		return fmt.Errorf("resolving current principal: %w", err)
 	}
-	values["AZURE_PRINCIPAL_ID"] = principal.GetObjectId()
+	resolved.principalID = principal.GetObjectId()
 	switch principal.GetPrincipalType() {
 	case azdext.PrincipalType_PRINCIPAL_TYPE_USER:
-		values["AZURE_PRINCIPAL_TYPE"] = "User"
+		resolved.principalType = "User"
 	case azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
-		values["AZURE_PRINCIPAL_TYPE"] = "ServicePrincipal"
+		resolved.principalType = "ServicePrincipal"
 	default:
 		return errors.New("current principal type is unknown")
 	}
-	if values["AZURE_PRINCIPAL_ID"] == "" {
+	if resolved.principalID == "" {
 		return errors.New("current principal object ID is empty")
 	}
 	return nil

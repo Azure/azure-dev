@@ -18,6 +18,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
+// Our generated main.parameters.jsont uses ${AZURE_PRINCIPAL_ID} and ${AZURE_PRINCIPAL_TYPE},
+// following core azd's Bicep convention. These placeholders need the signed-in principal
+// resolved by the provider, not authored environment values.
+const (
+	principalIDPlaceholder   = "AZURE_PRINCIPAL_ID"
+	principalTypePlaceholder = "AZURE_PRINCIPAL_TYPE"
+)
+
 var envPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:?=)([^}]*))?\}`)
 
 type parameterDefinition struct {
@@ -56,6 +64,14 @@ func (p *Provider) prepare(ctx context.Context) error {
 	if p.params != nil {
 		return nil
 	}
+	// Scope is resolved during serial initialization, before hooks and dependent layers update inputs.
+	values, err := p.loadEnvironmentValues(ctx)
+	if err != nil {
+		return err
+	}
+	values[principalIDPlaceholder] = p.scope.principalID
+	values[principalTypePlaceholder] = p.scope.principalType
+
 	parameters, definitions, err := p.loadParameterInputs()
 	if err != nil {
 		return err
@@ -64,7 +80,7 @@ func (p *Provider) prepare(ctx context.Context) error {
 	params := map[string]any{}
 	metadata := make([]*azdext.ProvisioningParameter, 0, len(definitions))
 	for _, name := range slices.Sorted(maps.Keys(definitions)) {
-		parameter, info, err := p.prepareParameter(ctx, name, parameters[name], definitions[name])
+		parameter, info, err := p.prepareParameter(ctx, name, parameters[name], definitions[name], values)
 		if err != nil {
 			return err
 		}
@@ -110,7 +126,7 @@ func (p *Provider) loadParameterInputs() (map[string]map[string]any, map[string]
 //
 // Both the deployment parameter and metadata are nil, with no error, when the template default should be used.
 func (p *Provider) prepareParameter(
-	ctx context.Context, name string, parameter map[string]any, definition parameterDefinition,
+	ctx context.Context, name string, parameter map[string]any, definition parameterDefinition, values map[string]string,
 ) (map[string]any, *azdext.ProvisioningParameter, error) {
 	mapping := []string{}
 	prompted := false
@@ -118,9 +134,10 @@ func (p *Provider) prepareParameter(
 	var err error
 
 	if _, hasReference := parameter["reference"]; hasReference {
-		deploymentParameter, err = p.prepareKeyVaultReferenceParameter(ctx, name, parameter, &mapping)
+		deploymentParameter, err = p.prepareKeyVaultReferenceParameter(ctx, name, parameter, values, &mapping)
 	} else {
-		deploymentParameter, prompted, err = p.prepareValueParameter(ctx, name, parameter["value"], definition, &mapping)
+		deploymentParameter, prompted, err = p.prepareValueParameter(
+			ctx, name, parameter["value"], definition, values, &mapping)
 	}
 
 	if err != nil {
@@ -151,13 +168,13 @@ func (p *Provider) prepareParameter(
 // prepareKeyVaultReferenceParameter prepares a parameter that identifies a Key Vault secret
 // instead of supplying its value.
 func (p *Provider) prepareKeyVaultReferenceParameter(
-	ctx context.Context, name string, parameter map[string]any, mapping *[]string,
+	ctx context.Context, name string, parameter map[string]any, values map[string]string, mapping *[]string,
 ) (map[string]any, error) {
 	if _, hasValue := parameter["value"]; hasValue {
 		return nil, fmt.Errorf("parameter %q cannot contain both value and reference", name)
 	}
 
-	resolved, err := p.resolve(ctx, parameter["reference"], mapping)
+	resolved, err := p.resolve(ctx, parameter["reference"], values, mapping)
 	if err != nil {
 		return nil, fmt.Errorf("resolving parameter %q: %w", name, err)
 	}
@@ -169,9 +186,9 @@ func (p *Provider) prepareKeyVaultReferenceParameter(
 // It returns the deployment parameter, whether its value required a local prompt, and an error if preparation fails.
 // A nil deployment parameter with no error means the template default should be used.
 func (p *Provider) prepareValueParameter(
-	ctx context.Context, name string, input any, definition parameterDefinition, mapping *[]string,
+	ctx context.Context, name string, input any, definition parameterDefinition, values map[string]string, mapping *[]string,
 ) (map[string]any, bool, error) {
-	value, prompted, err := p.resolveParameterValue(ctx, name, input, mapping)
+	value, prompted, err := p.resolveParameterValue(ctx, name, input, values, mapping)
 
 	if err != nil {
 		return nil, false, fmt.Errorf("resolving parameter %q: %w", name, err)
@@ -195,10 +212,10 @@ func (p *Provider) prepareValueParameter(
 }
 
 func (p *Provider) resolveParameterValue(
-	ctx context.Context, name string, value any, mapping *[]string,
+	ctx context.Context, name string, value any, values map[string]string, mapping *[]string,
 ) (any, bool, error) {
 	if p.resolver != nil {
-		resolved, prompted, err := p.resolver.ResolveParameter(ctx, name, p.values, mapping)
+		resolved, prompted, err := p.resolver.ResolveParameter(ctx, name, values, mapping)
 		if err != nil {
 			return nil, prompted, err
 		}
@@ -206,7 +223,7 @@ func (p *Provider) resolveParameterValue(
 			return resolved, prompted, err
 		}
 	}
-	resolved, err := p.resolve(ctx, value, mapping)
+	resolved, err := p.resolve(ctx, value, values, mapping)
 	return resolved, false, err
 }
 
@@ -221,15 +238,15 @@ func (p *Provider) promptParameter(ctx context.Context, name string, definition 
 	return response.Value, nil
 }
 
-func (p *Provider) resolve(ctx context.Context, value any, mapping *[]string) (any, error) {
+func (p *Provider) resolve(ctx context.Context, value any, values map[string]string, mapping *[]string) (any, error) {
 	switch value := value.(type) {
 	case string:
 		replaced := envPattern.ReplaceAllStringFunc(value, func(match string) string {
 			parts := envPattern.FindStringSubmatch(match)
-			if parts[1] != "AZURE_PRINCIPAL_ID" && parts[1] != "AZURE_PRINCIPAL_TYPE" {
+			if parts[1] != principalIDPlaceholder && parts[1] != principalTypePlaceholder {
 				*mapping = append(*mapping, parts[1])
 			}
-			if resolved, exists := p.values[parts[1]]; exists && (resolved != "" || parts[2] != ":=") {
+			if resolved, exists := values[parts[1]]; exists && (resolved != "" || parts[2] != ":=") {
 				return resolved
 			}
 			return parts[3]
@@ -241,7 +258,7 @@ func (p *Provider) resolve(ctx context.Context, value any, mapping *[]string) (a
 	case []any:
 		result := make([]any, len(value))
 		for i, item := range value {
-			resolved, err := p.resolve(ctx, item, mapping)
+			resolved, err := p.resolve(ctx, item, values, mapping)
 			if err != nil {
 				return nil, err
 			}
@@ -251,7 +268,7 @@ func (p *Provider) resolve(ctx context.Context, value any, mapping *[]string) (a
 	case map[string]any:
 		result := make(map[string]any, len(value))
 		for key, item := range value {
-			resolved, err := p.resolve(ctx, item, mapping)
+			resolved, err := p.resolve(ctx, item, values, mapping)
 			if err != nil {
 				return nil, err
 			}

@@ -306,7 +306,7 @@ func TestDestroyConfirmation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			prompts := &promptServer{confirmed: test.confirmed, confirmErr: test.promptErr}
 			azure := &fakeBackend{deployment: deployedFixture()}
-			p := readyProvider(azure)
+			p := readyProvider(t, azure)
 			p.client = newHostClient(t, &environmentServer{}, prompts)
 
 			_, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: test.force}, nil)
@@ -353,17 +353,18 @@ func TestEnsureEnvUsesHostScopeAndPrincipal(t *testing.T) {
 	if err := p.EnsureEnv(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if p.values["AZURE_PRINCIPAL_ID"] != "resource-tenant-object-id" ||
-		p.values["AZURE_PRINCIPAL_TYPE"] != "ServicePrincipal" {
-		t.Fatalf("principal resolution lost tenant identity: %v", p.values["AZURE_PRINCIPAL_TYPE"])
+	if p.scope.principalID != "resource-tenant-object-id" ||
+		p.scope.principalType != "ServicePrincipal" {
+		t.Fatalf("principal resolution lost tenant identity: %v", p.scope.principalType)
 	}
-	if p.values["AZURE_SUBSCRIPTION_ID"] != "sub" || p.values["AZURE_LOCATION"] != "eastus" {
+	if p.scope.subscriptionID != "sub" || p.scope.location != "eastus" {
 		t.Fatal("host prompts did not configure the Azure scope")
 	}
 	if p.name != deploymentName("example", "dev", "app") {
 		t.Fatal("layer identity was not included in the deployment name")
 	}
-	require.Equal(t, "dev", p.values["AZURE_ENV_NAME"])
+	require.Equal(t, "dev", p.envName)
+	require.Equal(t, "user-access-tenant", p.scope.tenantID)
 	require.Equal(t, map[string]string{"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_LOCATION": "eastus"}, env.values)
 	require.Len(t, env.writes, 2)
 	for _, write := range env.writes {
@@ -409,12 +410,17 @@ func TestEnsureEnvValuePrecedenceAndSavedScope(t *testing.T) {
 	p.azure = backend
 
 	require.NoError(t, p.EnsureEnv(t.Context()))
+	require.Equal(t, &scope{
+		subscriptionID: "sub", tenantID: "user-access-tenant", location: "virtual-location",
+		principalID: "user-id", principalType: "User",
+	}, p.scope)
+	values, err := p.loadEnvironmentValues(t.Context())
+	require.NoError(t, err)
 	for key, value := range map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_LOCATION": "virtual-location", "AZURE_ENV_NAME": "dev",
 		"PROCESS_ONLY": "process", "SAVED_ONLY": "saved", "VIRTUAL_ONLY": "virtual", "SHARED": "saved",
-		"AZURE_PRINCIPAL_ID": "user-id", "AZURE_PRINCIPAL_TYPE": "User",
 	} {
-		require.Equal(t, value, p.values[key], key)
+		require.Equal(t, value, values[key], key)
 	}
 	require.Zero(t, prompts.subscriptionRequests)
 	require.Empty(t, prompts.locations)
@@ -445,7 +451,7 @@ func TestEnsureEnvIdentityFailures(t *testing.T) {
 			p := New(newHostClientWithIdentity(t, &test.env, prompts, account, &test.project), nil)
 			require.NoError(t, p.Initialize(t.Context(), ".", &azdext.ProvisioningOptions{Path: "testdata"}))
 			require.ErrorContains(t, p.EnsureEnv(t.Context()), test.want)
-			require.Nil(t, p.values)
+			require.Nil(t, p.scope)
 			require.Nil(t, p.azure)
 			require.Empty(t, p.name)
 			require.Empty(t, test.env.writes)
@@ -486,7 +492,7 @@ func TestEnsureEnvSubscriptionFailures(t *testing.T) {
 			p := New(newHostClientWithIdentity(t, env, &test.prompts, &test.account, &projectServer{}), nil)
 			require.NoError(t, p.Initialize(t.Context(), ".", &azdext.ProvisioningOptions{Path: "testdata"}))
 			require.ErrorContains(t, p.EnsureEnv(t.Context()), test.want)
-			require.Nil(t, p.values)
+			require.Nil(t, p.scope)
 			require.Nil(t, p.azure)
 			require.Empty(t, p.name)
 			require.Empty(t, env.writes)
@@ -515,7 +521,7 @@ func TestEnsureEnvLocationFailures(t *testing.T) {
 			p := New(newHostClientWithIdentity(t, env, &test.prompts, account, &projectServer{}), nil)
 			require.NoError(t, p.Initialize(t.Context(), ".", &azdext.ProvisioningOptions{Path: "testdata"}))
 			require.ErrorContains(t, p.EnsureEnv(t.Context()), test.want)
-			require.Nil(t, p.values)
+			require.Nil(t, p.scope)
 			require.Nil(t, p.azure)
 			require.Empty(t, env.writes)
 			require.Empty(t, account.principals)
@@ -546,7 +552,7 @@ func TestEnsureEnvPrincipalAndCredentialFailures(t *testing.T) {
 			p := New(newHostClientWithIdentity(t, env, &promptServer{}, &test.account, &projectServer{}), nil)
 			require.NoError(t, p.Initialize(t.Context(), ".", &azdext.ProvisioningOptions{Path: "testdata"}))
 			require.ErrorContains(t, p.EnsureEnv(t.Context()), test.want)
-			require.Nil(t, p.values)
+			require.Nil(t, p.scope)
 			require.Nil(t, p.azure)
 			require.Empty(t, p.name)
 			require.Empty(t, env.writes)
@@ -563,12 +569,12 @@ func TestEnsureEnvRetriesAfterPersistenceFailure(t *testing.T) {
 	p := New(newHostClient(t, env, prompts), nil)
 	require.NoError(t, p.Initialize(t.Context(), ".", &azdext.ProvisioningOptions{Path: "testdata"}))
 	require.ErrorContains(t, p.EnsureEnv(t.Context()), "save failed")
-	require.Nil(t, p.values)
+	require.Nil(t, p.scope)
 	require.NotContains(t, env.values, "AZURE_LOCATION")
 
 	env.setErr = nil
 	require.NoError(t, p.EnsureEnv(t.Context()))
-	require.Equal(t, "eastus", p.values["AZURE_LOCATION"])
+	require.Equal(t, "eastus", p.scope.location)
 	require.Equal(t, "eastus", env.values["AZURE_LOCATION"])
 	require.Len(t, prompts.locations, 2)
 }
@@ -582,7 +588,7 @@ func TestEnsureEnvRejectsMissingSelectedEnvironment(t *testing.T) {
 	require.Zero(t, env.currentCalls)
 	require.Empty(t, env.reads)
 	require.Empty(t, env.writes)
-	require.Nil(t, p.values)
+	require.Nil(t, p.scope)
 	require.Nil(t, p.azure)
 }
 
@@ -599,7 +605,7 @@ func TestEnsureEnvUsesSelectedEnvironment(t *testing.T) {
 	require.Len(t, env.reads, 1)
 	require.Equal(t, "prod", env.reads[0].Name)
 	require.Equal(t, "prod", env.cloudReads[0].EnvName)
-	require.Equal(t, "prod", p.values["AZURE_ENV_NAME"])
+	require.Equal(t, "prod", p.envName)
 	require.Equal(t, deploymentName("example", "prod", "data"), p.name)
 	for _, write := range env.writes {
 		require.Equal(t, "prod", write.EnvName)

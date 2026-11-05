@@ -294,7 +294,7 @@ func (p *Provider) request(ctx context.Context) (armresources.Deployment, error)
 		return armresources.Deployment{}, errors.New("generated template does not declare a resource group")
 	}
 	return armresources.Deployment{
-		Location: new(p.values["AZURE_LOCATION"]),
+		Location: new(p.scope.location),
 		Properties: &armresources.DeploymentProperties{
 			Mode: new(armresources.DeploymentModeIncremental), Template: template, Parameters: p.params,
 		},
@@ -346,7 +346,7 @@ func (p *Provider) Deploy(ctx context.Context, progress grpcbroker.ProgressFunc)
 			continue
 		}
 		groupCount++
-		if !strings.EqualFold(id.SubscriptionID, p.values["AZURE_SUBSCRIPTION_ID"]) {
+		if !strings.EqualFold(id.SubscriptionID, p.scope.subscriptionID) {
 			return nil, errors.New("generated resource group belongs to another subscription")
 		}
 		group, err := p.azure.group(ctx, id.ResourceGroupName)
@@ -466,7 +466,7 @@ func (p *Provider) Destroy(
 			continue
 		}
 		groupReferences++
-		if !strings.EqualFold(id.SubscriptionID, p.values["AZURE_SUBSCRIPTION_ID"]) {
+		if !strings.EqualFold(id.SubscriptionID, p.scope.subscriptionID) {
 			return nil, errors.New("refusing to delete resource group in another subscription")
 		}
 		_, err = p.azure.group(ctx, id.ResourceGroupName)

@@ -32,7 +32,9 @@ type fakeBackend struct {
 	contents      []string
 	changes       []*armresources.WhatIfChange
 	previewErr    error
+	previewInput  armresources.DeploymentWhatIf
 	deployErr     error
+	deployInput   armresources.Deployment
 	deleteErr     error
 	deployed      bool
 	deletedGroups []string
@@ -56,6 +58,7 @@ func (f *fakeBackend) deploy(
 	_ context.Context, _ string, request armresources.Deployment, progress grpcbroker.ProgressFunc,
 ) (armresources.DeploymentExtended, error) {
 	f.deployed = true
+	f.deployInput = request
 	if request.Properties.Mode == nil || *request.Properties.Mode != armresources.DeploymentModeIncremental {
 		return armresources.DeploymentExtended{}, errors.New("deployment must be incremental")
 	}
@@ -64,8 +67,9 @@ func (f *fakeBackend) deploy(
 }
 
 func (f *fakeBackend) preview(
-	_ context.Context, _ string, _ armresources.DeploymentWhatIf, progress grpcbroker.ProgressFunc,
+	_ context.Context, _ string, request armresources.DeploymentWhatIf, progress grpcbroker.ProgressFunc,
 ) ([]*armresources.WhatIfChange, error) {
+	f.previewInput = request
 	report(progress, "preview")
 	return f.changes, f.previewErr
 }
@@ -88,15 +92,15 @@ func (f *fakeBackend) deleteDeployment(context.Context, string, grpcbroker.Progr
 	return nil
 }
 
-func readyProvider(azure *fakeBackend) *Provider {
+func readyProvider(t *testing.T, azure *fakeBackend) *Provider {
+	t.Helper()
 	name := deploymentName("example", "dev", "data")
-	return &Provider{
+	p := &Provider{
 		options: &azdext.ProvisioningOptions{Name: "data"}, name: name,
 		envName: "dev", projectName: "example", path: "testdata", module: "main",
-		values: map[string]string{
-			"AZURE_ENV_NAME": "dev", "AZURE_SUBSCRIPTION_ID": "sub", "AZURE_LOCATION": "eastus",
-			"AZURE_PRINCIPAL_ID": "object-id", "QUOTED": "contains \"quotes\"\nand newlines",
-			"PASSWORD": "saved-password",
+		scope: &scope{
+			subscriptionID: "sub", tenantID: "user-access-tenant", location: "eastus",
+			principalID: "object-id", principalType: "User",
 		},
 		azure: azure,
 		template: map[string]any{
@@ -114,6 +118,11 @@ func readyProvider(azure *fakeBackend) *Provider {
 			"outputs": map[string]any{"AZURE_RESOURCE_STORAGE_ID": map[string]any{"type": "string"}},
 		},
 	}
+	p.client = newHostClient(t, &environmentServer{values: map[string]string{
+		"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_LOCATION": "eastus",
+		"QUOTED": "contains \"quotes\"\nand newlines", "PASSWORD": "saved-password",
+	}}, &promptServer{})
+	return p
 }
 
 func deployedFixture() armresources.DeploymentExtended {
@@ -147,8 +156,7 @@ func TestDeploymentNameIsolation(t *testing.T) {
 }
 
 func TestParametersGeneratedSubstitutions(t *testing.T) {
-	p := readyProvider(&fakeBackend{})
-	p.values["AZURE_KEY_VAULT_NAME"] = "my-vault"
+	p := readyProvider(t, &fakeBackend{})
 	parameters, err := p.Parameters(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -171,10 +179,10 @@ func TestParametersGeneratedSubstitutions(t *testing.T) {
 		t.Fatal("settings parameter wrapper missing")
 	}
 	value, ok := settings["value"].(map[string]any)
-	if !ok || value["quoted"] != p.values["QUOTED"] {
+	if !ok || value["quoted"] != "contains \"quotes\"\nand newlines" {
 		t.Fatal("nested quoted environment value was corrupted")
 	}
-	p.values["PASSWORD"] = "changed-value"
+	require.NoError(t, p.setEnv(t.Context(), "PASSWORD", "changed-value"))
 	repeated, err := p.Parameters(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, parameters, repeated, "parameters must be cached within a provider session")
@@ -189,7 +197,7 @@ func TestParametersTemplateDefaults(t *testing.T) {
 		{name: "empty environment value", input: `{"parameters": {"optional": {"value": "${MISSING}"}}}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			p := readyProvider(&fakeBackend{})
+			p := readyProvider(t, &fakeBackend{})
 			p.path = t.TempDir()
 			p.template["parameters"] = map[string]any{
 				"optional": map[string]any{"type": "string", "defaultValue": "fallback"},
@@ -206,9 +214,10 @@ func TestParametersTemplateDefaults(t *testing.T) {
 }
 
 func TestParametersReferenceMetadata(t *testing.T) {
-	p := readyProvider(&fakeBackend{})
+	p := readyProvider(t, &fakeBackend{})
 	p.path = t.TempDir()
-	p.values["VAULT_ID"] = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/vault"
+	vaultID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/vault"
+	require.NoError(t, p.setEnv(t.Context(), "VAULT_ID", vaultID))
 	p.template["parameters"] = map[string]any{"password": map[string]any{"type": "secureString"}}
 	input := `{"parameters": {"password": {"reference": {
 		"keyVault": {"id": "${VAULT_ID}"}, "secretName": "${SECRET_NAME:=password}", "secretVersion": "${SECRET_NAME}"
@@ -222,12 +231,12 @@ func TestParametersReferenceMetadata(t *testing.T) {
 		EnvVarMapping: []string{"SECRET_NAME", "VAULT_ID"}, UsingEnvVarMapping: true,
 	}}, parameters)
 	require.Equal(t, map[string]any{"reference": map[string]any{
-		"keyVault": map[string]any{"id": p.values["VAULT_ID"]}, "secretName": "password", "secretVersion": "",
+		"keyVault": map[string]any{"id": vaultID}, "secretName": "password", "secretVersion": "",
 	}}, p.params["password"])
 }
 
 func TestParametersRejectValueAndReference(t *testing.T) {
-	p := readyProvider(&fakeBackend{})
+	p := readyProvider(t, &fakeBackend{})
 	p.path = t.TempDir()
 	p.template["parameters"] = map[string]any{"password": map[string]any{"type": "secureString"}}
 	input := `{"parameters": {"password": {"value": "password", "reference": {}}}}`
@@ -255,9 +264,9 @@ func TestResolveEnvironmentDefaults(t *testing.T) {
 		{name: "plain", input: "${TEXT}", values: map[string]string{"TEXT": "value"}, want: "value"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			p := &Provider{values: test.values}
+			p := &Provider{}
 			var mapping []string
-			got, err := p.resolve(t.Context(), test.input, &mapping)
+			got, err := p.resolve(t.Context(), test.input, test.values, &mapping)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -281,9 +290,9 @@ func TestResolveRejectsCommands(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := readyProvider(&fakeBackend{})
+			p := readyProvider(t, &fakeBackend{})
 			mapping := []string{}
-			value, err := p.resolve(t.Context(), tt.input, &mapping)
+			value, err := p.resolve(t.Context(), tt.input, nil, &mapping)
 			require.ErrorContains(t, err, "command substitutions are not supported")
 			require.Nil(t, value)
 		})
@@ -319,7 +328,7 @@ func TestProvisioningValueRejectsUnsupportedValues(t *testing.T) {
 }
 
 func TestStateStringOutputsAndResourceIDs(t *testing.T) {
-	p := readyProvider(&fakeBackend{deployment: deployedFixture()})
+	p := readyProvider(t, &fakeBackend{deployment: deployedFixture()})
 	result, err := p.State(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -350,7 +359,7 @@ func TestLegacyDeploymentStateAndDown(t *testing.T) {
 		legacyName: *legacy.Name, legacy: legacy, getErr: &azcore.ResponseError{StatusCode: 404},
 		groupValue: armresources.ResourceGroup{Tags: map[string]*string{"azd-env-name": new("dev")}},
 	}
-	p := readyProvider(azure)
+	p := readyProvider(t, azure)
 	state, err := p.State(t.Context(), nil)
 	if err != nil || len(state.State.Outputs) == 0 {
 		t.Fatalf("legacy state lost: %v", err)
@@ -369,7 +378,7 @@ func TestLegacyDeploymentDoesNotAdoptAnotherProject(t *testing.T) {
 	legacy.Tags = map[string]*string{
 		"azd-project-name": new("other"), "azd-env-name": new("dev"), "azd-layer-name": new("data"),
 	}
-	p := readyProvider(&fakeBackend{
+	p := readyProvider(t, &fakeBackend{
 		legacyName: *legacy.Name, legacy: legacy, getErr: &azcore.ResponseError{StatusCode: 404},
 	})
 	if _, err := p.State(t.Context(), nil); err == nil {
@@ -421,7 +430,7 @@ func TestDeployOwnershipAndProgress(t *testing.T) {
 					{ResourceID: new(groupID), ChangeType: new(armresources.ChangeTypeCreate)},
 				},
 			}
-			p := readyProvider(azure)
+			p := readyProvider(t, azure)
 			if test.missing {
 				azure.groupErr = &azcore.ResponseError{StatusCode: 404}
 			} else {
@@ -445,7 +454,7 @@ func TestDeployOwnershipAndProgress(t *testing.T) {
 
 func TestDestroyDoesNotDeleteGroupsOfLinkedResources(t *testing.T) {
 	azure := &fakeBackend{deployment: deployedFixture()}
-	p := readyProvider(azure)
+	p := readyProvider(t, azure)
 	azure.groupValue.Tags = map[string]*string{ownerTag: new(p.name)}
 	result, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, nil)
 	if err != nil {
@@ -470,7 +479,7 @@ func TestDestroyRejectsUnsafeScopeAndUnsupportedPurge(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			azure := &fakeBackend{deployment: deployedFixture()}
-			p := readyProvider(azure)
+			p := readyProvider(t, azure)
 			if test.groupID != "" {
 				azure.deployment.Properties.OutputResources[0].ID = new(test.groupID)
 			}
@@ -484,7 +493,7 @@ func TestDestroyRejectsUnsafeScopeAndUnsupportedPurge(t *testing.T) {
 
 func TestDestroyFailureRetainsDeploymentForRetry(t *testing.T) {
 	azure := &fakeBackend{deployment: deployedFixture(), deleteErr: errors.New("delete failed")}
-	p := readyProvider(azure)
+	p := readyProvider(t, azure)
 	azure.groupValue.Tags = map[string]*string{ownerTag: new(p.name)}
 	_, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, nil)
 	if err == nil || azure.deletedRecord {
@@ -513,7 +522,7 @@ func TestDestroyDeletesAllResourcesInRecordedGroups(t *testing.T) {
 				azure.deployment.Properties.OutputResources = append(
 					azure.deployment.Properties.OutputResources, &armresources.ResourceReference{ID: new(linkedInGroup)})
 			}
-			p := readyProvider(azure)
+			p := readyProvider(t, azure)
 			_, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -531,7 +540,7 @@ func TestDestroyDoesNotRequireGroupOwnershipTags(t *testing.T) {
 		t.Run(owner, func(t *testing.T) {
 			azure := &fakeBackend{deployment: deployedFixture()}
 			azure.groupValue.Tags = map[string]*string{ownerTag: new(owner)}
-			p := readyProvider(azure)
+			p := readyProvider(t, azure)
 			if _, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, nil); err != nil {
 				t.Fatal(err)
 			}
@@ -547,7 +556,7 @@ func TestEntryScopedOutputsRetainResourceIdentity(t *testing.T) {
 	azure.deployment.Properties.Outputs = map[string]any{
 		"AZURE_RESOURCES_DATA__RESOURCE_STORAGE_ID": map[string]any{"type": "String", "value": linkedID},
 	}
-	p := readyProvider(azure)
+	p := readyProvider(t, azure)
 	state, err := p.State(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -586,7 +595,7 @@ func TestDestroyPurgeGuidanceBeforeHostAccess(t *testing.T) {
 }
 
 func TestRequestDoesNotMutateCompiledTemplate(t *testing.T) {
-	p := readyProvider(&fakeBackend{})
+	p := readyProvider(t, &fakeBackend{})
 	for range 2 {
 		if _, err := p.request(t.Context()); err != nil {
 			t.Fatal(err)
@@ -604,7 +613,7 @@ func TestRequestDoesNotMutateCompiledTemplate(t *testing.T) {
 }
 
 func TestRequestRetainsCoreDeploymentDiscoveryTags(t *testing.T) {
-	p := readyProvider(&fakeBackend{})
+	p := readyProvider(t, &fakeBackend{})
 	p.projectName = "example"
 	request, err := p.request(t.Context())
 	if err != nil {
@@ -626,7 +635,7 @@ func TestMissingBicepAndClose(t *testing.T) {
 	if !ok || toolError.Kind != azdext.ToolErrorKindMissing {
 		t.Fatalf("missing Bicep error = %v", err)
 	}
-	p := readyProvider(&fakeBackend{})
+	p := readyProvider(t, &fakeBackend{})
 	if err := p.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -640,7 +649,7 @@ func TestPreviewStructuredChangesAndFailures(t *testing.T) {
 		{ResourceID: new(groupID), ChangeType: new(armresources.ChangeTypeCreate)},
 		{ResourceID: new(linkedID), ChangeType: new(armresources.ChangeTypeNoChange)},
 	}}
-	p := readyProvider(azure)
+	p := readyProvider(t, azure)
 	progress := []string{}
 	result, err := p.Preview(t.Context(), func(message string) { progress = append(progress, message) })
 	if err != nil {
@@ -672,7 +681,7 @@ func TestStateMissingAndServiceFailures(t *testing.T) {
 		{name: "canceled", err: context.Canceled, want: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			p := readyProvider(&fakeBackend{getErr: tt.err})
+			p := readyProvider(t, &fakeBackend{getErr: tt.err})
 			result, err := p.State(t.Context(), nil)
 			if (err != nil) != tt.want {
 				t.Fatalf("state error = %v; want error %v", err, tt.want)

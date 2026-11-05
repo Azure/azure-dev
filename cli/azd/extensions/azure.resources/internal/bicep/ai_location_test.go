@@ -51,7 +51,7 @@ func newAIProvider(t *testing.T, client *azdext.AzdClient, name string) *Provide
 		[]byte(`{"parameters": {}}`), 0o600))
 	require.NoError(t, p.Initialize(t.Context(), ".", options))
 	t.Cleanup(func() { require.NoError(t, p.Close()) })
-	p.values = map[string]string{"AZURE_ENV_NAME": "dev", "AZURE_SUBSCRIPTION_ID": "sub", "AZURE_LOCATION": "eastus"}
+	p.scope = &scope{subscriptionID: "sub", location: "eastus"}
 	p.azure = &fakeBackend{deployment: deployedFixture()}
 	p.compile = func(context.Context, string) ([]byte, error) {
 		// Prompt requirements must come from resource config, even with no Bicep metadata.
@@ -93,7 +93,7 @@ func TestAILocationPersistsAcrossProviderInstances(t *testing.T) {
 	key := scaffold.EntryEnvKey("models", "AZURE_AI_DEPLOYMENTS_LOCATION")
 	for i := range 2 {
 		p := newAIProvider(t, client, "models")
-		p.values = nil
+		p.scope = nil
 		parameters, err := p.Parameters(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, "westus3", env.values[key])
@@ -119,7 +119,7 @@ func TestAIStateDoesNotPromptForDeploymentLocation(t *testing.T) {
 
 func TestResourceResolverPreservesNormalBicepParameterResolution(t *testing.T) {
 	prompts := &promptServer{aiLocation: "westus3"}
-	client := newHostClient(t, &environmentServer{values: map[string]string{}}, prompts)
+	client := newHostClient(t, &environmentServer{values: map[string]string{"AZURE_LOCATION": "eastus"}}, prompts)
 	p := newAIProvider(t, client, "")
 	p.compile = func(context.Context, string) ([]byte, error) {
 		return []byte(`{

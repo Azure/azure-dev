@@ -36,7 +36,7 @@ type ParameterResolver interface {
 }
 
 // Provider executes generated Bicep without depending on the core provisioning implementation.
-// Its lock serializes lifecycle calls and protects compiled templates and resolved secrets.
+// Its lock serializes lifecycle calls and protects the resolved scope, compiled templates, and prepared parameters.
 type Provider struct {
 	mu          sync.Mutex
 	client      *azdext.AzdClient
@@ -46,7 +46,7 @@ type Provider struct {
 	envName     string
 	projectName string
 	legacy      bool
-	values      map[string]string
+	scope       *scope
 	name        string
 	template    map[string]any
 	params      map[string]any
@@ -93,7 +93,7 @@ func (p *Provider) Initialize(_ context.Context, projectPath string, options *az
 	p.options = proto.Clone(options).(*azdext.ProvisioningOptions)
 	p.path, p.module = absolute, module
 	p.legacy = false
-	p.template, p.params, p.metadata, p.values, p.azure = nil, nil, nil, nil, nil
+	p.template, p.params, p.metadata, p.scope, p.azure = nil, nil, nil, nil, nil
 	return nil
 }
 
@@ -102,7 +102,7 @@ func (p *Provider) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.template, p.params, p.metadata, p.values, p.azure = nil, nil, nil, nil, nil
+	p.template, p.params, p.metadata, p.scope, p.azure = nil, nil, nil, nil, nil
 	p.options = nil
 	return nil
 }

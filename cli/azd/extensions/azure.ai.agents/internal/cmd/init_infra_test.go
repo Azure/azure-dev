@@ -22,6 +22,7 @@ import (
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
+	"azureaiagent/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/pflag"
@@ -1257,12 +1258,61 @@ func TestNormalizeContainerRegistryEndpointRejectsMalformedURL(t *testing.T) {
 	assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
 }
 
+func TestEjectInfra_NewProjectBicepCompiles(t *testing.T) {
+	bicep := testutil.LookupBicep(t)
+
+	for _, tt := range []struct {
+		name         string
+		azureYAML    string
+		templatePath string
+	}{
+		{
+			name:         "container_agent",
+			azureYAML:    validFoundryAzureYAML,
+			templatePath: filepath.Join("infra", "main.bicep"),
+		},
+		{
+			name: "without_registry",
+			azureYAML: `name: my-project
+services:
+  my-foundry:
+    host: azure.ai.project
+`,
+			templatePath: filepath.Join("infra", "main.bicep"),
+		},
+		{
+			name: "custom_module",
+			azureYAML: strings.Replace(validFoundryAzureYAML, "  provider: microsoft.foundry", `  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: foundry
+      path: custom/foundry
+      module: project
+      provider: microsoft.foundry`, 1),
+			templatePath: filepath.Join("custom", "foundry", "project.bicep"),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), tt.azureYAML)
+			withCapturedStdout(t, func() {
+				require.NoError(t, ejectInfra(dir, "bicep"))
+			})
+
+			out := filepath.Join(t.TempDir(), "main.json")
+			cmd := exec.CommandContext(t.Context(), bicep, "build",
+				filepath.Join(dir, tt.templatePath), "--outfile", out)
+			output, err := cmd.CombinedOutput()
+			require.NoErrorf(t, err, "generated %s Bicep failed to compile: %s", tt.name, output)
+			require.FileExists(t, out)
+		})
+	}
+}
+
 func TestEjectInfra_ExistingProjectBicepModesCompile(t *testing.T) {
 	t.Parallel()
-	bicep := lookupInstalledBicep()
-	if bicep == "" {
-		t.Skip("Bicep CLI not found; skipping generated Bicep compilation")
-	}
+	bicep := testutil.LookupBicep(t)
 
 	const projectYAML = `name: my-project
 services:
@@ -1316,23 +1366,6 @@ services:
 			require.NoErrorf(t, err, "generated %s Bicep failed to compile: %s", mode, output)
 		})
 	}
-}
-
-func lookupInstalledBicep() string {
-	if path, err := exec.LookPath("bicep"); err == nil {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	for _, name := range []string{"bicep", "bicep.exe"} {
-		path := filepath.Join(home, ".azure", "bin", name)
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-	return ""
 }
 
 func TestEjectInfra_ExistingProjectAddsBicepLayerBesideExistingInfra(t *testing.T) {
@@ -1670,9 +1703,13 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 		"main.arm.json should be excluded from the ejected tree (it would be stale "+
 			"the moment the user edits main.bicep)")
 
-	// The existing-project entry point is excluded.
+	// New-project exports exclude existing-project rendering assets.
 	for _, rel := range []string{
 		filepath.Join("infra", "existing-project.bicep"),
+		filepath.Join("infra", "existing-project-eject.bicep"),
+		filepath.Join("infra", "existing-project-eject.bicep.tmpl"),
+		filepath.Join("infra", "existing-project.arm.json"),
+		filepath.Join("infra", "modules", "container-registry-eject.bicep.tmpl"),
 	} {
 		_, err := os.Stat(filepath.Join(dir, rel))
 		assert.True(t, os.IsNotExist(err),

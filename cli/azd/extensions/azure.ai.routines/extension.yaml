@@ -3,8 +3,8 @@ capabilities:
     - custom-commands
     - service-target-provider
     - metadata
-description: Manage Microsoft Foundry Routines from your terminal. (Beta)
-displayName: Foundry Routines (Beta)
+description: Manage Microsoft Foundry Routines from your terminal.
+displayName: Foundry Routines
 id: azure.ai.routines
 language: go
 namespace: ai.routine

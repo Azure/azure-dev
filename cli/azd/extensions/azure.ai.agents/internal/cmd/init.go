@@ -41,7 +41,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -694,7 +693,7 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-t <azure.yaml pointer>] [--src <source directory>]",
-		Short: fmt.Sprintf("Initialize a new prompt, hosted, or voice agent project. %s", color.YellowString("(Preview)")),
+		Short: "Initialize a new prompt, hosted, or voice agent project.",
 		Long: `Initialize a new prompt, hosted, or voice agent project.
 
 Use 'azd ai agent add <name> --file <path>' to add one file-backed Agent

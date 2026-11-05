@@ -134,7 +134,12 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 			}
 			if saved := strings.TrimSpace(values["AZURE_SUBSCRIPTION_ID"]); saved != "" &&
 				!strings.EqualFold(saved, boundProject.SubscriptionId) {
-				return projectACRValidation("AZURE_SUBSCRIPTION_ID conflicts with the deployed project binding")
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"AZURE_SUBSCRIPTION_ID conflicts with the deployed project binding",
+					fmt.Sprintf("restore AZURE_SUBSCRIPTION_ID to %q to match the deployed project, "+
+						"or use a new azd environment", boundProject.SubscriptionId),
+				)
 			}
 			if id := values["AZURE_AI_PROJECT_ID"]; id != "" && !strings.EqualFold(id, binding.ProjectResourceID) {
 				return projectACRValidation(
@@ -148,8 +153,11 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 				}
 				if (a.flags.projectID != "" && !strings.EqualFold(a.flags.projectID, binding.ProjectResourceID)) ||
 					(a.flags.projectEndpoint != "" && !equalProjectEndpoint(a.flags.projectEndpoint, project.Endpoint)) {
-					return projectACRValidation(
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
 						"cannot replace a project while its deployed registry binding is still in use",
+						"remove --project-id or --project-endpoint to retain the deployed project, "+
+							"or use a new azd environment for a different project",
 					)
 				}
 			}
@@ -169,8 +177,11 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 				}
 				if (a.flags.projectID != "" && !strings.EqualFold(a.flags.projectID, a.flags.preserveProjectID)) ||
 					(a.flags.projectEndpoint != "" && !equalProjectEndpoint(a.flags.projectEndpoint, project.Endpoint)) {
-					return projectACRValidation(
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
 						"cannot replace a project while its deployed registry outputs are still in use",
+						"remove --project-id or --project-endpoint to retain the deployed project, "+
+							"or use a new azd environment for a different project",
 					)
 				}
 			}

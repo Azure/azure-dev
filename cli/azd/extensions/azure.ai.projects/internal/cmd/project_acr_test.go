@@ -62,6 +62,8 @@ func TestProjectAddRestoresBoundSubscription(t *testing.T) {
 				err = action.Run(t.Context())
 				if saved == "other" {
 					require.ErrorContains(t, err, "AZURE_SUBSCRIPTION_ID conflicts")
+					assert.Equal(t, `restore AZURE_SUBSCRIPTION_ID to "subscription" to match the deployed project, `+
+						"or use a new azd environment", azdext.ErrorSuggestion(err))
 					require.Equal(t, before, env.values)
 					require.Empty(t, env.setLog)
 				} else {
@@ -1084,40 +1086,53 @@ func TestProjectAddRejectsOwnedProjectAdoptionBeforeWrites(t *testing.T) {
 		"Microsoft.CognitiveServices/accounts/account/projects/project"
 	for _, legacy := range []bool{false, true} {
 		for _, endpoint := range []bool{false, true} {
-			t.Run(strconv.FormatBool(legacy)+"/endpoint="+strconv.FormatBool(endpoint), func(t *testing.T) {
-				root := t.TempDir()
-				t.Setenv("AZD_EXEC_PROJECT_DIR", root)
-				client, project, env, _, workflow := newSelfInitializingDeploymentClient(t, root)
-				maps.Copy(env.values, map[string]string{
-					"AZURE_AI_PROJECT_ID": projectID, "USE_EXISTING_AI_PROJECT": "false",
-					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testExternalRegistryID,
-					"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "shared.azurecr.io", "AZD_FOUNDRY_ACR_MODE": "reuse-connect",
-				})
-				if !legacy {
-					binding, err := json.Marshal(synthesis.ACRBinding{
-						Version: 1, Mode: "reuse-connect", RegistryResourceID: testExternalRegistryID,
-						ProjectResourceID: projectID, PrincipalID: "principal",
+			for _, targetName := range []string{"project", "other"} {
+				t.Run(strconv.FormatBool(legacy)+"/endpoint="+strconv.FormatBool(endpoint)+"/target="+targetName, func(t *testing.T) {
+					root := t.TempDir()
+					t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+					client, project, env, _, workflow := newSelfInitializingDeploymentClient(t, root)
+					maps.Copy(env.values, map[string]string{
+						"AZURE_AI_PROJECT_ID": projectID, "USE_EXISTING_AI_PROJECT": "false",
+						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testExternalRegistryID,
+						"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "shared.azurecr.io", "AZD_FOUNDRY_ACR_MODE": "reuse-connect",
 					})
-					require.NoError(t, err)
-					env.config = map[string][]byte{synthesis.ACRBindingConfigKey: binding}
-				}
-				before, beforeConfig := maps.Clone(env.values), maps.Clone(env.config)
-				flags := &projectAddFlags{noPrompt: true, output: "none", projectID: projectID}
-				if endpoint {
-					flags.projectID = ""
-					flags.projectEndpoint = "https://account.services.ai.azure.com/api/projects/project"
-				}
-				action := &ProjectAddAction{client: client, flags: flags,
-					extCtx: &azdext.ExtensionContext{Environment: "test"}}
-				require.ErrorContains(t, action.Run(t.Context()), "cannot adopt")
-				assert.Equal(t, before, env.values)
-				assert.Equal(t, beforeConfig, env.config)
-				assert.Empty(t, env.setLog)
-				assert.Empty(t, workflow.args)
-				assert.False(t, project.providerSet)
-				assert.NoFileExists(t, filepath.Join(root, "azure.yaml"))
-				assert.NoDirExists(t, filepath.Join(root, ".azure"))
-			})
+					if !legacy {
+						binding, err := json.Marshal(synthesis.ACRBinding{
+							Version: 1, Mode: "reuse-connect", RegistryResourceID: testExternalRegistryID,
+							ProjectResourceID: projectID, PrincipalID: "principal",
+						})
+						require.NoError(t, err)
+						env.config = map[string][]byte{synthesis.ACRBindingConfigKey: binding}
+					}
+					before, beforeConfig := maps.Clone(env.values), maps.Clone(env.config)
+					targetID := strings.TrimSuffix(projectID, "/project") + "/" + targetName
+					flags := &projectAddFlags{noPrompt: true, output: "none", projectID: targetID}
+					if endpoint {
+						flags.projectID = ""
+						flags.projectEndpoint = "https://account.services.ai.azure.com/api/projects/" + targetName
+					}
+					action := &ProjectAddAction{client: client, flags: flags,
+						extCtx: &azdext.ExtensionContext{Environment: "test"}}
+					err := action.Run(t.Context())
+					if targetName == "project" {
+						require.ErrorContains(t, err, "cannot adopt")
+					} else {
+						require.ErrorContains(t, err, "cannot replace")
+						assert.Contains(t, azdext.ErrorSuggestion(err), "retain the deployed project")
+						assert.Contains(t, azdext.ErrorSuggestion(err), "--project-id")
+						assert.Contains(t, azdext.ErrorSuggestion(err), "--project-endpoint")
+					}
+					assert.Contains(t, azdext.ErrorSuggestion(err), "new azd environment")
+					assert.NotContains(t, azdext.ErrorSuggestion(err), "azd down")
+					assert.Equal(t, before, env.values)
+					assert.Equal(t, beforeConfig, env.config)
+					assert.Empty(t, env.setLog)
+					assert.Empty(t, workflow.args)
+					assert.False(t, project.providerSet)
+					assert.NoFileExists(t, filepath.Join(root, "azure.yaml"))
+					assert.NoDirExists(t, filepath.Join(root, ".azure"))
+				})
+			}
 		}
 	}
 }

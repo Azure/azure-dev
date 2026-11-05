@@ -94,7 +94,7 @@ Preview Feature Switches
   AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
     Hosted agent memory snapshots.
   AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
-    Existing AKS project initialization and adoption.
+    Existing AKS project initialization, adoption, provisioning, and provisioning preview.
 
   All preview switches default to off.
   A notice appears only when a command uses an enabled preview feature.

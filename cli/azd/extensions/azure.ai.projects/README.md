@@ -233,6 +233,9 @@ For missing principal bindings declared by the template, the provider uses match
 After local validation, preview opt-in, and credential initialization, preflight collects resource
 and authorization evidence. Required bindings must resolve successfully before they are merged
 and ARM deployment or what-if can proceed.
+Preflight and federation-role binding share built-in role-name lookups within that preparation,
+keyed by target subscription and role name. Binding resolves the role on demand if preflight did
+not need it; role-definition permission reads and role-assignment checks remain separate.
 
 `azd provision --preview` resolves the host bindings and returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives names for omitted supporting resources and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`. Registry outputs are empty when no registry is selected.
 

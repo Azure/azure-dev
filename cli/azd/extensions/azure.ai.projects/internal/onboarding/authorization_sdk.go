@@ -19,7 +19,7 @@ import (
 type scopedAuthorizer struct {
 	credential azcore.TokenCredential
 	options    *arm.ClientOptions
-	reads      *authorizationEvidence
+	reads      *AuthorizationEvidence
 }
 
 type operation struct {
@@ -31,6 +31,13 @@ func NewAuthorizer(credential azcore.TokenCredential, options *arm.ClientOptions
 	return &scopedAuthorizer{credential: credential, options: onboardingARMOptions(options)}
 }
 
+// NewAuthorizerWithEvidence reuses request-local evidence across preflight and deployment bindings.
+func NewAuthorizerWithEvidence(
+	credential azcore.TokenCredential, options *arm.ClientOptions, evidence *AuthorizationEvidence,
+) Authorizer {
+	return &scopedAuthorizer{credential: credential, options: onboardingARMOptions(options), reads: evidence}
+}
+
 // CheckClusterDeployment checks deployment-write permission in the AKS resource group without checking supporting resources.
 func CheckClusterDeployment(
 	ctx context.Context, clusterID string, credential azcore.TokenCredential, options *arm.ClientOptions,
@@ -40,7 +47,7 @@ func CheckClusterDeployment(
 		return nil, err
 	}
 	a := &scopedAuthorizer{credential: credential, options: onboardingARMOptions(options)}
-	a.reads = newAuthorizationEvidence(a.credential, a.options)
+	a.reads = NewAuthorizationEvidence(a.credential, a.options)
 	caller, tokenErr, identityErr := a.operatorIdentity(ctx)
 	report := a.checkOperations(ctx, []operation{
 		{"P09", "Microsoft.Resources/deployments/write", cluster.Parent.String()},
@@ -137,7 +144,7 @@ func supportingOperations(plan Plan, facts Facts) ([]operation, error) {
 
 func (a *scopedAuthorizer) Check(ctx context.Context, p Plan, f Facts) (Report, error) {
 	local := *a
-	local.reads = newAuthorizationEvidence(a.credential, a.options)
+	local.reads = a.evidence()
 	a = &local
 	report := a.suppliedIdentityChecks(ctx, p, f)
 	report = append(report, permissionPlanSkips(p)...)
@@ -226,7 +233,7 @@ func permissionPlanSkips(plan Plan) Report {
 	return report
 }
 
-func (e *authorizationEvidence) resolveGrantRole(
+func (e *AuthorizationEvidence) resolveGrantRole(
 	ctx context.Context, subscription string, grant grantRequest,
 ) (string, error) {
 	if scope, err := arm.ParseResourceID(grant.scope); err == nil && scope.SubscriptionID != "" {
@@ -235,13 +242,20 @@ func (e *authorizationEvidence) resolveGrantRole(
 	if grant.roleID != "" {
 		return "/subscriptions/" + subscription + "/providers/Microsoft.Authorization/roleDefinitions/" + grant.roleID, nil
 	}
-	return e.roleNames.get(strings.ToLower(subscription)+"|"+grant.roleName, func() (string, error) {
+	return e.ResolveRoleByName(ctx, subscription, grant.roleName)
+}
+
+// ResolveRoleByName resolves a built-in role, sharing concurrent reads and errors by subscription and exact role name.
+func (e *AuthorizationEvidence) ResolveRoleByName(
+	ctx context.Context, subscription, roleName string,
+) (string, error) {
+	return e.roleNames.get(strings.ToLower(subscription)+"|"+roleName, func() (string, error) {
 		client, err := e.definitionClient()
 		if err != nil {
 			return "", err
 		}
 		pager := client.NewListPager("/subscriptions/"+subscription,
-			&armauthorization.RoleDefinitionsClientListOptions{Filter: new("roleName eq '" + grant.roleName + "'")})
+			&armauthorization.RoleDefinitionsClientListOptions{Filter: new("roleName eq '" + roleName + "'")})
 		for pager.More() {
 			page, err := pager.NextPage(ctx)
 			if err != nil {
@@ -249,12 +263,12 @@ func (e *authorizationEvidence) resolveGrantRole(
 			}
 			for _, role := range page.Value {
 				if role != nil && role.ID != nil && role.Properties != nil &&
-					authString(role.Properties.RoleName) == grant.roleName &&
+					authString(role.Properties.RoleName) == roleName &&
 					strings.EqualFold(authString(role.Properties.RoleType), "BuiltInRole") {
 					return *role.ID, nil
 				}
 			}
 		}
-		return "", fmt.Errorf("required built-in role %q is unavailable", grant.roleName)
+		return "", fmt.Errorf("required built-in role %q is unavailable", roleName)
 	})
 }

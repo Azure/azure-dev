@@ -20,7 +20,6 @@ import (
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
@@ -125,9 +124,10 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if err != nil {
 		return err
 	}
+	evidence := onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
 	pipeline := onboarding.Pipeline{
 		Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions),
-		Access:    onboarding.NewAuthorizer(p.credential, p.armClientOptions),
+		Access:    onboarding.NewAuthorizerWithEvidence(p.credential, p.armClientOptions, evidence),
 	}
 	facts, report, preflightErr := pipeline.Preflight(ctx, plan)
 	if err := writeBYOPreflight(report, preflightErr, progress); err != nil {
@@ -168,7 +168,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		resolvedBindings[identity.binding] = identity.fact.PrincipalID
 	}
 	if resolveFederationRole {
-		roleID, err := p.resolveBYOFederationRoleID(ctx, roleSubscription)
+		roleID, err := resolveBYOFederationRoleID(ctx, roleSubscription, evidence)
 		if err != nil {
 			return err
 		}
@@ -217,42 +217,23 @@ func parseBYOResourceID(value, kind string) (*arm.ResourceID, error) {
 	return id, nil
 }
 
-func (p *FoundryProvisioningProvider) resolveBYOFederationRoleID(
-	ctx context.Context, roleSubscription string,
+func resolveBYOFederationRoleID(
+	ctx context.Context, roleSubscription string, evidence *onboarding.AuthorizationEvidence,
 ) (string, error) {
 	const roleName = "Managed Identity Federated Identity Credential Contributor"
-	roles, err := armauthorization.NewRoleDefinitionsClient(p.credential, byoARMOptions(p.armClientOptions))
+	id, err := evidence.ResolveRoleByName(ctx, roleSubscription, roleName)
 	if err != nil {
-		return "", fmt.Errorf("create role definitions client: %w", err)
+		return "", fmt.Errorf("resolve built-in federation role: %w", err)
 	}
-	pager := roles.NewListPager("/subscriptions/"+roleSubscription,
-		&armauthorization.RoleDefinitionsClientListOptions{Filter: new("roleName eq '" + roleName + "'")})
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return "", fmt.Errorf("resolve built-in federation role: %w", err)
-		}
-		for _, role := range page.Value {
-			if role == nil || role.Properties == nil || role.Properties.RoleName == nil ||
-				*role.Properties.RoleName != roleName || role.Properties.RoleType == nil ||
-				!strings.EqualFold(*role.Properties.RoleType, "BuiltInRole") {
-				continue
-			}
-			if role.ID == nil {
-				return "", fmt.Errorf("built-in federation role has an invalid ID")
-			}
-			roleID, err := arm.ParseResourceID(*role.ID)
-			if err != nil || !strings.EqualFold(roleID.ResourceType.String(), "Microsoft.Authorization/roleDefinitions") {
-				return "", fmt.Errorf("built-in federation role has an invalid ID")
-			}
-			if _, err := uuid.Parse(roleID.Name); err != nil {
-				return "", fmt.Errorf("BYO AKS federation role requires a role definition GUID: %w", err)
-			}
-			return "/subscriptions/" + roleSubscription +
-				"/providers/Microsoft.Authorization/roleDefinitions/" + roleID.Name, nil
-		}
+	roleID, err := arm.ParseResourceID(id)
+	if err != nil || !strings.EqualFold(roleID.ResourceType.String(), "Microsoft.Authorization/roleDefinitions") {
+		return "", fmt.Errorf("built-in federation role has an invalid ID")
 	}
-	return "", fmt.Errorf("required built-in role %q is unavailable", roleName)
+	if _, err := uuid.Parse(roleID.Name); err != nil {
+		return "", fmt.Errorf("BYO AKS federation role requires a role definition GUID: %w", err)
+	}
+	return "/subscriptions/" + roleSubscription +
+		"/providers/Microsoft.Authorization/roleDefinitions/" + roleID.Name, nil
 }
 
 func byoHostingParameter(source *templateSource) (byoHostingParameters, error) {

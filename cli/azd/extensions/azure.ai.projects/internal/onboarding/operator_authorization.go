@@ -16,7 +16,7 @@ import (
 
 var operatorObjectIDPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
 
-func (e *authorizationEvidence) filteredAssignments(
+func (e *AuthorizationEvidence) filteredAssignments(
 	ctx context.Context, scope, filter string,
 ) ([]*armauthorization.RoleAssignment, error) {
 	return e.assignments.get(strings.ToLower(scope)+"|"+filter, func() ([]*armauthorization.RoleAssignment, error) {
@@ -24,7 +24,7 @@ func (e *authorizationEvidence) filteredAssignments(
 	})
 }
 
-func (e *authorizationEvidence) readAssignments(
+func (e *AuthorizationEvidence) readAssignments(
 	ctx context.Context, scope, filter string,
 ) ([]*armauthorization.RoleAssignment, error) {
 	id, err := arm.ParseResourceID(scope)

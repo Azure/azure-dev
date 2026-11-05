@@ -34,7 +34,8 @@ func (c *passReads[T]) get(key string, read func() (T, error)) (T, error) {
 	return load()
 }
 
-type authorizationEvidence struct {
+// AuthorizationEvidence shares authorization reads within one provisioning preparation.
+type AuthorizationEvidence struct {
 	credential        azcore.TokenCredential
 	options           *arm.ClientOptions
 	assignmentClients passReads[*armauthorization.RoleAssignmentsClient]
@@ -44,24 +45,25 @@ type authorizationEvidence struct {
 	roleNames         passReads[string]
 }
 
-func newAuthorizationEvidence(credential azcore.TokenCredential, options *arm.ClientOptions) *authorizationEvidence {
-	return &authorizationEvidence{credential: credential, options: options}
+// NewAuthorizationEvidence creates a request-local, concurrency-safe evidence cache.
+func NewAuthorizationEvidence(credential azcore.TokenCredential, options *arm.ClientOptions) *AuthorizationEvidence {
+	return &AuthorizationEvidence{credential: credential, options: onboardingARMOptions(options)}
 }
 
-func (a *scopedAuthorizer) evidence() *authorizationEvidence {
+func (a *scopedAuthorizer) evidence() *AuthorizationEvidence {
 	if a.reads != nil {
 		return a.reads
 	}
-	return newAuthorizationEvidence(a.credential, a.options)
+	return NewAuthorizationEvidence(a.credential, a.options)
 }
 
-func (e *authorizationEvidence) definitionClient() (*armauthorization.RoleDefinitionsClient, error) {
+func (e *AuthorizationEvidence) definitionClient() (*armauthorization.RoleDefinitionsClient, error) {
 	return e.definitionClients.get("", func() (*armauthorization.RoleDefinitionsClient, error) {
 		return armauthorization.NewRoleDefinitionsClient(e.credential, e.options)
 	})
 }
 
-func (e *authorizationEvidence) roleDefinition(
+func (e *AuthorizationEvidence) roleDefinition(
 	ctx context.Context, id string,
 ) (armauthorization.RoleDefinitionsClientGetByIDResponse, error) {
 	return e.definitions.get(strings.ToLower(id), func() (armauthorization.RoleDefinitionsClientGetByIDResponse, error) {

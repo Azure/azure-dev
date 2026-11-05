@@ -5,7 +5,7 @@ Usage
   azd ai [command]
 
 Available Commands
-  agent     	: Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. (Beta)
+  agent     	: Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal.
   connection	: Manage Microsoft Foundry Connections from your terminal.
   cu        	: Extension for Azure Content Understanding. (Preview)
   dataset   	: Register and version Foundry datasets from your terminal. (Beta)
@@ -16,7 +16,7 @@ Available Commands
   project   	: Manage Microsoft Foundry Project resources from your terminal.
   routine   	: Manage Microsoft Foundry Routines from your terminal.
   skill     	: Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal.
-  toolbox   	: Manage Microsoft Foundry Toolboxes from your terminal. (Beta)
+  toolbox   	: Manage Microsoft Foundry Toolboxes from your terminal.
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

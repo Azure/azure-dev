@@ -473,20 +473,46 @@ func TestMonitoringPreflightImplicitExistingProjectIsNotConsent(t *testing.T) {
 	assert.Len(t, fixture.requests, 3, "only deployment binding, What-If and project identity are read; no setup or discovery")
 }
 
-func TestMonitoringPreflightPrivateNetworkSkipsMonitoring(t *testing.T) {
+func TestMonitoringPreflightPrivateNetworkConnectsExistingComponent(t *testing.T) {
 	t.Parallel()
-	fixture := monitoringCloudFixture{}
-	p := newMonitoringCloudFixture(t, &fixture)
-	p.synthResult = &synthesis.Result{MonitoringExplicit: true}
-	source := monitoringTestSource("reuse-connect")
-	source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
-	client, err := p.deploymentsClient(t.Context())
-	require.NoError(t, err)
-	require.NoError(t, p.prepareMonitoring(t.Context(), source, client, func(string) {}))
-	assert.Equal(t, "none", source.parameters["monitoringMode"].(map[string]any)["value"])
-	fixture.mu.Lock()
-	defer fixture.mu.Unlock()
-	assert.Empty(t, fixture.writes)
+	tests := []struct {
+		name      string
+		component map[string]any
+		wantErr   string
+	}{
+		{
+			name:      "component with public ingestion disabled",
+			component: map[string]any{"publicNetworkAccessForIngestion": "Disabled"},
+		},
+		{name: "component with public ingestion enabled"},
+		{
+			name:      "local authentication disabled",
+			component: map[string]any{"DisableLocalAuth": true},
+			wantErr:   "disabled local authentication",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := monitoringCloudFixture{componentPolicy: tt.component}
+			p := newMonitoringCloudFixture(t, &fixture)
+			p.synthResult = &synthesis.Result{MonitoringExplicit: true}
+			source := monitoringTestSource("reuse-connect")
+			source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+			client, err := p.deploymentsClient(t.Context())
+			require.NoError(t, err)
+			err = p.prepareMonitoring(t.Context(), source, client, func(string) {})
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "reuse-connect", source.parameters["monitoringMode"].(map[string]any)["value"])
+			fixture.mu.Lock()
+			defer fixture.mu.Unlock()
+			assert.Empty(t, fixture.writes)
+		})
+	}
 }
 
 func TestMonitoringPreflightOwnedExistingProjectRetainsCreateGraph(t *testing.T) {

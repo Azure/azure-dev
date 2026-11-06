@@ -62,13 +62,13 @@ resource component 'Microsoft.Insights/components@2020-02-02' = if (createResour
   }
 }
 
-module privateLink 'monitor-private-link.bicep' = if (createResources && privateNetwork) {
+module privateLink 'monitor-private-link.bicep' = if ((createResources || mode == 'reuse-connect') && privateNetwork) {
   name: 'foundry-monitoring-private-link'
   params: {
     location: vnetLocation
     suffix: token
-    applicationInsightsResourceId: component!.id
-    logAnalyticsWorkspaceResourceId: workspace!.id
+    applicationInsightsResourceId: createResources ? component!.id : existingComponent!.id
+    logAnalyticsWorkspaceResourceId: createResources ? workspace!.id : existingComponent!.properties.WorkspaceResourceId
     vnetId: vnetId
     peSubnetId: peSubnetId
     dnsZonesResourceGroup: dnsZonesResourceGroup

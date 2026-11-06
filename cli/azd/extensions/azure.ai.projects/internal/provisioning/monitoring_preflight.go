@@ -173,11 +173,6 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 		return fmt.Errorf("the declared existing AppInsights connection was not found; no connection was created")
 	}
 	if monitoringPrivateNetwork(source) {
-		if mode != "create" {
-			source.parameters["monitoringMode"] = map[string]any{"value": "none"}
-			progress("Warning: " + synthesis.PrivateNetworkMonitoringWarning)
-			return nil
-		}
 		if err := p.checkMonitorPrivateLinkConflict(ctx, source, &resolver, progress); err != nil {
 			if _, conflict := errors.AsType[*synthesis.MonitorPrivateLinkConflictError](err); conflict {
 				// Skip rather than fail so an existing private network keeps provisioning.

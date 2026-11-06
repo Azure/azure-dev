@@ -152,7 +152,7 @@ func TestSynthesizeMonitoringPrivateNetwork(t *testing.T) {
 		{
 			name:     "BYO component",
 			settings: "    monitoring:\n      applicationInsightsResourceId: " + component + "\n",
-			wantMode: "none", wantWarning: true,
+			wantMode: "reuse-connect",
 		},
 		{name: "explicit opt out", settings: "    monitoring:\n      enabled: false\n", wantMode: "none"},
 	}
@@ -166,10 +166,13 @@ func TestSynthesizeMonitoringPrivateNetwork(t *testing.T) {
 				})
 				require.NoError(t, err)
 				wantMode, wantWarning := tt.wantMode, tt.wantWarning
-				if networkName == "managed egress" && wantMode == "create" {
+				if networkName == "managed egress" && (wantMode == "create" || wantMode == "reuse-connect") {
 					wantMode, wantWarning = "none", true
 				}
 				assert.Equal(t, wantMode, result.Parameters["monitoringMode"])
+				if wantMode == "reuse-connect" {
+					assert.Equal(t, component, result.Parameters["applicationInsightsResourceId"])
+				}
 				if wantWarning {
 					assert.Equal(t, []string{PrivateNetworkMonitoringWarning}, result.Warnings)
 					assert.Equal(t, "", result.Parameters["applicationInsightsResourceId"])

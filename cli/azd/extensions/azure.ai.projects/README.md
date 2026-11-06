@@ -200,10 +200,17 @@ fresh deployment, private ingestion can return 403 for a while (observed up to
 about 20 minutes) before traces start to arrive. Live testing confirmed that
 Foundry service-side traces from a deployed prompt agent were read from inside
 the network without any post-deployment change.
-Unsupported private-network cases never block provisioning: managed egress,
-connecting an existing component, or a virtual network that already has an
-Azure Monitor private endpoint skip automatic monitoring and azd prints a
-warning. Set `monitoring.enabled: false` to opt out silently. Other monitoring
+With your own agent subnet you can also connect an existing component
+(`reuse-connect`): azd builds its own Private Link Scope, private endpoint and
+DNS zones and links the component and its workspace to the scope, without
+modifying the component. The component must keep local authentication enabled.
+azd does not re-update a component it does not own; if ingestion returns 403
+after provisioning, touching the component (for example, updating a tag) can
+clear it.
+Unsupported private-network cases never block provisioning: managed egress, or
+a virtual network that already has an Azure Monitor private endpoint (azd does
+not adopt an existing scope or endpoint) skip automatic monitoring and azd
+prints a warning. Set `monitoring.enabled: false` to opt out silently. Other monitoring
 failures can fail normal provisioning; there is no second best-effort
 deployment or agent deployment repair hook.
 

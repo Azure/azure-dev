@@ -73,6 +73,21 @@ func TestMonitoringResyncMatchesComponent(t *testing.T) {
 	assert.Contains(t, monitoring, "publicNetworkAccessForQuery: 'Enabled'")
 }
 
+func TestMonitoringPrivateLinkScopesExistingComponent(t *testing.T) {
+	t.Parallel()
+	raw, err := templatesFS.ReadFile("templates/modules/monitoring.bicep")
+	require.NoError(t, err)
+	monitoring := string(raw)
+	// A connected existing component is scoped to the new AMPLS, but never rewritten.
+	assert.Contains(t, monitoring,
+		"module privateLink 'monitor-private-link.bicep' = if ((createResources || mode == 'reuse-connect') && privateNetwork)")
+	assert.Contains(t, monitoring, "createResources ? component!.id : existingComponent!.id")
+	assert.Contains(t, monitoring,
+		"createResources ? workspace!.id : existingComponent!.properties.WorkspaceResourceId")
+	assert.Contains(t, monitoring, "module resync 'monitoring-resync.bicep' = if (createResources && privateNetwork)")
+	assert.NotContains(t, monitoring, "resource existingComponent 'Microsoft.Insights/components@2020-02-02' = ")
+}
+
 func TestCheckMonitorPrivateLinkConflict(t *testing.T) {
 	t.Parallel()
 	const ownedScope = "/subscriptions/" + testSub + "/resourceGroups/rg/providers/Microsoft.Insights/privateLinkScopes/ampls-abc"

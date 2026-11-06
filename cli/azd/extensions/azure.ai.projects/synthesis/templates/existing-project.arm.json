@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "1470382681626266510"
+      "templateHash": "8339999164769765153"
     }
   },
   "definitions": {
@@ -803,7 +803,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "7468204480995557245"
+              "templateHash": "6075082788325261439"
             }
           },
           "parameters": {
@@ -916,7 +916,7 @@
               ]
             },
             {
-              "condition": "[and(variables('createResources'), parameters('privateNetwork'))]",
+              "condition": "[and(or(variables('createResources'), equals(parameters('mode'), 'reuse-connect')), parameters('privateNetwork'))]",
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
               "name": "foundry-monitoring-private-link",
@@ -932,12 +932,8 @@
                   "suffix": {
                     "value": "[variables('token')]"
                   },
-                  "applicationInsightsResourceId": {
-                    "value": "[resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))]"
-                  },
-                  "logAnalyticsWorkspaceResourceId": {
-                    "value": "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
-                  },
+                  "applicationInsightsResourceId": "[if(variables('createResources'), createObject('value', resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])))]",
+                  "logAnalyticsWorkspaceResourceId": "[if(variables('createResources'), createObject('value', resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8]), '2020-02-02').WorkspaceResourceId))]",
                   "vnetId": {
                     "value": "[parameters('vnetId')]"
                   },

@@ -74,6 +74,7 @@ words:
   - abbrs
   - acrpush
   - alnum
+  - azuremonitor
   - foundryproject
   - agentignore
   - ADLS

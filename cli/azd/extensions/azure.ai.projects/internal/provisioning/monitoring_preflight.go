@@ -94,8 +94,18 @@ func (p *FoundryProvisioningProvider) privateMonitoringSkipReason(
 	if managed, _ := templateParameter(source, "useManagedEgress"); managed == true {
 		return "managed egress cannot reach a private Azure Monitor endpoint in your virtual network", nil
 	}
+	ownedScopeID := p.ownedPrivateLinkScope(source, previous)
+	owned := ownedScopeID != "" || (previous != nil && previous.owned)
+	// Skipping would record monitoringMode none and drop the binding of an owned graph.
+	ownedBlock := func(reason string) (string, error) {
+		if owned {
+			return "", fmt.Errorf("automatic monitoring cannot continue for this environment: %s; "+
+				"resolve this or set monitoring.enabled: false", reason)
+		}
+		return reason, nil
+	}
 	if zones, _ := templateParameter(source, "dnsZonesResourceGroup"); zones != nil && zones != "" {
-		return "shared private DNS zones are configured and azd cannot verify they are safe to bind to a new Azure Monitor scope", nil
+		return ownedBlock("shared private DNS zones are configured and azd cannot verify they are safe to bind to a new Azure Monitor scope")
 	}
 	vnetID, err := monitoringParameter(source, "vnetId")
 	if err != nil {
@@ -104,16 +114,15 @@ func (p *FoundryProvisioningProvider) privateMonitoringSkipReason(
 	if vnetID == "" {
 		return "", nil
 	}
-	ownedScopeID := p.ownedPrivateLinkScope(source, previous)
 	err = resolver.CheckMonitorPrivateLinkConflict(ctx, vnetID, ownedScopeID)
 	if err == nil {
 		return "", nil
 	}
 	if _, conflict := errors.AsType[*synthesis.MonitorPrivateLinkConflictError](err); conflict {
-		return err.Error(), nil
+		return ownedBlock(err.Error())
 	}
 	log.Printf("[warn] foundry provider: could not check for an existing Azure Monitor private endpoint: %v", err)
-	if ownedScopeID != "" || (previous != nil && previous.owned) {
+	if owned {
 		return "", fmt.Errorf("could not verify the Azure Monitor private endpoint this environment already uses; "+
 			"retry provisioning: %w", err)
 	}
@@ -252,7 +261,8 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 			mode = "already-connected"
 			componentID = connection.Target
 		}
-		if err := resolver.ValidateComponent(ctx, connection.Target, mode == "create" || mode == "reuse-connect"); err != nil {
+		// A preserved connection is reused as is, so only a new one needs key authentication.
+		if err := resolver.ValidateComponent(ctx, connection.Target, mode == "create"); err != nil {
 			return err
 		}
 		source.parameters["monitoringMode"] = map[string]any{"value": mode}

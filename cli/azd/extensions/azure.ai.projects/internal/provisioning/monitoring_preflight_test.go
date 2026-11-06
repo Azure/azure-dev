@@ -72,7 +72,14 @@ type monitoringCloudFixture struct {
 	deploymentStatus       int
 	deploymentOutputs      map[string]any
 	deploymentResources    []any
+	vnetStatus             int
+	foreignEndpointScope   string
 }
+
+const (
+	monitoringTestVNet     = "/subscriptions/sub/resourceGroups/net-rg/providers/Microsoft.Network/virtualNetworks/vnet"
+	monitoringTestEndpoint = "/subscriptions/sub/resourceGroups/net-rg/providers/Microsoft.Network/privateEndpoints/pe"
+)
 
 func newMonitoringCloudFixture(t *testing.T, fixture *monitoringCloudFixture) *FoundryProvisioningProvider {
 	t.Helper()
@@ -91,6 +98,24 @@ func newMonitoringCloudFixture(t *testing.T, fixture *monitoringCloudFixture) *F
 			}})
 		}
 		switch {
+		case strings.Contains(request.URL.Path, "/providers/Microsoft.Network/virtualNetworks/"):
+			if fixture.vnetStatus != 0 {
+				failure(fixture.vnetStatus)
+				return
+			}
+			endpoints := []any{}
+			if fixture.foreignEndpointScope != "" {
+				endpoints = append(endpoints, map[string]any{"id": monitoringTestEndpoint})
+			}
+			reply(http.StatusOK, map[string]any{"id": request.URL.Path, "properties": map[string]any{
+				"subnets": []any{map[string]any{"properties": map[string]any{"privateEndpoints": endpoints}}},
+			}})
+		case strings.EqualFold(request.URL.Path, monitoringTestEndpoint):
+			reply(http.StatusOK, map[string]any{"id": request.URL.Path, "properties": map[string]any{
+				"privateLinkServiceConnections": []any{map[string]any{"properties": map[string]any{
+					"groupIds": []any{"azuremonitor"}, "privateLinkServiceId": fixture.foreignEndpointScope,
+				}}},
+			}})
 		case strings.EqualFold(request.URL.Path, "/subscriptions/sub/resourceGroups/adjunct-rg"):
 			if request.Method == http.MethodDelete {
 				fixture.deletions = append(fixture.deletions, request.URL.Path)
@@ -676,6 +701,94 @@ func TestMonitoringPreflightPrivateCreatePlansWithApproval(t *testing.T) {
 	planned := fixture.plans[0]["properties"].(map[string]any)["parameters"].(map[string]any)
 	assert.Equal(t, true, planned["monitoringPrivateLinkApproved"].(map[string]any)["value"],
 		"the planning What-If must include the monitoring graph")
+}
+
+func TestMonitoringPrivateMonitoringSkipReasonDecisions(t *testing.T) {
+	t.Parallel()
+	owned := "/subscriptions/sub/resourceGroups/project-rg/providers/Microsoft.Insights/privateLinkScopes/owned"
+	foreign := "/subscriptions/sub/resourceGroups/other/providers/Microsoft.Insights/privateLinkScopes/foreign"
+	ownedOutputs := map[string]any{"azd_monitoring_private_link_scope_id": map[string]any{"value": owned}}
+	planWith := func(id string) *armresources.WhatIfOperationResult {
+		kind := armresources.ChangeTypeCreate
+		return &armresources.WhatIfOperationResult{Properties: &armresources.WhatIfOperationProperties{
+			Changes: []*armresources.WhatIfChange{{ResourceID: &id, ChangeType: &kind}},
+		}}
+	}
+	tests := []struct {
+		name       string
+		foreign    string
+		vnetStatus int
+		previous   *monitoringTargetBinding
+		extra      map[string]any
+		wantSkip   bool
+		wantErr    bool
+	}{
+		{name: "new environment with a free network proceeds"},
+		{name: "new environment conflict skips", foreign: foreign, wantSkip: true},
+		{name: "new environment read failure skips", vnetStatus: http.StatusInternalServerError, wantSkip: true},
+		{
+			name: "owned environment conflict errors", foreign: foreign,
+			previous: &monitoringTargetBinding{owned: true}, wantErr: true,
+		},
+		{
+			name: "owned environment read failure errors", vnetStatus: http.StatusInternalServerError,
+			previous: &monitoringTargetBinding{owned: true}, wantErr: true,
+		},
+		{
+			name: "owned environment shared DNS errors", previous: &monitoringTargetBinding{owned: true},
+			extra: map[string]any{"dnsZonesResourceGroup": "dns-rg"}, wantErr: true,
+		},
+		{
+			name: "own scope from mixed-case outputs is exempt", foreign: owned,
+			previous: &monitoringTargetBinding{outputs: ownedOutputs},
+		},
+		{
+			name: "own scope from a failed retry plan is exempt", foreign: owned,
+			previous: &monitoringTargetBinding{retry: true, plan: planWith(owned)},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := monitoringCloudFixture{foreignEndpointScope: tt.foreign, vnetStatus: tt.vnetStatus}
+			p := newMonitoringCloudFixture(t, &fixture)
+			source := monitoringTestSource("reuse-connect")
+			source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+			source.parameters["vnetId"] = map[string]any{"value": monitoringTestVNet}
+			source.parameters["resourceGroupName"] = map[string]any{"value": "project-rg"}
+			for name, value := range tt.extra {
+				source.parameters[name] = map[string]any{"value": value}
+			}
+			resolver := synthesis.MonitoringResolver{
+				Credential: p.credential, ClientOptions: p.armClientOptions, PrivateNetwork: true,
+			}
+			reason, err := p.privateMonitoringSkipReason(t.Context(), source, &resolver, tt.previous)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Empty(t, reason)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSkip, reason != "", reason)
+		})
+	}
+}
+
+func TestMonitoringPreflightPrivateNetworkPreservesKeylessConnection(t *testing.T) {
+	t.Parallel()
+	fixture := monitoringCloudFixture{
+		componentPolicy:    map[string]any{"DisableLocalAuth": true},
+		accountConnections: []any{monitoringTestConnection("shared-monitoring", monitoringTestComponent, "AAD", true)},
+	}
+	p := newMonitoringCloudFixture(t, &fixture)
+	p.synthResult = &synthesis.Result{MonitoringExplicit: true}
+	source := monitoringTestSource("reuse-connect")
+	source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+	client, err := p.deploymentsClient(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, p.prepareMonitoring(t.Context(), source, client, func(string) {}))
+	assert.Equal(t, "reuse-connect", source.parameters["monitoringMode"].(map[string]any)["value"])
+	assert.Equal(t, false, source.parameters["monitoringCreateConnection"].(map[string]any)["value"])
 }
 
 func TestMonitoringPlannedPrivateLinkScope(t *testing.T) {

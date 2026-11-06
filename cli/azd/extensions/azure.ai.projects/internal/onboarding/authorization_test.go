@@ -6,7 +6,6 @@ package onboarding
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -37,7 +36,6 @@ func authorizationFake() *readFake {
 		if strings.HasSuffix(strings.ToLower(path), strings.ToLower(assignmentSuffix)) {
 			scope := path[:len(path)-len(assignmentSuffix)]
 			return readReply{200, map[string]any{"value": []any{
-				assignment(scope, testOperator, ownerRole),
 				assignment(scope, "hosting-principal", ownerRole),
 				assignment(scope, "workload-principal", ownerRole),
 			}}}, true
@@ -89,12 +87,12 @@ func suppliedFacts() Facts {
 }
 
 func TestSuppliedGrantChecksUseCurrentExistenceWithoutRecoveryExemptions(t *testing.T) {
-	for _, id := range []string{"G02", "G03"} {
+	for _, id := range []string{"hosting-federation", "workload-blob"} {
 		for _, state := range []string{"absent", "existing", "unknown", "supplied"} {
 			t.Run(id+"/"+state, func(t *testing.T) {
 				plan, facts := suppliedPlan(t), suppliedFacts()
 				target := &plan.Workload
-				if id == "G03" {
+				if id == "workload-blob" {
 					target = &plan.Storage
 					plan.Hosting.Supplied = false
 				}
@@ -121,96 +119,6 @@ func TestSuppliedGrantChecksUseCurrentExistenceWithoutRecoveryExemptions(t *test
 				}
 			})
 		}
-	}
-}
-
-func TestRoleAssignmentPermissionUsesConcreteOrExistingParentScope(t *testing.T) {
-	for _, existing := range []bool{false, true} {
-		plan, facts := suppliedPlan(t), suppliedFacts()
-		plan.Storage.Supplied = false
-		facts.Exists[strings.ToLower(testStorage)] = existing
-		fake := authorizationFake()
-		authorizer := NewAuthorizer(testCredential{}, fake.options()).(*scopedAuthorizer)
-		report := authorizer.checkP06(t.Context(), plan, facts, callerIdentity{objectID: testOperator}, nil)
-		require.Len(t, report, 1)
-		require.NoError(t, report.Err())
-		expected := testGroup
-		if existing {
-			expected = testStorage
-		}
-		assert.Equal(t, expected, report[0].Scope)
-		assert.Equal(t, 1, fake.count(expected+assignmentSuffix))
-	}
-	for _, allowed := range []bool{true, false} {
-		t.Run("known ancestor with unresolved resource/"+fmt.Sprint(allowed), func(t *testing.T) {
-			plan, facts := suppliedPlan(t), suppliedFacts()
-			plan.Grants = []PlannedGrant{{
-				CheckID: "G03", Target: Resource{Origin: "Storage in edited module", Missing: "runtime Storage name"},
-				AuthorityScope: testGroup, DeploymentScope: testGroup,
-			}}
-			fake := authorizationFake()
-			if !allowed {
-				fake.replies[strings.ToLower(testGroup+assignmentSuffix)] =
-					readReply{200, map[string]any{"value": []any{}}}
-			}
-			authorizer := NewAuthorizer(testCredential{}, fake.options()).(*scopedAuthorizer)
-			report := authorizer.checkP06(t.Context(), plan, facts, callerIdentity{objectID: testOperator}, nil)
-			require.Len(t, report, 1)
-			assert.Equal(t, testGroup, report[0].Scope)
-			if allowed {
-				assert.Equal(t, Pass, report[0].Status)
-			} else {
-				assert.Equal(t, Fail, report[0].Status)
-				require.Error(t, report.Err())
-			}
-			assert.Equal(t, 1, fake.count(testGroup+assignmentSuffix))
-		})
-	}
-	for _, field := range []string{"condition", "conditionVersion", "delegatedManagedIdentityResourceId"} {
-		t.Run(field, func(t *testing.T) {
-			plan, facts := suppliedPlan(t), suppliedFacts()
-			plan.Storage.Supplied = false
-			fake := authorizationFake()
-			grant := assignment(testStorage, testOperator, ownerRole)
-			grant["properties"].(map[string]any)[field] = "unsupported"
-			fake.replies[strings.ToLower(testStorage+assignmentSuffix)] =
-				readReply{200, map[string]any{"value": []any{grant}}}
-			authorizer := NewAuthorizer(testCredential{}, fake.options()).(*scopedAuthorizer)
-			report := authorizer.checkP06(t.Context(), plan, facts, callerIdentity{objectID: testOperator}, nil)
-			require.Error(t, report.Err())
-			assert.Equal(t, Fail, report[0].Status)
-			assert.Contains(t, report[0].Missing, "unconditional")
-		})
-	}
-}
-
-func TestSupportingOperationsKeepReferencesReadOnlyAndDefaultWrites(t *testing.T) {
-	plan, facts := suppliedPlan(t), suppliedFacts()
-	operations, err := supportingOperations(plan, facts)
-	require.NoError(t, err)
-	require.Len(t, operations, 4)
-	for _, operation := range operations {
-		assert.Equal(t, "P02", operation.checkID)
-		assert.NotContains(t, operation.action, "/write")
-	}
-	plan.Storage.Supplied = false
-	operations, err = supportingOperations(plan, facts)
-	require.NoError(t, err)
-	assert.Contains(t, operations, operation{"P04", "Microsoft.Storage/storageAccounts/write", testStorage})
-	plan.Workload.ID = strings.Replace(testWorkload, "/target-rg/", "/other-rg/", 1)
-	plan.Hosting.Supplied = false
-	plan.Cluster.ID = testGroup + "/providers/Microsoft.ContainerService/managedClusters/cluster"
-	plan.Cluster.Parent = testGroup
-	operations, err = supportingOperations(plan, facts)
-	require.NoError(t, err)
-	assert.Contains(t, operations, operation{"P09", "Microsoft.Resources/deployments/write", testGroup})
-	for _, action := range []string{"write", "read", "operations/read"} {
-		assert.Contains(t, operations, operation{"P09", "Microsoft.Resources/deployments/" + action,
-			testSubscription + "/resourceGroups/other-rg"})
-	}
-	for _, operation := range operations {
-		assert.NotContains(t, operation.action, "Microsoft.ContainerRegistry")
-		assert.NotContains(t, operation.action, "Microsoft.Network")
 	}
 }
 
@@ -253,7 +161,6 @@ func TestEquivalentIdentityPermissionsPreserveActionsAndDataActions(t *testing.T
 	} {
 		t.Run(test.name, func(t *testing.T) { assert.Equal(t, test.allowed, roleCovers(test.available, required)) })
 	}
-	assert.True(t, actionMatches("Microsoft.Resources/*", "Microsoft.Resources/deployments/operations/read"))
 }
 
 func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
@@ -305,39 +212,11 @@ func TestAuthorizationReadsAreCachedOnlyWithinOnePass(t *testing.T) {
 		report, err := authorizer.Check(t.Context(), suppliedPlan(t), suppliedFacts())
 		require.NoError(t, err)
 		require.NoError(t, report.Err())
-		assert.Equal(t, pass, fake.count(testCluster+assignmentSuffix), "G01 has two role requirements at the same scope")
-		assert.Equal(t, pass, fake.count(testWorkload+assignmentSuffix), "G02 and P02 share raw scope evidence")
+		assert.Equal(t, pass, fake.count(testCluster+assignmentSuffix),
+			"hosting-aks has two role requirements at the same scope")
+		assert.Equal(t, pass, fake.count(testWorkload+assignmentSuffix),
+			"hosting-federation requirements share raw scope evidence")
 		assert.Equal(t, pass, fake.count(ownerRole), "roles shared by multiple scopes are read once per pass")
-	}
-}
-
-func TestOperatorGroupEvidenceAndManagementGroupAncestry(t *testing.T) {
-	fake := authorizationFake()
-	original := fake.handler
-	fake.handler = func(request *http.Request) (readReply, bool) {
-		if strings.HasSuffix(strings.ToLower(request.URL.Path), strings.ToLower(assignmentSuffix)) {
-			values := []any{}
-			if strings.HasPrefix(request.URL.Query().Get("$filter"), "assignedTo(") {
-				scope := "/providers/Microsoft.Management/managementGroups/parent"
-				values = append(values, assignment(scope, "operator-group", ownerRole))
-			}
-			return readReply{200, map[string]any{"value": values}}, true
-		}
-		return original(request)
-	}
-	authorizer := NewAuthorizer(testCredential{}, fake.options()).(*scopedAuthorizer)
-	caller := callerIdentity{objectID: testOperator, groupOverage: true}
-	status, _, err := authorizer.basicAction(t.Context(), testStorage, caller, roleAssignmentWrite, true)
-	require.NoError(t, err)
-	assert.Equal(t, Pass, status)
-	assert.Equal(t, 2, fake.count(testStorage+assignmentSuffix))
-	caller.objectID = "invalid') or ('"
-	status, _, err = authorizer.basicAction(t.Context(), testStorage, caller, roleAssignmentWrite, true)
-	require.NoError(t, err)
-	assert.Equal(t, Unverified, status)
-	for _, request := range fake.requests {
-		assert.NotContains(t, request.filter, caller.objectID)
-		assert.NotContains(t, request.path, "graph")
 	}
 }
 
@@ -357,7 +236,7 @@ type accessStub struct{ called *bool }
 
 func (s accessStub) Check(context.Context, Plan, Facts) (Report, error) {
 	*s.called = true
-	report := Report{{ID: "P06", Status: Unverified, Mandatory: true}}
+	report := Report{{ID: "workload-blob", Status: Unverified, Mandatory: true}}
 	return report, report.Err()
 }
 
@@ -365,7 +244,7 @@ func TestPipelineCollectsMandatoryFailuresAndPreservesServiceErrors(t *testing.T
 	cause := errors.New("original resource read error")
 	called := false
 	pipeline := Pipeline{
-		Resources: resourceStub{report: Report{{ID: "S01", Status: Fail, Mandatory: true, Cause: cause}}},
+		Resources: resourceStub{report: Report{{ID: "storage-type", Status: Fail, Mandatory: true, Cause: cause}}},
 		Access:    accessStub{called: &called},
 	}
 	_, report, err := pipeline.Preflight(t.Context(), suppliedPlan(t))

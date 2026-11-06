@@ -5,7 +5,6 @@ package onboarding
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,15 +31,14 @@ const testCluster = "/subscriptions/cluster-sub/resourceGroups/cluster-rg/provid
 const testStorage = testGroup + "/providers/Microsoft.Storage/storageAccounts/customer"
 const testHosting = testGroup + "/providers/Microsoft.ManagedIdentity/userAssignedIdentities/hosting"
 const testWorkload = testGroup + "/providers/Microsoft.ManagedIdentity/userAssignedIdentities/workload"
-const testOperator = "11111111-1111-4111-8111-111111111111"
+const testKubeletObjectID = "11111111-1111-4111-8111-111111111111"
 
 type testCredential struct {
 	err error
 }
 
 func (c testCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	raw := base64.RawURLEncoding.EncodeToString([]byte(`{"oid":"` + testOperator + `"}`))
-	return azcore.AccessToken{Token: "header." + raw + ".signature", ExpiresOn: time.Now().Add(time.Hour)}, c.err
+	return azcore.AccessToken{Token: "offline-token", ExpiresOn: time.Now().Add(time.Hour)}, c.err
 }
 
 type readReply struct {
@@ -49,7 +47,7 @@ type readReply struct {
 }
 
 type readRequest struct {
-	method, path, filter string
+	method, path string
 }
 
 type readFake struct {
@@ -62,7 +60,7 @@ type readFake struct {
 func (f *readFake) Do(request *http.Request) (*http.Response, error) {
 	f.mu.Lock()
 	f.requests = append(f.requests, readRequest{
-		request.Method, request.URL.Path, request.URL.Query().Get("$filter"),
+		request.Method, request.URL.Path,
 	})
 	f.mu.Unlock()
 	if request.Method != http.MethodGet {
@@ -123,9 +121,6 @@ func storageBody() map[string]any {
 		"properties": map[string]any{
 			"provisioningState": "Succeeded", "accessTier": "Hot", "isHnsEnabled": false,
 			"supportsHttpsTrafficOnly": true, "minimumTlsVersion": "TLS1_2",
-			"allowSharedKeyAccess": false, "allowBlobPublicAccess": false,
-			"publicNetworkAccess": "Enabled", "networkAcls": map[string]any{"defaultAction": "Allow"},
-			"primaryEndpoints": map[string]any{"blob": "https://customer.blob.core.windows.net/"},
 		},
 	}
 }
@@ -153,7 +148,7 @@ func resourceFake() *readFake {
 			"networkProfile": map[string]any{
 				"networkPlugin": "azure", "networkPluginMode": "overlay", "networkDataplane": "cilium",
 			},
-			"identityProfile":   map[string]any{"kubeletidentity": map[string]any{"objectId": testOperator}},
+			"identityProfile":   map[string]any{"kubeletidentity": map[string]any{"objectId": testKubeletObjectID}},
 			"oidcIssuerProfile": map[string]any{"enabled": true, "issuerURL": "https://issuer.example.test/"},
 			"securityProfile":   map[string]any{"workloadIdentity": map[string]any{"enabled": true}},
 		},
@@ -243,11 +238,11 @@ func TestResourceCheckerReadsOnlySupportingResources(t *testing.T) {
 		assert.True(t, facts.exists(resource))
 		assert.False(t, facts.absent(resource))
 	}
-	for _, id := range []string{"S01", "S02", "S03"} {
+	for _, id := range []string{"storage-type", "storage-security"} {
 		assert.Equal(t, Pass, checkWithID(t, report, id).Status)
 	}
-	for i := 1; i <= 11; i++ {
-		assert.Equal(t, Pass, checkWithID(t, report, fmt.Sprintf("A%02d", i)).Status)
+	for _, id := range aksCheckIDs {
+		assert.Equal(t, Pass, checkWithID(t, report, id).Status)
 	}
 	assert.Len(t, fake.requests, 8, "two subscription tenants, three supporting resources, AKS, pools and SKUs")
 	assert.Equal(t, 1, fake.count(testCluster))
@@ -295,10 +290,6 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 			properties := body["properties"].(map[string]any)
 			properties["currentKubernetesVersion"], properties["kubernetesVersion"] = "1.30.9", "1.33.0"
 		}},
-		{"Automatic rather than Base AKS", func(f *readFake) {
-			body := f.replies[strings.ToLower(testCluster)].body.(map[string]any)
-			body["sku"] = map[string]any{"name": "Automatic"}
-		}},
 		{"missing cluster managed identity", func(f *readFake) {
 			body := f.replies[strings.ToLower(testCluster)].body.(map[string]any)
 			delete(body, "identity")
@@ -307,12 +298,6 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 			body := f.replies[strings.ToLower(testCluster)].body.(map[string]any)
 			body["properties"].(map[string]any)["securityProfile"] =
 				map[string]any{"workloadIdentity": map[string]any{"enabled": false}}
-		}},
-		{"available vCPU takes precedence over nominal vCPU", func(f *readFake) {
-			body := f.replies["/subscriptions/cluster-sub/providers/microsoft.compute/skus"].body.(map[string]any)
-			sku := body["value"].([]any)[1].(map[string]any)
-			sku["capabilities"] = append(sku["capabilities"].([]any),
-				map[string]any{"name": "vCPUsAvailable", "value": "7"})
 		}},
 		{"pool requirements cannot be combined across pools", func(f *readFake) {
 			body := f.replies[strings.ToLower(testCluster+"/agentPools")].body.(map[string]any)
@@ -331,15 +316,6 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 			body := f.replies[strings.ToLower(testCluster+"/agentPools")].body.(map[string]any)
 			body["value"].([]any)[1].(map[string]any)["properties"].(map[string]any)["nodeImageVersion"] =
 				"AKSAzureLinux-V3katagen2-202608.13.0"
-		}},
-		{"enabled Agent pool SSH", func(f *readFake) {
-			body := f.replies[strings.ToLower(testCluster+"/agentPools")].body.(map[string]any)
-			body["value"].([]any)[1].(map[string]any)["properties"].(map[string]any)["securityProfile"] =
-				map[string]any{"sshAccess": "Enabled"}
-		}},
-		{"unfinished Agent pool ARM state", func(f *readFake) {
-			body := f.replies[strings.ToLower(testCluster+"/agentPools")].body.(map[string]any)
-			body["value"].([]any)[1].(map[string]any)["properties"].(map[string]any)["provisioningState"] = "Updating"
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -368,7 +344,7 @@ func TestDefaultExistenceDoesNotBecomeSupplied(t *testing.T) {
 				delete(fake.replies, strings.ToLower(testStorage))
 			case "existing":
 				body := fake.replies[strings.ToLower(testStorage)].body.(map[string]any)
-				body["properties"] = map[string]any{"allowSharedKeyAccess": true}
+				body["properties"] = map[string]any{}
 			case "forbidden":
 				fake.replies[strings.ToLower(testStorage)] = readReply{403,
 					map[string]any{"error": map[string]string{"code": "AuthorizationFailed"}}}
@@ -382,7 +358,7 @@ func TestDefaultExistenceDoesNotBecomeSupplied(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
-			for _, id := range []string{"S01", "S02", "S03"} {
+			for _, id := range []string{"storage-type", "storage-security"} {
 				assert.Equal(t, NotApplicable, checkWithID(t, report, id).Status)
 			}
 		})
@@ -395,22 +371,16 @@ func TestStorageRulesRetainSourceStandardsAndDefaults(t *testing.T) {
 		value                 any
 		status                Status
 	}{
-		{"HNS missing", "isHnsEnabled", "S01", nil, Unverified},
-		{"HNS enabled", "isHnsEnabled", "S01", true, Fail},
-		{"Cool tier", "accessTier", "S01", "Cool", Fail},
-		{"tier missing", "accessTier", "S01", nil, Unverified},
-		{"HTTPS missing uses true default", "supportsHttpsTrafficOnly", "S02", nil, Pass},
-		{"HTTPS disabled", "supportsHttpsTrafficOnly", "S02", false, Fail},
-		{"anonymous explicitly disabled", "allowBlobPublicAccess", "S02", false, Pass},
-		{"anonymous enabled", "allowBlobPublicAccess", "S02", true, Fail},
-		{"anonymous missing", "allowBlobPublicAccess", "S02", nil, Unverified},
-		{"anonymous null", "allowBlobPublicAccess", "S02", json.RawMessage("null"), Unverified},
-		{"Shared Key missing uses true default", "allowSharedKeyAccess", "S02", nil, Fail},
-		{"Shared Key enabled", "allowSharedKeyAccess", "S02", true, Fail},
-		{"TLS missing uses 1.0 default", "minimumTlsVersion", "S02", nil, Fail},
-		{"TLS 1.1", "minimumTlsVersion", "S02", "TLS1_1", Fail},
-		{"TLS 1.3", "minimumTlsVersion", "S02", "TLS1_3", Pass},
-		{"TLS unknown", "minimumTlsVersion", "S02", "future-value", Unverified},
+		{"HNS missing", "isHnsEnabled", "storage-type", nil, Unverified},
+		{"HNS enabled", "isHnsEnabled", "storage-type", true, Fail},
+		{"Cool tier", "accessTier", "storage-type", "Cool", Fail},
+		{"tier missing", "accessTier", "storage-type", nil, Unverified},
+		{"HTTPS missing uses true default", "supportsHttpsTrafficOnly", "storage-security", nil, Pass},
+		{"HTTPS disabled", "supportsHttpsTrafficOnly", "storage-security", false, Fail},
+		{"TLS missing uses 1.0 default", "minimumTlsVersion", "storage-security", nil, Fail},
+		{"TLS 1.1", "minimumTlsVersion", "storage-security", "TLS1_1", Fail},
+		{"TLS 1.3", "minimumTlsVersion", "storage-security", "TLS1_3", Pass},
+		{"TLS unknown", "minimumTlsVersion", "storage-security", "future-value", Unverified},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			body := storageBody()
@@ -440,97 +410,9 @@ func TestStorageRulesRetainSourceStandardsAndDefaults(t *testing.T) {
 	}
 }
 
-func TestStorageAnonymousAccessRequiresExplicitReadOnlyEvidence(t *testing.T) {
-	for _, test := range []struct {
-		name      string
-		anonymous any
-		property  string
-		value     any
-		status    Status
-		observed  string
-	}{
-		{"disabled", false, "", nil, Pass, "false"},
-		{"enabled", true, "", nil, Fail, "true"},
-		{"missing", nil, "", nil, Unverified, "unknown"},
-		{"null", json.RawMessage("null"), "", nil, Unverified, "unknown"},
-		{"missing with HTTP enabled", nil, "supportsHttpsTrafficOnly", false, Fail, "unknown"},
-		{"missing with Shared Key enabled", nil, "allowSharedKeyAccess", true, Fail, "unknown"},
-		{"missing with TLS 1.1", nil, "minimumTlsVersion", "TLS1_1", Fail, "unknown"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			fake := resourceFake()
-			body := storageBody()
-			properties, ok := body["properties"].(map[string]any)
-			require.True(t, ok)
-			if test.anonymous == nil {
-				delete(properties, "allowBlobPublicAccess")
-			} else {
-				properties["allowBlobPublicAccess"] = test.anonymous
-			}
-			if test.property != "" {
-				properties[test.property] = test.value
-			}
-			fake.replies[strings.ToLower(testStorage)] = readReply{http.StatusOK, body}
-			_, report, err := NewResourceChecker(testCredential{}, fake.options()).Check(t.Context(), suppliedPlan(t))
-			if test.status == Pass {
-				require.NoError(t, err)
-			} else {
-				require.Error(t, err)
-			}
-			check := checkWithID(t, report, "S02")
-			assert.Equal(t, test.status, check.Status)
-			assert.Contains(t, check.Observed, "anonymous Blob="+test.observed)
-			var output strings.Builder
-			require.NoError(t, Report{check}.Write(&output))
-			assert.Contains(t, output.String(), "anonymous Blob="+test.observed)
-			if test.observed == "unknown" {
-				assert.NotContains(t, output.String(), "anonymous Blob=false")
-			}
-			assert.Positive(t, fake.count(testStorage))
-			for _, request := range fake.requests {
-				assert.Equal(t, http.MethodGet, request.method)
-			}
-		})
-	}
-}
-
-func TestStorageNetworkWarningsAndURLNonDisclosure(t *testing.T) {
-	for _, test := range []struct {
-		access, action string
-		status         Status
-	}{
-		{"Enabled", "Allow", Pass},
-		{"Disabled", "Deny", NotApplicable},
-		{"Enabled", "Deny", NotApplicable},
-		{"", "Allow", Unverified},
-		{"Enabled", "", Unverified},
-	} {
-		t.Run(test.access+"/"+test.action, func(t *testing.T) {
-			body := storageBody()
-			properties := body["properties"].(map[string]any)
-			properties["publicNetworkAccess"] = test.access
-			properties["networkAcls"] = map[string]any{"defaultAction": test.action}
-			//nolint:gosec // G101: synthetic URL credentials exercise output redaction.
-			properties["primaryEndpoints"] = map[string]any{
-				"blob": "https://private-user:private-password@customer.blob.core.windows.net/" +
-					"?sig=private-token#private-fragment",
-			}
-			raw, err := json.Marshal(body)
-			require.NoError(t, err)
-			var account armstorage.Account
-			require.NoError(t, json.Unmarshal(raw, &account))
-			report := storageNetworkChecks(suppliedPlan(t), &account)
-			assert.Equal(t, test.status, report[0].Status)
-			assert.Equal(t, test.status == NotApplicable, report[0].Warning != "")
-			var output strings.Builder
-			require.NoError(t, report.Write(&output))
-			assert.Contains(t, output.String(), "https://customer.blob.core.windows.net/")
-			assert.NotContains(t, output.String(), "private-")
-			assert.NotContains(t, output.String(), "sig=")
-		})
-	}
+func TestResourceReportURLNonDisclosure(t *testing.T) {
 	//nolint:gosec // G101: synthetic URL credentials exercise report and error redaction.
-	report := Report{{ID: "S03", Mandatory: true, Status: Fail,
+	report := Report{{ID: "resource-refs", Mandatory: true, Status: Fail,
 		Scope:    "https://user:private-password@host/path?sig=private-token#private-fragment",
 		Observed: "read https://user:private-password@host/path?sig=private-token#private-fragment"}}
 	var output strings.Builder

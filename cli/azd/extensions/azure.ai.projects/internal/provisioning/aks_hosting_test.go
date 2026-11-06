@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/onboarding"
 	"azure.ai.projects/internal/synthesis"
 	"azure.ai.projects/internal/testutil"
 
@@ -40,8 +39,6 @@ const offlineVNetID = "/subscriptions/network-sub/resourceGroups/net-rg/provider
 const offlineClusterID = offlineClusterGroupID + "/providers/" +
 	"Microsoft.ContainerService/managedClusters/aks"
 const offlineKubeletObjectID = "11111111-aaaa-4111-8111-111111111111"
-const offlineDeploymentRoleID = "/subscriptions/cluster-sub/providers/Microsoft.Authorization/" +
-	"roleDefinitions/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 const offlineProjectID = "/subscriptions/target-sub/resourceGroups/target-rg/providers/" +
 	"Microsoft.CognitiveServices/accounts/cog-native/projects/project"
 const offlineProjectEndpoint = "https://cog-native.services.ai.azure.com/api/projects/project"
@@ -181,22 +178,6 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 			"properties": map[string]any{"roleName": "Managed Identity Federated Identity Credential Contributor",
 				"type": "BuiltInRole"},
 		}}}), nil
-	}
-	if request.Method == http.MethodGet &&
-		strings.HasSuffix(strings.ToLower(request.URL.Path), "/providers/microsoft.authorization/roleassignments") {
-		scope := request.URL.Path[:len(request.URL.Path)-len("/providers/Microsoft.Authorization/roleAssignments")]
-		return f.response(request, 200, map[string]any{"value": []any{map[string]any{
-			"id": offlineClusterGroupID + "/providers/Microsoft.Authorization/roleAssignments/deployment",
-			"properties": map[string]any{
-				"scope": scope, "principalId": suppliedOperator,
-				"roleDefinitionId": offlineDeploymentRoleID,
-			},
-		}}}), nil
-	}
-	if request.Method == http.MethodGet && request.URL.Path == offlineDeploymentRoleID {
-		return f.response(request, 200, map[string]any{"id": offlineDeploymentRoleID, "properties": map[string]any{
-			"permissions": []any{map[string]any{"actions": []string{"*"}}},
-		}}), nil
 	}
 	path := "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + f.provider.deploymentName()
 	if request.Method == http.MethodGet && request.URL.Path == path {
@@ -510,8 +491,6 @@ func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
 	assert.Equal(t, 1, fake.writes)
 	assert.Contains(t, fake.requests, "GET "+offlineClusterID)
 	assert.Contains(t, fake.requests, "GET "+offlineClusterID+"/agentPools")
-	assert.Contains(t, fake.requests, "GET "+offlineClusterGroupID+"/providers/Microsoft.Authorization/roleAssignments")
-	assert.Contains(t, fake.requests, "GET "+suppliedGroupID+"/providers/Microsoft.Authorization/roleAssignments")
 	for _, request := range fake.requests[:len(fake.requests)-1] {
 		assert.True(t, strings.HasPrefix(request, "GET "), request)
 	}
@@ -665,21 +644,17 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 	for _, scenario := range []string{
 		"renamed resources", "cross subscription", "cross subscription Foundry", "unknown Storage name",
 		"unknown Storage and known AKS failure", "known missing Storage reference",
-		"unknown workload name", "actual cluster selection", "no native pull assignments",
+		"unknown workload name", "actual cluster selection",
 		"cross subscription unknown workload",
-		"native registry without connection",
-		"selected existing network", "new selected subnets", "external DNS", "overlapping selected Node subnet",
-		"unknown network injections", "unknown network connections", "unknown network DNS configs",
-		"empty network selections", "unrelated network endpoint",
+		"selected existing network", "new selected subnets", "overlapping selected Node subnet",
+		"unknown network injections", "empty network selections",
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			tool := testutil.LookupBicep(t)
 			unknownField := map[string]string{
-				"unknown network injections":  "networkInjections",
-				"unknown network connections": "privateLinkServiceConnections",
-				"unknown network DNS configs": "privateDnsZoneConfigs",
+				"unknown network injections": "networkInjections",
 			}[scenario]
-			noNetworkSelection := scenario == "empty network selections" || scenario == "unrelated network endpoint"
+			noNetworkSelection := scenario == "empty network selections"
 			provider, requests := offlineBYOProvider(t)
 			root := t.TempDir()
 			require.NoError(t, fs.WalkDir(synthesis.TemplatesFS(), "templates",
@@ -763,41 +738,6 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				edited = strings.ReplaceAll(edited, "clusterResourceId: agentHosting.clusterResourceId",
 					"clusterResourceId: '"+requests.clusterID+"'")
 			}
-			if scenario == "no native pull assignments" {
-				path := filepath.Join(root, "modules", "acr.bicep")
-				//nolint:gosec // Embedded fixture copied to t.TempDir.
-				raw, err := os.ReadFile(path)
-				require.NoError(t, err)
-				lines := strings.Split(string(raw), "\n")
-				disabled := 0
-				for i, line := range lines {
-					if strings.Contains(line, "'Microsoft.Authorization/roleAssignments@") {
-						equal := strings.Index(line, " = ")
-						require.Greater(t, equal, 0)
-						lines[i] = line[:equal] + " = if (false) {"
-						disabled++
-					}
-				}
-				require.Equal(t, 2, disabled)
-				//nolint:gosec // G703: test-owned acr.bicep under t.TempDir.
-				require.NoError(t, os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o600))
-			}
-			if scenario == "native registry without connection" {
-				path := filepath.Join(root, "modules", "acr.bicep")
-				//nolint:gosec // Embedded fixture copied to t.TempDir.
-				raw, err := os.ReadFile(path)
-				require.NoError(t, err)
-				text := string(raw)
-				start, end := strings.Index(text, "// Existing parent references"), strings.Index(text, "// Outputs")
-				require.Greater(t, start, 0)
-				require.Greater(t, end, start)
-				text = text[:start] + text[end:]
-				require.Contains(t, text, "output connectionName string = foundryAccount::project::acrConnection.name")
-				text = strings.Replace(text, "output connectionName string = foundryAccount::project::acrConnection.name",
-					"output connectionName string = ''", 1)
-				//nolint:gosec // G703: test-owned acr.bicep under t.TempDir.
-				require.NoError(t, os.WriteFile(path, []byte(text), 0o600))
-			}
 			missingStorage := suppliedGroupID + "/providers/Microsoft.Storage/storageAccounts/missingstore"
 			if scenario == "known missing Storage reference" {
 				start := strings.Index(edited, "var storageAccountResourceId = ")
@@ -819,41 +759,6 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				edited = strings.Replace(edited, "networkInjections: agentNetworkInjections",
 					"networkInjections: "+value, 1)
 			}
-			if unknownField == "privateLinkServiceConnections" || unknownField == "privateDnsZoneConfigs" ||
-				noNetworkSelection {
-				path := filepath.Join(root, "modules", "private-endpoint-dns.bicep")
-				//nolint:gosec // Embedded fixture copied to t.TempDir.
-				raw, err := os.ReadFile(path)
-				require.NoError(t, err)
-				text := string(raw)
-				if scenario == "unrelated network endpoint" {
-					require.Contains(t, text, "privateLinkServiceId: aiAccount.id")
-					text = strings.Replace(text, "privateLinkServiceId: aiAccount.id",
-						"privateLinkServiceId: '${aiAccount.id}-unrelated'", 1)
-				} else {
-					fields := []string{unknownField}
-					if noNetworkSelection {
-						fields = []string{"privateLinkServiceConnections", "privateDnsZoneConfigs"}
-					}
-					for _, field := range fields {
-						start := strings.Index(text, "    "+field+": [")
-						require.Greater(t, start, 0)
-						end := strings.Index(text[start:], "\n    ]")
-						require.Greater(t, end, 0)
-						end += start + len("\n    ]")
-						value := "[]"
-						if unknownField != "" {
-							value = "any(runtimeNetworkConfig.properties)." + field
-						}
-						text = text[:start] + "    " + field + ": " + value + text[end:]
-					}
-					if unknownField != "" {
-						text += runtimeNetwork
-					}
-				}
-				//nolint:gosec // G703: test-owned endpoint template under t.TempDir.
-				require.NoError(t, os.WriteFile(path, []byte(text), 0o600))
-			}
 			//nolint:gosec // G703: test-owned resources.bicep under t.TempDir.
 			require.NoError(t, os.WriteFile(resourcePath, []byte(edited), 0o600))
 			main := filepath.Join(root, "main.bicep")
@@ -870,7 +775,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				"tags": map[string]any{"value": map[string]any{"team": "test"}},
 			}
 			network := scenario == "selected existing network" || scenario == "new selected subnets" ||
-				scenario == "external DNS" || scenario == "overlapping selected Node subnet" ||
+				scenario == "overlapping selected Node subnet" ||
 				unknownField != "" || noNetworkSelection
 			if network {
 				requests.nodeSubnetID = offlineVNetID + "/subnets/nodes"
@@ -884,9 +789,6 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				if scenario == "new selected subnets" {
 					parameters["createAgentSubnet"] = map[string]any{"value": true}
 					parameters["createPESubnet"] = map[string]any{"value": true}
-				} else if scenario == "external DNS" {
-					parameters["dnsZonesResourceGroup"] = map[string]any{"value": "dns-rg"}
-					parameters["dnsZonesSubscription"] = map[string]any{"value": "dns-sub"}
 				} else if scenario == "overlapping selected Node subnet" {
 					requests.nodePrefix = "172.16.0.0/24"
 				}
@@ -911,7 +813,6 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				identified, err := provider.identifyBYOTemplatePlan(t.Context(), source)
 				require.NoError(t, err)
 				assert.Equal(t, subscription, identified.SubscriptionID)
-				assert.Equal(t, group, identified.ResourceGroup)
 				assert.Contains(t, identified.OwningSubscriptions, "target-sub")
 				assert.Contains(t, identified.OwningSubscriptions, subscription)
 			}
@@ -920,61 +821,24 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				require.NoError(t, err)
 				identified, err := provider.identifyBYOTemplatePlan(t.Context(), source)
 				require.NoError(t, err)
-				selection, err := byoDeploymentSelection(source)
-				require.NoError(t, err)
-				base := identified
-				base.Operations = nil
-				expected, err := onboarding.WithDeploymentOperations(base, selection)
-				require.NoError(t, err)
-				if unknownField == "" && !noNetworkSelection || unknownField == "privateLinkServiceConnections" {
-					assert.ElementsMatch(t, expected.Operations, identified.Operations,
-						"actual standard-network operations must match the reused review planner")
-				}
 				if unknownField == "networkInjections" || noNetworkSelection {
 					assert.Empty(t, identified.AgentSubnet.ID)
 				} else {
-					assert.Equal(t, expected.AgentSubnet.ID, identified.AgentSubnet.ID)
-					assert.Equal(t, expected.AgentSubnet.Supplied, identified.AgentSubnet.Supplied)
-				}
-				if unknownField != "" {
-					var warnings onboarding.Report
-					for _, check := range identified.SkippedChecks {
-						if check.ID == "P03" && strings.Contains(check.Missing, unknownField) {
-							assert.Equal(t, onboarding.Skipped, check.Status)
-							assert.False(t, check.Mandatory)
-							assert.Contains(t, check.Scope, "/providers/")
-							assert.Contains(t, check.Scope, " at ")
-							assert.NotEmpty(t, check.Warning)
-							warnings = append(warnings, check)
-						}
-					}
-					if unknownField == "privateDnsZoneConfigs" {
-						require.Len(t, warnings, 2)
-						assert.Equal(t, "Microsoft.Network/privateDnsZones/write", warnings[0].Expected)
-						assert.Equal(t, "Microsoft.Network/privateDnsZones/join/action", warnings[1].Expected)
-					} else {
-						require.Len(t, warnings, 1)
-					}
-					known := onboarding.Plan{}
-					for _, action := range []string{"Microsoft.Network/privateEndpoints/write",
-						"Microsoft.Network/privateEndpoints/privateDnsZoneGroups/write"} {
-						known.AddOperation("P03", action, suppliedGroupID)
-					}
-					assert.Subset(t, identified.Operations, known.Operations,
-						"unknown array selections must preserve independently known network writes")
+					assert.Equal(t, offlineVNetID+"/subnets/agents", identified.AgentSubnet.ID)
+					assert.Equal(t, scenario != "new selected subnets", identified.AgentSubnet.Supplied)
 				}
 			}
 			_, err = provider.Deploy(t.Context(), func(message string) { progress.WriteString(message) })
 			if scenario == "unknown Storage and known AKS failure" {
-				require.ErrorContains(t, err, "A01 FAIL")
+				require.ErrorContains(t, err, "aks-version FAIL")
 				assert.Zero(t, requests.writes)
 			} else if scenario == "known missing Storage reference" {
 				require.ErrorContains(t, err, "does not exist")
 				assert.Contains(t, requests.requests, "GET "+missingStorage)
 				assert.Zero(t, requests.writes)
-				assert.NotContains(t, progress.String(), "S01 SKIPPED")
+				assert.NotContains(t, progress.String(), "storage-type SKIPPED")
 			} else if scenario == "overlapping selected Node subnet" {
-				require.ErrorContains(t, err, "N02 FAIL")
+				require.ErrorContains(t, err, "agent-subnet FAIL")
 				assert.Zero(t, requests.writes)
 			} else {
 				require.NoError(t, err, progress.String())
@@ -986,37 +850,16 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 					assert.Contains(t, requests.requests,
 						"GET "+base+"Microsoft.ManagedIdentity/userAssignedIdentities/edited-workload")
 				}
-				if !network {
-					registryGroup := suppliedGroupID
-					if scenario == "cross subscription Foundry" {
-						registryGroup = "/subscriptions/" + subscription + "/resourceGroups/" + group
-					}
-					assert.Contains(t, requests.requests,
-						"GET "+registryGroup+"/providers/Microsoft.ContainerRegistry/registries/editedregistry")
-					assert.Contains(t, progress.String(), "P05 PASS")
-					if scenario == "no native pull assignments" {
-						assert.Contains(t, progress.String(), "P07 NOT_APPLICABLE")
-					} else {
-						assert.Contains(t, progress.String(), "P07 PASS")
-					}
-				}
-				assert.Contains(t, progress.String(), "P02 PASS")
 			}
 			if strings.HasPrefix(scenario, "unknown Storage") {
-				assert.Contains(t, progress.String(), "WARNING: P04 [Microsoft.Storage/storageAccounts at ")
 				assert.Contains(t, progress.String(), "utcNow")
-				assert.Contains(t, progress.String(), "P04 SKIPPED")
-				assert.NotContains(t, progress.String(), "P04 PASS")
-				assert.Contains(t, progress.String(), "P02 PASS")
 			}
 			if scenario == "unknown workload name" || scenario == "cross subscription unknown workload" {
-				assert.Contains(t, progress.String(), "P02 SKIPPED")
 				assert.Contains(t, progress.String(), "utcNow")
 				assert.Equal(t, map[string]any{"value": "/subscriptions/" + subscription + "/providers/" +
 					"Microsoft.Authorization/roleDefinitions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
 					requests.parameters["federatedIdentityRoleDefinitionId"])
-				assert.Contains(t, progress.String(), "I02 PASS [/subscriptions/target-sub]")
-				assert.Contains(t, progress.String(), "P04 PASS")
+				assert.Contains(t, progress.String(), "resource-refs PASS [/subscriptions/target-sub]")
 			}
 			if scenario == "actual cluster selection" {
 				assert.Contains(t, requests.requests, "GET "+requests.clusterID)
@@ -1025,32 +868,16 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				assert.Equal(t, map[string]any{"value": requests.kubeletID}, requests.parameters["kubeletObjectId"])
 			}
 			if network {
-				assert.NotContains(t, progress.String(), "P05 ")
-				assert.NotContains(t, progress.String(), "P07 ")
 				if noNetworkSelection {
-					assert.NotContains(t, progress.String(), "P03 ")
-					assert.Contains(t, progress.String(), "N02 NOT_APPLICABLE")
-				} else {
-					assert.Contains(t, progress.String(), "P03 PASS")
-					if unknownField != "" {
-						assert.Contains(t, progress.String(), "P03 SKIPPED")
-						assert.Contains(t, progress.String(), "WARNING: P03 [")
-						assert.Contains(t, progress.String(), unknownField)
-						for _, action := range []string{"Microsoft.Network/privateEndpoints/write",
-							"Microsoft.Network/privateEndpoints/privateDnsZoneGroups/write"} {
-							assert.Contains(t, progress.String(), "P03 PASS ["+suppliedGroupID+"]\n  Expected: "+action)
-						}
-					} else {
-						assert.NotContains(t, progress.String(), "P03 SKIPPED")
-					}
+					assert.Contains(t, progress.String(), "agent-subnet NOT_APPLICABLE")
 				}
 				if scenario == "new selected subnets" {
-					assert.Contains(t, progress.String(), "N02 NOT_APPLICABLE")
+					assert.Contains(t, progress.String(), "agent-subnet NOT_APPLICABLE")
 					assert.NotContains(t, requests.requests, "GET "+offlineVNetID+"/subnets/agents")
 				} else if unknownField == "networkInjections" {
-					assert.Contains(t, progress.String(), "N02 SKIPPED")
+					assert.Contains(t, progress.String(), "agent-subnet SKIPPED")
 				} else if scenario != "overlapping selected Node subnet" && !noNetworkSelection {
-					assert.Contains(t, progress.String(), "N02 PASS")
+					assert.Contains(t, progress.String(), "agent-subnet PASS")
 				}
 			}
 			assert.NotContains(t, requests.requests, "GET "+defaultStorageID,
@@ -1160,40 +987,6 @@ func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {
 
 }
 
-func byoDeploymentSelection(source *templateSource) (onboarding.DeploymentSelection, error) {
-	selection := onboarding.DeploymentSelection{}
-	var network onboarding.LegacyNetwork
-	for key, out := range map[string]*bool{
-		"enableNetworkIsolation": &network.Enabled, "createAgentSubnet": &network.CreateAgentSubnet,
-		"createPESubnet": &network.CreatePESubnet, "useManagedEgress": &network.ManagedEgress,
-	} {
-		if raw := byoParameterValue(source, key); raw != nil {
-			value, ok := raw.(bool)
-			if !ok {
-				return selection, fmt.Errorf("effective %s must be a boolean", key)
-			}
-			*out = value
-		}
-	}
-	for key, out := range map[string]*string{
-		"vnetId": &network.VNetID, "agentSubnetName": &network.AgentSubnetName, "peSubnetName": &network.PESubnetName,
-		"peSubnetPrefix":       &network.PESubnetPrefix,
-		"managedIsolationMode": &network.IsolationMode, "dnsZonesResourceGroup": &network.DNSResourceGroup,
-		"dnsZonesSubscription": &network.DNSSubscription,
-	} {
-		if raw := byoParameterValue(source, key); raw != nil {
-			value, ok := raw.(string)
-			if !ok {
-				return selection, fmt.Errorf("effective %s must be a string", key)
-			}
-			*out = value
-		}
-	}
-	if network.Enabled {
-		selection.Network = &network
-	}
-	return selection, nil
-}
 func TestBYOInitializeRejectsInvalidInputsBeforePromptsOrPersistence(t *testing.T) {
 	for _, onDisk := range []bool{false, true} {
 		root := t.TempDir()

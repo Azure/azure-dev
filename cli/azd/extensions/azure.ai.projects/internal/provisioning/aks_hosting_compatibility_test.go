@@ -240,7 +240,6 @@ func TestBYOSuppliedPreflightUsesCustomizedCompiledPlan(t *testing.T) {
 	require.NoError(t, err)
 	plan, err := p.identifyBYOTemplatePlan(t.Context(), source)
 	require.NoError(t, err)
-	assert.Equal(t, "custom-rg", plan.ResourceGroup)
 	assert.Equal(t, suppliedStorageID, plan.Storage.ID)
 	assert.True(t, plan.Storage.Supplied)
 	var progress strings.Builder
@@ -249,9 +248,6 @@ func TestBYOSuppliedPreflightUsesCustomizedCompiledPlan(t *testing.T) {
 	assert.Equal(t, 1, fake.base.writes)
 	assert.Equal(t, p.armTemplate, fake.base.template)
 	assert.Empty(t, compiler.buildParamCalls, "the customized compiled plan has no resource-token expression")
-	assert.Contains(t, progress.String(), "S03 PASS")
-	assert.NotContains(t, progress.String(), "P05 ")
-	assert.NotContains(t, progress.String(), "P07 ")
 	assert.Equal(t, map[string]any{"value": offlineKubeletObjectID}, fake.base.parameters["kubeletObjectId"])
 }
 

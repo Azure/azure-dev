@@ -25,11 +25,6 @@ type planPartialID struct {
 	components           []any
 }
 
-type planPrincipal struct {
-	resourceID string
-	binding    string
-}
-
 type planExpression struct {
 	name     string
 	literal  any

@@ -41,17 +41,17 @@ func (c *sdkResourceChecker) readParentNetwork(ctx context.Context, raw string) 
 			return armnetwork.NewVirtualNetworksClient(id.SubscriptionID, c.credential, c.options)
 		})
 	if err != nil {
-		return nil, Report{readFailure("N02", id.Parent.String(), "Microsoft.Network/virtualNetworks/read", err)}
+		return nil, Report{readFailure("agent-subnet", id.Parent.String(), "Microsoft.Network/virtualNetworks/read", err)}
 	}
 	response, err := client.Get(ctx, id.ResourceGroupName, id.Parent.Name, nil)
 	if err != nil {
-		return nil, Report{readFailure("N02", id.Parent.String(), "Microsoft.Network/virtualNetworks/read", err)}
+		return nil, Report{readFailure("agent-subnet", id.Parent.String(), "Microsoft.Network/virtualNetworks/read", err)}
 	}
 	state := ""
 	if response.Properties != nil {
 		state = resourceValue(response.Properties.ProvisioningState)
 	}
 	check := resourceReadiness(id.Parent.String(), resourceValue(response.ID), state, "ARM network configuration")
-	check.ID = "N02"
+	check.ID = "agent-subnet"
 	return &response.VirtualNetwork, Report{check}
 }

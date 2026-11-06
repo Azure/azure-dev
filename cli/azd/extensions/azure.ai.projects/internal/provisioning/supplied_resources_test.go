@@ -5,7 +5,6 @@ package provisioning
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -33,13 +32,11 @@ const defaultWorkloadID = suppliedGroupID +
 	"/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cog-abcdefghijklm-workload-mi"
 const suppliedHostingPrincipal = "22222222-2222-4222-8222-222222222222"
 const suppliedWorkloadPrincipal = "33333333-3333-4333-8333-333333333333"
-const suppliedOperator = "44444444-4444-4444-8444-444444444444"
 
 type suppliedCredential struct{}
 
 func (suppliedCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	raw := base64.RawURLEncoding.EncodeToString([]byte(`{"oid":"` + suppliedOperator + `"}`))
-	return azcore.AccessToken{Token: "header." + raw + ".signature", ExpiresOn: time.Now().Add(time.Hour)}, nil
+	return azcore.AccessToken{Token: "offline-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
 }
 
 type suppliedReply struct {
@@ -84,15 +81,11 @@ func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
 	}
 	if path != "" && strings.EqualFold(path, selection.StorageAccountResourceID) ||
 		strings.EqualFold(path, defaultStorageID) && f.existingDefaults[strings.ToLower(path)] {
-		sharedKey := strings.EqualFold(path, defaultStorageID)
 		return respond(200, map[string]any{
 			"id": path, "kind": "StorageV2", "sku": map[string]any{"name": "Standard_ZRS"},
 			"properties": map[string]any{
 				"provisioningState": "Succeeded", "accessTier": "Hot", "isHnsEnabled": false,
 				"supportsHttpsTrafficOnly": true, "minimumTlsVersion": "TLS1_2",
-				"allowSharedKeyAccess": sharedKey, "allowBlobPublicAccess": false,
-				"publicNetworkAccess": "Enabled", "networkAcls": map[string]any{"defaultAction": "Allow"},
-				"primaryEndpoints": map[string]any{"blob": "https://customer.blob.core.windows.net/"},
 			},
 		})
 	}
@@ -125,7 +118,7 @@ func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
 	const suffix = "/providers/Microsoft.Authorization/roleAssignments"
 	if strings.HasSuffix(lower, strings.ToLower(suffix)) {
 		scope := path[:len(path)-len(suffix)]
-		principals := []string{suppliedOperator}
+		var principals []string
 		if !strings.EqualFold(scope, f.missingGrant) {
 			principals = append(principals, suppliedHostingPrincipal, suppliedWorkloadPrincipal)
 		}
@@ -249,13 +242,6 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 						}
 					}
 					assert.NotEmpty(t, compiler.buildParamCalls, "the actual Foundry account name uses the resource token")
-					assert.Contains(t, progress.String(), "S03")
-					assert.Contains(t, progress.String(), "P02 PASS")
-					if mask&2 == 0 {
-						assert.Contains(t, progress.String(), "P09 PASS ["+offlineClusterGroupID+"]")
-					} else {
-						assert.NotContains(t, progress.String(), "P09 PASS ["+offlineClusterGroupID+"]")
-					}
 					assert.Empty(t, p.virtualEnv)
 					method := "PUT "
 					if preview {
@@ -333,7 +319,7 @@ func TestBYOExistingDefaultStorageRetainsOrdinaryARMUpdate(t *testing.T) {
 	require.NoError(t, err)
 	hosting := fake.base.parameters["agentHosting"].(map[string]any)["value"].(map[string]any)
 	assert.Equal(t, "", hosting["storageAccountResourceId"])
-	assert.Contains(t, progress.String(), "S01 NOT_APPLICABLE")
+	assert.Contains(t, progress.String(), "storage-type NOT_APPLICABLE")
 	assert.Equal(t, 1, fake.base.writes)
 }
 
@@ -347,7 +333,7 @@ func TestBYOExistingDefaultDependencyMissingGrantBlocksRetry(t *testing.T) {
 	fake.existingDefaults[strings.ToLower(defaultWorkloadID)] = true
 	fake.missingGrant = defaultWorkloadID
 	_, err = p.Deploy(t.Context(), func(string) {})
-	require.ErrorContains(t, err, "G02 FAIL")
+	require.ErrorContains(t, err, "hosting-federation FAIL")
 	assert.Equal(t, 1, fake.base.writes, "no historical failed-attempt exemption may open the write gate")
 }
 
@@ -366,16 +352,17 @@ func TestBYOSuppliedWorkloadUsesItsOwnSubscriptionForFederationRole(t *testing.T
 }
 
 func TestBYOSuppliedExplicitPrincipalDoesNotOverwriteUserInput(t *testing.T) {
+	const principal = "44444444-4444-4444-8444-444444444444"
 	p, fake, _ := suppliedProvider(t, 7)
 	p.onDiskSource = &templateSource{
 		mode: templateModeBicep, armTemplate: p.armTemplate,
-		parameters: map[string]any{"hostingPrincipalId": map[string]any{"value": suppliedOperator}},
+		parameters: map[string]any{"hostingPrincipalId": map[string]any{"value": principal}},
 	}
 	_, err := p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
 	assert.Equal(t, 1, fake.base.writes)
-	assert.Equal(t, map[string]any{"value": suppliedOperator}, fake.base.parameters["hostingPrincipalId"])
-	assert.Equal(t, suppliedOperator, p.onDiskSource.parameters["hostingPrincipalId"].(map[string]any)["value"])
+	assert.Equal(t, map[string]any{"value": principal}, fake.base.parameters["hostingPrincipalId"])
+	assert.Equal(t, principal, p.onDiskSource.parameters["hostingPrincipalId"].(map[string]any)["value"])
 	assert.Empty(t, p.virtualEnv)
 }
 

@@ -55,7 +55,7 @@ func (r *templatePlanResolver) scope(subscription, group string) planScope {
 	scope := planScope{subscriptionID: subscription, group: group}
 	if subscription == "" || strings.ContainsAny(subscription+group, "/\\?#%@:\x00 \t\r\n") {
 		scope.missing = "template deployment subscription/resource-group scope is not resolved"
-		r.err = errors.Join(r.err, fmt.Errorf("I03: actual template subscription/resource-group scope is invalid"))
+		r.err = errors.Join(r.err, fmt.Errorf("resource-plan: actual template subscription/resource-group scope is invalid"))
 		return scope
 	}
 	subKey := strings.ToLower(subscription + "/")
@@ -67,14 +67,15 @@ func (r *templatePlanResolver) scope(subscription, group string) planScope {
 			response, err = client.Get(r.ctx, subscription, nil)
 			if err == nil {
 				if response.ID == nil || !strings.EqualFold(*response.ID, "/subscriptions/"+subscription) {
-					err = fmt.Errorf("I02: subscription lookup did not return the actual selected subscription ARM ID")
+					err = fmt.Errorf(
+						"resource-refs: subscription lookup did not return the actual selected subscription ARM ID")
 				} else {
 					subscriptionScope = planScope{subscriptionID: subscription, subscriptionARMID: *response.ID}
 				}
 			}
 		}
 		if err != nil {
-			r.err = errors.Join(r.err, fmt.Errorf("I02: read actual template subscription scope: %w", err))
+			r.err = errors.Join(r.err, fmt.Errorf("resource-refs: read actual template subscription scope: %w", err))
 			subscriptionScope.missing = "actual subscription scope could not be read"
 		}
 		r.scopes[subKey] = subscriptionScope
@@ -92,7 +93,8 @@ func (r *templatePlanResolver) scope(subscription, group string) planScope {
 		response, err = client.Get(r.ctx, group, nil)
 		if err == nil {
 			if response.ID == nil || !strings.EqualFold(*response.ID, scope.groupARMID) {
-				err = fmt.Errorf("I02: resource-group lookup did not return the actual selected resource-group ARM ID")
+				err = fmt.Errorf(
+					"resource-refs: resource-group lookup did not return the actual selected resource-group ARM ID")
 			} else {
 				scope.groupARMID = *response.ID
 				scope.groupExists = true
@@ -106,7 +108,7 @@ func (r *templatePlanResolver) scope(subscription, group string) planScope {
 		err = nil
 	}
 	if err != nil {
-		r.err = errors.Join(r.err, fmt.Errorf("I02: read actual template resource-group scope: %w", err))
+		r.err = errors.Join(r.err, fmt.Errorf("resource-refs: read actual template resource-group scope: %w", err))
 		scope.missing = "actual resource-group scope could not be read"
 	}
 	r.scopes[key] = scope
@@ -378,12 +380,12 @@ func (n *planResource) reference(full bool) any {
 	if missing != "" {
 		return planUnknown{missing}
 	}
-	properties := map[string]any{"principalId": planPrincipal{resourceID: id}}
+	properties := map[string]any{}
 	if !full {
 		return properties
 	}
 	return map[string]any{
-		"id": id, "identity": map[string]any{"principalId": planPrincipal{resourceID: id}},
+		"id":         id,
 		"properties": properties,
 		"location":   planUnknown{"runtime resource location is not a local template value"},
 	}
@@ -395,11 +397,12 @@ func (r *templatePlanResolver) resource(value any, kind, origin string) onboardi
 	if missing != "" {
 		if partial, ok := value.(planPartialID); ok {
 			if !strings.EqualFold(partial.kind, kind) {
-				r.err = errors.Join(r.err, fmt.Errorf("I02: actual template resource type differs from expected %s", kind))
+				r.err = errors.Join(r.err,
+					fmt.Errorf("resource-refs: actual template resource type differs from expected %s", kind))
 				return result
 			}
 			if strings.ContainsAny(partial.scope, "?#%\\@:\x00 \t\r\n") {
-				r.err = errors.Join(r.err, fmt.Errorf("I02: actual template resource scope is malformed"))
+				r.err = errors.Join(r.err, fmt.Errorf("resource-refs: actual template resource scope is malformed"))
 				return result
 			}
 			if scope, err := arm.ParseResourceID(partial.scope); err == nil && scope.SubscriptionID != "" {
@@ -422,16 +425,16 @@ func (r *templatePlanResolver) resource(value any, kind, origin string) onboardi
 					}
 				}
 			} else if partial.scope != "" {
-				r.err = errors.Join(r.err, fmt.Errorf("I02: actual template resource scope is malformed"))
+				r.err = errors.Join(r.err, fmt.Errorf("resource-refs: actual template resource scope is malformed"))
 			}
 		} else if _, unknown := value.(planUnknown); !unknown {
-			r.err = errors.Join(r.err, fmt.Errorf("I02: actual template %s resource ID must be a string", kind))
+			r.err = errors.Join(r.err, fmt.Errorf("resource-refs: actual template %s resource ID must be a string", kind))
 		}
 		return result
 	}
 	parsed, err := onboarding.ParseID(id, kind)
 	if err != nil {
-		r.err = errors.Join(r.err, fmt.Errorf("I02: actual template %s: %w", kind, err))
+		r.err = errors.Join(r.err, fmt.Errorf("resource-refs: actual template %s: %w", kind, err))
 		return result
 	}
 	result.Parent = parsed.Parent.String()
@@ -471,8 +474,7 @@ func (r *templatePlanResolver) resource(value any, kind, origin string) onboardi
 func (r *templatePlanResolver) recordOwningSubscription(kind, subscription string) {
 	switch strings.ToLower(kind) {
 	case "microsoft.containerservice/managedclusters", "microsoft.storage/storageaccounts",
-		"microsoft.managedidentity/userassignedidentities", "microsoft.containerregistry/registries",
-		"microsoft.network/privatednszones":
+		"microsoft.managedidentity/userassignedidentities":
 		r.owningSubscriptions[strings.ToLower(subscription)] = true
 	}
 }
@@ -503,40 +505,28 @@ func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
 			return planUnknown{"parameter " + key + " requires a runtime parameter reference"}
 		}
 	}
-	if definitions, ok := source.armTemplate["parameters"].(map[string]any); ok {
-		for name := range definitions {
-			if strings.EqualFold(name, "kubeletObjectId") && parameters["kubeletobjectid"] == nil {
-				parameters["kubeletobjectid"] = func() any { return planPrincipal{binding: "kubeletObjectId"} }
-			}
-		}
-	}
 	scope := resolver.scope(p.subID, "")
 	env := resolver.environment(source.armTemplate, parameters, scope, "compiled template", p.deploymentName())
 	resolver.walk(env, "", 0)
-	plan := onboarding.Plan{SubscriptionID: p.subID, Grants: []onboarding.PlannedGrant{}}
+	plan := onboarding.Plan{SubscriptionID: p.subID}
 	resolver.owningSubscriptions[strings.ToLower(p.subID)] = true
 	resolver.bindResources(&plan, env)
-	group, missing := planString(env.parameter("resourceGroupName"))
+	_, missing := planString(env.parameter("resourceGroupName"))
 	if resolver.account != nil {
-		group, missing = resolver.account.env.scope.group, resolver.account.env.scope.missing
+		missing = resolver.account.env.scope.missing
 		if subscription := resolver.account.env.scope.subscriptionID; subscription != "" {
 			plan.SubscriptionID = subscription
 			resolver.owningSubscriptions[strings.ToLower(subscription)] = true
 		} else {
 			missing = strings.Trim(missing+"; actual Foundry account subscription is not resolved", "; ")
-			plan.SkippedChecks = append(plan.SkippedChecks, onboarding.SkippedCheck("I02",
+			plan.SkippedChecks = append(plan.SkippedChecks, onboarding.SkippedCheck("resource-refs",
 				resolver.account.path, "Foundry account subscription owning tenant", missing))
 		}
 	}
-	plan.ResourceGroup = group
-	if missing == "" {
-		plan.ResourceGroupSupplied = resolver.scope(plan.SubscriptionID, group).groupExists
-	} else {
-		plan.TargetScopeMissing = "actual Foundry target resource-group selection: " + missing
-		plan.SkippedChecks = append(plan.SkippedChecks, onboarding.SkippedCheck("I03", env.path,
-			"actual Foundry target resource-group scope", plan.TargetScopeMissing))
+	if missing != "" {
+		plan.SkippedChecks = append(plan.SkippedChecks, onboarding.SkippedCheck("resource-plan", env.path,
+			"actual Foundry target resource-group scope", "actual Foundry target resource-group selection: "+missing))
 	}
-	resolver.bindGrants(&plan)
 	resolver.bindNetwork(&plan)
 	plan.OwningSubscriptions = append(plan.OwningSubscriptions, slices.Sorted(maps.Keys(resolver.owningSubscriptions))...)
 	return plan, resolver.err

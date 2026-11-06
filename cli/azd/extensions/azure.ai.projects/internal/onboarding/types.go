@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package onboarding checks BYO AKS prerequisites, deployment permissions and supporting resources
+// Package onboarding checks BYO AKS prerequisites, supplied-identity permissions and supporting resources
 // without mutating Azure or persisting deployment state.
 package onboarding
 
@@ -143,35 +143,16 @@ func (r Resource) diagnosticScope() string {
 	return r.Origin
 }
 
-// PlannedGrant identifies an actual role-assignment creation in the compiled template.
-type PlannedGrant struct {
-	CheckID           string
-	Target            Resource
-	AuthorityScope    string
-	DeploymentScope   string
-	Missing           string
-	DeploymentMissing string
-}
-
 // Plan contains this deployment's resolved resource and standard-network selections.
 type Plan struct {
-	SubscriptionID        string
-	ResourceGroup         string
-	ResourceGroupSupplied bool
-	TargetScopeMissing    string
-	LegacyNetwork         *LegacyNetwork
-	AgentSubnet           Resource
-	Operations            []operation
-	SkippedChecks         Report
-	OwningSubscriptions   []string
-	Grants                []PlannedGrant
-	Cluster               Resource
-	Storage               Resource
-	Hosting               Resource
-	Workload              Resource
-	Registry              Resource
-	RegistryGrantPlanned  *bool
-	RegistryGrantMissing  string
+	SubscriptionID      string
+	AgentSubnet         Resource
+	SkippedChecks       Report
+	OwningSubscriptions []string
+	Cluster             Resource
+	Storage             Resource
+	Hosting             Resource
+	Workload            Resource
 }
 
 // Facts contains current read-only evidence; an absent Exists key means existence is unverified.
@@ -192,16 +173,6 @@ func (f Facts) absent(resource Resource) bool {
 	return known && !exists
 }
 
-func (f Facts) scope(resource Resource) string {
-	if resource.Supplied || f.exists(resource) {
-		return resource.ID
-	}
-	if f.absent(resource) {
-		return resource.Parent
-	}
-	return ""
-}
-
 // Identity records distinct ARM, object, client and tenant identifiers.
 type Identity struct {
 	ID          string
@@ -215,7 +186,7 @@ type ResourceChecker interface {
 	Check(context.Context, Plan) (Facts, Report, error)
 }
 
-// Authorizer checks scoped operations and supplied-identity grants without writing.
+// Authorizer checks supplied-identity grants without writing.
 type Authorizer interface {
 	Check(context.Context, Plan, Facts) (Report, error)
 }

@@ -14,6 +14,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 )
 
+var aksCheckIDs = [...]string{
+	"aks-version", "aks-cni", "aks-identity", "aks-federation", "system-pool",
+	"agent-pool", "agent-image", "agent-label", "network-policy",
+}
+
 func resourceCheck(id, scope, expected string) Check {
 	return Check{
 		ID: id, Scope: scope, Status: Unverified, Mandatory: true, Expected: expected,
@@ -153,68 +158,63 @@ func skuCapacity(
 	return Unverified, fmt.Sprintf("no exact virtualMachines SKU capability for %s in %s", size, region)
 }
 
-func poolCapacity(
-	p *armcontainerservice.ManagedClusterAgentPoolProfileProperties,
-	skus []*armcompute.ResourceSKU, region string, cpu, memory float64,
-) (Status, string) {
-	sizes := vmSizes(p)
+func poolCapacityWarning(
+	pool *armcontainerservice.AgentPool, skus []*armcompute.ResourceSKU, region string, cpu, memory float64,
+) string {
+	sizes := vmSizes(pool.Properties)
+	var details []string
 	if len(sizes) == 0 {
-		return Unverified, "pool has no explicit VM size evidence"
+		details = append(details, "pool has no explicit VM size evidence")
 	}
-	status, details := Pass, []string{}
 	for _, size := range sizes {
-		s, detail := skuCapacity(skus, region, size, cpu, memory)
-		details = append(details, detail)
-		if s == Fail || s == Unverified && status == Pass {
-			status = s
+		status, detail := skuCapacity(skus, region, size, cpu, memory)
+		if status != Pass {
+			details = append(details, detail)
 		}
 	}
-	return status, strings.Join(details, "; ")
+	if len(details) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"Pool %s: %s. At least %g available vCPU / %g GiB per VM is recommended; "+
+			"this recommendation does not block provisioning or change the pool.",
+		resourceValue(pool.Name), strings.Join(details, "; "), cpu, memory)
 }
 
-func agentPoolChecks(
-	pool *armcontainerservice.AgentPool, skus []*armcompute.ResourceSKU, region string,
-) Report {
+func agentPoolChecks(pool *armcontainerservice.AgentPool) Report {
 	p := pool.Properties
 	scope := resourceValue(pool.ID)
 	if scope == "" {
 		scope = resourceValue(pool.Name)
 	}
 	checks := Report{
-		resourceCheck("A06", scope, "one User pool: Azure Linux, KataVmIsolation, count >= 1, >= 8 vCPU / 32 GiB"),
-		resourceCheck("A07", scope, "compatible AKSAzureLinux-V3katagen2 image >= 202608.14.0"),
-		resourceCheck("A08", scope, "agents.ai.azure.com/sandbox-node=true"),
-		resourceCheck("A09", scope, "AgentPool securityProfile.sshAccess=Disabled"),
-		resourceCheck("A10", scope, "cluster and required AgentPool child resources provisioningState=Succeeded"),
+		resourceCheck("agent-pool", scope, "one User pool: Azure Linux, KataVmIsolation, count >= 1"),
+		resourceCheck("agent-image", scope, "compatible AKSAzureLinux-V3katagen2 image >= 202608.14.0"),
+		resourceCheck("agent-label", scope, "agents.ai.azure.com/sandbox-node=true"),
 	}
 	knownOS := p.OSSKU != nil
 	validOS := resourceValue(p.OSSKU) == "AzureLinux" || resourceValue(p.OSSKU) == "AzureLinux3"
-	capacity, detail := poolCapacity(p, skus, region, 8, 32)
-	known := knownOS && p.WorkloadRuntime != nil && p.Count != nil && capacity != Unverified
+	known := knownOS && p.WorkloadRuntime != nil && p.Count != nil
 	valid := validOS && resourceValue(p.WorkloadRuntime) == "KataVmIsolation" && p.Count != nil && *p.Count >= 1
-	checks[0] = resourceKnown(checks[0], known, valid && capacity == Pass, detail)
+	detail := "osSKU=" + resourceValue(p.OSSKU) + "; workloadRuntime=" + resourceValue(p.WorkloadRuntime)
+	if p.Count != nil {
+		detail += "; count=" + strconv.Itoa(int(*p.Count))
+	}
+	checks[0] = resourceKnown(checks[0], known, valid, detail)
 	// A known incompatible field is a failure even when a different property is absent.
 	if knownOS && !validOS || p.WorkloadRuntime != nil && resourceValue(p.WorkloadRuntime) != "KataVmIsolation" ||
-		p.Count != nil && *p.Count < 1 || capacity == Fail {
-		checks[0] = resourceResult(checks[0], Fail, "incompatible agent pool configuration; "+detail)
+		p.Count != nil && *p.Count < 1 {
+		checks[0] = resourceResult(checks[0], Fail, "incompatible agent pool configuration")
 	}
 	imageKnown, imageValid := agentImage(resourceValue(p.NodeImageVersion))
 	checks[1] = resourceKnown(checks[1], imageKnown, imageValid, resourceValue(p.NodeImageVersion))
 	label, labelExists := p.NodeLabels["agents.ai.azure.com/sandbox-node"]
 	checks[2] = resourceKnown(checks[2], p.NodeLabels != nil, labelExists && resourceValue(label) == "true",
 		"persisted pool sandbox-node label="+resourceValue(label))
-	if p.SecurityProfile != nil {
-		ssh := resourceValue(p.SecurityProfile.SSHAccess)
-		checks[3] = resourceKnown(checks[3], ssh != "", ssh == "Disabled", "sshAccess="+ssh)
-	}
-	state := resourceValue(p.ProvisioningState)
-	checks[4] = resourceKnown(checks[4], state != "", state == "Succeeded", "AgentPool provisioningState="+state)
 	return checks
 }
 
-func selectedAgentPool(
-	cluster armcontainerservice.ManagedCluster, pools []*armcontainerservice.AgentPool, skus []*armcompute.ResourceSKU,
-) (*armcontainerservice.AgentPool, Report) {
+func selectedAgentPool(pools []*armcontainerservice.AgentPool) (*armcontainerservice.AgentPool, Report) {
 	var best *armcontainerservice.AgentPool
 	var checks Report
 	bestScore := -1
@@ -222,19 +222,12 @@ func selectedAgentPool(
 		if pool == nil || pool.Properties == nil || resourceValue(pool.Properties.Mode) != "User" {
 			continue
 		}
-		candidate := agentPoolChecks(pool, skus, resourceValue(cluster.Location))
+		candidate := agentPoolChecks(pool)
 		score := 0
 		for _, check := range candidate {
 			if check.Status == Pass {
 				score += 2
 			} else if check.Status == Unverified {
-				score++
-			}
-		}
-		if cluster.Properties != nil && cluster.Properties.NetworkProfile != nil {
-			n := cluster.Properties.NetworkProfile
-			if resourceValue(n.NetworkPlugin) == "azure" &&
-				(resourceValue(n.NetworkPluginMode) == "overlay" || resourceValue(pool.Properties.PodSubnetID) != "") {
 				score++
 			}
 		}
@@ -246,7 +239,7 @@ func selectedAgentPool(
 }
 
 func aksResourceChecks(
-	cluster armcontainerservice.ManagedCluster, pools []*armcontainerservice.AgentPool, skus []*armcompute.ResourceSKU,
+	cluster armcontainerservice.ManagedCluster, pools []*armcontainerservice.AgentPool,
 ) (string, Report) {
 	scope := resourceValue(cluster.ID)
 	report := Report{}
@@ -255,36 +248,32 @@ func aksResourceChecks(
 	}
 	p := cluster.Properties
 	if p == nil {
-		for i := 1; i <= 11; i++ {
-			report = append(report, resourceCheck(fmt.Sprintf("A%02d", i), scope, "readable AKS properties"))
+		for _, id := range aksCheckIDs {
+			report = append(report, resourceCheck(id, scope, "readable AKS properties"))
 		}
 		return "", report
 	}
-	// Base is the documented default SKU name. The billing tier is not the product type.
-	sku := "Base"
-	if cluster.SKU != nil && cluster.SKU.Name != nil {
-		sku = resourceValue(cluster.SKU.Name)
-	}
 	version := resourceValue(p.CurrentKubernetesVersion)
 	knownVersion, validVersion := numericVersion(version, []int{1, 31})
-	add("A01", "AKS Base (not Automatic), running Kubernetes >= 1.31",
-		knownVersion, sku == "Base" && validVersion, "SKU="+sku+"; currentKubernetesVersion="+version)
-	if sku != "Base" {
-		report[len(report)-1] = resourceResult(report[len(report)-1], Fail, "unsupported AKS SKU="+sku)
-	}
+	add("aks-version", "running Kubernetes >= 1.31",
+		knownVersion, validVersion, "currentKubernetesVersion="+version)
 	n := p.NetworkProfile
-	selectedPool, selectedChecks := selectedAgentPool(cluster, pools, skus)
+	selectedPool, selectedChecks := selectedAgentPool(pools)
 	if n == nil {
-		add("A02", "Azure CNI Overlay or Pod Subnet", false, false, "networkProfile is absent")
+		add("aks-cni", "Azure CNI Overlay or Pod Subnet on every pool", false, false, "networkProfile is absent")
 	} else {
-		plugin, mode := resourceValue(n.NetworkPlugin), resourceValue(n.NetworkPluginMode)
-		podSubnet := false
-		if selectedPool != nil {
-			podSubnet = resourceValue(selectedPool.Properties.PodSubnetID) != ""
+		plugin := strings.ToLower(resourceValue(n.NetworkPlugin))
+		mode := strings.ToLower(resourceValue(n.NetworkPluginMode))
+		allPodSubnets := len(p.AgentPoolProfiles) > 0
+		for _, pool := range p.AgentPoolProfiles {
+			if pool == nil || resourceValue(pool.PodSubnetID) == "" {
+				allPodSubnets = false
+				break
+			}
 		}
-		add("A02", "Azure CNI Overlay or Pod Subnet", plugin != "",
-			plugin == "azure" && (mode == "overlay" || podSubnet),
-			"plugin="+plugin+"; mode="+mode+"; User pool podSubnetID evidence="+strconv.FormatBool(podSubnet))
+		add("aks-cni", "Azure CNI Overlay or Pod Subnet on every pool", plugin != "",
+			plugin == "azure" && (mode == "overlay" || allPodSubnets),
+			"plugin="+plugin+"; mode="+mode+"; nonempty pool list with all podSubnetID="+strconv.FormatBool(allPodSubnets))
 	}
 	kubelet := ""
 	if identity := p.IdentityProfile["kubeletidentity"]; identity != nil {
@@ -296,7 +285,7 @@ func aksResourceChecks(
 	}
 	managed := identityType == "SystemAssigned" || identityType == "UserAssigned" ||
 		identityType == "SystemAssigned, UserAssigned"
-	add("A03", "managed cluster identity and kubelet principal object ID",
+	add("aks-identity", "managed cluster identity and kubelet principal object ID",
 		identityType != "" && kubelet != "", managed && kubelet != "",
 		"identity.type="+identityType+"; kubelet object ID="+kubelet)
 	if identityType != "" && !managed || identityType == "" && p.ServicePrincipalProfile != nil {
@@ -311,61 +300,34 @@ func aksResourceChecks(
 	if p.SecurityProfile != nil && p.SecurityProfile.WorkloadIdentity != nil {
 		workload = resourceBool(p.SecurityProfile.WorkloadIdentity.Enabled)
 	}
-	add("A04", "OIDC enabled with issuer URL; Workload Identity enabled",
+	add("aks-federation", "OIDC enabled with issuer URL; Workload Identity enabled",
 		knownFederation, oidc && workload && strings.TrimSpace(issuer) != "", "OIDC and Workload Identity configuration")
-	systemStatus, systemDetails, hasSystem := Pass, []string{}, false
+	hasSystem := false
 	for _, pool := range pools {
 		if pool == nil || pool.Properties == nil {
 			continue
 		}
-		switch resourceValue(pool.Properties.Mode) {
-		case "System":
+		if resourceValue(pool.Properties.Mode) == "System" {
 			hasSystem = true
-			status, detail := poolCapacity(pool.Properties, skus, resourceValue(cluster.Location), 4, 16)
-			systemDetails = append(systemDetails, resourceValue(pool.Name)+": "+detail)
-			if status == Fail || status == Unverified && systemStatus == Pass {
-				systemStatus = status
-			}
 		}
 	}
-	system := resourceCheck("A05", scope, "System pools, every applicable VM size >= 4 vCPU / 16 GiB")
-	if !hasSystem {
-		systemStatus, systemDetails = Fail, []string{"no System child pool"}
-	}
-	report = append(report, resourceResult(system, systemStatus, strings.Join(systemDetails, "; ")))
+	add("system-pool", "at least one System child pool", true, hasSystem,
+		"System child pool present="+strconv.FormatBool(hasSystem))
 	if selectedPool == nil {
-		for _, id := range []string{"A06", "A07", "A08", "A09", "A10"} {
+		for _, id := range []string{"agent-pool", "agent-image", "agent-label"} {
 			report = append(report, resourceResult(resourceCheck(id, scope, "one complete qualifying User pool"),
 				Fail, "no User child pool"))
 		}
 	} else {
 		report = append(report, selectedChecks...)
 	}
-	for i := range report {
-		if report[i].ID != "A10" {
-			continue
-		}
-		for _, pool := range pools {
-			if pool == nil || pool.Properties == nil || resourceValue(pool.Properties.Mode) != "System" {
-				continue
-			}
-			state := resourceValue(pool.Properties.ProvisioningState)
-			if state != "Succeeded" {
-				report[i] = resourceKnown(report[i], state != "", false, "System child pool state="+state)
-			}
-		}
-		state := resourceValue(p.ProvisioningState)
-		if state != "Succeeded" {
-			report[i] = resourceKnown(report[i], state != "", false, "cluster provisioningState="+state)
-		}
-	}
 	if n == nil {
-		add("A11", "supported network policy engine enabled", false, false, "networkProfile is absent")
+		add("network-policy", "supported network policy engine enabled", false, false, "networkProfile is absent")
 	} else {
 		policy, dataplane := resourceValue(n.NetworkPolicy), resourceValue(n.NetworkDataplane)
 		valid := policy == "azure" || policy == "calico" || dataplane == "cilium" && (policy == "" || policy == "cilium")
 		known := policy != "" || dataplane == "azure" || dataplane == "cilium"
-		add("A11", "Azure/Calico policy or supported Cilium dataplane",
+		add("network-policy", "Azure/Calico policy or supported Cilium dataplane",
 			known, valid, "networkPolicy="+policy+"; networkDataplane="+dataplane)
 	}
 	return kubelet, report
@@ -373,9 +335,8 @@ func aksResourceChecks(
 
 func storageResourceChecks(account armstorage.Account) Report {
 	scope := resourceValue(account.ID)
-	typeCheck := resourceCheck("S01", scope, "StorageV2; Hot tier; HNS explicitly disabled")
-	security := resourceCheck("S02", scope,
-		"HTTPS only; TLS >= 1.2; Shared Key disabled; anonymous Blob explicitly disabled")
+	typeCheck := resourceCheck("storage-type", scope, "StorageV2; Hot tier; HNS explicitly disabled")
+	security := resourceCheck("storage-security", scope, "HTTPS only; TLS >= 1.2")
 	p := account.Properties
 	if p == nil {
 		return Report{typeCheck, security}
@@ -407,54 +368,15 @@ func storageResourceChecks(account armstorage.Account) Report {
 			"This recommendation does not block provisioning or change the account."
 	}
 	// Accounts.GetProperties uses API 2024-01-01. Its documented defaults are:
-	// HTTPS=true (since 2019-04-01), minimum TLS=1.0, Shared Key=true.
-	// Anonymous Blob access requires explicit allowBlobPublicAccess=false evidence.
+	// HTTPS=true (since 2019-04-01), minimum TLS=1.0.
 	https := p.EnableHTTPSTrafficOnly == nil || *p.EnableHTTPSTrafficOnly
-	anonymousKnown := p.AllowBlobPublicAccess != nil
-	anonymous := resourceBool(p.AllowBlobPublicAccess)
-	anonymousObserved := "unknown"
-	if anonymousKnown {
-		anonymousObserved = strconv.FormatBool(anonymous)
-	}
-	shared := p.AllowSharedKeyAccess == nil || *p.AllowSharedKeyAccess
 	tls := resourceValue(p.MinimumTLSVersion)
 	tlsKnown := tls == "" || tls == "TLS1_0" || tls == "TLS1_1" || tls == "TLS1_2" || tls == "TLS1_3"
 	tlsValid := tls == "TLS1_2" || tls == "TLS1_3"
-	security = resourceKnown(security, tlsKnown && anonymousKnown, https && !anonymous && !shared && tlsValid,
-		fmt.Sprintf("HTTPS=%t; minimum TLS=%s; Shared Key=%t; anonymous Blob=%s", https, tls, shared, anonymousObserved))
-	if !https || anonymous || shared || tlsKnown && !tlsValid {
+	security = resourceKnown(security, tlsKnown, https && tlsValid,
+		fmt.Sprintf("HTTPS=%t; minimum TLS=%s", https, tls))
+	if !https || tlsKnown && !tlsValid {
 		security = resourceResult(security, Fail, security.Observed)
 	}
 	return Report{typeCheck, security}
-}
-
-func storageNetworkChecks(plan Plan, storage *armstorage.Account) Report {
-	check := resourceCheck("S03", plan.Storage.ID, "supplied Storage matches the public static network baseline")
-	if !plan.Storage.Supplied {
-		return Report{resourceResult(check, NotApplicable,
-			"S03 applies only to supplied Storage; new Storage checks are skipped before and after deployment")}
-	}
-	if storage == nil || storage.Properties == nil || storage.Properties.PrimaryEndpoints == nil {
-		return Report{check}
-	}
-	p := storage.Properties
-	endpoint := safeResourceEndpoint(resourceValue(p.PrimaryEndpoints.Blob))
-	access := resourceValue(p.PublicNetworkAccess)
-	action := ""
-	if p.NetworkRuleSet != nil {
-		action = resourceValue(p.NetworkRuleSet.DefaultAction)
-	}
-	check.Observed = "Blob endpoint=" + endpoint + "; publicNetworkAccess=" + access + "; defaultAction=" + action
-	if endpoint == "" || access != "Enabled" && access != "Disabled" || action != "Allow" && action != "Deny" {
-		check.Missing = "valid HTTPS Blob endpoint and explicit public/firewall access settings"
-		return Report{check}
-	}
-	if access == "Enabled" && action == "Allow" {
-		return Report{resourceResult(check, Pass, check.Observed+"; public static baseline, not actual connectivity")}
-	}
-	check = resourceResult(check, NotApplicable, check.Observed+"; restricted/private network path verification skipped")
-	check.Mandatory = false
-	check.Warning = "Restricted/private Storage network connectivity was not verified; " +
-		"S03 is skipped and does not block provisioning."
-	return Report{check}
 }

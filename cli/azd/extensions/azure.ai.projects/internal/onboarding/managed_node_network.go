@@ -23,7 +23,7 @@ func (c *sdkResourceChecker) nodeSubnetIDs(
 	if pool != nil && pool.Properties != nil && resourceValue(pool.Properties.VnetSubnetID) != "" {
 		return []string{resourceValue(pool.Properties.VnetSubnetID)}, nil
 	}
-	check := resourceCheck("N02", plan.Cluster.ID,
+	check := resourceCheck("agent-subnet", plan.Cluster.ID,
 		"selected AKS pool Node subnet from cluster-owned node resource group and ARM VMSS network configuration")
 	check.Missing = "cluster nodeResourceGroup, exact managedBy cluster binding, selected pool VMSS and subnet IDs"
 	check.Remediation = "allow resourceGroups/read and virtualMachineScaleSets/read on the AKS node resource group, " +
@@ -98,7 +98,7 @@ func (c *sdkResourceChecker) nodeSubnetIDs(
 }
 
 func managedNodeReadFailure(scope, action string, err error) Check {
-	check := readFailure("N02", scope, action, err)
+	check := readFailure("agent-subnet", scope, action, err)
 	check.Status = Unverified
 	return check
 }

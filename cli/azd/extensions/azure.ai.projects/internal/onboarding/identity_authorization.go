@@ -16,9 +16,9 @@ func (a *scopedAuthorizer) suppliedIdentityChecks(ctx context.Context, plan Plan
 	for _, grant := range grantRequests(plan, facts.HostingIdentity, facts.WorkloadIdentity) {
 		principal, target := plan.Hosting, plan.Cluster
 		switch grant.checkID {
-		case "G02":
+		case "hosting-federation":
 			target = plan.Workload
-		case "G03":
+		case "workload-blob":
 			principal, target = plan.Workload, plan.Storage
 		}
 		if missing := principal.Missing + principal.LifecycleMissing; missing != "" {
@@ -26,9 +26,9 @@ func (a *scopedAuthorizer) suppliedIdentityChecks(ctx context.Context, plan Plan
 				"supplied identity grant requirements", missing))
 			continue
 		}
-		needed := grant.checkID == "G01" && plan.Hosting.Supplied ||
-			grant.checkID == "G02" && plan.Hosting.Supplied ||
-			grant.checkID == "G03" && plan.Workload.Supplied
+		needed := grant.checkID == "hosting-aks" && plan.Hosting.Supplied ||
+			grant.checkID == "hosting-federation" && plan.Hosting.Supplied ||
+			grant.checkID == "workload-blob" && plan.Workload.Supplied
 		if !needed {
 			continue
 		}
@@ -39,8 +39,8 @@ func (a *scopedAuthorizer) suppliedIdentityChecks(ctx context.Context, plan Plan
 		}
 		check := resourceCheck(grant.checkID, grant.scope,
 			"supplied identity "+grant.principalID+" has "+grant.roleName+" or provably equivalent inherited permissions")
-		future := grant.checkID == "G02" && !plan.Workload.Supplied && facts.absent(plan.Workload) ||
-			grant.checkID == "G03" && !plan.Storage.Supplied && facts.absent(plan.Storage)
+		future := grant.checkID == "hosting-federation" && !plan.Workload.Supplied && facts.absent(plan.Workload) ||
+			grant.checkID == "workload-blob" && !plan.Storage.Supplied && facts.absent(plan.Storage)
 		if future {
 			report = append(report, resourceResult(check, NotApplicable,
 				"dependency does not yet exist; the same ARM graph will create the dependency and grant"))

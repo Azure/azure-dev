@@ -10,10 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v7"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 )
 
 func subnetPrefixes(subnet *armnetwork.Subnet) ([]netip.Prefix, error) {
@@ -44,7 +42,7 @@ func subnetPrefixes(subnet *armnetwork.Subnet) ([]netip.Prefix, error) {
 func delegatedSubnetCheck(
 	subnet *armnetwork.Subnet, parent *armnetwork.VirtualNetwork, related []netip.Prefix,
 ) Check {
-	c := resourceCheck("N02", resourceValue(subnet.ID),
+	c := resourceCheck("agent-subnet", resourceValue(subnet.ID),
 		"private non-overlapping delegated subnet, at least /27, contained in its VNet")
 	prefixes, err := subnetPrefixes(subnet)
 	if err != nil {
@@ -100,16 +98,14 @@ func delegatedSubnetCheck(
 
 func (c *sdkResourceChecker) networkChecks(
 	ctx context.Context, plan Plan, cluster *armcontainerservice.ManagedCluster,
-	pools []*armcontainerservice.AgentPool, skus []*armcompute.ResourceSKU, storage *armstorage.Account,
+	pools []*armcontainerservice.AgentPool,
 ) Report {
 	report := Report{}
 	checkSubnet := plan.AgentSubnet.ID != "" && plan.AgentSubnet.Supplied &&
 		plan.AgentSubnet.Missing == "" && plan.AgentSubnet.LifecycleMissing == ""
 	var selected *armcontainerservice.AgentPool
-	if cluster != nil && checkSubnet && skus != nil {
-		// The SKU-aware choice is made from the same child resources as A06-A10.
-		// Nil SKUs mean enumeration failed; an empty successful enumeration is non-nil.
-		selected, _ = selectedAgentPool(*cluster, pools, skus)
+	if cluster != nil && checkSubnet {
+		selected, _ = selectedAgentPool(pools)
 	}
 	var related []netip.Prefix
 	var nodeMetadataKnown bool
@@ -122,21 +118,16 @@ func (c *sdkResourceChecker) networkChecks(
 		}, func() {
 			parent, parentReport = c.readParentNetwork(ctx, plan.AgentSubnet.ID)
 		}, func() {
-			subnet, subnetReport = c.readNetworkSubnet(ctx, plan.AgentSubnet.ID, "N02")
+			subnet, subnetReport = c.readNetworkSubnet(ctx, plan.AgentSubnet.ID, "agent-subnet")
 		})
 	}
 	report = append(report, nodeReport...)
-	if missing := plan.Storage.Missing + plan.Storage.LifecycleMissing; missing != "" {
-		report = append(report, SkippedCheck("S03", plan.Storage.diagnosticScope(), "Storage network access", missing))
-	} else {
-		report = append(report, storageNetworkChecks(plan, storage)...)
-	}
 	if missing := plan.AgentSubnet.Missing + plan.AgentSubnet.LifecycleMissing; missing != "" {
-		return append(report, SkippedCheck("N02", plan.AgentSubnet.diagnosticScope(),
+		return append(report, SkippedCheck("agent-subnet", plan.AgentSubnet.diagnosticScope(),
 			"existing Agent subnet configuration", missing))
 	}
 	if !checkSubnet {
-		report = append(report, resourceResult(resourceCheck("N02", plan.AgentSubnet.ID,
+		report = append(report, resourceResult(resourceCheck("agent-subnet", plan.AgentSubnet.ID,
 			"existing standard network.agentSubnet selection"), NotApplicable,
 			"no existing customer Agent subnet selected; standard network configuration is unchanged"))
 		return report
@@ -152,7 +143,7 @@ func (c *sdkResourceChecker) networkChecks(
 			subnetCheck.Expected = "private IPv4 CIDR, at least /27, contained in its VNet and delegated"
 			subnetCheck.Observed = "ARM CIDR containment and Microsoft.App/environments delegation verified"
 		}
-		return append(report, subnetCheck, SkippedCheck("N02", plan.AgentSubnet.ID,
+		return append(report, subnetCheck, SkippedCheck("agent-subnet", plan.AgentSubnet.ID,
 			"selected AKS Node subnet non-overlap", plan.Cluster.Missing))
 	}
 	if !nodeMetadataKnown && subnetCheck.Status != Fail {
@@ -174,7 +165,7 @@ func (c *sdkResourceChecker) readNodeSubnetPrefixes(
 		report = append(report, checks...)
 		nodeMetadataKnown = len(subnetIDs) > 0
 		for _, subnetID := range subnetIDs {
-			subnet, checks := c.readNetworkSubnet(ctx, subnetID, "N02")
+			subnet, checks := c.readNetworkSubnet(ctx, subnetID, "agent-subnet")
 			report = append(report, checks...)
 			if subnet != nil {
 				state := ""
@@ -185,7 +176,7 @@ func (c *sdkResourceChecker) readNodeSubnetPrefixes(
 				report = append(report, readiness)
 				prefixes, err := subnetPrefixes(subnet)
 				if err != nil {
-					metadata := resourceCheck("N02", subnetID, "parseable selected AKS pool Node subnet CIDRs")
+					metadata := resourceCheck("agent-subnet", subnetID, "parseable selected AKS pool Node subnet CIDRs")
 					metadata.Missing = "ARM subnet addressPrefix/addressPrefixes"
 					metadata.Cause = err
 					report = append(report, metadata)

@@ -22,7 +22,6 @@ type Input struct {
 	DefaultStorageID   string
 	DefaultHostingID   string
 	DefaultWorkloadID  string
-	DefaultRegistryID  string
 }
 
 // ParseID validates the exact ARM type and complete subscription/RG hierarchy.
@@ -55,21 +54,20 @@ func validResourceIDSyntax(value string) bool {
 func BuildPlan(in Input) (Plan, error) {
 	cluster, err := ParseID(in.ClusterID, "Microsoft.ContainerService/managedClusters")
 	if err != nil {
-		return Plan{}, fmt.Errorf("I01 clusterResourceId: %w", err)
+		return Plan{}, fmt.Errorf("aks-id clusterResourceId: %w", err)
 	}
 	parent := "/subscriptions/" + in.SubscriptionID + "/resourceGroups/" + in.ResourceGroup
 	if _, err := arm.ParseResourceID(parent); err != nil || in.SubscriptionID == "" || in.ResourceGroup == "" ||
 		strings.ContainsAny(in.SubscriptionID+in.ResourceGroup, "/\\?#%@:\x00 \t\r\n") {
-		return Plan{}, fmt.Errorf("I03: target subscription and resource group are required")
+		return Plan{}, fmt.Errorf("resource-plan: target subscription and resource group are required")
 	}
 	ancestor := "/subscriptions/" + in.SubscriptionID
 	if in.GroupExists {
 		ancestor = parent
 	}
 	plan := Plan{
-		SubscriptionID: in.SubscriptionID, ResourceGroup: in.ResourceGroup,
-		ResourceGroupSupplied: in.GroupExists,
-		Cluster:               Resource{ID: in.ClusterID, Parent: cluster.Parent.String(), Supplied: true},
+		SubscriptionID: in.SubscriptionID,
+		Cluster:        Resource{ID: in.ClusterID, Parent: cluster.Parent.String(), Supplied: true},
 	}
 	for _, item := range []struct {
 		supplied, fallback, kind string
@@ -85,25 +83,15 @@ func BuildPlan(in Input) (Plan, error) {
 		}
 		id, err := ParseID(value, item.kind)
 		if err != nil {
-			return Plan{}, fmt.Errorf("I02: %w", err)
+			return Plan{}, fmt.Errorf("resource-refs: %w", err)
 		}
 		*item.out = Resource{ID: value, Parent: id.Parent.String(), Supplied: item.supplied != ""}
 		if !item.out.Supplied {
 			if !strings.EqualFold(id.Parent.String(), parent) {
-				return Plan{}, fmt.Errorf("I03: default supporting resource differs from the deployment target")
+				return Plan{}, fmt.Errorf("resource-plan: default supporting resource differs from the deployment target")
 			}
 			item.out.Parent = ancestor
 		}
-	}
-	if in.DefaultRegistryID != "" {
-		id, err := ParseID(in.DefaultRegistryID, "Microsoft.ContainerRegistry/registries")
-		if err != nil {
-			return Plan{}, fmt.Errorf("P05: %w", err)
-		}
-		if !strings.EqualFold(id.Parent.String(), parent) {
-			return Plan{}, fmt.Errorf("P05: native registry differs from the deployment target")
-		}
-		plan.Registry = Resource{ID: in.DefaultRegistryID, Parent: ancestor}
 	}
 	return plan, nil
 }

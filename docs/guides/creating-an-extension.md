@@ -53,7 +53,7 @@ Implement the required interfaces for your declared capabilities. See the extens
 
 For a provisioning-provider example that combines supplied references with independently
 created defaults, see [Foundry existing AKS hosting](../../cli/azd/extensions/azure.ai.projects/README.md#existing-aks-hosting).
-Its AKS, selected Agent-subnet, supporting-resource and authorization preflight is read-only
+Its AKS, selected Agent-subnet, supporting-resource and supplied-identity permission preflight is read-only
 and runs before deployment or ARM what-if, including when supporting resources use defaults.
 The editable-template path identifies actual resources and scopes, warning and skipping
 only checks whose required plan information cannot be resolved. Supplied-resource references

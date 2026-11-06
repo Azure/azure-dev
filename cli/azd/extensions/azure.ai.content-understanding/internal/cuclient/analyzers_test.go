@@ -401,7 +401,7 @@ func TestAnalyzerHTTPFailures(t *testing.T) {
 			client := newWireClient(t, DefaultAPIVersion, wireStep{
 				method: http.MethodPut, path: "/analyzers/custom", query: url.Values{"allowReplace": {"false"}},
 				body: `{}`, contentType: "application/json", status: test.status,
-				response: `{"error":{"code":"ServiceCode","message":"private-token"}}`,
+				response: `{"error":{"code":"ServiceCode","message":"token: private-token"}}`,
 				headers:  http.Header{"Retry-After": {"86400"}},
 			})
 			result, err := client.CreateAnalyzer(t.Context(), CreateAnalyzerRequest{

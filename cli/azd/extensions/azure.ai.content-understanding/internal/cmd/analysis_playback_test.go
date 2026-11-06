@@ -127,6 +127,104 @@ func TestRecordedAnalysisDefaultLLMInput(t *testing.T) {
 	})
 }
 
+func TestAnalyzeServiceFailureReachesTerminalAndReport(t *testing.T) {
+	for _, sample := range []struct {
+		name, body string
+		expected   []string
+	}{
+		{
+			"model", `{"status":"Failed","error":{"code":"InvalidRequest","message":"Invalid request.",
+				"innererror":{"code":"ModelNotSupported",
+				"message":"Provided model 'gpt-6-luna' is not supported by this analyzer.\n` +
+				`https://user:private-password@example.test/doc?sig=private-signature\ncontent: private-document",
+				"target":"private-target"}}}`,
+			[]string{"InvalidRequest", "Invalid request.", "ModelNotSupported", "gpt-6-luna",
+				"not supported by this analyzer", "supportedModels", "modelDeployments"},
+		},
+		{
+			"unknown-code", `{"status":"Failed","error":{"code":"InvalidRequest","message":"Invalid request.",
+				"innererror":{"code":"FutureServiceFailure",
+				"message":"Processing region is unavailable. Select another supported region."}}}`,
+			[]string{"FutureServiceFailure", "Processing region is unavailable. Select another supported region."},
+		},
+		{
+			"long-outer-with-many-details",
+			`{"status":"Failed","error":{"code":"InvalidRequest","message":"` +
+				strings.Repeat("Long outer explanation. ", 80) + `","innererror":{"code":"ModelNotSupported",` +
+				`"message":"Provided model 'gpt-6-luna' is not supported by this analyzer."},"details":[` +
+				strings.Repeat(`{"code":"SiblingFailure","message":"Secondary diagnostic."},`, 40) + `{}]}}`,
+			[]string{"ModelNotSupported", "gpt-6-luna", "not supported by this analyzer",
+				"Additional service diagnostics omitted.", "supportedModels", "modelDeployments"},
+		},
+		{
+			"missing-details", `{"status":"Failed"}`,
+			[]string{"The analysis operation failed.", "No further service diagnostic was provided."},
+		},
+	} {
+		for _, flags := range [][]string{nil, {"--pretty"}, {"--output", "json"}, {"--output", "none"}} {
+			t.Run(sample.name+"/"+strings.Join(flags, " "), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					fixture := loadRecordedFixture(t, "analyze_single")
+					fixture.Interactions[len(fixture.Interactions)-1].Response.Body = json.RawMessage(sample.body)
+					transport := &recordedTransport{fixture: fixture, binaryBody: []byte(recordedBinaryInput)}
+					root := newRecordedCommand(t, transport, "prebuilt-layout")
+					inputDir := filepath.Join(testutil.TempDir(t), "private")
+					require.NoError(t, os.Mkdir(inputDir, 0o700))
+					input := filepath.Join(inputDir, "invoice.pdf")
+					require.NoError(t, os.WriteFile(input, []byte(recordedBinaryInput), 0o600))
+					reportPath := filepath.Join(testutil.TempDir(t), "report.json")
+					args := append([]string{"analyze", input, "--report-file", reportPath,
+						"--endpoint", "https://sanitized.services.ai.azure.com", "--analyzer", "prebuilt-layout",
+						"--api-version", cuclient.DefaultAPIVersion, "--no-prompt"}, flags...)
+					root.SetArgs(args)
+					var stdout, stderr bytes.Buffer
+					root.SetOut(&stdout)
+					root.SetErr(&stderr)
+					err := root.ExecuteContext(t.Context())
+					require.Error(t, err)
+					require.NoError(t, transport.complete())
+					assert.Empty(t, stdout.String())
+					assert.Empty(t, stderr.String())
+					expectedMessages := append([]string{"Input 1:", "0 succeeded, 1 failed, 0 skipped"}, sample.expected...)
+					for _, expected := range expectedMessages {
+						assert.Contains(t, err.Error(), expected)
+					}
+					assert.NotContains(t, err.Error(), "successful result files were retained")
+					for _, secret := range []string{
+						"preview-user", "preview-password", "private-signature", "private-document", "private-target",
+					} {
+						assert.NotContains(t, err.Error(), secret)
+					}
+					// #nosec G304 -- Reads only this test's private temporary report.
+					body, readErr := os.ReadFile(reportPath)
+					require.NoError(t, readErr)
+					var saved struct {
+						Schema  string `json:"schema"`
+						Results []struct {
+							Input  string `json:"input"`
+							Status string `json:"status"`
+							Error  string `json:"error"`
+						} `json:"results"`
+					}
+					require.NoError(t, json.Unmarshal(body, &saved))
+					assert.Equal(t, "cu-cli/analyze-report/v1", saved.Schema)
+					require.Len(t, saved.Results, 1)
+					assert.Equal(t, input, saved.Results[0].Input)
+					assert.Equal(t, "failed", saved.Results[0].Status)
+					for _, expected := range sample.expected {
+						assert.Contains(t, saved.Results[0].Error, expected)
+					}
+					for _, secret := range []string{
+						"preview-user", "preview-password", "private-signature", "private-document", "private-target",
+					} {
+						assert.NotContains(t, saved.Results[0].Error, secret)
+					}
+				})
+			})
+		}
+	}
+}
+
 func TestRecordedAnalysisSyntheticURLContract(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fixture := loadRecordedFixture(t, "analyze_single")

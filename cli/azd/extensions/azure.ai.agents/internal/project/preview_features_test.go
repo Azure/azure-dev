@@ -188,6 +188,7 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 func TestPreviewGatesIgnorePropertyCase(t *testing.T) {
 	t.Setenv(featureflags.MemorySnapshot.EnvVar, "false")
 	t.Setenv(featureflags.Voice.EnvVar, "false")
+	t.Setenv(featureflags.ManagedHarness.EnvVar, "false")
 
 	ws := []any{map[string]any{"protocol": "invocations_ws"}}
 	for _, tc := range []struct {
@@ -285,16 +286,17 @@ func TestMixedCaseDefinitionsDecodeThroughInitialize(t *testing.T) {
 
 	t.Run("harness decodes and is gated", func(t *testing.T) {
 		props := map[string]any{
-			"kind": "prompt", "Harness": map[string]any{"Type": "microsoft_copilot_preview"},
+			"kind": "prompt", "name": "agent", "model": "gpt-4.1-mini", "instructions": "Be helpful.",
+			"Harness": map[string]any{"Type": "microsoft_copilot_preview"},
 		}
 		root := t.TempDir()
 		service := &azdext.ServiceConfig{
 			Name: "agent", Host: foundryAgentHost, AdditionalProperties: mustStruct(t, props),
 		}
-		definition, _, found, _, err := AgentDefinitionFromService(service)
+		prompt, found, err := PromptAgentFromResolvedService(service, root)
 		require.NoError(t, err)
 		require.True(t, found)
-		require.NotNil(t, definition)
+		require.Equal(t, "microsoft_copilot_preview", prompt.HarnessType())
 		require.ErrorContains(t, RequireAgentFeatures(service, root, io.Discard), "agents.managed_harness")
 	})
 }

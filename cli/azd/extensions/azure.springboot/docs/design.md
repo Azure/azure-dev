@@ -178,6 +178,11 @@ Container Apps outbound rules. PostgreSQL remains on a public endpoint; this
 design removes broad bootstrap exposure and split local egress dependence but
 does not provide private networking.
 
+The initial spike uses a public, digest-pinned prototype image. Production
+readiness requires publishing the same minimal runner from a Microsoft-owned
+registry with vulnerability scanning, SBOM, signing, provenance, servicing,
+and release retention before this path can graduate from prototype status.
+
 ## Failure behavior
 
 Locally checkable configuration errors fail before credentials or mutations.

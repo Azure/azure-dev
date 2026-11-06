@@ -27,24 +27,24 @@ func automaticFirewallBinding() (*deploymentBinding, *firewallIdentity) {
 	bootstrapID := serverID + "/firewallRules/" + authoredBootstrapRule
 	runtimeID := serverID + "/firewallRules/aca-1-2-3-4"
 	return &deploymentBinding{
-		automatic: true,
-		values: map[string]string{
-			postgresServerIDEnv: serverID, containerAppIDEnv: appID, "DATABASE_OUTBOUND_IPS": `["1.2.3.4"]`,
-		},
-		outputs: currentDeploymentOutputs{
-			"DATABASE_OUTBOUND_IPS": {Type: "string", Value: `["1.2.3.4"]`},
-		},
-		resources: map[string]bool{
-			strings.ToLower(serverID): true, strings.ToLower(appID): true,
-			strings.ToLower(bootstrapID): true, strings.ToLower(runtimeID): true,
-		},
-		app: &armappcontainers.ContainerApp{ID: new(appID), Properties: &armappcontainers.ContainerAppProperties{
-			OutboundIPAddresses: []*string{new("1.2.3.4")},
-		}},
-	}, &firewallIdentity{
-		subscriptionID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-		resourceGroup:  "rg", postgresServerName: "pg", containerAppName: "app",
-	}
+			automatic: true,
+			values: map[string]string{
+				postgresServerIDEnv: serverID, containerAppIDEnv: appID, "DATABASE_OUTBOUND_IPS": `["1.2.3.4"]`,
+			},
+			outputs: currentDeploymentOutputs{
+				"DATABASE_OUTBOUND_IPS": {Type: "string", Value: `["1.2.3.4"]`},
+			},
+			resources: map[string]bool{
+				strings.ToLower(serverID): true, strings.ToLower(appID): true,
+				strings.ToLower(bootstrapID): true, strings.ToLower(runtimeID): true,
+			},
+			app: &armappcontainers.ContainerApp{ID: new(appID), Properties: &armappcontainers.ContainerAppProperties{
+				OutboundIPAddresses: []*string{new("1.2.3.4")},
+			}},
+		}, &firewallIdentity{
+			subscriptionID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+			resourceGroup:  "rg", postgresServerName: "pg", containerAppName: "app",
+		}
 }
 
 func TestAutomaticFirewallDeletesOnlyVerifiedBroadBootstrapAndConfirmsAbsence(t *testing.T) {

@@ -152,7 +152,8 @@ func springLiveEnvironment(t *testing.T, ctx context.Context, cli *azdcli.CLI) m
 }
 
 func runSpringCommandWithoutLogging(ctx context.Context, cli *azdcli.CLI, args ...string) (string, error) {
-	command := osexec.CommandContext(ctx, cli.AzdPath, args...) // #nosec G204 -- Test-owned azd arguments.
+	// #nosec G702,G204 -- Test-owned azd executable and argument vector, without shell interpolation.
+	command := osexec.CommandContext(ctx, cli.AzdPath, args...)
 	command.Dir = cli.WorkingDirectory
 	command.Env = cli.Env
 	var stdout, stderr bytes.Buffer

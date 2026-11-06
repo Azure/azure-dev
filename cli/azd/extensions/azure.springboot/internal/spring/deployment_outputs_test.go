@@ -152,26 +152,26 @@ func managedIdentityDeploymentOutputFixture() (resolvedDatabase, map[string]stri
 	identityID := "/subscriptions/sub/resourceGroups/rg/providers/" +
 		"Microsoft.ManagedIdentity/userAssignedIdentities/app"
 	return resolvedDatabase{
-		Type:             databasePostgreSQL,
-		ServerResourceID: serverID,
-		Name:             "PetClinic",
-		Authentication:   databaseAuthenticationManagedIdentity,
-		Username:         "PetClinic_App",
-		AppIdentity: &databaseAppIdentity{
-			Type:       databaseAppIdentityTypeUserAssigned,
-			ResourceID: identityID,
-		},
-	}, map[string]string{
-		postgresServerIDEnv:           serverID,
-		postgresServerNameEnv:         "pg",
-		postgresHostEnv:               "pg.postgres.database.azure.com",
-		postgresDatabaseEnv:           "PetClinic",
-		postgresAdministratorEnv:      "Developer@contoso.com",
-		containerAppIDEnv:             "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app",
-		serviceIdentityIDEnv:          identityID,
-		serviceIdentityClientIDEnv:    "11111111-1111-1111-1111-111111111111",
-		serviceIdentityPrincipalIDEnv: "22222222-2222-2222-2222-222222222222",
-	}
+			Type:             databasePostgreSQL,
+			ServerResourceID: serverID,
+			Name:             "PetClinic",
+			Authentication:   databaseAuthenticationManagedIdentity,
+			Username:         "PetClinic_App",
+			AppIdentity: &databaseAppIdentity{
+				Type:       databaseAppIdentityTypeUserAssigned,
+				ResourceID: identityID,
+			},
+		}, map[string]string{
+			postgresServerIDEnv:           serverID,
+			postgresServerNameEnv:         "pg",
+			postgresHostEnv:               "pg.postgres.database.azure.com",
+			postgresDatabaseEnv:           "PetClinic",
+			postgresAdministratorEnv:      "Developer@contoso.com",
+			containerAppIDEnv:             "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app",
+			serviceIdentityIDEnv:          identityID,
+			serviceIdentityClientIDEnv:    "11111111-1111-1111-1111-111111111111",
+			serviceIdentityPrincipalIDEnv: "22222222-2222-2222-2222-222222222222",
+		}
 }
 
 func deploymentOutputsFromValues(values map[string]string) currentDeploymentOutputs {

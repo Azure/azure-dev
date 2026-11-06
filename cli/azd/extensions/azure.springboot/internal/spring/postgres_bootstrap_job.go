@@ -30,9 +30,11 @@ const (
 	postgresBootstrapExecutionTimeout        = 12 * time.Minute
 	postgresBootstrapPollInterval            = 5 * time.Second
 	postgresBootstrapStaleThreshold          = time.Hour
+	postgresBootstrapImage                   = "ghcr.io/xiaofeicao/azd-spring-postgres-bootstrap@" +
+		"sha256:fa1a6e345471f363712c980e5cbb7c0c842e874d37278f857d753617c046ccc4"
 )
 
-var postgresBootstrapImage string
+var errPostgresBootstrapExecutionNotFound = errors.New("PostgreSQL bootstrap execution not found")
 
 type postgresBootstrapCloud interface {
 	createJob(
@@ -136,6 +138,9 @@ func (c *azurePostgresBootstrapCloud) listJobs(
 		}
 		jobs = append(jobs, response.Value...)
 	}
+	if pager.More() {
+		return nil, errors.New("listing retained PostgreSQL bootstrap jobs exceeded the page limit")
+	}
 	return jobs, nil
 }
 
@@ -193,7 +198,10 @@ func (c *azurePostgresBootstrapCloud) getExecution(
 			}
 		}
 	}
-	return nil, fmt.Errorf("Container Apps job execution %q was not found", executionName)
+	if pager.More() {
+		return nil, errors.New("listing PostgreSQL bootstrap executions exceeded the page limit")
+	}
+	return nil, fmt.Errorf("%w: %q", errPostgresBootstrapExecutionNotFound, executionName)
 }
 
 func (c *azurePostgresBootstrapCloud) createAdministrator(
@@ -266,7 +274,6 @@ func verifyPostgresBootstrapAdministrator(
 }
 
 type postgresRemoteAccessReconciler struct {
-	client          *azdext.AzdClient
 	verifyResources func(
 		context.Context,
 		string,
@@ -284,11 +291,9 @@ type postgresRemoteAccessReconciler struct {
 }
 
 func newPostgresRemoteAccessReconciler(
-	client *azdext.AzdClient,
 	verify *postgresAccessReconciler,
 ) *postgresRemoteAccessReconciler {
 	return &postgresRemoteAccessReconciler{
-		client:           client,
 		verifyResources:  verify.verifyResources,
 		newCloud:         newAzurePostgresBootstrapCloud,
 		image:            postgresBootstrapImage,
@@ -394,11 +399,11 @@ func (r *postgresRemoteAccessReconciler) Reconcile(
 		r.image,
 		input,
 	)
-	created, err := cloud.createJob(ctx, resources.ResourceGroup, jobName, job)
-	if err != nil {
+	if _, err := cloud.createJob(ctx, resources.ResourceGroup, jobName, job); err != nil {
 		return fmt.Errorf("creating the PostgreSQL bootstrap job: %w", err)
 	}
-	if created, err = cloud.getJob(ctx, resources.ResourceGroup, jobName); err != nil {
+	created, err := cloud.getJob(ctx, resources.ResourceGroup, jobName)
+	if err != nil {
 		return errors.Join(
 			fmt.Errorf("reading back the PostgreSQL bootstrap job: %w", err),
 			r.deleteJob(ctx, cloud, resources.ResourceGroup, jobName),
@@ -502,6 +507,12 @@ func (r *postgresRemoteAccessReconciler) waitForExecution(
 			)
 		}
 		execution, err := cloud.getExecution(ctx, resourceGroup, jobName, executionName)
+		if errors.Is(err, errPostgresBootstrapExecutionNotFound) {
+			if err := r.sleep(ctx, r.pollInterval); err != nil {
+				return fmt.Errorf("waiting for the PostgreSQL bootstrap job execution: %w", err)
+			}
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("reading the PostgreSQL bootstrap job execution: %w", err)
 		}
@@ -553,12 +564,18 @@ func (r *postgresRemoteAccessReconciler) recoverStaleJobs(
 			!tagEqualsPointers(job.Tags, postgresBootstrapServerTag, serverTag) {
 			continue
 		}
-		if job.SystemData == nil || job.SystemData.CreatedAt == nil ||
-			r.now().Sub(*job.SystemData.CreatedAt) < r.staleThreshold {
-			continue
-		}
 		if job.Name == nil || !strings.HasPrefix(*job.Name, "azd-pg-") {
 			return configurationError("a retained PostgreSQL bootstrap job has invalid ownership metadata")
+		}
+		if job.SystemData == nil || job.SystemData.CreatedAt == nil {
+			return configurationError("a retained PostgreSQL bootstrap job has no creation timestamp")
+		}
+		if r.now().Sub(*job.SystemData.CreatedAt) < r.staleThreshold {
+			return validationError(
+				"postgres_bootstrap_job_pending_recovery",
+				fmt.Sprintf("PostgreSQL bootstrap job %q is still within its recovery window", *job.Name),
+				"inspect the retained job logs and retry after the recovery window",
+			)
 		}
 		input, err := encodePostgresBootstrapInput(postgresBootstrapInput{
 			Version:                   postgresBootstrapProtocolVersion,
@@ -778,6 +795,9 @@ func verifyPostgresBootstrapJobShape(
 		*actual.Properties.Configuration.ReplicaRetryLimit != 0 ||
 		len(actual.Properties.Configuration.Secrets) != 0 ||
 		len(actual.Properties.Configuration.Registries) != 0 ||
+		len(actual.Properties.Configuration.IdentitySettings) != 0 ||
+		actual.Properties.Configuration.EventTriggerConfig != nil ||
+		actual.Properties.Configuration.ScheduleTriggerConfig != nil ||
 		actual.Properties.Configuration.ManualTriggerConfig == nil ||
 		actual.Properties.Configuration.ManualTriggerConfig.Parallelism == nil ||
 		*actual.Properties.Configuration.ManualTriggerConfig.Parallelism != 1 ||
@@ -808,6 +828,7 @@ func samePostgresBootstrapTemplate(
 		actualContainer.Image == nil || expectedContainer.Image == nil ||
 		*actualContainer.Image != *expectedContainer.Image ||
 		len(actualContainer.Command) != 0 || len(actualContainer.Args) != 0 ||
+		len(actualContainer.Probes) != 0 || len(actualContainer.VolumeMounts) != 0 ||
 		len(actualContainer.Env) != 1 || len(expectedContainer.Env) != 1 ||
 		actualContainer.Resources == nil || expectedContainer.Resources == nil ||
 		actualContainer.Resources.CPU == nil || expectedContainer.Resources.CPU == nil ||
@@ -833,7 +854,7 @@ func newPostgresAccessDispatcher(client *azdext.AzdClient) func(
 	map[string]string,
 ) error {
 	local := newPostgresAccessReconciler(client)
-	remote := newPostgresRemoteAccessReconciler(client, local)
+	remote := newPostgresRemoteAccessReconciler(local)
 	return func(
 		ctx context.Context,
 		envName string,

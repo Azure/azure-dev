@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -40,7 +41,8 @@ func (i postgresBootstrapInput) validate() error {
 	if _, err := parsePostgresServerResourceID(i.ServerResourceID); err != nil {
 		return fmt.Errorf("invalid PostgreSQL server resource ID: %w", err)
 	}
-	if i.Host == "" || strings.ContainsAny(i.Host, `/\:@?#`) {
+	if i.Host == "" || strings.TrimSpace(i.Host) != i.Host ||
+		strings.ContainsAny(i.Host, " \t\r\n/\\:@?#") {
 		return fmt.Errorf("invalid PostgreSQL server host")
 	}
 	if !databaseIdentifierPattern.MatchString(i.DatabaseName) {
@@ -87,6 +89,9 @@ func encodePostgresBootstrapInput(input postgresBootstrapInput) (string, error) 
 }
 
 func decodePostgresBootstrapInput(value string) (postgresBootstrapInput, error) {
+	if len(value) > 16<<10 {
+		return postgresBootstrapInput{}, fmt.Errorf("decoding PostgreSQL bootstrap input: value is too large")
+	}
 	raw, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
 		return postgresBootstrapInput{}, fmt.Errorf("decoding PostgreSQL bootstrap input: %w", err)
@@ -96,6 +101,9 @@ func decodePostgresBootstrapInput(value string) (postgresBootstrapInput, error) 
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&input); err != nil {
 		return postgresBootstrapInput{}, fmt.Errorf("decoding PostgreSQL bootstrap input: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return postgresBootstrapInput{}, fmt.Errorf("decoding PostgreSQL bootstrap input: trailing content")
 	}
 	if err := input.validate(); err != nil {
 		return postgresBootstrapInput{}, err
@@ -169,7 +177,7 @@ func writePostgresBootstrapFailure(writer io.Writer, err error) error {
 		"status": "failed",
 		"error":  safe.Error(),
 	}); encodeErr != nil {
-		return fmt.Errorf("%w; writing failure output: %v", safe, encodeErr)
+		return errors.Join(safe, fmt.Errorf("writing failure output: %w", encodeErr))
 	}
 	return safe
 }

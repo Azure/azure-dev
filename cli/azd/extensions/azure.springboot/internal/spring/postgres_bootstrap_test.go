@@ -48,6 +48,17 @@ func TestPostgresBootstrapInputRequiresSeparateAdministrators(t *testing.T) {
 	require.ErrorContains(t, err, "session PostgreSQL administrator")
 }
 
+func TestPostgresBootstrapInputRejectsTrailingContent(t *testing.T) {
+	encoded, err := encodePostgresBootstrapInput(testPostgresBootstrapInput())
+	require.NoError(t, err)
+	raw, err := base64.RawURLEncoding.DecodeString(encoded)
+	require.NoError(t, err)
+	raw = append(raw, []byte(`{"version":1}`)...)
+
+	_, err = decodePostgresBootstrapInput(base64.RawURLEncoding.EncodeToString(raw))
+	require.ErrorContains(t, err, "trailing content")
+}
+
 func TestVerifiedPostgresResourcesSessionAdministrator(t *testing.T) {
 	resources := &verifiedPostgresResources{AdministratorName: "developer"}
 	require.Equal(t, "developer", resources.sessionAdministratorName())

@@ -109,6 +109,14 @@ func verifyProposedPetclinicTemplate(t *testing.T, projectDir string) {
 	require.Contains(t, applicationText, "azure.managedIdentityEnabled=true")
 	require.Contains(t, applicationText, "SPRING_PROFILES_ACTIVE")
 	require.Contains(t, applicationText, "postgres,spring-data-jpa")
+
+	databaseBicep, err := os.ReadFile(filepath.Join(projectDir, "infra", "database.bicep"))
+	require.NoError(t, err)
+	databaseText := strings.ReplaceAll(string(databaseBicep), "\r\n", "\n")
+	require.Contains(t, databaseText, "name: 'aca-${replace(ip, '.', '-')}'")
+	require.NotContains(t, databaseText, "bootstrap-local-ip")
+	require.NotContains(t, databaseText, "startIpAddress: '0.0.0.0'")
+	require.NotContains(t, databaseText, "endIpAddress: '255.255.255.255'")
 }
 
 func Test_CLI_SpringExtension_BundleInstallsWithoutBaseTarget(t *testing.T) {
@@ -328,6 +336,7 @@ func stagePetclinicTemplate(t *testing.T, ctx context.Context) string {
 	require.NoError(t, err, "cloning the pinned Petclinic template: %s", output)
 	require.True(t, filepath.IsAbs(parent))
 
+	// #nosec G204 -- fixed git arguments and test-owned clone, without shell interpolation.
 	checkout := osexec.CommandContext(ctx, "git", "-C", templateDir, "checkout", "--quiet", proposedTemplateCommit)
 	output, err = checkout.CombinedOutput()
 	require.NoError(t, err, "checking out the proposed Petclinic revision: %s", output)
@@ -510,10 +519,6 @@ func retainSpringAcceptanceSource(t *testing.T, source string) string {
 	require.NoError(t, os.WriteFile(filepath.Join(directory, "test-name.txt"), []byte(t.Name()+"\n"), 0o600))
 	t.Logf("retained exact acceptance build inputs and bundle: %s", directory)
 	return directory
-}
-
-func verifyH2ContainerStartup(t *testing.T, ctx context.Context, image string) {
-	verifyH2ContainerStartupAt(t, ctx, image, "8080", "/actuator/health")
 }
 
 func verifyH2ContainerStartupAt(

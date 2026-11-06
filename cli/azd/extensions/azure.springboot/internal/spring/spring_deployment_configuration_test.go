@@ -155,6 +155,7 @@ func TestAutomaticDiscoveryBindsSystemAssignedIdentityWithoutClientID(t *testing
 		"spring.datasource.hikari.data-source-properties[azure.clientId]=${AZURE_CLIENT_ID:}\n",
 		"",
 	))
+	// #nosec G703 -- fixed path beneath a test-owned temporary project directory.
 	require.NoError(t, os.WriteFile(propertiesPath, properties, 0o600))
 
 	subscription := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"

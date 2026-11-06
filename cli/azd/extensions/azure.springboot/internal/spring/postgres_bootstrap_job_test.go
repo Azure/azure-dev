@@ -26,14 +26,15 @@ func (postgresBootstrapTestCredential) GetToken(
 }
 
 type postgresBootstrapTestCloud struct {
-	job             *armappcontainers.Job
-	jobs            []*armappcontainers.Job
-	outboundIPs     []*string
-	executionStatus armappcontainers.JobExecutionRunningState
-	deleteAdminErr  error
-	operations      []string
-	administratorID string
-	administrator   postgresBootstrapAdministrator
+	job              *armappcontainers.Job
+	jobs             []*armappcontainers.Job
+	outboundIPs      []*string
+	executionStatus  armappcontainers.JobExecutionRunningState
+	executionMissing int
+	deleteAdminErr   error
+	operations       []string
+	administratorID  string
+	administrator    postgresBootstrapAdministrator
 }
 
 func (c *postgresBootstrapTestCloud) createJob(
@@ -86,6 +87,10 @@ func (c *postgresBootstrapTestCloud) getExecution(
 	string,
 ) (*armappcontainers.JobExecution, error) {
 	c.operations = append(c.operations, "get-execution")
+	if c.executionMissing > 0 {
+		c.executionMissing--
+		return nil, errPostgresBootstrapExecutionNotFound
+	}
 	return &armappcontainers.JobExecution{
 		Name: new("execution-1"),
 		Properties: &armappcontainers.JobExecutionProperties{
@@ -162,6 +167,30 @@ func TestPostgresRemoteAccessReconcilerFailureRetainsUnprivilegedJob(t *testing.
 	require.Contains(t, err.Error(), "az containerapp job logs show")
 	require.Equal(t, "delete-administrator", cloud.operations[len(cloud.operations)-1])
 	require.NotContains(t, cloud.operations, "delete-job")
+}
+
+func TestPostgresRemoteAccessReconcilerWaitsForExecutionVisibility(t *testing.T) {
+	cloud := &postgresBootstrapTestCloud{
+		outboundIPs:      []*string{new("1.2.3.4")},
+		executionStatus:  armappcontainers.JobExecutionRunningStateSucceeded,
+		executionMissing: 1,
+	}
+	reconciler := testPostgresRemoteAccessReconciler(cloud)
+
+	err := reconciler.Reconcile(
+		testPostgresRemoteContext(),
+		"dev",
+		testManagedIdentityDatabase(),
+		map[string]string{},
+	)
+	require.NoError(t, err)
+	executionReads := 0
+	for _, operation := range cloud.operations {
+		if operation == "get-execution" {
+			executionReads++
+		}
+	}
+	require.Equal(t, 2, executionReads)
 }
 
 func TestPostgresRemoteAccessReconcilerPreservesIdentityWhenAdministratorCleanupFails(t *testing.T) {
@@ -248,6 +277,54 @@ func TestPostgresRemoteAccessReconcilerRecoversOnlyVerifiedStaleJob(t *testing.T
 	)
 	require.NoError(t, err)
 	require.Equal(t, []string{"list-jobs", "delete-administrator", "delete-job"}, cloud.operations)
+}
+
+func TestPostgresRemoteAccessReconcilerBlocksRecentOwnedJob(t *testing.T) {
+	now := time.Now().UTC()
+	resources := testVerifiedPostgresResources()
+	database := testManagedIdentityDatabase()
+	input, err := encodePostgresBootstrapInput(postgresBootstrapInput{
+		Version:                   postgresBootstrapProtocolVersion,
+		ServerResourceID:          resources.ServerID,
+		Host:                      resources.Host,
+		DatabaseName:              database.Name,
+		ApplicationUsername:       database.Username,
+		ApplicationPrincipalID:    resources.IdentityPrincipalID,
+		EnvironmentName:           "dev",
+		ExpectedAdministratorName: resources.AdministratorName,
+		SessionAdministratorName:  "azd-pg-recent",
+	})
+	require.NoError(t, err)
+	image := "ghcr.io/example/bootstrap@sha256:" + strings.Repeat("a", 64)
+	environmentID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/env"
+	job := postgresBootstrapJob(
+		"westus2",
+		environmentID,
+		"dev",
+		resources.ServerID,
+		image,
+		input,
+	)
+	job.Name = new("azd-pg-recent")
+	job.SystemData = &armappcontainers.SystemData{CreatedAt: new(now.Add(-time.Minute))}
+
+	cloud := &postgresBootstrapTestCloud{jobs: []*armappcontainers.Job{&job}}
+	reconciler := testPostgresRemoteAccessReconciler(cloud)
+	reconciler.image = image
+	reconciler.now = func() time.Time { return now }
+	binding := testPostgresRemoteContext().Value(deploymentBindingKey{}).(*deploymentBinding)
+
+	err = reconciler.recoverStaleJobs(
+		t.Context(),
+		cloud,
+		binding,
+		"dev",
+		database,
+		resources,
+		environmentID,
+	)
+	require.ErrorContains(t, err, "recovery window")
+	require.Equal(t, []string{"list-jobs"}, cloud.operations)
 }
 
 func testPostgresRemoteAccessReconciler(

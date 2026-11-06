@@ -158,9 +158,11 @@ spring.datasource.azure.credential.managed-identity-enabled=true`,
 
 func TestSpringDatasourceManagedIdentityRejectsExplicitEmptyClientID(t *testing.T) {
 	for _, clientID := range []string{"", "${AZURE_CLIENT_ID:}"} {
-		config := datasourceProperties(t, `spring.datasource.url=jdbc:postgresql://actual.example/petclinic?sslmode=verify-full
+		const datasourcePrefix = `spring.datasource.url=` +
+			`jdbc:postgresql://actual.example/petclinic?sslmode=verify-full
 spring.datasource.username=app
-spring.datasource.hikari.data-source-properties[authenticationPluginClassName]=`+azurePostgreSQLPlugin+`
+spring.datasource.hikari.data-source-properties[authenticationPluginClassName]=`
+		config := datasourceProperties(t, datasourcePrefix+azurePostgreSQLPlugin+`
 spring.datasource.hikari.data-source-properties[azure.managedIdentityEnabled]=true
 spring.datasource.hikari.data-source-properties[azure.clientId]=`+clientID)
 		_, err := inferSpringDatasource(config, springDependencies{postgresql: true, azureIdentity: true}, true)

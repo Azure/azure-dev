@@ -106,7 +106,12 @@ If administrator removal cannot be confirmed, the job is retained so the
 identity/administrator pair can be recovered deterministically. This path
 requires permission to manage Container Apps Jobs and PostgreSQL Entra
 administrators in addition to reading the verified application and firewall
-resources.
+resources. Release builds enable this path only by injecting a digest-pinned
+runner from `mcr.microsoft.com/azure-dev/azd-spring-postgres-bootstrap`.
+The build scripts accept it through the release-only
+`POSTGRES_BOOTSTRAP_IMAGE` input. Builds without that Microsoft-owned image
+fail before authentication or Azure mutation rather than falling back to an
+untrusted or validation-only image.
 
 Password-authenticated and unsupported custom deployments retain local
 reconciliation. `POSTGRES_BOOTSTRAP_CLIENT_IP` remains a troubleshooting-only

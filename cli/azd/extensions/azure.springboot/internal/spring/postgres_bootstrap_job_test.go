@@ -150,6 +150,39 @@ func TestPostgresRemoteAccessReconcilerSuccessCleansAdministratorBeforeJob(t *te
 	require.Equal(t, "ServicePrincipal", cloud.administrator.PrincipalType)
 }
 
+func TestPostgresRemoteAccessReconcilerRejectsMissingReleaseImageBeforeCloudAccess(t *testing.T) {
+	cloud := &postgresBootstrapTestCloud{}
+	reconciler := testPostgresRemoteAccessReconciler(cloud)
+	reconciler.image = ""
+
+	err := reconciler.Reconcile(
+		testPostgresRemoteContext(),
+		"dev",
+		testManagedIdentityDatabase(),
+		map[string]string{},
+	)
+	require.ErrorContains(t, err, "Microsoft-owned repository")
+	require.Empty(t, cloud.operations)
+}
+
+func TestPostgresBootstrapJobUsesAzureSafeTags(t *testing.T) {
+	job := postgresBootstrapJob(
+		"westus2",
+		"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/env",
+		"dev",
+		testManagedIdentityDatabase().ServerResourceID,
+		postgresBootstrapImageRepository+"@sha256:"+strings.Repeat("a", 64),
+		"input",
+	)
+
+	for name := range job.Tags {
+		lowerName := strings.ToLower(name)
+		require.NotRegexp(t, `^(azure|microsoft|windows)([.\-_]|$)`, lowerName)
+	}
+	require.Equal(t, "true", *job.Tags[postgresBootstrapOwnerTag])
+	require.NotEmpty(t, *job.Tags[postgresBootstrapServerTag])
+}
+
 func TestPostgresRemoteAccessReconcilerFailureRetainsUnprivilegedJob(t *testing.T) {
 	cloud := &postgresBootstrapTestCloud{
 		outboundIPs:     []*string{new("1.2.3.4")},
@@ -245,7 +278,7 @@ func TestPostgresRemoteAccessReconcilerRecoversOnlyVerifiedStaleJob(t *testing.T
 		SessionAdministratorName:  "azd-pg-stale",
 	})
 	require.NoError(t, err)
-	image := "ghcr.io/example/bootstrap@sha256:" + strings.Repeat("a", 64)
+	image := postgresBootstrapImageRepository + "@sha256:" + strings.Repeat("a", 64)
 	environmentID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/env"
 	job := postgresBootstrapJob(
 		"westus2",
@@ -295,7 +328,7 @@ func TestPostgresRemoteAccessReconcilerBlocksRecentOwnedJob(t *testing.T) {
 		SessionAdministratorName:  "azd-pg-recent",
 	})
 	require.NoError(t, err)
-	image := "ghcr.io/example/bootstrap@sha256:" + strings.Repeat("a", 64)
+	image := postgresBootstrapImageRepository + "@sha256:" + strings.Repeat("a", 64)
 	environmentID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/env"
 	job := postgresBootstrapJob(
 		"westus2",
@@ -342,13 +375,27 @@ func testPostgresRemoteAccessReconciler(
 		newCloud: func(string, azcore.TokenCredential) (postgresBootstrapCloud, error) {
 			return cloud, nil
 		},
-		image:            "ghcr.io/example/bootstrap@sha256:" + strings.Repeat("a", 64),
+		image:            postgresBootstrapImageRepository + "@sha256:" + strings.Repeat("a", 64),
 		now:              time.Now,
 		randomSuffix:     func() (string, error) { return "0123456789abcdef", nil },
 		pollInterval:     time.Millisecond,
 		executionTimeout: time.Minute,
 		staleThreshold:   time.Hour,
 		sleep:            func(context.Context, time.Duration) error { return nil },
+	}
+}
+
+func TestValidatePostgresBootstrapImage(t *testing.T) {
+	valid := postgresBootstrapImageRepository + "@sha256:" + strings.Repeat("a", 64)
+	require.NoError(t, validatePostgresBootstrapImage(valid))
+
+	for _, image := range []string{
+		"",
+		postgresBootstrapImageRepository + ":latest",
+		"ghcr.io/example/bootstrap@sha256:" + strings.Repeat("a", 64),
+		postgresBootstrapImageRepository + "@sha256:" + strings.Repeat("g", 64),
+	} {
+		require.Error(t, validatePostgresBootstrapImage(image), image)
 	}
 }
 

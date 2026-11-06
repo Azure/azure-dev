@@ -178,10 +178,13 @@ Container Apps outbound rules. PostgreSQL remains on a public endpoint; this
 design removes broad bootstrap exposure and split local egress dependence but
 does not provide private networking.
 
-The initial spike uses a public, digest-pinned prototype image. Production
-readiness requires publishing the same minimal runner from a Microsoft-owned
-registry with vulnerability scanning, SBOM, signing, provenance, servicing,
-and release retention before this path can graduate from prototype status.
+Release builds enable remote reconciliation only with a digest-pinned runner
+from `mcr.microsoft.com/azure-dev/azd-spring-postgres-bootstrap`. The release
+pipeline supplies the published digest through the build-only
+`POSTGRES_BOOTSTRAP_IMAGE` input and must publish that image with vulnerability
+scanning, SBOM, signing, provenance, servicing, and release retention. Builds
+without the release image fail before authentication or Azure mutation;
+validation-only or personal registry images are not accepted.
 
 ## Failure behavior
 

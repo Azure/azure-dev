@@ -21,6 +21,15 @@ else
     )
 fi
 
+ldflags="-X 'azurespringboot/internal/version.Version=$EXTENSION_VERSION'"
+if [[ -n "${POSTGRES_BOOTSTRAP_IMAGE:-}" ]]; then
+    if [[ ! "$POSTGRES_BOOTSTRAP_IMAGE" =~ ^mcr\.microsoft\.com/azure-dev/azd-spring-postgres-bootstrap@sha256:[0-9a-f]{64}$ ]]; then
+        echo "POSTGRES_BOOTSTRAP_IMAGE must be the digest-pinned Microsoft-owned MCR image." >&2
+        exit 1
+    fi
+    ldflags+=" -X 'azurespringboot/internal/spring.postgresBootstrapImage=$POSTGRES_BOOTSTRAP_IMAGE'"
+fi
+
 for platform in "${platforms[@]}"; do
     target_os="${platform%/*}"
     target_arch="${platform#*/}"
@@ -30,7 +39,7 @@ for platform in "${platforms[@]}"; do
     fi
 
     GOOS="$target_os" GOARCH="$target_arch" go build \
-        -ldflags="-X 'azurespringboot/internal/version.Version=$EXTENSION_VERSION'" \
+        -ldflags="$ldflags" \
         -o "$output_name" \
         .
 done

@@ -24,15 +24,17 @@ import (
 
 const (
 	postgresBootstrapAdministratorAPIVersion = "2024-08-01"
-	postgresBootstrapOwnerTag                = "azure.springboot.postgres-bootstrap"
-	postgresBootstrapServerTag               = "azure.springboot.postgres-server"
+	postgresBootstrapOwnerTag                = "azd-springboot-postgres-bootstrap"
+	postgresBootstrapServerTag               = "azd-springboot-postgres-server"
 	postgresBootstrapReplicaTimeout          = int32(600)
 	postgresBootstrapExecutionTimeout        = 12 * time.Minute
 	postgresBootstrapPollInterval            = 5 * time.Second
 	postgresBootstrapStaleThreshold          = time.Hour
-	postgresBootstrapImage                   = "ghcr.io/xiaofeicao/azd-spring-postgres-bootstrap@" +
-		"sha256:1600b5d5a0c5557e8f7e9ddcaedeccd7cb7020b24a89e28c4af1da591a17e0b3"
+	postgresBootstrapImageRepository         = "mcr.microsoft.com/azure-dev/azd-spring-postgres-bootstrap"
 )
+
+// postgresBootstrapImage is supplied by the release build after the runner is published.
+var postgresBootstrapImage string
 
 var errPostgresBootstrapExecutionNotFound = errors.New("PostgreSQL bootstrap execution not found")
 
@@ -715,11 +717,13 @@ func postgresBootstrapServerTagValue(serverID string) string {
 
 func validatePostgresBootstrapImage(image string) error {
 	const separator = "@sha256:"
-	index := strings.LastIndex(image, separator)
-	if index <= 0 || len(image[index+len(separator):]) != 64 {
-		return errors.New("the PostgreSQL bootstrap image is not configured with a SHA-256 digest")
+	prefix := postgresBootstrapImageRepository + separator
+	if !strings.HasPrefix(image, prefix) || len(image) != len(prefix)+64 {
+		return errors.New(
+			"the PostgreSQL bootstrap image must use the Microsoft-owned repository with a SHA-256 digest",
+		)
 	}
-	if _, err := hex.DecodeString(image[index+len(separator):]); err != nil {
+	if _, err := hex.DecodeString(image[len(prefix):]); err != nil {
 		return errors.New("the PostgreSQL bootstrap image has an invalid SHA-256 digest")
 	}
 	return nil

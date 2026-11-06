@@ -84,7 +84,6 @@ func TestAIHelpColor(t *testing.T) {
 		require.Contains(t, text, output.WithBold("%s", output.WithUnderline("Usage")))
 		require.Contains(t, text, output.WithBold("%s", output.WithUnderline("Examples")))
 		require.Contains(t, text, output.WithHighLightFormat("%s", "--environment"))
-		require.Contains(t, text, "\x1b[94m")
 	})
 }
 

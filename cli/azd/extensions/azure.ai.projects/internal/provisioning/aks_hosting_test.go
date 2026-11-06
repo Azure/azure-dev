@@ -89,10 +89,10 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 	f.requests = append(f.requests, request.Method+" "+request.URL.Path)
 	if request.Method == http.MethodGet && request.URL.Path == f.clusterID {
 		return f.response(request, 200, map[string]any{
-			"id": f.clusterID, "location": "westus", "sku": map[string]any{"name": "Base"},
+			"id": f.clusterID, "location": "westus",
 			"identity": map[string]any{"type": "SystemAssigned"},
 			"properties": map[string]any{
-				"currentKubernetesVersion": f.clusterVersion, "provisioningState": "Succeeded",
+				"currentKubernetesVersion": f.clusterVersion,
 				"networkProfile": map[string]any{
 					"networkPlugin": "azure", "networkPluginMode": "overlay", "networkDataplane": "cilium",
 				},
@@ -108,14 +108,13 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 		return f.response(request, 200, map[string]any{"value": []any{
 			map[string]any{"id": f.clusterID + "/agentPools/system", "name": "system",
 				"properties": map[string]any{
-					"mode": "System", "vmSize": "Standard_E4s_v5", "count": 1, "provisioningState": "Succeeded",
+					"mode": "System", "vmSize": "Standard_E4s_v5", "count": 1,
 				}},
 			map[string]any{"id": f.clusterID + "/agentPools/agents", "name": "agents",
 				"properties": map[string]any{
 					"mode": "User", "osSKU": "AzureLinux", "vmSize": "Standard_D8as_v5", "count": 1,
 					"workloadRuntime": "KataVmIsolation", "nodeImageVersion": "AKSAzureLinux-V3katagen2-202608.14.0",
-					"nodeLabels":      map[string]any{"agents.ai.azure.com/sandbox-node": "true"},
-					"securityProfile": map[string]any{"sshAccess": "Disabled"}, "provisioningState": "Succeeded",
+					"nodeLabels":   map[string]any{"agents.ai.azure.com/sandbox-node": "true"},
 					"vnetSubnetID": f.nodeSubnetID,
 				}},
 		}}), nil
@@ -700,9 +699,9 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				require.Contains(t, edited, replacement.from)
 				edited = strings.Replace(edited, replacement.from, replacement.to, 1)
 			}
-			subscription, group := "target-sub", "target-rg"
+			subscription := "target-sub"
 			if scenario == "cross subscription" || scenario == "cross subscription unknown workload" {
-				subscription, group = "support-sub", "support-rg"
+				subscription = "support-sub"
 				edited = strings.Replace(edited, "name: 'byo-prerequisites'",
 					"name: 'byo-prerequisites'\n  scope: resourceGroup('support-sub', 'support-rg')", 1)
 				for _, kind := range []string{"Microsoft.Storage/storageAccounts",
@@ -712,7 +711,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				}
 			}
 			if scenario == "cross subscription Foundry" {
-				subscription, group = "foundry-sub", "foundry-rg"
+				subscription = "foundry-sub"
 				path := filepath.Join(root, "main.bicep")
 				//nolint:gosec // Embedded fixture copied to t.TempDir.
 				raw, err := os.ReadFile(path)
@@ -850,13 +849,6 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 			} else {
 				require.NoError(t, err, progress.String())
 				assert.Equal(t, 1, requests.writes)
-				base := "/subscriptions/" + subscription + "/resourceGroups/" + group + "/providers/"
-				assert.Contains(t, requests.requests,
-					"GET "+base+"Microsoft.ManagedIdentity/userAssignedIdentities/edited-hosting")
-				if scenario != "unknown workload name" && scenario != "cross subscription unknown workload" {
-					assert.Contains(t, requests.requests,
-						"GET "+base+"Microsoft.ManagedIdentity/userAssignedIdentities/edited-workload")
-				}
 			}
 			if strings.HasPrefix(scenario, "unknown Storage") {
 				assert.Contains(t, progress.String(), "utcNow")

@@ -203,9 +203,9 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	c = &local
 	tenant, report := c.subscriptionTenants(ctx, plan)
 	report = append(slices.Clone(plan.SkippedChecks), report...)
-	facts := Facts{TenantID: tenant, Exists: map[string]bool{}}
+	facts := Facts{Exists: map[string]bool{}}
 	var identities [2]Identity
-	var existence [3]*bool
+	var existence [2]*bool
 	var identityReports [2]Check
 	var storage *armstorage.Account
 	var storageReport Report
@@ -213,23 +213,35 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	var pools []*armcontainerservice.AgentPool
 	var clusterReport Report
 	tasks := []func(){func() {
-		storage, existence[2], storageReport = c.readStorage(ctx, plan.Storage)
-	}, func() {
 		cluster, pools, clusterReport = c.readCluster(ctx, plan.Cluster)
 	}}
-	for i, resource := range []Resource{plan.Hosting, plan.Workload} {
+	if plan.Storage.Supplied || plan.Workload.Supplied {
 		tasks = append(tasks, func() {
-			identities[i], existence[i], identityReports[i] = c.readIdentity(ctx, resource, tenant)
+			storage, existence[1], storageReport = c.readStorage(ctx, plan.Storage)
+		})
+	}
+	if plan.Hosting.Supplied {
+		tasks = append(tasks, func() {
+			identities[0], _, identityReports[0] = c.readIdentity(ctx, plan.Hosting, tenant)
+		})
+	}
+	if plan.Workload.Supplied || plan.Hosting.Supplied {
+		tasks = append(tasks, func() {
+			identities[1], existence[0], identityReports[1] = c.readIdentity(ctx, plan.Workload, tenant)
 		})
 	}
 	parallelReads(tasks...)
 	facts.HostingIdentity, facts.WorkloadIdentity = identities[0], identities[1]
-	for i, resource := range []Resource{plan.Hosting, plan.Workload, plan.Storage} {
+	for i, resource := range []Resource{plan.Workload, plan.Storage} {
 		if existence[i] != nil {
 			facts.Exists[strings.ToLower(resource.ID)] = *existence[i]
 		}
 	}
-	report = append(report, identityReports[:]...)
+	for _, check := range identityReports {
+		if check.ID != "" {
+			report = append(report, check)
+		}
+	}
 	report = append(report, storageReport...)
 	report = append(report, clusterReport...)
 	if cluster != nil {
@@ -477,11 +489,8 @@ func (c *sdkResourceChecker) readIdentity(
 		check.Observed = "supplied identity ID, principal, client or owning tenant evidence is missing"
 		return Identity{}, new(true), check
 	}
-	identity := Identity{
-		ID: *response.ID, PrincipalID: *properties.PrincipalID,
-		ClientID: *properties.ClientID, TenantID: *properties.TenantID,
-	}
-	if !strings.EqualFold(resource.ID, identity.ID) || !strings.EqualFold(tenant, identity.TenantID) {
+	identity := Identity{ID: *response.ID, PrincipalID: *properties.PrincipalID}
+	if !strings.EqualFold(resource.ID, identity.ID) || !strings.EqualFold(tenant, *properties.TenantID) {
 		return Identity{}, new(true), resourceResult(check, Fail, "supplied identity ID or owning tenant does not match")
 	}
 	return identity, new(true), resourceResult(check, Pass,

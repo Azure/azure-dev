@@ -77,7 +77,6 @@ func authorizationFake() *readFake {
 
 func suppliedFacts() Facts {
 	return Facts{
-		TenantID:         "tenant",
 		HostingIdentity:  Identity{ID: testHosting, PrincipalID: "hosting-principal"},
 		WorkloadIdentity: Identity{ID: testWorkload, PrincipalID: "workload-principal"},
 		Exists: map[string]bool{

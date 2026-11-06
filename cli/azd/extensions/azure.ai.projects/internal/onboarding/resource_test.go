@@ -141,10 +141,10 @@ func resourceFake() *readFake {
 		}}
 	}
 	fake.replies[strings.ToLower(testCluster)] = readReply{200, map[string]any{
-		"id": testCluster, "location": "westus", "sku": map[string]any{"name": "Base"},
+		"id": testCluster, "location": "westus",
 		"identity": map[string]any{"type": "SystemAssigned"},
 		"properties": map[string]any{
-			"currentKubernetesVersion": "1.31.0", "provisioningState": "Succeeded",
+			"currentKubernetesVersion": "1.31.0",
 			"networkProfile": map[string]any{
 				"networkPlugin": "azure", "networkPluginMode": "overlay", "networkDataplane": "cilium",
 			},
@@ -155,13 +155,12 @@ func resourceFake() *readFake {
 	}}
 	fake.replies[strings.ToLower(testCluster+"/agentPools")] = readReply{200, map[string]any{"value": []any{
 		map[string]any{"id": testCluster + "/agentPools/system", "name": "system", "properties": map[string]any{
-			"mode": "System", "vmSize": "Standard_E4s_v5", "count": 1, "provisioningState": "Succeeded",
+			"mode": "System", "vmSize": "Standard_E4s_v5", "count": 1,
 		}},
 		map[string]any{"id": testCluster + "/agentPools/agents", "name": "agents", "properties": map[string]any{
 			"mode": "User", "osSKU": "AzureLinux", "vmSize": "Standard_D8as_v5", "count": 1,
 			"workloadRuntime": "KataVmIsolation", "nodeImageVersion": "AKSAzureLinux-V3katagen2-202608.14.0",
-			"nodeLabels":      map[string]any{"agents.ai.azure.com/sandbox-node": "true"},
-			"securityProfile": map[string]any{"sshAccess": "Disabled"}, "provisioningState": "Succeeded",
+			"nodeLabels": map[string]any{"agents.ai.azure.com/sandbox-node": "true"},
 		}},
 	}}}
 	var skus []any
@@ -231,11 +230,9 @@ func TestResourceCheckerReadsOnlySupportingResources(t *testing.T) {
 	fake := resourceFake()
 	facts, report, err := NewResourceChecker(testCredential{}, fake.options()).Check(t.Context(), suppliedPlan(t))
 	require.NoError(t, err)
-	assert.Equal(t, "tenant", facts.TenantID)
 	assert.Equal(t, "hosting-principal", facts.HostingIdentity.PrincipalID)
 	assert.Equal(t, "workload-principal", facts.WorkloadIdentity.PrincipalID)
-	for _, resource := range []Resource{{ID: testStorage}, {ID: testHosting}, {ID: testWorkload}} {
-		assert.True(t, facts.exists(resource))
+	for _, resource := range []Resource{{ID: testStorage}, {ID: testWorkload}} {
 		assert.False(t, facts.absent(resource))
 	}
 	for _, id := range []string{"storage-type", "storage-security"} {
@@ -352,7 +349,6 @@ func TestDefaultExistenceDoesNotBecomeSupplied(t *testing.T) {
 			facts, report, err := NewResourceChecker(testCredential{}, fake.options()).Check(t.Context(), plan)
 			assert.False(t, plan.Storage.Supplied)
 			assert.Equal(t, state == "absent", facts.absent(plan.Storage))
-			assert.Equal(t, state == "existing", facts.exists(plan.Storage))
 			if state == "forbidden" {
 				require.Error(t, err)
 			} else {

@@ -40,7 +40,6 @@ type planResource struct {
 	raw       map[string]any
 	env       *planEnvironment
 	resolver  *templatePlanResolver
-	symbol    string
 	path      string
 	kind      string
 	inactive  bool
@@ -204,7 +203,7 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 				path += fmt.Sprintf("[%d]", index)
 			}
 			resource := &planResource{
-				raw: entry.raw, env: &local, resolver: r, symbol: entry.symbol, path: path,
+				raw: entry.raw, env: &local, resolver: r, path: path,
 				missing: strings.Join(slices.DeleteFunc([]string{inheritedMissing, copyMissing},
 					func(s string) bool { return s == "" }), "; "),
 			}

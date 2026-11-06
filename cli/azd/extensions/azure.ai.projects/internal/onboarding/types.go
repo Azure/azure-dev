@@ -160,14 +160,9 @@ type Plan struct {
 // Facts contains current read-only evidence; an absent Exists key means existence is unverified.
 type Facts struct {
 	KubeletObjectID  string
-	TenantID         string
 	HostingIdentity  Identity
 	WorkloadIdentity Identity
 	Exists           map[string]bool
-}
-
-func (f Facts) exists(resource Resource) bool {
-	return f.Exists[strings.ToLower(resource.ID)]
 }
 
 func (f Facts) absent(resource Resource) bool {
@@ -175,12 +170,10 @@ func (f Facts) absent(resource Resource) bool {
 	return known && !exists
 }
 
-// Identity records distinct ARM, object, client and tenant identifiers.
+// Identity records a managed identity's ARM resource ID and principal object ID.
 type Identity struct {
 	ID          string
 	PrincipalID string
-	ClientID    string
-	TenantID    string
 }
 
 // ResourceChecker performs read-only AKS, selected-network and supporting-resource checks.

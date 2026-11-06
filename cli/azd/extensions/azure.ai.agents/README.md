@@ -754,12 +754,22 @@ For plain messages, azd composes both the version-specific JSON-RPC body and
 the `A2A-Version` header. Because azd controls both, `1.0` is a convenience
 default when `--a2a-version` is omitted. A deployed hosted A2A implementation must
 support `1.0` (`1.0.0` in deployment YAML) and match the requested wire version,
-regardless of other protocols. Local working-tree definitions are not authoritative
-for the deployed target, even when `--version` selects the current deployment.
-Local inspection failures and compatibility findings are advisory diagnostics
-shown with `--debug`; Foundry enforces deployed target support. Request and
-file-argument validation remain blocking. Translation availability and restrictions
-can vary by service rollout.
+regardless of other protocols. For remote protocol selection and A2A enablement
+checks, azd reads the current Foundry endpoint configuration when the caller can
+read agent metadata. Local working-tree definitions and saved deployment protocol
+lists are not authoritative for deployed capabilities. Saved endpoints can still
+provide routing hints, but only currently enabled protocols are selected when live
+configuration is available.
+
+A prompt agent's public endpoint must enable both `a2a` and `responses`; declaring
+a hosted implementation protocol in local YAML does not publish that endpoint.
+If metadata cannot be read, such as for an endpoint-only consumer without
+`agents/read`, azd leaves validation to Foundry rather than treating the read
+failure as a disabled protocol. Use `--protocol` explicitly when routing is
+ambiguous. Version-specific compatibility remains enforced by Foundry for the
+selected version or session, not inferred from the latest working-tree source.
+Request and file-argument validation remain blocking. Translation availability
+and restrictions can vary by service rollout.
 
 ```bash
 azd ai agent invoke -p a2a "Hello!"

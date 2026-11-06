@@ -112,6 +112,7 @@ const (
 	CodeIncompatibleProjectsExtension   = "incompatible_projects_extension"
 	CodeIncompleteAgentProtocolMetadata = "incomplete_agent_protocol_metadata"
 	CodeLegacyAgentProtocolMetadata     = "legacy_agent_protocol_metadata"
+	CodeAgentEndpointProtocolNotEnabled = "agent_endpoint_protocol_not_enabled"
 	CodeDeprecatedEvalCommand           = "deprecated_eval_command"
 	// CodeFeatureNotEnabled is returned when an opt-in extension feature is off.
 	CodeFeatureNotEnabled = "feature_not_enabled"

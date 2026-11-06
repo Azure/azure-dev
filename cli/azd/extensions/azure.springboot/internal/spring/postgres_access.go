@@ -44,14 +44,22 @@ type postgresAccessReconciler struct {
 }
 
 type verifiedPostgresResources struct {
-	SubscriptionID      string
-	ResourceGroup       string
-	ServerName          string
-	ServerID            string
-	Host                string
-	AdministratorName   string
-	IdentityPrincipalID string
-	IdentityClientID    string
+	SubscriptionID           string
+	ResourceGroup            string
+	ServerName               string
+	ServerID                 string
+	Host                     string
+	AdministratorName        string
+	SessionAdministratorName string
+	IdentityPrincipalID      string
+	IdentityClientID         string
+}
+
+func (r *verifiedPostgresResources) sessionAdministratorName() string {
+	if r.SessionAdministratorName != "" {
+		return r.SessionAdministratorName
+	}
+	return r.AdministratorName
 }
 
 func newPostgresAccessReconciler(client *azdext.AzdClient) *postgresAccessReconciler {
@@ -619,12 +627,23 @@ func (r *postgresAccessReconciler) reconcileSQL(
 		}
 		password = token.Token
 	}
+	return r.reconcileSQLWithAdministratorPassword(ctx, resources, database, values, envName, password)
+}
+
+func (r *postgresAccessReconciler) reconcileSQLWithAdministratorPassword(
+	ctx context.Context,
+	resources *verifiedPostgresResources,
+	database resolvedDatabase,
+	values map[string]string,
+	envName string,
+	administratorPassword string,
+) error {
 	marker := databaseRoleMarker(envName, database)
 	if err := r.verifyDatabaseScope(
 		ctx,
 		resources,
 		database,
-		password,
+		administratorPassword,
 		marker,
 	); err != nil {
 		return err
@@ -633,13 +652,19 @@ func (r *postgresAccessReconciler) reconcileSQL(
 		ctx,
 		resources,
 		database,
-		password,
+		administratorPassword,
 		values[databaseAppPasswordEnv],
 		marker,
 	); err != nil {
 		return err
 	}
-	if err := r.reconcileDatabasePrivileges(ctx, resources, database, password, marker); err != nil {
+	if err := r.reconcileDatabasePrivileges(
+		ctx,
+		resources,
+		database,
+		administratorPassword,
+		marker,
+	); err != nil {
 		return err
 	}
 	if database.Authentication == databaseAuthenticationPassword {
@@ -712,7 +737,7 @@ func (r *postgresAccessReconciler) verifyDatabaseScope(
 		ctx,
 		resources.Host,
 		database.Name,
-		resources.AdministratorName,
+		resources.sessionAdministratorName(),
 		administratorPassword,
 	)
 	if err != nil {
@@ -765,7 +790,7 @@ func (r *postgresAccessReconciler) reconcileRole(
 		ctx,
 		resources.Host,
 		"postgres",
-		resources.AdministratorName,
+		resources.sessionAdministratorName(),
 		administratorPassword,
 	)
 	if err != nil {
@@ -950,7 +975,7 @@ func (r *postgresAccessReconciler) reconcileDatabasePrivileges(
 		ctx,
 		resources.Host,
 		database.Name,
-		resources.AdministratorName,
+		resources.sessionAdministratorName(),
 		administratorPassword,
 	)
 	if err != nil {

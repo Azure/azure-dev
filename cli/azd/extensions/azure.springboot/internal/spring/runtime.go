@@ -74,7 +74,6 @@ type Runtime struct {
 
 // NewRuntime creates a Spring lifecycle runtime backed by azd's stable services.
 func NewRuntime(client *azdext.AzdClient) *Runtime {
-	access := newPostgresAccessReconciler(client)
 	return &Runtime{
 		client:          client,
 		environments:    &grpcEnvironmentStore{client: client},
@@ -83,7 +82,7 @@ func NewRuntime(client *azdext.AzdClient) *Runtime {
 		tenants:         newUserAccessTenantResolver(client),
 		outputs:         newDeploymentOutputVerifier(client),
 		reconcile:       newFirewallReconciler(client).Reconcile,
-		configureAccess: access.Reconcile,
+		configureAccess: newPostgresAccessDispatcher(client),
 		prepareNetwork:  newFirewallReconciler(client).PrepareAutomatic,
 	}
 }

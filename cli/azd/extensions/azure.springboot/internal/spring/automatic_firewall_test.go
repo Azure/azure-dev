@@ -126,8 +126,10 @@ func TestAutomaticFirewallDeletesOnlyVerifiedBroadBootstrapAndConfirmsAbsence(t 
 			switch scenario {
 			case "success", "changed-bootstrap", "delete-denied", "absence-unconfirmed":
 				require.NoError(t, prepareErr)
+				require.Equal(t, []string{"1.2.3.4"}, binding.outboundIPs)
 			default:
 				require.Error(t, prepareErr)
+				require.Empty(t, binding.outboundIPs)
 			}
 			if scenario == "unowned-bootstrap" {
 				require.Nil(t, cleanup)

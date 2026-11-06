@@ -32,7 +32,7 @@ const (
 	petclinicBranch          = "main"
 	petclinicTemplateCommit  = "215d42251c4960c67bd86167a0a67ef8a24cf3ff"
 	proposedTemplateRepo     = "https://github.com/XiaofeiCao/petclinic-rest-azd"
-	proposedTemplateCommit   = "ce7d05f5d2044ce91eedd8c8679d83386b757b39"
+	proposedTemplateCommit   = "1490c0943c70e2a83b51647b1fea47f72127887c"
 	gitMetadataAccommodation = "Packaging Maven project without Git commit metadata because the repository has no commits."
 )
 

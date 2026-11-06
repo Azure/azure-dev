@@ -91,19 +91,29 @@ Existing administrator-owned or foreign application objects are rejected,
 not adopted or transferred. Old DML-only readiness markers are insufficient.
 Use a fresh database/environment or a separately approved migration. Changing
 target, auth mode, username or identity likewise needs explicit migration.
-`POSTGRES_BOOTSTRAP_CLIENT_IP`, where needed for narrow-network templates,
-is a troubleshooting-only exact public IPv4 override, not a firewall policy.
-Automatic discovery observes HTTPS egress and cannot prove the source address
-of a direct PostgreSQL connection; proxy, VPN, or split-egress routes can differ.
-During `postprovision`, the extension deletes the exact template-authored
-`bootstrap-local-ip` rule only after current deployment evidence verifies that
-it belongs to the selected PostgreSQL server and still allows all public IPv4
-addresses. This requires firewall-rule read/delete permission. Unknown,
-changed, or unowned rules are never deleted. Because azd skips
-`postprovision` when provisioning itself fails, the extension cannot guarantee
-cleanup on that failure path. Bicep does not roll back resources created before
-a later deployment failure, so templates must not rely on a broad bootstrap
-rule as an automatically recoverable temporary control.
+For automatic managed-identity deployments, the extension runs access
+reconciliation in a short-lived Container Apps Job in the application's
+verified environment. The job must report exactly the outbound IPv4 addresses
+already covered by deployment-owned PostgreSQL firewall rules before the
+extension grants its system identity temporary PostgreSQL administrator access.
+The job has no secrets, private registry credentials, user-assigned identities,
+retries, or caller-supplied template override. The extension removes the
+temporary administrator before deleting the job.
+
+Failed executions retain only the unprivileged job for log inspection. A later
+run recovers verified stale jobs by removing any matching administrator first.
+If administrator removal cannot be confirmed, the job is retained so the
+identity/administrator pair can be recovered deterministically. This path
+requires permission to manage Container Apps Jobs and PostgreSQL Entra
+administrators in addition to reading the verified application and firewall
+resources.
+
+Password-authenticated and unsupported custom deployments retain local
+reconciliation. `POSTGRES_BOOTSTRAP_CLIENT_IP` remains a troubleshooting-only
+exact public IPv4 override for that local path. Legacy deployments containing
+the exact template-authored `bootstrap-local-ip` rule are still cleaned up only
+after deployment ownership and the unchanged unrestricted range are verified.
+New templates must not create that broad rule.
 
 ## Commands and validation
 

@@ -17,13 +17,14 @@ import (
 )
 
 type deploymentBinding struct {
-	id        string
-	resources map[string]bool
-	values    map[string]string
-	outputs   currentDeploymentOutputs
-	original  bool
-	automatic bool
-	app       *armappcontainers.ContainerApp
+	id          string
+	resources   map[string]bool
+	values      map[string]string
+	outputs     currentDeploymentOutputs
+	original    bool
+	automatic   bool
+	outboundIPs []string
+	app         *armappcontainers.ContainerApp
 }
 
 type deploymentBindingKey struct{}

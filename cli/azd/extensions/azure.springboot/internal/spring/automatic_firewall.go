@@ -147,6 +147,7 @@ func validateAutomaticRuntimeFirewall(
 			return err
 		}
 	}
+	binding.outboundIPs = append([]string(nil), actual...)
 	return nil
 }
 

@@ -131,29 +131,52 @@ does not rotate it. For managed identity, the selected system-assigned or
 attached user-assigned identity must match the verified deployment and
 PostgreSQL Entra mapping.
 
-The extension creates a temporary narrow bootstrap firewall rule only when
-needed and verifies the runtime network path. During `postprovision`, it also
-deletes the template-authored `bootstrap-local-ip` rule only when current
-deployment evidence proves that the exact rule belongs to the selected
-PostgreSQL server and still allows all public IPv4 addresses. This mutation
-requires permission to read and delete PostgreSQL firewall rules. The extension
-does not adopt or delete unknown, changed, or unowned rules.
+Automatic managed-identity deployments reconcile PostgreSQL access in a
+short-lived Container Apps Job in the application's verified managed
+environment. This avoids inferring the database TCP source address from an
+unrelated local HTTPS request. Before creating a temporary PostgreSQL
+administrator, the extension reads the job back and verifies:
 
-Automatic bootstrap address discovery observes the HTTPS egress path through
-an external public-address endpoint; it cannot prove which source address a
-direct PostgreSQL connection will use. A live split-egress trial produced
-different HTTPS and PostgreSQL NAT paths, so the exact discovered rule did not
-admit the database connection. `POSTGRES_BOOTSTRAP_CLIENT_IP` supplies an
-explicit public IPv4 candidate for troubleshooting, but it does not verify the
-PostgreSQL route.
+- the expected environment, ownership tags, location, and system identity;
+- no secrets, private registries, user-assigned identities, retries, init
+  containers, volumes, command, or caller-supplied execution override;
+- the fixed digest-pinned image, input contract, timeout, and single-replica
+  template;
+- an outbound IPv4 set exactly equal to the application's deployment-owned
+  `aca-<ip>` firewall-rule inventory.
 
-The deletion is bounded by the azd lifecycle. Once `postprovision` is running,
-the extension attempts cleanup before returning success or an application,
-database, or cancellation error. azd does not invoke `postprovision` when the
-provisioning action itself fails. Because Bicep deployments are not
-transactional, a PostgreSQL server and broad rule created before a later
-failure can remain without extension cleanup. Templates must not treat a broad
-bootstrap rule as an automatically recoverable temporary control.
+The job receives only a versioned, non-secret input value. Its managed identity
+acquires a token for Azure Database for PostgreSQL and connects with
+hostname-verified TLS. The temporary session administrator is used only for the
+connection. Database and initialization-marker ownership checks continue to
+expect the deployment-verified developer administrator, preserving the
+`app-owned-v2` policy.
+
+The extension creates the job and its PostgreSQL administrator dynamically
+after Bicep succeeds; neither resource is part of the authored template. It
+starts the stored template without an execution override and polls the exact
+returned execution. On success, cancellation before execution, or start
+failure, cleanup removes the administrator first and then the job. A failed
+execution removes the administrator but temporarily retains the unprivileged
+job for log inspection. Later runs recover only stale jobs whose complete
+template, tags, identity, server, environment, and input contract can still be
+proved; administrator deletion must succeed before job deletion. An
+administrator whose matching owned job no longer exists is never inferred or
+deleted.
+
+Password-authenticated and unsupported custom deployments retain local
+reconciliation. That path can create a temporary exact firewall rule and can
+accept `POSTGRES_BOOTSTRAP_CLIENT_IP` as a troubleshooting-only public IPv4
+candidate. HTTPS discovery cannot prove the direct PostgreSQL route, so it is
+not used for automatic managed-identity bootstrap.
+
+Legacy automatic deployments may still contain the exact template-authored
+`bootstrap-local-ip` rule. The extension deletes it only when current deployment
+evidence proves ownership and the range remains unrestricted. Unknown, changed,
+or unowned rules are never deleted. New templates must provision only the exact
+Container Apps outbound rules. PostgreSQL remains on a public endpoint; this
+design removes broad bootstrap exposure and split local egress dependence but
+does not provide private networking.
 
 ## Failure behavior
 

@@ -40,7 +40,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 		Long: "Analyze local files, directories, or HTTPS URLs using Microsoft Entra authentication.\n\n" +
 			"Uses prebuilt-layout when no analyzer is specified or configured.\n" +
 			"Results use YAML front matter and Markdown by default. Batches save source-relative result files.\n" +
-			"Use --pretty to pretty-print one streamed LLM-input result in the terminal.\n" +
+			"Use --pretty (-p) to pretty-print one streamed LLM-input result in the terminal.\n" +
 			"Without --pretty, stdout retains the original Markdown and HTML tables, including when redirected.\n" +
 			"Use --output json for complete JSON, or --dry-run to inspect the plan without service calls.",
 		Example: `  azd ai cu analyze invoice.pdf
@@ -83,7 +83,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 	flags.BoolVar(&options.usage, "usage", false, "Include usage metadata in streamed results or per-input summaries")
 	flags.BoolVar(&options.output.LLMInput, "llm-input", true,
 		"Render YAML front matter and Markdown; set false for complete JSON; true conflicts with --output json")
-	flags.BoolVar(&options.pretty, "pretty", false,
+	flags.BoolVarP(&options.pretty, "pretty", "p", false,
 		"Pretty-print one streamed LLM-input result in the terminal (default: original text)")
 	flags.StringVar(&options.output.File, "output-file", "", "Save one result to this file")
 	flags.StringVarP(&options.output.Directory, "output-dir", "d", "", "Save source-relative result files in this directory")

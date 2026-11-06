@@ -188,8 +188,8 @@ Analysis displays YAML front matter and Markdown in the console by default.
 azd ai cu analyze invoice.pdf --output-file invoice.result.md
 ```
 
-Markdown and HTML tables remain unrendered by default, including when stdout is
-redirected. Use `azd ai cu analyze invoice.pdf --pretty` to pretty-print results
+By default, stdout contains Markdown and HTML tables as text, including when
+redirected. Use `azd ai cu analyze invoice.pdf --pretty` (or `-p`) to pretty-print results
 in the terminal, with formatted Markdown and simple HTML tables displayed as
 tables or labeled cards. Colors distinguish headings and tables when enabled.
 The flag only applies to one streamed LLM-input

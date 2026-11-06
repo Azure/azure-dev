@@ -7,9 +7,8 @@ the separate [Microsoft Foundry provisioning guide](https://github.com/Azure/azu
 
 ## Check the installed extension version
 
-Run `azd ai cu version` to display the extension title, version, and extension
-name. The text output includes surrounding blank lines to separate it from azd
-update notices. For scripts, use `azd ai cu version --output json`, which returns
+Run `azd ai cu version` to display the installed extension version and name.
+For scripts, use `azd ai cu version --output json`, which returns
 the extension ID as `name` and the installed version as `version`.
 
 ## Connect to Microsoft Foundry and check setup
@@ -156,32 +155,31 @@ azd ai cu analyze \
 
 ### Pretty-print results in the terminal
 
-The default stdout retains the original Markdown, including HTML tables. This
-also applies to redirects and pipes, so GUI viewers and other consumers can do
-their own rendering:
+By default, stdout contains Markdown and HTML tables as text. Redirect or pipe
+this output to save it or render it with another tool:
 
 ```bash
 azd ai cu analyze invoice.pdf > invoice.result.md
 ```
 
-Pretty-print results in the terminal with `--pretty`; use `--pretty=false` or omit
-the flag to retain original text:
+Pretty-print results in the terminal with `--pretty` (or `-p`); omit the flag or
+use `--pretty=false` for the default text output:
 
 ```bash
 azd ai cu analyze invoice.pdf --pretty
 ```
 
-Pretty-printing formats Markdown for easier terminal reading and displays document
-metadata with its original `---` delimiters. Source line breaks and page comments
-remain visible. Metadata, page comments, and generated row annotations share the
-standard azd gray without additional dimming when color is enabled; H1 headings retain the `#` marker and use the same
-heading color as H2/H3/H4, without a separate highlight background.
-Reference-style links work even when their
-definitions are on the other side of a table. Simple HTML tables show all columns, switching
-to labeled cards when a table is too wide. A notice explains the switch, and
-generated labels such as `<!-- Row 1 -->` are clearly marked as comments.
-When color is enabled, layout notices are yellow, and headings and
-tables use distinct colors to make them easier to spot.
+Pretty-printing formats Markdown for terminal reading. The preview includes
+document metadata with `---` delimiters and page comments, and keeps source line
+breaks. Reference-style links work across tables.
+
+Simple HTML tables show all columns, switching to labeled cards when a table is
+too wide. A notice explains the switch, and generated row labels use comment
+syntax, such as `<!-- Row 1 -->`.
+
+When color is enabled, metadata, page comments, and generated row labels are gray.
+Headings share a consistent color, tables use a distinct color, and layout notices
+are yellow.
 
 Keep these limitations in mind:
 
@@ -195,8 +193,8 @@ Keep these limitations in mind:
 
 `--pretty` requires a single streamed LLM-input result. It cannot be combined with
 `--output json`, `--output none`, `--llm-input=false`, `--usage`, `--dry-run`,
-`--output-file`, or `--output-dir`. Saved result files, reports, and the default
-stdout format are unchanged. To save original Markdown/HTML, omit `--pretty`.
+`--output-file`, or `--output-dir`. The flag affects only the streamed preview,
+not saved result files or reports. To save Markdown/HTML, omit `--pretty`.
 
 ### Complete JSON response
 

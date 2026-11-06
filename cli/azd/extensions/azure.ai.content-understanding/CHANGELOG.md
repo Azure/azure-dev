@@ -4,17 +4,13 @@
 
 ### Features Added
 
-- Add `azd ai cu analyze --pretty` to pretty-print a single result in the
+- Add `azd ai cu analyze --pretty` (`-p`) to pretty-print a single result in the
   terminal, with formatted Markdown, colored headings, and simple HTML tables
-  displayed as tables or labeled cards. Default output and saved results remain
-  unchanged. Preserve metadata delimiters, page comments, and source line
-  breaks; show layout notices only when a table falls back to source or cards.
+  displayed as tables or labeled cards.
 
 ### Other Changes
 
-- Make `azd ai cu version` easier to read with a descriptive title, labeled
-  version and extension name, and spacing before azd update notices. JSON output
-  remains unchanged.
+- Improve the readability of `azd ai cu version` text output.
 - Highlight commands, paths, and identifiers in infrastructure generation
   guidance, and use blue text for wizard questions. Respect `NO_COLOR`.
 

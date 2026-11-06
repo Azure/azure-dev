@@ -41,6 +41,9 @@ func TestAnalyzePrettyFlagContract(t *testing.T) {
 	command, _, err := root.Find([]string{"analyze"})
 	require.NoError(t, err)
 	require.NotNil(t, command.Flags().Lookup("pretty"))
+	assert.Same(t, command.Flags().Lookup("pretty"), command.Flags().ShorthandLookup("p"))
+	setHelpColor(t, false)
+	assert.Contains(t, renderHelp(t, command), "-p, --pretty")
 	assert.Nil(t, command.Flags().Lookup("render"))
 
 	fixture := newAnalyzeFixture(t)
@@ -51,7 +54,9 @@ func TestAnalyzePrettyFlagContract(t *testing.T) {
 }
 
 func TestAnalyzeRenderingIsOptIn(t *testing.T) {
-	for _, flags := range [][]string{nil, {"--pretty=false"}, {"--pretty"}} {
+	for _, flags := range [][]string{
+		nil, {"--pretty=false"}, {"-p=false"}, {"--pretty"}, {"-p"}, {"--pretty=true"}, {"-p=true"},
+	} {
 		t.Run(strings.Join(flags, " "), func(t *testing.T) {
 			fixture := newAnalyzeFixture(t)
 			body := previewResponse(t, fixture)
@@ -60,7 +65,7 @@ func TestAnalyzeRenderingIsOptIn(t *testing.T) {
 			assert.Empty(t, stderr)
 			assert.NotContains(t, stdout, "\x1b", "injected/redirected output must not contain ANSI")
 			assert.EqualValues(t, 1, fixture.client.calls.Load())
-			if len(flags) != 0 && flags[0] == "--pretty" {
+			if len(flags) != 0 && !strings.HasSuffix(flags[0], "=false") {
 				assert.NotContains(t, stdout, "Preview only")
 				assert.Contains(t, stdout, "Important")
 				assert.Contains(t, stdout, "Example")
@@ -79,31 +84,33 @@ func TestAnalyzeRenderingIsOptIn(t *testing.T) {
 }
 
 func TestAnalyzeRenderRejectsConflictsBeforeAuthentication(t *testing.T) {
-	for _, flags := range [][]string{
-		{"--output", "json"}, {"--output", "none"}, {"--llm-input=false"}, {"--usage"}, {"--dry-run"},
-		{"--output-file", "result.md"}, {"--output-dir", "results"}, {"--output-file="}, {"--output-dir="},
-	} {
-		t.Run(strings.Join(flags, " "), func(t *testing.T) {
-			fixture := newAnalyzeFixture(t)
-			t.Chdir(testutil.TempDir(t))
-			args := append([]string{"https://example.com/doc.pdf", "--pretty"}, flags...)
-			stdout, stderr, err := fixture.execute(t.Context(), args...)
-			require.ErrorContains(t, err, "--pretty")
-			assert.Empty(t, stdout)
-			assert.Empty(t, stderr)
-			assert.Zero(t, fixture.opens)
-			assert.Zero(t, fixture.client.calls.Load())
-			entries, err := os.ReadDir(".")
-			require.NoError(t, err)
-			assert.Empty(t, entries)
-		})
+	for _, pretty := range []string{"--pretty", "-p"} {
+		for _, flags := range [][]string{
+			{"--output", "json"}, {"--output", "none"}, {"--llm-input=false"}, {"--usage"}, {"--dry-run"},
+			{"--output-file", "result.md"}, {"--output-dir", "results"}, {"--output-file="}, {"--output-dir="},
+		} {
+			t.Run(pretty+" "+strings.Join(flags, " "), func(t *testing.T) {
+				fixture := newAnalyzeFixture(t)
+				t.Chdir(testutil.TempDir(t))
+				args := append([]string{"https://example.com/doc.pdf", pretty}, flags...)
+				stdout, stderr, err := fixture.execute(t.Context(), args...)
+				require.ErrorContains(t, err, "--pretty")
+				assert.Empty(t, stdout)
+				assert.Empty(t, stderr)
+				assert.Zero(t, fixture.opens)
+				assert.Zero(t, fixture.client.calls.Load())
+				entries, err := os.ReadDir(".")
+				require.NoError(t, err)
+				assert.Empty(t, entries)
+			})
+		}
+		fixture := newAnalyzeFixture(t)
+		first, second := schemaFile(t, "first"), schemaFile(t, "second")
+		_, _, err := fixture.execute(t.Context(), first, second, pretty)
+		require.ErrorContains(t, err, "batch")
+		assert.Zero(t, fixture.opens)
+		assert.Zero(t, fixture.client.calls.Load())
 	}
-	fixture := newAnalyzeFixture(t)
-	first, second := schemaFile(t, "first"), schemaFile(t, "second")
-	_, _, err := fixture.execute(t.Context(), first, second, "--pretty")
-	require.ErrorContains(t, err, "batch")
-	assert.Zero(t, fixture.opens)
-	assert.Zero(t, fixture.client.calls.Load())
 }
 
 func TestAnalyzeOriginalFilesAndJSONRemainUnchanged(t *testing.T) {

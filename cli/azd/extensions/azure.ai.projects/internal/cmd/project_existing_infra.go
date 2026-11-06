@@ -16,9 +16,10 @@ import (
 	"strings"
 	"text/template"
 
+	"azure.ai.projects/internal/azure"
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/provisioning"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
@@ -393,6 +394,14 @@ func ejectExistingProjectInfra(
 			"run `azd down` before ejecting Terraform, or keep Bicep/"+
 				"microsoft.foundry for the existing resources",
 		)
+	}
+
+	if provider == provisioning.TerraformProviderName {
+		if err := synthesis.ResolveTerraformMonitoringExport(
+			ctx, result.Parameters, identity.ResourceId, environment, azure.NewArmClientOptions(),
+		); err != nil {
+			return err
+		}
 	}
 
 	stageDir, err := os.MkdirTemp(projectRoot, ".azd-foundry-eject-*")
@@ -962,21 +971,27 @@ func writeExistingProjectBicep(
 			}
 		}
 	}
+	for _, name := range []string{"monitoring.bicep", "monitoring-connection.bicep"} {
+		data, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/modules/"+name)
+		if err != nil {
+			return fmt.Errorf("read monitoring Bicep module: %w", err)
+		}
+		// #nosec G306
+		if err := os.WriteFile(filepath.Join(moduleDir, name), data, 0644); err != nil {
+			return fmt.Errorf("write monitoring Bicep module: %w", err)
+		}
+	}
 
 	outputParams := map[string]any{}
 	maps.Copy(outputParams, params)
 	outputParams["projectResourceId"] = "${AZURE_AI_PROJECT_ID}"
 	outputParams["projectEndpoint"] = "${FOUNDRY_PROJECT_ENDPOINT}"
 	delete(outputParams, "includeAcr")
+	outputParams["resourceGroupName"] = "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}"
+	outputParams["location"] = "${AZURE_LOCATION}"
+	outputParams["resourceTokenSalt"] = "${AZD_RESOURCE_TOKEN_SALT}"
+	outputParams["tags"] = map[string]string{"azd-env-name": "${AZURE_ENV_NAME}"}
 	switch mode {
-	case projectEjectAcrCreate:
-		outputParams["resourceGroupName"] =
-			"${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}"
-		outputParams["location"] = "${AZURE_LOCATION}"
-		outputParams["resourceTokenSalt"] = "${AZD_RESOURCE_TOKEN_SALT}"
-		outputParams["tags"] = map[string]string{
-			"azd-env-name": "${AZURE_ENV_NAME}",
-		}
 	case projectEjectAcrReuseConnect, projectEjectAcrAlreadyConnected:
 		outputParams["existingAcrEndpoint"] =
 			existingAcrEndpoint
@@ -1028,6 +1043,10 @@ func writeExistingProjectTerraform(
 	mode projectEjectAcrMode,
 	values map[string]string,
 ) error {
+	monitoring, err := synthesis.RenderTerraformMonitoring(params, true)
+	if err != nil {
+		return err
+	}
 	existingAcrEndpoint := ""
 	if mode == projectEjectAcrReuseConnect ||
 		mode == projectEjectAcrAlreadyConnected {
@@ -1052,7 +1071,8 @@ func writeExistingProjectTerraform(
 		if entry.IsDir() || !strings.HasSuffix(name, ".tf") ||
 			name == "container-registry-create.tf" ||
 			name == "container-registry-reuse.tf" ||
-			name == "container-registry-connect.tf" {
+			name == "container-registry-connect.tf" ||
+			(name == "adjunct-resource-group.tf" && mode != projectEjectAcrCreate) {
 			continue
 		}
 		data, err := fs.ReadFile(
@@ -1099,6 +1119,9 @@ func writeExistingProjectTerraform(
 			return fmt.Errorf("write container-registry.tf: %w", err)
 		}
 	}
+	if err := writeTerraformMonitoring(infraDir, monitoring); err != nil {
+		return err
+	}
 
 	outputs, err := fs.ReadFile(
 		filesystem,
@@ -1113,12 +1136,14 @@ func writeExistingProjectTerraform(
 	}
 	var rendered bytes.Buffer
 	if err := outputTemplate.Execute(&rendered, struct {
-		IncludeAcr bool
-		Layer      bool
-		AcrMode    string
+		IncludeAcr     bool
+		IncludeAdjunct bool
+		Layer          bool
+		AcrMode        string
 	}{
-		IncludeAcr: mode != projectEjectAcrNone,
-		AcrMode:    string(mode),
+		IncludeAcr:     mode != projectEjectAcrNone,
+		IncludeAdjunct: mode == projectEjectAcrCreate || monitoring.CreatesResources,
+		AcrMode:        string(mode),
 	}); err != nil {
 		return fmt.Errorf("render Terraform outputs: %w", err)
 	}
@@ -1147,6 +1172,7 @@ func writeExistingProjectTerraform(
 	if deployments, ok := params["deployments"]; ok {
 		tfvars["deployments"] = deployments
 	}
+	maps.Copy(tfvars, monitoring.Variables)
 	if err := writeJSONFile(
 		filepath.Join(infraDir, module+".tfvars.json"), tfvars,
 	); err != nil {

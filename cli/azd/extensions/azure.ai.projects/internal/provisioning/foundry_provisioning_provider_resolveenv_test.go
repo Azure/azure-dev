@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -36,6 +36,7 @@ type resolveEnvStubEnvServer struct {
 	getErr       map[string]error
 	set          map[string]string
 	process      map[string]string
+	environments map[string]*resolveEnvStubEnvServer
 	config       map[string][]byte
 	configErr    error
 	currentErr   error
@@ -90,8 +91,15 @@ func (s *resolveEnvStubEnvServer) GetCurrent(
 }
 
 func (s *resolveEnvStubEnvServer) GetValue(
-	_ context.Context, req *azdext.GetEnvRequest,
+	ctx context.Context, req *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
+	if s.environments != nil {
+		env, found := s.environments[req.GetEnvName()]
+		if !found {
+			return nil, status.Error(codes.NotFound, "environment not found")
+		}
+		return env.GetValue(ctx, req)
+	}
 	if err := s.getErr[req.Key]; err != nil {
 		return nil, err
 	}
@@ -103,8 +111,15 @@ func (s *resolveEnvStubEnvServer) GetValue(
 }
 
 func (s *resolveEnvStubEnvServer) GetValues(
-	_ context.Context, _ *azdext.GetEnvironmentRequest,
+	ctx context.Context, req *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
+	if s.environments != nil {
+		env, found := s.environments[req.GetName()]
+		if !found {
+			return nil, status.Error(codes.NotFound, "environment not found")
+		}
+		return env.GetValues(ctx, req)
+	}
 	s.valuesN++
 	if s.valuesErr != nil {
 		return nil, s.valuesErr
@@ -117,8 +132,15 @@ func (s *resolveEnvStubEnvServer) GetValues(
 }
 
 func (s *resolveEnvStubEnvServer) SetValue(
-	_ context.Context, req *azdext.SetEnvRequest,
+	ctx context.Context, req *azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
+	if s.environments != nil {
+		env, found := s.environments[req.GetEnvName()]
+		if !found {
+			return nil, status.Error(codes.NotFound, "environment not found")
+		}
+		return env.SetValue(ctx, req)
+	}
 	if s.set == nil {
 		s.set = map[string]string{}
 	}
@@ -186,6 +208,53 @@ func newResolveEnvTestClient(
 	t.Cleanup(func() { client.Close() })
 
 	return client
+}
+
+func TestResolveEnvSelectedEnvironment(t *testing.T) {
+	for _, selected := range []string{"", "prod", " prod ", "missing"} {
+		t.Run(fmt.Sprintf("selection=%q", selected), func(t *testing.T) {
+			t.Setenv("AZD_ENVIRONMENT", selected)
+			defaultEnv := &resolveEnvStubEnvServer{get: map[string]string{
+				envKeySubscriptionID: "default-sub", envKeyLocation: "westus3",
+				envKeyResourceGroup: "default-group", "DESTINATION": "default-component",
+			}}
+			selectedEnv := &resolveEnvStubEnvServer{get: map[string]string{
+				envKeySubscriptionID: "selected-sub", envKeyLocation: "eastus2",
+				envKeyResourceGroup: "selected-group", "DESTINATION": "selected-component",
+			}}
+			env := &resolveEnvStubEnvServer{
+				envName: "test", environments: map[string]*resolveEnvStubEnvServer{
+					"test": defaultEnv, "prod": selectedEnv,
+				},
+			}
+			p := &FoundryProvisioningProvider{
+				azdClient: newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{}),
+			}
+			err := p.resolveEnv(t.Context())
+			if selected == "missing" {
+				require.ErrorContains(t, err, "environment not found")
+				assert.Empty(t, defaultEnv.set)
+				assert.Empty(t, selectedEnv.set)
+				return
+			}
+			require.NoError(t, err)
+			wantEnv, wantName := selectedEnv, "prod"
+			if selected == "" {
+				wantEnv, wantName = defaultEnv, "test"
+			}
+			values, err := p.synthesisEnvMap(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, wantName, p.envName)
+			assert.Equal(t, wantEnv.get[envKeySubscriptionID], p.subID)
+			assert.Equal(t, wantEnv.get[envKeyResourceGroup], p.rgName)
+			assert.Equal(t, wantEnv.get["DESTINATION"], values["DESTINATION"])
+			require.NoError(t, p.setEnv(t.Context(), "OWNERSHIP", "selected-owner"))
+			assert.Equal(t, "selected-owner", wantEnv.set["OWNERSHIP"])
+			if selected != "" {
+				assert.Empty(t, defaultEnv.set)
+			}
+		})
+	}
 }
 
 func TestResolveEnv_PromptsAndPersistsSubscriptionAndLocation(t *testing.T) {

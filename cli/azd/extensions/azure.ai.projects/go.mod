@@ -14,7 +14,7 @@ require (
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.19.0
 	github.com/google/uuid v1.6.0
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
@@ -113,3 +113,7 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+require azure.ai.projects/synthesis v0.0.0
+
+replace azure.ai.projects/synthesis => ./synthesis

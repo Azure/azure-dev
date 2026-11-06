@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -14,7 +15,7 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -684,6 +685,20 @@ func TestWriteExistingProjectTerraformAcrModes(t *testing.T) {
 			} else {
 				assert.NoFileExists(t, registryPath)
 			}
+			adjunctPath := filepath.Join(dir, "adjunct-resource-group.tf")
+			if test.mode == projectEjectAcrCreate {
+				// #nosec G304
+				adjunct, err := os.ReadFile(adjunctPath)
+				require.NoError(t, err)
+				assert.Contains(t, string(adjunct), `resource "azurerm_resource_group" "adjunct"`)
+				// #nosec G304
+				registry, err := os.ReadFile(registryPath)
+				require.NoError(t, err)
+				assert.NotContains(t, string(registry), `resource "azurerm_resource_group"`)
+				assert.Contains(t, string(registry), "azurerm_resource_group.adjunct.name")
+			} else {
+				assert.NoFileExists(t, adjunctPath)
+			}
 			// #nosec G304
 			outputs, err := os.ReadFile(filepath.Join(dir, "outputs.tf"))
 			require.NoError(t, err)
@@ -873,6 +888,27 @@ func TestExistingProjectEjectionDoesNotEmitReplacedRegistryState(t *testing.T) {
 			assertProjectEjectionOmitsConnections(t, dir)
 		})
 	}
+}
+
+func TestWriteExistingProjectBicepModuleNamedMonitoringDoesNotCollide(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, writeExistingProjectBicep(
+		dir, "monitoring", map[string]any{"deployments": []synthesis.Deployment{}}, projectEjectAcrNone, nil,
+	))
+
+	// #nosec G304 -- test reads from its own temp directory
+	entrypoint, err := os.ReadFile(filepath.Join(dir, "monitoring.bicep"))
+	require.NoError(t, err)
+	// #nosec G304 -- test reads from its own temp directory
+	moduleTemplate, err := os.ReadFile(filepath.Join(dir, "modules", "monitoring.bicep"))
+	require.NoError(t, err)
+	embedded, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/modules/monitoring.bicep")
+	require.NoError(t, err)
+
+	assert.Equal(t, string(embedded), string(moduleTemplate), "monitoring module must be the embedded template")
+	assert.NotEqual(t, string(embedded), string(entrypoint), "entrypoint must not be the monitoring module")
+	assert.Contains(t, string(entrypoint), "modules/monitoring.bicep")
+	assert.FileExists(t, filepath.Join(dir, "modules", "monitoring-connection.bicep"))
 }
 
 func TestWriteExistingProjectBicepAcrModes(t *testing.T) {

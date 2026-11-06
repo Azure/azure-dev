@@ -8,6 +8,8 @@ The `azure.ai.projects` extension owns the project service and the `microsoft.fo
 
 When `network:` is present, azd always provisions an **account private endpoint** and disables public data-plane access. Without `agentHosting:`, dependent stores (Cosmos DB, AI Search, Storage) stay platform-managed.
 
+Automatic Application Insights monitoring does not configure private-network ingestion yet. A project with `network:` therefore skips automatic monitoring, whether `monitoring:` is omitted, empty, or names a component, so provisioning is never blocked, and azd prints a warning when it skips monitoring. Set up monitoring for such projects outside azd.
+
 For **existing AKS hosting**, set `agentHosting.clusterResourceId` on the project service. Without `network:`, the Foundry account uses public networking; with it, the account uses the private-networking configuration below. Hosting creates a Storage account and two separate managed identities. The native azd registry, its Project connection and image-pull grants are created only when an Agent requires building a container image, including with private account networking. Storage and any automatically created ACR expose public authenticated endpoints. See [Existing AKS hosting](../../azure.ai.projects/README.md#existing-aks-hosting) for cluster prerequisites and standard Foundry teardown behavior.
 
 Legacy `network.mode`, `network.byo`, and `network.managed` fields are no

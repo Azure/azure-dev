@@ -22,6 +22,22 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+# synthesis is a nested Go module, so ./... above does not include it.
+Write-Host "Running synthesis module tests..."
+Push-Location (Join-Path $PSScriptRoot "synthesis")
+try {
+    go test ./... -count=1
+    $synthesisExit = $LASTEXITCODE
+} finally {
+    Pop-Location
+}
+
+if ($synthesisExit -ne 0) {
+    Write-Host ""
+    Write-Host "Synthesis tests failed with exit code: $synthesisExit" -ForegroundColor Red
+    exit $synthesisExit
+}
+
 Write-Host ""
 Write-Host "All tests passed!" -ForegroundColor Green
 exit 0

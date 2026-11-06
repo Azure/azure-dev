@@ -1,6 +1,6 @@
 # Foundry Projects
 
-<!-- cspell:ignore strconv Kata kubelet -->
+<!-- cspell:ignore strconv Kata katagen kubelet -->
 
 Manage Microsoft Foundry Project resources from your terminal.
 

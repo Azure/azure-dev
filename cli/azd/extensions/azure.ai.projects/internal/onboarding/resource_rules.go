@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore armcompute armstorage GZRS Kata katagen kubelet kubeletidentity OSSKU RAGRS RAGZRS
+
 package onboarding
 
 import (

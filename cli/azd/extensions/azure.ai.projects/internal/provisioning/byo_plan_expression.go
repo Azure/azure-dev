@@ -1,6 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore ARMID copyindex createarray createobject extensionresourceid
+// cspell:ignore resourceid resourceinfo shallowmerge subscriptionresourceid
+// cspell:ignore tolower toupper tryget uniquestring
+
 package provisioning
 
 import (

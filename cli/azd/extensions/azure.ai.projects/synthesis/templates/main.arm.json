@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "3000994132333516536"
+      "templateHash": "16542737369431655029"
     }
   },
   "definitions": {
@@ -2533,7 +2533,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "2583294824551726700"
+              "templateHash": "4682671837567762900"
             }
           },
           "parameters": {
@@ -2579,7 +2579,7 @@
               "type": "bool",
               "defaultValue": false,
               "metadata": {
-                "description": "When true, new monitoring resources accept ingestion and queries only through an Azure Monitor private link."
+                "description": "When true, new monitoring resources accept ingestion only through an Azure Monitor private link. Queries stay public."
               }
             },
             "vnetId": {

@@ -16,7 +16,7 @@ param existingConnectionName string = ''
 param environmentName string
 param resourceTokenSalt string = ''
 
-@description('When true, new monitoring resources accept ingestion and queries only through an Azure Monitor private link.')
+@description('When true, new monitoring resources accept ingestion only through an Azure Monitor private link. Queries stay public.')
 param privateNetwork bool = false
 param vnetId string = ''
 param vnetLocation string = ''

@@ -21,6 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -639,6 +640,62 @@ func TestMonitoringPreflightFreshNativeTargetComesFromARM(t *testing.T) {
 	for _, request := range fixture.requests {
 		assert.NotContains(t, request, "-stale")
 	}
+}
+
+func TestMonitoringPreflightPrivateCreatePlansWithApproval(t *testing.T) {
+	t.Parallel()
+	component := "/subscriptions/sub/resourceGroups/project-rg/providers/Microsoft.Insights/components/new"
+	workspace := "/subscriptions/sub/resourceGroups/project-rg/providers/Microsoft.OperationalInsights/workspaces/new"
+	fixture := monitoringCloudFixture{
+		projectStatus: http.StatusNotFound, accountStatus: http.StatusNotFound,
+		plannedChanges: []any{
+			map[string]any{"resourceId": monitoringTestProject, "changeType": "Create"},
+			map[string]any{"resourceId": component, "changeType": "Create"},
+			map[string]any{"resourceId": workspace, "changeType": "Create"},
+		},
+	}
+	p := newMonitoringCloudFixture(t, &fixture)
+	p.synthResult = &synthesis.Result{}
+	source := monitoringTestSource("create")
+	delete(source.parameters, "projectResourceId")
+	source.parameters["applicationInsightsResourceId"] = map[string]any{"value": ""}
+	source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+	source.armTemplate["parameters"] = map[string]any{"monitoringPrivateLinkApproved": map[string]any{}}
+	for name, value := range map[string]string{
+		"location": "westus3", "resourceGroupName": "project-rg", "foundryProjectName": "project", "resourceTokenSalt": "test",
+	} {
+		source.parameters[name] = map[string]any{"value": value}
+	}
+	client, err := p.deploymentsClient(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, p.prepareMonitoring(t.Context(), source, client, func(string) {}))
+	assert.Equal(t, "create", source.parameters["monitoringMode"].(map[string]any)["value"])
+	fixture.mu.Lock()
+	defer fixture.mu.Unlock()
+	require.Len(t, fixture.plans, 1)
+	planned := fixture.plans[0]["properties"].(map[string]any)["parameters"].(map[string]any)
+	assert.Equal(t, true, planned["monitoringPrivateLinkApproved"].(map[string]any)["value"],
+		"the planning What-If must include the monitoring graph")
+}
+
+func TestMonitoringPlannedPrivateLinkScope(t *testing.T) {
+	t.Parallel()
+	prefix := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Insights/privateLinkScopes/"
+	result := func(changes ...*armresources.WhatIfChange) *armresources.WhatIfOperationResult {
+		return &armresources.WhatIfOperationResult{Properties: &armresources.WhatIfOperationProperties{Changes: changes}}
+	}
+	change := func(id string, kind armresources.ChangeType) *armresources.WhatIfChange {
+		return &armresources.WhatIfChange{ResourceID: &id, ChangeType: &kind}
+	}
+	assert.Equal(t, prefix+"a", monitoringPlannedPrivateLinkScope(
+		result(change(prefix+"a", armresources.ChangeTypeCreate)), "SUB", "RG"))
+	assert.Empty(t, monitoringPlannedPrivateLinkScope(
+		result(change(prefix+"a", armresources.ChangeTypeCreate), change(prefix+"b", armresources.ChangeTypeCreate)), "sub", "rg"))
+	assert.Empty(t, monitoringPlannedPrivateLinkScope(
+		result(change(prefix+"a", armresources.ChangeTypeIgnore)), "sub", "rg"))
+	assert.Empty(t, monitoringPlannedPrivateLinkScope(
+		result(change(prefix+"a", armresources.ChangeTypeCreate)), "sub", "other"))
+	assert.Empty(t, monitoringPlannedPrivateLinkScope(nil, "sub", "rg"))
 }
 
 func TestMonitoringPreflightFailedNativeAttemptCanRetryWithoutTrustingOutputs(t *testing.T) {

@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+capabilities:
+    - custom-commands
+    - metadata
+description: Infer Spring Boot application dependencies and generate an azd project. (Beta)
+displayName: Spring Boot (Beta)
+id: azure.springboot
+language: go
+namespace: spring
+tags:
+    - spring
+    - java
+usage: azd spring <command> [options]
+version: 1.0.0-beta.1
+requiredAzdVersion: ">=1.34.2"

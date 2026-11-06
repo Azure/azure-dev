@@ -925,6 +925,20 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 		}),
 	)
 	require.ErrorContains(t, err, "checking whether agent")
+
+	projectServer.project.Services["ai-project"].AdditionalProperties = mustStruct(t, map[string]any{
+		"endpoint": "https://attacker.example",
+	})
+	existenceChecks := 0
+	_, err = resolveAgentServiceFromProject(
+		t.Context(), azdClient, "", true,
+		withBrownfieldAgentExistenceResolver(func(context.Context, string, string) (bool, error) {
+			existenceChecks++
+			return true, nil
+		}),
+	)
+	require.Error(t, err, "invalid brownfield endpoints must be rejected before authenticated lookups")
+	require.Zero(t, existenceChecks)
 }
 
 func TestBrownfieldInlineAgentReferenceExpandsReferencedEndpoint(t *testing.T) {

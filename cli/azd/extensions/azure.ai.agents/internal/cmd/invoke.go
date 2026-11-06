@@ -77,6 +77,7 @@ const outputRaw = "raw"
 const outputDefault = "default"
 
 const defaultInvokeTimeoutSeconds = 30 * 60
+const remoteAgentMetadataTimeout = 5 * time.Second
 const maxInvokeVersionLength = 128
 
 var createInvokeVersionSession = createInvokeVersionSessionImpl
@@ -98,6 +99,7 @@ type InvokeAction struct {
 	resolvedBodyLabel     string
 	bodyResolved          bool
 	credential            azcore.TokenCredential
+	agentReader           func(context.Context, *remoteContext) (*agent_api.AgentObject, error)
 	invokeReporter        foundryTelemetry.Reporter
 }
 
@@ -116,11 +118,10 @@ argument is provided it is treated as the message and the agent name
 is auto-detected from azure.yaml. With two arguments the first is the
 agent name and the second is the message.
 
-When --protocol is omitted, complete deployed endpoint data is used when
-available. Endpoint data created by an older extension must be refreshed by
-redeploying or bypassed with --protocol. Otherwise the agent definition is
-used. If neither identifies exactly one invocable protocol, pass --protocol
-explicitly.
+When choosing a remote endpoint protocol, azd reads the current Foundry endpoint
+configuration. If agent metadata cannot be read, saved deployment endpoints are
+used as routing hints and Foundry validates the request. If the protocol cannot
+be determined, pass --protocol explicitly. Local invocations use the project definition.
 
 ` + invokeVoiceHelp + `Request Body:
 Use --input-file/-f to send the contents of a file as the request body
@@ -903,7 +904,10 @@ func (a *InvokeAction) resolveProtocol(
 			return "", err
 		}
 
-		protocol, err := a.resolveDeployedProtocol(ctx, rc)
+		var protocol agent_api.AgentProtocol
+		if err = a.loadRemoteAgent(ctx, rc); err == nil {
+			protocol, err = a.resolveDeployedProtocol(ctx, rc)
+		}
 		if err != nil {
 			if rc.azdClient != nil {
 				rc.azdClient.Close()
@@ -939,6 +943,38 @@ func (a *InvokeAction) resolveDeployedProtocol(
 	ctx context.Context,
 	rc *remoteContext,
 ) (agent_api.AgentProtocol, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if rc.agent != nil {
+		if rc.version != "" && rc.version != rc.agent.Versions.Latest.Version {
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"current endpoint configuration does not identify the protocol of the selected agent version",
+				"pass --protocol explicitly when invoking a specific agent version",
+			)
+		}
+
+		var protocols []agent_api.AgentProtocol
+		enabled := resolveEndpointProtocols(rc.agent.AgentEndpoint)
+		for _, protocol := range agent_api.InvocableProtocols() {
+			if slices.Contains(enabled, string(protocol)) {
+				protocols = append(protocols, protocol)
+			}
+		}
+		if len(protocols) == 0 {
+			return "", exterrors.Compatibility(
+				exterrors.CodeAgentEndpointProtocolNotEnabled,
+				"the current deployed agent endpoint has no enabled invocable protocols",
+				"enable an invocable public endpoint protocol (responses, invocations, or a2a) "+
+					"on the deployed agent before invoking",
+			)
+		}
+
+		// A saved endpoint can express a preference, but only among currently enabled protocols.
+		return selectRemoteInvokeProtocol(protocols, rc.invocableProtocols)
+	}
+
 	if rc.deployedProtocolMetadataIncomplete {
 		return "", exterrors.Compatibility(
 			exterrors.CodeIncompleteAgentProtocolMetadata,
@@ -983,48 +1019,24 @@ func (a *InvokeAction) resolveDeployedProtocol(
 		)
 	}
 
-	deployed := uniqueAgentProtocols(rc.invocableProtocols)
-	var local []agent_api.AgentProtocol
-	if len(deployed) != 1 && rc.azdClient != nil && rc.serviceName != "" {
-		if rc.deployedProtocolMetadata && len(deployed) == 0 {
-			return "", remoteProtocolSelectionError(deployed, "")
-		}
-		var err error
-		local, err = resolveAgentInvocableProtocols(
-			ctx,
-			rc.azdClient,
-			rc.serviceName,
-			a.noPrompt,
-		)
-		if err != nil {
-			return "", remoteProtocolSelectionError(
-				deployed,
-				fmt.Sprintf("the local definition could not determine the protocol: %v", err),
-			)
-		}
-	}
-
-	return selectRemoteInvokeProtocol(deployed, local)
+	return selectRemoteInvokeProtocol(rc.invocableProtocols, nil)
 }
 
 func selectRemoteInvokeProtocol(
 	deployed []agent_api.AgentProtocol,
-	local []agent_api.AgentProtocol,
+	preferred []agent_api.AgentProtocol,
 ) (agent_api.AgentProtocol, error) {
 	deployed = uniqueAgentProtocols(deployed)
-	local = uniqueAgentProtocols(local)
+	preferred = uniqueAgentProtocols(preferred)
 	switch len(deployed) {
 	case 0:
-		if len(local) == 1 {
-			return local[0], nil
-		}
 		return "", remoteProtocolSelectionError(deployed, "")
 	case 1:
 		return deployed[0], nil
 	}
 
-	if len(local) == 1 && containsAgentProtocol(deployed, local[0]) {
-		return local[0], nil
+	if len(preferred) == 1 && containsAgentProtocol(deployed, preferred[0]) {
+		return preferred[0], nil
 	}
 	return "", remoteProtocolSelectionError(deployed, "")
 }
@@ -1088,7 +1100,7 @@ func remoteProtocolSelectionError(
 		names[i] = string(protocol)
 	}
 	message := fmt.Sprintf(
-		"the deployed agent exposes multiple invocable protocols: %s",
+		"endpoint routing data identifies multiple invocable protocols: %s",
 		strings.Join(names, ", "),
 	)
 	if reason != "" {
@@ -1097,7 +1109,7 @@ func remoteProtocolSelectionError(
 	return exterrors.Validation(
 		exterrors.CodeInvalidParameter,
 		message,
-		"pass --protocol to choose one of the deployed protocols",
+		"pass --protocol to choose an endpoint protocol",
 	)
 }
 
@@ -1108,6 +1120,55 @@ func (a *InvokeAction) resolveRemoteContextForInvoke(
 		return a.resolvedRemoteContext, nil
 	}
 	return a.resolveRemoteContext(ctx)
+}
+
+func (a *InvokeAction) loadRemoteAgent(ctx context.Context, rc *remoteContext) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if rc.agentRead || rc.name == "" || rc.projectEndpoint == "" {
+		return nil
+	}
+	rc.agentRead = true
+
+	read := a.agentReader
+	if read == nil {
+		read = a.readRemoteAgent
+	}
+	timeout := remoteAgentMetadataTimeout
+	if a.flags != nil && a.flags.timeout > 0 {
+		timeout = min(timeout, a.httpTimeout())
+	}
+	readCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	agent, err := read(readCtx, rc)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err != nil || agent == nil || agent.Name != rc.name || agent.AgentEndpoint == nil ||
+		(agent.AgentEndpoint.ProtocolConfiguration == nil && agent.AgentEndpoint.Protocols == nil) {
+		// Endpoint consumers may invoke without agents/read. Unreadable metadata is not disabled capability.
+		log.Printf("could not inspect current agent configuration; Foundry will validate the invocation")
+		return nil
+	}
+	rc.agent = agent
+	return nil
+}
+
+func (a *InvokeAction) readRemoteAgent(ctx context.Context, rc *remoteContext) (*agent_api.AgentObject, error) {
+	credential := a.credential
+	if credential == nil {
+		var err error
+		credential, err = newAgentCredential()
+		if err != nil {
+			return nil, err
+		}
+	}
+	apiVersion := rc.apiVersion
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	return agent_api.NewAgentClient(rc.projectEndpoint, credential).GetAgent(ctx, rc.name, apiVersion, false)
 }
 
 func (a *InvokeAction) serviceNameSelector() string {
@@ -1425,6 +1486,8 @@ type remoteContext struct {
 	deployedProtocolMetadataStale      bool
 	azdClient                          *azdext.AzdClient
 	bearerToken                        string
+	agent                              *agent_api.AgentObject
+	agentRead                          bool
 }
 
 func (rc *remoteContext) nextStepName() string {
@@ -1494,12 +1557,16 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	rc := &remoteContext{apiVersion: DefaultAgentAPIVersion, version: a.flags.version}
 
 	if a.endpoint != nil {
+		projectEndpoint, _, err := validateProjectEndpoint(a.endpoint.ProjectEndpoint)
+		if err != nil {
+			return nil, err
+		}
 		rc.name = a.endpoint.AgentName
-		rc.projectEndpoint = a.endpoint.ProjectEndpoint
+		rc.projectEndpoint = projectEndpoint
 		if a.endpoint.APIVersion != "" {
 			rc.apiVersion = a.endpoint.APIVersion
 		}
-		rc.agentKey = buildAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, rc.version, false)
+		rc.agentKey = buildAgentKey(rc.projectEndpoint, a.endpoint.AgentName, rc.version, false)
 		// Best-effort attach to the parent azd daemon so environment-backed context
 		// remains available. When running the extension
 		// binary directly (standalone), this fails and we proceed without persistence.
@@ -1588,6 +1655,12 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		}
 		rc.projectEndpoint = ep
 	}
+	projectEndpoint, _, err := validateProjectEndpoint(rc.projectEndpoint)
+	if err != nil {
+		azdClient.Close()
+		return nil, err
+	}
+	rc.projectEndpoint = projectEndpoint
 	if rc.agentKey == "" {
 		rc.agentKey = buildAgentKey(rc.projectEndpoint, rc.name, rc.version, false)
 	}

@@ -6,11 +6,10 @@ argument is provided it is treated as the message and the agent name
 is auto-detected from azure.yaml. With two arguments the first is the
 agent name and the second is the message.
 
-When --protocol is omitted, complete deployed endpoint data is used when
-available. Endpoint data created by an older extension must be refreshed by
-redeploying or bypassed with --protocol. Otherwise the agent definition is
-used. If neither identifies exactly one invocable protocol, pass --protocol
-explicitly.
+When choosing a remote endpoint protocol, azd reads the current Foundry endpoint
+configuration. If agent metadata cannot be read, saved deployment endpoints are
+used as routing hints and Foundry validates the request. If the protocol cannot
+be determined, pass --protocol explicitly. Local invocations use the project definition.
 
 Voice Agents
 For prompt voice agents and hosted voice wrappers, open your agent in the

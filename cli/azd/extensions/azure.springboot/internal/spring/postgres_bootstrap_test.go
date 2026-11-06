@@ -23,6 +23,18 @@ func TestPostgresBootstrapInputRoundTrip(t *testing.T) {
 	require.Equal(t, input, actual)
 }
 
+func TestPostgresBootstrapInputSupportsGuestAdministratorName(t *testing.T) {
+	input := testPostgresBootstrapInput()
+	input.ExpectedAdministratorName = "developer_contoso.com#EXT#@tenant.onmicrosoft.com"
+
+	encoded, err := encodePostgresBootstrapInput(input)
+	require.NoError(t, err)
+
+	actual, err := decodePostgresBootstrapInput(encoded)
+	require.NoError(t, err)
+	require.Equal(t, input, actual)
+}
+
 func TestPostgresBootstrapInputRejectsUnknownFields(t *testing.T) {
 	encoded, err := encodePostgresBootstrapInput(testPostgresBootstrapInput())
 	require.NoError(t, err)

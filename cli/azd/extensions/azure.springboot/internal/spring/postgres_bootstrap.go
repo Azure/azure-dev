@@ -57,7 +57,7 @@ func (i postgresBootstrapInput) validate() error {
 	if strings.TrimSpace(i.EnvironmentName) == "" {
 		return fmt.Errorf("invalid azd environment name")
 	}
-	if !databaseLoginPattern.MatchString(i.ExpectedAdministratorName) {
+	if !validAdministratorName(i.ExpectedAdministratorName) {
 		return fmt.Errorf("invalid expected PostgreSQL administrator name")
 	}
 	if !databaseLoginPattern.MatchString(i.SessionAdministratorName) {

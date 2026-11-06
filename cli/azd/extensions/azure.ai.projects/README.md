@@ -216,13 +216,18 @@ azd's checks never creates the private path unless
 `monitoringPrivateLinkApproved` is set. Set `monitoring.enabled: false` to opt
 out silently.
 
-The Private Link Scope changes Azure Monitor routing for the whole virtual
-network, not only this project. With ingestion Private Only, workloads in the
-network (or in networks sharing its DNS zones) can no longer send telemetry to
-Application Insights or Log Analytics resources that are not in the scope. Check
-for such workloads first, and opt out with `monitoring.enabled: false`. Other monitoring
-failures can fail normal provisioning; there is no second best-effort
-deployment or agent deployment repair hook.
+**Impact on a shared virtual network.** The Azure Monitor private DNS zones and
+Private Link Scope change Azure Monitor routing for the whole virtual network,
+not only this project. With ingestion Private Only, any workload in the network
+(or in a network sharing its DNS zones) can send telemetry only to Application
+Insights or Log Analytics resources that are in the scope; telemetry to
+resources outside it stops arriving. A virtual network can use only one Private
+Link Scope, so to keep other workloads' telemetry, add their Application
+Insights components or Log Analytics workspaces as scoped resources of the
+Private Link Scope that azd created. To avoid any change to Azure Monitor
+routing, set `monitoring.enabled: false`. Check for existing workloads before
+you provision. Other monitoring failures can fail normal provisioning; there is
+no second best-effort deployment or agent deployment repair hook.
 
 Monitoring creates billable Azure resources and can store agent telemetry,
 including application-supplied content. Review your application's telemetry,

@@ -3010,6 +3010,7 @@ func TestHandleInvocationLRO(t *testing.T) {
 func TestHandleInvocationLRO_PropagatesUserIdentityHeader(t *testing.T) {
 	pollRequests := captureInvocationLROPollRequests(
 		t,
+		"token",
 		&agent_api.SessionRequestOptions{
 			UserIdentity: "user-1",
 		},
@@ -3025,6 +3026,7 @@ func TestHandleInvocationLRO_PropagatesUserIdentityHeader(t *testing.T) {
 func TestHandleInvocationLRO_PropagatesPartialUserIdentityHeader(t *testing.T) {
 	pollRequests := captureInvocationLROPollRequests(
 		t,
+		"token",
 		&agent_api.SessionRequestOptions{
 			UserIdentity: "user-1",
 		},
@@ -3032,8 +3034,22 @@ func TestHandleInvocationLRO_PropagatesPartialUserIdentityHeader(t *testing.T) {
 	assertPollRequestsHaveHeaders(t, pollRequests, "user-1")
 }
 
+func TestHandleInvocationLRO_LocalPollingOmitsExtensionUserAgent(t *testing.T) {
+	pollRequests := captureInvocationLROPollRequests(t, "", nil)
+	for i, r := range pollRequests {
+		pollNumber := i + 1
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("poll %d: Authorization = %q, want no authentication header", pollNumber, got)
+		}
+		if got := r.UserAgent(); strings.Contains(got, useragent.Default()) {
+			t.Errorf("poll %d: User-Agent = %q, want no extension User-Agent", pollNumber, got)
+		}
+	}
+}
+
 func captureInvocationLROPollRequests(
 	t *testing.T,
+	bearerToken string,
 	options *agent_api.SessionRequestOptions,
 	pollBodies ...string,
 ) []*http.Request {
@@ -3044,7 +3060,7 @@ func captureInvocationLROPollRequests(
 	t.Cleanup(func() { defaultLROPollInterval = origInterval })
 
 	// Use two-poll scenario: first poll returns "running", second returns "completed".
-	// Verify that the user-identity header is sent on every poll, not just the first.
+	// Verify the headers on every poll, not just the first.
 	if len(pollBodies) == 0 {
 		pollBodies = []string{
 			`{"status":"running"}`,
@@ -3081,7 +3097,7 @@ func captureInvocationLROPollRequests(
 		t.Context(),
 		resp,
 		"",
-		"token",
+		bearerToken,
 		"test-agent",
 		time.Second,
 		"",
@@ -3115,6 +3131,9 @@ func assertPollRequestsHaveHeaders(
 
 	for i, r := range pollRequests {
 		pollNumber := i + 1
+		if got, want := r.UserAgent(), useragent.Default(); got != want {
+			t.Errorf("poll %d: User-Agent = %q, want %q", pollNumber, got, want)
+		}
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
 			t.Errorf("poll %d: Authorization = %q, want Bearer token", pollNumber, got)
 		}

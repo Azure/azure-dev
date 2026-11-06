@@ -20,6 +20,7 @@ func AllResourceTypes() []ResourceType {
 		ResourceTypeDbCosmos,
 		ResourceTypeHostAppService,
 		ResourceTypeHostContainerApp,
+		ResourceTypeHostFunctionApp,
 		ResourceTypeOpenAiModel,
 		ResourceTypeMessagingEventHubs,
 		ResourceTypeMessagingServiceBus,
@@ -38,6 +39,7 @@ const (
 	ResourceTypeDbCosmos            ResourceType = "db.cosmos"
 	ResourceTypeHostContainerApp    ResourceType = "host.containerapp"
 	ResourceTypeHostAppService      ResourceType = "host.appservice"
+	ResourceTypeHostFunctionApp     ResourceType = "host.functionapp"
 	ResourceTypeOpenAiModel         ResourceType = "ai.openai.model"
 	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
 	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
@@ -63,6 +65,8 @@ func (r ResourceType) String() string {
 		return "App Service"
 	case ResourceTypeHostContainerApp:
 		return "Container App"
+	case ResourceTypeHostFunctionApp:
+		return "Function App"
 	case ResourceTypeOpenAiModel:
 		return "Open AI Model"
 	case ResourceTypeMessagingEventHubs:
@@ -94,6 +98,8 @@ func (r ResourceType) AzureResourceType() string {
 		return "Microsoft.Web/sites"
 	case ResourceTypeHostContainerApp:
 		return "Microsoft.App/containerApps"
+	case ResourceTypeHostFunctionApp:
+		return "Microsoft.Web/sites"
 	case ResourceTypeDbRedis:
 		return "Microsoft.Cache/redis"
 	case ResourceTypeDbPostgres:
@@ -176,6 +182,8 @@ func (r *ResourceConfig) MarshalYAML() (any, error) {
 			errMarshal = marshalRawProps(raw.Props.(AppServiceProps))
 		case ResourceTypeHostContainerApp:
 			errMarshal = marshalRawProps(raw.Props.(ContainerAppProps))
+		case ResourceTypeHostFunctionApp:
+			errMarshal = marshalRawProps(raw.Props.(FunctionAppProps))
 		case ResourceTypeDbCosmos:
 			errMarshal = marshalRawProps(raw.Props.(CosmosDBProps))
 		case ResourceTypeMessagingEventHubs:
@@ -236,6 +244,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
+	case ResourceTypeHostFunctionApp:
+		props := FunctionAppProps{}
+		if err := unmarshalProps(&props); err != nil {
+			return err
+		}
+		raw.Props = props
 	case ResourceTypeDbCosmos:
 		cdp := CosmosDBProps{}
 		if err := unmarshalProps(&cdp); err != nil {
@@ -282,6 +296,18 @@ type AppServiceProps struct {
 	Env            []ServiceEnvVar   `yaml:"env,omitempty"`
 	Runtime        AppServiceRuntime `yaml:"runtime,omitempty"`
 	StartupCommand string            `yaml:"startupCommand,omitempty"`
+}
+
+// FunctionAppProps configures a code-based Function App resource on Flex Consumption.
+type FunctionAppProps struct {
+	Runtime FunctionAppRuntime `yaml:"runtime,omitempty"`
+	Env     []ServiceEnvVar    `yaml:"env,omitempty"`
+}
+
+// FunctionAppRuntime selects the language stack and runtime version for Flex Consumption.
+type FunctionAppRuntime struct {
+	Stack   string `yaml:"stack,omitempty"`
+	Version string `yaml:"version,omitempty"`
 }
 
 type AppServiceRuntimeStack string

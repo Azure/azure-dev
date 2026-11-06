@@ -491,6 +491,73 @@ func TestFillUses_MultiSelectError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestFillUses_FunctionStorageSelection(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name    string
+		selects []string
+		wantErr bool
+	}{
+		{name: "no storage", selects: []string{"redis"}},
+		{name: "one storage", selects: []string{"redis", "first"}},
+		{name: "two storage accounts", selects: []string{"first", "second"}, wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestConsole()
+			c.multiSelectFn = func(opts input.ConsoleOptions) ([]string, error) {
+				labels := []string{}
+				for _, name := range tt.selects {
+					res := project.ResourceTypeStorage
+					if name == "redis" {
+						res = project.ResourceTypeDbRedis
+					}
+					label := fmt.Sprintf("[%s]\t%s", res.String(), name)
+					require.Contains(t, opts.Options, label)
+					labels = append(labels, label)
+				}
+				return labels, nil
+			}
+			r := &project.ResourceConfig{Type: project.ResourceTypeHostFunctionApp, Name: "api"}
+			prj := &project.ProjectConfig{Resources: map[string]*project.ResourceConfig{
+				"first":  {Type: project.ResourceTypeStorage, Name: "first"},
+				"second": {Type: project.ResourceTypeStorage, Name: "second", Existing: true},
+				"redis":  {Type: project.ResourceTypeDbRedis, Name: "redis"},
+			}}
+			got, err := fillUses(t.Context(), r, c, PromptOptions{PrjConfig: prj})
+			if tt.wantErr {
+				require.ErrorContains(t, err, "can use only one storage resource")
+				assert.Empty(t, r.Uses)
+			} else {
+				require.NoError(t, err)
+				assert.ElementsMatch(t, tt.selects, got.Uses)
+			}
+		})
+	}
+}
+
+func TestPromptUsedBy_FiltersFunctionsWithStorage(t *testing.T) {
+	t.Parallel()
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing=%t", existing), func(t *testing.T) {
+			c := newTestConsole()
+			c.multiSelectFn = func(opts input.ConsoleOptions) ([]string, error) {
+				assert.ElementsMatch(t, []string{"available", "web"}, opts.Options)
+				return opts.Options, nil
+			}
+			prj := &project.ProjectConfig{Resources: map[string]*project.ResourceConfig{
+				"storage":   {Type: project.ResourceTypeStorage, Name: "storage", Existing: existing},
+				"bound":     {Type: project.ResourceTypeHostFunctionApp, Name: "bound", Uses: []string{"storage"}},
+				"available": {Type: project.ResourceTypeHostFunctionApp, Name: "available"},
+				"web":       {Type: project.ResourceTypeHostContainerApp, Name: "web", Uses: []string{"storage"}},
+			}}
+			r := &project.ResourceConfig{Type: project.ResourceTypeStorage, Name: "new-storage"}
+			got, err := promptUsedBy(t.Context(), r, c, PromptOptions{PrjConfig: prj})
+			require.NoError(t, err)
+			assert.ElementsMatch(t, []string{"available", "web"}, got)
+		})
+	}
+}
+
 func TestPromptUsedBy_ReturnsSelectedServices(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()

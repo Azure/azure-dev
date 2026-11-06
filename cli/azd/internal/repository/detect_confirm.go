@@ -326,6 +326,9 @@ func (d *detectConfirm) add(ctx context.Context) error {
 	entries := make([]any, 0, len(languages)+len(frameworks)+len(databases))
 
 	for _, lang := range languages {
+		if lang == appdetect.Go {
+			continue
+		}
 		selections = append(selections, fmt.Sprintf("%s\t%s", lang.Display(), "[Language]"))
 		entries = append(entries, lang)
 	}

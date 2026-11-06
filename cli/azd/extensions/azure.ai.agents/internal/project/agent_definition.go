@@ -982,7 +982,10 @@ func SetAgentContainerSettings(
 }
 
 func validateMemorySnapshotSetting(props *structpb.Struct) error {
-	if setting, exists := props.GetFields()["enableMemorySnapshot"]; exists {
+	for key, setting := range props.GetFields() {
+		if !strings.EqualFold(key, "enableMemorySnapshot") {
+			continue
+		}
 		if structKind(props) != string(agent_yaml.AgentKindHosted) {
 			return exterrors.Validation(
 				exterrors.CodeInvalidAgentManifest,

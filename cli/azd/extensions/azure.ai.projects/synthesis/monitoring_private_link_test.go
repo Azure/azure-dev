@@ -94,6 +94,16 @@ func TestCheckMonitorPrivateLinkConflict(t *testing.T) {
 		{name: "foreign scope", reader: privateLinkReader("azuremonitor", foreignScope), conflict: true},
 		{name: "foreign scope in the deployment group", reader: privateLinkReader("azuremonitor", sameGroupForeign), conflict: true},
 		{name: "read failure", reader: &fakeReader{resourceErr: errors.New("boom")}, err: true},
+		{name: "private endpoint deleted since listing", reader: func() *fakeReader {
+			r := privateLinkReader("azuremonitor", foreignScope)
+			delete(r.resources, strings.ToLower(testPEID))
+			return r
+		}()},
+		{name: "malformed private endpoint id", reader: &fakeReader{resources: map[string]*armresources.GenericResource{
+			strings.ToLower(testVNetID): armResource(testVNetID, map[string]any{"subnets": []any{
+				map[string]any{"properties": map[string]any{"privateEndpoints": []any{map[string]any{"id": "not-an-id"}}}},
+			}}),
+		}}, err: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -4,7 +4,6 @@
 package preview
 
 import (
-	"net/url"
 	"regexp"
 	"strings"
 	"unicode"
@@ -13,10 +12,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-var (
-	previewURL = regexp.MustCompile("(?i)\\b[a-z][a-z0-9+.-]*://[^\\s\\x00-\\x1f<>\"'`]+")
-	entity     = regexp.MustCompile(`&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]+);`)
-)
+var entity = regexp.MustCompile(`&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]+);`)
 
 func safeText(source string) string {
 	clean := func(value string) string {
@@ -37,49 +33,5 @@ func safeText(source string) string {
 		return value
 	})
 
-	// Match decoded URLs, but map replacements back to source offsets so escaped
-	// Markdown/HTML elsewhere is not accidentally promoted to active markup.
-	var decoded strings.Builder
-	offsets := make([]int, 0, len(source)+1)
-	cursor := 0
-	for _, match := range entity.FindAllStringIndex(source, -1) {
-		for index := cursor; index < match[0]; index++ {
-			decoded.WriteByte(source[index])
-			offsets = append(offsets, index)
-		}
-		value := html.UnescapeString(source[match[0]:match[1]])
-		decoded.WriteString(value)
-		for range len(value) {
-			offsets = append(offsets, match[0])
-		}
-		cursor = match[1]
-	}
-	for index := cursor; index < len(source); index++ {
-		decoded.WriteByte(source[index])
-		offsets = append(offsets, index)
-	}
-	offsets = append(offsets, len(source))
-	text := decoded.String()
-	var result strings.Builder
-	cursor = 0
-	for _, match := range previewURL.FindAllStringIndex(text, -1) {
-		raw := strings.TrimRight(text[match[0]:match[1]], ").,;:!]}")
-		end := match[0] + len(raw)
-		parsed, err := url.Parse(raw)
-		replacement := "[redacted URL]"
-		if err == nil && parsed.Host != "" {
-			parsed.User = nil
-			parsed.RawQuery, parsed.Fragment, parsed.RawFragment = "", "", ""
-			parsed.ForceQuery = false
-			replacement = parsed.String()
-		}
-		if replacement == raw {
-			continue
-		}
-		result.WriteString(source[cursor:offsets[match[0]]])
-		result.WriteString(replacement)
-		cursor = offsets[end]
-	}
-	result.WriteString(source[cursor:])
-	return result.String()
+	return source
 }

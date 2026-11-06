@@ -282,23 +282,6 @@ func TestPreviewErrorsAndCancellation(t *testing.T) {
 }
 
 func TestPreviewSafetyForMarkdownAndHTML(t *testing.T) {
-	// #nosec G101 -- Synthetic credentials exercise URL non-disclosure.
-	const unsafeURL = "https://preview-user:preview-password@example.com/doc?sig=private-signature#private-fragment"
-	for _, source := range []string{
-		"[Document](" + unsafeURL + ")\n",
-		unsafeURL + "\n",
-		"https&#58;//preview-user:preview-password@example.com/doc?sig=private-signature#private-fragment\n",
-		"<table><tr><th>URL</th></tr><tr><td>" + unsafeURL + "</td></tr></table>\n",
-		"<table><tr><th>URL</th></tr><tr><td><a href=\"" + unsafeURL + "\">Document</a></td></tr></table>\n",
-		"<table><tr><th>URL</th></tr><tr><td><a href=\"https&#58;//preview-user:preview-password@" +
-			"example.com/doc?sig=private-signature#private-fragment\">Document</a></td></tr></table>\n",
-	} {
-		result := renderPreview(t, source, 120)
-		for _, secret := range []string{"preview-user", "preview-password", "private-signature", "private-fragment"} {
-			assert.NotContains(t, result, secret)
-		}
-		assert.Contains(t, result, "example.com/doc")
-	}
 	result := renderPreview(t, "\x1b]52;c;private-clipboard\x07**Safe**\r\x08\n"+
 		"<table><tr><th>Name</th></tr><tr><td>&#27;[31mCell</td></tr></table>\n", 80)
 	assert.NotContains(t, result, "private-clipboard")
@@ -309,10 +292,89 @@ func TestPreviewSafetyForMarkdownAndHTML(t *testing.T) {
 }
 
 func TestSafetyPreservesUnrelatedEscapesAndMarkdownDelimiters(t *testing.T) {
-	// #nosec G101 -- Synthetic credentials exercise URL non-disclosure.
-	source := "&lt;table&gt; [Link](https://user:password@example.com/path?sig=secret#fragment) &amp;"
-	assert.Equal(t, "&lt;table&gt; [Link](https://example.com/path) &amp;", safeText(source))
-	assert.Equal(t, "&lt;table&gt; &amp;", safeText("&lt;table&gt; &amp;"))
-	assert.Equal(t, "https://example.com/path", safeText("https://example.com/path?"))
-	assert.Equal(t, "[redacted URL]", safeText("https://user:password@example.com/%invalid?sig=secret"))
+	for _, source := range []string{
+		"&lt;table&gt; &amp;",
+		"A &amp; B",
+		"A &amp;amp; B",
+		"# Title\n\n**Important** and *emphasis*.",
+		"中文、日本語、한글 😀",
+		"https://example.com/doc?page=2#section",
+		"https://example.com/doc?",
+		"[Document](https://example.com/doc?page=2#section)",
+	} {
+		t.Run(source, func(t *testing.T) {
+			assert.Equal(t, source, safeText(source))
+		})
+	}
+}
+
+func TestSafetyNormalizesNewlinesAndRemovesControls(t *testing.T) {
+	for _, sample := range []struct {
+		name, source, expected string
+	}{
+		{"newlines-and-tabs", "First\r\n\tSecond\nThird", "First\n\tSecond\nThird"},
+		{"raw-controls", "A\x00\x08\rB", "AB"},
+		{"ansi-color", "\x1b[31mRed\x1b[0m", "Red"},
+		{"decimal-entity", "A&#27;B", "AB"},
+		{"hex-entity", "A&#x1b;B", "AB"},
+		{"encoded-newline-and-tab", "A&#10;&#9;B", "A&#10;&#9;B"},
+		{"bidi-controls", "中文\u202eABC\u202c\u2066日本語\u2069", "中文ABC日本語"},
+		{"encoded-bidi", "A&#x202e;B&#8236;", "AB"},
+	} {
+		t.Run(sample.name, func(t *testing.T) {
+			actual := safeText(sample.source)
+			assert.Equal(t, sample.expected, actual)
+			assert.Equal(t, actual, safeText(actual), "cleaning is stable across repeated calls")
+		})
+	}
+}
+
+func TestPrettyDecodesEntitiesOnce(t *testing.T) {
+	for _, sample := range []struct {
+		source, expected string
+	}{
+		{"A &amp; B\n", "A & B"},
+		{"A &amp;amp; B\n", "A &amp; B"},
+		{"&lt;table&gt;\n", "<table>"},
+		{"<table><tr><th>Text</th></tr><tr><td>A &amp;amp; B</td></tr></table>\n", "A &amp; B"},
+	} {
+		result := renderPreview(t, sample.source, 120)
+		assert.Contains(t, result, sample.expected)
+		assert.NotContains(t, result, "HTML table not rendered:")
+	}
+}
+
+func TestPrettyPreservesOrdinaryURLComponents(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	const destination = "https://example.com/doc?page=2&view=full#section"
+	for _, sample := range []struct {
+		name, source, expected, notice string
+		width                          int
+	}{
+		{"plain", destination + "\n", destination, "", 200},
+		{"link", "[Document](" + destination + ")\n", destination, "", 200},
+		{"encoded", "https&#58;//example.com/doc?page=2&amp;view=full#section\n", destination, "", 200},
+		{"empty-query", "https://example.com/doc?\n", "https://example.com/doc?", "", 200},
+		{"table", "<table><tr><th>URL</th></tr><tr><td>" + destination + "</td></tr></table>\n",
+			destination, "", 200},
+		{"cards", "<table><tr><th>URL</th></tr><tr><td>" + destination + "</td></tr></table>\n",
+			destination, "Table exceeds terminal width", 20},
+		{"fallback", "<table><tr><th>URL</th></tr><tr><td colspan=\"2\">" + destination + "</td></tr></table>\n",
+			destination, "HTML table not rendered", 200},
+	} {
+		t.Run(sample.name, func(t *testing.T) {
+			for _, color := range []bool{false, true} {
+				var result bytes.Buffer
+				require.NoError(t, Render(t.Context(), &result, sample.source, sample.width, color))
+				plain := ansi.Strip(result.String())
+				assert.Contains(t, plain, sample.expected)
+				if sample.notice != "" {
+					assert.Contains(t, plain, sample.notice)
+				}
+				if !color {
+					assert.NotContains(t, result.String(), "\x1b")
+				}
+			}
+		})
+	}
 }

@@ -190,8 +190,7 @@ Keep these limitations in mind:
 - Long values can overflow, and some Unicode text or emoji may not align correctly.
   Right-to-left text display depends on your terminal. Markdown tables may shorten
   long links.
-- Preview text removes terminal controls and URL credentials, queries, and
-  fragments; it is not an exact copy of the result. Links and images are not fetched.
+- Preview text removes terminal controls. Links and images are not fetched.
 - Piped or redirected previews are uncolored and use an 80-column layout.
 
 `--pretty` requires a single streamed LLM-input result. It cannot be combined with

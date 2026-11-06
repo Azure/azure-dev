@@ -173,8 +173,8 @@ azd ai cu analyze invoice.pdf --pretty
 
 Pretty-printing formats Markdown for easier terminal reading and displays document
 metadata with its original `---` delimiters. Source line breaks and page comments
-remain visible. Metadata, page comments, and generated row annotations use a dim
-color when color is enabled; H1 headings retain the `#` marker and use the same
+remain visible. Metadata, page comments, and generated row annotations share the
+standard azd gray without additional dimming when color is enabled; H1 headings retain the `#` marker and use the same
 heading color as H2/H3/H4, without a separate highlight background.
 Reference-style links work even when their
 definitions are on the other side of a table. Simple HTML tables show all columns, switching

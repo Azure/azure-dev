@@ -63,8 +63,10 @@ func TestPrettyPreservesDocumentStructure(t *testing.T) {
 		assert.NotContains(t, plain, "Preview only")
 		assert.NotContains(t, plain, "URLs omit")
 		if color {
-			assert.Contains(t, result.String(), "\x1b[90;2m---")
-			assert.Contains(t, result.String(), "\x1b[90;2m"+comment)
+			assert.Contains(t, result.String(), "\x1b[90m---")
+			assert.Contains(t, result.String(), "\x1b[90m"+comment)
+			assert.NotContains(t, result.String(), "\x1b[90;2m")
+			assert.NotContains(t, result.String(), "\x1b[2m")
 		}
 	}
 	commentWithTable := "<!-- PageFooter=\"<table> is an example\" -->"
@@ -109,7 +111,9 @@ func TestPrettyLayoutNoticesAndRowAnnotations(t *testing.T) {
 			assert.Contains(t, result.String(), "\x1b[33m<!-- Table exceeds terminal width;")
 			assert.Contains(t, plain, "<!-- Row 1 -->")
 			assert.Contains(t, plain, "<!-- Row 2 -->")
-			assert.Regexp(t, "\x1b\\[90;2m[^\\n]*<!-- Row 1 -->", result.String())
+			assert.Regexp(t, "\x1b\\[90m[^\\n]*<!-- Row 1 -->", result.String())
+			assert.NotContains(t, result.String(), "\x1b[90;2m")
+			assert.NotContains(t, result.String(), "\x1b[2m")
 		} else {
 			assert.NotContains(t, plain, "Table exceeds terminal width")
 			assert.NotContains(t, plain, "<!-- Row")

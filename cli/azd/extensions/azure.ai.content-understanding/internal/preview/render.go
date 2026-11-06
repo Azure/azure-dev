@@ -49,7 +49,7 @@ func Render(ctx context.Context, writer io.Writer, source string, width int, col
 	}
 	color = color && os.Getenv("NO_COLOR") == ""
 	tableColor := terminalColor.New(terminalColor.FgCyan)
-	commentColor := terminalColor.New(terminalColor.FgHiBlack, terminalColor.Faint)
+	commentColor := terminalColor.New(terminalColor.FgHiBlack)
 	warningColor := terminalColor.New(terminalColor.FgYellow)
 	tableColor.EnableColor()
 	commentColor.EnableColor()

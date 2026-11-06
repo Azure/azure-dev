@@ -263,6 +263,13 @@ Missing-resource errors suggest checking the endpoint and available analyzers;
 creation conflicts suggest inspecting the existing analyzer and choosing an unused ID.
 Service response bodies and authored content remain hidden.
 
+In an interactive terminal, analysis shows an animated `Analyzing <target>...`
+status in the action color (`NO_COLOR` disables color). Concurrent inputs share
+one status line that cycles through active targets. Local targets show the file
+name; URL targets omit credentials, query parameters, and fragments. The status
+clears before results or errors appear and is omitted for redirected or piped
+stdout, JSON/none output, and dry runs. It is never saved in result or report files.
+
 - Batch concurrency defaults to 4; `--concurrency` accepts 1-32.
 - More than 50 selected inputs require confirmation or explicit `--yes`.
 - Existing results fail by default. Use `--on-existing skip` to keep them or

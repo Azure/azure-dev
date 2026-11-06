@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -217,9 +218,13 @@ func runAnalyzeCommand(
 			}
 		}
 	}
-	execution, err := analysis.Execute(ctx, session.client, plan, analysis.RunOptions{
-		Analyzer: session.analyzer, Mode: mode, Concurrency: options.concurrency, Usage: options.usage,
-	})
+	execution, err := executeAnalysis(ctx, cmd.OutOrStdout(), extCtx.OutputFormat,
+		func(ctx context.Context, progress func(int, analysis.Input, bool) error) (analysis.Execution, error) {
+			return analysis.Execute(ctx, session.client, plan, analysis.RunOptions{
+				Analyzer: session.analyzer, Mode: mode, Concurrency: options.concurrency, Usage: options.usage,
+				Progress: progress,
+			})
+		})
 	if err != nil {
 		return err
 	}

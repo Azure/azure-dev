@@ -21,12 +21,14 @@ var (
 	secretValue   = regexp.MustCompile(
 		`(?im)\b(?:[a-z_]*token|api[-_]?key|ocp-apim-subscription-key|accountkey|client_secret|` +
 			`password|secret|sas|sig|schema|content|text|payload|body|path)\s*[:=]\s*[^\r\n]*`)
-	diagnosticURL  = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>]+`)
-	windowsPath    = regexp.MustCompile(`(?i)(?:[a-z]:[\\/]|\\\\)[^\s"'<>]+`)
-	posixPath      = regexp.MustCompile(`(^|[\s"'=(])(?:/|~/|\.\.?/)[^\s"'<>]+`)
-	quotedValue    = regexp.MustCompile(`"[^"\r\n]*"|'[^'\r\n]*'`)
-	fieldPath      = regexp.MustCompile(`\b(fieldSchema\.fields|fields|properties)\.[^\s:]+`)
-	diagnosticCode = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
+	diagnosticURL   = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>]+`)
+	windowsPath     = regexp.MustCompile(`(?i)(?:[a-z]:[\\/]|\\\\)[^\s"'<>]+`)
+	posixPath       = regexp.MustCompile(`(^|[\s"'=(])(?:/|~/|\.\.?/)[^\s"'<>]+`)
+	quotedValue     = regexp.MustCompile(`"[^"\r\n]*"|'[^'\r\n]*'`)
+	fieldPath       = regexp.MustCompile(`\b(fieldSchema\.fields|fields|properties)\.[^\s:]+`)
+	diagnosticCode  = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
+	endpointExample = regexp.MustCompile(
+		`https://<your-resource>\.services\.ai\.azure\.com(\.(?:\s|$)|\s|$)`)
 )
 
 // Redact is for diagnostics only, never command results or service payloads.
@@ -35,6 +37,10 @@ func Redact(message string) string {
 	if len(message) > 64*1024 || !utf8.ValidString(message) {
 		return "Diagnostic omitted because it exceeds the safe text limit."
 	}
+	const example = "https://<your-resource>.services.ai.azure.com"
+	const placeholder = "CU_ENDPOINT_EXAMPLE_PLACEHOLDER"
+	// Protect only the literal help example, not real URLs or URL suffixes.
+	message = endpointExample.ReplaceAllString(message, placeholder+"${1}")
 	if start := strings.IndexByte(message, '{'); start >= 0 {
 		message = message[:start] + "[redacted payload]"
 	}
@@ -51,7 +57,7 @@ func Redact(message string) string {
 		}
 		return r
 	}, message)
-	message = strings.TrimSpace(message)
+	message = strings.TrimSpace(strings.ReplaceAll(message, placeholder, example))
 	if len(message) > MaxDiagnosticBytes {
 		return "Diagnostic omitted because it exceeds the safe text limit."
 	}

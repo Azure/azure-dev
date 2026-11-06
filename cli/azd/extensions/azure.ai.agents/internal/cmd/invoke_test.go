@@ -23,6 +23,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/useragent"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -2317,6 +2318,7 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 				sessionID     string
 				apiVersion    string
 				authorization string
+				userAgent     string
 				userIdentity  string
 				clientID      string
 			}
@@ -2335,6 +2337,7 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 					sessionID:     sessionID,
 					apiVersion:    r.URL.Query().Get("api-version"),
 					authorization: r.Header.Get("Authorization"),
+					userAgent:     r.Header.Get("User-Agent"),
 					userIdentity:  r.Header.Get("x-ms-user-identity"),
 					clientID:      r.Header.Get("x-client-request-id"),
 				})
@@ -2433,6 +2436,7 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 				}
 				if post.apiVersion != "v1" ||
 					post.authorization != "Bearer test-token" ||
+					post.userAgent != useragent.Default() ||
 					post.userIdentity != "user-1" ||
 					post.clientID != "request-1" {
 					t.Errorf("POST request %d headers/query = %+v", i+1, post)
@@ -2453,6 +2457,7 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 				}
 				if probe.apiVersion != "v1" ||
 					probe.authorization != "Bearer test-token" ||
+					probe.userAgent != useragent.Default() ||
 					probe.userIdentity != "user-1" ||
 					probe.clientID != "request-1" {
 					t.Errorf("OpenAPI request %d headers/query = %+v", i+1, probe)
@@ -3217,6 +3222,10 @@ func TestCreateConversation(t *testing.T) {
 				// Verify content type
 				if got := r.Header.Get("Content-Type"); got != "application/json" {
 					t.Errorf("Content-Type = %q, want %q", got, "application/json")
+				}
+
+				if got := r.Header.Get("User-Agent"); got != useragent.Default() {
+					t.Errorf("User-Agent = %q, want %q", got, useragent.Default())
 				}
 
 				w.WriteHeader(tt.statusCode)

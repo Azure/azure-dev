@@ -4,10 +4,101 @@
 package cmd
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+
+	"azureaiagent/internal/featureflags"
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/useragent"
 )
+
+func TestRemoteInvokeUserAgent(t *testing.T) {
+	t.Setenv(featureflags.A2A.EnvVar, "true")
+
+	for _, caller := range []struct{ name, environment string }{
+		{name: "default"},
+		{name: "Foundry skill", environment: "microsoft_foundry_skill"},
+	} {
+		t.Run(caller.name, func(t *testing.T) {
+			t.Setenv("AZURE_DEV_USER_AGENT", caller.environment)
+
+			for _, protocol := range []struct {
+				name        agent_api.AgentProtocol
+				contentType string
+				response    string
+			}{
+				{
+					name: agent_api.AgentProtocolA2A, contentType: "application/json",
+					response: `{"jsonrpc":"2.0","result":{"parts":[{"kind":"text","text":"ok"}]}}`,
+				},
+				{
+					name: agent_api.AgentProtocolResponses, contentType: "text/event-stream",
+					response: "event: response.completed\ndata: " +
+						`{"response":{"id":"resp_test","status":"completed","output":[]}}` + "\n\n",
+				},
+				{
+					name: agent_api.AgentProtocolInvocations, contentType: "application/json",
+					response: `{"result":"ok"}`,
+				},
+			} {
+				t.Run(string(protocol.name), func(t *testing.T) {
+					wantUserAgent := useragent.Default()
+					var calls atomic.Int32
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						calls.Add(1)
+						if got := r.Header.Get("User-Agent"); got != wantUserAgent {
+							t.Errorf("User-Agent = %q, want %q", got, wantUserAgent)
+						}
+						if got := r.Header.Get("x-ms-user-identity"); got != "test-user" {
+							t.Errorf("user identity = %q, want test-user", got)
+						}
+						if protocol.name != agent_api.AgentProtocolA2A {
+							if got := r.Header.Get("x-client-request-id"); got != "request-1" {
+								t.Errorf("client request ID = %q, want request-1", got)
+							}
+						}
+						w.Header().Set("Content-Type", protocol.contentType)
+						_, _ = io.WriteString(w, protocol.response)
+					}))
+					defer server.Close()
+
+					flags := &invokeFlags{
+						message: "hello", protocol: string(protocol.name), session: "sess_test",
+						userIdentityFlags: userIdentityFlags{userIdentity: "test-user"},
+					}
+					if protocol.name == agent_api.AgentProtocolResponses {
+						flags.conversation = "conv_test"
+					}
+					if protocol.name == agent_api.AgentProtocolA2A {
+						flags.a2aVersion = "0.3"
+					}
+					action := &InvokeAction{
+						flags: flags, credential: responseTestCredential{},
+						endpoint: &parsedAgentEndpoint{
+							ProjectEndpoint: server.URL, AgentName: "agent", APIVersion: "v1", Protocol: protocol.name,
+						},
+						resolvedRemoteContext: &remoteContext{
+							projectEndpoint: server.URL, name: "agent", apiVersion: "v1",
+						},
+					}
+					if protocol.name != agent_api.AgentProtocolA2A {
+						action.clientHeaders = http.Header{"X-Client-Request-Id": {"request-1"}}
+					}
+					_, err := captureStdout(t, func() error { return action.Run(t.Context()) })
+					if err != nil {
+						t.Fatalf("invoke: %v", err)
+					}
+					if got := calls.Load(); got != 1 {
+						t.Errorf("request count = %d, want 1", got)
+					}
+				})
+			}
+		})
+	}
+}
 
 func TestParseCustomHeaders(t *testing.T) {
 	t.Parallel()

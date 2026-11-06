@@ -168,7 +168,9 @@ func TestAnalyzeServiceFailureReachesTerminalAndReport(t *testing.T) {
 					fixture.Interactions[len(fixture.Interactions)-1].Response.Body = json.RawMessage(sample.body)
 					transport := &recordedTransport{fixture: fixture, binaryBody: []byte(recordedBinaryInput)}
 					root := newRecordedCommand(t, transport, "prebuilt-layout")
-					input := filepath.Join(testutil.TempDir(t), "invoice.pdf")
+					inputDir := filepath.Join(testutil.TempDir(t), "private")
+					require.NoError(t, os.Mkdir(inputDir, 0o700))
+					input := filepath.Join(inputDir, "invoice.pdf")
 					require.NoError(t, os.WriteFile(input, []byte(recordedBinaryInput), 0o600))
 					reportPath := filepath.Join(testutil.TempDir(t), "report.json")
 					args := append([]string{"analyze", input, "--report-file", reportPath,
@@ -188,14 +190,18 @@ func TestAnalyzeServiceFailureReachesTerminalAndReport(t *testing.T) {
 						assert.Contains(t, err.Error(), expected)
 					}
 					assert.NotContains(t, err.Error(), "successful result files were retained")
-					assert.NotContains(t, err.Error(), "private")
-					assert.NotContains(t, err.Error(), "password")
+					for _, secret := range []string{
+						"preview-user", "preview-password", "private-signature", "private-document", "private-target",
+					} {
+						assert.NotContains(t, err.Error(), secret)
+					}
 					// #nosec G304 -- Reads only this test's private temporary report.
 					body, readErr := os.ReadFile(reportPath)
 					require.NoError(t, readErr)
 					var saved struct {
 						Schema  string `json:"schema"`
 						Results []struct {
+							Input  string `json:"input"`
 							Status string `json:"status"`
 							Error  string `json:"error"`
 						} `json:"results"`
@@ -203,12 +209,16 @@ func TestAnalyzeServiceFailureReachesTerminalAndReport(t *testing.T) {
 					require.NoError(t, json.Unmarshal(body, &saved))
 					assert.Equal(t, "cu-cli/analyze-report/v1", saved.Schema)
 					require.Len(t, saved.Results, 1)
+					assert.Equal(t, input, saved.Results[0].Input)
 					assert.Equal(t, "failed", saved.Results[0].Status)
 					for _, expected := range sample.expected {
 						assert.Contains(t, saved.Results[0].Error, expected)
 					}
-					assert.NotContains(t, string(body), "private")
-					assert.NotContains(t, string(body), "password")
+					for _, secret := range []string{
+						"preview-user", "preview-password", "private-signature", "private-document", "private-target",
+					} {
+						assert.NotContains(t, saved.Results[0].Error, secret)
+					}
 				})
 			})
 		}

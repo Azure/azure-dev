@@ -170,10 +170,6 @@ func TestExtensionAction_Run_PropagatesTraceContext(t *testing.T) {
 }
 
 func TestExtensionAction_WorkflowStepCwdOverridesStickyParent(t *testing.T) {
-	originalArgs := os.Args
-	os.Args = []string{"azd", "--output=json"}
-	t.Cleanup(func() { os.Args = originalArgs })
-
 	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	parentDir := filepath.Join(tmpDir, "parent")
@@ -208,6 +204,7 @@ func TestExtensionAction_WorkflowStepCwdOverridesStickyParent(t *testing.T) {
 				Cwd:             parentDir,
 				NoPrompt:        true,
 				EnvironmentName: "parent-env",
+				PreParsedOutput: "json",
 			}
 			container := ioc.NewNestedContainer(nil)
 			ioc.RegisterInstance(container, opts)
@@ -299,12 +296,6 @@ func TestExtensionAction_Run_InterruptUnwindsAsCancellation(t *testing.T) {
 		extensionCancellationGracePeriod = originalGracePeriod
 	})
 
-	originalArgs := os.Args
-	os.Args = []string{"azd", "--output=json"}
-	t.Cleanup(func() {
-		os.Args = originalArgs
-	})
-
 	configDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configDir)
 	extensionPath := filepath.Join("extensions", "test-ext", "bin", "test-ext")
@@ -325,7 +316,7 @@ func TestExtensionAction_Run_InterruptUnwindsAsCancellation(t *testing.T) {
 		lazyEnv:          lazy.From[*environment.Environment](nil),
 		extensionManager: newExtensionActionTestManager(t, mockCtx, extension),
 		azdServer:        newExtensionActionTestServer(),
-		globalOptions:    &internal.GlobalCommandOptions{},
+		globalOptions:    &internal.GlobalCommandOptions{PreParsedOutput: "json"},
 		cmd: &cobra.Command{
 			Annotations: map[string]string{"extension.id": extension.Id},
 		},
@@ -366,12 +357,6 @@ func TestExtensionAction_Run_InterruptUnwindsAsCancellation(t *testing.T) {
 }
 
 func TestExtensionAction_Run_InterruptExitKeepsHandlerUntilSignalConsumed(t *testing.T) {
-	originalArgs := os.Args
-	os.Args = []string{"azd", "--output=json"}
-	t.Cleanup(func() {
-		os.Args = originalArgs
-	})
-
 	configDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configDir)
 	extensionPath := filepath.Join("extensions", "test-ext", "bin", "test-ext")
@@ -400,7 +385,7 @@ func TestExtensionAction_Run_InterruptExitKeepsHandlerUntilSignalConsumed(t *tes
 		lazyEnv:          lazy.From[*environment.Environment](nil),
 		extensionManager: newExtensionActionTestManager(t, mockCtx, extension),
 		azdServer:        newExtensionActionTestServer(),
-		globalOptions:    &internal.GlobalCommandOptions{},
+		globalOptions:    &internal.GlobalCommandOptions{PreParsedOutput: "json"},
 		cmd: &cobra.Command{
 			Annotations: map[string]string{"extension.id": extension.Id},
 		},
@@ -622,12 +607,6 @@ func TestExtensionInterruptController_FinishedHandlerClaimsOnlyInFlightSignal(t 
 }
 
 func TestExtensionAction_RunCommandLaunch(t *testing.T) {
-	originalArgs := os.Args
-	os.Args = []string{"azd", "--output=json"}
-	t.Cleanup(func() {
-		os.Args = originalArgs
-	})
-
 	configDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configDir)
 	t.Setenv("EXTENSION_TEST_PARENT", "parent-value")
@@ -696,6 +675,7 @@ func TestExtensionAction_RunCommandLaunch(t *testing.T) {
 		azdServer:        newExtensionActionTestServer(),
 		globalOptions: &internal.GlobalCommandOptions{
 			EnvironmentName: "test",
+			PreParsedOutput: "json",
 		},
 		cmd: &cobra.Command{
 			Annotations: map[string]string{"extension.id": extension.Id},

@@ -1101,7 +1101,7 @@
       "description": "Manage Search service from your terminal. (Preview)",
       "versions": [
         {
-          "version": "0.0.1-nightly.7024457",
+          "version": "0.0.1-nightly.7019854",
           "requiredAzdVersion": ">=1.33.0",
           "capabilities": [
             "custom-commands",
@@ -1113,7 +1113,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "23d699eeaa21c4592ca31cbea55fa5a10bc233950499e0820486a763d46ea42f"
+                "value": "17d23b75f6b1adc492b1035e1a5f095f6eb3c257a14d299760b7239d0c5b297c"
               },
               "entryPoint": "azure-ai-search-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-search/nightly/azure-ai-search-darwin-amd64.zip"
@@ -1121,7 +1121,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "5fb047b3af445eb2b4862d4420a660a299fbda09f64e6975478ad10133cef5a7"
+                "value": "6a6ef99715eba47ef80f545523130d5fc527d364708d6c7b1714cfce3e1c6a24"
               },
               "entryPoint": "azure-ai-search-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-search/nightly/azure-ai-search-darwin-arm64.zip"
@@ -1129,7 +1129,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "78007a880d00e6efc54abe29a5fd4c79e8a7d45f6ca1cff5bb34cd9555b9ed6f"
+                "value": "8cc0c7ed7d289d923d2a60c9d8631ee7c67c5994f13df3ddd8afe484943f58bf"
               },
               "entryPoint": "azure-ai-search-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-search/nightly/azure-ai-search-linux-amd64.tar.gz"
@@ -1137,7 +1137,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "1c4fbad8d6c036678290826ab4abc5ac5c9321afd6c9fb44d91a629e6ecfcc4b"
+                "value": "e844e254aa8329f23af2d3d38c0b084bb2ac772ff56684efb6eb65ca587ea2f0"
               },
               "entryPoint": "azure-ai-search-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-search/nightly/azure-ai-search-linux-arm64.tar.gz"
@@ -1145,7 +1145,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "77cab1242b857542744a6fba8b00781ad08803d770276cf3ced95083575a463e"
+                "value": "e3dc4a111dc6d87a8bf0165c750945a5ff40727d1f3aaac3229a7fa9544ae870"
               },
               "entryPoint": "azure-ai-search-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-search/nightly/azure-ai-search-windows-amd64.zip"
@@ -1153,7 +1153,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "1560299431b9562c0b5c22d6244ba28fa867a07c9f8def91e014d9df81d2cc26"
+                "value": "77fd7bf545be1dc6e9503af76a29be06317ab1e2ecdfb4718bb7ee342d257eda"
               },
               "entryPoint": "azure-ai-search-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-search/nightly/azure-ai-search-windows-arm64.zip"

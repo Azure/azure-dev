@@ -189,13 +189,23 @@ Log Analytics Reader role on the Application Insights resource; azd does not
 grant it.
 Discovery rejects conflicting destinations, protected names, ambiguous sharing,
 unreadable resources, and authentication or ingestion policies that would need
-to be weakened. ApiKey setup does not enable local authentication or configure
-private-network ingestion. A project with a `network:` block always skips
-automatic monitoring, whether `monitoring:` is omitted, empty, or names a
-component, so provisioning is never blocked; azd prints a warning when it
-skips monitoring. Set up monitoring for such
-projects outside azd. Other monitoring failures can fail normal provisioning; there
-is no second best-effort deployment or agent deployment repair hook.
+to be weakened. ApiKey setup does not enable local authentication. A new
+project with a `network:` block that uses your own agent subnet gets a private
+monitoring path that matches the Foundry samples: the component disables public
+ingestion and keeps public query enabled, and azd adds an Azure Monitor Private
+Link Scope (ingestion Private Only, query Open), an `azuremonitor` private
+endpoint, and the four Azure Monitor private DNS zones. Ingestion is private
+only; trace reads are not restricted to the private network. Right after a
+fresh deployment, private ingestion can return 403 for a while (observed up to
+about 20 minutes) before traces start to arrive. Live testing confirmed that
+Foundry service-side traces from a deployed prompt agent were read from inside
+the network without any post-deployment change.
+Unsupported private-network cases never block provisioning: managed egress,
+connecting an existing component, or a virtual network that already has an
+Azure Monitor private endpoint skip automatic monitoring and azd prints a
+warning. Set `monitoring.enabled: false` to opt out silently. Other monitoring
+failures can fail normal provisioning; there is no second best-effort
+deployment or agent deployment repair hook.
 
 Monitoring creates billable Azure resources and can store agent telemetry,
 including application-supplied content. Review your application's telemetry,

@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"azure.ai.projects/synthesis"
@@ -49,6 +51,36 @@ func monitoringParameter(source *templateSource, name string) (string, error) {
 	return strings.TrimSpace(text), nil
 }
 
+func monitoringPrivateNetwork(source *templateSource) bool {
+	enabled, present := templateParameter(source, "enableNetworkIsolation")
+	return present && enabled != false
+}
+
+// The conflict check is advisory when it cannot read the network: ARM remains
+// the authority, so a read failure warns and continues.
+func (p *FoundryProvisioningProvider) checkMonitorPrivateLinkConflict(
+	ctx context.Context,
+	source *templateSource,
+	resolver *synthesis.MonitoringResolver,
+	progress grpcbroker.ProgressFunc,
+) error {
+	vnetID, err := monitoringParameter(source, "vnetId")
+	if err != nil || vnetID == "" {
+		return err
+	}
+	group, err := monitoringParameter(source, "resourceGroupName")
+	if err != nil {
+		return err
+	}
+	err = resolver.CheckMonitorPrivateLinkConflict(ctx, vnetID, group)
+	if _, conflict := errors.AsType[*synthesis.MonitorPrivateLinkConflictError](err); conflict || err == nil {
+		return err
+	}
+	log.Printf("[warn] foundry provider: could not check for an existing Azure Monitor private endpoint: %v", err)
+	progress("Warning: could not check the virtual network for an existing Azure Monitor private endpoint")
+	return nil
+}
+
 // Both Preview and Deploy resolve the same graph. This is read-only and never
 // runs during State or agent deployment.
 func (p *FoundryProvisioningProvider) prepareMonitoring(
@@ -87,7 +119,9 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 	if err != nil || project.Parent == nil {
 		return fmt.Errorf("monitoring target must identify a Foundry project")
 	}
-	resolver := synthesis.MonitoringResolver{Credential: p.credential, ClientOptions: p.armClientOptions}
+	resolver := synthesis.MonitoringResolver{
+		Credential: p.credential, ClientOptions: p.armClientOptions, PrivateNetwork: monitoringPrivateNetwork(source),
+	}
 	projectResource, projectExists, err := resolver.Resource(ctx, project, "2025-04-01-preview")
 	if err != nil {
 		return err
@@ -138,22 +172,33 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 	if mode == "already-connected" {
 		return fmt.Errorf("the declared existing AppInsights connection was not found; no connection was created")
 	}
-	if enabled, present := templateParameter(source, "enableNetworkIsolation"); present && enabled != false {
-		// Private-network ingestion is unsupported; skip monitoring instead of failing provisioning.
-		source.parameters["monitoringMode"] = map[string]any{"value": "none"}
-		progress("Warning: " + synthesis.PrivateNetworkMonitoringWarning)
-		return nil
-	}
-	for _, resource := range []*armresources.GenericResource{account, projectResource} {
-		if resource == nil {
-			continue
+	if monitoringPrivateNetwork(source) {
+		if mode != "create" {
+			source.parameters["monitoringMode"] = map[string]any{"value": "none"}
+			progress("Warning: " + synthesis.PrivateNetworkMonitoringWarning)
+			return nil
 		}
-		properties, err := synthesis.MonitoringProperties(resource)
-		if err != nil {
+		if err := p.checkMonitorPrivateLinkConflict(ctx, source, &resolver, progress); err != nil {
+			if _, conflict := errors.AsType[*synthesis.MonitorPrivateLinkConflictError](err); conflict {
+				// Skip rather than fail so an existing private network keeps provisioning.
+				source.parameters["monitoringMode"] = map[string]any{"value": "none"}
+				progress("Warning: automatic monitoring was skipped. " + err.Error())
+				return nil
+			}
 			return err
 		}
-		if err := synthesis.MonitoringNetworkPolicy(properties); err != nil {
-			return err
+	} else {
+		for _, resource := range []*armresources.GenericResource{account, projectResource} {
+			if resource == nil {
+				continue
+			}
+			properties, err := synthesis.MonitoringProperties(resource)
+			if err != nil {
+				return err
+			}
+			if err := synthesis.MonitoringNetworkPolicy(properties); err != nil {
+				return err
+			}
 		}
 	}
 	if mode == "reuse-connect" {

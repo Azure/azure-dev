@@ -478,7 +478,7 @@ func TestMonitoringPreflightPrivateNetworkSkipsMonitoring(t *testing.T) {
 	fixture := monitoringCloudFixture{}
 	p := newMonitoringCloudFixture(t, &fixture)
 	p.synthResult = &synthesis.Result{MonitoringExplicit: true}
-	source := monitoringTestSource("create")
+	source := monitoringTestSource("reuse-connect")
 	source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
 	client, err := p.deploymentsClient(t.Context())
 	require.NoError(t, err)

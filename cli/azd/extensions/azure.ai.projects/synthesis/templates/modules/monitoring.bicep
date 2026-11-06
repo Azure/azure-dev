@@ -16,7 +16,16 @@ param existingConnectionName string = ''
 param environmentName string
 param resourceTokenSalt string = ''
 
+@description('When true, new monitoring resources accept ingestion and queries only through an Azure Monitor private link.')
+param privateNetwork bool = false
+param vnetId string = ''
+param vnetLocation string = ''
+param peSubnetId string = ''
+param dnsZonesResourceGroup string = ''
+param dnsZonesSubscription string = ''
+
 var createResources = mode == 'create'
+var publicNetworkAccess = privateNetwork ? 'Disabled' : 'Enabled'
 var token = uniqueString(projectResourceId, resourceGroup().id, resourceTokenSalt)
 var projectParts = split(projectResourceId, '/')
 var componentParts = split(applicationInsightsResourceId, '/')
@@ -48,6 +57,35 @@ resource component 'Microsoft.Insights/components@2020-02-02' = if (createResour
   properties: {
     Application_Type: 'web'
     WorkspaceResourceId: workspace!.id
+    publicNetworkAccessForIngestion: publicNetworkAccess
+    publicNetworkAccessForQuery: 'Enabled'
+  }
+}
+
+module privateLink 'monitor-private-link.bicep' = if (createResources && privateNetwork) {
+  name: 'foundry-monitoring-private-link'
+  params: {
+    location: vnetLocation
+    suffix: token
+    applicationInsightsResourceId: component!.id
+    logAnalyticsWorkspaceResourceId: workspace!.id
+    vnetId: vnetId
+    peSubnetId: peSubnetId
+    dnsZonesResourceGroup: dnsZonesResourceGroup
+    dnsZonesSubscription: dnsZonesSubscription
+  }
+}
+
+module resync 'monitoring-resync.bicep' = if (createResources && privateNetwork) {
+  name: 'foundry-monitoring-resync'
+  params: {
+    name: 'appi-${token}'
+    location: location
+    tags: monitoringTags
+    workspaceResourceId: workspace!.id
+    publicNetworkAccessForIngestion: publicNetworkAccess
+    publicNetworkAccessForQuery: 'Enabled'
+    privateLinkScopeResourceId: privateLink!.outputs.azureMonitorPrivateLinkScopeResourceId
   }
 }
 
@@ -56,7 +94,8 @@ resource existingComponent 'Microsoft.Insights/components@2020-02-02' existing =
   scope: resourceGroup(componentParts[2], componentParts[4])
 }
 
-var effectiveComponentId = mode == 'none' ? '' : (createResources ? component!.id : existingComponent!.id)
+// Routing through the resync output makes the connection wait for the second component update.
+var effectiveComponentId = mode == 'none' ? '' : (createResources ? (privateNetwork ? resync!.outputs.id : component!.id) : existingComponent!.id)
 
 module connection 'monitoring-connection.bicep' = if (createConnection && (mode == 'create' || mode == 'reuse-connect')) {
   name: 'foundry-monitoring-connection'

@@ -343,8 +343,10 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, err
 	}
 	var warnings []string
-	if mode, _ := monitoring["monitoringMode"].(string); netMode != NetworkModeNone && mode != "" && mode != "none" {
-		// Private-network ingestion is not supported yet; skip rather than fail provisioning.
+	monitoringMode, _ := monitoring["monitoringMode"].(string)
+	if netMode != NetworkModeNone && monitoringMode != "" && monitoringMode != "none" &&
+		!(netMode == NetworkModeByo && monitoringMode == "create") {
+		// This private-network setup is not supported yet; skip rather than fail provisioning.
 		monitoring = map[string]any{"monitoringMode": "none", "applicationInsightsResourceId": ""}
 		warnings = append(warnings, PrivateNetworkMonitoringWarning)
 	}
@@ -371,8 +373,9 @@ func Synthesize(in Input) (*Result, error) {
 }
 
 // PrivateNetworkMonitoringWarning is shown when automatic monitoring is skipped for a private network.
-const PrivateNetworkMonitoringWarning = "Automatic Application Insights monitoring is not supported for projects " +
-	"with a network: block yet, so monitoring was not configured. Agent traces will not be collected automatically."
+const PrivateNetworkMonitoringWarning = "Automatic Application Insights monitoring does not support this " +
+	"private-network configuration (managed egress, or connecting an existing component), so monitoring was not " +
+	"configured. Agent traces will not be collected automatically."
 
 // GreenfieldACRMode distinguishes selectors from deployed outputs.
 func GreenfieldACRMode(in Input) (string, error) {

@@ -212,6 +212,12 @@ module monitoring 'modules/monitoring.bicep' = if (monitoringMode != 'none') {
     existingConnectionName: monitoringConnectionName
     environmentName: contains(tags, 'azd-env-name') ? string(tags['azd-env-name']) : ''
     resourceTokenSalt: resourceTokenSalt
+    privateNetwork: enableNetworkIsolation
+    vnetId: resources.outputs.NETWORK_VNET_ID
+    vnetLocation: resources.outputs.NETWORK_VNET_LOCATION
+    peSubnetId: resources.outputs.NETWORK_PE_SUBNET_ID
+    dnsZonesResourceGroup: dnsZonesResourceGroup
+    dnsZonesSubscription: dnsZonesSubscription
   }
 }
 

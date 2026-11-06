@@ -142,13 +142,19 @@ func TestSynthesizeMonitoringPrivateNetwork(t *testing.T) {
 			"      peSubnet: {vnet: " + vnet + ", name: pe-subnet, prefix: 192.168.1.0/24}\n",
 	}
 	monitoring := []struct {
-		name     string
-		settings string
+		name        string
+		settings    string
+		wantMode    string
+		wantWarning bool
 	}{
-		{name: "default"},
-		{name: "empty block", settings: "    monitoring: {}\n"},
-		{name: "BYO component", settings: "    monitoring:\n      applicationInsightsResourceId: " + component + "\n"},
-		{name: "explicit opt out", settings: "    monitoring:\n      enabled: false\n"},
+		{name: "default", wantMode: "create"},
+		{name: "empty block", settings: "    monitoring: {}\n", wantMode: "create"},
+		{
+			name:     "BYO component",
+			settings: "    monitoring:\n      applicationInsightsResourceId: " + component + "\n",
+			wantMode: "none", wantWarning: true,
+		},
+		{name: "explicit opt out", settings: "    monitoring:\n      enabled: false\n", wantMode: "none"},
 	}
 	for networkName, network := range networks {
 		for _, tt := range monitoring {
@@ -159,13 +165,18 @@ func TestSynthesizeMonitoringPrivateNetwork(t *testing.T) {
 					ServiceName:  "foundry",
 				})
 				require.NoError(t, err)
-				assert.Equal(t, "none", result.Parameters["monitoringMode"])
-				assert.Equal(t, "", result.Parameters["applicationInsightsResourceId"])
-				if tt.name == "explicit opt out" {
-					assert.Empty(t, result.Warnings)
-				} else {
-					assert.Equal(t, []string{PrivateNetworkMonitoringWarning}, result.Warnings)
+				wantMode, wantWarning := tt.wantMode, tt.wantWarning
+				if networkName == "managed egress" && wantMode == "create" {
+					wantMode, wantWarning = "none", true
 				}
+				assert.Equal(t, wantMode, result.Parameters["monitoringMode"])
+				if wantWarning {
+					assert.Equal(t, []string{PrivateNetworkMonitoringWarning}, result.Warnings)
+					assert.Equal(t, "", result.Parameters["applicationInsightsResourceId"])
+				} else {
+					assert.Empty(t, result.Warnings)
+				}
+				assert.Equal(t, true, result.Parameters["enableNetworkIsolation"])
 			})
 		}
 	}

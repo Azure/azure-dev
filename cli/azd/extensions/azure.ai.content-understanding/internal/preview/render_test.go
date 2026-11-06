@@ -46,6 +46,82 @@ func TestMarkdownStylesAndHTMLTable(t *testing.T) {
 	assert.Contains(t, ansi.Strip(colored.String()), "Bold")
 }
 
+func TestPrettyPreservesDocumentStructure(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	const metadata = "---\nmimeType: application/pdf\npages: 1\n---\n"
+	const comment = "<!-- PageNumber=\"1\" -->"
+	source := metadata + "# Document title\n\nFirst source line.\nSecond source line.\n\n" + comment + "\n"
+	for _, color := range []bool{false, true} {
+		var result bytes.Buffer
+		require.NoError(t, Render(t.Context(), &result, source, 120, color))
+		plain := ansi.Strip(result.String())
+		assert.Contains(t, plain, metadata)
+		assert.Contains(t, plain, comment)
+		assert.Contains(t, plain, "# Document title")
+		assert.Contains(t, plain, "Document title")
+		assert.Regexp(t, `First source line\.\s*\n\s*Second source line\.`, plain)
+		assert.NotContains(t, plain, "Preview only")
+		assert.NotContains(t, plain, "URLs omit")
+		if color {
+			assert.Contains(t, result.String(), "\x1b[90;2m---")
+			assert.Contains(t, result.String(), "\x1b[90;2m"+comment)
+		}
+	}
+	commentWithTable := "<!-- PageFooter=\"<table> is an example\" -->"
+	plain := renderPreview(t, commentWithTable+"\n", 120)
+	assert.Contains(t, plain, commentWithTable)
+	assert.NotContains(t, plain, "HTML table not rendered:")
+}
+
+func TestH1UsesTheOtherHeadingStyles(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	const source = "# First\n\n## Second\n\n### Third\n\n#### Fourth\n"
+	for _, color := range []bool{false, true} {
+		var result bytes.Buffer
+		require.NoError(t, Render(t.Context(), &result, source, 120, color))
+		plain := ansi.Strip(result.String())
+		for _, heading := range []string{"# First", "## Second", "### Third", "#### Fourth"} {
+			assert.Contains(t, plain, heading)
+		}
+		if color {
+			for line := range strings.SplitSeq(result.String(), "\n") {
+				for _, title := range []string{"First", "Second", "Third", "Fourth"} {
+					if strings.Contains(line, title) {
+						assert.Contains(t, line, "\x1b[38;5;39;1m", "all headings use the shared heading color")
+						assert.NotContains(t, line, "\x1b[48;", "H1 has no dedicated background")
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestPrettyLayoutNoticesAndRowAnnotations(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	const table = "<table><tr><th>Name</th><th>Value</th></tr>" +
+		"<tr><td>First</td><td>RECORD0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ</td></tr>" +
+		"<tr><td>Second</td><td>RECORD9876543210ABCDEFGHIJKLMNOPQRSTUVWXYZ</td></tr></table>"
+	for _, width := range []int{20, 160} {
+		var result bytes.Buffer
+		require.NoError(t, Render(t.Context(), &result, table, width, true))
+		plain := ansi.Strip(result.String())
+		if width == 20 {
+			assert.Contains(t, result.String(), "\x1b[33m<!-- Table exceeds terminal width;")
+			assert.Contains(t, plain, "<!-- Row 1 -->")
+			assert.Contains(t, plain, "<!-- Row 2 -->")
+			assert.Regexp(t, "\x1b\\[90;2m[^\\n]*<!-- Row 1 -->", result.String())
+		} else {
+			assert.NotContains(t, plain, "Table exceeds terminal width")
+			assert.NotContains(t, plain, "<!-- Row")
+		}
+	}
+	const merged = "<table><tr><th>Name</th></tr><tr><td colspan=\"2\">Merged</td></tr></table>"
+	var result bytes.Buffer
+	require.NoError(t, Render(t.Context(), &result, merged, 120, true))
+	assert.Contains(t, result.String(), "\x1b[33m<!-- HTML table not rendered:")
+	assert.Contains(t, ansi.Strip(result.String()), merged)
+}
+
 func TestWideTableSelectsCardsAndKeepsValues(t *testing.T) {
 	const identifier = "RECORD0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	const link = "https://example.com/reports/2026/quarterly/network/event-log/details"
@@ -146,7 +222,7 @@ func TestUnsupportedTablesPreserveSource(t *testing.T) {
 	} {
 		t.Run(source, func(t *testing.T) {
 			result := renderPreview(t, source+"\n", 80)
-			assert.Contains(t, result, "[HTML table not rendered:")
+			assert.Contains(t, result, "<!-- HTML table not rendered:")
 			assert.Contains(t, result, source)
 		})
 	}
@@ -159,7 +235,7 @@ func TestCodeFenceAndNativeMarkdownTablesStayWithGlamour(t *testing.T) {
 	assert.Contains(t, result, "<table>")
 	assert.Contains(t, result, "Native")
 	assert.Contains(t, result, "42")
-	assert.NotContains(t, result, "[HTML table not rendered:")
+	assert.NotContains(t, result, "HTML table not rendered:")
 	assert.NotContains(t, result, "Row 1")
 }
 

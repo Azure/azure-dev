@@ -172,9 +172,15 @@ azd ai cu analyze invoice.pdf --pretty
 ```
 
 Pretty-printing formats Markdown for easier terminal reading and displays document
-metadata in separate code blocks. Reference-style links work even when their
+metadata with its original `---` delimiters. Source line breaks and page comments
+remain visible. Metadata, page comments, and generated row annotations use a dim
+color when color is enabled; H1 headings retain the `#` marker and use the same
+heading color as H2/H3/H4, without a separate highlight background.
+Reference-style links work even when their
 definitions are on the other side of a table. Simple HTML tables show all columns, switching
-to labeled cards when a table is too wide. When color is enabled, headings and
+to labeled cards when a table is too wide. A notice explains the switch, and
+generated labels such as `<!-- Row 1 -->` are clearly marked as comments.
+When color is enabled, layout notices are yellow, and headings and
 tables use distinct colors to make them easier to spot.
 
 Keep these limitations in mind:

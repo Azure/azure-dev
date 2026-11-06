@@ -41,7 +41,7 @@ func TestMultilingualPreview(t *testing.T) {
 						assert.Contains(t, plain, sample.greeting)
 						assert.Contains(t, plain, identifier)
 						assert.NotContains(t, plain, "\ufffd")
-						assert.NotContains(t, plain, "[HTML table not rendered:")
+						assert.NotContains(t, plain, "HTML table not rendered:")
 						if !color {
 							assert.NotContains(t, output.String(), "\x1b")
 						}

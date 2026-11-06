@@ -61,7 +61,7 @@ func TestAnalyzeRenderingIsOptIn(t *testing.T) {
 			assert.NotContains(t, stdout, "\x1b", "injected/redirected output must not contain ANSI")
 			assert.EqualValues(t, 1, fixture.client.calls.Load())
 			if len(flags) != 0 && flags[0] == "--pretty" {
-				assert.Contains(t, stdout, "Preview only")
+				assert.NotContains(t, stdout, "Preview only")
 				assert.Contains(t, stdout, "Important")
 				assert.Contains(t, stdout, "Example")
 				assert.NotContains(t, stdout, "<table>")
@@ -153,7 +153,8 @@ func TestAnalyzeRedirectedStdout(t *testing.T) {
 		assert.Empty(t, stderr.String())
 		assert.NotContains(t, string(result), "\x1b")
 		if render {
-			assert.Contains(t, string(result), "Preview only")
+			assert.NotContains(t, string(result), "Preview only")
+			assert.Contains(t, string(result), "Important")
 			assert.NotContains(t, string(result), "<table>")
 		} else {
 			var envelope struct{ Result json.RawMessage }
@@ -172,7 +173,8 @@ func TestAnalyzeRenderedPreviewKeepsReportContract(t *testing.T) {
 	stdout, stderr, err := fixture.execute(t.Context(), "https://example.com/doc.pdf", "--pretty", "--report-file", path)
 	require.NoError(t, err)
 	assert.Empty(t, stderr)
-	assert.Contains(t, stdout, "Preview only")
+	assert.NotContains(t, stdout, "Preview only")
+	assert.Contains(t, stdout, "Example")
 	report, err := os.ReadFile(path) // #nosec G304 -- Fixed filename inside the test's private temporary directory.
 	require.NoError(t, err)
 	var parsed map[string]any

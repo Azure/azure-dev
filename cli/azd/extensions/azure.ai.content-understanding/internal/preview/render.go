@@ -5,6 +5,7 @@ package preview
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/x/ansi"
 	terminalColor "github.com/fatih/color"
 	"github.com/yuin/goldmark"
@@ -31,6 +33,11 @@ type table struct {
 	rows    [][]string
 }
 
+type previewBlock struct {
+	start, end int
+	table      bool
+}
+
 // Render writes a human-readable preview without changing the source result.
 // Width controls layout selection, not a hard bound on retained long values.
 func Render(ctx context.Context, writer io.Writer, source string, width int, color bool) error {
@@ -42,21 +49,38 @@ func Render(ctx context.Context, writer io.Writer, source string, width int, col
 	}
 	color = color && os.Getenv("NO_COLOR") == ""
 	tableColor := terminalColor.New(terminalColor.FgCyan)
+	commentColor := terminalColor.New(terminalColor.FgHiBlack, terminalColor.Faint)
+	warningColor := terminalColor.New(terminalColor.FgYellow)
 	tableColor.EnableColor()
-	style := "ascii"
+	commentColor.EnableColor()
+	warningColor.EnableColor()
+	style := styles.ASCIIStyleConfig
 	if color {
-		style = "dark"
+		style = styles.DarkStyleConfig
 	}
-	renderer, err := glamour.NewTermRenderer(glamour.WithStandardStyle(style), glamour.WithWordWrap(width))
+	style.H1 = style.H2
+	style.H1.Prefix = "# "
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithStyles(style), glamour.WithWordWrap(width), glamour.WithPreservedNewLines(),
+	)
 	if err != nil {
 		return fmt.Errorf("initialize Markdown preview: %w", err)
 	}
 	source = safeText(source)
-	source, err = formatMetadata(source)
+	metadata, err := metadataBlocks(source)
 	if err != nil {
 		return err
 	}
 	data := []byte(source)
+	var blocks []previewBlock
+	for _, segment := range metadata {
+		blocks = append(blocks, previewBlock{start: segment.Start, end: segment.Stop})
+		for index := segment.Start; index < segment.Stop; index++ {
+			if data[index] != '\n' {
+				data[index] = ' '
+			}
+		}
+	}
 	document := goldmark.New(goldmark.WithExtensions(extension.GFM)).Parser().Parse(text.NewReader(data))
 	var references strings.Builder
 	err = ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -77,10 +101,6 @@ func Render(ctx context.Context, writer io.Writer, source string, width int, col
 	renderMarkdown := func(fragment string) (string, error) {
 		return renderer.Render(references.String() + fragment)
 	}
-	var result strings.Builder
-	result.WriteString("Preview only; original Markdown/HTML is unchanged. " +
-		"URLs omit credentials, queries and fragments.\n\n")
-	cursor := 0
 	err = ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if err := ctx.Err(); err != nil {
 			return ast.WalkStop, err
@@ -95,40 +115,78 @@ func Render(ctx context.Context, writer io.Writer, source string, width int, col
 			end = max(end, block.ClosureLine.Stop)
 		}
 		raw := source[start:end]
-		if !strings.Contains(strings.ToLower(raw), "<table") {
+		isComment := strings.HasPrefix(strings.TrimSpace(raw), "<!--")
+		isTable := !isComment && strings.Contains(strings.ToLower(raw), "<table")
+		if !isTable && !isComment {
 			return ast.WalkSkipChildren, nil
 		}
-		before, err := renderMarkdown(source[cursor:start])
+		blocks = append(blocks, previewBlock{start: start, end: end, table: isTable})
+		return ast.WalkSkipChildren, nil
+	})
+	if err != nil {
+		return err
+	}
+	slices.SortFunc(blocks, func(a, b previewBlock) int { return cmp.Compare(a.start, b.start) })
+	var result strings.Builder
+	cursor := 0
+	for _, block := range blocks {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		before, err := renderMarkdown(source[cursor:block.start])
 		if err != nil {
-			return ast.WalkStop, fmt.Errorf("render Markdown: %w", err)
+			return fmt.Errorf("render Markdown: %w", err)
 		}
 		result.WriteString(before)
+		raw := source[block.start:block.end]
+		if !block.table {
+			if color {
+				raw = commentColor.Sprint(raw)
+			}
+			result.WriteString(raw)
+			cursor = block.end
+			continue
+		}
 		parsed, reason, err := parseTable(raw)
 		if err != nil {
-			return ast.WalkStop, err
+			return err
 		}
 		if reason != "" {
-			fmt.Fprintf(&result, "\n[HTML table not rendered: %s; source shown with preview safety filtering]\n%s\n",
-				reason, safeText(html.UnescapeString(raw)))
+			notice := fmt.Sprintf("<!-- HTML table not rendered: %s; original HTML shown. -->", reason)
+			if color {
+				notice = warningColor.Sprint(notice)
+			}
+			fmt.Fprintf(&result, "\n%s\n%s\n", notice, raw)
 		} else {
-			rendered, err := renderTable(parsed, width)
+			rendered, cards, err := renderTable(parsed, width)
 			if err != nil {
-				return ast.WalkStop, err
+				return err
+			}
+			if cards {
+				notice := "<!-- Table exceeds terminal width; showing each row as a card. -->"
+				if color {
+					notice = warningColor.Sprint(notice)
+				}
+				result.WriteString(notice + "\n")
 			}
 			if parsed.caption != "" {
 				rendered = parsed.caption + "\n" + rendered
 			}
 			if color {
-				rendered = tableColor.Sprint(ansi.Strip(rendered))
+				var styled strings.Builder
+				for line := range strings.SplitAfterSeq(ansi.Strip(rendered), "\n") {
+					if cards && strings.HasPrefix(strings.TrimSpace(line), "<!-- Row ") {
+						styled.WriteString(commentColor.Sprint(line))
+					} else {
+						styled.WriteString(tableColor.Sprint(line))
+					}
+				}
+				rendered = styled.String()
 			}
 			result.WriteString(rendered)
 			result.WriteByte('\n')
 		}
-		cursor = end
-		return ast.WalkSkipChildren, nil
-	})
-	if err != nil {
-		return err
+		cursor = block.end
 	}
 	after, err := renderMarkdown(source[cursor:])
 	if err != nil {
@@ -252,7 +310,7 @@ func cellText(node *html.Node) (string, bool) {
 	return strings.Join(strings.Fields(safeText(value.String())), " "), true
 }
 
-func renderTable(value table, width int) (string, error) {
+func renderTable(value table, width int) (string, bool, error) {
 	columns := make([]output.PrettyColumn, len(value.headers))
 	for index, heading := range value.headers {
 		columns[index] = output.PrettyColumn{
@@ -268,7 +326,7 @@ func renderTable(value table, width int) (string, error) {
 	options := output.PrettyTableFormatterOptions{Columns: columns, FullThreshold: 1, CompactThreshold: 1}
 	var result bytes.Buffer
 	if err := formatter.Format(rows, &result, options); err != nil {
-		return "", fmt.Errorf("render table: %w", err)
+		return "", false, fmt.Errorf("render table: %w", err)
 	}
 	for line := range strings.SplitSeq(result.String(), "\n") {
 		if ansi.StringWidth(line) <= width {
@@ -280,13 +338,13 @@ func renderTable(value table, width int) (string, error) {
 		}
 		options.ForceCards = true
 		options.Columns = append([]output.PrettyColumn{{
-			Column: output.Column{Heading: heading, ValueTemplate: "Row {{index . 0}}"}, CardTitle: true,
+			Column: output.Column{Heading: heading, ValueTemplate: "<!-- Row {{index . 0}} -->"}, CardTitle: true,
 		}}, columns...)
 		result.Reset()
 		if err := formatter.Format(rows, &result, options); err != nil {
-			return "", fmt.Errorf("render cards: %w", err)
+			return "", false, fmt.Errorf("render cards: %w", err)
 		}
 		break
 	}
-	return result.String(), nil
+	return result.String(), options.ForceCards, nil
 }

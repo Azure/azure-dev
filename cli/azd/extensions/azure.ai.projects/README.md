@@ -207,10 +207,20 @@ modifying the component. The component must keep local authentication enabled.
 azd does not re-update a component it does not own; if ingestion returns 403
 after provisioning, touching the component (for example, updating a tag) can
 clear it.
-Unsupported private-network cases never block provisioning: managed egress, or
-a virtual network that already has an Azure Monitor private endpoint (azd does
-not adopt an existing scope or endpoint) skip automatic monitoring and azd
-prints a warning. Set `monitoring.enabled: false` to opt out silently. Other monitoring
+Unsupported private-network cases never block provisioning: managed egress,
+shared private DNS zones (`network.dns`), a virtual network that already has an
+Azure Monitor private endpoint (azd does not adopt an existing scope or
+endpoint), or a network azd cannot inspect skip automatic monitoring and azd
+prints a warning (also on stderr). Ejected or hand-authored Bicep that bypasses
+azd's checks never creates the private path unless
+`monitoringPrivateLinkApproved` is set. Set `monitoring.enabled: false` to opt
+out silently.
+
+The Private Link Scope changes Azure Monitor routing for the whole virtual
+network, not only this project. With ingestion Private Only, workloads in the
+network (or in networks sharing its DNS zones) can no longer send telemetry to
+Application Insights or Log Analytics resources that are not in the scope. Check
+for such workloads first, and opt out with `monitoring.enabled: false`. Other monitoring
 failures can fail normal provisioning; there is no second best-effort
 deployment or agent deployment repair hook.
 

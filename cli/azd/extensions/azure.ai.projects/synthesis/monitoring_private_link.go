@@ -8,13 +8,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 )
 
-// ownedPrivateLinkScopePrefix is the name prefix monitor-private-link.bicep and
-// the Terraform equivalent give the Azure Monitor Private Link Scope they create.
-const ownedPrivateLinkScopePrefix = "ampls-"
+// OwnedPrivateLinkScopeOutput is the deployment output carrying the exact
+// Azure Monitor Private Link Scope ID a previous deployment of this project created.
+const OwnedPrivateLinkScopeOutput = "AZD_MONITORING_PRIVATE_LINK_SCOPE_ID"
 
 // MonitorPrivateLinkConflictError reports an Azure Monitor private endpoint that
 // already serves the VNet. A VNet can use only one Azure Monitor Private Link
@@ -32,11 +31,12 @@ func (e *MonitorPrivateLinkConflictError) Error() string {
 }
 
 // CheckMonitorPrivateLinkConflict looks for an existing azuremonitor private
-// endpoint on the VNet that this deployment does not own. It is read-only. A
+// endpoint on the VNet other than the exact scope (ownedScopeID) a previous
+// deployment of this project created. It is read-only. A
 // *MonitorPrivateLinkConflictError means a conflict; any other error means the
-// check could not complete and ARM remains the authority.
+// check could not complete.
 func (p *MonitoringResolver) CheckMonitorPrivateLinkConflict(
-	ctx context.Context, vnetID, ownedResourceGroup string,
+	ctx context.Context, vnetID, ownedScopeID string,
 ) error {
 	id, err := MonitoringResourceID(vnetID, "Microsoft.Network/virtualNetworks")
 	if err != nil {
@@ -62,9 +62,7 @@ func (p *MonitoringResolver) CheckMonitorPrivateLinkConflict(
 		if !isMonitor {
 			continue
 		}
-		if scope, err := arm.ParseResourceID(scopeID); err == nil &&
-			strings.EqualFold(scope.ResourceGroupName, ownedResourceGroup) &&
-			strings.HasPrefix(strings.ToLower(scope.Name), ownedPrivateLinkScopePrefix) {
+		if ownedScopeID != "" && strings.EqualFold(scopeID, ownedScopeID) {
 			continue
 		}
 		return &MonitorPrivateLinkConflictError{PrivateEndpointID: endpointID}

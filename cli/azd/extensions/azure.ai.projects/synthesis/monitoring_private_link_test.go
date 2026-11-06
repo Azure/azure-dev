@@ -88,15 +88,39 @@ func TestMonitoringPrivateLinkScopesExistingComponent(t *testing.T) {
 	assert.NotContains(t, monitoring, "resource existingComponent 'Microsoft.Insights/components@2020-02-02' = ")
 }
 
+func TestPrivateMonitoringTemplateGates(t *testing.T) {
+	t.Parallel()
+	read := func(name string) string {
+		raw, err := templatesFS.ReadFile(name)
+		require.NoError(t, err)
+		return string(raw)
+	}
+	main := read("templates/main.bicep")
+	// Without azd's verified-network approval, or on managed egress, the private path is never created.
+	assert.Contains(t, main, "param monitoringPrivateLinkApproved bool = false")
+	assert.Contains(t, main, "enableNetworkIsolation && (useManagedEgress || !monitoringPrivateLinkApproved)")
+	assert.Contains(t, main, "module monitoring 'modules/monitoring.bicep' = if (effectiveMonitoringMode != 'none')")
+	assert.Contains(t, main, "output AZD_MONITORING_PRIVATE_LINK_SCOPE_ID")
+	// The workspace closes public ingestion like the component does.
+	monitoring := read("templates/modules/monitoring.bicep")
+	workspace := monitoring[strings.Index(monitoring, "resource workspace"):strings.Index(monitoring, "resource component")]
+	assert.Contains(t, workspace, "publicNetworkAccessForIngestion: publicNetworkAccess")
+	assert.Contains(t, workspace, "publicNetworkAccessForQuery: 'Enabled'")
+}
+
 func TestCheckMonitorPrivateLinkConflict(t *testing.T) {
 	t.Parallel()
 	const ownedScope = "/subscriptions/" + testSub + "/resourceGroups/rg/providers/Microsoft.Insights/privateLinkScopes/ampls-abc"
 	const foreignScope = "/subscriptions/" + testSub + "/resourceGroups/shared/providers/Microsoft.Insights/privateLinkScopes/corp"
 	const sameGroupForeign = "/subscriptions/" + testSub + "/resourceGroups/rg/providers/Microsoft.Insights/privateLinkScopes/corp"
 
+	const lookalikeScope = "/subscriptions/" + testSub + "/resourceGroups/rg/providers/Microsoft.Insights/privateLinkScopes/ampls-other"
+	const otherSubScope = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Insights/privateLinkScopes/ampls-abc"
+
 	tests := []struct {
 		name     string
 		reader   *fakeReader
+		owned    string
 		conflict bool
 		err      bool
 	}{
@@ -105,9 +129,17 @@ func TestCheckMonitorPrivateLinkConflict(t *testing.T) {
 		}}},
 		{name: "virtual network does not exist yet", reader: &fakeReader{}},
 		{name: "unrelated private endpoint", reader: privateLinkReader("blob", foreignScope)},
-		{name: "owned scope from a previous run", reader: privateLinkReader("azuremonitor", ownedScope)},
-		{name: "foreign scope", reader: privateLinkReader("azuremonitor", foreignScope), conflict: true},
-		{name: "foreign scope in the deployment group", reader: privateLinkReader("azuremonitor", sameGroupForeign), conflict: true},
+		{name: "owned scope from a previous run", reader: privateLinkReader("azuremonitor", ownedScope), owned: ownedScope},
+		{name: "owned scope matched case-insensitively", reader: privateLinkReader("azuremonitor", ownedScope),
+			owned: strings.ToUpper(ownedScope)},
+		{name: "scope not yet created by this project", reader: privateLinkReader("azuremonitor", ownedScope), conflict: true},
+		{name: "ampls-prefixed scope of another project", reader: privateLinkReader("azuremonitor", lookalikeScope),
+			owned: ownedScope, conflict: true},
+		{name: "same scope name in another subscription", reader: privateLinkReader("azuremonitor", otherSubScope),
+			owned: ownedScope, conflict: true},
+		{name: "foreign scope", reader: privateLinkReader("azuremonitor", foreignScope), owned: ownedScope, conflict: true},
+		{name: "foreign scope in the deployment group", reader: privateLinkReader("azuremonitor", sameGroupForeign),
+			owned: ownedScope, conflict: true},
 		{name: "read failure", reader: &fakeReader{resourceErr: errors.New("boom")}, err: true},
 		{name: "private endpoint deleted since listing", reader: func() *fakeReader {
 			r := privateLinkReader("azuremonitor", foreignScope)
@@ -123,7 +155,7 @@ func TestCheckMonitorPrivateLinkConflict(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err := (&MonitoringResolver{Reader: tt.reader}).CheckMonitorPrivateLinkConflict(t.Context(), testVNetID, "rg")
+			err := (&MonitoringResolver{Reader: tt.reader}).CheckMonitorPrivateLinkConflict(t.Context(), testVNetID, tt.owned)
 			var conflict *MonitorPrivateLinkConflictError
 			switch {
 			case tt.conflict:

@@ -515,6 +515,44 @@ func TestMonitoringPreflightPrivateNetworkConnectsExistingComponent(t *testing.T
 	}
 }
 
+func TestMonitoringPreflightPrivateNetworkGates(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		extra    map[string]any
+		declared bool
+		wantMode string
+		approved bool
+	}{
+		{name: "managed egress is skipped", extra: map[string]any{"useManagedEgress": true}, wantMode: "none"},
+		{name: "shared DNS zones are skipped", extra: map[string]any{"dnsZonesResourceGroup": "dns-rg"}, wantMode: "none"},
+		{name: "verified network is approved", declared: true, wantMode: "reuse-connect", approved: true},
+		{name: "template without the gate is left alone", wantMode: "reuse-connect"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := monitoringCloudFixture{}
+			p := newMonitoringCloudFixture(t, &fixture)
+			p.synthResult = &synthesis.Result{MonitoringExplicit: true}
+			source := monitoringTestSource("reuse-connect")
+			source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+			for name, value := range tt.extra {
+				source.parameters[name] = map[string]any{"value": value}
+			}
+			if tt.declared {
+				source.armTemplate["parameters"] = map[string]any{"monitoringPrivateLinkApproved": map[string]any{}}
+			}
+			client, err := p.deploymentsClient(t.Context())
+			require.NoError(t, err)
+			require.NoError(t, p.prepareMonitoring(t.Context(), source, client, func(string) {}))
+			assert.Equal(t, tt.wantMode, source.parameters["monitoringMode"].(map[string]any)["value"])
+			approved, present := source.parameters["monitoringPrivateLinkApproved"].(map[string]any)
+			assert.Equal(t, tt.approved, present && approved["value"] == true)
+		})
+	}
+}
+
 func TestMonitoringPreflightOwnedExistingProjectRetainsCreateGraph(t *testing.T) {
 	t.Parallel()
 	source := monitoringTestSource("create")

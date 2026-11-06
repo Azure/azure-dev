@@ -46,6 +46,8 @@ resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (c
       name: 'PerGB2018'
     }
     retentionInDays: 30
+    publicNetworkAccessForIngestion: publicNetworkAccess
+    publicNetworkAccessForQuery: 'Enabled'
   }
 }
 
@@ -108,6 +110,7 @@ module connection 'monitoring-connection.bicep' = if (createConnection && (mode 
   }
 }
 
+output privateLinkScopeResourceId string = (mode == 'create' || mode == 'reuse-connect') && privateNetwork ? privateLink!.outputs.azureMonitorPrivateLinkScopeResourceId : ''
 output applicationInsightsResourceId string = effectiveComponentId
 output applicationInsightsAppId string = mode == 'none' ? '' : (createResources ? component!.properties.AppId : existingComponent!.properties.AppId)
 output logAnalyticsWorkspaceResourceId string = mode == 'none' ? '' : (createResources ? component!.properties.WorkspaceResourceId : existingComponent!.properties.WorkspaceResourceId)

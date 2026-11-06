@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "8339999164769765153"
+      "templateHash": "4222368514653268958"
     }
   },
   "definitions": {
@@ -803,7 +803,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "6075082788325261439"
+              "templateHash": "2583294824551726700"
             }
           },
           "parameters": {
@@ -894,7 +894,9 @@
                 "sku": {
                   "name": "PerGB2018"
                 },
-                "retentionInDays": 30
+                "retentionInDays": 30,
+                "publicNetworkAccessForIngestion": "[variables('publicNetworkAccess')]",
+                "publicNetworkAccessForQuery": "Enabled"
               }
             },
             {
@@ -1365,6 +1367,10 @@
             }
           ],
           "outputs": {
+            "privateLinkScopeResourceId": {
+              "type": "string",
+              "value": "[if(and(or(equals(parameters('mode'), 'create'), equals(parameters('mode'), 'reuse-connect')), parameters('privateNetwork')), reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link'), '2025-04-01').outputs.azureMonitorPrivateLinkScopeResourceId.value, '')]"
+            },
             "applicationInsightsResourceId": {
               "type": "string",
               "value": "[if(equals(parameters('mode'), 'none'), '', if(variables('createResources'), if(parameters('privateNetwork'), reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-resync'), '2025-04-01').outputs.id.value, resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])))]"

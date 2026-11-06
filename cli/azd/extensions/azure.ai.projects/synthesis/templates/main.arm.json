@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "1030136728286432684"
+      "templateHash": "3000994132333516536"
     }
   },
   "definitions": {
@@ -326,7 +326,18 @@
       "metadata": {
         "description": "Subscription holding existing private DNS zones. Empty defaults to this subscription."
       }
+    },
+    "monitoringPrivateLinkApproved": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Set by azd after it verified the VNet has no conflicting Azure Monitor private endpoint. A network-isolated deployment without it never creates the private monitoring path."
+      }
     }
+  },
+  "variables": {
+    "privateMonitoringBlocked": "[and(and(parameters('enableNetworkIsolation'), or(parameters('useManagedEgress'), not(parameters('monitoringPrivateLinkApproved')))), or(equals(parameters('monitoringMode'), 'create'), equals(parameters('monitoringMode'), 'reuse-connect')))]",
+    "effectiveMonitoringMode": "[if(variables('privateMonitoringBlocked'), 'none', parameters('monitoringMode'))]"
   },
   "resources": {
     "resourceGroup": {
@@ -2460,7 +2471,7 @@
       ]
     },
     "monitoring": {
-      "condition": "[not(equals(parameters('monitoringMode'), 'none'))]",
+      "condition": "[not(equals(variables('effectiveMonitoringMode'), 'none'))]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "foundry-monitoring",
@@ -2472,7 +2483,7 @@
         "mode": "Incremental",
         "parameters": {
           "mode": {
-            "value": "[parameters('monitoringMode')]"
+            "value": "[variables('effectiveMonitoringMode')]"
           },
           "location": {
             "value": "[parameters('location')]"
@@ -2522,7 +2533,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "6075082788325261439"
+              "templateHash": "2583294824551726700"
             }
           },
           "parameters": {
@@ -2613,7 +2624,9 @@
                 "sku": {
                   "name": "PerGB2018"
                 },
-                "retentionInDays": 30
+                "retentionInDays": 30,
+                "publicNetworkAccessForIngestion": "[variables('publicNetworkAccess')]",
+                "publicNetworkAccessForQuery": "Enabled"
               }
             },
             {
@@ -3084,6 +3097,10 @@
             }
           ],
           "outputs": {
+            "privateLinkScopeResourceId": {
+              "type": "string",
+              "value": "[if(and(or(equals(parameters('mode'), 'create'), equals(parameters('mode'), 'reuse-connect')), parameters('privateNetwork')), reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link'), '2025-04-01').outputs.azureMonitorPrivateLinkScopeResourceId.value, '')]"
+            },
             "applicationInsightsResourceId": {
               "type": "string",
               "value": "[if(equals(parameters('mode'), 'none'), '', if(variables('createResources'), if(parameters('privateNetwork'), reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-resync'), '2025-04-01').outputs.id.value, resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])))]"
@@ -3160,23 +3177,27 @@
     },
     "AZURE_APPLICATION_INSIGHTS_RESOURCE_ID": {
       "type": "string",
-      "value": "[if(not(equals(parameters('monitoringMode'), 'none')), reference('monitoring').outputs.applicationInsightsResourceId.value, '')]"
+      "value": "[if(not(equals(variables('effectiveMonitoringMode'), 'none')), reference('monitoring').outputs.applicationInsightsResourceId.value, '')]"
     },
     "AZURE_APPLICATION_INSIGHTS_APP_ID": {
       "type": "string",
-      "value": "[if(not(equals(parameters('monitoringMode'), 'none')), reference('monitoring').outputs.applicationInsightsAppId.value, '')]"
+      "value": "[if(not(equals(variables('effectiveMonitoringMode'), 'none')), reference('monitoring').outputs.applicationInsightsAppId.value, '')]"
     },
     "AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID": {
       "type": "string",
-      "value": "[if(not(equals(parameters('monitoringMode'), 'none')), reference('monitoring').outputs.logAnalyticsWorkspaceResourceId.value, '')]"
+      "value": "[if(not(equals(variables('effectiveMonitoringMode'), 'none')), reference('monitoring').outputs.logAnalyticsWorkspaceResourceId.value, '')]"
     },
     "AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME": {
       "type": "string",
-      "value": "[if(not(equals(parameters('monitoringMode'), 'none')), reference('monitoring').outputs.projectConnectionName.value, '')]"
+      "value": "[if(not(equals(variables('effectiveMonitoringMode'), 'none')), reference('monitoring').outputs.projectConnectionName.value, '')]"
     },
     "AZD_FOUNDRY_MONITORING_MODE": {
       "type": "string",
-      "value": "[parameters('monitoringMode')]"
+      "value": "[variables('effectiveMonitoringMode')]"
+    },
+    "AZD_MONITORING_PRIVATE_LINK_SCOPE_ID": {
+      "type": "string",
+      "value": "[if(not(equals(variables('effectiveMonitoringMode'), 'none')), reference('monitoring').outputs.privateLinkScopeResourceId.value, '')]"
     }
   }
 }

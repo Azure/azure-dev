@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"azure.ai.projects/synthesis"
@@ -56,29 +57,62 @@ func monitoringPrivateNetwork(source *templateSource) bool {
 	return present && enabled != false
 }
 
-// The conflict check is advisory when it cannot read the network: ARM remains
-// the authority, so a read failure warns and continues.
-func (p *FoundryProvisioningProvider) checkMonitorPrivateLinkConflict(
+// A private-link graph is only deployed after the VNet is proven free of other
+// Azure Monitor private endpoints. Anything inconclusive skips monitoring,
+// because ARM would accept a second scope and rewrite the shared Azure Monitor DNS.
+func (p *FoundryProvisioningProvider) privateMonitoringSkipReason(
 	ctx context.Context,
 	source *templateSource,
 	resolver *synthesis.MonitoringResolver,
-	progress grpcbroker.ProgressFunc,
-) error {
+	previous *monitoringTargetBinding,
+) string {
+	if managed, _ := templateParameter(source, "useManagedEgress"); managed == true {
+		return "managed egress cannot reach a private Azure Monitor endpoint in your virtual network"
+	}
+	if zones, _ := templateParameter(source, "dnsZonesResourceGroup"); zones != nil && zones != "" {
+		return "shared private DNS zones are configured and azd cannot verify they are safe to bind to a new Azure Monitor scope"
+	}
 	vnetID, err := monitoringParameter(source, "vnetId")
-	if err != nil || vnetID == "" {
-		return err
-	}
-	group, err := monitoringParameter(source, "resourceGroupName")
 	if err != nil {
-		return err
+		return err.Error()
 	}
-	err = resolver.CheckMonitorPrivateLinkConflict(ctx, vnetID, group)
-	if _, conflict := errors.AsType[*synthesis.MonitorPrivateLinkConflictError](err); conflict || err == nil {
-		return err
+	if vnetID == "" {
+		return ""
+	}
+	ownedScopeID := ""
+	if previous != nil {
+		if output := armOutputsToProto(previous.outputs)[synthesis.OwnedPrivateLinkScopeOutput]; output != nil {
+			ownedScopeID = output.Value
+		}
+	}
+	err = resolver.CheckMonitorPrivateLinkConflict(ctx, vnetID, ownedScopeID)
+	if err == nil {
+		return ""
+	}
+	if _, conflict := errors.AsType[*synthesis.MonitorPrivateLinkConflictError](err); conflict {
+		return err.Error()
 	}
 	log.Printf("[warn] foundry provider: could not check for an existing Azure Monitor private endpoint: %v", err)
-	progress("Warning: could not check the virtual network for an existing Azure Monitor private endpoint")
-	return nil
+	return "the virtual network could not be checked for an existing Azure Monitor private endpoint: " + err.Error()
+}
+
+func skipPrivateMonitoring(source *templateSource, progress grpcbroker.ProgressFunc, reason string) {
+	source.parameters["monitoringMode"] = map[string]any{"value": "none"}
+	monitoringWarning(progress, "automatic monitoring was skipped. "+reason)
+}
+
+// Progress is a replaceable spinner message, so a skip is also written to stderr.
+func monitoringWarning(progress grpcbroker.ProgressFunc, message string) {
+	progress("Warning: " + message)
+	fmt.Fprintln(os.Stderr, "WARNING: "+message)
+}
+
+// Templates without the gate parameter (older or hand-authored) are left untouched.
+func approvePrivateMonitoring(source *templateSource) {
+	parameters, _ := source.armTemplate["parameters"].(map[string]any)
+	if _, declared := parameters["monitoringPrivateLinkApproved"]; declared {
+		source.parameters["monitoringPrivateLinkApproved"] = map[string]any{"value": true}
+	}
 }
 
 // Both Preview and Deploy resolve the same graph. This is read-only and never
@@ -91,7 +125,7 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 ) error {
 	if p.synthResult != nil {
 		for _, warning := range p.synthResult.Warnings {
-			progress("Warning: " + warning)
+			monitoringWarning(progress, warning)
 		}
 	}
 	mode, err := monitoringParameter(source, "monitoringMode")
@@ -103,6 +137,12 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 	}
 	if mode != "create" && mode != "reuse-connect" && mode != "already-connected" {
 		return fmt.Errorf("monitoringMode must be none, create, reuse-connect, or already-connected")
+	}
+	if managed, _ := templateParameter(source, "useManagedEgress"); managed == true && monitoringPrivateNetwork(source) &&
+		(mode == "create" || mode == "reuse-connect") {
+		skipPrivateMonitoring(source, progress,
+			"managed egress cannot reach a private Azure Monitor endpoint in your virtual network")
+		return nil
 	}
 	componentID, err := monitoringParameter(source, "applicationInsightsResourceId")
 	if err != nil {
@@ -153,6 +193,13 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 			if err := p.validateMonitoringCreateGraph(ctx, source, previous, connection); err != nil {
 				return err
 			}
+			if monitoringPrivateNetwork(source) {
+				if reason := p.privateMonitoringSkipReason(ctx, source, &resolver, previous); reason != "" {
+					skipPrivateMonitoring(source, progress, reason)
+					return nil
+				}
+				approvePrivateMonitoring(source)
+			}
 		} else if mode == "create" && source.mode != templateModeEmbedded {
 			return fmt.Errorf("a compatible AppInsights connection already exists; preserve it with " +
 				"monitoringMode already-connected and its applicationInsightsResourceId in the authored infrastructure")
@@ -173,14 +220,10 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 		return fmt.Errorf("the declared existing AppInsights connection was not found; no connection was created")
 	}
 	if monitoringPrivateNetwork(source) {
-		if err := p.checkMonitorPrivateLinkConflict(ctx, source, &resolver, progress); err != nil {
-			if _, conflict := errors.AsType[*synthesis.MonitorPrivateLinkConflictError](err); conflict {
-				// Skip rather than fail so an existing private network keeps provisioning.
-				source.parameters["monitoringMode"] = map[string]any{"value": "none"}
-				progress("Warning: automatic monitoring was skipped. " + err.Error())
-				return nil
-			}
-			return err
+		if reason := p.privateMonitoringSkipReason(ctx, source, &resolver, previous); reason != "" {
+			// Skip rather than fail so an existing private network keeps provisioning.
+			skipPrivateMonitoring(source, progress, reason)
+			return nil
 		}
 	} else {
 		for _, resource := range []*armresources.GenericResource{account, projectResource} {
@@ -205,6 +248,9 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 		if err := p.validateMonitoringCreateGraph(ctx, source, previous, nil); err != nil {
 			return err
 		}
+	}
+	if monitoringPrivateNetwork(source) && (mode == "create" || mode == "reuse-connect") {
+		approvePrivateMonitoring(source)
 	}
 	return nil
 }

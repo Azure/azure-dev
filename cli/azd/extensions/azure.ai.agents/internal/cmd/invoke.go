@@ -25,6 +25,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/useragent"
 	"azureaiagent/internal/telemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -1822,6 +1823,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	applyCustomHeaders(req, a.clientHeaders)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
+	req.Header.Set("User-Agent", useragent.Default())
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	latency := newInvokeLatency(req, a.flags.debugLatency, a.flags.longRunning)
 	if raw {
@@ -2114,6 +2116,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	applyCustomHeaders(req, a.clientHeaders)
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
+	req.Header.Set("User-Agent", useragent.Default())
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	latency := newInvokeLatency(req, a.flags.debugLatency, false)
 	if raw {
@@ -2200,6 +2203,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		}
 		specRequest := &http.Request{Header: make(http.Header)}
 		applyCustomHeaders(specRequest, a.clientHeaders)
+		specRequest.Header.Set("User-Agent", useragent.Default())
 		applyRemoteUserIdentityHeader(specRequest, &a.flags.userIdentityFlags)
 		_, _, probeErr := fetchOpenAPISpec(
 			ctx,
@@ -2516,6 +2520,7 @@ func handleInvocationLRO(
 		}
 		if bearerToken != "" {
 			req.Header.Set("Authorization", "Bearer "+bearerToken)
+			req.Header.Set("User-Agent", useragent.Default())
 		}
 		options.ApplyHeaders(req.Header)
 		if raw {
@@ -2638,6 +2643,7 @@ func createConversation(
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	req.Header.Set("User-Agent", useragent.Default())
 	options.ApplyHeaders(req.Header)
 
 	client := &http.Client{Timeout: 30 * time.Second}

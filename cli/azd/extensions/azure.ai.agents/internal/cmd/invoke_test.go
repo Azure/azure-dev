@@ -1149,6 +1149,61 @@ func TestResolveRemoteContextMatchesDeployedNameToService(t *testing.T) {
 	}
 }
 
+func TestResolveRemoteContextValidatesProjectEndpoint(t *testing.T) {
+	const valid = "https://account.services.ai.azure.com/api/projects/project"
+	for _, tt := range []struct {
+		name, protocol, endpoint string
+		explicit, valid          bool
+	}{
+		{name: "automatic selection", endpoint: "https://attacker.example"},
+		{name: "explicit Responses", protocol: "responses", endpoint: "https://attacker.example"},
+		{name: "explicit Invocations", protocol: "invocations", endpoint: "https://attacker.example"},
+		{name: "explicit A2A", protocol: "a2a", endpoint: "https://attacker.example"},
+		{name: "non HTTPS endpoint", endpoint: "http://account.services.ai.azure.com/api/projects/project"},
+		{name: "spoofed host suffix", endpoint: "https://account.services.ai.azure.com.attacker.example"},
+		{name: "normalize service endpoint", endpoint: " HTTPS://ACCOUNT.services.ai.azure.com/api/projects/project/// ",
+			valid: true},
+		{name: "explicit endpoint is also validated", endpoint: "https://attacker.example", explicit: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"target": {Name: "target", Host: AiAgentHost},
+				},
+			}}
+			envServer := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "test"},
+				values: map[string]map[string]string{"test": {
+					"AGENT_TARGET_NAME":                       "agent",
+					"AGENT_TARGET_PROJECT_ENDPOINT":           tt.endpoint,
+					"AGENT_TARGET_RESPONSES_ENDPOINT":         valid + "/responses",
+					"AGENT_TARGET_PROTOCOL_ENDPOINTS_VERSION": "1",
+				}},
+			}
+			t.Setenv("AZD_SERVER", newInvokeRemoteContextTestAzdServer(t, projectServer, envServer))
+			t.Setenv("FOUNDRY_PROJECT_ENDPOINT", valid)
+			action := &InvokeAction{
+				flags: &invokeFlags{name: "target", protocol: tt.protocol}, noPrompt: true,
+			}
+			if tt.explicit {
+				action.endpoint = &parsedAgentEndpoint{AgentName: "agent", ProjectEndpoint: tt.endpoint}
+			}
+			rc, err := action.resolveRemoteContext(t.Context())
+			if !tt.valid {
+				if rc != nil && rc.azdClient != nil {
+					rc.azdClient.Close()
+				}
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			defer rc.azdClient.Close()
+			require.Equal(t, valid, rc.projectEndpoint)
+		})
+	}
+}
+
 func newInvokeRemoteContextTestAzdServer(
 	t *testing.T,
 	projectServer azdext.ProjectServiceServer,
@@ -1553,6 +1608,34 @@ func TestRemoteProtocolUsesLiveConfiguration(t *testing.T) {
 	}
 }
 
+func TestRemoteProtocolDisabledConfigurationSuggestsEnablement(t *testing.T) {
+	for _, endpoint := range []string{
+		`{"protocol_configuration":{}}`,
+		`{"protocols":[]}`,
+		`{"protocol_configuration":{"mcp":{}}}`,
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			mockInvokeMetadata(t, http.StatusOK, `{"name":"agent","agent_endpoint":`+endpoint+`}`)
+			action := &InvokeAction{
+				flags: &invokeFlags{}, credential: responseTestCredential{},
+				resolvedRemoteContext: &remoteContext{
+					name: "agent", projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+					apiVersion: "v1", invocableProtocols: []agent_api.AgentProtocol{agent_api.AgentProtocolResponses},
+				},
+			}
+			_, err := action.resolveProtocol(t.Context())
+			require.Error(t, err)
+			localError, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeAgentEndpointProtocolNotEnabled, localError.Code)
+			suggestion := azdext.WrapError(err).GetSuggestion()
+			require.Contains(t, suggestion, "enable")
+			require.Contains(t, suggestion, "public")
+			require.NotContains(t, suggestion, "--protocol")
+		})
+	}
+}
+
 func TestA2ATargetUsesLiveConfiguration(t *testing.T) {
 	transport := mockInvokeMetadata(t, http.StatusOK, `{
 		"name":"agent",
@@ -1570,6 +1653,7 @@ func TestA2ATargetUsesLiveConfiguration(t *testing.T) {
 
 	rc, err := action.resolveRemoteContextForInvoke(t.Context())
 	require.NoError(t, err)
+	require.NoError(t, action.loadRemoteAgent(t.Context(), rc))
 	err = action.validateA2ATarget(t.Context(), rc)
 	require.ErrorContains(t, err, "a2a")
 	require.Equal(t, 1, transport.requests)
@@ -1723,6 +1807,80 @@ func TestA2ARemoteUsesLivePublishedProtocols(t *testing.T) {
 	}
 }
 
+func TestRemoteContextResolutionDoesNotReadMetadata(t *testing.T) {
+	for _, protocol := range []string{"responses", "invocations", ""} {
+		t.Run("protocol="+protocol, func(t *testing.T) {
+			reads := 0
+			rc := &remoteContext{
+				name: "agent", projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+			}
+			action := &InvokeAction{
+				flags: &invokeFlags{protocol: protocol}, resolvedRemoteContext: rc,
+				agentReader: func(context.Context, *remoteContext) (*agent_api.AgentObject, error) {
+					reads++
+					return nil, errors.New("metadata must not be read by shared context resolution")
+				},
+			}
+			resolved, err := action.resolveRemoteContextForInvoke(t.Context())
+			require.NoError(t, err)
+			require.Same(t, rc, resolved)
+			require.Zero(t, reads)
+			require.False(t, rc.agentRead)
+		})
+	}
+}
+
+func TestLiveConfigurationReadHasIndependentDeadline(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		timeout int
+		maxWait time.Duration
+	}{
+		{name: "default invocation timeout", timeout: defaultInvokeTimeoutSeconds, maxWait: 5 * time.Second},
+		{name: "unlimited invocation timeout", timeout: 0, maxWait: 5 * time.Second},
+		{name: "shorter invocation timeout", timeout: 1, maxWait: time.Second},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			action := &InvokeAction{
+				flags: &invokeFlags{timeout: tt.timeout},
+				agentReader: func(ctx context.Context, _ *remoteContext) (*agent_api.AgentObject, error) {
+					deadline, ok := ctx.Deadline()
+					require.True(t, ok, "optional metadata reads must have a deadline")
+					require.Positive(t, time.Until(deadline))
+					require.LessOrEqual(t, time.Until(deadline), tt.maxWait)
+					return nil, &azcore.ResponseError{StatusCode: http.StatusForbidden}
+				},
+			}
+			rc := &remoteContext{
+				name: "agent", projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+			}
+			require.NoError(t, action.loadRemoteAgent(t.Context(), rc))
+		})
+	}
+}
+
+func TestLiveConfigurationReadTimeoutFallsBack(t *testing.T) {
+	rc := &remoteContext{
+		name: "agent", projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+		invocableProtocols: []agent_api.AgentProtocol{agent_api.AgentProtocolResponses},
+	}
+	action := &InvokeAction{
+		flags: &invokeFlags{timeout: 1}, resolvedRemoteContext: rc,
+		agentReader: func(ctx context.Context, _ *remoteContext) (*agent_api.AgentObject, error) {
+			if _, ok := ctx.Deadline(); !ok {
+				t.Error("metadata read has no deadline")
+				return nil, errors.New("missing metadata deadline")
+			}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	protocol, err := action.resolveProtocol(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, agent_api.AgentProtocolResponses, protocol)
+	require.NoError(t, t.Context().Err(), "metadata deadline must not cancel the caller")
+}
+
 func TestLiveConfigurationReadPreservesCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	action := &InvokeAction{
@@ -1734,7 +1892,7 @@ func TestLiveConfigurationReadPreservesCancellation(t *testing.T) {
 			return nil, &azcore.ResponseError{StatusCode: http.StatusForbidden}
 		},
 	}
-	_, err := action.resolveRemoteContextForInvoke(ctx)
+	err := action.loadRemoteAgent(ctx, action.resolvedRemoteContext)
 	require.ErrorIs(t, err, context.Canceled)
 }
 

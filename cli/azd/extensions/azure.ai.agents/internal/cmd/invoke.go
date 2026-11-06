@@ -77,6 +77,7 @@ const outputRaw = "raw"
 const outputDefault = "default"
 
 const defaultInvokeTimeoutSeconds = 30 * 60
+const remoteAgentMetadataTimeout = 5 * time.Second
 const maxInvokeVersionLength = 128
 
 var createInvokeVersionSession = createInvokeVersionSessionImpl
@@ -903,7 +904,10 @@ func (a *InvokeAction) resolveProtocol(
 			return "", err
 		}
 
-		protocol, err := a.resolveDeployedProtocol(ctx, rc)
+		var protocol agent_api.AgentProtocol
+		if err = a.loadRemoteAgent(ctx, rc); err == nil {
+			protocol, err = a.resolveDeployedProtocol(ctx, rc)
+		}
 		if err != nil {
 			if rc.azdClient != nil {
 				rc.azdClient.Close()
@@ -959,7 +963,12 @@ func (a *InvokeAction) resolveDeployedProtocol(
 			}
 		}
 		if len(protocols) == 0 {
-			return "", remoteProtocolSelectionError(nil, "the current endpoint has no enabled invocable protocols")
+			return "", exterrors.Compatibility(
+				exterrors.CodeAgentEndpointProtocolNotEnabled,
+				"the current deployed agent endpoint has no enabled invocable protocols",
+				"enable an invocable public endpoint protocol (responses, invocations, or a2a) "+
+					"on the deployed agent before invoking",
+			)
 		}
 
 		// A saved endpoint can express a preference, but only among currently enabled protocols.
@@ -1107,21 +1116,10 @@ func remoteProtocolSelectionError(
 func (a *InvokeAction) resolveRemoteContextForInvoke(
 	ctx context.Context,
 ) (*remoteContext, error) {
-	rc := a.resolvedRemoteContext
-	if rc == nil {
-		var err error
-		rc, err = a.resolveRemoteContext(ctx)
-		if err != nil {
-			return nil, err
-		}
+	if a.resolvedRemoteContext != nil {
+		return a.resolvedRemoteContext, nil
 	}
-	if err := a.loadRemoteAgent(ctx, rc); err != nil {
-		if rc.azdClient != nil {
-			rc.azdClient.Close()
-		}
-		return nil, err
-	}
-	return rc, nil
+	return a.resolveRemoteContext(ctx)
 }
 
 func (a *InvokeAction) loadRemoteAgent(ctx context.Context, rc *remoteContext) error {
@@ -1137,7 +1135,13 @@ func (a *InvokeAction) loadRemoteAgent(ctx context.Context, rc *remoteContext) e
 	if read == nil {
 		read = a.readRemoteAgent
 	}
-	agent, err := read(ctx, rc)
+	timeout := remoteAgentMetadataTimeout
+	if a.flags != nil && a.flags.timeout > 0 {
+		timeout = min(timeout, a.httpTimeout())
+	}
+	readCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	agent, err := read(readCtx, rc)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -1159,11 +1163,6 @@ func (a *InvokeAction) readRemoteAgent(ctx context.Context, rc *remoteContext) (
 		if err != nil {
 			return nil, err
 		}
-	}
-	if timeout := a.httpTimeout(); timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
 	}
 	apiVersion := rc.apiVersion
 	if apiVersion == "" {
@@ -1558,12 +1557,16 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	rc := &remoteContext{apiVersion: DefaultAgentAPIVersion, version: a.flags.version}
 
 	if a.endpoint != nil {
+		projectEndpoint, _, err := validateProjectEndpoint(a.endpoint.ProjectEndpoint)
+		if err != nil {
+			return nil, err
+		}
 		rc.name = a.endpoint.AgentName
-		rc.projectEndpoint = a.endpoint.ProjectEndpoint
+		rc.projectEndpoint = projectEndpoint
 		if a.endpoint.APIVersion != "" {
 			rc.apiVersion = a.endpoint.APIVersion
 		}
-		rc.agentKey = buildAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, rc.version, false)
+		rc.agentKey = buildAgentKey(rc.projectEndpoint, a.endpoint.AgentName, rc.version, false)
 		// Best-effort attach to the parent azd daemon so environment-backed context
 		// remains available. When running the extension
 		// binary directly (standalone), this fails and we proceed without persistence.
@@ -1652,6 +1655,12 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		}
 		rc.projectEndpoint = ep
 	}
+	projectEndpoint, _, err := validateProjectEndpoint(rc.projectEndpoint)
+	if err != nil {
+		azdClient.Close()
+		return nil, err
+	}
+	rc.projectEndpoint = projectEndpoint
 	if rc.agentKey == "" {
 		rc.agentKey = buildAgentKey(rc.projectEndpoint, rc.name, rc.version, false)
 	}

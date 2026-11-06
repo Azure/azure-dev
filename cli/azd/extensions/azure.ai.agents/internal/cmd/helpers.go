@@ -1284,6 +1284,11 @@ func resolveAgentServiceFromProject(
 		if reference == nil {
 			break
 		}
+		projectEndpoint, _, err := validateProjectEndpoint(reference.projectEndpoint)
+		if err != nil {
+			return info, err
+		}
+		reference.projectEndpoint = projectEndpoint
 		if resolutionOptions.brownfieldAgentExists == nil {
 			return info, fmt.Errorf("brownfield agent existence resolver is not configured")
 		}

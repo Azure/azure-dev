@@ -61,4 +61,4 @@
 /cli/azd/pkg/azdext/contracts_v1_aliases.go              @Azure/azure-dev-core
 
 # ── This file (most specific -- must be last for /.github/) ───────────────────
-/.github/CODEOWNERS                                      @tg-msft @RickWinter @richardpark-msft @Azure/azure-sdk-eng
+/.github/CODEOWNERS                                      @tg-msft @RickWinter @richardpark-msft @vhvb1989 @Azure/azure-sdk-eng

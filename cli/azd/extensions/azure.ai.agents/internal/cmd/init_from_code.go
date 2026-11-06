@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
@@ -89,6 +90,16 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 
 	if err := validateCodeDeployInput(
 		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution,
+	); err != nil {
+		return err
+	}
+	if a.flags.acrResourceIDSet {
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
+		}
+	}
+	if err := validateInitACRProjectContent(
+		ctx, a.azdClient, a.flags, nil, "", valueOrDefault(a.projectTargetDir, "."),
 	); err != nil {
 		return err
 	}

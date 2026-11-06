@@ -15,9 +15,10 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -30,16 +31,19 @@ import (
 // empty, which is what triggers the prompt path), and records SetValue writes.
 type resolveEnvStubEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	envName    string
-	get        map[string]string
-	getErr     map[string]error
-	set        map[string]string
-	process    map[string]string
-	config     map[string][]byte
-	configErr  error
-	currentErr error
-	valuesErr  error
-	valuesN    int
+	envName      string
+	get          map[string]string
+	getErr       map[string]error
+	set          map[string]string
+	process      map[string]string
+	environments map[string]*resolveEnvStubEnvServer
+	config       map[string][]byte
+	configErr    error
+	currentErr   error
+	valuesErr    error
+	valuesN      int
+	configSetN   int
+	configUnsetN int
 }
 
 func (s *resolveEnvStubEnvServer) GetConfig(
@@ -55,6 +59,7 @@ func (s *resolveEnvStubEnvServer) GetConfig(
 func (s *resolveEnvStubEnvServer) SetConfig(
 	_ context.Context, req *azdext.SetConfigRequest,
 ) (*azdext.EmptyResponse, error) {
+	s.configSetN++
 	if s.configErr != nil {
 		return nil, s.configErr
 	}
@@ -68,6 +73,7 @@ func (s *resolveEnvStubEnvServer) SetConfig(
 func (s *resolveEnvStubEnvServer) UnsetConfig(
 	_ context.Context, req *azdext.UnsetConfigRequest,
 ) (*azdext.EmptyResponse, error) {
+	s.configUnsetN++
 	if s.configErr != nil {
 		return nil, s.configErr
 	}
@@ -85,8 +91,15 @@ func (s *resolveEnvStubEnvServer) GetCurrent(
 }
 
 func (s *resolveEnvStubEnvServer) GetValue(
-	_ context.Context, req *azdext.GetEnvRequest,
+	ctx context.Context, req *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
+	if s.environments != nil {
+		env, found := s.environments[req.GetEnvName()]
+		if !found {
+			return nil, status.Error(codes.NotFound, "environment not found")
+		}
+		return env.GetValue(ctx, req)
+	}
 	if err := s.getErr[req.Key]; err != nil {
 		return nil, err
 	}
@@ -98,8 +111,15 @@ func (s *resolveEnvStubEnvServer) GetValue(
 }
 
 func (s *resolveEnvStubEnvServer) GetValues(
-	_ context.Context, _ *azdext.GetEnvironmentRequest,
+	ctx context.Context, req *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
+	if s.environments != nil {
+		env, found := s.environments[req.GetName()]
+		if !found {
+			return nil, status.Error(codes.NotFound, "environment not found")
+		}
+		return env.GetValues(ctx, req)
+	}
 	s.valuesN++
 	if s.valuesErr != nil {
 		return nil, s.valuesErr
@@ -112,8 +132,15 @@ func (s *resolveEnvStubEnvServer) GetValues(
 }
 
 func (s *resolveEnvStubEnvServer) SetValue(
-	_ context.Context, req *azdext.SetEnvRequest,
+	ctx context.Context, req *azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
+	if s.environments != nil {
+		env, found := s.environments[req.GetEnvName()]
+		if !found {
+			return nil, status.Error(codes.NotFound, "environment not found")
+		}
+		return env.SetValue(ctx, req)
+	}
 	if s.set == nil {
 		s.set = map[string]string{}
 	}
@@ -183,6 +210,53 @@ func newResolveEnvTestClient(
 	return client
 }
 
+func TestResolveEnvSelectedEnvironment(t *testing.T) {
+	for _, selected := range []string{"", "prod", " prod ", "missing"} {
+		t.Run(fmt.Sprintf("selection=%q", selected), func(t *testing.T) {
+			t.Setenv("AZD_ENVIRONMENT", selected)
+			defaultEnv := &resolveEnvStubEnvServer{get: map[string]string{
+				envKeySubscriptionID: "default-sub", envKeyLocation: "westus3",
+				envKeyResourceGroup: "default-group", "DESTINATION": "default-component",
+			}}
+			selectedEnv := &resolveEnvStubEnvServer{get: map[string]string{
+				envKeySubscriptionID: "selected-sub", envKeyLocation: "eastus2",
+				envKeyResourceGroup: "selected-group", "DESTINATION": "selected-component",
+			}}
+			env := &resolveEnvStubEnvServer{
+				envName: "test", environments: map[string]*resolveEnvStubEnvServer{
+					"test": defaultEnv, "prod": selectedEnv,
+				},
+			}
+			p := &FoundryProvisioningProvider{
+				azdClient: newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{}),
+			}
+			err := p.resolveEnv(t.Context())
+			if selected == "missing" {
+				require.ErrorContains(t, err, "environment not found")
+				assert.Empty(t, defaultEnv.set)
+				assert.Empty(t, selectedEnv.set)
+				return
+			}
+			require.NoError(t, err)
+			wantEnv, wantName := selectedEnv, "prod"
+			if selected == "" {
+				wantEnv, wantName = defaultEnv, "test"
+			}
+			values, err := p.synthesisEnvMap(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, wantName, p.envName)
+			assert.Equal(t, wantEnv.get[envKeySubscriptionID], p.subID)
+			assert.Equal(t, wantEnv.get[envKeyResourceGroup], p.rgName)
+			assert.Equal(t, wantEnv.get["DESTINATION"], values["DESTINATION"])
+			require.NoError(t, p.setEnv(t.Context(), "OWNERSHIP", "selected-owner"))
+			assert.Equal(t, "selected-owner", wantEnv.set["OWNERSHIP"])
+			if selected != "" {
+				assert.Empty(t, defaultEnv.set)
+			}
+		})
+	}
+}
+
 func TestResolveEnv_PromptsAndPersistsSubscriptionAndLocation(t *testing.T) {
 	// Neither AZURE_SUBSCRIPTION_ID nor AZURE_LOCATION is set: resolveEnv must
 	// prompt for both (matching core `azd up`) and persist the choices, instead
@@ -208,6 +282,7 @@ func TestResolveEnv_PromptsAndPersistsSubscriptionAndLocation(t *testing.T) {
 }
 
 func TestInitializeValidatesPromptedRegistrySubscriptionBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, layer := range []bool{false, true} {
 		for _, onDisk := range []bool{false, true} {
 			for _, canonical := range []bool{false, true} {
@@ -290,6 +365,7 @@ func TestInitializeValidatesPromptedRegistrySubscriptionBeforeWrites(t *testing.
 }
 
 func TestInitializeUsesPromptedLocationInSynthesis(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, layer := range []bool{false, true} {
 		for _, onDisk := range []bool{false, true} {
 			for _, blank := range []bool{false, true} {
@@ -341,6 +417,7 @@ func TestInitializeUsesPromptedLocationInSynthesis(t *testing.T) {
 }
 
 func TestInitializeRecalculatesRemoteBuildAfterLocationPrompt(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	root := t.TempDir()
 	// Condition expands to the prompted location value. Use a truthy location so
 	// the agent is disabled before the prompt and enabled afterward.
@@ -697,7 +774,12 @@ func TestInitializeLeavesSplitConnectionEnvironmentToOwningExtension(t *testing.
 				}
 				project := &forbiddenProjectServer{}
 				client := newPromptOrderTestClient(t, project, env, prompt)
-				provider := &FoundryProvisioningProvider{azdClient: client}
+				provider := &FoundryProvisioningProvider{
+					azdClient: client,
+					bicepCliInstance: &stubCompiler{
+						buildResult: bicep.BuildResult{Compiled: minimalARMTemplate()},
+					},
+				}
 
 				require.NoError(t, provider.Initialize(t.Context(), projectPath,
 					&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
@@ -719,6 +801,7 @@ func TestInitializeLeavesSplitConnectionEnvironmentToOwningExtension(t *testing.
 }
 
 func TestInitializeExistingRegistry(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	const subscription = "11111111-1111-1111-1111-111111111111"
 	for _, tt := range []struct {
 		name     string
@@ -881,6 +964,7 @@ func TestInitializeExistingRegistry(t *testing.T) {
 }
 
 func TestInitializeRegistryEnvironmentReadFailure(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, read := range []string{"current", "values"} {
 		t.Run(read, func(t *testing.T) {
 			root := t.TempDir()

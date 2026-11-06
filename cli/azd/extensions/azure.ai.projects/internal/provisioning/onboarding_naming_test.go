@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"azure.ai.projects/internal/testutil"
+	"azure.ai.projects/synthesis/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"

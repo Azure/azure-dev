@@ -1,5 +1,15 @@
 # Release History
 
+## 1.0.0 (2026-11-05)
+
+### Features Added
+
+- Update all seven bundled Foundry extensions to stable `~1.0.0` dependencies: `azure.ai.agents`, `azure.ai.connections`, `azure.ai.inspector`, `azure.ai.projects`, `azure.ai.routines`, `azure.ai.skills`, and `azure.ai.toolboxes`.
+
+### Other Changes
+
+- [[#10836]](https://github.com/Azure/azure-dev/pull/10836) Remove the Preview label from the Microsoft Foundry bundle description.
+
 ## 1.0.0-beta.4 (2026-10-23)
 
 ### Features Added

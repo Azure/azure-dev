@@ -12,7 +12,7 @@ import (
 
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/provisioning"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
@@ -112,6 +112,15 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 			return fmt.Errorf("read environment before registry selection: %w", err)
 		}
 	}
+	raw, err := readProjectACRManifest(root)
+	if err != nil {
+		return err
+	}
+	if err := synthesis.RequireACRReuseForEnvironment(ctx, a.client, envName, synthesis.Input{
+		RawAzureYAML: raw, ProjectRoot: root, Env: values,
+	}); err != nil {
+		return err
+	}
 	if envName != "" {
 		binding, err := readProjectACRBinding(ctx, a.client, envName)
 		if err != nil {
@@ -205,10 +214,6 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 	if !greenfield || (!a.flags.acrResourceIDSet && values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] == "" &&
 		a.flags.deployedBinding == nil) {
 		return nil
-	}
-	raw, err := readProjectACRManifest(root)
-	if err != nil {
-		return err
 	}
 	project := &resolvedProject{
 		Mode:             projectModeNew,

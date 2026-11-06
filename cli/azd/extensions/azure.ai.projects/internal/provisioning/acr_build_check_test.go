@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -31,6 +31,7 @@ import (
 )
 
 func TestACRRemoteBuildPreflight(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name, service, endpoint, provider string
 		classic, canonical, noSelector    bool
@@ -80,7 +81,7 @@ func TestACRRemoteBuildPreflight(t *testing.T) {
 				provider = FoundryProviderName
 			}
 			var raw strings.Builder
-			raw.WriteString("infra:\n  provider: " + provider + "\nservices:\n  project:\n    host: azure.ai.project\n")
+			raw.WriteString("infra:\n  provider: " + provider + "\nservices:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n")
 			if tt.endpoint != "" {
 				raw.WriteString("    endpoint: " + tt.endpoint + "\n")
 			}
@@ -162,6 +163,7 @@ func TestACRRemoteBuildPreflight(t *testing.T) {
 }
 
 func TestACRRemoteBuildPreflightUsesOnDiskSelection(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, include := range []bool{false, true} {
 		for _, layer := range []bool{false, true} {
 			for _, params := range []bool{false, true} {
@@ -177,7 +179,7 @@ func TestACRRemoteBuildPreflightUsesOnDiskSelection(t *testing.T) {
 								raw = "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
 									"      path: infra/foundry\n      module: project\n"
 							}
-							raw += "services:\n  project:\n    host: azure.ai.project\n" +
+							raw += "services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n" +
 								"  agent:\n    host: azure.ai.agent\n    docker: {remoteBuild: true}\n"
 							require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
 							require.NoError(t, os.MkdirAll(filepath.Join(root, path), 0o750))
@@ -236,6 +238,7 @@ func TestACRRemoteBuildPreflightUsesOnDiskSelection(t *testing.T) {
 }
 
 func TestACROnDiskNetworkingUsesEffectiveInputs(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, route := range []struct {
 		name, path, module string
 		layer              bool
@@ -270,7 +273,7 @@ func TestACROnDiskNetworkingUsesEffectiveInputs(t *testing.T) {
 								"      path: " + route.path + "\n      module: " + route.module + "\n"
 							options.Name = "foundry"
 						}
-						raw += "services:\n  project:\n    host: azure.ai.project\n" +
+						raw += "services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n" +
 							"    network:\n      peSubnet:\n" +
 							"        vnet: /subscriptions/sub/resourceGroups/network/" +
 							"providers/Microsoft.Network/virtualNetworks/vnet\n        name: pe-subnet\n" +
@@ -480,6 +483,26 @@ func TestACRRemoteBuildLookupFailureStopsPreflight(t *testing.T) {
 	require.ErrorContains(t, p.validateACRRemoteBuild(t.Context(), acrTestSource()), "registry unavailable")
 }
 
+func TestACRRemoteBuildRequiresPreview(t *testing.T) {
+	for _, include := range []bool{false, true} {
+		t.Run(strconv.FormatBool(include), func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			t.Setenv(synthesis.ACRReuseEnvVar, "false")
+			p.acrRemoteBuild = true
+			p.acrRequest = func(context.Context, string, string, string, any) error {
+				t.Fatal("disabled reuse must fail before registry requests")
+				return nil
+			}
+			src := acrTestSource()
+			src.parameters["includeAcr"] = map[string]any{"value": include}
+			err := p.validateACRRemoteBuild(t.Context(), src)
+			require.ErrorContains(t, err, synthesis.ACRReuseEnvVar+"=true")
+			assert.Empty(t, env.config)
+			assert.Empty(t, env.set)
+		})
+	}
+}
+
 func TestACRRemoteBuildPreservesManagedBinding(t *testing.T) {
 	for _, include := range []bool{false, true} {
 		t.Run(strconv.FormatBool(include), func(t *testing.T) {
@@ -536,11 +559,12 @@ func TestACRRemoteBuildWithInfrastructureDisabled(t *testing.T) {
 }
 
 func TestACRRemoteBuildRejectsBeforePersistingPromptChoices(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, condition := range []string{"", "${AZURE_LOCATION/eastus2/true}", "${AZURE_SUBSCRIPTION_ID/sub/true}"} {
 		for _, test := range []struct{ abac, onDisk bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
 			t.Run(fmt.Sprintf("condition=%s/ABAC=%t/onDisk=%t", condition, test.abac, test.onDisk), func(t *testing.T) {
 				root := t.TempDir()
-				raw := "infra:\n  provider: microsoft.foundry\nservices:\n  project:\n    host: azure.ai.project\n" +
+				raw := "infra:\n  provider: microsoft.foundry\nservices:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n" +
 					"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    docker: {remoteBuild: true}\n"
 				if condition != "" {
 					raw += "    condition: " + condition + "\n"
@@ -636,6 +660,7 @@ func TestACROnDiskLocalBuildValidatesPromptedScopeBeforeWrites(t *testing.T) {
 				{name: "compile failure", subscription: "sub", compileFailure: true, wantError: "invalid authored template"},
 			} {
 				t.Run(route.name+"/"+params+"/"+tt.name, func(t *testing.T) {
+					t.Setenv(synthesis.ACRReuseEnvVar, "true")
 					root := t.TempDir()
 					options := &azdext.ProvisioningOptions{Provider: FoundryProviderName}
 					raw := "infra:\n  provider: microsoft.foundry\n"
@@ -649,7 +674,7 @@ func TestACROnDiskLocalBuildValidatesPromptedScopeBeforeWrites(t *testing.T) {
 					if route.name != "root" {
 						options.Path, options.Module = filepath.FromSlash(route.path), route.module
 					}
-					raw += "services:\n  project:\n    host: azure.ai.project\n" +
+					raw += "services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n" +
 						"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    docker: {remoteBuild: false}\n"
 					infra := filepath.Join(root, filepath.FromSlash(route.path))
 					require.NoError(t, os.MkdirAll(infra, 0o750))

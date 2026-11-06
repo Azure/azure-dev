@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/phasetelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/recordproxy"
@@ -49,6 +50,7 @@ func (s *phaseTelemetryServer) ReportUsage(
 }
 
 func TestAgentProviderTimingsUseSharedUpAndStandaloneEntryPoints(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, entry := range []string{"up", "standalone"} {
 		t.Run(entry, func(t *testing.T) {
 			t.Setenv("NO_COLOR", "1")

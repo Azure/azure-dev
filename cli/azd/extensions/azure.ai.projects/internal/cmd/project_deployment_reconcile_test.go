@@ -6,7 +6,7 @@ package cmd
 import (
 	"testing"
 
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -26,6 +26,15 @@ import (
 )
 
 const initACRSubscriptionMessage = "Select an Azure subscription to provision your agent and Foundry project resources."
+
+const initACRHelp = `Use --acr-resource-id to select an externally owned Azure Container Registry
+for source builds in a new Foundry project. Project setup saves the selection
+for azd up. This requires Bicep, cannot be used with code deploy or a prebuilt
+image, and does not migrate an already deployed project's registry.
+The registry must be in the project's subscription and outside its resource
+group. Cross-subscription reuse is not supported.
+
+`
 
 func initACRResourceID(flags *initFlags) string {
 	if flags.acrResourceIDSet {
@@ -116,7 +125,7 @@ func validateResolvedInitACRInput(flags *initFlags) error {
 	if strings.ToLower(strings.TrimSpace(flags.infra)) == project.TerraformProviderName {
 		return initACRConflict("--infra terraform", initACRSelectorSource(flags))
 	}
-	return nil
+	return synthesis.RequireACRReuse()
 }
 
 func validateInitACRManifest(
@@ -173,7 +182,7 @@ func validateInitACRManifestInEnvironment(
 	if !needsACR {
 		return initACRConflict("an agent configuration without hosted-container source builds", selector)
 	}
-	return nil
+	return synthesis.RequireACRReuse()
 }
 
 func validateInitACRInfrastructure(content []byte, root string, selectors ...string) error {
@@ -299,6 +308,11 @@ func readInitACRTargetEnvironment(flags *initFlags, targetDir string) (string, m
 		return "", nil, fmt.Errorf("read target registry binding: %w", err)
 	}
 	if err == nil {
+		if _, found := cfg.Get(synthesis.ACRPendingConfigKey); found {
+			if err := synthesis.RequireACRReuse(); err != nil {
+				return "", nil, err
+			}
+		}
 		if binding, found := cfg.Get(synthesis.ACRBindingConfigKey); found {
 			encoded, err := json.Marshal(binding)
 			if err != nil {
@@ -359,6 +373,9 @@ func planInitACRSubscription(
 	registryID := initACRResourceID(flags)
 	if registryID == "" {
 		return nil, nil
+	}
+	if err := synthesis.RequireACRReuse(); err != nil {
+		return nil, err
 	}
 	envName, values, err := readInitACREnvironment(ctx, client, flags, targetDir)
 	if err != nil {
@@ -434,9 +451,6 @@ func validateInitACRProjectContent(
 			return nil
 		}
 	}
-	if !flags.acrResourceIDSet && (flags.projectResourceId != "" || !staged && flags.templatePointer != "") {
-		return nil
-	}
 	if !staged {
 		var err error
 		root, err = azdext.GetProjectDir()
@@ -470,6 +484,25 @@ func validateInitACRProjectContent(
 			return nil
 		}
 	}
+	if values == nil {
+		var err error
+		envName, values, err = readInitACREnvironment(ctx, client, flags, targetDir)
+		if err != nil {
+			return err
+		}
+	}
+	if !flags.acrResourceIDSet && flags.projectResourceId != "" {
+		values["USE_EXISTING_AI_PROJECT"] = "true"
+	}
+	input := synthesis.Input{
+		RawAzureYAML: content, ProjectRoot: root, Env: plannedInitACREnvironment(flags, values),
+	}
+	if err := synthesis.RequireACRReuseForEnvironment(ctx, client, envName, input); err != nil {
+		return err
+	}
+	if !flags.acrResourceIDSet && (flags.projectResourceId != "" || !staged && flags.templatePointer != "") {
+		return nil
+	}
 	if !flags.acrResourceIDSet && flags.infra != "" {
 		provider, err := parseInfraProvider(flags.infra)
 		if err != nil {
@@ -482,13 +515,6 @@ func validateInitACRProjectContent(
 		if gate.standaloneEject {
 			// Eject validates its final scope during synthesis.
 			return nil
-		}
-	}
-	if values == nil {
-		var err error
-		envName, values, err = readInitACREnvironment(ctx, client, flags, targetDir)
-		if err != nil {
-			return err
 		}
 	}
 	if err := readInitACRBinding(ctx, client, envName, values); err != nil {
@@ -504,9 +530,7 @@ func validateInitACRProjectContent(
 		}
 	}
 	selectedID := flags.acrResourceID
-	input := synthesis.Input{
-		RawAzureYAML: content, ProjectRoot: root, Env: plannedInitACREnvironment(flags, values),
-	}
+	input.Env = plannedInitACREnvironment(flags, values)
 	if !flags.acrResourceIDSet {
 		selectedID = values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 		flags.acrSelectionSource = "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"
@@ -571,12 +595,12 @@ func validateInitACRProjectContent(
 	if err := validateResolvedInitACRInput(flags); err != nil {
 		return err
 	}
-	if len(content) > 0 && flags.templatePointer == "" && !flags.acrTemplateTarget {
+	if len(content) > 0 && (staged || flags.templatePointer == "" && !flags.acrTemplateTarget) {
 		if err := validateInitACRInfrastructure(content, root, initACRSelectorSource(flags)); err != nil {
 			return err
 		}
 	}
-	if len(content) > 0 && canReuseExistingAgentConfiguration(flags, false, flags.src != "") {
+	if len(content) > 0 && (staged || canReuseExistingAgentConfiguration(flags, false, flags.src != "")) {
 		info, err := inspectAzureYaml(content, root)
 		if err != nil {
 			return err

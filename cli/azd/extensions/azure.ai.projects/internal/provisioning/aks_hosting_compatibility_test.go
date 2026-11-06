@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,7 +21,10 @@ func TestBYONonBooleanIncludeAcrReachesARM(t *testing.T) {
 				p, fake := offlineBYOProvider(t)
 				p.onDiskSource = &templateSource{
 					mode: templateModeBicep, armTemplate: p.armTemplate,
-					parameters: map[string]any{"includeAcr": map[string]any{"value": value}},
+					parameters: map[string]any{
+						"includeAcr":     map[string]any{"value": value},
+						"monitoringMode": map[string]any{"value": "none"},
+					},
 				}
 				var err error
 				if preview {
@@ -234,7 +237,10 @@ func TestBYOSuppliedPreflightUsesCustomizedCompiledPlan(t *testing.T) {
 	}}
 	p.onDiskSource = &templateSource{
 		mode: templateModeBicep, armTemplate: p.armTemplate,
-		parameters: map[string]any{"includeAcr": map[string]any{"value": true}},
+		parameters: map[string]any{
+			"includeAcr":     map[string]any{"value": true},
+			"monitoringMode": map[string]any{"value": "none"},
+		},
 	}
 	source, err := p.resolveTemplate(t.Context(), func(string) {})
 	require.NoError(t, err)

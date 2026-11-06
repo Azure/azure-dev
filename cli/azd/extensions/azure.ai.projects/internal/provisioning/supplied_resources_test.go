@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -142,7 +142,8 @@ func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
 
 func suppliedYAML(mask int) string {
 	var raw strings.Builder
-	raw.WriteString("services:\n  project:\n    host: azure.ai.project\n    agentHosting:\n" +
+	raw.WriteString("services:\n  project:\n    host: azure.ai.project\n" +
+		"    monitoring: {enabled: false}\n    agentHosting:\n" +
 		"      clusterResourceId: " + offlineClusterID + "\n")
 	for i, selection := range []struct{ name, id string }{
 		{"storageAccountResourceId", suppliedStorageID},
@@ -189,7 +190,10 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 					p.armTemplate["contentVersion"] = "2.0.0.0"
 					p.onDiskSource = &templateSource{
 						mode: templateModeBicep, armTemplate: p.armTemplate,
-						parameters: map[string]any{"includeAcr": map[string]any{"value": registry}},
+						parameters: map[string]any{
+							"includeAcr":     map[string]any{"value": registry},
+							"monitoringMode": map[string]any{"value": "none"},
+						},
 					}
 					var progress strings.Builder
 					if preview {
@@ -356,7 +360,10 @@ func TestBYOSuppliedExplicitPrincipalDoesNotOverwriteUserInput(t *testing.T) {
 	p, fake, _ := suppliedProvider(t, 7)
 	p.onDiskSource = &templateSource{
 		mode: templateModeBicep, armTemplate: p.armTemplate,
-		parameters: map[string]any{"hostingPrincipalId": map[string]any{"value": principal}},
+		parameters: map[string]any{
+			"hostingPrincipalId": map[string]any{"value": principal},
+			"monitoringMode":     map[string]any{"value": "none"},
+		},
 	}
 	_, err := p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)

@@ -10,6 +10,22 @@
 
 ### Other Changes
 
+## 1.37.3 (2026-11-04)
+
+### Features Added
+
+- [[#10696]](https://github.com/Azure/azure-dev/pull/10696) Add support for stable-to-stable `azd update` from an elevated terminal for machine-wide Windows x64 MSI installations, preserving custom installation directories.
+
+### Bugs Fixed
+
+- [[#10763]](https://github.com/Azure/azure-dev/pull/10763) Fix workflow steps ignoring their explicit `--cwd` when a parent `-C` or `--cwd` is set, preventing agent initialization from splitting project configuration across directories.
+- [[#10699]](https://github.com/Azure/azure-dev/pull/10699) Fix subprocess cancellation leaving child processes running or reporting ordinary command failures, including clearer cancellation errors for `azd exec`.
+
+### Other Changes
+
+- [[#10720]](https://github.com/Azure/azure-dev/pull/10720) Improve telemetry data minimization by omitting unsupported or unmatched hook names and removing builder image and tag collection. Thanks @JeffreyCA for the contribution!
+- [[#9783]](https://github.com/Azure/azure-dev/pull/9783) Add bounded diagnostic telemetry for dropped or rejected extension telemetry reports without recording rejected payload content.
+
 ## 1.37.2 (2026-10-28)
 
 ### Bugs Fixed

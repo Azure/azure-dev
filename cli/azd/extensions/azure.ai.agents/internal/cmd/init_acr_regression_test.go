@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -71,6 +71,7 @@ func TestInitACRNormalizedTerraformBeforeWrites(t *testing.T) {
 }
 
 func TestInitACRConflictUsesAuthoritativeBinding(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	root := t.TempDir()
 	t.Chdir(root)
 	require.NoError(t, os.WriteFile("azure.yaml", []byte("name: test\n"), 0o600))
@@ -95,6 +96,7 @@ func TestInitACRConflictUsesAuthoritativeBinding(t *testing.T) {
 }
 
 func TestInitACRTemplateRetainedSaltBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, envName := range []string{"test", strings.Repeat("a", 64)} {
 		for _, layer := range []bool{false, true} {
 			for _, saved := range []bool{false, true} {
@@ -186,6 +188,7 @@ func writeInitACRRegressionBinding(t *testing.T, path, registry string) []byte {
 }
 
 func TestInitACROrphanedSourceEnvironmentBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, boundary := range []string{"subscription", "binding", "saved environment", "saved binding"} {
 		t.Run(boundary, func(t *testing.T) {
 			root := t.TempDir()
@@ -329,6 +332,7 @@ func TestInitACRImageOnlyEffectiveSourceBuild(t *testing.T) {
 }
 
 func TestInitACRImagePassthroughOnlyRejectedBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, saved := range []bool{false, true} {
 		t.Run(fmt.Sprint(saved), func(t *testing.T) {
 			root := t.TempDir()
@@ -401,6 +405,7 @@ func TestInitACRFalseOnlyDockerPreserved(t *testing.T) {
 }
 
 func TestInitACRInteractiveVoiceSavedSelectorBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, binding := range []bool{false, true} {
 		t.Run(fmt.Sprint(binding), func(t *testing.T) {
 			root := t.TempDir()
@@ -444,6 +449,7 @@ func TestInitACRInteractiveVoiceSavedSelectorBeforeWrites(t *testing.T) {
 }
 
 func TestInitACRProjectsCapabilityBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, boundary := range []string{"supported", "unsupported", "check error", "no selector"} {
 		t.Run(boundary, func(t *testing.T) {
 			root := t.TempDir()
@@ -536,6 +542,7 @@ func TestInitACROwnershipSummary(t *testing.T) {
 }
 
 func TestInitACRProjectsCapabilityRejectsTemplateAndReuseBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, route := range []string{"template", "reuse"} {
 		for _, selector := range []string{"explicit", "environment", "binding"} {
 			t.Run(route+"/"+selector, func(t *testing.T) {
@@ -730,6 +737,7 @@ func newInstalledProjectsCapabilityClient(
 }
 
 func TestInitACRInstalledProjectsCapabilityBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, boundary := range []string{"absent", "lookup error", "missing executable", "unsupported", "similar flags"} {
 		t.Run(boundary, func(t *testing.T) {
 			root := t.TempDir()

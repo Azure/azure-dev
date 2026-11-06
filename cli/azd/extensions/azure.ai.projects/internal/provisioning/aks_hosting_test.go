@@ -1,7 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore BYOAKS kubelet kubeletidentity crnative AGENTHOSTING INCLUDEACR KUBELETOBJECTID
+// cspell:ignore BYOAKS kubelet kubeletidentity crnative AGENTHOSTING
+// cspell:ignore INCLUDEACR KUBELETOBJECTID
 
 package provisioning
 
@@ -22,8 +23,8 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
-	"azure.ai.projects/internal/testutil"
+	"azure.ai.projects/synthesis"
+	"azure.ai.projects/synthesis/testutil"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -48,6 +49,7 @@ const offlineBYOAzureYAML = `
 services:
   project:
     host: azure.ai.project
+    monitoring: {enabled: false}
     agentHosting: {clusterResourceId: ` + offlineClusterID + `}
 `
 
@@ -526,6 +528,7 @@ func TestBYORegistryValidationBeforeLifecycleWrites(t *testing.T) {
 		{name: "invalid hosting", invalid: true, expectedError: "registry reuse is not supported with agentHosting"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(synthesis.ACRReuseEnvVar, "true")
 			p, fake := offlineBYOProvider(t)
 			env := &resolveEnvStubEnvServer{envName: "test"}
 			p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
@@ -568,6 +571,7 @@ func TestBYORegistryPreviewRejectsReuseWithoutWrites(t *testing.T) {
 		"Microsoft.ContainerRegistry/registries/registry"
 	for _, abac := range []bool{false, true} {
 		t.Run(fmt.Sprintf("ABAC=%t", abac), func(t *testing.T) {
+			t.Setenv(synthesis.ACRReuseEnvVar, "true")
 			p, fake := offlineBYOProvider(t)
 			env := &resolveEnvStubEnvServer{envName: "test"}
 			p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
@@ -613,12 +617,14 @@ func TestBYOFailedDeploymentCanBeRetried(t *testing.T) {
 }
 
 func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	p, fake := offlineBYOProvider(t)
 	p.armTemplate["contentVersion"] = "2.0.0.0"
 	p.onDiskSource = &templateSource{
 		mode: templateModeBicep, armTemplate: p.armTemplate,
 		parameters: map[string]any{
 			"includeAcr":        map[string]any{"value": true},
+			"monitoringMode":    map[string]any{"value": "none"},
 			"resourceTokenSalt": map[string]any{"value": "custom"},
 			"tags":              map[string]any{"value": map[string]string{"team": "test"}},
 		},
@@ -772,7 +778,8 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 			require.NoError(t, err)
 			parameters := map[string]any{
 				"includeAcr": map[string]any{"value": true}, "resourceTokenSalt": map[string]any{"value": "edited"},
-				"tags": map[string]any{"value": map[string]any{"team": "test"}},
+				"tags":           map[string]any{"value": map[string]any{"team": "test"}},
+				"monitoringMode": map[string]any{"value": "none"},
 			}
 			network := scenario == "selected existing network" || scenario == "new selected subnets" ||
 				scenario == "overlapping selected Node subnet" ||
@@ -891,7 +898,7 @@ func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSReads(t *testing.T) {
 	p, fake := offlineBYOProvider(t)
 	t.Setenv(synthesis.BYOAKSEnvVar, "false")
 	result, err := synthesis.Synthesize(synthesis.Input{ServiceName: "project",
-		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n")})
+		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n")})
 	require.NoError(t, err)
 	p.synthResult = result
 	deployed, err := p.Deploy(t.Context(), func(string) {})

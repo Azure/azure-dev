@@ -12,5 +12,6 @@ words:
   - ondisk
   - purgeable
   - recordproxy
+  - testutil
   # Contributors
   - hemarina

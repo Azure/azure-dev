@@ -24,7 +24,7 @@ import (
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/phasetelemetry"
 	"azure.ai.projects/internal/provisioning"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -98,23 +98,14 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Use:   "add",
 		Short: "Add or update a Microsoft Foundry project.",
 		Long: "Add or update a Microsoft Foundry project.\n\n" +
-			"Use --new-project --acr-resource-id to reuse an external registry for\n" +
-			"source-built agents with Bicep. Project-only setup saves the selection\n" +
-			"until agents are added. Code, prebuilt-image, and non-container-only\n" +
-			"projects cannot use the selector. A deployed registry binding cannot\n" +
-			"be changed; repeating the same selection preserves the project.\n" +
-			"The registry must be in the project's subscription and outside its\n" +
-			"resource group. Cross-subscription reuse is not supported.",
+			projectACRHelp,
 		Example: `  # Configure a Foundry project interactively
   azd ai project add
 
   # Connect an existing project by its ARM resource ID
   azd ai project add --project-id "<project-resource-id>"
 
-  # Reuse an externally owned registry for source-built agents (Bicep only)
-  azd ai project add --new-project --acr-resource-id "<registry-resource-id>"
-
-  # Eject the configured infrastructure as Bicep
+` + projectACRExample + `  # Eject the configured infrastructure as Bicep
   azd ai project add --infra=bicep`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) (runErr error) {
@@ -212,6 +203,9 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			if err := validateProjectACRInfrastructure(raw, projectRoot); err != nil {
 				return err
 			}
+		}
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
 		}
 	}
 
@@ -2180,8 +2174,16 @@ func writeTerraformEjectedInfraAt(
 	if err != nil {
 		return err
 	}
+	monitoring, err := synthesis.RenderTerraformMonitoring(parameters, false)
+	if err != nil {
+		return err
+	}
+	maps.Copy(variables, monitoring.Variables)
 	if err := copyEmbeddedTerraform(infraDir, includeAcr); err != nil {
 		return fmt.Errorf("copy Terraform templates: %w", err)
+	}
+	if err := writeTerraformMonitoring(infraDir, monitoring); err != nil {
+		return err
 	}
 	if err := renderTerraformOutputs(infraDir, includeAcr, layer); err != nil {
 		return fmt.Errorf("render Terraform outputs: %w", err)
@@ -2235,12 +2237,24 @@ func terraformEjectionVariables(
 }
 
 func copyEmbeddedTerraform(destination string, includeAcr bool) error {
-	skip := map[string]struct{}{"outputs.tf.tmpl": {}}
+	skip := map[string]struct{}{
+		"outputs.tf.tmpl": {}, "monitoring.tf.tmpl": {}, "provider-monitoring.tf.tmpl": {},
+	}
 	if !includeAcr {
 		skip["container-registry.tf"] = struct{}{}
 	}
 	return copyEmbeddedTree(synthesis.TerraformTemplatesFS(), "templates/terraform", destination,
 		skip)
+}
+
+func writeTerraformMonitoring(destination string, monitoring synthesis.TerraformMonitoring) error {
+	for name, data := range monitoring.Files {
+		// #nosec G306 -- generated infrastructure is intended to be human-readable.
+		if err := os.WriteFile(filepath.Join(destination, name), data, 0644); err != nil {
+			return fmt.Errorf("write monitoring infrastructure %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func renderTerraformOutputs(destination string, includeAcr, layer bool) error {

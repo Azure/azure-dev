@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -26,12 +27,13 @@ func ResetNoticesForTesting() {
 	enabledNotices.Unlock()
 }
 
-// Require announces an enabled preview feature once per process and rejects a disabled feature.
+// Require announces an enabled preview once per process.
+// Disabled features are rejected before their operation starts.
 func Require(feature Feature) error {
 	return RequireWithWriter(feature, os.Stdout)
 }
 
-// RequireWithWriter announces an enabled preview feature once per process using writer.
+// RequireWithWriter checks and announces a preview on writer.
 func RequireWithWriter(feature Feature, writer io.Writer) error {
 	if writer == nil {
 		writer = os.Stdout
@@ -51,6 +53,9 @@ func RequireWithWriter(feature Feature, writer io.Writer) error {
 
 // Check rejects a disabled feature without announcing enabled features.
 func Check(feature Feature) error {
+	if feature == FoundryACRReuse {
+		return synthesis.RequireACRReuse()
+	}
 	enabled, err := IsEnabled(feature)
 	if err != nil {
 		return err
@@ -61,7 +66,7 @@ func Check(feature Feature) error {
 	return nil
 }
 
-// RequireWithNotice checks a feature and returns its notice once per process.
+// RequireWithNotice returns an enabled feature notice once per process.
 // The returned message is intended for host-visible lifecycle responses.
 func RequireWithNotice(feature Feature) (string, error) {
 	if err := Check(feature); err != nil {

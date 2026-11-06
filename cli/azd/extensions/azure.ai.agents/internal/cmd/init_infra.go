@@ -17,11 +17,11 @@ import (
 	"strings"
 	"text/template"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/inittelemetry"
 	projectPaths "azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -55,6 +55,15 @@ type infraEjectPlan struct {
 	mergeExisting     bool
 	updatedYAML       []byte
 	updateDescription string
+}
+
+type infraEjectPreparation struct {
+	rawYAML         []byte
+	plan            *infraEjectPlan
+	parameters      map[string]any
+	existingProject bool
+	acrMode         infraEjectAcrMode
+	environments    []map[string]string
 }
 
 type infraTargetState struct {
@@ -486,7 +495,21 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 		}
 	}
 	defer inittelemetry.Start(ctx, inittelemetry.InfraGeneration)()
-	return ejectInfra(projectRoot, provider, env)
+	if provider != project.TerraformProviderName {
+		return ejectInfra(projectRoot, provider, env)
+	}
+	prepared, err := prepareInfraEject(projectRoot, provider, env)
+	if err != nil {
+		return err
+	}
+	if prepared.existingProject {
+		if err := synthesis.ResolveTerraformMonitoringExport(
+			ctx, prepared.parameters, env["AZURE_AI_PROJECT_ID"], env, nil,
+		); err != nil {
+			return err
+		}
+	}
+	return writeInfraEject(projectRoot, provider, prepared)
 }
 
 // ejectInfra synthesizes infrastructure templates from azure.yaml. A project
@@ -507,15 +530,24 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 //
 // On success it prints the summary block and returns nil.
 func ejectInfra(projectRoot, provider string, environments ...map[string]string) error {
-	yamlPath := filepath.Join(projectRoot, "azure.yaml")
-	rawYAML, err := readProjectAzureYAML(projectRoot)
+	prepared, err := prepareInfraEject(projectRoot, provider, environments...)
 	if err != nil {
 		return err
+	}
+	return writeInfraEject(projectRoot, provider, prepared)
+}
+
+func prepareInfraEject(
+	projectRoot, provider string, environments ...map[string]string,
+) (*infraEjectPreparation, error) {
+	rawYAML, err := readProjectAzureYAML(projectRoot)
+	if err != nil {
+		return nil, err
 	}
 
 	svcName, err := findFoundryServiceForEject(rawYAML)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var ejectEnv map[string]string
 	if len(environments) > 0 {
@@ -523,7 +555,7 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 	}
 	endpoint, err := synthesis.ProjectEndpoint(rawYAML, svcName, projectRoot, ejectEnv)
 	if err != nil {
-		return exterrors.Validation(
+		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
 			fmt.Sprintf("read endpoint for foundry project service %q: %s", svcName, err),
 			"check the endpoint field under your azure.ai.project service",
@@ -532,17 +564,17 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 	existingProject := endpoint != ""
 	if existingProject && len(environments) > 0 {
 		if err := validateExistingProjectEjectEnvironment(endpoint, environments[0]); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	layerProvider := foundryLayerProvider(provider)
 	plan, err := planInfraEject(projectRoot, rawYAML, provider, layerProvider)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := validateEjectTarget(plan); err != nil {
-		return err
+		return nil, err
 	}
 
 	var environment map[string]string
@@ -559,6 +591,9 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		// the ejected main.parameters.json stays environment-portable; the
 		// on-disk provision flow resolves them from the azd environment.
 		PreserveVarRefs: true,
+	}
+	if err := synthesis.RequireACRReuseForEnvironment(context.Background(), nil, "", synthesisInput); err != nil {
+		return nil, err
 	}
 	if !existingProject {
 		environment = maps.Clone(environment)
@@ -582,10 +617,10 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 	if !existingProject && provider == project.TerraformProviderName {
 		mode, err := synthesis.GreenfieldACRMode(synthesisInput)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if mode == "reuse-connect" {
-			return exterrors.Validation(
+			return nil, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"reuse mode with AZURE_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
 				"eject Bicep instead with `azd ai agent init --infra=bicep`, "+
@@ -600,17 +635,23 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		res, err = synthesis.Synthesize(synthesisInput)
 	}
 	if err != nil {
+		if local, ok := errors.AsType[*azdext.LocalError](err); ok {
+			return nil, local
+		}
 		// Reuse the provider's vocabulary so eject and provision report
 		// consistent codes for the same azure.yaml problems.
-		return exterrors.Validation(
+		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
 			fmt.Sprintf("synthesize foundry project service %q: %s", svcName, err),
 			"check the endpoint, deployments, and network fields under your azure.ai.project service",
 		)
 	}
+	for _, warning := range res.Warnings {
+		fmt.Fprintln(os.Stderr, color.YellowString("Warning: "+warning))
+	}
 	deployments, present, err := project.DecodeProjectDeploymentsEnv(environment[projectDeploymentsEnvKey])
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if present {
 		res.Parameters["deployments"] = deployments
@@ -620,14 +661,14 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		values := environment
 		acrMode, err = resolveInfraEjectAcrMode(res.Parameters, values)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if provider == project.TerraformProviderName && acrMode == infraEjectAcrCreate &&
 			(strings.TrimSpace(values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]) != "" ||
 				strings.TrimSpace(values["AZURE_CONTAINER_REGISTRY_ENDPOINT"]) != "" ||
 				strings.TrimSpace(values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]) != "" ||
 				strings.TrimSpace(values["AZD_FOUNDRY_RESOURCE_GROUP_ID"]) != "") {
-			return exterrors.Validation(
+			return nil, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"Terraform eject cannot adopt the container registry previously created by microsoft.foundry",
 				"run `azd down` before ejecting Terraform, or keep Bicep/microsoft.foundry for the existing resources",
@@ -636,7 +677,7 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 	}
 	if provider == project.TerraformProviderName {
 		if res.Hosting != nil {
-			return exterrors.Validation(
+			return nil, exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"BYO AKS requires the microsoft.foundry provisioning provider",
 				"use embedded provisioning or Bicep eject to create the default AKS supporting resources and grants",
@@ -648,7 +689,7 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		// public account — the exact silent public fallback the network: contract
 		// forbids. Fail fast instead of ejecting an insecure template.
 		if res.NetworkMode != synthesis.NetworkModeNone {
-			return exterrors.Validation(
+			return nil, exterrors.Validation(
 				exterrors.CodeInfraEjectNetworkUnsupported,
 				"private networking (the service's network: block) is not yet supported with Terraform",
 				"eject Bicep instead with `azd ai agent init --infra` (or `--infra=bicep`), "+
@@ -657,6 +698,15 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		}
 	}
 
+	return &infraEjectPreparation{
+		rawYAML: rawYAML, plan: plan, parameters: res.Parameters, existingProject: existingProject,
+		acrMode: acrMode, environments: environments,
+	}, nil
+}
+
+func writeInfraEject(projectRoot, provider string, prepared *infraEjectPreparation) error {
+	plan := prepared.plan
+	params := prepared.parameters
 	// Generate away from the destination, then install only after every file is
 	// ready. This lets a layered eject merge into an existing infra/ tree without
 	// exposing partial files or deleting user-owned content on failure.
@@ -670,16 +720,16 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 	defer os.RemoveAll(stageDir)
 
 	var written []ejectArtifact
-	if existingProject && provider == project.TerraformProviderName {
+	if prepared.existingProject && provider == project.TerraformProviderName {
 		written, err = ejectExistingProjectTerraform(
-			stageDir, plan.targetPath, plan.module, res.Parameters, acrMode, environments)
+			stageDir, plan.targetPath, plan.module, params, prepared.acrMode, prepared.environments)
 	} else if provider == project.TerraformProviderName {
-		written, err = ejectTerraform(stageDir, plan.targetPath, plan.module, plan.layer, res.Parameters)
-	} else if existingProject {
+		written, err = ejectTerraform(stageDir, plan.targetPath, plan.module, plan.layer, params)
+	} else if prepared.existingProject {
 		written, err = ejectExistingProjectBicep(
-			stageDir, plan.targetPath, plan.module, res.Parameters, acrMode, environments)
+			stageDir, plan.targetPath, plan.module, params, prepared.acrMode, prepared.environments)
 	} else {
-		written, err = ejectBicep(stageDir, plan.targetPath, plan.module, plan.layer, res.Parameters)
+		written, err = ejectBicep(stageDir, plan.targetPath, plan.module, plan.layer, params)
 	}
 	if err != nil {
 		return err
@@ -690,7 +740,8 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		return err
 	}
 	if plan.updatedYAML != nil {
-		unchanged, err := azureYAMLUnchanged(yamlPath, rawYAML)
+		yamlPath := filepath.Join(projectRoot, "azure.yaml")
+		unchanged, err := azureYAMLUnchanged(yamlPath, prepared.rawYAML)
 		if err != nil {
 			rollback()
 			return exterrors.Internal(
@@ -781,12 +832,11 @@ func ejectExistingProjectBicep(
 	params["projectResourceId"] = "${AZURE_AI_PROJECT_ID}"
 	params["projectEndpoint"] = "${FOUNDRY_PROJECT_ENDPOINT}"
 	delete(params, "includeAcr")
-	if acrMode == infraEjectAcrCreate {
-		params["resourceGroupName"] = "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}"
-		params["location"] = "${AZURE_LOCATION}"
-		params["resourceTokenSalt"] = "${AZD_RESOURCE_TOKEN_SALT}"
-		params["tags"] = map[string]string{"azd-env-name": "${AZURE_ENV_NAME}"}
-	} else if (acrMode == infraEjectAcrReuseConnect || acrMode == infraEjectAcrAlreadyConnected) &&
+	params["resourceGroupName"] = "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}"
+	params["location"] = "${AZURE_LOCATION}"
+	params["resourceTokenSalt"] = "${AZD_RESOURCE_TOKEN_SALT}"
+	params["tags"] = map[string]string{"azd-env-name": "${AZURE_ENV_NAME}"}
+	if (acrMode == infraEjectAcrReuseConnect || acrMode == infraEjectAcrAlreadyConnected) &&
 		len(environments) > 0 {
 		params["existingAcrEndpoint"] = existingAcrEndpoint
 		params["existingAcrResourceId"] = environments[0]["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
@@ -815,8 +865,16 @@ func ejectTerraform(
 	params map[string]any,
 ) ([]ejectArtifact, error) {
 	includeAcr, _ := params["includeAcr"].(bool)
+	monitoring, err := synthesis.RenderTerraformMonitoring(params, false)
+	if err != nil {
+		return nil, err
+	}
 
 	written, err := writeEmbeddedTerraformTemplates(infraDir, artifactRoot, includeAcr)
+	if err != nil {
+		return nil, err
+	}
+	written, err = writeTerraformMonitoringFiles(infraDir, artifactRoot, written, monitoring)
 	if err != nil {
 		return nil, err
 	}
@@ -848,6 +906,10 @@ func ejectExistingProjectTerraform(
 	acrMode infraEjectAcrMode,
 	environments []map[string]string,
 ) ([]ejectArtifact, error) {
+	monitoring, err := synthesis.RenderTerraformMonitoring(params, true)
+	if err != nil {
+		return nil, err
+	}
 	existingAcrEndpoint := ""
 	if len(environments) > 0 &&
 		(acrMode == infraEjectAcrReuseConnect ||
@@ -867,6 +929,10 @@ func ejectExistingProjectTerraform(
 	if err != nil {
 		return nil, err
 	}
+	written, err = writeTerraformMonitoringFiles(infraDir, artifactRoot, written, monitoring)
+	if err != nil {
+		return nil, err
+	}
 	markerArtifact, err := writeFoundryTerraformMarker(infraDir, artifactRoot)
 	if err != nil {
 		return nil, err
@@ -880,6 +946,7 @@ func ejectExistingProjectTerraform(
 		synthesis.ExistingProjectTerraformTemplatesFS(),
 		false,
 		string(acrMode),
+		acrMode == infraEjectAcrCreate,
 	)
 	if err != nil {
 		return nil, err
@@ -891,6 +958,30 @@ func ejectExistingProjectTerraform(
 		return nil, err
 	}
 	return append(written, tfvarsArtifact), nil
+}
+
+func writeTerraformMonitoringFiles(
+	infraDir, artifactRoot string,
+	artifacts []ejectArtifact,
+	monitoring synthesis.TerraformMonitoring,
+) ([]ejectArtifact, error) {
+	for _, name := range slices.Sorted(maps.Keys(monitoring.Files)) {
+		data := monitoring.Files[name]
+		//nolint:gosec // generated infrastructure is intended to be human-readable
+		if err := os.WriteFile(filepath.Join(infraDir, name), data, 0o644); err != nil {
+			return nil, infraInstallError("write monitoring Terraform", err)
+		}
+		artifact := ejectArtifact{relPath: filepath.ToSlash(filepath.Join(artifactRoot, name)), bytes: len(data)}
+		index := slices.IndexFunc(artifacts, func(existing ejectArtifact) bool {
+			return existing.relPath == artifact.relPath
+		})
+		if index < 0 {
+			artifacts = append(artifacts, artifact)
+		} else {
+			artifacts[index] = artifact
+		}
+	}
+	return artifacts, nil
 }
 
 func writeFoundryTerraformMarker(infraDir, artifactRoot string) (ejectArtifact, error) {
@@ -1210,6 +1301,8 @@ func writeExistingProjectBicepTemplates(
 		target string
 	}{
 		{"templates/modules/foundry-project.bicep", "modules/foundry-project.bicep"},
+		{"templates/modules/monitoring.bicep", "modules/monitoring.bicep"},
+		{"templates/modules/monitoring-connection.bicep", "modules/monitoring-connection.bicep"},
 	}
 	if acrMode == infraEjectAcrCreate || (acrMode == infraEjectAcrReuseConnect && !acrPullAssigned) {
 		registrySource, err := fs.ReadFile(
@@ -2071,7 +2164,8 @@ func writeTerraformTemplateSet(
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".tf") ||
 			name == "container-registry-reuse.tf" || name == "container-registry-connect.tf" ||
-			name == "container-registry-create.tf" {
+			name == "container-registry-create.tf" ||
+			(name == "adjunct-resource-group.tf" && !includeAcr) {
 			continue
 		}
 		data, err := fs.ReadFile(tfs, templatesRoot+"/"+name)
@@ -2123,6 +2217,7 @@ func writeOutputsFile(
 		synthesis.TerraformTemplatesFS(),
 		layer,
 		"",
+		false,
 	)
 }
 
@@ -2134,6 +2229,7 @@ func writeTerraformOutputsFile(
 	tfs fs.FS,
 	layer bool,
 	acrMode string,
+	includeAdjunct bool,
 ) (ejectArtifact, error) {
 	raw, err := fs.ReadFile(tfs, tmplPath)
 	if err != nil {
@@ -2153,10 +2249,13 @@ func writeTerraformOutputsFile(
 
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, struct {
-		IncludeAcr bool
-		Layer      bool
-		AcrMode    string
-	}{IncludeAcr: includeAcr, Layer: layer, AcrMode: acrMode}); err != nil {
+		IncludeAcr     bool
+		IncludeAdjunct bool
+		Layer          bool
+		AcrMode        string
+	}{
+		IncludeAcr: includeAcr, IncludeAdjunct: includeAdjunct, Layer: layer, AcrMode: acrMode,
+	}); err != nil {
 		return ejectArtifact{}, exterrors.Internal(
 			exterrors.CodeInfraEjectWriteFailed,
 			fmt.Sprintf("render outputs template: %s", err),
@@ -2202,11 +2301,16 @@ func writeExistingProjectTfvarsFile(
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
 	}
+	monitoring, err := synthesis.RenderTerraformMonitoring(params, true)
+	if err != nil {
+		return ejectArtifact{}, err
+	}
+	maps.Copy(doc, monitoring.Variables)
 	return writeJSONArtifact(infraDir, artifactRoot, module+".tfvars.json", doc)
 }
 
 func readInfraEjectEnvironment(ctx context.Context, azdClient *azdext.AzdClient) (map[string]string, error) {
-	current, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	current, err := synthesis.CurrentEnvironment(ctx, azdClient)
 	if err != nil {
 		return nil, fmt.Errorf("read active azd environment for infrastructure eject: %w", err)
 	}
@@ -2230,6 +2334,10 @@ func readInfraEjectEnvironment(ctx context.Context, azdClient *azdext.AzdClient)
 	}
 	if binding.GetFound() {
 		result[synthesis.ACRBindingEnvKey] = string(binding.GetValue())
+	}
+	if err := synthesis.RequireACRReuseForEnvironment(ctx, azdClient, current.Environment.Name,
+		synthesis.Input{Env: result}); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -2387,12 +2495,16 @@ func writeTfvarsFile(
 		doc["foundry_project_name"] = "${AZURE_AI_PROJECT_NAME=}"
 	}
 
-	// Model deployments are the only synthesizer-derived values
-	// written to tfvars. The Terraform provider resolves ${VAR} references
+	// The Terraform provider resolves ${VAR} references
 	// across the generated file at provision time.
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
 	}
+	monitoring, err := synthesis.RenderTerraformMonitoring(params, false)
+	if err != nil {
+		return ejectArtifact{}, err
+	}
+	maps.Copy(doc, monitoring.Variables)
 	filename := module + ".tfvars.json"
 	return writeJSONArtifact(infraDir, artifactRoot, filename, doc)
 }

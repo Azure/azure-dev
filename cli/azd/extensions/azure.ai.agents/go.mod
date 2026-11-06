@@ -128,3 +128,7 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 )
+
+require azure.ai.projects/synthesis v0.0.0
+
+replace azure.ai.projects/synthesis => ../azure.ai.projects/synthesis

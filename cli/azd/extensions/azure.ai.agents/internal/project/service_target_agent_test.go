@@ -2504,6 +2504,7 @@ func newServiceTargetTestClient(
 	t.Helper()
 
 	srv := grpc.NewServer()
+	azdext.RegisterEnvironmentServiceServer(srv, &stubInitializeEnvServer{})
 	if containerSrv != nil {
 		azdext.RegisterContainerServiceServer(srv, containerSrv)
 	}
@@ -2585,6 +2586,18 @@ type stubInitializeEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 }
 
+func (s *stubInitializeEnvServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	return &azdext.KeyValueListResponse{}, nil
+}
+
+func (s *stubInitializeEnvServer) GetConfig(
+	context.Context, *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	return &azdext.GetConfigResponse{}, nil
+}
+
 func (s *stubInitializeEnvServer) GetCurrent(
 	context.Context, *azdext.EmptyRequest,
 ) (*azdext.EnvironmentResponse, error) {
@@ -2659,7 +2672,7 @@ func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *az
 }
 
 type legacyPreBuiltEnvironmentServer struct {
-	azdext.UnimplementedEnvironmentServiceServer
+	stubInitializeEnvServer
 }
 
 func (s *legacyPreBuiltEnvironmentServer) GetValue(

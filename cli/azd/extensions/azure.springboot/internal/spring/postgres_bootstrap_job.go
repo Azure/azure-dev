@@ -31,7 +31,7 @@ const (
 	postgresBootstrapPollInterval            = 5 * time.Second
 	postgresBootstrapStaleThreshold          = time.Hour
 	postgresBootstrapImage                   = "ghcr.io/xiaofeicao/azd-spring-postgres-bootstrap@" +
-		"sha256:55be023db010e617e19cc0944ea19f6e780d33b24e420cdec097f72a4d1547ce"
+		"sha256:1600b5d5a0c5557e8f7e9ddcaedeccd7cb7020b24a89e28c4af1da591a17e0b3"
 )
 
 var errPostgresBootstrapExecutionNotFound = errors.New("PostgreSQL bootstrap execution not found")

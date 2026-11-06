@@ -43,6 +43,10 @@ type GlobalCommandOptions struct {
 	// purposes such as URLs).
 	EnvironmentName string
 
+	// PreParsedOutput holds the normalized --output/-o value parsed before command tree construction.
+	// It is not bound to a Cobra flag; commands with DisableFlagParsing use it for host console output.
+	PreParsedOutput string
+
 	// EnableTelemetry indicates if telemetry should be sent.
 	// The rootCmd will disable this based if the environment variable
 	// AZURE_DEV_COLLECT_TELEMETRY is set to 'no'.

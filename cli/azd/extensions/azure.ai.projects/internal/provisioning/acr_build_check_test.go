@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -81,7 +81,7 @@ func TestACRRemoteBuildPreflight(t *testing.T) {
 				provider = FoundryProviderName
 			}
 			var raw strings.Builder
-			raw.WriteString("infra:\n  provider: " + provider + "\nservices:\n  project:\n    host: azure.ai.project\n")
+			raw.WriteString("infra:\n  provider: " + provider + "\nservices:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n")
 			if tt.endpoint != "" {
 				raw.WriteString("    endpoint: " + tt.endpoint + "\n")
 			}
@@ -179,7 +179,7 @@ func TestACRRemoteBuildPreflightUsesOnDiskSelection(t *testing.T) {
 								raw = "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
 									"      path: infra/foundry\n      module: project\n"
 							}
-							raw += "services:\n  project:\n    host: azure.ai.project\n" +
+							raw += "services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n" +
 								"  agent:\n    host: azure.ai.agent\n    docker: {remoteBuild: true}\n"
 							require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
 							require.NoError(t, os.MkdirAll(filepath.Join(root, path), 0o750))
@@ -273,7 +273,7 @@ func TestACROnDiskNetworkingUsesEffectiveInputs(t *testing.T) {
 								"      path: " + route.path + "\n      module: " + route.module + "\n"
 							options.Name = "foundry"
 						}
-						raw += "services:\n  project:\n    host: azure.ai.project\n" +
+						raw += "services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n" +
 							"    network:\n      peSubnet:\n" +
 							"        vnet: /subscriptions/sub/resourceGroups/network/" +
 							"providers/Microsoft.Network/virtualNetworks/vnet\n        name: pe-subnet\n" +
@@ -564,7 +564,7 @@ func TestACRRemoteBuildRejectsBeforePersistingPromptChoices(t *testing.T) {
 		for _, test := range []struct{ abac, onDisk bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
 			t.Run(fmt.Sprintf("condition=%s/ABAC=%t/onDisk=%t", condition, test.abac, test.onDisk), func(t *testing.T) {
 				root := t.TempDir()
-				raw := "infra:\n  provider: microsoft.foundry\nservices:\n  project:\n    host: azure.ai.project\n" +
+				raw := "infra:\n  provider: microsoft.foundry\nservices:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n" +
 					"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    docker: {remoteBuild: true}\n"
 				if condition != "" {
 					raw += "    condition: " + condition + "\n"
@@ -674,7 +674,7 @@ func TestACROnDiskLocalBuildValidatesPromptedScopeBeforeWrites(t *testing.T) {
 					if route.name != "root" {
 						options.Path, options.Module = filepath.FromSlash(route.path), route.module
 					}
-					raw += "services:\n  project:\n    host: azure.ai.project\n" +
+					raw += "services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n" +
 						"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    docker: {remoteBuild: false}\n"
 					infra := filepath.Join(root, filepath.FromSlash(route.path))
 					require.NoError(t, os.MkdirAll(infra, 0o750))

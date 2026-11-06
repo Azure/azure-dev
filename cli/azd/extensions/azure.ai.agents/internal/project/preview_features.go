@@ -8,10 +8,10 @@ import (
 	"io"
 	"strings"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/phasetelemetry"
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )

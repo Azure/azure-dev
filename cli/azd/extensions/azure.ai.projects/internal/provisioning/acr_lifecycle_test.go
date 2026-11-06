@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -2035,7 +2035,7 @@ func TestACRProjectOnlyProvisionPreservesPendingSelector(t *testing.T) {
 			tt.mode, tt.down, tt.refresh, tt.agentBeforeRefresh)
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
-			manifest := "services:\n  project:\n    host: azure.ai.project\n"
+			manifest := "services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n"
 			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(manifest), 0o600))
 			p, env := acrTestProvider(t)
 			env.get = map[string]string{
@@ -2219,7 +2219,7 @@ func TestACRStatePreservesDeployedRegistryOutputs(t *testing.T) {
 				t.Run(fmt.Sprintf("%s/alias=%t/read=%s", mode, alias, failRead), func(t *testing.T) {
 					root := t.TempDir()
 					require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
-						"services:\n  project:\n    host: azure.ai.project\n"), 0o600))
+						"services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n"), 0o600))
 					p, env := acrTestProvider(t)
 					binding := acrTestBinding()
 					binding.Mode = mode
@@ -2317,7 +2317,7 @@ func TestACRFailedDeploymentRecoversIndependentOwnership(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
-				"services:\n  project:\n    host: azure.ai.project\n"+
+				"services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n"+
 					"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"), 0o600))
 			p, env := acrTestProvider(t)
 			env.get = map[string]string{
@@ -2995,7 +2995,7 @@ func TestACRProjectOnlyEjectionRemainsDemandDriven(t *testing.T) {
 						raw = "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
 							"      path: infra/foundry\n      module: project\n"
 					}
-					raw += "services:\n  project:\n    host: azure.ai.project\n"
+					raw += "services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n"
 					values := map[string]string{
 						"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
 					}

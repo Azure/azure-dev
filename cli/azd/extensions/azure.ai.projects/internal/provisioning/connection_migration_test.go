@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -302,7 +302,9 @@ func findSystemAcrConnections(template map[string]any) []map[string]any {
 	visit = func(value any) {
 		switch value := value.(type) {
 		case map[string]any:
-			if value["type"] == "Microsoft.CognitiveServices/accounts/projects/connections" {
+			properties, _ := value["properties"].(map[string]any)
+			if value["type"] == "Microsoft.CognitiveServices/accounts/projects/connections" &&
+				properties["category"] == "ContainerRegistry" {
 				connections = append(connections, value)
 			}
 			for _, child := range value {

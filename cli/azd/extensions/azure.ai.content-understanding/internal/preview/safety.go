@@ -12,7 +12,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-var entity = regexp.MustCompile(`&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]+);`)
+var entity = regexp.MustCompile(`&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]+);?`)
 
 func safeText(source string) string {
 	clean := func(value string) string {

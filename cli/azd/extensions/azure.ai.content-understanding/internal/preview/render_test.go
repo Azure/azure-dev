@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -300,6 +301,12 @@ func TestSafetyPreservesUnrelatedEscapesAndMarkdownDelimiters(t *testing.T) {
 		"&lt;table&gt; &amp;",
 		"A &amp; B",
 		"A &amp;amp; B",
+		"A &amp B",
+		"A &copy B",
+		"A &#65 B",
+		"A &#x41 Z",
+		"A &amp;#27 B",
+		"A &amp;#x1b Z",
 		"# Title\n\n**Important** and *emphasis*.",
 		"中文、日本語、한글 😀",
 		"https://example.com/doc?page=2#section",
@@ -321,15 +328,55 @@ func TestSafetyNormalizesNewlinesAndRemovesControls(t *testing.T) {
 		{"ansi-color", "\x1b[31mRed\x1b[0m", "Red"},
 		{"decimal-entity", "A&#27;B", "AB"},
 		{"hex-entity", "A&#x1b;B", "AB"},
+		{"decimal-entity-no-semicolon", "A&#27B", "AB"},
+		{"hex-entity-no-semicolon", "A&#x1bZ", "AZ"},
+		{"decimal-entity-at-end", "A&#27", "A"},
+		{"hex-entity-at-end", "A&#x1b", "A"},
+		{"hex-entity-uppercase", "A&#X001BZ", "AZ"},
+		{"hex-entity-longest-match", "A&#x1bB", "A&#x1bB"},
+		{"decimal-entity-longest-match", "A&#270B", "A&#270B"},
 		{"encoded-newline-and-tab", "A&#10;&#9;B", "A&#10;&#9;B"},
 		{"bidi-controls", "中文\u202eABC\u202c\u2066日本語\u2069", "中文ABC日本語"},
 		{"encoded-bidi", "A&#x202e;B&#8236;", "AB"},
+		{"encoded-bidi-no-semicolon", "A&#x202eZ&#8236", "AZ"},
 	} {
 		t.Run(sample.name, func(t *testing.T) {
 			actual := safeText(sample.source)
 			assert.Equal(t, sample.expected, actual)
 			assert.Equal(t, actual, safeText(actual), "cleaning is stable across repeated calls")
 		})
+	}
+}
+
+func TestPreviewFiltersSemicolonlessControlsBeforeRendering(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	for _, encoded := range []string{"&#27", "&#x1b", "&#X001B", "&#8238", "&#x202e"} {
+		for _, sample := range []struct {
+			name, template string
+			width          int
+		}{
+			{"markdown", "Before %s[31mAfter\n", 120},
+			{"metadata", "---\nmimeType: application/pdf\nnote: %s[31mAfter\n---\n", 120},
+			{"comment", "<!-- Before %s[31mAfter -->\n", 120},
+			{"table", "<table><caption>%s[31mCaption</caption><tr><th>Name</th></tr>" +
+				"<tr><td>Before %s[31mAfter</td></tr></table>\n", 120},
+			{"cards", "<table><tr><th>Name</th></tr><tr><td>%s[31m" +
+				"RECORD0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ</td></tr></table>\n", 20},
+			{"fallback", "<table><tr><th>Name</th></tr>" +
+				"<tr><td colspan=\"2\">Before %s[31mAfter</td></tr></table>\n", 120},
+		} {
+			for _, color := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/color=%t", encoded, sample.name, color), func(t *testing.T) {
+					source := strings.ReplaceAll(sample.template, "%s", encoded)
+					baseline := strings.ReplaceAll(sample.template, "%s", "")
+					var actual, expected bytes.Buffer
+					require.NoError(t, Render(t.Context(), &actual, source, sample.width, color))
+					require.NoError(t, Render(t.Context(), &expected, baseline, sample.width, color))
+					assert.Equal(t, expected.String(), actual.String(),
+						"encoded controls must not introduce bytes beyond the renderer's own styling")
+				})
+			}
+		}
 	}
 }
 

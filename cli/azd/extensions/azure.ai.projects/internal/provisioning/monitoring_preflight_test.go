@@ -811,6 +811,37 @@ func TestMonitoringPlannedPrivateLinkScope(t *testing.T) {
 	assert.Empty(t, monitoringPlannedPrivateLinkScope(nil, "sub", "rg"))
 }
 
+func TestMonitoringPreflightPrivateReuseConnectRetryMismatchSuggestsRecovery(t *testing.T) {
+	t.Parallel()
+	source := monitoringTestSource("reuse-connect")
+	delete(source.parameters, "projectResourceId")
+	for name, value := range map[string]string{
+		"location": "westus3", "resourceGroupName": "project-rg", "foundryProjectName": "project", "resourceTokenSalt": "test",
+	} {
+		source.parameters[name] = map[string]any{"value": value}
+	}
+	source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+	fixture := monitoringCloudFixture{
+		plannedStatus: http.StatusOK,
+		plannedChanges: []any{
+			map[string]any{"resourceId": monitoringTestProject, "changeType": "NoChange"},
+		},
+		previous: map[string]any{
+			"provisioningState": "Failed", "parameters": source.parameters,
+			"template": map[string]any{"resources": []any{"different"}},
+		},
+	}
+	p := newMonitoringCloudFixture(t, &fixture)
+	p.synthResult = &synthesis.Result{}
+	client, err := p.deploymentsClient(t.Context())
+	require.NoError(t, err)
+	err = p.prepareMonitoring(t.Context(), source, client, func(string) {})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "different monitoring graph")
+	assert.Contains(t, err.Error(), "monitoring.enabled: false")
+	assert.NotContains(t, err.Error(), "explicitly configure existing-component reuse")
+}
+
 func TestMonitoringPreflightFailedNativeAttemptCanRetryWithoutTrustingOutputs(t *testing.T) {
 	t.Parallel()
 	source := monitoringTestSource("create")

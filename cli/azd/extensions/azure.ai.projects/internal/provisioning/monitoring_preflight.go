@@ -398,6 +398,11 @@ func (p *FoundryProvisioningProvider) resolveMonitoringTarget(
 		before, beforeErr := json.Marshal(exported.Template)
 		after, afterErr := json.Marshal(source.armTemplate)
 		if beforeErr != nil || afterErr != nil || !bytes.Equal(before, after) {
+			if mode == "reuse-connect" {
+				return "", nil, fmt.Errorf("the failed deployment used a different monitoring graph; " +
+					"existing-component reuse is already selected, so restore the previous infrastructure " +
+					"template or disable monitoring (monitoring.enabled: false) before retrying")
+			}
 			return "", nil, fmt.Errorf("the failed deployment used a different monitoring graph; " +
 				"restore its infrastructure or explicitly configure existing-component reuse before retrying")
 		}

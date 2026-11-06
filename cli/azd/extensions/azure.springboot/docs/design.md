@@ -140,11 +140,12 @@ requires permission to read and delete PostgreSQL firewall rules. The extension
 does not adopt or delete unknown, changed, or unowned rules.
 
 Automatic bootstrap address discovery observes the HTTPS egress path through
-`api.ipify.org`; it cannot prove which source address a direct PostgreSQL
-connection will use. A live split-egress trial produced different HTTPS and
-PostgreSQL NAT paths, so the exact discovered rule did not admit the database
-connection. `POSTGRES_BOOTSTRAP_CLIENT_IP` supplies an explicit public IPv4
-candidate for troubleshooting, but it does not verify the PostgreSQL route.
+an external public-address endpoint; it cannot prove which source address a
+direct PostgreSQL connection will use. A live split-egress trial produced
+different HTTPS and PostgreSQL NAT paths, so the exact discovered rule did not
+admit the database connection. `POSTGRES_BOOTSTRAP_CLIENT_IP` supplies an
+explicit public IPv4 candidate for troubleshooting, but it does not verify the
+PostgreSQL route.
 
 The deletion is bounded by the azd lifecycle. Once `postprovision` is running,
 the extension attempts cleanup before returning success or an application,

@@ -27,11 +27,14 @@ type sdkResourceChecker struct {
 	credential  azcore.TokenCredential
 	options     *arm.ClientOptions
 	readClients *resourceClients
+	reads       *AuthorizationEvidence
 }
 
 // NewResourceChecker constructs read-only ARM adapters using an already resolved user-access-tenant credential.
-func NewResourceChecker(credential azcore.TokenCredential, options *arm.ClientOptions) ResourceChecker {
-	return &sdkResourceChecker{credential: credential, options: onboardingARMOptions(options)}
+func NewResourceChecker(
+	credential azcore.TokenCredential, options *arm.ClientOptions, evidence *AuthorizationEvidence,
+) ResourceChecker {
+	return &sdkResourceChecker{credential: credential, options: onboardingARMOptions(options), reads: evidence}
 }
 
 func onboardingARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
@@ -115,7 +118,7 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 		}
 		subscriptions[strings.ToLower(id.SubscriptionID)] = true
 	}
-	client, err := arm.NewClient("azure.ai.projects.onboarding", "v1.0.0", c.credential, c.options)
+	_, err := c.reads.armClient()
 	if err != nil {
 		return "", append(report, readFailure("resource-refs", plan.SubscriptionID, "subscriptions/read", err))
 	}
@@ -125,7 +128,7 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 	tasks := make([]func(), 0, len(keys))
 	for i, subscription := range keys {
 		tasks = append(tasks, func() {
-			tenants[i], checks[i] = readSubscriptionTenant(ctx, client, subscription)
+			tenants[i], checks[i] = readSubscriptionTenant(ctx, c.reads, subscription)
 		})
 	}
 	parallelReads(tasks...)
@@ -140,23 +143,15 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 		}
 		report = append(report, check)
 	}
-	if report.Err() != nil {
+	if slices.ContainsFunc(report, Check.blocks) {
 		tenant = ""
 	}
 	return tenant, report
 }
 
-func readSubscriptionTenant(ctx context.Context, client *arm.Client, subscription string) (string, Check) {
+func readSubscriptionTenant(ctx context.Context, reader *AuthorizationEvidence, subscription string) (string, Check) {
 	scope := "/subscriptions/" + subscription
-	request, err := runtime.NewRequest(ctx, http.MethodGet,
-		strings.TrimRight(client.Endpoint(), "/")+scope+"?api-version=2022-12-01")
-	if err != nil {
-		return "", readFailure("resource-refs", scope, "Microsoft.Resources/subscriptions/read", err)
-	}
-	response, err := client.Pipeline().Do(request)
-	if err == nil && !runtime.HasStatusCode(response, http.StatusOK) {
-		err = runtime.NewResponseError(response)
-	}
+	response, err := reader.GetSubscription(ctx, subscription)
 	if err != nil {
 		return "", readFailure("resource-refs", scope, "Microsoft.Resources/subscriptions/read", err)
 	}
@@ -178,6 +173,9 @@ func readSubscriptionTenant(ctx context.Context, client *arm.Client, subscriptio
 func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Report, error) {
 	local := *c
 	local.readClients = &resourceClients{}
+	if local.reads == nil {
+		local.reads = NewAuthorizationEvidence(c.credential, c.options)
+	}
 	c = &local
 	tenant, report := c.subscriptionTenants(ctx, plan)
 	report = append(slices.Clone(plan.SkippedChecks), report...)
@@ -189,6 +187,7 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	var cluster *armcontainerservice.ManagedCluster
 	var pools []*armcontainerservice.AgentPool
 	var clusterReport Report
+	var selected *armcontainerservice.AgentPool
 	tasks := []func(){func() {
 		cluster, pools, clusterReport = c.readCluster(ctx, plan.Cluster)
 	}}
@@ -217,8 +216,9 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	report = append(report, storageReport...)
 	report = append(report, clusterReport...)
 	if cluster != nil {
-		kubelet, checks := aksResourceChecks(*cluster, pools)
-		c.poolCapacityWarnings(ctx, *cluster, pools, checks)
+		kubelet, checks, pool := aksResourceChecks(*cluster, pools)
+		selected = pool
+		c.poolCapacityWarnings(ctx, *cluster, pools, selected, checks)
 		facts.KubeletObjectID = kubelet
 		report = append(report, checks...)
 	} else {
@@ -249,7 +249,7 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 				NotApplicable, "Storage uses the default ARM creation/update path"))
 		}
 	}
-	report = append(report, c.networkChecks(ctx, plan, cluster, pools)...)
+	report = append(report, c.networkChecks(ctx, plan, cluster, selected)...)
 	if err := ctx.Err(); err != nil {
 		return facts, report, err
 	}
@@ -308,9 +308,9 @@ func (c *sdkResourceChecker) readAgentPools(
 }
 
 func (c *sdkResourceChecker) poolCapacityWarnings(
-	ctx context.Context, cluster armcontainerservice.ManagedCluster, pools []*armcontainerservice.AgentPool, report Report,
+	ctx context.Context, cluster armcontainerservice.ManagedCluster, pools []*armcontainerservice.AgentPool,
+	selected *armcontainerservice.AgentPool, report Report,
 ) {
-	selected, _ := selectedAgentPool(pools)
 	var candidates []*armcontainerservice.AgentPool
 	for _, pool := range pools {
 		if pool != nil && pool.Properties != nil &&

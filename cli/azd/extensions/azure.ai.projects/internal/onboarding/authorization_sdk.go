@@ -16,7 +16,6 @@ import (
 type scopedAuthorizer struct {
 	credential azcore.TokenCredential
 	options    *arm.ClientOptions
-	reads      *AuthorizationEvidence
 }
 
 // NewAuthorizer checks supplied-identity permissions without trial writes, deny reads or Graph calls.
@@ -24,17 +23,13 @@ func NewAuthorizer(credential azcore.TokenCredential, options *arm.ClientOptions
 	return &scopedAuthorizer{credential: credential, options: onboardingARMOptions(options)}
 }
 
-// NewAuthorizerWithEvidence reuses request-local evidence across preflight and deployment bindings.
-func NewAuthorizerWithEvidence(
-	credential azcore.TokenCredential, options *arm.ClientOptions, evidence *AuthorizationEvidence,
-) Authorizer {
-	return &scopedAuthorizer{credential: credential, options: onboardingARMOptions(options), reads: evidence}
+func (a *scopedAuthorizer) Check(ctx context.Context, p Plan, f Facts) (Report, error) {
+	return NewAuthorizationEvidence(a.credential, a.options).Check(ctx, p, f)
 }
 
-func (a *scopedAuthorizer) Check(ctx context.Context, p Plan, f Facts) (Report, error) {
-	local := *a
-	local.reads = a.evidence()
-	report := local.suppliedIdentityChecks(ctx, p, f)
+// Check validates supplied-identity roles using this preparation's shared evidence.
+func (e *AuthorizationEvidence) Check(ctx context.Context, p Plan, f Facts) (Report, error) {
+	report := e.suppliedIdentityChecks(ctx, p, f)
 	return report, report.Err()
 }
 

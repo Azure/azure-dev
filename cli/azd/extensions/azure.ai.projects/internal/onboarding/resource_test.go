@@ -194,7 +194,7 @@ func checkWithID(t *testing.T, report Report, id string) Check {
 
 func TestResourceCheckerReadsOnlySupportingResources(t *testing.T) {
 	fake := resourceFake()
-	facts, report, err := NewResourceChecker(testCredential{}, fake.options()).Check(t.Context(), suppliedPlan(t))
+	facts, report, err := NewResourceChecker(testCredential{}, fake.options(), nil).Check(t.Context(), suppliedPlan(t))
 	require.NoError(t, err)
 	assert.Equal(t, "hosting-principal", facts.HostingIdentity.PrincipalID)
 	assert.Equal(t, "workload-principal", facts.WorkloadIdentity.PrincipalID)
@@ -281,7 +281,7 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			fake := resourceFake()
 			test.change(fake)
-			_, report, err := NewResourceChecker(testCredential{}, fake.options()).Check(t.Context(), suppliedPlan(t))
+			_, report, err := NewResourceChecker(testCredential{}, fake.options(), nil).Check(t.Context(), suppliedPlan(t))
 			require.Error(t, err)
 			require.Error(t, report.Err())
 			if test.name == "read forbidden" {

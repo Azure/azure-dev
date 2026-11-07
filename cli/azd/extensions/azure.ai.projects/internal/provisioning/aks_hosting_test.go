@@ -821,7 +821,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 			if scenario == "cross subscription Foundry" {
 				source, err := provider.resolveTemplate(t.Context(), func(string) {})
 				require.NoError(t, err)
-				identified, err := provider.identifyBYOTemplatePlan(t.Context(), source)
+				identified, err := provider.identifyBYOTemplatePlan(t.Context(), source, nil)
 				require.NoError(t, err)
 				assert.Equal(t, subscription, identified.SubscriptionID)
 				assert.Contains(t, identified.OwningSubscriptions, "target-sub")
@@ -830,7 +830,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 			if network {
 				source, err := provider.resolveTemplate(t.Context(), func(string) {})
 				require.NoError(t, err)
-				identified, err := provider.identifyBYOTemplatePlan(t.Context(), source)
+				identified, err := provider.identifyBYOTemplatePlan(t.Context(), source, nil)
 				require.NoError(t, err)
 				if unknownField == "networkInjections" || noNetworkSelection {
 					assert.Empty(t, identified.AgentSubnet.ID)

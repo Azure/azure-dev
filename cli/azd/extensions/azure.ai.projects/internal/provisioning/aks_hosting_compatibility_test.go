@@ -244,7 +244,7 @@ func TestBYOSuppliedPreflightUsesCustomizedCompiledPlan(t *testing.T) {
 	}
 	source, err := p.resolveTemplate(t.Context(), func(string) {})
 	require.NoError(t, err)
-	plan, err := p.identifyBYOTemplatePlan(t.Context(), source)
+	plan, err := p.identifyBYOTemplatePlan(t.Context(), source, nil)
 	require.NoError(t, err)
 	assert.Equal(t, suppliedStorageID, plan.Storage.ID)
 	assert.True(t, plan.Storage.Supplied)

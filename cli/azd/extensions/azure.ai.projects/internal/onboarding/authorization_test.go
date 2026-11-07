@@ -75,7 +75,7 @@ func TestSuppliedGrantChecksRequireAllSuppliedSelections(t *testing.T) {
 				fake := authorizationFake()
 				fake.replies[strings.ToLower(target.ID+assignmentSuffix)] =
 					readReply{200, map[string]any{"value": []any{}}}
-				authorizer := NewAuthorizer(testCredential{}, fake.options()).(*scopedAuthorizer)
+				authorizer := NewAuthorizationEvidence(testCredential{}, fake.options())
 				report := authorizer.suppliedIdentityChecks(t.Context(), plan, facts)
 				if state != "supplied" {
 					assert.Empty(t, report)
@@ -117,7 +117,7 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 				page = map[string]any{"value": []any{}, "nextLink": "https://management.azure.com/next-role-page"}
 			}
 			fake.replies[strings.ToLower(testStorage+assignmentSuffix)] = readReply{200, page}
-			authorizer := NewAuthorizer(testCredential{}, fake.options()).(*scopedAuthorizer)
+			authorizer := NewAuthorizationEvidence(testCredential{}, fake.options())
 			status, _, err := authorizer.identityGrantAllows(t.Context(), grant)
 			assert.Equal(t, state == "incomplete", err != nil)
 			switch state {

@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-func (a *scopedAuthorizer) suppliedIdentityChecks(ctx context.Context, plan Plan, facts Facts) Report {
+func (e *AuthorizationEvidence) suppliedIdentityChecks(ctx context.Context, plan Plan, facts Facts) Report {
 	if !plan.Hosting.Supplied || !plan.Workload.Supplied || !plan.Storage.Supplied {
 		return nil
 	}
@@ -39,7 +39,7 @@ func (a *scopedAuthorizer) suppliedIdentityChecks(ctx context.Context, plan Plan
 			report = append(report, check)
 			continue
 		}
-		check.Status, check.Observed, check.Cause = a.identityGrantAllows(ctx, grant)
+		check.Status, check.Observed, check.Cause = e.identityGrantAllows(ctx, grant)
 		if check.Status != Pass && check.Status != NotApplicable {
 			check.Missing = "readable applicable role assignment with an accepted role ID and no condition"
 			check.Remediation = "Have the resource administrator configure the supplied identity's required permissions; " +
@@ -50,10 +50,10 @@ func (a *scopedAuthorizer) suppliedIdentityChecks(ctx context.Context, plan Plan
 	return report
 }
 
-func (a *scopedAuthorizer) identityGrantAllows(
+func (e *AuthorizationEvidence) identityGrantAllows(
 	ctx context.Context, grant grantRequest,
 ) (Status, string, error) {
-	assignments, err := a.evidence().roleAssignments(ctx, grant.scope, false)
+	assignments, err := e.roleAssignments(ctx, grant.scope, false)
 	if err != nil {
 		return Unverified, "supplied identity role assignments cannot be read", err
 	}

@@ -100,15 +100,11 @@ func delegatedSubnetCheck(
 
 func (c *sdkResourceChecker) networkChecks(
 	ctx context.Context, plan Plan, cluster *armcontainerservice.ManagedCluster,
-	pools []*armcontainerservice.AgentPool,
+	selected *armcontainerservice.AgentPool,
 ) Report {
 	report := Report{}
 	checkSubnet := plan.AgentSubnet.ID != "" && plan.AgentSubnet.Supplied &&
 		plan.AgentSubnet.Missing == "" && plan.AgentSubnet.LifecycleMissing == ""
-	var selected *armcontainerservice.AgentPool
-	if cluster != nil && checkSubnet {
-		selected, _ = selectedAgentPool(pools)
-	}
 	var related []netip.Prefix
 	var nodeMetadataKnown bool
 	var nodeReport, parentReport, subnetReport Report

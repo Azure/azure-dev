@@ -41,6 +41,10 @@ type Check struct {
 	Cause       error
 }
 
+func (c Check) blocks() bool {
+	return c.Mandatory && c.Status != Pass && c.Status != NotApplicable
+}
+
 // Report retains all checks, including real service errors.
 type Report []Check
 
@@ -48,7 +52,7 @@ type Report []Check
 func (r Report) Err() error {
 	var blocked []Check
 	for _, c := range r {
-		if c.Mandatory && c.Status != Pass && c.Status != NotApplicable {
+		if c.blocks() {
 			blocked = append(blocked, c)
 		}
 	}

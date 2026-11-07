@@ -121,14 +121,14 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
-	plan, err := p.identifyBYOTemplatePlan(ctx, source)
+	evidence := onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
+	plan, err := p.identifyBYOTemplatePlan(ctx, source, evidence)
 	if err != nil {
 		return err
 	}
-	evidence := onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
 	pipeline := onboarding.Pipeline{
-		Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions),
-		Access:    onboarding.NewAuthorizerWithEvidence(p.credential, p.armClientOptions, evidence),
+		Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions, evidence),
+		Access:    evidence,
 	}
 	facts, report, preflightErr := pipeline.Preflight(ctx, plan)
 	if err := writeBYOPreflight(report, preflightErr, progress); err != nil {

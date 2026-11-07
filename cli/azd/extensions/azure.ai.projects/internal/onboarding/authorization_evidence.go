@@ -4,11 +4,14 @@
 package onboarding
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -41,14 +44,20 @@ func (c *passReads[T]) get(key string, read func() (T, error)) (T, error) {
 	return load()
 }
 
-// AuthorizationEvidence shares authorization reads within one provisioning preparation.
+// AuthorizationEvidence shares authorization and owning-subscription reads within one provisioning preparation.
 type AuthorizationEvidence struct {
 	credential        azcore.TokenCredential
 	options           *arm.ClientOptions
-	assignmentClients passReads[*arm.Client]
+	armClients        passReads[*arm.Client]
 	definitionClients passReads[*armauthorization.RoleDefinitionsClient]
 	assignments       passReads[[]*armauthorization.RoleAssignment]
 	roleNames         passReads[string]
+	subscriptions     passReads[subscriptionResponse]
+}
+
+type subscriptionResponse struct {
+	response *http.Response
+	payload  []byte
 }
 
 // NewAuthorizationEvidence creates a request-local, concurrency-safe evidence cache.
@@ -56,11 +65,43 @@ func NewAuthorizationEvidence(credential azcore.TokenCredential, options *arm.Cl
 	return &AuthorizationEvidence{credential: credential, options: onboardingARMOptions(options)}
 }
 
-func (a *scopedAuthorizer) evidence() *AuthorizationEvidence {
-	if a.reads != nil {
-		return a.reads
+func (e *AuthorizationEvidence) armClient() (*arm.Client, error) {
+	return e.armClients.get("", func() (*arm.Client, error) {
+		return arm.NewClient("azure.ai.projects.onboarding", "v1.0.0", e.credential, e.options)
+	})
+}
+
+// GetSubscription shares raw responses while each consumer retains its own decoding and validation.
+func (e *AuthorizationEvidence) GetSubscription(ctx context.Context, subscription string) (*http.Response, error) {
+	cached, err := e.subscriptions.get(strings.ToLower(subscription), func() (subscriptionResponse, error) {
+		client, err := e.armClient()
+		if err != nil {
+			return subscriptionResponse{}, err
+		}
+		request, err := runtime.NewRequest(ctx, http.MethodGet,
+			strings.TrimRight(client.Endpoint(), "/")+"/subscriptions/"+url.PathEscape(subscription)+
+				"?api-version=2022-12-01")
+		if err != nil {
+			return subscriptionResponse{}, err
+		}
+		request.Raw().Header.Set("Accept", "application/json")
+		response, err := client.Pipeline().Do(request)
+		if err == nil && !runtime.HasStatusCode(response, http.StatusOK) {
+			err = runtime.NewResponseError(response)
+		}
+		if err != nil {
+			return subscriptionResponse{}, err
+		}
+		payload, err := runtime.Payload(response)
+		return subscriptionResponse{response: response, payload: payload}, err
+	})
+	if err != nil {
+		return nil, err
 	}
-	return NewAuthorizationEvidence(a.credential, a.options)
+	response := *cached.response
+	response.Header = cached.response.Header.Clone()
+	response.Body = io.NopCloser(bytes.NewReader(cached.payload))
+	return &response, nil
 }
 
 func (e *AuthorizationEvidence) definitionClient() (*armauthorization.RoleDefinitionsClient, error) {
@@ -85,10 +126,7 @@ func (e *AuthorizationEvidence) readAssignments(
 	if err != nil || id.SubscriptionID == "" {
 		return nil, fmt.Errorf("authorization requires a complete subscription scope: %s", scope)
 	}
-	client, err := e.assignmentClients.get("",
-		func() (*arm.Client, error) {
-			return arm.NewClient("azure.ai.projects.onboarding", "v1.0.0", e.credential, e.options)
-		})
+	client, err := e.armClient()
 	if err != nil {
 		return nil, err
 	}

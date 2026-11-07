@@ -19,6 +19,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 )
@@ -26,6 +27,7 @@ import (
 type templatePlanResolver struct {
 	ctx                 context.Context
 	provider            *FoundryProvisioningProvider
+	evidence            *onboarding.AuthorizationEvidence
 	scopes              map[string]planScope
 	functions           map[string]any
 	references          map[*planResource]bool
@@ -62,16 +64,16 @@ func (r *templatePlanResolver) scope(subscription, group string) planScope {
 	subKey := strings.ToLower(subscription + "/")
 	subscriptionScope, found := r.scopes[subKey]
 	if !found {
-		client, err := armsubscriptions.NewClient(r.provider.credential, byoARMOptions(r.provider.armClientOptions))
+		response, err := r.evidence.GetSubscription(r.ctx, subscription)
 		if err == nil {
-			var response armsubscriptions.ClientGetResponse
-			response, err = client.Get(r.ctx, subscription, nil)
+			var result armsubscriptions.Subscription
+			err = runtime.UnmarshalAsJSON(response, &result)
 			if err == nil {
-				if response.ID == nil || !strings.EqualFold(*response.ID, "/subscriptions/"+subscription) {
+				if result.ID == nil || !strings.EqualFold(*result.ID, "/subscriptions/"+subscription) {
 					err = fmt.Errorf(
 						"resource-refs: subscription lookup did not return the actual selected subscription ARM ID")
 				} else {
-					subscriptionScope = planScope{subscriptionID: subscription, subscriptionARMID: *response.ID}
+					subscriptionScope = planScope{subscriptionID: subscription, subscriptionARMID: *result.ID}
 				}
 			}
 		}
@@ -162,6 +164,7 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 		symbol string
 		raw    map[string]any
 	}
+	var modules []*planResource
 	switch resources := env.template["resources"].(type) {
 	case map[string]any:
 		for _, symbol := range slices.Sorted(maps.Keys(resources)) {
@@ -225,14 +228,13 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 			}
 			env.resources[entry.symbol] = resource
 			r.nodes = append(r.nodes, resource)
+			if !resource.inactive && strings.EqualFold(resource.kind, "Microsoft.Resources/deployments") {
+				modules = append(modules, resource)
+			}
 		}
 	}
 	// Install all symbolic resources before resolving module-output references.
-	for _, resource := range slices.Clone(r.nodes) {
-		if resource.env.path != env.path || resource.inactive ||
-			!strings.EqualFold(resource.kind, "Microsoft.Resources/deployments") {
-			continue
-		}
+	for _, resource := range modules {
 		if child := resource.module(); child != nil {
 			r.walk(child, resource.missing, depth+1)
 		}
@@ -481,10 +483,13 @@ func (r *templatePlanResolver) recordOwningSubscription(kind, subscription strin
 }
 
 func (p *FoundryProvisioningProvider) identifyBYOTemplatePlan(
-	ctx context.Context, source *templateSource,
+	ctx context.Context, source *templateSource, evidence *onboarding.AuthorizationEvidence,
 ) (onboarding.Plan, error) {
+	if evidence == nil {
+		evidence = onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
+	}
 	resolver := &templatePlanResolver{
-		ctx: ctx, provider: p, scopes: map[string]planScope{}, functions: map[string]any{},
+		ctx: ctx, provider: p, evidence: evidence, scopes: map[string]planScope{}, functions: map[string]any{},
 		references: map[*planResource]bool{}, owningSubscriptions: map[string]bool{},
 	}
 	encoded, err := json.Marshal(source.parameters)

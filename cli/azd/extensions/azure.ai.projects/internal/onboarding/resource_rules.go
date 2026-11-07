@@ -242,8 +242,9 @@ func selectedAgentPool(pools []*armcontainerservice.AgentPool) (*armcontainerser
 
 func aksResourceChecks(
 	cluster armcontainerservice.ManagedCluster, pools []*armcontainerservice.AgentPool,
-) (string, Report) {
+) (string, Report, *armcontainerservice.AgentPool) {
 	scope := resourceValue(cluster.ID)
+	selectedPool, selectedChecks := selectedAgentPool(pools)
 	report := Report{}
 	add := func(id, expected string, known, valid bool, observed string) {
 		report = append(report, resourceKnown(resourceCheck(id, scope, expected), known, valid, observed))
@@ -253,14 +254,13 @@ func aksResourceChecks(
 		for _, id := range aksCheckIDs {
 			report = append(report, resourceCheck(id, scope, "readable AKS properties"))
 		}
-		return "", report
+		return "", report, selectedPool
 	}
 	version := resourceValue(p.CurrentKubernetesVersion)
 	knownVersion, validVersion := numericVersion(version, []int{1, 31})
 	add("aks-version", "running Kubernetes >= 1.31",
 		knownVersion, validVersion, "currentKubernetesVersion="+version)
 	n := p.NetworkProfile
-	selectedPool, selectedChecks := selectedAgentPool(pools)
 	if n == nil {
 		add("aks-cni", "Azure CNI Overlay or Pod Subnet on every pool", false, false, "networkProfile is absent")
 	} else {
@@ -332,7 +332,7 @@ func aksResourceChecks(
 		add("network-policy", "Azure/Calico policy or supported Cilium dataplane",
 			known, valid, "networkPolicy="+policy+"; networkDataplane="+dataplane)
 	}
-	return kubelet, report
+	return kubelet, report, selectedPool
 }
 
 func storageResourceChecks(account armstorage.Account) Report {

@@ -45,14 +45,13 @@ type suppliedReply struct {
 }
 
 type suppliedARMFake struct {
-	mu               sync.Mutex
-	base             *byoARMFake
-	overrides        map[string]suppliedReply
-	existingDefaults map[string]bool
-	missingGrant     string
-	requests         []string
-	selection        *synthesis.AgentHostingInput
-	reads            []string
+	mu           sync.Mutex
+	base         *byoARMFake
+	overrides    map[string]suppliedReply
+	missingGrant string
+	requests     []string
+	selection    *synthesis.AgentHostingInput
+	reads        []string
 }
 
 func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
@@ -79,8 +78,7 @@ func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
 	if selection == nil {
 		selection = f.selection
 	}
-	if path != "" && strings.EqualFold(path, selection.StorageAccountResourceID) ||
-		strings.EqualFold(path, defaultStorageID) && f.existingDefaults[strings.ToLower(path)] {
+	if path != "" && strings.EqualFold(path, selection.StorageAccountResourceID) {
 		return respond(200, map[string]any{
 			"id": path, "kind": "StorageV2", "sku": map[string]any{"name": "Standard_ZRS"},
 			"properties": map[string]any{
@@ -98,9 +96,6 @@ func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
 				"principalId": identity.principal, "clientId": identity.principal, "tenantId": "tenant",
 			}})
 		}
-	}
-	if strings.EqualFold(path, defaultWorkloadID) && f.existingDefaults[strings.ToLower(path)] {
-		return respond(200, map[string]any{"id": path})
 	}
 	if strings.HasSuffix(lower, "/roledefinitions") {
 		return respond(200, map[string]any{"value": []any{map[string]any{
@@ -164,7 +159,7 @@ func suppliedProvider(t *testing.T, mask int) (*FoundryProvisioningProvider, *su
 	require.NoError(t, err)
 	p.synthResult, p.credential = result, suppliedCredential{}
 	fake := &suppliedARMFake{
-		base: base, overrides: map[string]suppliedReply{}, existingDefaults: map[string]bool{}, selection: result.Hosting,
+		base: base, overrides: map[string]suppliedReply{}, selection: result.Hosting,
 	}
 	p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
 		Transport: fake, Retry: policy.RetryOptions{MaxRetries: -1},
@@ -315,9 +310,8 @@ func TestBYOSuppliedPreviewUsesNormalWhatIfAfterReadOnlyChecks(t *testing.T) {
 	assert.True(t, strings.HasSuffix(fake.requests[len(fake.requests)-1], "/whatIf"))
 }
 
-func TestBYOExistingDefaultStorageRetainsOrdinaryARMUpdate(t *testing.T) {
+func TestBYODefaultStorageRetainsOrdinaryARMUpdate(t *testing.T) {
 	p, fake, _ := suppliedProvider(t, 2)
-	fake.existingDefaults[strings.ToLower(defaultStorageID)] = true
 	var progress strings.Builder
 	_, err := p.Deploy(t.Context(), func(message string) { progress.WriteString(message) })
 	require.NoError(t, err)
@@ -334,7 +328,6 @@ func TestBYOExistingDefaultDependencyMissingGrantRetainsARMRetry(t *testing.T) {
 	require.ErrorContains(t, err, "offline deployment failure")
 	assert.Equal(t, 1, fake.base.writes)
 	fake.base.failWrite = false
-	fake.existingDefaults[strings.ToLower(defaultWorkloadID)] = true
 	fake.missingGrant = defaultWorkloadID
 	_, err = p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)

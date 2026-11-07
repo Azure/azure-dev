@@ -52,7 +52,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 			"agentHosting.clusterResourceId must be a resource ID string for AKS binding lookups",
 			"supply the complete resource ID of the effective AKS cluster")
 	}
-	if _, err := parseBYOResourceID(clusterID, "Microsoft.ContainerService/managedClusters"); err != nil {
+	if _, err := onboarding.ParseID(clusterID, "Microsoft.ContainerService/managedClusters"); err != nil {
 		return err
 	}
 	hostBindings := map[string]any{
@@ -102,7 +102,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 			delete(hostBindings, identity.binding)
 			continue
 		}
-		id, err := parseBYOResourceID(identity.id, "Microsoft.ManagedIdentity/userAssignedIdentities")
+		id, err := onboarding.ParseID(identity.id, "Microsoft.ManagedIdentity/userAssignedIdentities")
 		if err != nil {
 			return err
 		}
@@ -212,22 +212,6 @@ func byoARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
 	return &result
 }
 
-func parseBYOResourceID(value, kind string) (*arm.ResourceID, error) {
-	if !strings.HasPrefix(strings.ToLower(value), "/subscriptions/") ||
-		strings.ContainsAny(value, "?#%\\@:\x00 \t\r\n") || strings.Contains(value, "//") {
-		return nil, fmt.Errorf("expected a complete %s resource ID without URL components", kind)
-	}
-	id, err := arm.ParseResourceID(value)
-	if err != nil {
-		return nil, fmt.Errorf("invalid %s resource ID: %w", kind, err)
-	}
-	if id.SubscriptionID == "" || id.ResourceGroupName == "" || id.Name == "" ||
-		!strings.EqualFold(id.ResourceType.String(), kind) || len(strings.Split(value, "/")) != 9 {
-		return nil, fmt.Errorf("expected a complete %s resource ID", kind)
-	}
-	return id, nil
-}
-
 func resolveBYOFederationRoleID(
 	ctx context.Context, roleSubscription string, evidence *onboarding.AuthorizationEvidence,
 ) (string, error) {
@@ -296,19 +280,12 @@ func byoHostingParameter(source *templateSource) (byoHostingParameters, error) {
 }
 
 func byoParameterValue(source *templateSource, key string) any {
+	// Malformed explicit envelopes must not enable template-default bindings before ARM validation.
 	for name, parameter := range source.parameters {
 		if strings.EqualFold(name, key) {
 			envelope, _ := parameter.(map[string]any)
 			return envelope["value"]
 		}
 	}
-	if definitions, ok := source.armTemplate["parameters"].(map[string]any); ok {
-		for name, definition := range definitions {
-			if strings.EqualFold(name, key) {
-				definition, _ := definition.(map[string]any)
-				return definition["defaultValue"]
-			}
-		}
-	}
-	return nil
+	return parameterValue(source, key)
 }

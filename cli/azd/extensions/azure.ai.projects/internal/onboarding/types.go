@@ -157,17 +157,11 @@ type Plan struct {
 	Workload            Resource
 }
 
-// Facts contains current read-only evidence; an absent Exists key means existence is unverified.
+// Facts contains current read-only identity evidence for authorization and deployment bindings.
 type Facts struct {
 	KubeletObjectID  string
 	HostingIdentity  Identity
 	WorkloadIdentity Identity
-	Exists           map[string]bool
-}
-
-func (f Facts) absent(resource Resource) bool {
-	exists, known := f.Exists[strings.ToLower(resource.ID)]
-	return known && !exists
 }
 
 // Identity records a managed identity's ARM resource ID and principal object ID.

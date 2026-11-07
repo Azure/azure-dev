@@ -59,15 +59,12 @@ func suppliedFacts() Facts {
 	return Facts{
 		HostingIdentity:  Identity{ID: testHosting, PrincipalID: "hosting-principal"},
 		WorkloadIdentity: Identity{ID: testWorkload, PrincipalID: "workload-principal"},
-		Exists: map[string]bool{
-			strings.ToLower(testHosting): true, strings.ToLower(testWorkload): true, strings.ToLower(testStorage): true,
-		},
 	}
 }
 
 func TestSuppliedGrantChecksRequireAllSuppliedSelections(t *testing.T) {
 	for _, id := range []string{"hosting-federation", "workload-blob"} {
-		for _, state := range []string{"absent", "existing", "unknown", "supplied"} {
+		for _, state := range []string{"unknown", "supplied"} {
 			t.Run(id+"/"+state, func(t *testing.T) {
 				plan, facts := suppliedPlan(t), suppliedFacts()
 				target := &plan.Workload
@@ -75,12 +72,6 @@ func TestSuppliedGrantChecksRequireAllSuppliedSelections(t *testing.T) {
 					target = &plan.Storage
 				}
 				target.Supplied = state == "supplied"
-				delete(facts.Exists, strings.ToLower(target.ID))
-				if state == "existing" {
-					facts.Exists[strings.ToLower(target.ID)] = true
-				} else if state == "absent" {
-					facts.Exists[strings.ToLower(target.ID)] = false
-				}
 				fake := authorizationFake()
 				fake.replies[strings.ToLower(target.ID+assignmentSuffix)] =
 					readReply{200, map[string]any{"value": []any{}}}

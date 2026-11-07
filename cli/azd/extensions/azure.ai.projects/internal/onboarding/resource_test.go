@@ -107,12 +107,15 @@ func (f *readFake) count(path string) int {
 
 func suppliedPlan(t *testing.T) Plan {
 	t.Helper()
-	plan, err := BuildPlan(Input{
-		SubscriptionID: "target-sub", ResourceGroup: "target-rg", GroupExists: true,
-		ClusterID: testCluster, StorageID: testStorage, HostingIdentityID: testHosting, WorkloadIdentityID: testWorkload,
-	})
-	require.NoError(t, err)
-	return plan
+	return Plan{
+		SubscriptionID: "target-sub",
+		Cluster: Resource{
+			ID: testCluster, Parent: "/subscriptions/cluster-sub/resourceGroups/cluster-rg", Supplied: true,
+		},
+		Storage:  Resource{ID: testStorage, Parent: testGroup, Supplied: true},
+		Hosting:  Resource{ID: testHosting, Parent: testGroup, Supplied: true},
+		Workload: Resource{ID: testWorkload, Parent: testGroup, Supplied: true},
+	}
 }
 
 func storageBody() map[string]any {
@@ -189,52 +192,12 @@ func checkWithID(t *testing.T, report Report, id string) Check {
 	return Check{}
 }
 
-func TestBuildPlanIndependentSelectionsAndExistingParents(t *testing.T) {
-	for mask := range 8 {
-		for _, groupExists := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%d/group=%t", mask, groupExists), func(t *testing.T) {
-				input := Input{
-					SubscriptionID: "target-sub", ResourceGroup: "target-rg", GroupExists: groupExists,
-					ClusterID: testCluster, DefaultStorageID: testStorage, DefaultHostingID: testHosting,
-					DefaultWorkloadID: testWorkload,
-				}
-				for i, field := range []*string{&input.StorageID, &input.HostingIdentityID, &input.WorkloadIdentityID} {
-					if mask&(1<<i) != 0 {
-						*field = []string{testStorage, testHosting, testWorkload}[i]
-					}
-				}
-				plan, err := BuildPlan(input)
-				require.NoError(t, err)
-				for i, resource := range []Resource{plan.Storage, plan.Hosting, plan.Workload} {
-					assert.Equal(t, mask&(1<<i) != 0, resource.Supplied)
-					expected := testSubscription
-					if groupExists || resource.Supplied {
-						expected = testGroup
-					}
-					assert.Equal(t, expected, resource.Parent)
-				}
-			})
-		}
-	}
-	for _, invalid := range []string{testStorage + "/child/name", testHosting, "https://user:private@host?sig=private"} {
-		_, err := BuildPlan(Input{
-			SubscriptionID: "target-sub", ResourceGroup: "target-rg", ClusterID: testCluster,
-			StorageID: invalid, HostingIdentityID: testHosting, WorkloadIdentityID: testWorkload,
-		})
-		require.Error(t, err)
-		assert.NotContains(t, err.Error(), "private")
-	}
-}
-
 func TestResourceCheckerReadsOnlySupportingResources(t *testing.T) {
 	fake := resourceFake()
 	facts, report, err := NewResourceChecker(testCredential{}, fake.options()).Check(t.Context(), suppliedPlan(t))
 	require.NoError(t, err)
 	assert.Equal(t, "hosting-principal", facts.HostingIdentity.PrincipalID)
 	assert.Equal(t, "workload-principal", facts.WorkloadIdentity.PrincipalID)
-	for _, resource := range []Resource{{ID: testStorage}, {ID: testWorkload}} {
-		assert.False(t, facts.absent(resource))
-	}
 	for _, id := range []string{"storage-type", "storage-security"} {
 		assert.Equal(t, Pass, checkWithID(t, report, id).Status)
 	}
@@ -325,37 +288,6 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 				response, ok := errors.AsType[*azcore.ResponseError](err)
 				require.True(t, ok)
 				assert.Equal(t, http.StatusForbidden, response.StatusCode)
-			}
-		})
-	}
-}
-
-func TestDefaultExistenceDoesNotBecomeSupplied(t *testing.T) {
-	for _, state := range []string{"absent", "existing", "forbidden"} {
-		t.Run(state, func(t *testing.T) {
-			fake := resourceFake()
-			plan := suppliedPlan(t)
-			plan.Storage.Supplied = false
-			switch state {
-			case "absent":
-				delete(fake.replies, strings.ToLower(testStorage))
-			case "existing":
-				body := fake.replies[strings.ToLower(testStorage)].body.(map[string]any)
-				body["properties"] = map[string]any{}
-			case "forbidden":
-				fake.replies[strings.ToLower(testStorage)] = readReply{403,
-					map[string]any{"error": map[string]string{"code": "AuthorizationFailed"}}}
-			}
-			facts, report, err := NewResourceChecker(testCredential{}, fake.options()).Check(t.Context(), plan)
-			assert.False(t, plan.Storage.Supplied)
-			assert.Equal(t, state == "absent", facts.absent(plan.Storage))
-			if state == "forbidden" {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-			for _, id := range []string{"storage-type", "storage-security"} {
-				assert.Equal(t, NotApplicable, checkWithID(t, report, id).Status)
 			}
 		})
 	}

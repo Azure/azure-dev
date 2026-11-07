@@ -44,27 +44,10 @@ func onboardingARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
 }
 
 func existingResourceID(raw, kind string) (*arm.ResourceID, error) {
-	if !validResourceIDSyntax(raw) {
-		return nil, fmt.Errorf("expected a complete %s resource ID without URL credentials or extra components", kind)
-	}
-	id, err := arm.ParseResourceID(raw)
-	if err != nil {
-		return nil, fmt.Errorf("invalid resource ID: %w", err)
-	}
-	if raw != strings.TrimSpace(raw) || strings.ContainsAny(raw, "?#%\\") ||
-		id.SubscriptionID == "" || id.ResourceGroupName == "" || id.Name == "" ||
-		!strings.EqualFold(id.ResourceType.String(), kind) {
+	if raw != strings.TrimSpace(raw) {
 		return nil, fmt.Errorf("expected a complete %s resource ID", kind)
 	}
-	parts := strings.Split(strings.TrimPrefix(raw, "/"), "/")
-	expected := 8
-	if strings.EqualFold(kind, "Microsoft.Network/virtualNetworks/subnets") {
-		expected = 10
-	}
-	if !strings.HasPrefix(raw, "/") || len(parts) != expected || slices.Contains(parts, "") {
-		return nil, fmt.Errorf("expected a complete %s resource ID without extra segments", kind)
-	}
-	return id, nil
+	return ParseID(raw, kind)
 }
 
 func readFailure(id, scope, action string, err error) Check {
@@ -81,11 +64,6 @@ func readFailure(id, scope, action string, err error) Check {
 		}
 	}
 	return c
-}
-
-func responseNotFound(err error) bool {
-	response, ok := errors.AsType[*azcore.ResponseError](err)
-	return ok && response.StatusCode == http.StatusNotFound
 }
 
 func resourceReadiness(scope, returnedID, state, action string) Check {
@@ -203,9 +181,8 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	c = &local
 	tenant, report := c.subscriptionTenants(ctx, plan)
 	report = append(slices.Clone(plan.SkippedChecks), report...)
-	facts := Facts{Exists: map[string]bool{}}
+	facts := Facts{}
 	var identities [2]Identity
-	var existence [2]*bool
 	var identityReports [2]Check
 	var storage *armstorage.Account
 	var storageReport Report
@@ -215,28 +192,23 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	tasks := []func(){func() {
 		cluster, pools, clusterReport = c.readCluster(ctx, plan.Cluster)
 	}}
-	if plan.Storage.Supplied || plan.Workload.Supplied {
+	if plan.Storage.Supplied {
 		tasks = append(tasks, func() {
-			storage, existence[1], storageReport = c.readStorage(ctx, plan.Storage)
+			storage, storageReport = c.readStorage(ctx, plan.Storage)
 		})
 	}
 	if plan.Hosting.Supplied {
 		tasks = append(tasks, func() {
-			identities[0], _, identityReports[0] = c.readIdentity(ctx, plan.Hosting, tenant)
+			identities[0], identityReports[0] = c.readIdentity(ctx, plan.Hosting, tenant)
 		})
 	}
-	if plan.Workload.Supplied || plan.Hosting.Supplied {
+	if plan.Workload.Supplied {
 		tasks = append(tasks, func() {
-			identities[1], existence[0], identityReports[1] = c.readIdentity(ctx, plan.Workload, tenant)
+			identities[1], identityReports[1] = c.readIdentity(ctx, plan.Workload, tenant)
 		})
 	}
 	parallelReads(tasks...)
 	facts.HostingIdentity, facts.WorkloadIdentity = identities[0], identities[1]
-	for i, resource := range []Resource{plan.Workload, plan.Storage} {
-		if existence[i] != nil {
-			facts.Exists[strings.ToLower(resource.ID)] = *existence[i]
-		}
-	}
 	for _, check := range identityReports {
 		if check.ID != "" {
 			report = append(report, check)
@@ -402,52 +374,37 @@ func (c *sdkResourceChecker) readSKUs(
 
 func (c *sdkResourceChecker) readStorage(
 	ctx context.Context, resource Resource,
-) (*armstorage.Account, *bool, Report) {
+) (*armstorage.Account, Report) {
 	if resource.Missing != "" {
-		return nil, nil, Report{SkippedCheck("resource-refs", resource.diagnosticScope(),
+		return nil, Report{SkippedCheck("resource-refs", resource.diagnosticScope(),
 			"Storage resource existence and identity", resource.Missing)}
 	}
 	id, err := ParseID(resource.ID, "Microsoft.Storage/storageAccounts")
 	if err != nil {
-		return nil, nil, Report{readFailure("resource-refs", resource.ID, "valid Storage resource ID", err)}
+		return nil, Report{readFailure("resource-refs", resource.ID, "valid Storage resource ID", err)}
 	}
 	client, err := armstorage.NewAccountsClient(id.SubscriptionID, c.credential, c.options)
 	if err != nil {
-		return nil, nil, Report{readFailure("resource-refs", resource.ID, "Microsoft.Storage/storageAccounts/read", err)}
+		return nil, Report{readFailure("resource-refs", resource.ID, "Microsoft.Storage/storageAccounts/read", err)}
 	}
 	response, err := client.GetProperties(ctx, id.ResourceGroupName, id.Name, nil)
-	if responseNotFound(err) && !resource.Supplied {
-		if resource.LifecycleMissing != "" {
-			return nil, new(false), Report{SkippedCheck("resource-refs", resource.ID,
-				"Storage creation/reference existence", resource.LifecycleMissing)}
-		}
-		return nil, new(false), Report{resourceResult(
-			resourceCheck("resource-plan", resource.ID, "current default Storage existence"),
-			Pass, "default Storage does not exist; ARM will create it")}
-	}
 	if err != nil {
-		return nil, nil, Report{readFailure("resource-refs", resource.ID, "Microsoft.Storage/storageAccounts/read", err)}
-	}
-	if !resource.Supplied {
-		check := resourceKnown(resourceCheck("resource-plan", resource.ID, "exact default Storage target"),
-			response.ID != nil, strings.EqualFold(resourceValue(response.ID), resource.ID),
-			"default Storage exists; its ordinary ARM creation/update path is retained")
-		return &response.Account, new(true), Report{check}
+		return nil, Report{readFailure("resource-refs", resource.ID, "Microsoft.Storage/storageAccounts/read", err)}
 	}
 	state := ""
 	if response.Properties != nil {
 		state = resourceValue(response.Properties.ProvisioningState)
 	}
-	return &response.Account, new(true), Report{
+	return &response.Account, Report{
 		resourceReadiness(resource.ID, resourceValue(response.ID), state, "storageAccounts/read"),
 	}
 }
 
 func (c *sdkResourceChecker) readIdentity(
 	ctx context.Context, resource Resource, tenant string,
-) (Identity, *bool, Check) {
+) (Identity, Check) {
 	if resource.Missing != "" {
-		return Identity{}, nil, SkippedCheck("resource-refs", resource.diagnosticScope(),
+		return Identity{}, SkippedCheck("resource-refs", resource.diagnosticScope(),
 			"managed identity existence and metadata", resource.Missing)
 	}
 	check := resourceCheck("resource-refs", resource.ID,
@@ -455,7 +412,7 @@ func (c *sdkResourceChecker) readIdentity(
 	id, err := ParseID(resource.ID, "Microsoft.ManagedIdentity/userAssignedIdentities")
 	if err != nil {
 		check.Status, check.Observed, check.Cause = Fail, "invalid identity resource ID", err
-		return Identity{}, nil, check
+		return Identity{}, check
 	}
 	client, err := c.clients().identities.get(strings.ToLower(id.SubscriptionID),
 		func() (*armmsi.UserAssignedIdentitiesClient, error) {
@@ -463,36 +420,23 @@ func (c *sdkResourceChecker) readIdentity(
 		})
 	if err != nil {
 		check.Cause = err
-		return Identity{}, nil, check
+		return Identity{}, check
 	}
 	response, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
-	if responseNotFound(err) && !resource.Supplied {
-		if resource.LifecycleMissing != "" {
-			return Identity{}, new(false), SkippedCheck("resource-refs", resource.ID,
-				"managed identity creation/reference existence", resource.LifecycleMissing)
-		}
-		return Identity{}, new(false), resourceResult(check, Pass, "default identity does not exist; ARM will create it")
-	}
-
 	if err != nil {
-		return Identity{}, nil, readFailure("resource-refs", resource.ID,
+		return Identity{}, readFailure("resource-refs", resource.ID,
 			"Microsoft.ManagedIdentity/userAssignedIdentities/read", err)
-	}
-	if !resource.Supplied {
-		return Identity{}, new(true), resourceKnown(check, response.ID != nil,
-			strings.EqualFold(authString(response.ID), resource.ID),
-			"default identity exists; its ordinary ARM creation/update path is retained")
 	}
 	properties := response.Properties
 	if response.ID == nil || properties == nil || authString(properties.PrincipalID) == "" ||
 		authString(properties.ClientID) == "" || authString(properties.TenantID) == "" || tenant == "" {
 		check.Observed = "supplied identity ID, principal, client or owning tenant evidence is missing"
-		return Identity{}, new(true), check
+		return Identity{}, check
 	}
 	identity := Identity{ID: *response.ID, PrincipalID: *properties.PrincipalID}
 	if !strings.EqualFold(resource.ID, identity.ID) || !strings.EqualFold(tenant, *properties.TenantID) {
-		return Identity{}, new(true), resourceResult(check, Fail, "supplied identity ID or owning tenant does not match")
+		return Identity{}, resourceResult(check, Fail, "supplied identity ID or owning tenant does not match")
 	}
-	return identity, new(true), resourceResult(check, Pass,
+	return identity, resourceResult(check, Pass,
 		"existing identity metadata matches; no identity PUT or owner tag is planned")
 }

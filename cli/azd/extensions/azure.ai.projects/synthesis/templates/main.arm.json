@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "3163459157451933935"
+      "templateHash": "6420297895380766764"
     }
   },
   "definitions": {
@@ -2538,7 +2538,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "9994627183557504386"
+              "templateHash": "5920771964239170690"
             }
           },
           "parameters": {
@@ -2662,17 +2662,6 @@
             },
             {
               "condition": "[parameters('managedEgressRule')]",
-              "type": "Microsoft.Authorization/roleAssignments",
-              "apiVersion": "2022-04-01",
-              "name": "[guid(resourceGroup().id, parameters('projectResourceId'), variables('networkConnectionApproverRoleId'))]",
-              "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('networkConnectionApproverRoleId'))]",
-                "principalId": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('projectParts')[8]), '2025-06-01', 'full').identity.principalId]",
-                "principalType": "ServicePrincipal"
-              }
-            },
-            {
-              "condition": "[parameters('managedEgressRule')]",
               "type": "Microsoft.CognitiveServices/accounts/managedNetworks/outboundRules",
               "apiVersion": "2025-10-01-preview",
               "name": "[format('{0}/default/ampls-monitor-rule', variables('projectParts')[8])]",
@@ -2685,7 +2674,7 @@
                 "category": "UserDefined"
               },
               "dependsOn": [
-                "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, parameters('projectResourceId'), variables('networkConnectionApproverRoleId')))]",
+                "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-network-approver')]",
                 "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link')]"
               ]
             },
@@ -2931,6 +2920,57 @@
                 "[resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
               ]
+            },
+            {
+              "condition": "[parameters('managedEgressRule')]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "foundry-monitoring-network-approver",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "principalId": {
+                    "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('projectParts')[8]), '2025-06-01', 'full').identity.principalId]"
+                  },
+                  "roleDefinitionId": {
+                    "value": "[variables('networkConnectionApproverRoleId')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "785343973509457050"
+                    }
+                  },
+                  "parameters": {
+                    "principalId": {
+                      "type": "string"
+                    },
+                    "roleDefinitionId": {
+                      "type": "string"
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "name": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleDefinitionId'))]",
+                      "properties": {
+                        "principalId": "[parameters('principalId')]",
+                        "principalType": "ServicePrincipal",
+                        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionId'))]"
+                      }
+                    }
+                  ]
+                }
+              }
             },
             {
               "condition": "[and(variables('createResources'), parameters('privateNetwork'))]",

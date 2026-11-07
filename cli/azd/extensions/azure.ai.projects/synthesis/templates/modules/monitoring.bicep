@@ -88,12 +88,11 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' existi
   name: projectParts[8]
 }
 
-resource networkApproverAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (managedEgressRule) {
-  name: guid(resourceGroup().id, projectResourceId, networkConnectionApproverRoleId)
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', networkConnectionApproverRoleId)
+module networkApproverAssignment 'network-approver-role-assignment.bicep' = if (managedEgressRule) {
+  name: 'foundry-monitoring-network-approver'
+  params: {
     principalId: foundryAccount!.identity.principalId
-    principalType: 'ServicePrincipal'
+    roleDefinitionId: networkConnectionApproverRoleId
   }
 }
 

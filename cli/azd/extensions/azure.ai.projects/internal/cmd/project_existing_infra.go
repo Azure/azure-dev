@@ -973,6 +973,7 @@ func writeExistingProjectBicep(
 	}
 	for _, name := range []string{
 		"monitoring.bicep", "monitoring-connection.bicep", "monitor-private-link.bicep", "monitoring-resync.bicep",
+		"network-approver-role-assignment.bicep",
 	} {
 		data, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/modules/"+name)
 		if err != nil {

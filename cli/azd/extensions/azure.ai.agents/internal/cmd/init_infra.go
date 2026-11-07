@@ -1305,6 +1305,10 @@ func writeExistingProjectBicepTemplates(
 		{"templates/modules/monitoring-connection.bicep", "modules/monitoring-connection.bicep"},
 		{"templates/modules/monitor-private-link.bicep", "modules/monitor-private-link.bicep"},
 		{"templates/modules/monitoring-resync.bicep", "modules/monitoring-resync.bicep"},
+		{
+			"templates/modules/network-approver-role-assignment.bicep",
+			"modules/network-approver-role-assignment.bicep",
+		},
 	}
 	if acrMode == infraEjectAcrCreate || (acrMode == infraEjectAcrReuseConnect && !acrPullAssigned) {
 		registrySource, err := fs.ReadFile(

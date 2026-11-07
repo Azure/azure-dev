@@ -17,11 +17,12 @@ import (
 	"strings"
 	"time"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/phasetelemetry"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -345,6 +346,16 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	if err := expandPromptAgentTools(&managed, toolEnv); err != nil {
 		return nil, err
 	}
+	model, err := ResolvePromptAgentModel(
+		managed.Model, p.serviceConfig, p.projectServices, p.projectPath, env,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if model != strings.TrimSpace(managed.Model) && progress != nil {
+		progress(fmt.Sprintf("Using model deployment %q for %q", model, managed.Model))
+	}
+	managed.Model = model
 
 	if _, mapErr := ResolvePromptTargetFromEnv(settings, env); mapErr != nil {
 		return nil, mapErr
@@ -445,6 +456,7 @@ func (p *AgentServiceTargetProvider) ensurePromptCredential(
 	if p.credential != nil {
 		return nil
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.CredentialAcquisition)()
 	credential, err := ResolvePromptCredential(ctx, p.azdClient, settings)
 	if err != nil {
 		return err
@@ -575,6 +587,8 @@ func (p *AgentServiceTargetProvider) waitForPromptAgentActive(
 	headers map[string]string,
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentVersionObject, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AgentActivationWait)()
+
 	const pollInterval = 5 * time.Second
 	const pollTimeout = 5 * time.Minute
 
@@ -625,6 +639,7 @@ func (p *AgentServiceTargetProvider) waitForPromptAgentActive(
 	if lastStatus == "" {
 		lastStatus = "unknown"
 	}
+	phasetelemetry.Timeout(ctx)
 	return nil, exterrors.Internal(
 		exterrors.CodeAgentCreateFailed,
 		fmt.Sprintf("prompt agent deployment timed out (last status: %s); check status with 'azd ai agent show'", lastStatus),
@@ -644,6 +659,8 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 	harnessed bool,
 	bindings map[string]any,
 ) error {
+	defer phasetelemetry.Start(ctx, phasetelemetry.EndpointUpdate)()
+
 	if agentName == "" {
 		return fmt.Errorf("agent name is empty; cannot register environment variables")
 	}
@@ -923,6 +940,8 @@ func deployedPromptAgentIsHarnessed(version *agent_api.AgentVersionObject) (bool
 // GetTargetResource return before ensureDeployContext runs, so p.env would
 // otherwise still be nil and dereferencing it would panic the handler.
 func (p *AgentServiceTargetProvider) azdEnvValues(ctx context.Context) (map[string]string, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ConfigurationLoading)()
+
 	if err := p.ensureEnv(ctx); err != nil {
 		return nil, err
 	}
@@ -974,6 +993,8 @@ func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 	settings *PromptAgentSettings,
 	headers map[string]string,
 ) (*agent_api.AgentObject, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AgentCreateOrUpdate)()
+
 	apiVersion := ProjectEndpointAPIVersion
 
 	agent, err := client.CreateAgentWithHeaders(ctx, request, apiVersion, headers)

@@ -5,6 +5,7 @@ on:
     paths:
       - "cli/azd/extensions/registry.json"
       - "cli/azd/extensions/registry.dev.json"
+      - "cli/azd/extension_registry*.go"
       - ".github/workflows/ext-registry-ci.yml"
     branches: [main]
 
@@ -27,6 +28,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 2
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
@@ -34,6 +36,13 @@ jobs:
           go-version-file: cli/azd/go.mod
           cache-dependency-path: |
             cli/azd/go.sum
+
+      - name: Validate required azd versions are published
+        run: |
+          published_version="$(curl --fail --location --silent --show-error --retry 3 --max-time 30 \
+            https://aka.ms/azure-dev/versions/cli/latest)"
+          # Compare against the base used by this merge ref, including on reruns.
+          go tool mage checkExtensionAzdVersions HEAD^1 "$published_version"
 
       - name: Build azd
         run: go build .

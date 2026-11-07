@@ -463,7 +463,8 @@ func TestFormatNext_HighlightsCdCommand(t *testing.T) {
 	defer func() { color.NoColor = prev }()
 
 	suggestions := []Suggestion{
-		{Command: "cd my-agent", Description: "enter your new project folder", Priority: 0},
+		{Command: "cd my-agent", Description: "enter your project folder", Priority: 0},
+		{Command: "Set-Location -LiteralPath 'My Agent'", Description: "PowerShell alternative", Priority: 0},
 		{Command: "edit azure.yaml: enable the toolbox", Description: "fix the toolbox", Priority: 5},
 		{Command: "azd deploy", Description: "deploy to Azure", Priority: 10, Trailing: true},
 	}
@@ -473,10 +474,12 @@ func TestFormatNext_HighlightsCdCommand(t *testing.T) {
 	got := buf.String()
 
 	assert.Contains(t, got, bodyIndent+output.WithHighLightFormat("%s", "cd my-agent")+"\n")
+	assert.Contains(t, got, bodyIndent+
+		output.WithHighLightFormat("%s", "Set-Location -LiteralPath 'My Agent'")+"\n")
 	assert.Contains(t, got, bodyIndent+output.WithHighLightFormat("%s", "azd deploy")+"\n")
 	// The description stays plain.
-	assert.Contains(t, got, bodyIndent+"enter your new project folder\n")
-	assert.NotContains(t, got, output.WithHighLightFormat("%s", "enter your new project folder"))
+	assert.Contains(t, got, bodyIndent+"enter your project folder\n")
+	assert.NotContains(t, got, output.WithHighLightFormat("%s", "enter your project folder"))
 	// Non-command instructions stay plain.
 	assert.Contains(t, got, bodyIndent+"edit azure.yaml: enable the toolbox\n")
 	assert.NotContains(t, got, output.WithHighLightFormat("%s", "edit azure.yaml: enable the toolbox"))
@@ -492,12 +495,12 @@ func TestFormatNext_CdCommandPlainWhenNoColor(t *testing.T) {
 
 	var buf bytes.Buffer
 	require.NoError(t, PrintAllNext(&buf, []Suggestion{
-		{Command: "cd my-agent", Description: "enter your new project folder", Priority: 0},
+		{Command: "cd my-agent", Description: "enter your project folder", Priority: 0},
 	}))
 
 	want := "\n" +
 		"Next:\n" +
 		"  cd my-agent\n" +
-		"  enter your new project folder\n"
+		"  enter your project folder\n"
 	assert.Equal(t, want, buf.String())
 }

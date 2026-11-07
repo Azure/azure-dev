@@ -16,6 +16,14 @@ ignorePaths:
 
     - eng # not required
 overrides:
+    - filename: .github/skills/extension-user-contract-review/evals/**/*.yaml
+      words:
+          - evals
+    - filename: docs/guides/releasing-azd.md
+      words:
+          - ESRP
+          - pkgs
+          - runbook
     - filename: docs/architecture/extension-framework.md
       words:
           - generateprojectclient
@@ -161,6 +169,9 @@ overrides:
       words:
           - GOARCH
           - GOEXPERIMENT
+    - filename: docs/guides/release-canvas.md
+      words:
+          - runbook
     - filename: docs/reference/**/*.md
       words:
           - apphost

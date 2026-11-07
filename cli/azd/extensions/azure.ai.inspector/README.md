@@ -1,9 +1,11 @@
-# Azure AI Inspector Extension (Preview)
+# Azure AI Inspector Extension
 
 Browser-based inspector UI for locally running Foundry agents, packaged as a standalone
 azd extension.
 
 ## Extension telemetry API
+
+Requires azd 1.37.0 or later and uses the stable v1 telemetry API.
 
 Extension code reports best-effort usage events through the shared
 `pkg/foundry/telemetry` reporter. Extension-owned event builders remain in

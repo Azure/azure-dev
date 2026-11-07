@@ -8,15 +8,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/synthesis"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
-	"github.com/drone/envsubst"
 )
 
 // Default locations for the on-disk Bicep tree. A provisioning layer can
@@ -142,6 +143,9 @@ func loadFromBicep(
 ) (*templateSource, error) {
 	res, err := compiler.Build(ctx, bicepPath)
 	if err != nil {
+		if _, structured := errors.AsType[*azdext.LocalError](err); structured {
+			return nil, err
+		}
 		return nil, exterrors.Validation(
 			exterrors.CodeOnDiskBicepCompileFailed,
 			fmt.Sprintf("compile %s: %s", bicepPath, err),
@@ -178,37 +182,11 @@ func loadFromBicepParam(
 	compiler bicepCompiler,
 	envValues map[string]string,
 ) (*templateSource, error) {
-	env := envValuesToKeyEquals(envValues)
-	res, err := compiler.BuildBicepParam(ctx, bicepparamPath, env)
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeOnDiskBicepCompileFailed,
-			fmt.Sprintf("compile %s: %s", bicepparamPath, err),
-			"fix the bicep errors above and re-run `azd provision`",
-		)
-	}
-
-	// `bicep build-params --stdout` returns {"templateJson": "...", "parametersJson": "..."}.
-	var envelope struct {
-		TemplateJson   string `json:"templateJson"`
-		ParametersJson string `json:"parametersJson"`
-	}
-	if err := json.Unmarshal([]byte(res.Compiled), &envelope); err != nil {
-		return nil, exterrors.Internal(
-			exterrors.CodeOnDiskBicepParseFailed,
-			fmt.Sprintf("parse bicepparam envelope from %s: %s", bicepparamPath, err),
-		)
-	}
-
-	tmpl, err := unmarshalARMTemplate(envelope.TemplateJson, bicepparamPath)
+	tmpl, params, err := synthesis.CompileBicepParameters(ctx, compiler, bicepparamPath, envValues)
 	if err != nil {
 		return nil, err
 	}
-
-	// parametersJson is itself an ARM-parameters-file shape; extract the inner
-	// "parameters" map so it matches the .bicep + parameters.json path.
-	params, err := extractParametersFromARMFile([]byte(envelope.ParametersJson), bicepparamPath)
-	if err != nil {
+	if err := validateProjectTemplate(tmpl, bicepparamPath); err != nil {
 		return nil, err
 	}
 
@@ -232,152 +210,23 @@ func loadFromBicepParam(
 // Each parameter is substituted in isolation so one unresolved VAR doesn't
 // affect siblings.
 func loadParametersFile(paramFilePath string, envValues map[string]string) (map[string]any, error) {
-	//nolint:gosec // paramFilePath is derived from projectPath supplied by azd-core
-	raw, err := os.ReadFile(paramFilePath)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return map[string]any{}, nil
-		}
-		return nil, exterrors.Internal(
-			exterrors.CodeOnDiskParametersInvalid,
-			fmt.Sprintf("read %s: %s", paramFilePath, err),
-		)
-	}
-
-	// Parse the "parameters" map first, then per-entry substitute the JSON
-	// encoding of each value.
-	pre, err := extractParametersFromARMFile(raw, paramFilePath)
-	if err != nil {
-		return nil, err
-	}
-
-	out := make(map[string]any, len(pre))
-	for name, raw := range pre {
-		kept, err := substituteParamValue(
-			raw,
-			paramFilePath,
-			name,
-			envValues,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if kept == nil {
-			continue // dropped: VAR unset AND substituted value is empty
-		}
-		out[name] = kept
-	}
-	return out, nil
-}
-
-// substituteParamValue runs envsubst over the JSON encoding of one parameter
-// entry. Returns nil when the entry should be dropped (string value collapsed
-// to "" AND at least one referenced VAR was unset).
-func substituteParamValue(
-	rawEntry any,
-	sourcePath, name string,
-	envValues map[string]string,
-) (any, error) {
-	resolved, hasUnsetEnvVar, err := substituteJSONValue(
-		rawEntry,
-		sourcePath,
-		name,
-		envValues,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Drop strings that unresolved variables reduce to empty.
-	// Non-string values are always kept.
-	if entry, ok := resolved.(map[string]any); ok {
-		if val, ok := entry["value"]; ok {
-			if str, ok := val.(string); ok && str == "" && hasUnsetEnvVar {
-				return nil, nil
-			}
-		}
-	}
-	return resolved, nil
-}
-
-func substituteJSONValue(
-	rawEntry any,
-	sourcePath, name string,
-	envValues map[string]string,
-) (any, bool, error) {
-	enc, err := json.Marshal(rawEntry)
-	if err != nil {
-		return nil, false, exterrors.Internal(
-			exterrors.CodeOnDiskParametersInvalid,
-			fmt.Sprintf("re-encode parameter %q in %s: %s", name, sourcePath, err),
-		)
-	}
-
-	hasUnsetEnvVar := false
-	substituted, err := envsubst.Eval(string(enc), func(varName string) string {
-		v, ok := envValues[varName]
-		if !ok {
-			hasUnsetEnvVar = true
-			return ""
-		}
-		// The value is being injected into a JSON-encoded entry, so JSON-escape
-		// it. Values that are themselves valid azd values can contain quotes,
-		// backslashes (Windows paths), or newlines, which would otherwise corrupt
-		// the encoded string and fail the unmarshal below.
-		escaped, err := json.Marshal(v)
-		if err != nil {
-			return v
-		}
-		return string(escaped[1 : len(escaped)-1])
-	})
-	if err != nil {
-		return nil, false, exterrors.Validation(
-			exterrors.CodeOnDiskParametersInvalid,
-			fmt.Sprintf("substitute env vars in parameter %q of %s: %s", name, sourcePath, err),
-			"check for malformed ${VAR} references in the parameters file",
-		)
-	}
-
-	var resolved any
-	if err := json.Unmarshal([]byte(substituted), &resolved); err != nil {
-		return nil, false, exterrors.Validation(
-			exterrors.CodeOnDiskParametersInvalid,
-			fmt.Sprintf("parse parameter %q in %s after substitution: %s", name, sourcePath, err),
-			"ensure the substituted value is valid JSON",
-		)
-	}
-	return resolved, hasUnsetEnvVar, nil
-}
-
-// extractParametersFromARMFile pulls the inner "parameters" map out of
-// an ARM parameters file. Returns a fresh map even when the input is
-// empty so the caller can range over it without nil checks.
-func extractParametersFromARMFile(raw []byte, sourcePath string) (map[string]any, error) {
-	if len(raw) == 0 {
-		return map[string]any{}, nil
-	}
-	var doc struct {
-		Parameters map[string]any `json:"parameters"`
-	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeOnDiskParametersInvalid,
-			fmt.Sprintf("parse %s as ARM parameters JSON: %s", sourcePath, err),
-			"verify the file matches the ARM deploymentParameters schema",
-		)
-	}
-	if doc.Parameters == nil {
-		return map[string]any{}, nil
-	}
-	return doc.Parameters, nil
+	return synthesis.LoadARMParametersFile(paramFilePath, envValues)
 }
 
 // mergeParameters layers host-derived parameters UNDER user-supplied ones:
-// the user's value wins on keys present in both. Lets host-derived values like
-// `location` flow through when the user's file omits them.
+// the user's value wins on case-insensitively matching names. Lets host-derived
+// values like `location` flow through when the user's file omits them.
 func mergeParameters(userParams, hostParams map[string]any) map[string]any {
 	out := make(map[string]any, len(userParams)+len(hostParams))
 	maps.Copy(out, hostParams)
+	for name := range hostParams {
+		for supplied := range userParams {
+			if strings.EqualFold(name, supplied) {
+				delete(out, name)
+				break
+			}
+		}
+	}
 	maps.Copy(out, userParams)
 	return out
 }
@@ -389,8 +238,11 @@ func parametersDeclaredByTemplate(hostParams, armTemplate map[string]any) map[st
 	declared, _ := armTemplate["parameters"].(map[string]any)
 	out := make(map[string]any, min(len(hostParams), len(declared)))
 	for name, value := range hostParams {
-		if _, ok := declared[name]; ok {
-			out[name] = value
+		for declaration := range declared {
+			if strings.EqualFold(name, declaration) {
+				out[name] = value
+				break
+			}
 		}
 	}
 	return out

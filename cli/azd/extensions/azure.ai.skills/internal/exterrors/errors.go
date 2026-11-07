@@ -44,6 +44,15 @@ func Auth(code, message, suggestion string) error {
 	}
 }
 
+// Internal returns an internal error for unexpected failures.
+func Internal(code, message string) error {
+	return &azdext.LocalError{
+		Message:  message,
+		Code:     code,
+		Category: azdext.LocalErrorCategoryInternal,
+	}
+}
+
 // ServiceFromAzure converts an Azure SDK error into a structured service error.
 // Non-azcore errors are returned unchanged.
 func ServiceFromAzure(err error, operation string) error {

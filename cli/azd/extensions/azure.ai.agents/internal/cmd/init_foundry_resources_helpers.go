@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/azure"
 	"context"
 	"fmt"
@@ -1452,10 +1453,13 @@ func configureNewProjectForNoPrompt(
 	azdClient *azdext.AzdClient,
 	envName string,
 	azureContext *azdext.AzureContext,
-	subscriptionMessage string,
+	acrResourceID string,
 ) (azcore.TokenCredential, error) {
-	newCred, err := ensureSubscriptionAndLocation(ctx, azdClient, azureContext, envName, subscriptionMessage)
+	newCred, err := ensureInitACRSubscription(ctx, azdClient, azureContext, envName, acrResourceID)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureLocation(ctx, azdClient, azureContext, envName); err != nil {
 		return nil, err
 	}
 
@@ -1486,13 +1490,28 @@ func ensureSubscription(
 	envName string,
 	promptMessage string,
 ) (azcore.TokenCredential, error) {
+	if err := resolveSubscription(ctx, azdClient, azureContext, promptMessage); err != nil {
+		return nil, err
+	}
+	return persistSubscription(ctx, azdClient, azureContext, envName)
+}
+
+// resolveSubscription selects a subscription without persisting it.
+func resolveSubscription(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	promptMessage string,
+) error {
+	defer inittelemetry.Start(ctx, inittelemetry.SubscriptionSelection)()
+
 	if azureContext.Scope.SubscriptionId == "" {
 		fmt.Println(promptMessage)
 
 		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 		if err != nil {
 			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("subscription selection was cancelled")
+				return exterrors.Cancelled("subscription selection was cancelled")
 			}
 			// Only attach the AZURE_SUBSCRIPTION_ID-specific guidance when the
 			// failure is the no-prompt / "prompt required" path. Other prompt
@@ -1500,14 +1519,14 @@ func ensureSubscription(
 			// don't mislead the user into setting an env var that wouldn't have
 			// helped.
 			if exterrors.IsPromptRequired(err) {
-				return nil, exterrors.Dependency(
+				return exterrors.Dependency(
 					exterrors.CodeMissingAzureSubscription,
 					fmt.Sprintf("failed to select an Azure subscription: %s", err),
 					"set AZURE_SUBSCRIPTION_ID in your azd environment "+
 						"(run `azd env set AZURE_SUBSCRIPTION_ID <id>`), or run interactively to pick one",
 				)
 			}
-			return nil, exterrors.Dependency(
+			return exterrors.Dependency(
 				exterrors.CodeMissingAzureSubscription,
 				fmt.Sprintf("failed to select an Azure subscription: %s", err),
 				"retry, or run interactively to pick one",
@@ -1521,7 +1540,7 @@ func ensureSubscription(
 			SubscriptionId: azureContext.Scope.SubscriptionId,
 		})
 		if err != nil {
-			return nil, exterrors.Auth(
+			return exterrors.Auth(
 				exterrors.CodeTenantLookupFailed,
 				fmt.Sprintf("failed to lookup tenant for subscription %s: %s", azureContext.Scope.SubscriptionId, err),
 				"verify your Azure login with 'azd auth login'",
@@ -1529,7 +1548,15 @@ func ensureSubscription(
 		}
 		azureContext.Scope.TenantId = tenantResponse.TenantId
 	}
+	return nil
+}
 
+func persistSubscription(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	envName string,
+) (azcore.TokenCredential, error) {
 	// Persist to environment
 	if err := setEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID", azureContext.Scope.SubscriptionId); err != nil {
 		return nil, err
@@ -1562,11 +1589,13 @@ func ensureLocation(
 	azureContext *azdext.AzureContext,
 	envName string,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.LocationSelection)()
+
 	allowedLocations, err := supportedRegionsForInit(ctx)
 	if err != nil {
 		return err
 	}
-	return ensureLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
+	return resolveLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
 }
 
 func ensureLocationWithAllowedLocations(
@@ -1576,7 +1605,19 @@ func ensureLocationWithAllowedLocations(
 	envName string,
 	allowedLocations []string,
 ) error {
-	if azureContext.Scope.Location != "" && locationAllowed(azureContext.Scope.Location, allowedLocations) {
+	defer inittelemetry.Start(ctx, inittelemetry.LocationSelection)()
+
+	return resolveLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
+}
+
+func resolveLocationWithAllowedLocations(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	envName string,
+	allowedLocations []string,
+) error {
+	if azureContext.Scope.Location != "" && initLocationAllowed(ctx, azureContext.Scope.Location, allowedLocations) {
 		if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location); err != nil {
 			return err
 		}
@@ -1703,6 +1744,8 @@ func selectNewModel(
 	azureContext *azdext.AzureContext,
 	modelFlag string,
 ) (*azdext.AiModel, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ModelSelection)()
+
 	defaultModel := defaultAgentModel
 	if modelFlag != "" {
 		defaultModel = modelFlag
@@ -1882,6 +1925,8 @@ func selectFoundryProject(
 	bicepless bool,
 	allowedLocations []string,
 ) (*FoundryProjectInfo, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.FoundryProjectSelection)()
+
 	spinnerText := "Searching for Foundry projects in your subscription..."
 	if projectResourceId != "" {
 		spinnerText = "Getting details on the provided Foundry project..."
@@ -1919,12 +1964,12 @@ func selectFoundryProject(
 	}
 
 	if projectResourceId != "" && len(projects) > 0 {
-		if err := validateInitLocation(projects[0].Location, allowedLocations); err != nil {
+		if err := validateInitLocation(ctx, projects[0].Location, allowedLocations); err != nil {
 			return nil, err
 		}
 	}
 	projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
-		return !locationAllowed(p.Location, allowedLocations)
+		return !initLocationAllowed(ctx, p.Location, allowedLocations)
 	})
 
 	// Hosted agents (code deploy or a pre-built --image) must run in a region that
@@ -2048,6 +2093,8 @@ func selectModelDeployment(
 	modelDeploymentFlag string,
 	modelFilter string,
 ) (*FoundryDeploymentInfo, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ModelDeploymentSelection)()
+
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
 		Text:        "Searching for model deployments in your Foundry Project...",
 		ClearOnStop: true,

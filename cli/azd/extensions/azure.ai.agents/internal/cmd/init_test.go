@@ -2097,8 +2097,8 @@ func TestResolveImageServiceNameCollision(t *testing.T) {
 }
 
 func TestFastPathProjectTargetUsesHostDiscovery(t *testing.T) {
-	t.Parallel()
 	projectRoot := t.TempDir()
+	t.Chdir(projectRoot)
 	target, folder := fastPathProjectTarget(
 		&azdext.ProjectConfig{Path: projectRoot}, nil, "agent",
 	)
@@ -2108,6 +2108,13 @@ func TestFastPathProjectTargetUsesHostDiscovery(t *testing.T) {
 	target, folder = fastPathProjectTarget(nil, errors.New("project not found"), "New Agent")
 	require.Equal(t, "new-agent", target)
 	require.Equal(t, "new-agent", folder)
+
+	t.Run("existing target directory still requires navigation", func(t *testing.T) {
+		require.NoError(t, os.Mkdir("new-agent", 0o700))
+		target, folder := fastPathProjectTarget(nil, errors.New("project not found"), "New Agent")
+		require.Equal(t, "new-agent", target)
+		require.Equal(t, "new-agent", folder)
+	})
 }
 
 func TestEnsureLoggedIn(t *testing.T) {
@@ -2279,7 +2286,7 @@ func TestParseAuthStatusJSON(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // createdFolder path computation after Chdir
-// (covers PR review — directory creation tracking and message accuracy)
+// (covers navigation hints and message accuracy)
 // ---------------------------------------------------------------------------
 
 // TestCreatedFolderPath_AfterChdir verifies that formatCreatedFolderMessage
@@ -2334,52 +2341,44 @@ func TestCreatedFolderPath_AfterChdir(t *testing.T) {
 	}
 }
 
-// TestCreatedFolderPath_NotSetWhenDirectoryExists verifies that the
-// newlyCreated check correctly identifies an existing directory.
-func TestCreatedFolderPath_NotSetWhenDirectoryExists(t *testing.T) {
+// TestCreatedFolderPath_SetWhenDirectoryExists verifies that a pre-existing
+// subdirectory still needs a navigation hint when no project exists in cwd.
+func TestCreatedFolderPath_SetWhenDirectoryExists(t *testing.T) {
 	originalCwd := t.TempDir()
 	t.Chdir(originalCwd)
 
 	folderName := "existing-project"
 
-	// Pre-create the directory (simulates an existing project)
+	// Pre-create the target without a project in the parent directory.
 	existingDir := filepath.Join(originalCwd, folderName)
 	//nolint:gosec // test fixture directory permissions are intentional
 	if err := os.MkdirAll(existingDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
-	// Mirror production logic: stat + errors.Is
-	_, statErr := os.Stat(folderName)
-	newlyCreated := errors.Is(statErr, fs.ErrNotExist)
-
-	if newlyCreated {
-		t.Error("newlyCreated should be false when directory already exists")
-	}
+	target, folderDisplay := fastPathProjectTarget(nil, errors.New("project not found"), folderName)
+	require.Equal(t, folderName, target)
+	require.Equal(t, folderName, folderDisplay)
+	msg := formatCreatedFolderMessage(originalCwd, filepath.Join(originalCwd, target), "")
+	require.Contains(t, msg, "cd "+folderDisplay+"\n")
 }
 
 // TestCreatedFolderPath_SetWhenDirectoryDoesNotExist verifies that the
-// newlyCreated check correctly identifies a missing directory.
+// navigation hint is set for a missing target directory.
 func TestCreatedFolderPath_SetWhenDirectoryDoesNotExist(t *testing.T) {
 	originalCwd := t.TempDir()
 	t.Chdir(originalCwd)
 
 	folderName := "new-agent-project"
 
-	// Do NOT create the directory — simulates fresh init
-	_, statErr := os.Stat(folderName)
-	newlyCreated := errors.Is(statErr, fs.ErrNotExist)
-
-	if !newlyCreated {
-		t.Error("newlyCreated should be true when directory does not exist")
-	}
+	target, folderDisplay := fastPathProjectTarget(nil, errors.New("project not found"), folderName)
+	require.Equal(t, folderName, target)
+	require.Equal(t, folderName, folderDisplay)
 
 	// Verify formatCreatedFolderMessage produces valid output
-	createdFolder := filepath.Join(originalCwd, folderName)
+	createdFolder := filepath.Join(originalCwd, target)
 	msg := formatCreatedFolderMessage(originalCwd, createdFolder, "")
-	if !strings.Contains(msg, folderName) {
-		t.Errorf("message should contain %q:\n%s", folderName, msg)
-	}
+	require.Contains(t, msg, "cd "+folderDisplay+"\n")
 }
 
 // TestCreatedFolderPath_AzdTemplateCase verifies the full flow for the
@@ -2409,9 +2408,8 @@ func TestCreatedFolderPath_AzdTemplateCase(t *testing.T) {
 	}
 }
 
-// TestCreatedFolderPath_ManifestTemplateExistingProject verifies that no
-// "created" message is produced when an existing project is found for the
-// agent manifest template flow.
+// TestCreatedFolderPath_ManifestTemplateExistingProject verifies that a project
+// in a subdirectory still needs a navigation hint when no project exists in cwd.
 func TestCreatedFolderPath_ManifestTemplateExistingProject(t *testing.T) {
 	originalCwd := t.TempDir()
 	t.Chdir(originalCwd)
@@ -2433,13 +2431,11 @@ func TestCreatedFolderPath_ManifestTemplateExistingProject(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	// Mirror production logic: directory exists, so newlyCreated is false
-	_, statErr := os.Stat(folderName)
-	newlyCreated := errors.Is(statErr, fs.ErrNotExist)
-
-	if newlyCreated {
-		t.Error("newlyCreated should be false for existing project directory")
-	}
+	target, folderDisplay := fastPathProjectTarget(nil, errors.New("project not found"), folderName)
+	require.Equal(t, folderName, target)
+	require.Equal(t, folderName, folderDisplay)
+	msg := formatCreatedFolderMessage(originalCwd, filepath.Join(originalCwd, target), "")
+	require.Contains(t, msg, "cd "+folderDisplay+"\n")
 }
 
 func TestFolderNameFromTitle(t *testing.T) {

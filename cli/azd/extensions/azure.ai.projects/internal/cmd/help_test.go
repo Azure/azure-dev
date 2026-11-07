@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.projects/synthesis"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/fatih/color"
@@ -18,6 +20,7 @@ import (
 )
 
 func TestAIHelp(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	t.Setenv("NO_COLOR", "1")
 	previous := color.NoColor
 	color.NoColor = true
@@ -26,6 +29,7 @@ func TestAIHelp(t *testing.T) {
 	walkAIHelp(t, func(t *testing.T, command *cobra.Command, path []string) {
 		text := executeAIHelp(t, path)
 		require.NotContains(t, text, "\x1b")
+		require.NotRegexp(t, `(?i)\((preview|beta)\)`, command.Short+"\n"+command.Long)
 		require.Contains(t, text, "\nUsage\n  azd ai "+command.CommandPath())
 		require.Contains(t, text, "\nGlobal Flags\n")
 		require.Equal(t, 1, strings.Count(text, "\nExamples\n"))

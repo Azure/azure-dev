@@ -1,6 +1,73 @@
 # Release History
 
-<!-- cspell:ignore Deeksharma JerryYangKai Yimin -->
+<!-- cspell:ignore Deeksharma JerryYangKai vebudumu yiliuTo Yimin -->
+
+## 1.0.0 (2026-11-05)
+
+### Breaking Changes
+
+- [[#10813]](https://github.com/Azure/azure-dev/pull/10813) Require `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true` to retain developer RBAC warnings in final deployment output and JSON messages while keeping role checks and automatic role assignment enabled.
+- [[#10792]](https://github.com/Azure/azure-dev/pull/10792) Align registry provisioning with source-build behavior: a bare `image` no longer suppresses registry creation, so use `docker.imagePassthrough: true` or the supported `AZD_AGENT_SKIP_ACR=true` setting with a nonempty image for prebuilt deployment.
+
+### Features Added
+
+- [[#10809]](https://github.com/Azure/azure-dev/pull/10809) Add terminal-only local A2A 0.3 agent execution and invocation without launching Inspector, including custom ports and JSON or streaming output.
+- [[#10760]](https://github.com/Azure/azure-dev/pull/10760) Add config-driven skill optimization from traces, candidate inspection, per-skill publication outcomes, and report downloads without automatically applying or deploying generated skills. Thanks @vebudumu for the contribution!
+
+### Bugs Fixed
+
+- [[#10559]](https://github.com/Azure/azure-dev/pull/10559) Reject invalid hosted-agent resource settings before deployment or local startup instead of silently substituting defaults.
+- [[#10815]](https://github.com/Azure/azure-dev/pull/10815) Fix agent deployment failing with HTTP 403 on newly provisioned projects by waiting for Foundry User role assignments to propagate.
+- [[#10832]](https://github.com/Azure/azure-dev/pull/10832) Fix new-project Bicep exports failing to compile because referenced registry and Foundry project modules were missing. Thanks @yiliuTo for the contribution!
+- [[#10838]](https://github.com/Azure/azure-dev/pull/10838) Fix skill optimization trace connections to use the service-supported `application_insights` type. Thanks @vebudumu for the contribution!
+
+### Other Changes
+
+- [[#10836]](https://github.com/Azure/azure-dev/pull/10836) Remove extension-wide Preview and Beta labels from command help and extension descriptions while preserving notices for independently gated features.
+
+## 1.0.0-beta.23 (2026-10-29)
+
+### Features Added
+
+- [[#10182]](https://github.com/Azure/azure-dev/pull/10182) Expose `--harness` for `azd ai agent init`.
+
+### Bugs Fixed
+
+- [[#10561]](https://github.com/Azure/azure-dev/pull/10561) Fix A2A 0.3 invocation output to show completed task answers instead of generic lifecycle messages.
+- [[#10715]](https://github.com/Azure/azure-dev/pull/10715) Fix prompt-agent deployment and invocation accepting invalid paths or modules in later infrastructure layers after an earlier layer matches.
+- [[#10553]](https://github.com/Azure/azure-dev/pull/10553) Fix hosted-agent activation failure and timeout diagnostics to identify the attempted version and clarify that a timeout does not confirm deployment failure.
+- [[#10675]](https://github.com/Azure/azure-dev/pull/10675) Fix developer RBAC warnings disappearing from final deployment output, including JSON output and deployments that later fail.
+
+## 1.0.0-beta.22 (2026-10-23)
+
+### Breaking Changes
+
+- [[#10631]](https://github.com/Azure/azure-dev/pull/10631) Replace singular `toolbox` declarations with the plural `toolboxes` list and reject the former spelling with migration guidance.
+- [[#10640]](https://github.com/Azure/azure-dev/pull/10640) Require separate opt-ins for managed harness, voice, and long-running invocation previews through `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true`, `AZD_ALPHA_ENABLE_AGENTS_VOICE=true`, and `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true`, respectively.
+- [[#10660]](https://github.com/Azure/azure-dev/pull/10660) Replace legacy `azd ai agent eval` workflows with migration guidance to `azd ai eval` from the `azure.ai.evaluations` extension. Thanks @Zyysurely for the contribution!
+- [[#10660]](https://github.com/Azure/azure-dev/pull/10660) Remove legacy agent evaluation configuration from optimization and require a standalone optimization API request for `--config`, using `--eval` or `--eval-config` to reuse evaluation configuration. Thanks @Zyysurely for the contribution!
+
+### Features Added
+
+- [[#10515]](https://github.com/Azure/azure-dev/pull/10515) Add Voice Agent telephony deployment through GA binding APIs with safe reconciliation of existing bindings and transfer targets.
+- [[#10660]](https://github.com/Azure/azure-dev/pull/10660) Update agent optimization to the GA v1 API and add evaluation service selection through `--eval` and `--eval-config`, including file-backed definitions. Thanks @Zyysurely for the contribution!
+
+### Bugs Fixed
+
+- [[#10563]](https://github.com/Azure/azure-dev/pull/10563) Fix adopted prompt agents to use each environment's selected model deployments during deployment and invocation, including after infrastructure ejection.
+- [[#10563]](https://github.com/Azure/azure-dev/pull/10563) Fix `azd ai agent init --model-deployment` to replace the selected template deployment without provisioning the original and reject ambiguous or conflicting model selectors before writing project files.
+- [[#10631]](https://github.com/Azure/azure-dev/pull/10631) Fix prompt-agent deployment to attach every declared toolbox with an authenticated Foundry project connection instead of ignoring references or failing invocation with HTTP 401.
+- [[#10651]](https://github.com/Azure/azure-dev/pull/10651) Fix Copilot harness initialization to use live region policies with embedded fallback, including support for West US and Central US.
+- [[#10651]](https://github.com/Azure/azure-dev/pull/10651) Fix generated and adopted Copilot harness initialization to reject mismatched project and model deployment locations before model selection.
+- [[#10526]](https://github.com/Azure/azure-dev/pull/10526) Fix initialization to always show a shell-safe `cd` hint when scaffolding into a subdirectory, including folders that already exist.
+- [[#10502]](https://github.com/Azure/azure-dev/pull/10502) Fix legacy agent projects to honor per-environment `AI_PROJECT_DEPLOYMENTS` settings and prompt for model deployments in a new environment while preserving YAML defaults in no-prompt mode.
+- [[#10660]](https://github.com/Azure/azure-dev/pull/10660) Fix optimization candidate application and deployment to preserve baseline tools, skills, and explicit empty values. Thanks @Zyysurely for the contribution!
+
+### Other Changes
+
+- [[#10548]](https://github.com/Azure/azure-dev/pull/10548) Add step-level timing telemetry to `azd ai agent init` to help diagnose slow initialization without recording user input or resource names.
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+- [[#10683]](https://github.com/Azure/azure-dev/pull/10683) Read preview opt-ins only from the extension process environment and list the supported switches in root help.
 
 ## 1.0.0-beta.21 (2026-10-19)
 

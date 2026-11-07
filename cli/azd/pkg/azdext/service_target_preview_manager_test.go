@@ -28,22 +28,22 @@ type mockServiceTargetPreviewProvider struct {
 
 func (m *mockServiceTargetPreviewProvider) Preview(
 	ctx context.Context,
-	serviceConfig *v1beta.ServiceConfig,
-) (*v1beta.ServiceDeployPreviewResult, error) {
+	serviceConfig *ServiceConfig,
+) (*ServiceDeployPreviewResult, error) {
 	args := m.Called(ctx, serviceConfig)
-	result, _ := args.Get(0).(*v1beta.ServiceDeployPreviewResult)
+	result, _ := args.Get(0).(*ServiceDeployPreviewResult)
 	return result, args.Error(1)
 }
 
 func TestServiceTargetPreviewManager_OnPreview(t *testing.T) {
 	t.Parallel()
 
-	result := &v1beta.ServiceDeployPreviewResult{Message: "1 change"}
+	result := &ServiceDeployPreviewResult{Message: "1 change"}
 	tests := []struct {
 		name          string
-		request       *v1beta.ServiceTargetPreviewRequest
+		request       *ServiceTargetPreviewRequest
 		provider      func() ServiceTargetProvider
-		result        *v1beta.ServiceDeployPreviewResult
+		result        *ServiceDeployPreviewResult
 		providerError error
 		wantError     string
 	}{
@@ -56,13 +56,18 @@ func TestServiceTargetPreviewManager_OnPreview(t *testing.T) {
 			wantError: "service target 'custom' does not support deployment preview",
 		},
 		{
+			name:      "BetaProviderRequiresBetaRegistration",
+			provider:  func() ServiceTargetProvider { return &mockBetaServiceTargetPreviewProvider{} },
+			wantError: "service target 'custom' does not support deployment preview",
+		},
+		{
 			name:      "NoFactory",
-			request:   &v1beta.ServiceTargetPreviewRequest{ServiceConfig: &v1beta.ServiceConfig{Host: "missing"}},
+			request:   &ServiceTargetPreviewRequest{ServiceConfig: &ServiceConfig{Host: "missing"}},
 			wantError: "no preview factory registered for service target: missing",
 		},
 		{
 			name:      "NilServiceConfig",
-			request:   &v1beta.ServiceTargetPreviewRequest{},
+			request:   &ServiceTargetPreviewRequest{},
 			wantError: "service config is required for preview request",
 		},
 	}
@@ -71,10 +76,10 @@ func TestServiceTargetPreviewManager_OnPreview(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			serviceConfig := &v1beta.ServiceConfig{Name: "api", Host: "custom"}
+			serviceConfig := &ServiceConfig{Name: "api", Host: "custom"}
 			request := tt.request
 			if request == nil {
-				request = &v1beta.ServiceTargetPreviewRequest{ServiceConfig: serviceConfig}
+				request = &ServiceTargetPreviewRequest{ServiceConfig: serviceConfig}
 			}
 
 			var providers []*mockServiceTargetPreviewProvider
@@ -116,23 +121,27 @@ func TestServiceTargetPreviewManager_OnPreview(t *testing.T) {
 	}
 }
 
-// fakePreviewHost plays the azd side of the v1beta deployment preview stream.
+// fakePreviewHost plays the azd side of the stable deployment preview stream.
 type fakePreviewHost struct {
-	v1beta.UnimplementedServiceTargetServiceServer
-	registrations chan *v1beta.RegisterServiceTargetRequest
-	brokers       chan *grpcbroker.MessageBroker[v1beta.ServiceTargetMessage]
+	UnimplementedServiceTargetServiceServer
+	registrations chan *RegisterServiceTargetRequest
+	brokers       chan *grpcbroker.MessageBroker[ServiceTargetMessage]
 }
 
-func (h *fakePreviewHost) Stream(stream v1beta.ServiceTargetService_StreamServer) error {
-	broker := grpcbroker.NewMessageBroker(stream, NewServiceTargetPreviewEnvelope(), "host", nil)
+func (h *fakePreviewHost) Stream(stream ServiceTargetService_StreamServer) error {
+	return h.receive(stream, stream.Context())
+}
+
+func (h *fakePreviewHost) receive(stream grpcbroker.BidiStream[ServiceTargetMessage], ctx context.Context) error {
+	broker := grpcbroker.NewMessageBroker(stream, NewServiceTargetEnvelope(), "host", nil)
 	if err := broker.On(func(
 		ctx context.Context,
-		req *v1beta.RegisterServiceTargetRequest,
-	) (*v1beta.ServiceTargetMessage, error) {
+		req *RegisterServiceTargetRequest,
+	) (*ServiceTargetMessage, error) {
 		h.registrations <- req
-		return &v1beta.ServiceTargetMessage{
-			MessageType: &v1beta.ServiceTargetMessage_RegisterServiceTargetResponse{
-				RegisterServiceTargetResponse: &v1beta.RegisterServiceTargetResponse{},
+		return &ServiceTargetMessage{
+			MessageType: &ServiceTargetMessage_RegisterServiceTargetResponse{
+				RegisterServiceTargetResponse: &RegisterServiceTargetResponse{},
 			},
 		}, nil
 	}); err != nil {
@@ -140,19 +149,95 @@ func (h *fakePreviewHost) Stream(stream v1beta.ServiceTargetService_StreamServer
 	}
 
 	h.brokers <- broker
-	return broker.Run(stream.Context())
+	return broker.Run(ctx)
+}
+
+type fakeBetaPreviewHost struct {
+	v1beta.UnimplementedServiceTargetServiceServer
+	host *fakePreviewHost
+}
+
+func (h *fakeBetaPreviewHost) Stream(stream v1beta.ServiceTargetService_StreamServer) error {
+	return h.host.receive(&betaServiceTargetPreviewStream{BidiStream: stream}, stream.Context())
+}
+
+type mockBetaServiceTargetPreviewProvider struct {
+	MockServiceTargetProvider
+}
+
+//nolint:staticcheck // Verify the retained beta provider's deprecated result type.
+func TestBetaServiceTargetPreviewManager_OnPreview(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		result        *v1beta.ServiceDeployPreviewResult
+		providerError error
+		wantError     string
+	}{
+		{name: "Success", result: &v1beta.ServiceDeployPreviewResult{Message: "1 change"}},
+		{name: "ProviderError", providerError: errors.New("remote lookup failed"), wantError: "remote lookup failed"},
+		{name: "NilResult", wantError: "service target 'custom' returned a nil deployment preview result"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			provider := &mockBetaServiceTargetPreviewProvider{}
+			provider.On("Preview", mock.Anything, &v1beta.ServiceConfig{Name: "api", Host: "custom"}).
+				Return(tt.result, tt.providerError)
+			manager := newBetaServiceTargetPreviewManager("test.ext", nil, nil)
+			manager.factories["custom"] = func() ServiceTargetProvider { return provider }
+			response, err := manager.onPreview(t.Context(), &ServiceTargetPreviewRequest{
+				ServiceConfig: &ServiceConfig{Name: "api", Host: "custom"},
+			})
+			if tt.wantError != "" {
+				require.EqualError(t, err, tt.wantError)
+				require.Nil(t, response)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.result.GetMessage(), response.GetPreviewResponse().GetResult().GetMessage())
+			}
+			provider.AssertExpectations(t)
+		})
+	}
+}
+
+//nolint:staticcheck // Mock the retained beta provider's original signature.
+func (m *mockBetaServiceTargetPreviewProvider) Preview(
+	ctx context.Context,
+	config *v1beta.ServiceConfig,
+) (*v1beta.ServiceDeployPreviewResult, error) {
+	args := m.Called(ctx, config)
+	result, _ := args.Get(0).(*v1beta.ServiceDeployPreviewResult)
+	return result, args.Error(1)
 }
 
 func TestServiceTargetPreviewManager_Stream(t *testing.T) {
 	t.Parallel()
 
+	for _, beta := range []bool{false, true} {
+		t.Run(map[bool]string{false: "Stable", true: "DeprecatedBeta"}[beta], func(t *testing.T) {
+			testServiceTargetPreviewManagerStream(t, beta)
+		})
+	}
+}
+
+//nolint:staticcheck // Exercise both stable providers and retained beta providers over their real routes.
+func testServiceTargetPreviewManagerStream(t *testing.T, beta bool) {
+	t.Helper()
+
 	host := &fakePreviewHost{
-		registrations: make(chan *v1beta.RegisterServiceTargetRequest, 1),
-		brokers:       make(chan *grpcbroker.MessageBroker[v1beta.ServiceTargetMessage], 1),
+		registrations: make(chan *RegisterServiceTargetRequest, 1),
+		brokers:       make(chan *grpcbroker.MessageBroker[ServiceTargetMessage], 1),
 	}
 	listener := bufconn.Listen(1024 * 1024)
 	grpcServer := grpc.NewServer()
-	v1beta.RegisterServiceTargetServiceServer(grpcServer, host)
+	if beta {
+		v1beta.RegisterServiceTargetServiceServer(grpcServer, &fakeBetaPreviewHost{host: host})
+	} else {
+		RegisterServiceTargetServiceServer(grpcServer, host)
+	}
 	go func() { _ = grpcServer.Serve(listener) }()
 	t.Cleanup(grpcServer.Stop)
 
@@ -170,16 +255,24 @@ func TestServiceTargetPreviewManager_Stream(t *testing.T) {
 	defer cancel()
 
 	manager := newServiceTargetPreviewManager("test.ext", &AzdClient{connection: connection}, nil)
+	manager.beta = beta
 	t.Cleanup(func() { require.NoError(t, manager.Close()) })
 	go func() { _ = manager.Receive(ctx) }()
 	require.NoError(t, manager.Ready(ctx))
 
 	data, err := structpb.NewStruct(map[string]any{"action": "create"})
 	require.NoError(t, err)
-	result := &v1beta.ServiceDeployPreviewResult{Message: "would create", Data: data}
+	result := &ServiceDeployPreviewResult{Message: "would create", Data: data}
 	var factoryCalls atomic.Int32
 	require.NoError(t, manager.Register(ctx, func() ServiceTargetProvider {
 		factoryCalls.Add(1)
+		if beta {
+			provider := &mockBetaServiceTargetPreviewProvider{}
+			provider.On("Preview", mock.Anything, mock.MatchedBy(func(config *v1beta.ServiceConfig) bool {
+				return config.GetName() == "api" && config.GetHost() == "custom"
+			})).Return(&v1beta.ServiceDeployPreviewResult{Message: "would create", Data: data}, nil)
+			return provider
+		}
 		provider := &mockServiceTargetPreviewProvider{}
 		provider.On("Preview", mock.Anything, mock.Anything).Return(result, nil)
 		return provider
@@ -191,11 +284,11 @@ func TestServiceTargetPreviewManager_Stream(t *testing.T) {
 	require.Zero(t, factoryCalls.Load(), "registration must not construct providers")
 
 	broker := <-host.brokers
-	response, err := broker.SendAndWait(ctx, &v1beta.ServiceTargetMessage{
+	response, err := broker.SendAndWait(ctx, &ServiceTargetMessage{
 		RequestId: "preview-1",
-		MessageType: &v1beta.ServiceTargetMessage_PreviewRequest{
-			PreviewRequest: &v1beta.ServiceTargetPreviewRequest{
-				ServiceConfig: &v1beta.ServiceConfig{Name: "api", Host: "custom"},
+		MessageType: &ServiceTargetMessage_PreviewRequest{
+			PreviewRequest: &ServiceTargetPreviewRequest{
+				ServiceConfig: &ServiceConfig{Name: "api", Host: "custom"},
 			},
 		},
 	})
@@ -221,15 +314,25 @@ func TestServiceTargetPreviewEnvelope_Error(t *testing.T) {
 	require.Nil(t, message.Error)
 }
 
-func TestExtensionHost_WithBetaServiceTargetPreview(t *testing.T) {
+func TestExtensionHost_WithServiceTargetPreview(t *testing.T) {
 	t.Parallel()
+
+	for _, beta := range []bool{false, true} {
+		t.Run(map[bool]string{false: "Stable", true: "DeprecatedBeta"}[beta], func(t *testing.T) {
+			testExtensionHostWithServiceTargetPreview(t, beta)
+		})
+	}
+}
+
+func testExtensionHostWithServiceTargetPreview(t *testing.T, beta bool) {
+	t.Helper()
 
 	tests := []struct {
 		name       string
 		previewErr error
 	}{
 		{name: "Registered"},
-		// Hosts without the preview override reject the registration; the extension must still start.
+		// Hosts without preview support reject the registration; the extension must still start.
 		{name: "PreviewUnavailable", previewErr: errors.New("provider demo already registered")},
 	}
 
@@ -253,10 +356,16 @@ func TestExtensionHost_WithBetaServiceTargetPreview(t *testing.T) {
 
 			host := NewExtensionHost(newTestAzdClient())
 			host.serviceTargetManager = newRegistrar("stable", nil)
-			host.serviceTargetPreviewManager = newRegistrar("preview", tt.previewErr)
-			host.WithBetaServiceTargetPreview("demo", func() ServiceTargetProvider {
+			factory := func() ServiceTargetProvider {
 				return &mockServiceTargetPreviewProvider{}
-			})
+			}
+			if beta {
+				host.betaServiceTargetPreviewManager = newRegistrar("preview", tt.previewErr)
+				host.WithBetaServiceTargetPreview("demo", factory)
+			} else {
+				host.serviceTargetPreviewManager = newRegistrar("preview", tt.previewErr)
+				host.WithServiceTargetPreview("demo", factory)
+			}
 			require.Len(t, host.ServiceTargets(), 1)
 
 			ctx, cancel := context.WithCancel(t.Context())

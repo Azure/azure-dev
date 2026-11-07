@@ -6,6 +6,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -61,6 +62,29 @@ func TestUxMiddleware_OtherErrors_NotSwallowed(t *testing.T) {
 
 	// Other errors should still be returned
 	require.ErrorIs(t, err, someErr)
+}
+
+func TestUxMiddleware_NoPromptValidationFailure_NotSwallowed(t *testing.T) {
+	t.Parallel()
+	mockContext := mocks.NewMockContext(t.Context())
+	ux := NewUxMiddleware(&Options{}, mockContext.Console, &alpha.FeatureManager{}, &output.NoneFormatter{})
+	validationErr := &internal.ErrorWithSuggestion{
+		Err:        internal.ErrValidationFailed,
+		Message:    "Provisioning was canceled because critical warnings require interactive confirmation.",
+		Suggestion: "Resolve the critical warnings, or rerun without --no-prompt.",
+	}
+
+	result, err := ux.Run(*mockContext.Context, func(context.Context) (*actions.ActionResult, error) {
+		return nil, validationErr
+	})
+
+	require.ErrorIs(t, err, internal.ErrValidationFailed)
+	require.Nil(t, result)
+	output := strings.Join(mockContext.Console.Output(), "\n")
+	require.Contains(t, output, "ERROR:")
+	require.Contains(t, output, validationErr.Message)
+	require.Contains(t, output, validationErr.Suggestion)
+	require.NotContains(t, output, "SUCCESS:")
 }
 
 func TestUxMiddleware_Success_ShowsActionResult(t *testing.T) {

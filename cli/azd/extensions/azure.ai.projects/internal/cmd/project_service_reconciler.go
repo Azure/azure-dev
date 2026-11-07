@@ -13,8 +13,9 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/phasetelemetry"
 	"azure.ai.projects/internal/provisioning"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -50,6 +51,8 @@ type projectServiceReconciler struct {
 func (r *projectServiceReconciler) discoverProjectService(
 	ctx context.Context,
 ) (*projectServiceInfo, *azdext.ProjectConfig, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ProjectResolution)()
+
 	response, err := r.client.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return nil, nil, err
@@ -161,6 +164,8 @@ func (r *projectServiceReconciler) reconcileEndpoint(
 	projectName, endpoint string,
 	mode projectMode,
 ) (string, string, func() error, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ConfigurationSave)()
+
 	service, project, err := r.discoverProjectService(ctx)
 	if err != nil {
 		return "", "", func() error { return nil }, err

@@ -1,0 +1,18 @@
+display_name: Learn reusable skills from agent traces
+target_configuration:
+  type: foundry_agent
+  name: my-agent
+  version: "1"
+optimization_model_configuration:
+  model: my-optimizer-deployment
+optimization_configuration:
+  type: skill_optimization
+  context:
+    - type: agent_traces
+      trace_window:
+        type: fixed
+        start_time: 1792454400 # 2026-10-20T00:00:00Z
+        end_time: 1793059200 # 2026-10-27T00:00:00Z
+        max_traces: 10
+    - type: steering_prompt
+      prompt: Prefer concise, evidence-grounded procedures that generalize across tasks.

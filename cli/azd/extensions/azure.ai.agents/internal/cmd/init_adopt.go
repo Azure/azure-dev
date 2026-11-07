@@ -24,6 +24,8 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
@@ -37,6 +39,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 )
@@ -206,7 +209,7 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 			if strings.EqualFold(strings.TrimSpace(kind), string(agent_yaml.AgentKindPrompt)) {
 				info.hasPromptAgent = true
 				harness, _ := svcMap["harness"].(map[string]any)
-				if harnessType, _ := harness["type"].(string); len(promptHarnessRegionsForInit(harnessType)) > 0 {
+				if harnessType, _ := harness["type"].(string); agent_api.IsCopilotHarness(harnessType) {
 					info.promptHarness = harnessType
 				}
 			} else {
@@ -259,6 +262,8 @@ func loadExplicitAzureYaml(
 	flags *initFlags,
 	httpClient *http.Client,
 ) ([]byte, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateLoading)()
+
 	if err := checkNotDirectory(flags.templatePointer); err != nil {
 		return nil, err
 	}
@@ -328,7 +333,7 @@ func validateExplicitAzureYamlContent(templatePointer string, content []byte) ([
 	)
 }
 
-func validateLocalExplicitAzureYaml(templatePointer string) ([]byte, bool, error) {
+func validateLocalExplicitAzureYaml(ctx context.Context, templatePointer string) ([]byte, bool, error) {
 	kind, err := classifyInitSource(templatePointer)
 	if err != nil {
 		return nil, false, err
@@ -336,6 +341,8 @@ func validateLocalExplicitAzureYaml(templatePointer string) ([]byte, bool, error
 	if kind == initSourceHTTP {
 		return nil, false, nil
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateLoading)()
+
 	if err := checkNotDirectory(templatePointer); err != nil {
 		return nil, false, err
 	}
@@ -801,19 +808,30 @@ func adoptedAgentNameConfig(
 	return strings.TrimSpace(name), "name", nil
 }
 
+type adoptedProjectPreflight struct {
+	replacedDeployment string
+	subscription       *azdext.AzureScope
+}
+
 // runInitFromAzureYaml adopts a sample's unified Foundry `azure.yaml` as the
 // project-root manifest (#8798). The sample's `azure.yaml` and referenced files are placed at
 // the project root via azd-core's native template adoption; the services it
 // already declares (project, connections, toolboxes, agents) are not
 // re-derived. `content` is the already-fetched azure.yaml used to derive the
 // project folder name.
+// A supplied stagingDir avoids downloading the sample again.
 func runInitFromAzureYaml(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 	content []byte,
+	stagingDir string,
+	noticeWriter io.Writer,
 ) error {
+	if err := validateInitModelSelectors(flags, true); err != nil {
+		return err
+	}
 	projectName := foundryProjectName(content)
 	recordInitProjectContent(ctx, content)
 	agentNameOverride, err := adoptedAgentNameOverride(flags)
@@ -841,18 +859,32 @@ func runInitFromAzureYaml(
 	}
 	// Stage the sample as a local template directory (azure.yaml at its root
 	// alongside referenced files) that azd-core can adopt with `azd init -t`.
-	stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
-	if err != nil {
-		return err
+	if stagingDir == "" {
+		var cleanup func()
+		stagingDir, cleanup, err = stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
 	}
-	defer cleanup()
 
 	if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 		return err
 	}
+	if err := requireStagedPreviewFeatures(stagingDir, noticeWriter); err != nil {
+		return err
+	}
+	//nolint:gosec // trusted staging directory
 	stagedContent, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
 	if err != nil {
 		return fmt.Errorf("reading staged azure.yaml: %w", err)
+	}
+	flags.acrTemplateTarget = true
+	if err := validateInitACRManifest(ctx, azdClient, stagedContent, stagingDir, flags, targetDir); err != nil {
+		return err
+	}
+	if err := validateInitACRProjectContent(ctx, azdClient, flags, stagedContent, stagingDir, targetDir); err != nil {
+		return err
 	}
 	stagedInfo, err := inspectAzureYaml(stagedContent, stagingDir)
 	if err != nil {
@@ -868,10 +900,24 @@ func runInitFromAzureYaml(
 		}
 	}
 
+	replacedDeployment, err := preflightAdoptedDeploymentReplacement(ctx, azdClient, stagingDir, flags)
+	if err != nil {
+		return err
+	}
+	subscription, err := planInitACRSubscription(ctx, azdClient, flags, targetDir)
+	if err != nil {
+		return err
+	}
+	if err := ensureInitACRProjectsCapability(ctx, flags, azdClient); err != nil {
+		return err
+	}
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 
 	envName := deriveEnvName(flags, targetDir)
-	if err := scaffoldProject(ctx, azdClient, targetDir, stagingDir, envName); err != nil {
+	endScaffolding := inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)
+	err = scaffoldProject(ctx, azdClient, targetDir, stagingDir, envName)
+	endScaffolding()
+	if err != nil {
 		return err
 	}
 
@@ -884,6 +930,7 @@ func runInitFromAzureYaml(
 		promptOnly,
 		agentNameOverride,
 		TemplateTypeAzureYaml,
+		adoptedProjectPreflight{replacedDeployment: replacedDeployment, subscription: subscription},
 	)
 }
 
@@ -893,7 +940,11 @@ func runInitFromAzdTemplate(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 	selectedTemplate *AgentTemplate,
+	noticeWriter io.Writer,
 ) error {
+	if err := validateInitModelSelectors(flags, true); err != nil {
+		return err
+	}
 	targetDir := strings.TrimSpace(flags.src)
 	if targetDir == "" {
 		targetDir = folderNameStrippingParenSuffix(selectedTemplate.Title)
@@ -909,19 +960,19 @@ func runInitFromAzdTemplate(
 		)
 	}
 
-	folderDisplay := ""
-	if _, statErr := os.Stat(targetDir); errors.Is(statErr, fs.ErrNotExist) {
-		folderDisplay = filepath.ToSlash(targetDir)
-	}
+	folderDisplay := folderDisplayForSubdir(targetDir)
 	envName := deriveEnvName(flags, targetDir)
-	if err := scaffoldAzdTemplateProject(
+	plan, err := scaffoldAzdTemplateProject(
 		ctx,
 		azdClient,
 		httpClient,
 		targetDir,
 		selectedTemplate.Source,
 		envName,
-	); err != nil {
+		flags,
+		noticeWriter,
+	)
+	if err != nil {
 		return err
 	}
 	if err := validateStagedAzureYaml(".", selectedTemplate.Source); err != nil {
@@ -956,6 +1007,7 @@ func runInitFromAzdTemplate(
 		info.promptOnly(),
 		agentNameOverride,
 		TemplateTypeAzd,
+		plan,
 	)
 }
 
@@ -966,11 +1018,18 @@ func scaffoldAzdTemplateProject(
 	targetDir string,
 	templateSource string,
 	envName string,
-) error {
-	if err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource); err != nil {
-		return err
+	flags *initFlags,
+	noticeWriter io.Writer,
+) (adoptedProjectPreflight, error) {
+	plan, err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource, flags, targetDir, noticeWriter)
+	if err != nil {
+		return adoptedProjectPreflight{}, err
 	}
-	return scaffoldProject(ctx, azdClient, targetDir, templateSource, envName)
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
+	if err := scaffoldProject(ctx, azdClient, targetDir, templateSource, envName); err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	return plan, nil
 }
 
 type azdTemplateRepositoryParser func(context.Context, string) (*GitHubUrlInfo, error)
@@ -981,7 +1040,11 @@ func preflightAzdTemplate(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 	templateSource string,
-) error {
+	flags *initFlags,
+	targetDir string,
+	noticeWriter io.Writer,
+) (adoptedProjectPreflight, error) {
+	flags.acrTemplateTarget = true
 	stagingDir, cleanup, err := stageAzdTemplateRepository(
 		ctx,
 		templateSource,
@@ -993,11 +1056,39 @@ func preflightAzdTemplate(
 		},
 	)
 	if err != nil {
-		return err
+		return adoptedProjectPreflight{}, err
 	}
 	defer cleanup()
 
-	return validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource))
+	if err := validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource)); err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	if err := requireStagedPreviewFeatures(stagingDir, noticeWriter); err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	//nolint:gosec // trusted staging directory
+	content, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
+	if err != nil {
+		return adoptedProjectPreflight{}, fmt.Errorf("read template registry configuration: %w", err)
+	}
+	if err := validateInitACRManifest(ctx, azdClient, content, stagingDir, flags, targetDir); err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	if err := validateInitACRProjectContent(ctx, azdClient, flags, content, stagingDir, targetDir); err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	replaced, err := preflightAdoptedDeploymentReplacement(ctx, azdClient, stagingDir, flags)
+	if err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	subscription, err := planInitACRSubscription(ctx, azdClient, flags, targetDir)
+	if err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	if err := ensureInitACRProjectsCapability(ctx, flags, azdClient); err != nil {
+		return adoptedProjectPreflight{}, err
+	}
+	return adoptedProjectPreflight{replacedDeployment: replaced, subscription: subscription}, nil
 }
 
 func stageAzdTemplateRepository(
@@ -1006,6 +1097,8 @@ func stageAzdTemplateRepository(
 	parseSource azdTemplateRepositoryParser,
 	downloadSource azdTemplateRepositoryDownloader,
 ) (string, func(), error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateStaging)()
+
 	noop := func() {}
 	if !strings.Contains(templateSource, "://") {
 		info, statErr := os.Stat(templateSource)
@@ -1231,7 +1324,31 @@ func finalizeAdoptedProject(
 	promptOnly bool,
 	agentNameOverride string,
 	templateType string,
+	plan adoptedProjectPreflight,
 ) error {
+	if err := validateInitModelSelectors(flags, true); err != nil {
+		return err
+	}
+	replacedDeployment := plan.replacedDeployment
+	env := getExistingEnvironment(ctx, envName, azdClient)
+	if env == nil {
+		var err error
+		env, err = createNewEnvironment(ctx, azdClient, envName)
+		if err != nil {
+			return err
+		}
+	}
+	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
+	if err != nil {
+		return err
+	}
+	if plan.subscription != nil {
+		azureContext.Scope.SubscriptionId = plan.subscription.SubscriptionId
+		azureContext.Scope.TenantId = plan.subscription.TenantId
+	}
+	if err := validateInitACRSubscription(initACRResourceID(flags), azureContext.Scope.SubscriptionId); err != nil {
+		return err
+	}
 	// Defensive: the sample should already declare `infra.provider:
 	// microsoft.foundry`, but stamp it if missing so provisioning stays
 	// bicep-less by default.
@@ -1245,25 +1362,6 @@ func finalizeAdoptedProject(
 		if err := applyAdoptedAgentNameOverride(ctx, azdClient, agentNameOverride); err != nil {
 			return err
 		}
-	}
-
-	// --- Interactive Azure context setup (subscription, Foundry project) ---
-	// The scaffolding created an environment; load it and run the same Foundry
-	// project selection flow as the generated-agent path so the user ends up
-	// with a provision-ready environment.
-	env := getExistingEnvironment(ctx, envName, azdClient)
-	if env == nil {
-		// Environment should exist after scaffoldProject; if not, create one.
-		var err error
-		env, err = createNewEnvironment(ctx, azdClient, envName)
-		if err != nil {
-			return err
-		}
-	}
-
-	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
-	if err != nil {
-		return err
 	}
 
 	// Apply deploy-mode configuration to the adopted agent
@@ -1298,7 +1396,11 @@ func finalizeAdoptedProject(
 	if err != nil {
 		return err
 	}
-	allowedLocations := promptHarnessRegionsForInit(manifestInfo.promptHarness)
+	ctx = withHarnessRegionPolicy(ctx, manifestInfo.promptHarness)
+	allowedLocations, err := promptHarnessRegionsForInit(ctx, manifestInfo.promptHarness)
+	if err != nil {
+		return err
+	}
 	environmentValues, err := getAgentEnvironmentValues(ctx, azdClient, env.Name)
 	if err != nil {
 		return fmt.Errorf("reading environment values: %w", err)
@@ -1323,6 +1425,7 @@ func finalizeAdoptedProject(
 		filterHostedRegions && !promptOnly,
 		preserveDeferredProjectState,
 		allowedLocations,
+		initACRResourceID(flags),
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -1371,7 +1474,8 @@ func finalizeAdoptedProject(
 			result.FoundryProject,
 			projectRoot,
 			projectAuthoringExisting,
-			flags.noPrompt,
+			adoptedProjectAddNoPrompt(flags),
+			initACRResourceID(flags),
 		); err != nil {
 			return err
 		}
@@ -1422,6 +1526,7 @@ func finalizeAdoptedProject(
 			projectRoot,
 			result.AuthoringMode,
 			flags.noPrompt,
+			initACRResourceID(flags),
 		); err != nil {
 			return err
 		}
@@ -1451,6 +1556,7 @@ func finalizeAdoptedProject(
 			result.Credential,
 			result.FoundryProject,
 			flags,
+			replacedDeployment,
 		); err != nil {
 			if exterrors.IsCancellation(err) {
 				return exterrors.Cancelled("initialization was cancelled")
@@ -1512,6 +1618,35 @@ func wireAdoptedProjectDependency(
 	return nil
 }
 
+// adoptedProjectAddNoPrompt keeps project authoring headless when
+// --model-deployment already names the model, so Projects does not prompt
+// for template deployments before the override is applied.
+func adoptedProjectAddNoPrompt(flags *initFlags) bool {
+	return flags.noPrompt || strings.TrimSpace(flags.modelDeployment) != ""
+}
+
+func validateInitModelSelectors(flags *initFlags, adopting bool) error {
+	suggestion := "pass an existing deployment name with --model-deployment, or use --model to deploy a new model"
+	if flags.modelDeploymentExplicit && strings.TrimSpace(flags.modelDeployment) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter, "--model-deployment was set to an empty value", suggestion,
+		)
+	}
+	if flags.modelExplicit && strings.TrimSpace(flags.model) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter, "--model was set to an empty value", suggestion,
+		)
+	}
+	if adopting && strings.TrimSpace(flags.modelDeployment) != "" && strings.TrimSpace(flags.model) != "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--model-deployment and --model cannot be used together",
+			"use --model-deployment to reuse an existing deployment, or --model to deploy a new model",
+		)
+	}
+	return nil
+}
+
 func validateAdoptedModelDeploymentTarget(
 	flags *initFlags,
 	projectInfo *FoundryProjectInfo,
@@ -1565,6 +1700,7 @@ func configureAdoptedExistingDeployment(
 	credential azcore.TokenCredential,
 	projectInfo *FoundryProjectInfo,
 	flags *initFlags,
+	replacedDeployment string,
 ) error {
 	requested := strings.TrimSpace(flags.modelDeployment)
 	if requested == "" {
@@ -1601,17 +1737,10 @@ func configureAdoptedExistingDeployment(
 			"verify the deployment name or omit --model-deployment",
 		)
 	}
-	if err := setEnvValue(
-		ctx,
-		azdClient,
-		envName,
-		"AZURE_AI_MODEL_DEPLOYMENT_NAME",
-		selected.Name,
+	if err := replaceAdoptedTemplateDeployment(
+		ctx, azdClient, envName, selected.Name, replacedDeployment,
 	); err != nil {
-		return fmt.Errorf(
-			"storing AZURE_AI_MODEL_DEPLOYMENT_NAME: %w",
-			err,
-		)
+		return err
 	}
 	if err := updatePendingModelDeploymentSignal(
 		ctx,
@@ -1694,13 +1823,13 @@ func adoptedAgentNameOverride(flags *initFlags) (string, error) {
 }
 
 // adoptTargetDir resolves the directory the adopted project is created in and
-// the display path for the "created folder" next-step hint. An explicit --src
-// (or positional directory) wins; otherwise a new folder named after the
+// the display path for the project folder next-step hint. An explicit --src
+// (or positional directory) wins; otherwise a folder named after the
 // sample's project name is used, falling back to the current directory when the
 // sample has no name.
 func adoptTargetDir(flags *initFlags, projectName string) (targetDir string, folderDisplay string) {
 	if flags.src != "" {
-		return flags.src, folderDisplayIfNew(flags.src)
+		return flags.src, folderDisplayForSubdir(flags.src)
 	}
 	if projectName == "" {
 		return ".", ""
@@ -1709,19 +1838,24 @@ func adoptTargetDir(flags *initFlags, projectName string) (targetDir string, fol
 	if folder == "" {
 		return ".", ""
 	}
-	return folder, folderDisplayIfNew(folder)
+	return folder, folderDisplayForSubdir(folder)
 }
 
-// folderDisplayIfNew returns a slash-formatted display path when dir does not
-// yet exist (so the cd hint is only shown for newly-created folders), else "".
-func folderDisplayIfNew(dir string) string {
-	if dir == "." {
+// folderDisplayForSubdir returns a slash-formatted display path whenever init
+// scaffolds outside the user's current directory, excluding equivalent paths to it.
+func folderDisplayForSubdir(dir string) string {
+	if dir == "" {
 		return ""
 	}
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		return filepath.ToSlash(dir)
+	if filepath.Clean(dir) == "." {
+		return ""
 	}
-	return ""
+	if dirInfo, err := os.Stat(dir); err == nil {
+		if cwdInfo, err := os.Stat("."); err == nil && os.SameFile(dirInfo, cwdInfo) {
+			return ""
+		}
+	}
+	return filepath.ToSlash(dir)
 }
 
 func projectManifestExists(dir string) bool {
@@ -1744,6 +1878,8 @@ func stageAzureYamlTemplate(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 ) (string, func(), error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateStaging)()
+
 	noop := func() {}
 	pointer := flags.templatePointer
 
@@ -2090,6 +2226,12 @@ func applyDeployModeToAdoptedProjectWithSources(
 			continue
 		}
 		hadDockerConfig := adoptedServiceHasDocker(agent.svc)
+		if flags.acrResourceIDSet || flags.effectiveACRResourceID != "" {
+			hadDockerConfig, err = adoptedServiceHasSourceDocker(ctx, azdClient, agent.name, agent.svc)
+			if err != nil {
+				return false, nil, err
+			}
+		}
 		serviceNeedsACR, err := applyDeployModeToService(
 			ctx,
 			flags,
@@ -2102,7 +2244,11 @@ func applyDeployModeToAdoptedProjectWithSources(
 			return false, nil, err
 		}
 		projectNeedsACR = projectNeedsACR || serviceNeedsACR
-		if serviceNeedsACR && (flags.deployMode != "" || !hadDockerConfig) {
+		configuredSource := flags.deployMode != "" || !hadDockerConfig
+		if initACRResourceID(flags) != "" && hadDockerConfig {
+			configuredSource = false
+		}
+		if serviceNeedsACR && configuredSource {
 			configuredSourceContainers = append(configuredSourceContainers, agent.name)
 		}
 	}
@@ -2313,6 +2459,12 @@ func applyDeployModeToService(
 	// takes precedence over stale image or docker properties when no override
 	// is requested.
 	hasDocker := adoptedServiceHasDocker(svc)
+	if initACRResourceID(flags) != "" {
+		hasDocker, err = adoptedServiceHasSourceDocker(ctx, azdClient, serviceName, svc)
+		if err != nil {
+			return false, err
+		}
+	}
 	if flags.deployMode == "" && hasCodeConfig {
 		return false, nil
 	}
@@ -2322,6 +2474,20 @@ func applyDeployModeToService(
 	// may carry the image in extension properties, so promote the resolved value
 	// to the core service image field. An explicit code mode overrides a leftover image.
 	if effectiveImage != "" && flags.deployMode != "code" {
+		if (flags.acrResourceIDSet || flags.effectiveACRResourceID != "") && !hasCodeConfig {
+			if svc.GetDocker().GetImagePassthrough() ||
+				strings.TrimSpace(probe.definition.RegistryConnectionID) != "" {
+				return false, nil
+			}
+			if !hasDocker {
+				if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, ""); err != nil {
+					return false, err
+				}
+			} else if err := ensureSourceBuildProjectPath(ctx, azdClient, serviceName, svc); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
 		if err := validateHostedContainerImage(effectiveImage); err != nil {
 			return false, err
 		}
@@ -2349,7 +2515,10 @@ func applyDeployModeToService(
 
 	// When no explicit --deploy-mode flag is passed and the service is already
 	// configured for a source-container build, respect that configuration.
-	if flags.deployMode == "" && hasDocker {
+	if (flags.deployMode == "" || initACRResourceID(flags) != "") && hasDocker {
+		if initACRResourceID(flags) != "" {
+			return true, ensureSourceBuildProjectPath(ctx, azdClient, serviceName, svc)
+		}
 		return true, nil
 	}
 
@@ -2368,8 +2537,12 @@ func applyDeployModeToService(
 	}
 	showCodeDeploy := supportsCodeDeploy(serviceDir)
 	// The final argument is true because -t supplied unified project input.
+	requestedMode := flags.deployMode
+	if initACRResourceID(flags) != "" {
+		requestedMode = "container"
+	}
 	deployMode, err := promptDeployMode(
-		ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true,
+		ctx, azdClient, flags.noPrompt, showCodeDeploy, requestedMode, true,
 	)
 	if err != nil {
 		return false, fmt.Errorf("resolving deploy mode for adopted project: %w", err)
@@ -2424,6 +2597,25 @@ func adoptedServiceHasDocker(svc *azdext.ServiceConfig) bool {
 	}
 	// A null value doesn't count as having docker configured.
 	return v != nil && v.GetStructValue() != nil
+}
+
+func adoptedServiceHasSourceDocker(
+	ctx context.Context, azdClient *azdext.AzdClient, serviceName string, svc *azdext.ServiceConfig,
+) (bool, error) {
+	if adoptedServiceHasDocker(svc) ||
+		svc.GetDocker() != nil && !proto.Equal(svc.GetDocker(), &azdext.DockerProjectOptions{}) {
+		return true, nil
+	}
+	// The typed mapper loses a false-only Docker block's presence.
+	// This API reads the raw service mapping from azure.yaml.
+	resp, err := azdClient.Project().GetServiceConfigValue(ctx, &azdext.GetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        "docker",
+	})
+	if err != nil {
+		return false, fmt.Errorf("reading authored docker configuration for service %q: %w", serviceName, err)
+	}
+	return resp.GetFound() && resp.GetValue().GetStructValue() != nil, nil
 }
 
 // applyCodeDeployToService writes codeConfiguration onto the adopted agent
@@ -2515,6 +2707,11 @@ func applyContainerDeployToService(
 	if err != nil {
 		return err
 	}
+	if image == "" {
+		if err := ensureSourceBuildProjectPath(ctx, azdClient, serviceName, svc); err != nil {
+			return err
+		}
+	}
 	dockerValue, err := structpb.NewValue(dockerMap)
 	if err != nil {
 		return fmt.Errorf("encoding docker configuration: %w", err)
@@ -2552,5 +2749,23 @@ func applyContainerDeployToService(
 	}
 
 	log.Printf("Applied container deploy configuration to service %q", serviceName)
+	return nil
+}
+
+func ensureSourceBuildProjectPath(
+	ctx context.Context, client *azdext.AzdClient, serviceName string, svc *azdext.ServiceConfig,
+) error {
+	if strings.TrimSpace(svc.GetRelativePath()) != "" {
+		return nil
+	}
+	value, err := structpb.NewValue(".")
+	if err != nil {
+		return fmt.Errorf("encoding source build project path: %w", err)
+	}
+	if _, err := client.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName, Path: "project", Value: value,
+	}); err != nil {
+		return fmt.Errorf("writing source build project path: %w", err)
+	}
 	return nil
 }

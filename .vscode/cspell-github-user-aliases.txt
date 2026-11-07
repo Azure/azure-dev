@@ -14,6 +14,7 @@ bradleyjkemp
 braydonk
 briandowns
 buger
+chienyuanchang
 cobey
 davidm00
 denormal
@@ -56,6 +57,7 @@ rajeshkamal
 richardpark-msft
 rguptar
 rujche
+saikeerthan-14
 Saipriya
 saragluna
 scottaddie
@@ -79,4 +81,5 @@ wanglliwang
 weilim
 Yionse
 YoYoJa
+yungshinlintw
 Zyysurely

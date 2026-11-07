@@ -4,19 +4,32 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"maps"
+	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"azure.ai.projects/synthesis"
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestSanitizeAgentName(t *testing.T) {
@@ -498,7 +511,11 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 	var definition *agent_yaml.ContainerAgent
 	output, err := captureStdout(t, func() error {
 		var runErr error
-		definition, runErr = action.createDefinitionFromLocalAgent(t.Context())
+		protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil, io.Discard)
+		if err != nil {
+			return err
+		}
+		definition, runErr = action.createDefinitionFromLocalAgent(t.Context(), protocols)
 		return runErr
 	})
 	if err != nil {
@@ -528,6 +545,609 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 	}
 }
 
+type sourceInitACRPromptServer struct {
+	initACRPromptServer
+	locationCalls int
+	agentName     string
+	nameError     error
+	nameCalls     int
+}
+
+func (s *sourceInitACRPromptServer) Prompt(
+	_ context.Context, req *azdext.PromptRequest,
+) (*azdext.PromptResponse, error) {
+	if req.GetOptions().GetMessage() != "Enter a name for your agent" {
+		return nil, status.Error(codes.FailedPrecondition, "unexpected source init text prompt")
+	}
+	s.nameCalls++
+	if s.nameError != nil {
+		return nil, s.nameError
+	}
+	return &azdext.PromptResponse{Value: s.agentName}, nil
+}
+
+func (s *sourceInitACRPromptServer) PromptLocation(
+	context.Context, *azdext.PromptLocationRequest,
+) (*azdext.PromptLocationResponse, error) {
+	s.locationCalls++
+	return &azdext.PromptLocationResponse{Location: &azdext.Location{Name: "eastus2"}}, nil
+}
+
+func (s *sourceInitACRPromptServer) Select(
+	_ context.Context, req *azdext.SelectRequest,
+) (*azdext.SelectResponse, error) {
+	for i, choice := range req.GetOptions().GetChoices() {
+		if choice.GetValue() == "skip" || choice.GetValue() == initModeFromCode {
+			return &azdext.SelectResponse{Value: new(int32(i))}, nil
+		}
+	}
+	return nil, status.Error(codes.FailedPrecondition, "unexpected source init selection")
+}
+
+type sourceInitACRAccountServer struct {
+	azdext.UnimplementedAccountServiceServer
+	subscriptions []string
+}
+
+func (s *sourceInitACRAccountServer) LookupTenant(
+	_ context.Context, req *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	s.subscriptions = append(s.subscriptions, req.GetSubscriptionId())
+	return &azdext.LookupTenantResponse{TenantId: "user-tenant"}, nil
+}
+
+func TestInitFromCodeValidatesACRBeforeSetupWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+	for _, tt := range []struct {
+		name                   string
+		subscription           string
+		promptedSubscription   string
+		wantError              string
+		freshProject, noPrompt bool
+		withoutSelector        bool
+		wantPrompts            int
+	}{
+		{name: "prompted mismatch", promptedSubscription: "other",
+			wantError: "same subscription", wantPrompts: 1},
+		{name: "fresh prompted mismatch", freshProject: true, promptedSubscription: "other",
+			wantError: "same subscription", wantPrompts: 1},
+		{name: "configured mismatch", subscription: "other", wantError: "same subscription"},
+		{name: "matching prompted choice", promptedSubscription: "SUB", wantPrompts: 1},
+		{name: "matching configured choice", subscription: "sub"},
+		{name: "headless selector defers", noPrompt: true},
+		{name: "ordinary headless init defers", noPrompt: true, withoutSelector: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			source := []byte("print('hello')\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "main.py"), source, 0o600))
+			manifest := []byte("name: test\nservices: {}\n")
+			projects := &recordingProjectServer{projectPath: root}
+			if tt.freshProject {
+				projects.getProjectErr = status.Error(codes.NotFound, initScopeNoProject)
+			} else {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), manifest, 0o600))
+			}
+			values := map[string]string{}
+			if tt.subscription != "" {
+				values["AZURE_SUBSCRIPTION_ID"] = tt.subscription
+			}
+			before := maps.Clone(values)
+			environments := &initACREnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					environments: map[string]*azdext.Environment{"test": {Name: "test"}},
+					values:       map[string]map[string]string{"test": values},
+				},
+			}
+			prompts := &sourceInitACRPromptServer{initACRPromptServer: initACRPromptServer{
+				subscription: &azdext.Subscription{
+					Id: tt.promptedSubscription, TenantId: "resource-tenant", UserTenantId: "user-tenant",
+				},
+			}}
+			account := &sourceInitACRAccountServer{}
+			workflow := &recordingProjectWorkflowServer{}
+			if tt.freshProject {
+				workflow.err = errors.New("source init reached project scaffolding")
+			}
+			server := grpc.NewServer()
+			azdext.RegisterProjectServiceServer(server, projects)
+			azdext.RegisterEnvironmentServiceServer(server, environments)
+			azdext.RegisterPromptServiceServer(server, prompts)
+			azdext.RegisterAccountServiceServer(server, account)
+			azdext.RegisterWorkflowServiceServer(server, workflow)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+			client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+			require.NoError(t, err)
+			t.Cleanup(func() { client.Close() })
+			flags := &initFlags{
+				src: ".", env: "test", agentName: "test-agent",
+				protocols: []string{"responses"}, noPrompt: tt.noPrompt,
+				acrResourceIDSet: !tt.withoutSelector,
+				projectsAddHelp:  testProjectsACRHelp(workflow),
+			}
+			if !tt.withoutSelector {
+				flags.acrResourceID = testInitACRID
+			}
+			action := &InitFromCodeAction{azdClient: client, flags: flags}
+
+			err = action.Run(t.Context())
+			require.Equal(t, tt.wantPrompts, prompts.calls)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				require.Equal(t, before, values)
+				require.Empty(t, environments.setKeys)
+				require.Zero(t, prompts.locationCalls)
+				require.Empty(t, workflow.requests)
+				require.Empty(t, projects.added)
+				require.NoFileExists(t, filepath.Join(root, ".agentignore"))
+				require.NoDirExists(t, filepath.Join(root, ".azure"))
+			} else {
+				require.NoError(t, err)
+				require.Len(t, projects.added, 1)
+				require.Len(t, workflow.requests, 1)
+				if tt.noPrompt {
+					require.Nil(t, action.credential)
+					require.Zero(t, prompts.locationCalls)
+					require.Empty(t, values["AZURE_SUBSCRIPTION_ID"])
+				} else {
+					require.Equal(t, 1, prompts.locationCalls)
+					require.NotNil(t, action.credential)
+					require.True(t, strings.EqualFold("sub", values["AZURE_SUBSCRIPTION_ID"]))
+					require.Equal(t, "user-tenant", values["AZURE_TENANT_ID"])
+					require.Equal(t, "user-tenant", action.azureContext.Scope.TenantId)
+					require.Equal(t, []string{values["AZURE_SUBSCRIPTION_ID"]}, account.subscriptions)
+					require.Equal(t, "eastus2", values["AZURE_LOCATION"])
+				}
+				if !tt.withoutSelector {
+					require.Equal(t, "docker", projects.added[0].Language)
+					args := []string{"ai", "project", "add"}
+					if tt.noPrompt {
+						args = append(args, "--no-prompt")
+					}
+					args = append(args, "--output", "none", "--new-project", "--acr-resource-id", testInitACRID)
+					require.Equal(t, expectedProjectWorkflowArgs(t, root, args...), workflowArgs(t, workflow, 0))
+				}
+			}
+			after, readErr := os.ReadFile(filepath.Join(root, "main.py"))
+			require.NoError(t, readErr)
+			require.Equal(t, source, after)
+			if !tt.freshProject {
+				after, readErr = os.ReadFile(filepath.Join(root, "azure.yaml"))
+				require.NoError(t, readErr)
+				require.Equal(t, manifest, after)
+			}
+		})
+	}
+}
+
+func TestInitFromCodePlannedACREnvironmentBeforeScaffolding(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+	for _, tt := range []struct {
+		targetDir, envName, agentName string
+	}{
+		{"", "my-source-dev", ""},
+		{".", "my-source-dev", ""},
+		{"target-folder", "target-folder-dev", ""},
+		{"", "my-source-dev", "chat"},
+		{".", "my-source-dev", "chat"},
+		{"target-folder", "target-folder-dev", "chat"},
+	} {
+		t.Run(fmt.Sprintf("target=%s/agent=%s", tt.targetDir, tt.agentName), func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "My Source")
+			require.NoError(t, os.Mkdir(root, 0o700))
+			t.Chdir(root)
+			source := []byte("print('hello')\n")
+			require.NoError(t, os.WriteFile("main.py", source, 0o600))
+			environments := &testEnvironmentServiceServer{}
+			workflow := &recordingProjectWorkflowServer{}
+			prompts := &sourceInitACRPromptServer{}
+			client := newTestAzdClient(t, environments, workflow, prompts)
+			action := &InitFromCodeAction{
+				azdClient: client,
+				flags: &initFlags{
+					src: ".", protocols: []string{"responses"}, noPrompt: true,
+					agentName:        tt.agentName,
+					acrResourceIDSet: true,
+					acrResourceID:    strings.Replace(testInitACRID, "/registry-rg/", "/rg-"+tt.envName+"/", 1),
+					projectsAddHelp:  testProjectsACRHelp(workflow),
+				},
+				projectTargetDir: tt.targetDir,
+				sourceValidated:  true,
+			}
+
+			require.ErrorContains(t, action.Run(t.Context()), "same resource-group name")
+			require.Empty(t, workflow.requests)
+			require.Empty(t, environments.setKeys)
+			require.Zero(t, prompts.calls)
+			require.Zero(t, prompts.locationCalls)
+			entries, err := os.ReadDir(root)
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			after, err := os.ReadFile("main.py")
+			require.NoError(t, err)
+			require.Equal(t, source, after)
+		})
+	}
+}
+
+func TestInitFromCodeAgentDerivedEnvironmentBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+	for _, tt := range []struct {
+		name, agentName, promptedName, group, wantError string
+		noPrompt, cancelName                            bool
+		wantNameCalls                                   int
+	}{
+		{name: "headless final group", agentName: "chat", group: "rg-chat-dev",
+			noPrompt: true, wantError: "resource group"},
+		{name: "headless external directory group", agentName: "chat", group: "rg-demo-dev", noPrompt: true},
+		{name: "interactive final group", promptedName: "chat", group: "rg-chat-dev",
+			wantError: "resource group", wantNameCalls: 1},
+		{name: "interactive external directory group", promptedName: "chat", group: "rg-demo-dev", wantNameCalls: 1},
+		{name: "cancelled name", group: "registry-rg", cancelName: true,
+			wantError: "cancelled", wantNameCalls: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "demo")
+			require.NoError(t, os.Mkdir(root, 0o700))
+			t.Chdir(root)
+			manifest := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n")
+			source := []byte("print('hello')\n")
+			require.NoError(t, os.WriteFile("azure.yaml", manifest, 0o600))
+			require.NoError(t, os.WriteFile("main.py", source, 0o600))
+			environments := &reuseInitACREnvironmentServer{testEnvironmentServiceServer: testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{},
+				values:       map[string]map[string]string{},
+				configErr:    errors.New("unexpected binding read before environment creation"),
+			}}
+			projects := &recordingProjectServer{projectPath: root}
+			workflow := &recordingProjectWorkflowServer{}
+			workflow.runHook = func(call int) error {
+				args := workflow.requests[call-1].GetWorkflow().GetSteps()[0].GetCommand().GetArgs()
+				if len(args) == 3 && args[0] == "env" && args[1] == "new" {
+					env := &azdext.Environment{Name: args[2]}
+					environments.environments[env.Name] = env
+					environments.current = env
+					environments.values[env.Name] = map[string]string{}
+					environments.configErr = nil
+				}
+				return nil
+			}
+			prompts := &sourceInitACRPromptServer{
+				initACRPromptServer: initACRPromptServer{subscription: &azdext.Subscription{
+					Id: "sub", UserTenantId: "user-tenant",
+				}},
+				agentName: tt.promptedName,
+			}
+			if tt.cancelName {
+				prompts.nameError = status.Error(codes.Canceled, "agent name selection cancelled")
+			}
+			account := &sourceInitACRAccountServer{}
+			registry := strings.Replace(testInitACRID, "/registry-rg/", "/"+tt.group+"/", 1)
+			args := []string{"--src", ".", "--protocol", "responses", "--acr-resource-id", registry}
+			if tt.agentName != "" {
+				args = append(args, "--agent-name", tt.agentName)
+			}
+			err := executeReuseInitACR(
+				t, environments, workflow, prompts, projects, account, tt.noPrompt, "", args...,
+			)
+			require.Equal(t, tt.wantNameCalls, prompts.nameCalls)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				require.Empty(t, workflow.requests)
+				require.Empty(t, projects.added)
+				require.Empty(t, projects.configValues)
+				require.Empty(t, projects.configSections)
+				require.Empty(t, environments.environments)
+				require.Empty(t, environments.values)
+				require.Empty(t, environments.setKeys)
+				require.Zero(t, prompts.calls)
+				require.Zero(t, prompts.locationCalls)
+				require.Empty(t, account.subscriptions)
+				require.NoFileExists(t, ".agentignore")
+			} else {
+				require.NoError(t, err)
+				require.Len(t, workflow.requests, 2)
+				require.Equal(t, []string{"env", "new", "chat-dev"}, workflowArgs(t, workflow, 0))
+				require.Equal(t, "chat-dev", environments.current.GetName())
+				require.Len(t, projects.added, 1)
+				require.Equal(t, "docker", projects.added[0].GetLanguage())
+			}
+			after, err := os.ReadFile("azure.yaml")
+			require.NoError(t, err)
+			require.Equal(t, manifest, after)
+			after, err = os.ReadFile("main.py")
+			require.NoError(t, err)
+			require.Equal(t, source, after)
+			require.NoDirExists(t, ".azure")
+		})
+	}
+}
+
+func TestInitFromCodeMissingEnvironmentACRScopeBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+	for _, tt := range []struct {
+		name, group, rootGroup, foundryGroup string
+		layer, existing, fresh, noPrompt     bool
+		wantError                            bool
+	}{
+		{name: "missing root environment", group: "rg-dev", wantError: true},
+		{name: "missing layer environment", layer: true, group: "rg-dev-foundry", wantError: true},
+		{name: "fresh root project", fresh: true, group: "rg-dev", wantError: true},
+		{name: "headless missing root", noPrompt: true, group: "rg-dev", wantError: true},
+		{name: "headless missing layer", noPrompt: true, layer: true, group: "rg-dev-foundry", wantError: true},
+		{name: "configured root", existing: true, rootGroup: "registry-rg", group: "registry-rg", wantError: true},
+		{name: "configured layer", existing: true, layer: true, rootGroup: "application-rg",
+			foundryGroup: "registry-rg", group: "registry-rg", wantError: true},
+		{name: "external root ignores current scope", group: "registry-rg"},
+		{name: "external layer ignores current scope", layer: true, group: "registry-rg"},
+		{name: "headless external defers", noPrompt: true, group: "registry-rg"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			source := []byte("print('hello')\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "main.py"), source, 0o600))
+			content := []byte("name: test\nservices: {}\n")
+			if tt.layer {
+				content = append(content, []byte(
+					"infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n")...)
+			}
+			projects := &recordingProjectServer{projectPath: root}
+			if tt.fresh {
+				projects.getProjectErr = status.Error(codes.NotFound, initScopeNoProject)
+			} else {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
+			}
+			environments := &reuseInitACREnvironmentServer{testEnvironmentServiceServer: testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"current": {Name: "current"}},
+				current:      &azdext.Environment{Name: "current"},
+				values: map[string]map[string]string{"current": {
+					"AZURE_SUBSCRIPTION_ID": "other", "AZURE_RESOURCE_GROUP": "registry-rg",
+					"AZURE_FOUNDRY_RESOURCE_GROUP": "registry-rg",
+				}},
+				config: map[string][]byte{"keep": []byte(`"unchanged"`)},
+			}}
+			if tt.existing {
+				environments.environments["dev"] = &azdext.Environment{Name: "dev"}
+				environments.values["dev"] = map[string]string{
+					"AZURE_SUBSCRIPTION_ID":        "sub",
+					"AZURE_RESOURCE_GROUP":         tt.rootGroup,
+					"AZURE_FOUNDRY_RESOURCE_GROUP": tt.foundryGroup,
+				}
+			}
+			beforeValues := make(map[string]map[string]string, len(environments.values))
+			for name, values := range environments.values {
+				beforeValues[name] = maps.Clone(values)
+			}
+			beforeCurrent := proto.Clone(environments.current)
+			beforeConfig := maps.Clone(environments.config)
+			beforeEnvironments := maps.Clone(environments.environments)
+			prompts := &sourceInitACRPromptServer{initACRPromptServer: initACRPromptServer{
+				subscription: &azdext.Subscription{
+					Id: "sub", TenantId: "resource-tenant", UserTenantId: "user-tenant",
+				},
+			}}
+			workflow := &recordingProjectWorkflowServer{}
+			workflow.runHook = func(call int) error {
+				args := workflow.requests[call-1].GetWorkflow().GetSteps()[0].GetCommand().GetArgs()
+				if len(args) >= 2 && args[0] == "env" && args[1] == "new" {
+					environment := &azdext.Environment{Name: "dev"}
+					environments.environments["dev"] = environment
+					environments.current = environment
+					environments.values["dev"] = map[string]string{}
+					return nil
+				}
+				if tt.wantError {
+					return errors.New("registry is in the resource group that azd down deletes")
+				}
+				return nil
+			}
+			account := &sourceInitACRAccountServer{}
+			registry := strings.Replace(testInitACRID, "/registry-rg/", "/"+tt.group+"/", 1)
+			err := executeReuseInitACR(t, environments, workflow, prompts, projects, account, tt.noPrompt, "dev",
+				"--src", ".", "--agent-name", "test-agent", "--protocol", "responses", "--acr-resource-id", registry)
+			if tt.wantError {
+				require.ErrorContains(t, err, "resource group")
+				require.Zero(t, prompts.calls)
+				require.Zero(t, prompts.locationCalls)
+				require.Empty(t, workflow.requests)
+				require.Empty(t, projects.added)
+				require.Empty(t, projects.configValues)
+				require.Empty(t, projects.configSections)
+				require.Empty(t, environments.setKeys)
+				require.Equal(t, beforeValues, environments.values)
+				require.Equal(t, beforeConfig, environments.config)
+				require.Equal(t, beforeEnvironments, environments.environments)
+				require.True(t, proto.Equal(beforeCurrent, environments.current))
+				require.Empty(t, account.subscriptions)
+				require.NoFileExists(t, filepath.Join(root, ".agentignore"))
+			} else {
+				require.NoError(t, err)
+				require.Len(t, projects.added, 1)
+				require.Len(t, workflow.requests, 2)
+				require.Equal(t, beforeValues["current"], environments.values["current"])
+				if tt.noPrompt {
+					require.Zero(t, prompts.calls)
+					require.Zero(t, prompts.locationCalls)
+					require.Empty(t, environments.values["dev"]["AZURE_SUBSCRIPTION_ID"])
+				} else {
+					require.Equal(t, 1, prompts.calls)
+					require.Equal(t, 1, prompts.locationCalls)
+					require.Equal(t, "sub", environments.values["dev"]["AZURE_SUBSCRIPTION_ID"])
+					require.Equal(t, "user-tenant", environments.values["dev"]["AZURE_TENANT_ID"])
+				}
+			}
+			after, readErr := os.ReadFile(filepath.Join(root, "main.py"))
+			require.NoError(t, readErr)
+			require.Equal(t, source, after)
+			require.NoDirExists(t, filepath.Join(root, ".azure"))
+			if tt.fresh {
+				require.NoFileExists(t, filepath.Join(root, "azure.yaml"))
+			} else {
+				after, readErr = os.ReadFile(filepath.Join(root, "azure.yaml"))
+				require.NoError(t, readErr)
+				require.Equal(t, content, after)
+			}
+		})
+	}
+}
+
+func TestInitFromCodeEffectiveACRSelection(t *testing.T) {
+	for _, canonical := range []bool{false, true} {
+		for _, tt := range []struct {
+			name, wantError string
+			args            []string
+			noPrompt        bool
+		}{
+			{name: "code conflict", noPrompt: true, args: []string{"--deploy-mode", "code"},
+				wantError: "--acr-resource-id cannot be combined with --deploy-mode code"},
+			{name: "interactive code conflict", args: []string{"--deploy-mode", "code"},
+				wantError: "--acr-resource-id cannot be combined with --deploy-mode code"},
+			{name: "image conflict", noPrompt: true, args: []string{"--image", "registry.example.com/agent:v1"},
+				wantError: "--acr-resource-id cannot be combined with --image"},
+			{name: "empty image conflict", noPrompt: true, args: []string{"--image="},
+				wantError: "--acr-resource-id cannot be combined with --image"},
+			{name: "runtime conflict", noPrompt: true, args: []string{"--runtime", "python_3_13"},
+				wantError: "--acr-resource-id cannot be combined with --runtime"},
+			{name: "headless source forces container", noPrompt: true},
+			{name: "explicit container", noPrompt: true, args: []string{"--deploy-mode", "container"}},
+		} {
+			t.Run(fmt.Sprintf("canonical=%t/%s", canonical, tt.name), func(t *testing.T) {
+				t.Setenv(synthesis.ACRReuseEnvVar, "true")
+				root := t.TempDir()
+				t.Chdir(root)
+				content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n")
+				source := []byte("print('hello')\n")
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "main.py"), source, 0o600))
+				values := map[string]string{
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testInitACRID,
+					"AZD_AGENT_SKIP_ACR":                   "true",
+				}
+				environments := &reuseInitACREnvironmentServer{testEnvironmentServiceServer: testEnvironmentServiceServer{
+					environments: map[string]*azdext.Environment{"test": {Name: "test"}},
+					current:      &azdext.Environment{Name: "test"},
+					values:       map[string]map[string]string{"test": values},
+					config:       map[string][]byte{},
+				}}
+				if canonical {
+					binding, err := json.Marshal(synthesis.ACRBinding{
+						Version: 1, Mode: "reuse-connect", RegistryResourceID: testInitACRID,
+						ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry-rg/providers/" +
+							"Microsoft.CognitiveServices/accounts/account/projects/project",
+						PrincipalID: "principal",
+					})
+					require.NoError(t, err)
+					environments.config[synthesis.ACRBindingConfigKey] = binding
+					delete(values, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+				}
+				before := maps.Clone(values)
+				beforeConfig := maps.Clone(environments.config)
+				projects := &recordingProjectServer{projectPath: root}
+				workflow := &recordingProjectWorkflowServer{}
+				prompts := &sourceInitACRPromptServer{}
+				account := &sourceInitACRAccountServer{}
+				args := append([]string{"--src", ".", "--agent-name", "test-agent", "--protocol", "responses"}, tt.args...)
+				err := executeReuseInitACR(
+					t, environments, workflow, prompts, projects, account, tt.noPrompt, "test", args...,
+				)
+				if tt.wantError != "" {
+					selector := "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"
+					if canonical {
+						selector = "saved ACR binding"
+					}
+					require.ErrorContains(t, err, strings.Replace(tt.wantError, "--acr-resource-id", selector, 1))
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+					require.Equal(t, before, values)
+					require.Empty(t, environments.setKeys)
+					require.Empty(t, workflow.requests)
+					require.Empty(t, projects.added)
+					require.Empty(t, projects.configValues)
+					require.Empty(t, projects.configSections)
+					require.NoFileExists(t, filepath.Join(root, ".agentignore"))
+				} else {
+					require.NoError(t, err)
+					require.Len(t, projects.added, 1)
+					require.Equal(t, "docker", projects.added[0].Language)
+					require.Empty(t, projects.added[0].Image)
+					require.Equal(t, "false", values["AZD_AGENT_SKIP_ACR"])
+					require.Len(t, workflow.requests, 1)
+					require.Contains(t, workflow.requests[0].Workflow.Steps[0].Command.Args, "--acr-resource-id")
+					require.Contains(t, workflow.requests[0].Workflow.Steps[0].Command.Args, testInitACRID)
+					require.FileExists(t, filepath.Join(root, ".agentignore"))
+				}
+				require.Zero(t, prompts.calls)
+				require.Zero(t, prompts.locationCalls)
+				require.Empty(t, account.subscriptions)
+				require.Equal(t, beforeConfig, environments.config)
+				require.NoDirExists(t, filepath.Join(root, ".azure"))
+				after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+				require.NoError(t, err)
+				require.Equal(t, content, after)
+				after, err = os.ReadFile(filepath.Join(root, "main.py"))
+				require.NoError(t, err)
+				require.Equal(t, source, after)
+			})
+		}
+	}
+}
+
+func TestCreateDefinitionFromLocalAgent_NativeA2A(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		protocols []string
+	}{
+		{"native only", []string{"a2a"}},
+		{"coexisting", []string{"responses", "invocations", "a2a"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			source := []byte("# Existing agent implementation; init must not generate an A2A server.\n")
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), source, 0600))
+			const envName = "agent-dev"
+			envServer := &testEnvironmentServiceServer{values: map[string]map[string]string{envName: {}}}
+			action := &InitFromCodeAction{
+				azdClient:   newTestAzdClient(t, envServer, &testWorkflowServiceServer{}),
+				environment: &azdext.Environment{Name: envName},
+				flags: &initFlags{
+					noPrompt: true, env: envName, agentName: "native-agent", src: dir,
+					protocols: tt.protocols, deployMode: "code", runtime: "python_3_13",
+					entryPoint: "app.py", depResolution: "remote",
+				},
+			}
+			t.Setenv(featureflags.A2A.EnvVar, "true")
+			protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, tt.protocols, io.Discard)
+			require.NoError(t, err)
+			definition, err := action.createDefinitionFromLocalAgent(t.Context(), protocols)
+			require.NoError(t, err)
+			require.Equal(t, tt.protocols, definition.AgentEndpoint.Protocols)
+			require.Contains(t, definition.Protocols, agent_yaml.ProtocolVersionRecord{Protocol: "a2a", Version: "1.0.0"})
+			properties, err := project.AgentDefinitionToServiceProperties(*definition, nil)
+			require.NoError(t, err)
+			endpoint := properties.Fields["agentEndpoint"].GetStructValue()
+			require.NotNil(t, endpoint)
+			endpointProtocols := endpoint.Fields["protocols"].GetListValue().Values
+			require.Len(t, endpointProtocols, len(tt.protocols))
+			for i, protocol := range tt.protocols {
+				require.Equal(t, protocol, endpointProtocols[i].GetStringValue())
+			}
+			contents, err := os.ReadFile(filepath.Join(dir, "app.py"))
+			require.NoError(t, err)
+			require.Equal(t, source, contents)
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			require.Len(t, entries, 1, "creating the definition must not generate an agent implementation")
+		})
+	}
+}
+
 func TestCreateDefinitionFromLocalAgent_PreBuiltImageIsDirect(t *testing.T) {
 	t.Chdir(t.TempDir())
 
@@ -551,7 +1171,9 @@ func TestCreateDefinitionFromLocalAgent_PreBuiltImageIsDirect(t *testing.T) {
 		},
 	}
 
-	definition, err := action.createDefinitionFromLocalAgent(t.Context())
+	protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil, io.Discard)
+	require.NoError(t, err)
+	definition, err := action.createDefinitionFromLocalAgent(t.Context(), protocols)
 	require.NoError(t, err)
 	require.Equal(t, image, definition.Image)
 	require.Equal(t, "private-registry", definition.RegistryConnectionID)
@@ -587,7 +1209,9 @@ func TestCreateDefinitionFromLocalAgent_LoadsPersistedProjectBeforeAcrValidation
 		},
 	}
 
-	_, err := action.createDefinitionFromLocalAgent(t.Context())
+	protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil, io.Discard)
+	require.NoError(t, err)
+	_, err = action.createDefinitionFromLocalAgent(t.Context(), protocols)
 
 	require.ErrorContains(t, err, "invalid --project-id value")
 	require.Equal(t, "invalid-project-id", action.flags.projectResourceId)
@@ -661,6 +1285,132 @@ func stringSlicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestNativeA2AInitProtocols(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		noPrompt bool
+		flags    []string
+		want     []agent_yaml.ProtocolVersionRecord
+	}{
+		{"explicit", false, []string{"a2a"}, []agent_yaml.ProtocolVersionRecord{{Protocol: "a2a", Version: "1.0.0"}}},
+		{"noninteractive", true, []string{"a2a"}, []agent_yaml.ProtocolVersionRecord{{Protocol: "a2a", Version: "1.0.0"}}},
+		{"default", true, nil, []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}},
+		{"coexisting", true, []string{"responses", "a2a", "a2a"}, []agent_yaml.ProtocolVersionRecord{
+			{Protocol: "responses", Version: "2.0.0"}, {Protocol: "a2a", Version: "1.0.0"},
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := promptProtocols(t.Context(), nil, tt.noPrompt, tt.flags, true, true)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestNativeA2AInitInteractive(t *testing.T) {
+	t.Parallel()
+	for _, nativeOnly := range []bool{true, false} {
+		name := "native only"
+		if !nativeOnly {
+			name = "native and responses"
+		}
+		t.Run(name, func(t *testing.T) {
+			client := &fakePromptClient{multiSelectFn: func(
+				_ context.Context, request *azdext.MultiSelectRequest, _ ...grpc.CallOption,
+			) (*azdext.MultiSelectResponse, error) {
+				require.Equal(t, "Use arrow keys to move, space to toggle, enter to confirm", request.Options.HelpMessage)
+				choices := request.Options.Choices
+				require.Len(t, choices, 5)
+				for i, expected := range []struct{ value, label string }{
+					{"responses", "responses"}, {"invocations", "invocations"},
+					{"invocations_ws", "invocations_ws"}, {"activity", "activity"},
+					{"a2a", "a2a"},
+				} {
+					require.Equal(t, expected.value, choices[i].Value)
+					require.Equal(t, expected.label, choices[i].Label)
+					require.Equal(t, expected.value == "responses", choices[i].Selected)
+					choices[i].Selected = expected.value == "a2a" || (!nativeOnly && expected.value == "responses")
+				}
+				return &azdext.MultiSelectResponse{Values: choices}, nil
+			}}
+			got, err := promptProtocols(t.Context(), client, false, nil, true, true)
+			require.NoError(t, err)
+			want := []agent_yaml.ProtocolVersionRecord{{Protocol: "a2a", Version: "1.0.0"}}
+			if !nativeOnly {
+				want = append([]agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}, want...)
+			}
+			require.Equal(t, want, got)
+		})
+	}
+}
+
+func TestComposeLocalAgentEndpoint(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name      string
+		protocols []string
+		existing  bool
+	}{
+		{"native only", []string{"a2a"}, false},
+		{"coexisting", []string{"responses", "invocations", "invocations_ws", "a2a"}, false},
+		{"preserve endpoint", []string{"responses", "a2a"}, true},
+		{"preserve activity auth", []string{"activity", "responses", "a2a"}, true},
+		{"activity defaults", []string{"activity", "a2a"}, false},
+		{"no native", []string{"responses"}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			protocols, err := validateExplicitProtocols(tt.protocols)
+			require.NoError(t, err)
+			definition := &agent_yaml.ContainerAgent{Protocols: protocols}
+			selector := &agent_yaml.VersionSelector{
+				VersionSelectionRules: []agent_yaml.VersionSelectionRule{
+					{Type: "fixed_ratio", AgentVersion: "7", TrafficPercentage: new(int32(100))},
+				},
+			}
+			auth := []agent_yaml.AuthorizationScheme{{
+				Type: "AgentUserRbac", IsolationKeySource: &agent_yaml.IsolationKeySource{Kind: "user"},
+			}}
+			want := slices.Clone(tt.protocols)
+			if tt.existing {
+				definition.AgentEndpoint = &agent_yaml.AgentEndpoint{
+					Protocols: []string{"invocations"}, AuthorizationSchemes: auth, VersionSelector: selector,
+				}
+				want = append([]string{"invocations"}, want...)
+			}
+			composeLocalAgentEndpoint(definition)
+			if tt.name == "no native" {
+				require.Nil(t, definition.AgentEndpoint)
+				return
+			}
+			require.Equal(t, want, definition.AgentEndpoint.Protocols)
+			if tt.existing {
+				require.Equal(t, auth, definition.AgentEndpoint.AuthorizationSchemes)
+				require.Same(t, selector, definition.AgentEndpoint.VersionSelector)
+			} else if tt.name == "activity defaults" {
+				require.Equal(t, "BotServiceRbac", definition.AgentEndpoint.AuthorizationSchemes[0].Type)
+			} else {
+				require.Empty(t, definition.AgentEndpoint.AuthorizationSchemes)
+			}
+			// Composition is idempotent and does not add Responses to native-only init.
+			composeLocalAgentEndpoint(definition)
+			require.Equal(t, want, definition.AgentEndpoint.Protocols)
+			var writer bytes.Buffer
+			printNativeA2AGuidance(&writer, definition)
+			require.Contains(t, writer.String(),
+				"A2A hosted agent (1.0) configured; init does not generate an A2A server.")
+			for _, route := range []string{
+				"POST /a2a", "POST /invocations/a2a", "GET /invocations/a2a/.well-known/agent-card.json", "GET /readiness",
+			} {
+				require.Contains(t, writer.String(), route)
+			}
+		})
+	}
+	var writer bytes.Buffer
+	printNativeA2AGuidance(&writer, &agent_yaml.ContainerAgent{})
+	require.Empty(t, writer.String())
 }
 
 func TestPromptProtocols_FlagValues(t *testing.T) {
@@ -737,7 +1487,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := promptProtocols(t.Context(), nil, false, tt.flagProtocols)
+			got, err := promptProtocols(t.Context(), nil, false, tt.flagProtocols, true, true)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -768,7 +1518,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 func TestPromptProtocols_NoPromptDefault(t *testing.T) {
 	t.Parallel()
 
-	got, err := promptProtocols(t.Context(), nil, true, nil)
+	got, err := promptProtocols(t.Context(), nil, true, nil, false, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -922,7 +1672,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 			t.Parallel()
 
 			client := &fakePromptClient{multiSelectFn: tt.multiSelectFn}
-			got, err := promptProtocols(t.Context(), client, false, nil)
+			got, err := promptProtocols(t.Context(), client, false, nil, true, true)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -975,7 +1725,7 @@ func TestPromptProtocols_ChoicesIncludeInvocationsWsWithoutChangingDefault(t *te
 		return &azdext.MultiSelectResponse{Values: choices}, nil
 	}}
 
-	got, err := promptProtocols(t.Context(), client, false, nil)
+	got, err := promptProtocols(t.Context(), client, false, nil, true, true)
 	require.NoError(t, err)
 	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "2.0.0"},

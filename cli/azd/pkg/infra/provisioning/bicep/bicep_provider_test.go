@@ -21,7 +21,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
@@ -2123,6 +2123,11 @@ func TestSetProvisionValidationOutcome_AllOutcomeValues(t *testing.T) {
 			name:          "canceled by user",
 			outcome:       provisionValidationOutcomeCanceledByUser,
 			diagnosticIDs: []string{"role_assignment_conditional"},
+		},
+		{
+			name:          "canceled in no-prompt mode",
+			outcome:       provisionValidationOutcomeCanceledNoPrompt,
+			diagnosticIDs: []string{"role_assignment_missing"},
 		},
 		{
 			name:          "skipped",

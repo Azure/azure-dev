@@ -17,7 +17,7 @@ defaults:
   timeout: 8m
   executor: copilot-sdk
   model: gpt-5.6-terra
-  judge_model: gpt-5.5
+  judge_model: gpt-5.6-terra
 
 scoring:
   threshold: 0.8
@@ -42,7 +42,7 @@ stimuli:
       - type: output-matches
         name: "reports beta-only services"
         config:
-          pattern: '(?is)(?=.*ComposeService)(?=.*CopilotService)(?=.*TelemetryService)'
+          pattern: '(?is)(?=.*ComposeService)(?=.*CopilotService)(?=.*CommandResultService)'
       - type: output-contains
         name: "names the cross-channel check"
         config:

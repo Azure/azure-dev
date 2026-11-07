@@ -217,10 +217,11 @@ func parseFieldDeclaration(
 		))
 	}
 	// Endpoint semantics require owner review; this source check enforces the public structural contract.
-	if classificationResolved && field.classification != fields.SystemMetadata && field.endpoint == "N/A" {
+	if classificationResolved && field.classification != fields.SystemMetadata &&
+		field.classification != fields.OrganizationalIdentifiableInformation && field.endpoint == "N/A" {
 		diagnostics = append(diagnostics, declarationDiagnostic(
 			field,
-			"non-SystemMetadata classifications must use an endpoint other than N/A",
+			fmt.Sprintf("%s must use an endpoint other than N/A", classificationName),
 		))
 	}
 	if field.isMeasurement {

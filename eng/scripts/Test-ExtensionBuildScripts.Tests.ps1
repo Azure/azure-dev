@@ -5,6 +5,7 @@ BeforeDiscovery {
     $metadata = @{
         'azure.ai.agents' = @('azureaiagent/internal/version')
         'azure.ai.connections' = @('azure.ai.connections/internal/version')
+        'azure.ai.content-understanding' = @('azure.ai.content-understanding/internal/cmd')
         'azure.ai.dataset' = @('azureaidataset/internal/version')
         'azure.ai.evaluations' = @('azureaieval/internal/version')
         'azure.ai.finetune' = @('azure.ai.finetune/internal/version')
@@ -20,6 +21,7 @@ BeforeDiscovery {
         'azure.appservice' = @('azureappservice/internal/version')
         'azure.coding-agent' = @('azurecodingagent/internal/cmd')
         'azure.logicappsstandard' = @('azurelogicappsstandard/internal/version')
+        'azure.resources' = @('azure.resources/internal/version')
         'microsoft.azd.ai.builder' = @(
             'github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/cmd'
         )
@@ -56,6 +58,9 @@ BeforeAll {
     New-Item -ItemType Directory -Path $fixtureDirectory | Out-Null
     $goSource = Join-Path $fixtureDirectory 'main.go'
     Set-Content $goSource @'
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package main
 
 import (

@@ -53,6 +53,10 @@ When investigating a pipeline:
 - Inspect the failed or running job logs first. Distinguish the root failure from secondary warnings, infrastructure noise, or downstream failures.
 - For releases, distinguish publishing from validation using the source branch and template parameters. For the core CLI pipeline, `DoPublish=true` identifies a publishing release run.
 
+For an end-to-end core release roadmap, version correlation, and known recovery procedures, read
+[Tracking and recovering an azd core release](../../docs/guides/releasing-azd.md).
+Changelog preparation alone does not establish release completion.
+
 ## Development
 
 Commands assume you are in `cli/azd`.
@@ -282,16 +286,20 @@ code, **all** telemetry docs, and the coverage test in the same change — other
 public reference, and downstream Kusto/LENS consumers drift out of sync. Verify every claim against
 **actual code behavior**, not comments.
 
+When adding or reviewing extension telemetry, read the
+[attribute naming rules](docs/extensions/extension-telemetry.md#name-attributes-for-their-scope)
+before choosing or approving field names.
+
 **1. Code**
 
 - **Field** — define an **exported, package-level** `AttributeKey` var in
   `cli/azd/internal/tracing/fields/fields.go` (this file holds the field/key definitions; within the
   same package `features.go` holds feature-name attribute values and `domains.go` the Azure
   host-domain table). Every field MUST set a `Classification` (e.g. `SystemMetadata`,
-  `OrganizationalIdentifiableInformation`, `EndUserPseudonymizedInformation`; never emit
-  `CustomerContent`) and a `Purpose` (`FeatureInsight` / `BusinessInsight` /
+  `OrganizationalIdentifiableInformation`, `EndUserPseudonymizedInformation`) and a
+  `Purpose` (`FeatureInsight` / `BusinessInsight` /
   `PerformanceAndHealth`); telemetry metadata also includes the optional `Endpoint` and
-  `IsMeasurement` members.
+  `IsMeasurement` members. Do not add new `CustomerContent` collection.
 - **First-party extension field** — keep the runtime `ReportUsage` map key as a string literal or
   same-package compile-time constant and declare its final `ext.*` name as an exported
   `AttributeKey` in `cli/azd/extensions/telemetry/fields.go`. Declarations are shared by final key
@@ -311,11 +319,12 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
   `AttributeKey` declarations; raw literal keys bypass that contract and are rejected by
   `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`). Dynamic `ext.*` keys are the
   only sanctioned exception.
-- **Hash user-derived values** with `fields.StringHashed` / `fields.StringSliceHashed`
-  (`cli/azd/internal/tracing/fields/key.go`). Hash anything that embeds a user-chosen name, path,
-  repo URL, or project / env / service / layer identifier (e.g. `exegraph.step.name`, `hooks.name`).
-  Emit raw only for fixed enums or compile-time literals (the key itself must
-  still be a `fields.AttributeKey`, per **Emit** above).
+- **Follow the field's hashing and omission rules.** Use `fields.StringHashed` /
+  `fields.StringSliceHashed` (`cli/azd/internal/tracing/fields/key.go`) where hashing is required.
+  Preserve documented raw-value exceptions and omission rules in the
+  [schema's hashing reference](../../docs/specs/metrics-audit/telemetry-schema.md#hashing).
+  Prefer counts or fixed categories to customer-derived names; ask a maintainer when the
+  supported inputs or classification are unclear.
 
 **2. Documentation — keep all of these in sync**
 
@@ -328,9 +337,9 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
   enum values.
 - `docs/specs/metrics-audit/feature-telemetry-matrix.md` — command→telemetry inventory: update the
   command's row (and/or the Cross-Cutting Subsystems table) and the ✅/⚠️/❌ coverage flags.
-- `docs/specs/metrics-audit/privacy-review-checklist.md` — if the field is hashed (always or
-  conditionally), add it to the matching hashing table, and copy the **PR Checklist Template** into
-  your PR description.
+- `docs/specs/metrics-audit/privacy-review-checklist.md`. Follow the contributor checklist and
+  copy its **PR checklist template** into your PR description. Update the checklist when the
+  process changes; keep per-field hashing rules in `telemetry-schema.md`.
 
 **3. Tests**
 
@@ -340,8 +349,16 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
 
 **4. Privacy & downstream**
 
-- A privacy review is required for any new field/event, any classification/purpose change, or any
-  removal of hashing — see the triggers in `privacy-review-checklist.md`.
+- Assess every telemetry change against the approved collection and handling scope using the
+  [privacy review checklist](../../docs/specs/metrics-audit/privacy-review-checklist.md).
+  A new field or event does not automatically require a separate formal review. Have a maintainer
+  confirm existing coverage or identify the required additional review before uncovered collection
+  begins.
+- For code review, follow the checklist's
+  [reviewer guidance](../../docs/specs/metrics-audit/privacy-review-checklist.md#for-reviewers)
+  and ask a maintainer to assess coverage when it is unclear.
+- Record implementation, metadata deployment, and downstream verification separately, with owners
+  for any follow-up.
 - If the field is queried downstream, coordinate Kusto-function / cooked-table / dashboard updates
   per the recurring process in `docs/specs/metrics-audit/audit-process.md`.
 
@@ -498,3 +515,18 @@ When adding or changing GitHub API access in a pipeline:
 ## Copilot Code Review
 
 When reviewing code in Copilot Code Review, also use the azd-code-reviewer skill to look for azd-specific criteria.
+
+### Required extension contract review
+
+For every PR review, including fork PRs, inspect the complete changed-file list first. If any file under
+`cli/azd/extensions/` changed, you MUST read and apply
+[extension-user-contract-review](../../.github/skills/extension-user-contract-review/SKILL.md) before general review lenses.
+Do not wait until a contract change is already suspected. This requirement applies even when
+`azd-code-reviewer` is not otherwise loaded.
+
+Return one inline comment for each distinct new or removed command, positional parameter, flag, or YAML schema
+component, preserving existing-thread deduplication and per-thread approved experiences spec tracking. Do not use
+this pass for behavior-only changes such as defaults, validation, prompts, output, or runtime semantics. Before
+finishing, audit that coverage and comments survived triage. Include the contract pass's completion status and
+counts in the review summary or supported result channel; if required evidence or output capacity is unavailable,
+explicitly report `blocked`, not a clean review.

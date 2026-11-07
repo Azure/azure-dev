@@ -22,10 +22,14 @@ Useful places to start:
 
 - `internal/cmd/`: Cobra commands, the endpoint resolver, and the config store
 - `internal/provisioning/`: the `microsoft.foundry` provider
-- `internal/synthesis/`: project config synthesis and embedded IaC
+- `synthesis/`: standalone shared Go module for project config synthesis and embedded IaC
 - `internal/exterrors/`: structured error factories and extension-specific codes
 
-During the staged ownership migration, `internal/synthesis/` is also present in `azure.ai.agents` for `azd ai agent init --infra`. Keep the production files and templates byte-for-byte aligned until init moves.
+Projects owns the standalone `azure.ai.projects/synthesis` module. Both extensions import it; do not copy synthesis or templates into Agents. Projects uses a child-module `replace`, while Agents uses a sibling-to-sibling `replace` pointing at this module. Run its tests separately with `go -C synthesis test ./...` because the parent module's `go test ./...` does not traverse nested modules.
+
+BYO AKS synthesis contract tests live in Projects; its parity test checks both production copies and embedded templates. Run the Projects synthesis suite when changing either copy.
+
+Native Bicep tests require at least the minimum exported by the referenced azd SDK's `pkg/tools/bicep.Version`. They use `AZD_BICEP_TOOL_PATH` when set, otherwise PATH and the Azure CLI bundled location. Missing or unsupported automatically discovered tools skip with a diagnostic; an invalid explicit override fails. These helpers never install or upgrade tools.
 
 ## Build and test
 

@@ -1,0 +1,975 @@
+{
+  "sourceCommit": "25d39b30116a840491b7b6f393d6db792b38d4a4",
+  "sourcePath": "packages/core/src/cu_cli_core/operations/analysis.py",
+  "cases": [
+    {
+      "envelope": {
+        "result": {
+          "contents": [],
+          "warnings": [
+            {
+              "code": "Notice",
+              "message": "not included in test report"
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "EnvelopeWarning"
+          }
+        ]
+      },
+      "fields": {}
+    },
+    {
+      "envelope": {
+        "result": {
+          "contents": [
+            {
+              "fields": {}
+            }
+          ],
+          "warnings": [
+            {
+              "code": "Notice",
+              "message": "not included in test report"
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "EnvelopeWarning"
+          }
+        ]
+      },
+      "fields": {}
+    },
+    {
+      "envelope": {
+        "result": {
+          "contents": [
+            {
+              "fields": {
+                "String": {
+                  "valueString": "invoice",
+                  "confidence": 0.95
+                },
+                "Zero": {
+                  "valueInteger": 0,
+                  "confidence": 0.6
+                },
+                "False": {
+                  "valueBoolean": false,
+                  "confidence": "0.5995"
+                },
+                "Empty": {
+                  "valueString": "",
+                  "confidence": 0.2
+                },
+                "Null": {
+                  "type": "string",
+                  "confidence": 0.1
+                },
+                "Big": {
+                  "valueInteger": 9007199254740993
+                },
+                "Date": {
+                  "valueDate": "2026-10-21"
+                },
+                "Time": {
+                  "valueTime": "13:45:00"
+                },
+                "Json": {
+                  "valueJson": {
+                    "exact": 9007199254740993
+                  }
+                },
+                "Fallback": {
+                  "content": "fallback",
+                  "confidence": "bad"
+                },
+                "Value": {
+                  "value": false,
+                  "confidence": true
+                }
+              }
+            }
+          ],
+          "warnings": [
+            {
+              "code": "Notice",
+              "message": "not included in test report"
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "EnvelopeWarning"
+          }
+        ]
+      },
+      "fields": {
+        "String": {
+          "value": "invoice",
+          "confidence": 0.95
+        },
+        "Zero": {
+          "value": 0,
+          "confidence": 0.6
+        },
+        "False": {
+          "value": false,
+          "confidence": 0.5995
+        },
+        "Empty": {
+          "value": "",
+          "confidence": 0.2
+        },
+        "Null": {
+          "value": null,
+          "confidence": 0.1
+        },
+        "Big": {
+          "value": 9007199254740993,
+          "confidence": null
+        },
+        "Date": {
+          "value": "2026-10-21",
+          "confidence": null
+        },
+        "Time": {
+          "value": "13:45:00",
+          "confidence": null
+        },
+        "Json": {
+          "value": {
+            "exact": 9007199254740993
+          },
+          "confidence": null
+        },
+        "Fallback": {
+          "value": "fallback",
+          "confidence": null
+        },
+        "Value": {
+          "value": false,
+          "confidence": 1.0
+        }
+      }
+    },
+    {
+      "envelope": {
+        "result": {
+          "contents": [
+            {
+              "fields": {
+                "Address": {
+                  "valueObject": {
+                    "City": {
+                      "valueString": "Seattle",
+                      "confidence": 0.1235
+                    },
+                    "Empty": {
+                      "valueString": ""
+                    },
+                    "Nested": {
+                      "valueObject": {
+                        "Flag": {
+                          "valueBoolean": false
+                        }
+                      }
+                    }
+                  },
+                  "confidence": 0.8
+                },
+                "Lines": {
+                  "valueArray": [
+                    {
+                      "valueObject": {
+                        "Price": {
+                          "valueNumber": 0,
+                          "confidence": 0.45
+                        },
+                        "Name": {
+                          "valueString": "a",
+                          "confidence": 0.475
+                        }
+                      }
+                    },
+                    {
+                      "valueObject": {
+                        "Price": {
+                          "valueNumber": 4,
+                          "confidence": 0.475
+                        },
+                        "Name": {
+                          "valueString": "",
+                          "confidence": 0.45
+                        }
+                      }
+                    },
+                    {
+                      "valueObject": {
+                        "Name": {
+                          "valueString": null
+                        }
+                      }
+                    },
+                    {
+                      "valueString": "non-object"
+                    }
+                  ],
+                  "confidence": 0.9
+                },
+                "EmptyArray": {
+                  "valueArray": [
+                    {
+                      "valueString": ""
+                    },
+                    {
+                      "valueObject": {}
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "warnings": [
+            {
+              "code": "Notice",
+              "message": "not included in test report"
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "EnvelopeWarning"
+          }
+        ]
+      },
+      "fields": {
+        "Address": {
+          "value": {
+            "City": "Seattle",
+            "Empty": "",
+            "Nested": {
+              "Flag": false
+            }
+          },
+          "confidence": 0.8
+        },
+        "Address.City": {
+          "value": "Seattle",
+          "confidence": 0.1235
+        },
+        "Address.Empty": {
+          "value": "",
+          "confidence": null
+        },
+        "Address.Nested": {
+          "value": {
+            "Flag": false
+          },
+          "confidence": null
+        },
+        "Lines": {
+          "value": [
+            {
+              "Price": 0,
+              "Name": "a"
+            },
+            {
+              "Price": 4,
+              "Name": ""
+            },
+            {
+              "Name": null
+            },
+            "non-object"
+          ],
+          "confidence": 0.9
+        },
+        "Lines[].Price": {
+          "value": [
+            0,
+            4
+          ],
+          "confidence": 0.463
+        },
+        "Lines[].Name": {
+          "value": [
+            "a",
+            "",
+            null
+          ],
+          "confidence": 0.463
+        },
+        "EmptyArray": {
+          "value": [
+            "",
+            {}
+          ],
+          "confidence": null
+        }
+      }
+    },
+    {
+      "envelope": {
+        "result": {
+          "contents": [
+            {
+              "fields": {
+                "A": {
+                  "valueString": ""
+                },
+                "B": {
+                  "valueArray": [
+                    {
+                      "valueString": ""
+                    }
+                  ]
+                },
+                "C": {
+                  "valueObject": {
+                    "Inner": {
+                      "valueString": ""
+                    }
+                  }
+                },
+                "D": {
+                  "valueBoolean": false
+                }
+              }
+            },
+            {
+              "fields": {
+                "A": {
+                  "valueString": "later",
+                  "confidence": 0.7
+                },
+                "B": {
+                  "valueString": "ignored"
+                },
+                "C": {
+                  "valueString": "ignored"
+                },
+                "D": {
+                  "valueString": "ignored"
+                }
+              }
+            }
+          ],
+          "warnings": [
+            {
+              "code": "Notice",
+              "message": "not included in test report"
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "EnvelopeWarning"
+          }
+        ]
+      },
+      "fields": {
+        "A": {
+          "value": "later",
+          "confidence": 0.7
+        },
+        "B": {
+          "value": [
+            ""
+          ],
+          "confidence": null
+        },
+        "C": {
+          "value": {
+            "Inner": ""
+          },
+          "confidence": null
+        },
+        "C.Inner": {
+          "value": "",
+          "confidence": null
+        },
+        "D": {
+          "value": false,
+          "confidence": null
+        }
+      }
+    },
+    {
+      "envelope": {
+        "result": {
+          "contents": [
+            {
+              "fields": {
+                "Array": {
+                  "valueArray": []
+                },
+                "Object": {
+                  "valueObject": {}
+                },
+                "JsonEmpty": {
+                  "valueJson": {
+                    "Nested": [
+                      "",
+                      null,
+                      {}
+                    ]
+                  }
+                },
+                "JsonPopulated": {
+                  "valueJson": {
+                    "Nested": [
+                      false
+                    ]
+                  }
+                },
+                "PrimitiveString": "plain",
+                "PrimitiveNumber": 0,
+                "PrimitiveNull": null
+              }
+            }
+          ],
+          "warnings": [
+            {
+              "code": "Notice",
+              "message": "not included in test report"
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "EnvelopeWarning"
+          }
+        ]
+      },
+      "fields": {
+        "Array": {
+          "value": [],
+          "confidence": null
+        },
+        "Object": {
+          "value": {},
+          "confidence": null
+        },
+        "JsonEmpty": {
+          "value": {
+            "Nested": [
+              "",
+              null,
+              {}
+            ]
+          },
+          "confidence": null
+        },
+        "JsonPopulated": {
+          "value": {
+            "Nested": [
+              false
+            ]
+          },
+          "confidence": null
+        },
+        "PrimitiveString": {
+          "value": "plain",
+          "confidence": null
+        },
+        "PrimitiveNumber": {
+          "value": 0,
+          "confidence": null
+        },
+        "PrimitiveNull": {
+          "value": null,
+          "confidence": null
+        }
+      }
+    },
+    {
+      "envelope": {
+        "result": {
+          "contents": [
+            {
+              "fields": {
+                "Ordered": {
+                  "valueObject": {
+                    "x": {
+                      "valueString": "child"
+                    }
+                  }
+                },
+                "Ordered.x": {
+                  "valueString": "top-level"
+                }
+              }
+            }
+          ],
+          "warnings": [
+            {
+              "code": "Notice",
+              "message": "not included in test report"
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "EnvelopeWarning"
+          }
+        ]
+      },
+      "fields": {
+        "Ordered": {
+          "value": {
+            "x": "child"
+          },
+          "confidence": null
+        },
+        "Ordered.x": {
+          "value": "child",
+          "confidence": null
+        }
+      }
+    }
+  ],
+  "report": {
+    "analyzerId": "test-analyzer",
+    "samples": [
+      {
+        "input": "sample-0",
+        "status": "ok",
+        "fields": {}
+      },
+      {
+        "input": "sample-1",
+        "status": "ok",
+        "fields": {}
+      },
+      {
+        "input": "sample-2",
+        "status": "ok",
+        "fields": {
+          "String": {
+            "value": "invoice",
+            "confidence": 0.95
+          },
+          "Zero": {
+            "value": 0,
+            "confidence": 0.6
+          },
+          "False": {
+            "value": false,
+            "confidence": 0.5995
+          },
+          "Empty": {
+            "value": "",
+            "confidence": 0.2
+          },
+          "Null": {
+            "value": null,
+            "confidence": 0.1
+          },
+          "Big": {
+            "value": 9007199254740993,
+            "confidence": null
+          },
+          "Date": {
+            "value": "2026-10-21",
+            "confidence": null
+          },
+          "Time": {
+            "value": "13:45:00",
+            "confidence": null
+          },
+          "Json": {
+            "value": {
+              "exact": 9007199254740993
+            },
+            "confidence": null
+          },
+          "Fallback": {
+            "value": "fallback",
+            "confidence": null
+          },
+          "Value": {
+            "value": false,
+            "confidence": 1.0
+          }
+        }
+      },
+      {
+        "input": "sample-3",
+        "status": "ok",
+        "fields": {
+          "Address": {
+            "value": {
+              "City": "Seattle",
+              "Empty": "",
+              "Nested": {
+                "Flag": false
+              }
+            },
+            "confidence": 0.8
+          },
+          "Address.City": {
+            "value": "Seattle",
+            "confidence": 0.1235
+          },
+          "Address.Empty": {
+            "value": "",
+            "confidence": null
+          },
+          "Address.Nested": {
+            "value": {
+              "Flag": false
+            },
+            "confidence": null
+          },
+          "Lines": {
+            "value": [
+              {
+                "Price": 0,
+                "Name": "a"
+              },
+              {
+                "Price": 4,
+                "Name": ""
+              },
+              {
+                "Name": null
+              },
+              "non-object"
+            ],
+            "confidence": 0.9
+          },
+          "Lines[].Price": {
+            "value": [
+              0,
+              4
+            ],
+            "confidence": 0.463
+          },
+          "Lines[].Name": {
+            "value": [
+              "a",
+              "",
+              null
+            ],
+            "confidence": 0.463
+          },
+          "EmptyArray": {
+            "value": [
+              "",
+              {}
+            ],
+            "confidence": null
+          }
+        }
+      },
+      {
+        "input": "sample-4",
+        "status": "ok",
+        "fields": {
+          "A": {
+            "value": "later",
+            "confidence": 0.7
+          },
+          "B": {
+            "value": [
+              ""
+            ],
+            "confidence": null
+          },
+          "C": {
+            "value": {
+              "Inner": ""
+            },
+            "confidence": null
+          },
+          "C.Inner": {
+            "value": "",
+            "confidence": null
+          },
+          "D": {
+            "value": false,
+            "confidence": null
+          }
+        }
+      },
+      {
+        "input": "sample-5",
+        "status": "ok",
+        "fields": {
+          "Array": {
+            "value": [],
+            "confidence": null
+          },
+          "Object": {
+            "value": {},
+            "confidence": null
+          },
+          "JsonEmpty": {
+            "value": {
+              "Nested": [
+                "",
+                null,
+                {}
+              ]
+            },
+            "confidence": null
+          },
+          "JsonPopulated": {
+            "value": {
+              "Nested": [
+                false
+              ]
+            },
+            "confidence": null
+          },
+          "PrimitiveString": {
+            "value": "plain",
+            "confidence": null
+          },
+          "PrimitiveNumber": {
+            "value": 0,
+            "confidence": null
+          },
+          "PrimitiveNull": {
+            "value": null,
+            "confidence": null
+          }
+        }
+      },
+      {
+        "input": "sample-6",
+        "status": "ok",
+        "fields": {
+          "Ordered": {
+            "value": {
+              "x": "child"
+            },
+            "confidence": null
+          },
+          "Ordered.x": {
+            "value": "child",
+            "confidence": null
+          }
+        }
+      },
+      {
+        "input": "failed-sample",
+        "status": "error",
+        "error": "safe error",
+        "fields": {}
+      }
+    ],
+    "summary": {
+      "samplesTotal": 8,
+      "samplesOk": 7,
+      "samplesFailed": 1,
+      "disclaimer": "This is not a real accuracy benchmark. It only checks whether a value was extracted or generated, and reports confidence when the service returns it.",
+      "fields": {
+        "A": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": 0.7,
+          "lowConfidenceCount": 0
+        },
+        "Address": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": 0.8,
+          "lowConfidenceCount": 0
+        },
+        "Address.City": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": 0.123,
+          "lowConfidenceCount": 1
+        },
+        "Address.Empty": {
+          "populated": 0,
+          "populatedPct": 0.0,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "Address.Nested": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "Array": {
+          "populated": 0,
+          "populatedPct": 0.0,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "B": {
+          "populated": 0,
+          "populatedPct": 0.0,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "Big": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "C": {
+          "populated": 0,
+          "populatedPct": 0.0,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "C.Inner": {
+          "populated": 0,
+          "populatedPct": 0.0,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "D": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "Date": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "Empty": {
+          "populated": 0,
+          "populatedPct": 0.0,
+          "meanConfidence": 0.2,
+          "lowConfidenceCount": 1
+        },
+        "EmptyArray": {
+          "populated": 0,
+          "populatedPct": 0.0,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "Fallback": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "False": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": 0.6,
+          "lowConfidenceCount": 1
+        },
+        "Json": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "JsonEmpty": {
+          "populated": 0,
+          "populatedPct": 0.0,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "JsonPopulated": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "Lines": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": 0.9,
+          "lowConfidenceCount": 0
+        },
+        "Lines[].Name": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": 0.463,
+          "lowConfidenceCount": 1
+        },
+        "Lines[].Price": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": 0.463,
+          "lowConfidenceCount": 1
+        },
+        "Null": {
+          "populated": 0,
+          "populatedPct": 0.0,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "Object": {
+          "populated": 0,
+          "populatedPct": 0.0,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "Ordered": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "Ordered.x": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "PrimitiveNull": {
+          "populated": 0,
+          "populatedPct": 0.0,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "PrimitiveNumber": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "PrimitiveString": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "String": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": 0.95,
+          "lowConfidenceCount": 0
+        },
+        "Time": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "Value": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": 1.0,
+          "lowConfidenceCount": 0
+        },
+        "Zero": {
+          "populated": 1,
+          "populatedPct": 12.5,
+          "meanConfidence": 0.6,
+          "lowConfidenceCount": 0
+        }
+      },
+      "lowConfidenceThreshold": 0.6
+    }
+  }
+}

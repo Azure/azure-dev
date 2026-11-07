@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/exec/internal/process"
 )
 
 // Config holds the configuration for script execution.
@@ -199,32 +201,32 @@ func containsPrintable(s string) bool {
 func (e *Executor) runCommand(
 	ctx context.Context, cmd *exec.Cmd, scriptOrPath, shell string, isInline bool,
 ) error {
-	setupProcessTree(cmd, e.config.Interactive)
-	killTree, err := startProcessTree(cmd)
-	if err != nil {
+	tree := process.New(ctx, cmd, process.Options{
+		Interactive:       e.config.Interactive,
+		ForwardInterrupts: e.config.Interactive,
+	})
+	if err := tree.Start(); err != nil {
 		return e.wrapError(err, scriptOrPath, shell, isInline)
 	}
 
-	// Kill entire process tree on context cancellation.
-	done := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			killTree()
-		case <-done:
-		}
-	}()
-
-	err = cmd.Wait()
-	close(done)
-
+	err := tree.Wait()
 	if err != nil {
 		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-			return &ExecutionError{
-				ExitCode: exitErr.ExitCode(),
+			exitCode := exitErr.ExitCode()
+			if exitCode == -1 && process.IsInterruptExit(exitErr, exitCode) {
+				exitCode = 130
+			}
+			executionErr := &ExecutionError{
+				ExitCode: exitCode,
 				Shell:    shell,
 				IsInline: isInline,
 			}
+			// Exact identity keeps ordinary exit errors concrete; wrapped errors
+			// retain their additional causes through executionErrorWithCause.
+			if err == exitErr { //nolint:errorlint
+				return executionErr
+			}
+			return wrapExecutionError(executionErr, err)
 		}
 		return e.wrapError(err, scriptOrPath, shell, isInline)
 	}

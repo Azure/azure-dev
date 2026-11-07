@@ -686,7 +686,8 @@ func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {
 		ctx:    streamCtx,
 		recvCh: make(chan *v1beta.EventMessage, 1),
 	}
-	sendErr := make(chan error, 1)
+	sendErr := make(chan error, 2)
+	requestIDs := make(chan string, 2)
 	stream.sendFn = func(msg *v1beta.EventMessage) error {
 		invoke := msg.GetInvokeServiceHandler()
 		if invoke == nil || invoke.Service == nil {
@@ -697,9 +698,14 @@ func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {
 			sendErr <- errors.New("service name was not preserved")
 			return nil
 		}
+		if msg.GetRequestId() == "" {
+			sendErr <- errors.New("service invocation request ID was empty")
+			return nil
+		}
+		requestIDs <- msg.GetRequestId()
 		sendErr <- nil
 		stream.recvCh <- &v1beta.EventMessage{
-			RequestId: msg.RequestId,
+			RequestId: msg.GetRequestId(),
 			MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
 				ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
 					EventName:   invoke.EventName,
@@ -735,13 +741,19 @@ func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {
 		broker,
 		newBetaServiceEventCorrelations(),
 	)
-	err = handler(t.Context(), project.ServiceLifecycleEventArgs{
-		Project:        projectConfig,
-		Service:        serviceConfig,
-		ServiceContext: project.NewServiceContext(),
-	})
-	require.NoError(t, err)
-	require.NoError(t, <-sendErr)
+	for range 2 {
+		err = handler(t.Context(), project.ServiceLifecycleEventArgs{
+			Project:        projectConfig,
+			Service:        serviceConfig,
+			ServiceContext: project.NewServiceContext(),
+		})
+		require.NoError(t, err)
+		require.NoError(t, <-sendErr)
+	}
+
+	firstRequestID := <-requestIDs
+	secondRequestID := <-requestIDs
+	require.NotEqual(t, firstRequestID, secondRequestID)
 }
 
 func TestBetaEventServiceProjectHandlerUsesInvocationCancellation(t *testing.T) {
@@ -801,19 +813,56 @@ func requireBetaHandlerStopsOnCancel(
 ) {
 	t.Helper()
 
-	invoked := make(chan struct{})
+	invoked := make(chan string, 1)
+	cancellationReceived := make(chan error, 1)
+	envelope := newBetaEventMessageEnvelope()
+	recvCh := make(chan *v1beta.EventMessage, 1)
+	var invocation *v1beta.EventMessage
 	stream := &scriptedBetaEventStream{
 		ctx:    streamCtx,
-		recvCh: make(chan *v1beta.EventMessage),
-		sendFn: func(*v1beta.EventMessage) error {
-			close(invoked)
+		recvCh: recvCh,
+		sendFn: func(msg *v1beta.EventMessage) error {
+			if envelope.GetInnerMessage(msg) != nil {
+				invocation = msg
+				invoked <- msg.GetRequestId()
+			} else if err := envelope.GetError(msg); err != nil {
+				cancellationReceived <- err
+				if invocation == nil {
+					return errors.New("beta cancellation received before invocation")
+				}
+				response := &v1beta.EventMessage{RequestId: msg.GetRequestId()}
+				switch invoke := invocation.MessageType.(type) {
+				case *v1beta.EventMessage_InvokeProjectHandler:
+					response.MessageType = &v1beta.EventMessage_ProjectHandlerStatus{
+						ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
+							EventName: invoke.InvokeProjectHandler.GetEventName(),
+							Status:    "failed",
+							Message:   context.Canceled.Error(),
+							Error:     wrapBetaError(context.Canceled),
+						},
+					}
+				case *v1beta.EventMessage_InvokeServiceHandler:
+					response.MessageType = &v1beta.EventMessage_ServiceHandlerStatus{
+						ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+							EventName:   invoke.InvokeServiceHandler.GetEventName(),
+							ServiceName: invoke.InvokeServiceHandler.GetService().GetName(),
+							Status:      "failed",
+							Message:     context.Canceled.Error(),
+							Error:       wrapBetaError(context.Canceled),
+						},
+					}
+				default:
+					return errors.New("unexpected beta invocation type")
+				}
+				recvCh <- response
+			}
 			return nil
 		},
 	}
 	brokerCtx, stopBroker := context.WithCancel(streamCtx)
 	broker := grpcbroker.NewMessageBroker(
 		stream,
-		newBetaEventMessageEnvelope(),
+		envelope,
 		extensionID,
 		nil,
 	)
@@ -833,7 +882,8 @@ func requireBetaHandlerStopsOnCancel(
 	}()
 
 	select {
-	case <-invoked:
+	case requestID := <-invoked:
+		require.NotEmpty(t, requestID)
 	case <-time.After(time.Second):
 		t.Fatal("handler did not send its invocation")
 	}
@@ -844,6 +894,13 @@ func requireBetaHandlerStopsOnCancel(
 		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
 		t.Fatal("handler did not stop after its invocation was canceled")
+	}
+
+	select {
+	case err := <-cancellationReceived:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("extension handler did not receive cancellation")
 	}
 }
 
@@ -1022,6 +1079,173 @@ func TestServer_BetaEventStreamCollectsServiceMessages(t *testing.T) {
 	require.NotNil(t, disconnectedInvoke.GetInvokeProjectHandler())
 	require.NoError(t, stream.CloseSend())
 	require.Error(t, <-disconnectedDone)
+}
+
+func TestBetaEventServiceSDKStreamContinuesAfterCanceledServiceHandler(t *testing.T) {
+	extension := createTestExtension()
+	extension.Capabilities = []extensions.CapabilityType{
+		extensions.LifecycleEventsCapability,
+	}
+	service, _ := createTestEventService()
+	service.extensionManager = testExtensionLookup{extension: extension}
+
+	withClaims := func(ctx context.Context) context.Context {
+		return extensionClaimsContext(ctx, extension.Id)
+	}
+	server := grpc.NewServer(
+		grpc.UnaryInterceptor(func(
+			ctx context.Context,
+			req any,
+			info *grpc.UnaryServerInfo,
+			handler grpc.UnaryHandler,
+		) (any, error) {
+			return handler(withClaims(ctx), req)
+		}),
+		grpc.StreamInterceptor(func(
+			srv any,
+			stream grpc.ServerStream,
+			info *grpc.StreamServerInfo,
+			handler grpc.StreamHandler,
+		) error {
+			return handler(srv, &betaClaimsServerStream{
+				ServerStream: stream,
+				ctx:          withClaims(stream.Context()),
+			})
+		}),
+	)
+	implementations := stableServiceImplementations()
+	implementations[BetaEventService] = service
+	require.NoError(t, registerBetaServices(
+		server,
+		implementations,
+		map[BetaService]any{
+			BetaEventService: &betaEventService{service: service},
+		},
+	))
+	readyService := &readyExtensionService{ready: make(chan struct{})}
+	azdext.RegisterExtensionServiceServer(server, readyService)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	token, err := jwt.NewWithClaims(
+		jwt.SigningMethodHS256,
+		jwt.MapClaims{"sub": extension.Id},
+	).SignedString([]byte("test-key"))
+	require.NoError(t, err)
+
+	var handlerMu sync.Mutex
+	handlerCalls := 0
+	handlerStarted := make(chan int)
+	host := azdext.NewExtensionHost(client).WithBetaServiceEventHandler(
+		"predeploy",
+		func(ctx context.Context, _ *azdext.ServiceEventArgs) (*azdext.BetaServiceEventResponse, error) {
+			handlerMu.Lock()
+			handlerCalls++
+			call := handlerCalls
+			handlerMu.Unlock()
+			handlerStarted <- call
+			if call == 1 {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}
+			return &azdext.BetaServiceEventResponse{}, nil
+		},
+		nil,
+	)
+	hostCtx, cancelHost := context.WithCancel(azdext.WithAccessToken(ctx, token))
+	hostDone := make(chan error, 1)
+	go func() {
+		hostDone <- host.Run(hostCtx)
+	}()
+	defer cancelHost()
+
+	select {
+	case <-readyService.ready:
+	case err := <-hostDone:
+		require.NoError(t, err)
+		t.Fatal("extension host stopped before becoming ready")
+	case <-ctx.Done():
+		t.Fatal("extension host did not become ready")
+	}
+
+	projectConfig, err := service.lazyProject.GetValue()
+	require.NoError(t, err)
+	serviceConfig := projectConfig.Services["api"]
+	require.NotNil(t, serviceConfig)
+	eventArgs := project.ServiceLifecycleEventArgs{
+		Project:        projectConfig,
+		Service:        serviceConfig,
+		ServiceContext: project.NewServiceContext(),
+	}
+
+	firstCtx, cancelFirst := context.WithCancel(ctx)
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- serviceConfig.RaiseEvent(firstCtx, ext.Event("predeploy"), eventArgs)
+	}()
+
+	select {
+	case call := <-handlerStarted:
+		require.Equal(t, 1, call)
+		cancelFirst()
+	case <-ctx.Done():
+		t.Fatal("first beta service handler did not start")
+	}
+	select {
+	case err := <-firstDone:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-ctx.Done():
+		t.Fatal("canceled beta service event did not finish")
+	}
+	select {
+	case err := <-hostDone:
+		require.NoError(t, err)
+		t.Fatal("extension host stopped after canceled handler")
+	default:
+	}
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- serviceConfig.RaiseEvent(ctx, ext.Event("predeploy"), eventArgs)
+	}()
+
+	select {
+	case call := <-handlerStarted:
+		require.Equal(t, 2, call)
+	case err := <-secondDone:
+		require.NoError(t, err)
+		t.Fatal("second beta service event finished without invoking the handler")
+	case <-ctx.Done():
+		t.Fatal("second beta service handler did not start")
+	}
+	select {
+	case err := <-secondDone:
+		require.NoError(t, err)
+	case <-ctx.Done():
+		t.Fatal("second beta service event did not finish")
+	}
+
+	cancelHost()
+	select {
+	case err := <-hostDone:
+		require.NoError(t, err)
+	case <-ctx.Done():
+		t.Fatal("extension host did not stop")
+	}
 }
 
 func TestServer_BetaEventStreamCorrelatesConcurrentServiceHooks(t *testing.T) {

@@ -20,6 +20,47 @@
         ]
       }
     },
+    "agentHosting": {
+      "type": "object",
+      "description": "Host agents on an existing AKS cluster when azd creates a new Foundry account. Storage and the hosting and workload identities may each be supplied independently; omitted resources are created. Container registry selection follows the standard Foundry rules. Network configuration is optional and independent of agentHosting.",
+      "additionalProperties": false,
+      "required": ["clusterResourceId"],
+      "properties": {
+        "clusterResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Complete Microsoft.ContainerService/managedClusters ARM resource ID. Supports ${VAR} from the azd environment."
+        },
+        "storageAccountResourceId": {
+          "type": ["string", "null"],
+          "description": "Optional existing Storage account ARM resource ID. Omitted, empty or null uses the default account's ARM creation/update path. Supports ${VAR}; an empty resolved value also uses the default. Undefined variables without a default are rejected."
+        },
+        "hostingManagementIdentityResourceId": {
+          "type": ["string", "null"],
+          "description": "Optional existing hosting-management user-assigned identity ARM resource ID. Omitted, empty or null uses the default identity's ARM creation/update path. Supports ${VAR}; an empty resolved value also uses the default. Undefined variables without a default are rejected."
+        },
+        "workloadIdentityResourceId": {
+          "type": ["string", "null"],
+          "description": "Optional existing workload user-assigned identity ARM resource ID. Omitted, empty or null uses the default identity's ARM creation/update path. Supports ${VAR}; an empty resolved value also uses the default. Undefined variables without a default are rejected."
+        }
+      }
+    },
+    "monitoring": {
+      "type": "object",
+      "description": "Application Insights tracing. Enabled automatically for newly created projects; existing projects require applicationInsightsResourceId, and creating a component for an existing project is not supported. Referenced components and existing compatible connections are preserved.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable monitoring setup. False skips setup without deleting or disabling existing monitoring."
+        },
+        "applicationInsightsResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "ARM resource ID of an existing workspace-backed Application Insights component. Enables monitoring and connects the project without creating or managing the component or its workspace. Supports ${VAR}."
+        }
+      }
+    },
     "network": {
       "type": "object",
       "description": "Private networking for the Foundry account that backs this project. When omitted, the account uses public networking. When present, azd provisions an account private endpoint and disables public data-plane access.",
@@ -64,6 +105,19 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": { "required": ["agentHosting"] },
+      "then": {
+        "properties": {
+          "endpoint": {
+            "pattern": "^(?:\\s|\\$\\{[A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?\\})*$",
+            "description": "Must resolve to empty when agentHosting is set; an existing account cannot receive hosting."
+          }
+        }
+      }
+    }
+  ],
   "definitions": {
     "Deployment": {
       "type": "object",

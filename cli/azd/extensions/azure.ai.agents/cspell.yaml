@@ -1,9 +1,17 @@
 import: ../../.vscode/cspell.yaml
 overrides:
+  - filename: ["internal/phasetelemetry/*.go", "internal/project/*.go", "docs/phase-telemetry.md"]
+    words:
+      - phasetelemetry
+  - filename: ["internal/inittelemetry/*.go", "internal/cmd/*.go", "docs/init-telemetry.md"]
+    words:
+      - inittelemetry
   - filename: ["internal/helpformat/*.go", "internal/cmd/root.go"]
     words:
       - helpformat
-  - filename: ["internal/cmd/testdata/TestAgentHelp-root.snap"]
+  - filename:
+      - "internal/cmd/testdata/TestAgentHelp-root.snap"
+      - "internal/cmd/testdata/TestAgentHelpPreviewsOff-root.snap"
     words:
       - vdev
 words:
@@ -16,6 +24,8 @@ words:
   # Eval / optimize async job ID prefixes and terms
   - datagen
   - evaluatorgen
+  - lookback
+  - optconfig
   - signup
   # Terms
   - Reprompt
@@ -29,6 +39,9 @@ words:
   - PSTN
   - pstn
   - webrtc
+  - nonblank
+  - ultrafast
+  - xhigh
   # Azure region names
   - australiaeast
   - brazilsouth
@@ -56,6 +69,7 @@ words:
   - westeurope
   - westcentralus
   # Project terms
+  - featureflags
   - ABAC
   - abbrs
   - acrpush
@@ -132,6 +146,7 @@ words:
   - testdir
   # Test infrastructure
   - recordproxy
+  - testutil
   # Activity protocol local run (Playground)
   - agentsplayground
   - winget

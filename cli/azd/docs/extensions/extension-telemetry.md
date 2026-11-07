@@ -2,15 +2,19 @@
 
 <!-- cspell:ignore tostring -->
 
-This guide is for extension authors whose telemetry has passed privacy review
-and whose extension is published to the official `azd` registry. It explains
+This guide is for extension authors whose telemetry is covered by the service's
+approved collection and handling scope and whose extension is published to the
+official `azd` registry. It explains
 how to ask `azd` to record a usage signal on the extension's behalf — for
 example, which deployment mode a user picked.
 
 > [!IMPORTANT]
-> Any telemetry must go through a privacy review to ensure that it respects
-> user privacy before you start collecting it. See [Your responsibility for
-> content](#your-responsibility-for-content) below.
+> Have an azd maintainer assess telemetry changes against the approved collection
+> and handling scope using the
+> [privacy review checklist](../../../../docs/specs/metrics-audit/privacy-review-checklist.md).
+> A new event or field does not automatically require a separate formal review.
+> Collection outside the approved scope waits for the required approval.
+> See [Your responsibility for content](#your-responsibility-for-content) below.
 
 Telemetry is a stable gRPC service since azd 1.36.0, offered to eligible extensions installed
 from the official `azd` registry. Import
@@ -147,12 +151,22 @@ var DeployMode = fields.AttributeKey{
 }
 ```
 
-Declarations form a shared first-party field schema and are not exclusive to
-the extension that introduced them. Another first-party extension may reuse an
-existing key when its meaning, allowed values, classification, and purpose are
-identical. If any of those differ, declare a distinct key. Prefer feature-scoped
-key suffixes (for example, `agent.invoke.protocol`) over generic ones like
-`protocol`, since a different extension may use the latter for unrelated values.
+### Name attributes for their scope
+
+Declarations share one first-party schema keyed by the final `ext.*` name.
+Core prepends only `ext.`; `extension.id` and `extension.event` do not namespace
+declarations.
+
+Name new fields for their feature. For example, use
+`agent.init.step.duration_ms`, not `duration_ms`, for an agent Init step.
+Reuse an existing key only when its meaning, allowed values, classification,
+and purpose are identical; otherwise declare a distinct, scoped key.
+
+Existing generic keys such as `ext.source` and `ext.operation` are legacy
+exceptions, not precedent for new fields. Preserve them for compatibility;
+renaming them requires a separate downstream migration.
+
+### Validate declarations and usage
 
 The extension still sends the suffix:
 
@@ -165,8 +179,11 @@ Attributes: map[string]string{
 Choose classification, purpose, and endpoint from what the property actually
 contains and why it is collected. Do not copy `SystemMetadata` or
 `FeatureInsight` merely because another extension field uses them.
-`SystemMetadata` must use `N/A`; every other classification must use a
-non-`N/A` endpoint.
+Set an explicit, nonempty `Endpoint`. `SystemMetadata` requires exactly `N/A`.
+`OrganizationalIdentifiableInformation` may use explicit `N/A` when the field
+owner's assessment of the identifier's handling supports it. Other supported
+classifications require a non-`N/A` endpoint. Structural validation does not
+grant approval; ask an owner to assess ambiguous identifier semantics.
 
 Set `Attributes` only in the telemetry payload literal, using `nil` or an
 inline `map[string]string` literal. Reading or assigning `Attributes` or
@@ -197,7 +214,8 @@ go test ./extensions/telemetry
 The test scans production Go source under `extensions/`, verifies every final
 `ext.*` key has one valid declaration, and fails with the extension, file, and
 line for an undeclared key. It analyzes repository source only and does not run
-extensions. The extension CI workflow runs the same test.
+extensions. The extension CI workflow runs the same test. Naming scope and
+semantic compatibility still require review; this check does not enforce them.
 
 The inventory is not a runtime allowlist. Metadata changes do not require a new
 `azd` release, while released extensions continue to use the existing
@@ -214,18 +232,27 @@ best-effort `ReportUsage` behavior.
 | Recorded events per `azd` invocation | 100 |
 
 There are no charset rules. Exceeding a per-event bound rejects the whole call
-and records nothing, so a partially-valid event never lands as a
-complete-looking one. The per-invocation budget behaves differently: see
+with `InvalidArgument`, for every install source, and records no `ext.usage`
+span, so a partially-valid event never lands as a complete-looking one. Only
+the bounded summary described in
+[Diagnosing dropped reports](#diagnosing-dropped-reports) is recorded. Bounds
+are checked before the source gate, so extensions installed with `--source dev`
+or from a file path still get validation errors during local development. The
+per-invocation budget behaves differently: see
 [When your event is not recorded](#when-your-event-is-not-recorded).
 
 ## Your responsibility for content
 
-`azd` does not inspect your values at runtime. Privacy review and the content
-rules below remain your responsibility as the extension author:
+`azd` does not inspect your values at runtime. As the extension author, describe
+the values you send and enforce their allowed range in your code. Use the
+[privacy review checklist](../../../../docs/specs/metrics-audit/privacy-review-checklist.md)
+to confirm classification and approval coverage with a maintainer.
 
-- **Never send customer content.** No file paths, resource names, connection
-  strings, prompts, URLs, or anything a user typed. If you are unsure whether a
-  value qualifies as customer content, always assume that it does to be safe.
+- **Never send customer content or secrets, even as hashes.** Do not report
+  prompts, file contents, connection strings, raw error text, or free-form input.
+  Prefer fixed categories or counts to names, paths, and URLs. If an identifier
+  is needed, ask a maintainer to confirm its classification and handling before
+  collecting it.
 - **Keep values low cardinality.** Prefer a small enum such as
   `code | container | unknown`. Unbounded values make the data expensive and
   unusable for aggregation.
@@ -233,39 +260,102 @@ rules below remain your responsibility as the extension author:
   each event and attribute means and why you need it.
 - **Declare every attribute** in `extensions/telemetry/fields.go` with the
   classification, purpose, and endpoint that match its actual semantics.
-- **Get a privacy review** as part of reviewing your extension, following the
-  [telemetry privacy review checklist](../../../../docs/specs/metrics-audit/privacy-review-checklist.md).
 
 ## When the call returns an error
 
 | Status | Cause |
 |---|---|
-| `Unauthenticated` | The request did not carry the host-issued extension token |
+| `Unauthenticated` | The request did not carry a valid host-issued extension token |
+| `InvalidArgument` | The event name is missing, or a per-event bound was exceeded. Checked before installation and source eligibility |
 | `PermissionDenied` | The calling extension is not installed |
-| `InvalidArgument` | The event name is missing, or a per-event bound was exceeded |
+| `Internal` | The host could not read the installed extension record |
 | `Unimplemented` | The `azd` host predates this service |
 
 Error messages do not echo attribute values. When a valid key has an oversized
 value, the key is included so you can identify the failing field; invalid keys
-are not echoed. Use the status code plus your own call site to diagnose.
+are not echoed. Use the status code plus your own call site to diagnose. Hosts
+that support dropped-report telemetry also record the bounded reason described
+in [Diagnosing dropped reports](#diagnosing-dropped-reports).
 
 ## When your event is not recorded
 
-Two outcomes are deliberately **not** errors. The call succeeds and
+The following outcomes are deliberately **not** errors. The call succeeds and
 `ReportUsageResponse.Accepted` is `false`:
 
 | Cause | Why |
 |---|---|
 | The extension is not eligible for telemetry recording | Recording is limited to reviewed official-registry installations |
+| The host could not verify the configured registry source | The event is dropped when source eligibility cannot be determined |
 | The per-invocation event budget is spent | `ReportUsage` can be called in a loop, and the per-event bounds do not limit how many events arrive |
 
-Run `azd` with `--debug` to see which one applied.
+Run `azd` with `--debug` to see which one applied. Hosts that support
+dropped-report telemetry also record the bounded reason described in
+[Diagnosing dropped reports](#diagnosing-dropped-reports).
 
 This means **your events are not recorded while you develop locally**, because
 an extension installed with `--source dev` or from a file path does not pass the
 gate. You can still verify your integration end to end: the call succeeds and
 `Accepted` comes back `false`. Because it is not an error, your code runs the
 same path in development as in production — do not branch on `Accepted`.
+
+## Diagnosing dropped reports
+
+`azd` aggregates rejected and dropped calls on the command span that hosted the
+extension. It records two fields:
+
+| Attribute | Meaning |
+|---|---|
+| `extension.usage.dropped` | Unique `<extension-id-or-unattributed>@<reason>` values for the invocation |
+| `extension.usage.dropped.count` | Total reports dropped during the invocation |
+
+The reason is always one of these host-defined values:
+
+| Reason | Cause |
+|---|---|
+| `event_name_invalid` | The event name is missing or exceeds 128 UTF-8 bytes |
+| `attribute_count_exceeded` | The report contains more than 32 attributes |
+| `attribute_key_invalid` | An attribute key is empty or exceeds 128 UTF-8 bytes |
+| `attribute_value_too_long` | An attribute value exceeds 512 UTF-8 bytes |
+| `not_installed` | The calling extension is not installed |
+| `lookup_failed` | `azd` could not read the installed extension record |
+| `source_check_failed` | `azd` could not verify the configured registry source |
+| `source_ineligible` | The configured source is not the verified official registry |
+| `budget_exhausted` | The invocation has already recorded 100 extension usage events |
+| `unauthenticated` | The request did not contain validated extension claims |
+
+No event name, key, value, source, or other caller-controlled content is copied
+into the signal. Repeated failures add to the count but do not add duplicate
+values to the list, so a reporting loop cannot create an unbounded property.
+The extension ID appears only after `azd` verifies the installed record against
+the official registry source. Earlier failures use the fixed value
+`unattributed`.
+
+Use this query to find how many invocations were affected by each extension and
+reason:
+
+```kusto
+requests
+| where isnotempty(tostring(customDimensions["extension.usage.dropped"]))
+| extend dropped = parse_json(tostring(customDimensions["extension.usage.dropped"]))
+| mv-expand dropped
+| extend parts = split(tostring(dropped), "@")
+| summarize affected_invocations=dcount(operation_Id)
+    by extension_id=tostring(parts[0]), reason=tostring(parts[1])
+```
+
+To inspect total volume separately, sum
+`customMeasurements["extension.usage.dropped.count"]`. The fields appear only
+on the command span that hosted the extension; synthetic phase spans created by
+`azd up`, workflow step command spans, and VS RPC spans do not copy them. The count covers all reasons in an invocation, so do
+not assign it to one reason when the list contains several values.
+
+Accepted `ext.usage` spans and the command span share `operation_Id`. Use that
+field with `extension.id` to compare affected invocations with invocations that
+successfully recorded at least one report.
+
+For a long-running server command, such as `azd vs-server`, the invocation ends
+when the `azd` process exits. Its aggregate therefore covers the process
+lifetime rather than one RPC.
 
 ## Where the data lands
 

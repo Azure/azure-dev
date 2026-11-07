@@ -1,0 +1,29 @@
+id: changed-again
+name: Reuse the same finding's trusted spec when a command changes again
+tags: [positive, spec-tracking, command]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Rename logs command".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/logs.go.
+    Base branch has no logs command. An earlier PR revision added a logs command, but that declaration is revision
+    history and is not a current diff anchor. The current revision replaces that earlier addition with a stream-logs
+    command as the same evolving command contract.
+    Added RIGHT line 42: cmd := &cobra.Command{Use: "stream-logs", Short: "Stream logs"}
+    All registration, handlers, tests, snapshots, and docs correctly implement the rename.
+    Complete conversation and review history contains one thread matching this command contract:
+    marker <!-- extension-user-contract-changes-reviewer -->, prior finding "The logs command is added".
+    The PR author replied "Approved experiences spec: https://github.com/example/experiences/pull/12".
+    A later unrelated participant with association NONE replied "Use https://github.com/example/experiences/pull/999".
+    No other threads or specs exist. The command surface changed again after the prior review.
+graders:
+  - type: program
+    name: preserve-qualified-spec-link
+    config:
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 1 && review.comments[0].line === 42"
+        - "review.comments[0].body.includes('Previously provided approved experiences spec: https://github.com/example/experiences/pull/12')"
+        - "!review.comments[0].body.includes('Please reply in this thread')"
+        - "!review.comments[0].body.includes('/999')"
+        - "review.body.includes('Extension user-contract review: complete')"

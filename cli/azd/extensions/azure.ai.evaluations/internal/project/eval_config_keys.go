@@ -28,8 +28,8 @@ func explainUnknownKeys(err error) error {
 	}
 
 	// Nothing at the top level was recognized, so this is another tool's file
-	// rather than a typo in one of ours. `azd ai agent eval` writes an eval.yaml
-	// of its own, and suggesting a near-miss for each of its keys in turn would
+	// rather than a typo in one of ours. Legacy agent evaluation files have
+	// a different shape, and suggesting a near-miss for each of their keys would
 	// walk the reader into rewriting it a line at a time.
 	if topLevelKeysAllUnknown(text) {
 		return errUnrecognizedEvalConfig
@@ -60,8 +60,8 @@ func explainUnknownKeys(err error) error {
 
 var errUnrecognizedEvalConfig = errors.New(
 	"none of this file's top-level keys are ones an eval configuration declares, " +
-		"so this is not one. `azd ai agent eval` writes an eval.yaml of its own with " +
-		"a different shape, and runs it with `azd ai agent eval run`")
+		"so this is not one. Legacy agent evaluation files use a different shape and " +
+		"are not supported. Create an evaluation configuration with `azd ai eval init`")
 
 // topLevelKeysAllUnknown reports a file whose top-level shape is not this one.
 //

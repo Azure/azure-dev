@@ -37,15 +37,21 @@ type connectionDescriptorRunner interface {
 	Run(ctx context.Context, args ...string) ([]byte, error)
 }
 
-type azdConnectionDescriptorRunner struct{}
+type azdConnectionDescriptorRunner struct {
+	stderr io.Writer
+}
 
-func (azdConnectionDescriptorRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
+func (r azdConnectionDescriptorRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
 	// #nosec G204 -- the executable is fixed and callers construct the azd argument list without a shell.
 	command := exec.CommandContext(ctx, "azd", args...)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	command.Stdout = &stdout
-	command.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	writer := r.stderr
+	if writer == nil {
+		writer = os.Stderr
+	}
+	command.Stderr = io.MultiWriter(writer, &stderr)
 	if err := command.Run(); err != nil {
 		message := strings.TrimSpace(stderr.String())
 		if message == "" {

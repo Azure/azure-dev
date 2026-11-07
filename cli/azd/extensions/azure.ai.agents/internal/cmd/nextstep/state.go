@@ -12,10 +12,11 @@ import (
 	"slices"
 	"strings"
 
+	"azure.ai.projects/synthesis"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/envkey"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
@@ -169,6 +170,8 @@ func (s *clientSource) ServiceConfigValue(
 type Option func(*config)
 
 type config struct {
+	localPort int
+
 	// environmentName, when non-empty, selects the environment to inspect
 	// without changing azd's active environment.
 	environmentName string
@@ -190,6 +193,12 @@ type config struct {
 	// the folder created during init (e.g., "my-agent"). Empty when
 	// init did not create a new directory.
 	createdFolderDisplay string
+}
+
+// WithLocalPort records the actual port selected by run for local invocation
+// guidance. When omitted, guidance leaves invoke to use its default local port.
+func WithLocalPort(port int) Option {
+	return func(c *config) { c.localPort = port }
 }
 
 // WithEnvironment selects the azd environment used to assemble next-step
@@ -266,7 +275,8 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 		opt(cfg)
 	}
 
-	state := &State{}
+	state := &State{LocalPort: cfg.localPort}
+	state.A2APreviewEnabled, _ = featureflags.IsEnabled(featureflags.A2A)
 	state.CreatedFolderDisplay = cfg.createdFolderDisplay
 	state.EnvironmentName = cfg.environmentName
 	var errs []error
@@ -543,6 +553,11 @@ func populateOpenAPIPayload(
 	projectPath, envName string,
 	state *State,
 ) {
+	// A2A has no invocations OpenAPI contract. Do not fetch that route or
+	// reuse a stale invocations payload for an A2A target.
+	if svc := findService(state, cfg.openAPIAgent); svc != nil && svc.Protocol == ProtocolA2A {
+		return
+	}
 	var specBytes []byte
 	if cfg.openAPILiveFetch != nil {
 		if b, err := cfg.openAPILiveFetch(ctx); err == nil && len(b) > 0 {
@@ -658,10 +673,13 @@ func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 	sawInvocations := false
 	sawActivity := false
 	sawInvocationsWS := false
+	sawA2A := false
 	for _, p := range hosted.Protocols {
 		switch strings.TrimSpace(p.Protocol) {
 		case ProtocolResponses:
 			return ProtocolResponses, multiProtocol
+		case ProtocolA2A:
+			sawA2A = true
 		case ProtocolInvocationsWS:
 			sawInvocationsWS = true
 		case ProtocolInvocations:
@@ -672,6 +690,9 @@ func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 	}
 	if sawInvocations {
 		return ProtocolInvocations, multiProtocol
+	}
+	if sawA2A {
+		return ProtocolA2A, multiProtocol
 	}
 	if sawActivity {
 		return ProtocolActivity, multiProtocol

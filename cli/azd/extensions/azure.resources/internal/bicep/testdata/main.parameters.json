@@ -1,0 +1,9 @@
+{
+    "parameters": {
+        "environmentName": { "value": "${AZURE_ENV_NAME}" },
+        "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
+        "serviceExists": { "value": "${SERVICE_API_RESOURCE_EXISTS=false}" },
+        "password": { "value": "${PASSWORD}" },
+        "settings": { "value": { "quoted": "${QUOTED}" } }
+    }
+}

@@ -83,6 +83,8 @@ func (f armField[T]) MarshalJSON() ([]byte, error) {
 // It follows the schema defined at:
 // https://learn.microsoft.com/azure/azure-resource-manager/templates/resource-declaration
 type armTemplateResource struct {
+	// ID is the fully resolved resource ID emitted for predicted snapshot resources.
+	ID string `json:"id,omitempty"`
 	// Type is the resource type including namespace (e.g. "Microsoft.Storage/storageAccounts").
 	Type string `json:"type"`
 	// APIVersion is the REST API version to use for the resource (e.g. "2023-01-01").
@@ -267,6 +269,8 @@ const (
 type ProvisionValidationCheckResult struct {
 	// Severity indicates whether this result is a warning or a blocking error.
 	Severity ProvisionValidationCheckSeverity
+	// IsCritical marks a non-blocking warning that defaults confirmation to No.
+	IsCritical bool
 	// DiagnosticID is a unique, stable identifier for this specific finding type
 	// (e.g. "role_assignment_missing"). Used in telemetry to correlate actioned
 	// warnings with deployment outcomes and to track error frequency over time.

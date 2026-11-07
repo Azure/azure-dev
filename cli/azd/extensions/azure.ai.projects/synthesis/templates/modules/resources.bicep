@@ -1,0 +1,453 @@
+// Resource-group-scoped resources for a microsoft.foundry service: the
+// Foundry (AIServices) account, its project, model deployments, the optional
+// container registry.
+//
+// Deployed by main.bicep into a resource group it creates at subscription
+// scope. Kept as a separate module so main.bicep can target the subscription
+// (and thus create the resource group) while these resources stay RG-scoped.
+
+targetScope = 'resourceGroup'
+
+// User-defined types
+
+@description('Shape of one model deployment entry in azure.yaml.')
+type deploymentsType = deploymentType[]
+
+@description('Shape of a single model deployment.')
+type deploymentType = {
+  name: string
+  model: {
+    name: string
+    format: string
+    version: string
+  }
+  sku: {
+    name: string
+    capacity: int
+  }
+}
+
+type agentHostingType = {
+  enabled: bool
+  hostingType: 'ManagedCluster' | ''
+  name: string
+  clusterResourceId: string
+  hostingManagementIdentityResourceId: string?
+  storageAccountResourceId: string?
+  workloadIdentityResourceId: string?
+}
+
+// Parameters
+
+@description('Azure region for all resources.')
+param location string = resourceGroup().location
+
+@description('Tags applied to all resources.')
+param tags object = {}
+
+@description('Optional salt to vary resource names across re-provisions.')
+param resourceTokenSalt string = ''
+
+@description('Foundry project name. 3-32 alphanumeric/hyphen chars.')
+@minLength(3)
+@maxLength(32)
+param foundryProjectName string
+
+@description('Model deployments to provision on the Foundry account.')
+param deployments deploymentsType = []
+
+@description('Include an Azure Container Registry. Set true when any agent uses docker:.')
+param includeAcr bool = false
+
+param agentHosting agentHostingType = {
+  enabled: false
+  hostingType: ''
+  name: ''
+  clusterResourceId: ''
+  hostingManagementIdentityResourceId: ''
+  storageAccountResourceId: ''
+  workloadIdentityResourceId: ''
+}
+
+param kubeletObjectId string = ''
+param federatedIdentityRoleDefinitionId string = ''
+param hostingPrincipalId string = ''
+param workloadPrincipalId string = ''
+
+@description('Full ARM ID of an existing container registry to reuse instead of creating one.')
+param existingAcrResourceId string = ''
+
+param acrPullAssigned bool = false
+param acrAccessOperationId string = ''
+param acrPullRoleDefinitionId string = ''
+
+// Network isolation parameters. All default off so an absent network: block in
+// azure.yaml yields a public account identical to the pre-network template.
+
+@description('Master switch: when true the account is VNet-bound (private).')
+param enableNetworkIsolation bool = false
+
+@description('When true (and isolation on), the agent runtime uses the Microsoft-managed network instead of injecting into a customer subnet.')
+param useManagedEgress bool = false
+
+@description('ARM id of the existing customer VNet (byo mode).')
+param vnetId string = ''
+
+@description('Agent (delegated) subnet name.')
+param agentSubnetName string = 'agent-subnet'
+
+@description('Agent subnet CIDR. Empty derives a /24 from the VNet space.')
+param agentSubnetPrefix string = ''
+
+@description('When true, create the agent subnet; when false, reference it.')
+param createAgentSubnet bool = false
+
+@description('Private-endpoint subnet name.')
+param peSubnetName string = 'pe-subnet'
+
+@description('Private-endpoint subnet CIDR. Empty derives a /24 from the VNet space.')
+param peSubnetPrefix string = ''
+
+@description('When true, create the PE subnet; when false, reference it.')
+param createPESubnet bool = false
+
+@description('Managed-network isolation mode (managed mode). AllowInternetOutbound | AllowOnlyApprovedOutbound.')
+param managedIsolationMode string = ''
+
+@description('Resource group holding existing private DNS zones. Empty creates and links new zones.')
+param dnsZonesResourceGroup string = ''
+
+@description('Subscription holding existing private DNS zones. Empty defaults to this subscription.')
+param dnsZonesSubscription string = ''
+
+// Variables
+
+var resourceToken = empty(resourceTokenSalt)
+  ? uniqueString(subscription().id, resourceGroup().id, location)
+  : uniqueString(subscription().id, resourceGroup().id, location, resourceTokenSalt)
+
+var abbrs = loadJsonContent('../abbreviations.json')
+
+var foundryAccountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
+var byoFoundryAccountName = 'aks-${foundryAccountName}'
+var activeFoundryAccountName = agentHosting.enabled
+  ? byoFoundryAccountName
+  : foundryAccountName
+var activeFoundryAccountId = resourceId('Microsoft.CognitiveServices/accounts', activeFoundryAccountName)
+var activeFoundryProjectId = resourceId('Microsoft.CognitiveServices/accounts/projects', activeFoundryAccountName, foundryProjectName)
+var storageAccountName = 'st${resourceToken}'
+var hostingIdentityName = '${foundryAccountName}-hosting-mi'
+var workloadIdentityName = '${foundryAccountName}-workload-mi'
+var suppliedHostingIdentityResourceId = agentHosting.?hostingManagementIdentityResourceId ?? ''
+var suppliedWorkloadIdentityResourceId = agentHosting.?workloadIdentityResourceId ?? ''
+var suppliedStorageAccountResourceId = agentHosting.?storageAccountResourceId ?? ''
+var hostingIdentityResourceId = empty(suppliedHostingIdentityResourceId)
+  ? resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', hostingIdentityName)
+  : suppliedHostingIdentityResourceId
+var workloadIdentityResourceId = empty(suppliedWorkloadIdentityResourceId)
+  ? resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', workloadIdentityName)
+  : suppliedWorkloadIdentityResourceId
+var storageAccountResourceId = empty(suppliedStorageAccountResourceId)
+  ? resourceId('Microsoft.Storage/storageAccounts', storageAccountName)
+  : suppliedStorageAccountResourceId
+
+// Egress: byo injects the agent into a customer subnet; managed uses the
+// Microsoft-managed network. Ingress: an account private endpoint is always
+// provisioned when isolation is on, so the data plane is never left public.
+var useByoNetwork = enableNetworkIsolation && !useManagedEgress
+var useManagedNetwork = enableNetworkIsolation && useManagedEgress
+var disablePublicDataPlaneAccess = enableNetworkIsolation
+
+// Resources
+
+module prerequisites 'byo-prerequisites.bicep' = if (agentHosting.enabled) {
+  name: 'byo-prerequisites'
+  params: {
+    location: location
+    tags: tags
+    clusterResourceId: agentHosting.clusterResourceId
+    storageAccountName: storageAccountName
+    hostingIdentityName: hostingIdentityName
+    workloadIdentityName: workloadIdentityName
+    federatedIdentityRoleDefinitionId: federatedIdentityRoleDefinitionId
+    hostingIdentityResourceId: suppliedHostingIdentityResourceId
+    workloadIdentityResourceId: suppliedWorkloadIdentityResourceId
+    storageAccountResourceId: suppliedStorageAccountResourceId
+    suppliedHostingPrincipalId: hostingPrincipalId
+    suppliedWorkloadPrincipalId: workloadPrincipalId
+  }
+}
+
+// Customer VNet wiring: reference the VNet and create or reference the agent
+// (byo egress only) + private-endpoint subnets. Runs whenever isolation is on
+// because the account private endpoint is always provisioned.
+module network 'network.bicep' = if (enableNetworkIsolation) {
+  name: 'foundry-network'
+  params: {
+    vnetId: vnetId
+    agentSubnetName: agentSubnetName
+    agentSubnetPrefix: agentSubnetPrefix
+    createAgentSubnet: createAgentSubnet
+    peSubnetName: peSubnetName
+    peSubnetPrefix: peSubnetPrefix
+    createPESubnet: createPESubnet
+  }
+}
+
+// networkInjections wires the account into the agent subnet (byo) or the
+// Microsoft-managed network (managed). Null when isolation is off.
+//
+// subnetArmId is built as a concrete string from the (concrete) vnetId param
+// rather than network!.outputs.agentSubnetId. The account and the network
+// module deploy in the same template, so an inter-module reference() here is
+// unresolved at the CognitiveServices RP preflight, which then fails to convert
+// networkInjections to its typed contract (ARM what-if does not catch this).
+// The deterministic id avoids the unresolved reference; an explicit dependsOn
+// on the network module preserves ordering (the subnet must exist first).
+var agentSubnetArmId = '${vnetId}/subnets/${agentSubnetName}'
+var agentNetworkInjections = useByoNetwork
+  ? [
+      {
+        scenario: 'agent'
+        subnetArmId: agentSubnetArmId
+        useMicrosoftManagedNetwork: false
+      }
+    ]
+  : (useManagedNetwork
+      ? [
+          {
+            scenario: 'agent'
+            useMicrosoftManagedNetwork: true
+          }
+        ]
+      : null)
+
+var foundryAccountProperties = {
+  allowProjectManagement: true
+  customSubDomainName: activeFoundryAccountName
+  publicNetworkAccess: disablePublicDataPlaneAccess ? 'Disabled' : 'Enabled'
+  disableLocalAuth: true
+  networkAcls: {
+    defaultAction: disablePublicDataPlaneAccess ? 'Deny' : 'Allow'
+    bypass: disablePublicDataPlaneAccess ? 'AzureServices' : null
+    virtualNetworkRules: []
+    ipRules: []
+  }
+  networkInjections: agentNetworkInjections
+}
+
+resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = if (!agentHosting.enabled) {
+  name: foundryAccountName
+  location: location
+  tags: tags
+  sku: {
+    name: 'S0'
+  }
+  kind: 'AIServices'
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: foundryAccountProperties
+  dependsOn: useByoNetwork ? [network] : []
+
+  @batchSize(1)
+  resource modelDeployments 'deployments' = [
+    for d in deployments: {
+      name: d.name
+      properties: {
+        model: d.model
+      }
+      sku: d.sku
+    }
+  ]
+
+  resource project 'projects' = {
+    name: foundryProjectName
+    location: location
+    identity: {
+      type: 'SystemAssigned'
+    }
+    properties: {
+      description: '${foundryProjectName} Project'
+      displayName: foundryProjectName
+    }
+    dependsOn: [
+      modelDeployments
+    ]
+  }
+}
+
+resource byoFoundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview' = if (agentHosting.enabled) {
+  name: byoFoundryAccountName
+  location: location
+  tags: tags
+  sku: {
+    name: 'S0'
+  }
+  kind: 'AIServices'
+  identity: {
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${hostingIdentityResourceId}': {}
+    }
+  }
+  properties: {
+    ...foundryAccountProperties
+    agentHostingConfigurations: [
+      {
+        hostingType: 'ManagedCluster'
+        name: 'default'
+        clusterResourceId: agentHosting.clusterResourceId
+        hostingManagementIdentityResourceId: hostingIdentityResourceId
+        storageAccountResourceId: storageAccountResourceId
+        workloadIdentityResourceId: workloadIdentityResourceId
+      }
+    ]
+  }
+
+  // The account injects into the agent subnet via a deterministic id (above),
+  // so Bicep cannot infer the dependency on the network module that creates
+  // that subnet. Declare it explicitly so the subnet exists before injection.
+  dependsOn: useByoNetwork ? [network, prerequisites] : [prerequisites]
+
+  // Sequential model deployment creation; ARM throttles concurrent
+  // deployments on the same account.
+  @batchSize(1)
+  resource modelDeployments 'deployments' = [
+    for d in deployments: {
+      name: d.name
+      properties: {
+        model: d.model
+      }
+      sku: d.sku
+    }
+  ]
+
+  resource project 'projects' = {
+    name: foundryProjectName
+    location: location
+    identity: {
+      type: 'SystemAssigned'
+    }
+    properties: {
+      description: '${foundryProjectName} Project'
+      displayName: foundryProjectName
+    }
+    // Explicit dependsOn ensures all model deployments complete before
+    // the project is created; the project does not reference them so
+    // there is no implicit dependency Bicep can infer.
+    dependsOn: [
+      modelDeployments
+    ]
+  }
+}
+
+// Managed-network isolation (managed egress only). Applies the chosen outbound
+// isolation mode to the Microsoft-managed VNet that hosts the agent runtime.
+// Only deployed when an explicit isolationMode is requested; otherwise the
+// platform default applies. Note: AllowOnlyApprovedOutbound additionally
+// requires approved outbound rules for the agent to reach dependent resources;
+// for the platform-managed stores used here those are managed by the platform.
+resource foundryManagedNetwork 'Microsoft.CognitiveServices/accounts/managednetworks@2025-10-01-preview' =
+  if (useManagedNetwork && !empty(managedIsolationMode)) {
+    name: '${activeFoundryAccountName}/default'
+    properties: {
+      managedNetwork: {
+        isolationMode: managedIsolationMode
+      }
+    }
+    dependsOn: [
+      foundryAccount
+      byoFoundryAccount
+    ]
+  }
+
+module acr 'acr.bicep' = if (includeAcr && empty(existingAcrResourceId)) {
+  name: 'acr'
+  params: {
+    location: location
+    tags: tags
+    name: '${abbrs.containerRegistryRegistries}${resourceToken}'
+    foundryAccountName: activeFoundryAccountName
+    foundryProjectName: foundryProjectName
+    foundryProjectPrincipalId: agentHosting.enabled
+      ? byoFoundryAccount::project!.identity.principalId
+      : foundryAccount::project!.identity.principalId
+    enableNetworkIsolation: enableNetworkIsolation
+    byoAks: agentHosting.enabled
+    kubeletObjectId: kubeletObjectId
+  }
+}
+
+resource externalRegistry 'Microsoft.ContainerRegistry/registries@2025-11-01' existing = if (includeAcr && !empty(existingAcrResourceId)) {
+  name: last(split(existingAcrResourceId, '/'))
+  scope: resourceGroup(split(existingAcrResourceId, '/')[2], split(existingAcrResourceId, '/')[4])
+}
+
+module existingAcr 'container-registry.bicep' = if (includeAcr && !empty(existingAcrResourceId) && !acrPullAssigned) {
+  name: empty(acrAccessOperationId)
+    ? 'existing-acr-${uniqueString(activeFoundryAccountId, activeFoundryProjectId)}'
+    : 'azd-acr-${acrAccessOperationId}'
+  scope: resourceGroup(split(existingAcrResourceId, '/')[2], split(existingAcrResourceId, '/')[4])
+  params: {
+    mode: 'reuse-connect'
+    location: location
+    registryName: last(split(existingAcrResourceId, '/'))
+    projectPrincipalId: agentHosting.enabled
+      ? byoFoundryAccount::project!.identity.principalId
+      : foundryAccount::project!.identity.principalId
+    pullAssigned: acrPullAssigned
+    accessOperationId: acrAccessOperationId
+    pullRoleDefinitionId: acrPullRoleDefinitionId
+  }
+}
+
+module existingAcrConnection 'foundry-project.bicep' = if (includeAcr && !empty(existingAcrResourceId)) {
+  name: 'existing-acr-connection-${uniqueString(activeFoundryAccountId, activeFoundryProjectId)}'
+  params: {
+    accountName: activeFoundryAccountName
+    projectName: foundryProjectName
+    acrName: last(split(existingAcrResourceId, '/'))
+    acrEndpoint: includeAcr && !empty(existingAcrResourceId) ? externalRegistry!.properties.loginServer : ''
+    acrResourceId: includeAcr && !empty(existingAcrResourceId) ? externalRegistry!.id : ''
+    createAcrConnection: true
+  }
+  dependsOn: [
+    foundryAccount::project
+    byoFoundryAccount::project
+    existingAcr
+  ]
+}
+
+// Account private endpoint + AI private DNS zones. The account is always given a
+// private endpoint when isolation is on (byo or managed egress); dependent
+// stores stay platform-managed, so only the account gets an endpoint.
+module privateEndpointDns 'private-endpoint-dns.bicep' = if (enableNetworkIsolation) {
+  name: 'foundry-private-endpoint-dns'
+  params: {
+    aiAccountName: activeFoundryAccountName
+    location: network!.outputs.vnetLocation
+    vnetId: network!.outputs.vnetId
+    peSubnetId: network!.outputs.peSubnetId
+    suffix: resourceToken
+    dnsZonesResourceGroup: dnsZonesResourceGroup
+    dnsZonesSubscription: dnsZonesSubscription
+  }
+  dependsOn: [
+    foundryAccount
+    byoFoundryAccount
+  ]
+}
+
+// Outputs
+
+output AZURE_AI_PROJECT_ID string = resourceId('Microsoft.CognitiveServices/accounts/projects', activeFoundryAccountName, foundryProjectName)
+output AZURE_AI_ACCOUNT_NAME string = activeFoundryAccountName
+output AZURE_AI_PROJECT_NAME string = foundryProjectName
+output AZURE_OPENAI_ENDPOINT string = 'https://${activeFoundryAccountName}.openai.azure.com/'
+output FOUNDRY_PROJECT_ENDPOINT string = 'https://${activeFoundryAccountName}.services.ai.azure.com/api/projects/${foundryProjectName}'
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = !includeAcr ? '' : (empty(existingAcrResourceId) ? acr!.outputs.loginServer : externalRegistry!.properties.loginServer)
+output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = !includeAcr ? '' : (empty(existingAcrResourceId) ? acr!.outputs.resourceId : externalRegistry!.id)
+output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = !includeAcr ? '' : (empty(existingAcrResourceId) ? acr!.outputs.connectionName : existingAcrConnection!.outputs.acrConnectionName)
+output AZURE_FOUNDRY_NETWORK_MODE string = !enableNetworkIsolation ? 'none' : (useManagedEgress ? 'managed' : 'byo')
+output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = useManagedNetwork ? managedIsolationMode : ''

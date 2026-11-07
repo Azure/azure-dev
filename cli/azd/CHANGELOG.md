@@ -1,5 +1,63 @@
 # Release History
 
+## 1.38.0-beta.1 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
+## 1.37.3 (2026-11-04)
+
+### Features Added
+
+- [[#10696]](https://github.com/Azure/azure-dev/pull/10696) Add support for stable-to-stable `azd update` from an elevated terminal for machine-wide Windows x64 MSI installations, preserving custom installation directories.
+
+### Bugs Fixed
+
+- [[#10763]](https://github.com/Azure/azure-dev/pull/10763) Fix workflow steps ignoring their explicit `--cwd` when a parent `-C` or `--cwd` is set, preventing agent initialization from splitting project configuration across directories.
+- [[#10699]](https://github.com/Azure/azure-dev/pull/10699) Fix subprocess cancellation leaving child processes running or reporting ordinary command failures, including clearer cancellation errors for `azd exec`.
+
+### Other Changes
+
+- [[#10720]](https://github.com/Azure/azure-dev/pull/10720) Improve telemetry data minimization by omitting unsupported or unmatched hook names and removing builder image and tag collection. Thanks @JeffreyCA for the contribution!
+- [[#9783]](https://github.com/Azure/azure-dev/pull/9783) Add bounded diagnostic telemetry for dropped or rejected extension telemetry reports without recording rejected payload content.
+
+## 1.37.2 (2026-10-28)
+
+### Bugs Fixed
+
+- [[#10516]](https://github.com/Azure/azure-dev/pull/10516) Fix unresolved or empty environment variables in composite Deployment Stacks deny-list values being sent to Azure when the `deployment.stacks` alpha feature is enabled. Thanks @saikeerthan-14 for the contribution!
+- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Fix provisioning validation with clearer scope-aware warnings, default-No confirmation for critical warnings, errors for `--no-prompt` or unanswered critical confirmations, and cancellation that skips post-provision hooks without hiding parallel-layer failures. Thanks @hyoshis for the contribution!
+
+## 1.37.1 (2026-10-21)
+
+### Bugs Fixed
+
+- [[#10353]](https://github.com/Azure/azure-dev/pull/10353) Fix Ctrl+C cancellation not propagating across extension processes, RPC calls, and extension-started workflows, leaving work running after cancellation.
+- [[#10353]](https://github.com/Azure/azure-dev/pull/10353) Fix extension cancellations and timeouts being reported as generic failures.
+
+## 1.37.0 (2026-10-19)
+
+### Features Added
+
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Add per-command `launch.noAzdEnvironment` extension metadata to skip loading the selected azd environment and resolving its Key Vault references.
+- [[#10628]](https://github.com/Azure/azure-dev/pull/10628) Add stable v1 deployment-preview gRPC contracts and SDK APIs while preserving existing beta compatibility.
+- [[#10362]](https://github.com/Azure/azure-dev/pull/10362) Add beta `azd env unset`.
+
+### Bugs Fixed
+
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension service edits rewriting unrelated `azure.yaml` settings, including empty mappings, large integers, and environment templates.
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension selection prompts mixing terminal UI into JSON output instead of using the injected stderr writer.
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension command metadata, canonical paths, and flag resolution when using parent or child aliases and global flags.
+
+### Other Changes
+
+- [[#10572]](https://github.com/Azure/azure-dev/pull/10572) Update Go dependencies across core and first-party extensions, including gRPC v1.84.0 and OpenTelemetry v1.47.0.
+
 ## 1.36.0 (2026-10-14)
 
 ### Features Added

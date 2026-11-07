@@ -11,14 +11,17 @@ steps:
       artifactName: ${{ parameters.ArtifactName }}
       path: ${{ parameters.ArtifactDownloadPath }}
 
-  - task: AzurePowerShell@5
+  - task: AzureCLI@2
     displayName: Upload shield JSON info
     inputs:
       azureSubscription: 'Azure SDK Artifacts'
-      azurePowerShellVersion: LatestVersion
-      pwsh: true
-      ScriptType: InlineScript
-      Inline: |
-        azcopy copy "${{ parameters.ArtifactDownloadPath }}/${{ parameters.ArtifactFilename }}" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/${{ parameters.PublishDestination }}/shield.json" --overwrite=true
-    env:
-      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        az storage blob upload `
+          --account-name "$(publish-storage-account-name)" `
+          --auth-mode login `
+          --container-name '${{ parameters.StorageContainerName }}' `
+          --file '${{ parameters.ArtifactDownloadPath }}/${{ parameters.ArtifactFilename }}' `
+          --name '${{ parameters.PublishDestination }}/shield.json' `
+          --overwrite true

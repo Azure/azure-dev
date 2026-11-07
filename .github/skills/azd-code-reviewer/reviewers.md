@@ -1,3 +1,5 @@
+<!-- cspell:ignore runbooks -->
+
 # Reviewers
 
 Definitions for the 9 fixed specialist lenses and dynamic domain detection rules.
@@ -25,6 +27,7 @@ findings:
   - severity: critical | suggestion | nit | praise
     file: path/to/file.go
     line: 42
+    side: RIGHT
     summary: One-line description of the finding
     detail: |
       Full explanation with rationale. Why does this matter?
@@ -33,6 +36,10 @@ findings:
 ```
 
 `file` and `line` are optional — some findings are PR-level, not line-level. When `line` is provided, it MUST be a line that appears in the diff (GitHub API rejects comments on lines outside the diff).
+
+Use `side: RIGHT` with new-file line numbers for additions and modifications, and `side: LEFT` with old-file line
+numbers for deletion-only findings. `side` defaults to `RIGHT` when omitted by existing lenses; extension contract
+findings must include it explicitly. Preserve both fields through triage and final output, including for deleted files.
 
 ## Fixed Lenses
 
@@ -321,6 +328,9 @@ If there are no {domain}-specific concerns, contribute no findings.
 
 When applying the Observability Expert lens to telemetry field changes:
 
+- Follow the [privacy checklist's reviewer guidance](../../../docs/specs/metrics-audit/privacy-review-checklist.md#for-reviewers), which covers the actual values and the maintainer's coverage decision.
+- For new or renamed extension fields, apply the
+  [attribute naming rules](../../../cli/azd/docs/extensions/extension-telemetry.md#name-attributes-for-their-scope).
 - Verify every new or modified exported, package-level `fields.AttributeKey` sets non-empty
   `Classification` and `Purpose` metadata.
 - Compare each runtime key string with existing `AttributeKey` declarations. A telemetry key must be

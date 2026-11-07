@@ -16,7 +16,9 @@ import (
 	"strings"
 	"sync"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/envkey"
@@ -42,10 +44,24 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryReporter *agentContextReporter) {
 	azdClient := host.Client()
 	operationReporter := newOperationReporter()
+	retainRBACWarnings, err := featureflags.IsEnabled(featureflags.RBACWarnings)
+	if err != nil {
+		panic(err)
+	}
+	predeploy := func(
+		ctx context.Context, args *azdext.ServiceEventArgs,
+	) (*azdext.BetaServiceEventResponse, error) {
+		telemetryReporter.reportService(ctx, azdClient.Telemetry(), args.Project, args.Service, "deploy")
+		usage := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+		operationReporter.report(ctx, usage, "deploy", []agentTelemetry.OperationClass{
+			operationServiceClass(args.Service),
+		})
+		return predeployHandler(ctx, azdClient, args)
+	}
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
 	host.
-		WithBetaServiceTargetPreview(AiAgentHost, func() azdext.ServiceTargetProvider {
+		WithServiceTargetPreview(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
@@ -59,14 +75,6 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
 		}).
-		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-			telemetryReporter.reportService(ctx, azdClient.Telemetry(), args.Project, args.Service, "deploy")
-			usage := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
-			operationReporter.report(ctx, usage, "deploy", []agentTelemetry.OperationClass{
-				operationServiceClass(args.Service),
-			})
-			return predeployHandler(ctx, azdClient, args)
-		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return postdeployHandler(ctx, azdClient, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
@@ -77,10 +85,33 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		WithProjectEventHandler("postdown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postdownHandler(ctx, azdClient, args)
 		})
+
+	if retainRBACWarnings {
+		host.WithBetaServiceEventHandler("predeploy", predeploy, &azdext.ServiceEventOptions{Host: AiAgentHost})
+		return
+	}
+	host.WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+		response, err := predeploy(ctx, args)
+		if response != nil {
+			for _, message := range response.Messages {
+				fmt.Println(output.WithWarningFormat("%s", message.Message))
+				if message.Suggestion != "" {
+					fmt.Println(message.Suggestion)
+				}
+			}
+		}
+		return err
+	}, &azdext.ServiceEventOptions{Host: AiAgentHost})
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	if err := checkProjectPreviewFeatures(args.Project); err != nil {
+		return err
+	}
 	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
+		return err
+	}
+	if err := synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project); err != nil {
 		return err
 	}
 
@@ -213,11 +244,11 @@ func postprovisionHandler(
 
 // currentEnvName returns the name of the currently selected azd
 // environment, or empty string + error when no environment is
-// selected. Wraps Environment().GetCurrent so callers (notably
+// selected. Honors the host's explicit environment selection so
 // postprovisionHandler) can read the current env name without
 // duplicating the request shape.
 func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
-	resp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	resp, err := synthesis.CurrentEnvironment(ctx, azdClient)
 	if err != nil {
 		return "", err
 	}
@@ -227,12 +258,22 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 	return resp.Environment.Name, nil
 }
 
+// legacyProjectDeploymentsMu serializes the environment read, prompt, and
+// write of AI_PROJECT_DEPLOYMENTS. Each legacy agent service runs predeploy
+// in parallel when an explicit uses graph allows it, and they share one
+// project-wide list. Overlapping handlers can both observe a missing value,
+// prompt separately, and let the last write discard the other selection.
+var legacyProjectDeploymentsMu sync.Mutex
+
 func updateLegacyProjectDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	services map[string]*azdext.ServiceConfig,
 	projectRoot string,
 ) error {
+	legacyProjectDeploymentsMu.Lock()
+	defer legacyProjectDeploymentsMu.Unlock()
+
 	deployments, err := collectLegacyProjectDeployments(
 		services,
 		projectRoot,
@@ -251,6 +292,68 @@ func updateLegacyProjectDeployments(
 			err,
 		)
 	}
+	response, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
+	if err != nil {
+		return fmt.Errorf("read environment for legacy deployments: %w", err)
+	}
+	values := map[string]string{}
+	for _, kv := range response.GetKeyValues() {
+		values[kv.GetKey()] = kv.GetValue()
+	}
+	if strings.TrimSpace(values["AI_PROJECT_DEPLOYMENTS"]) != "" {
+		return nil
+	}
+	if !azdext.DetectInteractive().NoPrompt {
+		location := values["AZURE_AI_DEPLOYMENTS_LOCATION"]
+		if location == "" {
+			location = values["AZURE_LOCATION"]
+		}
+		azureContext := &azdext.AzureContext{Scope: &azdext.AzureScope{
+			SubscriptionId: values["AZURE_SUBSCRIPTION_ID"],
+			TenantId:       values["AZURE_TENANT_ID"],
+			Location:       location,
+		}}
+		resolved := make([]project.Deployment, 0, len(deployments))
+		for _, declaration := range deployments {
+			model, err := azdClient.Prompt().PromptAiModel(ctx, &azdext.PromptAiModelRequest{
+				AzureContext: azureContext,
+				DefaultValue: declaration.Model.Name,
+				Filter: &azdext.AiModelFilterOptions{
+					Locations: []string{azureContext.Scope.Location},
+				},
+				Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
+			})
+			if err != nil {
+				return exterrors.FromPrompt(err, "select legacy deployment model")
+			}
+			if model.GetModel().GetName() == "" {
+				return fmt.Errorf("no model selected for deployment %q", declaration.Name)
+			}
+			response, err := azdClient.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
+				AzureContext: azureContext,
+				ModelName:    model.GetModel().GetName(),
+				Options: &azdext.AiModelDeploymentOptions{
+					Locations: []string{azureContext.Scope.Location},
+				},
+				Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
+			})
+			if err != nil {
+				return exterrors.FromPrompt(err, "select legacy model deployment")
+			}
+			selected := response.GetDeployment()
+			if selected.GetModelName() == "" || selected.GetVersion() == "" ||
+				selected.GetSku().GetName() == "" || selected.GetCapacity() <= 0 {
+				return fmt.Errorf("incomplete model selection for deployment %q", declaration.Name)
+			}
+			declaration.Model.Name = selected.GetModelName()
+			declaration.Model.Format = selected.GetFormat()
+			declaration.Model.Version = selected.GetVersion()
+			declaration.Sku.Name = selected.GetSku().GetName()
+			declaration.Sku.Capacity = int(selected.GetCapacity())
+			resolved = append(resolved, declaration)
+		}
+		deployments = resolved
+	}
 	return deploymentEnvUpdate(
 		ctx,
 		deployments,
@@ -266,11 +369,32 @@ func updateLegacyProjectDeployments(
 // for each colliding service.
 var duplicateAgentNameWarnOnce sync.Once
 
-func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
+func predeployHandler(
+	ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs,
+) (*azdext.BetaServiceEventResponse, error) {
 	svc := args.Service
 
 	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
-		return err
+		return nil, err
+	}
+
+	notices, err := project.RequireAgentFeatureNotices(svc, args.Project.GetPath())
+	if err != nil {
+		return nil, err
+	}
+	messages := make([]azdext.BetaServiceEventMessage, 0, len(notices))
+	for _, notice := range notices {
+		messages = append(messages, azdext.BetaServiceEventMessage{
+			Kind:    azdext.BetaServiceEventMessageWarning,
+			Message: notice,
+		})
+	}
+	response := &azdext.BetaServiceEventResponse{Messages: messages}
+	fail := func(err error) (*azdext.BetaServiceEventResponse, error) {
+		return response, err
+	}
+	if err := synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project); err != nil {
+		return fail(err)
 	}
 
 	// Warn (once) when multiple agent services resolve to the same Foundry agent
@@ -286,7 +410,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		args.Project.Services,
 		args.Project.Path,
 	); err != nil {
-		return err
+		return fail(err)
 	}
 	// Prompt (kind=prompt) agents have no container settings — the harness owns
 	// the runtime. Without this guard SetAgentContainerSettings writes default
@@ -294,7 +418,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	// azd does not host.
 	if !project.ServiceIsPromptAgent(svc) {
 		if err := prepareContainerSettings(svc, args.Project.Path); err != nil {
-			return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+			return fail(fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err))
 		}
 	}
 	if err := envUpdate(
@@ -303,21 +427,34 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		args.Project,
 		svc,
 	); err != nil {
-		return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+		return fail(fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err))
+	}
+
+	hosted := isHostedAgentService(svc, args.Project)
+	rbacMessages, err := project.CheckDeveloperRBAC(ctx, azdClient, hosted)
+	messages = append(messages, rbacMessages...)
+	if err != nil {
+		response.Messages = messages
+		return response, err
 	}
 
 	// Capture the current session so it can be resumed on the newly deployed
 	// version after deploy (see session_carryover.go). Best-effort; hosted
 	// agents only.
-	hosted := isHostedAgentService(svc, args.Project)
 	if hosted {
 		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
-	if err := project.CheckDeveloperRBAC(ctx, azdClient, hosted); err != nil {
-		return err
-	}
+	response.Messages = messages
+	return response, nil
+}
 
+func checkProjectPreviewFeatures(config *azdext.ProjectConfig) error {
+	for _, service := range config.GetServices() {
+		if err := project.CheckAgentFeatures(service, config.GetPath()); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -588,7 +725,7 @@ func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.Serv
 // postdownHandler cleans up available saved agent context for services that were torn down.
 // This is best-effort — failures are logged but do not block azd down.
 func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	envResp, err := synthesis.CurrentEnvironment(ctx, azdClient)
 	if err != nil {
 		log.Printf("postdown: failed to get current environment: %v", err)
 		return nil
@@ -648,6 +785,9 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig, validateDeployment
 // Best-effort throughout — a harness failure is logged but never blocks down.
 func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	if err := validateRuntimeAgentServices(args.Project, false); err != nil {
+		return err
+	}
+	if err := synthesis.RequireACRReuseForProjectState(ctx, azdClient, args.Project); err != nil {
 		return err
 	}
 
@@ -1014,6 +1154,9 @@ func prepareContainerSettings(
 			"failed to normalize agent config: %w",
 			err,
 		)
+	}
+	if err := project.ResolveAgentContainerSettings(svc, projectRoot); err != nil {
+		return err
 	}
 	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
 	if err != nil {

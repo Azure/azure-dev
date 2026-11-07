@@ -1923,6 +1923,68 @@ func TestCreateHostedAgentAPIRequest_WithInvocationsModeration(t *testing.T) {
 // Session configuration (idle timeout) mapping
 // ---------------------------------------------------------------------------
 
+func TestCreateHostedAgentAPIRequest_MemorySnapshot(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"container", "code"} {
+		for _, setting := range []struct {
+			name  string
+			value *bool
+		}{
+			{name: "absent"},
+			{name: "disabled", value: new(false)},
+			{name: "enabled", value: new(true)},
+		} {
+			t.Run(mode+"/"+setting.name, func(t *testing.T) {
+				t.Parallel()
+				agent := ContainerAgent{
+					AgentDefinition:      AgentDefinition{Kind: AgentKindHosted, Name: "snapshot-agent"},
+					EnableMemorySnapshot: setting.value,
+				}
+				if mode == "code" {
+					agent.CodeConfiguration = &CodeConfiguration{Runtime: "python_3_13", EntryPoint: "main.py"}
+				} else {
+					agent.Image = "img:latest"
+				}
+
+				request, err := CreateHostedAgentAPIRequest(agent, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				data, err := json.Marshal(request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var payload struct {
+					Definition map[string]json.RawMessage `json:"definition"`
+				}
+				if err := json.Unmarshal(data, &payload); err != nil {
+					t.Fatal(err)
+				}
+				encoded, present := payload.Definition["enable_memory_snapshot"]
+				if setting.value == nil {
+					if present {
+						t.Fatalf("unset snapshot field must be omitted, got %s", encoded)
+					}
+					return
+				}
+				if !present {
+					t.Fatal("explicit snapshot field missing from request")
+				}
+				var actual bool
+				if err := json.Unmarshal(encoded, &actual); err != nil {
+					t.Fatal(err)
+				}
+				if actual != *setting.value {
+					t.Fatalf("snapshot value = %v, want %v", actual, *setting.value)
+				}
+				if _, present := payload.Definition["enableMemorySnapshot"]; present {
+					t.Fatal("YAML property name must not appear in the REST definition")
+				}
+			})
+		}
+	}
+}
+
 func TestCreateHostedAgentAPIRequest_ContainerSessionConfiguration(t *testing.T) {
 	t.Parallel()
 	agent := ContainerAgent{

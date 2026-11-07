@@ -326,6 +326,51 @@ func TestProjectLayersAlphaSchema(t *testing.T) {
 	schema, err := compiler.Compile(resourceURI)
 	require.NoError(t, err)
 
+	rawStableSchema, err := os.ReadFile(filepath.Join(repositoryRoot, "schemas", "v1.0", "azure.yaml.json"))
+	require.NoError(t, err)
+	var stableDocument map[string]any
+	require.NoError(t, json.Unmarshal(rawStableSchema, &stableDocument))
+	const stableURI = "mem://azure.v1.yaml.json"
+	require.NoError(t, compiler.AddResource(stableURI, stableDocument))
+	stableSchema, err := compiler.Compile(stableURI)
+	require.NoError(t, err)
+	for _, providerSchema := range []*jsonschema.Schema{schema, stableSchema} {
+		config := map[string]any{"private": nil, "settings": []any{true, "custom"}}
+		require.NoError(t, providerSchema.Validate(map[string]any{
+			"name": "extension-project",
+			"infra": map[string]any{
+				"provider": "custom", "config": config,
+			},
+		}))
+		require.NoError(t, providerSchema.Validate(map[string]any{
+			"name": "extension-project",
+			"infra": map[string]any{
+				"layers": []any{map[string]any{
+					"name": "extension", "provider": "custom", "config": config,
+				}},
+			},
+		}))
+		require.NoError(t, providerSchema.Validate(map[string]any{
+			"name": "legacy-project",
+			"resources": map[string]any{
+				"cache": map[string]any{"type": "db.redis"},
+			},
+		}))
+		for _, provider := range []string{"bicep", "terraform", ""} {
+			entry := map[string]any{"name": "native"}
+			if provider != "" {
+				entry["provider"] = provider
+			}
+			require.Error(t, providerSchema.Validate(map[string]any{
+				"name": "native-project", "infra": map[string]any{"layers": []any{entry}},
+			}))
+			entry["path"] = "infra/native"
+			require.NoError(t, providerSchema.Validate(map[string]any{
+				"name": "native-project", "infra": map[string]any{"layers": []any{entry}},
+			}))
+		}
+	}
+
 	layer := map[string]any{
 		"name": "application",
 		"infra": []any{map[string]any{

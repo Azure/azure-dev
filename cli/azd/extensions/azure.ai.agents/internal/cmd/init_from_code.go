@@ -4,17 +4,23 @@
 package cmd
 
 import (
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -38,6 +44,8 @@ type InitFromCodeAction struct {
 	createdFolderPath   string
 	serviceNameOverride string
 	sourceValidated     bool
+	acrSubscription     *azdext.AzureScope
+	noticeWriter        io.Writer // preview notices; nil means stdout
 
 	// selectedFoundryProject holds the existing Foundry project resolved during
 	// init (nil when creating a new project). It carries NetworkInjected so
@@ -80,7 +88,37 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		}
 	}
 
-	var err error
+	if err := validateCodeDeployInput(
+		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution,
+	); err != nil {
+		return err
+	}
+	if a.flags.acrResourceIDSet {
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
+		}
+	}
+	if err := validateInitACRProjectContent(
+		ctx, a.azdClient, a.flags, nil, "", valueOrDefault(a.projectTargetDir, "."),
+	); err != nil {
+		return err
+	}
+	protocols, err := selectHostedProtocols(ctx, a.azdClient, a.flags.noPrompt, a.flags.protocols, a.noticeWriter)
+	if err != nil {
+		return err
+	}
+	if err := a.resolveACREnvironment(ctx); err != nil {
+		return err
+	}
+	a.acrSubscription, err = planInitACRSubscription(
+		ctx, a.azdClient, a.flags, valueOrDefault(a.projectTargetDir, "."),
+	)
+	if err != nil {
+		return err
+	}
+	if err := ensureInitACRProjectsCapability(ctx, a.flags, a.azdClient); err != nil {
+		return err
+	}
 	a.projectConfig, err = a.ensureProject(ctx)
 	if err != nil {
 		return err
@@ -105,13 +143,6 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		a.flags.src = relPath
 	}
 
-	// Validate code deploy flags
-	if err := validateCodeDeployInput(
-		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution,
-	); err != nil {
-		return err
-	}
-
 	// Default src to current directory when not specified
 	srcDir = a.flags.src
 	if srcDir == "" {
@@ -120,7 +151,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 
 	// No manifest pointer provided - process local agent code
 	// Create a definition based on user prompts
-	localDefinition, err := a.createDefinitionFromLocalAgent(ctx)
+	localDefinition, err := a.createDefinitionFromLocalAgent(ctx, protocols)
 	if err != nil {
 		return fmt.Errorf("failed to create definition from local agent: %w", err)
 	}
@@ -147,7 +178,10 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		// Generate .agentignore. The agent definition is written into the
 		// azure.yaml service entry below, not to an on-disk agent.yaml.
 		if strings.TrimSpace(localDefinition.Image) == "" {
-			if err := a.writeAgentIgnoreToSrcDir(srcDir); err != nil {
+			endGeneration := inittelemetry.Start(ctx, inittelemetry.FileGeneration)
+			err := a.writeAgentIgnoreToSrcDir(srcDir)
+			endGeneration()
+			if err != nil {
 				return fmt.Errorf("failed to write .agentignore: %w", err)
 			}
 		}
@@ -157,6 +191,8 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		if err := a.addToProject(ctx, srcDir, localDefinition, isCodeDeploy); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
+
+		printNativeA2AGuidance(os.Stdout, localDefinition)
 
 		// Run post-init validations (advisory warnings only)
 		validatePostInit(srcDir, localDefinition.CodeConfiguration)
@@ -190,9 +226,10 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	if a.projectTargetDir != "" {
 		return ensureProject(ctx, a.flags, a.azdClient, a.projectTargetDir)
 	}
-
 	projectResponse, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
+		defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
+
 		fmt.Println("Let's get your project initialized.")
 
 		// Derive an environment name when the user didn't pass --environment.
@@ -266,18 +303,53 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	return projectResponse.Project, nil
 }
 
+func (a *InitFromCodeAction) resolveACREnvironment(ctx context.Context) error {
+	if !a.flags.acrResourceIDSet || a.flags.env != "" || a.projectTargetDir != "" {
+		return nil
+	}
+	if _, err := azdext.GetProjectDir(); errors.Is(err, azdext.ErrProjectNotFound) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("resolve project before planning the environment: %w", err)
+	}
+	if env := getExistingEnvironment(ctx, "", a.azdClient); env != nil {
+		return nil
+	}
+
+	defaultName := "my-agent"
+	if cwd, err := os.Getwd(); err == nil {
+		defaultName = sanitizeAgentName(filepath.Base(cwd))
+	}
+	agentName, err := resolveInitAgentName(ctx, a.azdClient, a.flags, defaultName)
+	if err != nil {
+		return err
+	}
+	a.flags.resolvedAgentName = agentName
+	a.flags.resolvedEnvironmentName = sanitizeAgentName(agentName + "-dev")
+	return nil
+}
+
 // createDefinitionFromLocalAgent creates a ContainerAgent for local agent code
 // This is used when no manifest pointer is provided and we need to scaffold a new agent
-func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context) (*agent_yaml.ContainerAgent, error) {
+func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
+	ctx context.Context, protocols []agent_yaml.ProtocolVersionRecord,
+) (*agent_yaml.ContainerAgent, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.AgentConfiguration)()
+
 	// Default agent name to sanitized cwd
 	defaultName := "my-agent"
 	if cwd, err := os.Getwd(); err == nil {
 		defaultName = sanitizeAgentName(filepath.Base(cwd))
 	}
 
-	agentName, err := resolveInitAgentName(ctx, a.azdClient, a.flags, defaultName)
-	if err != nil {
-		return nil, err
+	agentName := a.flags.resolvedAgentName
+	if agentName == "" {
+		var err error
+		agentName, err = resolveInitAgentName(ctx, a.azdClient, a.flags, defaultName)
+		if err != nil {
+			return nil, err
+		}
+		a.flags.resolvedAgentName = agentName
 	}
 
 	// Create the azd environment now that we have the agent name
@@ -286,7 +358,13 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			a.environment = env
 			a.flags.env = env.Name
 		} else {
-			envName := sanitizeAgentName(agentName + "-dev")
+			envName := a.flags.env
+			if envName == "" {
+				envName = valueOrDefault(
+					a.flags.resolvedEnvironmentName,
+					sanitizeAgentName(agentName+"-dev"),
+				)
+			}
 			env, err := createNewEnvironment(ctx, a.azdClient, envName)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create azd environment: %w", err)
@@ -306,6 +384,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 		a.azureContext = azureContext
 	}
+	if a.acrSubscription != nil {
+		a.azureContext.Scope.SubscriptionId = a.acrSubscription.SubscriptionId
+		a.azureContext.Scope.TenantId = a.acrSubscription.TenantId
+	}
 	// TODO: Prompt user for agent kind
 	agentKind := agent_yaml.AgentKindHosted
 
@@ -317,7 +399,8 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	}
 	showCodeDeploy := supportsCodeDeploy(srcDir)
 	requestedDeployMode := a.flags.deployMode
-	if strings.TrimSpace(a.flags.image) != "" {
+	if strings.TrimSpace(a.flags.image) != "" ||
+		a.flags.acrResourceIDSet || a.flags.effectiveACRResourceID != "" {
 		requestedDeployMode = "container"
 	}
 	deployMode, err := promptDeployMode(
@@ -332,7 +415,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		return nil, err
 	}
 
-	if a.flags.projectResourceId == "" {
+	if a.flags.projectResourceId == "" && initACRResourceID(a.flags) == "" {
 		projectResourceId, err := getEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_PROJECT_ID")
 		if err != nil {
 			return nil, fmt.Errorf("failed to read AZURE_AI_PROJECT_ID: %w", err)
@@ -355,11 +438,6 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	protocols, err := promptProtocols(ctx, a.azdClient.Prompt(), a.flags.noPrompt, a.flags.protocols)
-	if err != nil {
-		return nil, err
 	}
 
 	// Step 1: Foundry project selection
@@ -419,10 +497,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			return nil, err
 		}
 		deferredAzureContext = true
-	} else if a.flags.noPrompt {
+	} else if a.flags.noPrompt || initACRResourceID(a.flags) != "" {
 		newCred, err := configureNewProjectForNoPrompt(
 			ctx, a.azdClient, a.environment.Name, a.azureContext,
-			"Select an Azure subscription to look up available models and provision your Foundry project resources.",
+			initACRResourceID(a.flags),
 		)
 		if err != nil {
 			return nil, err
@@ -644,18 +722,8 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 	}
 
-	// An activity agent additionally advertises the friendly "activity" endpoint
-	// guarded by BotServiceRbac. We compose this into any existing agent_endpoint
-	// rather than overwriting it, so Activity can coexist with the other
-	// protocols the agent selected (responses/invocations). Injecting it here
-	// mirrors the manifest-based init so the generated azure.yaml is identical and
-	// `azd deploy` provisions the Azure Bot connector. Phase 1 covers the simple
-	// use case; digital-worker is a Phase 2 addition. No-op for non-activity agents.
-	if project.IsActivityProtocol(*definition) {
-		definition.AgentEndpoint = project.ComposeActivityAgentEndpoint(
-			definition.AgentEndpoint, definition.Protocols,
-		)
-	}
+	// Enable public endpoints without replacing existing auth or routing settings.
+	composeLocalAgentEndpoint(definition)
 
 	// Add model resource if a model was selected
 	if existingDeployment != nil {
@@ -887,6 +955,8 @@ func (a *InitFromCodeAction) addToProject(
 	definition *agent_yaml.ContainerAgent,
 	isCodeDeploy bool,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectConfiguration)()
+
 	agentName := definition.Name
 	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	if a.serviceNameOverride != "" {
@@ -1012,6 +1082,7 @@ func (a *InitFromCodeAction) addToProject(
 			return projectAuthoringCurrent
 		}(),
 		a.flags.noPrompt,
+		initACRResourceID(a.flags),
 	); err != nil {
 		return err
 	}
@@ -1044,6 +1115,44 @@ func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context, srcDir
 	}, false)
 }
 
+// composeLocalAgentEndpoint enables selected endpoints while preserving auth and routing settings.
+func composeLocalAgentEndpoint(definition *agent_yaml.ContainerAgent) {
+	if project.IsActivityProtocol(*definition) {
+		definition.AgentEndpoint = project.ComposeActivityAgentEndpoint(
+			definition.AgentEndpoint, definition.Protocols,
+		)
+	}
+	if !hasNativeA2A(definition) {
+		return
+	}
+	if definition.AgentEndpoint == nil {
+		definition.AgentEndpoint = &agent_yaml.AgentEndpoint{}
+	}
+	for _, protocol := range definition.Protocols {
+		name := protocol.Protocol
+		if name == "activity_protocol" {
+			name = "activity"
+		}
+		if !slices.Contains(definition.AgentEndpoint.Protocols, name) {
+			definition.AgentEndpoint.Protocols = append(definition.AgentEndpoint.Protocols, name)
+		}
+	}
+}
+
+func hasNativeA2A(definition *agent_yaml.ContainerAgent) bool {
+	return slices.ContainsFunc(definition.Protocols, func(protocol agent_yaml.ProtocolVersionRecord) bool {
+		return protocol.Protocol == "a2a" && protocol.Version == "1.0.0"
+	})
+}
+
+func printNativeA2AGuidance(writer io.Writer, definition *agent_yaml.ContainerAgent) {
+	if hasNativeA2A(definition) {
+		fmt.Fprintln(writer, "\nA2A hosted agent (1.0) configured; init does not generate an A2A server.")
+		fmt.Fprintln(writer, "Your agent implementation must serve POST /a2a, POST /invocations/a2a, "+
+			"GET /invocations/a2a/.well-known/agent-card.json, and GET /readiness.")
+	}
+}
+
 // protocolInfo pairs a protocol name with the default generated version.
 type protocolInfo struct {
 	Name    string
@@ -1065,6 +1174,76 @@ var knownProtocols = []protocolInfo{
 	// forward), so new agents default to it, matching the latest-version
 	// convention responses uses.
 	{Name: "activity", Version: "2.0.0"},
+	// Foundry declares 1.0.0; public A2A headers use 1.0.
+	// https://a2a-protocol.org/v1.0.0/specification/#36-versioning.
+	{Name: "a2a", Version: "1.0.0"},
+}
+
+func protocolNames(voiceEnabled, a2aEnabled bool) []string {
+	names := make([]string, 0, len(knownProtocols))
+	for _, protocol := range knownProtocols {
+		if protocol.Name == "invocations_ws" && !voiceEnabled || protocol.Name == "a2a" && !a2aEnabled {
+			continue
+		}
+		names = append(names, protocol.Name)
+	}
+	return names
+}
+
+func selectHostedProtocols(
+	ctx context.Context, client *azdext.AzdClient, noPrompt bool, explicit []string, writer io.Writer,
+) ([]agent_yaml.ProtocolVersionRecord, error) {
+	if len(explicit) > 0 {
+		return selectExplicitHostedProtocols(explicit, writer)
+	}
+	if noPrompt {
+		return promptProtocols(ctx, nil, true, nil, false, false)
+	}
+	voiceEnabled, err := featureflags.IsEnabled(featureflags.Voice)
+	if err != nil {
+		return nil, err
+	}
+	a2aEnabled, err := featureflags.IsEnabled(featureflags.A2A)
+	if err != nil {
+		return nil, err
+	}
+	records, err := promptProtocols(ctx, client.Prompt(), false, nil, voiceEnabled, a2aEnabled)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireProtocolPreviewFeatures(records, writer); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+// selectExplicitHostedProtocols validates parsed selections before authentication or writes.
+func selectExplicitHostedProtocols(explicit []string, writer io.Writer) ([]agent_yaml.ProtocolVersionRecord, error) {
+	records, err := validateExplicitProtocols(explicit)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireProtocolPreviewFeatures(records, writer); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+// requireProtocolPreviewFeatures announces the preview switch for each selected preview protocol.
+func requireProtocolPreviewFeatures(records []agent_yaml.ProtocolVersionRecord, writer io.Writer) error {
+	for _, record := range records {
+		switch record.Protocol {
+		case "invocations_ws":
+			if err := featureflags.RequireWithWriter(featureflags.Voice, writer); err != nil {
+				return err
+			}
+		case "a2a":
+			if err := featureflags.RequireWithWriter(featureflags.A2A, writer); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // promptProtocols asks the user which protocols their agent supports.
@@ -1075,7 +1254,10 @@ func promptProtocols(
 	promptClient azdext.PromptServiceClient,
 	noPrompt bool,
 	flagProtocols []string,
+	voiceEnabled, a2aEnabled bool,
 ) ([]agent_yaml.ProtocolVersionRecord, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ProtocolSelection)()
+
 	// If explicit flag values were provided, use them directly (with dedup).
 	if len(flagProtocols) > 0 {
 		return validateExplicitProtocols(flagProtocols)
@@ -1089,9 +1271,13 @@ func promptProtocols(
 	}
 
 	// Build multi-select choices; "responses" is pre-selected.
-	versionOf := knownProtocolVersions()
+	versionOf := make(map[string]string)
 	choices := make([]*azdext.MultiSelectChoice, 0, len(knownProtocols))
 	for _, p := range knownProtocols {
+		if p.Name == "invocations_ws" && !voiceEnabled || p.Name == "a2a" && !a2aEnabled {
+			continue
+		}
+		versionOf[p.Name] = p.Version
 		choices = append(choices, &azdext.MultiSelectChoice{
 			Value:    p.Name,
 			Label:    p.Name,
@@ -1179,11 +1365,7 @@ func validateExplicitProtocols(flagProtocols []string) ([]agent_yaml.ProtocolVer
 
 // knownProtocolNames returns a comma-separated list of known protocol names.
 func knownProtocolNames() string {
-	names := make([]string, 0, len(knownProtocols))
-	for _, p := range knownProtocols {
-		names = append(names, p.Name)
-	}
-	return strings.Join(names, ", ")
+	return strings.Join(protocolNames(true, true), ", ")
 }
 
 // promptDeployMode asks the user to choose between code deploy and container deploy.
@@ -1191,6 +1373,8 @@ func knownProtocolNames() string {
 // When noPrompt is true and no flag is provided, defaults to "code".
 // When showCodeDeploy is false and no explicit flag overrides, code deploy is not offered.
 func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool, deployModeFlag string, userProvidedTemplate bool) (string, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.DeployModeSelection)()
+
 	// Resolution precedence:
 	//   1. Explicit flag (--deploy-mode) — always wins
 	//   2. !showCodeDeploy — container is the only option (not Python/.NET)
@@ -1308,6 +1492,8 @@ type codeDeployOptions struct {
 // promptCodeConfig prompts for code deploy configuration (runtime, entry point,
 // dependency resolution). When noPrompt is true, flags or defaults are used without prompting.
 func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir string, noPrompt bool, opts codeDeployOptions, userProvidedTemplate bool) (*agent_yaml.CodeConfiguration, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.CodeConfiguration)()
+
 	if srcDir == "" {
 		srcDir = "."
 	}

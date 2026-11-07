@@ -1,0 +1,280 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "microsoft-foundry/content-understanding-cli",
+    "commit": "25d39b30116a840491b7b6f393d6db792b38d4a4",
+    "license": "MIT",
+    "files": {
+      "packages/core/tests/test_command_spec.py": "d62624647ab1acfca46cf4a484f0df933c66b9642eaddcee39de606e78c4d0a0",
+      "packages/core/src/cu_cli_core/command_spec.py": "073fb0d107b050ac6a2ba97813620f01d690f5993af6b68ab6b5daf51b6d4286",
+      "packages/core/src/cu_cli_core/contracts.py": "1facc2b6b4cd36ede842c98431a35c798f5e6dcd66af8029b5f73ed8803a6fea",
+      "packages/core/src/cu_cli_core/serialization.py": "ec6645b824189daa5434adc2cede102ed6d10176672f5d6846c75fcaa026fd31",
+      "packages/core/src/cu_cli_core/operations/analyzer_copy.py": "baf4e055bdcb7f94e9be1a0f5ef573423ffcaebcb5105dc91ca82a24984c9344"
+    }
+  },
+  "data": {
+    "cases": [
+      {
+        "name": "same-resource",
+        "http": [
+          {
+            "request": {
+              "method": "GET",
+              "url": "https://sanitized.services.ai.azure.com/contentunderstanding/analyzers/dev?api-version=2025-11-01",
+              "headers": {
+                "Accept": "application/json"
+              },
+              "body_mode": "none",
+              "body": null
+            },
+            "response": {
+              "status": 200,
+              "headers": {
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "analyzerId": "dev",
+                "status": "ready",
+                "baseAnalyzerId": "prebuilt-document",
+                "description": "Synthetic core-copy model.",
+                "metadata": {
+                  "exactInteger": 9007199254740993,
+                  "synthetic": true
+                }
+              }
+            }
+          },
+          {
+            "request": {
+              "method": "GET",
+              "url": "https://sanitized.services.ai.azure.com/contentunderstanding/analyzers/prod?api-version=2025-11-01",
+              "headers": {
+                "Accept": "application/json"
+              },
+              "body_mode": "none",
+              "body": null
+            },
+            "response": {
+              "status": 404,
+              "headers": {
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "error": {
+                  "code": "NotFound",
+                  "message": "Synthetic missing analyzer."
+                }
+              }
+            }
+          },
+          {
+            "request": {
+              "method": "POST",
+              "url": "https://sanitized.services.ai.azure.com/contentunderstanding/analyzers/prod:copy?api-version=2025-11-01&allowReplace=false",
+              "headers": {
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+              },
+              "body_mode": "json",
+              "body": {
+                "sourceAnalyzerId": "dev"
+              }
+            },
+            "response": {
+              "status": 201,
+              "headers": {
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "analyzerId": "prod",
+                "status": "ready",
+                "baseAnalyzerId": "prebuilt-document",
+                "description": "Synthetic core-copy model.",
+                "metadata": {
+                  "exactInteger": 9007199254740993,
+                  "synthetic": true
+                }
+              }
+            }
+          }
+        ],
+        "gets": [
+          {
+            "name": "dev",
+            "result": {
+              "analyzerId": "dev",
+              "status": "ready",
+              "baseAnalyzerId": "prebuilt-document",
+              "description": "Synthetic core-copy model.",
+              "metadata": {
+                "exactInteger": 9007199254740993,
+                "synthetic": true
+              }
+            },
+            "missing": false
+          },
+          {
+            "name": "prod",
+            "result": null,
+            "missing": true
+          }
+        ],
+        "copied": true,
+        "result": {
+          "analyzerId": "prod",
+          "status": "ready",
+          "baseAnalyzerId": "prebuilt-document",
+          "description": "Synthetic core-copy model.",
+          "metadata": {
+            "exactInteger": 9007199254740993,
+            "synthetic": true
+          }
+        },
+        "error_code": "",
+        "error": null
+      },
+      {
+        "name": "destination-exists",
+        "http": [
+          {
+            "request": {
+              "method": "GET",
+              "url": "https://sanitized.services.ai.azure.com/contentunderstanding/analyzers/dev?api-version=2025-11-01",
+              "headers": {
+                "Accept": "application/json"
+              },
+              "body_mode": "none",
+              "body": null
+            },
+            "response": {
+              "status": 200,
+              "headers": {
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "analyzerId": "dev",
+                "status": "ready",
+                "baseAnalyzerId": "prebuilt-document",
+                "description": "Synthetic core-copy model.",
+                "metadata": {
+                  "exactInteger": 9007199254740993,
+                  "synthetic": true
+                }
+              }
+            }
+          },
+          {
+            "request": {
+              "method": "GET",
+              "url": "https://sanitized.services.ai.azure.com/contentunderstanding/analyzers/prod?api-version=2025-11-01",
+              "headers": {
+                "Accept": "application/json"
+              },
+              "body_mode": "none",
+              "body": null
+            },
+            "response": {
+              "status": 200,
+              "headers": {
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "analyzerId": "prod",
+                "status": "ready",
+                "baseAnalyzerId": "prebuilt-document",
+                "description": "Synthetic core-copy model.",
+                "metadata": {
+                  "exactInteger": 9007199254740993,
+                  "synthetic": true
+                }
+              }
+            }
+          }
+        ],
+        "gets": [
+          {
+            "name": "dev",
+            "result": {
+              "analyzerId": "dev",
+              "status": "ready",
+              "baseAnalyzerId": "prebuilt-document",
+              "description": "Synthetic core-copy model.",
+              "metadata": {
+                "exactInteger": 9007199254740993,
+                "synthetic": true
+              }
+            },
+            "missing": false
+          },
+          {
+            "name": "prod",
+            "result": {
+              "analyzerId": "prod",
+              "status": "ready",
+              "baseAnalyzerId": "prebuilt-document",
+              "description": "Synthetic core-copy model.",
+              "metadata": {
+                "exactInteger": 9007199254740993,
+                "synthetic": true
+              }
+            },
+            "missing": false
+          }
+        ],
+        "copied": false,
+        "result": null,
+        "error_code": "copy_destination_exists",
+        "error": {
+          "category": "service",
+          "status_code": 409,
+          "message": "The destination analyzer already exists; nothing was replaced.",
+          "hint": "Use a new versioned destination ID, or inspect and explicitly delete it at the destination resource."
+        }
+      },
+      {
+        "name": "source-missing",
+        "http": [
+          {
+            "request": {
+              "method": "GET",
+              "url": "https://sanitized.services.ai.azure.com/contentunderstanding/analyzers/dev?api-version=2025-11-01",
+              "headers": {
+                "Accept": "application/json"
+              },
+              "body_mode": "none",
+              "body": null
+            },
+            "response": {
+              "status": 404,
+              "headers": {
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "error": {
+                  "code": "NotFound",
+                  "message": "Synthetic missing analyzer."
+                }
+              }
+            }
+          }
+        ],
+        "gets": [
+          {
+            "name": "dev",
+            "result": null,
+            "missing": true
+          }
+        ],
+        "copied": false,
+        "result": null,
+        "error_code": "copy_source_not_found",
+        "error": {
+          "category": "service",
+          "status_code": 404,
+          "message": "The source analyzer was not found.",
+          "hint": "Check the source analyzer ID and source resource."
+        }
+      }
+    ]
+  }
+}

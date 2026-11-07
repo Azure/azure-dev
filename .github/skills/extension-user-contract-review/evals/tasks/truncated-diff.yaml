@@ -1,0 +1,25 @@
+id: truncated-diff
+name: An unread extension file cannot be counted as inspected
+tags: [negative, blocked]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Internal refactor".
+    Complete changed-file list:
+    cli/azd/extensions/example/internal/cmd/list.go
+    cli/azd/extensions/example/internal/cmd/create.go
+    list.go diff: private local variable renamed from items to formats with identical values and behavior.
+    RIGHT changed line 12: func labels() []string { formats := []string{"table","json"}; return formats }
+    create.go diff: unavailable because the harness truncated the payload. Its current and prior source are also
+    unavailable, and the harness has no tool capable of retrieving them.
+    Complete conversation and review history: empty.
+graders:
+  - type: program
+    name: incomplete-coverage-is-blocked
+    config:
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 0"
+        - "/Extension user-contract review: blocked/i.test(review.body)"
+        - "/create.go|truncated/i.test(review.body)"
+        - "!review.body.includes('Extension user-contract review: complete')"

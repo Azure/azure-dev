@@ -4,6 +4,10 @@ command: 'azd ai agent invoke "hello" --no-wait'
 cwd: "/tmp"
 tags: ["tier:0", "cmd:invoke", "negative-path", "parallel-safe"]
 
+# Long-running invocation is a preview. Enable it so option validation runs.
+env:
+  AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING: "true"
+
 goals:
   - "Confirm the initial command exits non-zero with '--no-wait requires --long-running'."
   - "Run 'azd ai agent invoke --help'. Confirm it exits with code 0, advertises --long-running and --no-wait, and explains continued service-side execution after disconnection separately from returning after receiving an ID."

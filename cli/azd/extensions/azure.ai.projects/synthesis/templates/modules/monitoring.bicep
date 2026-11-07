@@ -24,6 +24,12 @@ param peSubnetId string = ''
 param dnsZonesResourceGroup string = ''
 param dnsZonesSubscription string = ''
 
+@description('When true, the project uses managed egress and needs an outbound rule so the managed network can reach the private link scope.')
+param managedEgressRule bool = false
+
+// Azure AI Enterprise Network Connection Approver: lets the account approve the managed private endpoint.
+var networkConnectionApproverRoleId = 'b556d68e-0be0-4f35-a333-ad7ee1ce17ea'
+
 var createResources = mode == 'create'
 var publicNetworkAccess = privateNetwork ? 'Disabled' : 'Enabled'
 var token = uniqueString(projectResourceId, resourceGroup().id, resourceTokenSalt)
@@ -76,6 +82,33 @@ module privateLink 'monitor-private-link.bicep' = if ((createResources || mode =
     dnsZonesResourceGroup: dnsZonesResourceGroup
     dnsZonesSubscription: dnsZonesSubscription
   }
+}
+
+resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = if (managedEgressRule) {
+  name: projectParts[8]
+}
+
+resource networkApproverAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (managedEgressRule) {
+  name: guid(resourceGroup().id, projectResourceId, networkConnectionApproverRoleId)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', networkConnectionApproverRoleId)
+    principalId: foundryAccount!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+#disable-next-line BCP081
+resource managedNetworkRule 'Microsoft.CognitiveServices/accounts/managedNetworks/outboundRules@2025-10-01-preview' = if (managedEgressRule) {
+  name: '${projectParts[8]}/default/ampls-monitor-rule'
+  properties: {
+    type: 'PrivateEndpoint'
+    destination: {
+      serviceResourceId: privateLink!.outputs.azureMonitorPrivateLinkScopeResourceId
+      subresourceTarget: 'azuremonitor'
+    }
+    category: 'UserDefined'
+  }
+  dependsOn: [networkApproverAssignment]
 }
 
 module resync 'monitoring-resync.bicep' = if (createResources && privateNetwork) {

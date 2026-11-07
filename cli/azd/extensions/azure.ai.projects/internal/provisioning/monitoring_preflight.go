@@ -91,9 +91,6 @@ func (p *FoundryProvisioningProvider) privateMonitoringSkipReason(
 	resolver *synthesis.MonitoringResolver,
 	previous *monitoringTargetBinding,
 ) (string, error) {
-	if managed, _ := templateParameter(source, "useManagedEgress"); managed == true {
-		return "managed egress cannot reach a private Azure Monitor endpoint in your virtual network", nil
-	}
 	ownedScopeID := p.ownedPrivateLinkScope(source, previous)
 	owned := ownedScopeID != "" || (previous != nil && previous.owned)
 	// Skipping would record monitoringMode none and drop the binding of an owned graph.
@@ -173,12 +170,6 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 	}
 	if mode != "create" && mode != "reuse-connect" && mode != "already-connected" {
 		return fmt.Errorf("monitoringMode must be none, create, reuse-connect, or already-connected")
-	}
-	if managed, _ := templateParameter(source, "useManagedEgress"); managed == true && monitoringPrivateNetwork(source) &&
-		(mode == "create" || mode == "reuse-connect") {
-		skipPrivateMonitoring(source, progress,
-			"managed egress cannot reach a private Azure Monitor endpoint in your virtual network")
-		return nil
 	}
 	componentID, err := monitoringParameter(source, "applicationInsightsResourceId")
 	if err != nil {

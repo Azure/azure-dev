@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "16542737369431655029"
+      "templateHash": "3163459157451933935"
     }
   },
   "definitions": {
@@ -336,8 +336,10 @@
     }
   },
   "variables": {
-    "privateMonitoringBlocked": "[and(and(parameters('enableNetworkIsolation'), or(parameters('useManagedEgress'), not(parameters('monitoringPrivateLinkApproved')))), or(equals(parameters('monitoringMode'), 'create'), equals(parameters('monitoringMode'), 'reuse-connect')))]",
-    "effectiveMonitoringMode": "[if(variables('privateMonitoringBlocked'), 'none', parameters('monitoringMode'))]"
+    "privateMonitoringBlocked": "[and(and(parameters('enableNetworkIsolation'), not(parameters('monitoringPrivateLinkApproved'))), or(equals(parameters('monitoringMode'), 'create'), equals(parameters('monitoringMode'), 'reuse-connect')))]",
+    "effectiveMonitoringMode": "[if(variables('privateMonitoringBlocked'), 'none', parameters('monitoringMode'))]",
+    "managedMonitoringRule": "[and(and(parameters('enableNetworkIsolation'), parameters('useManagedEgress')), or(equals(variables('effectiveMonitoringMode'), 'create'), equals(variables('effectiveMonitoringMode'), 'reuse-connect')))]",
+    "effectiveManagedIsolationMode": "[if(and(variables('managedMonitoringRule'), empty(parameters('managedIsolationMode'))), 'AllowInternetOutbound', parameters('managedIsolationMode'))]"
   },
   "resources": {
     "resourceGroup": {
@@ -431,7 +433,7 @@
             "value": "[parameters('createPESubnet')]"
           },
           "managedIsolationMode": {
-            "value": "[parameters('managedIsolationMode')]"
+            "value": "[variables('effectiveManagedIsolationMode')]"
           },
           "dnsZonesResourceGroup": {
             "value": "[parameters('dnsZonesResourceGroup')]"
@@ -2519,6 +2521,9 @@
           "peSubnetId": {
             "value": "[reference('resources').outputs.NETWORK_PE_SUBNET_ID.value]"
           },
+          "managedEgressRule": {
+            "value": "[variables('managedMonitoringRule')]"
+          },
           "dnsZonesResourceGroup": {
             "value": "[parameters('dnsZonesResourceGroup')]"
           },
@@ -2533,7 +2538,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "4682671837567762900"
+              "templateHash": "9994627183557504386"
             }
           },
           "parameters": {
@@ -2601,9 +2606,17 @@
             "dnsZonesSubscription": {
               "type": "string",
               "defaultValue": ""
+            },
+            "managedEgressRule": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "When true, the project uses managed egress and needs an outbound rule so the managed network can reach the private link scope."
+              }
             }
           },
           "variables": {
+            "networkConnectionApproverRoleId": "b556d68e-0be0-4f35-a333-ad7ee1ce17ea",
             "createResources": "[equals(parameters('mode'), 'create')]",
             "publicNetworkAccess": "[if(parameters('privateNetwork'), 'Disabled', 'Enabled')]",
             "token": "[uniqueString(parameters('projectResourceId'), resourceGroup().id, parameters('resourceTokenSalt'))]",
@@ -2645,6 +2658,35 @@
               },
               "dependsOn": [
                 "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('managedEgressRule')]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceGroup().id, parameters('projectResourceId'), variables('networkConnectionApproverRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('networkConnectionApproverRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('projectParts')[8]), '2025-06-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              }
+            },
+            {
+              "condition": "[parameters('managedEgressRule')]",
+              "type": "Microsoft.CognitiveServices/accounts/managedNetworks/outboundRules",
+              "apiVersion": "2025-10-01-preview",
+              "name": "[format('{0}/default/ampls-monitor-rule', variables('projectParts')[8])]",
+              "properties": {
+                "type": "PrivateEndpoint",
+                "destination": {
+                  "serviceResourceId": "[reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link'), '2025-04-01').outputs.azureMonitorPrivateLinkScopeResourceId.value]",
+                  "subresourceTarget": "azuremonitor"
+                },
+                "category": "UserDefined"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, parameters('projectResourceId'), variables('networkConnectionApproverRoleId')))]",
+                "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link')]"
               ]
             },
             {

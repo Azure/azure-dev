@@ -550,7 +550,7 @@ func TestMonitoringPreflightPrivateNetworkGates(t *testing.T) {
 		wantMode string
 		approved bool
 	}{
-		{name: "managed egress is skipped", extra: map[string]any{"useManagedEgress": true}, wantMode: "none"},
+		{name: "managed egress is verified and approved", extra: map[string]any{"useManagedEgress": true}, declared: true, wantMode: "reuse-connect", approved: true},
 		{name: "shared DNS zones are skipped", extra: map[string]any{"dnsZonesResourceGroup": "dns-rg"}, wantMode: "none"},
 		{name: "verified network is approved", declared: true, wantMode: "reuse-connect", approved: true},
 		{name: "template without the gate is left alone", wantMode: "reuse-connect"},

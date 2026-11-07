@@ -207,11 +207,16 @@ modifying the component. The component must keep local authentication enabled.
 azd does not re-update a component it does not own; if ingestion returns 403
 after provisioning, touching the component (for example, updating a tag) can
 clear it.
-Unsupported private-network cases never block provisioning: managed egress,
-shared private DNS zones (`network.dns`), a virtual network that already has an
+Unsupported private-network cases never block provisioning: shared private DNS zones (`network.dns`), a virtual network that already has an
 Azure Monitor private endpoint (azd does not adopt an existing scope or
 endpoint), or a network azd cannot inspect skip automatic monitoring and azd
-prints a warning (also on stderr). Ejected or hand-authored Bicep that bypasses
+prints a warning (also on stderr). With managed egress (no `agentSubnet`), azd
+also adds an `ampls-monitor-rule` outbound rule to the managed network so the
+agent runtime reaches the Private Link Scope through a managed private endpoint,
+and grants the account identity the Azure AI Enterprise Network Connection
+Approver role on the resource group so the endpoint is approved. If you set no
+`isolationMode`, azd uses `AllowInternetOutbound` so the managed network exists.
+Ejected or hand-authored Bicep that bypasses
 azd's checks never creates the private path unless
 `monitoringPrivateLinkApproved` is set. Set `monitoring.enabled: false` to opt
 out silently.

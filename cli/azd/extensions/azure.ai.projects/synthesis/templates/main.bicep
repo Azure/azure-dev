@@ -160,9 +160,12 @@ param dnsZonesSubscription string = ''
 @description('Set by azd after it verified the VNet has no conflicting Azure Monitor private endpoint. A network-isolated deployment without it never creates the private monitoring path.')
 param monitoringPrivateLinkApproved bool = false
 
-// Private monitoring needs a customer VNet (not managed egress) and a verified network.
-var privateMonitoringBlocked = enableNetworkIsolation && (useManagedEgress || !monitoringPrivateLinkApproved) && (monitoringMode == 'create' || monitoringMode == 'reuse-connect')
+// Private monitoring needs a verified network. Managed egress reaches the private scope through a managed-network outbound rule.
+var privateMonitoringBlocked = enableNetworkIsolation && !monitoringPrivateLinkApproved && (monitoringMode == 'create' || monitoringMode == 'reuse-connect')
 var effectiveMonitoringMode = privateMonitoringBlocked ? 'none' : monitoringMode
+var managedMonitoringRule = enableNetworkIsolation && useManagedEgress && (effectiveMonitoringMode == 'create' || effectiveMonitoringMode == 'reuse-connect')
+// The outbound rule needs the managed network resource, so an unset mode defaults to AllowInternetOutbound.
+var effectiveManagedIsolationMode = managedMonitoringRule && empty(managedIsolationMode) ? 'AllowInternetOutbound' : managedIsolationMode
 
 // Resources
 
@@ -200,7 +203,7 @@ module resources 'modules/resources.bicep' = {
     peSubnetName: peSubnetName
     peSubnetPrefix: peSubnetPrefix
     createPESubnet: createPESubnet
-    managedIsolationMode: managedIsolationMode
+    managedIsolationMode: effectiveManagedIsolationMode
     dnsZonesResourceGroup: dnsZonesResourceGroup
     dnsZonesSubscription: dnsZonesSubscription
   }
@@ -223,6 +226,7 @@ module monitoring 'modules/monitoring.bicep' = if (effectiveMonitoringMode != 'n
     vnetId: resources.outputs.NETWORK_VNET_ID
     vnetLocation: resources.outputs.NETWORK_VNET_LOCATION
     peSubnetId: resources.outputs.NETWORK_PE_SUBNET_ID
+    managedEgressRule: managedMonitoringRule
     dnsZonesResourceGroup: dnsZonesResourceGroup
     dnsZonesSubscription: dnsZonesSubscription
   }

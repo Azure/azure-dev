@@ -96,13 +96,16 @@ func TestPrivateMonitoringTemplateGates(t *testing.T) {
 		return string(raw)
 	}
 	main := read("templates/main.bicep")
-	// Without azd's verified-network approval, or on managed egress, the private path is never created.
+	// Without azd's verified-network approval the private path is never created; managed egress adds an outbound rule.
 	assert.Contains(t, main, "param monitoringPrivateLinkApproved bool = false")
-	assert.Contains(t, main, "enableNetworkIsolation && (useManagedEgress || !monitoringPrivateLinkApproved)")
+	assert.Contains(t, main, "enableNetworkIsolation && !monitoringPrivateLinkApproved")
+	assert.Contains(t, main, "managedEgressRule: managedMonitoringRule")
 	assert.Contains(t, main, "module monitoring 'modules/monitoring.bicep' = if (effectiveMonitoringMode != 'none')")
 	assert.Contains(t, main, "output AZD_MONITORING_PRIVATE_LINK_SCOPE_ID")
 	// The workspace closes public ingestion like the component does.
 	monitoring := read("templates/modules/monitoring.bicep")
+	assert.Contains(t, monitoring, "ampls-monitor-rule")
+	assert.Contains(t, monitoring, "subresourceTarget: 'azuremonitor'")
 	workspace := monitoring[strings.Index(monitoring, "resource workspace"):strings.Index(monitoring, "resource component")]
 	assert.Contains(t, workspace, "publicNetworkAccessForIngestion: publicNetworkAccess")
 	assert.Contains(t, workspace, "publicNetworkAccessForQuery: 'Enabled'")

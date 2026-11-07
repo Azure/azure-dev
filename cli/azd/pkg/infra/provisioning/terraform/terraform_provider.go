@@ -6,6 +6,7 @@ package terraform
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"maps"
@@ -20,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
@@ -38,14 +40,15 @@ var (
 
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
 type TerraformProvider struct {
-	envManager   environment.Manager
-	env          *environment.Environment
-	prompters    prompt.Prompter
-	console      input.Console
-	cli          *terraform.Cli
-	curPrincipal provisioning.CurrentPrincipalIdProvider
-	projectPath  string
-	options      provisioning.Options
+	envManager     environment.Manager
+	env            *environment.Environment
+	prompters      prompt.Prompter
+	serviceLocator ioc.ServiceLocator
+	console        input.Console
+	cli            *terraform.Cli
+	curPrincipal   provisioning.CurrentPrincipalIdProvider
+	projectPath    string
+	options        provisioning.Options
 }
 
 type terraformDeploymentDetails struct {
@@ -71,14 +74,16 @@ func NewTerraformProvider(
 	console input.Console,
 	curPrincipal provisioning.CurrentPrincipalIdProvider,
 	prompters prompt.Prompter,
+	serviceLocator ioc.ServiceLocator,
 ) provisioning.Provider {
 	provider := &TerraformProvider{
-		envManager:   envManager,
-		env:          env,
-		console:      console,
-		cli:          cli,
-		curPrincipal: curPrincipal,
-		prompters:    prompters,
+		envManager:     envManager,
+		env:            env,
+		console:        console,
+		cli:            cli,
+		curPrincipal:   curPrincipal,
+		prompters:      prompters,
+		serviceLocator: serviceLocator,
 	}
 
 	return provider
@@ -134,12 +139,29 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value.
 func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
+	var inputLocator ioc.ServiceLocator
+	if t.serviceLocator != nil {
+		content, err := os.ReadFile(t.parametersTemplateFilePath())
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("reading terraform input bindings: %w", err)
+		}
+		if err == nil {
+			if _, err := envsubst.Eval(string(content), func(name string) string {
+				if name == environment.LocationEnvVarName {
+					inputLocator = t.serviceLocator
+				}
+				return t.env.Getenv(name)
+			}); err != nil {
+				return fmt.Errorf("reading terraform input bindings: %w", err)
+			}
+		}
+	}
 	return provisioning.EnsureSubscriptionAndLocation(
 		ctx,
 		t.envManager,
 		t.env,
 		t.prompters,
-		provisioning.EnsureSubscriptionAndLocationOptions{},
+		provisioning.EnsureSubscriptionAndLocationOptions{InputServiceLocator: inputLocator},
 	)
 }
 

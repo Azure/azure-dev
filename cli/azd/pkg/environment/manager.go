@@ -15,8 +15,10 @@ import (
 	"sync"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/inputs"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
@@ -94,10 +96,11 @@ type Manager interface {
 }
 
 type manager struct {
-	local      DataStore
-	remote     DataStore
-	azdContext *azdcontext.AzdContext
-	console    input.Console
+	local          DataStore
+	remote         DataStore
+	azdContext     *azdcontext.AzdContext
+	console        input.Console
+	serviceLocator ioc.ServiceLocator
 
 	// Instance cache to ensure the same environment name returns the same *Environment instance
 	// across different scopes, enabling shared state mutation (e.g., from extensions)
@@ -165,6 +168,7 @@ func NewManager(
 		local:             local,
 		remote:            remote,
 		console:           console,
+		serviceLocator:    serviceLocator,
 		envCache:          make(map[string]*Environment),
 		stateCacheManager: state.NewStateCacheManager(azdContext),
 	}, nil
@@ -620,8 +624,26 @@ func (m *manager) Delete(ctx context.Context, name string) error {
 
 // ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
 // and the user is prompted for a new name.
-// In --no-prompt mode, when no name is provided, the name is auto-generated from the working directory basename.
+// Input providers can supply a missing name before prompting or the --no-prompt directory-name fallback.
 func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) error {
+	if spec.Name == "" {
+		value, err := inputs.Resolve(ctx, m.serviceLocator, &v1beta.InputDefinition{
+			Id: "environment.name", Kind: inputs.EnvironmentNameKind, EnvironmentVariable: EnvNameEnvVarName,
+		}, func(value string) (bool, error) {
+			return IsValidEnvironmentName(value), nil
+		})
+		if err != nil {
+			return err
+		}
+		if value != nil {
+			if !IsValidEnvironmentName(*value) {
+				return fmt.Errorf("input provider returned an invalid environment name: %w",
+					InvalidEnvironmentNameError(*value))
+			}
+			spec.Name = *value
+		}
+	}
+
 	// In --no-prompt mode with no name provided, generate from working directory
 	if spec.Name == "" && m.console.IsNoPromptMode() {
 		// Prefer the project directory from azdContext, fall back to process working directory.

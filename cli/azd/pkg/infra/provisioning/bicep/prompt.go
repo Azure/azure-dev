@@ -6,6 +6,7 @@ package bicep
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -79,6 +80,8 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 	return genValue, nil
 }
 
+var errNoLocationQuota = errors.New("no location found with enough quota")
+
 // locationsWithQuotaFor finds locations that have sufficient quota for the given usage requirements.
 //
 // The quotaFor parameter uses the Bicep metadata format: "UsageName" or "UsageName, Capacity".
@@ -122,8 +125,8 @@ func (a *BicepProvider) locationsWithQuotaFor(
 			formattedQuota[i] = fmt.Sprintf("%s ( Cap: %.0f )", f.UsageName, f.Capacity)
 		}
 		return nil, fmt.Errorf(
-			"no location found with enough quota for %s",
-			ux.ListAsText(formattedQuota))
+			"%w for %s",
+			errNoLocationQuota, ux.ListAsText(formattedQuota))
 	}
 	return results, nil
 }

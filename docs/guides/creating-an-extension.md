@@ -14,6 +14,7 @@ azd extensions use a gRPC-based framework to add functionality. The extension fr
 - **Framework service providers** — Add build/restore support for new languages
 - **Service target providers** — Add deployment support for new Azure hosting targets
 - **Provisioning providers** — Add custom infrastructure provisioning support
+- **Input providers (beta)** — Supply missing environment-name or infrastructure-location values
 - **Metadata** — Provide metadata about commands and capabilities
 
 ## Prerequisites
@@ -50,6 +51,18 @@ capabilities:
 ### 3. Implement the extension
 
 Implement the required interfaces for your declared capabilities. See the extension framework services documentation for interface details.
+
+For beta input resolution, declare `input-provider`, set
+`requiredAzdVersion: ">=1.38.0-0"`, and register semantic kinds with
+`ExtensionHost.WithBetaInputProvider`. Import definitions from `contracts/v1beta`
+and pin an SDK release containing this API before shipping. Return a beta
+`ResolveInputResponse` containing options, recommendations and optional rationales.
+Mark the response `required` only if its options are the complete allowed set:
+core intersects required sets, filters native constraints, then selects or prompts.
+Return `nil, nil` to decline; do not prompt or persist values yourself. Ambiguous
+choices fail under `--no-prompt`. No new template configuration is required for the initial consumers.
+See [input providers](../../cli/azd/docs/extensions/extension-framework.md#input-providers-beta)
+and the [demo extension](../../cli/azd/extensions/microsoft.azd.demo/README.md#input-provider-beta).
 
 If your Go extension creates role assignments, use the stable [`Account().GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) method with the target subscription ID and request types from `azdext` or `contracts/v1`. The host resolves the resource-tenant object ID and principal type without returning an access token. Pin the published azd SDK to v1.36.0 or later and set `requiredAzdVersion: ">=1.36.0"` before replacing an existing lookup. The equivalent beta API is deprecated.
 

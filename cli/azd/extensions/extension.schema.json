@@ -112,7 +112,7 @@
     "capabilities": {
       "type": "array",
       "title": "Capabilities",
-      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server, service-target-provider, framework-service-provider, provisioning-provider, validation-provider, metadata. Select one or more from the allowed list. Each value must be unique. Not required for extension packs, which declare dependencies instead and have no executable.",
+      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server, service-target-provider, framework-service-provider, provisioning-provider, validation-provider, input-provider, metadata. Select one or more from the allowed list. Each value must be unique. Not required for extension packs, which declare dependencies instead and have no executable.",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
@@ -158,6 +158,12 @@
             "const": "validation-provider",
             "title": "Validation Provider",
             "description": "Validation provider enables extensions to contribute checks to azd validation pipelines."
+          },
+          {
+            "type": "string",
+            "const": "input-provider",
+            "title": "Input Provider (Beta)",
+            "description": "Input provider enables extensions to resolve missing azd inputs through the beta contract."
           },
           {
             "type": "string",

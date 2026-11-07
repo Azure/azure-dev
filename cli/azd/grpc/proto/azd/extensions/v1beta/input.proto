@@ -1,0 +1,67 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azd.extensions.v1beta;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta";
+
+import "azd/extensions/v1beta/errors.proto";
+
+// InputService lets extensions resolve missing inputs requested by azd.
+// This preview supports immediate string values, not infrastructure generation.
+service InputService {
+  rpc Stream(stream InputMessage) returns (stream InputMessage);
+}
+
+message InputMessage {
+  string request_id = 1;
+  ExtensionError error = 99;
+  oneof message_type {
+    RegisterInputProviderRequest register_input_provider_request = 2;
+    RegisterInputProviderResponse register_input_provider_response = 3;
+    ResolveInputRequest resolve_input_request = 4;
+    ResolveInputResponse resolve_input_response = 5;
+  }
+}
+
+message RegisterInputProviderRequest {
+  // Versioned semantic kinds, such as "azure.location/v1".
+  repeated string kinds = 1;
+}
+
+message RegisterInputProviderResponse {}
+
+// InputDefinition describes a need independently of the extension resolving it.
+message InputDefinition {
+  string id = 1;
+  string kind = 2;
+  // The environment variable to which the consumer binds an accepted value.
+  string environment_variable = 3;
+  // An empty list means no enumerated constraint.
+  repeated string allowed_values = 4;
+  // Advisory context only. Unknown annotations may be ignored.
+  map<string, string> annotations = 5;
+}
+
+message ResolveInputRequest {
+  InputDefinition input = 1;
+}
+
+message ResolveInputResponse {
+  // Legacy single recommendation. Must not be combined with options or required.
+  optional string value = 1 [deprecated = true];
+  repeated InputOption options = 2;
+  // When true, options is the complete allowed set, not just suggestions.
+  // Required sets intersect across providers and with the input's allowed values.
+  // An empty required set is unsatisfiable; an empty optional set declines.
+  bool required = 3;
+}
+
+message InputOption {
+  // An empty string is an explicit option, not a decline.
+  string value = 1;
+  // A preference only; never overrides a required set or native input constraint.
+  bool recommended = 2;
+  string rationale = 3;
+}

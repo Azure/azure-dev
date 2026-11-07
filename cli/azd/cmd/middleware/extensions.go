@@ -32,6 +32,7 @@ var (
 		extensions.FrameworkServiceProviderCapability,
 		extensions.ProvisioningProviderCapability,
 		extensions.ValidationProviderCapability,
+		extensions.InputProviderCapability,
 	}
 )
 
@@ -61,6 +62,18 @@ func NewExtensionsMiddleware(
 	console input.Console,
 	globalOptions *internal.GlobalCommandOptions,
 ) Middleware {
+	return newExtensionsMiddleware(
+		options, serviceLocator, extensionsManager, extensionRunner, console, globalOptions)
+}
+
+func newExtensionsMiddleware(
+	options *Options,
+	serviceLocator ioc.ServiceLocator,
+	extensionsManager *extensions.Manager,
+	extensionRunner *extensions.Runner,
+	console input.Console,
+	globalOptions *internal.GlobalCommandOptions,
+) *ExtensionsMiddleware {
 	return &ExtensionsMiddleware{
 		options:          options,
 		serviceLocator:   serviceLocator,
@@ -76,7 +89,24 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	if IsChildAction(ctx) {
 		return next(ctx)
 	}
+	if activation, ok := ctx.Value(inputProviderActivationKey{}).(*inputProviderActivation); ok {
+		started, err := activation.ensureStarted()
+		if err != nil {
+			return nil, err
+		}
+		if started {
+			return next(ctx)
+		}
+	}
+	cleanup, err := m.start(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	return next(ctx)
+}
 
+func (m *ExtensionsMiddleware) start(ctx context.Context) (func(), error) {
 	installedExtensions, err := m.extensionManager.ListInstalled()
 	if err != nil {
 		return nil, err
@@ -97,7 +127,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	}
 
 	if !requireLifecycleEvents {
-		return next(ctx)
+		return func() {}, nil
 	}
 
 	var grpcServer *grpcserver.Server
@@ -113,9 +143,9 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	processCtx, cancelProcesses := context.WithCancel(context.WithoutCancel(ctx))
 	var processes []*extensionProcess
 
-	defer func() {
+	cleanup := func() {
 		shutdownExtensionProcesses(grpcServer, cancelProcesses, processes)
-	}()
+	}
 
 	forceColor := !color.NoColor
 	var wg sync.WaitGroup
@@ -177,6 +207,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	wg.Wait()
 
 	if ctxErr := ctx.Err(); ctxErr != nil {
+		cleanup()
 		return nil, ctxErr
 	}
 
@@ -295,7 +326,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	totalElapsed := time.Since(allExtensionsStartTime)
 	log.Printf("All %d extensions completed startup in %v\n", len(extensionList), totalElapsed)
 
-	return next(ctx)
+	return cleanup, nil
 }
 
 // isDebug checks if AZD_EXT_DEBUG environment variable is set to a truthy value

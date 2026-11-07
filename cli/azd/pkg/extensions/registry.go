@@ -57,6 +57,8 @@ const (
 	// Validation provider enables extensions to contribute validation checks
 	// to azd's validation pipeline (e.g. provision checks during provisioning)
 	ValidationProviderCapability CapabilityType = "validation-provider"
+	// InputProviderCapability enables preview resolution of missing azd inputs.
+	InputProviderCapability CapabilityType = "input-provider"
 )
 
 type ProviderType string

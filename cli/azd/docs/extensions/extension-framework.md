@@ -23,6 +23,7 @@ Table of Contents
     - [Workflow Service](#workflow-service)
     - [Copilot Service](#copilot-service)
 - [Registry Schema Versioning](#registry-schema-versioning)
+- [Input Providers (Beta)](#input-providers-beta)
 
 ### Related Guides
 
@@ -34,6 +35,121 @@ Table of Contents
 | [Extension Framework Services](./extension-framework-services.md) | Custom language/framework support via `FrameworkServiceProvider`. |
 | [Extension Style Guide](./extensions-style-guide.md) | Design guidelines for command integration, flags, and discoverability. |
 | [Extension Resolution and Versioning](./extension-resolution-and-versioning.md) | How azd resolves extensions from sources, version constraint syntax, caching, and semver guidance. |
+
+## Input Providers (Beta)
+
+Input providers contribute options for missing values before azd falls back to its existing
+prompts or `--no-prompt` missing-input behavior. The protocol is beta-only,
+targeting azd 1.38.0; it does not change stable v1 or the legacy bridge.
+
+Declare `input-provider` in `extension.yaml`, set
+`requiredAzdVersion: ">=1.38.0-0"`, and register a handler:
+
+```go
+import (
+    "context"
+
+    "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+    v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+)
+
+host.WithBetaInputProvider([]string{"azure.location/v1"},
+    func(ctx context.Context, input *v1beta.InputDefinition) (*v1beta.ResolveInputResponse, error) {
+        return &v1beta.ResolveInputResponse{
+            Required: true,
+            Options: []*v1beta.InputOption{
+                {Value: "eastus2", Recommended: true, Rationale: "Preferred region with available quota."},
+                {Value: "westus3", Rationale: "Another supported region."},
+            },
+        }, nil
+    })
+```
+
+Pin a published SDK release containing these APIs before shipping a separate
+extension. `requiredAzdVersion` constrains the host, not the SDK dependency.
+
+Every command can use installed input providers through the shared input coordinator,
+including `azd init`, `azd env new`, and `azd up`. The host starts listeners on demand
+and waits for registration when a missing input is requested, even while constructing
+environment-consuming action or hook dependencies. Commands that do not request inputs
+do not start listeners unless their normal extension middleware requires them.
+Projects without input providers keep their existing startup order. Repeated input
+requests and child workflow steps reuse the parent's listeners, which remain available
+until the parent command completes.
+The native `v1beta.InputService.Stream` supports registration and correlated
+resolution requests. `AzdClient.InputsBeta()` exposes the generated client;
+the host helper manages the stream and readiness handshake.
+
+An input definition describes a need, **not a resolver**:
+
+| Field | Meaning |
+|---|---|
+| `id` | Consumer-defined input identity |
+| `kind` | Versioned semantic kind, matched exactly against registered kinds |
+| `environment_variable` | Optional environment binding used by the consumer |
+| `allowed_values` | Enumerated string constraint; empty means unconstrained |
+| `annotations` | Advisory string context; unknown keys may be ignored |
+
+Initial consumers define `azd.environment.name/v1` for a new unnamed environment
+and `azure.location/v1` for missing infrastructure location inputs. No new
+`azure.yaml` fields are required. Bicep requests a location only for an unresolved
+string parameter annotated as a location, including `AZURE_LOCATION` mappings.
+For `.bicepparam`, pre-compilation resolution requires a discoverable
+`AZURE_LOCATION` reference. Existing parameter values, environment values,
+saved parameters, defaults, and nullable parameters retain precedence.
+Terraform's existing environment initialization also supports location resolution
+when its `.tfvars.json` template references `AZURE_LOCATION`.
+
+A handler returns `*v1beta.ResolveInputResponse`, with:
+
+| Field | Meaning |
+|---|---|
+| `options` | Candidate strings, each with a `recommended` preference and optional `rationale` |
+| `required` | If true, the options are this provider's complete allowed set; otherwise they are suggestions |
+
+Within one required set, options are alternatives, not simultaneous requirements.
+Across providers, required sets intersect with each other and the definition's
+`allowed_values`. Suggestions are combined and do not restrict other providers.
+Equal values are deduplicated, retaining recommendations, sources, and rationales.
+For example, required sets `{eastus2, westus3}` and `{eastus2}` leave `eastus2`;
+required sets `{eastus2}` and `{westus3}` fail with the contributing source names.
+Recommendations never override these constraints.
+
+Core filters options through native validation **before** choosing. Environment
+names use normal azd name validation. Locations must be supported by the subscription
+and satisfy native parameter constraints and quota metadata. Core accepts a sole
+remaining option or a unique remaining recommendation automatically. Otherwise it
+prompts with the valid options, showing recommendations first with sources and
+rationales. Automatic selections print a note identifying the extensions that
+supplied the selected option and whether it was the only valid option or a unique
+recommendation. Existing explicit or persisted values do not produce this note.
+Ambiguity under `--no-prompt` is a structured missing-input error, not
+an arbitrary first-option choice. Ordering is deterministic and does not depend on
+provider registration order.
+
+The consumer persists the selected value through its normal environment lifecycle,
+not the handler. Existing explicit or persisted values still bypass this missing-input
+protocol; providers are not queried to revalidate them. Subscription selection and
+authentication remain unchanged.
+
+All matching providers are queried in extension-ID order with a bounded
+30-second resolution context. A handler returns `nil, nil` or an empty optional
+response to decline. An empty required set is unsatisfiable, not a decline.
+An option containing an empty string is explicit and still subject to validation.
+The initial preview's singular `value` field remains readable as one recommendation;
+it must not be mixed with `options` or `required`.
+Incompatible required sets, no valid remaining options, malformed replies, and provider
+errors fail explicitly. Conflict errors identify sources without printing values.
+If every provider declines or none match, the existing prompt or non-interactive fallback runs.
+Handlers must respect cancellation and must not prompt, persist values, or
+provision resources. They must not call APIs that require an initialized current
+environment while resolving its name.
+
+This iteration supports **immediate string values only**. Template-defined inputs,
+runtime-contributed definitions, resource creation, infrastructure generation,
+and deferred fulfillment are not implemented. See the
+[demo](../../extensions/microsoft.azd.demo/README.md#input-provider-beta)
+for a working option-provider example.
 
 ## Getting Started
 
@@ -996,6 +1112,13 @@ Extensions can provide AI agent tools through the Model Context Protocol, enabli
 - Azure service automation for AI agents
 - Custom development workflows for AI-assisted development
 
+##### Input Providers (`input-provider`, beta)
+
+Extensions can resolve missing semantic inputs before azd prompts. Register kinds
+with `WithBetaInputProvider`; definitions do not select an extension. See
+[input providers](#input-providers-beta) for the initial environment-name and
+location consumers, host requirements, and protocol limitations.
+
 ##### Validation Provider (`validation-provider`)
 
 > Extensions must declare the `validation-provider` capability in their `extension.yaml` file.
@@ -1142,6 +1265,7 @@ Extensions can declare the following capabilities in their manifest:
 - **`framework-service-provider`**: Provide custom language frameworks and build systems
 - **`provisioning-provider`**: Provide a custom infrastructure provisioning experience (alternative to Bicep / Terraform)
 - **`validation-provider`**: Contribute validation checks to azd's provision validation and future validation pipelines
+- **`input-provider`** (beta): Resolve missing semantic inputs before prompts using the beta input stream
 - **`metadata`**: Provide comprehensive metadata about commands and configuration schemas
 
 Telemetry is not a capability. Internal telemetry is currently available to

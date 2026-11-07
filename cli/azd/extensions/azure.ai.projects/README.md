@@ -211,10 +211,15 @@ Unsupported private-network cases never block provisioning: shared private DNS z
 Azure Monitor private endpoint (azd does not adopt an existing scope or
 endpoint), or a network azd cannot inspect skip automatic monitoring and azd
 prints a warning (also on stderr). With managed egress (no `agentSubnet`), azd
-also adds an outbound rule to the managed network so the
-agent runtime reaches the Private Link Scope through a managed private endpoint,
-and grants the account identity the Azure AI Enterprise Network Connection
-Approver role on the resource group so the endpoint is approved. If you set no
+also adds two outbound rules to the managed network and grants the account
+identity the Azure AI Enterprise Network Connection Approver role on the
+resource group so the managed private endpoints are approved:
+`ampls-monitor-rule` (target `azuremonitor`) lets the agent runtime reach the
+Private Link Scope, and `foundry-account-pe` (target `account`, to the account
+itself) is required for hosted agents, which otherwise fail with
+`Public access is disabled`. The hosted agent's own identity also needs
+`Monitoring Metrics Publisher` on the Application Insights component to export
+telemetry; azd does not grant that role yet. If you set no
 `isolationMode`, azd uses `AllowInternetOutbound` so the managed network exists.
 Ejected or hand-authored Bicep that bypasses
 azd's checks never creates the private path unless

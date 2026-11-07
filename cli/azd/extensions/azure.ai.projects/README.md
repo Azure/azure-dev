@@ -211,7 +211,7 @@ Unsupported private-network cases never block provisioning: shared private DNS z
 Azure Monitor private endpoint (azd does not adopt an existing scope or
 endpoint), or a network azd cannot inspect skip automatic monitoring and azd
 prints a warning (also on stderr). With managed egress (no `agentSubnet`), azd
-also adds an `ampls-monitor-rule` outbound rule to the managed network so the
+also adds an outbound rule to the managed network so the
 agent runtime reaches the Private Link Scope through a managed private endpoint,
 and grants the account identity the Azure AI Enterprise Network Connection
 Approver role on the resource group so the endpoint is approved. If you set no

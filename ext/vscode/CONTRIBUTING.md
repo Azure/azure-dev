@@ -31,7 +31,7 @@ By default, the extension uses whatever version of the `azd` binary is present i
 
 ## Submitting a change
 
-Before submitting a PR make sure that the unit tests pass (`npm run unit-test`) and that the code linter does not produce any errors or warnings (`npm run lint`). 
+Before submitting a PR make sure that the unit tests pass (`npm run test`) and that the code linter does not produce any errors or warnings (`npm run lint`). 
 
 You might find [ESLint for Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) handy for keeping the code error-free as you are making changes.
 

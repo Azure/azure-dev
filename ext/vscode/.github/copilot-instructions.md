@@ -27,7 +27,7 @@ Before submitting any changes or pushing code, **always run the following checks
    - Checks for spelling errors in source code
    - Add technical terms to `.vscode/cspell-dictionary.txt` if needed
 
-3. **Unit Tests**: `npm run unit-test`
+3. **Unit Tests**: `npm run test`
    - Runs fast unit tests without full VS Code integration
    - All tests must pass before committing
    - **IMPORTANT**: If you modify existing code, ensure related tests still pass
@@ -36,7 +36,7 @@ Before submitting any changes or pushing code, **always run the following checks
 ### Pre-Commit Checklist
 ✅ Run `npm run lint` and fix all issues
 ✅ Run `npx cspell "src/**/*.ts" --config .vscode/cspell.yaml` and fix spelling errors
-✅ Run `npm run unit-test` and ensure all tests pass
+✅ Run `npm run test` and ensure all tests pass
 ✅ Update [README.md](../README.md) if functionality changed
 ✅ Verify merge conflicts are resolved (no `<<<<<<<`, `=======`, `>>>>>>>` markers)
 
@@ -208,11 +208,8 @@ When working on `azure.yaml` language support in `src/language/`:
 - FileSystemWatchers are a scarce resource on some systems - consolidate into shared watchers when possible
 
 ## Build & Package
-- Development build: `npm run dev-build`
 - Production build: `npm run build`
-- Watch mode: `npm run watch`
 - Package extension: `npm run package`
-- CI build: `npm run ci-build`
 - CI package: `npm run ci-package`
 
 ## Additional Resources

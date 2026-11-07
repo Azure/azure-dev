@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "8956748682766475904"
+      "templateHash": "5294638763993881508"
     }
   },
   "definitions": {
@@ -194,6 +194,16 @@
         "description": "Federation-management role; resolved by microsoft.foundry when omitted."
       }
     },
+    "byoAksExistingRoleAssignmentKeys": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "defaultValue": [],
+      "metadata": {
+        "description": "Existing scope/principal/role keys used to avoid duplicate BYO AKS role assignments; resolved by microsoft.foundry when omitted."
+      }
+    },
     "existingAcrResourceId": {
       "type": "string",
       "defaultValue": "",
@@ -374,6 +384,9 @@
           "federatedIdentityRoleDefinitionId": {
             "value": "[parameters('federatedIdentityRoleDefinitionId')]"
           },
+          "byoAksExistingRoleAssignmentKeys": {
+            "value": "[parameters('byoAksExistingRoleAssignmentKeys')]"
+          },
           "existingAcrResourceId": {
             "value": "[parameters('existingAcrResourceId')]"
           },
@@ -437,7 +450,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "9059128905136687232"
+              "templateHash": "12875187479335769071"
             }
           },
           "definitions": {
@@ -583,6 +596,13 @@
             "federatedIdentityRoleDefinitionId": {
               "type": "string",
               "defaultValue": ""
+            },
+            "byoAksExistingRoleAssignmentKeys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "defaultValue": []
             },
             "hostingPrincipalId": {
               "type": "string",
@@ -909,6 +929,9 @@
                   "federatedIdentityRoleDefinitionId": {
                     "value": "[parameters('federatedIdentityRoleDefinitionId')]"
                   },
+                  "existingRoleAssignmentKeys": {
+                    "value": "[parameters('byoAksExistingRoleAssignmentKeys')]"
+                  },
                   "hostingIdentityResourceId": {
                     "value": "[variables('suppliedHostingIdentityResourceId')]"
                   },
@@ -927,12 +950,13 @@
                 },
                 "template": {
                   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "languageVersion": "2.0",
                   "contentVersion": "1.0.0.0",
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
                       "version": "0.48.1.52935",
-                      "templateHash": "17798698122283979447"
+                      "templateHash": "2286626592862147696"
                     }
                   },
                   "parameters": {
@@ -976,9 +1000,17 @@
                     "suppliedWorkloadPrincipalId": {
                       "type": "string",
                       "defaultValue": ""
+                    },
+                    "existingRoleAssignmentKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "defaultValue": []
                     }
                   },
                   "variables": {
+                    "createRoleAssignments": "[or(or(empty(parameters('hostingIdentityResourceId')), empty(parameters('workloadIdentityResourceId'))), empty(parameters('storageAccountResourceId')))]",
                     "clusterParts": "[split(parameters('clusterResourceId'), '/')]",
                     "workloadParts": "[split(if(empty(parameters('workloadIdentityResourceId')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName')), parameters('workloadIdentityResourceId')), '/')]",
                     "storageParts": "[split(if(empty(parameters('storageAccountResourceId')), resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('storageAccountResourceId')), '/')]",
@@ -1009,8 +1041,8 @@
                     "kubernetesExtensionContributorRoleId": "85cb6faf-e071-4c9b-8136-154b5a04f717",
                     "blobContributorRoleId": "[subscriptionResourceId(variables('storageParts')[2], 'Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]"
                   },
-                  "resources": [
-                    {
+                  "resources": {
+                    "hosting": {
                       "condition": "[empty(parameters('hostingIdentityResourceId'))]",
                       "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
                       "apiVersion": "2023-01-31",
@@ -1018,7 +1050,7 @@
                       "location": "[parameters('location')]",
                       "tags": "[parameters('tags')]"
                     },
-                    {
+                    "workload": {
                       "condition": "[empty(parameters('workloadIdentityResourceId'))]",
                       "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
                       "apiVersion": "2023-01-31",
@@ -1026,7 +1058,7 @@
                       "location": "[parameters('location')]",
                       "tags": "[parameters('tags')]"
                     },
-                    {
+                    "storage": {
                       "condition": "[empty(parameters('storageAccountResourceId'))]",
                       "type": "Microsoft.Storage/storageAccounts",
                       "apiVersion": "2023-05-01",
@@ -1050,12 +1082,12 @@
                         "allowSharedKeyAccess": false
                       }
                     },
-                    {
+                    "clusterGrants": {
                       "copy": {
                         "name": "clusterGrants",
                         "count": "[length(createArray(variables('readerRoleId'), variables('kubernetesExtensionContributorRoleId')))]"
                       },
-                      "condition": "[empty(parameters('hostingIdentityResourceId'))]",
+                      "condition": "[variables('createRoleAssignments')]",
                       "type": "Microsoft.Resources/deployments",
                       "apiVersion": "2025-04-01",
                       "name": "[format('byo-cluster-{0}-{1}', uniqueString(resourceGroup().id, parameters('hostingIdentityName')), createArray(variables('readerRoleId'), variables('kubernetesExtensionContributorRoleId'))[copyIndex()])]",
@@ -1070,19 +1102,23 @@
                           "resourceName": {
                             "value": "[last(variables('clusterParts'))]"
                           },
-                          "principalId": "[if(empty(parameters('hostingIdentityResourceId')), createObject('value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName')), '2023-01-31').principalId), createObject('value', parameters('suppliedHostingPrincipalId')))]",
+                          "principalId": "[if(empty(parameters('hostingIdentityResourceId')), createObject('value', reference('hosting').principalId), createObject('value', parameters('suppliedHostingPrincipalId')))]",
                           "roleDefinitionId": {
                             "value": "[subscriptionResourceId(variables('clusterParts')[2], 'Microsoft.Authorization/roleDefinitions', createArray(variables('readerRoleId'), variables('kubernetesExtensionContributorRoleId'))[copyIndex()])]"
+                          },
+                          "existingRoleAssignmentKeys": {
+                            "value": "[parameters('existingRoleAssignmentKeys')]"
                           }
                         },
                         "template": {
                           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                          "languageVersion": "2.0",
                           "contentVersion": "1.0.0.0",
                           "metadata": {
                             "_generator": {
                               "name": "bicep",
                               "version": "0.48.1.52935",
-                              "templateHash": "9565368374017416886"
+                              "templateHash": "15407276058203200956"
                             }
                           },
                           "parameters": {
@@ -1094,10 +1130,27 @@
                             },
                             "roleDefinitionId": {
                               "type": "string"
+                            },
+                            "existingRoleAssignmentKeys": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "defaultValue": []
                             }
                           },
-                          "resources": [
-                            {
+                          "variables": {
+                            "assignmentKey": "[toLower(format('{0}|{1}|{2}', resourceId('Microsoft.ContainerService/managedClusters', parameters('resourceName')), parameters('principalId'), last(split(parameters('roleDefinitionId'), '/'))))]"
+                          },
+                          "resources": {
+                            "target": {
+                              "existing": true,
+                              "type": "Microsoft.ContainerService/managedClusters",
+                              "apiVersion": "2025-01-01",
+                              "name": "[parameters('resourceName')]"
+                            },
+                            "assignment": {
+                              "condition": "[not(contains(parameters('existingRoleAssignmentKeys'), variables('assignmentKey')))]",
                               "type": "Microsoft.Authorization/roleAssignments",
                               "apiVersion": "2022-04-01",
                               "scope": "[resourceId('Microsoft.ContainerService/managedClusters', parameters('resourceName'))]",
@@ -1108,15 +1161,15 @@
                                 "roleDefinitionId": "[parameters('roleDefinitionId')]"
                               }
                             }
-                          ]
+                          }
                         }
                       },
                       "dependsOn": [
-                        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName'))]"
+                        "hosting"
                       ]
                     },
-                    {
-                      "condition": "[or(empty(parameters('hostingIdentityResourceId')), empty(parameters('workloadIdentityResourceId')))]",
+                    "federationGrant": {
+                      "condition": "[variables('createRoleAssignments')]",
                       "type": "Microsoft.Resources/deployments",
                       "apiVersion": "2025-04-01",
                       "name": "[if(empty(parameters('workloadIdentityResourceId')), 'byo-federation-access', format('byo-federation-access-{0}', uniqueString(resourceGroup().id, parameters('hostingIdentityName'))))]",
@@ -1131,19 +1184,23 @@
                           "resourceName": {
                             "value": "[last(variables('workloadParts'))]"
                           },
-                          "principalId": "[if(empty(parameters('hostingIdentityResourceId')), createObject('value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName')), '2023-01-31').principalId), createObject('value', parameters('suppliedHostingPrincipalId')))]",
+                          "principalId": "[if(empty(parameters('hostingIdentityResourceId')), createObject('value', reference('hosting').principalId), createObject('value', parameters('suppliedHostingPrincipalId')))]",
                           "roleDefinitionId": {
                             "value": "[parameters('federatedIdentityRoleDefinitionId')]"
+                          },
+                          "existingRoleAssignmentKeys": {
+                            "value": "[parameters('existingRoleAssignmentKeys')]"
                           }
                         },
                         "template": {
                           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                          "languageVersion": "2.0",
                           "contentVersion": "1.0.0.0",
                           "metadata": {
                             "_generator": {
                               "name": "bicep",
                               "version": "0.48.1.52935",
-                              "templateHash": "1047566723091155563"
+                              "templateHash": "1217818203790909366"
                             }
                           },
                           "parameters": {
@@ -1155,10 +1212,27 @@
                             },
                             "roleDefinitionId": {
                               "type": "string"
+                            },
+                            "existingRoleAssignmentKeys": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "defaultValue": []
                             }
                           },
-                          "resources": [
-                            {
+                          "variables": {
+                            "assignmentKey": "[toLower(format('{0}|{1}|{2}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('resourceName')), parameters('principalId'), last(split(parameters('roleDefinitionId'), '/'))))]"
+                          },
+                          "resources": {
+                            "target": {
+                              "existing": true,
+                              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+                              "apiVersion": "2023-01-31",
+                              "name": "[parameters('resourceName')]"
+                            },
+                            "assignment": {
+                              "condition": "[not(contains(parameters('existingRoleAssignmentKeys'), variables('assignmentKey')))]",
                               "type": "Microsoft.Authorization/roleAssignments",
                               "apiVersion": "2022-04-01",
                               "scope": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('resourceName'))]",
@@ -1169,16 +1243,16 @@
                                 "roleDefinitionId": "[parameters('roleDefinitionId')]"
                               }
                             }
-                          ]
+                          }
                         }
                       },
                       "dependsOn": [
-                        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName'))]",
-                        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName'))]"
+                        "hosting",
+                        "workload"
                       ]
                     },
-                    {
-                      "condition": "[or(empty(parameters('workloadIdentityResourceId')), empty(parameters('storageAccountResourceId')))]",
+                    "storageGrant": {
+                      "condition": "[variables('createRoleAssignments')]",
                       "type": "Microsoft.Resources/deployments",
                       "apiVersion": "2025-04-01",
                       "name": "[if(empty(parameters('storageAccountResourceId')), 'byo-storage-access', format('byo-storage-access-{0}', uniqueString(resourceGroup().id, parameters('workloadIdentityName'))))]",
@@ -1193,19 +1267,23 @@
                           "resourceName": {
                             "value": "[last(variables('storageParts'))]"
                           },
-                          "principalId": "[if(empty(parameters('workloadIdentityResourceId')), createObject('value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName')), '2023-01-31').principalId), createObject('value', parameters('suppliedWorkloadPrincipalId')))]",
+                          "principalId": "[if(empty(parameters('workloadIdentityResourceId')), createObject('value', reference('workload').principalId), createObject('value', parameters('suppliedWorkloadPrincipalId')))]",
                           "roleDefinitionId": {
                             "value": "[variables('blobContributorRoleId')]"
+                          },
+                          "existingRoleAssignmentKeys": {
+                            "value": "[parameters('existingRoleAssignmentKeys')]"
                           }
                         },
                         "template": {
                           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                          "languageVersion": "2.0",
                           "contentVersion": "1.0.0.0",
                           "metadata": {
                             "_generator": {
                               "name": "bicep",
                               "version": "0.48.1.52935",
-                              "templateHash": "8476384347606291870"
+                              "templateHash": "17607993597062036622"
                             }
                           },
                           "parameters": {
@@ -1217,10 +1295,27 @@
                             },
                             "roleDefinitionId": {
                               "type": "string"
+                            },
+                            "existingRoleAssignmentKeys": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "defaultValue": []
                             }
                           },
-                          "resources": [
-                            {
+                          "variables": {
+                            "assignmentKey": "[toLower(format('{0}|{1}|{2}', resourceId('Microsoft.Storage/storageAccounts', parameters('resourceName')), parameters('principalId'), last(split(parameters('roleDefinitionId'), '/'))))]"
+                          },
+                          "resources": {
+                            "target": {
+                              "existing": true,
+                              "type": "Microsoft.Storage/storageAccounts",
+                              "apiVersion": "2023-05-01",
+                              "name": "[parameters('resourceName')]"
+                            },
+                            "assignment": {
+                              "condition": "[not(contains(parameters('existingRoleAssignmentKeys'), variables('assignmentKey')))]",
                               "type": "Microsoft.Authorization/roleAssignments",
                               "apiVersion": "2022-04-01",
                               "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('resourceName'))]",
@@ -1231,15 +1326,15 @@
                                 "roleDefinitionId": "[parameters('roleDefinitionId')]"
                               }
                             }
-                          ]
+                          }
                         }
                       },
                       "dependsOn": [
-                        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
-                        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName'))]"
+                        "storage",
+                        "workload"
                       ]
                     }
-                  ]
+                  }
                 }
               }
             },

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.projects/synthesis/testutil"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/assert"
@@ -321,6 +323,9 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 	visit = func(value any) {
 		switch value := value.(type) {
 		case map[string]any:
+			if existing, _ := value["existing"].(bool); existing {
+				return
+			}
 			// Reuse-only branches are not deployed on the native registry path.
 			if condition, ok := value["condition"].(string); ok &&
 				strings.Contains(condition, "not(empty(parameters('existingAcrResourceId')))") {
@@ -609,7 +614,7 @@ func TestHostingGraphIndependentlyReferencesSuppliedResources(t *testing.T) {
 		assert.Contains(t, expression, "variables('"+selector+"')")
 	}
 	var prerequisites struct {
-		Resources []struct {
+		Resources map[string]struct {
 			Name           string
 			Condition      string
 			SubscriptionID string
@@ -630,11 +635,9 @@ func TestHostingGraphIndependentlyReferencesSuppliedResources(t *testing.T) {
 		"[parameters('hostingIdentityName')]":  "[empty(parameters('hostingIdentityResourceId'))]",
 		"[parameters('workloadIdentityName')]": "[empty(parameters('workloadIdentityResourceId'))]",
 		"[parameters('storageAccountName')]":   "[empty(parameters('storageAccountResourceId'))]",
-		"clusterGrants":                        "[empty(parameters('hostingIdentityResourceId'))]",
-		federationGrantName: "[or(empty(parameters('hostingIdentityResourceId')), " +
-			"empty(parameters('workloadIdentityResourceId')))]",
-		storageGrantName: "[or(empty(parameters('workloadIdentityResourceId')), " +
-			"empty(parameters('storageAccountResourceId')))]",
+		"clusterGrants":                        "[variables('createRoleAssignments')]",
+		federationGrantName:                    "[variables('createRoleAssignments')]",
+		storageGrantName:                       "[variables('createRoleAssignments')]",
 	}
 	require.Len(t, prerequisites.Resources, len(expected))
 	for _, resource := range prerequisites.Resources {
@@ -652,10 +655,10 @@ func TestHostingGraphIndependentlyReferencesSuppliedResources(t *testing.T) {
 }
 
 func TestBicepToolVersionAndExplicitOverride(t *testing.T) {
-	require.NoError(t, validateBicepVersion("Bicep CLI version "+bicep.Version.String()+" (hash)"))
-	require.ErrorContains(t, validateBicepVersion("Bicep CLI version 0.38.33 (hash)"), "below azd SDK minimum")
-	require.ErrorContains(t, validateBicepVersion("other CLI version 99.0.0"), "unrecognized Bicep")
-	path, err := findBicep(t.Context(), filepath.Join(t.TempDir(), "missing-bicep"))
+	require.NoError(t, testutil.ValidateBicepVersion("Bicep CLI version "+bicep.Version.String()+" (hash)"))
+	require.ErrorContains(t, testutil.ValidateBicepVersion("Bicep CLI version 0.38.33 (hash)"), "below azd SDK minimum")
+	require.ErrorContains(t, testutil.ValidateBicepVersion("other CLI version 99.0.0"), "unrecognized Bicep")
+	path, err := testutil.FindBicep(t.Context(), filepath.Join(t.TempDir(), "missing-bicep"))
 	require.Error(t, err)
 	assert.Empty(t, path)
 }

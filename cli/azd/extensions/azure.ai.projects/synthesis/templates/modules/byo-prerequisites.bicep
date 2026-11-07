@@ -12,7 +12,9 @@ param workloadIdentityResourceId string = ''
 param storageAccountResourceId string = ''
 param suppliedHostingPrincipalId string = ''
 param suppliedWorkloadPrincipalId string = ''
+param existingRoleAssignmentKeys string[] = []
 
+var createRoleAssignments = empty(hostingIdentityResourceId) || empty(workloadIdentityResourceId) || empty(storageAccountResourceId)
 var clusterParts = split(clusterResourceId, '/')
 var workloadParts = split(empty(workloadIdentityResourceId)
   ? resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', workloadIdentityName)
@@ -85,18 +87,19 @@ module clusterGrants 'byo-role-assignment.bicep' = [
   for role in [
     readerRoleId
     kubernetesExtensionContributorRoleId
-  ]: if (empty(hostingIdentityResourceId)) {
+  ]: if (createRoleAssignments) {
     name: 'byo-cluster-${uniqueString(resourceGroup().id, hostingIdentityName)}-${role}'
     scope: resourceGroup(clusterParts[2], clusterParts[4])
     params: {
       resourceName: last(clusterParts)
       principalId: hostingPrincipalId
       roleDefinitionId: subscriptionResourceId(clusterParts[2], 'Microsoft.Authorization/roleDefinitions', role)
+      existingRoleAssignmentKeys: existingRoleAssignmentKeys
     }
   }
 ]
 
-module federationGrant 'byo-identity-role-assignment.bicep' = if (empty(hostingIdentityResourceId) || empty(workloadIdentityResourceId)) {
+module federationGrant 'byo-identity-role-assignment.bicep' = if (createRoleAssignments) {
   name: empty(workloadIdentityResourceId)
     ? 'byo-federation-access'
     : 'byo-federation-access-${uniqueString(resourceGroup().id, hostingIdentityName)}'
@@ -105,11 +108,12 @@ module federationGrant 'byo-identity-role-assignment.bicep' = if (empty(hostingI
     resourceName: last(workloadParts)
     principalId: hostingPrincipalId
     roleDefinitionId: federatedIdentityRoleDefinitionId
+    existingRoleAssignmentKeys: existingRoleAssignmentKeys
   }
   dependsOn: [workload]
 }
 
-module storageGrant 'byo-storage-role-assignment.bicep' = if (empty(workloadIdentityResourceId) || empty(storageAccountResourceId)) {
+module storageGrant 'byo-storage-role-assignment.bicep' = if (createRoleAssignments) {
   name: empty(storageAccountResourceId)
     ? 'byo-storage-access'
     : 'byo-storage-access-${uniqueString(resourceGroup().id, workloadIdentityName)}'
@@ -118,6 +122,7 @@ module storageGrant 'byo-storage-role-assignment.bicep' = if (empty(workloadIden
     resourceName: last(storageParts)
     principalId: workloadPrincipalId
     roleDefinitionId: blobContributorRoleId
+    existingRoleAssignmentKeys: existingRoleAssignmentKeys
   }
   dependsOn: [storage]
 }

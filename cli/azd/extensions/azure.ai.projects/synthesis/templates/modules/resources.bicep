@@ -71,6 +71,7 @@ param agentHosting agentHostingType = {
 
 param kubeletObjectId string = ''
 param federatedIdentityRoleDefinitionId string = ''
+param byoAksExistingRoleAssignmentKeys string[] = []
 param hostingPrincipalId string = ''
 param workloadPrincipalId string = ''
 
@@ -170,6 +171,7 @@ module prerequisites 'byo-prerequisites.bicep' = if (agentHosting.enabled) {
     hostingIdentityName: hostingIdentityName
     workloadIdentityName: workloadIdentityName
     federatedIdentityRoleDefinitionId: federatedIdentityRoleDefinitionId
+    existingRoleAssignmentKeys: byoAksExistingRoleAssignmentKeys
     hostingIdentityResourceId: suppliedHostingIdentityResourceId
     workloadIdentityResourceId: suppliedWorkloadIdentityResourceId
     storageAccountResourceId: suppliedStorageAccountResourceId

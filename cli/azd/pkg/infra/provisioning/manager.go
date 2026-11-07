@@ -18,10 +18,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/inputs"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -363,6 +365,8 @@ type EnsureSubscriptionAndLocationOptions struct {
 	LocationFiler prompt.LocationFilterPredicate
 	// SelectDefaultLocation is the default location that azd mark as selected when prompting the user for the location.
 	SelectDefaultLocation *string
+	// InputServiceLocator enables preview input resolution before the location fallback.
+	InputServiceLocator ioc.ServiceLocator
 }
 
 // EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
@@ -409,7 +413,19 @@ func EnsureSubscriptionAndLocation(
 	}
 
 	location := env.GetLocation()
-	if env.GetLocation() == "" {
+	if _, exists := env.LookupEnv(environment.LocationEnvVarName); !exists {
+		value, err := prompt.ResolveLocationInput(ctx, options.InputServiceLocator, &v1beta.InputDefinition{
+			Id: "azure.location", Kind: inputs.AzureLocationKind, EnvironmentVariable: environment.LocationEnvVarName,
+			Annotations: map[string]string{"azure.subscription": env.GetSubscriptionId()},
+		}, env.GetSubscriptionId(), options.LocationFiler, nil)
+		if err != nil {
+			return err
+		}
+		if value != nil {
+			location = *value
+		}
+	}
+	if location == "" {
 		if prompter.IsNoPromptMode() {
 			return &input.PromptRequiredError{
 				Inputs: []input.RequiredInput{

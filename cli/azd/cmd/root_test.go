@@ -25,7 +25,7 @@ func TestRegisterGlobalMiddleware(t *testing.T) {
 		names[i] = registration.Name
 	}
 
-	require.Equal(t, []string{"debug", "ux", "telemetry", "error", "cancellation", "loginGuard"}, names)
+	require.Equal(t, []string{"debug", "ux", "telemetry", "error", "cancellation", "loginGuard", "inputProviders"}, names)
 	require.NotContains(t, names, "toolFirstRun")
 	require.NotContains(t, names, "toolUpdateCheck")
 }

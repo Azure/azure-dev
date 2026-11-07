@@ -694,6 +694,7 @@ down the connection.
 | `WithServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Register a deployment target and stable read-only preview; provider also implements `ServiceTargetPreviewProvider`. Targets azd 1.37.0. |
 | `WithBetaServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Deprecated beta preview registration; retained with the `preview.ServiceTargetPreviewProvider` interface. |
 | `WithFrameworkService` | `(language string, factory FrameworkServiceFactory) *ExtensionHost` | Register a custom language/framework build service. |
+| `WithBetaInputProvider` | `(kinds []string, handler BetaInputHandler) *ExtensionHost` | Register a beta missing-input provider returning `*v1beta.ResolveInputResponse`: options, recommendations, rationales, and an optional required set. Targets azd 1.38.0. |
 | `WithProjectEventHandler` | `(eventName string, handler ProjectEventHandler) *ExtensionHost` | Register a project-level lifecycle event handler. |
 | `WithServiceEventHandler` | `(eventName string, handler ServiceEventHandler, options *ServiceEventOptions) *ExtensionHost` | Register a service-level lifecycle event handler (with optional filtering). |
 | `Run` | `(ctx context.Context) error` | Start the host and block until shutdown. |
@@ -721,6 +722,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Deployment()` | `DeploymentServiceClient` |
 | `Events()` | `EventServiceClient` |
 | `EventsBeta()` | `v1beta.EventServiceClient` (preview) |
+| `InputsBeta()` | `v1beta.InputServiceClient` (preview) |
 | `CommandResult()` | `v1beta.CommandResultServiceClient` (preview) |
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
@@ -736,6 +738,13 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Telemetry()` | `TelemetryServiceClient` (stable since azd 1.36.0) |
 
 Always call `defer client.Close()` after creation.
+
+Input handlers receive `*v1beta.InputDefinition` and return `(*string, error)`.
+Return `nil, nil` to decline; do not prompt or persist values. Definitions carry
+semantic kinds, optional environment bindings, allowed values, and advisory
+annotations without naming a resolver. See
+[input providers](extension-framework.md#input-providers-beta) for the initial
+core consumers, matching rules, precedence, cancellation, and host requirements.
 
 #### Service configuration persistence
 

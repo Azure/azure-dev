@@ -95,6 +95,36 @@ Existing global command metadata and telemetry opt-out behavior are unchanged.
 Help and flag-parser failures do not execute the action; action-level validation failures record `failed` with zero counts.
 A maintainer must assess approval coverage before rollout. This records the proposed scope, not completed approval.
 
+## Recorded scope for hosted-agent memory snapshots
+
+This core change registers the field contract only. Runtime emission is supplied
+by extension PR [#10825](https://github.com/Azure/azure-dev/pull/10825); registration
+alone does not enable collection or change extension hosting behavior.
+
+The existing `agent.phase.completed` includes the fixed marker
+`ext.agent.memory.snapshot=true` only for resolved hosted provider Deploy attempts
+with snapshots explicitly enabled. It is classified `SystemMetadata` /
+`FeatureInsight`, endpoint `N/A`, not hashed and not a measurement. Disabled,
+unspecified, unresolved or non-hosted definitions, context events, other phases
+and steps omit the marker. No `false`, `unset` or `unknown` value is collected.
+Result, duration and invocation-local attempt ID remain the existing phase fields
+on that same event. No extra result event, RPC, queue, exporter, client or lifecycle
+hook is added. No new error-code field is collected.
+
+No agent names, versions, service names, request IDs, paths, URLs, credentials,
+or configuration contents are introduced. Outcomes belong to individual deployment
+attempts, not unique users or the whole command. Snapshot capture or restore is
+not measured, and missing markers do not mean disabled. Timeout/cancellation leave the backend outcome
+unknown. Request termination state/cause is used for errored hosted returns
+without replacing the original error. Existing phase reporting boundaries,
+one-second budget and best-effort loss remain applicable; missing events do not
+prove non-execution or define a complete deployment-success denominator.
+
+The official-source gate, opt-out and shared event budget remain unchanged.
+No core shutdown protocol is added. A maintainer must assess approval coverage;
+this records the proposed scope, not completed approval. Destination/query
+validation remains pending before rollout.
+
 ## Related references
 
 | Need | Reference |

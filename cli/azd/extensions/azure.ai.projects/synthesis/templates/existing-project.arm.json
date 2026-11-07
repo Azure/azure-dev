@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "7215862744136170496"
+      "templateHash": "19133302460120456"
     }
   },
   "definitions": {
@@ -803,7 +803,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "5920771964239170690"
+              "templateHash": "11506587318951603642"
             }
           },
           "parameters": {
@@ -941,6 +941,23 @@
               "dependsOn": [
                 "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-network-approver')]",
                 "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link')]"
+              ]
+            },
+            {
+              "condition": "[parameters('managedEgressRule')]",
+              "type": "Microsoft.CognitiveServices/accounts/managedNetworks/outboundRules",
+              "apiVersion": "2025-10-01-preview",
+              "name": "[format('{0}/default/foundry-account-pe', variables('projectParts')[8])]",
+              "properties": {
+                "type": "PrivateEndpoint",
+                "destination": {
+                  "serviceResourceId": "[resourceId('Microsoft.CognitiveServices/accounts', variables('projectParts')[8])]",
+                  "subresourceTarget": "account"
+                },
+                "category": "UserDefined"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts/managedNetworks/outboundRules', split(format('{0}/default/ampls-monitor-rule', variables('projectParts')[8]), '/')[0], split(format('{0}/default/ampls-monitor-rule', variables('projectParts')[8]), '/')[1], split(format('{0}/default/ampls-monitor-rule', variables('projectParts')[8]), '/')[2])]"
               ]
             },
             {

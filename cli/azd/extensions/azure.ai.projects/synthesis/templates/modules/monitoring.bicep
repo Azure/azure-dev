@@ -110,6 +110,22 @@ resource managedNetworkRule 'Microsoft.CognitiveServices/accounts/managedNetwork
   dependsOn: [networkApproverAssignment]
 }
 
+// Hosted agents call back into the account from the managed network; without a
+// private endpoint rule to the account itself they fail with "Public access is disabled".
+#disable-next-line BCP081
+resource accountSelfRule 'Microsoft.CognitiveServices/accounts/managedNetworks/outboundRules@2025-10-01-preview' = if (managedEgressRule) {
+  name: '${projectParts[8]}/default/foundry-account-pe'
+  properties: {
+    type: 'PrivateEndpoint'
+    destination: {
+      serviceResourceId: foundryAccount.id
+      subresourceTarget: 'account'
+    }
+    category: 'UserDefined'
+  }
+  dependsOn: [managedNetworkRule]
+}
+
 module resync 'monitoring-resync.bicep' = if (createResources && privateNetwork) {
   name: 'foundry-monitoring-resync'
   params: {

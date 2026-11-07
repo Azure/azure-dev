@@ -105,6 +105,8 @@ func TestPrivateMonitoringTemplateGates(t *testing.T) {
 	// The workspace closes public ingestion like the component does.
 	monitoring := read("templates/modules/monitoring.bicep")
 	assert.Contains(t, monitoring, "ampls-monitor-rule")
+	assert.Contains(t, monitoring, "foundry-account-pe")
+	assert.Contains(t, monitoring, "subresourceTarget: 'account'")
 	assert.Contains(t, monitoring, "subresourceTarget: 'azuremonitor'")
 	workspace := monitoring[strings.Index(monitoring, "resource workspace"):strings.Index(monitoring, "resource component")]
 	assert.Contains(t, workspace, "publicNetworkAccessForIngestion: publicNetworkAccess")

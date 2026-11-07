@@ -37,20 +37,34 @@ import (
 
 func TestInputProviderTerraformLocationBinding(t *testing.T) {
 	for _, tt := range []struct {
-		name     string
-		template string
-		existing string
-		wantErr  string
-		calls    int
+		name       string
+		template   string
+		existing   string
+		process    string
+		noProvider bool
+		unreadable bool
+		wantErr    string
+		calls      int
 	}{
 		{name: "required location", template: `{"location":"${AZURE_LOCATION}"}`, calls: 1},
 		{name: "existing location", template: `{"location":"${AZURE_LOCATION}"}`, existing: "westus3"},
+		{name: "process location wins", template: `{"location":"${AZURE_LOCATION}"}`, process: "westus3"},
+		{name: "dotenv wins over process", template: `{"location":"${AZURE_LOCATION}"}`,
+			existing: "westus3", process: "eastus2"},
+		{name: "existing location does not read template", existing: "westus3", unreadable: true},
+		{name: "inactive providers do not read template", noProvider: true, unreadable: true, wantErr: "prompt required"},
+		{name: "inactive providers do not parse template", noProvider: true, template: `${`, wantErr: "prompt required"},
+		{name: "binding discovery does not evaluate unrelated expressions",
+			template: `{"location":"${AZURE_LOCATION}","unrelated":"${UNRELATED:?missing}"}`, calls: 1},
 		{name: "no location binding", template: `{"name":"${AZURE_ENV_NAME}"}`, wantErr: "prompt required"},
 		{name: "no variables file", wantErr: "prompt required"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(environment.LocationEnvVarName, "")
 			require.NoError(t, os.Unsetenv(environment.LocationEnvVarName))
+			if tt.process != "" {
+				t.Setenv(environment.LocationEnvVarName, tt.process)
+			}
 			mockContext := mocks.NewMockContext(t.Context())
 			mockContext.Console.SetNoPromptMode(true)
 			env := environment.New("test")
@@ -63,17 +77,22 @@ func TestInputProviderTerraformLocationBinding(t *testing.T) {
 			accountManager := &mockaccount.MockAccountManager{Locations: []account.Location{{Name: "eastus2"}}}
 			ioc.RegisterInstance[account.Manager](mockContext.Container, accountManager)
 			calls := 0
-			ioc.RegisterInstance[inputs.Resolver](mockContext.Container, mockinputs.Resolver(
-				func(_ context.Context, definition *v1beta.InputDefinition) (*string, error) {
-					require.Equal(t, inputs.AzureLocationKind, definition.Kind)
-					require.Equal(t, environment.LocationEnvVarName, definition.EnvironmentVariable)
-					calls++
-					return new("eastus2"), nil
-				},
-			))
+			if !tt.noProvider {
+				ioc.RegisterInstance[inputs.Resolver](mockContext.Container, mockinputs.Resolver(
+					func(_ context.Context, definition *v1beta.InputDefinition) (*string, error) {
+						require.Equal(t, inputs.AzureLocationKind, definition.Kind)
+						require.Equal(t, environment.LocationEnvVarName, definition.EnvironmentVariable)
+						calls++
+						return new("eastus2"), nil
+					},
+				))
+			}
 			dir := t.TempDir()
 			if tt.template != "" {
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "main.tfvars.json"), []byte(tt.template), 0600))
+			}
+			if tt.unreadable {
+				require.NoError(t, os.Mkdir(filepath.Join(dir, "main.tfvars.json"), 0700))
 			}
 			provider := &TerraformProvider{
 				env: env, envManager: envManager, serviceLocator: mockContext.Container,
@@ -90,6 +109,8 @@ func TestInputProviderTerraformLocationBinding(t *testing.T) {
 				expected := "eastus2"
 				if tt.existing != "" {
 					expected = tt.existing
+				} else if tt.process != "" {
+					expected = tt.process
 				}
 				require.Equal(t, expected, env.GetLocation())
 				envManager.AssertNumberOfCalls(t, "Save", 2)

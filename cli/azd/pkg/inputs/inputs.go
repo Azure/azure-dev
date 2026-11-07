@@ -41,7 +41,31 @@ type Contribution struct {
 // Resolver gathers and combines options without prompting or persisting values.
 // An empty result means no extension contributed options.
 type Resolver interface {
+	HasInputProviders(context.Context) (bool, error)
 	ResolveInput(context.Context, *v1beta.InputDefinition) ([]Option, error)
+}
+
+// ResolveOptions supplies native validation and consumer-specific remediation.
+type ResolveOptions struct {
+	Filter        func(string) (bool, error)
+	FilterOptions func([]Option) ([]Option, error)
+	Sources       []input.InputSource
+	Description   string
+}
+
+// HasProviders checks availability without starting listeners or requesting values.
+func HasProviders(ctx context.Context, locator ioc.ServiceLocator) (bool, error) {
+	if locator == nil {
+		return false, nil
+	}
+	var resolver Resolver
+	if err := locator.Resolve(&resolver); err != nil {
+		if errors.Is(err, ioc.ErrResolveInstance) {
+			return false, nil
+		}
+		return false, fmt.Errorf("resolving input coordinator: %w", err)
+	}
+	return resolver.HasInputProviders(ctx)
 }
 
 // Combine intersects required sets, unions suggestions, and merges equal options.
@@ -60,13 +84,6 @@ func Combine(definition *v1beta.InputDefinition, contributions []Contribution) (
 			return nil, fmt.Errorf("extension %q returned an invalid input response", contribution.Source)
 		}
 		candidates := response.Options
-		legacy := response.Value //nolint:staticcheck // Preserve the initial preview's singular wire response.
-		if legacy != nil {
-			if len(candidates) > 0 || response.Required {
-				return nil, fmt.Errorf("extension %q mixed legacy and option responses", contribution.Source)
-			}
-			candidates = []*v1beta.InputOption{{Value: *legacy, Recommended: true}}
-		}
 		var allowed []string
 		for _, candidate := range candidates {
 			if candidate == nil {
@@ -119,7 +136,7 @@ func Resolve(
 	ctx context.Context,
 	locator ioc.ServiceLocator,
 	definition *v1beta.InputDefinition,
-	filter func(string) (bool, error),
+	settings ResolveOptions,
 ) (*string, error) {
 	if locator == nil {
 		return nil, nil
@@ -143,8 +160,8 @@ func Resolve(
 		if len(definition.AllowedValues) > 0 && !slices.Contains(definition.AllowedValues, option.Value) {
 			continue
 		}
-		if filter != nil {
-			accepted, err := filter(option.Value)
+		if settings.Filter != nil {
+			accepted, err := settings.Filter(option.Value)
 			if err != nil {
 				return nil, fmt.Errorf("validating input provider options for %q: %w", definition.Id, err)
 			}
@@ -153,6 +170,12 @@ func Resolve(
 			}
 		}
 		valid = append(valid, option)
+	}
+	if len(valid) > 0 && settings.FilterOptions != nil {
+		valid, err = settings.FilterOptions(valid)
+		if err != nil {
+			return nil, fmt.Errorf("validating input provider options for %q: %w", definition.Id, err)
+		}
 	}
 	if len(valid) == 0 {
 		return nil, fmt.Errorf("no valid input provider options remain for input %q", definition.Id)
@@ -179,12 +202,10 @@ func Resolve(
 	}
 	if console.IsNoPromptMode() {
 		required := input.RequiredInput{
-			Name: definition.Id, Description: "Multiple valid options remain without a unique recommendation.",
+			Name: definition.Id, Description: settings.Description, Sources: settings.Sources,
 		}
-		if definition.EnvironmentVariable != "" {
-			required.Sources = []input.InputSource{{
-				Kind: input.InputSourceEnvironment, Name: definition.EnvironmentVariable,
-			}}
+		if required.Description == "" {
+			required.Description = "Multiple valid options remain without a unique recommendation."
 		}
 		return nil, &input.PromptRequiredError{
 			Message: "Input provider options require a selection.", Inputs: []input.RequiredInput{required},

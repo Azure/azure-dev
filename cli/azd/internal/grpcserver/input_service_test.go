@@ -6,12 +6,16 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"io"
+	"log"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/inputs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -84,7 +88,9 @@ func startInputTestHost(t *testing.T, handler azdext.BetaInputHandler) *InputSer
 		require.Eventually(t, func() bool {
 			service.mu.RLock()
 			defer service.mu.RUnlock()
-			return len(service.providers) == 0
+			return !slices.ContainsFunc(service.providers, func(entry inputProviderEntry) bool {
+				return entry.err == nil
+			})
 		}, 5*time.Second, 5*time.Millisecond)
 	})
 	select {
@@ -103,7 +109,7 @@ func TestBetaInputProviderResolvesAndDeclines(t *testing.T) {
 		_ context.Context, definition *v1beta.InputDefinition,
 	) (*v1beta.ResolveInputResponse, error) {
 		assert.Equal(t, "AZURE_ENV_NAME", definition.EnvironmentVariable)
-		return &v1beta.ResolveInputResponse{Value: new("demo")}, nil
+		return &v1beta.ResolveInputResponse{Options: []*v1beta.InputOption{{Value: "demo", Recommended: true}}}, nil
 	})
 	value, err := service.ResolveInput(t.Context(), &v1beta.InputDefinition{
 		Id: "environment.name", Kind: inputs.EnvironmentNameKind, EnvironmentVariable: "AZURE_ENV_NAME",
@@ -250,6 +256,7 @@ func TestBetaInputProviderStreamAuthorizationAndCleanup(t *testing.T) {
 			if authorized {
 				extension.Capabilities = []extensions.CapabilityType{extensions.InputProviderCapability}
 			}
+
 			service := NewInputService(newStreamTestExtensionManager(t, extension))
 			stream := newRegisterStream(extensionClaimsContext(t.Context(), extension.Id), &v1beta.InputMessage{
 				RequestId: "registration",
@@ -266,7 +273,37 @@ func TestBetaInputProviderStreamAuthorizationAndCleanup(t *testing.T) {
 			} else {
 				require.Equal(t, codes.PermissionDenied, status.Code(err))
 			}
-			require.Empty(t, service.providers)
+			if authorized {
+				require.Len(t, service.providers, 1)
+				_, err := service.ResolveInput(t.Context(), &v1beta.InputDefinition{
+					Id: "location", Kind: inputs.AzureLocationKind,
+				})
+				require.ErrorContains(t, err, "input provider disconnected")
+				other, err := service.ResolveInput(t.Context(), &v1beta.InputDefinition{Id: "other", Kind: "other/v1"})
+				require.NoError(t, err)
+				require.Empty(t, other)
+
+				stream := newRegisterStream(extensionClaimsContext(t.Context(), extension.Id), stream.request)
+				require.NoError(t, service.Stream(stream))
+				require.NotNil(t, stream.response.GetRegisterInputProviderResponse(), "reconnection must register again")
+				require.Len(t, service.providers, 1)
+			} else {
+				require.Empty(t, service.providers)
+			}
 		})
 	}
+}
+
+func TestBetaInputProviderCannotRegisterClosedStream(t *testing.T) {
+	service := NewInputService(nil)
+	broker := grpcbroker.NewMessageBroker(
+		newFailingStream[v1beta.InputMessage](t.Context(), io.EOF),
+		azdext.NewBetaInputEnvelope(), "test.inputs", log.Default())
+	broker.Close()
+	response, err := service.registerProvider("test.inputs", broker, &v1beta.RegisterInputProviderRequest{
+		Kinds: []string{inputs.AzureLocationKind},
+	})
+	require.Nil(t, response)
+	require.Equal(t, codes.Unavailable, status.Code(err))
+	require.Empty(t, service.providers)
 }

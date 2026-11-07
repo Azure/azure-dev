@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/inputs"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 )
@@ -22,11 +23,17 @@ func ResolveLocationInput(
 	definition *v1beta.InputDefinition,
 	subscriptionID string,
 	filter LocationFilterPredicate,
-	validate func(string) (bool, error),
+	validate func([]inputs.Option) ([]inputs.Option, error),
 ) (*string, error) {
 	var locations []account.Location
 	loaded := false
-	return inputs.Resolve(ctx, locator, definition, func(value string) (bool, error) {
+	settings := inputs.ResolveOptions{FilterOptions: validate}
+	if definition.EnvironmentVariable != "" {
+		settings.Sources = []input.InputSource{{
+			Kind: input.InputSourceEnvironment, Name: definition.EnvironmentVariable,
+		}}
+	}
+	settings.Filter = func(value string) (bool, error) {
 		if !loaded {
 			var manager account.Manager
 			if err := locator.Resolve(&manager); err != nil {
@@ -42,12 +49,10 @@ func ResolveLocationInput(
 		for _, location := range locations {
 			if location.Name == value && !strings.Contains(location.RegionalDisplayName, "STG") &&
 				(filter == nil || filter(location)) {
-				if validate != nil {
-					return validate(value)
-				}
 				return true, nil
 			}
 		}
 		return false, nil
-	})
+	}
+	return inputs.Resolve(ctx, locator, definition, settings)
 }

@@ -47,8 +47,7 @@ for host routing and compatibility behavior.
 Input providers use the native beta `InputService.Stream`, with correlated
 registration and resolution messages. Providers return string options with
 recommendations, rationales, and optional required sets for core-defined needs.
-The host retains the initial singular `value` field as one recommendation and
-rejects mixing it with the richer response. It has no stable or unversioned route.
+The service has no stable or unversioned route.
 See [input providers](../docs/extensions/extension-framework.md#input-providers-beta)
 for registration, matching, constraints, and decline semantics.
 

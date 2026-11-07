@@ -67,12 +67,6 @@ func TestCombineInputOptions(t *testing.T) {
 		{name: "empty string is an option", responses: []*v1beta.ResolveInputResponse{
 			{Options: []*v1beta.InputOption{{Value: ""}}},
 		}, want: []string{""}},
-		{name: "legacy value is a recommendation", responses: []*v1beta.ResolveInputResponse{
-			{Value: new("eastus2")},
-		}, want: []string{"eastus2"}, recommended: []string{"eastus2"}},
-		{name: "mixed legacy and options rejected", responses: []*v1beta.ResolveInputResponse{
-			{Value: new("eastus2"), Options: []*v1beta.InputOption{{Value: "westus3"}}},
-		}, wantErr: "mixed legacy"},
 		{name: "malformed option", responses: []*v1beta.ResolveInputResponse{
 			{Options: []*v1beta.InputOption{nil}},
 		}, wantErr: "invalid input option"},
@@ -188,7 +182,9 @@ func TestInputOptionSelection(t *testing.T) {
 			))
 			value, err := inputs.Resolve(t.Context(), mockContext.Container, &v1beta.InputDefinition{
 				Id: "location", Kind: inputs.AzureLocationKind, EnvironmentVariable: "AZURE_LOCATION",
-			}, tt.filter)
+			}, inputs.ResolveOptions{Filter: tt.filter, Sources: []input.InputSource{{
+				Kind: input.InputSourceEnvironment, Name: "AZURE_LOCATION",
+			}}})
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				require.Nil(t, value)

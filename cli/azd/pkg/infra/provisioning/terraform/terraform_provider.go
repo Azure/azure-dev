@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/inputs"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -28,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/drone/envsubst"
+	"github.com/drone/envsubst/parse"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -140,19 +142,25 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 // AZURE_LOCATION value.
 func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
 	var inputLocator ioc.ServiceLocator
-	if t.serviceLocator != nil {
-		content, err := os.ReadFile(t.parametersTemplateFilePath())
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("reading terraform input bindings: %w", err)
+	_, hasLocation := t.env.LookupEnv(environment.LocationEnvVarName)
+	if !hasLocation {
+		available, err := inputs.HasProviders(ctx, t.serviceLocator)
+		if err != nil {
+			return err
 		}
-		if err == nil {
-			if _, err := envsubst.Eval(string(content), func(name string) string {
-				if name == environment.LocationEnvVarName {
+		if available {
+			content, err := os.ReadFile(t.parametersTemplateFilePath())
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("reading terraform input bindings: %w", err)
+			}
+			if err == nil {
+				tree, err := parse.Parse(string(content))
+				if err != nil {
+					return fmt.Errorf("reading terraform input bindings: %w", err)
+				}
+				if referencesLocation(tree.Root) {
 					inputLocator = t.serviceLocator
 				}
-				return t.env.Getenv(name)
-			}); err != nil {
-				return fmt.Errorf("reading terraform input bindings: %w", err)
 			}
 		}
 	}
@@ -163,6 +171,17 @@ func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
 		t.prompters,
 		provisioning.EnsureSubscriptionAndLocationOptions{InputServiceLocator: inputLocator},
 	)
+}
+
+func referencesLocation(node parse.Node) bool {
+	switch node := node.(type) {
+	case *parse.ListNode:
+		return slices.ContainsFunc(node.Nodes, referencesLocation)
+	case *parse.FuncNode:
+		return node.Param == environment.LocationEnvVarName || slices.ContainsFunc(node.Args, referencesLocation)
+	default:
+		return false
+	}
 }
 
 // Previews the infrastructure through terraform plan

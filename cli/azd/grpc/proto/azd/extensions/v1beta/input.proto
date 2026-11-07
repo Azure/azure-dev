@@ -49,8 +49,8 @@ message ResolveInputRequest {
 }
 
 message ResolveInputResponse {
-  // Legacy single recommendation. Must not be combined with options or required.
-  optional string value = 1 [deprecated = true];
+  reserved 1;
+  reserved "value";
   repeated InputOption options = 2;
   // When true, options is the complete allowed set, not just suggestions.
   // Required sets intersect across providers and with the input's allowed values.

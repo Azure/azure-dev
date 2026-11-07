@@ -28,6 +28,7 @@ type inputProviderEntry struct {
 	kind      string
 	extension string
 	broker    *grpcbroker.MessageBroker[v1beta.InputMessage]
+	err       error
 }
 
 // InputService coordinates immediate string input resolution over the beta channel.
@@ -41,6 +42,13 @@ type InputService struct {
 // NewInputService creates a coordinator that does not require an initialized environment.
 func NewInputService(extensionManager *extensions.Manager) *InputService {
 	return &InputService{extensionManager: extensionManager}
+}
+
+// HasInputProviders reports whether any provider has registered, including failed streams.
+func (s *InputService) HasInputProviders(context.Context) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.providers) > 0, nil
 }
 
 // Stream accepts capability-authorized provider registrations and handles correlated requests.
@@ -59,39 +67,17 @@ func (s *InputService) Stream(stream v1beta.InputService_StreamServer) error {
 	broker := grpcbroker.NewMessageBroker(stream, azdext.NewBetaInputEnvelope(), extension.Id, log.Default())
 	defer func() {
 		s.mu.Lock()
-		s.providers = slices.DeleteFunc(s.providers, func(entry inputProviderEntry) bool {
-			return entry.broker == broker
-		})
+		for i := range s.providers {
+			if s.providers[i].broker == broker {
+				s.providers[i].err = status.Error(codes.Unavailable, "input provider disconnected")
+			}
+		}
 		s.mu.Unlock()
 	}()
 	if err := broker.On(func(
 		_ context.Context, request *v1beta.RegisterInputProviderRequest,
 	) (*v1beta.InputMessage, error) {
-		if len(request.Kinds) == 0 {
-			return nil, status.Error(codes.InvalidArgument, "at least one input kind is required")
-		}
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		seen := make(map[string]bool)
-		for _, kind := range request.Kinds {
-			if strings.TrimSpace(kind) == "" || seen[kind] {
-				return nil, status.Error(codes.InvalidArgument, "input kinds must be nonempty and unique")
-			}
-			seen[kind] = true
-			for _, entry := range s.providers {
-				if entry.kind == kind && entry.extension == extension.Id {
-					return nil, status.Errorf(codes.AlreadyExists, "input kind %q is already registered", kind)
-				}
-			}
-		}
-		for _, kind := range request.Kinds {
-			s.providers = append(s.providers, inputProviderEntry{kind, extension.Id, broker})
-		}
-		return &v1beta.InputMessage{
-			MessageType: &v1beta.InputMessage_RegisterInputProviderResponse{
-				RegisterInputProviderResponse: &v1beta.RegisterInputProviderResponse{},
-			},
-		}, nil
+		return s.registerProvider(extension.Id, broker, request)
 	}); err != nil {
 		return err
 	}
@@ -99,6 +85,44 @@ func (s *InputService) Stream(stream v1beta.InputService_StreamServer) error {
 		return fmt.Errorf("input provider stream: %w", err)
 	}
 	return nil
+}
+
+func (s *InputService) registerProvider(
+	extensionID string, broker *grpcbroker.MessageBroker[v1beta.InputMessage],
+	request *v1beta.RegisterInputProviderRequest,
+) (*v1beta.InputMessage, error) {
+	if len(request.Kinds) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "at least one input kind is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if isInputBrokerClosed(broker) {
+		return nil, status.Error(codes.Unavailable, "input provider stream is closed")
+	}
+	seen := make(map[string]bool)
+	for _, kind := range request.Kinds {
+		if strings.TrimSpace(kind) == "" || seen[kind] {
+			return nil, status.Error(codes.InvalidArgument, "input kinds must be nonempty and unique")
+		}
+		seen[kind] = true
+		for _, entry := range s.providers {
+			if entry.kind == kind && entry.extension == extensionID && entry.err == nil &&
+				!isInputBrokerClosed(entry.broker) {
+				return nil, status.Errorf(codes.AlreadyExists, "input kind %q is already registered", kind)
+			}
+		}
+	}
+	for _, kind := range request.Kinds {
+		s.providers = slices.DeleteFunc(s.providers, func(entry inputProviderEntry) bool {
+			return entry.kind == kind && entry.extension == extensionID
+		})
+		s.providers = append(s.providers, inputProviderEntry{kind: kind, extension: extensionID, broker: broker})
+	}
+	return &v1beta.InputMessage{
+		MessageType: &v1beta.InputMessage_RegisterInputProviderResponse{
+			RegisterInputProviderResponse: &v1beta.RegisterInputProviderResponse{},
+		},
+	}, nil
 }
 
 // ResolveInput gathers options deterministically and intersects required sets.
@@ -121,6 +145,10 @@ func (s *InputService) ResolveInput(ctx context.Context, definition *v1beta.Inpu
 		if provider.kind != definition.Kind {
 			continue
 		}
+		if provider.err != nil {
+			return nil, fmt.Errorf("extension %q resolving input %q: %w",
+				provider.extension, definition.Id, provider.err)
+		}
 		response, err := provider.broker.SendAndWait(ctx, &v1beta.InputMessage{
 			RequestId: uuid.NewString(),
 			MessageType: &v1beta.InputMessage_ResolveInputRequest{
@@ -137,4 +165,13 @@ func (s *InputService) ResolveInput(ctx context.Context, definition *v1beta.Inpu
 		contributions = append(contributions, inputs.Contribution{Source: provider.extension, Response: resolved})
 	}
 	return inputs.Combine(definition, contributions)
+}
+
+func isInputBrokerClosed(broker *grpcbroker.MessageBroker[v1beta.InputMessage]) bool {
+	select {
+	case <-broker.Done():
+		return true
+	default:
+		return false
+	}
 }

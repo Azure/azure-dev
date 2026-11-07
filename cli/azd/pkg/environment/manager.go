@@ -627,10 +627,28 @@ func (m *manager) Delete(ctx context.Context, name string) error {
 // Input providers can supply a missing name before prompting or the --no-prompt directory-name fallback.
 func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) error {
 	if spec.Name == "" {
+		var existingNames map[string]bool
 		value, err := inputs.Resolve(ctx, m.serviceLocator, &v1beta.InputDefinition{
 			Id: "environment.name", Kind: inputs.EnvironmentNameKind, EnvironmentVariable: EnvNameEnvVarName,
-		}, func(value string) (bool, error) {
-			return IsValidEnvironmentName(value), nil
+		}, inputs.ResolveOptions{
+			Description: "Provide a name with 'azd env new <name>', or '--environment <name>' " +
+				"for commands that support it.",
+			Filter: func(value string) (bool, error) {
+				if !IsValidEnvironmentName(value) {
+					return false, nil
+				}
+				if existingNames == nil {
+					environments, err := m.List(ctx)
+					if err != nil {
+						return false, fmt.Errorf("checking existing environment names: %w", err)
+					}
+					existingNames = make(map[string]bool, len(environments))
+					for _, environment := range environments {
+						existingNames[environment.Name] = true
+					}
+				}
+				return !existingNames[value], nil
+			},
 		})
 		if err != nil {
 			return err

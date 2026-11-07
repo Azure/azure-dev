@@ -132,14 +132,27 @@ not the handler. Existing explicit or persisted values still bypass this missing
 protocol; providers are not queried to revalidate them. Subscription selection and
 authentication remain unchanged.
 
+Environment-name candidates that already exist locally or remotely are excluded
+without loading or hydrating those environments. Missing-input remediation comes from
+the consumer, not from the binding alone: `azd env new` takes an explicit positional
+name and does not consume `AZURE_ENV_NAME`. Other commands that support `--environment`
+retain their normal environment-variable and flag precedence.
+
+Unresolved Bicep parameters sharing `AZURE_LOCATION` are resolved together, intersecting
+their allowed values and applying every length and quota constraint before selection.
+Quota checks batch the candidate locations and report usage-query failures instead of
+treating unavailable data as insufficient quota. Existing non-provider quota lookup
+behavior is unchanged.
+
 All matching providers are queried in extension-ID order with a bounded
 30-second resolution context. A handler returns `nil, nil` or an empty optional
 response to decline. An empty required set is unsatisfiable, not a decline.
 An option containing an empty string is explicit and still subject to validation.
-The initial preview's singular `value` field remains readable as one recommendation;
-it must not be mixed with `options` or `required`.
 Incompatible required sets, no valid remaining options, malformed replies, and provider
 errors fail explicitly. Conflict errors identify sources without printing values.
+Input-provider startup and registered-stream failures also stop input resolution; they
+are not treated as declines. A disconnected provider can recover by registering its
+kinds again on a new stream.
 If every provider declines or none match, the existing prompt or non-interactive fallback runs.
 Handlers must respect cancellation and must not prompt, persist values, or
 provision resources. They must not call APIs that require an initialized current

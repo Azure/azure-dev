@@ -113,3 +113,16 @@ func (r *activatingInputResolver) ResolveInput(
 	}
 	return r.resolver.ResolveInput(ctx, definition)
 }
+
+func (r *activatingInputResolver) HasInputProviders(ctx context.Context) (bool, error) {
+	installed, err := r.activation.extensionManager.ListInstalled()
+	if err != nil {
+		return false, err
+	}
+	for _, extension := range installed {
+		if extension.HasCapability(extensions.InputProviderCapability) {
+			return true, nil
+		}
+	}
+	return r.resolver.HasInputProviders(ctx)
+}

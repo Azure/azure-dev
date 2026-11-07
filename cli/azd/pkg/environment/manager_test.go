@@ -182,6 +182,13 @@ func TestInputProviderEnvironmentName(t *testing.T) {
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				require.Nil(t, env)
+				if tt.noPrompt {
+					required, ok := errors.AsType[*input.PromptRequiredError](err)
+					require.True(t, ok)
+					require.Empty(t, required.Inputs[0].Sources)
+					require.Contains(t, required.ToString(""), "azd env new <name>")
+					require.NotContains(t, required.ToString(""), "azd env set")
+				}
 				entries, err := manager.List(t.Context())
 				require.NoError(t, err)
 				require.Empty(t, entries)
@@ -202,6 +209,60 @@ func TestInputProviderEnvironmentName(t *testing.T) {
 			require.LessOrEqual(t, calls, 1, "the selected default must not be resolved again")
 		})
 	}
+}
+
+func TestInputProviderEnvironmentNameAvoidsExistingState(t *testing.T) {
+	for _, create := range []bool{false, true} {
+		t.Run(map[bool]string{false: "load or initialize", true: "create"}[create], func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			mockContext.Console.WhenSelect(func(input.ConsoleOptions) bool { return true }).Respond(0)
+			mockContext.Console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
+			manager := createEnvManagerForManagerTest(t, mockContext).(*manager)
+			manager.serviceLocator = mockContext.Container
+			existing := New("demo")
+			require.NoError(t, existing.Config.Set("infra.parameters.saved", "preserve-me"))
+			require.NoError(t, manager.Save(t.Context(), existing))
+			configPath, err := manager.ConfigPath(existing)
+			require.NoError(t, err)
+			before, err := os.ReadFile(configPath)
+			require.NoError(t, err)
+			ioc.RegisterInstance[inputs.Resolver](mockContext.Container, mockinputs.OptionsResolver(
+				func(context.Context, *v1beta.InputDefinition) ([]inputs.Option, error) {
+					return []inputs.Option{{Value: "demo", Recommended: true}, {Value: "demo-dev"}}, nil
+				}))
+			var env *Environment
+			if create {
+				env, err = manager.Create(t.Context(), Spec{})
+			} else {
+				env, err = manager.LoadOrInitInteractive(t.Context(), "")
+			}
+			require.NoError(t, err)
+			require.Equal(t, "demo-dev", env.Name())
+			after, err := os.ReadFile(configPath)
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+		})
+	}
+}
+
+func TestInputProviderEnvironmentNameDoesNotHydrateRemoteCollisions(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	manager := createEnvManagerForManagerTest(t, mockContext).(*manager)
+	manager.serviceLocator = mockContext.Container
+	remote := &MockDataStore{}
+	remote.On("List", t.Context()).Return([]*contracts.EnvListEnvironment{{Name: "demo"}}, nil)
+	manager.remote = remote
+	ioc.RegisterInstance[inputs.Resolver](mockContext.Container, mockinputs.OptionsResolver(
+		func(context.Context, *v1beta.InputDefinition) ([]inputs.Option, error) {
+			return []inputs.Option{{Value: "demo", Recommended: true}, {Value: "demo-dev"}}, nil
+		}))
+	spec := Spec{}
+	require.NoError(t, manager.ensureValidEnvironmentName(t.Context(), &spec))
+	require.Equal(t, "demo-dev", spec.Name)
+	remote.AssertNotCalled(t, "Get", mock.Anything, mock.Anything)
+	remote.AssertNotCalled(t, "Save", mock.Anything, mock.Anything, mock.Anything)
+	_, err := os.Stat(filepath.Join(manager.azdContext.ProjectDirectory(), ".azure", "demo"))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestInputProviderEnvironmentNameBeforeNoPromptDefault(t *testing.T) {

@@ -154,6 +154,7 @@ func TestBetaInputProviderCommands(t *testing.T) {
 		name        string
 		args        []string
 		envName     string
+		processName string
 		starts      int32
 		interactive bool
 	}{
@@ -161,11 +162,15 @@ func TestBetaInputProviderCommands(t *testing.T) {
 		{name: "interactive init template", args: []string{"init"}, envName: "demo", starts: 1, interactive: true},
 		{name: "init explicit environment", args: []string{"init", "--environment", "explicit"},
 			envName: "explicit"},
+		{name: "init process environment", args: []string{"init"}, envName: "from-process", processName: "from-process"},
+		{name: "init flag wins over process", args: []string{"init", "--environment", "explicit"},
+			envName: "explicit", processName: "from-process"},
 		{name: "env new", args: []string{"env", "new"}, envName: "demo", starts: 1},
 		{name: "env new explicit environment", args: []string{"env", "new", "explicit"}, envName: "explicit"},
 		{name: "version", args: []string{"version"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(environment.EnvNameEnvVarName, tt.processName)
 			projectDir := t.TempDir()
 			t.Chdir(projectDir)
 			args := slices.Clone(tt.args)

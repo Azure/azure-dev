@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -32,29 +33,52 @@ import (
 
 func TestInputProviderRequiredBicepLocation(t *testing.T) {
 	for _, tt := range []struct {
-		name         string
-		parameter    azure.ArmTemplateParameterDefinition
-		fileValue    string
-		saved        string
-		existing     string
-		emptyEnv     bool
-		repeated     bool
-		resolved     *string
-		options      []inputs.Option
-		quotaFailure bool
-		wantCalls    int
-		wantLocation string
-		wantErr      string
+		name           string
+		parameter      azure.ArmTemplateParameterDefinition
+		otherParameter *azure.ArmTemplateParameterDefinition
+		fileValue      string
+		saved          string
+		existing       string
+		process        string
+		emptyEnv       bool
+		repeated       bool
+		resolved       *string
+		options        []inputs.Option
+		quotaFailure   bool
+		usageFailure   bool
+		wantCalls      int
+		wantLocation   string
+		wantErr        string
 	}{
 		{name: "missing mapped location", fileValue: "${AZURE_LOCATION}", resolved: new("eastus2"),
 			wantCalls: 1, wantLocation: "eastus2"},
 		{name: "shared binding resolves once", fileValue: "${AZURE_LOCATION}", resolved: new("eastus2"),
 			repeated: true, wantCalls: 1, wantLocation: "eastus2"},
+		{name: "shared allowed values are intersected before selection", fileValue: "${AZURE_LOCATION}", repeated: true,
+			options: []inputs.Option{{Value: "eastus2", Recommended: true}, {Value: "westus3"}},
+			parameter: azure.ArmTemplateParameterDefinition{
+				Type: "string", AllowedValues: new([]any{"eastus2", "westus3"}),
+			},
+			otherParameter: new(azure.ArmTemplateParameterDefinition{Type: "string", AllowedValues: new([]any{"westus3"})}),
+			wantCalls:      1, wantLocation: "westus3"},
+		{name: "shared length constraints filter before selection", fileValue: "${AZURE_LOCATION}", repeated: true,
+			options:        []inputs.Option{{Value: "eastus2", Recommended: true}, {Value: "swedencentral"}},
+			otherParameter: new(azure.ArmTemplateParameterDefinition{Type: "string", MinLength: new(10)}),
+			wantCalls:      1, wantLocation: "swedencentral"},
+		{name: "shared quota constraints filter before selection", fileValue: "${AZURE_LOCATION}", repeated: true,
+			options: []inputs.Option{{Value: "eastus2", Recommended: true}, {Value: "westus3"}},
+			otherParameter: new(azure.ArmTemplateParameterDefinition{Type: "string", Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type":"location","usageName":["demo.usage"]}`),
+			}}), wantCalls: 1, wantLocation: "westus3"},
 		{name: "explicit empty environment preserves missing input", fileValue: "${AZURE_LOCATION}",
 			emptyEnv: true, wantErr: "missing required inputs"},
 		{name: "parameter value wins", fileValue: "westus3", wantLocation: ""},
 		{name: "environment value wins", fileValue: "${AZURE_LOCATION}", existing: "westus3",
 			wantLocation: "westus3"},
+		{name: "process environment wins", fileValue: "${AZURE_LOCATION}", process: "westus3",
+			wantLocation: "westus3"},
+		{name: "dotenv wins over process environment", fileValue: "${AZURE_LOCATION}",
+			existing: "westus3", process: "eastus2", wantLocation: "westus3"},
 		{name: "saved value wins", fileValue: "${AZURE_LOCATION}", saved: "westus3"},
 		{name: "default needs no input", fileValue: "${AZURE_LOCATION}",
 			parameter: azure.ArmTemplateParameterDefinition{Type: "string", DefaultValue: "westus3"}},
@@ -96,10 +120,18 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 			parameter: azure.ArmTemplateParameterDefinition{Type: "string", Metadata: map[string]json.RawMessage{
 				"azd": json.RawMessage(`{"type":"location","usageName":["demo.usage"]}`),
 			}}, wantCalls: 1, wantErr: "quota lookup failed"},
+		{name: "usage lookup failure is not skipped", fileValue: "${AZURE_LOCATION}", usageFailure: true,
+			options: []inputs.Option{{Value: "eastus2", Recommended: true}, {Value: "westus3"}},
+			parameter: azure.ArmTemplateParameterDefinition{Type: "string", Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type":"location","usageName":["demo.usage"]}`),
+			}}, wantCalls: 1, wantErr: "usage lookup failed"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(environment.LocationEnvVarName, "")
 			require.NoError(t, os.Unsetenv(environment.LocationEnvVarName))
+			if tt.process != "" {
+				t.Setenv(environment.LocationEnvVarName, tt.process)
+			}
 			if tt.emptyEnv {
 				t.Setenv(environment.LocationEnvVarName, "")
 			}
@@ -152,21 +184,33 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 				path: filepath.Join(dir, "main.bicep"), options: provisioning.Options{Module: "main"},
 				curPrincipal: &mockCurrentPrincipal{}, serviceLocator: mockContext.Container,
 			}
-			if len(parameter.Metadata) > 0 {
+			hasQuota := len(parameter.Metadata) > 0 ||
+				(tt.otherParameter != nil && len(tt.otherParameter.Metadata) > 0)
+			var skuCalls atomic.Int32
+			if hasQuota {
 				mockContext.HttpClient.When(func(req *http.Request) bool {
 					return req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/skus")
 				}).RespondFn(func(req *http.Request) (*http.Response, error) {
+					skuCalls.Add(1)
 					if tt.quotaFailure {
 						return mocks.CreateHttpResponseWithBody(req, http.StatusBadRequest, json.RawMessage(
 							`{"error":{"code":"BadRequest","message":"quota lookup failed"}}`))
 					}
+					locations := `["westus3"]`
+					if tt.usageFailure {
+						locations = `["eastus2","westus3"]`
+					}
 					return mocks.CreateHttpResponseWithBody(req, http.StatusOK, json.RawMessage(
 						`{"value":[{"kind":"AIServices","name":"S0","tier":"Standard",`+
-							`"resourceType":"accounts","locations":["westus3"]}]}`))
+							`"resourceType":"accounts","locations":`+locations+`}]}`))
 				})
 				mockContext.HttpClient.When(func(req *http.Request) bool {
 					return req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/usages")
 				}).RespondFn(func(req *http.Request) (*http.Response, error) {
+					if tt.usageFailure && strings.Contains(req.URL.Path, "/locations/eastus2/") {
+						return mocks.CreateHttpResponseWithBody(req, http.StatusBadRequest, json.RawMessage(
+							`{"error":{"code":"BadRequest","message":"usage lookup failed"}}`))
+					}
 					return mocks.CreateHttpResponseWithBody(req, http.StatusOK, json.RawMessage(`{"value":[]}`))
 				})
 				client := azapi.NewAzureClient(mockaccount.SubscriptionCredentialProviderFunc(
@@ -178,6 +222,9 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 			definitions := azure.ArmTemplateParameterDefinitions{"location": parameter}
 			if tt.repeated {
 				definitions["otherLocation"] = parameter
+				if tt.otherParameter != nil {
+					definitions["otherLocation"] = *tt.otherParameter
+				}
 			}
 			parameters, err := provider.ensureParameters(t.Context(), azure.ArmTemplate{Parameters: definitions})
 			if tt.wantErr != "" {
@@ -185,6 +232,9 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 				envManager.AssertNotCalled(t, "Save", mock.Anything, mock.Anything)
 			} else {
 				require.NoError(t, err)
+				if tt.process != "" {
+					require.Equal(t, tt.wantLocation, parameters["location"].Value)
+				}
 				if tt.resolved != nil {
 					require.Equal(t, *tt.resolved, parameters["location"].Value)
 					if tt.repeated {
@@ -193,10 +243,16 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 				}
 				if tt.options != nil {
 					require.Equal(t, tt.wantLocation, parameters["location"].Value)
+					if tt.repeated {
+						require.Equal(t, tt.wantLocation, parameters["otherLocation"].Value)
+					}
 				}
 			}
 			require.Equal(t, tt.wantCalls, calls)
 			require.Equal(t, tt.wantLocation, env.GetLocation())
+			if hasQuota {
+				require.Equal(t, int32(1), skuCalls.Load(), "quota validation must batch provider candidates")
+			}
 		})
 	}
 }

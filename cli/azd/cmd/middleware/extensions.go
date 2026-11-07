@@ -326,6 +326,17 @@ func (m *ExtensionsMiddleware) start(ctx context.Context) (func(), error) {
 	totalElapsed := time.Since(allExtensionsStartTime)
 	log.Printf("All %d extensions completed startup in %v\n", len(extensionList), totalElapsed)
 
+	var inputFailures []error
+	for _, failure := range failedExtensions {
+		if failure.extension.HasCapability(extensions.InputProviderCapability) {
+			inputFailures = append(inputFailures, fmt.Errorf(
+				"input provider %q failed to start: %w", failure.extension.Id, failure.err))
+		}
+	}
+	if err := errors.Join(inputFailures...); err != nil {
+		cleanup()
+		return nil, err
+	}
 	return cleanup, nil
 }
 

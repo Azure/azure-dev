@@ -137,54 +137,68 @@ func TestStartAndWaitExtension_PropagatesTraceContext(t *testing.T) {
 	require.Contains(t, captured.Env, "AZD_ENVIRONMENT=test")
 }
 
-func TestExtensionsMiddleware_Run_ContinuesAfterExtensionStartFailure(t *testing.T) {
-	configDir := t.TempDir()
-	t.Setenv("AZD_CONFIG_DIR", configDir)
+func TestExtensionsMiddleware_Run_ListenerStartFailure(t *testing.T) {
+	for _, inputProvider := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unrelated listener remains best effort", true: "input provider fails"}[inputProvider],
+			func(t *testing.T) {
+				configDir := t.TempDir()
+				t.Setenv("AZD_CONFIG_DIR", configDir)
 
-	extensionPath := filepath.Join("extensions", "test-ext", "bin", "test-ext")
-	fullPath := filepath.Join(configDir, extensionPath)
-	require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
-	require.NoError(t, os.WriteFile(fullPath, []byte("test"), 0o600))
+				extensionPath := filepath.Join("extensions", "test-ext", "bin", "test-ext")
+				fullPath := filepath.Join(configDir, extensionPath)
+				require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+				require.NoError(t, os.WriteFile(fullPath, []byte("test"), 0o600))
 
-	mockCtx := mocks.NewMockContext(t.Context())
-	extension := &extensions.Extension{
-		Id:           "test-ext",
-		Path:         extensionPath,
-		Capabilities: []extensions.CapabilityType{extensions.LifecycleEventsCapability},
+				mockCtx := mocks.NewMockContext(t.Context())
+				extension := &extensions.Extension{
+					Id:           "test-ext",
+					Path:         extensionPath,
+					Capabilities: []extensions.CapabilityType{extensions.LifecycleEventsCapability},
+				}
+				if inputProvider {
+					extension.Capabilities = append(extension.Capabilities, extensions.InputProviderCapability)
+				}
+				manager := createExtensionsManager(
+					t,
+					mockCtx,
+					map[string]*extensions.Extension{extension.Id: extension},
+				)
+				startErr := errors.New("listen failed")
+				mockCtx.CommandRunner.When(func(exec.RunArgs, string) bool {
+					return true
+				}).SetError(startErr)
+				ioc.RegisterInstance[*grpcserver.Server](
+					mockCtx.Container,
+					newExtensionsMiddlewareTestServer(),
+				)
+
+				flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+				flags.Bool("debug", true, "")
+				flags.String("cwd", "work", "")
+				flags.String("environment", "test", "")
+				middleware := &ExtensionsMiddleware{
+					extensionManager: manager,
+					extensionRunner:  extensions.NewRunner(mockCtx.CommandRunner),
+					serviceLocator:   mockCtx.Container,
+					console:          mockCtx.Console,
+					options:          &Options{Flags: flags},
+					globalOptions:    &internal.GlobalCommandOptions{NoPrompt: true},
+				}
+				next, calls := nextCounter()
+
+				result, err := middleware.Run(t.Context(), next)
+
+				if inputProvider {
+					require.ErrorIs(t, err, startErr)
+					require.Nil(t, result)
+					require.Zero(t, *calls)
+					return
+				}
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				require.Equal(t, 1, *calls)
+			})
 	}
-	manager := createExtensionsManager(
-		t,
-		mockCtx,
-		map[string]*extensions.Extension{extension.Id: extension},
-	)
-	startErr := errors.New("listen failed")
-	mockCtx.CommandRunner.When(func(exec.RunArgs, string) bool {
-		return true
-	}).SetError(startErr)
-	ioc.RegisterInstance[*grpcserver.Server](
-		mockCtx.Container,
-		newExtensionsMiddlewareTestServer(),
-	)
-
-	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	flags.Bool("debug", true, "")
-	flags.String("cwd", "work", "")
-	flags.String("environment", "test", "")
-	middleware := &ExtensionsMiddleware{
-		extensionManager: manager,
-		extensionRunner:  extensions.NewRunner(mockCtx.CommandRunner),
-		serviceLocator:   mockCtx.Container,
-		console:          mockCtx.Console,
-		options:          &Options{Flags: flags},
-		globalOptions:    &internal.GlobalCommandOptions{NoPrompt: true},
-	}
-	next, calls := nextCounter()
-
-	result, err := middleware.Run(t.Context(), next)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, 1, *calls)
 }
 
 func TestShutdownExtensionProcesses_AutomaticallyCancelsUnresponsiveListener(t *testing.T) {

@@ -346,9 +346,17 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	// which can reference these values
 	if p.mode == bicepparamMode {
 		var inputLocator ioc.ServiceLocator
-		refs, _ := discoverParamEnvRefs(ctx, p.options, p.projectPath)
-		if slices.Contains(refs, environment.LocationEnvVarName) {
-			inputLocator = p.serviceLocator
+		if _, exists := p.env.LookupEnv(environment.LocationEnvVarName); !exists {
+			available, err := inputs.HasProviders(ctx, p.serviceLocator)
+			if err != nil {
+				return err
+			}
+			if available {
+				refs, _ := discoverParamEnvRefs(ctx, p.options, p.projectPath)
+				if slices.Contains(refs, environment.LocationEnvVarName) {
+					inputLocator = p.serviceLocator
+				}
+			}
 		}
 		if err := provisioning.EnsureSubscriptionAndLocation(
 			ctx, p.envManager, p.env, p.prompters, provisioning.EnsureSubscriptionAndLocationOptions{
@@ -3628,6 +3636,8 @@ func (p *BicepProvider) ensureParameters(
 		key   string
 		param azure.ArmTemplateParameterDefinition
 	}
+	var locationGroups [][]locationInput
+	var mappedLocations []locationInput
 
 	// make all parameters mapped to AZURE_LOCATION env var to be location parameters
 	for _, key := range sortedKeys {
@@ -3732,20 +3742,13 @@ func (p *BicepProvider) ensureParameters(
 
 		if parameterType == provisioning.ParameterTypeString && azdMetadata.Type != nil &&
 			*azdMetadata.Type == azure.AzdMetadataTypeLocation {
-			value, err := p.resolveLocationInput(ctx, key, param, slices.Contains(locationParameters, key))
-			if err != nil {
-				return nil, err
+			pending := locationInput{key: key, parameter: param, mapped: slices.Contains(locationParameters, key)}
+			if pending.mapped {
+				mappedLocations = append(mappedLocations, pending)
+			} else {
+				locationGroups = append(locationGroups, []locationInput{pending})
 			}
-			if value != nil {
-				configuredParameters[key] = azure.ArmParameter{Value: *value}
-				if slices.Contains(locationParameters, key) {
-					p.env.SetLocation(*value)
-				} else {
-					mustSetParamAsConfig(key, *value, p.env.Config, param.Secure())
-				}
-				configModified = true
-				continue
-			}
+			continue
 		}
 
 		// If the parameter is tagged with {type: "generate"}, skip prompting.
@@ -3772,6 +3775,38 @@ func (p *BicepProvider) ensureParameters(
 			param azure.ArmTemplateParameterDefinition
 		}{key: key, param: param})
 	}
+
+	if len(mappedLocations) > 0 {
+		locationGroups = append(locationGroups, mappedLocations)
+	}
+	for _, group := range locationGroups {
+		value, err := p.resolveLocationInput(ctx, group)
+		if err != nil {
+			return nil, err
+		}
+		for _, pending := range group {
+			if value == nil {
+				parameterPrompts = append(parameterPrompts, struct {
+					key   string
+					param azure.ArmTemplateParameterDefinition
+				}{pending.key, pending.parameter})
+				continue
+			}
+			configuredParameters[pending.key] = azure.ArmParameter{Value: *value}
+			if pending.mapped {
+				p.env.SetLocation(*value)
+			} else {
+				mustSetParamAsConfig(pending.key, *value, p.env.Config, pending.parameter.Secure())
+			}
+			configModified = true
+		}
+	}
+	slices.SortFunc(parameterPrompts, func(a, b struct {
+		key   string
+		param azure.ArmTemplateParameterDefinition
+	}) int {
+		return strings.Compare(a.key, b.key)
+	})
 
 	// If in no-prompt mode and there are missing parameters, return an error with all missing inputs
 	if len(parameterPrompts) > 0 && p.console.IsNoPromptMode() {
@@ -3836,9 +3871,18 @@ func (p *BicepProvider) ensureParameters(
 	return configuredParameters, nil
 }
 
-func (p *BicepProvider) resolveLocationInput(
-	ctx context.Context, key string, parameter azure.ArmTemplateParameterDefinition, mapped bool,
-) (*string, error) {
+type locationInput struct {
+	key       string
+	parameter azure.ArmTemplateParameterDefinition
+	mapped    bool
+}
+
+func (p *BicepProvider) resolveLocationInput(ctx context.Context, group []locationInput) (*string, error) {
+	available, err := inputs.HasProviders(ctx, p.serviceLocator)
+	if err != nil || !available {
+		return nil, err
+	}
+	key, mapped := group[0].key, group[0].mapped
 	var value *string
 	if mapped {
 		if existing, exists := p.env.LookupEnv(environment.LocationEnvVarName); exists {
@@ -3855,37 +3899,62 @@ func (p *BicepProvider) resolveLocationInput(
 	if mapped {
 		definition.EnvironmentVariable = environment.LocationEnvVarName
 	}
-	if parameter.AllowedValues != nil {
-		if len(*parameter.AllowedValues) == 0 {
-			return nil, fmt.Errorf("location parameter %q has no allowed values", key)
-		}
-		for _, option := range *parameter.AllowedValues {
-			value, ok := option.(string)
-			if !ok {
-				return nil, fmt.Errorf("location parameter %q has a non-string allowed value", key)
+	var quota []string
+	for _, pending := range group {
+		parameter := pending.parameter
+		metadata, _ := parameter.AzdMetadata()
+		quota = append(quota, metadata.UsageName...)
+		if parameter.AllowedValues != nil {
+			if len(*parameter.AllowedValues) == 0 {
+				return nil, fmt.Errorf("location parameter %q has no allowed values", pending.key)
 			}
-			definition.AllowedValues = append(definition.AllowedValues, value)
+			var allowed []string
+			for _, option := range *parameter.AllowedValues {
+				text, ok := option.(string)
+				if !ok {
+					return nil, fmt.Errorf("location parameter %q has a non-string allowed value", pending.key)
+				}
+				allowed = append(allowed, text)
+			}
+			if definition.AllowedValues == nil {
+				definition.AllowedValues = allowed
+			} else {
+				definition.AllowedValues = slices.DeleteFunc(definition.AllowedValues, func(value string) bool {
+					return !slices.Contains(allowed, value)
+				})
+				if len(definition.AllowedValues) == 0 {
+					return nil, fmt.Errorf("location parameters for %q have no common allowed values", key)
+				}
+			}
 		}
 	}
 	if value != nil && len(definition.AllowedValues) > 0 && !slices.Contains(definition.AllowedValues, *value) {
 		return nil, fmt.Errorf("input provider returned a value outside the allowed values for %q", key)
 	}
-	metadata, _ := parameter.AzdMetadata()
-	validate := func(value string) (bool, error) {
-		if err := validateLengthRange(key, parameter.MinLength, parameter.MaxLength)(value); err != nil {
-			return false, nil
-		}
-		if len(metadata.UsageName) > 0 {
-			locations, err := p.locationsWithQuotaFor(ctx, p.env.GetSubscriptionId(), []string{value}, metadata.UsageName)
+	validate := func(options []inputs.Option) ([]inputs.Option, error) {
+		valid := slices.DeleteFunc(slices.Clone(options), func(option inputs.Option) bool {
+			return slices.ContainsFunc(group, func(pending locationInput) bool {
+				return validateLengthRange(pending.key, pending.parameter.MinLength,
+					pending.parameter.MaxLength)(option.Value) != nil
+			})
+		})
+		if len(valid) > 0 && len(quota) > 0 {
+			values := make([]string, len(valid))
+			for i, option := range valid {
+				values[i] = option.Value
+			}
+			locations, err := p.locationsWithQuotaFor(ctx, p.env.GetSubscriptionId(), values, quota, true)
 			if errors.Is(err, errNoLocationQuota) {
-				return false, nil
+				return nil, nil
 			}
 			if err != nil {
-				return false, fmt.Errorf("validating input provider location quota: %w", err)
+				return nil, fmt.Errorf("validating input provider location quota: %w", err)
 			}
-			return slices.Contains(locations, value), nil
+			valid = slices.DeleteFunc(valid, func(option inputs.Option) bool {
+				return !slices.Contains(locations, option.Value)
+			})
 		}
-		return true, nil
+		return valid, nil
 	}
 	if value == nil {
 		return prompt.ResolveLocationInput(ctx, p.serviceLocator, definition, p.env.GetSubscriptionId(),
@@ -3893,11 +3962,11 @@ func (p *BicepProvider) resolveLocationInput(
 				return locationParameterFilterImpl(definition.AllowedValues, location)
 			}, validate)
 	}
-	valid, err := validate(*value)
+	valid, err := validate([]inputs.Option{{Value: *value}})
 	if err != nil {
 		return nil, err
 	}
-	if !valid {
+	if len(valid) == 0 {
 		return nil, fmt.Errorf("input provider location does not satisfy constraints for parameter %q", key)
 	}
 	return value, nil

@@ -87,7 +87,7 @@ var errNoLocationQuota = errors.New("no location found with enough quota")
 // The quotaFor parameter uses the Bicep metadata format: "UsageName" or "UsageName, Capacity".
 // An implicit requirement for "OpenAI.S0.AccountCount" with capacity 1 is always included.
 func (a *BicepProvider) locationsWithQuotaFor(
-	ctx context.Context, subId string, locations []string, quotaFor []string) ([]string, error) {
+	ctx context.Context, subId string, locations []string, quotaFor []string, strict bool) ([]string, error) {
 	if a.aiModelService == nil {
 		return nil, fmt.Errorf("AI model service is not configured")
 	}
@@ -110,7 +110,11 @@ func (a *BicepProvider) locationsWithQuotaFor(
 		})
 	}
 
-	results, err := a.aiModelService.ListLocationsWithQuota(ctx, subId, locations, requirements)
+	query := a.aiModelService.ListLocationsWithQuota
+	if strict {
+		query = a.aiModelService.ListLocationsWithQuotaStrict
+	}
+	results, err := query(ctx, subId, locations, requirements)
 	if err != nil {
 		return nil, fmt.Errorf("getting locations with quota: %w", err)
 	}
@@ -209,7 +213,7 @@ func (p *BicepProvider) promptForParameter(
 		}
 		if len(azdMetadata.UsageName) > 0 {
 			withQuotaLocations, err := p.locationsWithQuotaFor(
-				ctx, p.env.GetSubscriptionId(), allowedLocations, azdMetadata.UsageName)
+				ctx, p.env.GetSubscriptionId(), allowedLocations, azdMetadata.UsageName, false)
 			if err != nil {
 				return nil, fmt.Errorf("getting locations with quota: %w", err)
 			}

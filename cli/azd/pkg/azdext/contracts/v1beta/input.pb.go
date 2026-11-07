@@ -360,12 +360,8 @@ func (x *ResolveInputRequest) GetInput() *InputDefinition {
 }
 
 type ResolveInputResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Legacy single recommendation. Must not be combined with options or required.
-	//
-	// Deprecated: Marked as deprecated in azd/extensions/v1beta/input.proto.
-	Value   *string        `protobuf:"bytes,1,opt,name=value,proto3,oneof" json:"value,omitempty"`
-	Options []*InputOption `protobuf:"bytes,2,rep,name=options,proto3" json:"options,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Options []*InputOption         `protobuf:"bytes,2,rep,name=options,proto3" json:"options,omitempty"`
 	// When true, options is the complete allowed set, not just suggestions.
 	// Required sets intersect across providers and with the input's allowed values.
 	// An empty required set is unsatisfiable; an empty optional set declines.
@@ -402,14 +398,6 @@ func (x *ResolveInputResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ResolveInputResponse.ProtoReflect.Descriptor instead.
 func (*ResolveInputResponse) Descriptor() ([]byte, []int) {
 	return file_azd_extensions_v1beta_input_proto_rawDescGZIP(), []int{5}
-}
-
-// Deprecated: Marked as deprecated in azd/extensions/v1beta/input.proto.
-func (x *ResolveInputResponse) GetValue() string {
-	if x != nil && x.Value != nil {
-		return *x.Value
-	}
-	return ""
 }
 
 func (x *ResolveInputResponse) GetOptions() []*InputOption {
@@ -515,12 +503,10 @@ const file_azd_extensions_v1beta_input_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"S\n" +
 	"\x13ResolveInputRequest\x12<\n" +
-	"\x05input\x18\x01 \x01(\v2&.azd.extensions.v1beta.InputDefinitionR\x05input\"\x99\x01\n" +
-	"\x14ResolveInputResponse\x12\x1d\n" +
-	"\x05value\x18\x01 \x01(\tB\x02\x18\x01H\x00R\x05value\x88\x01\x01\x12<\n" +
+	"\x05input\x18\x01 \x01(\v2&.azd.extensions.v1beta.InputDefinitionR\x05input\"}\n" +
+	"\x14ResolveInputResponse\x12<\n" +
 	"\aoptions\x18\x02 \x03(\v2\".azd.extensions.v1beta.InputOptionR\aoptions\x12\x1a\n" +
-	"\brequired\x18\x03 \x01(\bR\brequiredB\b\n" +
-	"\x06_value\"c\n" +
+	"\brequired\x18\x03 \x01(\bR\brequiredJ\x04\b\x01\x10\x02R\x05value\"c\n" +
 	"\vInputOption\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12 \n" +
 	"\vrecommended\x18\x02 \x01(\bR\vrecommended\x12\x1c\n" +
@@ -582,7 +568,6 @@ func file_azd_extensions_v1beta_input_proto_init() {
 		(*InputMessage_ResolveInputRequest)(nil),
 		(*InputMessage_ResolveInputResponse)(nil),
 	}
-	file_azd_extensions_v1beta_input_proto_msgTypes[5].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

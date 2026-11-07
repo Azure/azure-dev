@@ -13,6 +13,9 @@ import (
 // Resolver implements the input coordinator with a test-specific function.
 type Resolver func(context.Context, *v1beta.InputDefinition) (*string, error)
 
+// HasInputProviders reports that the configured test provider is available.
+func (Resolver) HasInputProviders(context.Context) (bool, error) { return true, nil }
+
 // ResolveInput invokes the configured test function.
 func (r Resolver) ResolveInput(ctx context.Context, definition *v1beta.InputDefinition) ([]inputs.Option, error) {
 	value, err := r(ctx, definition)
@@ -24,6 +27,9 @@ func (r Resolver) ResolveInput(ctx context.Context, definition *v1beta.InputDefi
 
 // OptionsResolver implements the coordinator with a test-specific option list.
 type OptionsResolver func(context.Context, *v1beta.InputDefinition) ([]inputs.Option, error)
+
+// HasInputProviders reports that the configured test provider is available.
+func (OptionsResolver) HasInputProviders(context.Context) (bool, error) { return true, nil }
 
 // ResolveInput invokes the configured test function.
 func (r OptionsResolver) ResolveInput(ctx context.Context, definition *v1beta.InputDefinition) ([]inputs.Option, error) {

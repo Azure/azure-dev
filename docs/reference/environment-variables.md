@@ -72,6 +72,16 @@ Set by IDE hosts (VS Code, Visual Studio) when spawning azd as a subprocess. Use
 
 For details on the external authentication protocol, see [cli/azd/docs/external-authentication.md](../../cli/azd/docs/external-authentication.md).
 
+## Extension-Specific Variables
+
+The unpublished `azure.springboot` development extension reads and prepares the
+`DATABASE_ADMIN_NAME` and `DATABASE_ADMIN_OBJECT_ID` inputs,
+verifies database and identity outputs against the datasource discovered from
+effective Spring configuration, and owns `SPRING_DATABASE_*` readiness state.
+These are not universal core azd settings.
+See the [canonical Spring Boot variable reference](../../cli/azd/docs/environment-variables.md#azurespringboot-development-prototype)
+and [extension README](../../cli/azd/extensions/azure.springboot/README.md).
+
 ## See Also
 
 For the full reference with implementation details, see [cli/azd/docs/environment-variables.md](../../cli/azd/docs/environment-variables.md).

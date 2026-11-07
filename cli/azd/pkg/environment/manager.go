@@ -479,7 +479,11 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 		if err := func() error {
 			m.saveMu.Lock()
 			defer m.saveMu.Unlock()
-			return m.local.Save(ctx, remoteEnv, nil)
+			if err := m.local.Save(ctx, remoteEnv, nil); err != nil {
+				return err
+			}
+			// The local files now match the remote snapshot whose ETags Reload stored.
+			return writeRemoteBlobETags(ctx, m.azdContext, remoteEnv)
 		}(); err != nil {
 			return nil, err
 		}
@@ -564,8 +568,21 @@ func (m *manager) SaveWithOptions(ctx context.Context, env *Environment, options
 		}
 	}
 
-	if err := m.remote.Save(ctx, remoteEnv, options); err != nil {
-		return fmt.Errorf("saving remote environment, %w", err)
+	// remoteEnv carries the ETags captured when its snapshot was loaded. Save must
+	// not download a newer remote ETag to authorize this write.
+	remoteErr := m.remote.Save(ctx, remoteEnv, options)
+	if remoteEnv != env {
+		env.copyRemoteBlobMatchesFrom(remoteEnv)
+	}
+	persistErr := writeRemoteBlobETags(ctx, m.azdContext, remoteEnv)
+	if remoteErr != nil {
+		if persistErr != nil {
+			log.Printf("recording remote environment versions: %v", persistErr)
+		}
+		return fmt.Errorf("saving remote environment, %w", remoteErr)
+	}
+	if persistErr != nil {
+		return fmt.Errorf("recording remote environment versions: %w", persistErr)
 	}
 
 	return nil

@@ -8,17 +8,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
@@ -26,6 +30,11 @@ import (
 var (
 	ErrAccessDenied     = errors.New("access denied connecting Azure Blob Storage container.")
 	ErrInvalidContainer = errors.New("storage container name is invalid.")
+
+	// ErrRemoteStateConflict is returned when remote environment blobs were
+	// changed by another process between load and save.
+	ErrRemoteStateConflict = errors.New(
+		"the remote environment was modified by another process")
 )
 
 type StorageBlobDataStore struct {
@@ -150,8 +159,8 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 		return fmt.Errorf("saving config: %w", err)
 	}
 
-	if err := sbd.blobClient.Upload(ctx, configPath, cfgWriter); err != nil {
-		return fmt.Errorf("uploading config: %w", describeError(err))
+	if err := sbd.uploadBlob(ctx, env, configPath, cfgWriter); err != nil {
+		return fmt.Errorf("uploading config: %w", describeSaveError(err, false))
 	}
 
 	marshalled, err := marshallDotEnv(env)
@@ -161,8 +170,10 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 
 	buffer := bytes.NewBuffer([]byte(marshalled))
 
-	if err := sbd.blobClient.Upload(ctx, envPath, buffer); err != nil {
-		return fmt.Errorf("uploading .env: %w", describeError(err))
+	// config.json is already uploaded. A conflict here must not claim the save
+	// wrote nothing.
+	if err := sbd.uploadBlob(ctx, env, envPath, buffer); err != nil {
+		return fmt.Errorf("uploading .env: %w", describeSaveError(err, true))
 	}
 
 	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))
@@ -179,35 +190,41 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 		return err
 	}
 
-	// Reload .env file
-	dotEnvBuffer, err := sbd.blobClient.Download(ctx, envPath)
+	// Read and parse both blobs before touching the environment. A failure while
+	// parsing config must not leave ETags that belong to this download on the
+	// previous snapshot.
+	dotEnvDownload, err := sbd.blobClient.Download(ctx, envPath)
 	if err != nil {
 		return describeError(err)
 	}
-
-	defer dotEnvBuffer.Close()
-
-	envMap, err := godotenv.Parse(dotEnvBuffer)
+	dotEnvBytes, dotEnvETag, err := readBlobDownload(dotEnvDownload)
+	if err != nil {
+		return fmt.Errorf("loading .env: %w", err)
+	}
+	envMap, err := godotenv.Parse(bytes.NewReader(dotEnvBytes))
 	if err != nil {
 		return fmt.Errorf("loading .env: %w", err)
 	}
 
-	// Reload config file
-	configBuffer, err := sbd.blobClient.Download(ctx, configPath)
+	configDownload, err := sbd.blobClient.Download(ctx, configPath)
 	if err != nil {
 		return describeError(err)
 	}
-
-	defer configBuffer.Close()
-
-	cfg, err := sbd.configManager.Load(configBuffer)
+	configBytes, configETag, err := readBlobDownload(configDownload)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+	cfg, err := sbd.configManager.Load(bytes.NewReader(configBytes))
 	if errors.Is(err, os.ErrNotExist) {
 		cfg = config.NewEmptyConfig()
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
+
 	env.replaceState(envMap, make(map[string]struct{}))
 	env.Config = cfg
+	env.setRemoteBlobMatch(envPath, string(dotEnvETag))
+	env.setRemoteBlobMatch(configPath, string(configETag))
 
 	if env.Name() != "" {
 		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))
@@ -254,6 +271,26 @@ func (sbd *StorageBlobDataStore) Delete(ctx context.Context, name string) error 
 	return nil
 }
 
+func describeSaveError(err error, partialWrite bool) error {
+	if _, ok := errors.AsType[*storage.ConcurrencyConflictError](err); ok {
+		message := "The remote environment was modified by another process " +
+			"and this save could not be completed."
+		if partialWrite {
+			message += " Some remote state may have been written."
+		} else {
+			message += " This save was not applied."
+		}
+		return &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("%w: %w", ErrRemoteStateConflict, err),
+			Message:    message,
+			Suggestion: "Refresh the environment from remote state and retry the operation.",
+			Links:      []errorhandler.ErrorLink{},
+		}
+	}
+
+	return describeError(err)
+}
+
 func describeError(err error) error {
 	if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		switch responseErr.ErrorCode {
@@ -268,4 +305,64 @@ func describeError(err error) error {
 	}
 
 	return err
+}
+
+func (sbd *StorageBlobDataStore) uploadBlob(
+	ctx context.Context, env *Environment, blobPath string, reader *bytes.Buffer,
+) error {
+	match, err := sbd.matchETag(ctx, env, blobPath)
+	if err != nil {
+		return err
+	}
+
+	etag, err := sbd.blobClient.Upload(ctx, blobPath, reader, match)
+	if err != nil {
+		return err
+	}
+
+	env.setRemoteBlobMatch(blobPath, string(etag))
+	return nil
+}
+
+// matchETag returns the ETag of the snapshot loaded into env. An empty ETag
+// means the blob was absent and the upload must use If-None-Match. When env
+// has no token, a download may only discover that the blob is missing. The
+// ETag of an existing blob is not a token for this snapshot and must not
+// authorize the overwrite.
+func (sbd *StorageBlobDataStore) matchETag(
+	ctx context.Context, env *Environment, blobPath string,
+) (azcore.ETag, error) {
+	if match, known := env.remoteBlobMatch(blobPath); known {
+		return azcore.ETag(match), nil
+	}
+
+	download, err := sbd.blobClient.Download(ctx, blobPath)
+	if isBlobNotFound(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	defer download.Body.Close()
+	if _, err := io.Copy(io.Discard, download.Body); err != nil {
+		return "", fmt.Errorf("reading remote blob %q: %w", blobPath, err)
+	}
+	return "", &storage.ConcurrencyConflictError{BlobPath: blobPath}
+}
+
+func readBlobDownload(download *storage.BlobDownload) ([]byte, azcore.ETag, error) {
+	defer download.Body.Close()
+	data, err := io.ReadAll(download.Body)
+	if err != nil {
+		return nil, "", err
+	}
+	return data, download.ETag, nil
+}
+
+func isBlobNotFound(err error) bool {
+	respErr, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok {
+		return false
+	}
+	return respErr.ErrorCode == "BlobNotFound" || respErr.StatusCode == http.StatusNotFound
 }

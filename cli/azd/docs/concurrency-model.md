@@ -158,7 +158,7 @@ endpoint URL.
 
 | Lock                     | Protects                                          | Acquired by                                                                |
 |--------------------------|---------------------------------------------------|----------------------------------------------------------------------------|
-| `mu sync.RWMutex`        | `dotenv map[string]string`, `deletedKeys`         | `Getenv`, `LookupEnv`, `Dotenv`, `DotenvSet`, `DotenvDelete`, `Reload`, all helpers |
+| `mu sync.RWMutex`        | `dotenv map[string]string`, `deletedKeys`, `remoteBlobETags` | `Getenv`, `LookupEnv`, `Dotenv`, `DotenvSet`, `DotenvDelete`, remote blob ETag helpers, `Reload`, all helpers |
 
 **Contract**: All readers acquire `mu.RLock()`; all writers acquire `mu.Lock()`.
 Iteration over the underlying map (e.g. snapshotting for a hook) must hold

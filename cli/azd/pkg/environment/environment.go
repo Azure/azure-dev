@@ -79,9 +79,15 @@ type Environment struct {
 	// happens in Save
 	deletedKeys map[string]struct{}
 
-	// mu guards dotenv and deletedKeys against concurrent access from multiple
-	// goroutines (parallel service hooks, parallel deploy/publish, etc.).
+	// mu guards dotenv, deletedKeys, and remoteBlobETags against concurrent access
+	// from multiple goroutines (parallel service hooks, parallel deploy/publish, etc.).
 	mu sync.RWMutex
+
+	// remoteBlobETags maps a remote blob path to the ETag of the snapshot loaded
+	// into this environment (or last successfully saved from it). A missing key
+	// means this snapshot has no concurrency token for that blob. Saves must not
+	// replace a missing token with an ETag downloaded only to authorize a write.
+	remoteBlobETags map[string]string
 
 	// Config is environment specific config
 	Config config.Config
@@ -259,6 +265,52 @@ func (e *Environment) replaceState(dotenv map[string]string, deletedKeys map[str
 	defer e.mu.Unlock()
 	e.dotenv = dotenv
 	e.deletedKeys = deletedKeys
+}
+
+// remoteBlobMatch returns the ETag captured for blobPath with this snapshot.
+// known is false when the snapshot has no token for that blob.
+func (e *Environment) remoteBlobMatch(blobPath string) (match string, known bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	match, known = e.remoteBlobETags[blobPath]
+	return match, known
+}
+
+// setRemoteBlobMatch records the ETag of blobPath for the snapshot now stored
+// in this environment. Call it only after that snapshot is in memory, or after
+// a successful upload of the current snapshot.
+func (e *Environment) setRemoteBlobMatch(blobPath, match string) {
+	if match == "" {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.remoteBlobETags == nil {
+		e.remoteBlobETags = map[string]string{}
+	}
+	e.remoteBlobETags[blobPath] = match
+}
+
+// replaceRemoteBlobMatches replaces the concurrency tokens for this snapshot.
+func (e *Environment) replaceRemoteBlobMatches(matches map[string]string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.remoteBlobETags = maps.Clone(matches)
+}
+
+// cloneRemoteBlobMatches returns a copy of the snapshot's concurrency tokens.
+func (e *Environment) cloneRemoteBlobMatches() map[string]string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return maps.Clone(e.remoteBlobETags)
+}
+
+// copyRemoteBlobMatchesFrom copies snapshot concurrency tokens from src.
+func (e *Environment) copyRemoteBlobMatchesFrom(src *Environment) {
+	if src == nil {
+		return
+	}
+	e.replaceRemoteBlobMatches(src.cloneRemoteBlobMatches())
 }
 
 // Name gets the name of the environment

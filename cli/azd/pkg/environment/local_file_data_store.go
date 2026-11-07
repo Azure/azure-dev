@@ -208,7 +208,12 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 	}
 	defer releaseEnvLock(fl)
 
-	return fs.reloadLocked(ctx, env)
+	if err := fs.reloadLocked(ctx, env); err != nil {
+		return err
+	}
+	// Tokens belong to the snapshot just read. Save's merge calls reloadLocked
+	// directly and must keep the tokens captured when this environment was loaded.
+	return loadRemoteBlobETags(fs.azdContext, env)
 }
 
 // reloadLocked performs the actual reload work. Caller MUST hold the env

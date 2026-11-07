@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -120,7 +119,11 @@ func Render(ctx context.Context, writer io.Writer, source string, width int, col
 		if !isTable && !isComment {
 			return ast.WalkSkipChildren, nil
 		}
-		blocks = append(blocks, previewBlock{start: start, end: end, table: isTable})
+		if isTable {
+			blocks = append(blocks, tableBlocks(raw, start)...)
+		} else {
+			blocks = append(blocks, previewBlock{start: start, end: end})
+		}
 		return ast.WalkSkipChildren, nil
 	})
 	if err != nil {
@@ -206,6 +209,45 @@ func Render(ctx context.Context, writer io.Writer, source string, width int, col
 	return nil
 }
 
+// tableBlocks separates tables from following footnotes within the same Markdown HTML block.
+func tableBlocks(source string, offset int) []previewBlock {
+	var blocks []previewBlock
+	tokenizer := html.NewTokenizer(strings.NewReader(source))
+	position, start, depth := offset, offset, 0
+	for {
+		kind := tokenizer.Next()
+		if kind == html.ErrorToken {
+			break
+		}
+		tokenStart := position
+		position += len(tokenizer.Raw())
+		token := tokenizer.Token()
+		switch {
+		case (kind == html.StartTagToken || kind == html.SelfClosingTagToken) && token.Data == "table":
+			if depth == 0 {
+				start = tokenStart
+			}
+			depth++
+		case kind == html.EndTagToken && token.Data == "table" && depth > 0:
+			depth--
+			if depth == 0 {
+				blocks = append(blocks, previewBlock{start: start, end: position, table: true})
+			}
+		case kind == html.CommentToken && depth == 0:
+			blocks = append(blocks, previewBlock{start: tokenStart, end: position})
+		case depth == 0 && kind != html.TextToken:
+			return []previewBlock{{start: offset, end: offset + len(source), table: true}}
+		}
+	}
+	if depth > 0 {
+		blocks = append(blocks, previewBlock{start: start, end: offset + len(source), table: true})
+	}
+	if len(blocks) == 0 {
+		return []previewBlock{{start: offset, end: offset + len(source), table: true}}
+	}
+	return blocks
+}
+
 func parseTable(source string) (table, string, error) {
 	result := table{}
 	nodes, err := html.ParseFragment(strings.NewReader(source),
@@ -226,6 +268,7 @@ func parseTable(source string) (table, string, error) {
 	if root == nil {
 		return result, "expected one standalone table", nil
 	}
+	columnCount := 0
 	var visit func(*html.Node) string
 	visit = func(node *html.Node) string {
 		if node.Type == html.TextNode && strings.TrimSpace(node.Data) == "" {
@@ -243,20 +286,25 @@ func parseTable(source string) (table, string, error) {
 			}
 		case "caption":
 			value, ok := cellText(node)
-			if !ok || result.headers != nil || result.caption != "" {
+			if !ok || columnCount != 0 || result.caption != "" {
 				return "unsupported caption"
 			}
 			result.caption = value
 		case "tr":
 			var values []string
-			header := result.headers == nil
+			header := false
 			for cell := node.FirstChild; cell != nil; cell = cell.NextSibling {
 				if cell.Type == html.TextNode && strings.TrimSpace(cell.Data) == "" {
 					continue
 				}
-				if cell.Type != html.ElementNode ||
-					(header && cell.Data != "th") || (!header && cell.Data != "td") {
-					return "expected one header row followed by data rows"
+				if cell.Type != html.ElementNode || (cell.Data != "th" && cell.Data != "td") {
+					return "unsupported row structure"
+				}
+				if len(values) == 0 {
+					header = cell.Data == "th"
+				}
+				if (cell.Data == "th") != header || (header && columnCount != 0) {
+					return "multiple or mixed header rows are unsupported"
 				}
 				for _, attribute := range cell.Attr {
 					if (attribute.Key != "rowspan" && attribute.Key != "colspan") || attribute.Val != "1" {
@@ -264,27 +312,22 @@ func parseTable(source string) (table, string, error) {
 					}
 				}
 				value, ok := cellText(cell)
-				if !ok || value == "" {
-					return "rich or empty cells are unsupported"
+				if !ok {
+					return "unsupported cell content"
 				}
 				values = append(values, value)
 			}
 			if len(values) == 0 {
 				return "empty row"
 			}
+			if columnCount == 0 {
+				columnCount = len(values)
+			} else if len(values) != columnCount {
+				return "inconsistent column counts"
+			}
 			if header {
-				seen := map[string]bool{}
-				for _, value := range values {
-					if seen[value] {
-						return "duplicate headings"
-					}
-					seen[value] = true
-				}
 				result.headers = values
 			} else {
-				if len(values) != len(result.headers) {
-					return "inconsistent column counts"
-				}
 				result.rows = append(result.rows, values)
 			}
 		default:
@@ -293,8 +336,8 @@ func parseTable(source string) (table, string, error) {
 		return ""
 	}
 	reason := visit(root)
-	if reason == "" && (len(result.headers) == 0 || len(result.rows) == 0) {
-		reason = "expected headers and at least one data row"
+	if reason == "" && columnCount == 0 {
+		reason = "table has no cells"
 	}
 	return result, reason, nil
 }
@@ -311,40 +354,103 @@ func cellText(node *html.Node) (string, bool) {
 }
 
 func renderTable(value table, width int) (string, bool, error) {
-	columns := make([]output.PrettyColumn, len(value.headers))
+	uniqueHeaders := len(value.headers) != 0
+	seen := map[string]bool{}
+	for _, heading := range value.headers {
+		if heading == "" || seen[heading] {
+			uniqueHeaders = false
+		}
+		seen[heading] = true
+	}
+	var rendered string
+	if uniqueHeaders {
+		columns := make([]output.PrettyColumn, len(value.headers))
+		for index, heading := range value.headers {
+			columns[index] = output.PrettyColumn{
+				Column: output.Column{Heading: heading, ValueTemplate: fmt.Sprintf("{{index . %d}}", index)}, Priority: 1,
+			}
+		}
+		formatter := output.PrettyTableFormatter{ConsoleWidthFn: func() int { return width }}
+		// Document values must not inherit list-command column omission or truncation.
+		options := output.PrettyTableFormatterOptions{Columns: columns, FullThreshold: 1, CompactThreshold: 1}
+		var result bytes.Buffer
+		if err := formatter.Format(value.rows, &result, options); err != nil {
+			return "", false, fmt.Errorf("render table: %w", err)
+		}
+		rendered = result.String()
+	} else {
+		// The shared list formatter requires unique headings; document columns are positional.
+		rendered = renderPositionalTable(value)
+	}
+	for line := range strings.SplitSeq(rendered, "\n") {
+		if ansi.StringWidth(line) > width && len(value.rows) > 0 {
+			return renderTableCards(value, uniqueHeaders), true, nil
+		}
+	}
+	return rendered, false, nil
+}
+
+func renderPositionalTable(value table) string {
+	columnCount := len(value.headers)
+	if columnCount == 0 {
+		columnCount = len(value.rows[0])
+	}
+	widths := make([]int, columnCount)
 	for index, heading := range value.headers {
-		columns[index] = output.PrettyColumn{
-			Column: output.Column{Heading: heading, ValueTemplate: fmt.Sprintf("{{index . %d}}", index+1)}, Priority: 1,
+		widths[index] = ansi.StringWidth(heading)
+	}
+	for _, row := range value.rows {
+		for index, cell := range row {
+			widths[index] = max(widths[index], ansi.StringWidth(cell))
 		}
 	}
-	rows := make([][]string, len(value.rows))
+	var result strings.Builder
+	writeRow := func(row []string) {
+		for index, cell := range row {
+			result.WriteString(cell)
+			if index < columnCount-1 {
+				result.WriteString(strings.Repeat(" ", widths[index]-ansi.StringWidth(cell)+3))
+			}
+		}
+		result.WriteByte('\n')
+	}
+	if value.headers != nil {
+		writeRow(value.headers)
+		lineWidth := 3 * (columnCount - 1)
+		for _, columnWidth := range widths {
+			lineWidth += columnWidth
+		}
+		result.WriteString(strings.Repeat("─", lineWidth) + "\n")
+	}
+	for _, row := range value.rows {
+		writeRow(row)
+	}
+	return result.String()
+}
+
+func renderTableCards(value table, uniqueHeaders bool) string {
+	columnCount := len(value.rows[0])
+	labels := make([]string, columnCount)
+	maxLabelLen := 0
+	for index := range columnCount {
+		if value.headers != nil {
+			labels[index] = value.headers[index]
+		}
+		if !uniqueHeaders {
+			labels[index] = strings.TrimSpace(fmt.Sprintf("<!-- Column %d --> %s", index+1, labels[index]))
+		}
+		maxLabelLen = max(maxLabelLen, len(labels[index]))
+	}
+	var result strings.Builder
 	for index, row := range value.rows {
-		rows[index] = append([]string{strconv.Itoa(index + 1)}, row...)
-	}
-	formatter := output.PrettyTableFormatter{ConsoleWidthFn: func() int { return width }}
-	// Document values must not inherit list-command column omission or truncation.
-	options := output.PrettyTableFormatterOptions{Columns: columns, FullThreshold: 1, CompactThreshold: 1}
-	var result bytes.Buffer
-	if err := formatter.Format(rows, &result, options); err != nil {
-		return "", false, fmt.Errorf("render table: %w", err)
-	}
-	for line := range strings.SplitSeq(result.String(), "\n") {
-		if ansi.StringWidth(line) <= width {
-			continue
+		if index > 0 {
+			result.WriteByte('\n')
 		}
-		heading := "Row"
-		for slices.Contains(value.headers, heading) {
-			heading = "_" + heading
+		fmt.Fprintf(&result, "<!-- Row %d -->\n", index+1)
+		for column, cell := range row {
+			fmt.Fprintf(&result, "%s:%s%s\n", labels[column],
+				strings.Repeat(" ", maxLabelLen-len(labels[column])+2), cell)
 		}
-		options.ForceCards = true
-		options.Columns = append([]output.PrettyColumn{{
-			Column: output.Column{Heading: heading, ValueTemplate: "<!-- Row {{index . 0}} -->"}, CardTitle: true,
-		}}, columns...)
-		result.Reset()
-		if err := formatter.Format(rows, &result, options); err != nil {
-			return "", false, fmt.Errorf("render cards: %w", err)
-		}
-		break
 	}
-	return result.String(), options.ForceCards, nil
+	return result.String()
 }

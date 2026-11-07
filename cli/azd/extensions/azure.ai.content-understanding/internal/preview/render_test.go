@@ -220,15 +220,180 @@ func TestUnsupportedTablesPreserveSource(t *testing.T) {
 	for _, source := range []string{
 		"<table><tr><th>A</th><th>B</th></tr><tr><td colspan=\"2\">Merged</td></tr></table>",
 		"<table><tr><th>A</th></tr><tr><td><strong>Rich</strong></td></tr></table>",
-		"<table><tr><th>A</th></tr><tr><td></td></tr></table>",
-		"<table><tr><th>A</th><th>A</th></tr><tr><td>1</td><td>2</td></tr></table>",
 		"<table><tr><th>A</th></tr><tr><td><table><tr><td>Nested</td></tr></table></td></tr></table>",
-		"<table><tr><td>Not a heading</td></tr></table>",
+		"<table><tr><th>A</th><th>B</th></tr><tr><td>Missing column</td></tr></table>",
+		"<table><tr><th>A</th></tr><tr><th>Another header</th></tr><tr><td>Data</td></tr></table>",
+		"<table><tr><th>A</th><td>Mixed</td></tr><tr><td>1</td><td>2</td></tr></table>",
+		"<table><tr><td>A</td></tr><tr><th>Late header</th></tr></table>",
 	} {
 		t.Run(source, func(t *testing.T) {
 			result := renderPreview(t, source+"\n", 80)
 			assert.Contains(t, result, "<!-- HTML table not rendered:")
 			assert.Contains(t, result, source)
+		})
+	}
+}
+
+func TestOrdinaryHTMLTablesPreserveCellPositions(t *testing.T) {
+	for _, sample := range []struct {
+		name, source string
+		headers      []string
+		rows         [][]string
+	}{
+		{"empty cells", "<tr><th>A</th><th>B</th></tr>" +
+			"<tr><td></td><td>Second</td></tr><tr><td>First</td><td></td></tr><tr><td></td><td></td></tr>",
+			[]string{"A", "B"}, [][]string{{"", "Second"}, {"First", ""}, {"", ""}}},
+		{"headerless", "<tr><td>SUBTOTAL</td><td>$100.00</td></tr><tr><td>AMOUNT DUE</td><td>$110.00</td></tr>",
+			nil, [][]string{{"SUBTOTAL", "$100.00"}, {"AMOUNT DUE", "$110.00"}}},
+		{"single headerless row", "<tr><td>Only value</td></tr>", nil, [][]string{{"Only value"}}},
+		{"blank and duplicate headers", "<tr><th></th><th>Value</th><th>Value</th><th>Value (column 2)</th></tr>" +
+			"<tr><td>First</td><td>Second</td><td>Third</td><td>Fourth</td></tr>",
+			[]string{"", "Value", "Value", "Value (column 2)"}, [][]string{{"First", "Second", "Third", "Fourth"}}},
+		{"unit spans", "<tr><th colspan=\"1\">A</th></tr><tr><td rowspan=\"1\">First</td></tr>",
+			[]string{"A"}, [][]string{{"First"}}},
+		{"header only", "<tr><th>A</th><th></th></tr>", []string{"A", ""}, nil},
+	} {
+		t.Run(sample.name, func(t *testing.T) {
+			source := "<table><caption>Original caption</caption>" + sample.source + "</table>\n\nFootnote.\n"
+			parsed, reason, err := parseTable("<table>" + sample.source + "</table>")
+			require.NoError(t, err)
+			require.Empty(t, reason)
+			assert.Equal(t, sample.headers, parsed.headers)
+			assert.Equal(t, sample.rows, parsed.rows)
+			for _, width := range []int{1, 200} {
+				t.Run(strconv.Itoa(width), func(t *testing.T) {
+					plain := renderPreview(t, source, width)
+					assert.NotContains(t, plain, "HTML table not rendered")
+					assert.NotContains(t, plain, "<td>")
+					assert.Contains(t, plain, "Original caption")
+					assert.Contains(t, plain, "Footnote.")
+					for _, row := range sample.rows {
+						for _, cell := range row {
+							if cell != "" {
+								assert.Equal(t, 1, strings.Count(plain, cell), cell)
+							}
+						}
+					}
+					var colored bytes.Buffer
+					require.NoError(t, Render(t.Context(), &colored, source, width, true))
+					assert.Equal(t, plain, ansi.Strip(colored.String()))
+					if width == 200 {
+						assert.NotContains(t, plain, "<!-- Column")
+						assert.NotContains(t, plain, "<!-- Row")
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestInvoiceTablesRenderWithoutSourceFallback(t *testing.T) {
+	const source = "<table>\n" +
+		"<tr><th>SALESPERSON</th><th>P.O. NUMBER</th><th>REQUISITIONER</th>" +
+		"<th>SHIPPED VIA</th><th>F.O.B. POINT</th><th>TERMS</th></tr>\n" +
+		"<tr><td></td><td>PO-3333</td><td></td><td></td><td></td><td></td></tr>\n</table>\n\n" +
+		"<table>\n<tr><th>DATE</th><th>ITEM CODE</th><th>DESCRIPTION</th><th>QTY</th>" +
+		"<th>UM</th><th>PRICE</th><th>TAX</th><th>AMOUNT</th></tr>\n" +
+		"<tr><td>3/4/2021</td><td>A123</td><td>Consulting Services</td><td>2</td>" +
+		"<td>hours</td><td>$30.00</td><td>$6.00</td><td>$60.00</td></tr>\n" +
+		"<tr><td>3/5/2021</td><td>B456</td><td>Document Fee</td><td>3</td>" +
+		"<td></td><td>$10.00</td><td>$3.00</td><td>$30.00</td></tr>\n" +
+		"<tr><td>3/6/2021</td><td>C789</td><td>Printing Fee</td><td>10</td>" +
+		"<td>pages</td><td>$1.00</td><td>$1.00</td><td>$10.00</td></tr>\n</table>\n\n" +
+		"<table>\n<tr><td>SUBTOTAL</td><td>$100.00</td></tr>\n" +
+		"<tr><td>SALES TAX</td><td>$10.00</td></tr>\n<tr><td>TOTAL</td><td>$110.00</td></tr>\n" +
+		"<tr><td>PREVIOUS UNPAID BALANCE</td><td>$500.00</td></tr>\n" +
+		"<tr><td>AMOUNT DUE</td><td>$610.00</td></tr>\n</table>\n"
+	for _, width := range []int{20, 80, 120, 200} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			plain := renderPreview(t, source, width)
+			assert.NotContains(t, plain, "HTML table not rendered")
+			assert.NotContains(t, plain, "<table>")
+			for _, value := range []string{"PO-3333", "Consulting Services", "Document Fee", "Printing Fee",
+				"SUBTOTAL", "PREVIOUS UNPAID BALANCE", "AMOUNT DUE", "$610.00"} {
+				assert.Equal(t, 1, strings.Count(plain, value), value)
+			}
+			var colored bytes.Buffer
+			require.NoError(t, Render(t.Context(), &colored, source, width, true))
+			assert.Equal(t, plain, ansi.Strip(colored.String()))
+		})
+	}
+}
+
+func TestEmptyTableCellsKeepColumnAlignment(t *testing.T) {
+	const source = "<table><tr><th>A</th><th>B</th><th>C</th></tr>" +
+		"<tr><td></td><td>Middle</td><td>Last</td></tr>" +
+		"<tr><td>First</td><td></td><td>End</td></tr></table>\n"
+	result := renderPreview(t, source, 120)
+	assert.Contains(t, result, "        Middle   Last\n")
+	assert.Contains(t, result, "First            End\n")
+}
+
+func TestTableFootnotesStayOutsideTableParsing(t *testing.T) {
+	const table = "<table><caption>Original caption</caption>" +
+		"<tr><td>SUBTOTAL</td><td>$100.00</td></tr></table>"
+	const comment = "<!-- PageNumber=\"1\" -->"
+	for _, source := range []string{
+		table + "\nFootnote immediately after table.\n",
+		table + "\n" + comment + "\nFootnote immediately after table.\n",
+		table + "\n" + table + "\nFootnote immediately after table.\n",
+	} {
+		result := renderPreview(t, source, 120)
+		assert.NotContains(t, result, "HTML table not rendered")
+		assert.NotContains(t, result, "<td>")
+		assert.Contains(t, result, "Footnote immediately after table.")
+		assert.Equal(t, strings.Count(source, "SUBTOTAL"), strings.Count(result, "SUBTOTAL"))
+		if strings.Contains(source, comment) {
+			assert.Contains(t, result, comment)
+		}
+	}
+}
+
+func TestTableFallbackReasons(t *testing.T) {
+	for _, sample := range []struct {
+		name, source, reason string
+	}{
+		{"rowspan", "<tr><td rowspan=\"2\">A</td><td>B</td></tr><tr><td>C</td></tr>", "merged cells"},
+		{"colspan", "<tr><th colspan=\"2\">A</th></tr><tr><td>B</td><td>C</td></tr>", "merged cells"},
+		{"multiple headers", "<tr><th>A</th></tr><tr><th>B</th></tr>", "multiple or mixed header rows"},
+		{"mixed headers", "<tr><th>A</th><td>B</td></tr>", "multiple or mixed header rows"},
+		{"headed column mismatch", "<tr><th>A</th><th>B</th></tr><tr><td>C</td></tr>", "inconsistent column counts"},
+		{"headerless column mismatch", "<tr><td>A</td></tr><tr><td>B</td><td>C</td></tr>", "inconsistent column counts"},
+		{"empty table", "", "table has no cells"},
+		{"empty row", "<tr></tr>", "empty row"},
+		{"unknown content", "<tr><td><strong>A</strong></td></tr>", "unsupported cell content"},
+	} {
+		t.Run(sample.name, func(t *testing.T) {
+			source := "<table>" + sample.source + "</table>"
+			result := renderPreview(t, source+"\n", 120)
+			assert.Contains(t, result, "HTML table not rendered: "+sample.reason)
+			assert.Contains(t, result, source)
+		})
+	}
+}
+
+func TestCardsKeepEmptyFieldsAndIdentifyAmbiguousColumns(t *testing.T) {
+	for _, sample := range []struct {
+		name, source string
+		fields       []string
+	}{
+		{"empty fields", "<tr><th>A</th><th>B</th></tr><tr><td></td><td>Value</td></tr>" +
+			"<tr><td></td><td></td></tr>",
+			[]string{"<!-- Row 1 -->", "A:  \n", "B:  Value", "<!-- Row 2 -->", "B:  \n"}},
+		{"headerless fields", "<tr><td>First</td><td></td></tr>",
+			[]string{"<!-- Row 1 -->", "<!-- Column 1 -->:  First", "<!-- Column 2 -->:  \n"}},
+		{"ambiguous headings", "<tr><th></th><th>Value</th><th>Value</th><th>Value (column 2)</th></tr>" +
+			"<tr><td>First</td><td>Second</td><td>Third</td><td>Fourth</td></tr>",
+			[]string{"<!-- Column 1 -->", "<!-- Column 2 --> Value", "<!-- Column 3 --> Value",
+				"Value (column 2)", "First", "Second", "Third", "Fourth"}},
+	} {
+		t.Run(sample.name, func(t *testing.T) {
+			result := renderPreview(t, "<table>"+sample.source+"</table>\n", 1)
+			assert.Contains(t, result, "Table exceeds terminal width")
+			assert.NotContains(t, result, "HTML table not rendered")
+			for _, field := range sample.fields {
+				assert.Contains(t, result, field)
+			}
 		})
 	}
 }

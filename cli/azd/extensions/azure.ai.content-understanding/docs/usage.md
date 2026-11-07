@@ -173,9 +173,8 @@ Pretty-printing formats Markdown for terminal reading. The preview includes
 document metadata with `---` delimiters and page comments, and keeps source line
 breaks. Reference-style links work across tables.
 
-Simple HTML tables show all columns, switching to labeled cards when a table is
-too wide. A notice explains the switch, and generated row labels use comment
-syntax, such as `<!-- Row 1 -->`.
+HTML tables display all columns and switch to labeled cards when they are too wide
+for the terminal.
 
 When color is enabled, metadata, page comments, and generated row labels are gray.
 Headings share a consistent color, tables use a distinct color, and layout notices
@@ -183,8 +182,8 @@ are yellow.
 
 Keep these limitations in mind:
 
-- Complex HTML tables, such as those with merged cells or formatted cell content,
-  show a notice and their source instead of a formatted table.
+- Unsupported tables, such as those with merged cells or complex headers, display
+  an explanatory notice followed by their source HTML.
 - Long values can overflow, and some Unicode text or emoji may not align correctly.
   Right-to-left text display depends on your terminal. Markdown tables may shorten
   long links.

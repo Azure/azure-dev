@@ -110,11 +110,6 @@ func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
 			},
 		}}})
 	}
-	if strings.Contains(lower, "/roledefinitions/") {
-		return respond(200, map[string]any{"id": path, "properties": map[string]any{
-			"permissions": []any{map[string]any{"actions": []string{"*"}, "dataActions": []string{"*"}}},
-		}})
-	}
 	const suffix = "/providers/Microsoft.Authorization/roleAssignments"
 	if strings.HasSuffix(lower, strings.ToLower(suffix)) {
 		scope := path[:len(path)-len(suffix)]
@@ -122,13 +117,18 @@ func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
 		if !strings.EqualFold(scope, f.missingGrant) {
 			principals = append(principals, suppliedHostingPrincipal, suppliedWorkloadPrincipal)
 		}
-		var values []any
+		values := []any{}
 		for _, principal := range principals {
+			role := "8e3af657-a8ff-443c-a75c-2fe8c4bcb635"
+			if strings.Contains(strings.ToLower(scope), strings.ToLower("/Microsoft.Storage/storageAccounts/")) {
+				role = "b7e6dc6d-f1e8-4753-8033-0f276bb0955b"
+			}
 			values = append(values, map[string]any{
 				"id": scope + suffix + "/assignment-" + principal,
 				"properties": map[string]any{
 					"principalId": principal, "scope": scope,
-					"roleDefinitionId": "/subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions/owner",
+					"roleDefinitionId": "/subscriptions/target-sub/providers/" +
+						"Microsoft.Authorization/roleDefinitions/" + role,
 				},
 			})
 		}
@@ -327,7 +327,7 @@ func TestBYOExistingDefaultStorageRetainsOrdinaryARMUpdate(t *testing.T) {
 	assert.Equal(t, 1, fake.base.writes)
 }
 
-func TestBYOExistingDefaultDependencyMissingGrantBlocksRetry(t *testing.T) {
+func TestBYOExistingDefaultDependencyMissingGrantRetainsARMRetry(t *testing.T) {
 	p, fake, _ := suppliedProvider(t, 2)
 	fake.base.failWrite = true
 	_, err := p.Deploy(t.Context(), func(string) {})
@@ -337,8 +337,8 @@ func TestBYOExistingDefaultDependencyMissingGrantBlocksRetry(t *testing.T) {
 	fake.existingDefaults[strings.ToLower(defaultWorkloadID)] = true
 	fake.missingGrant = defaultWorkloadID
 	_, err = p.Deploy(t.Context(), func(string) {})
-	require.ErrorContains(t, err, "hosting-federation FAIL")
-	assert.Equal(t, 1, fake.base.writes, "no historical failed-attempt exemption may open the write gate")
+	require.NoError(t, err)
+	assert.Equal(t, 2, fake.base.writes, "mixed selections retain ARM resource and grant creation on retry")
 }
 
 func TestBYOSuppliedWorkloadUsesItsOwnSubscriptionForFederationRole(t *testing.T) {

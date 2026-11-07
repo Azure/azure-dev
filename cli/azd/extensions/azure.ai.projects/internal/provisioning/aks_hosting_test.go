@@ -167,6 +167,11 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 			"id": strings.Replace(request.URL.Path, "/resourcegroups/", "/resourceGroups/", 1), "location": "westus",
 		}), nil
 	}
+	if request.Method == http.MethodGet &&
+		strings.HasSuffix(strings.ToLower(request.URL.Path),
+			strings.ToLower("/providers/Microsoft.Authorization/roleAssignments")) {
+		return f.response(request, 200, map[string]any{"value": []any{}}), nil
+	}
 	if request.Method == http.MethodGet && (strings.Contains(strings.ToLower(request.URL.Path), "/microsoft.storage/") ||
 		strings.Contains(strings.ToLower(request.URL.Path), "/microsoft.managedidentity/") ||
 		strings.Contains(strings.ToLower(request.URL.Path), "/microsoft.containerregistry/")) {

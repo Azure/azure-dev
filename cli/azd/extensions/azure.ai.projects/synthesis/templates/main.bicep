@@ -96,6 +96,9 @@ param kubeletObjectId string = ''
 @description('Federation-management role; resolved by microsoft.foundry when omitted.')
 param federatedIdentityRoleDefinitionId string = ''
 
+@description('Existing scope/principal/role keys used to avoid duplicate BYO AKS role assignments; resolved by microsoft.foundry when omitted.')
+param byoAksExistingRoleAssignmentKeys string[] = []
+
 @description('Full ARM ID of an existing container registry to reuse instead of creating one.')
 param existingAcrResourceId string = ''
 
@@ -178,6 +181,7 @@ module resources 'modules/resources.bicep' = {
     agentHosting: agentHosting
     kubeletObjectId: kubeletObjectId
     federatedIdentityRoleDefinitionId: federatedIdentityRoleDefinitionId
+    byoAksExistingRoleAssignmentKeys: byoAksExistingRoleAssignmentKeys
     existingAcrResourceId: existingAcrResourceId
     acrPullAssigned: acrPullAssigned
     acrAccessOperationId: acrAccessOperationId

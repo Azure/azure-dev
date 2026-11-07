@@ -10,13 +10,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-const ownerRole = testSubscription + "/providers/Microsoft.Authorization/roleDefinitions/owner"
-const federationRoleGUID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+const ownerRole = testSubscription +
+	"/providers/Microsoft.Authorization/roleDefinitions/8e3af657-a8ff-443c-a75c-2fe8c4bcb635"
+const blobOwnerRole = testSubscription +
+	"/providers/Microsoft.Authorization/roleDefinitions/b7e6dc6d-f1e8-4753-8033-0f276bb0955b"
+const federationRoleGUID = "7e559ce2-48d7-4b27-9128-fa1b247f1308"
 const assignmentSuffix = "/providers/Microsoft.Authorization/roleAssignments"
 
 func assignment(scope, principal, role string) map[string]any {
@@ -37,7 +39,7 @@ func authorizationFake() *readFake {
 			scope := path[:len(path)-len(assignmentSuffix)]
 			return readReply{200, map[string]any{"value": []any{
 				assignment(scope, "hosting-principal", ownerRole),
-				assignment(scope, "workload-principal", ownerRole),
+				assignment(scope, "workload-principal", blobOwnerRole),
 			}}}, true
 		}
 		if strings.HasSuffix(strings.ToLower(path), "/roledefinitions") {
@@ -47,28 +49,6 @@ func authorizationFake() *readFake {
 					"roleName": "Managed Identity Federated Identity Credential Contributor", "type": "BuiltInRole",
 				},
 			}}}}, true
-		}
-		if strings.Contains(strings.ToLower(path), "/roledefinitions/") {
-			permissions := map[string]any{}
-			switch path[strings.LastIndex(path, "/")+1:] {
-			case "owner":
-				permissions["actions"], permissions["dataActions"] = []string{"*"}, []string{"*"}
-			case "acdd72a7-3385-48ef-bd42-f606fba81ae7":
-				permissions["actions"] = []string{"*/read"}
-			case "85cb6faf-e071-4c9b-8136-154b5a04f717":
-				permissions["actions"] = []string{"Microsoft.KubernetesConfiguration/extensions/*"}
-			case federationRoleGUID:
-				permissions["actions"] = []string{
-					"Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/*",
-				}
-			case "ba92f5b4-2d11-453d-a403-e96b0029c9fe":
-				permissions["dataActions"] = []string{"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/*"}
-			default:
-				return readReply{}, false
-			}
-			return readReply{200, map[string]any{
-				"id": path, "properties": map[string]any{"permissions": []any{permissions}},
-			}}, true
 		}
 		return readReply{}, false
 	}
@@ -85,7 +65,7 @@ func suppliedFacts() Facts {
 	}
 }
 
-func TestSuppliedGrantChecksUseCurrentExistenceWithoutRecoveryExemptions(t *testing.T) {
+func TestSuppliedGrantChecksRequireAllSuppliedSelections(t *testing.T) {
 	for _, id := range []string{"hosting-federation", "workload-blob"} {
 		for _, state := range []string{"absent", "existing", "unknown", "supplied"} {
 			t.Run(id+"/"+state, func(t *testing.T) {
@@ -93,7 +73,6 @@ func TestSuppliedGrantChecksUseCurrentExistenceWithoutRecoveryExemptions(t *test
 				target := &plan.Workload
 				if id == "workload-blob" {
 					target = &plan.Storage
-					plan.Hosting.Supplied = false
 				}
 				target.Supplied = state == "supplied"
 				delete(facts.Exists, strings.ToLower(target.ID))
@@ -107,58 +86,16 @@ func TestSuppliedGrantChecksUseCurrentExistenceWithoutRecoveryExemptions(t *test
 					readReply{200, map[string]any{"value": []any{}}}
 				authorizer := NewAuthorizer(testCredential{}, fake.options()).(*scopedAuthorizer)
 				report := authorizer.suppliedIdentityChecks(t.Context(), plan, facts)
-				check := checkWithID(t, report, id)
-				if state == "absent" {
-					assert.Equal(t, NotApplicable, check.Status)
-					assert.Zero(t, fake.count(target.ID+assignmentSuffix))
+				if state != "supplied" {
+					assert.Empty(t, report)
 				} else {
+					check := checkWithID(t, report, id)
 					assert.Equal(t, Fail, check.Status)
 					assert.NotEmpty(t, check.Remediation)
 					assert.Contains(t, check.Remediation, "does not repair")
 				}
 			})
 		}
-	}
-}
-
-func permission(actions, notActions, data, notData []string) *armauthorization.Permission {
-	pointers := func(values []string) []*string {
-		var result []*string
-		for _, value := range values {
-			result = append(result, new(value))
-		}
-		return result
-	}
-	return &armauthorization.Permission{
-		Actions: pointers(actions), NotActions: pointers(notActions),
-		DataActions: pointers(data), NotDataActions: pointers(notData),
-	}
-}
-
-func TestEquivalentIdentityPermissionsPreserveActionsAndDataActions(t *testing.T) {
-	read := "Microsoft.Storage/storageAccounts/read"
-	blob := "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/*"
-	required := []*armauthorization.Permission{permission([]string{read}, nil, []string{blob}, nil)}
-	for _, test := range []struct {
-		name      string
-		available []*armauthorization.Permission
-		allowed   bool
-	}{
-		{"wildcard owner", []*armauthorization.Permission{permission([]string{"*"}, nil, []string{"*"}, nil)}, true},
-		{"control plane does not imply data plane",
-			[]*armauthorization.Permission{permission([]string{"*"}, nil, nil, nil)}, false},
-		{"union of applicable roles", []*armauthorization.Permission{
-			permission([]string{read}, nil, nil, nil), permission(nil, nil, []string{blob}, nil),
-		}, true},
-		{"NotActions denies required read",
-			[]*armauthorization.Permission{permission([]string{"*"}, []string{read}, []string{"*"}, nil)}, false},
-		{"NotDataActions denies required write",
-			[]*armauthorization.Permission{permission([]string{"*"}, nil, []string{"*"}, []string{
-				"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write",
-			})}, false},
-		{"missing permissions", nil, false},
-	} {
-		t.Run(test.name, func(t *testing.T) { assert.Equal(t, test.allowed, roleCovers(test.available, required)) })
 	}
 }
 
@@ -175,7 +112,7 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 			} else if state == "unrelated" {
 				scope = testSubscription + "/resourceGroups/unrelated"
 			}
-			evidence := assignment(scope, "workload-principal", ownerRole)
+			evidence := assignment(scope, "workload-principal", blobOwnerRole)
 			page := map[string]any{"value": []any{evidence}}
 			switch state {
 			case "conditional":
@@ -190,14 +127,14 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 			}
 			fake.replies[strings.ToLower(testStorage+assignmentSuffix)] = readReply{200, page}
 			authorizer := NewAuthorizer(testCredential{}, fake.options()).(*scopedAuthorizer)
-			status, _, err := authorizer.identityGrantAllows(t.Context(), "target-sub", grant)
-			require.NoError(t, err)
+			status, _, err := authorizer.identityGrantAllows(t.Context(), grant)
+			assert.Equal(t, state == "incomplete", err != nil)
 			switch state {
-			case "inherited", "management group", "paged":
+			case "inherited", "management group", "paged", "unrelated":
 				assert.Equal(t, Pass, status)
-			case "conditional", "incomplete":
+			case "incomplete":
 				assert.Equal(t, Unverified, status)
-			case "missing", "unrelated":
+			case "missing", "conditional":
 				assert.Equal(t, Fail, status)
 			}
 		})
@@ -215,7 +152,6 @@ func TestAuthorizationReadsAreCachedOnlyWithinOnePass(t *testing.T) {
 			"hosting-aks has two role requirements at the same scope")
 		assert.Equal(t, pass, fake.count(testWorkload+assignmentSuffix),
 			"hosting-federation requirements share raw scope evidence")
-		assert.Equal(t, pass, fake.count(ownerRole), "roles shared by multiple scopes are read once per pass")
 	}
 }
 

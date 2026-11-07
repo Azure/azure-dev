@@ -5,12 +5,18 @@ package onboarding
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 )
 
@@ -39,10 +45,9 @@ func (c *passReads[T]) get(key string, read func() (T, error)) (T, error) {
 type AuthorizationEvidence struct {
 	credential        azcore.TokenCredential
 	options           *arm.ClientOptions
-	assignmentClients passReads[*armauthorization.RoleAssignmentsClient]
+	assignmentClients passReads[*arm.Client]
 	definitionClients passReads[*armauthorization.RoleDefinitionsClient]
 	assignments       passReads[[]*armauthorization.RoleAssignment]
-	definitions       passReads[armauthorization.RoleDefinitionsClientGetByIDResponse]
 	roleNames         passReads[string]
 }
 
@@ -64,68 +69,112 @@ func (e *AuthorizationEvidence) definitionClient() (*armauthorization.RoleDefini
 	})
 }
 
-func (e *AuthorizationEvidence) roleDefinition(
-	ctx context.Context, id string,
-) (armauthorization.RoleDefinitionsClientGetByIDResponse, error) {
-	return e.definitions.get(strings.ToLower(id), func() (armauthorization.RoleDefinitionsClientGetByIDResponse, error) {
-		client, err := e.definitionClient()
-		if err != nil {
-			return armauthorization.RoleDefinitionsClientGetByIDResponse{}, err
-		}
-		return client.GetByID(ctx, id, nil)
-	})
-}
-
-func (e *AuthorizationEvidence) filteredAssignments(
-	ctx context.Context, scope, filter string,
+func (e *AuthorizationEvidence) roleAssignments(
+	ctx context.Context, scope string, allowMissing bool,
 ) ([]*armauthorization.RoleAssignment, error) {
-	return e.assignments.get(strings.ToLower(scope)+"|"+filter, func() ([]*armauthorization.RoleAssignment, error) {
-		return e.readAssignments(ctx, scope, filter)
-	})
+	return e.assignments.get(strings.ToLower(scope)+"|"+strconv.FormatBool(allowMissing),
+		func() ([]*armauthorization.RoleAssignment, error) {
+			return e.readAssignments(ctx, scope, allowMissing)
+		})
 }
 
 func (e *AuthorizationEvidence) readAssignments(
-	ctx context.Context, scope, filter string,
+	ctx context.Context, scope string, allowMissing bool,
 ) ([]*armauthorization.RoleAssignment, error) {
 	id, err := arm.ParseResourceID(scope)
 	if err != nil || id.SubscriptionID == "" {
 		return nil, fmt.Errorf("authorization requires a complete subscription scope: %s", scope)
 	}
-	client, err := e.assignmentClients.get(strings.ToLower(id.SubscriptionID),
-		func() (*armauthorization.RoleAssignmentsClient, error) {
-			return armauthorization.NewRoleAssignmentsClient(id.SubscriptionID, e.credential, e.options)
+	client, err := e.assignmentClients.get("",
+		func() (*arm.Client, error) {
+			return arm.NewClient("azure.ai.projects.onboarding", "v1.0.0", e.credential, e.options)
 		})
 	if err != nil {
 		return nil, err
 	}
-	pager := client.NewListForScopePager(scope,
-		&armauthorization.RoleAssignmentsClientListForScopeOptions{Filter: new(filter)})
+	uri := strings.TrimRight(client.Endpoint(), "/") + scope +
+		"/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01&$filter=atScope()"
 	var assignments []*armauthorization.RoleAssignment
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
+	firstPage := true
+	visited := map[string]bool{}
+	for uri != "" {
+		if visited[uri] {
+			return nil, fmt.Errorf("role assignment pagination repeated a page at %s", scope)
+		}
+		visited[uri] = true
+		request, err := runtime.NewRequest(ctx, http.MethodGet, uri)
 		if err != nil {
+			return nil, fmt.Errorf("construct role assignment request at %s: %w", scope, err)
+		}
+		response, err := client.Pipeline().Do(request)
+		if err == nil && !runtime.HasStatusCode(response, http.StatusOK) {
+			err = runtime.NewResponseError(response)
+		}
+		if err != nil {
+			if response, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+				allowMissing && firstPage && response.StatusCode == http.StatusNotFound {
+				return nil, nil
+			}
 			return nil, fmt.Errorf("read applicable role assignments at %s: %w", scope, err)
 		}
-		assignments = append(assignments, page.Value...)
+		firstPage = false
+		var page struct {
+			Value    *[]*armauthorization.RoleAssignment `json:"value"`
+			NextLink json.RawMessage                     `json:"nextLink"`
+		}
+		if err := runtime.UnmarshalAsJSON(response, &page); err != nil {
+			return nil, fmt.Errorf("decode role assignments at %s: %w", scope, err)
+		}
+		if page.Value == nil {
+			return nil, fmt.Errorf("role assignment list is incomplete at %s", scope)
+		}
+		for _, assignment := range *page.Value {
+			if assignment == nil || assignment.Properties == nil ||
+				authString(assignment.Properties.PrincipalID) == "" || authString(assignment.Properties.Scope) == "" ||
+				authString(assignment.Properties.RoleDefinitionID) == "" {
+				return nil, fmt.Errorf("role assignment evidence is incomplete at %s", scope)
+			}
+		}
+		assignments = append(assignments, (*page.Value)...)
+		uri = ""
+		if len(page.NextLink) > 0 {
+			if string(page.NextLink) == "null" {
+				return nil, fmt.Errorf("role assignment nextLink is not a string at %s", scope)
+			}
+			if err := json.Unmarshal(page.NextLink, &uri); err != nil {
+				return nil, fmt.Errorf("decode role assignment nextLink at %s: %w", scope, err)
+			}
+		}
 	}
 	return assignments, nil
 }
 
-// assignmentApplies consumes only assignments returned by the target's ARM scope query.
-// ARM establishes management-group ancestry; its resource IDs are not subscription path prefixes.
-func assignmentApplies(assignment *armauthorization.RoleAssignment, scope string) bool {
-	p := assignment.Properties
-	if scopeContains(authString(p.Scope), scope) {
-		return true
+// ExistingRoleAssignmentKeys supplies exact scope/principal/role keys for mixed-resource deployment deduplication.
+func (e *AuthorizationEvidence) ExistingRoleAssignmentKeys(ctx context.Context, plan Plan) ([]string, Report, error) {
+	keys := []string{}
+	var skipped Report
+	if plan.Hosting.Supplied && plan.Workload.Supplied && plan.Storage.Supplied {
+		return keys, skipped, nil
 	}
-	parent := authString(p.Scope)
-	parts := strings.Split(parent, "/")
-	if len(parts) != 5 || parts[0] != "" || !strings.EqualFold(parts[1], "providers") ||
-		!strings.EqualFold(parts[2], "Microsoft.Management") || !strings.EqualFold(parts[3], "managementGroups") ||
-		parts[4] == "" || strings.ContainsAny(parts[4], "?#%\\@:\x00 \t\r\n") {
-		return false
+	for _, resource := range []Resource{plan.Cluster, plan.Workload, plan.Storage} {
+		if missing := resource.Missing + resource.LifecycleMissing; missing != "" {
+			skipped = append(skipped, SkippedCheck("role-assignment-keys", resource.diagnosticScope(),
+				"existing role assignment deduplication", missing))
+			continue
+		}
+		if resource.ID == "" {
+			return nil, skipped, fmt.Errorf("role assignment target is absent at %s", resource.diagnosticScope())
+		}
+		assignments, err := e.roleAssignments(ctx, resource.ID, !resource.Supplied)
+		if err != nil {
+			return nil, skipped, err
+		}
+		for _, assignment := range assignments {
+			p := assignment.Properties
+			keys = append(keys, strings.ToLower(authString(p.Scope)+"|"+authString(p.PrincipalID)+"|"+
+				roleGUID(authString(p.RoleDefinitionID))))
+		}
 	}
-	id, err := arm.ParseResourceID(authString(assignment.ID))
-	return err == nil && id.Name != "" && strings.EqualFold(id.ResourceType.String(),
-		"Microsoft.Authorization/roleAssignments") && strings.EqualFold(id.Parent.String(), parent)
+	slices.Sort(keys)
+	return slices.Compact(keys), skipped, nil
 }

@@ -38,18 +38,6 @@ func (a *scopedAuthorizer) Check(ctx context.Context, p Plan, f Facts) (Report, 
 	return report, report.Err()
 }
 
-func (e *AuthorizationEvidence) resolveGrantRole(
-	ctx context.Context, subscription string, grant grantRequest,
-) (string, error) {
-	if scope, err := arm.ParseResourceID(grant.scope); err == nil && scope.SubscriptionID != "" {
-		subscription = scope.SubscriptionID
-	}
-	if grant.roleID != "" {
-		return "/subscriptions/" + subscription + "/providers/Microsoft.Authorization/roleDefinitions/" + grant.roleID, nil
-	}
-	return e.ResolveRoleByName(ctx, subscription, grant.roleName)
-}
-
 // ResolveRoleByName resolves a built-in role, sharing concurrent reads and errors by subscription and exact role name.
 func (e *AuthorizationEvidence) ResolveRoleByName(
 	ctx context.Context, subscription, roleName string,

@@ -3,10 +3,7 @@
 
 package onboarding
 
-import (
-	"regexp"
-	"strings"
-)
+import "strings"
 
 type grantRequest struct {
 	checkID, scope, principalID, roleName, roleID string
@@ -18,7 +15,7 @@ func grantRequests(p Plan, hosting, workload Identity) []grantRequest {
 		{"hosting-aks", p.Cluster.ID, hosting.PrincipalID,
 			"Kubernetes Extension Contributor", "85cb6faf-e071-4c9b-8136-154b5a04f717"},
 		{"hosting-federation", p.Workload.ID, hosting.PrincipalID,
-			"Managed Identity Federated Identity Credential Contributor", ""},
+			"Managed Identity Federated Identity Credential Contributor", "7e559ce2-48d7-4b27-9128-fa1b247f1308"},
 		{"workload-blob", p.Storage.ID, workload.PrincipalID,
 			"Storage Blob Data Contributor", "ba92f5b4-2d11-453d-a403-e96b0029c9fe"},
 	}
@@ -31,16 +28,6 @@ func authString(p *string) string {
 	return *p
 }
 
-func scopeContains(parent, child string) bool {
-	parent = strings.ToLower(strings.TrimRight(parent, "/"))
-	child = strings.ToLower(strings.TrimRight(child, "/"))
-	return parent != "" && (parent == child || strings.HasPrefix(child, parent+"/"))
-}
-
-// ARM operation wildcards are not filesystem globs: '*' also matches separators.
-func actionMatches(pattern, action string) bool {
-	pattern = regexp.QuoteMeta(strings.ToLower(pattern))
-	pattern = strings.ReplaceAll(pattern, `\*`, ".*")
-	matched, _ := regexp.MatchString("^"+pattern+"$", strings.ToLower(action))
-	return matched
+func roleGUID(id string) string {
+	return strings.ToLower(id[strings.LastIndex(id, "/")+1:])
 }

@@ -59,6 +59,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		"federatedIdentityRoleDefinitionId": nil,
 		"hostingPrincipalId":                nil,
 		"workloadPrincipalId":               nil,
+		"byoAksExistingRoleAssignmentKeys":  nil,
 	}
 	if includeAcr, _ := byoParameterValue(source, "includeAcr").(bool); includeAcr {
 		hostBindings["kubeletObjectId"] = nil
@@ -152,7 +153,17 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		}
 	}
 	identities[0].fact, identities[1].fact = facts.HostingIdentity, facts.WorkloadIdentity
-	resolvedBindings := map[string]string{"kubeletObjectId": facts.KubeletObjectID}
+	resolvedBindings := map[string]any{"kubeletObjectId": facts.KubeletObjectID}
+	if _, needed := hostBindings["byoAksExistingRoleAssignmentKeys"]; needed {
+		keys, skipped, err := evidence.ExistingRoleAssignmentKeys(ctx, plan)
+		if err != nil {
+			return fmt.Errorf("resolve existing BYO AKS role assignments: %w", err)
+		}
+		if err := writeBYOPreflight(skipped, nil, progress); err != nil {
+			return err
+		}
+		resolvedBindings["byoAksExistingRoleAssignmentKeys"] = keys
+	}
 	for i := range identities {
 		identity := &identities[i]
 		if _, needed := hostBindings[identity.binding]; !needed {

@@ -189,13 +189,55 @@ Log Analytics Reader role on the Application Insights resource; azd does not
 grant it.
 Discovery rejects conflicting destinations, protected names, ambiguous sharing,
 unreadable resources, and authentication or ingestion policies that would need
-to be weakened. ApiKey setup does not enable local authentication or configure
-private-network ingestion. A project with a `network:` block always skips
-automatic monitoring, whether `monitoring:` is omitted, empty, or names a
-component, so provisioning is never blocked; azd prints a warning when it
-skips monitoring. Set up monitoring for such
-projects outside azd. Other monitoring failures can fail normal provisioning; there
-is no second best-effort deployment or agent deployment repair hook.
+to be weakened. ApiKey setup does not enable local authentication. A new
+project with a `network:` block that uses your own agent subnet gets a private
+monitoring path that matches the Foundry samples: the component disables public
+ingestion and keeps public query enabled, and azd adds an Azure Monitor Private
+Link Scope (ingestion Private Only, query Open), an `azuremonitor` private
+endpoint, and the four Azure Monitor private DNS zones. Ingestion is private
+only; trace reads are not restricted to the private network. Right after a
+fresh deployment, private ingestion can return 403 for a while (observed up to
+about 20 minutes) before traces start to arrive. Live testing confirmed that
+Foundry service-side traces from a deployed prompt agent were read from inside
+the network without any post-deployment change.
+With your own agent subnet you can also connect an existing component
+(`reuse-connect`): azd builds its own Private Link Scope, private endpoint and
+DNS zones and links the component and its workspace to the scope, without
+modifying the component. The component must keep local authentication enabled.
+azd does not re-update a component it does not own; if ingestion returns 403
+after provisioning, touching the component (for example, updating a tag) can
+clear it.
+Unsupported private-network cases never block provisioning: shared private DNS zones (`network.dns`), a virtual network that already has an
+Azure Monitor private endpoint (azd does not adopt an existing scope or
+endpoint), or a network azd cannot inspect skip automatic monitoring and azd
+prints a warning (also on stderr). With managed egress (no `agentSubnet`), azd
+also adds two outbound rules to the managed network and grants the account
+identity the Azure AI Enterprise Network Connection Approver role on the
+resource group so the managed private endpoints are approved:
+`ampls-monitor-rule` (target `azuremonitor`) lets the agent runtime reach the
+Private Link Scope, and `foundry-account-pe` (target `account`, to the account
+itself) is required for hosted agents, which otherwise fail with
+`Public access is disabled`. The hosted agent's own identity also needs
+`Monitoring Metrics Publisher` on the Application Insights component to export
+telemetry; azd does not grant that role yet. If you set no
+`isolationMode`, azd uses `AllowInternetOutbound` so the managed network exists.
+Ejected or hand-authored Bicep that bypasses
+azd's checks never creates the private path unless
+`monitoringPrivateLinkApproved` is set. Set `monitoring.enabled: false` to opt
+out silently.
+
+**Impact on a shared virtual network.** The Azure Monitor private DNS zones and
+Private Link Scope change Azure Monitor routing for the whole virtual network,
+not only this project. With ingestion Private Only, any workload in the network
+(or in a network sharing its DNS zones) can send telemetry only to Application
+Insights or Log Analytics resources that are in the scope; telemetry to
+resources outside it stops arriving. A virtual network can use only one Private
+Link Scope, so to keep other workloads' telemetry, add their Application
+Insights components or Log Analytics workspaces as scoped resources of the
+Private Link Scope that azd created. To avoid any change to Azure Monitor
+routing, set `monitoring.enabled: false`. Check for existing workloads before
+you provision. Other monitoring failures can fail normal provisioning; there is
+no second best-effort deployment or agent deployment repair hook.
 
 Monitoring creates billable Azure resources and can store agent telemetry,
 including application-supplied content. Review your application's telemetry,

@@ -1214,3 +1214,24 @@ func captureStdout(t *testing.T, fn func()) string {
 	require.NoError(t, err)
 	return string(data)
 }
+
+func TestValidateMemorySnapshotSettingIgnoresPropertyCase(t *testing.T) {
+	for name, tc := range map[string]struct {
+		props map[string]any
+		want  string
+	}{
+		"prompt agent":       {map[string]any{"kind": "prompt", "EnableMemorySnapshot": true}, "only supported on hosted"},
+		"non boolean":        {map[string]any{"kind": "hosted", "EnableMemorySnapshot": "yes"}, "must be a boolean"},
+		"collision non bool": {map[string]any{"kind": "hosted", "enableMemorySnapshot": true, "ENABLEMEMORYSNAPSHOT": "yes"}, "must be a boolean"},
+		"collision prompt":   {map[string]any{"kind": "prompt", "enableMemorySnapshot": nil, "enablememorysnapshot": false}, "only supported on hosted"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			props, err := structpb.NewStruct(tc.props)
+			require.NoError(t, err)
+			require.ErrorContains(t, validateMemorySnapshotSetting(props), tc.want)
+		})
+	}
+	props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "EnableMemorySnapshot": true})
+	require.NoError(t, err)
+	require.NoError(t, validateMemorySnapshotSetting(props))
+}

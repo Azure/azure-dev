@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 )
 
 // A prompt agent's definition reaches azd through the effective azure.yaml
@@ -41,7 +43,7 @@ var containerOnlyPromptFields = []string{
 // a tool type newer than this build still passes through.
 func ValidateInlinePromptAgent(props map[string]any) error {
 	for _, field := range containerOnlyPromptFields {
-		if _, ok := props[field]; ok {
+		if len(foldedValues(props, field)) > 0 {
 			return fmt.Errorf(
 				"field %q is not valid for a prompt (kind: prompt) agent; "+
 					"remove container-only fields (image, protocols, codeConfiguration, ...) "+
@@ -50,8 +52,8 @@ func ValidateInlinePromptAgent(props map[string]any) error {
 			)
 		}
 	}
-	if _, hasToolbox := props["toolbox"]; hasToolbox {
-		if _, hasToolboxes := props["toolboxes"]; hasToolboxes {
+	if len(foldedValues(props, "toolbox")) > 0 {
+		if len(foldedValues(props, "toolboxes")) > 0 {
 			return fmt.Errorf(
 				"cannot specify both \"toolbox\" and \"toolboxes\"; " +
 					"remove \"toolbox\" and list each azure.ai.toolbox service under \"toolboxes\"",
@@ -62,17 +64,36 @@ func ValidateInlinePromptAgent(props map[string]any) error {
 				"use \"toolboxes\" with a list of azure.ai.toolbox service names",
 		)
 	}
-	if raw, ok := props["harness"]; ok {
+	for _, raw := range foldedValues(props, "harness") {
 		if err := validateInlineHarness(raw); err != nil {
 			return err
 		}
 	}
-	if raw, ok := props["memory"]; ok {
+	for _, raw := range foldedValues(props, "memory") {
 		if err := validateInlineMemory(raw); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// foldedValues returns the value of every key in props that equals name under
+// Unicode case folding, in sorted key order so errors are deterministic.
+// Property names are matched case-insensitively, and two keys may fold to the
+// same name, so every match is returned.
+func foldedValues(props map[string]any, name string) []any {
+	var keys []string
+	for key := range props {
+		if strings.EqualFold(key, name) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	values := make([]any, 0, len(keys))
+	for _, key := range keys {
+		values = append(values, props[key])
+	}
+	return values
 }
 
 // validateInlineHarness mirrors [PromptHarness.UnmarshalYAML].

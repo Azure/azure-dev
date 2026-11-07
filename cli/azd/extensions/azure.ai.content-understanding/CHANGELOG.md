@@ -1,6 +1,20 @@
 # Release History
 
-## 0.1.1-preview (Unreleased)
+## 0.1.2-preview (Unreleased)
+
+### Features Added
+
+- Add `azd ai cu analyze --pretty` (`-p`) to pretty-print a single result in the
+  terminal, with formatted Markdown, colored headings, and simple HTML tables
+  displayed as tables or labeled cards.
+
+### Other Changes
+
+- Improve the readability of `azd ai cu version` text output.
+- Highlight commands, paths, and identifiers in infrastructure generation
+  guidance, and use blue text for wizard questions. Respect `NO_COLOR`.
+
+## 0.1.1-preview (2026-11-03)
 
 ### Features Added
 

@@ -5,6 +5,12 @@ development. Start with the [README](https://github.com/Azure/azure-dev/blob/mai
 For resource creation, permissions, model deployment, and service defaults, use
 the separate [Microsoft Foundry provisioning guide](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/provisioning.md).
 
+## Check the installed extension version
+
+Run `azd ai cu version` to display the installed extension version and name.
+For scripts, use `azd ai cu version --output json`, which returns
+the extension ID as `name` and the installed version as `version`.
+
 ## Connect to Microsoft Foundry and check setup
 
 You need a Microsoft Foundry resource endpoint and an identity with access to
@@ -147,6 +153,50 @@ azd ai cu analyze \
   --output-file invoice.result.md
 ```
 
+### Pretty-print results in the terminal
+
+By default, stdout contains Markdown and HTML tables as text. Redirect or pipe
+this output to save it or render it with another tool:
+
+```bash
+azd ai cu analyze invoice.pdf > invoice.result.md
+```
+
+Pretty-print results in the terminal with `--pretty` (or `-p`); omit the flag or
+use `--pretty=false` for the default text output:
+
+```bash
+azd ai cu analyze invoice.pdf --pretty
+```
+
+Pretty-printing formats Markdown for terminal reading. The preview includes
+document metadata with `---` delimiters and page comments, and keeps source line
+breaks. Reference-style links work across tables.
+
+HTML tables display all columns and switch to labeled cards when they are too wide
+for the terminal.
+
+When color is enabled, metadata, page comments, and generated row labels are gray.
+Headings share a consistent color, tables use a distinct color, and layout notices
+are yellow.
+
+Keep these limitations in mind:
+
+- Unsupported tables, such as those with merged cells or complex headers, display
+  an explanatory notice followed by their source HTML.
+- Long values can overflow, and some Unicode text or emoji may not align correctly.
+  Right-to-left text display depends on your terminal. Markdown tables may shorten
+  long links.
+- Preview text removes terminal controls. Links and images are not fetched.
+- Piped or redirected previews are uncolored and use an 80-column layout.
+
+`--pretty` requires a single streamed LLM-input result. It cannot be combined with
+`--output json`, `--output none`, `--llm-input=false`, `--usage`, `--dry-run`,
+`--output-file`, or `--output-dir`. The flag affects only the streamed preview,
+not saved result files or reports. To save Markdown/HTML, omit `--pretty`.
+
+### Complete JSON response
+
 For the complete JSON response envelope, including the result, service warnings,
 and usage when present, use `--output json`. These examples display the JSON
 in the console and save it to a file, respectively:
@@ -209,6 +259,13 @@ all per-input outcomes. Diagnosing a failure does not issue another analysis req
 Missing-resource errors suggest checking the endpoint and available analyzers;
 creation conflicts suggest inspecting the existing analyzer and choosing an unused ID.
 Service response bodies and authored content remain hidden.
+
+In an interactive terminal, analysis shows an animated `Analyzing <target>...`
+status in the action color (`NO_COLOR` disables color). Concurrent inputs share
+one status line that cycles through active targets. Local targets show the file
+name; URL targets omit credentials, query parameters, and fragments. The status
+clears before results or errors appear and is omitted for redirected or piped
+stdout, JSON/none output, and dry runs. It is never saved in result or report files.
 
 - Batch concurrency defaults to 4; `--concurrency` accepts 1-32.
 - More than 50 selected inputs require confirmation or explicit `--yes`.

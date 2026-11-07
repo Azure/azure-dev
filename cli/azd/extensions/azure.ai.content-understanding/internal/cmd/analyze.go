@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -11,9 +12,12 @@ import (
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/exterrors"
+	"azure.ai.content-understanding/internal/preview"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 type analyzeOptions struct {
@@ -26,6 +30,7 @@ type analyzeOptions struct {
 	usage       bool
 	dryRun      bool
 	yes         bool
+	pretty      bool
 }
 
 func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *cobra.Command {
@@ -35,6 +40,8 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 		Long: "Analyze local files, directories, or HTTPS URLs using Microsoft Entra authentication.\n\n" +
 			"Uses prebuilt-layout when no analyzer is specified or configured.\n" +
 			"Results use YAML front matter and Markdown by default. Batches save source-relative result files.\n" +
+			"Use --pretty (-p) to pretty-print one streamed LLM-input result in the terminal.\n" +
+			"Without --pretty, stdout retains the original Markdown and HTML tables, including when redirected.\n" +
 			"Use --output json for complete JSON, or --dry-run to inspect the plan without service calls.",
 		Example: `  azd ai cu analyze invoice.pdf
     Analyze one file using the configured analyzer, or prebuilt-layout if unset.
@@ -52,7 +59,10 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
     Analyze matching PDF files recursively and preserve their relative paths.
 
   azd ai cu analyze invoice.pdf --llm-input --output-file invoice.md
-    Save YAML front matter and Markdown for generative AI model input.`,
+    Save YAML front matter and Markdown for generative AI model input.
+
+  azd ai cu analyze invoice.pdf --pretty
+    Pretty-print Markdown and tables in the terminal; wide tables use labeled cards.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return exterrors.FromError(runAnalyzeCommand(cmd, extCtx, open, options, args))
 		},
@@ -73,6 +83,8 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 	flags.BoolVar(&options.usage, "usage", false, "Include usage metadata in streamed results or per-input summaries")
 	flags.BoolVar(&options.output.LLMInput, "llm-input", true,
 		"Render YAML front matter and Markdown; set false for complete JSON; true conflicts with --output json")
+	flags.BoolVarP(&options.pretty, "pretty", "p", false,
+		"Pretty-print one streamed LLM-input result in the terminal (default: original text)")
 	flags.StringVar(&options.output.File, "output-file", "", "Save one result to this file")
 	flags.StringVarP(&options.output.Directory, "output-dir", "d", "", "Save source-relative result files in this directory")
 	flags.StringVar(&options.output.Existing, "on-existing", "",
@@ -102,6 +114,25 @@ func runAnalyzeCommand(
 				"Omit --llm-input to return complete JSON, or omit --output json to render LLM input.")
 		}
 		options.output.LLMInput = false
+	}
+	if options.pretty {
+		for _, conflict := range []struct {
+			set  bool
+			name string
+		}{
+			{extCtx.OutputFormat != "default", "--output " + extCtx.OutputFormat},
+			{!options.output.LLMInput, "--llm-input=false"},
+			{options.usage, "--usage"},
+			{options.dryRun, "--dry-run"},
+			{cmd.Flags().Changed("output-file"), "--output-file"},
+			{cmd.Flags().Changed("output-dir"), "--output-dir"},
+		} {
+			if conflict.set {
+				return commandError("conflicting_analyze_options",
+					"--pretty cannot be combined with "+conflict.name+".",
+					"Omit --pretty to keep original text, saved results, or structured output.")
+			}
+		}
 	}
 	if options.dryRun && options.yes {
 		return commandError("dry_run_confirmation",
@@ -139,6 +170,11 @@ func runAnalyzeCommand(
 	plan, err := analysis.PlanOutputs(inputs, options.output)
 	if err != nil {
 		return err
+	}
+	if options.pretty && len(plan.Outputs) != 1 {
+		return commandError("conflicting_analyze_options",
+			"--pretty requires one input and cannot preview a batch.",
+			"Select one input, or omit --pretty to save batch results.")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -182,9 +218,13 @@ func runAnalyzeCommand(
 			}
 		}
 	}
-	execution, err := analysis.Execute(ctx, session.client, plan, analysis.RunOptions{
-		Analyzer: session.analyzer, Mode: mode, Concurrency: options.concurrency, Usage: options.usage,
-	})
+	execution, err := executeAnalysis(ctx, cmd.OutOrStdout(), extCtx.OutputFormat,
+		func(ctx context.Context, progress func(int, analysis.Input, bool) error) (analysis.Execution, error) {
+			return analysis.Execute(ctx, session.client, plan, analysis.RunOptions{
+				Analyzer: session.analyzer, Mode: mode, Concurrency: options.concurrency, Usage: options.usage,
+				Progress: progress,
+			})
+		})
 	if err != nil {
 		return err
 	}
@@ -192,6 +232,18 @@ func runAnalyzeCommand(
 		if text, ok := execution.Stream.(string); ok && extCtx.OutputFormat == "default" {
 			if err := ctx.Err(); err != nil {
 				return err
+			}
+			if options.pretty {
+				width, useColor := 80, false
+				if file, ok := cmd.OutOrStdout().(*os.File); ok && azdext.IsInteractiveTerminal(file) {
+					var err error
+					width, _, err = term.GetSize(int(file.Fd())) //nolint:gosec // File descriptor fits in int.
+					if err != nil {
+						return fmt.Errorf("read preview terminal size: %w", err)
+					}
+					useColor = !color.NoColor
+				}
+				return preview.Render(ctx, cmd.OutOrStdout(), text, width, useColor)
 			}
 			if _, err := fmt.Fprintln(cmd.OutOrStdout(), text); err != nil {
 				return fmt.Errorf("write CU result: %w", err)

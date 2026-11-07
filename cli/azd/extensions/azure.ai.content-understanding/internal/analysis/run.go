@@ -24,6 +24,8 @@ type RunOptions struct {
 	Mode        cuclient.AnalysisMode
 	Concurrency int
 	Usage       bool
+	// Progress can be called concurrently; implementations must serialize their output.
+	Progress func(index int, input Input, active bool) error
 }
 
 type Record struct {
@@ -205,7 +207,7 @@ func analyzeInputs(
 					return
 				}
 				index := jobs[position]
-				payload, usage, err := analyzeOne(ctx, client, inputs[index], llm, options)
+				payload, usage, err := analyzeWithProgress(ctx, client, inputs[index], index, llm, options)
 				// Drain all started jobs before closing the service session, including on cancellation.
 				completed <- outcome{index: index, payload: payload, usage: usage, err: err}
 			}
@@ -216,6 +218,21 @@ func analyzeInputs(
 		close(completed)
 	}()
 	return completed
+}
+
+func analyzeWithProgress(
+	ctx context.Context, client cuclient.Client, input Input, index int, llm bool, options RunOptions,
+) (any, json.RawMessage, error) {
+	if options.Progress != nil {
+		if err := options.Progress(index, input, true); err != nil {
+			return nil, nil, err
+		}
+	}
+	payload, usage, err := analyzeOne(ctx, client, input, llm, options)
+	if options.Progress != nil {
+		err = errors.Join(err, options.Progress(index, input, false))
+	}
+	return payload, usage, err
 }
 
 func analyzeOne(

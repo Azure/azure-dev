@@ -240,12 +240,11 @@ func (p *FoundryProvisioningProvider) preflightFailure(err error) error {
 	if wire.GetOrigin() != azdext.ErrorOrigin_ERROR_ORIGIN_UNSPECIFIED {
 		classified = azdext.UnwrapError(wire)
 	}
-	switch value := classified.(type) {
-	case *azdext.ServiceError:
+	if value, ok := errors.AsType[*azdext.ServiceError](classified); ok {
 		value.Message = message
-	case *azdext.LocalError:
+	} else if value, ok := errors.AsType[*azdext.LocalError](classified); ok {
 		value.Message = message
-	case *azdext.ToolError:
+	} else if value, ok := errors.AsType[*azdext.ToolError](classified); ok {
 		if original, ok := errors.AsType[*azdext.ToolError](err); ok {
 			value = new(*original)
 			classified = value

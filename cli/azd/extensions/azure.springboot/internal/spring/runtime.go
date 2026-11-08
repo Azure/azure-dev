@@ -262,6 +262,13 @@ func (r *Runtime) PreProvision(ctx context.Context, args *azdext.ProjectEventArg
 			return err
 		}
 	}
+	if database.discovered &&
+		preparation.Type == databasePostgreSQL &&
+		preparation.Authentication == databaseAuthenticationManagedIdentity {
+		if err := validatePostgresBootstrapImage(postgresBootstrapImage); err != nil {
+			return err
+		}
+	}
 
 	writes := map[string]string{}
 	switch preparation.Type {

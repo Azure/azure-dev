@@ -5,6 +5,7 @@ package spring
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,6 +44,7 @@ func automaticPostgresProject(t *testing.T) (*azdext.ProjectConfig, *azdext.Serv
 }
 
 func TestAutomaticPreProvisionPreparesOnlyBoundAdministratorInputs(t *testing.T) {
+	setTestPostgresBootstrapImage(t)
 	for _, key := range []string{
 		databasePasswordEnv, databaseAppPasswordEnv, databaseAdministratorNameEnv,
 		databaseAdministratorObjectIDEnv, "DATABASE_ADMIN_NAME", "DATABASE_ADMIN_OBJECT_ID",
@@ -73,6 +75,52 @@ func TestAutomaticPreProvisionPreparesOnlyBoundAdministratorInputs(t *testing.T)
 	require.Error(t, runtime.PreProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
 	require.Equal(t, 1, identities.calls)
 	require.Empty(t, store.writes)
+}
+
+func TestAutomaticPreProvisionRequiresBootstrapImageBeforeIdentityResolutionOrWrites(t *testing.T) {
+	originalImage := postgresBootstrapImage
+	postgresBootstrapImage = ""
+	t.Cleanup(func() {
+		postgresBootstrapImage = originalImage
+	})
+	for _, key := range []string{
+		databasePasswordEnv, databaseAppPasswordEnv, databaseAdministratorNameEnv,
+		databaseAdministratorObjectIDEnv, "DATABASE_ADMIN_NAME", "DATABASE_ADMIN_OBJECT_ID",
+	} {
+		clearProcessValue(t, key)
+	}
+	project, _ := automaticPostgresProject(t)
+	store := &fakeEnvironmentStore{name: "dev", data: map[string]string{azureSubscriptionIDEnv: "subscription"}}
+	identities := &fakeDeveloperIdentityResolver{err: errors.New("identity must not be resolved")}
+	runtime := &Runtime{environments: store, identities: identities}
+
+	err := runtime.PreProvision(t.Context(), &azdext.ProjectEventArgs{Project: project})
+
+	require.ErrorContains(t, err, "must use the Microsoft-owned repository")
+	require.Zero(t, identities.calls)
+	require.Empty(t, store.writes)
+}
+
+func TestH2PreProvisionDoesNotRequireBootstrapImage(t *testing.T) {
+	originalImage := postgresBootstrapImage
+	postgresBootstrapImage = ""
+	t.Cleanup(func() {
+		postgresBootstrapImage = originalImage
+	})
+	project, _ := createMavenProject(t)
+	store := &fakeEnvironmentStore{name: "dev", data: map[string]string{}}
+	runtime := &Runtime{environments: store}
+
+	require.NoError(t, runtime.PreProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
+}
+
+func setTestPostgresBootstrapImage(t *testing.T) {
+	t.Helper()
+	originalImage := postgresBootstrapImage
+	postgresBootstrapImage = postgresBootstrapImageRepository + "@sha256:" + strings.Repeat("a", 64)
+	t.Cleanup(func() {
+		postgresBootstrapImage = originalImage
+	})
 }
 
 func TestDeployedSpringConfigurationResolvesActualSecretReferencesAndLaunchArguments(t *testing.T) {

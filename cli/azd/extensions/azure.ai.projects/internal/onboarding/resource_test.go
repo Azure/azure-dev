@@ -223,6 +223,8 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 		{"read forbidden", func(f *readFake) {
 			f.replies[strings.ToLower(testStorage)] = readReply{403,
 				map[string]any{"error": map[string]string{"code": "AuthorizationFailed", "message": "offline forbidden"}}}
+			f.replies[strings.ToLower(testCluster+"/agentPools")] = readReply{403,
+				map[string]any{"error": map[string]string{"code": "AuthorizationFailed", "message": "pool read forbidden"}}}
 		}},
 		{"different subscription tenant", func(f *readFake) {
 			f.replies["/subscriptions/cluster-sub"] = readReply{200, map[string]any{"tenantId": "another-tenant"}}
@@ -288,9 +290,34 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 				response, ok := errors.AsType[*azcore.ResponseError](err)
 				require.True(t, ok)
 				assert.Equal(t, http.StatusForbidden, response.StatusCode)
+				for _, id := range []string{"system-pool", "agent-pool", "agent-image", "agent-label"} {
+					check := checkWithID(t, report, id)
+					assert.Equal(t, Unverified, check.Status)
+					assert.Equal(t, "AKS child pools could not be read", check.Observed)
+				}
+				assert.Equal(t, Pass, checkWithID(t, report, "aks-version").Status)
 			}
 		})
 	}
+	subnetID := testGroup + "/providers/Microsoft.Network/virtualNetworks/network/subnets/agents"
+	fake := resourceFake()
+	body := map[string]any{}
+	fake.replies[strings.ToLower(subnetID)] = readReply{200, body}
+	checker := &sdkResourceChecker{credential: testCredential{}, options: fake.options()}
+	subnet, report := checker.readNetworkSubnet(t.Context(), subnetID, "agent-subnet")
+	require.Nil(t, subnet)
+	require.Len(t, report, 1)
+	assert.Equal(t, Unverified, report[0].Status)
+	body["id"] = subnetID + "-other"
+	subnet, report = checker.readNetworkSubnet(t.Context(), subnetID, "agent-subnet")
+	require.Nil(t, subnet)
+	require.Len(t, report, 1)
+	assert.Equal(t, Fail, report[0].Status)
+	assert.Equal(t, subnetID, report[0].Scope)
+	body["id"] = strings.ToUpper(subnetID)
+	subnet, report = checker.readNetworkSubnet(t.Context(), subnetID, "agent-subnet")
+	require.NotNil(t, subnet)
+	require.Empty(t, report)
 }
 
 func TestStorageRulesRetainSourceStandardsAndDefaults(t *testing.T) {

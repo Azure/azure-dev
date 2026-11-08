@@ -186,10 +186,11 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	var storageReport Report
 	var cluster *armcontainerservice.ManagedCluster
 	var pools []*armcontainerservice.AgentPool
+	var poolsKnown bool
 	var clusterReport Report
 	var selected *armcontainerservice.AgentPool
 	tasks := []func(){func() {
-		cluster, pools, clusterReport = c.readCluster(ctx, plan.Cluster)
+		cluster, pools, poolsKnown, clusterReport = c.readCluster(ctx, plan.Cluster)
 	}}
 	if plan.Storage.Supplied {
 		tasks = append(tasks, func() {
@@ -216,7 +217,7 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	report = append(report, storageReport...)
 	report = append(report, clusterReport...)
 	if cluster != nil {
-		kubelet, checks, pool := aksResourceChecks(*cluster, pools)
+		kubelet, checks, pool := aksResourceChecks(*cluster, pools, poolsKnown)
 		selected = pool
 		c.poolCapacityWarnings(ctx, *cluster, pools, selected, checks)
 		facts.KubeletObjectID = kubelet
@@ -258,22 +259,22 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 
 func (c *sdkResourceChecker) readCluster(
 	ctx context.Context, resource Resource,
-) (*armcontainerservice.ManagedCluster, []*armcontainerservice.AgentPool, Report) {
+) (*armcontainerservice.ManagedCluster, []*armcontainerservice.AgentPool, bool, Report) {
 	if resource.Missing != "" {
-		return nil, nil, Report{SkippedCheck("resource-refs", resource.diagnosticScope(),
+		return nil, nil, false, Report{SkippedCheck("resource-refs", resource.diagnosticScope(),
 			"AKS resource existence and identity", resource.Missing)}
 	}
 	id, err := existingResourceID(resource.ID, "Microsoft.ContainerService/managedClusters")
 	if err != nil {
-		return nil, nil, Report{readFailure("resource-refs", resource.ID, "complete managedClusters resource ID", err)}
+		return nil, nil, false, Report{readFailure("resource-refs", resource.ID, "complete managedClusters resource ID", err)}
 	}
 	client, err := armcontainerservice.NewManagedClustersClient(id.SubscriptionID, c.credential, c.options)
 	if err != nil {
-		return nil, nil, Report{readFailure("resource-refs", resource.ID, "managedClusters/read", err)}
+		return nil, nil, false, Report{readFailure("resource-refs", resource.ID, "managedClusters/read", err)}
 	}
 	response, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
 	if err != nil {
-		return nil, nil, Report{readFailure("resource-refs", resource.ID,
+		return nil, nil, false, Report{readFailure("resource-refs", resource.ID,
 			"Microsoft.ContainerService/managedClusters/read", err)}
 	}
 	report := Report{resourceKnown(resourceCheck("resource-refs", resource.ID, "referenced AKS resource ID matches"),
@@ -284,7 +285,7 @@ func (c *sdkResourceChecker) readCluster(
 		report = append(report, readFailure("resource-refs", resource.ID,
 			"Microsoft.ContainerService/managedClusters/agentPools/read", poolErr))
 	}
-	return &response.ManagedCluster, pools, report
+	return &response.ManagedCluster, pools, poolErr == nil, report
 }
 
 func (c *sdkResourceChecker) readAgentPools(

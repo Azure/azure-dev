@@ -30,6 +30,12 @@ func (c *sdkResourceChecker) readNetworkSubnet(ctx context.Context, raw, checkID
 	if err != nil {
 		return nil, Report{readFailure(checkID, raw, "Microsoft.Network/virtualNetworks/subnets/read", err)}
 	}
+	returnedID := resourceValue(response.ID)
+	check := resourceKnown(resourceCheck(checkID, raw, "returned subnet resource ID matches"),
+		returnedID != "", strings.EqualFold(raw, returnedID), "returned subnet resource ID="+returnedID)
+	if check.Status != Pass {
+		return nil, Report{check}
+	}
 	return &response.Subnet, nil
 }
 

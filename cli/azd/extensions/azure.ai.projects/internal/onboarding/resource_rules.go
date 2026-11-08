@@ -241,7 +241,7 @@ func selectedAgentPool(pools []*armcontainerservice.AgentPool) (*armcontainerser
 }
 
 func aksResourceChecks(
-	cluster armcontainerservice.ManagedCluster, pools []*armcontainerservice.AgentPool,
+	cluster armcontainerservice.ManagedCluster, pools []*armcontainerservice.AgentPool, poolsKnown bool,
 ) (string, Report, *armcontainerservice.AgentPool) {
 	scope := resourceValue(cluster.ID)
 	selectedPool, selectedChecks := selectedAgentPool(pools)
@@ -313,12 +313,20 @@ func aksResourceChecks(
 			hasSystem = true
 		}
 	}
-	add("system-pool", "at least one System child pool", true, hasSystem,
-		"System child pool present="+strconv.FormatBool(hasSystem))
+	systemObserved := "AKS child pools could not be read"
+	if poolsKnown {
+		systemObserved = "System child pool present=" + strconv.FormatBool(hasSystem)
+	}
+	add("system-pool", "at least one System child pool", poolsKnown, hasSystem, systemObserved)
 	if selectedPool == nil {
 		for _, id := range []string{"agent-pool", "agent-image", "agent-label"} {
-			report = append(report, resourceResult(resourceCheck(id, scope, "one complete qualifying User pool"),
-				Fail, "no User child pool"))
+			check := resourceCheck(id, scope, "one complete qualifying User pool")
+			if poolsKnown {
+				check = resourceResult(check, Fail, "no User child pool")
+			} else {
+				check.Observed = "AKS child pools could not be read"
+			}
+			report = append(report, check)
 		}
 	} else {
 		report = append(report, selectedChecks...)

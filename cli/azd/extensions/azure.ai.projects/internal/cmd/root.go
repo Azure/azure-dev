@@ -38,7 +38,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProjectShowCommand(extCtx))
 	rootCmd.AddCommand(newProjectAddCommand(extCtx))
 	rootCmd.AddCommand(newProjectDeploymentCommand(extCtx))
-	rootCmd.AddCommand(newListenCommand())
+	rootCmd.AddCommand(newListenCommand(configureExtensionHostWithReport))
 
 	rootCmd.Example = `  # Configure a Foundry project in the current azd project
   azd ai project add

@@ -60,7 +60,7 @@ func (r *preflightReports) postProvision(
 	}, nil
 }
 
-func newListenCommand() *cobra.Command {
+func newListenCommand(configure func(*azdext.ExtensionHost, func(string))) *cobra.Command {
 	command := azdext.NewListenCommand(nil)
 	command.RunE = func(command *cobra.Command, _ []string) error {
 		ctx, cancel := context.WithCancel(azdext.WithAccessToken(command.Context()))
@@ -111,7 +111,7 @@ func newListenCommand() *cobra.Command {
 			return fmt.Errorf("invalid postprovision report subscription response")
 		}
 		host := azdext.NewExtensionHost(client)
-		configureExtensionHostWithReport(host, reports.add)
+		configure(host, reports.add)
 		workers.Go(func() { failures <- host.Run(ctx) })
 		err = <-failures
 		if command.Context().Err() != nil && errors.Is(err, context.Canceled) {

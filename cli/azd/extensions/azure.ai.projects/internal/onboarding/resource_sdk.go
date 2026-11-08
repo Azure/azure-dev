@@ -196,12 +196,12 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 			storage, storageReport = c.readStorage(ctx, plan.Storage)
 		})
 	}
-	if plan.Hosting.Supplied {
+	if plan.Hosting.Supplied || plan.Hosting.PrincipalRequired {
 		tasks = append(tasks, func() {
 			identities[0], identityReports[0] = c.readIdentity(ctx, plan.Hosting, tenant)
 		})
 	}
-	if plan.Workload.Supplied {
+	if plan.Workload.Supplied || plan.Workload.PrincipalRequired {
 		tasks = append(tasks, func() {
 			identities[1], identityReports[1] = c.readIdentity(ctx, plan.Workload, tenant)
 		})
@@ -430,13 +430,12 @@ func (c *sdkResourceChecker) readIdentity(
 	properties := response.Properties
 	if response.ID == nil || properties == nil || authString(properties.PrincipalID) == "" ||
 		authString(properties.ClientID) == "" || authString(properties.TenantID) == "" || tenant == "" {
-		check.Observed = "supplied identity ID, principal, client or owning tenant evidence is missing"
+		check.Observed = "identity ID, principal, client or owning tenant evidence is missing"
 		return Identity{}, check
 	}
 	identity := Identity{ID: *response.ID, PrincipalID: *properties.PrincipalID}
 	if !strings.EqualFold(resource.ID, identity.ID) || !strings.EqualFold(tenant, *properties.TenantID) {
-		return Identity{}, resourceResult(check, Fail, "supplied identity ID or owning tenant does not match")
+		return Identity{}, resourceResult(check, Fail, "identity ID or owning tenant does not match")
 	}
-	return identity, resourceResult(check, Pass,
-		"existing identity metadata matches; no identity PUT or owner tag is planned")
+	return identity, resourceResult(check, Pass, "existing identity metadata matches")
 }

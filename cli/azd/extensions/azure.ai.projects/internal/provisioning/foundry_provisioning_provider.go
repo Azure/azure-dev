@@ -116,6 +116,8 @@ type FoundryProvisioningProvider struct {
 	acrDeferPromptedEnv       bool
 	acrPromptedEnv            map[string]string
 	acrRequest                func(context.Context, string, string, string, any) error
+	preflightReport           strings.Builder
+	reportProvisioned         func(string)
 
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
@@ -138,8 +140,8 @@ func readProjectFile(projectRoot string) ([]byte, string, error) {
 
 // NewFoundryProvisioningProvider constructs the provider with a live
 // AzdClient. The host calls Initialize before any other method.
-func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient) azdext.ProvisioningProvider {
-	return &FoundryProvisioningProvider{azdClient: azdClient}
+func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient, report func(string)) azdext.ProvisioningProvider {
+	return &FoundryProvisioningProvider{azdClient: azdClient, reportProvisioned: report}
 }
 
 // Initialize loads azure.yaml, decides between the embedded ARM template
@@ -1482,6 +1484,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 	}
 	if err := p.verifyDeployedACRAccess(ctx, src); err != nil {
 		return nil, err
+	}
+	if p.reportProvisioned != nil && p.preflightReport.Len() > 0 {
+		p.reportProvisioned(p.preflightReport.String())
 	}
 	progress("Foundry deployment complete")
 	return &azdext.ProvisioningDeployResult{

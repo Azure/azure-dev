@@ -31,3 +31,7 @@ func authString(p *string) string {
 func roleGUID(id string) string {
 	return strings.ToLower(id[strings.LastIndex(id, "/")+1:])
 }
+
+func roleAssignmentKey(scope, principal, role string) string {
+	return strings.ToLower(scope + "|" + principal + "|" + roleGUID(role))
+}

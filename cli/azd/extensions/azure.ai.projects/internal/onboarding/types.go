@@ -92,8 +92,8 @@ func (e *BlockedError) Error() string {
 	var message strings.Builder
 	message.WriteString("BYO-AKS preflight blocked")
 	for _, c := range e.Checks {
-		message.WriteString(fmt.Sprintf("; %s %s: %s (%s)",
-			c.ID, c.Status, RedactDiagnostic(c.Observed), RedactDiagnostic(c.Remediation)))
+		message.WriteString(fmt.Sprintf("; %s %s [%s]: %s (%s)",
+			c.ID, c.Status, RedactDiagnostic(c.Scope), RedactDiagnostic(c.Observed), RedactDiagnostic(c.Remediation)))
 	}
 	return message.String()
 }
@@ -123,7 +123,7 @@ func RedactDiagnostic(message string) string {
 	})
 }
 
-// Resource distinguishes an explicit reference from an ordinary ARM deployment target.
+// Resource records a selected ARM resource's lifecycle and metadata requirements.
 type Resource struct {
 	ID               string
 	Parent           string
@@ -131,6 +131,8 @@ type Resource struct {
 	Origin           string
 	Missing          string
 	LifecycleMissing string
+	// PrincipalRequired requests binding facts without changing the ARM create/update lifecycle.
+	PrincipalRequired bool
 }
 
 // SkippedCheck reports an unresolved template-plan dependency, not successful evidence.

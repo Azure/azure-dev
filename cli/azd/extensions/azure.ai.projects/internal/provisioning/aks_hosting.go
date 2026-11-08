@@ -20,6 +20,7 @@ import (
 	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
@@ -33,7 +34,9 @@ type byoHostingParameters struct {
 
 func (p *FoundryProvisioningProvider) prepareBYO(
 	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
-) error {
+) (prepareErr error) {
+	p.preflightReport.Reset()
+	defer func() { prepareErr = p.preflightFailure(prepareErr) }()
 	hosting, err := byoHostingParameter(source)
 	if err != nil {
 		return err
@@ -99,7 +102,6 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 			}
 		}
 		if identity.id == "" {
-			delete(hostBindings, identity.binding)
 			continue
 		}
 		id, err := onboarding.ParseID(identity.id, "Microsoft.ManagedIdentity/userAssignedIdentities")
@@ -126,12 +128,22 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if err != nil {
 		return err
 	}
+	// Explicit selectors still need bindings when their effective identities are also ARM deployment targets.
+	for i, resource := range []*onboarding.Resource{&plan.Hosting, &plan.Workload} {
+		identity := &identities[i]
+		_, automatic := hostBindings[identity.binding]
+		resource.PrincipalRequired = automatic && (resource.Supplied || identity.id != "")
+		if !resource.PrincipalRequired {
+			delete(hostBindings, identity.binding)
+		}
+		identity.id = resource.ID
+	}
 	pipeline := onboarding.Pipeline{
 		Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions, evidence),
 		Access:    evidence,
 	}
 	facts, report, preflightErr := pipeline.Preflight(ctx, plan)
-	if err := writeBYOPreflight(report, preflightErr, progress); err != nil {
+	if err := p.writeBYOPreflight(report, preflightErr, progress); err != nil {
 		return err
 	}
 	_, needsKubelet := hostBindings["kubeletObjectId"]
@@ -154,16 +166,6 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	}
 	identities[0].fact, identities[1].fact = facts.HostingIdentity, facts.WorkloadIdentity
 	resolvedBindings := map[string]any{"kubeletObjectId": facts.KubeletObjectID}
-	if _, needed := hostBindings["byoAksExistingRoleAssignmentKeys"]; needed {
-		keys, skipped, err := evidence.ExistingRoleAssignmentKeys(ctx, plan)
-		if err != nil {
-			return fmt.Errorf("resolve existing BYO AKS role assignments: %w", err)
-		}
-		if err := writeBYOPreflight(skipped, nil, progress); err != nil {
-			return err
-		}
-		resolvedBindings["byoAksExistingRoleAssignmentKeys"] = keys
-	}
 	for i := range identities {
 		identity := &identities[i]
 		if _, needed := hostBindings[identity.binding]; !needed {
@@ -178,12 +180,33 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		}
 		resolvedBindings[identity.binding] = identity.fact.PrincipalID
 	}
+	federationRoleID, _ := byoParameterValue(source, "federatedIdentityRoleDefinitionId").(string)
 	if resolveFederationRole {
-		roleID, err := resolveBYOFederationRoleID(ctx, roleSubscription, evidence)
+		var err error
+		federationRoleID, err = resolveBYOFederationRoleID(ctx, roleSubscription, evidence)
 		if err != nil {
 			return err
 		}
-		resolvedBindings["federatedIdentityRoleDefinitionId"] = roleID
+		resolvedBindings["federatedIdentityRoleDefinitionId"] = federationRoleID
+	}
+	if _, needed := hostBindings["byoAksExistingRoleAssignmentKeys"]; needed {
+		grantFacts := facts
+		for name, principal := range map[string]*string{
+			"hostingPrincipalId":  &grantFacts.HostingIdentity.PrincipalID,
+			"workloadPrincipalId": &grantFacts.WorkloadIdentity.PrincipalID,
+		} {
+			if _, automatic := hostBindings[name]; automatic {
+				continue
+			}
+			if value, supplied := byoParameterValue(source, name).(string); supplied {
+				*principal = value
+			}
+		}
+		keys, checks, err := evidence.ExistingRoleAssignmentKeys(ctx, plan, grantFacts, federationRoleID)
+		if err := p.writeBYOPreflight(checks, err, progress); err != nil {
+			return fmt.Errorf("resolve existing BYO AKS role assignments: %w", err)
+		}
+		resolvedBindings["byoAksExistingRoleAssignmentKeys"] = keys
 	}
 	for name := range hostBindings {
 		hostBindings[name] = map[string]any{"value": resolvedBindings[name]}
@@ -192,16 +215,54 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	return nil
 }
 
-func writeBYOPreflight(report onboarding.Report, preflightErr error, progress grpcbroker.ProgressFunc) error {
+func (p *FoundryProvisioningProvider) writeBYOPreflight(
+	report onboarding.Report, preflightErr error, progress grpcbroker.ProgressFunc,
+) error {
 	var output strings.Builder
 	if err := report.Write(&output); err != nil {
 		return errors.Join(preflightErr, err)
 	}
 	if output.Len() > 0 {
+		p.preflightReport.WriteString(output.String())
 		progress(output.String())
 	}
 	return preflightErr
 }
+
+func (p *FoundryProvisioningProvider) preflightFailure(err error) error {
+	if err == nil || p.preflightReport.Len() == 0 {
+		return err
+	}
+	message := onboarding.RedactDiagnostic(err.Error()) +
+		"\n\nBYO-AKS preflight report:\n" + p.preflightReport.String()
+	wire := azdext.WrapError(err)
+	var classified error
+	if wire.GetOrigin() != azdext.ErrorOrigin_ERROR_ORIGIN_UNSPECIFIED {
+		classified = azdext.UnwrapError(wire)
+	}
+	switch value := classified.(type) {
+	case *azdext.ServiceError:
+		value.Message = message
+	case *azdext.LocalError:
+		value.Message = message
+	case *azdext.ToolError:
+		if original, ok := errors.AsType[*azdext.ToolError](err); ok {
+			value = new(*original)
+			classified = value
+		}
+		value.Message = message
+	}
+	return &byoPreflightError{cause: err, classified: classified, message: message}
+}
+
+type byoPreflightError struct {
+	cause, classified error
+	message           string
+}
+
+func (e *byoPreflightError) Error() string { return e.message }
+
+func (e *byoPreflightError) Unwrap() []error { return []error{e.classified, e.cause} }
 
 func byoARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
 	var result arm.ClientOptions

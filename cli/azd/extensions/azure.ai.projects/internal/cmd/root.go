@@ -38,7 +38,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProjectShowCommand(extCtx))
 	rootCmd.AddCommand(newProjectAddCommand(extCtx))
 	rootCmd.AddCommand(newProjectDeploymentCommand(extCtx))
-	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
+	rootCmd.AddCommand(newListenCommand())
 
 	rootCmd.Example = `  # Configure a Foundry project in the current azd project
   azd ai project add
@@ -57,6 +57,10 @@ func NewRootCommand() *cobra.Command {
 
 // configureExtensionHost registers project lifecycle providers.
 func configureExtensionHost(host *azdext.ExtensionHost) {
+	configureExtensionHostWithReport(host, nil)
+}
+
+func configureExtensionHostWithReport(host *azdext.ExtensionHost, report func(string)) {
 	azdClient := host.Client()
 	host.
 		WithServiceTargetPreview(
@@ -70,6 +74,7 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 			func() azdext.ProvisioningProvider {
 				return provisioning.NewFoundryProvisioningProvider(
 					azdClient,
+					report,
 				)
 			},
 		).

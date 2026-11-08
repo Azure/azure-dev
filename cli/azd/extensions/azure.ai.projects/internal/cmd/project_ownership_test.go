@@ -1780,7 +1780,7 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 				envServer.values["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
 			}
 			before := maps.Clone(envServer.values)
-			provider := provisioning.NewFoundryProvisioningProvider(client)
+			provider := provisioning.NewFoundryProvisioningProvider(client, nil)
 			require.NoError(t, provider.Initialize(t.Context(), root, &azdext.ProvisioningOptions{
 				Provider: provisioning.FoundryProviderName,
 			}))

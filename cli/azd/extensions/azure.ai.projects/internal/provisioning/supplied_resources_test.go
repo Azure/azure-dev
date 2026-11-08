@@ -18,9 +18,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 const suppliedGroupID = "/subscriptions/target-sub/resourceGroups/target-rg"
@@ -294,6 +297,78 @@ func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) 
 				assert.Empty(t, p.virtualEnv)
 				for _, request := range fake.requests {
 					assert.True(t, strings.HasPrefix(request, "GET "), request)
+				}
+			})
+		}
+	}
+}
+
+func TestBYOConditionalGrantRetainsExitDiagnostic(t *testing.T) {
+	for _, test := range []struct {
+		name, scope, identity, principal, role, roleID string
+		mask                                           int
+	}{
+		{"storage", suppliedStorageID, suppliedWorkloadID, suppliedWorkloadPrincipal,
+			"Storage Blob Data Contributor", "ba92f5b4-2d11-453d-a403-e96b0029c9fe", 5},
+		{"cluster", offlineClusterID, suppliedHostingID, suppliedHostingPrincipal,
+			"Reader", "acdd72a7-3385-48ef-bd42-f606fba81ae7", 2},
+		{"federation", defaultWorkloadID, suppliedHostingID, suppliedHostingPrincipal,
+			"Managed Identity Federated Identity Credential Contributor", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 2},
+		{"explicit principal", suppliedStorageID, suppliedWorkloadID, "44444444-4444-4444-8444-444444444444",
+			"Storage Blob Data Contributor", "ba92f5b4-2d11-453d-a403-e96b0029c9fe", 5},
+		{"explicit federation", defaultWorkloadID, suppliedHostingID, suppliedHostingPrincipal,
+			"Managed Identity Federated Identity Credential Contributor", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 2},
+	} {
+		for _, preview := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/preview=%t", test.name, preview), func(t *testing.T) {
+				p, fake, _ := suppliedProvider(t, test.mask)
+				const suffix = "/providers/Microsoft.Authorization/roleAssignments"
+				assignmentID := test.scope + suffix + "/55555555-5555-4555-8555-555555555555"
+				roleID := "/subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions/" + test.roleID
+				if strings.HasPrefix(test.name, "explicit ") {
+					name, value := "workloadPrincipalId", test.principal
+					if test.name == "explicit federation" {
+						name, value = "federatedIdentityRoleDefinitionId", roleID
+					}
+					p.onDiskSource = &templateSource{
+						mode: templateModeBicep, armTemplate: p.armTemplate,
+						parameters: map[string]any{name: map[string]any{"value": value}},
+					}
+				}
+				fake.overrides[strings.ToLower(test.scope+suffix)] = suppliedReply{200, map[string]any{
+					"value": []any{map[string]any{
+						"id": assignmentID,
+						"properties": map[string]any{
+							"scope": test.scope, "principalId": test.principal, "roleDefinitionId": roleID,
+							"condition": "restricted test condition", "conditionVersion": "2.0",
+						},
+					}},
+				}}
+				var err error
+				if preview {
+					_, err = p.Preview(t.Context(), func(string) {})
+				} else {
+					_, err = p.Deploy(t.Context(), func(string) {})
+				}
+				require.ErrorContains(t, err, "BYO-AKS preflight blocked")
+				assert.Zero(t, fake.base.writes)
+				assert.Zero(t, fake.base.previews)
+				assert.Empty(t, p.virtualEnv)
+				envelope := azdext.NewProvisioningEnvelope()
+				message := new(azdext.ProvisioningMessage)
+				envelope.SetError(message, err)
+				wire, marshalErr := proto.Marshal(message)
+				require.NoError(t, marshalErr)
+				received := new(azdext.ProvisioningMessage)
+				require.NoError(t, proto.Unmarshal(wire, received))
+				exitErr := fmt.Errorf("provisioning deploy failed: %w", envelope.GetError(received))
+				exitOutput := (&ux.ActionResult{Err: exitErr}).ToString("")
+				for _, detail := range []string{
+					"ERROR:", assignmentID, test.identity, test.principal, test.scope, test.role, roleID,
+					"restricted test condition", "remove its condition", "replace it with an unconditional",
+					"different ID conflicts", "azd does not modify existing conditions",
+				} {
+					assert.Contains(t, exitOutput, detail)
 				}
 			})
 		}

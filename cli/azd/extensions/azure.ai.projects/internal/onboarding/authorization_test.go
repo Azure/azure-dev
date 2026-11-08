@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -143,6 +144,86 @@ func TestAuthorizationReadsAreCachedOnlyWithinOnePass(t *testing.T) {
 			"hosting-aks has two role requirements at the same scope")
 		assert.Equal(t, pass, fake.count(testWorkload+assignmentSuffix),
 			"hosting-federation requirements share raw scope evidence")
+	}
+}
+
+func TestExistingRoleAssignmentKeysDistinguishConditions(t *testing.T) {
+	for _, state := range []string{
+		"missing", "unconditional", "conditional", "unrelated principal", "unrelated role", "inherited scope",
+		"conditional then unconditional", "unconditional then conditional", "paged", "new principal",
+		"unconditional new principal", "missing ID", "credential URL",
+	} {
+		t.Run(state, func(t *testing.T) {
+			plan, facts := suppliedPlan(t), suppliedFacts()
+			plan.Hosting.Supplied = false
+			grant := grantRequests(plan, facts.HostingIdentity, facts.WorkloadIdentity)[3]
+			roleID := testSubscription + "/providers/Microsoft.Authorization/roleDefinitions/" + grant.roleID
+			value := assignment(grant.scope, grant.principalID, roleID)
+			assignmentID, ok := value["id"].(string)
+			require.True(t, ok)
+			properties, ok := value["properties"].(map[string]any)
+			require.True(t, ok)
+			if state != "unconditional" && state != "unconditional new principal" {
+				properties["condition"] = "container name equals allowed"
+				properties["conditionVersion"] = "2.0"
+			}
+			values := []any{value}
+			switch state {
+			case "missing":
+				values = []any{}
+			case "unrelated principal":
+				properties["principalId"] = "another-principal"
+			case "unrelated role":
+				properties["roleDefinitionId"] = blobOwnerRole
+			case "inherited scope":
+				properties["scope"] = testGroup
+			case "conditional then unconditional":
+				values = append(values, assignment(grant.scope, grant.principalID, roleID))
+			case "unconditional then conditional":
+				values = append([]any{assignment(grant.scope, grant.principalID, roleID)}, values...)
+			case "new principal", "unconditional new principal":
+				facts.WorkloadIdentity = Identity{}
+			case "missing ID":
+				delete(value, "id")
+			case "credential URL":
+				properties["condition"] = "https://user:password@example.test/path?sig=secret#fragment"
+			}
+			fake := authorizationFake()
+			page := map[string]any{"value": values}
+			if state == "paged" {
+				fake.replies["/next-role-page"] = readReply{200, page}
+				page = map[string]any{"value": []any{}, "nextLink": "https://management.azure.com/next-role-page"}
+			}
+			fake.replies[strings.ToLower(testStorage+assignmentSuffix)] = readReply{200, page}
+			evidence := NewAuthorizationEvidence(testCredential{}, fake.options())
+			keys, report, err := evidence.ExistingRoleAssignmentKeys(t.Context(), plan, facts, "")
+			expectedKey := roleAssignmentKey(grant.scope, grant.principalID, roleID)
+			switch state {
+			case "conditional", "paged":
+				require.Error(t, err)
+				require.Len(t, report, 1)
+				assert.Equal(t, Fail, report[0].Status)
+				for _, detail := range []string{
+					assignmentID, testWorkload, grant.principalID, grant.scope, grant.roleName,
+					roleID, "container name equals allowed", "2.0", "remove its condition", "different ID conflicts",
+				} {
+					assert.Contains(t, err.Error(), detail)
+				}
+			case "missing ID":
+				require.ErrorContains(t, err, "conditional role assignment ID is missing")
+			case "credential URL":
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "https://example.test/path")
+				for _, secret := range []string{"user:password", "sig=secret", "#fragment"} {
+					assert.NotContains(t, err.Error(), secret)
+				}
+			default:
+				require.NoError(t, err)
+			}
+			assert.Equal(t, state == "unconditional" || state == "conditional then unconditional" ||
+				state == "unconditional then conditional" || state == "unconditional new principal",
+				slices.Contains(keys, expectedKey))
+		})
 	}
 }
 

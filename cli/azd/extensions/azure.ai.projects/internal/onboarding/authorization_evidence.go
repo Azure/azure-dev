@@ -187,15 +187,18 @@ func (e *AuthorizationEvidence) readAssignments(
 	return assignments, nil
 }
 
-// ExistingRoleAssignmentKeys supplies exact scope/principal/role keys for mixed-resource deployment deduplication.
-func (e *AuthorizationEvidence) ExistingRoleAssignmentKeys(ctx context.Context, plan Plan) ([]string, Report, error) {
+// ExistingRoleAssignmentKeys deduplicates unconditional grants and reports conflicting required conditional assignments.
+func (e *AuthorizationEvidence) ExistingRoleAssignmentKeys(
+	ctx context.Context, plan Plan, facts Facts, federationRoleID string,
+) ([]string, Report, error) {
 	keys := []string{}
 	var skipped Report
+	var conditional []*armauthorization.RoleAssignment
 	if plan.Hosting.Supplied && plan.Workload.Supplied && plan.Storage.Supplied {
 		return keys, skipped, nil
 	}
 	for _, resource := range []Resource{plan.Cluster, plan.Workload, plan.Storage} {
-		if missing := resource.Missing + resource.LifecycleMissing; missing != "" {
+		if missing := resource.Missing; missing != "" {
 			skipped = append(skipped, SkippedCheck("role-assignment-keys", resource.diagnosticScope(),
 				"existing role assignment deduplication", missing))
 			continue
@@ -203,16 +206,66 @@ func (e *AuthorizationEvidence) ExistingRoleAssignmentKeys(ctx context.Context, 
 		if resource.ID == "" {
 			return nil, skipped, fmt.Errorf("role assignment target is absent at %s", resource.diagnosticScope())
 		}
-		assignments, err := e.roleAssignments(ctx, resource.ID, !resource.Supplied)
+		allowMissing := !resource.Supplied || resource.LifecycleMissing != ""
+		assignments, err := e.roleAssignments(ctx, resource.ID, allowMissing)
 		if err != nil {
 			return nil, skipped, err
 		}
 		for _, assignment := range assignments {
 			p := assignment.Properties
-			keys = append(keys, strings.ToLower(authString(p.Scope)+"|"+authString(p.PrincipalID)+"|"+
-				roleGUID(authString(p.RoleDefinitionID))))
+			if authString(p.Condition) != "" {
+				conditional = append(conditional, assignment)
+				continue
+			}
+			keys = append(keys, roleAssignmentKey(authString(p.Scope), authString(p.PrincipalID),
+				authString(p.RoleDefinitionID)))
 		}
 	}
 	slices.Sort(keys)
-	return slices.Compact(keys), skipped, nil
+	keys = slices.Compact(keys)
+	grants := grantRequests(plan, facts.HostingIdentity, facts.WorkloadIdentity)
+	for i := range grants {
+		if grants[i].checkID == "hosting-federation" && federationRoleID != "" {
+			grants[i].roleID = roleGUID(federationRoleID)
+		}
+	}
+	for _, assignment := range conditional {
+		p := assignment.Properties
+		key := roleAssignmentKey(authString(p.Scope), authString(p.PrincipalID), authString(p.RoleDefinitionID))
+		if slices.Contains(keys, key) {
+			continue
+		}
+		for _, grant := range grants {
+			if grant.principalID == "" || key != roleAssignmentKey(grant.scope, grant.principalID, grant.roleID) {
+				continue
+			}
+			if authString(assignment.ID) == "" {
+				return nil, skipped, fmt.Errorf(
+					"conditional role assignment ID is missing at %s for principal %s and role %s",
+					grant.scope, grant.principalID, grant.roleID)
+			}
+			identity := plan.Hosting
+			if grant.checkID == "workload-blob" {
+				identity = plan.Workload
+			}
+			check := resourceCheck("role-assignment-keys", grant.scope,
+				"a matching role assignment without a condition before suppressing the template grant")
+			check.Status = Fail
+			check.Observed = fmt.Sprintf(
+				"existing role assignment %s for identity %s (principalId %s), scope %s, role %s (roleDefinitionId %s) "+
+					"has condition %q (conditionVersion %q); preflight cannot establish the required unconditional grant",
+				authString(assignment.ID), identity.ID, grant.principalID, grant.scope, grant.roleName,
+				authString(p.RoleDefinitionID), authString(p.Condition), authString(p.ConditionVersion))
+			check.Missing = "a matching role assignment without a condition"
+			check.Remediation = fmt.Sprintf(
+				"Have the resource administrator review role assignment %s and, if approved, remove its condition "+
+					"or replace it with an unconditional %s assignment (roleDefinitionId %s) for identity %s "+
+					"(principalId %s) at scope %s. Creating a second assignment with the same principal, scope and role "+
+					"under a different ID conflicts with the existing assignment. azd does not modify existing conditions.",
+				authString(assignment.ID), grant.roleName, authString(p.RoleDefinitionID),
+				identity.ID, grant.principalID, grant.scope)
+			skipped = append(skipped, check)
+		}
+	}
+	return keys, skipped, skipped.Err()
 }

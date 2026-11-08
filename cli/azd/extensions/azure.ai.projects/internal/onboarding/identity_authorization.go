@@ -29,11 +29,12 @@ func (e *AuthorizationEvidence) suppliedIdentityChecks(ctx context.Context, plan
 		}
 		if missing := target.Missing + target.LifecycleMissing; missing != "" {
 			report = append(report, SkippedCheck(grant.checkID, target.diagnosticScope(),
-				"supplied identity access to its dependency", missing))
+				"supplied identity role assignment on its dependency", missing))
 			continue
 		}
 		check := resourceCheck(grant.checkID, grant.scope,
-			"supplied identity "+grant.principalID+" has "+grant.roleName+" or an accepted built-in role")
+			"matching role assignment for supplied identity "+grant.principalID+
+				" and "+grant.roleName+" or an accepted built-in role")
 		if grant.principalID == "" {
 			check.Observed, check.Missing = "supplied identity metadata is unavailable", "verified identity principal ID"
 			report = append(report, check)
@@ -74,7 +75,7 @@ func (e *AuthorizationEvidence) identityGrantAllows(
 				roleID == "b24988ac-6180-42a0-ab88-20f7382dd24c"
 		}
 		if accepted {
-			return Pass, "verified supplied-identity role assignment with an accepted role ID and no condition", nil
+			return Pass, "found an accepted role assignment without a condition; effective access is not verified", nil
 		}
 	}
 	return Fail, fmt.Sprintf("no accepted role assignment without a condition for identity %s and role %s",

@@ -347,4 +347,5 @@ func TestResourceReportURLNonDisclosure(t *testing.T) {
 	require.NoError(t, report.Write(&output))
 	assert.NotContains(t, output.String()+report.Err().Error(), "private-")
 	assert.Contains(t, output.String(), "https://host/path")
+	assert.Contains(t, report.Err().Error(), "resource-refs FAIL [https://host/path]")
 }

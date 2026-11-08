@@ -130,9 +130,7 @@ func (r *templatePlanResolver) function(name string, args []string) any {
 	}
 	value, err := evaluateBYOPlanFunction(r.ctx, r.provider.bicepCli(), name, args)
 	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			r.err = errors.Join(r.err, err)
-		}
+		r.err = errors.Join(r.err, err)
 		unknown := planUnknown{"azd-managed Bicep could not evaluate " + name + ": " + err.Error()}
 		r.functions[key] = unknown
 		return unknown
@@ -315,16 +313,12 @@ func (n *planResource) module() *planEnvironment {
 	return n.child
 }
 
-func (n *planResource) id() (string, string) {
-	name, missing := planString(n.env.value(n.raw["name"]))
-	if missing != "" {
-		return "", "resource name: " + missing
-	}
+func (n *planResource) resourceScope() (string, string) {
 	if n.env.scope.missing != "" {
 		return "", n.env.scope.missing
 	}
 	if strings.EqualFold(n.kind, "Microsoft.Resources/resourceGroups") {
-		return n.env.scope.subscriptionARMID + "/resourceGroups/" + name, ""
+		return n.env.scope.subscriptionARMID, ""
 	}
 	scope := n.env.scope.groupARMID
 	if raw, present := n.raw["scope"]; present {
@@ -338,7 +332,25 @@ func (n *planResource) id() (string, string) {
 			scope += "/providers/" + value
 		}
 	}
-	if scope == "" || n.kind == "" {
+	if scope == "" {
+		return "", "resource type or deployment resource-group scope is not resolved"
+	}
+	return scope, ""
+}
+
+func (n *planResource) id() (string, string) {
+	name, missing := planString(n.env.value(n.raw["name"]))
+	if missing != "" {
+		return "", "resource name: " + missing
+	}
+	scope, missing := n.resourceScope()
+	if missing != "" {
+		return "", missing
+	}
+	if strings.EqualFold(n.kind, "Microsoft.Resources/resourceGroups") {
+		return scope + "/resourceGroups/" + name, ""
+	}
+	if n.kind == "" {
 		return "", "resource type or deployment resource-group scope is not resolved"
 	}
 	types, names := strings.Split(n.kind, "/"), strings.Split(name, "/")
@@ -383,7 +395,7 @@ func (n *planResource) reference(full bool) any {
 	if missing != "" {
 		return planUnknown{missing}
 	}
-	properties := map[string]any{}
+	properties := planUnknown{"runtime resource properties are not local template values"}
 	if !full {
 		return properties
 	}
@@ -442,9 +454,25 @@ func (r *templatePlanResolver) resource(value any, kind, origin string) onboardi
 	}
 	result.Parent = parsed.Parent.String()
 	r.recordOwningSubscription(kind, parsed.SubscriptionID)
+	parentScope := parsed.Parent
+	for range strings.Count(kind, "/") - 1 {
+		parentScope = parentScope.Parent
+	}
 	uncertain := strings.Join(r.unresolved, "; ")
 	for _, node := range r.nodes {
 		if node.inactive || !strings.EqualFold(node.kind, kind) {
+			continue
+		}
+		if _, override := node.raw["scope"]; !override {
+			if node.env.scope.subscriptionID != "" &&
+				!strings.EqualFold(node.env.scope.subscriptionID, parsed.SubscriptionID) {
+				continue
+			}
+			if node.env.scope.group != "" && !strings.EqualFold(node.env.scope.group, parsed.ResourceGroupName) {
+				continue
+			}
+		}
+		if scope, why := node.resourceScope(); why == "" && !strings.EqualFold(scope, parentScope.String()) {
 			continue
 		}
 		actual, why := node.id()

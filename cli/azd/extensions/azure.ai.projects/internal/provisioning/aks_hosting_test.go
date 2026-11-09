@@ -70,6 +70,7 @@ type byoARMFake struct {
 	previews       int
 	failWrite      bool
 	clusterVersion string
+	clusterSKUName string
 	clusterID      string
 	kubeletID      string
 	nodeSubnetID   string
@@ -90,6 +91,7 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 	if request.Method == http.MethodGet && request.URL.Path == f.clusterID {
 		return f.response(request, 200, map[string]any{
 			"id": f.clusterID, "location": "westus",
+			"sku":      map[string]any{"name": f.clusterSKUName},
 			"identity": map[string]any{"type": "SystemAssigned"},
 			"properties": map[string]any{
 				"currentKubernetesVersion": f.clusterVersion,
@@ -292,7 +294,7 @@ func offlineBYOProvider(t *testing.T) (*FoundryProvisioningProvider, *byoARMFake
 		tenantID: "user-access-tenant", virtualEnv: map[string]string{},
 	}
 	fake := &byoARMFake{
-		t: t, provider: p, clusterVersion: "1.31.0", clusterID: offlineClusterID,
+		t: t, provider: p, clusterVersion: "1.31.0", clusterSKUName: "Base", clusterID: offlineClusterID,
 		kubeletID: offlineKubeletObjectID, nodePrefix: "172.16.2.0/24",
 	}
 	p.bicepCliInstance = &stubCompiler{buildParamResult: bicep.BuildResult{

@@ -17,7 +17,7 @@ import (
 )
 
 var aksCheckIDs = [...]string{
-	"aks-version", "aks-cni", "aks-identity", "aks-federation", "system-pool",
+	"aks-type", "aks-version", "aks-cni", "aks-identity", "aks-federation", "system-pool",
 	"agent-pool", "agent-image", "agent-label", "network-policy",
 }
 
@@ -256,6 +256,22 @@ func aksResourceChecks(
 		}
 		return "", report, selectedPool
 	}
+	skuName := ""
+	if cluster.SKU != nil {
+		skuName = resourceValue(cluster.SKU.Name)
+	}
+	typeCheck := resourceKnown(
+		resourceCheck("aks-type", scope, "AKS Standard cluster (sku.name=Base)"),
+		skuName != "",
+		strings.EqualFold(skuName, "Base"),
+		fmt.Sprintf("returned cluster sku.name=%q", skuName),
+	)
+	if typeCheck.Status != Pass {
+		typeCheck.Missing = "explicit sku.name=Base on the selected AKS cluster"
+		typeCheck.Remediation = "Select an AKS Standard cluster with sku.name=Base. " +
+			"AKS Automatic is not supported by this hosting configuration."
+	}
+	report = append(report, typeCheck)
 	version := resourceValue(p.CurrentKubernetesVersion)
 	knownVersion, validVersion := numericVersion(version, []int{1, 31})
 	add("aks-version", "running Kubernetes >= 1.31",

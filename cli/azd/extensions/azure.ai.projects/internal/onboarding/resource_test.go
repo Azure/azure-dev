@@ -145,6 +145,7 @@ func resourceFake() *readFake {
 	}
 	fake.replies[strings.ToLower(testCluster)] = readReply{200, map[string]any{
 		"id": testCluster, "location": "westus",
+		"sku":      map[string]any{"name": "Base"},
 		"identity": map[string]any{"type": "SystemAssigned"},
 		"properties": map[string]any{
 			"currentKubernetesVersion": "1.31.0",
@@ -210,6 +211,54 @@ func TestResourceCheckerReadsOnlySupportingResources(t *testing.T) {
 	for _, request := range fake.requests {
 		assert.Equal(t, http.MethodGet, request.method)
 		assert.NotContains(t, request.path, "Microsoft.Network")
+	}
+}
+
+func TestResourceCheckerRequiresStandardAKS(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		sku    any
+		status Status
+	}{
+		{"Base without tier", map[string]any{"name": "Base"}, Pass},
+		{"Base Free tier", map[string]any{"name": "Base", "tier": "Free"}, Pass},
+		{"Base Standard tier", map[string]any{"name": "Base", "tier": "Standard"}, Pass},
+		{"Base Premium tier", map[string]any{"name": "Base", "tier": "Premium"}, Pass},
+		{"case insensitive Base", map[string]any{"name": "base"}, Pass},
+		{"Automatic Standard tier", map[string]any{"name": "Automatic", "tier": "Standard"}, Fail},
+		{"unknown name", map[string]any{"name": "Unknown"}, Fail},
+		{"missing SKU", nil, Unverified},
+		{"null SKU", nil, Unverified},
+		{"missing name", map[string]any{"tier": "Standard"}, Unverified},
+		{"null name", map[string]any{"name": nil}, Unverified},
+		{"empty name", map[string]any{"name": ""}, Unverified},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fake := resourceFake()
+			body, ok := fake.replies[strings.ToLower(testCluster)].body.(map[string]any)
+			require.True(t, ok)
+			body["sku"] = test.sku
+			if test.name == "missing SKU" {
+				delete(body, "sku")
+			}
+			_, report, err := NewResourceChecker(testCredential{}, fake.options(), nil).Check(t.Context(), suppliedPlan(t))
+			check := checkWithID(t, report, "aks-type")
+			assert.Equal(t, test.status, check.Status)
+			assert.Equal(t, testCluster, check.Scope)
+			assert.True(t, check.Mandatory)
+			assert.Equal(t, 1, fake.count(testCluster))
+			if test.status == Pass {
+				require.NoError(t, err)
+				assert.Empty(t, check.Remediation)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "aks-type")
+				assert.Contains(t, err.Error(), testCluster)
+				assert.Contains(t, err.Error(), "sku.name=Base")
+				assert.Contains(t, err.Error(), check.Observed)
+				assert.Contains(t, err.Error(), "Select an AKS Standard cluster")
+			}
+		})
 	}
 }
 

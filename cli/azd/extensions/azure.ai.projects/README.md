@@ -346,6 +346,7 @@ Provision and preview run read-only preflight for every BYO AKS plan, including 
 
 | Checks | Required evidence |
 |---|---|
+| `aks-type` | AKS Standard cluster with explicit `sku.name=Base`; AKS Automatic and other names fail, and missing type evidence blocks preflight as `UNVERIFIED`. The `sku.tier` pricing tier is not restricted. |
 | `aks-version`, `aks-cni`, `aks-identity`, `aks-federation` | Actual running Kubernetes version at least 1.31; Azure CNI with case-insensitive plugin/mode matching, using Overlay or a nonempty cluster `agentPoolProfiles` list with `podSubnetID` on every pool, including System pools; supported managed cluster identity and kubelet object ID; enabled OIDC with issuer and Workload Identity. |
 | `system-pool` | At least one System child pool exists. |
 | `agent-pool`, `agent-image`, `agent-label` | One complete User Agent pool has Azure Linux, KataVmIsolation, at least one node, an `AKSAzureLinux-V3katagen2-` image at least `202608.14.0`, and `agents.ai.azure.com/sandbox-node=true`. Requirements cannot be combined across different pools. |

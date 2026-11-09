@@ -266,7 +266,10 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 
 func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) {
 	for _, preview := range []bool{false, true} {
-		for _, failure := range []string{"missing Storage", "forbidden Storage", "missing identity", "tenant", "grant"} {
+		for _, failure := range []string{
+			"missing Storage", "forbidden Storage", "missing identity", "tenant", "grant",
+			"Automatic cluster", "missing cluster SKU name",
+		} {
 			t.Run(fmt.Sprintf("%s/preview=%t", failure, preview), func(t *testing.T) {
 				p, fake, _ := suppliedProvider(t, 7)
 				switch failure {
@@ -284,6 +287,10 @@ func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) 
 						map[string]any{"tenantId": "other-tenant"}}
 				case "grant":
 					fake.missingGrant = suppliedWorkloadID
+				case "Automatic cluster":
+					fake.base.clusterSKUName = "Automatic"
+				case "missing cluster SKU name":
+					fake.base.clusterSKUName = ""
 				}
 				var err error
 				if preview {
@@ -292,6 +299,11 @@ func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) 
 					_, err = p.Deploy(t.Context(), func(string) {})
 				}
 				require.ErrorContains(t, err, "preflight blocked")
+				if failure == "Automatic cluster" || failure == "missing cluster SKU name" {
+					assert.Contains(t, err.Error(), "aks-type")
+					assert.Contains(t, err.Error(), offlineClusterID)
+					assert.Contains(t, err.Error(), "sku.name=Base")
+				}
 				assert.Zero(t, fake.base.writes)
 				assert.Zero(t, fake.base.previews)
 				assert.Empty(t, p.virtualEnv)

@@ -6,6 +6,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"strings"
@@ -22,26 +23,31 @@ const (
 
 // PrintObject prints a struct or slice in the specified format
 func PrintObject(obj any, format OutputFormat) error {
+	return PrintObjectTo(os.Stdout, obj, format)
+}
+
+// PrintObjectTo prints an object to the command's selected output writer.
+func PrintObjectTo(w io.Writer, obj any, format OutputFormat) error {
 	switch format {
 	case FormatJSON:
-		return printJSON(obj)
+		return printJSON(w, obj)
 	case FormatTable:
-		return printTable(obj)
+		return printTable(w, obj)
 	default:
 		return fmt.Errorf("unsupported format: %s", format)
 	}
 }
 
-func printJSON(obj any) error {
+func printJSON(w io.Writer, obj any) error {
 	data, err := json.MarshalIndent(obj, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
-	fmt.Println(string(data))
-	return nil
+	_, err = fmt.Fprintln(w, string(data))
+	return err
 }
 
-func printTable(obj any) error {
+func printTable(w io.Writer, obj any) error {
 	v := reflect.ValueOf(obj)
 	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
@@ -51,11 +57,11 @@ func printTable(obj any) error {
 	}
 
 	if v.Kind() == reflect.Slice {
-		return printSliceAsTable(v)
+		return printSliceAsTable(w, v)
 	}
 
 	if v.Kind() == reflect.Struct {
-		return printStructAsKeyValue(v)
+		return printStructAsKeyValue(w, v)
 	}
 
 	return fmt.Errorf("table format requires a struct or slice, got %s", v.Kind())
@@ -81,10 +87,10 @@ func getTableColumns(t reflect.Type) []columnInfo {
 	return cols
 }
 
-func printSliceAsTable(v reflect.Value) error {
+func printSliceAsTable(out io.Writer, v reflect.Value) error {
 	if v.Len() == 0 {
-		fmt.Println("No items to display")
-		return nil
+		_, err := fmt.Fprintln(out, "No items to display")
+		return err
 	}
 
 	firstElem := v.Index(0)
@@ -104,7 +110,7 @@ func printSliceAsTable(v reflect.Value) error {
 		return fmt.Errorf("no fields with 'table' struct tags found in type %s", firstElem.Type().Name())
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
 	headers := make([]string, len(cols))
 	for i, col := range cols {
@@ -137,7 +143,7 @@ func printSliceAsTable(v reflect.Value) error {
 	return w.Flush()
 }
 
-func printStructAsKeyValue(v reflect.Value) error {
+func printStructAsKeyValue(out io.Writer, v reflect.Value) error {
 	t := v.Type()
 	cols := getTableColumns(t)
 
@@ -145,7 +151,7 @@ func printStructAsKeyValue(v reflect.Value) error {
 		return fmt.Errorf("no fields with table tags found")
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
 	for _, col := range cols {
 		value := formatFieldValue(v.Field(col.index))

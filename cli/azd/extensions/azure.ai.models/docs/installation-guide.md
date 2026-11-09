@@ -186,6 +186,7 @@ azd ai models init --project-endpoint "https://my-account.services.ai.azure.com/
 |---------|-------------|
 | `azd ai models init` | Set up project, environment, and Azure context |
 | `azd ai models list` | List all custom models |
+| `azd ai models list --connection <connection> --account <account>` | List models in a connected Fireworks account |
 | `azd ai models create --name <n> --source <path>` | Upload and register a model |
 | `azd ai models show --name <n>` | Show model details |
 | `azd ai models delete --name <n>` | Delete a model |
@@ -203,3 +204,25 @@ azd ai models init --project-endpoint "https://my-account.services.ai.azure.com/
 | `--source` | | Local path or remote URL for model files |
 | `--source-file` | | File containing the source URL |
 | `--base-model` | | Base model architecture tag |
+| `--connection` | | Saved Fireworks project connection (list only) |
+| `--account` | | Fireworks account ID (list only) |
+
+### List models through a Fireworks connection
+
+```bash
+azd ai models list \
+  --project-endpoint "https://my-account.services.ai.azure.com/api/projects/my-project" \
+  --connection fireworks --account my-fireworks-account --output json
+```
+
+The connection must target `https://api.fireworks.ai` and contain either an API key
+or a Custom Keys `Authorization: Bearer <key>` credential. The signed-in Azure
+identity needs permission to read the connection's credentials. The key is read
+at runtime; it is not included in command output.
+
+This command follows all Fireworks listing pages and returns a JSON array with
+`name`, `kind`, and `state`, or a table with those columns. Without `--connection`,
+`list` continues to list registered Foundry model assets. `--connection` and
+`--account` must be supplied together and cannot be combined with `--source-job-id`.
+Use an account ID, not an `accounts/...` resource path.
+Listing does not import, register, or deploy a model.

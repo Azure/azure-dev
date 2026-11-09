@@ -22,6 +22,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | `provision` | Stable |
 | `restore` | Beta |
 | [`resources add` (extension)](../../cli/azd/extensions/azure.resources/README.md#add-resources-interactively) | Preview |
+| [`ai models list --connection` (extension)](../../cli/azd/extensions/azure.ai.models/docs/installation-guide.md#list-models-through-a-fireworks-connection) | Preview |
 | `show` | Stable |
 | `template` | Beta |
 | `up` | Stable |

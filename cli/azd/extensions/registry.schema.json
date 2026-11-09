@@ -81,6 +81,7 @@
                             "service-target-provider",
                             "framework-service-provider",
                             "provisioning-provider",
+                            "infra-generation-provider",
                             "validation-provider",
                             "metadata"
                         ]
@@ -252,7 +253,9 @@
                     "type": "string",
                     "description": "The type of provider.",
                     "enum": [
-                        "service-target"
+                        "service-target",
+                        "provisioning-provider",
+                        "infra-generation-provider"
                     ]
                 },
                 "description": {

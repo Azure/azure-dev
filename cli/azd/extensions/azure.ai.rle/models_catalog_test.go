@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestModelCatalog256KRendererParity(t *testing.T) {
+func TestModelCatalog(t *testing.T) {
 	data, err := os.ReadFile("models.json")
 	if err != nil {
 		t.Fatal(err)
@@ -28,6 +28,9 @@ func TestModelCatalog256KRendererParity(t *testing.T) {
 			t.Fatalf("duplicate model %q", model.Model)
 		}
 		renderers[model.Model] = model.Renderers
+	}
+	if _, exists := renderers["Qwen/Qwen3-32B"]; exists {
+		t.Fatal("unsupported model Qwen/Qwen3-32B must not be listed")
 	}
 	for _, base := range []string{
 		"Qwen/Qwen3.8-27B",

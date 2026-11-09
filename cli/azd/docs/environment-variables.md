@@ -252,6 +252,12 @@ guide for [deployment outputs](../extensions/azure.ai.content-understanding/docs
 the [postprovision-only override](../extensions/azure.ai.content-understanding/docs/provisioning.md#postprovision-only-override),
 and [compatibility with existing generated projects](../extensions/azure.ai.content-understanding/docs/provisioning.md#compatibility-with-existing-generated-projects).
 
+### azure.ai.projects
+
+| Variable | Description |
+| --- | --- |
+| `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Process-environment opt-in for BYO AKS and its preflight-report listener; disabled by default. Values accepted as true by Go's `strconv.ParseBool` enable it; unset, empty, false, and invalid values disable it. See [Existing AKS hosting](../extensions/azure.ai.projects/README.md#existing-aks-hosting) for process-environment requirements. |
+
 ### azure.ai.routines
 
 | Variable | Description |

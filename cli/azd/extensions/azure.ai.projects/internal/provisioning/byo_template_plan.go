@@ -255,8 +255,13 @@ func (n *planResource) module() *planEnvironment {
 		n.resolver.unresolved = append(n.resolver.unresolved, n.path+": "+n.missing)
 		return nil
 	}
-	evaluation, _ := properties["expressionEvaluationOptions"].(map[string]any)
-	if evaluation["scope"] != "inner" {
+	evaluation, hasEvaluation := properties["expressionEvaluationOptions"]
+	options, validEvaluation := evaluation.(map[string]any)
+	evaluationScope, hasScope := options["scope"]
+	if !hasScope && (!hasEvaluation || validEvaluation) && n.env.template["languageVersion"] == "2.0" {
+		evaluationScope = "inner"
+	}
+	if evaluationScope != "inner" {
 		n.missing = "nested template does not use supported inner expression evaluation"
 		n.resolver.unresolved = append(n.resolver.unresolved, n.path+": "+n.missing)
 		return nil

@@ -6,6 +6,8 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"strconv"
 
 	"azure.ai.projects/internal/helpformat"
 	"azure.ai.projects/internal/provisioning"
@@ -38,7 +40,11 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProjectShowCommand(extCtx))
 	rootCmd.AddCommand(newProjectAddCommand(extCtx))
 	rootCmd.AddCommand(newProjectDeploymentCommand(extCtx))
-	rootCmd.AddCommand(newListenCommand(configureExtensionHostWithReport))
+	listenCommand := azdext.NewListenCommand(configureExtensionHost)
+	if enabled, err := strconv.ParseBool(os.Getenv(synthesis.BYOAKSEnvVar)); err == nil && enabled {
+		listenCommand = newListenCommand(configureExtensionHostWithReport)
+	}
+	rootCmd.AddCommand(listenCommand)
 
 	rootCmd.Example = `  # Configure a Foundry project in the current azd project
   azd ai project add

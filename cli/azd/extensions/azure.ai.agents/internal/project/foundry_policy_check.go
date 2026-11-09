@@ -4,9 +4,11 @@
 package project
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -516,4 +518,101 @@ func FormatPolicyViolationsWarning(violations []foundrypolicy.Violation) string 
 		}
 	}
 	return b.String()
+}
+
+// ServicePolicyFinding describes the policy evaluation outcome for one agent service.
+type ServicePolicyFinding struct {
+	ServiceName string
+	AgentKind   string
+	Violations  []foundrypolicy.Violation
+}
+
+// ProjectPolicyResult is the side-effect-free outcome of QueryProjectPolicy,
+// suitable for diagnostics (`azd ai agent doctor`'s `remote.policy` check).
+type ProjectPolicyResult struct {
+	ProjectScope string
+	AccountName  string
+	ProjectName  string
+	Services     []ServicePolicyFinding
+}
+
+// QueryProjectPolicy evaluates Azure Policy compliance for every azure.ai.agent
+// service declared in the project against the given Foundry project resource ID.
+func QueryProjectPolicy(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	projectResourceID string,
+) (*ProjectPolicyResult, error) {
+	info, err := parseAgentIdentityInfo(projectResourceID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidProjectResourceID, err)
+	}
+
+	tenantResp, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: info.SubscriptionID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("lookup tenant: %w", err)
+	}
+
+	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   tenantResp.TenantId,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create credential: %w", err)
+	}
+
+	azdEnv := map[string]string{
+		"AZURE_AI_PROJECT_ID": info.ProjectScope,
+	}
+	if envResp, envErr := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); envErr == nil &&
+		envResp != nil && envResp.Environment != nil && envResp.Environment.Name != "" {
+		if valResp, valErr := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+			Name: envResp.Environment.Name,
+		}); valErr == nil && valResp != nil {
+			for _, kv := range valResp.KeyValues {
+				azdEnv[kv.Key] = kv.Value
+			}
+		}
+	}
+	azdEnv["AZURE_AI_PROJECT_ID"] = info.ProjectScope
+
+	projResp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || projResp == nil || projResp.Project == nil {
+		return nil, fmt.Errorf("read project config: %w", err)
+	}
+
+	serviceNames := slices.Sorted(maps.Keys(projResp.Project.Services))
+	var findings []ServicePolicyFinding
+	ops := defaultPolicyPreflightOperations()
+
+	for _, name := range serviceNames {
+		svc := projResp.Project.Services[name]
+		if svc == nil || svc.GetHost() != "azure.ai.agent" {
+			continue
+		}
+		candidate := ExtractServicePolicyCandidate(svc, projResp.Project.GetPath(), azdEnv)
+		candidate.ProjectResourceID = info.ProjectScope
+		evalRes, evalErr := EvaluateCandidateWithCredential(ctx, cred, candidate, ops)
+		if evalErr != nil {
+			return nil, fmt.Errorf("evaluate policy for service %q: %w", name, evalErr)
+		}
+		findings = append(findings, ServicePolicyFinding{
+			ServiceName: name,
+			AgentKind:   candidate.AgentKind,
+			Violations:  evalRes.Violations,
+		})
+	}
+
+	slices.SortFunc(findings, func(a, b ServicePolicyFinding) int {
+		return cmp.Compare(a.ServiceName, b.ServiceName)
+	})
+
+	return &ProjectPolicyResult{
+		ProjectScope: info.ProjectScope,
+		AccountName:  info.AccountName,
+		ProjectName:  info.ProjectName,
+		Services:     findings,
+	}, nil
 }

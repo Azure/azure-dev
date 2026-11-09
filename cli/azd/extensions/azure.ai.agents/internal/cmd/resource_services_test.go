@@ -108,12 +108,14 @@ func TestServiceEnvironmentTemplates(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	environment, err := serviceEnvironmentTemplates(cfg)
+	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
 		"SEARCH_KEY":   "${SEARCH_KEY}",
 		"SERVER_NAME":  "${SERVER_NAME}",
 		"DEFAULT_NAME": "${DEFAULT_NAME}",
 		"EVENT_BODY":   "${EVENT_BODY}",
-	}, serviceEnvironmentTemplates(cfg))
+	}, environment)
 }
 
 // TestServiceEnvironmentTemplatesDeterministic verifies a var
@@ -131,9 +133,40 @@ func TestServiceEnvironmentTemplatesDeterministic(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	environment, err := serviceEnvironmentTemplates(cfg)
+	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
 		"TOPIC": "${TOPIC}",
-	}, serviceEnvironmentTemplates(cfg))
+	}, environment)
+}
+
+func TestServiceEnvironmentTemplatesRejectsWithoutPartialResult(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := structpb.NewStruct(map[string]any{
+		"first": "${VALID}",
+		"metadata": map[string]any{
+			"a": "${BAR:=x}",
+			"z": "${OTHER:=x}",
+		},
+	})
+	require.NoError(t, err)
+
+	for range 10 {
+		environment, err := serviceEnvironmentTemplates(cfg)
+		require.ErrorContains(t, err, "metadata.a:")
+		require.Nil(t, environment)
+	}
+}
+
+func TestServiceEnvironmentTemplatesEmpty(t *testing.T) {
+	t.Parallel()
+
+	for _, cfg := range []*structpb.Struct{nil, {}} {
+		environment, err := serviceEnvironmentTemplates(cfg)
+		require.NoError(t, err)
+		require.Nil(t, environment)
+	}
 }
 
 func TestEscapeFoundryTemplates(t *testing.T) {
@@ -191,6 +224,36 @@ func TestAddResourceServiceWritesEnvironment(t *testing.T) {
 	assert.Equal(t, map[string]any{
 		"SEARCH_KEY": "${SEARCH_KEY}",
 	}, server.env["search"])
+}
+
+func TestAddResourceServiceRejectsUnsupportedReferencesBeforeChanges(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"${BAR:=x}", "${OUTER:-${NESTED}}"} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+			server := &recordingProjectServer{}
+			client := newProjectRecorderClient(t, server)
+			cfg, err := project.MarshalStruct(&project.Toolbox{
+				Tools: []map[string]any{
+					{"configuration": map[string]any{"endpoint": value}},
+				},
+			})
+			require.NoError(t, err)
+
+			err = addResourceService(
+				t.Context(), client, "search", AiToolboxHost, cfg, []string{aiProjectServiceName},
+			)
+			require.ErrorContains(t, err, `service "search"`)
+			require.ErrorContains(t, err, "tools[0].configuration.endpoint:")
+
+			server.mu.Lock()
+			defer server.mu.Unlock()
+			require.Empty(t, server.added)
+			require.Empty(t, server.env)
+			require.Empty(t, server.uses)
+		})
+	}
 }
 
 func TestCollectLegacyProjectDeploymentsIgnoresSplitProject(

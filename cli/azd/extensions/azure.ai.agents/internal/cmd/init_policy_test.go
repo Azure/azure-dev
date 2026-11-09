@@ -85,7 +85,11 @@ func TestWarnInitPolicyIfBlocked(t *testing.T) {
 		warnInitPromptPolicyIfBlocked(t.Context(), stubInitTokenCred{}, proj, pa, dep)
 
 		assert.Equal(t, "prompt", captured.AgentKind)
-		require.NotEmpty(t, captured.Models)
+		require.Len(t, captured.Models, 1, "sparse manifest model and selected deployment must be merged")
+		assert.Equal(t, "gpt-4.1", captured.Models[0].DeploymentName)
+		assert.Equal(t, "gpt-4.1", captured.Models[0].Name)
+		assert.Equal(t, "OpenAI", captured.Models[0].Format)
+		assert.Equal(t, "2025-04-14", captured.Models[0].Version)
 		outputText := buf.String()
 		assert.Contains(t, outputText, "Warning: This agent configuration may be blocked by Azure Policy")
 		assert.Contains(t, outputText, "Block Prompt Agents")

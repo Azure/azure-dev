@@ -2596,6 +2596,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		p.credential,
 		serviceConfig.GetName(),
 		fullImageURL,
+		azdEnv,
 	); err != nil {
 		return nil, err
 	}

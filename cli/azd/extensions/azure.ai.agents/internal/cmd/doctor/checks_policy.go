@@ -7,13 +7,41 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
+	"azureaiagent/internal/pkg/foundrypolicy"
 	"azureaiagent/internal/project"
 )
 
 const foundryGovernPortalFallback = "https://ai.azure.com/?flight=govern_ignite"
+
+var (
+	policyARMSubResourceRE = regexp.MustCompile(`(?i)/subscriptions/[^\s"',)]+`)
+	policyARMMGScopeRE     = regexp.MustCompile(`(?i)/providers/Microsoft\.Management/managementGroups/[^\s"',)]+`)
+	policyPortalURLRE      = regexp.MustCompile(`(?i)https://ai\.azure\.com/[^\s"',)]+`)
+)
+
+func redactARMResourceID(raw string) string {
+	trimmed := strings.TrimRight(raw, ".:;]")
+	suffix := raw[len(trimmed):]
+	return redactScope(trimmed, false) + suffix
+}
+
+func sanitizePolicyText(text string, unredacted bool) string {
+	if unredacted || text == "" {
+		return text
+	}
+	text = policyPortalURLRE.ReplaceAllStringFunc(text, func(raw string) string {
+		trimmed := strings.TrimRight(raw, ".:;]")
+		suffix := raw[len(trimmed):]
+		return redactedPlaceholder + suffix
+	})
+	text = policyARMSubResourceRE.ReplaceAllStringFunc(text, redactARMResourceID)
+	text = policyARMMGScopeRE.ReplaceAllStringFunc(text, redactARMResourceID)
+	return text
+}
 
 // newCheckPolicy produces Check `remote.policy`. It evaluates active Azure Policy
 // assignments on the Foundry project scope against the configured azure.ai.agent
@@ -144,6 +172,7 @@ func classifyPolicyResult(res *project.ProjectPolicyResult, unredacted bool) Res
 
 	scopeShort := fmt.Sprintf("%s/%s", res.AccountName, res.ProjectName)
 	var violationSummaries []string
+	var indeterminateSummaries []string
 	var links []string
 	var detailsServices []map[string]any
 	totalViolations := 0
@@ -152,11 +181,13 @@ func classifyPolicyResult(res *project.ProjectPolicyResult, unredacted bool) Res
 		var svcViolations []map[string]any
 		for _, v := range svc.Violations {
 			totalViolations++
-			summary := fmt.Sprintf("service %q: %s", svc.ServiceName, strings.TrimSpace(v.Message))
-			if strings.TrimSpace(v.Message) == "" {
+			sanitizedMsg := sanitizePolicyText(strings.TrimSpace(v.Message), unredacted)
+			sanitizedTargetVal := sanitizePolicyText(v.TargetValue, unredacted)
+			summary := fmt.Sprintf("service %q: %s", svc.ServiceName, sanitizedMsg)
+			if sanitizedMsg == "" {
 				summary = fmt.Sprintf(
 					"service %q: blocked by policy %q (%s: %s)",
-					svc.ServiceName, v.DisplayName, v.Target, v.TargetValue,
+					svc.ServiceName, v.DisplayName, v.Target, sanitizedTargetVal,
 				)
 			}
 			if !slices.Contains(violationSummaries, summary) {
@@ -173,16 +204,33 @@ func classifyPolicyResult(res *project.ProjectPolicyResult, unredacted bool) Res
 
 			svcViolations = append(svcViolations, map[string]any{
 				"target":       string(v.Target),
-				"targetValue":  v.TargetValue,
+				"targetValue":  sanitizedTargetVal,
 				"displayName":  v.DisplayName,
 				"assignmentId": redactScope(v.AssignmentID, unredacted),
+				"message":      sanitizedMsg,
 			})
 		}
-		detailsServices = append(detailsServices, map[string]any{
+
+		svcEntry := map[string]any{
 			"serviceName": svc.ServiceName,
 			"agentKind":   svc.AgentKind,
 			"violations":  svcViolations,
-		})
+		}
+		if svc.Outcome != "" {
+			svcEntry["outcome"] = string(svc.Outcome)
+		}
+		if svc.Outcome == foundrypolicy.OutcomeIndeterminate {
+			reason := sanitizePolicyText(strings.TrimSpace(svc.IncompleteReason), unredacted)
+			if reason == "" {
+				reason = "policy compliance could not be fully verified"
+			}
+			svcEntry["incompleteReason"] = reason
+			indeterminateSummaries = append(
+				indeterminateSummaries,
+				fmt.Sprintf("service %q: %s", svc.ServiceName, reason),
+			)
+		}
+		detailsServices = append(detailsServices, svcEntry)
 	}
 
 	details := map[string]any{
@@ -193,6 +241,18 @@ func classifyPolicyResult(res *project.ProjectPolicyResult, unredacted bool) Res
 	}
 
 	if totalViolations == 0 {
+		if len(indeterminateSummaries) > 0 {
+			return Result{
+				Status: StatusSkip,
+				Message: fmt.Sprintf(
+					"skipped: Azure Policy compliance could not be fully verified for project '%s' (%s).",
+					scopeShort, strings.Join(indeterminateSummaries, "; "),
+				),
+				Suggestion: "Re-run `azd ai agent doctor` after a moment, or proceed with deployment to let " +
+					"the Microsoft Foundry service enforce policy compliance.",
+				Details: details,
+			}
+		}
 		return Result{
 			Status: StatusPass,
 			Message: fmt.Sprintf(
@@ -204,16 +264,21 @@ func classifyPolicyResult(res *project.ProjectPolicyResult, unredacted bool) Res
 		}
 	}
 
+	suggestion := "Update the agent configuration in azure.yaml (agent kind, container image/registry, " +
+		"model, or tools) to comply with your organization's Azure Policy assignments, or select a " +
+		"different Foundry project."
+	if !unredacted {
+		suggestion += " Re-run with `--unredacted` to include full resource IDs and policy assignment links."
+	}
+
 	return Result{
 		Status: StatusFail,
 		Message: fmt.Sprintf(
 			"Azure Policy on project '%s' blocks deployment: %s",
 			scopeShort, strings.Join(violationSummaries, "; "),
 		),
-		Suggestion: "Update the agent configuration in azure.yaml (agent kind, container image/registry, " +
-			"model, or tools) to comply with your organization's Azure Policy assignments, or select a " +
-			"different Foundry project.",
-		Links:   links,
-		Details: details,
+		Suggestion: suggestion,
+		Links:      links,
+		Details:    details,
 	}
 }

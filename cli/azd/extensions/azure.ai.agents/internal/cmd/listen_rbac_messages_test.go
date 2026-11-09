@@ -278,8 +278,8 @@ func testAgentRBACMessages(t *testing.T, betaEnabled bool) {
 	case <-ctx.Done():
 		t.Fatal("missing stable stream")
 	}
-	stableRegistrations := 5
-	wantServiceEvents := []string{"postdeploy"}
+	stableRegistrations := 6
+	wantServiceEvents := []string{"prepackage", "postdeploy"}
 	if !betaEnabled {
 		stableRegistrations++
 		wantServiceEvents = append(wantServiceEvents, "predeploy")

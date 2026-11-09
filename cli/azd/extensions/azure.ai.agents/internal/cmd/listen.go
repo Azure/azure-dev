@@ -75,6 +75,9 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
 		}).
+		WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+			return prepackageHandler(ctx, azdClient, args)
+		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return postdeployHandler(ctx, azdClient, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
@@ -368,6 +371,15 @@ func updateLegacyProjectDeployments(
 // azure.ai.agent service surfaces all collisions without repeating the warning
 // for each colliding service.
 var duplicateAgentNameWarnOnce sync.Once
+
+func prepackageHandler(
+	ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs,
+) error {
+	if args == nil || args.Service == nil {
+		return nil
+	}
+	return project.CheckServicePolicyForPredeploy(ctx, azdClient, args.Service, args.Project.GetPath())
+}
 
 func predeployHandler(
 	ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs,

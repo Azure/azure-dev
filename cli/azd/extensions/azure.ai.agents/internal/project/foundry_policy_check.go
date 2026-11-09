@@ -6,6 +6,7 @@ package project
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"maps"
@@ -13,10 +14,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/agentkind"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/foundrypolicy"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -27,17 +31,140 @@ import (
 )
 
 // skipPolicyPreflightEnvKey allows opting out of client-side Azure Policy preflight checks.
-const skipPolicyPreflightEnvKey = "AZD_AGENT_SKIP_POLICY_CHECKS"
+// Accepted values follow strconv.ParseBool ("1", "t", "T", "true", "TRUE", "True"); defaults
+// to false. Values set in the active azd environment take precedence over the process
+// environment. Microsoft Foundry still enforces Azure Policy assignments server-side.
+const (
+	skipPolicyPreflightEnvKey       = "AZD_AI_AGENT_SKIP_POLICY_CHECKS"
+	legacySkipPolicyPreflightEnvKey = "AZD_AGENT_SKIP_POLICY_CHECKS"
+)
 
 type policyPreflightOperations struct {
 	loadInventory func(ctx context.Context, cred azcore.TokenCredential, projectID string) (foundrypolicy.Inventory, error)
-	evaluateModel func(ctx context.Context, cred azcore.TokenCredential, projectID string, models []foundrypolicy.ModelCandidate) ([]foundrypolicy.Violation, error)
+	evaluateModel func(
+		ctx context.Context,
+		cred azcore.TokenCredential,
+		projectID string,
+		models []foundrypolicy.ModelCandidate,
+	) (foundrypolicy.ModelPolicyEvaluation, error)
+	evalCache *candidateEvaluationCache
 }
 
 func defaultPolicyPreflightOperations() policyPreflightOperations {
 	return policyPreflightOperations{
 		loadInventory: loadProjectPolicyInventory,
 		evaluateModel: evaluateProjectModelPolicies,
+		evalCache:     defaultCandidateEvalCache,
+	}
+}
+
+type candidateEvalCacheEntry struct {
+	result   foundrypolicy.EvaluationResult
+	cachedAt time.Time
+}
+
+type candidateEvaluationCache struct {
+	mu      sync.Mutex
+	entries map[string]candidateEvalCacheEntry
+	ttl     time.Duration
+	now     func() time.Time
+}
+
+func newCandidateEvaluationCache(ttl time.Duration, now func() time.Time) *candidateEvaluationCache {
+	if ttl <= 0 {
+		ttl = foundrypolicy.DefaultPolicyCacheTTL
+	}
+	if now == nil {
+		now = time.Now
+	}
+	return &candidateEvaluationCache{
+		entries: map[string]candidateEvalCacheEntry{},
+		ttl:     ttl,
+		now:     now,
+	}
+}
+
+var defaultCandidateEvalCache = newCandidateEvaluationCache(
+	foundrypolicy.DefaultPolicyCacheTTL,
+	time.Now,
+)
+
+type policyAssignmentCacheFingerprint struct {
+	Assignment            foundrypolicy.PolicyAssignment `json:"assignment"`
+	ManagementGroupScopes []string                       `json:"managementGroupScopes,omitempty"`
+	IsExempt              bool                           `json:"isExempt,omitempty"`
+}
+
+func candidateCacheKey(candidate foundrypolicy.Candidate, inv foundrypolicy.Inventory) (string, bool) {
+	normProj := foundrypolicy.NormalizeScope(candidate.ProjectResourceID)
+	if normProj == "" {
+		return "", false
+	}
+	normalizedCand := candidate
+	normalizedCand.ProjectResourceID = normProj
+
+	fingerprints := make([]policyAssignmentCacheFingerprint, 0, len(inv.Assignments))
+	for _, a := range inv.Assignments {
+		fingerprints = append(fingerprints, policyAssignmentCacheFingerprint{
+			Assignment:            a,
+			ManagementGroupScopes: a.ManagementGroupScopes,
+			IsExempt:              a.IsExempt,
+		})
+	}
+
+	payload := struct {
+		Candidate   foundrypolicy.Candidate            `json:"candidate"`
+		ProjectID   string                             `json:"projectId"`
+		Assignments []policyAssignmentCacheFingerprint `json:"assignments"`
+	}{
+		Candidate:   normalizedCand,
+		ProjectID:   foundrypolicy.NormalizeScope(inv.ProjectID),
+		Assignments: fingerprints,
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", false
+	}
+	return normProj + "|" + string(b), true
+}
+
+func (c *candidateEvaluationCache) get(
+	candidate foundrypolicy.Candidate,
+	inv foundrypolicy.Inventory,
+) (foundrypolicy.EvaluationResult, bool) {
+	if c == nil {
+		return foundrypolicy.EvaluationResult{}, false
+	}
+	key, ok := candidateCacheKey(candidate, inv)
+	if !ok {
+		return foundrypolicy.EvaluationResult{}, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, exists := c.entries[key]
+	if !exists || c.now().Sub(entry.cachedAt) >= c.ttl {
+		return foundrypolicy.EvaluationResult{}, false
+	}
+	return entry.result, true
+}
+
+func (c *candidateEvaluationCache) put(
+	candidate foundrypolicy.Candidate,
+	inv foundrypolicy.Inventory,
+	res foundrypolicy.EvaluationResult,
+) {
+	if c == nil || res.IncompleteReason != "" || res.Outcome == foundrypolicy.OutcomeIndeterminate {
+		return
+	}
+	key, ok := candidateCacheKey(candidate, inv)
+	if !ok {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[key] = candidateEvalCacheEntry{
+		result:   res,
+		cachedAt: c.now(),
 	}
 }
 
@@ -62,9 +189,9 @@ func evaluateProjectModelPolicies(
 	cred azcore.TokenCredential,
 	projectID string,
 	models []foundrypolicy.ModelCandidate,
-) ([]foundrypolicy.Violation, error) {
+) (foundrypolicy.ModelPolicyEvaluation, error) {
 	if len(models) == 0 {
-		return nil, nil
+		return foundrypolicy.ModelPolicyEvaluation{}, nil
 	}
 	pipeline := foundrypolicy.NewARMPipeline(cred)
 	evaluator := foundrypolicy.NewARMDeploymentPolicyEvaluator(pipeline, "")
@@ -72,18 +199,64 @@ func evaluateProjectModelPolicies(
 }
 
 type funcDeploymentPolicyEvaluator struct {
-	fn func(ctx context.Context, projectResourceID string, models []foundrypolicy.ModelCandidate) ([]foundrypolicy.Violation, error)
+	fn func(
+		ctx context.Context,
+		projectResourceID string,
+		models []foundrypolicy.ModelCandidate,
+	) (foundrypolicy.ModelPolicyEvaluation, error)
 }
 
 func (f funcDeploymentPolicyEvaluator) EvaluateModelDeployments(
 	ctx context.Context,
 	projectResourceID string,
 	models []foundrypolicy.ModelCandidate,
-) ([]foundrypolicy.Violation, error) {
+) (foundrypolicy.ModelPolicyEvaluation, error) {
 	if f.fn == nil {
-		return nil, nil
+		return foundrypolicy.ModelPolicyEvaluation{}, nil
 	}
 	return f.fn(ctx, projectResourceID, models)
+}
+
+func expandPolicyEnv(value string, azdEnv map[string]string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	expanded, err := ExpandEnv(trimmed, func(name string) string {
+		if v, ok := azdEnv[name]; ok {
+			return v
+		}
+		v, _ := os.LookupEnv(name)
+		return v
+	})
+	if err != nil {
+		return ""
+	}
+	expanded = strings.TrimSpace(expanded)
+	if strings.Contains(expanded, "${") {
+		return ""
+	}
+	return expanded
+}
+
+func resolvePromptModelForPolicy(
+	rawModel string,
+	svc *azdext.ServiceConfig,
+	projectServices map[string]*azdext.ServiceConfig,
+	projectRoot string,
+	azdEnv map[string]string,
+) string {
+	trimmed := strings.TrimSpace(rawModel)
+	if trimmed == "" {
+		return ""
+	}
+	if resolved, err := ResolvePromptAgentModel(trimmed, svc, projectServices, projectRoot, azdEnv); err == nil {
+		resolved = strings.TrimSpace(resolved)
+		if resolved != "" && !strings.Contains(resolved, "${") {
+			return resolved
+		}
+	}
+	return expandPolicyEnv(trimmed, azdEnv)
 }
 
 // ExtractServicePolicyCandidate inspects an azure.ai.agent service configuration and
@@ -91,6 +264,18 @@ func (f funcDeploymentPolicyEvaluator) EvaluateModelDeployments(
 // models, and tools).
 func ExtractServicePolicyCandidate(
 	svc *azdext.ServiceConfig,
+	projectRoot string,
+	azdEnv map[string]string,
+) foundrypolicy.Candidate {
+	return ExtractServicePolicyCandidateWithServices(svc, nil, projectRoot, azdEnv)
+}
+
+// ExtractServicePolicyCandidateWithServices inspects an azure.ai.agent service configuration
+// along with sibling project services (for resolving azure.ai.project deployment bindings) and
+// extracts its policy-relevant attributes.
+func ExtractServicePolicyCandidateWithServices(
+	svc *azdext.ServiceConfig,
+	projectServices map[string]*azdext.ServiceConfig,
 	projectRoot string,
 	azdEnv map[string]string,
 ) foundrypolicy.Candidate {
@@ -114,13 +299,7 @@ func ExtractServicePolicyCandidate(
 		if dep == "" && name == "" {
 			return
 		}
-		for _, existing := range candidate.Models {
-			if strings.EqualFold(existing.DeploymentName, dep) &&
-				strings.EqualFold(existing.Name, name) {
-				return
-			}
-		}
-		candidate.Models = append(candidate.Models, m)
+		candidate.Models = foundrypolicy.MergeModelCandidates(append(candidate.Models, m))
 	}
 
 	addTool := func(t foundrypolicy.ToolCandidate) {
@@ -131,45 +310,78 @@ func ExtractServicePolicyCandidate(
 		for _, existing := range candidate.Tools {
 			if strings.EqualFold(existing.Type, typ) &&
 				strings.EqualFold(existing.Name, t.Name) &&
-				strings.EqualFold(existing.ConnectionID, t.ConnectionID) {
+				strings.EqualFold(existing.ConnectionID, t.ConnectionID) &&
+				strings.EqualFold(existing.ServerURL, t.ServerURL) &&
+				strings.EqualFold(existing.ConnectorID, t.ConnectorID) {
 				return
 			}
 		}
 		candidate.Tools = append(candidate.Tools, t)
 	}
 
+	hasToolOfType := func(toolType string) bool {
+		for _, existing := range candidate.Tools {
+			if strings.EqualFold(existing.Type, toolType) {
+				return true
+			}
+		}
+		return false
+	}
+
+	toolEnv := promptToolEnvironment(azdEnv, svc.GetEnvironment())
+
 	if pa, found, promptErr := PromptAgentFromResolvedService(svc, projectRoot); promptErr == nil && found {
 		if candidate.AgentKind == "" {
 			candidate.AgentKind = string(agent_yaml.AgentKindPrompt)
 		}
-		if model := strings.TrimSpace(pa.Model); model != "" && !strings.Contains(model, "${") {
+		if model := resolvePromptModelForPolicy(pa.Model, svc, projectServices, projectRoot, azdEnv); model != "" {
 			addModel(foundrypolicy.ModelCandidate{
 				DeploymentName: model,
-				Name:           model,
 			})
 		}
 		for _, rawTool := range pa.Tools {
-			for _, tc := range extractToolCandidatesFromAny(rawTool) {
+			for _, tc := range extractToolCandidatesFromAny(rawTool, toolEnv) {
 				addTool(tc)
 			}
 		}
+		for _, tb := range pa.Toolboxes {
+			if tbName := expandPolicyEnv(tb.Name, toolEnv); tbName != "" {
+				tbURL := expandPolicyEnv(toolEnv[envkey.ToolboxMCPEndpoint(tbName)], toolEnv)
+				addTool(foundrypolicy.ToolCandidate{
+					Type:      "mcp",
+					Name:      "toolbox:" + tbName,
+					ServerURL: tbURL,
+				})
+			}
+		}
 		if pa.Memory != nil {
-			addTool(foundrypolicy.ToolCandidate{Type: "memory_search"})
+			if chat := resolvePromptModelForPolicy(pa.Memory.ChatModel, svc, projectServices, projectRoot, azdEnv); chat != "" {
+				addModel(foundrypolicy.ModelCandidate{
+					DeploymentName: chat,
+				})
+			}
+			if emb := resolvePromptModelForPolicy(pa.Memory.EmbeddingModel, svc, projectServices, projectRoot, azdEnv); emb != "" {
+				addModel(foundrypolicy.ModelCandidate{
+					DeploymentName: emb,
+				})
+			}
+			if !hasToolOfType(memorySearchToolType) {
+				addTool(foundrypolicy.ToolCandidate{Type: memorySearchToolType})
+			}
 		}
 	} else if va, isVoice, voiceErr := resolveVoiceAgentForDeploy(svc, projectRoot); voiceErr == nil && isVoice {
 		if candidate.AgentKind == "" {
 			candidate.AgentKind = "voice"
 		}
 		if va.Model != nil {
-			if modelID := strings.TrimSpace(va.Model.Id); modelID != "" && !strings.Contains(modelID, "${") {
+			if modelID := expandPolicyEnv(va.Model.Id, toolEnv); modelID != "" {
 				addModel(foundrypolicy.ModelCandidate{
 					DeploymentName: modelID,
-					Name:           modelID,
 				})
 			}
 		}
 		for _, rawTool := range va.Tools {
-			for _, tc := range extractToolCandidatesFromAny(rawTool) {
+			for _, tc := range extractToolCandidatesFromAny(rawTool, toolEnv) {
 				addTool(tc)
 			}
 		}
@@ -178,7 +390,7 @@ func ExtractServicePolicyCandidate(
 			candidate.AgentKind = string(agent_yaml.AgentKindHosted)
 		}
 		if ca.CodeConfiguration == nil {
-			image := strings.TrimSpace(ca.Image)
+			image := expandPolicyEnv(ca.Image, toolEnv)
 			skipACR := strings.EqualFold(strings.TrimSpace(azdEnv["AZD_AGENT_SKIP_ACR"]), "true")
 			if strings.TrimSpace(ca.RegistryConnectionID) != "" ||
 				svc.GetDocker().GetImagePassthrough() ||
@@ -193,63 +405,188 @@ func ExtractServicePolicyCandidate(
 	if targetCfg, cfgErr := LoadServiceTargetAgentConfig(svc); cfgErr == nil && targetCfg != nil {
 		for _, dep := range targetCfg.Deployments {
 			addModel(foundrypolicy.ModelCandidate{
-				DeploymentName: dep.Name,
-				Name:           dep.Model.Name,
-				Format:         dep.Model.Format,
-				Version:        dep.Model.Version,
+				DeploymentName: expandPolicyEnv(dep.Name, toolEnv),
+				Name:           expandPolicyEnv(dep.Model.Name, toolEnv),
+				Format:         expandPolicyEnv(dep.Model.Format, toolEnv),
+				Version:        expandPolicyEnv(dep.Model.Version, toolEnv),
 			})
 		}
+		for _, res := range targetCfg.Resources {
+			if strings.EqualFold(strings.TrimSpace(res.Resource), "model") {
+				if depName := expandPolicyEnv(res.ConnectionName, toolEnv); depName != "" {
+					addModel(foundrypolicy.ModelCandidate{
+						DeploymentName: depName,
+					})
+				}
+			}
+		}
 		for _, ms := range targetCfg.MemoryStores {
-			if chat := strings.TrimSpace(ms.ChatModel); chat != "" && !strings.Contains(chat, "${") {
-				addModel(foundrypolicy.ModelCandidate{DeploymentName: chat, Name: chat})
+			if chat := expandPolicyEnv(ms.ChatModel, toolEnv); chat != "" {
+				addModel(foundrypolicy.ModelCandidate{DeploymentName: chat})
 			}
-			if emb := strings.TrimSpace(ms.EmbeddingModel); emb != "" && !strings.Contains(emb, "${") {
-				addModel(foundrypolicy.ModelCandidate{DeploymentName: emb, Name: emb})
+			if emb := expandPolicyEnv(ms.EmbeddingModel, toolEnv); emb != "" {
+				addModel(foundrypolicy.ModelCandidate{DeploymentName: emb})
 			}
-			addTool(foundrypolicy.ToolCandidate{Type: "memory_search", Name: ms.Name})
+			storeName := expandPolicyEnv(ms.Name, toolEnv)
+			if !hasToolOfType(memorySearchToolType) || storeName != "" {
+				addTool(foundrypolicy.ToolCandidate{Type: memorySearchToolType, Name: storeName})
+			}
 		}
 		for _, tb := range targetCfg.Toolboxes {
-			if strings.TrimSpace(tb.Name) != "" {
-				addTool(foundrypolicy.ToolCandidate{Type: "mcp", Name: "toolbox:" + strings.TrimSpace(tb.Name)})
+			if tbName := expandPolicyEnv(tb.Name, toolEnv); tbName != "" {
+				tbURL := expandPolicyEnv(toolEnv[envkey.ToolboxMCPEndpoint(tbName)], toolEnv)
+				addTool(foundrypolicy.ToolCandidate{
+					Type:      "mcp",
+					Name:      "toolbox:" + tbName,
+					ServerURL: tbURL,
+				})
 			}
 			for _, rawTool := range tb.Tools {
-				for _, tc := range extractToolCandidatesFromAny(rawTool) {
+				for _, tc := range extractToolCandidatesFromAny(rawTool, toolEnv) {
 					addTool(tc)
 				}
 			}
+		}
+
+		connTargets := map[string]string{}
+		for _, c := range targetCfg.Connections {
+			if name := expandPolicyEnv(c.Name, toolEnv); name != "" {
+				if target := expandPolicyEnv(c.Target, toolEnv); target != "" {
+					connTargets[strings.ToLower(name)] = target
+				}
+			}
+		}
+		for _, c := range targetCfg.ToolConnections {
+			if name := expandPolicyEnv(c.Name, toolEnv); name != "" {
+				if target := expandPolicyEnv(c.Target, toolEnv); target != "" {
+					connTargets[strings.ToLower(name)] = target
+				}
+			}
+		}
+		if len(connTargets) > 0 {
+			for i := range candidate.Tools {
+				if strings.EqualFold(candidate.Tools[i].Type, "mcp") &&
+					strings.TrimSpace(candidate.Tools[i].ServerURL) == "" &&
+					strings.TrimSpace(candidate.Tools[i].ConnectionID) != "" {
+					if target, ok := connTargets[strings.ToLower(strings.TrimSpace(candidate.Tools[i].ConnectionID))]; ok {
+						candidate.Tools[i].ServerURL = target
+					}
+				}
+			}
+		}
+	}
+
+	if envDeps, present, decErr := DecodeProjectDeploymentsEnv(azdEnv["AI_PROJECT_DEPLOYMENTS"]); present && decErr == nil {
+		hasExplicitModels := len(candidate.Models) > 0
+		for _, dep := range envDeps {
+			depName := expandPolicyEnv(dep.Name, azdEnv)
+			if depName == "" {
+				continue
+			}
+			if hasExplicitModels {
+				matched := false
+				for _, existing := range candidate.Models {
+					if strings.EqualFold(existing.DeploymentName, depName) ||
+						(existing.DeploymentName == "" && strings.EqualFold(existing.Name, depName)) {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					continue
+				}
+			}
+			addModel(foundrypolicy.ModelCandidate{
+				DeploymentName: depName,
+				Name:           expandPolicyEnv(dep.Model.Name, azdEnv),
+				Format:         expandPolicyEnv(dep.Model.Format, azdEnv),
+				Version:        expandPolicyEnv(dep.Model.Version, azdEnv),
+			})
 		}
 	}
 
 	return candidate
 }
 
-func extractToolCandidatesFromAny(raw any) []foundrypolicy.ToolCandidate {
+func extractNestedConnectionIDs(raw any, azdEnv map[string]string, out *[]string) {
+	switch typed := raw.(type) {
+	case map[string]any:
+		keys := slices.Sorted(maps.Keys(typed))
+		for _, k := range keys {
+			v := typed[k]
+			switch strings.ToLower(strings.TrimSpace(k)) {
+			case "project_connection_id", "connection_id", "connection":
+				if str, ok := v.(string); ok {
+					conn := expandPolicyEnv(str, azdEnv)
+					if conn != "" && !slices.ContainsFunc(*out, func(existing string) bool {
+						return strings.EqualFold(existing, conn)
+					}) {
+						*out = append(*out, conn)
+					}
+					continue
+				}
+			}
+			extractNestedConnectionIDs(v, azdEnv, out)
+		}
+	case []any:
+		for _, item := range typed {
+			extractNestedConnectionIDs(item, azdEnv, out)
+		}
+	}
+}
+
+func extractToolCandidatesFromAny(raw any, azdEnv map[string]string) []foundrypolicy.ToolCandidate {
 	switch typed := raw.(type) {
 	case string:
-		s := strings.TrimSpace(typed)
+		s := expandPolicyEnv(typed, azdEnv)
 		if s != "" {
 			return []foundrypolicy.ToolCandidate{{Type: s}}
 		}
 	case map[string]any:
-		toolType, _ := typed["type"].(string)
+		rawType, _ := typed["type"].(string)
+		if rawType == "" {
+			rawType, _ = typed["kind"].(string)
+		}
+		toolType := expandPolicyEnv(rawType, azdEnv)
 		if toolType == "" {
-			toolType, _ = typed["kind"].(string)
+			return nil
 		}
-		name, _ := typed["name"].(string)
-		connID, _ := typed["project_connection_id"].(string)
-		if connID == "" {
-			connID, _ = typed["connection_id"].(string)
+		rawName, _ := typed["name"].(string)
+		name := expandPolicyEnv(rawName, azdEnv)
+
+		rawServerURL, _ := typed["server_url"].(string)
+		if rawServerURL == "" {
+			rawServerURL, _ = typed["serverUrl"].(string)
 		}
-		if connID == "" {
-			connID, _ = typed["connection"].(string)
+		serverURL := expandPolicyEnv(rawServerURL, azdEnv)
+
+		rawConnectorID, _ := typed["connector_id"].(string)
+		if rawConnectorID == "" {
+			rawConnectorID, _ = typed["connectorId"].(string)
 		}
-		if strings.TrimSpace(toolType) != "" {
+		connectorID := expandPolicyEnv(rawConnectorID, azdEnv)
+
+		var connIDs []string
+		extractNestedConnectionIDs(typed, azdEnv, &connIDs)
+		if len(connIDs) == 0 {
 			return []foundrypolicy.ToolCandidate{{
-				Type:         strings.TrimSpace(toolType),
-				Name:         strings.TrimSpace(name),
-				ConnectionID: strings.TrimSpace(connID),
+				Type:        toolType,
+				Name:        name,
+				ServerURL:   serverURL,
+				ConnectorID: connectorID,
 			}}
 		}
+		out := make([]foundrypolicy.ToolCandidate, 0, len(connIDs))
+		for _, connID := range connIDs {
+			out = append(out, foundrypolicy.ToolCandidate{
+				Type:         toolType,
+				Name:         name,
+				ConnectionID: connID,
+				ServerURL:    serverURL,
+				ConnectorID:  connectorID,
+			})
+		}
+		return out
 	}
 	return nil
 }
@@ -304,6 +641,19 @@ func checkServicePolicyForPredeploy(
 		return nil
 	}
 
+	var projectServices map[string]*azdext.ServiceConfig
+	if projClient := azdClient.Project(); projClient != nil {
+		if projResp, projErr := projClient.Get(ctx, &azdext.EmptyRequest{}); projErr == nil &&
+			projResp != nil && projResp.Project != nil {
+			projectServices = projResp.Project.GetServices()
+			if strings.TrimSpace(projectRoot) == "" {
+				projectRoot = projResp.Project.GetPath()
+			}
+		}
+	}
+
+	candidate := ExtractServicePolicyCandidateWithServices(svc, projectServices, projectRoot, azdEnv)
+
 	tenantResp, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 		SubscriptionId: parsedProject.SubscriptionID,
 	})
@@ -320,7 +670,6 @@ func checkServicePolicyForPredeploy(
 		return nil
 	}
 
-	candidate := ExtractServicePolicyCandidate(svc, projectRoot, azdEnv)
 	result, err := EvaluateCandidateWithCredential(ctx, cred, candidate, ops)
 	if err != nil {
 		log.Printf("[FoundryPolicy] Policy preflight query failed for %s (failing open): %v", svc.GetName(), err)
@@ -342,6 +691,7 @@ func CheckHostedContainerImagePolicy(
 	cred azcore.TokenCredential,
 	serviceName string,
 	imageURL string,
+	azdEnv map[string]string,
 ) error {
 	return checkHostedContainerImagePolicy(
 		ctx,
@@ -349,6 +699,7 @@ func CheckHostedContainerImagePolicy(
 		cred,
 		serviceName,
 		imageURL,
+		azdEnv,
 		defaultPolicyPreflightOperations(),
 	)
 }
@@ -359,6 +710,7 @@ func checkHostedContainerImagePolicy(
 	cred azcore.TokenCredential,
 	serviceName string,
 	imageURL string,
+	azdEnv map[string]string,
 	ops policyPreflightOperations,
 ) error {
 	projectResourceID = strings.TrimSpace(projectResourceID)
@@ -369,7 +721,7 @@ func checkHostedContainerImagePolicy(
 	if _, ok := foundrypolicy.ParseFoundryProjectID(projectResourceID); !ok {
 		return nil
 	}
-	if skip, err := strconv.ParseBool(os.Getenv(skipPolicyPreflightEnvKey)); err == nil && skip {
+	if shouldSkipPolicyChecks(azdEnv) {
 		return nil
 	}
 
@@ -397,12 +749,23 @@ func EvaluateCandidateWithCredential(
 	candidate foundrypolicy.Candidate,
 	ops policyPreflightOperations,
 ) (foundrypolicy.EvaluationResult, error) {
+	if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > foundrypolicy.DefaultPolicyPreflightTimeout {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, foundrypolicy.DefaultPolicyPreflightTimeout)
+		defer cancel()
+	}
+
 	if ops.loadInventory == nil {
 		ops = defaultPolicyPreflightOperations()
 	}
+
 	inv, err := ops.loadInventory(ctx, cred, candidate.ProjectResourceID)
 	if err != nil {
 		return foundrypolicy.EvaluationResult{Outcome: foundrypolicy.OutcomeAllowed}, err
+	}
+
+	if cachedRes, hit := ops.evalCache.get(candidate, inv); hit {
+		return cachedRes, nil
 	}
 
 	var modelEval foundrypolicy.DeploymentPolicyEvaluator
@@ -412,13 +775,15 @@ func EvaluateCandidateWithCredential(
 				evalCtx context.Context,
 				projectID string,
 				models []foundrypolicy.ModelCandidate,
-			) ([]foundrypolicy.Violation, error) {
+			) (foundrypolicy.ModelPolicyEvaluation, error) {
 				return ops.evaluateModel(evalCtx, cred, projectID, models)
 			},
 		}
 	}
 
-	return foundrypolicy.EvaluateCandidate(ctx, inv, candidate, modelEval), nil
+	res := foundrypolicy.EvaluateCandidate(ctx, inv, candidate, modelEval)
+	ops.evalCache.put(candidate, inv, res)
+	return res, nil
 }
 
 // CheckCandidateWithCredential is the exported entrypoint for evaluating a Candidate
@@ -432,12 +797,19 @@ func CheckCandidateWithCredential(
 }
 
 func shouldSkipPolicyChecks(azdEnv map[string]string) bool {
-	val := strings.TrimSpace(azdEnv[skipPolicyPreflightEnvKey])
-	if val == "" {
-		val = strings.TrimSpace(os.Getenv(skipPolicyPreflightEnvKey))
+	for _, key := range []string{skipPolicyPreflightEnvKey, legacySkipPolicyPreflightEnvKey} {
+		if val := strings.TrimSpace(azdEnv[key]); val != "" {
+			if skip, err := strconv.ParseBool(val); err == nil {
+				return skip
+			}
+		}
+		if val := strings.TrimSpace(os.Getenv(key)); val != "" {
+			if skip, err := strconv.ParseBool(val); err == nil {
+				return skip
+			}
+		}
 	}
-	skip, err := strconv.ParseBool(val)
-	return err == nil && skip
+	return false
 }
 
 // PolicyViolationsToError converts one or more policy violations into a structured
@@ -522,9 +894,11 @@ func FormatPolicyViolationsWarning(violations []foundrypolicy.Violation) string 
 
 // ServicePolicyFinding describes the policy evaluation outcome for one agent service.
 type ServicePolicyFinding struct {
-	ServiceName string
-	AgentKind   string
-	Violations  []foundrypolicy.Violation
+	ServiceName      string
+	AgentKind        string
+	Outcome          foundrypolicy.EvaluationOutcome
+	Violations       []foundrypolicy.Violation
+	IncompleteReason string
 }
 
 // ProjectPolicyResult is the side-effect-free outcome of QueryProjectPolicy,
@@ -592,16 +966,23 @@ func QueryProjectPolicy(
 		if svc == nil || svc.GetHost() != "azure.ai.agent" {
 			continue
 		}
-		candidate := ExtractServicePolicyCandidate(svc, projResp.Project.GetPath(), azdEnv)
+		candidate := ExtractServicePolicyCandidateWithServices(
+			svc,
+			projResp.Project.GetServices(),
+			projResp.Project.GetPath(),
+			azdEnv,
+		)
 		candidate.ProjectResourceID = info.ProjectScope
 		evalRes, evalErr := EvaluateCandidateWithCredential(ctx, cred, candidate, ops)
 		if evalErr != nil {
 			return nil, fmt.Errorf("evaluate policy for service %q: %w", name, evalErr)
 		}
 		findings = append(findings, ServicePolicyFinding{
-			ServiceName: name,
-			AgentKind:   candidate.AgentKind,
-			Violations:  evalRes.Violations,
+			ServiceName:      name,
+			AgentKind:        candidate.AgentKind,
+			Outcome:          evalRes.Outcome,
+			Violations:       evalRes.Violations,
+			IncompleteReason: evalRes.IncompleteReason,
 		})
 	}
 

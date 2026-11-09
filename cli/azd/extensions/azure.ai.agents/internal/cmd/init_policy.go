@@ -105,7 +105,17 @@ func warnInitServicePolicyIfBlocked(
 	}
 	azdEnv["AZURE_AI_PROJECT_ID"] = projectID
 
-	candidate := project.ExtractServicePolicyCandidate(svc, projectRoot, azdEnv)
+	var projectServices map[string]*azdext.ServiceConfig
+	if azdClient != nil {
+		if projClient := azdClient.Project(); projClient != nil {
+			if projResp, err := projClient.Get(ctx, &azdext.EmptyRequest{}); err == nil &&
+				projResp != nil && projResp.Project != nil {
+				projectServices = projResp.Project.GetServices()
+			}
+		}
+	}
+
+	candidate := project.ExtractServicePolicyCandidateWithServices(svc, projectServices, projectRoot, azdEnv)
 	for _, dep := range deployments {
 		candidate.Models = append(candidate.Models, foundrypolicy.ModelCandidate{
 			DeploymentName: dep.Name,
@@ -114,6 +124,7 @@ func warnInitServicePolicyIfBlocked(
 			Version:        dep.Model.Version,
 		})
 	}
+	candidate.Models = foundrypolicy.MergeModelCandidates(candidate.Models)
 
 	emitInitPolicyWarningForCandidate(ctx, cred, candidate)
 }

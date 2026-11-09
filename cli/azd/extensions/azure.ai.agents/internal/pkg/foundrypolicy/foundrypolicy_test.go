@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -105,6 +106,9 @@ func TestBuildResourceGraphQueries(t *testing.T) {
 	assert.Contains(t, assignQuery, "85455646-5d02-433e-a42d-265151140427")
 	assert.Contains(t, assignQuery, "215c2c77-3afb-4f55-be2f-709b60dc8d53")
 	assert.Contains(t, assignQuery, "d0d9ac6c-628b-46c1-a177-eb22b12ce588")
+	assert.Contains(t, assignQuery, "7740c22b-07ef-4bac-9f5a-e38d188f80b7")
+	assert.Contains(t, assignQuery, "e7352ad2-6c86-4a07-9573-47f67b557ba8")
+	assert.Contains(t, assignQuery, "aafe3651-cb78-4f68-9f81-e7e41509110f")
 	assert.NotContains(t, strings.ToLower(assignQuery), "microsoft.authorization/policysetdefinitions")
 	assert.Contains(t, assignQuery, "assignmentOverrides = properties.overrides")
 	assert.Contains(t, assignQuery, "resourceSelectors = properties.resourceSelectors")
@@ -313,6 +317,268 @@ func TestToolAndModelPolicies(t *testing.T) {
 		require.Len(t, res.Violations, 1)
 		assert.Equal(t, TargetTool, res.Violations[0].Target)
 		assert.Equal(t, "web_search", res.Violations[0].TargetValue)
+	})
+
+	t.Run("evaluates live built-in Denied Tools (7740c22b) and Approved Tools (e7352ad2) policies", func(t *testing.T) {
+		t.Parallel()
+		deniedInv := Inventory{
+			ProjectID: testProjectID,
+			Assignments: []PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/deny-live-tools",
+					AssignmentDisplayName: "Deny Code Interpreter and Untrusted MCP",
+					PolicyDefinitionID:    DeniedToolsPolicyID,
+					DefinitionDisplayName: "[Preview]: Microsoft Foundry agents and toolboxes should not use denied tools",
+					AssignmentParameters: map[string]any{
+						"effect":              map[string]any{"value": "Deny"},
+						"deniedToolTypes":     map[string]any{"value": []any{"code_interpreter"}},
+						"deniedMcpEndpoints":  map[string]any{"value": []any{"https://untrusted.example.com/*"}},
+						"deniedMcpConnectors": map[string]any{"value": []any{"blocked-connector"}},
+					},
+					EnforcementMode: "Default",
+				},
+			},
+		}
+
+		resDenied := EvaluateToolPolicy(deniedInv, []ToolCandidate{
+			{Type: "web_search"},
+			{Type: "code_interpreter"},
+			{Type: "mcp", Name: "bad-url", ServerURL: "https://untrusted.example.com/mcp"},
+			{Type: "mcp", Name: "bad-conn", ConnectorID: "BLOCKED-CONNECTOR"},
+			{Type: "mcp", Name: "good-mcp", ServerURL: "https://trusted.example.com/mcp"},
+		})
+		require.Equal(t, OutcomeBlocked, resDenied.Outcome)
+		require.Len(t, resDenied.Violations, 3)
+
+		approvedInv := Inventory{
+			ProjectID: testProjectID,
+			Assignments: []PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/approve-live-tools",
+					AssignmentDisplayName: "Approved Tools Only",
+					PolicyDefinitionID:    AllowedToolsPolicyID,
+					DefinitionDisplayName: "[Preview]: Microsoft Foundry agents and toolboxes should only use approved tools",
+					AssignmentParameters: map[string]any{
+						"effect":                map[string]any{"value": "Deny"},
+						"approvedToolTypes":     map[string]any{"value": []any{"web_search"}},
+						"approvedMcpEndpoints":  map[string]any{"value": []any{"https://approved.example.com/*"}},
+						"approvedMcpConnectors": map[string]any{"value": []any{"approved-connector"}},
+					},
+					EnforcementMode: "Default",
+				},
+			},
+		}
+
+		// Any of approvedToolTypes, approvedMcpEndpoints, or approvedMcpConnectors approves the tool.
+		resApproved := EvaluateToolPolicy(approvedInv, []ToolCandidate{
+			{Type: "web_search"},
+			{Type: "mcp", Name: "by-endpoint", ServerURL: "https://approved.example.com/v1/mcp"},
+			{Type: "mcp", Name: "by-connector", ConnectorID: "approved-connector"},
+		})
+		assert.Equal(t, OutcomeAllowed, resApproved.Outcome)
+		assert.Empty(t, resApproved.Violations)
+
+		// Unapproved tool type and unapproved MCP server (with known ServerURL and ConnectorID) are blocked.
+		resUnapproved := EvaluateToolPolicy(approvedInv, []ToolCandidate{
+			{Type: "code_interpreter"},
+			{Type: "mcp", Name: "unapproved-mcp", ServerURL: "https://other.example.com/mcp", ConnectorID: "other-connector"},
+		})
+		require.Equal(t, OutcomeBlocked, resUnapproved.Outcome)
+		require.Len(t, resUnapproved.Violations, 2)
+
+		// Exact field & operator isolation:
+		// 1. MCP tool named "code_interpreter" is NOT blocked by deniedToolTypes: ["code_interpreter"]
+		// 2. code_interpreter tool named "web_search" is NOT approved by approvedToolTypes: ["web_search"]
+		// 3. Literal "*" in deniedToolTypes is not treated as a wildcard
+		// 4. ConnectionID is not matched against deniedMcpConnectors or approvedMcpConnectors
+		wildcardTypeInv := Inventory{
+			ProjectID: testProjectID,
+			Assignments: []PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/deny-wildcard-type",
+					AssignmentDisplayName: "Deny Literal Wildcard",
+					PolicyDefinitionID:    DeniedToolsPolicyID,
+					AssignmentParameters: map[string]any{
+						"effect":              map[string]any{"value": "Deny"},
+						"deniedToolTypes":     map[string]any{"value": []any{"code_*", "code_interpreter"}},
+						"deniedMcpConnectors": map[string]any{"value": []any{"conn-id-only"}},
+					},
+					EnforcementMode: "Default",
+				},
+			},
+		}
+		assert.Equal(t, OutcomeAllowed, EvaluateToolPolicyAssignment(
+			wildcardTypeInv.Assignments[0],
+			testProjectID,
+			ToolCandidate{
+				Type:         "mcp",
+				Name:         "code_interpreter",
+				ConnectionID: "conn-id-only",
+				ServerURL:    "https://trusted.example.com/mcp",
+				ConnectorID:  "safe-connector",
+			},
+		))
+		assert.Equal(t, OutcomeAllowed, EvaluateToolPolicyAssignment(
+			wildcardTypeInv.Assignments[0],
+			testProjectID,
+			ToolCandidate{Type: "code_runner"},
+		))
+		assert.Equal(t, OutcomeBlocked, EvaluateToolPolicyAssignment(
+			approvedInv.Assignments[0],
+			testProjectID,
+			ToolCandidate{Type: "code_interpreter", Name: "web_search"},
+		))
+
+		// Unresolved MCP toolbox/connection (empty ServerURL & ConnectorID) under approvedMcpEndpoints
+		// returns OutcomeIndeterminate rather than falsely blocking.
+		resIndeterminateMCP := EvaluateToolPolicy(approvedInv, []ToolCandidate{
+			{Type: "mcp", Name: "toolbox:my-tools", ConnectionID: "approved-connector"},
+		})
+		assert.Equal(t, OutcomeIndeterminate, resIndeterminateMCP.Outcome)
+		assert.Empty(t, resIndeterminateMCP.Violations)
+		assert.Contains(t, resIndeterminateMCP.IncompleteReason, "MCP tool endpoint or connector metadata")
+	})
+
+	t.Run("evaluates live built-in Approved Models policy (aafe3651) with authoritative Publisher and AssetID and defers when unknown", func(t *testing.T) {
+		t.Parallel()
+		inv := Inventory{
+			ProjectID: testProjectID,
+			Assignments: []PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/approved-models",
+					AssignmentDisplayName: "Foundry Approved Models",
+					PolicyDefinitionID:    AllowedModelsPolicyID,
+					DefinitionDisplayName: "Foundry model deployments should only use approved models",
+					AssignmentParameters: map[string]any{
+						"effect":            map[string]any{"value": "Deny"},
+						"allowedPublishers": map[string]any{"value": []any{"Anthropic"}},
+						"allowedAssetIds": map[string]any{"value": []any{
+							"azureml://registries/azure-openai/models/gpt-4.1/versions/2025-04-14",
+							"azureml://registries/azure-openai/models/gpt-5/",
+						}},
+					},
+					EnforcementMode: "Default",
+				},
+			},
+		}
+
+		// Approved via authoritative AssetID
+		resAsset := EvaluateModelInventoryPolicy(inv, []ModelCandidate{{
+			DeploymentName: "chat",
+			Name:           "gpt-4.1",
+			Format:         "OpenAI",
+			Version:        "2025-04-14",
+			Publisher:      "OpenAI",
+			AssetID:        "azureml://registries/azure-openai/models/gpt-4.1/versions/2025-04-14",
+		}})
+		assert.Equal(t, OutcomeAllowed, resAsset.Outcome)
+
+		// Approved via authoritative Publisher
+		resPublisher := EvaluateModelInventoryPolicy(inv, []ModelCandidate{{
+			DeploymentName: "claude",
+			Name:           "claude-3-7-sonnet",
+			Publisher:      "Anthropic",
+		}})
+		assert.Equal(t, OutcomeAllowed, resPublisher.Outcome)
+
+		// Blocked when both Publisher and AssetID are known and neither matches (e.g. different version or registry)
+		resBlocked := EvaluateModelInventoryPolicy(inv, []ModelCandidate{{
+			DeploymentName: "chat-old-ver",
+			Name:           "gpt-4.1",
+			Format:         "OpenAI",
+			Version:        "2024-01-01",
+			Publisher:      "OpenAI",
+			AssetID:        "azureml://registries/azure-openai/models/gpt-4.1/versions/2024-01-01",
+		}})
+		assert.Equal(t, OutcomeBlocked, resBlocked.Outcome)
+		require.Len(t, resBlocked.Violations, 1)
+
+		// When Publisher and AssetID are not known locally (only Format/Name/Version), returns OutcomeIndeterminate
+		// and EvaluateCandidate defers to authoritative ARM evaluateDeploymentPolicies!
+		resIndeterminate := EvaluateModelInventoryPolicy(inv, []ModelCandidate{{
+			DeploymentName: "chat",
+			Name:           "gpt-4.1",
+			Format:         "OpenAI",
+			Version:        "2025-04-14",
+		}})
+		assert.Equal(t, OutcomeIndeterminate, resIndeterminate.Outcome)
+		assert.Empty(t, resIndeterminate.Violations)
+
+		armCompliantEval := NewARMDeploymentPolicyEvaluator(newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"results":{"chat":{"evaluationOutcome":"Compliant"}}}`)),
+				Request:    req,
+			}, nil
+		}), "https://management.azure.com")
+		resDeferredAllowed := EvaluateCandidate(
+			t.Context(),
+			inv,
+			Candidate{
+				ProjectResourceID: testProjectID,
+				Models: []ModelCandidate{{
+					DeploymentName: "chat",
+					Name:           "gpt-4.1",
+					Format:         "OpenAI",
+					Version:        "2025-04-14",
+				}},
+			},
+			armCompliantEval,
+		)
+		assert.Equal(t, OutcomeAllowed, resDeferredAllowed.Outcome)
+		assert.Empty(t, resDeferredAllowed.Violations)
+
+		// Preserve literal allowedAssetIds entries without trimming:
+		// 1. allowedAssetIds: [""] matches any known non-empty assetID via contains.
+		emptyAssetEntryInv := Inventory{
+			ProjectID: testProjectID,
+			Assignments: []PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/empty-asset-entry",
+					AssignmentDisplayName: "Empty Asset Entry",
+					PolicyDefinitionID:    AllowedModelsPolicyID,
+					AssignmentParameters: map[string]any{
+						"effect":          map[string]any{"value": "Deny"},
+						"allowedAssetIds": map[string]any{"value": []any{""}},
+					},
+					EnforcementMode: "Default",
+				},
+			},
+		}
+		resEmptyEntry := EvaluateModelInventoryPolicy(emptyAssetEntryInv, []ModelCandidate{{
+			DeploymentName: "chat",
+			Name:           "gpt-4.1",
+			Publisher:      "OpenAI",
+			AssetID:        "azureml://registries/azure-openai/models/gpt-4.1/versions/2025-04-14",
+		}})
+		assert.Equal(t, OutcomeAllowed, resEmptyEntry.Outcome)
+
+		// 2. allowedAssetIds entry with leading/trailing whitespace is matched literally (not trimmed).
+		paddedAssetEntryInv := Inventory{
+			ProjectID: testProjectID,
+			Assignments: []PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/padded-asset-entry",
+					AssignmentDisplayName: "Padded Asset Entry",
+					PolicyDefinitionID:    AllowedModelsPolicyID,
+					AssignmentParameters: map[string]any{
+						"effect":            map[string]any{"value": "Deny"},
+						"allowedPublishers": map[string]any{"value": []any{"Anthropic"}},
+						"allowedAssetIds":   map[string]any{"value": []any{" /models/gpt-4.1/ "}},
+					},
+					EnforcementMode: "Default",
+				},
+			},
+		}
+		resPaddedEntry := EvaluateModelInventoryPolicy(paddedAssetEntryInv, []ModelCandidate{{
+			DeploymentName: "chat",
+			Name:           "gpt-4.1",
+			Publisher:      "OpenAI",
+			AssetID:        "azureml://registries/azure-openai/models/gpt-4.1/versions/2025-04-14",
+		}})
+		assert.Equal(t, OutcomeBlocked, resPaddedEntry.Outcome)
+		require.Len(t, resPaddedEntry.Violations, 1)
 	})
 
 	t.Run("evaluates model deployment policy via ARM evaluateDeploymentPolicies", func(t *testing.T) {
@@ -596,5 +862,631 @@ func TestInventoryCache(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, FreshnessStale, res.Freshness)
 		assert.Equal(t, initial, res.Inventory)
+	})
+
+	t.Run("deduplicates true concurrent Get calls with barrier", func(t *testing.T) {
+		t.Parallel()
+		cache := NewInventoryCache(5*time.Minute, time.Now, nil, 5*time.Minute, 5*time.Second)
+
+		var fetchCount atomic.Int32
+		fetchStarted := make(chan struct{})
+		releaseFetch := make(chan struct{})
+		expected := Inventory{ProjectID: testProjectID, Assignments: []PolicyAssignment{createAgentAssignment(nil)}}
+
+		fetch := func(_ context.Context) (Inventory, error) {
+			if fetchCount.Add(1) == 1 {
+				close(fetchStarted)
+			}
+			<-releaseFetch
+			return expected, nil
+		}
+
+		const workers = 4
+		var wg sync.WaitGroup
+		results := make([]Inventory, workers)
+		errs := make([]error, workers)
+
+		for i := range workers {
+			wg.Go(func() {
+				results[i], errs[i] = cache.Get(t.Context(), testProjectID, fetch)
+			})
+		}
+
+		<-fetchStarted
+		close(releaseFetch)
+		wg.Wait()
+
+		assert.Equal(t, int32(1), fetchCount.Load())
+		for i := range workers {
+			require.NoError(t, errs[i])
+			assert.Equal(t, expected, results[i])
+		}
+	})
+
+	t.Run("cancelled waiter returns immediately without breaking other concurrent waiters", func(t *testing.T) {
+		t.Parallel()
+		cache := NewInventoryCache(5*time.Minute, time.Now, nil, 5*time.Minute, 5*time.Second)
+
+		fetchStarted := make(chan struct{})
+		releaseFetch := make(chan struct{})
+		expected := Inventory{ProjectID: testProjectID, Assignments: []PolicyAssignment{createAgentAssignment(nil)}}
+
+		fetch := func(ctx context.Context) (Inventory, error) {
+			close(fetchStarted)
+			select {
+			case <-releaseFetch:
+				return expected, nil
+			case <-ctx.Done():
+				return Inventory{}, ctx.Err()
+			}
+		}
+
+		ctx1, cancel1 := context.WithCancel(t.Context())
+		defer cancel1()
+		ctx2, cancel2 := context.WithCancel(t.Context())
+
+		errCh1 := make(chan error, 1)
+		resCh1 := make(chan Inventory, 1)
+		errCh2 := make(chan error, 1)
+
+		go func() {
+			inv, err := cache.Get(ctx1, testProjectID, fetch)
+			resCh1 <- inv
+			errCh1 <- err
+		}()
+
+		<-fetchStarted
+
+		go func() {
+			_, err := cache.Get(ctx2, testProjectID, fetch)
+			errCh2 <- err
+		}()
+
+		// Cancel waiter 2 while fetch is still in flight; it must return context.Canceled immediately.
+		cancel2()
+		err2 := <-errCh2
+		require.ErrorIs(t, err2, context.Canceled)
+
+		// Now release the shared fetch; caller 1 must still succeed.
+		close(releaseFetch)
+		require.NoError(t, <-errCh1)
+		assert.Equal(t, expected, <-resCh1)
+	})
+}
+
+func TestARMDeploymentPolicyEffectsAndEnrichment(t *testing.T) {
+	t.Parallel()
+
+	newEvaluatorWithResponse := func(resultsJSON string) *ARMDeploymentPolicyEvaluator {
+		pipeline := newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/evaluateDeploymentPolicies") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(resultsJSON)),
+					Request:    req,
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(bytes.NewReader(nil)),
+				Request:    req,
+			}, nil
+		})
+		return NewARMDeploymentPolicyEvaluator(pipeline, "https://management.azure.com")
+	}
+
+	modelCand := []ModelCandidate{{
+		DeploymentName: "my-gpt4",
+		Name:           "gpt-4o",
+		Format:         "OpenAI",
+		Version:        "2024-08-06",
+	}}
+
+	t.Run("ignores audit-only and missing/non-exact effects even when NonCompliant", func(t *testing.T) {
+		t.Parallel()
+		eval := newEvaluatorWithResponse(`{
+			"results": {
+				"my-gpt4": {
+					"evaluationOutcome": "NonCompliant",
+					"nonCompliantAssignments": [
+						{"assignmentId": "/subscriptions/sub/policyAssignments/audit-1", "effect": "Audit"},
+						{"assignmentId": "/subscriptions/sub/policyAssignments/empty-1", "effect": ""},
+						{"assignmentId": "/subscriptions/sub/policyAssignments/prefix-1", "effect": "denyAction"}
+					]
+				}
+			}
+		}`)
+		evalRes, err := eval.EvaluateModelDeployments(t.Context(), testProjectID, modelCand)
+		require.NoError(t, err)
+		assert.Empty(t, evalRes.Violations)
+	})
+
+	t.Run("emits violations only for Deny assignments in mixed and multi-deny responses and enriches display name", func(t *testing.T) {
+		t.Parallel()
+		eval := newEvaluatorWithResponse(`{
+			"results": {
+				"my-gpt4": {
+					"evaluationOutcome": "NonCompliant",
+					"errorMessage": "Deployment 'my-gpt4' is non-compliant with policy '/subscriptions/sub/policyAssignments/audit-only'",
+					"nonCompliantAssignments": [
+						{"assignmentId": "/subscriptions/sub/policyAssignments/audit-only", "effect": "Audit"},
+						{"assignmentId": "/subscriptions/sub/policyAssignments/deny-one", "effect": "Deny"},
+						{"assignmentId": "/subscriptions/sub/policyAssignments/deny-two", "effect": "deny"}
+					]
+				}
+			}
+		}`)
+
+		inv := Inventory{
+			ProjectID: testProjectID,
+			Assignments: []PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/deny-one",
+					AssignmentDisplayName: "Human Readable Deny One",
+				},
+			},
+		}
+		res := EvaluateCandidate(
+			t.Context(),
+			inv,
+			Candidate{
+				ProjectResourceID: testProjectID,
+				Models:            modelCand,
+			},
+			eval,
+		)
+		require.Equal(t, OutcomeBlocked, res.Outcome)
+		require.Len(t, res.Violations, 2)
+		assert.Equal(t, "/subscriptions/sub/policyassignments/deny-one", res.Violations[0].AssignmentID)
+		assert.Equal(t, "Human Readable Deny One", res.Violations[0].DisplayName)
+		assert.Contains(t, res.Violations[0].Message, "Human Readable Deny One")
+		assert.NotContains(t, res.Violations[0].Message, "audit-only")
+		assert.Equal(t, "/subscriptions/sub/policyassignments/deny-two", res.Violations[1].AssignmentID)
+		assert.Equal(t, "deny-two", res.Violations[1].DisplayName)
+		assert.NotContains(t, res.Violations[1].Message, "audit-only")
+	})
+}
+
+func TestModelCandidateMergingAndAllowedModelsAliasHandling(t *testing.T) {
+	t.Parallel()
+
+	t.Run("merges sparse candidate preceding complete candidate without ARM GET", func(t *testing.T) {
+		t.Parallel()
+		var getCalls int
+		var postBody evaluateDeploymentPoliciesRequest
+		pipeline := newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			if req.Method == http.MethodGet {
+				getCalls++
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Body:       io.NopCloser(bytes.NewReader(nil)),
+					Request:    req,
+				}, nil
+			}
+			if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/evaluateDeploymentPolicies") {
+				_ = json.NewDecoder(req.Body).Decode(&postBody)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"results":{"my-dep":{"evaluationOutcome":"Compliant"}}}`)),
+					Request:    req,
+				}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(bytes.NewReader(nil)), Request: req}, nil
+		})
+
+		eval := NewARMDeploymentPolicyEvaluator(pipeline, "https://management.azure.com")
+		evalRes, err := eval.EvaluateModelDeployments(t.Context(), testProjectID, []ModelCandidate{
+			{DeploymentName: "my-dep"},
+			{DeploymentName: "my-dep", Name: "gpt-4o", Format: "OpenAI", Version: "2024-08-06"},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, evalRes.Violations)
+		assert.Empty(t, evalRes.IncompleteReason)
+		assert.Equal(t, 0, getCalls, "expected merged candidate to avoid ARM GET for deployment metadata")
+		require.Len(t, postBody.Deployments, 1)
+		assert.Equal(t, "my-dep", postBody.Deployments[0].Name)
+		assert.Equal(t, "gpt-4o", postBody.Deployments[0].Properties.Model.Name)
+		assert.Equal(t, "OpenAI", postBody.Deployments[0].Properties.Model.Format)
+		assert.Equal(t, "2024-08-06", postBody.Deployments[0].Properties.Model.Version)
+	})
+
+	t.Run("allowedModels does not falsely block deployment-only alias and marks indeterminate when unresolved", func(t *testing.T) {
+		t.Parallel()
+		inv := Inventory{
+			ProjectID: testProjectID,
+			Assignments: []PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/allow-gpt4o",
+					AssignmentDisplayName: "Allow only GPT-4o",
+					DefinitionDisplayName: "[Preview]: Microsoft Foundry agents should only use allowed models",
+					AssignmentParameters: map[string]any{
+						"effect":        map[string]any{"value": "Deny"},
+						"allowedModels": map[string]any{"value": []any{"gpt-4o"}},
+					},
+					EnforcementMode: "Default",
+				},
+			},
+		}
+
+		// Sparse candidate with only deployment alias "production-chat" must NOT be blocked by allowedModels.
+		resAliasOnly := EvaluateModelInventoryPolicy(inv, []ModelCandidate{
+			{DeploymentName: "production-chat"},
+		})
+		assert.Equal(t, OutcomeIndeterminate, resAliasOnly.Outcome)
+		assert.Empty(t, resAliasOnly.Violations)
+
+		// Enriched candidate with DeploymentName "production-chat" and underlying Name "gpt-4o" is allowed.
+		resAllowed := EvaluateModelInventoryPolicy(inv, []ModelCandidate{
+			{DeploymentName: "production-chat"},
+			{DeploymentName: "production-chat", Name: "gpt-4o", Format: "OpenAI", Version: "2024-08-06"},
+		})
+		assert.Equal(t, OutcomeAllowed, resAllowed.Outcome)
+		assert.Empty(t, resAllowed.Violations)
+
+		// Enriched candidate with underlying Name "gpt-35-turbo" is blocked.
+		resBlocked := EvaluateModelInventoryPolicy(inv, []ModelCandidate{
+			{DeploymentName: "production-chat", Name: "gpt-35-turbo"},
+		})
+		assert.Equal(t, OutcomeBlocked, resBlocked.Outcome)
+		require.Len(t, resBlocked.Violations, 1)
+	})
+
+	t.Run("EvaluateCandidate preserves OutcomeIndeterminate when ARM model evaluation fails", func(t *testing.T) {
+		t.Parallel()
+		failingEval := NewARMDeploymentPolicyEvaluator(newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Body:       io.NopCloser(strings.NewReader("server error")),
+				Request:    req,
+			}, nil
+		}), "https://management.azure.com")
+
+		res := EvaluateCandidate(
+			t.Context(),
+			Inventory{ProjectID: testProjectID},
+			Candidate{
+				ProjectResourceID: testProjectID,
+				Models: []ModelCandidate{{
+					DeploymentName: "my-dep",
+					Name:           "gpt-4o",
+					Format:         "OpenAI",
+					Version:        "2024-08-06",
+				}},
+			},
+			failingEval,
+		)
+		assert.Equal(t, OutcomeIndeterminate, res.Outcome)
+		assert.Contains(t, res.IncompleteReason, "model deployment policy evaluation failed")
+	})
+
+	t.Run("re-evaluates deniedModels and allowedModels inventory rules with ARM-resolved model names", func(t *testing.T) {
+		t.Parallel()
+		pipeline := newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			if req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/deployments/production-chat") {
+				body := `{"properties":{"model":{"format":"OpenAI","name":"gpt-4o","version":"2024-08-06"}}}`
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(body)),
+					Request:    req,
+				}, nil
+			}
+			if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/evaluateDeploymentPolicies") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"results":{"production-chat":{"evaluationOutcome":"Compliant"}}}`)),
+					Request:    req,
+				}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(bytes.NewReader(nil)), Request: req}, nil
+		})
+		eval := NewARMDeploymentPolicyEvaluator(pipeline, "https://management.azure.com")
+
+		deniedInv := Inventory{
+			ProjectID: testProjectID,
+			Assignments: []PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/deny-gpt4o",
+					AssignmentDisplayName: "Deny GPT-4o",
+					DefinitionDisplayName: "[Preview]: Microsoft Foundry agents should not use denied models",
+					AssignmentParameters: map[string]any{
+						"effect":       map[string]any{"value": "Deny"},
+						"deniedModels": map[string]any{"value": []any{"gpt-4o"}},
+					},
+					EnforcementMode: "Default",
+				},
+			},
+		}
+
+		// Without ARM resolution, deployment alias "production-chat" alone is indeterminate against deniedModels.
+		noARMDenied := EvaluateModelInventoryPolicy(deniedInv, []ModelCandidate{{DeploymentName: "production-chat"}})
+		assert.Equal(t, OutcomeIndeterminate, noARMDenied.Outcome)
+
+		// With ARM resolution of "production-chat" -> "gpt-4o", inventory deniedModels blocks it.
+		resDenied := EvaluateCandidate(
+			t.Context(),
+			deniedInv,
+			Candidate{
+				ProjectResourceID: testProjectID,
+				Models:            []ModelCandidate{{DeploymentName: "production-chat"}},
+			},
+			eval,
+		)
+		assert.Equal(t, OutcomeBlocked, resDenied.Outcome)
+		require.Len(t, resDenied.Violations, 1)
+		assert.Equal(t, "Deny GPT-4o", resDenied.Violations[0].DisplayName)
+
+		allowedInv := Inventory{
+			ProjectID: testProjectID,
+			Assignments: []PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/allow-gpt4o",
+					AssignmentDisplayName: "Allow GPT-4o",
+					DefinitionDisplayName: "[Preview]: Microsoft Foundry agents should only use allowed models",
+					AssignmentParameters: map[string]any{
+						"effect":        map[string]any{"value": "Deny"},
+						"allowedModels": map[string]any{"value": []any{"gpt-4o"}},
+					},
+					EnforcementMode: "Default",
+				},
+			},
+		}
+
+		// With ARM resolution of "production-chat" -> "gpt-4o", inventory allowedModels is satisfied.
+		resAllowed := EvaluateCandidate(
+			t.Context(),
+			allowedInv,
+			Candidate{
+				ProjectResourceID: testProjectID,
+				Models:            []ModelCandidate{{DeploymentName: "production-chat"}},
+			},
+			eval,
+		)
+		assert.Equal(t, OutcomeAllowed, resAllowed.Outcome)
+		assert.Empty(t, resAllowed.Violations)
+
+		// False-block prevention: partial local candidate with conflicting Name ("gpt-35-turbo", no format/version)
+		// is overridden by authoritative ARM GET metadata ("gpt-4o") and allowed by allowedModels: ["gpt-4o"].
+		resOverrideAllowed := EvaluateCandidate(
+			t.Context(),
+			allowedInv,
+			Candidate{
+				ProjectResourceID: testProjectID,
+				Models:            []ModelCandidate{{DeploymentName: "production-chat", Name: "gpt-35-turbo"}},
+			},
+			eval,
+		)
+		assert.Equal(t, OutcomeAllowed, resOverrideAllowed.Outcome)
+		assert.Empty(t, resOverrideAllowed.Violations)
+
+		// Missed-denial prevention: partial local candidate with Name "gpt-4o" (no format/version)
+		// is overridden when ARM GET resolves "gpt-35-turbo", which is blocked by deniedModels: ["gpt-35-turbo"].
+		evalResolves35 := NewARMDeploymentPolicyEvaluator(newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			if req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/deployments/production-chat") {
+				body := `{"properties":{"model":{"format":"OpenAI","name":"gpt-35-turbo","version":"0613"}}}`
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(body)),
+					Request:    req,
+				}, nil
+			}
+			if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/evaluateDeploymentPolicies") {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"results":{"production-chat":{"evaluationOutcome":"Compliant"}}}`)),
+					Request:    req,
+				}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(bytes.NewReader(nil)), Request: req}, nil
+		}), "https://management.azure.com")
+
+		denied35Inv := Inventory{
+			ProjectID: testProjectID,
+			Assignments: []PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/deny-gpt35",
+					AssignmentDisplayName: "Deny GPT-3.5 Turbo",
+					DefinitionDisplayName: "[Preview]: Microsoft Foundry agents should not use denied models",
+					AssignmentParameters: map[string]any{
+						"effect":       map[string]any{"value": "Deny"},
+						"deniedModels": map[string]any{"value": []any{"gpt-35-turbo"}},
+					},
+					EnforcementMode: "Default",
+				},
+			},
+		}
+		resOverrideBlocked := EvaluateCandidate(
+			t.Context(),
+			denied35Inv,
+			Candidate{
+				ProjectResourceID: testProjectID,
+				Models:            []ModelCandidate{{DeploymentName: "production-chat", Name: "gpt-4o"}},
+			},
+			evalResolves35,
+		)
+		assert.Equal(t, OutcomeBlocked, resOverrideBlocked.Outcome)
+		require.Len(t, resOverrideBlocked.Violations, 1)
+		assert.Equal(t, "Deny GPT-3.5 Turbo", resOverrideBlocked.Violations[0].DisplayName)
+	})
+
+	t.Run("handles metadata GET failure, partial GET failure with Deny block, missing results entry, and Compliant outcome", func(t *testing.T) {
+		t.Parallel()
+
+		// 1. Metadata GET failure -> OutcomeIndeterminate
+		getFailEval := NewARMDeploymentPolicyEvaluator(newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader("not found")),
+				Request:    req,
+			}, nil
+		}), "https://management.azure.com")
+		resGetFail := EvaluateCandidate(
+			t.Context(),
+			Inventory{ProjectID: testProjectID},
+			Candidate{
+				ProjectResourceID: testProjectID,
+				Models:            []ModelCandidate{{DeploymentName: "missing-dep"}},
+			},
+			getFailEval,
+		)
+		assert.Equal(t, OutcomeIndeterminate, resGetFail.Outcome)
+		assert.Contains(t, resGetFail.IncompleteReason, "could not resolve model metadata")
+
+		// 2. Partial failure: 1 model fails GET, 1 model blocked by Deny -> OutcomeBlocked with violation preserved
+		partialEval := NewARMDeploymentPolicyEvaluator(newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			if req.Method == http.MethodGet {
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Body:       io.NopCloser(strings.NewReader("not found")),
+					Request:    req,
+				}, nil
+			}
+			if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/evaluateDeploymentPolicies") {
+				body := `{
+					"results": {
+						"known-dep": {
+							"evaluationOutcome": "NonCompliant",
+							"nonCompliantAssignments": [
+								{"assignmentId": "/subscriptions/sub/policyAssignments/deny-known", "effect": "Deny"}
+							]
+						}
+					}
+				}`
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(body)),
+					Request:    req,
+				}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(bytes.NewReader(nil)), Request: req}, nil
+		}), "https://management.azure.com")
+		resPartial := EvaluateCandidate(
+			t.Context(),
+			Inventory{ProjectID: testProjectID},
+			Candidate{
+				ProjectResourceID: testProjectID,
+				Models: []ModelCandidate{
+					{DeploymentName: "missing-dep"},
+					{DeploymentName: "known-dep", Name: "gpt-4o", Format: "OpenAI", Version: "2024-08-06"},
+				},
+			},
+			partialEval,
+		)
+		assert.Equal(t, OutcomeBlocked, resPartial.Outcome)
+		require.Len(t, resPartial.Violations, 1)
+		assert.Equal(t, "/subscriptions/sub/policyassignments/deny-known", resPartial.Violations[0].AssignmentID)
+
+		// 3. Missing deployment entry in results -> OutcomeIndeterminate
+		missingResEval := NewARMDeploymentPolicyEvaluator(newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"results":{}}`)),
+				Request:    req,
+			}, nil
+		}), "https://management.azure.com")
+		resMissing := EvaluateCandidate(
+			t.Context(),
+			Inventory{ProjectID: testProjectID},
+			Candidate{
+				ProjectResourceID: testProjectID,
+				Models: []ModelCandidate{
+					{DeploymentName: "known-dep", Name: "gpt-4o", Format: "OpenAI", Version: "2024-08-06"},
+				},
+			},
+			missingResEval,
+		)
+		assert.Equal(t, OutcomeIndeterminate, resMissing.Outcome)
+		assert.Contains(t, resMissing.IncompleteReason, "omitted deployment")
+
+		// 4. Complete "Compliant" response -> OutcomeAllowed
+		compliantEval := NewARMDeploymentPolicyEvaluator(newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"results":{"known-dep":{"evaluationOutcome":"Compliant"}}}`)),
+				Request:    req,
+			}, nil
+		}), "https://management.azure.com")
+		resCompliant := EvaluateCandidate(
+			t.Context(),
+			Inventory{ProjectID: testProjectID},
+			Candidate{
+				ProjectResourceID: testProjectID,
+				Models: []ModelCandidate{
+					{DeploymentName: "known-dep", Name: "gpt-4o", Format: "OpenAI", Version: "2024-08-06"},
+				},
+			},
+			compliantEval,
+		)
+		assert.Equal(t, OutcomeAllowed, resCompliant.Outcome)
+		assert.Empty(t, resCompliant.Violations)
+		assert.Empty(t, resCompliant.IncompleteReason)
+	})
+}
+
+func TestResourceGraphJSONAndDataEnvelopeValidation(t *testing.T) {
+	t.Parallel()
+
+	runQueryWithBody := func(body string) ([]json.RawMessage, error, []string) {
+		var logs []string
+		pipeline := newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    req,
+			}, nil
+		})
+		q := NewResourceGraphQueryFunc(pipeline, "https://management.azure.com", func(msg string) {
+			logs = append(logs, msg)
+		})
+		rows, err := q(t.Context(), ResourceGraphRequest{Subscriptions: []string{"sub"}, Query: "resources"})
+		return rows, err, logs
+	}
+
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "malformed JSON", body: `{"data":[invalid`},
+		{name: "null top-level body", body: `null`},
+		{name: "missing data field", body: `{}`},
+		{name: "null data field", body: `{"data":null}`},
+		{name: "null data.rows field", body: `{"data":{"rows":null}}`},
+		{name: "number data shape", body: `{"data":123}`},
+		{name: "string data shape", body: `{"data":"unexpected"}`},
+		{name: "object data without rows", body: `{"data":{"columns":[]}}`},
+		{name: "object data with non-array rows", body: `{"data":{"rows":"bad"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, err, logs := runQueryWithBody(tc.body)
+			require.Error(t, err)
+			assert.Nil(t, rows)
+			assert.NotEmpty(t, logs)
+		})
+	}
+
+	t.Run("valid empty array and object-with-rows shapes succeed", func(t *testing.T) {
+		rows, err, logs := runQueryWithBody(`{"data":[]}`)
+		require.NoError(t, err)
+		assert.Empty(t, rows)
+		assert.Empty(t, logs)
+
+		rowsEmptyObj, errEmptyObj, logsEmptyObj := runQueryWithBody(`{"data":{"rows":[]}}`)
+		require.NoError(t, errEmptyObj)
+		assert.Empty(t, rowsEmptyObj)
+		assert.Empty(t, logsEmptyObj)
+
+		rows2, err2, logs2 := runQueryWithBody(`{"data":{"rows":[{"id":"one"}]}}`)
+		require.NoError(t, err2)
+		require.Len(t, rows2, 1)
+		assert.Empty(t, logs2)
 	})
 }

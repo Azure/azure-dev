@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -46,14 +47,45 @@ type ResourceGraphRequest struct {
 }
 
 type resourceGraphResponse struct {
-	Data            []json.RawMessage `json:"data"`
-	DollarSkipToken string            `json:"$skipToken"`
-	SkipToken       string            `json:"skipToken"`
-	ResultTruncated any               `json:"resultTruncated"`
+	Data            json.RawMessage `json:"data"`
+	DollarSkipToken string          `json:"$skipToken"`
+	SkipToken       string          `json:"skipToken"`
+	ResultTruncated any             `json:"resultTruncated"`
 	Error           *struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+func parseResourceGraphRows(rawData json.RawMessage) ([]json.RawMessage, error) {
+	trimmed := bytes.TrimSpace(rawData)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, fmt.Errorf("Resource Graph response missing data array")
+	}
+	switch trimmed[0] {
+	case '[':
+		var rows []json.RawMessage
+		if err := json.Unmarshal(trimmed, &rows); err != nil {
+			return nil, fmt.Errorf("invalid Resource Graph data array: %w", err)
+		}
+		if rows == nil {
+			return nil, fmt.Errorf("Resource Graph response data array is null")
+		}
+		return rows, nil
+	case '{':
+		var tabular struct {
+			Rows *[]json.RawMessage `json:"rows"`
+		}
+		if err := json.Unmarshal(trimmed, &tabular); err != nil {
+			return nil, fmt.Errorf("invalid Resource Graph data object: %w", err)
+		}
+		if tabular.Rows == nil || *tabular.Rows == nil {
+			return nil, fmt.Errorf("Resource Graph data object missing 'rows' array")
+		}
+		return *tabular.Rows, nil
+	default:
+		return nil, fmt.Errorf("unexpected Resource Graph data JSON type")
+	}
 }
 
 // ResourceGraphQueryFunc executes a Resource Graph query and returns raw JSON rows.
@@ -95,8 +127,14 @@ policyresources
             '%s',
             '%s',
             '%s',
+            '%s',
+            '%s',
+            '%s',
             '%s'
         )
+        or tolower(definitionDisplayName) endswith '%s'
+        or tolower(definitionDisplayName) endswith '%s'
+        or tolower(definitionDisplayName) endswith '%s'
         or tolower(definitionDisplayName) endswith '%s'
         or tolower(definitionDisplayName) endswith '%s'
         or tolower(definitionDisplayName) endswith '%s'
@@ -130,14 +168,20 @@ policyresources
 		AllowedAgentKindsPolicyID,
 		DeniedContainerImagesPolicyID,
 		AllowedContainerImagesPolicyID,
+		DeniedToolsPolicyID,
+		AllowedToolsPolicyID,
+		AllowedModelsPolicyID,
 		DeniedAgentKindsDisplaySuffix,
 		AllowedAgentKindsDisplaySuffix,
 		DeniedContainerImagesDisplaySuffix,
 		AllowedContainerImagesDisplaySuffix,
 		DeniedToolsDisplaySuffix,
+		LegacyDeniedToolsDisplaySuffix,
 		AllowedToolsDisplaySuffix,
+		LegacyAllowedToolsDisplaySuffix,
 		DeniedModelsDisplaySuffix,
 		AllowedModelsDisplaySuffix,
+		LegacyAllowedModelsDisplaySuffix,
 	)
 }
 
@@ -271,7 +315,7 @@ func NewResourceGraphQueryFunc(
 			}
 
 			var parsed resourceGraphResponse
-			_ = json.Unmarshal(respBytes, &parsed)
+			unmarshalErr := json.Unmarshal(respBytes, &parsed)
 
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 				code := fmt.Sprintf("%d", resp.StatusCode)
@@ -288,7 +332,23 @@ func NewResourceGraphQueryFunc(
 				return nil, fmt.Errorf("unable to evaluate Azure Policy for the selected project")
 			}
 
-			rows = append(rows, parsed.Data...)
+			if unmarshalErr != nil {
+				logError(fmt.Sprintf("Foundry Azure Policy Resource Graph response decode failed: %v", unmarshalErr))
+				return nil, fmt.Errorf("unable to evaluate Azure Policy for the selected project")
+			}
+
+			if bytes.Equal(bytes.TrimSpace(respBytes), []byte("null")) {
+				logError("Foundry Azure Policy Resource Graph response body is null")
+				return nil, fmt.Errorf("unable to evaluate Azure Policy for the selected project")
+			}
+
+			pageRows, parseErr := parseResourceGraphRows(parsed.Data)
+			if parseErr != nil {
+				logError(fmt.Sprintf("Foundry Azure Policy Resource Graph response data invalid: %v", parseErr))
+				return nil, fmt.Errorf("unable to evaluate Azure Policy for the selected project")
+			}
+
+			rows = append(rows, pageRows...)
 
 			nextToken := parsed.DollarSkipToken
 			if nextToken == "" {
@@ -423,6 +483,53 @@ func LoadInventory(
 	}, nil
 }
 
+func lastScopeSegment(scope string) string {
+	trimmed := strings.TrimRight(strings.TrimSpace(scope), "/")
+	if trimmed == "" {
+		return ""
+	}
+	parts := strings.Split(trimmed, "/")
+	return parts[len(parts)-1]
+}
+
+func enrichViolationFromInventory(v Violation, inventory Inventory) Violation {
+	if v.AssignmentID == "" {
+		return v
+	}
+	normID := NormalizeScope(v.AssignmentID)
+	lastSeg := lastScopeSegment(v.AssignmentID)
+	for _, a := range inventory.Assignments {
+		if NormalizeScope(a.AssignmentID) != normID {
+			continue
+		}
+		display := AssignmentDisplayName(a)
+		if display == "" || display == "Azure Policy assignment" {
+			break
+		}
+		if v.DisplayName == "" ||
+			v.DisplayName == "Azure Policy assignment" ||
+			strings.EqualFold(v.DisplayName, v.AssignmentID) ||
+			(lastSeg != "" && strings.EqualFold(v.DisplayName, lastSeg)) {
+			oldDisplay := v.DisplayName
+			v.DisplayName = display
+			if oldDisplay != "" {
+				v.Message = strings.ReplaceAll(
+					v.Message,
+					fmt.Sprintf("(%q)", oldDisplay),
+					fmt.Sprintf("(%q)", display),
+				)
+				v.Message = strings.ReplaceAll(
+					v.Message,
+					fmt.Sprintf("The %q policy", oldDisplay),
+					fmt.Sprintf("The %q policy", display),
+				)
+			}
+		}
+		break
+	}
+	return v
+}
+
 // EvaluateCandidate evaluates all populated fields on candidate (agent kind, container image/registry,
 // tools, and models) against the loaded inventory and optional ARM deployment policy evaluator.
 func EvaluateCandidate(
@@ -432,7 +539,21 @@ func EvaluateCandidate(
 	modelEvaluator DeploymentPolicyEvaluator,
 ) EvaluationResult {
 	var violations []Violation
+	var incompleteReasons []string
 	hasIndeterminate := false
+
+	addIncompleteReason := func(reason string) {
+		reason = strings.TrimSpace(reason)
+		if reason == "" {
+			return
+		}
+		for _, r := range incompleteReasons {
+			if r == reason {
+				return
+			}
+		}
+		incompleteReasons = append(incompleteReasons, reason)
+	}
 
 	if strings.TrimSpace(candidate.AgentKind) != "" {
 		res := EvaluateAgentKindPolicy(inventory, candidate.AgentKind)
@@ -447,6 +568,9 @@ func EvaluateCandidate(
 		violations = append(violations, res.Violations...)
 		if res.Outcome == OutcomeIndeterminate {
 			hasIndeterminate = true
+			addIncompleteReason(
+				"container image policy uses repository/tag patterns that cannot be verified before image build",
+			)
 		}
 	} else if reg := strings.TrimSpace(candidate.ContainerRegistry); reg != "" {
 		res := EvaluateContainerImagePolicy(inventory, ContainerImageCandidate{
@@ -456,28 +580,44 @@ func EvaluateCandidate(
 		violations = append(violations, res.Violations...)
 		if res.Outcome == OutcomeIndeterminate {
 			hasIndeterminate = true
+			addIncompleteReason(
+				"container image policy uses repository/tag patterns that cannot be verified from registry endpoint alone",
+			)
 		}
 	}
 
 	if len(candidate.Tools) > 0 {
 		res := EvaluateToolPolicy(inventory, candidate.Tools)
 		violations = append(violations, res.Violations...)
+		if res.Outcome == OutcomeIndeterminate {
+			hasIndeterminate = true
+			addIncompleteReason(res.IncompleteReason)
+		}
 	}
 
 	if len(candidate.Models) > 0 {
-		invModelViolations := EvaluateInventoryModelPolicy(inventory, candidate.Models)
-		violations = append(violations, invModelViolations...)
 		if modelEvaluator != nil {
-			if armViolations, err := modelEvaluator.EvaluateModelDeployments(
+			armEval, err := modelEvaluator.EvaluateModelDeployments(
 				ctx, inventory.ProjectID, candidate.Models,
-			); err == nil {
-				for _, v := range armViolations {
+			)
+			modelsForInventory := candidate.Models
+			if len(armEval.ResolvedModels) > 0 {
+				modelsForInventory = MergeModelCandidates(
+					append(slices.Clone(armEval.ResolvedModels), candidate.Models...),
+				)
+			}
+			invModelRes := EvaluateModelInventoryPolicy(inventory, modelsForInventory)
+			violations = append(violations, invModelRes.Violations...)
+
+			if err == nil {
+				for _, v := range armEval.Violations {
+					v = enrichViolationFromInventory(v, inventory)
 					// Deduplicate if the same assignment & target were already reported by inventory.
 					duplicate := false
 					for _, existing := range violations {
 						if existing.Target == v.Target &&
 							existing.AssignmentID != "" &&
-							existing.AssignmentID == v.AssignmentID {
+							NormalizeScope(existing.AssignmentID) == NormalizeScope(v.AssignmentID) {
 							duplicate = true
 							break
 						}
@@ -486,20 +626,37 @@ func EvaluateCandidate(
 						violations = append(violations, v)
 					}
 				}
+				if armEval.IncompleteReason != "" {
+					hasIndeterminate = true
+					addIncompleteReason(armEval.IncompleteReason)
+				}
 			} else {
 				log.Printf("[FoundryPolicy] ARM model policy evaluation failed (failing open): %v", err)
+				hasIndeterminate = true
+				addIncompleteReason(fmt.Sprintf("model deployment policy evaluation failed: %v", err))
+			}
+		} else {
+			invModelRes := EvaluateModelInventoryPolicy(inventory, candidate.Models)
+			violations = append(violations, invModelRes.Violations...)
+			if invModelRes.Outcome == OutcomeIndeterminate {
+				hasIndeterminate = true
+				addIncompleteReason(invModelRes.IncompleteReason)
 			}
 		}
 	}
 
 	if len(violations) > 0 {
 		return EvaluationResult{
-			Outcome:    OutcomeBlocked,
-			Violations: violations,
+			Outcome:          OutcomeBlocked,
+			Violations:       violations,
+			IncompleteReason: strings.Join(incompleteReasons, "; "),
 		}
 	}
 	if hasIndeterminate {
-		return EvaluationResult{Outcome: OutcomeIndeterminate}
+		return EvaluationResult{
+			Outcome:          OutcomeIndeterminate,
+			IncompleteReason: strings.Join(incompleteReasons, "; "),
+		}
 	}
 	return EvaluationResult{Outcome: OutcomeAllowed}
 }
@@ -621,7 +778,11 @@ func (c *InventoryCache) GetWithFreshness(
 	}
 	c.mu.Unlock()
 
-	<-call.done
+	select {
+	case <-call.done:
+	case <-ctx.Done():
+		return InventoryResult{}, ctx.Err()
+	}
 	if call.err != nil {
 		return InventoryResult{}, call.err
 	}
@@ -656,7 +817,11 @@ func (c *InventoryCache) GetFresh(
 	}
 	c.mu.Unlock()
 
-	<-call.done
+	select {
+	case <-call.done:
+	case <-ctx.Done():
+		return InventoryResult{}, ctx.Err()
+	}
 	if call.err != nil {
 		return InventoryResult{}, call.err
 	}
@@ -684,7 +849,7 @@ func (c *InventoryCache) startRefreshLocked(
 	go func() {
 		defer close(call.done)
 
-		timeoutCtx, cancel := context.WithTimeout(parentCtx, c.requestTimeout)
+		timeoutCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), c.requestTimeout)
 		defer cancel()
 
 		type fetchOutcome struct {

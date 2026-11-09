@@ -6,6 +6,7 @@ package bicep
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,10 +20,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/inputs"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
@@ -42,6 +46,7 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 		process        string
 		emptyEnv       bool
 		repeated       bool
+		otherMissing   bool
 		resolved       *string
 		options        []inputs.Option
 		quotaFailure   bool
@@ -86,6 +91,14 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 			parameter: azure.ArmTemplateParameterDefinition{Type: "string", DefaultValue: "hello"}},
 		{name: "declined preserves missing input error", fileValue: "${AZURE_LOCATION}",
 			wantCalls: 1, wantErr: "missing required inputs"},
+		{name: "mapped ambiguity retains the complete missing input report", fileValue: "${AZURE_LOCATION}",
+			options: []inputs.Option{{Value: "eastus2"}, {Value: "westus3"}}, otherMissing: true,
+			wantCalls: 1, wantErr: "missing required inputs"},
+		{name: "unmapped ambiguity retains configuration guidance", otherMissing: true,
+			options: []inputs.Option{{Value: "eastus2"}, {Value: "westus3"}},
+			parameter: azure.ArmTemplateParameterDefinition{Type: "string", Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type":"location"}`),
+			}}, wantCalls: 1, wantErr: "missing required inputs"},
 		{name: "disallowed value", fileValue: "${AZURE_LOCATION}", resolved: new("eastus2"), wantCalls: 1,
 			parameter: azure.ArmTemplateParameterDefinition{Type: "string", AllowedValues: new([]any{"westus3"})},
 			wantErr:   "no valid input provider options"},
@@ -155,7 +168,11 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 				func(_ context.Context, definition *v1beta.InputDefinition) ([]inputs.Option, error) {
 					calls++
 					require.Equal(t, inputs.AzureLocationKind, definition.Kind)
-					require.Equal(t, environment.LocationEnvVarName, definition.EnvironmentVariable)
+					if tt.fileValue == "${AZURE_LOCATION}" {
+						require.Equal(t, environment.LocationEnvVarName, definition.EnvironmentVariable)
+					} else {
+						require.Empty(t, definition.EnvironmentVariable)
+					}
 					if tt.options != nil {
 						return tt.options, nil
 					}
@@ -184,8 +201,12 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 				path: filepath.Join(dir, "main.bicep"), options: provisioning.Options{Module: "main"},
 				curPrincipal: &mockCurrentPrincipal{}, serviceLocator: mockContext.Container,
 			}
-			hasQuota := len(parameter.Metadata) > 0 ||
-				(tt.otherParameter != nil && len(tt.otherParameter.Metadata) > 0)
+			metadata, _ := parameter.AzdMetadata()
+			hasQuota := len(metadata.UsageName) > 0
+			if tt.otherParameter != nil {
+				otherMetadata, _ := tt.otherParameter.AzdMetadata()
+				hasQuota = hasQuota || len(otherMetadata.UsageName) > 0
+			}
 			var skuCalls atomic.Int32
 			if hasQuota {
 				mockContext.HttpClient.When(func(req *http.Request) bool {
@@ -226,15 +247,26 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 					definitions["otherLocation"] = *tt.otherParameter
 				}
 			}
+			if tt.otherMissing {
+				definitions["database"] = azure.ArmTemplateParameterDefinition{Type: "string"}
+			}
 			parameters, err := provider.ensureParameters(t.Context(), azure.ArmTemplate{Parameters: definitions})
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				envManager.AssertNotCalled(t, "Save", mock.Anything, mock.Anything)
+				if tt.otherMissing {
+					missing, ok := errors.AsType[*MissingInputsError](err)
+					require.True(t, ok)
+					require.Len(t, missing.Inputs, 2)
+					require.Contains(t, missing.ToString(""), "infra.parameters.location")
+					require.Contains(t, missing.ToString(""), "infra.parameters.database")
+				}
 			} else {
 				require.NoError(t, err)
 				if tt.process != "" {
 					require.Equal(t, tt.wantLocation, parameters["location"].Value)
 				}
+
 				if tt.resolved != nil {
 					require.Equal(t, *tt.resolved, parameters["location"].Value)
 					if tt.repeated {
@@ -255,4 +287,44 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInputProviderBicepParamRetainsNativeLocationFallback(t *testing.T) {
+	t.Setenv(environment.LocationEnvVarName, "")
+	require.NoError(t, os.Unsetenv(environment.LocationEnvVarName))
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.Console.SetNoPromptMode(true)
+	env := environment.New("test")
+	env.SetSubscriptionId("subscription")
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, env).Return(nil).Run(func(mock.Arguments) {
+		require.Empty(t, env.GetLocation(), "must not persist an unconstrained provider recommendation")
+	}).Once()
+	ioc.RegisterInstance[account.Manager](mockContext.Container, &mockaccount.MockAccountManager{
+		Locations: []account.Location{{Name: "eastus2"}, {Name: "westus3"}},
+	})
+	calls := 0
+	ioc.RegisterInstance[inputs.Resolver](mockContext.Container, mockinputs.OptionsResolver(
+		func(context.Context, *v1beta.InputDefinition) ([]inputs.Option, error) {
+			calls++
+			return []inputs.Option{{Value: "eastus2", Recommended: true}, {Value: "westus3"}}, nil
+		}))
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "infra"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "infra", "main.bicep"),
+		[]byte("@allowed(['westus3'])\nparam location string\n"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "infra", "main.bicepparam"),
+		[]byte("using './main.bicep'\nparam location = readEnvironmentVariable('AZURE_LOCATION')\n"), 0600))
+	provider := &BicepProvider{
+		mode: bicepparamMode, env: env, envManager: envManager, serviceLocator: mockContext.Container,
+		projectPath: dir, options: provisioning.Options{Path: "infra", Module: "main"},
+		prompters: prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil, nil, cloud.AzurePublic()),
+	}
+	err := provider.EnsureEnv(t.Context())
+	missing, ok := errors.AsType[*input.PromptRequiredError](err)
+	require.True(t, ok, "%v", err)
+	require.Contains(t, missing.ToString(""), environment.LocationEnvVarName)
+	require.Zero(t, calls)
+	require.Empty(t, env.GetLocation())
+	envManager.AssertExpectations(t)
 }

@@ -178,7 +178,11 @@ func Resolve(
 		}
 	}
 	if len(valid) == 0 {
-		return nil, fmt.Errorf("no valid input provider options remain for input %q", definition.Id)
+		message := fmt.Sprintf("no valid input provider options remain for input %q", definition.Id)
+		if settings.Description != "" {
+			message += ". " + settings.Description
+		}
+		return nil, errors.New(message)
 	}
 	sortOptions(valid)
 	recommendations := 0

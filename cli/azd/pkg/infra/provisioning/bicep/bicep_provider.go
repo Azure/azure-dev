@@ -345,23 +345,9 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
 	// which can reference these values
 	if p.mode == bicepparamMode {
-		var inputLocator ioc.ServiceLocator
-		if _, exists := p.env.LookupEnv(environment.LocationEnvVarName); !exists {
-			available, err := inputs.HasProviders(ctx, p.serviceLocator)
-			if err != nil {
-				return err
-			}
-			if available {
-				refs, _ := discoverParamEnvRefs(ctx, p.options, p.projectPath)
-				if slices.Contains(refs, environment.LocationEnvVarName) {
-					inputLocator = p.serviceLocator
-				}
-			}
-		}
+		// Template constraints are unavailable before compilation; retain the native location fallback.
 		if err := provisioning.EnsureSubscriptionAndLocation(
-			ctx, p.envManager, p.env, p.prompters, provisioning.EnsureSubscriptionAndLocationOptions{
-				InputServiceLocator: inputLocator,
-			}); err != nil {
+			ctx, p.envManager, p.env, p.prompters, provisioning.EnsureSubscriptionAndLocationOptions{}); err != nil {
 			return err
 		}
 	}
@@ -3782,7 +3768,10 @@ func (p *BicepProvider) ensureParameters(
 	for _, group := range locationGroups {
 		value, err := p.resolveLocationInput(ctx, group)
 		if err != nil {
-			return nil, err
+			if _, ambiguity := errors.AsType[*input.PromptRequiredError](err); !ambiguity || !p.console.IsNoPromptMode() {
+				return nil, err
+			}
+			value = nil
 		}
 		for _, pending := range group {
 			if value == nil {

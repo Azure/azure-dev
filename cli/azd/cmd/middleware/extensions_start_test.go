@@ -17,8 +17,10 @@ import (
 	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/inputs"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinputs"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/propagation"
@@ -139,7 +141,7 @@ func TestStartAndWaitExtension_PropagatesTraceContext(t *testing.T) {
 
 func TestExtensionsMiddleware_Run_ListenerStartFailure(t *testing.T) {
 	for _, inputProvider := range []bool{false, true} {
-		t.Run(map[bool]string{false: "unrelated listener remains best effort", true: "input provider fails"}[inputProvider],
+		t.Run(map[bool]string{false: "unrelated listener", true: "input failure deferred"}[inputProvider],
 			func(t *testing.T) {
 				configDir := t.TempDir()
 				t.Setenv("AZD_CONFIG_DIR", configDir)
@@ -185,18 +187,32 @@ func TestExtensionsMiddleware_Run_ListenerStartFailure(t *testing.T) {
 					globalOptions:    &internal.GlobalCommandOptions{NoPrompt: true},
 				}
 				next, calls := nextCounter()
+				activation := &inputProviderActivation{
+					ctx: t.Context(), extensionManager: manager, start: middleware.start,
+				}
+				defer activation.close()
+				ctx := context.WithValue(t.Context(), inputProviderActivationKey{}, activation)
 
-				result, err := middleware.Run(t.Context(), next)
+				result, err := middleware.Run(ctx, next)
 
+				require.NoError(t, err, "commands without missing inputs must still run")
+				require.NotNil(t, result)
+				require.Equal(t, 1, *calls)
+				resolver := &activatingInputResolver{
+					activation: activation,
+					resolver: mockinputs.OptionsResolver(func(
+						context.Context, *contracts.InputDefinition,
+					) ([]inputs.Option, error) {
+						require.False(t, inputProvider, "failed input providers must not silently decline")
+						return nil, nil
+					}),
+				}
+				_, err = resolver.ResolveInput(ctx, &contracts.InputDefinition{})
 				if inputProvider {
 					require.ErrorIs(t, err, startErr)
-					require.Nil(t, result)
-					require.Zero(t, *calls)
 					return
 				}
 				require.NoError(t, err)
-				require.NotNil(t, result)
-				require.Equal(t, 1, *calls)
 			})
 	}
 }

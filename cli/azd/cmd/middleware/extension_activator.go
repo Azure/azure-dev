@@ -25,7 +25,7 @@ import (
 
 // ExtensionActivator starts installed extensions on demand so the capabilities they provide
 // (currently provisioning providers) become resolvable in commands that do not run the full
-// ExtensionsMiddleware, such as `azd env refresh`. Unlike the middleware, it starts only the
+// ExtensionsMiddleware, such as `azd env refresh`. Without shared input-provider activation, it starts only the
 // extensions declaring a requested capability, and only when that capability is not already
 // resolvable (for example when a parent command's middleware already started every extension).
 type ExtensionActivator struct {
@@ -60,8 +60,8 @@ func NewExtensionActivator(
 // provisioning provider names, so those providers can be resolved from the IoC container. Names no
 // installed extension declares are left to native resolution, and already-resolvable providers are
 // left alone, making activation idempotent. The returned cleanup (always non-nil, safe to defer)
-// stops the extension host when one was started. A required extension failing to start is an
-// error, since the caller cannot make progress without the provider it declares.
+// stops a host it owns; shared listeners remain owned by the parent command. A required extension
+// failing to start is an error, since the caller cannot make progress without the provider it declares.
 func (a *ExtensionActivator) EnsureProvisioningProviders(
 	ctx context.Context,
 	providerNames []string,
@@ -91,6 +91,26 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 
 	if len(toStart) == 0 {
 		return noop, nil
+	}
+
+	if activation, ok := ctx.Value(inputProviderActivationKey{}).(*inputProviderActivation); ok {
+		started, startErr := activation.ensureStarted()
+		if _, inputFailure := errors.AsType[*inputProviderStartupError](startErr); startErr != nil && !inputFailure {
+			return noop, startErr
+		}
+		if started {
+			for _, ext := range toStart {
+				for _, name := range declaredProviders(ext, names) {
+					if !a.providerResolvable(name) {
+						if startErr != nil {
+							return noop, startErr
+						}
+						return noop, fmt.Errorf("extension %q did not register provisioning provider %q", ext.Id, name)
+					}
+				}
+			}
+			return noop, nil
+		}
 	}
 
 	var grpcServer *grpcserver.Server

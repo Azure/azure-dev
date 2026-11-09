@@ -45,6 +45,13 @@ type extensionFailure struct {
 	timedOut  bool
 }
 
+type inputProviderStartupError struct {
+	err error
+}
+
+func (e *inputProviderStartupError) Error() string { return e.err.Error() }
+func (e *inputProviderStartupError) Unwrap() error { return e.err }
+
 type ExtensionsMiddleware struct {
 	extensionManager *extensions.Manager
 	extensionRunner  *extensions.Runner
@@ -91,7 +98,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	}
 	if activation, ok := ctx.Value(inputProviderActivationKey{}).(*inputProviderActivation); ok {
 		started, err := activation.ensureStarted()
-		if err != nil {
+		if _, inputFailure := errors.AsType[*inputProviderStartupError](err); err != nil && !inputFailure {
 			return nil, err
 		}
 		if started {
@@ -99,7 +106,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 		}
 	}
 	cleanup, err := m.start(ctx)
-	if err != nil {
+	if _, inputFailure := errors.AsType[*inputProviderStartupError](err); err != nil && !inputFailure {
 		return nil, err
 	}
 	defer cleanup()
@@ -334,8 +341,7 @@ func (m *ExtensionsMiddleware) start(ctx context.Context) (func(), error) {
 		}
 	}
 	if err := errors.Join(inputFailures...); err != nil {
-		cleanup()
-		return nil, err
+		return cleanup, &inputProviderStartupError{err: err}
 	}
 	return cleanup, nil
 }

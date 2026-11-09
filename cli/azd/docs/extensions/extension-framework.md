@@ -76,6 +76,9 @@ do not start listeners unless their normal extension middleware requires them.
 Projects without input providers keep their existing startup order. Repeated input
 requests and child workflow steps reuse the parent's listeners, which remain available
 until the parent command completes.
+On-demand provisioning-provider activation shares this same ownership when input
+providers are installed, rather than starting a second listener or stopping the
+shared server early.
 The native `v1beta.InputService.Stream` supports registration and correlated
 resolution requests. `AzdClient.InputsBeta()` exposes the generated client;
 the host helper manages the stream and readiness handshake.
@@ -94,8 +97,10 @@ Initial consumers define `azd.environment.name/v1` for a new unnamed environment
 and `azure.location/v1` for missing infrastructure location inputs. No new
 `azure.yaml` fields are required. Bicep requests a location only for an unresolved
 string parameter annotated as a location, including `AZURE_LOCATION` mappings.
-For `.bicepparam`, pre-compilation resolution requires a discoverable
-`AZURE_LOCATION` reference. Existing parameter values, environment values,
+For `.bicepparam`, template constraints are unavailable before environment-dependent
+compilation, so this prototype retains native location prompting rather than
+selecting and persisting an unconstrained provider value.
+Existing parameter values, environment values,
 saved parameters, defaults, and nullable parameters retain precedence.
 Terraform's existing environment initialization also supports location resolution
 when its `.tfvars.json` template references `AZURE_LOCATION`.
@@ -126,6 +131,8 @@ recommendation. Existing explicit or persisted values do not produce this note.
 Ambiguity under `--no-prompt` is a structured missing-input error, not
 an arbitrary first-option choice. Ordering is deterministic and does not depend on
 provider registration order.
+Bicep includes ambiguous parameters in its normal missing-input report, preserving
+configuration-key guidance and any other missing parameters.
 
 The consumer persists the selected value through its normal environment lifecycle,
 not the handler. Existing explicit or persisted values still bypass this missing-input
@@ -151,8 +158,9 @@ An option containing an empty string is explicit and still subject to validation
 Incompatible required sets, no valid remaining options, malformed replies, and provider
 errors fail explicitly. Conflict errors identify sources without printing values.
 Input-provider startup and registered-stream failures also stop input resolution; they
-are not treated as declines. A disconnected provider can recover by registering its
-kinds again on a new stream.
+are not treated as declines. Startup failures remain warnings for commands that do
+not request missing inputs, and do not stop other successful listeners.
+A disconnected provider can recover by registering its kinds again on a new stream.
 If every provider declines or none match, the existing prompt or non-interactive fallback runs.
 Handlers must respect cancellation and must not prompt, persist values, or
 provision resources. They must not call APIs that require an initialized current

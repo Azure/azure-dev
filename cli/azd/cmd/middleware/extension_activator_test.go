@@ -4,19 +4,24 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	provisioningTest "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
+	"github.com/azure/azure-dev/cli/azd/pkg/inputs"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinputs"
 	"github.com/stretchr/testify/require"
 )
 
@@ -201,6 +206,96 @@ func Test_EnsureProvisioningProviders_AlreadyResolvable(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cleanup)
 	cleanup()
+}
+
+func TestInputProvidersShareProvisioningActivation(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		inputFirst   bool
+		inputFailure bool
+		missing      bool
+	}{
+		{name: "activator first"},
+		{name: "input first", inputFirst: true},
+		{name: "unrelated input failure does not block provisioning", inputFailure: true},
+		{name: "missing provisioning registration fails without restarting", missing: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mockCtx := mocks.NewMockContext(t.Context())
+			installed := map[string]*extensions.Extension{
+				"demo.ext": {
+					Id: "demo.ext", Capabilities: []extensions.CapabilityType{
+						extensions.ProvisioningProviderCapability, extensions.InputProviderCapability,
+					},
+					Providers: []extensions.Provider{{Name: "demo", Type: extensions.ProvisioningProviderType}},
+				},
+			}
+			if tt.inputFailure {
+				installed["failed.ext"] = &extensions.Extension{
+					Id: "failed.ext", Capabilities: []extensions.CapabilityType{extensions.InputProviderCapability},
+				}
+			}
+			manager := createExtensionsManager(t, mockCtx, installed)
+			ioc.RegisterInstance[inputs.Resolver](mockCtx.Container, mockinputs.OptionsResolver(
+				func(context.Context, *v1beta.InputDefinition) ([]inputs.Option, error) {
+					return []inputs.Option{{Value: "eastus2"}}, nil
+				}))
+			starts, cleanups := 0, 0
+			startErr := errors.New("unrelated input provider failed")
+			m := &inputProvidersMiddleware{
+				container: mockCtx.Container, extensionManager: manager,
+				start: func(context.Context) (func(), error) {
+					starts++
+					if !tt.missing {
+						ioc.RegisterNamedInstance[provisioning.Provider](mockCtx.Container, "demo",
+							provisioningTest.NewTestProvider(nil, nil, nil, nil))
+					}
+					cleanup := func() { cleanups++ }
+					if tt.inputFailure {
+						return cleanup, &inputProviderStartupError{err: startErr}
+					}
+					return cleanup, nil
+				},
+			}
+			activator := NewExtensionActivator(mockCtx.Container, manager, nil, &internal.GlobalCommandOptions{})
+			_, err := m.Run(t.Context(), func(ctx context.Context) (*actions.ActionResult, error) {
+				var resolver inputs.Resolver
+				require.NoError(t, mockCtx.Container.Resolve(&resolver))
+				resolve := func() {
+					options, err := resolver.ResolveInput(ctx, &v1beta.InputDefinition{})
+					if tt.inputFailure {
+						require.ErrorIs(t, err, startErr)
+					} else {
+						require.NoError(t, err)
+						require.Len(t, options, 1)
+						require.Equal(t, "eastus2", options[0].Value)
+					}
+				}
+				if tt.inputFirst {
+					resolve()
+				}
+				cleanup, err := activator.EnsureProvisioningProviders(ctx, []string{"demo"}, "test")
+				cleanup()
+				require.Zero(t, cleanups, "the parent command owns the shared listeners")
+				if tt.missing {
+					require.ErrorContains(t, err, "did not register provisioning provider")
+					return nil, err
+				}
+				require.NoError(t, err)
+				if !tt.inputFirst {
+					resolve()
+				}
+				return (&ExtensionsMiddleware{}).Run(ctx, nextOK)
+			})
+			if tt.missing {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, 1, starts)
+			require.Equal(t, 1, cleanups)
+		})
+	}
 }
 
 func Test_ExtensionsForProvisioningProviders(t *testing.T) {

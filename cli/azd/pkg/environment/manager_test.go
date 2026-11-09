@@ -265,6 +265,41 @@ func TestInputProviderEnvironmentNameDoesNotHydrateRemoteCollisions(t *testing.T
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func TestInputProviderEnvironmentNamesExhausted(t *testing.T) {
+	for _, noPrompt := range []bool{false, true} {
+		t.Run(map[bool]string{false: "interactive", true: "no prompt"}[noPrompt], func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			mockContext.Console.SetNoPromptMode(noPrompt)
+			manager := createEnvManagerForManagerTest(t, mockContext).(*manager)
+			manager.serviceLocator = mockContext.Container
+			configs := map[string][]byte{}
+			for _, name := range []string{"demo", "demo-dev"} {
+				env := New(name)
+				require.NoError(t, env.Config.Set("infra.parameters.saved", name))
+				require.NoError(t, manager.Save(t.Context(), env))
+				path, err := manager.ConfigPath(env)
+				require.NoError(t, err)
+				configs[path], err = os.ReadFile(path)
+				require.NoError(t, err)
+			}
+			ioc.RegisterInstance[inputs.Resolver](mockContext.Container, mockinputs.OptionsResolver(
+				func(context.Context, *v1beta.InputDefinition) ([]inputs.Option, error) {
+					return []inputs.Option{{Value: "demo", Recommended: true}, {Value: "demo-dev"}}, nil
+				}))
+			env, err := manager.Create(t.Context(), Spec{})
+			require.Nil(t, env)
+			require.ErrorContains(t, err, "no valid input provider options")
+			require.ErrorContains(t, err, "azd env new <name>")
+			require.NotContains(t, err.Error(), "azd env set")
+			for path, before := range configs {
+				after, err := os.ReadFile(path)
+				require.NoError(t, err)
+				require.Equal(t, before, after)
+			}
+		})
+	}
+}
+
 func TestInputProviderEnvironmentNameBeforeNoPromptDefault(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Console.SetNoPromptMode(true)

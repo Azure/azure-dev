@@ -739,7 +739,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 
 Always call `defer client.Close()` after creation.
 
-Input handlers receive `*v1beta.InputDefinition` and return `(*string, error)`.
+Input handlers receive `*v1beta.InputDefinition` and return `(*v1beta.ResolveInputResponse, error)`.
 Return `nil, nil` to decline; do not prompt or persist values. Definitions carry
 semantic kinds, optional environment bindings, allowed values, and advisory
 annotations without naming a resolver. See

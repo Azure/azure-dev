@@ -30,6 +30,8 @@ jobs:
       go-version-file: cli/shared/foundry/go.mod
 
   build-test:
+    permissions:
+      contents: read
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]

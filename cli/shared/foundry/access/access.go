@@ -139,7 +139,7 @@ func ParseProjectResourceID(scope string) *arm.ResourceID {
 	for _, part := range []string{
 		resource.SubscriptionID, resource.ResourceGroupName, resource.Parent.Name, resource.Name,
 	} {
-		if !safeScopeSegment.MatchString(part) {
+		if part == "." || part == ".." || !safeScopeSegment.MatchString(part) {
 			return nil
 		}
 	}

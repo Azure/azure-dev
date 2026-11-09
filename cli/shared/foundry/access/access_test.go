@@ -289,6 +289,10 @@ func TestScopeBinding(t *testing.T) {
 		{"different ARM project", testEndpoint, func(v map[string]string) {
 			v["AZURE_AI_PROJECT_ID"] = strings.TrimSuffix(testScope, "proj") + "other"
 		}, false},
+		{"dot segment project", "https://acct.services.ai.azure.com/api/projects/..", func(v map[string]string) {
+			v["FOUNDRY_PROJECT_ENDPOINT"] = "https://acct.services.ai.azure.com/api/projects/.."
+			v["AZURE_AI_PROJECT_ID"] = strings.TrimSuffix(testScope, "proj") + ".."
+		}, false},
 		{"credential URL", "https://user:secret@acct.services.ai.azure.com/api/projects/proj?sig=secret#secret", nil, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

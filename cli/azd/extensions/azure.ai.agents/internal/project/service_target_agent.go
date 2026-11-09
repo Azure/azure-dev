@@ -1947,6 +1947,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		}
 	}
 
+	if identity := result.agentVersion.InstanceIdentity; identity != nil && azdManagedMonitoringComponentID(azdEnv) != "" {
+		progress("Granting agent identity access to Application Insights")
+		p.ensureHostedAgentMonitoringPublisher(ctx, azdEnv, identity.PrincipalID)
+	}
+
 	return p.finalizeDeploy(
 		ctx,
 		progress,

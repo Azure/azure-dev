@@ -219,7 +219,9 @@ Private Link Scope, and `foundry-account-pe` (target `account`, to the account
 itself) is required for hosted agents, which otherwise fail with
 `Public access is disabled`. The hosted agent's own identity also needs
 `Monitoring Metrics Publisher` on the Application Insights component to export
-telemetry; azd does not grant that role yet. If you set no
+telemetry. That identity exists only after the agent is deployed, so
+`azd deploy` in the agents extension grants it (best effort; on failure it
+prints the `az role assignment create` command). If you set no
 `isolationMode`, azd uses `AllowInternetOutbound` so the managed network exists.
 Ejected or hand-authored Bicep that bypasses
 azd's checks never creates the private path unless

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
@@ -11,6 +12,32 @@ import (
 	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestIsJsonOutput(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "uppercase", args: []string{"azd", "--output", "JSON"}, want: true},
+		{name: "surrounding whitespace", args: []string{"azd", "--output", " json "}, want: true},
+		{name: "mixed case with whitespace", args: []string{"azd", "--output", " Json "}, want: true},
+		{name: "short flag uppercase", args: []string{"azd", "-o", "JSON"}, want: true},
+		{name: "lowercase", args: []string{"azd", "--output", "json"}, want: true},
+		{name: "non-json", args: []string{"azd", "--output", "table"}, want: false},
+		{name: "no output flag", args: []string{"azd"}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalArgs := os.Args
+			t.Cleanup(func() { os.Args = originalArgs })
+			os.Args = tt.args
+
+			assert.Equal(t, tt.want, isJsonOutput())
+		})
+	}
+}
 
 // disableTerminalFormatting suppresses ANSI hyperlink and color escape codes
 // so substring assertions on the rendered banner are deterministic regardless

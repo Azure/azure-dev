@@ -440,7 +440,11 @@ func addResourceService(
 ) error {
 	var environment map[string]string
 	if host != AiProjectHost {
-		environment = serviceEnvironmentTemplates(cfg)
+		var err error
+		environment, err = serviceEnvironmentTemplates(cfg)
+		if err != nil {
+			return invalidServiceEnvironmentReferences(name, err)
+		}
 	}
 	svc := &azdext.ServiceConfig{
 		Name:                 name,
@@ -471,47 +475,63 @@ func addResourceService(
 }
 
 // serviceEnvironmentTemplates discovers client-side templates in the
-// generic nested resource config emitted to azure.yaml.
-func serviceEnvironmentTemplates(cfg *structpb.Struct) map[string]string {
+// generic nested resource config emitted to azure.yaml. Invalid
+// references fail before the caller writes service or env state.
+func serviceEnvironmentTemplates(cfg *structpb.Struct) (map[string]string, error) {
 	if cfg == nil {
-		return nil
+		return nil, nil
 	}
 
 	environment := map[string]string{}
-	collectEnvironmentTemplates(cfg.AsMap(), environment)
-	if len(environment) == 0 {
-		return nil
+	if err := collectEnvironmentTemplates(cfg.AsMap(), "", environment); err != nil {
+		return nil, err
 	}
-	return environment
+	if len(environment) == 0 {
+		return nil, nil
+	}
+	return environment, nil
 }
 
-func collectEnvironmentTemplates(value any, environment map[string]string) {
+func collectEnvironmentTemplates(value any, fieldPath string, environment map[string]string) error {
 	switch typed := value.(type) {
 	case string:
-		collectStringEnvironmentTemplates(typed, environment)
+		if err := collectStringEnvironmentTemplates(typed, environment); err != nil {
+			return fmt.Errorf("%s: %w", fieldPath, err)
+		}
 	case map[string]any:
-		for _, nested := range typed {
-			collectEnvironmentTemplates(nested, environment)
+		for _, key := range slices.Sorted(maps.Keys(typed)) {
+			childPath := key
+			if fieldPath != "" {
+				childPath = fieldPath + "." + key
+			}
+			if err := collectEnvironmentTemplates(typed[key], childPath, environment); err != nil {
+				return err
+			}
 		}
 	case []any:
-		for _, nested := range typed {
-			collectEnvironmentTemplates(nested, environment)
+		for i, nested := range typed {
+			if err := collectEnvironmentTemplates(nested, fmt.Sprintf("%s[%d]", fieldPath, i), environment); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
-func collectStringEnvironmentTemplates(value string, environment map[string]string) {
-	for _, reference := range findEnvironmentReferences(value) {
+func collectStringEnvironmentTemplates(value string, environment map[string]string) error {
+	references, err := findEnvironmentReferences(value)
+	if err != nil {
+		return err
+	}
+	for _, reference := range references {
 		// env is keyed by name, so store one canonical ${NAME}.
 		// A ${NAME:-default} default is re-applied by the owning
-		// extension against the raw config at deploy, so the env section
-		// only needs NAME's resolved base value. Collapsing every form of
-		// a var to one value also keeps collection deterministic when the
-		// same var appears with and without a default. This assumes a
-		// literal default: a nested ${VAR} default is unsupported and
-		// gets no entry here. See findEnvironmentReferences.
+		// extension against the raw config at deploy, so env only
+		// needs NAME's base value. Canonicalizing also keeps mixed
+		// bare and defaulted references deterministic.
 		environment[reference.Name] = "${" + reference.Name + "}"
 	}
+	return nil
 }
 
 // escapeFoundryTemplates escapes Foundry ${{...}} spans as $${{...}}

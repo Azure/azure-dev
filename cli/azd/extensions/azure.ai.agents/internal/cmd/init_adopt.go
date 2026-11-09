@@ -297,6 +297,11 @@ func validateExplicitAzureYamlContent(templatePointer string, content []byte) ([
 		if !info.hasAgentService && !info.hasUnresolvedRefs {
 			return nil, missingAgentServiceError(templatePointer)
 		}
+		if !info.hasUnresolvedRefs {
+			if _, err := findAzureYamlEnvironmentReferences(content, projectRoot); err != nil {
+				return nil, err
+			}
+		}
 		return content, nil
 	}
 
@@ -607,7 +612,8 @@ func validateStagedAzureYaml(stagingDir, templatePointer string) error {
 		return missingAgentServiceError(templatePointer)
 	}
 
-	return nil
+	_, err = findAzureYamlEnvironmentReferences(content, stagingDir)
+	return err
 }
 
 // foundryProjectName returns the top-level `name:` of a unified azure.yaml, used

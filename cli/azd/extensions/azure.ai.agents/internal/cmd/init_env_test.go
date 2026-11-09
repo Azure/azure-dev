@@ -4,12 +4,142 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestFindAzureYamlEnvironmentReferencesRejectsUnsupportedForms(t *testing.T) {
+	t.Parallel()
+
+	fields := []struct {
+		name       string
+		host       string
+		properties string
+		path       string
+	}{
+		{
+			name:       "agent value",
+			host:       "azure.ai.agent",
+			properties: "    kind: hosted\n    environmentVariables:\n      - value: '%s'\n",
+			path:       "environmentVariables[0].value",
+		},
+		{
+			name:       "legacy agent value",
+			host:       "azure.ai.agent",
+			properties: "    config:\n      kind: hosted\n      environmentVariables:\n        - value: '%s'\n",
+			path:       "config.environmentVariables[0].value",
+		},
+		{
+			name:       "connection target",
+			host:       "azure.ai.connection",
+			properties: "    target: '%s'\n",
+			path:       "target",
+		},
+		{
+			name:       "connection credentials",
+			host:       "azure.ai.connection",
+			properties: "    credentials:\n      nested:\n        - key: '%s'\n",
+			path:       "credentials.nested[0].key",
+		},
+		{
+			name:       "connection metadata",
+			host:       "azure.ai.connection",
+			properties: "    metadata:\n      resourceId: '%s'\n",
+			path:       "metadata.resourceId",
+		},
+		{
+			name:       "agent subnet",
+			host:       "azure.ai.project",
+			properties: "    network:\n      agentSubnet:\n        vnet: '%s'\n",
+			path:       "network.agentSubnet.vnet",
+		},
+		{
+			name:       "private endpoint subnet",
+			host:       "azure.ai.project",
+			properties: "    network:\n      peSubnet:\n        vnet: '%s'\n",
+			path:       "network.peSubnet.vnet",
+		},
+		{
+			name:       "DNS subscription",
+			host:       "azure.ai.project",
+			properties: "    network:\n      dns:\n        subscription: '%s'\n",
+			path:       "network.dns.subscription",
+		},
+		{
+			name:       "deprecated Foundry host",
+			host:       "microsoft.foundry",
+			properties: "    network:\n      dns:\n        subscription: '%s'\n",
+			path:       "network.dns.subscription",
+		},
+		{
+			name:       "routine input",
+			host:       "azure.ai.routine",
+			properties: "    action:\n      input:\n        items:\n          - value: '%s'\n",
+			path:       "action.input.items[0].value",
+		},
+		{
+			name:       "legacy routine input",
+			host:       "azure.ai.routine",
+			properties: "    config:\n      action:\n        input: '%s'\n",
+			path:       "config.action.input",
+		},
+		{
+			name:       "toolbox endpoint",
+			host:       "azure.ai.toolbox",
+			properties: "    endpoint: '%s'\n",
+			path:       "endpoint",
+		},
+		{
+			name:       "toolbox tool",
+			host:       "azure.ai.toolbox",
+			properties: "    tools:\n      - configuration:\n          endpoint: '%s'\n",
+			path:       "tools[0].configuration.endpoint",
+		},
+		{
+			name:       "legacy toolbox endpoint",
+			host:       "azure.ai.toolbox",
+			properties: "    config:\n      endpoint: '%s'\n",
+			path:       "config.endpoint",
+		},
+	}
+	values := []string{
+		"${BAR:=x}",
+		"${BAR:+alt}",
+		"${BAR:?message}",
+		"${BAR#prefix}",
+		"${BAR:0:3}",
+		"${OUTER:-${NESTED}}",
+		"${OUTER:-$${NESTED}}",
+		"${OUTER:-${BAR:=x}}",
+		"${UNCLOSED",
+		"${{event.body}",
+	}
+
+	for _, field := range fields {
+		t.Run(field.name, func(t *testing.T) {
+			t.Parallel()
+			for _, value := range values {
+				t.Run(value, func(t *testing.T) {
+					t.Parallel()
+					content := fmt.Sprintf(
+						"services:\n  sample:\n    host: %s\n%s",
+						field.host,
+						fmt.Sprintf(field.properties, value),
+					)
+					references, err := findAzureYamlEnvironmentReferences([]byte(content), ".")
+					require.ErrorContains(t, err, "unsupported environment variable reference")
+					require.ErrorContains(t, err, `service "sample"`)
+					require.ErrorContains(t, err, field.path+":")
+					require.Nil(t, references)
+				})
+			}
+		})
+	}
+}
 
 func TestFindAzureYamlEnvironmentReferences(t *testing.T) {
 	t.Parallel()
@@ -113,19 +243,19 @@ services:
 hooks:
   preprovision:
     shell: sh
-    run: echo ${PROJECT_HOOK_VALUE}
+    run: echo ${PROJECT_HOOK_VALUE:=x}
 services:
   web:
     host: containerapp
     env:
-      WEB_VALUE: ${WEB_VALUE}
+      WEB_VALUE: ${WEB_VALUE:=x}
   agent:
     host: azure.ai.agent
     kind: hosted
     hooks:
       predeploy:
         shell: sh
-        run: echo ${SERVICE_HOOK_VALUE}
+        run: echo ${SERVICE_HOOK_VALUE:=x}
     environmentVariables:
       - name: AGENT_VALUE
         value: ${AGENT_VALUE}
@@ -140,7 +270,7 @@ services:
 services:
   project:
     host: azure.ai.project
-    endpoint: ${RAW_PROJECT_ENDPOINT}
+    endpoint: ${RAW_PROJECT_ENDPOINT:=x}
     deployments:
       - name: ${RAW_DEPLOYMENT_NAME}
         model:
@@ -169,8 +299,8 @@ services:
 services:
   connection:
     host: azure.ai.connection
-    category: ${RAW_CATEGORY}
-    authType: ${RAW_AUTH_TYPE}
+    category: ${RAW_CATEGORY:=x}
+    authType: ${RAW_AUTH_TYPE:=x}
     target: ${CONNECTION_TARGET}
     credentials:
       key: ${CONNECTION_KEY}
@@ -189,7 +319,7 @@ services:
 services:
   toolbox:
     host: azure.ai.toolbox
-    description: ${RAW_TOOLBOX_DESCRIPTION}
+    description: ${RAW_TOOLBOX_DESCRIPTION:=x}
     endpoint: ${TOOLBOX_ENDPOINT}
     tools:
       - name: search
@@ -207,7 +337,7 @@ services:
 services:
   routine:
     host: azure.ai.routine
-    description: ${RAW_ROUTINE_DESCRIPTION}
+    description: ${RAW_ROUTINE_DESCRIPTION:=x}
     triggers:
       - type: ${RAW_TRIGGER_TYPE}
     action:
@@ -224,8 +354,8 @@ services:
 services:
   skill:
     host: azure.ai.skill
-    description: ${RAW_SKILL_DESCRIPTION}
-    instructions: ${RAW_SKILL_INSTRUCTIONS}
+    description: ${RAW_SKILL_DESCRIPTION:=x}
+    instructions: ${RAW_SKILL_INSTRUCTIONS:=x}
 `,
 			want: nil,
 		},
@@ -300,7 +430,7 @@ services:
       kind: hosted
       environmentVariables:
         - name: STALE_AGENT_VALUE
-          value: ${STALE_AGENT_VALUE}
+          value: ${STALE_AGENT_VALUE:=x}
   routine:
     host: azure.ai.routine
     description: inline routine
@@ -310,13 +440,13 @@ services:
     config:
       action:
         input:
-          value: ${STALE_ROUTINE_INPUT}
+          value: ${STALE_ROUTINE_INPUT:=x}
   toolbox:
     host: azure.ai.toolbox
     description: inline toolbox
     endpoint: ${INLINE_TOOLBOX_ENDPOINT}
     config:
-      endpoint: ${STALE_TOOLBOX_ENDPOINT}
+      endpoint: ${STALE_TOOLBOX_ENDPOINT:=x}
       tools:
         - name: stale
           configuration:
@@ -398,6 +528,84 @@ services:
 	require.NotContains(t, envServer.values["dev"], "OVERRIDDEN_RESOURCE_ID")
 	require.Len(t, promptServer.promptRequests, 2)
 	require.True(t, promptServer.promptRequests[0].Options.Secret)
+}
+
+func TestFindAzureYamlEnvironmentReferencesValidatesResolvedValues(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name       string
+		referenced string
+		override   string
+		wantErr    bool
+	}{
+		{"invalid reference", "${BAR:=x}", "", true},
+		{"invalid override", "${VALID}", "${OUTER:-${NESTED}}", true},
+		{"valid override replaces invalid reference", "${BAR:=x}", "${VALID}", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "connection.yaml"),
+				fmt.Appendf(nil, "credentials:\n  key: '%s'\n", tt.referenced),
+				0o600,
+			))
+			content := `services:
+  sample:
+    host: azure.ai.connection
+    $ref: ./connection.yaml
+`
+			if tt.override != "" {
+				content += fmt.Sprintf("    credentials:\n      key: '%s'\n", tt.override)
+			}
+			references, err := findAzureYamlEnvironmentReferences([]byte(content), root)
+			if tt.wantErr {
+				require.ErrorContains(t, err, `service "sample"`)
+				require.ErrorContains(t, err, "credentials.key:")
+				require.Nil(t, references)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, []azureYamlEnvironmentReference{{Name: "VALID", Secret: true}}, references)
+		})
+	}
+}
+
+func TestConfigureAzureYamlEnvironmentVariablesRejectsBeforeChanges(t *testing.T) {
+	const processVariable = "AZD_TEST_INIT_INVALID_REFERENCE"
+	t.Setenv(processVariable, "from-process")
+
+	for _, noPrompt := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noPrompt=%t", noPrompt), func(t *testing.T) {
+			root := t.TempDir()
+			content := []byte(`services:
+  sample:
+    host: azure.ai.connection
+    target: ${AZD_TEST_INIT_INVALID_REFERENCE}
+    credentials:
+      key: ${BAR:=x}
+`)
+			manifestPath := filepath.Join(root, "azure.yaml")
+			require.NoError(t, os.WriteFile(manifestPath, content, 0o600))
+			env := &testEnvironmentServiceServer{values: map[string]map[string]string{
+				"dev": {"UNCHANGED": "yes"},
+			}}
+			prompts := &testPromptServiceServer{}
+			client := newTestAzdClient(t, env, &testWorkflowServiceServer{}, prompts)
+
+			err := configureAzureYamlEnvironmentVariables(t.Context(), client, "dev", root, noPrompt)
+			require.ErrorContains(t, err, `service "sample"`)
+			require.ErrorContains(t, err, "credentials.key:")
+			require.Zero(t, env.getValuesCalls)
+			require.Empty(t, env.setKeys)
+			require.Equal(t, map[string]string{"UNCHANGED": "yes"}, env.values["dev"])
+			require.Empty(t, prompts.promptRequests)
+			after, err := os.ReadFile(manifestPath)
+			require.NoError(t, err)
+			require.Equal(t, content, after)
+		})
+	}
 }
 
 func TestConfigureAzureYamlEnvironmentVariables_PromptsAndPersistsMissingValues(t *testing.T) {

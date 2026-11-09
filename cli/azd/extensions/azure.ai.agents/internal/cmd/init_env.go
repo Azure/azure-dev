@@ -121,7 +121,7 @@ func configureAzureYamlEnvironmentVariables(
 
 	references, err := findAzureYamlEnvironmentReferences(content, projectDir)
 	if err != nil {
-		return fmt.Errorf("finding environment variable references in azure.yaml: %w", err)
+		return err
 	}
 	if len(references) == 0 {
 		return nil
@@ -344,46 +344,46 @@ func collectAzureYamlServiceEnvironmentReferences(
 		return nil
 	}
 
+	collect := func(value any, fieldPath string, secret bool) error {
+		if active != service {
+			fieldPath = "config." + fieldPath
+		}
+		if err := collectAzureYamlEnvironmentReferencesFromValue(
+			value, fieldPath, secret, references, indexByName,
+		); err != nil {
+			return invalidServiceEnvironmentReferences(serviceName, err)
+		}
+		return nil
+	}
+
 	switch host {
 	case "azure.ai.agent":
 		var config azureYamlAgentEnvironmentConfig
 		if err := active.Decode(&config); err != nil {
 			return fmt.Errorf("decoding agent service %q: %w", serviceName, err)
 		}
-		for _, variable := range config.EnvironmentVariables {
-			collectAzureYamlEnvironmentReferences(
+		for i, variable := range config.EnvironmentVariables {
+			if err := collect(
 				variable.Value,
+				fmt.Sprintf("environmentVariables[%d].value", i),
 				false,
-				references,
-				indexByName,
-			)
+			); err != nil {
+				return err
+			}
 		}
 	case "azure.ai.connection":
 		var config azureYamlConnectionEnvironmentConfig
 		if err := active.Decode(&config); err != nil {
 			return fmt.Errorf("decoding connection service %q: %w", serviceName, err)
 		}
-		collectAzureYamlEnvironmentReferences(
-			config.Target,
-			false,
-			references,
-			indexByName,
-		)
-		if err := collectAzureYamlEnvironmentReferencesFromValue(
-			config.Credentials,
-			true,
-			references,
-			indexByName,
-		); err != nil {
-			return fmt.Errorf("scanning connection service %q credentials: %w", serviceName, err)
+		if err := collect(config.Target, "target", false); err != nil {
+			return err
 		}
-		if err := collectAzureYamlEnvironmentReferencesFromValue(
-			config.Metadata,
-			false,
-			references,
-			indexByName,
-		); err != nil {
-			return fmt.Errorf("scanning connection service %q metadata: %w", serviceName, err)
+		if err := collect(config.Credentials, "credentials", true); err != nil {
+			return err
+		}
+		if err := collect(config.Metadata, "metadata", false); err != nil {
+			return err
 		}
 	case "azure.ai.project", "microsoft.foundry":
 		var config azureYamlProjectEnvironmentConfig
@@ -392,28 +392,31 @@ func collectAzureYamlServiceEnvironmentReferences(
 		}
 		if config.Network != nil {
 			if config.Network.AgentSubnet != nil {
-				collectAzureYamlEnvironmentReferences(
+				if err := collect(
 					config.Network.AgentSubnet.VNet,
+					"network.agentSubnet.vnet",
 					false,
-					references,
-					indexByName,
-				)
+				); err != nil {
+					return err
+				}
 			}
 			if config.Network.PESubnet != nil {
-				collectAzureYamlEnvironmentReferences(
+				if err := collect(
 					config.Network.PESubnet.VNet,
+					"network.peSubnet.vnet",
 					false,
-					references,
-					indexByName,
-				)
+				); err != nil {
+					return err
+				}
 			}
 			if config.Network.DNS != nil {
-				collectAzureYamlEnvironmentReferences(
+				if err := collect(
 					config.Network.DNS.Subscription,
+					"network.dns.subscription",
 					false,
-					references,
-					indexByName,
-				)
+				); err != nil {
+					return err
+				}
 			}
 		}
 	case "azure.ai.routine":
@@ -422,13 +425,8 @@ func collectAzureYamlServiceEnvironmentReferences(
 			return fmt.Errorf("decoding routine service %q: %w", serviceName, err)
 		}
 		if config.Action != nil {
-			if err := collectAzureYamlEnvironmentReferencesFromValue(
-				config.Action.Input,
-				false,
-				references,
-				indexByName,
-			); err != nil {
-				return fmt.Errorf("scanning routine service %q action input: %w", serviceName, err)
+			if err := collect(config.Action.Input, "action.input", false); err != nil {
+				return err
 			}
 		}
 	case "azure.ai.toolbox":
@@ -436,19 +434,11 @@ func collectAzureYamlServiceEnvironmentReferences(
 		if err := active.Decode(&config); err != nil {
 			return fmt.Errorf("decoding toolbox service %q: %w", serviceName, err)
 		}
-		collectAzureYamlEnvironmentReferences(
-			config.Endpoint,
-			false,
-			references,
-			indexByName,
-		)
-		if err := collectAzureYamlEnvironmentReferencesFromValue(
-			config.Tools,
-			false,
-			references,
-			indexByName,
-		); err != nil {
-			return fmt.Errorf("scanning toolbox service %q tools: %w", serviceName, err)
+		if err := collect(config.Endpoint, "endpoint", false); err != nil {
+			return err
+		}
+		if err := collect(config.Tools, "tools", false); err != nil {
+			return err
 		}
 	}
 
@@ -457,6 +447,7 @@ func collectAzureYamlServiceEnvironmentReferences(
 
 func collectAzureYamlEnvironmentReferencesFromValue(
 	value any,
+	fieldPath string,
 	secret bool,
 	references *[]azureYamlEnvironmentReference,
 	indexByName map[string]int,
@@ -467,44 +458,63 @@ func collectAzureYamlEnvironmentReferencesFromValue(
 
 	var node yaml.Node
 	if err := node.Encode(value); err != nil {
-		return fmt.Errorf("encoding value: %w", err)
+		return fmt.Errorf("%s: encoding value: %w", fieldPath, err)
 	}
-	collectAzureYamlEnvironmentReferencesFromNode(&node, secret, references, indexByName)
-	return nil
+	return collectAzureYamlEnvironmentReferencesFromNode(&node, fieldPath, secret, references, indexByName)
 }
 
 func collectAzureYamlEnvironmentReferencesFromNode(
 	node *yaml.Node,
+	fieldPath string,
 	secret bool,
 	references *[]azureYamlEnvironmentReference,
 	indexByName map[string]int,
-) {
+) error {
 	if node == nil {
-		return
+		return nil
 	}
 
 	switch node.Kind {
-	case yaml.DocumentNode, yaml.SequenceNode:
+	case yaml.DocumentNode:
 		for _, child := range node.Content {
-			collectAzureYamlEnvironmentReferencesFromNode(child, secret, references, indexByName)
+			if err := collectAzureYamlEnvironmentReferencesFromNode(
+				child, fieldPath, secret, references, indexByName,
+			); err != nil {
+				return err
+			}
+		}
+	case yaml.SequenceNode:
+		for i, child := range node.Content {
+			if err := collectAzureYamlEnvironmentReferencesFromNode(
+				child, fmt.Sprintf("%s[%d]", fieldPath, i), secret, references, indexByName,
+			); err != nil {
+				return err
+			}
 		}
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(node.Content); i += 2 {
 			key := node.Content[i]
 			value := node.Content[i+1]
 			childSecret := secret || isSecretAzureYamlEnvironmentKey(key.Value)
-			collectAzureYamlEnvironmentReferencesFromNode(value, childSecret, references, indexByName)
+			if err := collectAzureYamlEnvironmentReferencesFromNode(
+				value, fieldPath+"."+key.Value, childSecret, references, indexByName,
+			); err != nil {
+				return err
+			}
 		}
 	case yaml.AliasNode:
-		collectAzureYamlEnvironmentReferencesFromNode(node.Alias, secret, references, indexByName)
+		return collectAzureYamlEnvironmentReferencesFromNode(node.Alias, fieldPath, secret, references, indexByName)
 	case yaml.ScalarNode:
-		collectAzureYamlEnvironmentReferences(
+		if err := collectAzureYamlEnvironmentReferences(
 			node.Value,
 			secret,
 			references,
 			indexByName,
-		)
+		); err != nil {
+			return fmt.Errorf("%s: %w", fieldPath, err)
+		}
 	}
+	return nil
 }
 
 func collectAzureYamlEnvironmentReferences(
@@ -512,8 +522,12 @@ func collectAzureYamlEnvironmentReferences(
 	secret bool,
 	references *[]azureYamlEnvironmentReference,
 	indexByName map[string]int,
-) {
-	for _, reference := range findEnvironmentReferences(value) {
+) error {
+	found, err := findEnvironmentReferences(value)
+	if err != nil {
+		return err
+	}
+	for _, reference := range found {
 		// A ${VAR:-default} needs no environment value because the
 		// runtime expander supplies the fallback.
 		if reference.HasDefault {
@@ -533,6 +547,7 @@ func collectAzureYamlEnvironmentReferences(
 			Secret: secret,
 		})
 	}
+	return nil
 }
 
 func isSecretAzureYamlEnvironmentKey(key string) bool {

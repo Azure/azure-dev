@@ -1,0 +1,52 @@
+# Tier 0: reject unsupported references before authentication or writes.
+# No Azure authentication, network, or resource creation is allowed.
+name: "init-env-reference-validation"
+command: >-
+  azd ai agent init -t ./template/azure.yaml --src ./target --no-prompt
+cwd: "~/working/azd-agents-env-reference-validation-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-env-reference-validation-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- template &&
+      cp -r -- "{fixtures_dir}/init-env-reference-validation/." ./template
+    name: "seed a template with an unsupported environment reference"
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Fail without answering
+    any prompt. Do not obtain credentials, install or update extensions, fetch
+    files, contact Azure, create cloud resources, or make network calls. Use
+    only the literal init command and read-only inspection; do not repair
+    the fixture.
+  - >-
+    Wait for init to exit non-zero. Confirm the error identifies service
+    "agent", field environmentVariables[0].value, and an unsupported
+    environment variable reference.
+  - >-
+    Confirm the error suggests supported reference syntax. The output must
+    not contain test-user, test-password, sig=, test-signature, or
+    test-fragment from the rejected value.
+  - >-
+    Confirm no authentication, subscription, location, project, or agent
+    prompt appears. A credential, network, capability, or missing-file error
+    does not satisfy the required reference validation.
+  - >-
+    Confirm template/azure.yaml remains byte-for-byte identical to
+    '{fixtures_dir}/init-env-reference-validation/azure.yaml'. No files
+    or directories beyond the seeded template may be added, including
+    target, an .azure environment directory, or infrastructure.
+  - >-
+    Take a best-effort screenshot of the error output; capture failure
+    must not block later product assertions.
+  - >-
+    Report a finding if init succeeds, prompts, reaches authentication or
+    Azure, reports a different error, exposes the rejected credentials,
+    changes the fixture, or adds local artifacts. Do not retry or work
+    around a failed goal.

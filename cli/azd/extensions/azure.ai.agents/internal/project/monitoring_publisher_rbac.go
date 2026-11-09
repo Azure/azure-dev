@@ -14,6 +14,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 )
 
 const roleMonitoringMetricsPublisher = "3913510d-42f4-4e42-8a64-420c390055eb"
@@ -29,6 +30,11 @@ type monitoringRoleAssigner func(
 	principalID, roleID, roleName, scope string,
 	principalType armauthorization.PrincipalType,
 ) (bool, error)
+
+// monitoringComponentToucher refreshes the component after a role assignment. Application Insights
+// caches Entra authorization for ingestion, and without a component update a new Monitoring Metrics
+// Publisher assignment kept returning 403 for over 20 minutes in live runs.
+type monitoringComponentToucher func(ctx context.Context, componentID string) error
 
 // azdManagedMonitoringComponentID returns the App Insights component azd wired to the project,
 // or "" when azd did not provision or connect monitoring for this environment.
@@ -46,6 +52,7 @@ func azdManagedMonitoringComponentID(azdEnv map[string]string) string {
 func grantHostedAgentMonitoringPublisher(
 	ctx context.Context,
 	assign monitoringRoleAssigner,
+	touch monitoringComponentToucher,
 	azdEnv map[string]string,
 	principalID string,
 ) {
@@ -57,11 +64,22 @@ func grantHostedAgentMonitoringPublisher(
 
 	var lastErr error
 	for attempt := 1; attempt <= monitoringGrantAttempts; attempt++ {
-		_, err := assign(
+		created, err := assign(
 			ctx, principalID, roleMonitoringMetricsPublisher, "Monitoring Metrics Publisher",
 			componentID, armauthorization.PrincipalTypeServicePrincipal,
 		)
 		if err == nil {
+			if created && touch != nil {
+				if touchErr := touch(ctx, componentID); touchErr != nil {
+					_, _ = fmt.Fprintf(
+						os.Stderr,
+						"Warning: granted Monitoring Metrics Publisher but could not refresh %s: %v\n"+
+							"Hosted-agent telemetry can return 403 for a long time until the component is updated; "+
+							"changing any tag on it forces a refresh.\n",
+						componentID, touchErr,
+					)
+				}
+			}
 			return
 		}
 		lastErr = err
@@ -116,5 +134,20 @@ func (p *AgentServiceTargetProvider) ensureHostedAgentMonitoringPublisher(
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: could not grant Monitoring Metrics Publisher: %v\n", err)
 		return
 	}
-	grantHostedAgentMonitoringPublisher(ctx, assign, azdEnv, principalID)
+	touch := func(ctx context.Context, componentID string) error {
+		tags, err := armresources.NewTagsClient(
+			extractSubscriptionID(componentID), p.credential, azure.NewArmClientOptions(),
+		)
+		if err != nil {
+			return err
+		}
+		_, err = tags.UpdateAtScope(ctx, componentID, armresources.TagsPatchResource{
+			Operation: new(armresources.TagsPatchOperationMerge),
+			Properties: &armresources.Tags{Tags: map[string]*string{
+				"azd-monitoring-role-sync": new(time.Now().UTC().Format(time.RFC3339)),
+			}},
+		}, nil)
+		return err
+	}
+	grantHostedAgentMonitoringPublisher(ctx, assign, touch, azdEnv, principalID)
 }

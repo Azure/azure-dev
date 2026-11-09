@@ -43,9 +43,44 @@ func TestGrantHostedAgentMonitoringPublisherAssignsRole(t *testing.T) {
 		return true, nil
 	}
 
-	grantHostedAgentMonitoringPublisher(t.Context(), assign, publisherTestEnv(), " "+publisherTestPrincipal+" ")
+	touches := 0
+	touch := func(_ context.Context, componentID string) error {
+		touches++
+		assert.Equal(t, publisherTestComponent, componentID)
+		return nil
+	}
+
+	grantHostedAgentMonitoringPublisher(t.Context(), assign, touch, publisherTestEnv(), " "+publisherTestPrincipal+" ")
 
 	assert.Equal(t, 1, calls)
+	assert.Equal(t, 1, touches)
+}
+
+func TestGrantHostedAgentMonitoringPublisherTouchesOnlyNewAssignments(t *testing.T) {
+	assign := func(
+		context.Context, string, string, string, string, armauthorization.PrincipalType,
+	) (bool, error) {
+		return false, nil
+	}
+	touch := func(context.Context, string) error {
+		t.Fatal("component must not be touched when the role already existed")
+		return nil
+	}
+
+	grantHostedAgentMonitoringPublisher(t.Context(), assign, touch, publisherTestEnv(), publisherTestPrincipal)
+}
+
+func TestGrantHostedAgentMonitoringPublisherTouchFailureIsNonFatal(t *testing.T) {
+	assign := func(
+		context.Context, string, string, string, string, armauthorization.PrincipalType,
+	) (bool, error) {
+		return true, nil
+	}
+	touch := func(context.Context, string) error { return errors.New("denied") }
+
+	require.NotPanics(t, func() {
+		grantHostedAgentMonitoringPublisher(t.Context(), assign, touch, publisherTestEnv(), publisherTestPrincipal)
+	})
 }
 
 func TestGrantHostedAgentMonitoringPublisherSkips(t *testing.T) {
@@ -71,7 +106,7 @@ func TestGrantHostedAgentMonitoringPublisherSkips(t *testing.T) {
 				t.Fatal("role must not be assigned")
 				return false, nil
 			}
-			grantHostedAgentMonitoringPublisher(t.Context(), assign, tt.env, tt.principal)
+			grantHostedAgentMonitoringPublisher(t.Context(), assign, nil, tt.env, tt.principal)
 		})
 	}
 }
@@ -92,7 +127,7 @@ func TestGrantHostedAgentMonitoringPublisherRetriesPrincipalNotFound(t *testing.
 		return true, nil
 	}
 
-	grantHostedAgentMonitoringPublisher(t.Context(), assign, publisherTestEnv(), publisherTestPrincipal)
+	grantHostedAgentMonitoringPublisher(t.Context(), assign, nil, publisherTestEnv(), publisherTestPrincipal)
 
 	assert.Equal(t, 3, calls)
 }
@@ -107,7 +142,7 @@ func TestGrantHostedAgentMonitoringPublisherDoesNotRetryOtherErrors(t *testing.T
 	}
 
 	require.NotPanics(t, func() {
-		grantHostedAgentMonitoringPublisher(t.Context(), assign, publisherTestEnv(), publisherTestPrincipal)
+		grantHostedAgentMonitoringPublisher(t.Context(), assign, nil, publisherTestEnv(), publisherTestPrincipal)
 	})
 
 	assert.Equal(t, 1, calls)

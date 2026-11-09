@@ -430,6 +430,10 @@ func predeployHandler(
 		return fail(fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err))
 	}
 
+	if err := project.CheckServicePolicyForPredeploy(ctx, azdClient, svc, args.Project.GetPath()); err != nil {
+		return fail(err)
+	}
+
 	hosted := isHostedAgentService(svc, args.Project)
 	rbacMessages, err := project.CheckDeveloperRBAC(ctx, azdClient, hosted)
 	messages = append(messages, rbacMessages...)

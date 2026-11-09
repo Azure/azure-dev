@@ -1102,6 +1102,17 @@ func (a *InitFromCodeAction) addToProject(
 		return err
 	}
 
+	warnInitServicePolicyIfBlocked(
+		ctx,
+		a.azdClient,
+		a.credential,
+		a.environment,
+		a.selectedFoundryProject,
+		serviceConfig,
+		a.projectConfig.GetPath(),
+		resourceDeployments,
+	)
+
 	printAgentAddedMessage(agentName)
 	return nil
 }

@@ -1581,6 +1581,15 @@ func finalizeAdoptedProject(
 		output.WithHighLightFormat("azure.yaml"),
 	)
 
+	warnInitAdoptedServicesPolicyIfBlocked(
+		ctx,
+		azdClient,
+		result.Credential,
+		env,
+		result.FoundryProject,
+		projectRoot,
+	)
+
 	printAdoptionNextSteps(ctx, azdClient, folderDisplay, promptOnly)
 	return nil
 }

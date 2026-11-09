@@ -178,6 +178,12 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: docs/environment-variables.md
+    words:
+      - strconv
+  - filename: extensions/azure.ai.projects/internal/cmd/root.go
+    words:
+      - BYOAKS
   - filename: pkg/output/colors.go
     words:
       - termenv

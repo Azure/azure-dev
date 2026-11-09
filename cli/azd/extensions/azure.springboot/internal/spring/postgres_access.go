@@ -873,6 +873,10 @@ type roleState struct {
 	Comment string
 }
 
+type postgresRowQuerier interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
 func readRoleState(ctx context.Context, transaction pgx.Tx, username string) (*roleState, error) {
 	state := &roleState{}
 	err := transaction.QueryRow(
@@ -892,7 +896,7 @@ func readRoleState(ctx context.Context, transaction pgx.Tx, username string) (*r
 
 func verifyEntraRoleMapping(
 	ctx context.Context,
-	transaction pgx.Tx,
+	transaction postgresRowQuerier,
 	username string,
 	expectedObjectID string,
 ) error {
@@ -902,7 +906,7 @@ func verifyEntraRoleMapping(
 		ctx,
 		`SELECT objectid, principaltype, isadmin
 		 FROM pg_catalog.pgaadauth_list_principals(false)
-		 WHERE rolename = $1`,
+		 WHERE rolname = $1`,
 		username,
 	).Scan(&objectID, &principalType, &isAdmin)
 	if err != nil {

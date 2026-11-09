@@ -10,9 +10,51 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
+
+type postgresTestRow func(...any) error
+
+func (r postgresTestRow) Scan(destinations ...any) error {
+	return r(destinations...)
+}
+
+type recordingPostgresRowQuerier struct {
+	query string
+	args  []any
+	row   pgx.Row
+}
+
+func (q *recordingPostgresRowQuerier) QueryRow(
+	_ context.Context,
+	query string,
+	args ...any,
+) pgx.Row {
+	q.query = query
+	q.args = args
+	return q.row
+}
+
+func TestVerifyEntraRoleMappingUsesActualFunctionColumn(t *testing.T) {
+	objectID := "11111111-2222-3333-4444-555555555555"
+	querier := &recordingPostgresRowQuerier{
+		row: postgresTestRow(func(destinations ...any) error {
+			*destinations[0].(*string) = objectID
+			*destinations[1].(*string) = "service"
+			*destinations[2].(*int32) = 0
+			return nil
+		}),
+	}
+
+	err := verifyEntraRoleMapping(t.Context(), querier, "petclinic_app", objectID)
+
+	require.NoError(t, err)
+	require.Contains(t, querier.query, "WHERE rolname = $1")
+	require.NotContains(t, querier.query, "rolename")
+	require.Equal(t, []any{"petclinic_app"}, querier.args)
+}
 
 func TestSelectedApplicationIdentitySupportsSystemAndUserAssigned(t *testing.T) {
 	appID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app"

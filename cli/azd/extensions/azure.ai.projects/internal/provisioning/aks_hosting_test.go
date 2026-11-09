@@ -690,7 +690,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 			//nolint:gosec // Embedded fixture copied to t.TempDir.
 			body, err := os.ReadFile(resourcePath)
 			require.NoError(t, err)
-			edited := string(body)
+			edited := strings.ReplaceAll(string(body), "\r\n", "\n")
 			for _, replacement := range []struct{ from, to string }{
 				{"var foundryAccountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'",
 					"var foundryAccountName = 'edited-account'"},

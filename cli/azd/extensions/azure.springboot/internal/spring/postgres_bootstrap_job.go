@@ -23,14 +23,15 @@ import (
 )
 
 const (
-	postgresBootstrapAdministratorAPIVersion = "2024-08-01"
-	postgresBootstrapOwnerTag                = "azd-springboot-postgres-bootstrap"
-	postgresBootstrapServerTag               = "azd-springboot-postgres-server"
-	postgresBootstrapReplicaTimeout          = int32(600)
-	postgresBootstrapExecutionTimeout        = 12 * time.Minute
-	postgresBootstrapPollInterval            = 5 * time.Second
-	postgresBootstrapStaleThreshold          = time.Hour
-	postgresBootstrapImageRepository         = "mcr.microsoft.com/azure-dev/azd-spring-postgres-bootstrap"
+	postgresBootstrapAdministratorAPIVersion    = "2024-08-01"
+	postgresBootstrapOwnerTag                   = "azd-springboot-postgres-bootstrap"
+	postgresBootstrapServerTag                  = "azd-springboot-postgres-server"
+	postgresBootstrapReplicaTimeout             = int32(600)
+	postgresBootstrapExecutionTimeout           = 12 * time.Minute
+	postgresBootstrapPollInterval               = 5 * time.Second
+	postgresBootstrapStaleThreshold             = time.Hour
+	postgresBootstrapIdentityPropagationTimeout = 10 * time.Minute
+	postgresBootstrapImageRepository            = "mcr.microsoft.com/azure-dev/azd-spring-postgres-bootstrap"
 )
 
 // postgresBootstrapImage is supplied by the release build after the runner is published.
@@ -282,29 +283,31 @@ type postgresRemoteAccessReconciler struct {
 		resolvedDatabase,
 		map[string]string,
 	) (*verifiedPostgresResources, azcore.TokenCredential, error)
-	newCloud         func(string, azcore.TokenCredential) (postgresBootstrapCloud, error)
-	image            string
-	now              func() time.Time
-	randomSuffix     func() (string, error)
-	pollInterval     time.Duration
-	executionTimeout time.Duration
-	staleThreshold   time.Duration
-	sleep            func(context.Context, time.Duration) error
+	newCloud                   func(string, azcore.TokenCredential) (postgresBootstrapCloud, error)
+	image                      string
+	now                        func() time.Time
+	randomSuffix               func() (string, error)
+	pollInterval               time.Duration
+	executionTimeout           time.Duration
+	staleThreshold             time.Duration
+	identityPropagationTimeout time.Duration
+	sleep                      func(context.Context, time.Duration) error
 }
 
 func newPostgresRemoteAccessReconciler(
 	verify *postgresAccessReconciler,
 ) *postgresRemoteAccessReconciler {
 	return &postgresRemoteAccessReconciler{
-		verifyResources:  verify.verifyResources,
-		newCloud:         newAzurePostgresBootstrapCloud,
-		image:            postgresBootstrapImage,
-		now:              time.Now,
-		randomSuffix:     postgresBootstrapRandomSuffix,
-		pollInterval:     postgresBootstrapPollInterval,
-		executionTimeout: postgresBootstrapExecutionTimeout,
-		staleThreshold:   postgresBootstrapStaleThreshold,
-		sleep:            sleepWithContext,
+		verifyResources:            verify.verifyResources,
+		newCloud:                   newAzurePostgresBootstrapCloud,
+		image:                      postgresBootstrapImage,
+		now:                        time.Now,
+		randomSuffix:               postgresBootstrapRandomSuffix,
+		pollInterval:               postgresBootstrapPollInterval,
+		executionTimeout:           postgresBootstrapExecutionTimeout,
+		staleThreshold:             postgresBootstrapStaleThreshold,
+		identityPropagationTimeout: postgresBootstrapIdentityPropagationTimeout,
+		sleep:                      sleepWithContext,
 	}
 }
 
@@ -428,7 +431,7 @@ func (r *postgresRemoteAccessReconciler) Reconcile(
 		PrincipalType: "ServicePrincipal",
 		TenantID:      tenantID,
 	}
-	if err := cloud.createAdministrator(ctx, administratorID, administrator); err != nil {
+	if err := r.createAdministrator(ctx, cloud, administratorID, administrator); err != nil {
 		return errors.Join(
 			fmt.Errorf("creating the temporary PostgreSQL bootstrap administrator: %w", err),
 			r.cleanupAdministratorAndJob(
@@ -491,6 +494,50 @@ func (r *postgresRemoteAccessReconciler) Reconcile(
 		return err
 	}
 	return nil
+}
+
+func (r *postgresRemoteAccessReconciler) createAdministrator(
+	ctx context.Context,
+	cloud postgresBootstrapCloud,
+	administratorID string,
+	administrator postgresBootstrapAdministrator,
+) error {
+	propagationCtx, cancel := context.WithTimeout(ctx, r.identityPropagationTimeout)
+	defer cancel()
+
+	var propagationErr error
+	for {
+		err := cloud.createAdministrator(propagationCtx, administratorID, administrator)
+		if err == nil {
+			return nil
+		}
+		if propagationCtx.Err() != nil && propagationErr != nil {
+			return fmt.Errorf(
+				"waiting for the bootstrap managed identity to propagate in Microsoft Entra ID: %w",
+				errors.Join(propagationErr, propagationCtx.Err()),
+			)
+		}
+		if !isPostgresBootstrapIdentityPropagationError(err) {
+			return err
+		}
+		propagationErr = err
+		if err := r.sleep(propagationCtx, r.pollInterval); err != nil {
+			return fmt.Errorf(
+				"waiting for the bootstrap managed identity to propagate in Microsoft Entra ID: %w",
+				errors.Join(propagationErr, err),
+			)
+		}
+	}
+}
+
+func isPostgresBootstrapIdentityPropagationError(err error) bool {
+	responseErr, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok || !strings.EqualFold(responseErr.ErrorCode, "AadAuthPrincipalCreationFailed") {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "isn't found in the tenant") ||
+		strings.Contains(message, "is not found in the tenant")
 }
 
 func (r *postgresRemoteAccessReconciler) waitForExecution(

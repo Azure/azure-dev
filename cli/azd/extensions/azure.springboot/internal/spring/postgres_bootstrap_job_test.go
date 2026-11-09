@@ -18,6 +18,16 @@ import (
 
 type postgresBootstrapTestCredential struct{}
 
+type postgresBootstrapIdentityPropagationTestError struct{}
+
+func (postgresBootstrapIdentityPropagationTestError) Error() string {
+	return "Cannot validate Microsoft Entra ID user because the OID isn't found in the tenant."
+}
+
+func (postgresBootstrapIdentityPropagationTestError) Unwrap() error {
+	return &azcore.ResponseError{ErrorCode: "AadAuthPrincipalCreationFailed"}
+}
+
 func (postgresBootstrapTestCredential) GetToken(
 	context.Context,
 	policy.TokenRequestOptions,
@@ -32,6 +42,7 @@ type postgresBootstrapTestCloud struct {
 	executionStatus  armappcontainers.JobExecutionRunningState
 	executionMissing int
 	deleteAdminErr   error
+	createAdminErrs  []error
 	operations       []string
 	administratorID  string
 	administrator    postgresBootstrapAdministrator
@@ -107,6 +118,11 @@ func (c *postgresBootstrapTestCloud) createAdministrator(
 	c.operations = append(c.operations, "create-administrator")
 	c.administratorID = resourceID
 	c.administrator = administrator
+	if len(c.createAdminErrs) > 0 {
+		err := c.createAdminErrs[0]
+		c.createAdminErrs = c.createAdminErrs[1:]
+		return err
+	}
 	return nil
 }
 
@@ -148,6 +164,60 @@ func TestPostgresRemoteAccessReconcilerSuccessCleansAdministratorBeforeJob(t *te
 	))
 	require.Equal(t, "azd-pg-0123456789abcdef", cloud.administrator.PrincipalName)
 	require.Equal(t, "ServicePrincipal", cloud.administrator.PrincipalType)
+}
+
+func TestPostgresRemoteAccessReconcilerRetriesBootstrapIdentityPropagation(t *testing.T) {
+	cloud := &postgresBootstrapTestCloud{
+		outboundIPs:     []*string{new("1.2.3.4")},
+		executionStatus: armappcontainers.JobExecutionRunningStateSucceeded,
+		createAdminErrs: []error{postgresBootstrapIdentityPropagationTestError{}},
+	}
+	reconciler := testPostgresRemoteAccessReconciler(cloud)
+
+	err := reconciler.Reconcile(
+		testPostgresRemoteContext(),
+		"dev",
+		testManagedIdentityDatabase(),
+		map[string]string{},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 2, countOperations(cloud.operations, "create-administrator"))
+	require.Equal(t, []string{
+		"list-jobs",
+		"create-job",
+		"get-job",
+		"create-administrator",
+		"create-administrator",
+		"start-job",
+		"get-execution",
+		"delete-administrator",
+		"delete-job",
+	}, cloud.operations)
+}
+
+func TestPostgresRemoteAccessReconcilerDoesNotRetryOtherAdministratorFailures(t *testing.T) {
+	cloud := &postgresBootstrapTestCloud{
+		outboundIPs:     []*string{new("1.2.3.4")},
+		createAdminErrs: []error{errors.New("administrator denied")},
+	}
+	reconciler := testPostgresRemoteAccessReconciler(cloud)
+
+	err := reconciler.Reconcile(
+		testPostgresRemoteContext(),
+		"dev",
+		testManagedIdentityDatabase(),
+		map[string]string{},
+	)
+	require.ErrorContains(t, err, "administrator denied")
+	require.Equal(t, 1, countOperations(cloud.operations, "create-administrator"))
+	require.Equal(t, []string{
+		"list-jobs",
+		"create-job",
+		"get-job",
+		"create-administrator",
+		"delete-administrator",
+		"delete-job",
+	}, cloud.operations)
 }
 
 func TestPostgresRemoteAccessReconcilerRejectsMissingReleaseImageBeforeCloudAccess(t *testing.T) {
@@ -375,14 +445,25 @@ func testPostgresRemoteAccessReconciler(
 		newCloud: func(string, azcore.TokenCredential) (postgresBootstrapCloud, error) {
 			return cloud, nil
 		},
-		image:            postgresBootstrapImageRepository + "@sha256:" + strings.Repeat("a", 64),
-		now:              time.Now,
-		randomSuffix:     func() (string, error) { return "0123456789abcdef", nil },
-		pollInterval:     time.Millisecond,
-		executionTimeout: time.Minute,
-		staleThreshold:   time.Hour,
-		sleep:            func(context.Context, time.Duration) error { return nil },
+		image:                      postgresBootstrapImageRepository + "@sha256:" + strings.Repeat("a", 64),
+		now:                        time.Now,
+		randomSuffix:               func() (string, error) { return "0123456789abcdef", nil },
+		pollInterval:               time.Millisecond,
+		executionTimeout:           time.Minute,
+		staleThreshold:             time.Hour,
+		identityPropagationTimeout: time.Minute,
+		sleep:                      func(context.Context, time.Duration) error { return nil },
 	}
+}
+
+func countOperations(operations []string, name string) int {
+	count := 0
+	for _, operation := range operations {
+		if operation == name {
+			count++
+		}
+	}
+	return count
 }
 
 func TestValidatePostgresBootstrapImage(t *testing.T) {

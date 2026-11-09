@@ -27,6 +27,7 @@ func TestACRBindingSelection(t *testing.T) {
 		parsed, err := ParseACRBinding(binding)
 		require.NoError(t, err)
 		assert.Equal(t, binding, parsed)
+		assert.Equal(t, "principal", parsed.PullPrincipal())
 		require.NoError(t, ValidateACRBinding(parsed, "", ""))
 		require.NoError(t, ValidateACRBinding(parsed, mode, ""))
 		require.NoError(t, ValidateACRBinding(parsed, mode, strings.ToUpper(id)))
@@ -36,6 +37,14 @@ func TestACRBindingSelection(t *testing.T) {
 			opposite = "reuse-connect"
 		}
 		require.ErrorContains(t, ValidateACRBinding(parsed, opposite, id), "migration is not supported")
+		binding.PullPrincipalID = "11111111-aaaa-4111-8111-111111111111"
+		parsed, err = ParseACRBinding(binding)
+		require.NoError(t, err)
+		assert.Equal(t, binding.PullPrincipalID, parsed.PullPrincipal())
+		assert.Equal(t, "principal", parsed.PrincipalID)
+		binding.PullPrincipalID = "invalid"
+		_, err = ParseACRBinding(binding)
+		require.ErrorContains(t, err, "incomplete or unsupported")
 	}
 	require.NoError(t, ValidateACRBinding(nil, "reuse-connect", id))
 	for _, raw := range []string{"null", "{}", `{"version":2}`, `{"extra":true}`, "{} {}"} {

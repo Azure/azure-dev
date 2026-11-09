@@ -41,13 +41,13 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if err != nil {
 		return err
 	}
-	registryID, _ := parameterValue(source, "existingAcrResourceId").(string)
-	if hosting.Enabled && (registryID != "" ||
-		p.acrBinding != nil && p.acrBinding.Mode == "reuse-connect") {
-		return synthesis.ErrACRReuseAgentHosting
-	}
 	if !hosting.Enabled {
 		return nil
+	}
+	if include, _ := parameterValue(source, "includeAcr").(bool); include &&
+		!templateDeclaresParameter(source, "acrPullPrincipalId") {
+		return errors.New("the ejected Bicep registry access contract is outdated; " +
+			"re-eject the Foundry Bicep templates for kubelet-only registry access")
 	}
 	var clusterID string
 	if err := json.Unmarshal(hosting.ClusterResourceID, &clusterID); err != nil {

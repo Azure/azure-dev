@@ -1479,7 +1479,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	}
 
 	outputs := p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties))))
-	if err := p.persistACRBinding(ctx, outputs); err != nil {
+	if err := p.persistACRBinding(ctx, src, outputs); err != nil {
 		return nil, err
 	}
 	if err := p.verifyDeployedACRAccess(ctx, src); err != nil {

@@ -529,9 +529,9 @@ func TestBYORegistryValidationBeforeLifecycleWrites(t *testing.T) {
 		abac, remote, invalid bool
 	}{
 		{name: "ABAC remote", abac: true, remote: true, expectedError: "does not authenticate"},
-		{name: "ABAC local", abac: true, expectedError: "registry reuse is not supported with agentHosting"},
-		{name: "classic remote", remote: true, expectedError: "registry reuse is not supported with agentHosting"},
-		{name: "invalid hosting", invalid: true, expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "ABAC local", abac: true, expectedError: "check existing registry pull access"},
+		{name: "classic remote", remote: true, expectedError: "check existing registry pull access"},
+		{name: "invalid hosting", invalid: true, expectedError: "aks-version"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(synthesis.ACRReuseEnvVar, "true")
@@ -543,7 +543,7 @@ func TestBYORegistryValidationBeforeLifecycleWrites(t *testing.T) {
 			p.synthResult.Parameters["includeAcr"] = true
 			p.synthResult.Parameters["existingAcrResourceId"] = registryID
 			if test.invalid {
-				p.synthResult.Hosting.ClusterResourceID += "-other"
+				fake.clusterVersion = "1.30.0"
 			}
 			p.resourceGroupState = func(context.Context) (map[string]*string, bool, error) {
 				return nil, true, nil
@@ -562,7 +562,11 @@ func TestBYORegistryValidationBeforeLifecycleWrites(t *testing.T) {
 			fake.failWrite = true
 			_, err := p.Deploy(t.Context(), func(string) {})
 			require.ErrorContains(t, err, test.expectedError)
-			assert.Empty(t, fake.requests)
+			if test.abac && test.remote {
+				assert.Empty(t, fake.requests)
+			} else {
+				assert.NotEmpty(t, fake.requests)
+			}
 			assert.Zero(t, fake.writes)
 			assert.Empty(t, env.set)
 			assert.Empty(t, env.config)
@@ -572,7 +576,7 @@ func TestBYORegistryValidationBeforeLifecycleWrites(t *testing.T) {
 	}
 }
 
-func TestBYORegistryPreviewRejectsReuseWithoutWrites(t *testing.T) {
+func TestBYORegistryPreviewPlansKubeletAccessWithoutWrites(t *testing.T) {
 	const registryID = "/subscriptions/target-sub/resourceGroups/shared/providers/" +
 		"Microsoft.ContainerRegistry/registries/registry"
 	for _, abac := range []bool{false, true} {
@@ -586,6 +590,19 @@ func TestBYORegistryPreviewRejectsReuseWithoutWrites(t *testing.T) {
 			p.synthResult.Parameters["existingAcrResourceId"] = registryID
 			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
 				require.Equal(t, http.MethodGet, method)
+				if strings.HasPrefix(path, registryID+"/providers/Microsoft.Authorization/roleAssignments?") {
+					assignment := acrTestAssignment()
+					assignment.Properties.Scope = registryID
+					assignment.Properties.PrincipalID = "22222222-2222-4222-8222-222222222222"
+					values := []acrRoleAssignment{assignment}
+					if abac {
+						assignment.Properties.PrincipalID = offlineKubeletObjectID
+						assignment.Properties.RoleDefinitionID = "/subscriptions/target-sub/providers/" +
+							"Microsoft.Authorization/roleDefinitions/" + acrRepositoryReader
+						values = append(values, assignment)
+					}
+					return acrTestReply(out, map[string]any{"value": values})
+				}
 				if path != registryID {
 					return &azcore.ResponseError{StatusCode: http.StatusNotFound}
 				}
@@ -596,14 +613,21 @@ func TestBYORegistryPreviewRejectsReuseWithoutWrites(t *testing.T) {
 				return acrTestReply(out, map[string]any{"properties": map[string]any{"roleAssignmentMode": mode}})
 			}
 			_, err := p.Preview(t.Context(), func(string) {})
-			require.ErrorIs(t, err, synthesis.ErrACRReuseAgentHosting)
-			assert.Zero(t, fake.previews)
+			require.NoError(t, err)
+			assert.Equal(t, 1, fake.previews)
 			assert.Zero(t, fake.writes)
-			assert.Empty(t, fake.requests)
+			assert.NotEmpty(t, fake.requests)
 			assert.Empty(t, env.set)
 			assert.Empty(t, env.config)
 			assert.Nil(t, p.acrPending)
-			assert.Empty(t, fake.parameters)
+			assert.Equal(t, map[string]any{"value": offlineKubeletObjectID}, fake.parameters["acrPullPrincipalId"])
+			assert.Equal(t, map[string]any{"value": abac}, fake.parameters["acrPullAssigned"])
+			role := acrPullRole
+			if abac {
+				role = acrRepositoryReader
+			}
+			assert.Equal(t, map[string]any{"value": "/subscriptions/target-sub/providers/" +
+				"Microsoft.Authorization/roleDefinitions/" + role}, fake.parameters["acrPullRoleDefinitionId"])
 		})
 	}
 }
@@ -935,7 +959,7 @@ func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
 	assert.Zero(t, fake.previews)
 }
 
-func TestBYORejectsExternalRegistryBeforeAuthentication(t *testing.T) {
+func TestBYOPreflightAcceptsExternalRegistry(t *testing.T) {
 	for _, selectedBy := range []string{"parameter", "template default", "binding"} {
 		t.Run(selectedBy, func(t *testing.T) {
 			p, fake := offlineBYOProvider(t)
@@ -951,9 +975,8 @@ func TestBYORejectsExternalRegistryBeforeAuthentication(t *testing.T) {
 			case "binding":
 				p.acrBinding = acrTestBinding()
 			}
-			p.credential = nil
-			require.ErrorIs(t, p.prepareBYO(t.Context(), source, func(string) {}), synthesis.ErrACRReuseAgentHosting)
-			assert.Empty(t, fake.requests)
+			require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
+			assert.NotEmpty(t, fake.requests)
 		})
 	}
 }

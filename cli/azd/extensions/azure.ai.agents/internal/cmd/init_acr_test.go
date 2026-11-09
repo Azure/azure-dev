@@ -394,13 +394,14 @@ func TestInitACRPlannedEnvironmentDoesNotReadBinding(t *testing.T) {
 }
 
 func TestInitACRSelectionSpecificGuidance(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name, manifest, want string
 	}{
 		{"hosting", "services:\n  project:\n    host: azure.ai.project\n    agentHosting:\n" +
 			"      clusterResourceId: /subscriptions/sub/resourceGroups/aks/providers/" +
 			"Microsoft.ContainerService/managedClusters/aks\n",
-			"remove agentHosting"},
+			""},
 		{"unknown scope", "infra:\n  provider: bicep\nservices:\n  project:\n    host: azure.ai.project\n",
 			"Use Foundry-only infrastructure"},
 	} {
@@ -418,7 +419,11 @@ func TestInitACRSelectionSpecificGuidance(t *testing.T) {
 			err := validateInitACRProject(t.Context(), client, &initFlags{
 				acrResourceIDSet: true, acrResourceID: testInitACRID,
 			})
-			require.ErrorContains(t, err, tt.want)
+			if tt.want == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.want)
+			}
 			require.Empty(t, azdext.ErrorSuggestion(err))
 			require.Empty(t, server.setKeys)
 		})

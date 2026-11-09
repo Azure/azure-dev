@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore kubelet
+
 package provisioning
 
 import (
@@ -462,6 +464,26 @@ func templateDeclaresParameter(src *templateSource, name string) bool {
 	return false
 }
 
+func byoACRPullPrincipal(src *templateSource) (string, error) {
+	include, _ := parameterValue(src, "includeAcr").(bool)
+	if !include {
+		return "", nil
+	}
+	hosting, err := byoHostingParameter(src)
+	if err != nil || !hosting.Enabled {
+		return "", err
+	}
+	if !templateDeclaresParameter(src, "acrPullPrincipalId") {
+		return "", errors.New("the ejected Bicep registry access contract is outdated; " +
+			"re-eject the Foundry Bicep templates for kubelet-only registry access")
+	}
+	principal, _ := parameterValue(src, "kubeletObjectId").(string)
+	if uuid.Validate(principal) != nil {
+		return "", errors.New("BYO AKS registry access requires kubeletObjectId to be a principal object ID GUID")
+	}
+	return principal, nil
+}
+
 func (p *FoundryProvisioningProvider) validateACRTeardownScopes(id, group string) error {
 	env := map[string]string{"AZURE_ENV_NAME": p.envName}
 	maps.Copy(env, p.synthesisEnv)
@@ -694,6 +716,31 @@ func (p *FoundryProvisioningProvider) planACRAccess(
 	}
 	include, _ := parameterValue(src, "includeAcr").(bool)
 	id, _ := parameterValue(src, "existingAcrResourceId").(string)
+	kubeletPrincipal, err := byoACRPullPrincipal(src)
+	if err != nil {
+		return nil, err
+	}
+	if p.acrBinding != nil && p.acrBinding.PullPrincipalID != "" {
+		if !templateDeclaresParameter(src, "acrPullPrincipalId") {
+			return nil, errors.New("the ejected Bicep registry access contract is outdated; " +
+				"re-eject the Foundry Bicep templates to retain the registry pull identity")
+		}
+		if !include {
+			kubeletPrincipal = p.acrBinding.PullPrincipalID
+		}
+	}
+	if templateDeclaresParameter(src, "acrPullPrincipalId") {
+		for name := range src.parameters {
+			if strings.EqualFold(name, "acrPullPrincipalId") {
+				provided, ok := parameterValue(src, name).(string)
+				if !ok || !strings.EqualFold(provided, kubeletPrincipal) {
+					return nil, errors.New("acrPullPrincipalId conflicts with the selected registry pull identity; " +
+						"omit it to use the resolved kubeletObjectId or retained registry binding")
+				}
+			}
+		}
+		setParameterValue(src, "acrPullPrincipalId", kubeletPrincipal)
+	}
 	owned := []synthesis.ACRAssignment{}
 	if p.acrBinding != nil {
 		owned = append(owned, p.acrBinding.OwnedAssignments...)
@@ -780,11 +827,23 @@ func (p *FoundryProvisioningProvider) planACRAccess(
 			plan.principalID, plan.projectID = p.acrExistingPrincipalID, p.acrExistingProjectID
 		}
 	}
+	if kubeletPrincipal != "" {
+		plan.principalID = kubeletPrincipal
+	}
+	if p.acrBinding != nil && !strings.EqualFold(plan.principalID, p.acrBinding.PullPrincipal()) {
+		return nil, errors.New("registry pull identity changed; retain the bound hosting configuration " +
+			"and pull identity or use a new azd environment")
+	}
 	if pendingMatches {
 		if pendingAssignment != nil && plan.principalID != "" &&
 			!strings.EqualFold(plan.principalID, pendingAssignment.Properties.PrincipalID) {
-			return nil, errors.New("pending registry assignment does not match the current Foundry project identity; " +
+			return nil, errors.New("pending registry assignment does not match the selected pull identity; " +
 				"refusing to reassign registry access")
+		}
+		if p.acrPending.PrincipalID != "" && plan.principalID != "" &&
+			!strings.EqualFold(plan.principalID, p.acrPending.PrincipalID) {
+			return nil, errors.New("pending registry access operation targets a different pull identity; " +
+				"recover the original operation before changing the hosting configuration")
 		}
 		if plan.principalID == "" {
 			plan.principalID, plan.projectID = p.acrPending.PrincipalID, p.acrPending.ProjectResourceID
@@ -841,12 +900,12 @@ func (p *FoundryProvisioningProvider) verifyDeployedACRAccess(ctx context.Contex
 	if err := p.validateACRRemoteBuildMode(abac); err != nil {
 		return err
 	}
-	assigned, err := p.hasEffectiveACRPull(ctx, id, p.acrBinding.PrincipalID, abac)
+	assigned, err := p.hasEffectiveACRPull(ctx, id, p.acrBinding.PullPrincipal(), abac)
 	if err != nil {
 		return err
 	}
 	if !assigned {
-		return errors.New("deployed project does not have effective registry pull access; " +
+		return errors.New("deployed pull identity does not have a matching registry pull role assignment; " +
 			"the registry permission mode may have changed during provisioning. " +
 			"Exact grant ownership was saved; retry azd provision to replan access, or run azd down to clean up")
 	}
@@ -935,7 +994,7 @@ func (p *FoundryProvisioningProvider) preserveACROutputs(
 }
 
 func (p *FoundryProvisioningProvider) persistACRBinding(
-	ctx context.Context, outputs map[string]*azdext.ProvisioningOutputParameter,
+	ctx context.Context, src *templateSource, outputs map[string]*azdext.ProvisioningOutputParameter,
 ) error {
 	if p.brownfieldEndpoint != "" {
 		return nil
@@ -960,6 +1019,11 @@ func (p *FoundryProvisioningProvider) persistACRBinding(
 		ProjectResourceID: project.Value, PrincipalID: actual.Identity.PrincipalID,
 		DeploymentSalt: p.acrDeploymentSalt,
 	}
+	pullPrincipalID, err := byoACRPullPrincipal(src)
+	if err != nil {
+		return err
+	}
+	binding.PullPrincipalID = pullPrincipalID
 	if binding.PrincipalID == "" {
 		return errors.New("deployed Foundry project has no principal ID; registry binding was not saved")
 	}
@@ -972,6 +1036,14 @@ func (p *FoundryProvisioningProvider) persistACRBinding(
 			return errors.New("deployed project identity no longer matches the immutable registry binding")
 		}
 		binding.OwnedAssignments = slices.Clone(p.acrBinding.OwnedAssignments)
+		include, _ := parameterValue(src, "includeAcr").(bool)
+		if !include {
+			binding.PullPrincipalID = p.acrBinding.PullPrincipalID
+		}
+		if binding.Mode == "reuse-connect" &&
+			!strings.EqualFold(binding.PullPrincipal(), p.acrBinding.PullPrincipal()) {
+			return errors.New("deployed registry pull identity no longer matches the immutable registry binding")
+		}
 		if p.acrBindingRecovered && !synthesis.ACRReuseEnabled() {
 			return nil
 		}
@@ -981,7 +1053,11 @@ func (p *FoundryProvisioningProvider) persistACRBinding(
 	}
 	if p.acrPending != nil {
 		p.acrPending.ProjectResourceID = project.Value
-		p.acrPending.PrincipalID = binding.PrincipalID
+		if p.acrPending.PrincipalID != "" &&
+			!strings.EqualFold(p.acrPending.PrincipalID, binding.PullPrincipal()) {
+			return errors.New("deployed registry pull identity does not match the pending access operation")
+		}
+		p.acrPending.PrincipalID = binding.PullPrincipal()
 		if err := p.recoverACRAssignment(ctx); err != nil {
 			return err
 		}
@@ -991,12 +1067,12 @@ func (p *FoundryProvisioningProvider) persistACRBinding(
 			return err
 		}
 		if err == nil {
-			if !ownedACRAssignment(assignment, binding.RegistryResourceID, binding.PrincipalID,
+			if !ownedACRAssignment(assignment, binding.RegistryResourceID, binding.PullPrincipal(),
 				p.acrPending.RoleDefinitionID, p.acrPending.Token) {
 				return errors.New("deployed registry assignment does not match the saved access operation")
 			}
 			owned := synthesis.ACRAssignment{
-				ID: assignment.ID, PrincipalID: binding.PrincipalID,
+				ID: assignment.ID, PrincipalID: binding.PullPrincipal(),
 				RoleDefinitionID: p.acrPending.RoleDefinitionID, OwnershipToken: p.acrPending.Token,
 				DeploymentIDs: p.acrPending.DeploymentIDs,
 			}
@@ -1348,6 +1424,15 @@ func retainedACRAssignments(parameters map[string]struct{ Value any }) ([]synthe
 func (p *FoundryProvisioningProvider) recoverACRBindingAssignments(
 	ctx context.Context, binding *synthesis.ACRBinding, parameters map[string]struct{ Value any },
 ) error {
+	for name, parameter := range parameters {
+		if strings.EqualFold(name, "acrPullPrincipalId") {
+			principal, ok := parameter.Value.(string)
+			if !ok || principal != "" && uuid.Validate(principal) != nil {
+				return errors.New("cannot recover registry binding: invalid registry pull principal ID")
+			}
+			binding.PullPrincipalID = principal
+		}
+	}
 	if binding.Mode != "reuse-connect" {
 		return nil
 	}
@@ -1381,7 +1466,7 @@ func (p *FoundryProvisioningProvider) recoverACRBindingAssignments(
 			if !slices.ContainsFunc(recovered.OwnedAssignments,
 				func(owned synthesis.ACRAssignment) bool { return strings.EqualFold(owned.ID, id) }) {
 				recovered.OwnedAssignments = append(recovered.OwnedAssignments, synthesis.ACRAssignment{
-					ID: id, PrincipalID: binding.PrincipalID, RoleDefinitionID: roleID, OwnershipToken: token,
+					ID: id, PrincipalID: binding.PullPrincipal(), RoleDefinitionID: roleID, OwnershipToken: token,
 					DeploymentIDs: acrAccessDeploymentIDs(binding.RegistryResourceID, token),
 				})
 			}
@@ -1404,7 +1489,7 @@ func (p *FoundryProvisioningProvider) recoverACRBindingAssignments(
 			return fmt.Errorf("verify recovered registry grant ownership: %w", err)
 		}
 		if err == nil && !ownedACRAssignment(actual, binding.RegistryResourceID,
-			binding.PrincipalID, owned.RoleDefinitionID, owned.OwnershipToken) {
+			binding.PullPrincipal(), owned.RoleDefinitionID, owned.OwnershipToken) {
 			return errors.New("previous deployment registry grant does not match azd ownership; " +
 				"restore the saved registry lifecycle state before retrying")
 		}

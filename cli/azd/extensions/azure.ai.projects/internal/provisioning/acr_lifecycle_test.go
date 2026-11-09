@@ -328,6 +328,7 @@ func TestACRCleanupExactOwnership(t *testing.T) {
 func TestACRPartialRecoveryAndBinding(t *testing.T) {
 	p, env := acrTestProvider(t)
 	p.acrPending = acrTestPending()
+	p.acrPending.PrincipalID = offlineKubeletObjectID
 	data, err := json.Marshal(p.acrPending)
 	require.NoError(t, err)
 	env.config = map[string][]byte{acrPendingConfigKey: data}
@@ -337,17 +338,32 @@ func TestACRPartialRecoveryAndBinding(t *testing.T) {
 			return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
 		}
 		require.Equal(t, p.acrPending.assignmentID(), path)
-		return acrTestReply(out, acrTestAssignment())
+		assignment := acrTestAssignment()
+		assignment.Properties.PrincipalID = offlineKubeletObjectID
+		return acrTestReply(out, assignment)
 	}
 	require.NoError(t, p.recoverACRAssignment(t.Context()))
-	assert.Equal(t, "principal", p.acrPending.PrincipalID)
+	assert.Equal(t, offlineKubeletObjectID, p.acrPending.PrincipalID)
 	p.greenfieldAcrMode = "reuse-connect"
-	require.NoError(t, p.persistACRBinding(t.Context(), map[string]*azdext.ProvisioningOutputParameter{
+	src := acrTestSource()
+	declared, ok := src.armTemplate["parameters"].(map[string]any)
+	require.True(t, ok)
+	declared["agentHosting"] = map[string]any{}
+	declared["acrPullPrincipalId"] = map[string]any{}
+	setParameterValue(src, "agentHosting", map[string]any{"enabled": true})
+	setParameterValue(src, "kubeletObjectId", offlineKubeletObjectID)
+	require.NoError(t, p.persistACRBinding(t.Context(), src, map[string]*azdext.ProvisioningOutputParameter{
 		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": {Value: testACRID},
 		"AZURE_AI_PROJECT_ID":                  {Value: testACRProject},
 	}))
 	require.NotNil(t, p.acrBinding)
 	require.Len(t, p.acrBinding.OwnedAssignments, 1)
+	assert.Equal(t, "principal", p.acrBinding.PrincipalID)
+	assert.Equal(t, offlineKubeletObjectID, p.acrBinding.PullPrincipal())
+	assert.Equal(t, offlineKubeletObjectID, p.acrBinding.OwnedAssignments[0].PrincipalID)
+	parsed, err := synthesis.ParseACRBinding(json.RawMessage(env.config[synthesis.ACRBindingConfigKey]))
+	require.NoError(t, err)
+	assert.Equal(t, p.acrBinding, parsed)
 	assert.Nil(t, p.acrPending)
 	assert.NotEmpty(t, env.config[synthesis.ACRBindingConfigKey])
 	assert.NotContains(t, env.config, acrPendingConfigKey)
@@ -406,10 +422,11 @@ func TestACRTemplateParameterCasing(t *testing.T) {
 					require.Equal(t, testACRProject, path)
 					return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
 				}
-				require.NoError(t, p.persistACRBinding(t.Context(), map[string]*azdext.ProvisioningOutputParameter{
-					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": {Value: id},
-					"AZURE_AI_PROJECT_ID":                  {Value: testACRProject},
-				}))
+				require.NoError(t, p.persistACRBinding(t.Context(), acrTestSource(),
+					map[string]*azdext.ProvisioningOutputParameter{
+						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": {Value: id},
+						"AZURE_AI_PROJECT_ID":                  {Value: testACRProject},
+					}))
 				require.NotNil(t, p.acrBinding)
 				assert.Equal(t, "reuse-connect", p.acrBinding.Mode)
 			})
@@ -489,14 +506,20 @@ func TestACRRetainedParameterWritesReplaceCaseAliases(t *testing.T) {
 			p.acrBinding = acrTestBinding()
 			owned := []synthesis.ACRAssignment{}
 			if tt.owned {
+				p.acrBinding.PullPrincipalID = offlineKubeletObjectID
 				owned = append(owned, synthesis.ACRAssignment{
-					ID: acrTestAssignment().ID, PrincipalID: "principal", OwnershipToken: testACRToken,
+					ID: acrTestAssignment().ID, PrincipalID: offlineKubeletObjectID, OwnershipToken: testACRToken,
 					RoleDefinitionID: acrTestPending().RoleDefinitionID,
 					DeploymentIDs:    acrAccessDeploymentIDs(testACRID, testACRToken),
 				})
 				p.acrBinding.OwnedAssignments = owned
 			}
 			src := acrTestSource()
+			if tt.owned {
+				declared, ok := src.armTemplate["parameters"].(map[string]any)
+				require.True(t, ok)
+				declared["acrPullPrincipalId"] = map[string]any{}
+			}
 			if tt.casing {
 				declared, ok := src.armTemplate["parameters"].(map[string]any)
 				require.True(t, ok)
@@ -516,10 +539,14 @@ func TestACRRetainedParameterWritesReplaceCaseAliases(t *testing.T) {
 			plan, err := p.planACRAccess(t.Context(), src)
 			require.NoError(t, err)
 			assert.Nil(t, plan)
-			assert.Equal(t, map[string]any{
+			expected := map[string]any{
 				"existingAcrResourceId": map[string]any{"value": testACRID},
 				"acrOwnedAssignments":   map[string]any{"value": owned},
-			}, src.parameters)
+			}
+			if tt.owned {
+				expected["acrPullPrincipalId"] = map[string]any{"value": offlineKubeletObjectID}
+			}
+			assert.Equal(t, expected, src.parameters)
 		})
 	}
 }
@@ -670,9 +697,15 @@ func TestACRDeploymentGrantRecoveryAfterStateLoss(t *testing.T) {
 				require.Nil(t, p.acrBinding)
 				require.Nil(t, p.acrPending)
 				assignment := acrTestAssignment()
-				assignment.Properties.RoleDefinitionID = "/subscriptions/sub/providers/Microsoft.Authorization/roleDefinitions/" + tt.role
+				pullPrincipal := "principal"
+				if tt.role == acrRepositoryReader {
+					pullPrincipal = offlineKubeletObjectID
+				}
+				assignment.Properties.PrincipalID = pullPrincipal
+				assignment.Properties.RoleDefinitionID =
+					"/subscriptions/sub/providers/Microsoft.Authorization/roleDefinitions/" + tt.role
 				owned := synthesis.ACRAssignment{
-					ID: assignment.ID, PrincipalID: "principal",
+					ID: assignment.ID, PrincipalID: pullPrincipal,
 					RoleDefinitionID: assignment.Properties.RoleDefinitionID, OwnershipToken: testACRToken,
 					DeploymentIDs: acrAccessDeploymentIDs(testACRID, testACRToken),
 				}
@@ -716,8 +749,13 @@ func TestACRDeploymentGrantRecoveryAfterStateLoss(t *testing.T) {
 						if tt.unowned {
 							parameters["acrAccessOperationId"] = map[string]any{"value": ""}
 						}
+						if pullPrincipal != "principal" {
+							parameters["acrPullPrincipalId"] = map[string]any{"value": pullPrincipal}
+						}
 						if tt.name == "ABAC" {
-							for _, name := range []string{"acrAccessOperationId", "acrPullRoleDefinitionId"} {
+							for _, name := range []string{
+								"acrAccessOperationId", "acrPullRoleDefinitionId", "acrPullPrincipalId",
+							} {
 								parameters[strings.ToUpper(name)] = parameters[name]
 								delete(parameters, name)
 							}
@@ -795,6 +833,8 @@ func TestACRDeploymentGrantRecoveryAfterStateLoss(t *testing.T) {
 						return
 					}
 					require.NotNil(t, p.acrBinding)
+					assert.Equal(t, "principal", p.acrBinding.PrincipalID)
+					assert.Equal(t, pullPrincipal, p.acrBinding.PullPrincipal())
 					if tt.unowned {
 						assert.Empty(t, p.acrBinding.OwnedAssignments)
 						if tt.projectOnly {
@@ -1823,7 +1863,7 @@ func TestACRSuccessfulRepeatDoesNotRewriteLifecycleState(t *testing.T) {
 		require.Equal(t, testACRProject, path)
 		return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
 	}
-	require.NoError(t, p.persistACRBinding(t.Context(), map[string]*azdext.ProvisioningOutputParameter{
+	require.NoError(t, p.persistACRBinding(t.Context(), acrTestSource(), map[string]*azdext.ProvisioningOutputParameter{
 		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": {Value: testACRID},
 		"AZURE_AI_PROJECT_ID":                  {Value: testACRProject},
 	}))
@@ -2653,9 +2693,9 @@ func TestACRPreviewAccessFailureDoesNotSubmitWhatIf(t *testing.T) {
 			p.credential = acrTestCredential{}
 			_, err = p.Preview(t.Context(), func(string) {})
 			if failure == "pending identity" {
-				require.ErrorContains(t, err, "current Foundry project identity")
+				require.ErrorContains(t, err, "selected pull identity")
 				err = p.prepareACRAccess(t.Context(), acrTestSource())
-				require.ErrorContains(t, err, "current Foundry project identity")
+				require.ErrorContains(t, err, "selected pull identity")
 			} else {
 				require.ErrorIs(t, err, readErr)
 			}
@@ -3109,7 +3149,7 @@ func TestACRGrantRecoveryFailureRetainsDurableIntent(t *testing.T) {
 		}
 		return acrTestReply(out, acrTestAssignment())
 	}
-	err = p.persistACRBinding(t.Context(), map[string]*azdext.ProvisioningOutputParameter{
+	err = p.persistACRBinding(t.Context(), acrTestSource(), map[string]*azdext.ProvisioningOutputParameter{
 		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": {Value: testACRID},
 		"AZURE_AI_PROJECT_ID":                  {Value: testACRProject},
 	})

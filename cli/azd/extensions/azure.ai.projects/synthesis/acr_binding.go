@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -20,12 +21,6 @@ const ACRBindingConfigKey = "extensions.ai-projects.acrBinding"
 
 // ACRBindingEnvKey carries a binding in a synthesis snapshot.
 const ACRBindingEnvKey = "AZD_FOUNDRY_ACR_BINDING"
-
-// ErrACRReuseAgentHosting rejects unmanaged AKS pull access.
-var ErrACRReuseAgentHosting = errors.New(
-	"existing registry reuse is not supported with agentHosting; " +
-		"use an azd-created registry or remove agentHosting",
-)
 
 var projectResourceIDPattern = regexp.MustCompile(
 	`(?i)^/subscriptions/[^/\s?#\\%]+/resourceGroups/[^/\s?#\\%]+/providers/` +
@@ -52,8 +47,17 @@ type ACRBinding struct {
 	RegistryResourceID string          `json:"registryResourceId"`
 	ProjectResourceID  string          `json:"projectResourceId"`
 	PrincipalID        string          `json:"principalId"`
+	PullPrincipalID    string          `json:"pullPrincipalId,omitempty"`
 	DeploymentSalt     string          `json:"deploymentSalt,omitempty"`
 	OwnedAssignments   []ACRAssignment `json:"ownedAssignments,omitempty"`
+}
+
+// PullPrincipal returns the registry pull identity, defaulting to the project identity for existing bindings.
+func (b *ACRBinding) PullPrincipal() string {
+	if b.PullPrincipalID != "" {
+		return b.PullPrincipalID
+	}
+	return b.PrincipalID
 }
 
 // ParseACRBinding rejects malformed persisted deployment facts.
@@ -90,7 +94,8 @@ func ParseACRBinding(value any) (*ACRBinding, error) {
 	}
 	if binding.Version != 1 || (binding.Mode != "create" && binding.Mode != "reuse-connect") ||
 		!containerRegistryIDPattern.MatchString(binding.RegistryResourceID) ||
-		!projectResourceIDPattern.MatchString(binding.ProjectResourceID) || binding.PrincipalID == "" {
+		!projectResourceIDPattern.MatchString(binding.ProjectResourceID) || binding.PrincipalID == "" ||
+		binding.PullPrincipalID != "" && uuid.Validate(binding.PullPrincipalID) != nil {
 		return nil, errors.New("invalid deployed ACR binding: incomplete or unsupported deployment facts")
 	}
 	for _, assignment := range binding.OwnedAssignments {
@@ -101,7 +106,7 @@ func ParseACRBinding(value any) (*ACRBinding, error) {
 			strings.EqualFold(assignment.RoleDefinitionID, rolePrefix+"b93aa761-3e63-49ed-ac28-beffa264f7ac")
 		if !strings.EqualFold(assignment.ID, expectedPrefix+assignment.OwnershipToken) ||
 			!acrOwnershipTokenPattern.MatchString(assignment.OwnershipToken) ||
-			!strings.EqualFold(assignment.PrincipalID, binding.PrincipalID) ||
+			!strings.EqualFold(assignment.PrincipalID, binding.PullPrincipal()) ||
 			!knownRole {
 			return nil, errors.New("invalid deployed ACR binding: incomplete owned assignment")
 		}
@@ -147,7 +152,7 @@ func ValidateACRNetworking(includeACR bool, registryID string, isolated, hosting
 		return errors.New(
 			"synthesis: private networking does not support an auto-created Azure Container Registry; " +
 				"use docker.imagePassthrough: true with a prebuilt image, remove source-build demand, " +
-				"or set AZURE_CONTAINER_REGISTRY_RESOURCE_ID for Foundry-only reuse without agentHosting",
+				"or set AZURE_CONTAINER_REGISTRY_RESOURCE_ID for external registry reuse",
 		)
 	}
 	return nil
@@ -304,15 +309,6 @@ func ValidateACRSelectorForInput(in Input, selectedID string) error {
 		return errors.New("cannot establish application infrastructure teardown scopes for external registry reuse; " +
 			"AZURE_RESOURCE_GROUP does not describe every group deleted by azd down. " +
 			"Use Foundry-only infrastructure, or an azd-created registry in a new environment")
-	}
-	_, projects, err := acrProjectServices(in)
-	if err != nil {
-		return err
-	}
-	for _, project := range projects {
-		if project.AgentHosting != nil {
-			return ErrACRReuseAgentHosting
-		}
 	}
 	return nil
 }

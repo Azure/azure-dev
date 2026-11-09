@@ -26,6 +26,18 @@ go get github.com/azure/azure-dev/cli/azd@v1.24.0
 go mod tidy
 ```
 
+### Environment Variable Constants
+
+Use `github.com/azure/azure-dev/cli/azd/pkg/environment/constants` when you only
+need environment variable names, such as `constants.TenantIdEnvVarName`. This
+package has no imports and does not bring in environment management or Azure
+Storage dependencies. The existing constants in `pkg/environment` remain
+available as aliases for source compatibility.
+
+For local development before an SDK release includes this package, use the
+local `replace` directive described below. Before publishing an extension, pin
+an SDK release containing the package and remove the local override.
+
 ### Local Development
 
 For development within the monorepo, add a `replace` directive to use the local copy:

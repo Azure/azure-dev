@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -99,10 +100,17 @@ func TestParameterResolverPromptsWithCombinedQuotaAndPersistsLocation(t *testing
 	require.NoError(t, resolver.Configure(aiParameterOptions(t, "models")))
 	require.Empty(t, host.requests)
 	require.Empty(t, host.writes)
-	values := map[string]string{"AZURE_ENV_NAME": "dev", "AZURE_SUBSCRIPTION_ID": "sub", "AZURE_LOCATION": "eastus"}
+	values := map[string]string{
+		"AZURE_ENV_NAME": "dev", "AZURE_SUBSCRIPTION_ID": "other-sub", "AZURE_LOCATION": "other-location",
+		"AZURE_TENANT_ID": "resource-tenant",
+	}
+	azureContext := &azdext.AzureContext{Scope: &azdext.AzureScope{
+		SubscriptionId: "sub", TenantId: "user-access-tenant", Location: "eastus",
+	}}
+	before := proto.Clone(azureContext)
 	var mapping []string
 
-	value, prompted, err := resolver.ResolveParameter(t.Context(), "aiDeploymentsLocation", values, &mapping)
+	value, prompted, err := resolver.ResolveParameter(t.Context(), azureContext, "aiDeploymentsLocation", values, &mapping)
 	require.NoError(t, err)
 	require.Equal(t, "westus3", value)
 	require.True(t, prompted)
@@ -117,6 +125,10 @@ func TestParameterResolverPromptsWithCombinedQuotaAndPersistsLocation(t *testing
 	require.Len(t, host.requests, 1)
 	request := host.requests[0]
 	require.Equal(t, "sub", request.AzureContext.Scope.SubscriptionId)
+	require.Equal(t, "user-access-tenant", request.AzureContext.Scope.TenantId)
+	require.True(t, proto.Equal(azureContext, request.AzureContext))
+	require.True(t, proto.Equal(before, azureContext), "parameter resolution must not mutate the resolved scope")
+	require.Equal(t, "resource-tenant", values["AZURE_TENANT_ID"])
 	require.Equal(t, "eastus", request.DefaultValue)
 	require.Equal(t, []*azdext.QuotaRequirement{
 		{UsageName: "OpenAI.S0.AccountCount", MinCapacity: 1},
@@ -133,7 +145,7 @@ func TestParameterResolverReusesSavedLocationWithoutHostCalls(t *testing.T) {
 	before := maps.Clone(values)
 	var mapping []string
 
-	value, prompted, err := resolver.ResolveParameter(t.Context(), "aiDeploymentsLocation", values, &mapping)
+	value, prompted, err := resolver.ResolveParameter(t.Context(), nil, "aiDeploymentsLocation", values, &mapping)
 	require.NoError(t, err)
 	require.Equal(t, "westus3", value)
 	require.False(t, prompted)
@@ -150,7 +162,7 @@ func TestAILocationsAreEntryLocal(t *testing.T) {
 	values := map[string]string{firstKey: "eastus2"}
 	var mapping []string
 
-	value, prompted, err := resolver.ResolveParameter(t.Context(), "aiDeploymentsLocation", values, &mapping)
+	value, prompted, err := resolver.ResolveParameter(t.Context(), nil, "aiDeploymentsLocation", values, &mapping)
 	require.NoError(t, err)
 	require.Equal(t, "westus3", value)
 	require.True(t, prompted)
@@ -171,7 +183,7 @@ func TestAILocationPersistenceFailureIsNotCached(t *testing.T) {
 	before := maps.Clone(values)
 	var mapping []string
 
-	value, _, err := resolver.ResolveParameter(t.Context(), "aiDeploymentsLocation", values, &mapping)
+	value, _, err := resolver.ResolveParameter(t.Context(), nil, "aiDeploymentsLocation", values, &mapping)
 	require.ErrorContains(t, err, "save failed")
 	require.Equal(t, codes.Internal, status.Code(err))
 	require.Nil(t, value)
@@ -180,7 +192,7 @@ func TestAILocationPersistenceFailureIsNotCached(t *testing.T) {
 
 	host.setErr = nil
 	mapping = nil
-	value, prompted, err := resolver.ResolveParameter(t.Context(), "aiDeploymentsLocation", values, &mapping)
+	value, prompted, err := resolver.ResolveParameter(t.Context(), nil, "aiDeploymentsLocation", values, &mapping)
 	require.NoError(t, err)
 	require.Equal(t, "westus3", value)
 	require.True(t, prompted)
@@ -212,7 +224,7 @@ func TestAILocationPromptFailures(t *testing.T) {
 			before := maps.Clone(values)
 			var mapping []string
 
-			value, _, err := resolver.ResolveParameter(t.Context(), "aiDeploymentsLocation", values, &mapping)
+			value, _, err := resolver.ResolveParameter(t.Context(), nil, "aiDeploymentsLocation", values, &mapping)
 			require.Error(t, err)
 			require.Nil(t, value)
 			require.Equal(t, before, values)
@@ -304,7 +316,7 @@ func TestParameterResolverLeavesUnmanagedParametersToBicep(t *testing.T) {
 			require.NoError(t, resolver.Configure(&azdext.ProvisioningOptions{Config: config}))
 			for _, name := range test.parameters {
 				mapping := []string{}
-				value, prompted, err := resolver.ResolveParameter(t.Context(), name, map[string]string{}, &mapping)
+				value, prompted, err := resolver.ResolveParameter(t.Context(), nil, name, map[string]string{}, &mapping)
 				require.NoError(t, err)
 				require.Nil(t, value)
 				require.False(t, prompted)
@@ -326,7 +338,7 @@ func TestParameterResolverReconfigurationClearsAIRequirements(t *testing.T) {
 	require.Nil(t, resolver.requirements)
 	require.NotEqual(t, firstKey, resolver.locationKey)
 	var mapping []string
-	value, prompted, err := resolver.ResolveParameter(t.Context(), "aiDeploymentsLocation", map[string]string{}, &mapping)
+	value, prompted, err := resolver.ResolveParameter(t.Context(), nil, "aiDeploymentsLocation", map[string]string{}, &mapping)
 	require.NoError(t, err)
 	require.Nil(t, value)
 	require.False(t, prompted)

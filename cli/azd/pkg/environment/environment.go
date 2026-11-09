@@ -17,47 +17,48 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/constants"
 	"github.com/joho/godotenv"
 )
 
 // EnvNameEnvVarName is the name of the key used to store the envname property in the environment.
-const EnvNameEnvVarName = "AZURE_ENV_NAME"
+const EnvNameEnvVarName = constants.EnvNameEnvVarName
 
 // LocationEnvVarName is the name of the key used to store the location property in the environment.
-const LocationEnvVarName = "AZURE_LOCATION"
+const LocationEnvVarName = constants.LocationEnvVarName
 
 // SubscriptionIdEnvVarName is the name of they key used to store the subscription id property in the environment.
-const SubscriptionIdEnvVarName = "AZURE_SUBSCRIPTION_ID"
+const SubscriptionIdEnvVarName = constants.SubscriptionIdEnvVarName
 
 // PrincipalIdEnvVarName is the name of they key used to store the id of a principal in the environment.
-const PrincipalIdEnvVarName = "AZURE_PRINCIPAL_ID"
+const PrincipalIdEnvVarName = constants.PrincipalIdEnvVarName
 
 // PrincipalTypeEnvVarName is the name of they key used to store the type of a principal in the environment.
-const PrincipalTypeEnvVarName = "AZURE_PRINCIPAL_TYPE"
+const PrincipalTypeEnvVarName = constants.PrincipalTypeEnvVarName
 
 // TenantIdEnvVarName is the tenant that owns the subscription
-const TenantIdEnvVarName = "AZURE_TENANT_ID"
+const TenantIdEnvVarName = constants.TenantIdEnvVarName
 
 // ContainerRegistryEndpointEnvVarName is the name of they key used to store the endpoint of the container registry to push
 // to.
-const ContainerRegistryEndpointEnvVarName = "AZURE_CONTAINER_REGISTRY_ENDPOINT"
+const ContainerRegistryEndpointEnvVarName = constants.ContainerRegistryEndpointEnvVarName
 
 // ContainerEnvironmentEndpointEnvVarName is the name of the environment variable
 // that specifies the default domain for Azure Container Apps environments.
-const ContainerEnvironmentEndpointEnvVarName = "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"
+const ContainerEnvironmentEndpointEnvVarName = constants.ContainerEnvironmentEndpointEnvVarName
 
 // AppServiceAspireDashboardUrlEnvVarName is the name of the environment variable
 // that specifies the url for the App Service Aspire Dashboard.
-const AppServiceAspireDashboardUrlEnvVarName = "AZURE_APP_SERVICE_DASHBOARD_URI"
+const AppServiceAspireDashboardUrlEnvVarName = constants.AppServiceAspireDashboardUrlEnvVarName
 
 // AksClusterEnvVarName is the name of they key used to store the endpoint of the AKS cluster to push to.
-const AksClusterEnvVarName = "AZURE_AKS_CLUSTER_NAME"
+const AksClusterEnvVarName = constants.AksClusterEnvVarName
 
 // ResourceGroupEnvVarName is the name of the azure resource group that should be used for deployments
-const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
+const ResourceGroupEnvVarName = constants.ResourceGroupEnvVarName
 
 // PlatformTypeEnvVarName is the name of the key used to store the current azd platform type
-const PlatformTypeEnvVarName = "AZD_PLATFORM_TYPE"
+const PlatformTypeEnvVarName = constants.PlatformTypeEnvVarName
 
 // The zero value of an Environment is not valid. Use [New] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
@@ -96,7 +97,7 @@ type Environment struct {
 // While AZD_INITIAL_ENVIRONMENT_CONFIG is still supported for backwards compatibility, it is deprecated.
 // The currently strategy is to create individual variables or secrets for the CI/CD pipeline depending on the parameter
 // configuration.
-const AzdInitialEnvironmentConfigName = "AZD_INITIAL_ENVIRONMENT_CONFIG"
+const AzdInitialEnvironmentConfigName = constants.AzdInitialEnvironmentConfigName
 
 // New returns a new environment with the specified name.
 func New(name string) *Environment {

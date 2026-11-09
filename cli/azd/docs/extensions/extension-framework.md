@@ -985,6 +985,26 @@ A provisioning provider implements the full lifecycle (`Initialize`, `State`, `D
 > [!NOTE]
 > Commands such as `azd env refresh` do not run the full extension lifecycle. When a project's `infra.provider` names an extension-provided provider, `azd` starts only that extension on demand to resolve the provider, then stops it once the operation completes.
 
+##### Infrastructure Generation Providers (`infra-generation-provider`, beta)
+
+Extensions can independently opt into `azd infra generate` by declaring the
+`infra-generation-provider` capability and a `providers` entry with the same
+type and provider name. Register an `azdext.InfraGenerationProvider` through
+`ExtensionHost.WithInfraGenerationProvider`.
+
+The native beta-only `InfraGenerationService.Stream` carries registration,
+generation requests/results, and post-write completion acknowledgments.
+Generation takes an explicitly present, initially empty `InfraGenerateOptions`
+message. It returns relative source paths and bytes without provisioning
+initialization, authentication, or configuration changes. Core validates and
+writes the sources using its existing overwrite prompt (`--force` skips it).
+Only then does the extension receive `Complete`, where it can replace its
+original configuration with a file-based provider. Entries with skipped files
+are not converted. Errors during writes or conversion are reported explicitly.
+
+See [Infrastructure generation](extension-sdk-reference.md#infrastructure-generation-beta)
+for the SDK interface and host/version requirements.
+
 ##### Model Context Protocol Server (`mcp-server`)
 
 > Extensions must declare the `mcp-server` capability in their `extension.yaml` file.
@@ -1141,6 +1161,7 @@ Extensions can declare the following capabilities in their manifest:
 - **`service-target-provider`**: Provide custom service deployment targets
 - **`framework-service-provider`**: Provide custom language frameworks and build systems
 - **`provisioning-provider`**: Provide a custom infrastructure provisioning experience (alternative to Bicep / Terraform)
+- **`infra-generation-provider` (beta)**: Export infrastructure sources and update configuration after successful file writes
 - **`validation-provider`**: Contribute validation checks to azd's provision validation and future validation pipelines
 - **`metadata`**: Provide comprehensive metadata about commands and configuration schemas
 

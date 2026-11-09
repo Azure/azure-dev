@@ -12,7 +12,7 @@ The extension wire contracts have two public channels:
 The beta channel is a superset of stable. New additive contract fields,
 methods, and beta-only services can incubate there and graduate additively
 into stable after they have been validated. `ComposeService`,
-`CommandResultService` and `CopilotService` are currently
+`CommandResultService`, `CopilotService`, and `InfraGenerationService` are currently
 beta-only. Removing or renumbering fields, changing field types, and reusing
 reserved names or numbers remain breaking changes in either channel.
 
@@ -45,6 +45,12 @@ cannot send structured messages. See the extension contract versioning guide
 for host routing and compatibility behavior.
 
 ## Generate contracts
+
+`InfraGenerationService.Stream` is beta-only. It carries generation provider
+registration, relative source files, and completion acknowledgments after host
+file writes. Its `InfraGenerateOptions` message is explicitly present and
+initially empty. There is no stable service or frozen legacy route for generation.
+See [the SDK reference](../docs/extensions/extension-sdk-reference.md#infrastructure-generation-beta).
 
 Run generation from `cli/azd`:
 

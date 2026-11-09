@@ -14,6 +14,7 @@ azd extensions use a gRPC-based framework to add functionality. The extension fr
 - **Framework service providers** — Add build/restore support for new languages
 - **Service target providers** — Add deployment support for new Azure hosting targets
 - **Provisioning providers** — Add custom infrastructure provisioning support
+- **Infrastructure generation providers (beta)** — Export source files through `azd infra generate`, independently of provisioning
 - **Metadata** — Provide metadata about commands and capabilities
 
 ## Prerequisites
@@ -63,6 +64,15 @@ Go extensions can opt into beta structured messages for service
 for the stream requirements and legacy-client behavior.
 
 ### 4. Build
+
+For infrastructure generation, declare `infra-generation-provider` in both
+`capabilities` and the corresponding `providers[].type`, and register an
+`azdext.InfraGenerationProvider` with `ExtensionHost.WithInfraGenerationProvider`.
+Return source files from `Generate` without mutations. Put configuration
+conversion in `Complete`, which is called only after all files for the entry
+were written. Always pass an explicit, initially empty `InfraGenerateOptions`
+message. See the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#infrastructure-generation-beta)
+for the beta contract and host/version requirements.
 
 ```bash
 # Using the developer extension

@@ -84,6 +84,7 @@ Extensions declare their capabilities in `extension.yaml`:
 | `framework-service-provider` | Add build/restore support for new languages |
 | `service-target-provider` | Add deployment support for new hosting targets |
 | `provisioning-provider` | Add custom infrastructure provisioning support |
+| `infra-generation-provider` (beta) | Export infrastructure sources and replace configuration after successful file writes |
 | `metadata` | Provide metadata about commands and capabilities |
 
 ## Available gRPC Services
@@ -102,6 +103,7 @@ Extensions can access these azd services via gRPC:
 - **Follow-up (beta)** — Contribute command-level guidance from project lifecycle handlers; see the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
 - **Container** — Container registry operations
 - **Framework** — Framework service operations
+- **Infrastructure Generation (beta)** — Generate sources without provisioning initialization, then acknowledge successful writes so the extension can convert its configuration. See [the SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#infrastructure-generation-beta).
 - **Service Target** — Deployment target operations
 
 Structured deploy messages use the beta event stream. Go extensions opt in

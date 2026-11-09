@@ -222,7 +222,9 @@ itself) is required for hosted agents, which otherwise fail with
 telemetry. That identity exists only after the agent is deployed, so
 `azd deploy` in the agents extension grants it, then updates a tag on the
 component so Application Insights refreshes its cached ingestion authorization
-(best effort; on failure it prints the `az role assignment create` command). If you set no
+(best effort, only for azd-created components on the private path; set
+`AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true` to skip it; on skip or failure the
+deploy note carries a warning with the `az role assignment create` command). If you set no
 `isolationMode`, azd uses `AllowInternetOutbound` so the managed network exists.
 Ejected or hand-authored Bicep that bypasses
 azd's checks never creates the private path unless

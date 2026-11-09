@@ -1947,12 +1947,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 		}
 	}
 
-	if identity := result.agentVersion.InstanceIdentity; identity != nil && azdManagedMonitoringComponentID(azdEnv) != "" {
+	monitoringWarning := ""
+	if identity := result.agentVersion.InstanceIdentity; identity != nil && privateMonitoringComponentID(azdEnv) != "" {
 		progress("Granting agent identity access to Application Insights")
-		p.ensureHostedAgentMonitoringPublisher(ctx, azdEnv, identity.PrincipalID)
+		monitoringWarning = p.ensureHostedAgentMonitoringPublisher(ctx, azdEnv, identity.PrincipalID)
 	}
 
-	return p.finalizeDeploy(
+	deployResult, err := p.finalizeDeploy(
 		ctx,
 		progress,
 		serviceConfig,
@@ -1965,6 +1966,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		activityProfile,
 		serviceTargetConfig.Activity,
 	)
+	if err != nil {
+		return nil, err
+	}
+	appendDeployWarning(deployResult, monitoringWarning)
+	return deployResult, nil
 }
 
 func activityBotOwnership(

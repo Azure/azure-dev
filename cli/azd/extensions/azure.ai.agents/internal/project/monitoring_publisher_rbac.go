@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 const roleMonitoringMetricsPublisher = "3913510d-42f4-4e42-8a64-420c390055eb"
@@ -36,30 +38,60 @@ type monitoringRoleAssigner func(
 // Publisher assignment kept returning 403 for over 20 minutes in live runs.
 type monitoringComponentToucher func(ctx context.Context, componentID string) error
 
-// azdManagedMonitoringComponentID returns the App Insights component azd wired to the project,
-// or "" when azd did not provision or connect monitoring for this environment.
-func azdManagedMonitoringComponentID(azdEnv map[string]string) string {
-	if strings.TrimSpace(azdEnv["AZD_FOUNDRY_MONITORING_MODE"]) == "" {
+// privateMonitoringComponentID returns the App Insights component only when azd created it and
+// connected it through the private path (Private Link Scope). Public-network projects and
+// user-supplied components return "" so azd never changes their role assignments or tags.
+func privateMonitoringComponentID(azdEnv map[string]string) string {
+	if strings.TrimSpace(azdEnv["AZD_FOUNDRY_MONITORING_MODE"]) != "create" ||
+		strings.TrimSpace(azdEnv["AZD_MONITORING_PRIVATE_LINK_SCOPE_ID"]) == "" {
 		return ""
 	}
 	return strings.TrimSpace(azdEnv["AZURE_APPLICATION_INSIGHTS_RESOURCE_ID"])
 }
 
+// roleAssignmentsSkipped reports whether the user opted out of azd writing role assignments, using
+// the same precedence as the developer RBAC check: environment value first, then the process.
+func roleAssignmentsSkipped(azdEnv map[string]string) bool {
+	value := strings.TrimSpace(azdEnv["AZD_AGENT_SKIP_ROLE_ASSIGNMENTS"])
+	if value == "" {
+		value = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
+	}
+	skip, err := strconv.ParseBool(value)
+	return err == nil && skip
+}
+
+func monitoringGrantCommand(principalID, componentID string) string {
+	return fmt.Sprintf(
+		"az role assignment create --assignee-object-id %s --assignee-principal-type ServicePrincipal "+
+			"--role \"Monitoring Metrics Publisher\" --scope %s",
+		principalID, componentID,
+	)
+}
+
 // grantHostedAgentMonitoringPublisher lets a hosted agent's instance identity publish telemetry to the
-// project's App Insights component. The identity only exists after the agent version is created, so
-// this cannot be done in the provisioning template. It is best effort: a failure prints a manual
-// command and does not fail the deploy.
+// project's private App Insights component. The identity only exists after the agent version is
+// created, so this cannot be done in the provisioning template.
+//
+// It is best effort and never fails the deploy. It returns a warning for the deploy note when
+// telemetry may still be rejected, or "" when nothing needs the user's attention.
 func grantHostedAgentMonitoringPublisher(
 	ctx context.Context,
 	assign monitoringRoleAssigner,
 	touch monitoringComponentToucher,
 	azdEnv map[string]string,
 	principalID string,
-) {
-	componentID := azdManagedMonitoringComponentID(azdEnv)
+) string {
+	componentID := privateMonitoringComponentID(azdEnv)
 	principalID = strings.TrimSpace(principalID)
 	if componentID == "" || principalID == "" {
-		return
+		return ""
+	}
+	if roleAssignmentsSkipped(azdEnv) {
+		return fmt.Sprintf(
+			"AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set, so azd did not grant the hosted agent identity access to "+
+				"Application Insights. Hosted-agent telemetry is rejected with 403 until it has the role:\n  %s",
+			monitoringGrantCommand(principalID, componentID),
+		)
 	}
 
 	var lastErr error
@@ -71,16 +103,15 @@ func grantHostedAgentMonitoringPublisher(
 		if err == nil {
 			if created && touch != nil {
 				if touchErr := touch(ctx, componentID); touchErr != nil {
-					_, _ = fmt.Fprintf(
-						os.Stderr,
-						"Warning: granted Monitoring Metrics Publisher but could not refresh %s: %v\n"+
+					return fmt.Sprintf(
+						"Granted the hosted agent identity Monitoring Metrics Publisher, but could not refresh %s: %v. "+
 							"Hosted-agent telemetry can return 403 for a long time until the component is updated; "+
-							"changing any tag on it forces a refresh.\n",
+							"changing any tag on it forces a refresh.",
 						componentID, touchErr,
 					)
 				}
 			}
-			return
+			return ""
 		}
 		lastErr = err
 		if !strings.Contains(err.Error(), "PrincipalNotFound") || attempt == monitoringGrantAttempts {
@@ -88,18 +119,15 @@ func grantHostedAgentMonitoringPublisher(
 		}
 		select {
 		case <-ctx.Done():
-			return
+			return ""
 		case <-time.After(monitoringGrantRetryDelay):
 		}
 	}
 
-	_, _ = fmt.Fprintf(
-		os.Stderr,
-		"Warning: could not grant the agent identity Monitoring Metrics Publisher on %s: %v\n"+
-			"Traces from the hosted agent are rejected with 403 until it has the role. Grant it with:\n"+
-			"  az role assignment create --assignee-object-id %s --assignee-principal-type ServicePrincipal "+
-			"--role \"Monitoring Metrics Publisher\" --scope %s\n",
-		componentID, lastErr, principalID, componentID,
+	return fmt.Sprintf(
+		"Could not grant the hosted agent identity Monitoring Metrics Publisher on %s: %v\n"+
+			"Hosted-agent telemetry is rejected with 403 until it has the role. Grant it with:\n  %s",
+		componentID, lastErr, monitoringGrantCommand(principalID, componentID),
 	)
 }
 
@@ -119,20 +147,24 @@ func newMonitoringRoleAssigner(credential azcore.TokenCredential, componentID st
 	}, nil
 }
 
-// ensureHostedAgentMonitoringPublisher wires the real ARM client into grantHostedAgentMonitoringPublisher.
+// ensureHostedAgentMonitoringPublisher wires the real ARM clients into grantHostedAgentMonitoringPublisher
+// and returns its warning for the deploy note.
 func (p *AgentServiceTargetProvider) ensureHostedAgentMonitoringPublisher(
 	ctx context.Context,
 	azdEnv map[string]string,
 	principalID string,
-) {
-	componentID := azdManagedMonitoringComponentID(azdEnv)
+) string {
+	componentID := privateMonitoringComponentID(azdEnv)
 	if componentID == "" || strings.TrimSpace(principalID) == "" {
-		return
+		return ""
 	}
 	assign, err := newMonitoringRoleAssigner(p.credential, componentID)
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Warning: could not grant Monitoring Metrics Publisher: %v\n", err)
-		return
+		return fmt.Sprintf(
+			"Could not grant the hosted agent identity Monitoring Metrics Publisher: %v\n"+
+				"Hosted-agent telemetry is rejected with 403 until it has the role. Grant it with:\n  %s",
+			err, monitoringGrantCommand(strings.TrimSpace(principalID), componentID),
+		)
 	}
 	touch := func(ctx context.Context, componentID string) error {
 		tags, err := armresources.NewTagsClient(
@@ -149,5 +181,28 @@ func (p *AgentServiceTargetProvider) ensureHostedAgentMonitoringPublisher(
 		}, nil)
 		return err
 	}
-	grantHostedAgentMonitoringPublisher(ctx, assign, touch, azdEnv, principalID)
+	return grantHostedAgentMonitoringPublisher(ctx, assign, touch, azdEnv, principalID)
+}
+
+// appendDeployWarning adds text to the note of the last artifact, so it shows in the deploy output
+// instead of subprocess stderr, which the host discards.
+func appendDeployWarning(result *azdext.ServiceDeployResult, warning string) {
+	if result == nil || strings.TrimSpace(warning) == "" {
+		return
+	}
+	for i := len(result.Artifacts) - 1; i >= 0; i-- {
+		artifact := result.Artifacts[i]
+		if artifact == nil {
+			continue
+		}
+		if artifact.Metadata == nil {
+			artifact.Metadata = map[string]string{}
+		}
+		if existing := artifact.Metadata["note"]; existing != "" {
+			artifact.Metadata["note"] = existing + "\n\nWarning: " + warning
+		} else {
+			artifact.Metadata["note"] = "Warning: " + warning
+		}
+		return
+	}
 }

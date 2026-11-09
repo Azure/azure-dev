@@ -363,6 +363,11 @@ func HasAnyRoleAssignmentWithClient(
 			if assignment == nil || assignment.Properties == nil || assignment.Properties.RoleDefinitionID == nil {
 				continue
 			}
+			if assignment.Properties.Scope != nil &&
+				strings.TrimSpace(*assignment.Properties.Scope) != "" &&
+				!scopeAppliesToTarget(*assignment.Properties.Scope, scope) {
+				continue
+			}
 			roleDefID := strings.ToLower(*assignment.Properties.RoleDefinitionID)
 			for suffix := range suffixes {
 				if strings.HasSuffix(roleDefID, suffix) {
@@ -447,9 +452,6 @@ func AssignRoleWithClient(
 			respErr.StatusCode == http.StatusConflict && respErr.ErrorCode == "RoleAssignmentExists" {
 			return false, nil
 		}
-		if strings.Contains(err.Error(), "RoleAssignmentExists") || strings.Contains(err.Error(), "409") {
-			return false, nil
-		}
 		return false, fmt.Errorf("failed to create role assignment for role %s: %w", roleName, err)
 	}
 	return true, nil
@@ -474,18 +476,22 @@ func IsRoleSufficient(assignment *armauthorization.RoleAssignment, targetScope s
 	if props.Scope == nil || props.RoleDefinitionID == nil || (props.Condition != nil && *props.Condition != "") {
 		return false
 	}
-	inherited := strings.ToLower(strings.TrimRight(*props.Scope, "/"))
-	target := strings.ToLower(targetScope)
-	const groupPrefix = "/providers/microsoft.management/managementgroups/"
-	managementGroup := strings.HasPrefix(inherited, groupPrefix) &&
-		safeScopeSegment.MatchString(strings.TrimPrefix(inherited, groupPrefix))
-	if inherited == "" || (target != inherited && !strings.HasPrefix(target, inherited+"/") && !managementGroup) {
+	if !scopeAppliesToTarget(*props.Scope, targetScope) {
 		return false
 	}
 	role := (*props.RoleDefinitionID)[strings.LastIndex(*props.RoleDefinitionID, "/")+1:]
 	return slices.ContainsFunc(SufficientDataPlaneRoles, func(sufficient string) bool {
 		return strings.EqualFold(role, sufficient)
 	})
+}
+
+func scopeAppliesToTarget(assignmentScope, targetScope string) bool {
+	inherited := strings.ToLower(strings.TrimRight(assignmentScope, "/"))
+	target := strings.ToLower(strings.TrimRight(targetScope, "/"))
+	const groupPrefix = "/providers/microsoft.management/managementgroups/"
+	managementGroup := strings.HasPrefix(inherited, groupPrefix) &&
+		safeScopeSegment.MatchString(strings.TrimPrefix(inherited, groupPrefix))
+	return inherited != "" && (target == inherited || strings.HasPrefix(target, inherited+"/") || managementGroup)
 }
 
 // IsAccessDenied reports whether err is an HTTP 403 Foundry data-plane authorization denial.

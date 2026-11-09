@@ -764,6 +764,54 @@ func TestHasAnyRoleAssignmentAndAssignRole(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, hasRole)
 
+	childOnlyOpts := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Transport: transportFunc(func(request *http.Request) (*http.Response, error) {
+				return httpResponse(request, 200, map[string]any{
+					"value": []*armauthorization.RoleAssignment{
+						testRoleAssignment(testScope+"/connections/child", FoundryUserRoleID),
+					},
+				}), nil
+			}),
+			Retry: policy.RetryOptions{MaxRetries: -1},
+		},
+	}
+	hasChildRole, err := HasAnyRoleAssignment(
+		t.Context(),
+		credentialStub{},
+		testPrincipal,
+		SufficientDataPlaneRoles,
+		testScope,
+		childOnlyOpts,
+	)
+	require.NoError(t, err)
+	assert.False(t, hasChildRole, "descendant-scope assignments must not satisfy parent scope checks")
+
+	otherConflictOpts := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Transport: transportFunc(func(request *http.Request) (*http.Response, error) {
+				if request.Method == http.MethodGet {
+					return httpResponse(request, 200, map[string]any{"value": []any{}}), nil
+				}
+				return httpResponse(request, 409, map[string]any{
+					"error": map[string]string{"code": "RoleAssignmentLimitExceeded"},
+				}), nil
+			}),
+			Retry: policy.RetryOptions{MaxRetries: -1},
+		},
+	}
+	_, err = AssignRole(
+		t.Context(),
+		credentialStub{},
+		testPrincipal,
+		FoundryUserRoleID,
+		"Foundry User",
+		testScope,
+		armauthorization.PrincipalTypeUser,
+		otherConflictOpts,
+	)
+	require.Error(t, err, "non-RoleAssignmentExists 409 conflicts must not be swallowed")
+
 	created, err := AssignRole(
 		t.Context(),
 		credentialStub{},

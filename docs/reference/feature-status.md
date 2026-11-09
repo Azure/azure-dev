@@ -89,6 +89,8 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Current Azure principal (`AccountService.GetCurrentPrincipal`) | Stable v1 | azd 1.36.0 | Deprecated; wire route retained |
 | Deployment preview (`ServiceTargetService.Stream`) | Stable v1 | azd 1.37.0 | Preview messages/fields deprecated; wire route and Go SDK compatibility retained |
 | Structured service lifecycle messages (`ServiceHandlerStatus.messages`) | Stable v1 | azd 1.39.0 (target) | Beta messages deprecated; beta `EventStream` override and Go SDK compatibility retained |
+| Infrastructure generation (`InfraGenerationService.Stream`) | Beta-only | — | Native beta service, target azd 1.38.0 |
+
 
 The deployment preview contract graduation does not change the CLI feature stage
 in Advanced Features above. Host and SDK 1.37.0 shipped on October 21, 2026; see the

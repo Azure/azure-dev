@@ -26,6 +26,7 @@ func monitoringOutputKeys() []string {
 		"AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID",
 		"AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME",
 		"AZD_FOUNDRY_MONITORING_MODE",
+		synthesis.OwnedPrivateLinkScopeOutput,
 	}
 }
 
@@ -106,7 +107,7 @@ func (p *FoundryProvisioningProvider) privateMonitoringSkipReason(
 	}
 	vnetID, err := monitoringParameter(source, "vnetId")
 	if err != nil {
-		return err.Error(), nil
+		return ownedBlock(err.Error())
 	}
 	if vnetID == "" {
 		return "", nil

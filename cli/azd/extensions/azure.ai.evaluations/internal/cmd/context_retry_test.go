@@ -37,7 +37,7 @@ func (c *countingCred) GetToken(
 // the wrapper to the context and built both clients from the raw credential,
 // which made the retry dead code.
 func TestNewAzdTokenCredentialReturnsTheRetryingCredential(t *testing.T) {
-	cred, err := newAzdTokenCredential()
+	cred, err := newAzdTokenCredential("")
 	require.NoError(t, err)
 	_, wrapped := cred.(azdTokenRetry)
 	assert.True(t, wrapped, "clients must be built from the retrying credential, not the raw one")

@@ -31,6 +31,7 @@ var (
 		extensions.ServiceTargetProviderCapability,
 		extensions.FrameworkServiceProviderCapability,
 		extensions.ProvisioningProviderCapability,
+		extensions.InfraGenerationProviderCapability,
 		extensions.ValidationProviderCapability,
 	}
 )

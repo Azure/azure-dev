@@ -40,7 +40,9 @@ func (e *AuthorizationEvidence) suppliedIdentityChecks(ctx context.Context, plan
 			report = append(report, check)
 			continue
 		}
-		check.Status, check.Observed, check.Cause = e.identityGrantAllows(ctx, grant)
+		status, observed, cause := e.identityGrantAllows(ctx, grant)
+		check = resourceResult(check, status, observed)
+		check.Cause = cause
 		if check.Status != Pass && check.Status != NotApplicable {
 			check.Missing = "readable applicable role assignment with an accepted role ID and no condition"
 			check.Remediation = "Have the resource administrator configure the supplied identity's required permissions; " +

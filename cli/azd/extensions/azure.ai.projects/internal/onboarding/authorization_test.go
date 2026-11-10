@@ -125,6 +125,10 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 			authorizer := NewAuthorizationEvidence(testCredential{}, fake.options())
 			status, _, err := authorizer.identityGrantAllows(t.Context(), grant)
 			assert.Equal(t, state == "incomplete", err != nil)
+			if err != nil {
+				report := authorizer.suppliedIdentityChecks(t.Context(), suppliedPlan(t), suppliedFacts())
+				assert.ErrorIs(t, checkWithID(t, report, "workload-blob").Cause, err)
+			}
 			switch state {
 			case "inherited", "management group", "paged", "unrelated", "null final page", "paged null final page":
 				assert.Equal(t, Pass, status)
@@ -184,6 +188,12 @@ func TestAuthorizationReadsAreCachedOnlyWithinOnePass(t *testing.T) {
 		report, err := authorizer.Check(t.Context(), suppliedPlan(t), suppliedFacts())
 		require.NoError(t, err)
 		require.NoError(t, report.Err())
+		for _, check := range report {
+			assert.Equal(t, Pass, check.Status)
+			assert.Empty(t, check.Missing)
+			assert.Empty(t, check.Remediation)
+			assert.NoError(t, check.Cause)
+		}
 		assert.Equal(t, pass, fake.count(testCluster+assignmentSuffix),
 			"hosting-aks has two role requirements at the same scope")
 		assert.Equal(t, pass, fake.count(testWorkload+assignmentSuffix),

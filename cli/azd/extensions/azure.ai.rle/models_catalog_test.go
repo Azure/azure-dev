@@ -32,6 +32,10 @@ func TestModelCatalog(t *testing.T) {
 	if _, exists := renderers["Qwen/Qwen3-32B"]; exists {
 		t.Fatal("unsupported model Qwen/Qwen3-32B must not be listed")
 	}
+	maiRenderers := []string{"mai_harmony", "mai_harmony_internal"}
+	if got := renderers["MAI/MAI-Code-1.1-Flash"]; !slices.Equal(got, maiRenderers) {
+		t.Fatalf("MAI renderers = %v, want %v", got, maiRenderers)
+	}
 	for _, base := range []string{
 		"Qwen/Qwen3.8-27B",
 		"nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16",

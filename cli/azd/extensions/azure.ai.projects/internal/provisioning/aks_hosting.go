@@ -120,6 +120,28 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 			fmt.Sprintf("enable by setting %s=true in your shell or CI before running azd", synthesis.BYOAKSEnvVar),
 		)
 	}
+	includeAcr, _ := byoParameterValue(source, "includeAcr").(bool)
+	explicitKubeletID := ""
+	if includeAcr {
+		for name, parameter := range source.parameters {
+			if !strings.EqualFold(name, "kubeletObjectId") {
+				continue
+			}
+			if explicitKubeletID != "" {
+				return exterrors.Validation(exterrors.CodeConflictingArguments,
+					"multiple kubeletObjectId deployment parameters differ only by case",
+					"supply kubeletObjectId only once using the template's parameter name")
+			}
+			envelope, ok := parameter.(map[string]any)
+			principal, literal := envelope["value"].(string)
+			if !ok || len(envelope) != 1 || !literal || uuid.Validate(principal) != nil {
+				return exterrors.Validation(exterrors.CodeInvalidParameter,
+					"kubeletObjectId must use a value envelope containing a literal principal object ID GUID",
+					"omit kubeletObjectId to use the selected AKS cluster's actual kubelet identity")
+			}
+			explicitKubeletID = principal
+		}
+	}
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
@@ -147,13 +169,19 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		return err
 	}
 	_, needsKubelet := hostBindings["kubeletObjectId"]
-	if facts.KubeletObjectID == "" && (plan.Cluster.Missing == "" || needsKubelet) {
+	if facts.KubeletObjectID == "" && (plan.Cluster.Missing == "" || needsKubelet || includeAcr) {
 		return fmt.Errorf("BYO AKS requires a kubelet principal object ID from preflight")
 	}
 	if facts.KubeletObjectID != "" {
 		if _, err := uuid.Parse(facts.KubeletObjectID); err != nil {
 			return fmt.Errorf("AKS kubelet principal object ID must be a GUID: %w", err)
 		}
+	}
+	if explicitKubeletID != "" && !strings.EqualFold(explicitKubeletID, facts.KubeletObjectID) {
+		return exterrors.Validation(exterrors.CodeConflictingArguments,
+			fmt.Sprintf("kubeletObjectId %q does not match the actual kubelet principal object ID %q for AKS %q",
+				explicitKubeletID, facts.KubeletObjectID, plan.Cluster.ID),
+			"remove kubeletObjectId to resolve it automatically, or set it to the selected AKS cluster's actual kubelet ID")
 	}
 	workloadScope := plan.Workload.ID
 	if workloadScope == "" {

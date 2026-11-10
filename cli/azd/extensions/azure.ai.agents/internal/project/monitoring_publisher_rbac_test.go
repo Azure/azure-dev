@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -206,7 +207,7 @@ func TestAppendDeployWarning(t *testing.T) {
 			{Metadata: map[string]string{"note": "invoke"}},
 		}}
 
-		appendDeployWarning(result, "role missing")
+		appendDeployWarning(result, publisherTestComponent, "role missing")
 
 		assert.Equal(t, "first", result.Artifacts[0].Metadata["note"])
 		assert.Equal(t, "invoke\n\nWarning: role missing", result.Artifacts[1].Metadata["note"])
@@ -214,15 +215,98 @@ func TestAppendDeployWarning(t *testing.T) {
 	t.Run("creates note and metadata", func(t *testing.T) {
 		result := &azdext.ServiceDeployResult{Artifacts: []*azdext.Artifact{{}}}
 
-		appendDeployWarning(result, "role missing")
+		appendDeployWarning(result, publisherTestComponent, "role missing")
 
 		require.Equal(t, "Warning: role missing", result.Artifacts[0].Metadata["note"])
 	})
-	t.Run("empty warning or no artifacts is a no-op", func(t *testing.T) {
+	t.Run("empty warning is a no-op", func(t *testing.T) {
 		result := &azdext.ServiceDeployResult{Artifacts: []*azdext.Artifact{{}}}
-		appendDeployWarning(result, " ")
+		appendDeployWarning(result, publisherTestComponent, " ")
 		assert.Nil(t, result.Artifacts[0].Metadata)
-		assert.NotPanics(t, func() { appendDeployWarning(&azdext.ServiceDeployResult{}, "x") })
-		assert.NotPanics(t, func() { appendDeployWarning(nil, "x") })
+		assert.NotPanics(t, func() { appendDeployWarning(nil, publisherTestComponent, "x") })
+	})
+	t.Run("no artifacts gets a fallback artifact carrying the warning", func(t *testing.T) {
+		result := &azdext.ServiceDeployResult{}
+
+		appendDeployWarning(result, publisherTestComponent, "role missing")
+
+		require.Len(t, result.Artifacts, 1)
+		assert.Equal(t, publisherTestComponent, result.Artifacts[0].Location)
+		assert.Equal(t, "Warning: role missing", result.Artifacts[0].Metadata["note"])
+	})
+	t.Run("no artifacts and no component is a no-op", func(t *testing.T) {
+		result := &azdext.ServiceDeployResult{}
+		appendDeployWarning(result, "", "role missing")
+		assert.Empty(t, result.Artifacts)
+	})
+}
+
+type fakeTagsClient struct {
+	existing  map[string]*string
+	getErr    error
+	updateErr error
+	gets      int
+	updates   []armresources.TagsPatchResource
+}
+
+func (f *fakeTagsClient) GetAtScope(
+	_ context.Context, _ string, _ *armresources.TagsClientGetAtScopeOptions,
+) (armresources.TagsClientGetAtScopeResponse, error) {
+	f.gets++
+	if f.getErr != nil {
+		return armresources.TagsClientGetAtScopeResponse{}, f.getErr
+	}
+	return armresources.TagsClientGetAtScopeResponse{
+		TagsResource: armresources.TagsResource{Properties: &armresources.Tags{Tags: f.existing}},
+	}, nil
+}
+
+func (f *fakeTagsClient) UpdateAtScope(
+	_ context.Context, _ string, p armresources.TagsPatchResource, _ *armresources.TagsClientUpdateAtScopeOptions,
+) (armresources.TagsClientUpdateAtScopeResponse, error) {
+	if f.updateErr != nil {
+		return armresources.TagsClientUpdateAtScopeResponse{}, f.updateErr
+	}
+	f.updates = append(f.updates, p)
+	return armresources.TagsClientUpdateAtScopeResponse{}, nil
+}
+
+func TestRefreshMonitoringRoleSyncTag(t *testing.T) {
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	synced := map[string]*string{monitoringRoleSyncTag: new("earlier")}
+
+	t.Run("created assignment writes tag without reading", func(t *testing.T) {
+		c := &fakeTagsClient{existing: synced}
+		require.NoError(t, refreshMonitoringRoleSyncTag(t.Context(), c, publisherTestComponent, true, now))
+		assert.Equal(t, 0, c.gets)
+		require.Len(t, c.updates, 1)
+		assert.Equal(t, "2026-01-02T03:04:05Z", *c.updates[0].Properties.Tags[monitoringRoleSyncTag])
+		assert.Equal(t, armresources.TagsPatchOperationMerge, *c.updates[0].Operation)
+	})
+	t.Run("existing assignment with tag present is a no-op", func(t *testing.T) {
+		c := &fakeTagsClient{existing: synced}
+		require.NoError(t, refreshMonitoringRoleSyncTag(t.Context(), c, publisherTestComponent, false, now))
+		assert.Empty(t, c.updates)
+	})
+	t.Run("existing assignment with tag missing re-applies it", func(t *testing.T) {
+		c := &fakeTagsClient{existing: map[string]*string{"other": new("x")}}
+		require.NoError(t, refreshMonitoringRoleSyncTag(t.Context(), c, publisherTestComponent, false, now))
+		assert.Len(t, c.updates, 1)
+	})
+	t.Run("existing assignment with no tags re-applies it", func(t *testing.T) {
+		c := &fakeTagsClient{}
+		require.NoError(t, refreshMonitoringRoleSyncTag(t.Context(), c, publisherTestComponent, false, now))
+		assert.Len(t, c.updates, 1)
+	})
+	t.Run("read failure is returned without writing", func(t *testing.T) {
+		c := &fakeTagsClient{getErr: errors.New("read denied")}
+		err := refreshMonitoringRoleSyncTag(t.Context(), c, publisherTestComponent, false, now)
+		require.ErrorContains(t, err, "read denied")
+		assert.Empty(t, c.updates)
+	})
+	t.Run("update failure is returned", func(t *testing.T) {
+		c := &fakeTagsClient{updateErr: errors.New("write denied")}
+		err := refreshMonitoringRoleSyncTag(t.Context(), c, publisherTestComponent, true, now)
+		require.ErrorContains(t, err, "write denied")
 	})
 }

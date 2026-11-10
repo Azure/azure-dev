@@ -1969,7 +1969,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	appendDeployWarning(deployResult, monitoringWarning)
+	appendDeployWarning(deployResult, privateMonitoringComponentID(azdEnv), monitoringWarning)
 	return deployResult, nil
 }
 

@@ -178,32 +178,68 @@ func (p *AgentServiceTargetProvider) ensureHostedAgentMonitoringPublisher(
 		if err != nil {
 			return err
 		}
-		if !created {
-			current, err := tags.GetAtScope(ctx, componentID, nil)
-			if err != nil {
-				return err
-			}
-			if current.Properties != nil && current.Properties.Tags != nil &&
-				current.Properties.Tags[monitoringRoleSyncTag] != nil {
-				return nil
-			}
-		}
-		_, err = tags.UpdateAtScope(ctx, componentID, armresources.TagsPatchResource{
-			Operation: new(armresources.TagsPatchOperationMerge),
-			Properties: &armresources.Tags{Tags: map[string]*string{
-				monitoringRoleSyncTag: new(time.Now().UTC().Format(time.RFC3339)),
-			}},
-		}, nil)
-		return err
+		return refreshMonitoringRoleSyncTag(ctx, tags, componentID, created, time.Now())
 	}
 	return grantHostedAgentMonitoringPublisher(ctx, assign, touch, azdEnv, principalID)
 }
 
+// monitoringTagsClient is the subset of armresources.TagsClient used to refresh the component.
+type monitoringTagsClient interface {
+	GetAtScope(
+		ctx context.Context, scope string, options *armresources.TagsClientGetAtScopeOptions,
+	) (armresources.TagsClientGetAtScopeResponse, error)
+	UpdateAtScope(
+		ctx context.Context, scope string, parameters armresources.TagsPatchResource,
+		options *armresources.TagsClientUpdateAtScopeOptions,
+	) (armresources.TagsClientUpdateAtScopeResponse, error)
+}
+
+// refreshMonitoringRoleSyncTag merges the sync tag onto the component. When the assignment already
+// existed (created is false) it only writes the tag if it is missing, so repeat deploys are no-ops
+// but an earlier failed refresh is retried.
+func refreshMonitoringRoleSyncTag(
+	ctx context.Context,
+	tags monitoringTagsClient,
+	componentID string,
+	created bool,
+	now time.Time,
+) error {
+	if !created {
+		current, err := tags.GetAtScope(ctx, componentID, nil)
+		if err != nil {
+			return err
+		}
+		if current.Properties != nil && current.Properties.Tags != nil &&
+			current.Properties.Tags[monitoringRoleSyncTag] != nil {
+			return nil
+		}
+	}
+	_, err := tags.UpdateAtScope(ctx, componentID, armresources.TagsPatchResource{
+		Operation: new(armresources.TagsPatchOperationMerge),
+		Properties: &armresources.Tags{Tags: map[string]*string{
+			monitoringRoleSyncTag: new(now.UTC().Format(time.RFC3339)),
+		}},
+	}, nil)
+	return err
+}
+
 // appendDeployWarning adds text to the note of the last artifact, so it shows in the deploy output
-// instead of subprocess stderr, which the host discards.
-func appendDeployWarning(result *azdext.ServiceDeployResult, warning string) {
+// instead of subprocess stderr, which the host discards. Activity-only agents produce no artifacts,
+// so a resource artifact for the component carries the warning instead.
+func appendDeployWarning(result *azdext.ServiceDeployResult, componentID, warning string) {
 	if result == nil || strings.TrimSpace(warning) == "" {
 		return
+	}
+	if len(result.Artifacts) == 0 && componentID != "" {
+		result.Artifacts = append(result.Artifacts, &azdext.Artifact{
+			Kind:         azdext.ArtifactKind_ARTIFACT_KIND_RESOURCE,
+			Location:     componentID,
+			LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+			Metadata: map[string]string{
+				"label":     "Application Insights",
+				"clickable": "false",
+			},
+		})
 	}
 	for i := len(result.Artifacts) - 1; i >= 0; i-- {
 		artifact := result.Artifacts[i]

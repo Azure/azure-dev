@@ -45,12 +45,18 @@ Use --local to target a locally running agent (started via 'azd ai agent run')
 instead of Foundry. With -p a2a, the server must expose POST /a2a.
 Local A2A sends no Foundry headers and persists no session state. It rejects
 --session-id, --new-session, --conversation-id, --new-conversation,
---version, --user-identity, --call-id, or --client-header. Use A2A
-contextId/taskId in a request file for protocol-level continuity.
+--version, --user-identity, --call-id, or --client-header. Use --context-id
+with a plain A2A message, or contextId/taskId in a request file, for continuity.
 
 Sessions & Identity
 Except for local A2A, sessions are persisted per-agent — consecutive invokes
 reuse the same session automatically. Pass --new-session to force a reset.
+
+For A2A, the response's Context ID identifies the conversation. Pass
+--context-id to continue that conversation, including an older one.
+It is not a Foundry session ID. Unless --session-id or --version is explicit,
+azd omits cached session routing so Foundry can resolve the selected context.
+Do not combine --context-id with --input-file, --conversation-id, or reset flags.
 
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
@@ -71,11 +77,14 @@ Response Output
 Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
-header). Friendly summary lines like "Session:" and "Invocation:" are
+header). Friendly summaries such as Context ID, Task ID, State, Session, and Invocation are
 suppressed in raw mode.
+Default A2A output shows the returned Context ID and, for Tasks, their ID and state.
+Failed, canceled, and rejected Tasks return an error while keeping their IDs visible;
+input-required and auth-required states remain visible for follow-up.
 For completed A2A Tasks, default output prefers answer artifacts over generic
-status messages such as "Done". Other Tasks prefer status messages, falling
-back to artifacts when no status text is present. History is the final fallback.
+status messages such as "Done". Tasks awaiting completion prefer status messages,
+falling back to artifacts when no status text is present. History is the final fallback.
 
 Platform Latency
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
@@ -101,6 +110,7 @@ Flags
       --agent-endpoint string     : Full endpoint URL of a deployed agent (run 'azd ai agent show' to see it). Invokes without requiring an azd project; protocol is derived from the URL.
       --call-id string            : Call ID header value (sent as x-agent-foundry-call-id for local responses/invocations only; ignored for remote requests)
       --client-header stringArray : Custom x-client-* request header in "Name: Value" format (repeatable). The responses and invocations protocols forward the x-client-* header family to the agent; other header names are rejected and the flag is not supported with a2a.
+      --context-id string         : A2A context ID returned by a previous invocation (plain messages only)
       --conversation-id string    : Explicit conversation ID override
       --debug-latency             : Collect and show platform latency for remote responses/invocations; use --debug-latency=false to disable (default true)
   -f, --input-file string         : Path to a file whose contents are sent as the request body
@@ -145,6 +155,9 @@ Examples
 
   Send a complete public JSON-RPC file unchanged (version is required)
     azd ai agent invoke -p a2a --a2a-version 1.0 -f a2a-request-1.0.json
+
+  Continue an earlier A2A conversation using its returned Context ID
+    azd ai agent invoke -p a2a --context-id <context-id> "Tell me more"
 
   Invoke with a file as the request body
     azd ai agent invoke -f request.json

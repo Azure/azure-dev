@@ -49,6 +49,7 @@ type invokeFlags struct {
 	newConversation bool
 	protocol        string
 	a2aVersion      string
+	contextID       string
 	agentEndpoint   string
 	version         string
 	outputFmt       string
@@ -133,12 +134,18 @@ Use --local to target a locally running agent (started via 'azd ai agent run')
 instead of Foundry. With -p a2a, the server must expose POST /a2a.
 Local A2A sends no Foundry headers and persists no session state. It rejects
 --session-id, --new-session, --conversation-id, --new-conversation,
---version, --user-identity, --call-id, or --client-header. Use A2A
-contextId/taskId in a request file for protocol-level continuity.
+--version, --user-identity, --call-id, or --client-header. Use --context-id
+with a plain A2A message, or contextId/taskId in a request file, for continuity.
 
 Sessions & Identity:
 Except for local A2A, sessions are persisted per-agent — consecutive invokes
 reuse the same session automatically. Pass --new-session to force a reset.
+
+For A2A, the response's Context ID identifies the conversation. Pass
+--context-id to continue that conversation, including an older one.
+It is not a Foundry session ID. Unless --session-id or --version is explicit,
+azd omits cached session routing so Foundry can resolve the selected context.
+Do not combine --context-id with --input-file, --conversation-id, or reset flags.
 
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
@@ -159,11 +166,14 @@ Response Output:
 Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
-header). Friendly summary lines like "Session:" and "Invocation:" are
+header). Friendly summaries such as Context ID, Task ID, State, Session, and Invocation are
 suppressed in raw mode.
+Default A2A output shows the returned Context ID and, for Tasks, their ID and state.
+Failed, canceled, and rejected Tasks return an error while keeping their IDs visible;
+input-required and auth-required states remain visible for follow-up.
 For completed A2A Tasks, default output prefers answer artifacts over generic
-status messages such as "Done". Other Tasks prefer status messages, falling
-back to artifacts when no status text is present. History is the final fallback.
+status messages such as "Done". Tasks awaiting completion prefer status messages,
+falling back to artifacts when no status text is present. History is the final fallback.
 
 Platform Latency:
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
@@ -183,6 +193,9 @@ Raw output includes the returned headers without a formatted latency summary.` +
   # Invoke using a specific protocol
   azd ai agent invoke --protocol invocations "Hello!"
 ` + invokeA2APreviewExamples + `
+  # Continue an earlier A2A conversation using its returned Context ID
+  azd ai agent invoke -p a2a --context-id <context-id> "Tell me more"
+
   # Invoke with a file as the request body
   azd ai agent invoke -f request.json
 
@@ -261,6 +274,8 @@ Raw output includes the returned headers without a formatted latency summary.` +
 			"pass --protocol when it cannot be determined.")
 	cmd.Flags().StringVar(&flags.a2aVersion, "a2a-version", "",
 		"A2A wire version: 0.3 or 1.0. Defaults to 1.0 for messages; required with --input-file for a2a.")
+	cmd.Flags().StringVar(&flags.contextID, "context-id", "",
+		"A2A context ID returned by a previous invocation (plain messages only)")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,
@@ -463,6 +478,10 @@ func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags, a2aPreview bool)
 			"provide a message as a positional argument, or use --input-file/-f to send a file",
 		)
 	}
+	if err := validateInvokeContextIDFlags(&flags, agent_api.AgentProtocol(flags.protocol),
+		cmd.Flags().Changed("context-id")); err != nil {
+		return err
+	}
 	if err := validateInvokeVersionFlags(cmd, &flags); err != nil {
 		return err
 	}
@@ -647,6 +666,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	if err := validateLocalA2AOptions(a.flags, agent_api.AgentProtocol(a.flags.protocol)); err != nil {
 		return err
 	}
+	if err := validateInvokeContextIDFlags(a.flags, agent_api.AgentProtocol(a.flags.protocol), false); err != nil {
+		return err
+	}
 	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocol(a.flags.protocol), a2aPreview); err != nil {
 		return err
 	}
@@ -694,6 +716,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolResponses, a2aPreview); err != nil {
 				return err
 			}
+			if err := validateInvokeContextIDFlags(a.flags, agent_api.AgentProtocolResponses, false); err != nil {
+				return err
+			}
 			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
 				return err
 			}
@@ -706,6 +731,10 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		return err
 	}
 	if err := validateInvokeA2AVersionFlags(a.flags, protocol, a2aPreview); err != nil {
+		a.closeResolvedRemoteContextClient()
+		return err
+	}
+	if err := validateInvokeContextIDFlags(a.flags, protocol, false); err != nil {
 		a.closeResolvedRemoteContextClient()
 		return err
 	}

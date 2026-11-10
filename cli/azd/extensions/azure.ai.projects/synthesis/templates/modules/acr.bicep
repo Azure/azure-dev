@@ -1,7 +1,6 @@
 // Azure Container Registry for hosted agents that use docker:.
-// cspell:ignore kubelet
 // Wires the registry as a connection on the Foundry project so the
-// project can discover the registry. AKS uses its kubelet identity for image pulls.
+// project's managed identity can pull images.
 //
 // Premium SKU is intentional: Foundry recommends Premium so the registry
 // can support content trust and geo-replication if the user enables them
@@ -26,7 +25,7 @@ param foundryAccountName string
 @description('Name of the existing Foundry project receiving the ACR connection.')
 param foundryProjectName string
 
-@description('Foundry project managed identity; used by the connection and receives AcrPull outside BYO AKS.')
+@description('Principal id of the Foundry project managed identity; receives AcrPull and is the connection credential identity.')
 param foundryProjectPrincipalId string
 
 @description('When true, the registry disables public network access to stay inside the isolation boundary.')
@@ -65,7 +64,9 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
 }
 
-resource foundryAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!byoAks) {
+// Grant the Foundry project's managed identity AcrPull on this registry so the
+// hosted agent can pull images using the project identity.
+resource foundryAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(registry.id, foundryProjectPrincipalId, acrPullRoleId)
   scope: registry
   properties: {

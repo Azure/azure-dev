@@ -1,6 +1,6 @@
 # AI extension non-interactive input reference
 
-<!-- cspell:ignore Abac ABAC strconv kubelet -->
+<!-- cspell:ignore Abac ABAC strconv -->
 
 `azd` may enable no-prompt mode automatically in CI and supported coding-agent
 environments. Every prompt in `azure.ai.agents` and `azure.ai.projects` must
@@ -134,11 +134,10 @@ values. Cross-subscription reuse is rejected, including environment-only
 selections and ejected parameters. This is supported by Bicep, not Terraform
 eject in reuse mode. `azd down` never deletes the external registry.
 
-An external source-build registry selection supports `agentHosting`. BYO AKS
-uses only the AKS kubelet identity for registry pull grants; ordinary Foundry
-hosting uses the Project identity. Existing registry networking is not changed,
-so AKS must already be able to reach it. Re-eject older BYO AKS Bicep templates
-to obtain the kubelet-only access contract.
+An external source-build registry selection cannot be combined with
+`agentHosting`, even without active agents: reuse does not manage AKS node pull
+access. Remove the selector to let azd create the source-build registry, or use
+explicit prebuilt images with user-managed registry authentication.
 
 Without a selection, provisioning creates a registry only when source builds
 need one. Code deployments and prebuilt images do not need a source-build

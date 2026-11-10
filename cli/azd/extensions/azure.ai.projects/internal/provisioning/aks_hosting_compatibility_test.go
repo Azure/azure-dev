@@ -4,9 +4,7 @@
 package provisioning
 
 import (
-	"context"
 	"fmt"
-	"maps"
 	"strings"
 	"testing"
 
@@ -46,24 +44,21 @@ func TestBYONonBooleanIncludeAcrReachesARM(t *testing.T) {
 	}
 }
 
-func TestBYOPrepareValidatesSuppliedKubeletForACR(t *testing.T) {
+func TestBYOPreparePreservesSuppliedKubeletRegardlessOfACR(t *testing.T) {
 	for _, includeAcr := range []bool{false, true} {
 		for _, test := range []struct {
 			name      string
 			parameter any
 			duplicate bool
-			valid     bool
 		}{
-			{"empty", map[string]any{"value": ""}, false, false},
-			{"whitespace", map[string]any{"value": " "}, false, false},
-			{"non-string", map[string]any{"value": 1}, false, false},
-			{"invalid GUID", map[string]any{"value": "not-a-guid"}, false, false},
-			{"null", map[string]any{"value": nil}, false, false},
-			{"reference", map[string]any{"reference": map[string]any{"secretName": "kubelet"}}, false, false},
-			{"extra envelope field", map[string]any{"value": offlineKubeletObjectID, "extra": true}, false, false},
-			{"duplicate", map[string]any{"value": offlineKubeletObjectID}, true, false},
-			{"different", map[string]any{"value": suppliedHostingPrincipal}, false, false},
-			{"matching", map[string]any{"value": strings.ToUpper(offlineKubeletObjectID)}, false, true},
+			{"empty", map[string]any{"value": ""}, false},
+			{"whitespace", map[string]any{"value": " "}, false},
+			{"non-string", map[string]any{"value": 1}, false},
+			{"null", map[string]any{"value": nil}, false},
+			{"reference", map[string]any{"reference": map[string]any{"secretName": "kubelet"}}, false},
+			{"duplicate", map[string]any{"value": offlineKubeletObjectID}, true},
+			{"different", map[string]any{"value": suppliedHostingPrincipal}, false},
+			{"matching", map[string]any{"value": strings.ToUpper(offlineKubeletObjectID)}, false},
 		} {
 			t.Run(fmt.Sprintf("includeAcr=%t/%s", includeAcr, test.name), func(t *testing.T) {
 				p, fake := offlineBYOProvider(t)
@@ -71,87 +66,18 @@ func TestBYOPrepareValidatesSuppliedKubeletForACR(t *testing.T) {
 				require.NoError(t, err)
 				delete(source.parameters, "includeAcr")
 				source.parameters["INCLUDEACR"] = map[string]any{"value": includeAcr}
-				source.parameters["KUBELETOBJECTID"] = test.parameter
+				source.parameters["kubeletObjectId"] = test.parameter
 				if test.duplicate {
-					source.parameters["kubeletObjectId"] = test.parameter
+					source.parameters["KUBELETOBJECTID"] = test.parameter
 				}
-				err = p.prepareBYO(t.Context(), source, func(string) {})
-				if includeAcr && !test.valid {
-					require.ErrorContains(t, err, "kubeletObjectId")
-					if test.name == "different" {
-						require.ErrorContains(t, err, suppliedHostingPrincipal)
-						require.ErrorContains(t, err, offlineKubeletObjectID)
-						require.ErrorContains(t, err, offlineClusterID)
-						assert.Contains(t, fake.requests, "GET "+offlineClusterID)
-					} else {
-						assert.Empty(t, fake.requests, "invalid local inputs must fail before Azure reads")
-					}
-				} else {
-					require.NoError(t, err)
-					assert.Contains(t, fake.requests, "GET "+offlineClusterID)
-				}
-				assert.Equal(t, test.parameter, source.parameters["KUBELETOBJECTID"])
+				require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
+				assert.Contains(t, fake.requests, "GET "+offlineClusterID)
+				assert.Equal(t, test.parameter, source.parameters["kubeletObjectId"])
 				if test.duplicate {
-					assert.Equal(t, test.parameter, source.parameters["kubeletObjectId"])
+					assert.Equal(t, test.parameter, source.parameters["KUBELETOBJECTID"])
 				}
 				assert.Equal(t, map[string]any{"value": includeAcr}, source.parameters["INCLUDEACR"])
 			})
-		}
-	}
-}
-
-func TestBYOKubeletBindingFailureBeforeRegistryWrites(t *testing.T) {
-	for _, preview := range []bool{false, true} {
-		for _, external := range []bool{false, true} {
-			for _, failure := range []string{"mismatch", "invalid GUID", "missing actual identity"} {
-				t.Run(fmt.Sprintf("preview=%t/external=%t/%s", preview, external, failure), func(t *testing.T) {
-					t.Setenv(synthesis.ACRReuseEnvVar, "true")
-					p, fake := offlineBYOProvider(t)
-					env := &resolveEnvStubEnvServer{envName: "test"}
-					p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
-					p.acrPromptedEnv = map[string]string{envKeySubscriptionID: p.subID, envKeyLocation: p.location}
-					source, err := p.resolveTemplate(t.Context(), func(string) {})
-					require.NoError(t, err)
-					source.parameters["includeAcr"] = map[string]any{"value": true}
-					principal := suppliedHostingPrincipal
-					expectedError := "does not match"
-					switch failure {
-					case "invalid GUID":
-						principal = "not-a-guid"
-						expectedError = "literal principal object ID GUID"
-					case "missing actual identity":
-						principal = offlineKubeletObjectID
-						fake.kubeletID = ""
-						expectedError = "aks-identity"
-					}
-					source.parameters["kubeletObjectId"] = map[string]any{"value": principal}
-					if external {
-						source.parameters["existingAcrResourceId"] = map[string]any{
-							"value": "/subscriptions/target-sub/resourceGroups/shared/providers/" +
-								"Microsoft.ContainerRegistry/registries/registry",
-						}
-					}
-					original := maps.Clone(source.parameters)
-					p.onDiskSource = source
-					p.acrRequest = func(_ context.Context, method, path, _ string, _ any) error {
-						t.Errorf("registry access must not start after invalid kubelet binding: %s %s", method, path)
-						return fmt.Errorf("unexpected registry request")
-					}
-					if preview {
-						_, err = p.Preview(t.Context(), func(string) {})
-					} else {
-						_, err = p.Deploy(t.Context(), func(string) {})
-					}
-					require.ErrorContains(t, err, expectedError)
-					assert.Equal(t, original, source.parameters)
-					assert.Zero(t, fake.writes)
-					assert.Zero(t, fake.previews)
-					assert.Empty(t, env.set)
-					assert.Empty(t, env.config)
-					assert.Nil(t, p.acrPending)
-					assert.Len(t, p.acrPromptedEnv, 2)
-				})
-			}
 		}
 	}
 }

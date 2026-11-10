@@ -370,10 +370,11 @@ func TestARMExistingRegistryShape(t *testing.T) {
 				assert.Equal(t, map[string]any{"value": "[parameters('acrPullRoleDefinitionId')]"},
 					properties.Parameters["pullRoleDefinitionId"])
 				assert.Equal(t, "[if(parameters('agentHosting').enabled, "+
-					"createObject('value', parameters('acrPullPrincipalId')), "+
+					"createObject('value', reference('byoFoundryAccount::project', "+
+					"'2026-07-15-preview', 'full').identity.principalId), "+
 					"createObject('value', reference('foundryAccount::project', "+
 					"'2025-06-01', 'full').identity.principalId))]",
-					properties.Parameters["pullPrincipalId"])
+					properties.Parameters["projectPrincipalId"])
 				expectedName = "[if(empty(parameters('acrAccessOperationId')), " +
 					strings.TrimSuffix(strings.TrimPrefix(expectedName, "["), "]") +
 					", format('azd-acr-{0}', parameters('acrAccessOperationId')))]"

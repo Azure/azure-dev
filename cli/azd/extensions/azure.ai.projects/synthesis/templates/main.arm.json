@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "3455721059847612963"
+      "templateHash": "5294638763993881508"
     }
   },
   "definitions": {
@@ -215,14 +215,7 @@
       "type": "bool",
       "defaultValue": false,
       "metadata": {
-        "description": "The selected pull identity already has a matching registry pull role assignment."
-      }
-    },
-    "acrPullPrincipalId": {
-      "type": "string",
-      "defaultValue": "",
-      "metadata": {
-        "description": "AKS kubelet principal receiving registry pull access in BYO AKS deployments; resolved by microsoft.foundry."
+        "description": "Project already has effective registry pull access."
       }
     },
     "acrAccessOperationId": {
@@ -400,9 +393,6 @@
           "acrPullAssigned": {
             "value": "[parameters('acrPullAssigned')]"
           },
-          "acrPullPrincipalId": {
-            "value": "[parameters('acrPullPrincipalId')]"
-          },
           "acrAccessOperationId": {
             "value": "[parameters('acrAccessOperationId')]"
           },
@@ -460,7 +450,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "17291490647701483877"
+              "templateHash": "12875187479335769071"
             }
           },
           "definitions": {
@@ -632,10 +622,6 @@
             "acrPullAssigned": {
               "type": "bool",
               "defaultValue": false
-            },
-            "acrPullPrincipalId": {
-              "type": "string",
-              "defaultValue": ""
             },
             "acrAccessOperationId": {
               "type": "string",
@@ -1710,7 +1696,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.48.1.52935",
-                      "templateHash": "16865477437949245435"
+                      "templateHash": "4757893513251572043"
                     }
                   },
                   "parameters": {
@@ -1750,7 +1736,7 @@
                     "foundryProjectPrincipalId": {
                       "type": "string",
                       "metadata": {
-                        "description": "Foundry project managed identity; used by the connection and receives AcrPull outside BYO AKS."
+                        "description": "Principal id of the Foundry project managed identity; receives AcrPull and is the connection credential identity."
                       }
                     },
                     "enableNetworkIsolation": {
@@ -1817,7 +1803,6 @@
                       }
                     },
                     {
-                      "condition": "[not(parameters('byoAks'))]",
                       "type": "Microsoft.Authorization/roleAssignments",
                       "apiVersion": "2022-04-01",
                       "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]",
@@ -1890,7 +1875,7 @@
                   "registryName": {
                     "value": "[last(split(parameters('existingAcrResourceId'), '/'))]"
                   },
-                  "pullPrincipalId": "[if(parameters('agentHosting').enabled, createObject('value', parameters('acrPullPrincipalId')), createObject('value', reference('foundryAccount::project', '2025-06-01', 'full').identity.principalId))]",
+                  "projectPrincipalId": "[if(parameters('agentHosting').enabled, createObject('value', reference('byoFoundryAccount::project', '2026-07-15-preview', 'full').identity.principalId), createObject('value', reference('foundryAccount::project', '2025-06-01', 'full').identity.principalId))]",
                   "pullAssigned": {
                     "value": "[parameters('acrPullAssigned')]"
                   },
@@ -1908,7 +1893,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.48.1.52935",
-                      "templateHash": "2356462800975162710"
+                      "templateHash": "11513645951317576548"
                     }
                   },
                   "parameters": {
@@ -1929,7 +1914,7 @@
                     "registryName": {
                       "type": "string"
                     },
-                    "pullPrincipalId": {
+                    "projectPrincipalId": {
                       "type": "string"
                     },
                     "pullAssigned": {
@@ -1974,9 +1959,9 @@
                       "type": "Microsoft.Authorization/roleAssignments",
                       "apiVersion": "2022-04-01",
                       "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
-                      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('pullPrincipalId'), variables('acrPullRoleId'))]",
+                      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('projectPrincipalId'), variables('acrPullRoleId'))]",
                       "properties": {
-                        "principalId": "[parameters('pullPrincipalId')]",
+                        "principalId": "[parameters('projectPrincipalId')]",
                         "principalType": "ServicePrincipal",
                         "roleDefinitionId": "[variables('acrPullRoleId')]"
                       },
@@ -1988,7 +1973,7 @@
                       "condition": "[and(equals(parameters('mode'), 'reuse-connect'), not(parameters('pullAssigned')))]",
                       "type": "Microsoft.Resources/deployments",
                       "apiVersion": "2025-04-01",
-                      "name": "[if(empty(parameters('accessOperationId')), format('existing-acr-access-{0}', uniqueString(parameters('pullPrincipalId'), parameters('registryName'))), format('azd-acr-access-{0}', parameters('accessOperationId')))]",
+                      "name": "[if(empty(parameters('accessOperationId')), format('existing-acr-access-{0}', uniqueString(parameters('projectPrincipalId'), parameters('registryName'))), format('azd-acr-access-{0}', parameters('accessOperationId')))]",
                       "properties": {
                         "expressionEvaluationOptions": {
                           "scope": "inner"
@@ -1999,7 +1984,7 @@
                             "value": "[parameters('registryName')]"
                           },
                           "principalId": {
-                            "value": "[parameters('pullPrincipalId')]"
+                            "value": "[parameters('projectPrincipalId')]"
                           },
                           "assignmentName": {
                             "value": "[parameters('accessOperationId')]"
@@ -2076,6 +2061,7 @@
                 }
               },
               "dependsOn": [
+                "byoFoundryAccount::project",
                 "foundryAccount::project"
               ]
             },

@@ -92,17 +92,21 @@ func TestHostingPreservesACRSelection(t *testing.T) {
 	const registryID = "/subscriptions/sub/resourceGroups/shared/providers/" +
 		"Microsoft.ContainerRegistry/registries/registry"
 	for _, test := range []struct {
-		name, agent, mode          string
-		create, canonical, network bool
-		remote                     bool
+		name, agent, mode, expectedError string
+		create, canonical, network       bool
+		remote                           bool
 	}{
-		{name: "project only reuse", mode: "none"},
+		{name: "project only reuse", expectedError: "registry reuse is not supported with agentHosting"},
 		{name: "project only", create: true, mode: "none"},
 		{name: "create local", agent: "docker: {remoteBuild: false}", create: true, mode: "create"},
-		{name: "reuse local", agent: "docker: {remoteBuild: false}", mode: "reuse-connect"},
-		{name: "reuse remote", agent: "docker: {remoteBuild: true}", mode: "reuse-connect", remote: true},
-		{name: "canonical reuse", agent: "docker: {remoteBuild: false}", canonical: true, mode: "reuse-connect"},
-		{name: "private reuse", agent: "docker: {remoteBuild: false}", network: true, mode: "reuse-connect"},
+		{name: "reuse local", agent: "docker: {remoteBuild: false}",
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "reuse remote", agent: "docker: {remoteBuild: true}",
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "canonical reuse", agent: "docker: {remoteBuild: false}", canonical: true,
+			expectedError: "registry reuse is not supported with agentHosting"},
+		{name: "private reuse", agent: "docker: {remoteBuild: false}", network: true,
+			expectedError: "registry reuse is not supported with agentHosting"},
 		{name: "private create", agent: "docker: {remoteBuild: false}", network: true, create: true,
 			mode: "create"},
 		{name: "prebuilt", agent: "image: registry/image:v1\n    docker: {imagePassthrough: true}",
@@ -132,32 +136,38 @@ func TestHostingPreservesACRSelection(t *testing.T) {
 				} else if !test.create {
 					input.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = registryID
 				}
-				require.NoError(t, ValidateGreenfieldACRSelectionForInput(input, registryID))
+				if test.expectedError == "registry reuse is not supported with agentHosting" {
+					require.ErrorIs(t, ValidateGreenfieldACRSelectionForInput(input, registryID), ErrACRReuseAgentHosting)
+				}
 				if test.canonical || !test.create {
 					t.Setenv(ACRReuseEnvVar, "false")
 					disabledResult, disabledErr := Synthesize(input)
-					requireACRDisabled(t, disabledErr)
+					if test.canonical {
+						requireACRDisabled(t, disabledErr)
+					} else {
+						require.ErrorIs(t, disabledErr, ErrACRReuseAgentHosting)
+					}
 					require.Nil(t, disabledResult)
 					t.Setenv(ACRReuseEnvVar, "true")
 				}
 				result, err := Synthesize(input)
+				if test.expectedError != "" {
+					require.ErrorContains(t, err, test.expectedError)
+					assert.Nil(t, result)
+					return
+				}
 				require.NoError(t, err)
 				require.NotNil(t, result.Hosting)
 				assert.Equal(t, hostingClusterID, result.Hosting.ClusterResourceID)
 				assert.Equal(t, test.mode, result.ACRMode)
-				if test.name == "project only reuse" && preserve {
-					assert.NotContains(t, result.Parameters, "includeAcr")
-					assert.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}", result.Parameters["existingAcrResourceId"])
-				} else {
-					assert.Equal(t, test.mode != "none", result.Parameters["includeAcr"])
-				}
+				assert.Equal(t, test.mode != "none", result.Parameters["includeAcr"])
 				if test.mode == "reuse-connect" {
 					expected := registryID
 					if preserve && !test.canonical {
 						expected = "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"
 					}
 					assert.Equal(t, expected, result.Parameters["existingAcrResourceId"])
-				} else if test.name != "project only reuse" || !preserve {
+				} else {
 					assert.NotContains(t, result.Parameters, "existingAcrResourceId")
 				}
 				remote, err := RequiresRemoteACRBuild(input)
@@ -363,14 +373,6 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 				assert.Equal(t, "ManagedIdentity", properties["authType"])
 			case "Microsoft.Authorization/roleAssignments":
 				roleTemplates++
-				properties, ok := value["properties"].(map[string]any)
-				require.True(t, ok)
-				switch properties["principalId"] {
-				case "[parameters('foundryProjectPrincipalId')]":
-					assert.Equal(t, "[not(parameters('byoAks'))]", value["condition"])
-				case "[parameters('kubeletObjectId')]":
-					assert.Equal(t, "[parameters('byoAks')]", value["condition"])
-				}
 			}
 			for _, child := range value {
 				visit(child)

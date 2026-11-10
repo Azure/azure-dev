@@ -1,5 +1,4 @@
 // Resource-group-scoped resources for a microsoft.foundry service: the
-// cspell:ignore kubelet abbrs managednetworks
 // Foundry (AIServices) account, its project, model deployments, the optional
 // container registry.
 //
@@ -80,7 +79,6 @@ param workloadPrincipalId string = ''
 param existingAcrResourceId string = ''
 
 param acrPullAssigned bool = false
-param acrPullPrincipalId string = ''
 param acrAccessOperationId string = ''
 param acrPullRoleDefinitionId string = ''
 
@@ -397,8 +395,8 @@ module existingAcr 'container-registry.bicep' = if (includeAcr && !empty(existin
     mode: 'reuse-connect'
     location: location
     registryName: last(split(existingAcrResourceId, '/'))
-    pullPrincipalId: agentHosting.enabled
-      ? acrPullPrincipalId
+    projectPrincipalId: agentHosting.enabled
+      ? byoFoundryAccount::project!.identity.principalId
       : foundryAccount::project!.identity.principalId
     pullAssigned: acrPullAssigned
     accessOperationId: acrAccessOperationId

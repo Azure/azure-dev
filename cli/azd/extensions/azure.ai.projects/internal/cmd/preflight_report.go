@@ -47,7 +47,7 @@ func (r *preflightReports) postProvision(
 			InvocationId: request.GetInvocationId(),
 			Text:         "BYO-AKS preflight report:\n" + text,
 		}); err != nil {
-			return nil, fmt.Errorf("publish BYO-AKS preflight report: %w", err)
+			return nil, fmt.Errorf("publish BYO-AKS preflight report: %w\nBYO-AKS preflight report:\n%s", err, text)
 		}
 	}
 	return &v1beta.EventMessage{

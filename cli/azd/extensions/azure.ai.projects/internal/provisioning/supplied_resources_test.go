@@ -389,6 +389,7 @@ func TestBYOConditionalGrantRetainsExitDiagnostic(t *testing.T) {
 }
 
 func TestBYOReadFailureCauseRetainsExitDiagnostic(t *testing.T) {
+	//nolint:gosec // G101: synthetic URL credentials exercise final error redaction.
 	const endpoint = "https://cause-user:cause-password@example.test/resource?sig=cause-secret#cause-fragment"
 	for _, failure := range []string{"transport", "authentication", "decoding"} {
 		for _, preview := range []bool{false, true} {

@@ -64,6 +64,10 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
   }
 }
 
+var accountSubdomain = !empty(foundryAccount.properties.?customSubDomainName)
+  ? foundryAccount.properties.customSubDomainName
+  : first(split(last(split(projectEndpoint, '://')), '.'))
+
 resource adjunctResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = if (createAdjunctGroup) {
   name: resourceGroupName
   location: location
@@ -137,7 +141,7 @@ module monitoring 'modules/monitoring.bicep' = if (monitoringMode != 'none') {
 output AZURE_AI_PROJECT_ID string = projectResourceId
 output AZURE_AI_ACCOUNT_NAME string = accountName
 output AZURE_AI_PROJECT_NAME string = projectName
-output AZURE_OPENAI_ENDPOINT string = 'https://${accountName}.openai.azure.com/'
+output AZURE_OPENAI_ENDPOINT string = 'https://${accountSubdomain}.openai.azure.com/'
 output FOUNDRY_PROJECT_ENDPOINT string = projectEndpoint
 output AZURE_FOUNDRY_RESOURCE_GROUP string = createAdjunctGroup ? resourceGroupName : ''
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = {{ if eq .AcrMode "create" }}containerRegistry.outputs.endpoint{{ else if or (eq .AcrMode "reuse-connect") (eq .AcrMode "already-connected") }}existingAcrEndpoint{{ else }}''{{ end }}

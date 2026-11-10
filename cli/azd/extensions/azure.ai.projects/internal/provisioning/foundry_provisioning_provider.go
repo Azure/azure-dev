@@ -581,7 +581,10 @@ func (p *FoundryProvisioningProvider) resolveExistingProjectResourceGroup(ctx co
 
 func (p *FoundryProvisioningProvider) resolveExistingProjectInputs(ctx context.Context) error {
 	projectID, err := p.envValue(ctx, "AZURE_AI_PROJECT_ID")
-	if err != nil || projectID == "" {
+	if err != nil {
+		return fmt.Errorf("read AZURE_AI_PROJECT_ID: %w", err)
+	}
+	if projectID == "" {
 		return exterrors.Dependency(
 			exterrors.CodeInvalidServiceConfig,
 			"AZURE_AI_PROJECT_ID is required for an existing Foundry project",
@@ -599,9 +602,16 @@ func (p *FoundryProvisioningProvider) resolveExistingProjectInputs(ctx context.C
 		)
 	}
 	p.existingProjectID = projectID
-	endpointAccount, endpointProject := existingProjectEndpointIdentity(p.brownfieldEndpoint)
-	if endpointAccount == "" || endpointProject == "" ||
-		!strings.EqualFold(endpointAccount, resourceID.Parent.Name) ||
+	normalized, err := synthesis.ValidateFoundryProjectEndpoint(p.brownfieldEndpoint)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid existing Foundry project endpoint: %s", err),
+			"set a valid Azure Foundry project endpoint in azure.yaml",
+		)
+	}
+	_, endpointProject := existingProjectEndpointIdentity(normalized)
+	if endpointProject == "" ||
 		!strings.EqualFold(endpointProject, resourceID.Name) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -670,6 +680,31 @@ func (p *FoundryProvisioningProvider) resolveExistingProjectInputs(ctx context.C
 			exterrors.CodeInvalidServiceConfig,
 			"already-connected requires AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
 			"re-run `azd ai agent init` and select the existing project connection",
+		)
+	}
+	return nil
+}
+
+func (p *FoundryProvisioningProvider) validateExistingProjectIdentity(ctx context.Context) error {
+	if p.brownfieldEndpoint == "" || p.existingProjectReuseOnly {
+		return nil
+	}
+	if err := p.ensureCredential(ctx); err != nil {
+		return err
+	}
+	id, err := arm.ParseResourceID(p.existingProjectID)
+	if err != nil {
+		return fmt.Errorf("parse existing Foundry project resource ID: %w", err)
+	}
+	metadata, err := synthesis.LookupFoundryProject(ctx, id, p.credential, p.armClientOptions)
+	if err != nil {
+		return fmt.Errorf("verify existing Foundry project identity: %w", err)
+	}
+	if !sameExistingProjectEndpoint(p.brownfieldEndpoint, metadata.Endpoint) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"AZURE_AI_PROJECT_ID does not identify the project configured by the azure.yaml endpoint",
+			"rerun `azd ai project add --project-id <resource-id>` to select the intended project",
 		)
 	}
 	return nil
@@ -970,10 +1005,14 @@ func existingProjectEndpointIdentity(endpoint string) (string, string) {
 }
 
 func sameExistingProjectEndpoint(a, b string) bool {
-	aAccount, aProject := existingProjectEndpointIdentity(a)
-	bAccount, bProject := existingProjectEndpointIdentity(b)
-	return aAccount != "" && aProject != "" &&
-		strings.EqualFold(aAccount, bAccount) && strings.EqualFold(aProject, bProject)
+	normalizedA, errA := synthesis.ValidateFoundryProjectEndpoint(a)
+	normalizedB, errB := synthesis.ValidateFoundryProjectEndpoint(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	aAccount, aProject := existingProjectEndpointIdentity(normalizedA)
+	bAccount, bProject := existingProjectEndpointIdentity(normalizedB)
+	return strings.EqualFold(aAccount, bAccount) && strings.EqualFold(aProject, bProject)
 }
 
 // resolveEnv pulls the env values the provider needs from azd-core. It does
@@ -1310,6 +1349,9 @@ func (p *FoundryProvisioningProvider) State(
 			Outputs: p.existingProjectReuseOutputs(),
 		}}, nil
 	}
+	if err := p.validateExistingProjectIdentity(ctx); err != nil {
+		return nil, err
+	}
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1365,6 +1407,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 		return &azdext.ProvisioningDeployResult{Deployment: &azdext.ProvisioningDeployment{
 			Outputs: p.existingProjectReuseOutputs(),
 		}}, nil
+	}
+	if err := p.validateExistingProjectIdentity(ctx); err != nil {
+		return nil, err
 	}
 	progress("Preparing Foundry provisioning template...")
 
@@ -1758,6 +1803,9 @@ func (p *FoundryProvisioningProvider) Preview(
 			Preview: &azdext.ProvisioningDeploymentPreview{},
 		}, nil
 	}
+	if err := p.validateExistingProjectIdentity(ctx); err != nil {
+		return nil, err
+	}
 	progress("Computing deployment plan...")
 
 	src, err := p.resolveTemplate(ctx, progress)
@@ -1968,13 +2016,21 @@ func (p *FoundryProvisioningProvider) Destroy(
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
+	existingProjectMissing := false
+	if err := p.validateExistingProjectIdentity(ctx); err != nil {
+		if !isNotFound(err) {
+			return nil, err
+		}
+		existingProjectMissing = true
+		progress("Existing Foundry project or account was not found; leaving project connections untouched")
+	}
 	if err := p.recoverACRBinding(ctx, false); err != nil {
 		return nil, err
 	}
 	if err := p.cleanupACRAccess(ctx); err != nil {
 		return nil, err
 	}
-	if p.brownfieldEndpoint != "" {
+	if p.brownfieldEndpoint != "" && !existingProjectMissing {
 		if p.existingAcrMode == "create" {
 			if err := p.deleteExistingProjectAcrConnection(ctx, progress); err != nil {
 				return nil, err

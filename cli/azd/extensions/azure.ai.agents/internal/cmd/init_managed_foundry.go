@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -150,12 +151,12 @@ func resolvePromptHarnessTarget(
 	// from the project (no location prompt).
 	settings.SubscriptionID = proj.SubscriptionId
 	settings.ResourceGroup = proj.ResourceGroupName
-	settings.ModelEndpoint = fmt.Sprintf("https://%s.services.ai.azure.com", proj.AccountName)
-	// Record the Foundry project data-plane endpoint so all managed agent
-	// operations route to https://<account>.services.ai.azure.com/api/projects/<project>/agents.
-	settings.ProjectEndpoint = fmt.Sprintf(
-		"https://%s.services.ai.azure.com/api/projects/%s", proj.AccountName, proj.ProjectName,
-	)
+	endpoint, err := url.Parse(proj.Endpoint())
+	if err != nil {
+		return nil, false, nil, nil, fmt.Errorf("parse resolved Foundry project endpoint: %w", err)
+	}
+	settings.ModelEndpoint = endpoint.Scheme + "://" + endpoint.Host
+	settings.ProjectEndpoint = proj.Endpoint()
 
 	azureContext.Scope.Location = proj.Location
 	if proj.Location != "" {
@@ -296,7 +297,7 @@ func selectPromptFoundryProject(
 
 	idx := int(*resp.Value)
 	selected := projects[idx]
-	return &selected, nil
+	return getFoundryProject(ctx, credential, subscriptionId, selected.ResourceId)
 }
 
 // setPromptFoundryProjectEnv persists the core Foundry project identifiers to
@@ -316,15 +317,13 @@ func setPromptFoundryProjectEnv(
 			proj.SubscriptionId, proj.ResourceGroupName, proj.AccountName, proj.ProjectName,
 		)
 	}
-	foundryEndpoint := fmt.Sprintf(
-		"https://%s.services.ai.azure.com/api/projects/%s", proj.AccountName, proj.ProjectName,
-	)
 	values := map[string]string{
 		"AZURE_AI_PROJECT_ID":      resourceId,
 		"AZURE_RESOURCE_GROUP":     proj.ResourceGroupName,
 		"AZURE_AI_ACCOUNT_NAME":    proj.AccountName,
 		"AZURE_AI_PROJECT_NAME":    proj.ProjectName,
-		"FOUNDRY_PROJECT_ENDPOINT": foundryEndpoint,
+		"FOUNDRY_PROJECT_ENDPOINT": proj.Endpoint(),
+		"AZURE_OPENAI_ENDPOINT":    proj.openAIEndpoint(),
 	}
 	for k, v := range values {
 		if err := setEnvValue(ctx, azdClient, envName, k, v); err != nil {

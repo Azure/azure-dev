@@ -592,7 +592,10 @@ services:
 		"bicep",
 		mustReadProjectFile(t, root),
 		"https://account.services.ai.azure.com/api/projects/new",
-		newID,
+		&resolvedProject{
+			ResourceId: newID,
+			Endpoint:   "https://account.services.ai.azure.com/api/projects/new",
+		},
 		env,
 	)
 	require.NoError(t, err)
@@ -632,7 +635,10 @@ func TestEjectExistingProjectRollbackRemovesStagedFiles(t *testing.T) {
 		"bicep",
 		mustReadProjectFile(t, root),
 		"https://account.services.ai.azure.com/api/projects/project",
-		resourceID,
+		&resolvedProject{
+			ResourceId: resourceID,
+			Endpoint:   "https://account.services.ai.azure.com/api/projects/project",
+		},
 		map[string]string{"AZD_AGENT_SKIP_ACR": "true"},
 	)
 

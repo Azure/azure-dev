@@ -73,24 +73,18 @@ func projectIdentityChanged(
 
 	targetEndpoint := strings.TrimSpace(project.Endpoint)
 	targetID := strings.TrimSpace(project.ResourceId)
-	if oldEndpoint != "" && targetEndpoint != "" &&
-		!equalProjectEndpoint(oldEndpoint, targetEndpoint) {
-		return true
+	if oldID != "" && targetID != "" {
+		return !strings.EqualFold(oldID, targetID) ||
+			oldEndpoint != "" && !projectEndpointMatchesTarget(oldEndpoint, project)
 	}
-	if oldID != "" && targetID != "" &&
-		!strings.EqualFold(oldID, targetID) {
+	if oldEndpoint != "" && targetEndpoint != "" &&
+		!projectEndpointMatchesTarget(oldEndpoint, project) {
 		return true
 	}
 	if oldEndpoint == "" && oldID != "" && targetEndpoint != "" {
 		oldProject, err := projectFromResourceID(oldID)
 		if err != nil ||
 			!equalProjectEndpoint(oldProject.Endpoint, targetEndpoint) {
-			return true
-		}
-	}
-	if oldID == "" && oldEndpoint != "" && targetID != "" {
-		if targetProject, err := projectFromResourceID(targetID); err == nil &&
-			!equalProjectEndpoint(oldEndpoint, targetProject.Endpoint) {
 			return true
 		}
 	}
@@ -111,6 +105,18 @@ func projectIdentityChanged(
 		return true
 	}
 	return false
+}
+
+func projectEndpointMatchesTarget(endpoint string, project *resolvedProject) bool {
+	// Both supported project paths identify the same project.
+	endpoint = strings.Replace(endpoint, "/api/projects/", "/projects/", 1)
+	targetEndpoint := strings.Replace(project.Endpoint, "/api/projects/", "/projects/", 1)
+	if equalProjectEndpoint(endpoint, targetEndpoint) {
+		return true
+	}
+	legacy, err := projectFromResourceID(project.ResourceId)
+	return err == nil &&
+		equalProjectEndpoint(endpoint, strings.Replace(legacy.Endpoint, "/api/projects/", "/projects/", 1))
 }
 
 // planProjectEnvironment calculates environment mutations.

@@ -26,8 +26,9 @@ import (
 	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -499,8 +500,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			projectRoot,
 			serviceName,
 			infra,
-			target.Endpoint,
-			target.ResourceId,
+			target,
 			ejectValues,
 		); err != nil {
 			return rollbackProjectAdd(
@@ -650,11 +650,11 @@ func resolveProjectTarget(
 	}
 	envProjectID := values["AZURE_AI_PROJECT_ID"]
 	if serviceEndpointValue != "" && envProjectID != "" {
-		inferred, err := projectFromResourceID(envProjectID)
+		inferred, err := lookupResolvedProject(ctx, client, envProjectID)
 		if err != nil {
 			return nil, err
 		}
-		if !equalProjectEndpoint(serviceEndpointValue, inferred.Endpoint) {
+		if !projectEndpointMatchesTarget(serviceEndpointValue, inferred) {
 			if flags.noPrompt {
 				return nil, exterrors.Validation(
 					"project_target_mismatch",
@@ -677,9 +677,8 @@ func resolveProjectTarget(
 			if choice.GetValue() == 1 {
 				return resolvedProjectFromEndpoint(serviceEndpointValue)
 			}
-		} else {
-			return lookupResolvedProject(ctx, client, envProjectID)
 		}
+		return inferred, nil
 	}
 	if envProjectID != "" {
 		return lookupResolvedProject(ctx, client, envProjectID)
@@ -777,7 +776,7 @@ func promptProjectTarget(
 			"retry `azd ai project add`",
 		)
 	}
-	return &projects[index], nil
+	return lookupResolvedProject(ctx, client, projects[index].ResourceId)
 }
 
 func resolveInteractiveSubscription(
@@ -908,7 +907,7 @@ func confirmExplicitProjectReplacement(
 	}
 	oldID := strings.TrimSpace(values["AZURE_AI_PROJECT_ID"])
 	if (oldEndpoint == "" && oldID == "") ||
-		(oldEndpoint == "" || equalProjectEndpoint(oldEndpoint, target.Endpoint)) &&
+		(oldEndpoint == "" || projectEndpointMatchesTarget(oldEndpoint, target)) &&
 			(oldID == "" || strings.EqualFold(oldID, target.ResourceId)) {
 		return nil
 	}
@@ -1099,19 +1098,27 @@ func lookupResolvedProject(
 			"run `azd auth login` and retry",
 		)
 	}
-	projectsClient, err := armcognitiveservices.NewProjectsClient(
-		project.SubscriptionId, credential, azure.NewArmClientOptions(),
-	)
+	return hydrateResolvedProject(ctx, project, credential, azure.NewArmClientOptions())
+}
+
+func hydrateResolvedProject(
+	ctx context.Context,
+	project *resolvedProject,
+	credential azcore.TokenCredential,
+	options *arm.ClientOptions,
+) (*resolvedProject, error) {
+	id, err := arm.ParseResourceID(project.ResourceId)
 	if err != nil {
-		return nil, fmt.Errorf("create Foundry projects client: %w", err)
+		return nil, fmt.Errorf("parse Foundry project resource ID: %w", err)
 	}
-	response, err := projectsClient.Get(ctx,
-		project.ResourceGroupName, project.AccountName, project.ProjectName, nil)
+	metadata, err := synthesis.LookupFoundryProject(ctx, id, credential, options)
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountList)
 	}
-	if response.Project.Location != nil {
-		project.Location = *response.Project.Location
+	project.Endpoint = metadata.Endpoint
+	project.OpenAIEndpoint = metadata.OpenAIEndpoint
+	if metadata.Project.Location != nil {
+		project.Location = *metadata.Project.Location
 	}
 	return project, nil
 }

@@ -9,12 +9,6 @@ locals {
   acr_pull_role_id        = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
 }
 
-data "azapi_resource" "project" {
-  type                   = "Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview"
-  resource_id            = local.normalized_project_id
-  response_export_values = ["identity.principalId"]
-}
-
 locals {
   project_principal_id = data.azapi_resource.project.output.identity.principalId
 }

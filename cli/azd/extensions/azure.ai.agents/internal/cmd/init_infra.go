@@ -23,6 +23,7 @@ import (
 	projectPaths "azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -62,9 +63,12 @@ type infraEjectPreparation struct {
 	plan            *infraEjectPlan
 	parameters      map[string]any
 	existingProject bool
+	projectEndpoint string
 	acrMode         infraEjectAcrMode
 	environments    []map[string]string
 }
+
+type infraEjectProjectLookup func(context.Context, string) (*FoundryProjectInfo, error)
 
 type infraTargetState struct {
 	dir    string
@@ -468,6 +472,41 @@ func resolveInfraGate(provider string) (infraGate, error) {
 // directory. Init may create or discover a project above cwd, so use the same
 // upward project resolution as the rest of azd.
 func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdext.AzdClient) error {
+	var client *azdext.AzdClient
+	if len(clients) > 0 {
+		client = clients[0]
+	}
+	return ejectInfraAfterInitWithProjectLookup(ctx, provider, client,
+		func(ctx context.Context, projectID string) (*FoundryProjectInfo, error) {
+			details, err := extractProjectDetails(projectID)
+			if err != nil {
+				return nil, err
+			}
+			azureContext := &azdext.AzureContext{Scope: &azdext.AzureScope{SubscriptionId: details.SubscriptionId}}
+			if err := resolveSubscription(ctx, client, azureContext, ""); err != nil {
+				return nil, err
+			}
+			credential, err := azidentity.NewAzureDeveloperCLICredential(
+				&azidentity.AzureDeveloperCLICredentialOptions{
+					TenantID: azureContext.Scope.TenantId, AdditionallyAllowedTenants: []string{"*"},
+				})
+			if err != nil {
+				return nil, exterrors.Auth(
+					exterrors.CodeCredentialCreationFailed,
+					fmt.Sprintf("create Azure credential for infrastructure export: %s", err),
+					"run `azd auth login` and retry",
+				)
+			}
+			return getFoundryProject(ctx, credential, details.SubscriptionId, projectID)
+		})
+}
+
+func ejectInfraAfterInitWithProjectLookup(
+	ctx context.Context,
+	provider string,
+	client *azdext.AzdClient,
+	lookup infraEjectProjectLookup,
+) error {
 	if provider == "" {
 		return nil
 	}
@@ -488,25 +527,35 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 	}
 
 	var env map[string]string
-	if len(clients) > 0 && clients[0] != nil {
-		env, err = readInfraEjectEnvironment(ctx, clients[0])
+	if client != nil {
+		env, err = readInfraEjectEnvironment(ctx, client)
 		if err != nil {
 			return err
 		}
 	}
 	defer inittelemetry.Start(ctx, inittelemetry.InfraGeneration)()
-	if provider != project.TerraformProviderName {
-		return ejectInfra(projectRoot, provider, env)
-	}
 	prepared, err := prepareInfraEject(projectRoot, provider, env)
 	if err != nil {
 		return err
 	}
 	if prepared.existingProject {
-		if err := synthesis.ResolveTerraformMonitoringExport(
-			ctx, prepared.parameters, env["AZURE_AI_PROJECT_ID"], env, nil,
-		); err != nil {
+		target, err := lookup(ctx, strings.TrimSpace(env["AZURE_AI_PROJECT_ID"]))
+		if err != nil {
 			return err
+		}
+		if target == nil || !sameFoundryProject(prepared.projectEndpoint, target.Endpoint()) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"AZURE_AI_PROJECT_ID does not match the existing project configured in azure.yaml",
+				"re-run `azd ai agent init` against the configured existing project",
+			)
+		}
+		if provider == project.TerraformProviderName {
+			if err := synthesis.ResolveTerraformMonitoringExport(
+				ctx, prepared.parameters, env["AZURE_AI_PROJECT_ID"], env, nil,
+			); err != nil {
+				return err
+			}
 		}
 	}
 	return writeInfraEject(projectRoot, provider, prepared)
@@ -700,7 +749,7 @@ func prepareInfraEject(
 
 	return &infraEjectPreparation{
 		rawYAML: rawYAML, plan: plan, parameters: res.Parameters, existingProject: existingProject,
-		acrMode: acrMode, environments: environments,
+		projectEndpoint: endpoint, acrMode: acrMode, environments: environments,
 	}, nil
 }
 
@@ -2358,9 +2407,9 @@ func validateExistingProjectEjectEnvironment(endpoint string, values map[string]
 		)
 	}
 
-	account, projectName := foundryEndpointIdentity(endpoint)
+	_, projectName := foundryEndpointIdentity(endpoint)
 	idAccount, idProject := foundryResourceIDIdentity(values["AZURE_AI_PROJECT_ID"])
-	if idAccount == "" || !strings.EqualFold(account, idAccount) || !strings.EqualFold(projectName, idProject) {
+	if idAccount == "" || !strings.EqualFold(projectName, idProject) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"AZURE_AI_PROJECT_ID does not match the existing project configured in azure.yaml",
@@ -2379,7 +2428,10 @@ func sameFoundryProject(a, b string) bool {
 
 func foundryEndpointIdentity(endpoint string) (string, string) {
 	const projectSegment = "/projects/"
-	value := strings.TrimSpace(endpoint)
+	value, err := synthesis.ValidateFoundryProjectEndpoint(endpoint)
+	if err != nil {
+		return "", ""
+	}
 	_, hostAndPath, ok := strings.Cut(value, "://")
 	if !ok {
 		return "", ""

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -538,38 +539,61 @@ func TestAgentStateStoreClearSessionDoesNotReviveLegacyVersions(t *testing.T) {
 	for _, source := range []string{"user config", "project file"} {
 		t.Run(source, func(t *testing.T) {
 			const endpoint = "https://account.services.ai.azure.com/api/projects/project"
-			key := buildAgentKey(endpoint, "agent", "7", false)
-			oldKey := buildAgentKey(endpoint, "agent", "2", false)
-			otherKey := buildAgentKey(endpoint, "other", "7", false)
-			legacy := legacyProjectState{Sessions: map[string]string{
-				key: "deleted", oldKey: "keep", otherKey: "deleted",
-			}}
-			data, err := json.Marshal(legacy)
-			require.NoError(t, err)
-			projectPath := t.TempDir()
-			config := newInvokeUserConfigServer()
-			if source == "user config" {
-				config.values["extensions.ai-agents"] = data
-			} else {
-				directory := filepath.Join(projectPath, ".azure", "test")
-				require.NoError(t, os.MkdirAll(directory, 0o700))
-				require.NoError(t, os.WriteFile(filepath.Join(directory, ".foundry-agent.json"), data, 0o600))
-			}
-			client := newInvokeTestAzdClientWithProject(t, config,
-				&helpersProjectServer{project: &azdext.ProjectConfig{Path: projectPath}},
-				&testEnvironmentServiceServer{current: &azdext.Environment{Name: "test"}})
-			store, err := newAgentStateStoreForClient(client)
-			require.NoError(t, err)
-			require.NoError(t, store.clearSession(t.Context(), oldKey, "deleted"))
-			for range 2 {
-				id, err := getAgentSpecificContextValue(t.Context(), client, "sessions", key)
-				require.NoError(t, err)
-				assert.Empty(t, id)
-			}
-			for _, saved := range []struct{ key, id string }{{oldKey, "keep"}, {otherKey, "deleted"}} {
-				id, err := getAgentSpecificContextValue(t.Context(), client, "sessions", saved.key)
-				require.NoError(t, err)
-				assert.Equal(t, saved.id, id)
+			const name = "MyAgent"
+			versionKey := buildAgentKey(endpoint, name, "7", false)
+			base := strings.TrimSuffix(versionKey, "/remote")
+			for _, tt := range []struct{ name, version, legacyKey string }{
+				{"canonical", "7", versionKey},
+				{"mixed-case bare name", "", name},
+				{"query before mode", "7", base + "?legacy=1/remote"},
+				{"fragment before mode", "7", base + "#legacy/remote"},
+				{"query after mode", "7", versionKey + "?legacy=1"},
+				{"fragment after mode", "7", versionKey + "#legacy"},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					key := buildAgentKey(endpoint, name, tt.version, false)
+					oldKey := buildAgentKey(endpoint, name, "2", false)
+					otherKey := buildAgentKey(endpoint, "other", "7", false)
+					localKey := buildAgentKey(endpoint, name, tt.version, true)
+					legacy := legacyProjectState{
+						Sessions: map[string]string{
+							tt.legacyKey: "deleted", oldKey: "keep", otherKey: "deleted", localKey: "deleted",
+						},
+						Conversations: map[string]string{tt.legacyKey: "conversation"},
+					}
+					data, err := json.Marshal(legacy)
+					require.NoError(t, err)
+					projectPath := t.TempDir()
+					config := newInvokeUserConfigServer()
+					if source == "user config" {
+						config.values["extensions.ai-agents"] = data
+					} else {
+						directory := filepath.Join(projectPath, ".azure", "test")
+						require.NoError(t, os.MkdirAll(directory, 0o700))
+						require.NoError(t, os.WriteFile(filepath.Join(directory, ".foundry-agent.json"), data, 0o600))
+					}
+					client := newInvokeTestAzdClientWithProject(t, config,
+						&helpersProjectServer{project: &azdext.ProjectConfig{Path: projectPath}},
+						&testEnvironmentServiceServer{current: &azdext.Environment{Name: "test"}})
+					store, err := newAgentStateStoreForClient(client)
+					require.NoError(t, err)
+					require.NoError(t, store.clearSession(t.Context(), oldKey, "deleted"))
+					for range 2 {
+						id, err := getAgentSpecificContextValue(t.Context(), client, "sessions", key)
+						require.NoError(t, err)
+						assert.Empty(t, id)
+					}
+					conversation, err := getAgentSpecificContextValue(t.Context(), client, "conversations", key)
+					require.NoError(t, err)
+					assert.Equal(t, "conversation", conversation)
+					for _, saved := range []struct{ key, id string }{
+						{oldKey, "keep"}, {otherKey, "deleted"}, {localKey, "deleted"},
+					} {
+						id, err := getAgentSpecificContextValue(t.Context(), client, "sessions", saved.key)
+						require.NoError(t, err)
+						assert.Equal(t, saved.id, id)
+					}
+				})
 			}
 		})
 	}

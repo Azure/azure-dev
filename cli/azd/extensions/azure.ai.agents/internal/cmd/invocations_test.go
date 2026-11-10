@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -472,11 +473,11 @@ func TestExplicitVersionInvokePreservesLifecycleSelection(t *testing.T) {
 				Invocation: &savedInvocation{InvocationID: "inv_v2"}, CurrentInvocationProtocol: agent_api.AgentProtocol(protocol),
 			})
 			saveAgentStateForTest(t, nil, key, agentStateRecord{SessionID: "cached-v7", ConversationID: "conv_v7"})
-			var sends int
+			var sends atomic.Int32
 			transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				if r.Method == http.MethodGet {
-					require.Equal(t, protocol, "invocations")
-					require.Equal(t, "/api/projects/project/agents/agent/endpoint/protocols/invocations/docs/openapi.json",
+					assert.Equal(t, protocol, "invocations")
+					assert.Equal(t, "/api/projects/project/agents/agent/endpoint/protocols/invocations/docs/openapi.json",
 						r.URL.Path)
 					return &http.Response{
 						StatusCode: http.StatusOK, Request: r,
@@ -484,13 +485,15 @@ func TestExplicitVersionInvokePreservesLifecycleSelection(t *testing.T) {
 						Body:   io.NopCloser(strings.NewReader(`{"openapi":"3.1.0","paths":{}}`)),
 					}, nil
 				}
-				sends++
-				require.Equal(t, http.MethodPost, r.Method)
+				sends.Add(1)
+				assert.Equal(t, http.MethodPost, r.Method)
 				if protocol == "responses" {
-					require.Equal(t, "/api/projects/project/agents/agent/endpoint/protocols/openai/responses", r.URL.Path)
+					assert.Equal(t, "/api/projects/project/agents/agent/endpoint/protocols/openai/responses", r.URL.Path)
 					var body map[string]any
-					require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-					require.Equal(t, "cached-v7", body["agent_session_id"])
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						return nil, err
+					}
+					assert.Equal(t, "cached-v7", body["agent_session_id"])
 					return &http.Response{
 						StatusCode: http.StatusOK, Request: r,
 						Header: http.Header{"Content-Type": {"text/event-stream"}},
@@ -498,8 +501,8 @@ func TestExplicitVersionInvokePreservesLifecycleSelection(t *testing.T) {
 							`{"response":{"id":"resp_v7","status":"queued"}}` + "\n\n")),
 					}, nil
 				}
-				require.Equal(t, "/api/projects/project/agents/agent/endpoint/protocols/invocations", r.URL.Path)
-				require.Equal(t, "cached-v7", r.URL.Query().Get("agent_session_id"))
+				assert.Equal(t, "/api/projects/project/agents/agent/endpoint/protocols/invocations", r.URL.Path)
+				assert.Equal(t, "cached-v7", r.URL.Query().Get("agent_session_id"))
 				return &http.Response{
 					StatusCode: http.StatusOK, Request: r,
 					Header: http.Header{
@@ -510,12 +513,15 @@ func TestExplicitVersionInvokePreservesLifecycleSelection(t *testing.T) {
 			})
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				response, err := transport.RoundTrip(r)
-				require.NoError(t, err)
+				if !assert.NoError(t, err) {
+					http.Error(w, "test transport failed", http.StatusInternalServerError)
+					return
+				}
 				defer response.Body.Close()
 				maps.Copy(w.Header(), response.Header)
 				w.WriteHeader(response.StatusCode)
 				_, err = io.Copy(w, response.Body)
-				require.NoError(t, err)
+				assert.NoError(t, err)
 			}))
 			t.Cleanup(server.Close)
 			httpTransport, ok := server.Client().Transport.(*http.Transport)
@@ -541,7 +547,7 @@ func TestExplicitVersionInvokePreservesLifecycleSelection(t *testing.T) {
 			}
 			output, err := captureStdout(t, func() error { return action.Run(t.Context()) })
 			require.NoError(t, err)
-			require.Equal(t, 1, sends)
+			require.EqualValues(t, 1, sends.Load())
 			if protocol == "responses" {
 				assert.Contains(t, output, `invocations follow --id "resp_v7" --protocol responses --agent-name "target"`)
 			}

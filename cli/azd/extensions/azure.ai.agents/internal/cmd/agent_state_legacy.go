@@ -195,10 +195,12 @@ func (s *agentStateStore) legacySessionKeys(ctx context.Context, prefix, session
 			if id != sessionID {
 				continue
 			}
-			key = normalizeEndpoint(key)
 			if key == name {
 				keys = append(keys, prefix+"latest/remote")
-			} else if strings.HasPrefix(key, prefix) && strings.HasSuffix(key, "/remote") {
+				continue
+			}
+			key = normalizeLegacyAgentKey(key)
+			if strings.HasPrefix(key, prefix) && strings.HasSuffix(key, "/remote") {
 				keys = append(keys, key)
 			}
 		}
@@ -228,23 +230,21 @@ func (legacy legacyAgentState) apply(record *agentStateRecord) {
 	}
 }
 
+func normalizeLegacyAgentKey(key string) string {
+	for _, mode := range []string{"/remote", "/local"} {
+		if base, found := strings.CutSuffix(key, mode); found {
+			return normalizeEndpoint(base) + mode
+		}
+	}
+	return normalizeEndpoint(key)
+}
+
 func legacyAgentValue[T any](values map[string]T, agentKey string) (T, bool) {
 	if value, found := values[agentKey]; found {
 		return value, true
 	}
 	for _, key := range slices.Sorted(maps.Keys(values)) {
-		base, hasMode := strings.CutSuffix(key, "/remote")
-		mode := "/remote"
-		if !hasMode {
-			base, hasMode = strings.CutSuffix(key, "/local")
-			mode = "/local"
-		} else {
-			mode = "/remote"
-		}
-		if !hasMode {
-			base, mode = key, ""
-		}
-		if normalizeEndpoint(base)+mode == agentKey {
+		if normalizeLegacyAgentKey(key) == agentKey {
 			return values[key], true
 		}
 	}

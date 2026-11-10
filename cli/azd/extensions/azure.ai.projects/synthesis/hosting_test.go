@@ -399,7 +399,8 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 	assert.Equal(t, 2, identities)
 	assert.Equal(t, 1, storages)
 	assert.Equal(t, 1, connections)
-	assert.Equal(t, 5, roleTemplates, "the cluster role template is instantiated for both AKS roles")
+	// Includes the monitoring module's managed-egress network approver assignment.
+	assert.Equal(t, 6, roleTemplates, "the cluster role template is instantiated for both AKS roles")
 	assert.Equal(t, 1, clusterGrantModules)
 	text := string(raw)
 	for _, required := range []string{

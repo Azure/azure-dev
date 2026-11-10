@@ -21,6 +21,7 @@ BeforeDiscovery {
         'azure.appservice' = @('azureappservice/internal/version')
         'azure.coding-agent' = @('azurecodingagent/internal/cmd')
         'azure.logicappsstandard' = @('azurelogicappsstandard/internal/version')
+        'azure.resources' = @('azure.resources/internal/version')
         'microsoft.azd.ai.builder' = @(
             'github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/cmd'
         )
@@ -57,6 +58,9 @@ BeforeAll {
     New-Item -ItemType Directory -Path $fixtureDirectory | Out-Null
     $goSource = Join-Path $fixtureDirectory 'main.go'
     Set-Content $goSource @'
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package main
 
 import (

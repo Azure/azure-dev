@@ -6,6 +6,8 @@ overrides:
 words:
   - ABAC
   - alnum
+  - ampls
+  - azuremonitor
   - exterrors
   - foundryproject
   - idempotently

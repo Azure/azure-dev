@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
@@ -200,7 +201,7 @@ func isJsonOutput() bool {
 
 	_ = flags.Parse(os.Args[1:])
 
-	return output == "json"
+	return strings.ToLower(strings.TrimSpace(output)) == "json"
 }
 
 // setupLogging configures log output based on AZD_DEBUG_LOG environment variable

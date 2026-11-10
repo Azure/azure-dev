@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "396261769148947315"
+      "templateHash": "2684713470621108238"
     }
   },
   "definitions": {
@@ -803,7 +803,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "3471042481280362115"
+              "templateHash": "11506587318951603642"
             }
           },
           "parameters": {
@@ -844,16 +844,51 @@
             "resourceTokenSalt": {
               "type": "string",
               "defaultValue": ""
+            },
+            "privateNetwork": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "When true, new monitoring resources accept ingestion only through an Azure Monitor private link. Queries stay public."
+              }
+            },
+            "vnetId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "vnetLocation": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "peSubnetId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "dnsZonesResourceGroup": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "dnsZonesSubscription": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "managedEgressRule": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "When true, the project uses managed egress and needs an outbound rule so the managed network can reach the private link scope."
+              }
             }
           },
           "variables": {
+            "networkConnectionApproverRoleId": "b556d68e-0be0-4f35-a333-ad7ee1ce17ea",
             "createResources": "[equals(parameters('mode'), 'create')]",
+            "publicNetworkAccess": "[if(parameters('privateNetwork'), 'Disabled', 'Enabled')]",
             "token": "[uniqueString(parameters('projectResourceId'), resourceGroup().id, parameters('resourceTokenSalt'))]",
             "projectParts": "[split(parameters('projectResourceId'), '/')]",
             "componentParts": "[split(parameters('applicationInsightsResourceId'), '/')]",
             "connectionName": "[format('azd-appinsights-{0}', take(replace(guid(toLower(variables('projectParts')[10])), '-', ''), 13))]",
-            "monitoringTags": "[union(parameters('tags'), createObject('azd-created-by', 'azure.ai.projects', 'azd-environment', parameters('environmentName'), 'azd-monitoring-project', guid(toLower(parameters('projectResourceId')))))]",
-            "effectiveComponentId": "[if(equals(parameters('mode'), 'none'), '', if(variables('createResources'), resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token'))), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])))]"
+            "monitoringTags": "[union(parameters('tags'), createObject('azd-created-by', 'azure.ai.projects', 'azd-environment', parameters('environmentName'), 'azd-monitoring-project', guid(toLower(parameters('projectResourceId')))))]"
           },
           "resources": [
             {
@@ -867,7 +902,9 @@
                 "sku": {
                   "name": "PerGB2018"
                 },
-                "retentionInDays": 30
+                "retentionInDays": 30,
+                "publicNetworkAccessForIngestion": "[variables('publicNetworkAccess')]",
+                "publicNetworkAccessForQuery": "Enabled"
               }
             },
             {
@@ -880,9 +917,438 @@
               "kind": "web",
               "properties": {
                 "Application_Type": "web",
-                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]",
+                "publicNetworkAccessForIngestion": "[variables('publicNetworkAccess')]",
+                "publicNetworkAccessForQuery": "Enabled"
               },
               "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('managedEgressRule')]",
+              "type": "Microsoft.CognitiveServices/accounts/managedNetworks/outboundRules",
+              "apiVersion": "2025-10-01-preview",
+              "name": "[format('{0}/default/ampls-monitor-rule', variables('projectParts')[8])]",
+              "properties": {
+                "type": "PrivateEndpoint",
+                "destination": {
+                  "serviceResourceId": "[reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link'), '2025-04-01').outputs.azureMonitorPrivateLinkScopeResourceId.value]",
+                  "subresourceTarget": "azuremonitor"
+                },
+                "category": "UserDefined"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-network-approver')]",
+                "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link')]"
+              ]
+            },
+            {
+              "condition": "[parameters('managedEgressRule')]",
+              "type": "Microsoft.CognitiveServices/accounts/managedNetworks/outboundRules",
+              "apiVersion": "2025-10-01-preview",
+              "name": "[format('{0}/default/foundry-account-pe', variables('projectParts')[8])]",
+              "properties": {
+                "type": "PrivateEndpoint",
+                "destination": {
+                  "serviceResourceId": "[resourceId('Microsoft.CognitiveServices/accounts', variables('projectParts')[8])]",
+                  "subresourceTarget": "account"
+                },
+                "category": "UserDefined"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts/managedNetworks/outboundRules', split(format('{0}/default/ampls-monitor-rule', variables('projectParts')[8]), '/')[0], split(format('{0}/default/ampls-monitor-rule', variables('projectParts')[8]), '/')[1], split(format('{0}/default/ampls-monitor-rule', variables('projectParts')[8]), '/')[2])]"
+              ]
+            },
+            {
+              "condition": "[and(or(variables('createResources'), equals(parameters('mode'), 'reuse-connect')), parameters('privateNetwork'))]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "foundry-monitoring-private-link",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "location": {
+                    "value": "[parameters('vnetLocation')]"
+                  },
+                  "suffix": {
+                    "value": "[variables('token')]"
+                  },
+                  "applicationInsightsResourceId": "[if(variables('createResources'), createObject('value', resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])))]",
+                  "logAnalyticsWorkspaceResourceId": "[if(variables('createResources'), createObject('value', resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8]), '2020-02-02').WorkspaceResourceId))]",
+                  "vnetId": {
+                    "value": "[parameters('vnetId')]"
+                  },
+                  "peSubnetId": {
+                    "value": "[parameters('peSubnetId')]"
+                  },
+                  "dnsZonesResourceGroup": {
+                    "value": "[parameters('dnsZonesResourceGroup')]"
+                  },
+                  "dnsZonesSubscription": {
+                    "value": "[parameters('dnsZonesSubscription')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "10577939142835646204"
+                    }
+                  },
+                  "parameters": {
+                    "location": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Azure region of the customer VNet; the private endpoint must be in the same region."
+                      }
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Suffix for unique resource and link names."
+                      }
+                    },
+                    "applicationInsightsResourceId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "ARM resource id of the Application Insights component to scope."
+                      }
+                    },
+                    "logAnalyticsWorkspaceResourceId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "ARM resource id of the Log Analytics workspace to scope."
+                      }
+                    },
+                    "vnetId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "ARM resource id of the customer VNet."
+                      }
+                    },
+                    "peSubnetId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "ARM resource id of the private-endpoint subnet."
+                      }
+                    },
+                    "dnsZonesResourceGroup": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Resource group holding existing private DNS zones. Empty creates and links new zones."
+                      }
+                    },
+                    "dnsZonesSubscription": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Subscription holding existing private DNS zones. Empty defaults to this subscription."
+                      }
+                    }
+                  },
+                  "variables": {
+                    "copy": [
+                      {
+                        "name": "zoneIds",
+                        "count": "[length(variables('monitorDnsZoneNames'))]",
+                        "input": "[if(variables('useExistingZones'), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('existingZonesSubscription'), parameters('dnsZonesResourceGroup')), 'Microsoft.Network/privateDnsZones', variables('monitorDnsZoneNames')[copyIndex('zoneIds')]), resourceId('Microsoft.Network/privateDnsZones', variables('monitorDnsZoneNames')[copyIndex('zoneIds')]))]"
+                      }
+                    ],
+                    "monitorDnsZoneNames": [
+                      "privatelink.monitor.azure.com",
+                      "privatelink.oms.opinsights.azure.com",
+                      "privatelink.ods.opinsights.azure.com",
+                      "privatelink.agentsvc.azure-automation.net"
+                    ],
+                    "useExistingZones": "[not(empty(parameters('dnsZonesResourceGroup')))]",
+                    "existingZonesSubscription": "[if(empty(parameters('dnsZonesSubscription')), subscription().subscriptionId, parameters('dnsZonesSubscription'))]",
+                    "scopeName": "[format('ampls-{0}', parameters('suffix'))]"
+                  },
+                  "resources": [
+                    {
+                      "type": "microsoft.insights/privateLinkScopes",
+                      "apiVersion": "2021-07-01-preview",
+                      "name": "[variables('scopeName')]",
+                      "location": "global",
+                      "properties": {
+                        "accessModeSettings": {
+                          "ingestionAccessMode": "PrivateOnly",
+                          "queryAccessMode": "Open"
+                        }
+                      }
+                    },
+                    {
+                      "type": "Microsoft.Insights/privateLinkScopes/scopedResources",
+                      "apiVersion": "2021-07-01-preview",
+                      "name": "[format('{0}/{1}', variables('scopeName'), 'appinsights-scoped')]",
+                      "properties": {
+                        "linkedResourceId": "[parameters('applicationInsightsResourceId')]"
+                      },
+                      "dependsOn": [
+                        "[resourceId('microsoft.insights/privateLinkScopes', variables('scopeName'))]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Insights/privateLinkScopes/scopedResources",
+                      "apiVersion": "2021-07-01-preview",
+                      "name": "[format('{0}/{1}', variables('scopeName'), 'workspace-scoped')]",
+                      "properties": {
+                        "linkedResourceId": "[parameters('logAnalyticsWorkspaceResourceId')]"
+                      },
+                      "dependsOn": [
+                        "[resourceId('microsoft.insights/privateLinkScopes', variables('scopeName'))]",
+                        "[resourceId('Microsoft.Insights/privateLinkScopes/scopedResources', variables('scopeName'), 'appinsights-scoped')]"
+                      ]
+                    },
+                    {
+                      "copy": {
+                        "name": "zones",
+                        "count": "[length(variables('monitorDnsZoneNames'))]"
+                      },
+                      "condition": "[not(variables('useExistingZones'))]",
+                      "type": "Microsoft.Network/privateDnsZones",
+                      "apiVersion": "2020-06-01",
+                      "name": "[variables('monitorDnsZoneNames')[copyIndex()]]",
+                      "location": "global"
+                    },
+                    {
+                      "copy": {
+                        "name": "zoneLinks",
+                        "count": "[length(variables('monitorDnsZoneNames'))]"
+                      },
+                      "condition": "[not(variables('useExistingZones'))]",
+                      "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+                      "apiVersion": "2024-06-01",
+                      "name": "[format('{0}/{1}', variables('monitorDnsZoneNames')[copyIndex()], format('{0}-{1}-link', replace(variables('monitorDnsZoneNames')[copyIndex()], '.', '-'), parameters('suffix')))]",
+                      "location": "global",
+                      "properties": {
+                        "virtualNetwork": {
+                          "id": "[parameters('vnetId')]"
+                        },
+                        "registrationEnabled": false
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Network/privateDnsZones', variables('monitorDnsZoneNames')[copyIndex()])]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Network/privateEndpoints",
+                      "apiVersion": "2024-05-01",
+                      "name": "[format('{0}-private-endpoint', variables('scopeName'))]",
+                      "location": "[parameters('location')]",
+                      "properties": {
+                        "subnet": {
+                          "id": "[parameters('peSubnetId')]"
+                        },
+                        "privateLinkServiceConnections": [
+                          {
+                            "name": "[format('{0}-private-link-service-connection', variables('scopeName'))]",
+                            "properties": {
+                              "privateLinkServiceId": "[resourceId('microsoft.insights/privateLinkScopes', variables('scopeName'))]",
+                              "groupIds": [
+                                "azuremonitor"
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      "dependsOn": [
+                        "[resourceId('microsoft.insights/privateLinkScopes', variables('scopeName'))]",
+                        "[resourceId('Microsoft.Insights/privateLinkScopes/scopedResources', variables('scopeName'), 'appinsights-scoped')]",
+                        "[resourceId('Microsoft.Insights/privateLinkScopes/scopedResources', variables('scopeName'), 'workspace-scoped')]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+                      "apiVersion": "2024-05-01",
+                      "name": "[format('{0}/{1}', format('{0}-private-endpoint', variables('scopeName')), format('{0}-dns-group', variables('scopeName')))]",
+                      "properties": {
+                        "copy": [
+                          {
+                            "name": "privateDnsZoneConfigs",
+                            "count": "[length(variables('monitorDnsZoneNames'))]",
+                            "input": {
+                              "name": "[replace(variables('monitorDnsZoneNames')[copyIndex('privateDnsZoneConfigs')], '.', '-')]",
+                              "properties": {
+                                "privateDnsZoneId": "[variables('zoneIds')[copyIndex('privateDnsZoneConfigs')]]"
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Network/privateEndpoints', format('{0}-private-endpoint', variables('scopeName')))]",
+                        "zoneLinks"
+                      ]
+                    }
+                  ],
+                  "outputs": {
+                    "azureMonitorPrivateLinkScopeResourceId": {
+                      "type": "string",
+                      "value": "[resourceId('microsoft.insights/privateLinkScopes', variables('scopeName'))]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))]",
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('managedEgressRule')]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "foundry-monitoring-network-approver",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "principalId": {
+                    "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('projectParts')[8]), '2025-06-01', 'full').identity.principalId]"
+                  },
+                  "roleDefinitionId": {
+                    "value": "[variables('networkConnectionApproverRoleId')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "785343973509457050"
+                    }
+                  },
+                  "parameters": {
+                    "principalId": {
+                      "type": "string"
+                    },
+                    "roleDefinitionId": {
+                      "type": "string"
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "name": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleDefinitionId'))]",
+                      "properties": {
+                        "principalId": "[parameters('principalId')]",
+                        "principalType": "ServicePrincipal",
+                        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionId'))]"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[and(variables('createResources'), parameters('privateNetwork'))]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "foundry-monitoring-resync",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "name": {
+                    "value": "[format('appi-{0}', variables('token'))]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[variables('monitoringTags')]"
+                  },
+                  "workspaceResourceId": {
+                    "value": "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
+                  },
+                  "publicNetworkAccessForIngestion": {
+                    "value": "[variables('publicNetworkAccess')]"
+                  },
+                  "publicNetworkAccessForQuery": {
+                    "value": "Enabled"
+                  },
+                  "privateLinkScopeResourceId": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link'), '2025-04-01').outputs.azureMonitorPrivateLinkScopeResourceId.value]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "10336562090588378730"
+                    }
+                  },
+                  "parameters": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "tags": {
+                      "type": "object"
+                    },
+                    "workspaceResourceId": {
+                      "type": "string"
+                    },
+                    "publicNetworkAccessForIngestion": {
+                      "type": "string"
+                    },
+                    "publicNetworkAccessForQuery": {
+                      "type": "string"
+                    },
+                    "privateLinkScopeResourceId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "The private link scope resource ID. Hashing it into a tag orders this deployment after the scope."
+                      }
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Insights/components",
+                      "apiVersion": "2020-02-02",
+                      "name": "[parameters('name')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[union(parameters('tags'), createObject('azd-ampls-link', uniqueString(parameters('privateLinkScopeResourceId'), parameters('name'))))]",
+                      "kind": "web",
+                      "properties": {
+                        "Application_Type": "web",
+                        "WorkspaceResourceId": "[parameters('workspaceResourceId')]",
+                        "publicNetworkAccessForIngestion": "[parameters('publicNetworkAccessForIngestion')]",
+                        "publicNetworkAccessForQuery": "[parameters('publicNetworkAccessForQuery')]"
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "id": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.Insights/components', parameters('name'))]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link')]",
                 "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
               ]
             },
@@ -905,9 +1371,7 @@
                   "projectName": {
                     "value": "[variables('projectParts')[10]]"
                   },
-                  "applicationInsightsResourceId": {
-                    "value": "[variables('effectiveComponentId')]"
-                  },
+                  "applicationInsightsResourceId": "[if(equals(parameters('mode'), 'none'), createObject('value', ''), if(variables('createResources'), if(parameters('privateNetwork'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-resync'), '2025-04-01').outputs.id.value), createObject('value', resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token'))))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8]))))]",
                   "environmentName": {
                     "value": "[parameters('environmentName')]"
                   }
@@ -991,14 +1455,19 @@
                 }
               },
               "dependsOn": [
-                "[resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))]"
+                "[resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))]",
+                "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-resync')]"
               ]
             }
           ],
           "outputs": {
+            "privateLinkScopeResourceId": {
+              "type": "string",
+              "value": "[if(and(or(equals(parameters('mode'), 'create'), equals(parameters('mode'), 'reuse-connect')), parameters('privateNetwork')), reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link'), '2025-04-01').outputs.azureMonitorPrivateLinkScopeResourceId.value, '')]"
+            },
             "applicationInsightsResourceId": {
               "type": "string",
-              "value": "[variables('effectiveComponentId')]"
+              "value": "[if(equals(parameters('mode'), 'none'), '', if(variables('createResources'), if(parameters('privateNetwork'), reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-resync'), '2025-04-01').outputs.id.value, resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])))]"
             },
             "applicationInsightsAppId": {
               "type": "string",

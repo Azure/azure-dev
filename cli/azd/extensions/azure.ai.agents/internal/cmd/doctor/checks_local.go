@@ -98,6 +98,15 @@ type Dependencies struct {
 		projectResourceID string,
 	) (*project.ProjectStorageRBACResult, error)
 
+	// probeProjectPolicy is a test seam: when non-nil it replaces the
+	// production `project.QueryProjectPolicy` call inside the
+	// `remote.policy` check.
+	probeProjectPolicy func(
+		ctx context.Context,
+		azdClient *azdext.AzdClient,
+		projectResourceID string,
+	) (*project.ProjectPolicyResult, error)
+
 	// readProjectResourceIDFn is a test seam: when non-nil it
 	// replaces the production `readProjectResourceID` call inside
 	// the `remote.rbac` check, letting unit tests exercise the

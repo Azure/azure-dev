@@ -21,6 +21,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | `pipeline` | Beta |
 | `provision` | Stable |
 | `restore` | Beta |
+| [`resources add` (extension)](../../cli/azd/extensions/azure.resources/README.md#add-resources-interactively) | Preview |
 | `show` | Stable |
 | `template` | Beta |
 | `up` | Stable |

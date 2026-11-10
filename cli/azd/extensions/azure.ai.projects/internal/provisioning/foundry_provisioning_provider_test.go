@@ -621,6 +621,15 @@ func TestCanonicalizeOutputName(t *testing.T) {
 		"unknown name must pass through verbatim, not silently dropped")
 }
 
+func TestOwnedPrivateLinkScopeOutputIsCanonicalAndCleaned(t *testing.T) {
+	t.Parallel()
+
+	name := synthesis.OwnedPrivateLinkScopeOutput
+	assert.Equal(t, name, canonicalizeOutputName("azD_MONITORING_PRIVATE_LINK_SCOPE_ID"))
+	assert.Contains(t, greenfieldOutputNames, name)
+	assert.Contains(t, monitoringOutputKeys(), name)
+}
+
 // mapKeys returns a sorted list of keys for stable assert messages.
 func mapKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))

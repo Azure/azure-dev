@@ -37,6 +37,29 @@ services:
 | `workflows` | object | Workflow configuration |
 | `cloud` | object | Cloud environment configuration |
 
+## Infrastructure provider configuration
+
+`infra.config` is an optional provider-owned object supported by both the stable
+and alpha schemas. Core azd passes it to the infrastructure provider without
+interpreting its keys; that provider defines and validates the configuration.
+
+```yaml
+name: example
+infra:
+  provider: resources
+  config:
+    storage:
+      type: storage
+      containers:
+        - assets
+```
+
+For layered infrastructure, author each provider's configuration under
+`infra.layers[].config`. Root-level `infra.config` is not merged into layer configs.
+The preview `azd resources add` command edits only layered infrastructure; it does
+not edit the flat configuration shown above. See the
+[Azure Resources extension reference](../../cli/azd/extensions/azure.resources/README.md).
+
 ## Service Properties
 
 | Property | Type | Description |

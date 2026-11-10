@@ -438,13 +438,9 @@ func addResourceService(
 	cfg *structpb.Struct,
 	uses []string,
 ) error {
-	var environment map[string]string
-	if host != AiProjectHost {
-		var err error
-		environment, err = serviceEnvironmentTemplates(cfg)
-		if err != nil {
-			return invalidServiceEnvironmentReferences(name, err)
-		}
+	environment, err := serviceEnvironmentTemplates(host, cfg)
+	if err != nil {
+		return invalidServiceEnvironmentReferences(name, err)
 	}
 	svc := &azdext.ServiceConfig{
 		Name:                 name,
@@ -474,17 +470,32 @@ func addResourceService(
 	return nil
 }
 
-// serviceEnvironmentTemplates discovers client-side templates in the
-// generic nested resource config emitted to azure.yaml. Invalid
-// references fail before the caller writes service or env state.
-func serviceEnvironmentTemplates(cfg *structpb.Struct) (map[string]string, error) {
+// serviceEnvironmentTemplates scans only fields the resource provider
+// expands. Invalid references fail before this service is written.
+func serviceEnvironmentTemplates(host string, cfg *structpb.Struct) (map[string]string, error) {
 	if cfg == nil {
 		return nil, nil
 	}
 
+	var fields []string
+	switch host {
+	case AiConnectionHost:
+		fields = []string{
+			"audience", "authorizationUrl", "connectorName", "credentials",
+			"metadata", "refreshUrl", "scopes", "target", "tokenUrl",
+		}
+	case AiToolboxHost:
+		fields = []string{"endpoint", "tools"}
+	default:
+		return nil, nil
+	}
+
 	environment := map[string]string{}
-	if err := collectEnvironmentTemplates(cfg.AsMap(), "", environment); err != nil {
-		return nil, err
+	values := cfg.AsMap()
+	for _, field := range fields {
+		if err := collectEnvironmentTemplates(values[field], field, environment); err != nil {
+			return nil, err
+		}
 	}
 	if len(environment) == 0 {
 		return nil, nil

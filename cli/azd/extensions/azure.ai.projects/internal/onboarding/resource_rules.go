@@ -370,11 +370,16 @@ func storageResourceChecks(account armstorage.Account) Report {
 	known := account.Kind != nil && p.AccessTier != nil && p.IsHnsEnabled != nil
 	valid := resourceValue(account.Kind) == "StorageV2" && resourceValue(p.AccessTier) == "Hot" &&
 		p.IsHnsEnabled != nil && !*p.IsHnsEnabled
-	typeCheck = resourceKnown(typeCheck, known, valid,
-		"kind="+resourceValue(account.Kind)+"; tier="+resourceValue(p.AccessTier)+"; HNS evidence")
+	hns := "unavailable"
+	if p.IsHnsEnabled != nil {
+		hns = strconv.FormatBool(*p.IsHnsEnabled)
+	}
+	detail := "kind=" + resourceValue(account.Kind) + "; tier=" + resourceValue(p.AccessTier) +
+		"; isHnsEnabled=" + hns
+	typeCheck = resourceKnown(typeCheck, known, valid, detail)
 	if account.Kind != nil && resourceValue(account.Kind) != "StorageV2" ||
 		p.AccessTier != nil && resourceValue(p.AccessTier) != "Hot" || resourceBool(p.IsHnsEnabled) {
-		typeCheck = resourceResult(typeCheck, Fail, "incompatible Storage kind, tier or HNS configuration")
+		typeCheck = resourceResult(typeCheck, Fail, "incompatible Storage kind, tier or HNS configuration: "+detail)
 	}
 	sku := ""
 	if account.SKU != nil {

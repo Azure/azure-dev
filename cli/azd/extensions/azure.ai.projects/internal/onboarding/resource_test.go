@@ -474,7 +474,16 @@ func TestStorageRulesRetainSourceStandardsAndDefaults(t *testing.T) {
 			raw, err := json.Marshal(body)
 			require.NoError(t, err)
 			require.NoError(t, json.Unmarshal(raw, &account))
-			assert.Equal(t, test.status, checkWithID(t, storageResourceChecks(account), test.check).Status)
+			report := storageResourceChecks(account)
+			assert.Equal(t, test.status, checkWithID(t, report, test.check).Status)
+			typeCheck := checkWithID(t, report, "storage-type")
+			hns := "unavailable"
+			if value, ok := properties["isHnsEnabled"]; ok {
+				hns = fmt.Sprint(value)
+			}
+			assert.Contains(t, typeCheck.Observed, "kind=StorageV2")
+			assert.Contains(t, typeCheck.Observed, "tier="+resourceValue(account.Properties.AccessTier))
+			assert.Contains(t, typeCheck.Observed, "isHnsEnabled="+hns)
 		})
 	}
 	for _, sku := range []string{"Standard_ZRS", "Standard_LRS", "unknown", ""} {

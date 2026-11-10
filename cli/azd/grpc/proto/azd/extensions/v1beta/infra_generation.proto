@@ -1,0 +1,60 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azd.extensions.v1beta;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta";
+
+import "azd/extensions/v1beta/errors.proto";
+import "azd/extensions/v1beta/provisioning.proto";
+
+// InfraGenerationService separates source generation from provisioning.
+service InfraGenerationService {
+  rpc Stream(stream InfraGenerationMessage) returns (stream InfraGenerationMessage);
+}
+
+message InfraGenerationMessage {
+  string request_id = 1;
+  ExtensionError error = 99;
+  oneof message_type {
+    RegisterInfraGenerationProviderRequest register_request = 2;
+    RegisterInfraGenerationProviderResponse register_response = 3;
+    InfraGenerateRequest generate_request = 4;
+    InfraGenerateResponse generate_response = 5;
+    InfraGenerateCompleteRequest complete_request = 6;
+    InfraGenerateCompleteResponse complete_response = 7;
+  }
+}
+
+message RegisterInfraGenerationProviderRequest {
+  string name = 1;
+}
+
+message RegisterInfraGenerationProviderResponse {}
+
+// InfraGenerateOptions is required even when no options are configured.
+// Future additions must preserve the behavior of an empty message.
+message InfraGenerateOptions {}
+
+message InfraGenerateRequest {
+  string project_path = 1;
+  ProvisioningOptions entry = 2;
+  InfraGenerateOptions options = 3;
+  // Project-relative directory into which the host will write the sources.
+  string output_path = 4;
+}
+
+message InfraGenerateResponse {
+  // Paths use forward slashes and are relative to output_path.
+  // The host validates paths and owns overwrite prompts and file writes.
+  map<string, bytes> files = 1;
+}
+
+// Sent only after every generated file for this entry was successfully written.
+// Providers may now replace their entry with a file-based infrastructure entry.
+message InfraGenerateCompleteRequest {
+  InfraGenerateRequest generation = 1;
+}
+
+message InfraGenerateCompleteResponse {}

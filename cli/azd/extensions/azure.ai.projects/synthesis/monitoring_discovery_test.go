@@ -12,8 +12,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v3"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -89,8 +89,6 @@ func connRecord(name, category, target, auth string, shared *bool) MonitoringCon
 	}
 	return MonitoringConnectionRecord{Name: name, Properties: properties}
 }
-
-func boolPtr(value bool) *bool { return &value }
 
 func TestMonitoringConnectionNameIsStableAndBounded(t *testing.T) {
 	t.Parallel()
@@ -316,14 +314,14 @@ func TestDiscoverConnection(t *testing.T) {
 		},
 		{
 			name:          "shared account connection",
-			reader:        &fakeReader{account: []MonitoringConnectionRecord{appInsights("a", boolPtr(true))}},
+			reader:        &fakeReader{account: []MonitoringConnectionRecord{appInsights("a", new(true))}},
 			accountExists: true, wantTarget: testComponentID,
 		},
 		{
 			name: "mirrored entry is not double counted",
 			reader: &fakeReader{
 				project: []MonitoringConnectionRecord{appInsights("a", nil)},
-				account: []MonitoringConnectionRecord{appInsights("A", boolPtr(false))},
+				account: []MonitoringConnectionRecord{appInsights("A", new(false))},
 			},
 			projectExists: true, accountExists: true, wantTarget: testComponentID,
 		},
@@ -331,7 +329,7 @@ func TestDiscoverConnection(t *testing.T) {
 			name: "mirrored entry with different target is ambiguous",
 			reader: &fakeReader{
 				project: []MonitoringConnectionRecord{appInsights("a", nil)},
-				account: []MonitoringConnectionRecord{connRecord("a", "AppInsights", testOtherID, "ApiKey", boolPtr(false))},
+				account: []MonitoringConnectionRecord{connRecord("a", "AppInsights", testOtherID, "ApiKey", new(false))},
 			},
 			projectExists: true, accountExists: true, wantErr: "ambiguous",
 		},
@@ -359,12 +357,12 @@ func TestDiscoverConnection(t *testing.T) {
 		},
 		{
 			name:          "unshared sibling connection ignored",
-			reader:        &fakeReader{account: []MonitoringConnectionRecord{storage("sibling", boolPtr(false))}},
+			reader:        &fakeReader{account: []MonitoringConnectionRecord{storage("sibling", new(false))}},
 			accountExists: true,
 		},
 		{
 			name:          "reserved name protected at account",
-			reader:        &fakeReader{account: []MonitoringConnectionRecord{storage(reserved, boolPtr(false))}},
+			reader:        &fakeReader{account: []MonitoringConnectionRecord{storage(reserved, new(false))}},
 			accountExists: true, wantErr: "protected",
 		},
 		{

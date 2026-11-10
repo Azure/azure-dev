@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -132,6 +132,7 @@ func TestPreviewAndDeployPreserveResourceExistsAfterEnsureEnv(t *testing.T) {
 		deployment: deployedFixture(), groupErr: &azcore.ResponseError{StatusCode: 404},
 		changes: []*armresources.WhatIfChange{{ResourceID: new(groupID), ChangeType: new(armresources.ChangeTypeCreate)}},
 	}
+
 	p.azure = backend
 	require.NoError(t, p.EnsureEnv(t.Context()))
 	require.Len(t, env.writes, 2, "serial scope setup must persist subscription and location")
@@ -140,9 +141,11 @@ func TestPreviewAndDeployPreserveResourceExistsAfterEnsureEnv(t *testing.T) {
 	_, err := p.Preview(t.Context(), nil)
 	require.NoError(t, err)
 	request := backend.previewInput
-	parameters, ok := request.Properties.Parameters.(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, map[string]any{"value": true}, parameters["serviceExists"],
+	parameters := request.Properties.Parameters
+	require.Contains(t, parameters, "serviceExists")
+	encoded, err := json.Marshal(parameters["serviceExists"])
+	require.NoError(t, err)
+	require.JSONEq(t, `{"value":true}`, string(encoded),
 		"the generated Container App template must preserve the deployed image instead of selecting hello-world")
 	require.Equal(t, backend, p.azure)
 	require.Equal(t, "eastus", *request.Location)
@@ -158,6 +161,34 @@ func TestPreviewAndDeployPreserveResourceExistsAfterEnsureEnv(t *testing.T) {
 		"preview and deployment must use the same prepared inputs")
 	require.Equal(t, "true", result.Deployment.Parameters["serviceExists"].Value)
 	require.Len(t, env.reads, 2)
+}
+
+func TestDeploymentParametersPreserveWireValues(t *testing.T) {
+	parameters, err := deploymentParameters(map[string]any{
+		"empty": map[string]any{"value": nil},
+		"large": map[string]any{"value": json.Number("9007199254740993")},
+		"secret": map[string]any{"reference": map[string]any{
+			"keyVault": map[string]any{
+				"id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/vault",
+			},
+			"secretName": "password", "secretVersion": "version",
+		}},
+	})
+	require.NoError(t, err)
+	encoded, err := json.Marshal(parameters)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"empty":{"value":null},
+		"large":{"value":9007199254740993},
+		"secret":{"reference":{
+			"keyVault":{"id":"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/vault"},
+			"secretName":"password","secretVersion":"version"
+		}}
+	}`, string(encoded))
+	for _, invalid := range []any{nil, map[string]any{"unsupported": true}} {
+		_, err := deploymentParameters(map[string]any{"invalid": invalid})
+		require.Error(t, err)
+	}
 }
 
 func TestParametersEnvironmentRefreshFailureIsRetryable(t *testing.T) {

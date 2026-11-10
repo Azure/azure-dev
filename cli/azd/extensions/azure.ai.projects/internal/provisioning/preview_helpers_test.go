@@ -10,7 +10,7 @@ import (
 
 	"azure.ai.projects/internal/exterrors"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,7 +20,7 @@ func TestSummarizeWhatIf_NilSafe(t *testing.T) {
 	t.Parallel()
 
 	// Empty result: status defaults, no rows, no panic.
-	got := summarizeWhatIf(armresources.WhatIfOperationResult{})
+	got := summarizeWhatIf(armdeployments.WhatIfOperationResult{})
 	assert.Contains(t, got, "What-if status: Succeeded",
 		"default status should be Succeeded when Status is nil")
 	assert.Contains(t, got, "Total changes: 0")
@@ -29,21 +29,21 @@ func TestSummarizeWhatIf_NilSafe(t *testing.T) {
 
 	// Status set, no Properties: no panic on nil Properties.
 	status := "Succeeded"
-	got = summarizeWhatIf(armresources.WhatIfOperationResult{Status: &status})
+	got = summarizeWhatIf(armdeployments.WhatIfOperationResult{Status: &status})
 	assert.Contains(t, got, "What-if status: Succeeded")
 	assert.Contains(t, got, "Total changes: 0")
 
 	// Properties set with all-nil Changes entries: silently skipped.
-	props := &armresources.WhatIfOperationProperties{
-		Changes: []*armresources.WhatIfChange{nil, nil, nil},
+	props := &armdeployments.WhatIfOperationProperties{
+		Changes: []*armdeployments.WhatIfChange{nil, nil, nil},
 	}
-	got = summarizeWhatIf(armresources.WhatIfOperationResult{Properties: props})
+	got = summarizeWhatIf(armdeployments.WhatIfOperationResult{Properties: props})
 	assert.Contains(t, got, "Total changes: 0",
 		"nil changes must NOT be counted")
 
 	// Empty status string: still defaults to Succeeded.
 	empty := ""
-	got = summarizeWhatIf(armresources.WhatIfOperationResult{Status: &empty})
+	got = summarizeWhatIf(armdeployments.WhatIfOperationResult{Status: &empty})
 	assert.Contains(t, got, "What-if status: Succeeded",
 		"empty string Status should be treated as missing -> default")
 }
@@ -58,15 +58,15 @@ func TestSummarizeWhatIf_DetailedBreakdown(t *testing.T) {
 	id3 := "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-test" +
 		"/providers/Microsoft.ContainerRegistry/registries/cr-abc"
 
-	props := &armresources.WhatIfOperationProperties{
-		Changes: []*armresources.WhatIfChange{
-			{ChangeType: new(armresources.ChangeTypeCreate), ResourceID: &id1},
-			{ChangeType: new(armresources.ChangeTypeCreate), ResourceID: &id2},
-			{ChangeType: new(armresources.ChangeTypeModify), ResourceID: &id3},
-			{ChangeType: new(armresources.ChangeTypeDelete), ResourceID: new("/subs/.../old")},
+	props := &armdeployments.WhatIfOperationProperties{
+		Changes: []*armdeployments.WhatIfChange{
+			{ChangeType: new(armdeployments.ChangeTypeCreate), ResourceID: &id1},
+			{ChangeType: new(armdeployments.ChangeTypeCreate), ResourceID: &id2},
+			{ChangeType: new(armdeployments.ChangeTypeModify), ResourceID: &id3},
+			{ChangeType: new(armdeployments.ChangeTypeDelete), ResourceID: new("/subs/.../old")},
 		},
 	}
-	got := summarizeWhatIf(armresources.WhatIfOperationResult{Properties: props})
+	got := summarizeWhatIf(armdeployments.WhatIfOperationResult{Properties: props})
 
 	assert.Contains(t, got, "Total changes: 4")
 	assert.Contains(t, got, "Create: 2")
@@ -97,17 +97,17 @@ func TestSummarizeWhatIf_TruncatesLongList(t *testing.T) {
 
 	// Build 25 Create rows; exceeds maxPreviewResources (20).
 	const total = 25
-	createT := armresources.ChangeTypeCreate
-	changes := make([]*armresources.WhatIfChange, 0, total)
+	createT := armdeployments.ChangeTypeCreate
+	changes := make([]*armdeployments.WhatIfChange, 0, total)
 	for i := range total {
 		id := "/providers/Microsoft.Foo/bar/" + string(rune('a'+i%26))
-		changes = append(changes, &armresources.WhatIfChange{
+		changes = append(changes, &armdeployments.WhatIfChange{
 			ChangeType: &createT,
 			ResourceID: &id,
 		})
 	}
-	got := summarizeWhatIf(armresources.WhatIfOperationResult{
-		Properties: &armresources.WhatIfOperationProperties{Changes: changes},
+	got := summarizeWhatIf(armdeployments.WhatIfOperationResult{
+		Properties: &armdeployments.WhatIfOperationProperties{Changes: changes},
 	})
 
 	assert.Contains(t, got, "Total changes: 25",
@@ -125,12 +125,12 @@ func TestSummarizeWhatIf_UnknownChangeTypePassesThrough(t *testing.T) {
 	// A change with no ChangeType (nil) must fall back to "Unknown"
 	// rather than panicking or producing an empty per-type row.
 	id := "/providers/Microsoft.Foo/bar/x"
-	props := &armresources.WhatIfOperationProperties{
-		Changes: []*armresources.WhatIfChange{
+	props := &armdeployments.WhatIfOperationProperties{
+		Changes: []*armdeployments.WhatIfChange{
 			{ResourceID: &id}, // ChangeType nil
 		},
 	}
-	got := summarizeWhatIf(armresources.WhatIfOperationResult{Properties: props})
+	got := summarizeWhatIf(armdeployments.WhatIfOperationResult{Properties: props})
 	assert.Contains(t, got, "Unknown: 1")
 	assert.Contains(t, got, "+ Unknown Microsoft.Foo/bar/x")
 }
@@ -139,12 +139,12 @@ func TestSummarizeWhatIf_MissingResourceIDIsPlaceheld(t *testing.T) {
 	t.Parallel()
 
 	// ResourceID nil -> show placeholder rather than crashing.
-	props := &armresources.WhatIfOperationProperties{
-		Changes: []*armresources.WhatIfChange{
-			{ChangeType: new(armresources.ChangeTypeCreate)},
+	props := &armdeployments.WhatIfOperationProperties{
+		Changes: []*armdeployments.WhatIfChange{
+			{ChangeType: new(armdeployments.ChangeTypeCreate)},
 		},
 	}
-	got := summarizeWhatIf(armresources.WhatIfOperationResult{Properties: props})
+	got := summarizeWhatIf(armdeployments.WhatIfOperationResult{Properties: props})
 	assert.Contains(t, got, "<unknown resource>")
 }
 
@@ -190,11 +190,11 @@ func TestWhatIfFailure_Success(t *testing.T) {
 
 	// Nil result -> nil error. Lets callers treat "no failure
 	// detected" as the happy path without juggling sentinels.
-	assert.NoError(t, whatIfFailure(armresources.WhatIfOperationResult{}))
+	assert.NoError(t, whatIfFailure(armdeployments.WhatIfOperationResult{}))
 
 	// Status: Succeeded (any casing) -> nil error.
 	for _, s := range []string{"Succeeded", "succeeded", "SUCCEEDED"} {
-		err := whatIfFailure(armresources.WhatIfOperationResult{Status: &s})
+		err := whatIfFailure(armdeployments.WhatIfOperationResult{Status: &s})
 		assert.NoError(t, err, "Status=%q must be treated as success", s)
 	}
 }
@@ -206,16 +206,16 @@ func TestWhatIfFailure_UnknownQuotaUsesGenericGuidance(t *testing.T) {
 	// preflight failures. whatIfFailure must surface this as
 	// CodeArmWhatIfFailed so the caller doesn't silently report
 	// "0 changes".
-	inner := &armresources.ErrorResponse{
+	inner := &armdeployments.ErrorResponse{
 		Code:    new("InsufficientQuota"),
 		Message: new("This operation requires 10 capacity..."),
 	}
-	outer := &armresources.ErrorResponse{
+	outer := &armdeployments.ErrorResponse{
 		Code:    new("InvalidTemplateDeployment"),
 		Message: new("Preflight validation failed."),
-		Details: []*armresources.ErrorResponse{inner},
+		Details: []*armdeployments.ErrorResponse{inner},
 	}
-	err := whatIfFailure(armresources.WhatIfOperationResult{Error: outer})
+	err := whatIfFailure(armdeployments.WhatIfOperationResult{Error: outer})
 	require.Error(t, err)
 
 	var local *azdext.LocalError
@@ -236,7 +236,7 @@ func TestWhatIfFailure_UnknownQuotaUsesGenericGuidance(t *testing.T) {
 func TestWhatIfFailure_CognitiveServicesQuotaUsesFoundryGuidance(t *testing.T) {
 	t.Parallel()
 
-	inner := &armresources.ErrorResponse{
+	inner := &armdeployments.ErrorResponse{
 		Code:    new("InsufficientQuota"),
 		Message: new("Insufficient quota."),
 		Target: new(
@@ -244,11 +244,11 @@ func TestWhatIfFailure_CognitiveServicesQuotaUsesFoundryGuidance(t *testing.T) {
 				"Microsoft.CognitiveServices/accounts/ai-account",
 		),
 	}
-	err := whatIfFailure(armresources.WhatIfOperationResult{
-		Error: &armresources.ErrorResponse{
+	err := whatIfFailure(armdeployments.WhatIfOperationResult{
+		Error: &armdeployments.ErrorResponse{
 			Code:    new("InvalidTemplateDeployment"),
 			Message: new("Preflight validation failed."),
-			Details: []*armresources.ErrorResponse{inner},
+			Details: []*armdeployments.ErrorResponse{inner},
 		},
 	})
 	require.Error(t, err)
@@ -263,7 +263,7 @@ func TestWhatIfFailure_NonSucceededStatus(t *testing.T) {
 	t.Parallel()
 
 	failed := "Failed"
-	err := whatIfFailure(armresources.WhatIfOperationResult{Status: &failed})
+	err := whatIfFailure(armdeployments.WhatIfOperationResult{Status: &failed})
 	require.Error(t, err)
 	var local *azdext.LocalError
 	require.True(t, errors.As(err, &local))
@@ -281,7 +281,7 @@ func TestFormatArmErrorResponse(t *testing.T) {
 
 	t.Run("flat error: code + message", func(t *testing.T) {
 		t.Parallel()
-		got := formatArmErrorResponse(&armresources.ErrorResponse{
+		got := formatArmErrorResponse(&armdeployments.ErrorResponse{
 			Code:    new("InvalidTemplate"),
 			Message: new("Template syntax error at line 5"),
 		})
@@ -290,10 +290,10 @@ func TestFormatArmErrorResponse(t *testing.T) {
 
 	t.Run("nested details flatten recursively", func(t *testing.T) {
 		t.Parallel()
-		got := formatArmErrorResponse(&armresources.ErrorResponse{
+		got := formatArmErrorResponse(&armdeployments.ErrorResponse{
 			Code:    new("OuterCode"),
 			Message: new("outer msg"),
-			Details: []*armresources.ErrorResponse{
+			Details: []*armdeployments.ErrorResponse{
 				nil, // nil entries silently skipped
 				{
 					Code:    new("InnerCode"),
@@ -311,12 +311,12 @@ func TestFormatArmErrorResponse(t *testing.T) {
 		// Both code and message empty / nil: don't return ": "
 		// (would look like a parse bug to the user).
 		assert.Equal(t, "(empty ARM error)",
-			formatArmErrorResponse(&armresources.ErrorResponse{}))
+			formatArmErrorResponse(&armdeployments.ErrorResponse{}))
 	})
 
 	t.Run("code only is allowed", func(t *testing.T) {
 		t.Parallel()
-		got := formatArmErrorResponse(&armresources.ErrorResponse{
+		got := formatArmErrorResponse(&armdeployments.ErrorResponse{
 			Code: new("SomeCode"),
 		})
 		assert.Equal(t, "SomeCode:", got)
@@ -326,19 +326,19 @@ func TestFormatArmErrorResponse(t *testing.T) {
 func TestWhatIfChanges(t *testing.T) {
 	t.Parallel()
 
-	ctCreate := armresources.ChangeTypeCreate
-	ctDelete := armresources.ChangeTypeDelete
+	ctCreate := armdeployments.ChangeTypeCreate
+	ctDelete := armdeployments.ChangeTypeDelete
 
 	t.Run("nil Properties yields nil", func(t *testing.T) {
 		t.Parallel()
-		assert.Nil(t, whatIfChanges(armresources.WhatIfOperationResult{}))
+		assert.Nil(t, whatIfChanges(armdeployments.WhatIfOperationResult{}))
 	})
 
 	t.Run("nil entries skipped", func(t *testing.T) {
 		t.Parallel()
-		got := whatIfChanges(armresources.WhatIfOperationResult{
-			Properties: &armresources.WhatIfOperationProperties{
-				Changes: []*armresources.WhatIfChange{nil, nil},
+		got := whatIfChanges(armdeployments.WhatIfOperationResult{
+			Properties: &armdeployments.WhatIfOperationProperties{
+				Changes: []*armdeployments.WhatIfChange{nil, nil},
 			},
 		})
 		assert.Empty(t, got)
@@ -347,9 +347,9 @@ func TestWhatIfChanges(t *testing.T) {
 	t.Run("create pulls type+name from After state", func(t *testing.T) {
 		t.Parallel()
 		id := "/subscriptions/s/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/cog"
-		got := whatIfChanges(armresources.WhatIfOperationResult{
-			Properties: &armresources.WhatIfOperationProperties{
-				Changes: []*armresources.WhatIfChange{{
+		got := whatIfChanges(armdeployments.WhatIfOperationResult{
+			Properties: &armdeployments.WhatIfOperationProperties{
+				Changes: []*armdeployments.WhatIfChange{{
 					ChangeType: &ctCreate,
 					ResourceID: &id,
 					After: map[string]any{
@@ -369,9 +369,9 @@ func TestWhatIfChanges(t *testing.T) {
 	t.Run("delete falls back to Before state", func(t *testing.T) {
 		t.Parallel()
 		id := "/subscriptions/s/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/cr"
-		got := whatIfChanges(armresources.WhatIfOperationResult{
-			Properties: &armresources.WhatIfOperationProperties{
-				Changes: []*armresources.WhatIfChange{{
+		got := whatIfChanges(armdeployments.WhatIfOperationResult{
+			Properties: &armdeployments.WhatIfOperationProperties{
+				Changes: []*armdeployments.WhatIfChange{{
 					ChangeType: &ctDelete,
 					ResourceID: &id,
 					Before:     map[string]any{"type": "Microsoft.ContainerRegistry/registries", "name": "cr"},
@@ -386,9 +386,9 @@ func TestWhatIfChanges(t *testing.T) {
 	t.Run("name falls back to shortened id when state lacks name", func(t *testing.T) {
 		t.Parallel()
 		id := "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Resources/x/y"
-		got := whatIfChanges(armresources.WhatIfOperationResult{
-			Properties: &armresources.WhatIfOperationProperties{
-				Changes: []*armresources.WhatIfChange{{ChangeType: &ctCreate, ResourceID: &id}},
+		got := whatIfChanges(armdeployments.WhatIfOperationResult{
+			Properties: &armdeployments.WhatIfOperationProperties{
+				Changes: []*armdeployments.WhatIfChange{{ChangeType: &ctCreate, ResourceID: &id}},
 			},
 		})
 		require.Len(t, got, 1)

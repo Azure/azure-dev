@@ -5,12 +5,19 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -285,7 +292,7 @@ func (f *fakeTagsClient) GetAtScope(
 }
 
 func (f *fakeTagsClient) UpdateAtScope(
-	_ context.Context, _ string, p armresources.TagsPatchResource, _ *armresources.TagsClientUpdateAtScopeOptions,
+	_ context.Context, _ string, p armresources.TagsPatchResource, _ *armresources.TagsClientBeginUpdateAtScopeOptions,
 ) (armresources.TagsClientUpdateAtScopeResponse, error) {
 	if f.updateErr != nil {
 		return armresources.TagsClientUpdateAtScopeResponse{}, f.updateErr
@@ -332,4 +339,55 @@ func TestRefreshMonitoringRoleSyncTag(t *testing.T) {
 		err := refreshMonitoringRoleSyncTag(t.Context(), c, publisherTestComponent, true, now)
 		require.ErrorContains(t, err, "write denied")
 	})
+}
+
+func TestMonitoringTagUpdateWaitsForCompletion(t *testing.T) {
+	for _, status := range []string{"Succeeded", "Failed"} {
+		t.Run(status, func(t *testing.T) {
+			var methods []string
+			transport := storageTestTransport(func(request *http.Request) (*http.Response, error) {
+				methods = append(methods, request.Method)
+				header := http.Header{"Content-Type": {"application/json"}}
+				code := http.StatusOK
+				body := `{"status":"` + status + `"}`
+				if request.Method == http.MethodPatch {
+					require.Equal(t, publisherTestComponent+"/providers/Microsoft.Resources/tags/default", request.URL.Path)
+					var patch armresources.TagsPatchResource
+					require.NoError(t, json.NewDecoder(request.Body).Decode(&patch))
+					require.Equal(t, new(armresources.TagsPatchOperationMerge), patch.Operation)
+					require.Contains(t, patch.Properties.Tags, monitoringRoleSyncTag)
+					code = http.StatusAccepted
+					header.Set("Azure-AsyncOperation", "https://management.azure.com/operations/tag-update")
+					header.Set("Location", "https://management.azure.com/operations/tag-update/result")
+					body = `{}`
+				} else if request.URL.Path == "/operations/tag-update" {
+					if status == "Failed" {
+						body = `{"status":"Failed","error":{"code":"AuthorizationFailed","message":"denied"}}`
+					}
+				} else {
+					require.Equal(t, publisherTestComponent+"/providers/Microsoft.Resources/tags/default", request.URL.Path)
+					body = `{"properties":{"tags":{}}}`
+				}
+				return &http.Response{
+					StatusCode: code, Header: header, Body: io.NopCloser(strings.NewReader(body)), Request: request,
+				}, nil
+			})
+			client, err := armresources.NewTagsClient("sub-123", storageTestCredential{}, &arm.ClientOptions{
+				ClientOptions: azcore.ClientOptions{Transport: transport, Retry: policy.RetryOptions{MaxRetries: -1}},
+			})
+			require.NoError(t, err)
+
+			err = refreshMonitoringRoleSyncTag(
+				t.Context(), pollingMonitoringTagsClient{client}, publisherTestComponent, true, time.Now(),
+			)
+
+			require.GreaterOrEqual(t, len(methods), 2)
+			require.Equal(t, []string{http.MethodPatch, http.MethodGet}, methods[:2])
+			if status == "Failed" {
+				require.ErrorContains(t, err, "AuthorizationFailed")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

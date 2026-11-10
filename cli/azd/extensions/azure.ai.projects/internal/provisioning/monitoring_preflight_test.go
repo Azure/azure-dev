@@ -21,7 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -452,6 +452,11 @@ func TestMonitoringPreflightRunsBeforeDeployment(t *testing.T) {
 			t.Run(fmt.Sprintf("preview=%t/disabled-auth=%t", preview, disabled), func(t *testing.T) {
 				t.Parallel()
 				fixture := monitoringCloudFixture{componentPolicy: map[string]any{"DisableLocalAuth": disabled}}
+				if !disabled {
+					fixture.projectConnections = []any{
+						monitoringTestConnection("existing-monitoring", monitoringTestComponent, "ApiKey", false),
+					}
+				}
 				p := newMonitoringCloudFixture(t, &fixture)
 				p.onDiskSource = monitoringTestSource("reuse-connect")
 				p.onDiskSource.mode = templateModeBicep
@@ -475,9 +480,13 @@ func TestMonitoringPreflightRunsBeforeDeployment(t *testing.T) {
 					submissions = fixture.plans
 				}
 				require.Len(t, submissions, 1, "one ordinary root deployment or final What-If, not a second monitoring deployment")
-				properties := submissions[0]["properties"].(map[string]any)
-				parameters := properties["parameters"].(map[string]any)
-				assert.Equal(t, "reuse-connect", parameters["monitoringMode"].(map[string]any)["value"])
+				properties, ok := submissions[0]["properties"].(map[string]any)
+				require.True(t, ok)
+				parameters, ok := properties["parameters"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, map[string]any{"value": "already-connected"}, parameters["monitoringMode"])
+				assert.Equal(t, map[string]any{"value": "existing-monitoring"}, parameters["monitoringConnectionName"])
+				assert.Equal(t, map[string]any{"value": false}, parameters["monitoringCreateConnection"])
 			})
 		}
 	}

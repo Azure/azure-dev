@@ -27,8 +27,8 @@ import (
 	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
-	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v3"
+	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"

@@ -5637,7 +5637,7 @@ interactions:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azd-ext-azure-ai-agents/dev
             X-Ms-Correlation-Request-Id:
                 - 280032fd00da602bdd353ba8a507a4ca
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000/projects/test-proj0?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000/projects/test-proj0?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -5874,7 +5874,7 @@ interactions:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azd-ext-azure-ai-agents/dev
             X-Ms-Correlation-Request-Id:
                 - 280032fd00da602bdd353ba8a507a4ca
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -5947,7 +5947,7 @@ interactions:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azd-ext-azure-ai-agents/dev
             X-Ms-Correlation-Request-Id:
                 - 280032fd00da602bdd353ba8a507a4ca
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000/deployments?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000/deployments?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6018,7 +6018,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/skus?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/skus?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6085,7 +6085,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/southeastasia/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/southeastasia/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6156,7 +6156,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/eastasia/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/eastasia/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6227,7 +6227,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/jioindiawest/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/jioindiawest/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6298,7 +6298,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/centralindia/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/centralindia/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6369,7 +6369,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/jioindiacentral/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/jioindiacentral/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6440,7 +6440,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/southindia/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/southindia/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6511,7 +6511,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/qatarcentral/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/qatarcentral/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6582,7 +6582,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/japanwest/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/japanwest/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6653,7 +6653,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/japaneast/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/japaneast/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6724,7 +6724,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/koreacentral/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/koreacentral/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6795,7 +6795,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/uaenorth/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/uaenorth/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6866,7 +6866,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/ukwest/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/ukwest/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -6937,7 +6937,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/australiaeast/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/australiaeast/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7008,7 +7008,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/northeurope/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/northeurope/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7079,7 +7079,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/francecentral/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/francecentral/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7150,7 +7150,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/switzerlandwest/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/switzerlandwest/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7221,7 +7221,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/westeurope/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/westeurope/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7292,7 +7292,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/germanywestcentral/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/germanywestcentral/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7363,7 +7363,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/switzerlandnorth/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/switzerlandnorth/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7434,7 +7434,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/spaincentral/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/spaincentral/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7505,7 +7505,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/westus3/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/westus3/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7576,7 +7576,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/centralus/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/centralus/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7647,7 +7647,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/centraluseuap/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/centraluseuap/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7718,7 +7718,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/uksouth/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/uksouth/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7789,7 +7789,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/polandcentral/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/polandcentral/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7860,7 +7860,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/southcentralus/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/southcentralus/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -7931,7 +7931,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/eastus2euap/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/eastus2euap/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8002,7 +8002,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/westcentralus/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/westcentralus/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8073,7 +8073,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/westus2/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/westus2/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8144,7 +8144,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/canadacentral/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/canadacentral/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8215,7 +8215,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/southafricanorth/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/southafricanorth/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8286,7 +8286,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/norwayeast/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/norwayeast/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8357,7 +8357,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/canadaeast/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/canadaeast/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8428,7 +8428,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/eastus/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/eastus/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8499,7 +8499,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/westus/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/westus/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8570,7 +8570,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/italynorth/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/italynorth/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8641,7 +8641,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/eastus2/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/eastus2/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8712,7 +8712,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/brazilsouth/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/brazilsouth/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8783,7 +8783,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/northcentralus/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/northcentralus/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8854,7 +8854,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/swedencentral/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/swedencentral/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8925,7 +8925,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/canadacentral/usages?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/canadacentral/usages?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -8996,7 +8996,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/canadacentral/usages?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CognitiveServices/locations/canadacentral/usages?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -9067,7 +9067,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armcognitiveservices/v2.0.0,azd-ext-azure-ai-projects/dev
-        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000/projects/test-proj0?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000/projects/test-proj0?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/1.1

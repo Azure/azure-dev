@@ -15,7 +15,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 )
 
 // monitoringGrantRetryDelay is a variable so tests can avoid waiting.
@@ -170,7 +170,7 @@ func (p *AgentServiceTargetProvider) ensureHostedAgentMonitoringPublisher(
 		if err != nil {
 			return err
 		}
-		return refreshMonitoringRoleSyncTag(ctx, tags, componentID, created, time.Now())
+		return refreshMonitoringRoleSyncTag(ctx, pollingMonitoringTagsClient{tags}, componentID, created, time.Now())
 	}
 	return grantHostedAgentMonitoringPublisher(ctx, assign, touch, azdEnv, principalID)
 }

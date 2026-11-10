@@ -6,12 +6,10 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2 v2.0.0
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9 v9.0.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9 v9.6.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi v1.3.0
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/azure/azure-dev/cli/azd v1.37.0
-	github.com/drone/envsubst v1.0.3
+	github.com/drone/envsubst v1.0.3 // indirect
 	github.com/fatih/color v1.19.0
 	github.com/google/uuid v1.6.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
@@ -70,7 +68,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/jmespath-community/go-jmespath v1.1.1 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
@@ -114,6 +111,12 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-require azure.ai.projects/synthesis v0.0.0
+require (
+	azure.ai.projects/synthesis v0.0.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v3 v3.0.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments v1.0.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4 v4.0.0
+	github.com/joho/godotenv v1.5.1
+)
 
 replace azure.ai.projects/synthesis => ./synthesis

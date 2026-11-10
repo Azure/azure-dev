@@ -20,7 +20,8 @@ import (
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
+	resources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"google.golang.org/protobuf/proto"
@@ -244,7 +245,7 @@ func (p *Provider) loadDeployment(ctx context.Context, hint string) (armresource
 	return deployment, nil
 }
 
-func (p *Provider) ownsGroup(group armresources.ResourceGroup) bool {
+func (p *Provider) ownsGroup(group resources.ResourceGroup) bool {
 	return pointerValue(group.Tags[ownerTag]) == p.name
 }
 

@@ -10,7 +10,7 @@ import (
 	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 )
 
 type monitoringTargetBinding struct {

@@ -19,7 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -247,18 +247,40 @@ func (ds *StandardDeployments) GetResourceGroupDeployment(
 func (ds *StandardDeployments) createDeploymentsClient(
 	ctx context.Context,
 	subscriptionId string,
-) (*armresources.DeploymentsClient, error) {
+) (*armdeployments.DeploymentsClient, error) {
 	credential, err := ds.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := armresources.NewDeploymentsClient(subscriptionId, credential, ds.armClientOptions)
+	client, err := armdeployments.NewDeploymentsClient(subscriptionId, credential, ds.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
 
 	return client, nil
+}
+
+func convertToDeploymentParams(parameters azure.ArmParameters) map[string]*armdeployments.DeploymentParameter {
+	if parameters == nil {
+		return nil
+	}
+	result := make(map[string]*armdeployments.DeploymentParameter, len(parameters))
+	for name, parameter := range parameters {
+		converted := &armdeployments.DeploymentParameter{Value: parameter.Value}
+		if reference := parameter.KeyVaultReference; reference != nil {
+			converted.Reference = &armdeployments.KeyVaultParameterReference{
+				KeyVault:      &armdeployments.KeyVaultReference{ID: new(reference.KeyVault.ID)},
+				SecretName:    new(reference.SecretName),
+				SecretVersion: new(reference.SecretVersion),
+			}
+		} else if parameter.Value == nil {
+			// A nil SDK field is omitted, but nullable ARM parameters require an explicit JSON null.
+			converted.Value = azcore.NullValue[*any]()
+		}
+		result[name] = converted
+	}
+	return result
 }
 
 func (ds *StandardDeployments) DeployToSubscription(
@@ -281,11 +303,11 @@ func (ds *StandardDeployments) DeployToSubscription(
 
 	createFromTemplateOperation, err := deploymentClient.BeginCreateOrUpdateAtSubscriptionScope(
 		ctx, deploymentName,
-		armresources.Deployment{
-			Properties: &armresources.DeploymentProperties{
+		armdeployments.Deployment{
+			Properties: &armdeployments.DeploymentProperties{
 				Template:   armTemplate,
-				Parameters: parameters,
-				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+				Parameters: convertToDeploymentParams(parameters),
+				Mode:       to.Ptr(armdeployments.DeploymentModeIncremental),
 			},
 			Location: new(location),
 			Tags:     tags,
@@ -328,11 +350,11 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 
 	createFromTemplateOperation, err := deploymentClient.BeginCreateOrUpdate(
 		ctx, resourceGroup, deploymentName,
-		armresources.Deployment{
-			Properties: &armresources.DeploymentProperties{
+		armdeployments.Deployment{
+			Properties: &armdeployments.DeploymentProperties{
 				Template:   armTemplate,
-				Parameters: parameters,
-				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+				Parameters: convertToDeploymentParams(parameters),
+				Mode:       to.Ptr(armdeployments.DeploymentModeIncremental),
 			},
 			Tags: tags,
 		}, nil)
@@ -360,8 +382,8 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentOperations(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
-) ([]*armresources.DeploymentOperation, error) {
-	result := []*armresources.DeploymentOperation{}
+) ([]*armdeployments.DeploymentOperation, error) {
+	result := []*armdeployments.DeploymentOperation{}
 	deploymentOperationsClient, err := ds.createDeploymentsOperationsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -389,8 +411,8 @@ func (ds *StandardDeployments) ListResourceGroupDeploymentOperations(
 	subscriptionId string,
 	resourceGroupName string,
 	deploymentName string,
-) ([]*armresources.DeploymentOperation, error) {
-	result := []*armresources.DeploymentOperation{}
+) ([]*armdeployments.DeploymentOperation, error) {
+	result := []*armdeployments.DeploymentOperation{}
 	deploymentOperationsClient, err := ds.createDeploymentsOperationsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -417,14 +439,14 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentResources(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
-) ([]*armresources.ResourceReference, error) {
+) ([]*armdeployments.ResourceReference, error) {
 	subscriptionDeployment, err := ds.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 	if err != nil {
 		return nil, fmt.Errorf("getting subscription deployment: %w", err)
 	}
 
 	resourceGroupNames := createdResourceGroupsFromDeployment(subscriptionDeployment)
-	allResources := []*armresources.ResourceReference{}
+	allResources := []*armdeployments.ResourceReference{}
 
 	// Find all the resources from the resource groups created by this deployment.
 	for _, resourceGroupName := range resourceGroupNames {
@@ -434,12 +456,12 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentResources(
 		}
 
 		resourceGroupId := azure.ResourceGroupRID(subscriptionId, resourceGroupName)
-		allResources = append(allResources, &armresources.ResourceReference{
+		allResources = append(allResources, &armdeployments.ResourceReference{
 			ID: &resourceGroupId,
 		})
 
 		for _, resource := range resources {
-			allResources = append(allResources, &armresources.ResourceReference{
+			allResources = append(allResources, &armdeployments.ResourceReference{
 				ID: new(resource.Id),
 			})
 		}
@@ -489,7 +511,7 @@ func (ds *StandardDeployments) ListResourceGroupDeploymentResources(
 	subscriptionId string,
 	resourceGroupName string,
 	deploymentName string,
-) ([]*armresources.ResourceReference, error) {
+) ([]*armdeployments.ResourceReference, error) {
 	resources, err := ds.resourceService.ListResourceGroupResources(ctx, subscriptionId, resourceGroupName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("listing resource group resources: %w", err)
@@ -497,13 +519,13 @@ func (ds *StandardDeployments) ListResourceGroupDeploymentResources(
 
 	resourceGroupId := azure.ResourceGroupRID(subscriptionId, resourceGroupName)
 
-	allResources := []*armresources.ResourceReference{}
-	allResources = append(allResources, &armresources.ResourceReference{
+	allResources := []*armdeployments.ResourceReference{}
+	allResources = append(allResources, &armdeployments.ResourceReference{
 		ID: &resourceGroupId,
 	})
 
 	for _, resource := range resources {
-		allResources = append(allResources, &armresources.ResourceReference{
+		allResources = append(allResources, &armdeployments.ResourceReference{
 			ID: new(resource.Id),
 		})
 	}
@@ -697,7 +719,7 @@ func (ds *StandardDeployments) WhatIfDeployToSubscription(
 	deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
-) (_ *armresources.WhatIfOperationResult, err error) {
+) (_ *armdeployments.WhatIfOperationResult, err error) {
 	ctx, span := tracing.Start(ctx, events.ArmWhatIfSubscriptionEvent)
 	defer func() { span.EndWithStatus(err) }()
 
@@ -708,12 +730,12 @@ func (ds *StandardDeployments) WhatIfDeployToSubscription(
 
 	createFromTemplateOperation, err := deploymentClient.BeginWhatIfAtSubscriptionScope(
 		ctx, deploymentName,
-		armresources.DeploymentWhatIf{
-			Properties: &armresources.DeploymentWhatIfProperties{
+		armdeployments.DeploymentWhatIf{
+			Properties: &armdeployments.DeploymentWhatIfProperties{
 				Template:       armTemplate,
-				Parameters:     parameters,
-				Mode:           to.Ptr(armresources.DeploymentModeIncremental),
-				WhatIfSettings: &armresources.DeploymentWhatIfSettings{},
+				Parameters:     convertToDeploymentParams(parameters),
+				Mode:           to.Ptr(armdeployments.DeploymentModeIncremental),
+				WhatIfSettings: &armdeployments.DeploymentWhatIfSettings{},
 			},
 			Location: new(location),
 		}, nil)
@@ -737,7 +759,7 @@ func (ds *StandardDeployments) WhatIfDeployToResourceGroup(
 	subscriptionId, resourceGroup, deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
-) (_ *armresources.WhatIfOperationResult, err error) {
+) (_ *armdeployments.WhatIfOperationResult, err error) {
 	ctx, span := tracing.Start(ctx, events.ArmWhatIfResourceGroupEvent)
 	defer func() { span.EndWithStatus(err) }()
 
@@ -748,11 +770,11 @@ func (ds *StandardDeployments) WhatIfDeployToResourceGroup(
 
 	createFromTemplateOperation, err := deploymentClient.BeginWhatIf(
 		ctx, resourceGroup, deploymentName,
-		armresources.DeploymentWhatIf{
-			Properties: &armresources.DeploymentWhatIfProperties{
+		armdeployments.DeploymentWhatIf{
+			Properties: &armdeployments.DeploymentWhatIfProperties{
 				Template:   armTemplate,
-				Parameters: parameters,
-				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+				Parameters: convertToDeploymentParams(parameters),
+				Mode:       to.Ptr(armdeployments.DeploymentModeIncremental),
 			},
 		}, nil)
 	if err != nil {
@@ -773,13 +795,13 @@ func (ds *StandardDeployments) WhatIfDeployToResourceGroup(
 func (ds *StandardDeployments) createDeploymentsOperationsClient(
 	ctx context.Context,
 	subscriptionId string,
-) (*armresources.DeploymentOperationsClient, error) {
+) (*armdeployments.DeploymentOperationsClient, error) {
 	credential, err := ds.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := armresources.NewDeploymentOperationsClient(subscriptionId, credential, ds.armClientOptions)
+	client, err := armdeployments.NewDeploymentOperationsClient(subscriptionId, credential, ds.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
@@ -788,7 +810,7 @@ func (ds *StandardDeployments) createDeploymentsOperationsClient(
 }
 
 // Converts from an ARM Extended Deployment to Azd Generic deployment
-func (ds *StandardDeployments) convertFromArmDeployment(deployment *armresources.DeploymentExtended) *ResourceDeployment {
+func (ds *StandardDeployments) convertFromArmDeployment(deployment *armdeployments.DeploymentExtended) *ResourceDeployment {
 	return &ResourceDeployment{
 		Id:                *deployment.ID,
 		Location:          convert.ToValueWithDefault(deployment.Location, ""),
@@ -823,29 +845,29 @@ func (ds *StandardDeployments) convertFromArmDeployment(deployment *armresources
 	}
 }
 
-func convertFromStandardProvisioningState(state armresources.ProvisioningState) DeploymentProvisioningState {
+func convertFromStandardProvisioningState(state armdeployments.ProvisioningState) DeploymentProvisioningState {
 	switch state {
-	case armresources.ProvisioningStateAccepted:
+	case armdeployments.ProvisioningStateAccepted:
 		return DeploymentProvisioningStateAccepted
-	case armresources.ProvisioningStateCanceled:
+	case armdeployments.ProvisioningStateCanceled:
 		return DeploymentProvisioningStateCanceled
-	case armresources.ProvisioningStateCreating:
+	case armdeployments.ProvisioningStateCreating:
 		return DeploymentProvisioningStateCreating
-	case armresources.ProvisioningStateDeleted:
+	case armdeployments.ProvisioningStateDeleted:
 		return DeploymentProvisioningStateDeleted
-	case armresources.ProvisioningStateDeleting:
+	case armdeployments.ProvisioningStateDeleting:
 		return DeploymentProvisioningStateDeleting
-	case armresources.ProvisioningStateFailed:
+	case armdeployments.ProvisioningStateFailed:
 		return DeploymentProvisioningStateFailed
-	case armresources.ProvisioningStateNotSpecified:
+	case armdeployments.ProvisioningStateNotSpecified:
 		return DeploymentProvisioningStateNotSpecified
-	case armresources.ProvisioningStateReady:
+	case armdeployments.ProvisioningStateReady:
 		return DeploymentProvisioningStateReady
-	case armresources.ProvisioningStateRunning:
+	case armdeployments.ProvisioningStateRunning:
 		return DeploymentProvisioningStateRunning
-	case armresources.ProvisioningStateSucceeded:
+	case armdeployments.ProvisioningStateSucceeded:
 		return DeploymentProvisioningStateSucceeded
-	case armresources.ProvisioningStateUpdating:
+	case armdeployments.ProvisioningStateUpdating:
 		return DeploymentProvisioningStateUpdating
 	}
 
@@ -874,11 +896,11 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 
 	validateResult, err := deploymentClient.BeginValidateAtSubscriptionScope(
 		ctx, deploymentName,
-		armresources.Deployment{
-			Properties: &armresources.DeploymentProperties{
+		armdeployments.Deployment{
+			Properties: &armdeployments.DeploymentProperties{
 				Template:   armTemplate,
-				Parameters: parameters,
-				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+				Parameters: convertToDeploymentParams(parameters),
+				Mode:       to.Ptr(armdeployments.DeploymentModeIncremental),
 			},
 			Location: new(location),
 			Tags:     tags,
@@ -921,11 +943,11 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 	}
 
 	validateResult, err := deploymentClient.BeginValidate(ctx, resourceGroup, deploymentName,
-		armresources.Deployment{
-			Properties: &armresources.DeploymentProperties{
+		armdeployments.Deployment{
+			Properties: &armdeployments.DeploymentProperties{
 				Template:   armTemplate,
-				Parameters: parameters,
-				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+				Parameters: convertToDeploymentParams(parameters),
+				Mode:       to.Ptr(armdeployments.DeploymentModeIncremental),
 			},
 			Tags: tags,
 		}, nil)

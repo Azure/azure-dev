@@ -19,7 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -159,7 +159,7 @@ func TestConnectionDeleteRunWithContext(t *testing.T) {
 					assert.Equal(t, "management.azure.com", request.URL.Host)
 					assert.Equal(t, resourcePath, request.URL.Path,
 						"use the resolved subscription, RG, account, project and name")
-					assert.Equal(t, "2025-06-01", request.URL.Query().Get("api-version"))
+					assert.Equal(t, "2025-09-01", request.URL.Query().Get("api-version"))
 					assert.Equal(t, "Bearer synthetic-delete-token", request.Header.Get("Authorization"))
 					if len(requests) == 1 {
 						environment.mu.Lock()

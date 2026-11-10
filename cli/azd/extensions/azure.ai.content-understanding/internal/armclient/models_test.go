@@ -53,7 +53,11 @@ func TestManagementLiveCatalogPagingAndScope(t *testing.T) {
 	calls := 0
 	manager := managementFor(t, func(request *http.Request) (*http.Response, error) {
 		calls++
-		assert.Equal(t, "2025-06-01", request.URL.Query().Get("api-version"))
+		apiVersion := "2025-09-01"
+		if calls > 1 {
+			apiVersion = "2025-06-01"
+		}
+		assert.Equal(t, apiVersion, request.URL.Query().Get("api-version"))
 		assert.Equal(t, accountID+"/models", request.URL.Path)
 		if calls == 1 {
 			return response(request, 200, `{"value":[{"name":"gpt-5.2","version":"v1","format":"OpenAI",`+
@@ -128,7 +132,7 @@ func TestManagementSDKDeploymentBodyLROAndNoWriteReplay(t *testing.T) {
 		switch {
 		case request.Method == http.MethodPut:
 			assert.Equal(t, "*", request.Header.Get("If-None-Match"))
-			assert.Equal(t, "2025-06-01", request.URL.Query().Get("api-version"))
+			assert.Equal(t, "2025-09-01", request.URL.Query().Get("api-version"))
 			body, err := io.ReadAll(request.Body)
 			require.NoError(t, err)
 			assert.JSONEq(t, `{"sku":{"name":"GlobalStandard","capacity":1},"properties":`+

@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 )
@@ -30,7 +30,7 @@ func AddAzResourceListMock(
 		isMatch := strings.Contains(request.URL.Path, "/resources")
 		if matchResourceGroupName != nil {
 			isMatch = isMatch &&
-				strings.Contains(request.URL.Path, fmt.Sprintf("/resourceGroups/%s/resources", *matchResourceGroupName))
+				strings.Contains(request.URL.Path, fmt.Sprintf("/resourcegroups/%s/resources", *matchResourceGroupName))
 		}
 
 		return isMatch

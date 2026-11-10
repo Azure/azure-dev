@@ -34,8 +34,6 @@ type InfraGenerationMessage struct {
 	//	*InfraGenerationMessage_RegisterResponse
 	//	*InfraGenerationMessage_GenerateRequest
 	//	*InfraGenerationMessage_GenerateResponse
-	//	*InfraGenerationMessage_CompleteRequest
-	//	*InfraGenerationMessage_CompleteResponse
 	MessageType   isInfraGenerationMessage_MessageType `protobuf_oneof:"message_type"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -128,24 +126,6 @@ func (x *InfraGenerationMessage) GetGenerateResponse() *InfraGenerateResponse {
 	return nil
 }
 
-func (x *InfraGenerationMessage) GetCompleteRequest() *InfraGenerateCompleteRequest {
-	if x != nil {
-		if x, ok := x.MessageType.(*InfraGenerationMessage_CompleteRequest); ok {
-			return x.CompleteRequest
-		}
-	}
-	return nil
-}
-
-func (x *InfraGenerationMessage) GetCompleteResponse() *InfraGenerateCompleteResponse {
-	if x != nil {
-		if x, ok := x.MessageType.(*InfraGenerationMessage_CompleteResponse); ok {
-			return x.CompleteResponse
-		}
-	}
-	return nil
-}
-
 type isInfraGenerationMessage_MessageType interface {
 	isInfraGenerationMessage_MessageType()
 }
@@ -166,14 +146,6 @@ type InfraGenerationMessage_GenerateResponse struct {
 	GenerateResponse *InfraGenerateResponse `protobuf:"bytes,5,opt,name=generate_response,json=generateResponse,proto3,oneof"`
 }
 
-type InfraGenerationMessage_CompleteRequest struct {
-	CompleteRequest *InfraGenerateCompleteRequest `protobuf:"bytes,6,opt,name=complete_request,json=completeRequest,proto3,oneof"`
-}
-
-type InfraGenerationMessage_CompleteResponse struct {
-	CompleteResponse *InfraGenerateCompleteResponse `protobuf:"bytes,7,opt,name=complete_response,json=completeResponse,proto3,oneof"`
-}
-
 func (*InfraGenerationMessage_RegisterRequest) isInfraGenerationMessage_MessageType() {}
 
 func (*InfraGenerationMessage_RegisterResponse) isInfraGenerationMessage_MessageType() {}
@@ -181,10 +153,6 @@ func (*InfraGenerationMessage_RegisterResponse) isInfraGenerationMessage_Message
 func (*InfraGenerationMessage_GenerateRequest) isInfraGenerationMessage_MessageType() {}
 
 func (*InfraGenerationMessage_GenerateResponse) isInfraGenerationMessage_MessageType() {}
-
-func (*InfraGenerationMessage_CompleteRequest) isInfraGenerationMessage_MessageType() {}
-
-func (*InfraGenerationMessage_CompleteResponse) isInfraGenerationMessage_MessageType() {}
 
 type RegisterInfraGenerationProviderRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -266,10 +234,11 @@ func (*RegisterInfraGenerationProviderResponse) Descriptor() ([]byte, []int) {
 	return file_azd_extensions_v1beta_infra_generation_proto_rawDescGZIP(), []int{2}
 }
 
-// InfraGenerateOptions is required even when no options are configured.
-// Future additions must preserve the behavior of an empty message.
+// InfraGenerateOptions is required even when all options use their defaults.
 type InfraGenerateOptions struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Allow the extension to overwrite existing generated files.
+	Force         bool `protobuf:"varint,1,opt,name=force,proto3" json:"force,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -304,12 +273,19 @@ func (*InfraGenerateOptions) Descriptor() ([]byte, []int) {
 	return file_azd_extensions_v1beta_infra_generation_proto_rawDescGZIP(), []int{3}
 }
 
+func (x *InfraGenerateOptions) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
+}
+
 type InfraGenerateRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	ProjectPath string                 `protobuf:"bytes,1,opt,name=project_path,json=projectPath,proto3" json:"project_path,omitempty"`
 	Entry       *ProvisioningOptions   `protobuf:"bytes,2,opt,name=entry,proto3" json:"entry,omitempty"`
 	Options     *InfraGenerateOptions  `protobuf:"bytes,3,opt,name=options,proto3" json:"options,omitempty"`
-	// Project-relative directory into which the host will write the sources.
+	// Project-relative directory into which the extension should write its sources.
 	OutputPath    string `protobuf:"bytes,4,opt,name=output_path,json=outputPath,proto3" json:"output_path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -375,9 +351,10 @@ func (x *InfraGenerateRequest) GetOutputPath() string {
 
 type InfraGenerateResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Paths use forward slashes and are relative to output_path.
-	// The host validates paths and owns overwrite prompts and file writes.
-	Files         map[string][]byte `protobuf:"bytes,1,rep,name=files,proto3" json:"files,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Replacement provider, path, module, and config after the extension writes its files.
+	// Name must be empty or match the original entry. Core preserves identity,
+	// hooks, dependency edges, and deployment stacks. Runtime options are not accepted.
+	Entry         *ProvisioningOptions `protobuf:"bytes,1,opt,name=entry,proto3" json:"entry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -412,100 +389,18 @@ func (*InfraGenerateResponse) Descriptor() ([]byte, []int) {
 	return file_azd_extensions_v1beta_infra_generation_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *InfraGenerateResponse) GetFiles() map[string][]byte {
+func (x *InfraGenerateResponse) GetEntry() *ProvisioningOptions {
 	if x != nil {
-		return x.Files
+		return x.Entry
 	}
 	return nil
-}
-
-// Sent only after every generated file for this entry was successfully written.
-// Providers may now replace their entry with a file-based infrastructure entry.
-type InfraGenerateCompleteRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Generation    *InfraGenerateRequest  `protobuf:"bytes,1,opt,name=generation,proto3" json:"generation,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *InfraGenerateCompleteRequest) Reset() {
-	*x = InfraGenerateCompleteRequest{}
-	mi := &file_azd_extensions_v1beta_infra_generation_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *InfraGenerateCompleteRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*InfraGenerateCompleteRequest) ProtoMessage() {}
-
-func (x *InfraGenerateCompleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_infra_generation_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use InfraGenerateCompleteRequest.ProtoReflect.Descriptor instead.
-func (*InfraGenerateCompleteRequest) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_infra_generation_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *InfraGenerateCompleteRequest) GetGeneration() *InfraGenerateRequest {
-	if x != nil {
-		return x.Generation
-	}
-	return nil
-}
-
-type InfraGenerateCompleteResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *InfraGenerateCompleteResponse) Reset() {
-	*x = InfraGenerateCompleteResponse{}
-	mi := &file_azd_extensions_v1beta_infra_generation_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *InfraGenerateCompleteResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*InfraGenerateCompleteResponse) ProtoMessage() {}
-
-func (x *InfraGenerateCompleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1beta_infra_generation_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use InfraGenerateCompleteResponse.ProtoReflect.Descriptor instead.
-func (*InfraGenerateCompleteResponse) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1beta_infra_generation_proto_rawDescGZIP(), []int{7}
 }
 
 var File_azd_extensions_v1beta_infra_generation_proto protoreflect.FileDescriptor
 
 const file_azd_extensions_v1beta_infra_generation_proto_rawDesc = "" +
 	"\n" +
-	",azd/extensions/v1beta/infra_generation.proto\x12\x15azd.extensions.v1beta\x1a\"azd/extensions/v1beta/errors.proto\x1a(azd/extensions/v1beta/provisioning.proto\"\xdd\x05\n" +
+	",azd/extensions/v1beta/infra_generation.proto\x12\x15azd.extensions.v1beta\x1a\"azd/extensions/v1beta/errors.proto\x1a(azd/extensions/v1beta/provisioning.proto\"\x96\x04\n" +
 	"\x16InfraGenerationMessage\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12;\n" +
@@ -513,31 +408,21 @@ const file_azd_extensions_v1beta_infra_generation_proto_rawDesc = "" +
 	"\x10register_request\x18\x02 \x01(\v2=.azd.extensions.v1beta.RegisterInfraGenerationProviderRequestH\x00R\x0fregisterRequest\x12m\n" +
 	"\x11register_response\x18\x03 \x01(\v2>.azd.extensions.v1beta.RegisterInfraGenerationProviderResponseH\x00R\x10registerResponse\x12X\n" +
 	"\x10generate_request\x18\x04 \x01(\v2+.azd.extensions.v1beta.InfraGenerateRequestH\x00R\x0fgenerateRequest\x12[\n" +
-	"\x11generate_response\x18\x05 \x01(\v2,.azd.extensions.v1beta.InfraGenerateResponseH\x00R\x10generateResponse\x12`\n" +
-	"\x10complete_request\x18\x06 \x01(\v23.azd.extensions.v1beta.InfraGenerateCompleteRequestH\x00R\x0fcompleteRequest\x12c\n" +
-	"\x11complete_response\x18\a \x01(\v24.azd.extensions.v1beta.InfraGenerateCompleteResponseH\x00R\x10completeResponseB\x0e\n" +
+	"\x11generate_response\x18\x05 \x01(\v2,.azd.extensions.v1beta.InfraGenerateResponseH\x00R\x10generateResponseB\x0e\n" +
 	"\fmessage_type\"<\n" +
 	"&RegisterInfraGenerationProviderRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\")\n" +
-	"'RegisterInfraGenerationProviderResponse\"\x16\n" +
-	"\x14InfraGenerateOptions\"\xe3\x01\n" +
+	"'RegisterInfraGenerationProviderResponse\",\n" +
+	"\x14InfraGenerateOptions\x12\x14\n" +
+	"\x05force\x18\x01 \x01(\bR\x05force\"\xe3\x01\n" +
 	"\x14InfraGenerateRequest\x12!\n" +
 	"\fproject_path\x18\x01 \x01(\tR\vprojectPath\x12@\n" +
 	"\x05entry\x18\x02 \x01(\v2*.azd.extensions.v1beta.ProvisioningOptionsR\x05entry\x12E\n" +
 	"\aoptions\x18\x03 \x01(\v2+.azd.extensions.v1beta.InfraGenerateOptionsR\aoptions\x12\x1f\n" +
 	"\voutput_path\x18\x04 \x01(\tR\n" +
-	"outputPath\"\xa0\x01\n" +
-	"\x15InfraGenerateResponse\x12M\n" +
-	"\x05files\x18\x01 \x03(\v27.azd.extensions.v1beta.InfraGenerateResponse.FilesEntryR\x05files\x1a8\n" +
-	"\n" +
-	"FilesEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"k\n" +
-	"\x1cInfraGenerateCompleteRequest\x12K\n" +
-	"\n" +
-	"generation\x18\x01 \x01(\v2+.azd.extensions.v1beta.InfraGenerateRequestR\n" +
-	"generation\"\x1f\n" +
-	"\x1dInfraGenerateCompleteResponse2\x84\x01\n" +
+	"outputPath\"Y\n" +
+	"\x15InfraGenerateResponse\x12@\n" +
+	"\x05entry\x18\x01 \x01(\v2*.azd.extensions.v1beta.ProvisioningOptionsR\x05entry2\x84\x01\n" +
 	"\x16InfraGenerationService\x12j\n" +
 	"\x06Stream\x12-.azd.extensions.v1beta.InfraGenerationMessage\x1a-.azd.extensions.v1beta.InfraGenerationMessage(\x010\x01BGZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1betab\x06proto3"
 
@@ -553,7 +438,7 @@ func file_azd_extensions_v1beta_infra_generation_proto_rawDescGZIP() []byte {
 	return file_azd_extensions_v1beta_infra_generation_proto_rawDescData
 }
 
-var file_azd_extensions_v1beta_infra_generation_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_azd_extensions_v1beta_infra_generation_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_azd_extensions_v1beta_infra_generation_proto_goTypes = []any{
 	(*InfraGenerationMessage)(nil),                  // 0: azd.extensions.v1beta.InfraGenerationMessage
 	(*RegisterInfraGenerationProviderRequest)(nil),  // 1: azd.extensions.v1beta.RegisterInfraGenerationProviderRequest
@@ -561,31 +446,25 @@ var file_azd_extensions_v1beta_infra_generation_proto_goTypes = []any{
 	(*InfraGenerateOptions)(nil),                    // 3: azd.extensions.v1beta.InfraGenerateOptions
 	(*InfraGenerateRequest)(nil),                    // 4: azd.extensions.v1beta.InfraGenerateRequest
 	(*InfraGenerateResponse)(nil),                   // 5: azd.extensions.v1beta.InfraGenerateResponse
-	(*InfraGenerateCompleteRequest)(nil),            // 6: azd.extensions.v1beta.InfraGenerateCompleteRequest
-	(*InfraGenerateCompleteResponse)(nil),           // 7: azd.extensions.v1beta.InfraGenerateCompleteResponse
-	nil,                                             // 8: azd.extensions.v1beta.InfraGenerateResponse.FilesEntry
-	(*ExtensionError)(nil),                          // 9: azd.extensions.v1beta.ExtensionError
-	(*ProvisioningOptions)(nil),                     // 10: azd.extensions.v1beta.ProvisioningOptions
+	(*ExtensionError)(nil),                          // 6: azd.extensions.v1beta.ExtensionError
+	(*ProvisioningOptions)(nil),                     // 7: azd.extensions.v1beta.ProvisioningOptions
 }
 var file_azd_extensions_v1beta_infra_generation_proto_depIdxs = []int32{
-	9,  // 0: azd.extensions.v1beta.InfraGenerationMessage.error:type_name -> azd.extensions.v1beta.ExtensionError
-	1,  // 1: azd.extensions.v1beta.InfraGenerationMessage.register_request:type_name -> azd.extensions.v1beta.RegisterInfraGenerationProviderRequest
-	2,  // 2: azd.extensions.v1beta.InfraGenerationMessage.register_response:type_name -> azd.extensions.v1beta.RegisterInfraGenerationProviderResponse
-	4,  // 3: azd.extensions.v1beta.InfraGenerationMessage.generate_request:type_name -> azd.extensions.v1beta.InfraGenerateRequest
-	5,  // 4: azd.extensions.v1beta.InfraGenerationMessage.generate_response:type_name -> azd.extensions.v1beta.InfraGenerateResponse
-	6,  // 5: azd.extensions.v1beta.InfraGenerationMessage.complete_request:type_name -> azd.extensions.v1beta.InfraGenerateCompleteRequest
-	7,  // 6: azd.extensions.v1beta.InfraGenerationMessage.complete_response:type_name -> azd.extensions.v1beta.InfraGenerateCompleteResponse
-	10, // 7: azd.extensions.v1beta.InfraGenerateRequest.entry:type_name -> azd.extensions.v1beta.ProvisioningOptions
-	3,  // 8: azd.extensions.v1beta.InfraGenerateRequest.options:type_name -> azd.extensions.v1beta.InfraGenerateOptions
-	8,  // 9: azd.extensions.v1beta.InfraGenerateResponse.files:type_name -> azd.extensions.v1beta.InfraGenerateResponse.FilesEntry
-	4,  // 10: azd.extensions.v1beta.InfraGenerateCompleteRequest.generation:type_name -> azd.extensions.v1beta.InfraGenerateRequest
-	0,  // 11: azd.extensions.v1beta.InfraGenerationService.Stream:input_type -> azd.extensions.v1beta.InfraGenerationMessage
-	0,  // 12: azd.extensions.v1beta.InfraGenerationService.Stream:output_type -> azd.extensions.v1beta.InfraGenerationMessage
-	12, // [12:13] is the sub-list for method output_type
-	11, // [11:12] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	6, // 0: azd.extensions.v1beta.InfraGenerationMessage.error:type_name -> azd.extensions.v1beta.ExtensionError
+	1, // 1: azd.extensions.v1beta.InfraGenerationMessage.register_request:type_name -> azd.extensions.v1beta.RegisterInfraGenerationProviderRequest
+	2, // 2: azd.extensions.v1beta.InfraGenerationMessage.register_response:type_name -> azd.extensions.v1beta.RegisterInfraGenerationProviderResponse
+	4, // 3: azd.extensions.v1beta.InfraGenerationMessage.generate_request:type_name -> azd.extensions.v1beta.InfraGenerateRequest
+	5, // 4: azd.extensions.v1beta.InfraGenerationMessage.generate_response:type_name -> azd.extensions.v1beta.InfraGenerateResponse
+	7, // 5: azd.extensions.v1beta.InfraGenerateRequest.entry:type_name -> azd.extensions.v1beta.ProvisioningOptions
+	3, // 6: azd.extensions.v1beta.InfraGenerateRequest.options:type_name -> azd.extensions.v1beta.InfraGenerateOptions
+	7, // 7: azd.extensions.v1beta.InfraGenerateResponse.entry:type_name -> azd.extensions.v1beta.ProvisioningOptions
+	0, // 8: azd.extensions.v1beta.InfraGenerationService.Stream:input_type -> azd.extensions.v1beta.InfraGenerationMessage
+	0, // 9: azd.extensions.v1beta.InfraGenerationService.Stream:output_type -> azd.extensions.v1beta.InfraGenerationMessage
+	9, // [9:10] is the sub-list for method output_type
+	8, // [8:9] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_azd_extensions_v1beta_infra_generation_proto_init() }
@@ -600,8 +479,6 @@ func file_azd_extensions_v1beta_infra_generation_proto_init() {
 		(*InfraGenerationMessage_RegisterResponse)(nil),
 		(*InfraGenerationMessage_GenerateRequest)(nil),
 		(*InfraGenerationMessage_GenerateResponse)(nil),
-		(*InfraGenerationMessage_CompleteRequest)(nil),
-		(*InfraGenerationMessage_CompleteResponse)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -609,7 +486,7 @@ func file_azd_extensions_v1beta_infra_generation_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_azd_extensions_v1beta_infra_generation_proto_rawDesc), len(file_azd_extensions_v1beta_infra_generation_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -22,8 +22,6 @@ message InfraGenerationMessage {
     RegisterInfraGenerationProviderResponse register_response = 3;
     InfraGenerateRequest generate_request = 4;
     InfraGenerateResponse generate_response = 5;
-    InfraGenerateCompleteRequest complete_request = 6;
-    InfraGenerateCompleteResponse complete_response = 7;
   }
 }
 
@@ -33,28 +31,23 @@ message RegisterInfraGenerationProviderRequest {
 
 message RegisterInfraGenerationProviderResponse {}
 
-// InfraGenerateOptions is required even when no options are configured.
-// Future additions must preserve the behavior of an empty message.
-message InfraGenerateOptions {}
+// InfraGenerateOptions is required even when all options use their defaults.
+message InfraGenerateOptions {
+  // Allow the extension to overwrite existing generated files.
+  bool force = 1;
+}
 
 message InfraGenerateRequest {
   string project_path = 1;
   ProvisioningOptions entry = 2;
   InfraGenerateOptions options = 3;
-  // Project-relative directory into which the host will write the sources.
+  // Project-relative directory into which the extension should write its sources.
   string output_path = 4;
 }
 
 message InfraGenerateResponse {
-  // Paths use forward slashes and are relative to output_path.
-  // The host validates paths and owns overwrite prompts and file writes.
-  map<string, bytes> files = 1;
+  // Replacement provider, path, module, and config after the extension writes its files.
+  // Name must be empty or match the original entry. Core preserves identity,
+  // hooks, dependency edges, and deployment stacks. Runtime options are not accepted.
+  ProvisioningOptions entry = 1;
 }
-
-// Sent only after every generated file for this entry was successfully written.
-// Providers may now replace their entry with a file-based infrastructure entry.
-message InfraGenerateCompleteRequest {
-  InfraGenerateRequest generation = 1;
-}
-
-message InfraGenerateCompleteResponse {}

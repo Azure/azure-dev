@@ -47,9 +47,11 @@ for host routing and compatibility behavior.
 ## Generate contracts
 
 `InfraGenerationService.Stream` is beta-only. It carries generation provider
-registration, relative source files, and completion acknowledgments after host
-file writes. Its `InfraGenerateOptions` message is explicitly present and
-initially empty. There is no stable service or frozen legacy route for generation.
+registration and generation requests/results. Extensions write their own files
+and return a replacement provider entry for core to validate and save.
+`InfraGenerateOptions` is explicitly present and carries `force` for overwrite
+handling. There is no completion callback, stable service, or frozen legacy
+route for generation.
 See [the SDK reference](../docs/extensions/extension-sdk-reference.md#infrastructure-generation-beta).
 
 Run generation from `cli/azd`:

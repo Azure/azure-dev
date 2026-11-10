@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -27,13 +29,14 @@ const (
 )
 
 type agentStateRecord struct {
-	Version        int              `json:"version"`
-	AgentKey       string           `json:"agentKey"`
-	SessionID      string           `json:"sessionId,omitempty"`
-	ConversationID string           `json:"conversationId,omitempty"`
-	Response       *savedResponse   `json:"response,omitempty"`
-	Invocation     *savedInvocation `json:"invocation,omitempty"`
-	StateStore     string           `json:"stateStore,omitempty"`
+	Version                   int                     `json:"version"`
+	AgentKey                  string                  `json:"agentKey"`
+	SessionID                 string                  `json:"sessionId,omitempty"`
+	ConversationID            string                  `json:"conversationId,omitempty"`
+	Response                  *savedResponse          `json:"response,omitempty"`
+	Invocation                *savedInvocation        `json:"invocation,omitempty"`
+	CurrentInvocationProtocol agent_api.AgentProtocol `json:"currentInvocationProtocol,omitempty"`
+	StateStore                string                  `json:"stateStore,omitempty"`
 }
 
 func (r *agentStateRecord) empty() bool {

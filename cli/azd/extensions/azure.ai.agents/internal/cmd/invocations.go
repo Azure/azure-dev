@@ -43,8 +43,9 @@ func newInvocationsCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Inspect and manage work created by invoking an agent.",
 		Long: `Inspect and manage work created by 'azd ai agent invoke'.
 
-The protocol is inferred from the selected agent or --agent-endpoint.
-Use --protocol when the agent supports multiple protocols. Available operations
+The protocol comes from --agent-endpoint or the latest saved invocation for
+the selected target. Without saved work, use deployment routing. Older saved
+state containing multiple protocols requires --protocol. Available operations
 and service results depend on the protocol; unsupported operations are rejected.
 
 When --id is omitted, use the latest ID saved for the selected agent and
@@ -107,7 +108,8 @@ func newInvocationOperationCommand(
 	cmd.Flags().StringVar(&flags.agentEndpoint, "agent-endpoint", "", "Full protocol endpoint URL of a deployed agent")
 	cmd.Flags().StringVar(&flags.id, "id", "", "Service-assigned ID; defaults to the current ID for the agent and protocol")
 	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "",
-		"Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)")
+		"Protocol to use: responses, invocations, or a2a "+
+			"(inferred from current invocation or saved deployment; operation support varies)")
 	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
 
 	formats, defaultFormat := []string{outputDefault}, outputDefault
@@ -158,8 +160,8 @@ func supportsInvocationOperation(protocol agent_api.AgentProtocol, operation inv
 }
 
 // resolveInvocationCommand resolves a protocol before reading its current ID.
-// It uses saved routing, not live capabilities, and never creates a
-// session/conversation or changes the current selection.
+// It uses saved current-work selection, not live capabilities, and never creates
+// a session/conversation or changes the current selection.
 func resolveInvocationCommand(
 	ctx context.Context,
 	flags *invocationCommandFlags,
@@ -180,13 +182,14 @@ func resolveInvocationCommand(
 		invokeFlags.protocol = string(parsed.Protocol)
 	}
 	protocol := agent_api.AgentProtocol(invokeFlags.protocol)
+	var currentID string
 	if protocol == "" {
 		rc, err := action.resolveRemoteContextForInvoke(ctx)
 		if err != nil {
 			return nil, nil, "", err
 		}
 		action.resolvedRemoteContext = rc
-		protocol, err = action.resolveDeployedProtocol(ctx, rc)
+		protocol, currentID, err = action.resolveSavedInvocation(ctx, rc)
 		if err != nil {
 			action.closeResolvedRemoteContextClient()
 			return nil, nil, "", err
@@ -203,14 +206,62 @@ func resolveInvocationCommand(
 	if err != nil {
 		return nil, nil, "", err
 	}
-	id, err := resolveCurrentInvocationID(ctx, rc, protocol, flags.id)
-	if err != nil {
-		if rc.azdClient != nil {
-			rc.azdClient.Close()
+	id := currentID
+	if flags.id != "" || id == "" {
+		id, err = resolveCurrentInvocationID(ctx, rc, protocol, flags.id)
+		if err != nil {
+			if rc.azdClient != nil {
+				rc.azdClient.Close()
+			}
+			return nil, nil, "", err
 		}
-		return nil, nil, "", err
 	}
 	return action, rc, id, nil
+}
+
+// resolveSavedInvocation reads protocol and ID from the same saved-state snapshot.
+func (a *InvokeAction) resolveSavedInvocation(
+	ctx context.Context,
+	rc *remoteContext,
+) (agent_api.AgentProtocol, string, error) {
+	if rc.azdClient != nil && rc.agentKey != "" {
+		store, err := newAgentStateStoreForClient(rc.azdClient)
+		if err != nil {
+			return "", "", classifyInvocationStateReadError(err)
+		}
+		record, err := store.get(ctx, rc.agentKey)
+		if err != nil {
+			return "", "", classifyInvocationStateReadError(err)
+		}
+		if record != nil {
+			protocol := record.CurrentInvocationProtocol
+			if protocol == "" {
+				if record.Response != nil && record.Response.ResponseID != "" {
+					protocol = agent_api.AgentProtocolResponses
+				}
+				if record.Invocation != nil && record.Invocation.InvocationID != "" {
+					if protocol != "" {
+						return "", "", exterrors.Validation(
+							exterrors.CodeInvalidParameter,
+							"saved invocation state contains multiple protocols without a current selection",
+							"pass --protocol explicitly to select the saved invocation",
+						)
+					}
+					protocol = agent_api.AgentProtocolInvocations
+				}
+			}
+			switch {
+			case protocol == agent_api.AgentProtocolResponses && record.Response != nil:
+				return protocol, record.Response.ResponseID, nil
+			case protocol == agent_api.AgentProtocolInvocations && record.Invocation != nil:
+				return protocol, record.Invocation.InvocationID, nil
+			case protocol != "":
+				return protocol, "", nil
+			}
+		}
+	}
+	protocol, err := a.resolveDeployedProtocol(ctx, rc)
+	return protocol, "", err
 }
 
 // resolveCurrentInvocationID uses an explicit ID or the selected protocol's saved ID.

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -365,6 +366,7 @@ func (s *invocationStateStore) Save(ctx context.Context, agentKey string, invoca
 	}
 	return store.mutate(ctx, agentKey, func(record *agentStateRecord) {
 		record.Invocation = &invocation
+		record.CurrentInvocationProtocol = agent_api.AgentProtocolInvocations
 	})
 }
 

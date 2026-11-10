@@ -6,11 +6,13 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -275,27 +277,161 @@ func TestResolveInvocationCommandProjectSkipsLiveCapabilities(t *testing.T) {
 	}
 	t.Setenv("AZD_SERVER", newInvokeRemoteContextTestAzdServer(t, projectServer, envServer))
 	key := buildAgentKey(projectEndpoint, "agent", "", false)
-	saveAgentStateForTest(t, nil, key, agentStateRecord{
-		Response: &savedResponse{ResponseID: "resp_current"}, Invocation: &savedInvocation{InvocationID: "inv_current"},
-	})
-	for _, operation := range []invocationOperation{invocationShow, invocationFollow, invocationCancel} {
-		t.Run(string(operation), func(t *testing.T) {
-			action, rc, id, err := resolveInvocationCommand(t.Context(), &invocationCommandFlags{
-				agentName: "target", noPrompt: true,
-			}, operation)
-			require.NoError(t, err)
-			defer rc.azdClient.Close()
-			assert.Equal(t, "responses", action.flags.protocol)
-			assert.Equal(t, "resp_current", id)
-			assert.False(t, rc.agentRead, "lifecycle resolution must not attempt a live capability read")
-			record := loadAgentStateForTest(t, rc.azdClient, key)
-			require.NotNil(t, record)
-			require.NotNil(t, record.Response)
-			require.NotNil(t, record.Invocation)
-			assert.Equal(t, "resp_current", record.Response.ResponseID)
-			assert.Equal(t, "inv_current", record.Invocation.InvocationID)
+	for _, tt := range []struct {
+		name, selected, explicit, id, wantProtocol, wantID, wantError string
+		responses, invocations, deleteCurrent                         bool
+	}{
+		{name: "current Responses", responses: true, invocations: true, selected: "responses",
+			wantProtocol: "responses", wantID: "resp_current"},
+		{name: "current Invocations", responses: true, invocations: true, selected: "invocations",
+			wantProtocol: "invocations", wantID: "inv_current"},
+		{name: "explicit ID preserves current selection", responses: true, invocations: true, selected: "invocations",
+			id: "inv_explicit", wantProtocol: "invocations", wantID: "inv_explicit"},
+		{name: "legacy Responses", responses: true, wantProtocol: "responses", wantID: "resp_current"},
+		{name: "legacy Invocations", invocations: true, wantProtocol: "invocations", wantID: "inv_current"},
+		{name: "ambiguous legacy state", responses: true, invocations: true,
+			wantError: "multiple protocols"},
+		{name: "explicit protocol preserves selection", responses: true, invocations: true,
+			selected: "responses", explicit: "invocations", wantProtocol: "invocations", wantID: "inv_current"},
+		{name: "deleted current work does not select older Response", responses: true, invocations: true,
+			selected: "invocations", deleteCurrent: true, wantProtocol: "invocations",
+			wantError: "no current invocation is saved"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			state := agentStateRecord{}
+			if tt.responses {
+				state.Response = &savedResponse{ResponseID: "resp_current"}
+			}
+			if tt.invocations {
+				state.Invocation = &savedInvocation{InvocationID: "inv_current"}
+			}
+			saveAgentStateForTest(t, nil, key, state)
+			switch tt.selected {
+			case "responses":
+				require.NoError(t, newResponseStateStore(nil).Save(t.Context(), key, *state.Response))
+			case "invocations":
+				store := newInvocationStateStore(nil)
+				require.NoError(t, store.Save(t.Context(), key, *state.Invocation))
+				if tt.deleteCurrent {
+					require.NoError(t, store.Delete(t.Context(), key))
+				}
+			}
+			for _, operation := range []invocationOperation{invocationShow, invocationFollow, invocationCancel} {
+				t.Run(string(operation), func(t *testing.T) {
+					action, rc, id, err := resolveInvocationCommand(t.Context(), &invocationCommandFlags{
+						agentName: "target", protocol: tt.explicit, id: tt.id, noPrompt: true,
+					}, operation)
+					wantError := tt.wantError
+					if operation == invocationFollow && tt.wantProtocol == "invocations" {
+						wantError = "invocations follow is not supported with the invocations protocol"
+					}
+					if wantError != "" {
+						require.ErrorContains(t, err, wantError)
+						if tt.wantProtocol == "" {
+							require.Contains(t, azdext.WrapError(err).GetSuggestion(), "--protocol")
+						}
+						return
+					}
+					require.NoError(t, err)
+					defer rc.azdClient.Close()
+					assert.Equal(t, tt.wantProtocol, action.flags.protocol)
+					assert.Equal(t, tt.wantID, id)
+					assert.False(t, rc.agentRead, "lifecycle resolution must not attempt a live capability read")
+					record := loadAgentStateForTest(t, rc.azdClient, key)
+					require.NotNil(t, record)
+					if tt.responses {
+						require.NotNil(t, record.Response)
+						assert.Equal(t, "resp_current", record.Response.ResponseID)
+					}
+					if tt.invocations {
+						require.NotNil(t, record.Invocation)
+						assert.Equal(t, "inv_current", record.Invocation.InvocationID)
+					}
+					if tt.explicit != "" {
+						selected, target, savedID, err := resolveInvocationCommand(t.Context(),
+							&invocationCommandFlags{agentName: "target", noPrompt: true}, invocationShow)
+						require.NoError(t, err)
+						defer target.azdClient.Close()
+						assert.Equal(t, "responses", selected.flags.protocol)
+						assert.Equal(t, "resp_current", savedID)
+					}
+				})
+			}
 		})
 	}
+}
+
+func TestAutomaticInvokeAfterProtocolDriftSelectsSavedInvocation(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"target": {Name: "target", Host: AiAgentHost, AdditionalProperties: mustStruct(t, map[string]any{
+				"kind": "hosted", "name": "agent",
+				"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0.0"}},
+			})},
+		},
+	}}
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values: map[string]map[string]string{"test": {
+			"AGENT_TARGET_NAME":                       "agent",
+			"AGENT_TARGET_PROJECT_ENDPOINT":           endpoint,
+			"AGENT_TARGET_RESPONSES_ENDPOINT":         endpoint + "/agents/agent/endpoint/protocols/openai/responses",
+			"AGENT_TARGET_PROTOCOL_ENDPOINTS_VERSION": "1",
+		}},
+	}
+	t.Setenv("AZD_SERVER", newInvokeRemoteContextTestAzdServer(t, projectServer, envServer))
+	key := buildAgentKey(endpoint, "agent", "", false)
+	require.NoError(t, newResponseStateStore(nil).Save(t.Context(), key, savedResponse{ResponseID: "resp_before_drift"}))
+	reads, sends := 0, 0
+	action := &InvokeAction{
+		flags: &invokeFlags{name: "target", message: "hello"}, noPrompt: true, credential: responseTestCredential{},
+		agentReader: func(context.Context, *remoteContext) (*agent_api.AgentObject, error) {
+			reads++
+			var agent agent_api.AgentObject
+			err := json.Unmarshal([]byte(`{"name":"agent","agent_endpoint":`+
+				`{"protocol_configuration":{"invocations":{}}},"versions":`+
+				`{"latest":{"version":"7","definition":{"kind":"hosted"}}}}`), &agent)
+			return &agent, err
+		},
+		invocationsTransport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			sends++
+			assert.Equal(t, http.MethodPost, r.Method)
+			assert.Equal(t, "/api/projects/project/agents/agent/endpoint/protocols/invocations", r.URL.Path)
+			return &http.Response{
+				StatusCode: http.StatusOK, Request: r,
+				Header: http.Header{
+					"Content-Type": {"application/json"}, "X-Agent-Invocation-Id": {"inv_after_drift"},
+				},
+				Body: io.NopCloser(strings.NewReader(`{"output":"new invocation"}`)),
+			}, nil
+		}),
+	}
+	_, err := captureStdout(t, func() error { return action.Run(t.Context()) })
+	require.NoError(t, err)
+	require.Equal(t, 1, reads)
+	require.Equal(t, 1, sends)
+	for _, operation := range []invocationOperation{invocationShow, invocationCancel} {
+		selected, rc, id, err := resolveInvocationCommand(t.Context(),
+			&invocationCommandFlags{agentName: "target", noPrompt: true}, operation)
+		require.NoError(t, err)
+		assert.Equal(t, "invocations", selected.flags.protocol)
+		assert.Equal(t, "inv_after_drift", id)
+		assert.False(t, rc.agentRead)
+		saved := loadAgentStateForTest(t, rc.azdClient, key)
+		require.NotNil(t, saved)
+		require.NotNil(t, saved.Response)
+		require.NotNil(t, saved.Invocation)
+		assert.Equal(t, "resp_before_drift", saved.Response.ResponseID)
+		assert.Equal(t, "inv_after_drift", saved.Invocation.InvocationID)
+		rc.azdClient.Close()
+	}
+	_, _, _, err = resolveInvocationCommand(t.Context(),
+		&invocationCommandFlags{agentName: "target", noPrompt: true}, invocationFollow)
+	require.ErrorContains(t, err, "invocations follow is not supported with the invocations protocol")
 }
 
 func TestInvocationsCommandValidation(t *testing.T) {

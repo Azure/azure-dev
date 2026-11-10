@@ -1,7 +1,8 @@
 Inspect and manage work created by 'azd ai agent invoke'.
 
-The protocol is inferred from the selected agent or --agent-endpoint.
-Use --protocol when the agent supports multiple protocols. Available operations
+The protocol comes from --agent-endpoint or the latest saved invocation for
+the selected target. Without saved work, use deployment routing. Older saved
+state containing multiple protocols requires --protocol. Available operations
 and service results depend on the protocol; unsupported operations are rejected.
 
 When --id is omitted, use the latest ID saved for the selected agent and

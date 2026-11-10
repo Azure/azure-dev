@@ -760,8 +760,12 @@ read agent metadata. Local working-tree definitions and saved deployment protoco
 lists are not authoritative for deployed capabilities. Saved endpoints can still
 provide routing hints, but only currently enabled protocols are selected when live
 configuration is available. Explicit Responses/Invocations requests and lifecycle
-commands skip this capability metadata read. Lifecycle commands use saved endpoint
-routing so current capability changes do not reinterpret saved invocation IDs.
+commands skip this capability metadata read. Lifecycle commands use the protocol
+saved with the current invocation for the selected target, so protocol changes
+do not redirect them to older work. Older state with one saved work type can be
+inferred; if it contains both Response and Invocation IDs without a current
+selection, pass `--protocol` explicitly. Saved endpoint routing is only a fallback
+when no saved invocation identifies a protocol.
 
 A prompt agent's public endpoint must enable both `a2a` and `responses`; declaring
 a hosted implementation protocol in local YAML does not publish that endpoint.
@@ -771,6 +775,8 @@ timeout. If metadata cannot be read, such as for an endpoint-only consumer witho
 failure as a disabled protocol. Use `--protocol` explicitly when routing is
 ambiguous. If `--version` matches the saved deployment, azd can retain its single
 saved protocol while it remains enabled, even when a newer agent version is latest.
+An explicit `--version` uses version-scoped state and cannot reuse a session cached
+under a different saved deployment version.
 Version-specific compatibility remains enforced by Foundry for the
 selected version or session, not inferred from the latest working-tree source.
 Request and file-argument validation remain blocking. Translation availability

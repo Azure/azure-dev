@@ -200,6 +200,29 @@ func TestGrantHostedAgentMonitoringPublisherFailureReturnsCommand(t *testing.T) 
 	assert.Contains(t, warning, "--scope "+publisherTestComponent)
 }
 
+func TestMonitoringConstantsArePinned(t *testing.T) {
+	// These must match Azure's role definition and the azure.ai.projects provisioning outputs.
+	assert.Equal(t, "3913510d-42f4-4e42-8a64-420c390055eb", roleMonitoringMetricsPublisher)
+	assert.Equal(t, "Monitoring Metrics Publisher", roleMonitoringMetricsPublisherName)
+	assert.Equal(t, "azd-monitoring-role-sync", monitoringRoleSyncTag)
+	assert.Equal(t, "AZD_FOUNDRY_MONITORING_MODE", envFoundryMonitoringMode)
+	assert.Equal(t, "AZD_MONITORING_PRIVATE_LINK_SCOPE_ID", envMonitoringPrivateLinkScope)
+	assert.Equal(t, "AZURE_APPLICATION_INSIGHTS_RESOURCE_ID", envApplicationInsightsResource)
+	assert.Equal(t, "AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", envSkipRoleAssignments)
+	assert.Equal(t, "create", monitoringModeCreate)
+	assert.Equal(t, 4, monitoringGrantAttempts)
+	assert.Equal(t, 15*time.Second, defaultMonitoringGrantRetryDelay)
+}
+
+func TestMonitoringGrantCommand(t *testing.T) {
+	cmd := monitoringGrantCommand(publisherTestPrincipal, publisherTestComponent)
+	assert.Equal(t,
+		"az role assignment create --assignee-object-id "+publisherTestPrincipal+
+			" --assignee-principal-type ServicePrincipal --role \"Monitoring Metrics Publisher\" --scope "+
+			publisherTestComponent,
+		cmd)
+}
+
 func TestAppendDeployWarning(t *testing.T) {
 	t.Run("appends to last artifact note", func(t *testing.T) {
 		result := &azdext.ServiceDeployResult{Artifacts: []*azdext.Artifact{

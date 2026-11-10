@@ -16,16 +16,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-const roleMonitoringMetricsPublisher = "3913510d-42f4-4e42-8a64-420c390055eb"
-
-const monitoringGrantAttempts = 4
-
-// monitoringGrantRetryDelay is a variable so tests can avoid waiting. A new instance identity
-// can take a short while to replicate before ARM accepts it as a role assignment principal.
-var monitoringGrantRetryDelay = 15 * time.Second
+// monitoringGrantRetryDelay is a variable so tests can avoid waiting.
+var monitoringGrantRetryDelay = defaultMonitoringGrantRetryDelay
 
 type monitoringRoleAssigner func(
 	ctx context.Context,
@@ -41,25 +35,23 @@ type monitoringRoleAssigner func(
 // updates the component if the sync tag is missing, which recovers from an earlier failed touch.
 type monitoringComponentToucher func(ctx context.Context, componentID string, created bool) error
 
-const monitoringRoleSyncTag = "azd-monitoring-role-sync"
-
 // privateMonitoringComponentID returns the App Insights component only when azd created it and
 // connected it through the private path (Private Link Scope). Public-network projects and
 // user-supplied components return "" so azd never changes their role assignments or tags.
 func privateMonitoringComponentID(azdEnv map[string]string) string {
-	if strings.TrimSpace(azdEnv["AZD_FOUNDRY_MONITORING_MODE"]) != "create" ||
-		strings.TrimSpace(azdEnv["AZD_MONITORING_PRIVATE_LINK_SCOPE_ID"]) == "" {
+	if strings.TrimSpace(azdEnv[envFoundryMonitoringMode]) != monitoringModeCreate ||
+		strings.TrimSpace(azdEnv[envMonitoringPrivateLinkScope]) == "" {
 		return ""
 	}
-	return strings.TrimSpace(azdEnv["AZURE_APPLICATION_INSIGHTS_RESOURCE_ID"])
+	return strings.TrimSpace(azdEnv[envApplicationInsightsResource])
 }
 
 // roleAssignmentsSkipped reports whether the user opted out of azd writing role assignments, using
 // the same precedence as the developer RBAC check: environment value first, then the process.
 func roleAssignmentsSkipped(azdEnv map[string]string) bool {
-	value := strings.TrimSpace(azdEnv["AZD_AGENT_SKIP_ROLE_ASSIGNMENTS"])
+	value := strings.TrimSpace(azdEnv[envSkipRoleAssignments])
 	if value == "" {
-		value = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
+		value = os.Getenv(envSkipRoleAssignments)
 	}
 	skip, err := strconv.ParseBool(value)
 	return err == nil && skip
@@ -68,8 +60,8 @@ func roleAssignmentsSkipped(azdEnv map[string]string) bool {
 func monitoringGrantCommand(principalID, componentID string) string {
 	return fmt.Sprintf(
 		"az role assignment create --assignee-object-id %s --assignee-principal-type ServicePrincipal "+
-			"--role \"Monitoring Metrics Publisher\" --scope %s",
-		principalID, componentID,
+			"--role \"%s\" --scope %s",
+		principalID, roleMonitoringMetricsPublisherName, componentID,
 	)
 }
 
@@ -102,7 +94,7 @@ func grantHostedAgentMonitoringPublisher(
 	var lastErr error
 	for attempt := 1; attempt <= monitoringGrantAttempts; attempt++ {
 		created, err := assign(
-			ctx, principalID, roleMonitoringMetricsPublisher, "Monitoring Metrics Publisher",
+			ctx, principalID, roleMonitoringMetricsPublisher, roleMonitoringMetricsPublisherName,
 			componentID, armauthorization.PrincipalTypeServicePrincipal,
 		)
 		if err == nil {
@@ -181,79 +173,4 @@ func (p *AgentServiceTargetProvider) ensureHostedAgentMonitoringPublisher(
 		return refreshMonitoringRoleSyncTag(ctx, tags, componentID, created, time.Now())
 	}
 	return grantHostedAgentMonitoringPublisher(ctx, assign, touch, azdEnv, principalID)
-}
-
-// monitoringTagsClient is the subset of armresources.TagsClient used to refresh the component.
-type monitoringTagsClient interface {
-	GetAtScope(
-		ctx context.Context, scope string, options *armresources.TagsClientGetAtScopeOptions,
-	) (armresources.TagsClientGetAtScopeResponse, error)
-	UpdateAtScope(
-		ctx context.Context, scope string, parameters armresources.TagsPatchResource,
-		options *armresources.TagsClientUpdateAtScopeOptions,
-	) (armresources.TagsClientUpdateAtScopeResponse, error)
-}
-
-// refreshMonitoringRoleSyncTag merges the sync tag onto the component. When the assignment already
-// existed (created is false) it only writes the tag if it is missing, so repeat deploys are no-ops
-// but an earlier failed refresh is retried.
-func refreshMonitoringRoleSyncTag(
-	ctx context.Context,
-	tags monitoringTagsClient,
-	componentID string,
-	created bool,
-	now time.Time,
-) error {
-	if !created {
-		current, err := tags.GetAtScope(ctx, componentID, nil)
-		if err != nil {
-			return err
-		}
-		if current.Properties != nil && current.Properties.Tags != nil &&
-			current.Properties.Tags[monitoringRoleSyncTag] != nil {
-			return nil
-		}
-	}
-	_, err := tags.UpdateAtScope(ctx, componentID, armresources.TagsPatchResource{
-		Operation: new(armresources.TagsPatchOperationMerge),
-		Properties: &armresources.Tags{Tags: map[string]*string{
-			monitoringRoleSyncTag: new(now.UTC().Format(time.RFC3339)),
-		}},
-	}, nil)
-	return err
-}
-
-// appendDeployWarning adds text to the note of the last artifact, so it shows in the deploy output
-// instead of subprocess stderr, which the host discards. Activity-only agents produce no artifacts,
-// so a resource artifact for the component carries the warning instead.
-func appendDeployWarning(result *azdext.ServiceDeployResult, componentID, warning string) {
-	if result == nil || strings.TrimSpace(warning) == "" {
-		return
-	}
-	if len(result.Artifacts) == 0 && componentID != "" {
-		result.Artifacts = append(result.Artifacts, &azdext.Artifact{
-			Kind:         azdext.ArtifactKind_ARTIFACT_KIND_RESOURCE,
-			Location:     componentID,
-			LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
-			Metadata: map[string]string{
-				"label":     "Application Insights",
-				"clickable": "false",
-			},
-		})
-	}
-	for i := len(result.Artifacts) - 1; i >= 0; i-- {
-		artifact := result.Artifacts[i]
-		if artifact == nil {
-			continue
-		}
-		if artifact.Metadata == nil {
-			artifact.Metadata = map[string]string{}
-		}
-		if existing := artifact.Metadata["note"]; existing != "" {
-			artifact.Metadata["note"] = existing + "\n\nWarning: " + warning
-		} else {
-			artifact.Metadata["note"] = "Warning: " + warning
-		}
-		return
-	}
 }

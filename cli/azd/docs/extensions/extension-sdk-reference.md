@@ -695,7 +695,7 @@ down the connection.
 | `WithServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Register a deployment target and stable read-only preview; provider also implements `ServiceTargetPreviewProvider`. Targets azd 1.37.0. |
 | `WithBetaServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Deprecated beta preview registration; retained with the `preview.ServiceTargetPreviewProvider` interface. |
 | `WithFrameworkService` | `(language string, factory FrameworkServiceFactory) *ExtensionHost` | Register a custom language/framework build service. |
-| `WithInfraGenerationProvider` | `(name string, provider InfraGenerationProvider) *ExtensionHost` | Register a beta source generator and its post-write completion handler. |
+| `WithInfraGenerationProvider` | `(name string, provider InfraGenerationProvider) *ExtensionHost` | Register a beta source generator that writes files and returns a replacement infrastructure entry. |
 | `WithProjectEventHandler` | `(eventName string, handler ProjectEventHandler) *ExtensionHost` | Register a project-level lifecycle event handler. |
 | `WithServiceEventHandler` | `(eventName string, handler ServiceEventHandler, options *ServiceEventOptions) *ExtensionHost` | Register a service-level lifecycle event handler (with optional filtering). |
 | `Run` | `(ctx context.Context) error` | Start the host and block until shutdown. |
@@ -713,26 +713,32 @@ in their manifest. Generation does not require the provisioning capability.
 ```go
 type InfraGenerationProvider interface {
     Generate(context.Context, *v1beta.InfraGenerateRequest) (*v1beta.InfraGenerateResponse, error)
-    Complete(context.Context, *v1beta.InfraGenerateCompleteRequest) error
 }
 ```
 
 The request includes the project directory, infrastructure entry, planned
 project-relative output directory, and an explicit `*v1beta.InfraGenerateOptions`.
-Options are initially empty but required: callers send `&v1beta.InfraGenerateOptions{}`,
-and the SDK rejects `nil`. Future fields can be added without changing Go method
-signatures, while preserving the behavior of empty options. New non-default
-options must not be sent to implementations that cannot honor them.
+Options are required, and the SDK rejects `nil`. `options.force` carries the
+command's `--force` flag. Extensions own file writes, path safety, and overwrite
+handling. They must not silently overwrite existing files when `force` is false.
+The resources extension refuses existing destinations with guidance to use
+`--force`; it does not prompt. Built-in generation retains core's overwrite prompts.
 
-`Generate` returns a nonempty `files` map of relative paths to bytes. It must not
-write files, mutate configuration, authenticate, or initialize a provisioning
-provider. Core validates the paths, handles existing-file prompts, and writes
-within the project. `Complete` receives the original generation request only
-after every file for that entry was successfully written. It may replace
-provider-specific configuration with a file-based infrastructure entry.
-Skipping a file prevents completion for that entry; write failures prevent
-completion altogether. Completion failures are reported explicitly and the
-generated files remain available.
+`Generate` writes all sources before returning a required `entry`
+(`v1beta.ProvisioningOptions`) describing the replacement `provider`, `path`,
+`module`, and provider-specific `config`. The provider need not be Bicep.
+An optional `name` must match the original entry. Runtime fields and returned
+deployment-stack settings are rejected. Core preserves the original identity,
+hooks, dependencies, and deployment stacks and applies the returned provider
+fields after all generators succeed. Extensions must leave project configuration
+unchanged and must not authenticate or initialize a provisioning provider.
+
+Core validates replacement paths and project configuration, detects changes to
+the original entries, and saves the replacements together while preserving
+unrelated edits and YAML comments. On generation failure it does not replace
+entries. Files already written by extensions are not rolled back if generation
+or configuration saving fails. The response carries no file contents, and
+there is no completion callback.
 
 The SDK's host starts the stream before registration, registers handlers, and
 waits for registration acknowledgment before signaling readiness. Core enforces

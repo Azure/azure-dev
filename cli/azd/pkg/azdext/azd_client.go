@@ -23,6 +23,11 @@ import (
 
 type AzdClientOption func(*AzdClient) error
 
+// InfraGeneration returns the beta-only infrastructure generation client.
+func (c *AzdClient) InfraGeneration() v1beta.InfraGenerationServiceClient {
+	return v1beta.NewInfraGenerationServiceClient(c.connection)
+}
+
 // BetaServiceTarget returns the v1beta service target client.
 //
 // Deprecated: deployment preview is available through ServiceTarget in azd 1.37.0 or later.

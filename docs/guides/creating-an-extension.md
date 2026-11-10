@@ -68,10 +68,12 @@ for the stream requirements and legacy-client behavior.
 For infrastructure generation, declare `infra-generation-provider` in both
 `capabilities` and the corresponding `providers[].type`, and register an
 `azdext.InfraGenerationProvider` with `ExtensionHost.WithInfraGenerationProvider`.
-Return source files from `Generate` without mutations. Put configuration
-conversion in `Complete`, which is called only after all files for the entry
-were written. Always pass an explicit, initially empty `InfraGenerateOptions`
-message. See the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#infrastructure-generation-beta)
+Write source files inside `Generate`, honoring `InfraGenerateOptions.force`,
+and return the replacement provider entry after all writes succeed. Leave
+project configuration unchanged: core validates and saves the returned provider,
+path, module, and configuration while preserving hooks and dependency edges.
+Always pass an explicit `InfraGenerateOptions` message. There is no completion
+callback. See the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#infrastructure-generation-beta)
 for the beta contract and host/version requirements.
 
 ```bash

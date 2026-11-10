@@ -992,15 +992,23 @@ Extensions can independently opt into `azd infra generate` by declaring the
 type and provider name. Register an `azdext.InfraGenerationProvider` through
 `ExtensionHost.WithInfraGenerationProvider`.
 
+For `azd infra generate`, core starts only installed extensions declaring a
+generation provider used by the project's infrastructure entries. Unrelated
+listener extensions are not started. Already registered generators are reused,
+and listeners started by generation remain running until generation finishes.
+
 The native beta-only `InfraGenerationService.Stream` carries registration,
-generation requests/results, and post-write completion acknowledgments.
-Generation takes an explicitly present, initially empty `InfraGenerateOptions`
-message. It returns relative source paths and bytes without provisioning
-initialization, authentication, or configuration changes. Core validates and
-writes the sources using its existing overwrite prompt (`--force` skips it).
-Only then does the extension receive `Complete`, where it can replace its
-original configuration with a file-based provider. Entries with skipped files
-are not converted. Errors during writes or conversion are reported explicitly.
+and generation requests/results. Generation takes an explicitly present
+`InfraGenerateOptions` message containing `force`, matching `--force`.
+The extension writes its sources within the project and returns a replacement
+provider entry with its provider, path, module, and configuration. It does not
+initialize provisioning, authenticate, or modify project configuration.
+Core validates and saves the replacement entries after all generators succeed,
+preserving their identity, hooks, and dependency edges. Extensions own overwrite
+handling. The resources extension requires `--force` for existing destinations,
+while built-in generation retains core's overwrite prompts. Failures are
+reported explicitly, and files already written remain available. No completion
+callback is sent.
 
 See [Infrastructure generation](extension-sdk-reference.md#infrastructure-generation-beta)
 for the SDK interface and host/version requirements.

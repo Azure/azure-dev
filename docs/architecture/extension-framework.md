@@ -84,7 +84,7 @@ Extensions declare their capabilities in `extension.yaml`:
 | `framework-service-provider` | Add build/restore support for new languages |
 | `service-target-provider` | Add deployment support for new hosting targets |
 | `provisioning-provider` | Add custom infrastructure provisioning support |
-| `infra-generation-provider` (beta) | Export infrastructure sources and replace configuration after successful file writes |
+| `infra-generation-provider` (beta) | Write infrastructure sources and return a replacement provider entry for core to validate and save |
 | `metadata` | Provide metadata about commands and capabilities |
 
 ## Available gRPC Services

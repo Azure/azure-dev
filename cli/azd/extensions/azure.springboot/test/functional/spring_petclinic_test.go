@@ -32,7 +32,7 @@ const (
 	petclinicBranch          = "main"
 	petclinicTemplateCommit  = "215d42251c4960c67bd86167a0a67ef8a24cf3ff"
 	proposedTemplateRepo     = "https://github.com/XiaofeiCao/petclinic-rest-azd"
-	proposedTemplateCommit   = "a882069c33ccdcff1f2068c589e077d9e35be670"
+	proposedTemplateCommit   = "a474846de0a3ad7a447fd9558d1aed70bf80332d"
 	gitMetadataAccommodation = "Packaging Maven project without Git commit metadata because the repository has no commits."
 )
 
@@ -97,6 +97,35 @@ func verifyProposedPetclinicTemplate(t *testing.T, projectDir string) {
 	require.NoError(t, err)
 	require.Contains(t, string(mainParameters), "${DATABASE_ADMIN_OBJECT_ID}")
 	require.Contains(t, string(mainParameters), "${DATABASE_ADMIN_NAME}")
+	var parameters struct {
+		Parameters map[string]struct {
+			Value string `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(mainParameters, &parameters))
+	require.Equal(t, "${AZURE_USE_VNET=false}", parameters.Parameters["useVirtualNetwork"].Value)
+
+	mainBicep, err := os.ReadFile(filepath.Join(projectDir, "infra", "main.bicep"))
+	require.NoError(t, err)
+	mainText := strings.ReplaceAll(string(mainBicep), "\r\n", "\n")
+	require.Contains(t, mainText, "param useVirtualNetwork bool = false")
+	require.Contains(t, mainText, "principalId: bootstrap.outputs.principalId")
+	require.Contains(t, mainText, "dependsOn: [registryAccess]")
+	require.Contains(t, mainText, "output APPLICATION_PRINCIPAL_ID string = application.outputs.principalId")
+
+	bootstrapBicep, err := os.ReadFile(filepath.Join(projectDir, "infra", "bootstrap.bicep"))
+	require.NoError(t, err)
+	bootstrapText := strings.ReplaceAll(string(bootstrapBicep), "\r\n", "\n")
+	require.Contains(t, bootstrapText, "@onlyIfNotExists()")
+	require.Contains(t, bootstrapText, "type: 'SystemAssigned'")
+	require.Contains(t, bootstrapText, "image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'")
+	require.Contains(t, bootstrapText, "output principalId string = app.identity.principalId")
+	require.Contains(t, bootstrapText, "output image string = app.properties.template.containers[0].image")
+
+	registryAccessBicep, err := os.ReadFile(filepath.Join(projectDir, "infra", "registry-access.bicep"))
+	require.NoError(t, err)
+	require.Contains(t, string(registryAccessBicep), "scope: registry")
+	require.Contains(t, string(registryAccessBicep), "'7f951dda-4ed3-4680-a7ca-43fe172d538d'")
 
 	applicationParameters, err := os.ReadFile(filepath.Join(projectDir, "infra", "application.parameters.json"))
 	require.NoError(t, err)
@@ -108,20 +137,41 @@ func verifyProposedPetclinicTemplate(t *testing.T, projectDir string) {
 	require.Contains(t, applicationText, "sslmode=verify-full")
 	require.Contains(t, applicationText, "azure.managedIdentityEnabled=true")
 	require.Contains(t, applicationText, "name: 'SPRING_PROFILES_ACTIVE', value: 'azure-postgres,spring-data-jpa'")
+	require.Contains(t, applicationText, "type: 'SystemAssigned'")
+	require.Contains(t, applicationText, "registries: [{ server: registryEndpoint, identity: 'system' }]")
 	require.NotContains(t, applicationText, "SPRING_DATASOURCE_PASSWORD")
+
+	for file, content := range map[string]string{
+		"main.bicep":        mainText,
+		"bootstrap.bicep":   bootstrapText,
+		"application.bicep": applicationText,
+	} {
+		for _, legacy := range []string{
+			"UserAssigned", "userAssignedIdentities", "CLIENT_ID", "azure.clientId", "identityClientId", "identityId",
+		} {
+			require.NotContains(t, content, legacy, "%s must not retain a user-identity selector", file)
+		}
+	}
 
 	azureProfile, err := os.ReadFile(
 		filepath.Join(projectDir, "src", "main", "resources", "application-azure-postgres.properties"))
 	require.NoError(t, err)
 	require.NotContains(t, string(azureProfile), "spring.datasource.password")
 
-	localProfile, err := os.ReadFile(filepath.Join(projectDir, "src", "main", "resources", "application-postgres.properties"))
+	localProfile, err := os.ReadFile(
+		filepath.Join(projectDir, "src", "main", "resources", "application-postgres.properties"))
 	require.NoError(t, err)
 	require.Contains(t, string(localProfile), "spring.datasource.password")
 
 	databaseBicep, err := os.ReadFile(filepath.Join(projectDir, "infra", "database.bicep"))
 	require.NoError(t, err)
 	databaseText := strings.ReplaceAll(string(databaseBicep), "\r\n", "\n")
+	require.Contains(t, databaseText, "passwordAuth: 'Disabled'")
+	require.Contains(t, databaseText, "activeDirectoryAuth: 'Enabled'")
+	require.Contains(t, databaseText, "name: 'require_secure_transport'\n  dependsOn: [database]")
+	require.Contains(t, databaseText, "@batchSize(1)\nresource firewall ")
+	require.Contains(t, databaseText, "dependsOn: [requireTls]")
+	require.Contains(t, databaseText, "dependsOn: [firewall]")
 	require.Contains(t, databaseText, "name: 'aca-${replace(ip, '.', '-')}'")
 	require.NotContains(t, databaseText, "bootstrap-local-ip")
 	require.NotContains(t, databaseText, "startIpAddress: '0.0.0.0'")

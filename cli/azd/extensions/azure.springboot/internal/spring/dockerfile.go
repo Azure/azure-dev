@@ -4,14 +4,17 @@
 package spring
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -28,8 +31,10 @@ ENTRYPOINT ["java", "-jar", "/app/application.jar"]
 `
 
 const (
-	stagingDirectoryName = ".azd-springboot"
-	stagedJarName        = "app.jar"
+	stagingDirectoryName         = ".azd-springboot"
+	stagedJarName                = "app.jar"
+	springApplicationClassesPath = "BOOT-INF/classes/"
+	java17ClassMajorVersion      = 61
 )
 
 type stagedContainerContext struct {
@@ -181,6 +186,68 @@ func findMavenJar(serviceContext *azdext.ServiceContext) (string, error) {
 	return resolvedJar, nil
 }
 
+func validateSpringJarRuntime(ctx context.Context, jarPath string) (err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	archive, err := zip.OpenReader(jarPath)
+	if err != nil {
+		return validationError(
+			"invalid_maven_jar",
+			"the packaged app.jar is not a valid JAR archive",
+			"configure Maven to produce an executable Spring Boot JAR and rerun azd package",
+		)
+	}
+	defer func() {
+		err = errors.Join(err, archive.Close())
+	}()
+
+	for _, entry := range archive.File {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !strings.HasPrefix(entry.Name, springApplicationClassesPath) ||
+			!strings.HasSuffix(entry.Name, ".class") {
+			continue
+		}
+
+		classFile, err := entry.Open()
+		if err != nil {
+			return fmt.Errorf("opening packaged application class: %w", err)
+		}
+		var header [8]byte
+		_, readErr := io.ReadFull(classFile, header[:])
+		if err := errors.Join(readErr, classFile.Close()); err != nil {
+			return validationError(
+				"invalid_maven_jar",
+				"a packaged application class is invalid",
+				"configure Maven to produce a valid executable Spring Boot JAR and rerun azd package",
+			)
+		}
+		if binary.BigEndian.Uint32(header[:4]) != 0xcafebabe {
+			return validationError(
+				"invalid_maven_jar",
+				"a packaged application class has an invalid class header",
+				"configure Maven to produce a valid executable Spring Boot JAR and rerun azd package",
+			)
+		}
+
+		majorVersion := binary.BigEndian.Uint16(header[6:8])
+		if majorVersion > java17ClassMajorVersion {
+			javaVersion := int(majorVersion) - 44
+			return validationError(
+				"unsupported_java_runtime",
+				fmt.Sprintf(
+					"packaged application bytecode requires Java %d, but the generated runtime uses Java 17",
+					javaVersion,
+				),
+				"set the Maven compiler release to Java 17 and rerun azd package",
+			)
+		}
+	}
+	return nil
+}
+
 func prepareContainerContext(
 	ctx context.Context,
 	project *azdext.ProjectConfig,
@@ -195,6 +262,9 @@ func prepareContainerContext(
 	}
 	jarPath, err := findMavenJar(serviceContext)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateSpringJarRuntime(ctx, jarPath); err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {

@@ -11,10 +11,12 @@ packaging, deployment, and PostgreSQL access verification.
 
 ## Packaging
 
-The host JDK 17+ and checked-in Maven Wrapper build the Spring Boot JAR. The
-extension stages that JAR with its Java 17 runtime recipe in an isolated
-temporary context and sends it through azd's container pipeline. Project
-`Dockerfile` and `.dockerignore` files are not read or modified.
+The host JDK 17+ and checked-in Maven Wrapper build the Spring Boot JAR.
+Application classes must target Java 17 or earlier; packaging rejects newer
+bytecode before container staging. The extension stages the JAR with its Java
+17 runtime recipe in an isolated temporary context and sends it through azd's
+container pipeline. Project `Dockerfile` and `.dockerignore` files are not read
+or modified.
 
 Packaging requires Docker, `pom.xml`, `mvnw`,
 `.mvn/wrapper/maven-wrapper.properties`, and `src`. Deployment also requires

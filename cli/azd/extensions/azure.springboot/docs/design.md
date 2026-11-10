@@ -30,7 +30,9 @@ The Java framework provider restores and packages the application with the
 Maven Wrapper. The service target stages the resulting executable JAR and an
 extension-owned Java 17 runtime Dockerfile in a new temporary directory. It
 then uses azd's container build and package APIs. Project `Dockerfile` and
-`.dockerignore` files are neither read nor modified.
+`.dockerignore` files are neither read nor modified. Application classes must
+target Java 17 or earlier; packaging fails before container staging when the
+JAR contains newer application bytecode.
 
 ## Datasource discovery
 

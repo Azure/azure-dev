@@ -4,6 +4,8 @@
 package spring
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -79,17 +81,34 @@ func TestServicePathRejectsLinkedDirectoryOutsideProject(t *testing.T) {
 
 func TestPrepareContainerContextStagesMavenJarAndCleansOwnedFiles(t *testing.T) {
 	project, service := createMavenProject(t)
-	serviceContext := mavenPackageContext(t, []byte("jar-content"))
+	jarContent := mavenJar(t, java17ClassMajorVersion)
+	serviceContext := mavenPackageContext(t, jarContent)
 
 	staged, err := prepareContainerContext(t.Context(), project, service, serviceContext)
 	require.NoError(t, err)
 	require.FileExists(t, staged.jarPath)
 	content, err := os.ReadFile(staged.jarPath)
 	require.NoError(t, err)
-	require.Equal(t, []byte("jar-content"), content)
+	require.Equal(t, jarContent, content)
 	require.NoError(t, staged.cleanup())
 	require.NoDirExists(t, staged.directory)
 	require.NoFileExists(t, filepath.Join(project.Path, "Dockerfile"))
+}
+
+func TestPrepareContainerContextRejectsJavaBytecodeNewerThanRuntime(t *testing.T) {
+	project, service := createMavenProject(t)
+	serviceContext := mavenPackageContext(t, mavenJar(t, 65))
+
+	_, err := prepareContainerContext(t.Context(), project, service, serviceContext)
+	require.ErrorContains(t, err, "requires Java 21")
+	require.ErrorContains(t, err, "generated runtime uses Java 17")
+}
+
+func TestPrepareContainerContextRejectsInvalidJar(t *testing.T) {
+	project, service := createMavenProject(t)
+
+	_, err := prepareContainerContext(t.Context(), project, service, mavenPackageContext(t, []byte("not-a-jar")))
+	require.ErrorContains(t, err, "not a valid JAR archive")
 }
 
 func TestPrepareContainerContextIgnoresAuthoredRecipeAndDockerignore(t *testing.T) {
@@ -103,7 +122,12 @@ func TestPrepareContainerContextIgnoresAuthoredRecipeAndDockerignore(t *testing.
 	))
 
 	require.NoError(t, prepareSpringBuild(project, service))
-	staged, err := prepareContainerContext(t.Context(), project, service, mavenPackageContext(t, []byte("jar")))
+	staged, err := prepareContainerContext(
+		t.Context(),
+		project,
+		service,
+		mavenPackageContext(t, mavenJar(t, java17ClassMajorVersion)),
+	)
 	require.NoError(t, err)
 	content, err := os.ReadFile(filepath.Join(project.Path, "Dockerfile"))
 	require.NoError(t, err)
@@ -122,7 +146,12 @@ func TestPrepareContainerContextPreservesExistingUserStagingDirectory(t *testing
 	sentinel := filepath.Join(stagingDir, "keep.txt")
 	require.NoError(t, os.WriteFile(sentinel, []byte("user"), 0o600))
 
-	staged, err := prepareContainerContext(t.Context(), project, service, mavenPackageContext(t, []byte("jar")))
+	staged, err := prepareContainerContext(
+		t.Context(),
+		project,
+		service,
+		mavenPackageContext(t, mavenJar(t, java17ClassMajorVersion)),
+	)
 	require.NoError(t, err)
 	require.NotEqual(t, stagingDir, staged.directory)
 	require.NoError(t, staged.cleanup())
@@ -131,7 +160,7 @@ func TestPrepareContainerContextPreservesExistingUserStagingDirectory(t *testing
 
 func TestPrepareContainerContextIsolatesConcurrentBuilds(t *testing.T) {
 	project, service := createMavenProject(t)
-	artifact := mavenPackageContext(t, []byte("jar"))
+	artifact := mavenPackageContext(t, mavenJar(t, java17ClassMajorVersion))
 	first, err := prepareContainerContext(t.Context(), project, service, artifact)
 	require.NoError(t, err)
 	second, err := prepareContainerContext(t.Context(), project, service, artifact)
@@ -146,7 +175,12 @@ func TestContainerContextCleanupPreservesChangedFiles(t *testing.T) {
 	for _, file := range []string{"Dockerfile", stagedJarName} {
 		t.Run(file, func(t *testing.T) {
 			project, service := createMavenProject(t)
-			staged, err := prepareContainerContext(t.Context(), project, service, mavenPackageContext(t, []byte("jar")))
+			staged, err := prepareContainerContext(
+				t.Context(),
+				project,
+				service,
+				mavenPackageContext(t, mavenJar(t, java17ClassMajorVersion)),
+			)
 			require.NoError(t, err)
 			path := filepath.Join(staged.directory, file)
 			require.NoError(t, os.WriteFile(path, []byte("changed"), 0o600))
@@ -165,14 +199,19 @@ func TestPrepareContainerContextHonorsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	_, err := prepareContainerContext(ctx, project, service, mavenPackageContext(t, []byte("jar")))
+	_, err := prepareContainerContext(ctx, project, service, mavenPackageContext(t, mavenJar(t, java17ClassMajorVersion)))
 	require.ErrorIs(t, err, context.Canceled)
 	require.NoDirExists(t, filepath.Join(project.Path, stagingDirectoryName))
 }
 
 func TestContainerContextCleanupPreservesReplacedDirectory(t *testing.T) {
 	project, service := createMavenProject(t)
-	staged, err := prepareContainerContext(t.Context(), project, service, mavenPackageContext(t, []byte("jar")))
+	staged, err := prepareContainerContext(
+		t.Context(),
+		project,
+		service,
+		mavenPackageContext(t, mavenJar(t, java17ClassMajorVersion)),
+	)
 	require.NoError(t, err)
 	moved := filepath.Join(t.TempDir(), "moved-context")
 	require.NoError(t, os.Rename(staged.directory, moved))
@@ -239,4 +278,20 @@ func mavenPackageContext(t *testing.T, content []byte) *azdext.ServiceContext {
 		LocationKind: azdext.LocationKind_LOCATION_KIND_LOCAL,
 		Metadata:     map[string]string{"framework": "maven"},
 	}}}
+}
+
+func mavenJar(t *testing.T, classMajorVersion uint16) []byte {
+	t.Helper()
+	var content bytes.Buffer
+	writer := zip.NewWriter(&content)
+	classFile, err := writer.Create("BOOT-INF/classes/com/example/Application.class")
+	require.NoError(t, err)
+	_, err = classFile.Write([]byte{
+		0xca, 0xfe, 0xba, 0xbe,
+		0x00, 0x00,
+		byte(classMajorVersion >> 8), byte(classMajorVersion),
+	})
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	return content.Bytes()
 }

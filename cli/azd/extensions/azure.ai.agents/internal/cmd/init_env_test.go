@@ -52,6 +52,42 @@ func TestFindAzureYamlEnvironmentReferencesRejectsUnsupportedForms(t *testing.T)
 			path:       "metadata.resourceId",
 		},
 		{
+			name:       "connection audience",
+			host:       "azure.ai.connection",
+			properties: "    audience: '%s'\n",
+			path:       "audience",
+		},
+		{
+			name:       "connection authorization URL",
+			host:       "azure.ai.connection",
+			properties: "    authorizationUrl: '%s'\n",
+			path:       "authorizationUrl",
+		},
+		{
+			name:       "connection token URL",
+			host:       "azure.ai.connection",
+			properties: "    tokenUrl: '%s'\n",
+			path:       "tokenUrl",
+		},
+		{
+			name:       "connection refresh URL",
+			host:       "azure.ai.connection",
+			properties: "    refreshUrl: '%s'\n",
+			path:       "refreshUrl",
+		},
+		{
+			name:       "connection connector name",
+			host:       "azure.ai.connection",
+			properties: "    connectorName: '%s'\n",
+			path:       "connectorName",
+		},
+		{
+			name:       "connection scope",
+			host:       "azure.ai.connection",
+			properties: "    scopes:\n      - '%s'\n",
+			path:       "scopes[0]",
+		},
+		{
 			name:       "agent subnet",
 			host:       "azure.ai.project",
 			properties: "    network:\n      agentSubnet:\n        vnet: '%s'\n",
@@ -294,7 +330,7 @@ services:
 			},
 		},
 		{
-			name: "connection scans only target credentials and metadata",
+			name: "connection scans only provider-expanded fields",
 			content: `name: sample
 services:
   connection:
@@ -306,11 +342,25 @@ services:
       key: ${CONNECTION_KEY}
     metadata:
       resourceId: ${CONNECTION_RESOURCE_ID}
+    audience: ${CONNECTION_AUDIENCE}
+    authorizationUrl: ${CONNECTION_AUTHORIZATION_URL}
+    tokenUrl: ${CONNECTION_TOKEN_URL}
+    refreshUrl: ${CONNECTION_REFRESH_URL}
+    connectorName: ${CONNECTION_CONNECTOR_NAME}
+    scopes:
+      - ${CONNECTION_SCOPE}
+      - ${DEFAULT_SCOPE:-read}
 `,
 			want: []azureYamlEnvironmentReference{
 				{Name: "CONNECTION_TARGET"},
 				{Name: "CONNECTION_KEY", Secret: true},
 				{Name: "CONNECTION_RESOURCE_ID"},
+				{Name: "CONNECTION_AUDIENCE"},
+				{Name: "CONNECTION_AUTHORIZATION_URL"},
+				{Name: "CONNECTION_TOKEN_URL"},
+				{Name: "CONNECTION_REFRESH_URL"},
+				{Name: "CONNECTION_CONNECTOR_NAME"},
+				{Name: "CONNECTION_SCOPE"},
 			},
 		},
 		{

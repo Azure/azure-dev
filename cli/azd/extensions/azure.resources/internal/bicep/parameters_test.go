@@ -185,6 +185,7 @@ func TestDeploymentParametersPreserveWireValues(t *testing.T) {
 			"secretName":"password","secretVersion":"version"
 		}}
 	}`, string(encoded))
+	require.Contains(t, string(encoded), `"large":{"value":9007199254740993}`)
 	for _, invalid := range []any{nil, map[string]any{"unsupported": true}} {
 		_, err := deploymentParameters(map[string]any{"invalid": invalid})
 		require.Error(t, err)

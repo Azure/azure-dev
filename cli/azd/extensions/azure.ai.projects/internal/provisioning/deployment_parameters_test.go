@@ -5,6 +5,8 @@ package provisioning
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -46,11 +48,40 @@ func TestDeploymentParameters(t *testing.T) {
 	}
 }
 
+func TestDeploymentParametersFileMetadata(t *testing.T) {
+	const contents = `{
+		"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+		"contentVersion":"1.0.0.0",
+		"parameters":{
+			"location":{"value":"eastus","metadata":{"description":"Deployment location","custom":{"enabled":true}}},
+			"secret":{
+				"reference":{"keyVault":{"id":"/vault/id"},"secretName":"password"},
+				"metadata":{"description":"Client-only secret annotation"}
+			}
+		}
+	}`
+	path := filepath.Join(t.TempDir(), "main.parameters.json")
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+	parameters, err := loadParametersFile(path, nil)
+	require.NoError(t, err)
+
+	result, err := deploymentParameters(parameters)
+	require.NoError(t, err)
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"location":{"value":"eastus"},
+		"secret":{"reference":{"keyVault":{"id":"/vault/id"},"secretName":"password"}}
+	}`, string(encoded))
+}
+
 func TestDeploymentParametersRejectUnsupportedFields(t *testing.T) {
 	for _, input := range []map[string]any{
 		{"input": map[string]any{"value": "text", "unsupported": true}},
 		{"input": map[string]any{"reference": map[string]any{"unsupported": true}}},
 		{"input": map[string]any{"reference": map[string]any{"keyVault": map[string]any{"unsupported": true}}}},
+		{"input": map[string]any{"value": "text", "metadata": "not an object"}},
+		{"input": map[string]any{"value": "text", "metadata": []any{"not an object"}}},
 		{"input": nil},
 		{"input": false},
 	} {

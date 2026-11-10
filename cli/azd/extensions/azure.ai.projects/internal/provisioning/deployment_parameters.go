@@ -15,7 +15,7 @@ import (
 )
 
 func deploymentParameters(parameters map[string]any) (map[string]*armdeployments.DeploymentParameter, error) {
-	const suggestion = "Use ARM parameter entries with value, reference, or expression fields."
+	const suggestion = "Use ARM parameter entries with value, reference, or expression fields and optional metadata."
 	encoded, err := json.Marshal(parameters)
 	if err != nil {
 		return nil, exterrors.Validation(exterrors.CodeOnDiskParametersInvalid,
@@ -23,8 +23,9 @@ func deploymentParameters(parameters map[string]any) (map[string]*armdeployments
 	}
 	// Plain wire types reject unsupported fields that generated SDK decoders would silently discard.
 	var wire map[string]*struct {
-		Value      json.RawMessage `json:"value"`
-		Expression *string         `json:"expression"`
+		Value      json.RawMessage            `json:"value"`
+		Expression *string                    `json:"expression"`
+		Metadata   map[string]json.RawMessage `json:"metadata"`
 		Reference  *struct {
 			KeyVault *struct {
 				ID *string `json:"id"`

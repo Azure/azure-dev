@@ -144,9 +144,13 @@ func (c *sdkResourceChecker) networkChecks(
 		return append(report, subnetCheck, SkippedCheck("agent-subnet", plan.AgentSubnet.ID,
 			"selected AKS Node subnet non-overlap", plan.Cluster.Missing))
 	}
-	if !nodeMetadataKnown && subnetCheck.Status != Fail {
+	if !nodeMetadataKnown && subnetCheck.Status == Pass {
 		subnetCheck.Status = Unverified
+		subnetCheck.Observed = "ARM CIDR containment and Microsoft.App/environments delegation verified; " +
+			"non-overlap with the selected AKS pool Node subnet could not be verified"
 		subnetCheck.Missing = "selected AKS pool Node subnet ARM CIDR metadata"
+		subnetCheck.Remediation = "ensure the selected AKS pool Node subnet CIDRs are readable and complete, " +
+			"then rerun preflight to verify non-overlap"
 	}
 	report = append(report, subnetCheck)
 	return report

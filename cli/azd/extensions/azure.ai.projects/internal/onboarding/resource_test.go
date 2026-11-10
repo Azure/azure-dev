@@ -19,6 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -367,6 +368,81 @@ func TestResourceCheckerRejectsIncompleteOrMismatchedEvidence(t *testing.T) {
 	subnet, report = checker.readNetworkSubnet(t.Context(), subnetID, "agent-subnet")
 	require.NotNil(t, subnet)
 	require.Empty(t, report)
+}
+
+func TestNetworkChecksPreserveDiagnosticsWithoutNodeSubnetEvidence(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*armnetwork.Subnet, *armnetwork.VirtualNetwork)
+		status Status
+	}{
+		{"passing subnet", func(*armnetwork.Subnet, *armnetwork.VirtualNetwork) {}, Pass},
+		{"missing parent address space", func(_ *armnetwork.Subnet, parent *armnetwork.VirtualNetwork) {
+			parent.Properties.AddressSpace = nil
+		}, Unverified},
+		{"invalid subnet CIDR", func(subnet *armnetwork.Subnet, _ *armnetwork.VirtualNetwork) {
+			subnet.Properties.AddressPrefix = new("invalid")
+		}, Unverified},
+		{"missing delegation", func(subnet *armnetwork.Subnet, _ *armnetwork.VirtualNetwork) {
+			subnet.Properties.Delegations = nil
+		}, Fail},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			networkID := testGroup + "/providers/Microsoft.Network/virtualNetworks/network"
+			subnetID := networkID + "/subnets/agents"
+			subnet := &armnetwork.Subnet{
+				ID: new(subnetID),
+				Properties: &armnetwork.SubnetPropertiesFormat{
+					AddressPrefix: new("10.0.1.0/27"),
+					Delegations: []*armnetwork.Delegation{{
+						Properties: &armnetwork.ServiceDelegationPropertiesFormat{
+							ServiceName: new("Microsoft.App/environments"),
+						},
+					}},
+				},
+			}
+			parent := &armnetwork.VirtualNetwork{
+				ID: new(networkID),
+				Properties: &armnetwork.VirtualNetworkPropertiesFormat{
+					ProvisioningState: new(armnetwork.ProvisioningStateSucceeded),
+					AddressSpace: &armnetwork.AddressSpace{
+						AddressPrefixes: []*string{new("10.0.0.0/16")},
+					},
+				},
+			}
+			test.change(subnet, parent)
+			original := delegatedSubnetCheck(subnet, parent, nil)
+			require.Equal(t, test.status, original.Status)
+			fake := resourceFake()
+			fake.replies[strings.ToLower(subnetID)] = readReply{200, subnet}
+			fake.replies[strings.ToLower(networkID)] = readReply{200, parent}
+			checker := &sdkResourceChecker{credential: testCredential{}, options: fake.options()}
+			plan := Plan{AgentSubnet: Resource{ID: subnetID, Supplied: true}}
+			report := checker.networkChecks(t.Context(), plan, nil, nil)
+			require.NotEmpty(t, report)
+			check := report[len(report)-1]
+			if original.Status == Pass {
+				assert.Equal(t, Unverified, check.Status)
+				assert.Contains(t, check.Observed, "non-overlap with the selected AKS pool Node subnet could not be verified")
+				assert.NotContains(t, check.Observed, "non-overlap and")
+				assert.Equal(t, "selected AKS pool Node subnet ARM CIDR metadata", check.Missing)
+				assert.Contains(t, check.Remediation, "rerun preflight to verify non-overlap")
+			} else {
+				assert.Equal(t, original.Status, check.Status)
+				assert.Equal(t, original.Observed, check.Observed)
+				assert.Equal(t, original.Missing, check.Missing)
+				assert.Equal(t, original.Remediation, check.Remediation)
+			}
+			if original.Cause != nil {
+				require.Error(t, check.Cause)
+				assert.EqualError(t, check.Cause, original.Cause.Error())
+			} else {
+				assert.NoError(t, check.Cause)
+			}
+			assert.True(t, check.blocks())
+			assert.Error(t, report.Err())
+		})
+	}
 }
 
 func TestStorageRulesRetainSourceStandardsAndDefaults(t *testing.T) {

@@ -36,7 +36,12 @@ type monitoringRoleAssigner func(
 // monitoringComponentToucher refreshes the component after a role assignment. Application Insights
 // caches Entra authorization for ingestion, and without a component update a new Monitoring Metrics
 // Publisher assignment kept returning 403 for over 20 minutes in live runs.
-type monitoringComponentToucher func(ctx context.Context, componentID string) error
+//
+// created reports whether this deploy created the assignment. When it did not, the toucher only
+// updates the component if the sync tag is missing, which recovers from an earlier failed touch.
+type monitoringComponentToucher func(ctx context.Context, componentID string, created bool) error
+
+const monitoringRoleSyncTag = "azd-monitoring-role-sync"
 
 // privateMonitoringComponentID returns the App Insights component only when azd created it and
 // connected it through the private path (Private Link Scope). Public-network projects and
@@ -101,8 +106,8 @@ func grantHostedAgentMonitoringPublisher(
 			componentID, armauthorization.PrincipalTypeServicePrincipal,
 		)
 		if err == nil {
-			if created && touch != nil {
-				if touchErr := touch(ctx, componentID); touchErr != nil {
+			if touch != nil {
+				if touchErr := touch(ctx, componentID, created); touchErr != nil {
 					return fmt.Sprintf(
 						"Granted the hosted agent identity Monitoring Metrics Publisher, but could not refresh %s: %v. "+
 							"Hosted-agent telemetry can return 403 for a long time until the component is updated; "+
@@ -166,17 +171,27 @@ func (p *AgentServiceTargetProvider) ensureHostedAgentMonitoringPublisher(
 			err, monitoringGrantCommand(strings.TrimSpace(principalID), componentID),
 		)
 	}
-	touch := func(ctx context.Context, componentID string) error {
+	touch := func(ctx context.Context, componentID string, created bool) error {
 		tags, err := armresources.NewTagsClient(
 			extractSubscriptionID(componentID), p.credential, azure.NewArmClientOptions(),
 		)
 		if err != nil {
 			return err
 		}
+		if !created {
+			current, err := tags.GetAtScope(ctx, componentID, nil)
+			if err != nil {
+				return err
+			}
+			if current.Properties != nil && current.Properties.Tags != nil &&
+				current.Properties.Tags[monitoringRoleSyncTag] != nil {
+				return nil
+			}
+		}
 		_, err = tags.UpdateAtScope(ctx, componentID, armresources.TagsPatchResource{
 			Operation: new(armresources.TagsPatchOperationMerge),
 			Properties: &armresources.Tags{Tags: map[string]*string{
-				"azd-monitoring-role-sync": new(time.Now().UTC().Format(time.RFC3339)),
+				monitoringRoleSyncTag: new(time.Now().UTC().Format(time.RFC3339)),
 			}},
 		}, nil)
 		return err

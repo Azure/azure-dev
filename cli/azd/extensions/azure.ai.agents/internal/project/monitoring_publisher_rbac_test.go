@@ -52,8 +52,9 @@ func TestGrantHostedAgentMonitoringPublisherAssignsRole(t *testing.T) {
 		return true, nil
 	}
 	touches := 0
-	touch := func(_ context.Context, componentID string) error {
+	touch := func(_ context.Context, componentID string, created bool) error {
 		touches++
+		assert.True(t, created)
 		assert.Equal(t, publisherTestComponent, componentID)
 		return nil
 	}
@@ -135,25 +136,27 @@ func TestGrantHostedAgentMonitoringPublisherHonorsSkipRoleAssignments(t *testing
 	})
 }
 
-func TestGrantHostedAgentMonitoringPublisherTouchesOnlyNewAssignments(t *testing.T) {
+func TestGrantHostedAgentMonitoringPublisherPassesCreatedFlagToToucher(t *testing.T) {
 	assign := func(context.Context, string, string, string, string, armauthorization.PrincipalType) (bool, error) {
 		return false, nil
 	}
-	touch := func(context.Context, string) error {
-		t.Fatal("component must not be touched when the role already existed")
+	var got []bool
+	touch := func(_ context.Context, _ string, created bool) error {
+		got = append(got, created)
 		return nil
 	}
 
 	warning := grantHostedAgentMonitoringPublisher(t.Context(), assign, touch, publisherTestEnv(), publisherTestPrincipal)
 
 	assert.Empty(t, warning)
+	assert.Equal(t, []bool{false}, got)
 }
 
 func TestGrantHostedAgentMonitoringPublisherTouchFailureReturnsWarning(t *testing.T) {
 	assign := func(context.Context, string, string, string, string, armauthorization.PrincipalType) (bool, error) {
 		return true, nil
 	}
-	touch := func(context.Context, string) error { return errors.New("denied") }
+	touch := func(context.Context, string, bool) error { return errors.New("denied") }
 
 	warning := grantHostedAgentMonitoringPublisher(t.Context(), assign, touch, publisherTestEnv(), publisherTestPrincipal)
 

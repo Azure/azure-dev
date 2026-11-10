@@ -37,25 +37,27 @@ func TestConnectionDetailResultJSONContract(t *testing.T) {
 	require.False(t, hasCredentials)
 }
 
-func TestParseEndpointComponents(t *testing.T) {
+func TestParseEndpointProject(t *testing.T) {
 	tests := []struct {
 		name        string
 		endpoint    string
-		wantAccount string
 		wantProject string
 		wantErr     bool
 	}{
 		{
 			name:        "standard endpoint",
 			endpoint:    "https://myaccount.services.ai.azure.com/api/projects/myproject",
-			wantAccount: "myaccount",
 			wantProject: "myproject",
 		},
 		{
 			name:        "endpoint with trailing slash",
 			endpoint:    "https://myaccount.services.ai.azure.com/api/projects/myproject/",
-			wantAccount: "myaccount",
 			wantProject: "myproject",
+		},
+		{
+			name:        "custom DNS subdomain",
+			endpoint:    identityEndpoint,
+			wantProject: "project-one",
 		},
 		{
 			name:     "missing project segment",
@@ -76,13 +78,12 @@ func TestParseEndpointComponents(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			account, project, err := parseEndpointComponents(tt.endpoint)
+			project, err := parseEndpointProject(tt.endpoint)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tt.wantAccount, account)
 			require.Equal(t, tt.wantProject, project)
 		})
 	}
@@ -107,6 +108,43 @@ func TestParseARMResourceID(t *testing.T) {
 			wantRG:   "rg-test",
 			wantAcct: "acct1",
 			wantProj: "proj1",
+		},
+		{
+			name:       "project resource ID",
+			resourceID: identityProjectID,
+			wantSub:    "staging-sub",
+			wantRG:     "staging-rg",
+			wantAcct:   "arm-account",
+			wantProj:   "project-one",
+		},
+		{
+			name: "case insensitive resource type",
+			resourceID: "/SUBSCRIPTIONS/sub-123/RESOURCEGROUPS/rg-test/" +
+				"PROVIDERS/microsoft.cognitiveservices/ACCOUNTS/acct1/PROJECTS/proj1",
+			wantSub: "sub-123", wantRG: "rg-test", wantAcct: "acct1", wantProj: "proj1",
+		},
+		{
+			name: "wrong provider",
+			resourceID: "/subscriptions/sub/resourceGroups/rg/" +
+				"providers/Other/accounts/account/projects/project",
+			wantErr: true,
+		},
+		{
+			name:       "unsupported child resource",
+			resourceID: identityProjectID + "/agents/agent",
+			wantErr:    true,
+		},
+		{
+			name: "missing resource group",
+			resourceID: "/subscriptions/sub/providers/" +
+				"Microsoft.CognitiveServices/accounts/account/projects/project",
+			wantErr: true,
+		},
+		{
+			name: "empty account name",
+			resourceID: "/subscriptions/sub/resourceGroups/rg/providers/" +
+				"Microsoft.CognitiveServices/accounts//projects/project",
+			wantErr: true,
 		},
 		{
 			name:       "missing subscription",

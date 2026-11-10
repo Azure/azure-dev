@@ -116,7 +116,7 @@ func rawCreateConnection(
 					[]string{"https://management.azure.com/.default"}, nil),
 			},
 		},
-		&policy.ClientOptions{},
+		&connCtx.clientOptions,
 	)
 
 	req, err := runtime.NewRequest(ctx, http.MethodPut, armURL)
@@ -164,7 +164,7 @@ func rawGetConnection(
 					[]string{"https://management.azure.com/.default"}, nil),
 			},
 		},
-		&policy.ClientOptions{},
+		&connCtx.clientOptions,
 	)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, armURL)

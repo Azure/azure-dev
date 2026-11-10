@@ -206,7 +206,7 @@ func agentPoolChecks(pool *armcontainerservice.AgentPool) Report {
 	// A known incompatible field is a failure even when a different property is absent.
 	if knownOS && !validOS || p.WorkloadRuntime != nil && resourceValue(p.WorkloadRuntime) != "KataVmIsolation" ||
 		p.Count != nil && *p.Count < 1 {
-		checks[0] = resourceResult(checks[0], Fail, "incompatible agent pool configuration")
+		checks[0] = resourceResult(checks[0], Fail, "incompatible agent pool configuration: "+detail)
 	}
 	imageKnown, imageValid := agentImage(resourceValue(p.NodeImageVersion))
 	checks[1] = resourceKnown(checks[1], imageKnown, imageValid, resourceValue(p.NodeImageVersion))

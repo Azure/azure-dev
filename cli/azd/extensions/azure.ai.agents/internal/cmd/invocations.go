@@ -158,7 +158,8 @@ func supportsInvocationOperation(protocol agent_api.AgentProtocol, operation inv
 }
 
 // resolveInvocationCommand resolves a protocol before reading its current ID.
-// It never creates a session/conversation or changes the current selection.
+// It uses saved routing, not live capabilities, and never creates a
+// session/conversation or changes the current selection.
 func resolveInvocationCommand(
 	ctx context.Context,
 	flags *invocationCommandFlags,
@@ -178,9 +179,18 @@ func resolveInvocationCommand(
 		invokeFlags.name = parsed.AgentName
 		invokeFlags.protocol = string(parsed.Protocol)
 	}
-	protocol, err := action.resolveProtocol(ctx)
-	if err != nil {
-		return nil, nil, "", err
+	protocol := agent_api.AgentProtocol(invokeFlags.protocol)
+	if protocol == "" {
+		rc, err := action.resolveRemoteContextForInvoke(ctx)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		action.resolvedRemoteContext = rc
+		protocol, err = action.resolveDeployedProtocol(ctx, rc)
+		if err != nil {
+			action.closeResolvedRemoteContextClient()
+			return nil, nil, "", err
+		}
 	}
 	if !supportsInvocationOperation(protocol, operation) {
 		action.closeResolvedRemoteContextClient()

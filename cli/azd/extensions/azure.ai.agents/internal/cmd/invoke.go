@@ -947,7 +947,13 @@ func (a *InvokeAction) resolveDeployedProtocol(
 		return "", err
 	}
 	if rc.agent != nil {
+		enabled := resolveEndpointProtocols(rc.agent.AgentEndpoint)
 		if rc.version != "" && rc.version != rc.agent.Versions.Latest.Version {
+			preferred := uniqueAgentProtocols(rc.invocableProtocols)
+			if rc.version == rc.deployedVersion && len(preferred) == 1 &&
+				slices.Contains(enabled, string(preferred[0])) {
+				return preferred[0], nil
+			}
 			return "", exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"current endpoint configuration does not identify the protocol of the selected agent version",
@@ -956,7 +962,6 @@ func (a *InvokeAction) resolveDeployedProtocol(
 		}
 
 		var protocols []agent_api.AgentProtocol
-		enabled := resolveEndpointProtocols(rc.agent.AgentEndpoint)
 		for _, protocol := range agent_api.InvocableProtocols() {
 			if slices.Contains(enabled, string(protocol)) {
 				protocols = append(protocols, protocol)

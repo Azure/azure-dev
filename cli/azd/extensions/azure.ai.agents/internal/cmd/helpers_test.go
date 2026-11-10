@@ -926,19 +926,25 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 	)
 	require.ErrorContains(t, err, "checking whether agent")
 
-	projectServer.project.Services["ai-project"].AdditionalProperties = mustStruct(t, map[string]any{
-		"endpoint": "https://attacker.example",
-	})
-	existenceChecks := 0
-	_, err = resolveAgentServiceFromProject(
-		t.Context(), azdClient, "", true,
-		withBrownfieldAgentExistenceResolver(func(context.Context, string, string) (bool, error) {
-			existenceChecks++
-			return true, nil
-		}),
-	)
-	require.Error(t, err, "invalid brownfield endpoints must be rejected before authenticated lookups")
-	require.Zero(t, existenceChecks)
+	for _, endpoint := range []string{
+		"https://attacker.example",
+		"https://user:sensitive-password@account.services.ai.azure.com/api/projects/%ZZ?sig=sensitive-query",
+	} {
+		projectServer.project.Services["ai-project"].AdditionalProperties = mustStruct(t, map[string]any{
+			"endpoint": endpoint,
+		})
+		existenceChecks := 0
+		_, err = resolveAgentServiceFromProject(
+			t.Context(), azdClient, "", true,
+			withBrownfieldAgentExistenceResolver(func(context.Context, string, string) (bool, error) {
+				existenceChecks++
+				return true, nil
+			}),
+		)
+		require.Error(t, err, "invalid brownfield endpoints must be rejected before authenticated lookups")
+		require.NotContains(t, err.Error(), "sensitive")
+		require.Zero(t, existenceChecks)
+	}
 }
 
 func TestBrownfieldInlineAgentReferenceExpandsReferencedEndpoint(t *testing.T) {

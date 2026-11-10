@@ -1164,6 +1164,11 @@ func TestResolveRemoteContextValidatesProjectEndpoint(t *testing.T) {
 		{name: "normalize service endpoint", endpoint: " HTTPS://ACCOUNT.services.ai.azure.com/api/projects/project/// ",
 			valid: true},
 		{name: "explicit endpoint is also validated", endpoint: "https://attacker.example", explicit: true},
+		{name: "malformed service endpoint hides credentials",
+			endpoint: "https://user:sensitive-password@account.services.ai.azure.com" +
+				"/api/projects/%ZZ?sig=sensitive-query#sensitive-fragment"},
+		{name: "malformed explicit endpoint hides credentials", explicit: true,
+			endpoint: "https://account.services.ai.azure.com/api/projects/%ZZ?sig=sensitive-query"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
@@ -1195,6 +1200,7 @@ func TestResolveRemoteContextValidatesProjectEndpoint(t *testing.T) {
 					rc.azdClient.Close()
 				}
 				require.Error(t, err)
+				require.NotContains(t, err.Error(), "sensitive")
 				return
 			}
 			require.NoError(t, err)
@@ -1572,7 +1578,7 @@ func TestRemoteProtocolUsesLiveConfiguration(t *testing.T) {
 		{name: "legacy cached metadata", stale: true},
 		{name: "incomplete cached metadata", incomplete: true},
 		{name: "explicit current version overrides stale deployed version", version: "7"},
-		{name: "historical version still requires protocol", version: "2", wantError: "selected agent version"},
+		{name: "saved version with disabled route requires protocol", version: "2", wantError: "selected agent version"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			transport := mockInvokeMetadata(t, http.StatusOK, `{
@@ -1632,6 +1638,48 @@ func TestRemoteProtocolDisabledConfigurationSuggestsEnablement(t *testing.T) {
 			require.Contains(t, suggestion, "enable")
 			require.Contains(t, suggestion, "public")
 			require.NotContains(t, suggestion, "--protocol")
+		})
+	}
+}
+
+func TestRemoteProtocolPreservesEnabledSavedVersionRouting(t *testing.T) {
+	for _, tt := range []struct {
+		name, version string
+		saved         []agent_api.AgentProtocol
+		want          agent_api.AgentProtocol
+	}{
+		{name: "saved Responses version", version: "7",
+			saved: []agent_api.AgentProtocol{agent_api.AgentProtocolResponses}, want: agent_api.AgentProtocolResponses},
+		{name: "saved Invocations version", version: "7",
+			saved: []agent_api.AgentProtocol{agent_api.AgentProtocolInvocations}, want: agent_api.AgentProtocolInvocations},
+		{name: "unrelated version still requires protocol", version: "6",
+			saved: []agent_api.AgentProtocol{agent_api.AgentProtocolResponses}},
+		{name: "ambiguous saved routing still requires protocol", version: "7",
+			saved: []agent_api.AgentProtocol{agent_api.AgentProtocolResponses, agent_api.AgentProtocolInvocations}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := mockInvokeMetadata(t, http.StatusOK, `{
+				"name":"agent",
+				"agent_endpoint":{"protocol_configuration":{"responses":{},"invocations":{}}},
+				"versions":{"latest":{"version":"9","definition":{"kind":"hosted"}}}
+			}`)
+			action := &InvokeAction{
+				flags: &invokeFlags{version: tt.version}, credential: responseTestCredential{},
+				resolvedRemoteContext: &remoteContext{
+					name: "agent", projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+					apiVersion: "v1", deployedVersion: "7", version: tt.version,
+					invocableProtocols: tt.saved, deployedProtocolMetadata: true,
+				},
+			}
+			protocol, err := action.resolveProtocol(t.Context())
+			if tt.want == "" {
+				require.ErrorContains(t, err, "selected agent version")
+				require.Contains(t, azdext.WrapError(err).GetSuggestion(), "--protocol")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.want, protocol)
+			}
+			require.Equal(t, 1, transport.requests)
 		})
 	}
 }

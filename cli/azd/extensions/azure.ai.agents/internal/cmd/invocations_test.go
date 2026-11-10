@@ -248,6 +248,56 @@ func TestInvocationOperationSupport(t *testing.T) {
 	}
 }
 
+func TestResolveInvocationCommandProjectSkipsLiveCapabilities(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	// Keep a regressed metadata read from invoking the user's azd credentials.
+	t.Setenv("PATH", t.TempDir())
+	const projectEndpoint = "https://account.services.ai.azure.com/api/projects/project"
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"target": {
+				Name: "target", Host: AiAgentHost, AdditionalProperties: mustStruct(t, map[string]any{
+					"kind": "hosted", "name": "agent",
+					"protocols": []any{map[string]any{"protocol": "invocations", "version": "2.0.0"}},
+				}),
+			},
+		},
+	}}
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values: map[string]map[string]string{"test": {
+			"AGENT_TARGET_NAME":                       "agent",
+			"AGENT_TARGET_PROJECT_ENDPOINT":           projectEndpoint,
+			"AGENT_TARGET_RESPONSES_ENDPOINT":         projectEndpoint + "/agents/agent/endpoint/protocols/openai/responses",
+			"AGENT_TARGET_PROTOCOL_ENDPOINTS_VERSION": "1",
+		}},
+	}
+	t.Setenv("AZD_SERVER", newInvokeRemoteContextTestAzdServer(t, projectServer, envServer))
+	key := buildAgentKey(projectEndpoint, "agent", "", false)
+	saveAgentStateForTest(t, nil, key, agentStateRecord{
+		Response: &savedResponse{ResponseID: "resp_current"}, Invocation: &savedInvocation{InvocationID: "inv_current"},
+	})
+	for _, operation := range []invocationOperation{invocationShow, invocationFollow, invocationCancel} {
+		t.Run(string(operation), func(t *testing.T) {
+			action, rc, id, err := resolveInvocationCommand(t.Context(), &invocationCommandFlags{
+				agentName: "target", noPrompt: true,
+			}, operation)
+			require.NoError(t, err)
+			defer rc.azdClient.Close()
+			assert.Equal(t, "responses", action.flags.protocol)
+			assert.Equal(t, "resp_current", id)
+			assert.False(t, rc.agentRead, "lifecycle resolution must not attempt a live capability read")
+			record := loadAgentStateForTest(t, rc.azdClient, key)
+			require.NotNil(t, record)
+			require.NotNil(t, record.Response)
+			require.NotNil(t, record.Invocation)
+			assert.Equal(t, "resp_current", record.Response.ResponseID)
+			assert.Equal(t, "inv_current", record.Invocation.InvocationID)
+		})
+	}
+}
+
 func TestInvocationsCommandValidation(t *testing.T) {
 	for _, tt := range []struct {
 		name string

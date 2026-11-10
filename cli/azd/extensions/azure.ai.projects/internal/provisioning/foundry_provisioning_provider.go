@@ -1462,11 +1462,14 @@ func (p *FoundryProvisioningProvider) Deploy(
 		if checkErr := p.prepareACRAccess(ctx, src); checkErr != nil {
 			err = errors.Join(err, checkErr)
 		} else if parameterValue(src, "acrPullAssigned") == true {
-			poller, retryErr := client.BeginCreateOrUpdateAtSubscriptionScope(ctx, name, dep, nil)
-			if retryErr != nil {
-				err = retryErr
-			} else {
-				resp, err = pollWithProgress(ctx, poller, progress, "Foundry deployment in progress")
+			dep.Properties.Parameters, err = deploymentParameters(src.parameters)
+			if err == nil {
+				poller, retryErr := client.BeginCreateOrUpdateAtSubscriptionScope(ctx, name, dep, nil)
+				if retryErr != nil {
+					err = retryErr
+				} else {
+					resp, err = pollWithProgress(ctx, poller, progress, "Foundry deployment in progress")
+				}
 			}
 		}
 	}

@@ -1,7 +1,7 @@
 [
   {
     "model": "MAI/MAI-Code-1.1-Flash",
-    "renderers": ["mai_harmony_internal"]
+    "renderers": ["mai_harmony", "mai_harmony_internal"]
   },
   {
     "model": "Qwen/Qwen3.8-27B",

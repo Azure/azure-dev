@@ -309,17 +309,30 @@ func aksResourceChecks(
 	if identityType != "" && !managed || identityType == "" && p.ServicePrincipalProfile != nil {
 		report[len(report)-1] = resourceResult(report[len(report)-1], Fail, "cluster lacks a supported managed identity")
 	}
-	oidc, workload, issuer := false, false, ""
-	knownFederation := p.OidcIssuerProfile != nil && p.SecurityProfile != nil &&
-		p.SecurityProfile.WorkloadIdentity != nil
+	oidcState, workloadState, issuerState := "unavailable", "unavailable", "unavailable"
 	if p.OidcIssuerProfile != nil {
-		oidc, issuer = resourceBool(p.OidcIssuerProfile.Enabled), resourceValue(p.OidcIssuerProfile.IssuerURL)
+		if p.OidcIssuerProfile.Enabled != nil {
+			oidcState = strconv.FormatBool(*p.OidcIssuerProfile.Enabled)
+		}
+		if p.OidcIssuerProfile.IssuerURL != nil {
+			issuerState = "empty"
+			if strings.TrimSpace(*p.OidcIssuerProfile.IssuerURL) != "" {
+				issuerState = "present"
+			}
+		}
 	}
-	if p.SecurityProfile != nil && p.SecurityProfile.WorkloadIdentity != nil {
-		workload = resourceBool(p.SecurityProfile.WorkloadIdentity.Enabled)
+	if p.SecurityProfile != nil && p.SecurityProfile.WorkloadIdentity != nil &&
+		p.SecurityProfile.WorkloadIdentity.Enabled != nil {
+		workloadState = strconv.FormatBool(*p.SecurityProfile.WorkloadIdentity.Enabled)
 	}
+	federationObserved := fmt.Sprintf("OIDC enabled=%s; issuer URL=%s; Workload Identity enabled=%s",
+		oidcState, issuerState, workloadState)
 	add("aks-federation", "OIDC enabled with issuer URL; Workload Identity enabled",
-		knownFederation, oidc && workload && strings.TrimSpace(issuer) != "", "OIDC and Workload Identity configuration")
+		oidcState != "unavailable" && workloadState != "unavailable" && issuerState != "unavailable",
+		oidcState == "true" && workloadState == "true" && issuerState == "present", federationObserved)
+	if oidcState == "false" || workloadState == "false" || issuerState == "empty" {
+		report[len(report)-1] = resourceResult(report[len(report)-1], Fail, federationObserved)
+	}
 	hasSystem := false
 	for _, pool := range pools {
 		if pool == nil || pool.Properties == nil {

@@ -25,6 +25,7 @@ type manifestProviderDoc struct {
 var manifestComparedProviderTypes = []extensions.ProviderType{
 	extensions.ServiceTargetProviderType,
 	extensions.ProvisioningProviderType,
+	extensions.InfraGenerationProviderType,
 }
 
 // VerifyProvidersMatchManifest asserts that the providers an extension registers via
@@ -33,8 +34,8 @@ var manifestComparedProviderTypes = []extensions.ProviderType{
 //
 // It runs configure against a bare [ExtensionHost] (no azd connection; provider
 // factories are never invoked) and compares the registered names against the
-// manifest's `providers:` list. Only service-target and provisioning-provider types
-// are compared; framework-service and validation registrations have no manifest
+// manifest's `providers:` list. Service-target, provisioning-provider, and
+// infra-generation-provider types are compared. Framework-service and validation registrations have no manifest
 // representation.
 //
 // It returns a descriptive error when a provider is declared but not registered,
@@ -62,6 +63,10 @@ func VerifyProvidersMatchManifest(configure func(host *ExtensionHost), manifestP
 	for _, reg := range host.ProvisioningProviders() {
 		registered[extensions.ProvisioningProviderType] = append(
 			registered[extensions.ProvisioningProviderType], reg.Name)
+	}
+	for _, reg := range host.InfraGenerationProviders() {
+		registered[extensions.InfraGenerationProviderType] = append(
+			registered[extensions.InfraGenerationProviderType], reg.Name)
 	}
 
 	var mismatches []string

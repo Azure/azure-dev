@@ -28,12 +28,14 @@ import (
 )
 
 const (
-	petclinicRepository      = "https://github.com/XiaofeiCao/azd-spring-petclinic"
-	petclinicBranch          = "main"
-	petclinicTemplateCommit  = "215d42251c4960c67bd86167a0a67ef8a24cf3ff"
-	proposedTemplateRepo     = "https://github.com/XiaofeiCao/petclinic-rest-azd"
-	proposedTemplateCommit   = "a474846de0a3ad7a447fd9558d1aed70bf80332d"
-	gitMetadataAccommodation = "Packaging Maven project without Git commit metadata because the repository has no commits."
+	petclinicRepository              = "https://github.com/XiaofeiCao/azd-spring-petclinic"
+	petclinicBranch                  = "main"
+	petclinicTemplateCommit          = "215d42251c4960c67bd86167a0a67ef8a24cf3ff"
+	proposedTemplateRepo             = "https://github.com/XiaofeiCao/petclinic-rest-azd"
+	proposedTemplateCommit           = "6110dca64d6bbaed2998faa92cfb5941b725a849"
+	proposedTemplateAdminNameBinding = "${DATABASE_ADMIN_NAME=azd-preprovision-pending}"
+	proposedTemplateAdminIDBinding   = "${DATABASE_ADMIN_OBJECT_ID=00000000-0000-0000-0000-000000000000}"
+	gitMetadataAccommodation         = "Packaging Maven project without Git commit metadata because the repository has no commits."
 )
 
 type petclinicSourceManifest struct {
@@ -95,8 +97,6 @@ func verifyProposedPetclinicTemplate(t *testing.T, projectDir string) {
 
 	mainParameters, err := os.ReadFile(filepath.Join(projectDir, "infra", "main.parameters.json"))
 	require.NoError(t, err)
-	require.Contains(t, string(mainParameters), "${DATABASE_ADMIN_OBJECT_ID}")
-	require.Contains(t, string(mainParameters), "${DATABASE_ADMIN_NAME}")
 	var parameters struct {
 		Parameters map[string]struct {
 			Value string `json:"value"`
@@ -104,6 +104,10 @@ func verifyProposedPetclinicTemplate(t *testing.T, projectDir string) {
 	}
 	require.NoError(t, json.Unmarshal(mainParameters, &parameters))
 	require.Equal(t, "${AZURE_USE_VNET=false}", parameters.Parameters["useVirtualNetwork"].Value)
+	require.Equal(t, proposedTemplateAdminIDBinding,
+		parameters.Parameters["databaseAdministratorObjectId"].Value)
+	require.Equal(t, proposedTemplateAdminNameBinding,
+		parameters.Parameters["databaseAdministratorName"].Value)
 
 	mainBicep, err := os.ReadFile(filepath.Join(projectDir, "infra", "main.bicep"))
 	require.NoError(t, err)

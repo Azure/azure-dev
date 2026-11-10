@@ -15,6 +15,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
+const (
+	databaseAdministratorNameBinding         = "${DATABASE_ADMIN_NAME}"
+	databaseAdministratorIDBinding           = "${DATABASE_ADMIN_OBJECT_ID}"
+	databaseAdministratorNameDeferredBinding = "${DATABASE_ADMIN_NAME=azd-preprovision-pending}"
+	databaseAdministratorIDDeferredBinding   = "${DATABASE_ADMIN_OBJECT_ID=00000000-0000-0000-0000-000000000000}"
+)
+
 func automaticProvisionInputs(
 	ctx context.Context, project *azdext.ProjectConfig, selected resolvedDatabase,
 ) (resolvedDatabase, error) {
@@ -72,8 +79,11 @@ func automaticProvisionInputs(
 	nameBinding, hasName := document.Parameters["databaseAdministratorName"]
 	objectBinding, hasObject := document.Parameters["databaseAdministratorObjectId"]
 	managed := hasName || hasObject
-	if managed && (!hasName || !hasObject ||
-		nameBinding.Value != "${DATABASE_ADMIN_NAME}" || objectBinding.Value != "${DATABASE_ADMIN_OBJECT_ID}") {
+	directManaged := nameBinding.Value == databaseAdministratorNameBinding &&
+		objectBinding.Value == databaseAdministratorIDBinding
+	deferredManaged := nameBinding.Value == databaseAdministratorNameDeferredBinding &&
+		objectBinding.Value == databaseAdministratorIDDeferredBinding
+	if managed && (!hasName || !hasObject || (!directManaged && !deferredManaged)) {
 		return resolvedDatabase{}, configurationError(
 			"the Bicep developer administrator inputs do not match supported bindings",
 		)

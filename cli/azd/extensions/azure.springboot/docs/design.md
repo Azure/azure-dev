@@ -180,6 +180,30 @@ Container Apps outbound rules. PostgreSQL remains on a public endpoint; this
 design removes broad bootstrap exposure and split local egress dependence but
 does not provide private networking.
 
+For automatic managed-identity provisioning, azd initializes the Bicep provider
+before it invokes the extension's `preprovision` event. A template that maps
+required Bicep parameters directly to unset `DATABASE_ADMIN_*` values therefore
+fails before the extension can resolve the signed-in developer. Supported
+templates use this exact deferred binding pair in `main.parameters.json`:
+
+```json
+{
+  "databaseAdministratorName": {
+    "value": "${DATABASE_ADMIN_NAME=azd-preprovision-pending}"
+  },
+  "databaseAdministratorObjectId": {
+    "value": "${DATABASE_ADMIN_OBJECT_ID=00000000-0000-0000-0000-000000000000}"
+  }
+}
+```
+
+The placeholders satisfy only the provider's initial required-input check.
+Before the deployment plan is created, `preprovision` resolves the current
+developer, persists the real values, and azd reloads the parameter file. The
+extension rejects mixed or different fallback bindings. If the lifecycle event
+does not run, the zero principal causes deployment to fail closed rather than
+configure a different administrator.
+
 Release builds enable remote reconciliation only with a digest-pinned runner
 from `mcr.microsoft.com/azure-dev/azd-spring-postgres-bootstrap`. The release
 pipeline supplies the published digest through the build-only

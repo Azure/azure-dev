@@ -14,15 +14,29 @@ import (
 
 func TestAutomaticProvisionInputsValidateAuthoredBindings(t *testing.T) {
 	for _, test := range []struct {
-		name      string
-		document  string
-		h2        bool
-		managed   bool
-		wantError bool
+		name        string
+		document    string
+		h2          bool
+		managed     bool
+		wantManaged bool
+		wantError   bool
 	}{
 		{name: "exact password", document: `{"parameters":{"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD}"}}}`},
 		{name: "empty fallback password",
 			document: `{"parameters":{"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD:-}"}}}`},
+		{name: "exact managed identity", document: `{"parameters":{
+			"databaseAdministratorName":{"value":"${DATABASE_ADMIN_NAME}"},
+			"databaseAdministratorObjectId":{"value":"${DATABASE_ADMIN_OBJECT_ID}"}}}`, wantManaged: true},
+		{name: "deferred managed identity", document: `{"parameters":{
+			"databaseAdministratorName":{"value":"${DATABASE_ADMIN_NAME=azd-preprovision-pending}"},
+			"databaseAdministratorObjectId":{
+				"value":"${DATABASE_ADMIN_OBJECT_ID=00000000-0000-0000-0000-000000000000}"}}}`,
+			wantManaged: true},
+		{name: "mixed managed identity bindings", document: `{"parameters":{
+			"databaseAdministratorName":{"value":"${DATABASE_ADMIN_NAME}"},
+			"databaseAdministratorObjectId":{
+				"value":"${DATABASE_ADMIN_OBJECT_ID=00000000-0000-0000-0000-000000000000}"}}}`,
+			wantError: true},
 		{name: "nonstring password", document: `{"parameters":{"databasePassword":{"value":123}}}`, wantError: true},
 		{name: "flattened password", document: `{"parameters":{"databasePassword":"${SPRING_DATABASE_PASSWORD}"}}`,
 			wantError: true},
@@ -60,7 +74,11 @@ func TestAutomaticProvisionInputsValidateAuthoredBindings(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, selected.Type, actual.Type)
-			require.Equal(t, selected.Authentication, actual.Authentication)
+			if test.wantManaged {
+				require.Equal(t, databaseAuthenticationManagedIdentity, actual.Authentication)
+			} else {
+				require.Equal(t, selected.Authentication, actual.Authentication)
+			}
 		})
 	}
 }

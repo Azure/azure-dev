@@ -540,6 +540,7 @@ Counts remain zero if validation or environment loading fails before keys can be
 | `ext.agent.harness` | string | Prompt-agent harness classification: `none`, `github_copilot_preview`, `microsoft_copilot_preview`, or `other` (`agent.context.resolved`); preserves the recognized Copilot harness name after lowercasing and trimming whitespace. Empty values emit `none`; unrecognized values emit `other` |
 | `ext.agent.operation` | string | Fixed extension command path associated with the resolved agent context, such as `deploy` or `files.upload` (`agent.context.resolved`) |
 | `ext.agent.container.mode` | string | Optional hosted-agent deployment configuration: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown` (`agent.context.resolved`); explicit `AGENT_DEFINITION_PATH` overrides report `unknown`, and non-hosted agents omit the field |
+| `ext.agent.memory.snapshot` | string | **Pending #10825**: fixed `true` marker on the existing `agent.phase.completed` for a resolved hosted provider Deploy with snapshots explicitly enabled. Use that same record's `ext.agent.phase.outcome`, duration and attempt ID for the client-observed deployment result. Omitted when disabled, unspecified, unresolved or non-hosted, and on context, step and other phase events. Counts deployment attempts, not unique users or snapshot capture/restore outcomes |
 | `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
 | `ext.outcome` | string | Agent Inspector funnel-stage outcome: currently `succeeded` (`inspector.funnel.stage`) |
 | `ext.source` | string | Rows a scaffolded eval will grade, reported by `azure.ai.evaluations`: `traces`, `dataset`, or `unknown` (`init.completed`). Extension-chosen, and unrelated to the host-owned `extension.source` below |
@@ -573,6 +574,19 @@ and `service_target.get_target_resource`.
 The dropped-report summary fields described below are `SystemMetadata` for
 `PerformanceAndHealth`.
 
+`ext.agent.memory.snapshot` is registered here as a contract; its emission is
+implemented separately in [the agents extension PR](https://github.com/Azure/azure-dev/pull/10825).
+Registration alone does not enable reporting.
+
+The Agents outcome refinement is also pending #10825. Across Agents phases,
+a nil returned error is `success`, and an explicit deadline or network timeout
+is `timeout`. Other errored returns on terminated requests use the request cause:
+deadline means `timeout`, otherwise `canceled`. Remaining returned errors use the
+existing classifier, with observed polling timeouts changing only `error` to
+`timeout`. Projects continues to use the returned error and observed polling
+marker, not request termination state. Snapshot attribution does not change these
+rules, and the original business error is preserved.
+
 Each concrete first-party field has its own classification, purpose, and
 endpoint declaration. Current declarations use `SystemMetadata` with endpoint
 `N/A`. Product classification enums use `FeatureInsight`; agent Init and all
@@ -604,10 +618,10 @@ reserved, pending #10811:
 
 | Extension | `extension.event` | Trigger | Dynamic attributes |
 |-----------|-------------------|---------|--------------------|
-| `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; reported once per distinct kind/harness/container-mode classification before completion | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, `microsoft_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; optional hosted `ext.agent.container.mode`: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown`. `build` includes existing or azd-created ACR, `passthrough` does not imply a public image, and `passthrough_auth` indicates a configured registry connection rather than successful authentication; no customer content |
+| `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; reported once per distinct kind/harness/container-mode classification before completion | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, `microsoft_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; optional hosted `ext.agent.container.mode`: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown`. `build` includes existing or azd-created ACR, `passthrough` does not imply a public image, and `passthrough_auth` indicates a configured registry connection rather than successful authentication. No customer content |
 | `azure.ai.agents` | `agent.invoke.selected` | A remote invoke resolves its target after validation; project-backed routes must be hosted, while explicit `--agent-endpoint` routes have no project kind to check. Once per selected route before the invoke request, including later failures. Resolution can authenticate or probe Foundry for a brownfield agent first, so earlier failures are not counted. Excludes local and non-hosted project routes | `ext.agent.invoke.protocol`: resolved invocable protocol (currently `responses`, `invocations`, or `a2a`); `ext.agent.invoke.long_running`, `ext.agent.invoke.no_wait`: string-encoded `true` or `false`. `no_wait=true` requires `long_running=true`, supported only with remote Responses; no content or identifiers |
 | `azure.ai.agents` | `agent.init.step` | Completed business steps in `azd ai agent init`, buffered and reported on return, including failure and cancellation paths | `ext.agent.init.step.id`: fixed step ID; `ext.agent.init.step.sequence`: start order; `ext.agent.init.step.duration_ms`: elapsed milliseconds. All three are string properties; no answers, names, paths, or other customer content |
-| `azure.ai.agents` / `azure.ai.projects` | `agent.phase.completed` | **Pending #10811**: projects authoring handler or extension provider method returns, including failure/cancellation/timeout | `ext.agent.phase.name`, `.scope`, `.attempt_id`, `.start_time`, `.end_time`, `.duration_ms`, `.outcome`, `.step.dropped_count`; all strings with the encodings above, not a core command completion |
+| `azure.ai.agents` / `azure.ai.projects` | `agent.phase.completed` | **Pending #10811**: projects authoring handler or extension provider method returns, including failure/cancellation/timeout | `ext.agent.phase.name`, `.scope`, `.attempt_id`, `.start_time`, `.end_time`, `.duration_ms`, `.outcome`, `.step.dropped_count`; all strings with the encodings above, not a core command completion. **Pending #10825**: Agents resolved hosted `deploy` / `provider` completions additionally carry `ext.agent.memory.snapshot=true` (`FeatureInsight`) only when snapshots are explicitly enabled; all other completions and step events omit it. The Agents-only request-termination outcome refinement is described above |
 | `azure.ai.agents` / `azure.ai.projects` | `agent.phase.step` | **Pending #10811**: completed business steps buffered and reported after phase completion | `ext.agent.phase.name`, `.scope`, `.attempt_id`, `.step.id`, `.step.sequence`, `.step.start_offset_ms`, `.step.duration_ms`; all strings, with no user/resource names, paths, credentials, or error text |
 | `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode=sample`; `ext.demo.outcome=completed` |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |

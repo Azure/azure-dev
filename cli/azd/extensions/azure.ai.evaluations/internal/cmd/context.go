@@ -135,7 +135,7 @@ func newEvalContext(ctx context.Context, endpointFlag string) (*evalContext, err
 	ec.endpoint = strings.TrimSuffix(resolved.Endpoint, "/")
 	log.Printf("[endpoint] resolved from %s", resolved.Source)
 
-	tenantID := resolveAzdTenantID(ctx, azdClient.Environment(), azdClient.Account(), envName)
+	tenantID := resolveAzdTenantID(ctx, azdClient.Environment(), azdClient.Account(), tenantEnvName(resolved))
 
 	cred, err := newAzdTokenCredential(tenantID)
 	if err != nil {
@@ -179,6 +179,21 @@ type envValueReader interface {
 
 type tenantLookup interface {
 	LookupTenant(context.Context, *azdext.LookupTenantRequest, ...grpc.CallOption) (*azdext.LookupTenantResponse, error)
+}
+
+// tenantEnvName is the azd environment whose subscription tenant the
+// credential should ask for, or "" to keep azd's own default.
+//
+// Only an endpoint read out of the azd environment is known to belong to that
+// environment's subscription. An endpoint from --project-endpoint, global
+// config or the host environment can live in any tenant -- commonly the
+// user's home tenant -- so forcing the environment's tenant onto it would
+// break a deployment that works today.
+func tenantEnvName(resolved *projectctx.Resolved) string {
+	if resolved == nil || resolved.Source != projectctx.SourceAzdEnv {
+		return ""
+	}
+	return resolved.AzdEnvName
 }
 
 // resolveAzdTenantID returns the tenant that grants access to the azd

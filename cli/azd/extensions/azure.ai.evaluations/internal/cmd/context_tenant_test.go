@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"azureaieval/internal/foundry/projectctx"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -140,4 +142,31 @@ func TestNewAzdTokenCredentialPassesTheTenantToAzd(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Only an endpoint taken from the azd environment is known to belong to that
+// environment's subscription. One from --project-endpoint, global config or
+// the host environment can sit in another tenant (often the home tenant), so
+// those keep azd's default rather than being forced onto the environment's.
+func TestTenantEnvNameOnlyForEnvironmentSourcedEndpoints(t *testing.T) {
+	cases := []struct {
+		source projectctx.EndpointSource
+		want   string
+	}{
+		{projectctx.SourceAzdEnv, "dev"},
+		{projectctx.SourceFlag, ""},
+		{projectctx.SourceGlobalConfig, ""},
+		{projectctx.SourceFoundryEnv, ""},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.source), func(t *testing.T) {
+			resolved := &projectctx.Resolved{
+				Endpoint:   "https://example.services.ai.azure.com/api/projects/p",
+				Source:     tc.source,
+				AzdEnvName: "dev",
+			}
+			assert.Equal(t, tc.want, tenantEnvName(resolved))
+		})
+	}
+	assert.Empty(t, tenantEnvName(nil))
 }

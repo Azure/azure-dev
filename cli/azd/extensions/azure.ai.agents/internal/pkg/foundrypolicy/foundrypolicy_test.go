@@ -1590,3 +1590,64 @@ func TestResourceGraphJSONAndDataEnvelopeValidation(t *testing.T) {
 		assert.Empty(t, logs2)
 	})
 }
+
+func TestVerifyPolicyAssignmentsReadAccess(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name           string
+		statusCode     int
+		wantErrContain string
+	}{
+		{name: "200 OK succeeds", statusCode: http.StatusOK},
+		{
+			name:           "401 Unauthorized returns permission error",
+			statusCode:     http.StatusUnauthorized,
+			wantErrContain: "Microsoft.Authorization/policyAssignments/read",
+		},
+		{
+			name:           "403 Forbidden returns permission error",
+			statusCode:     http.StatusForbidden,
+			wantErrContain: "Microsoft.Authorization/policyAssignments/read",
+		},
+		{
+			name:           "400 Bad Request returns HTTP status error",
+			statusCode:     http.StatusBadRequest,
+			wantErrContain: "HTTP 400",
+		},
+		{
+			name:           "404 Not Found returns HTTP status error",
+			statusCode:     http.StatusNotFound,
+			wantErrContain: "HTTP 404",
+		},
+		{
+			name:           "429 Too Many Requests returns HTTP status error",
+			statusCode:     http.StatusTooManyRequests,
+			wantErrContain: "HTTP 429",
+		},
+		{
+			name:           "500 Internal Server Error returns HTTP status error",
+			statusCode:     http.StatusInternalServerError,
+			wantErrContain: "HTTP 500",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			pipeline := newTestPipeline(func(req *http.Request) (*http.Response, error) {
+				assert.Equal(t, http.MethodGet, req.Method)
+				assert.Contains(t, req.URL.Path, "/providers/Microsoft.Authorization/policyAssignments")
+				return &http.Response{
+					StatusCode: tc.statusCode,
+					Body:       io.NopCloser(strings.NewReader(`{}`)),
+					Request:    req,
+				}, nil
+			})
+			err := VerifyPolicyAssignmentsReadAccess(t.Context(), pipeline, "https://management.azure.com", testProjectID)
+			if tc.wantErrContain == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.wantErrContain)
+			}
+		})
+	}
+}

@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore noncompliant agentkind
+
 package project
 
 import (
@@ -11,7 +13,9 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net/http"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,6 +29,7 @@ import (
 	"azureaiagent/internal/pkg/foundrypolicy"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -204,7 +209,21 @@ func loadProjectPolicyInventory(
 		foundrypolicy.DefaultCache,
 		projectID,
 		func(fetchCtx context.Context) (foundrypolicy.Inventory, error) {
-			return foundrypolicy.LoadInventory(fetchCtx, projectID, parsed.SubscriptionID, queryFn)
+			inv, err := foundrypolicy.LoadInventory(fetchCtx, projectID, parsed.SubscriptionID, queryFn)
+			if err != nil {
+				return foundrypolicy.Inventory{}, err
+			}
+			if len(inv.Assignments) == 0 {
+				if accessErr := foundrypolicy.VerifyPolicyAssignmentsReadAccess(
+					fetchCtx,
+					pipeline,
+					"",
+					projectID,
+				); accessErr != nil {
+					return foundrypolicy.Inventory{}, accessErr
+				}
+			}
+			return inv, nil
 		},
 	)
 }
@@ -796,15 +815,6 @@ func EvaluateCandidateWithCredential(
 		ops = defaultPolicyPreflightOperations()
 	}
 
-	inv, err := ops.loadInventory(ctx, cred, candidate.ProjectResourceID)
-	if err != nil {
-		return foundrypolicy.EvaluationResult{Outcome: foundrypolicy.OutcomeAllowed}, err
-	}
-
-	if cachedRes, hit := ops.evalCache.get(candidate, inv); hit {
-		return cachedRes, nil
-	}
-
 	var modelEval foundrypolicy.DeploymentPolicyEvaluator
 	if ops.evaluateModel != nil && cred != nil {
 		modelEval = funcDeploymentPolicyEvaluator{
@@ -816,6 +826,29 @@ func EvaluateCandidateWithCredential(
 				return ops.evaluateModel(evalCtx, cred, projectID, models)
 			},
 		}
+	}
+
+	inv, err := ops.loadInventory(ctx, cred, candidate.ProjectResourceID)
+	if err != nil {
+		if len(candidate.Models) > 0 && modelEval != nil {
+			res := foundrypolicy.EvaluateCandidate(
+				ctx,
+				foundrypolicy.Inventory{ProjectID: candidate.ProjectResourceID},
+				candidate,
+				modelEval,
+			)
+			if res.Outcome == foundrypolicy.OutcomeBlocked && len(res.Violations) > 0 {
+				return res, nil
+			}
+		}
+		return foundrypolicy.EvaluationResult{
+			Outcome:          foundrypolicy.OutcomeIndeterminate,
+			IncompleteReason: err.Error(),
+		}, err
+	}
+
+	if cachedRes, hit := ops.evalCache.get(candidate, inv); hit {
+		return cachedRes, nil
 	}
 
 	res := foundrypolicy.EvaluateCandidate(ctx, inv, candidate, modelEval)
@@ -867,8 +900,11 @@ func PolicyViolationsToError(serviceName string, violations []foundrypolicy.Viol
 		if !slices.Contains(messages, msg) {
 			messages = append(messages, msg)
 		}
-		if url := strings.TrimSpace(v.PortalURL); url != "" && !slices.Contains(links, url) {
-			links = append(links, fmt.Sprintf("  View policy (%s): %s", v.DisplayName, url))
+		if url := strings.TrimSpace(v.PortalURL); url != "" {
+			linkLine := fmt.Sprintf("  View policy (%s): %s", v.DisplayName, url)
+			if !slices.Contains(links, linkLine) {
+				links = append(links, linkLine)
+			}
 		}
 	}
 
@@ -885,6 +921,137 @@ func PolicyViolationsToError(serviceName string, violations []foundrypolicy.Viol
 	}
 
 	return exterrors.Validation(code, fullMessage, suggestion)
+}
+
+var runtimePolicyAssignmentRegex = regexp.MustCompile(`(?i)noncompliant with policy (/[^\s:]+):`)
+
+// TryClassifyRuntimePolicyError inspects a runtime Azure SDK error from Foundry agent
+// creation/update and converts confirmed HTTP 403 Azure Policy denials into a structured
+// exterrors.Validation error with Foundry Govern portal links.
+func TryClassifyRuntimePolicyError(
+	err error,
+	serviceName string,
+	projectResourceID string,
+) (error, bool) {
+	respErr, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok || respErr == nil || respErr.StatusCode != http.StatusForbidden {
+		return nil, false
+	}
+
+	type runtimePolicyErrorEnvelope struct {
+		Error *struct {
+			Code           string `json:"code"`
+			Message        string `json:"message"`
+			AdditionalInfo *struct {
+				PolicyAssignmentID string `json:"policy_assignment_id"`
+				PolicyDefinitionID string `json:"policy_definition_id"`
+				Effect             string `json:"effect"`
+			} `json:"additionalInfo"`
+		} `json:"error"`
+	}
+
+	var parsed runtimePolicyErrorEnvelope
+	if respErr.RawResponse != nil && respErr.RawResponse.Body != nil {
+		if body, readErr := runtime.Payload(respErr.RawResponse); readErr == nil && len(body) > 0 {
+			_ = json.Unmarshal(body, &parsed)
+		}
+	}
+
+	code := strings.TrimSpace(respErr.ErrorCode)
+	message := strings.TrimSpace(respErr.Error())
+	var policyAssignmentID, policyDefinitionID string
+	if parsed.Error != nil {
+		if strings.TrimSpace(parsed.Error.Code) != "" {
+			code = strings.TrimSpace(parsed.Error.Code)
+		}
+		if strings.TrimSpace(parsed.Error.Message) != "" {
+			message = strings.TrimSpace(parsed.Error.Message)
+		}
+		if parsed.Error.AdditionalInfo != nil {
+			policyAssignmentID = strings.TrimSpace(parsed.Error.AdditionalInfo.PolicyAssignmentID)
+			policyDefinitionID = strings.TrimSpace(parsed.Error.AdditionalInfo.PolicyDefinitionID)
+		}
+	}
+
+	msgLower := strings.ToLower(message)
+	isPolicyDenied := strings.EqualFold(code, "agent_policy_denied") ||
+		strings.EqualFold(respErr.ErrorCode, "agent_policy_denied") ||
+		((strings.EqualFold(code, "forbidden") || strings.EqualFold(respErr.ErrorCode, "forbidden")) &&
+			strings.Contains(msgLower, "noncompliant with policy ") &&
+			strings.Contains(msgLower, "microsoft.cognitiveservices.data/accounts/"))
+	if !isPolicyDenied {
+		return nil, false
+	}
+
+	var assignmentIDs []string
+	if policyAssignmentID != "" {
+		assignmentIDs = []string{policyAssignmentID}
+	} else {
+		for _, m := range runtimePolicyAssignmentRegex.FindAllStringSubmatch(message, -1) {
+			if len(m) >= 2 {
+				id := strings.TrimSpace(m[1])
+				if id != "" && !slices.ContainsFunc(assignmentIDs, func(existing string) bool {
+					return strings.EqualFold(existing, id)
+				}) {
+					assignmentIDs = append(assignmentIDs, id)
+				}
+			}
+		}
+	}
+	if len(assignmentIDs) == 0 {
+		if !strings.EqualFold(code, "agent_policy_denied") &&
+			!strings.EqualFold(respErr.ErrorCode, "agent_policy_denied") {
+			return nil, false
+		}
+		assignmentIDs = []string{""}
+	}
+
+	defID := foundrypolicy.NormalizeScope(policyDefinitionID)
+	var target foundrypolicy.TargetKind
+	switch {
+	case defID == foundrypolicy.NormalizeScope(foundrypolicy.DeniedToolsPolicyID) ||
+		defID == foundrypolicy.NormalizeScope(foundrypolicy.AllowedToolsPolicyID) ||
+		strings.Contains(msgLower, "/agents/tools[") ||
+		strings.Contains(msgLower, "/toolboxes/tools["):
+		target = foundrypolicy.TargetTool
+	case defID == foundrypolicy.NormalizeScope(foundrypolicy.DeniedAgentKindsPolicyID) ||
+		defID == foundrypolicy.NormalizeScope(foundrypolicy.AllowedAgentKindsPolicyID) ||
+		strings.Contains(msgLower, "/agents/agentkind"):
+		target = foundrypolicy.TargetAgentKind
+	case defID == foundrypolicy.NormalizeScope(foundrypolicy.DeniedContainerImagesPolicyID) ||
+		defID == foundrypolicy.NormalizeScope(foundrypolicy.AllowedContainerImagesPolicyID) ||
+		strings.Contains(msgLower, "/agents/image"):
+		target = foundrypolicy.TargetContainerImage
+	case defID == foundrypolicy.NormalizeScope(foundrypolicy.AllowedModelsPolicyID):
+		target = foundrypolicy.TargetModel
+	default:
+		target = foundrypolicy.TargetKind("")
+	}
+
+	displayMsg := message
+	if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
+		displayMsg, _, _ = strings.Cut(strings.TrimSpace(parsed.Error.Message), "\n")
+	}
+
+	violations := make([]foundrypolicy.Violation, 0, len(assignmentIDs))
+	for _, id := range assignmentIDs {
+		displayName := "Azure Policy assignment"
+		if trimmed := strings.TrimRight(strings.TrimSpace(id), "/"); trimmed != "" {
+			parts := strings.Split(trimmed, "/")
+			if last := parts[len(parts)-1]; last != "" {
+				displayName = last
+			}
+		}
+		violations = append(violations, foundrypolicy.Violation{
+			Target:       target,
+			AssignmentID: foundrypolicy.NormalizeScope(id),
+			DisplayName:  displayName,
+			PortalURL:    foundrypolicy.BuildPolicyAssignmentPortalURL(projectResourceID, id),
+			Message:      displayMsg,
+		})
+	}
+
+	return PolicyViolationsToError(serviceName, violations), true
 }
 
 func selectPolicyErrorCode(violations []foundrypolicy.Violation) string {
@@ -997,25 +1164,87 @@ func QueryProjectPolicy(
 		return nil, fmt.Errorf("read project config: %w", err)
 	}
 
-	serviceNames := slices.Sorted(maps.Keys(projResp.Project.Services))
+	return queryProjectPolicyServices(
+		ctx,
+		cred,
+		info,
+		projResp.Project.GetServices(),
+		projResp.Project.GetPath(),
+		azdEnv,
+		defaultPolicyPreflightOperations(),
+	)
+}
+
+func queryProjectPolicyServices(
+	ctx context.Context,
+	cred azcore.TokenCredential,
+	info *agentIdentityInfo,
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+	azdEnv map[string]string,
+	ops policyPreflightOperations,
+) (*ProjectPolicyResult, error) {
+	if ops.loadInventory == nil {
+		ops = defaultPolicyPreflightOperations()
+	}
+
+	serviceNames := slices.Sorted(maps.Keys(services))
 	var findings []ServicePolicyFinding
-	ops := defaultPolicyPreflightOperations()
+	var firstEvalErr error
+	hasBlockedService := false
+
+	var (
+		invOnce sync.Once
+		inv     foundrypolicy.Inventory
+		invErr  error
+	)
+	svcOps := ops
+	svcOps.loadInventory = func(
+		loadCtx context.Context,
+		loadCred azcore.TokenCredential,
+		projectID string,
+	) (foundrypolicy.Inventory, error) {
+		invOnce.Do(func() {
+			inv, invErr = ops.loadInventory(loadCtx, loadCred, projectID)
+		})
+		return inv, invErr
+	}
 
 	for _, name := range serviceNames {
-		svc := projResp.Project.Services[name]
+		svc := services[name]
 		if svc == nil || svc.GetHost() != "azure.ai.agent" {
 			continue
 		}
 		candidate := ExtractServicePolicyCandidateWithServices(
 			svc,
-			projResp.Project.GetServices(),
-			projResp.Project.GetPath(),
+			services,
+			projectRoot,
 			azdEnv,
 		)
 		candidate.ProjectResourceID = info.ProjectScope
-		evalRes, evalErr := EvaluateCandidateWithCredential(ctx, cred, candidate, ops)
+		evalRes, evalErr := EvaluateCandidateWithCredential(ctx, cred, candidate, svcOps)
+		if evalRes.Outcome == foundrypolicy.OutcomeBlocked && len(evalRes.Violations) > 0 {
+			hasBlockedService = true
+			findings = append(findings, ServicePolicyFinding{
+				ServiceName:      name,
+				AgentKind:        candidate.AgentKind,
+				Outcome:          foundrypolicy.OutcomeBlocked,
+				Violations:       evalRes.Violations,
+				IncompleteReason: evalRes.IncompleteReason,
+			})
+			continue
+		}
 		if evalErr != nil {
-			return nil, fmt.Errorf("evaluate policy for service %q: %w", name, evalErr)
+			if firstEvalErr == nil {
+				firstEvalErr = fmt.Errorf("evaluate policy for service %q: %w", name, evalErr)
+			}
+			findings = append(findings, ServicePolicyFinding{
+				ServiceName:      name,
+				AgentKind:        candidate.AgentKind,
+				Outcome:          foundrypolicy.OutcomeIndeterminate,
+				IncompleteReason: evalErr.Error(),
+			})
+			continue
 		}
 		findings = append(findings, ServicePolicyFinding{
 			ServiceName:      name,
@@ -1024,6 +1253,10 @@ func QueryProjectPolicy(
 			Violations:       evalRes.Violations,
 			IncompleteReason: evalRes.IncompleteReason,
 		})
+	}
+
+	if firstEvalErr != nil && !hasBlockedService {
+		return nil, firstEvalErr
 	}
 
 	slices.SortFunc(findings, func(a, b ServicePolicyFinding) int {

@@ -4,20 +4,174 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/recordproxy"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func newVersionedSessionTestProject(t *testing.T) (string, *testEnvironmentServiceServer) {
+	t.Helper()
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", endpoint)
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"target": {Name: "target", Host: AiAgentHost, AdditionalProperties: mustStruct(t, map[string]any{
+				"kind": "hosted", "name": "agent",
+			})},
+		},
+	}}
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values: map[string]map[string]string{"test": {
+			"AGENT_TARGET_NAME": "agent", "AGENT_TARGET_PROJECT_ENDPOINT": endpoint, "AGENT_TARGET_VERSION": "2",
+			"AGENT_TARGET_ENDPOINT":                   endpoint + "/agents/agent/versions/2",
+			"AGENT_TARGET_RESPONSES_ENDPOINT":         endpoint + "/agents/agent/endpoint/protocols/openai/responses",
+			"AGENT_TARGET_PROTOCOL_ENDPOINTS_VERSION": "1",
+		}},
+	}
+	t.Setenv("AZD_SERVER", newInvokeRemoteContextTestAzdServer(t, projectServer, envServer))
+	return endpoint, envServer
+}
+
+func TestSessionCreateThenInvokeUsesRequestedVersion(t *testing.T) {
+	endpoint, _ := newVersionedSessionTestProject(t)
+	oldKey := buildAgentKey(endpoint, "agent", "2", false)
+	key := buildAgentKey(endpoint, "agent", "7", false)
+	saveAgentStateForTest(t, nil, oldKey, agentStateRecord{SessionID: "cached-v2"})
+	previous := recordproxy.Transport
+	t.Cleanup(func() { recordproxy.Transport = previous })
+	var creates int
+	recordproxy.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		creates++
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/projects/project/agents/agent/endpoint/sessions", r.URL.Path)
+		var request agent_api.CreateAgentSessionRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+		require.NotNil(t, request.VersionIndicator)
+		require.Equal(t, "7", request.VersionIndicator.AgentVersion)
+		return &http.Response{
+			StatusCode: http.StatusOK, Request: r, Header: http.Header{"Content-Type": {"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"agent_session_id":"created-v7","version_indicator":{"type":"version_ref","agent_version":"7"}}`,
+			)),
+		}, nil
+	})
+	action := &SessionCreateAction{
+		flags:      &sessionCreateFlags{sessionFlags: sessionFlags{agentName: "target", noPrompt: true}, version: "7"},
+		credential: responseTestCredential{},
+	}
+	_, err := captureStdout(t, func() error { return action.Run(t.Context()) })
+	require.NoError(t, err)
+	require.Equal(t, 1, creates)
+	previousCreate := createInvokeVersionSession
+	t.Cleanup(func() { createInvokeVersionSession = previousCreate })
+	var unexpectedCreates int
+	createInvokeVersionSession = func(context.Context, string, string, string, string) (*agent_api.AgentSessionResource, error) {
+		unexpectedCreates++
+		return &agent_api.AgentSessionResource{AgentSessionID: "unnecessary-v7"}, nil
+	}
+	invoke := &InvokeAction{flags: &invokeFlags{name: "target", version: "7", protocol: "invocations"}, noPrompt: true}
+	rc, err := invoke.resolveRemoteContextForInvoke(t.Context())
+	require.NoError(t, err)
+	defer rc.azdClient.Close()
+	id, err := invoke.resolveRemoteSessionID(t.Context(), rc)
+	require.NoError(t, err)
+	assert.Equal(t, "created-v7", id)
+	assert.Zero(t, unexpectedCreates)
+	assert.Equal(t, "cached-v2", loadAgentStateForTest(t, rc.azdClient, oldKey).SessionID)
+	assert.Equal(t, "created-v7", loadAgentStateForTest(t, rc.azdClient, key).SessionID)
+}
+
+func TestSessionDeleteClearsRequestedVersionBeforeInvoke(t *testing.T) {
+	for _, status := range []int{http.StatusNoContent, http.StatusNotFound, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			endpoint, _ := newVersionedSessionTestProject(t)
+			oldKey := buildAgentKey(endpoint, "agent", "2", false)
+			key := buildAgentKey(endpoint, "agent", "7", false)
+			otherKey := buildAgentKey(endpoint, "other-agent", "7", false)
+			otherProjectKey := buildAgentKey(strings.Replace(endpoint, "/project", "/other-project", 1), "agent", "7", false)
+			saveAgentStateForTest(t, nil, oldKey, agentStateRecord{SessionID: "cached-v2"})
+			saveAgentStateForTest(t, nil, key, agentStateRecord{
+				SessionID: "cached-v7", ConversationID: "conv-v7", Response: &savedResponse{ResponseID: "resp-v7"},
+			})
+			for _, other := range []string{otherKey, otherProjectKey} {
+				saveAgentStateForTest(t, nil, other, agentStateRecord{SessionID: "cached-v7"})
+			}
+			previous := recordproxy.Transport
+			t.Cleanup(func() { recordproxy.Transport = previous })
+			var deletes int
+			recordproxy.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				deletes++
+				require.Equal(t, http.MethodDelete, r.Method)
+				require.Equal(t, "/api/projects/project/agents/agent/endpoint/sessions/cached-v7", r.URL.Path)
+				return &http.Response{
+					StatusCode: status, Request: r,
+					Header: http.Header{"Content-Type": {"application/json"}},
+					Body:   io.NopCloser(strings.NewReader(`{"error":{"code":"session_not_found","message":"test"}}`)),
+				}, nil
+			})
+			action := &SessionDeleteAction{
+				flags:     &sessionDeleteFlags{sessionFlags: sessionFlags{agentName: "target", noPrompt: true}},
+				sessionID: "cached-v7", credential: responseTestCredential{},
+			}
+			_, err := captureStdout(t, func() error { return action.Run(t.Context()) })
+			if status == http.StatusNoContent {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			require.Equal(t, 1, deletes)
+			previousCreate := createInvokeVersionSession
+			t.Cleanup(func() { createInvokeVersionSession = previousCreate })
+			var creates int
+			createInvokeVersionSession = func(
+				context.Context, string, string, string, string,
+			) (*agent_api.AgentSessionResource, error) {
+				creates++
+				return &agent_api.AgentSessionResource{AgentSessionID: "replacement-v7"}, nil
+			}
+			invoke := &InvokeAction{flags: &invokeFlags{name: "target", version: "7", protocol: "invocations"}, noPrompt: true}
+			rc, err := invoke.resolveRemoteContextForInvoke(t.Context())
+			require.NoError(t, err)
+			defer rc.azdClient.Close()
+			id, err := invoke.resolveRemoteSessionID(t.Context(), rc)
+			require.NoError(t, err)
+			if status == http.StatusForbidden {
+				assert.Equal(t, "cached-v7", id)
+				assert.Zero(t, creates)
+			} else {
+				assert.Equal(t, "replacement-v7", id)
+				assert.Equal(t, 1, creates)
+			}
+			state := loadAgentStateForTest(t, rc.azdClient, key)
+			require.NotNil(t, state)
+			assert.Equal(t, "conv-v7", state.ConversationID)
+			require.NotNil(t, state.Response)
+			assert.Equal(t, "resp-v7", state.Response.ResponseID)
+			assert.Equal(t, "cached-v2", loadAgentStateForTest(t, rc.azdClient, oldKey).SessionID)
+			for _, other := range []string{otherKey, otherProjectKey} {
+				assert.Equal(t, "cached-v7", loadAgentStateForTest(t, rc.azdClient, other).SessionID)
+			}
+		})
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Command structure tests

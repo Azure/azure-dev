@@ -29,6 +29,12 @@ type legacyAgentState struct {
 	StateStores   map[string]string          `json:"stateStores"`
 }
 
+type legacyProjectState struct {
+	Sessions      map[string]string `json:"sessions"`
+	Conversations map[string]string `json:"conversations"`
+	Invocations   map[string]string `json:"invocations"`
+}
+
 func (s *agentStateStore) legacyMarkerPath(agentKey string) string {
 	return filepath.Join(s.locksDir, agentStateKeyHash(agentKey)+".migrated")
 }
@@ -107,51 +113,97 @@ func (s *agentStateStore) loadOrMigrate(
 }
 
 func (s *agentStateStore) readLegacyProjectState(ctx context.Context, record *agentStateRecord) error {
+	legacy, err := s.loadLegacyProjectState(ctx)
+	if err != nil {
+		return err
+	}
+	if legacy != nil {
+		state := legacyAgentState{Sessions: legacy.Sessions, Conversations: legacy.Conversations}
+		state.apply(record)
+		if record.Invocation == nil {
+			if id, found := legacyAgentValue(legacy.Invocations, record.AgentKey); found && id != "" {
+				record.Invocation = &savedInvocation{InvocationID: id}
+			}
+		}
+	}
+	return nil
+}
+
+func (s *agentStateStore) loadLegacyProjectState(ctx context.Context) (*legacyProjectState, error) {
 	project, err := s.client.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		if isMissingAzdProjectError(err) || status.Code(err) == codes.Unimplemented {
-			return nil
+			return nil, nil
 		}
-		return fmt.Errorf("locate legacy agent project: %w", err)
+		return nil, fmt.Errorf("locate legacy agent project: %w", err)
 	}
 	if project.GetProject() == nil || project.Project.Path == "" {
-		return nil
+		return nil, nil
 	}
 	env, err := s.client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		if isDefaultEnvironmentMissing(err) {
-			return nil
+			return nil, nil
 		}
-		return fmt.Errorf("locate legacy agent environment: %w", err)
+		return nil, fmt.Errorf("locate legacy agent environment: %w", err)
 	}
 	if env.GetEnvironment() == nil || env.Environment.Name == "" {
-		return nil
+		return nil, nil
 	}
 	path := filepath.Join(project.Project.Path, ".azure", env.Environment.Name, ".foundry-agent.json")
 	data, err := os.ReadFile(path) //nolint:gosec // path comes from the host's project and environment.
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
-		return fmt.Errorf("read legacy project state: %w", err)
+		return nil, fmt.Errorf("read legacy project state: %w", err)
 	}
-	var legacy struct {
-		Sessions      map[string]string `json:"sessions"`
-		Conversations map[string]string `json:"conversations"`
-		Invocations   map[string]string `json:"invocations"`
-	}
+	var legacy legacyProjectState
 	if err := json.Unmarshal(data, &legacy); err != nil {
 		log.Printf("legacy agent state: ignoring invalid project state %q: %v", path, err)
-		return nil
+		return nil, nil
 	}
-	legacyState := legacyAgentState{Sessions: legacy.Sessions, Conversations: legacy.Conversations}
-	legacyState.apply(record)
-	if record.Invocation == nil {
-		if id, found := legacyAgentValue(legacy.Invocations, record.AgentKey); found && id != "" {
-			record.Invocation = &savedInvocation{InvocationID: id}
+	return &legacy, nil
+}
+
+// legacySessionKeys includes not-yet-migrated caches so deletion cannot revive a session later.
+func (s *agentStateStore) legacySessionKeys(ctx context.Context, prefix, sessionID string) ([]string, error) {
+	if s.client == nil {
+		return nil, nil
+	}
+	helper, err := azdext.NewConfigHelper(s.client)
+	if err != nil {
+		return nil, err
+	}
+	var legacy legacyAgentState
+	if _, err := helper.GetUserJSON(ctx, "extensions.ai-agents", &legacy); err != nil &&
+		status.Code(err) != codes.Unimplemented {
+		return nil, fmt.Errorf("read legacy agent sessions: %w", err)
+	}
+	project, err := s.loadLegacyProjectState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sessions := []map[string]string{legacy.Sessions}
+	if project != nil {
+		sessions = append(sessions, project.Sessions)
+	}
+	_, name, _ := strings.Cut(strings.TrimSuffix(prefix, "/versions/"), "/agents/")
+	var keys []string
+	for _, state := range sessions {
+		for key, id := range state {
+			if id != sessionID {
+				continue
+			}
+			key = normalizeEndpoint(key)
+			if key == name {
+				keys = append(keys, prefix+"latest/remote")
+			} else if strings.HasPrefix(key, prefix) && strings.HasSuffix(key, "/remote") {
+				keys = append(keys, key)
+			}
 		}
 	}
-	return nil
+	return keys, nil
 }
 
 func (legacy legacyAgentState) apply(record *agentStateRecord) {

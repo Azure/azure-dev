@@ -1466,15 +1466,16 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 // In ephemeral mode (--agent-endpoint) the project endpoint / agent name /
 // api-version come from the parsed URL.
 //
-// agentKey is the persistence key used by the extension-owned state store. It is
-// non-empty whenever session/conversation IDs should be saved or resumed:
+// agentKey is the version-scoped session/conversation persistence key. It is
+// non-empty whenever IDs should be saved or resumed:
 //   - project mode: derived from AGENT_{SVC}_ENDPOINT
 //   - ephemeral mode: derived from the parsed --agent-endpoint URL
 //     (independent of api-version / trailing slash / fragment)
 //
 // In standalone mode (no parent azd daemon, e.g. running the extension binary
 // directly outside an azd command) azdClient is nil and persistence helpers
-// no-op. agentKey may still be non-empty in that case.
+// no-op. agentKey may still be non-empty in that case. Current work is saved under
+// buildInvocationStateKey(agentKey), independently of the session version.
 type remoteContext struct {
 	name                               string
 	serviceName                        string
@@ -1952,7 +1953,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	tracker := &responseIdentityTracker{
 		store:    responseStore,
-		agentKey: agentKey,
+		agentKey: buildInvocationStateKey(agentKey),
 		writer:   os.Stdout,
 	}
 	streamErr := readResponsesSSE(
@@ -1976,8 +1977,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			},
 		},
 	)
-	useCurrent := errors.Is(streamErr, errBackgroundNoWait) && responseStore != nil && tracker.saveErr == nil
-	followCommand := a.responseLifecycleCommand(rc, tracker.responseID, invocationFollow, useCurrent)
+	followCommand := a.responseLifecycleCommand(rc, tracker.responseID, invocationFollow)
 	if a.flags.noWait && tracker.responseID != "" {
 		if errors.Is(streamErr, errBackgroundNoWait) {
 			streamErr = nil
@@ -2223,7 +2223,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	if resp.StatusCode < http.StatusBadRequest && invocationID != "" && rc.azdClient != nil && agentKey != "" {
 		if err := newInvocationStateStore(rc.azdClient).Save(
 			ctx,
-			agentKey,
+			buildInvocationStateKey(agentKey),
 			savedInvocation{InvocationID: invocationID},
 		); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: Invocation %s was accepted, but its ID was not saved: %v\n", invocationID, err)

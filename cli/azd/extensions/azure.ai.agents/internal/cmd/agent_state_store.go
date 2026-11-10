@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +45,7 @@ func (r *agentStateRecord) empty() bool {
 		r.ConversationID == "" &&
 		r.Response == nil &&
 		r.Invocation == nil &&
+		r.CurrentInvocationProtocol == "" &&
 		r.StateStore == ""
 }
 
@@ -235,6 +237,62 @@ func (s *agentStateStore) delete(ctx context.Context, agentKey string) error {
 	return s.withLock(ctx, agentKey, func(path string) error {
 		return s.remove(path, agentKey)
 	})
+}
+
+// clearSession clears matching sessions across the target's cached versions.
+func (s *agentStateStore) clearSession(ctx context.Context, agentKey, sessionID string) error {
+	agentKey = normalizeEndpoint(agentKey)
+	versionIndex := strings.LastIndex(agentKey, "/versions/")
+	if versionIndex < 0 || !strings.HasSuffix(agentKey, "/remote") {
+		return errors.New("session cleanup requires a remote agent key")
+	}
+	prefix := agentKey[:versionIndex] + "/versions/"
+	keys, err := s.legacySessionKeys(ctx, prefix, sessionID)
+	var failures []error
+	if err != nil {
+		failures = append(failures, err)
+	}
+	selected := map[string]bool{agentKey: true}
+	for _, key := range keys {
+		selected[key] = true
+	}
+	entries, err := os.ReadDir(s.agentsDir)
+	if err != nil {
+		return errors.Join(append(failures, fmt.Errorf("list cached agent sessions: %w", err))...)
+	}
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		path := filepath.Join(s.agentsDir, entry.Name())
+		data, err := os.ReadFile(path) //nolint:gosec // path is an entry in the extension-owned state directory.
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			failures = append(failures, fmt.Errorf("read cached agent session: %w", err))
+			continue
+		}
+		var record agentStateRecord
+		if err := json.Unmarshal(data, &record); err != nil {
+			failures = append(failures, fmt.Errorf("parse cached agent session: %w", err))
+			continue
+		}
+		if record.SessionID == sessionID && strings.HasPrefix(record.AgentKey, prefix) &&
+			strings.HasSuffix(record.AgentKey, "/remote") && s.statePath(record.AgentKey) == path {
+			selected[record.AgentKey] = true
+		}
+	}
+	for key := range selected {
+		if err := s.mutate(ctx, key, func(record *agentStateRecord) {
+			if record.SessionID == sessionID {
+				record.SessionID = ""
+			}
+		}); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 func (s *agentStateStore) remove(path, agentKey string) error {

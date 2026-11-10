@@ -85,14 +85,11 @@ func buildResponsesRequestBody(message, sessionID, conversationID string, backgr
 	return body
 }
 
-// responseLifecycleCommand formats guidance for current or explicitly targeted work.
+// responseLifecycleCommand formats guidance targeting the accepted Response.
 func (a *InvokeAction) responseLifecycleCommand(
-	rc *remoteContext, id string, operation invocationOperation, useCurrent bool,
+	rc *remoteContext, id string, operation invocationOperation,
 ) string {
-	command := "azd ai agent invocations " + string(operation)
-	if !useCurrent || a.endpoint != nil {
-		command += fmt.Sprintf(" --id %q", id)
-	}
+	command := fmt.Sprintf("azd ai agent invocations %s --id %q", operation, id)
 	if a.endpoint != nil {
 		endpoint := buildResponsesURL(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, a.endpoint.APIVersion)
 		return command + fmt.Sprintf(" --agent-endpoint %q", endpoint)
@@ -123,7 +120,7 @@ func (a *InvokeAction) runResponseOperation(
 	case invocationFollow:
 		return classifyResponseLifecycleError(
 			a.followResponse(ctx, rc, id, writer), exterrors.OpFollowResponse, "following Response",
-			a.responseLifecycleCommand(rc, id, invocationShow, false),
+			a.responseLifecycleCommand(rc, id, invocationShow),
 		)
 	case invocationCancel:
 		return classifyResponseLifecycleError(
@@ -416,7 +413,7 @@ func (a *InvokeAction) followResponse(
 			return fmt.Errorf(
 				"%w; rerun `%s` to replay and follow again",
 				err,
-				a.responseLifecycleCommand(rc, responseID, invocationFollow, false),
+				a.responseLifecycleCommand(rc, responseID, invocationFollow),
 			)
 		}
 		return err

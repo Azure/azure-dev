@@ -182,8 +182,9 @@ func resolveInvocationCommand(
 		invokeFlags.protocol = string(parsed.Protocol)
 	}
 	protocol := agent_api.AgentProtocol(invokeFlags.protocol)
+	inferProtocol := protocol == ""
 	var currentID string
-	if protocol == "" {
+	if inferProtocol {
 		rc, err := action.resolveRemoteContextForInvoke(ctx)
 		if err != nil {
 			return nil, nil, "", err
@@ -207,14 +208,16 @@ func resolveInvocationCommand(
 		return nil, nil, "", err
 	}
 	id := currentID
-	if flags.id != "" || id == "" {
+	if flags.id != "" || !inferProtocol {
 		id, err = resolveCurrentInvocationID(ctx, rc, protocol, flags.id)
-		if err != nil {
-			if rc.azdClient != nil {
-				rc.azdClient.Close()
-			}
-			return nil, nil, "", err
+	} else if id == "" {
+		err = noCurrentInvocationError(protocol)
+	}
+	if err != nil {
+		if rc.azdClient != nil {
+			rc.azdClient.Close()
 		}
+		return nil, nil, "", err
 	}
 	return action, rc, id, nil
 }
@@ -225,11 +228,7 @@ func (a *InvokeAction) resolveSavedInvocation(
 	rc *remoteContext,
 ) (agent_api.AgentProtocol, string, error) {
 	if rc.azdClient != nil && rc.agentKey != "" {
-		store, err := newAgentStateStoreForClient(rc.azdClient)
-		if err != nil {
-			return "", "", classifyInvocationStateReadError(err)
-		}
-		record, err := store.get(ctx, rc.agentKey)
+		record, err := readSavedInvocationState(ctx, rc, "")
 		if err != nil {
 			return "", "", classifyInvocationStateReadError(err)
 		}
@@ -264,6 +263,47 @@ func (a *InvokeAction) resolveSavedInvocation(
 	return protocol, "", err
 }
 
+// readSavedInvocationState prefers target-level work, retaining older version-keyed selections.
+func readSavedInvocationState(
+	ctx context.Context,
+	rc *remoteContext,
+	protocol agent_api.AgentProtocol,
+) (*agentStateRecord, error) {
+	store, err := newAgentStateStoreForClient(rc.azdClient)
+	if err != nil {
+		return nil, err
+	}
+	currentKey := buildInvocationStateKey(rc.agentKey)
+	keys := []string{currentKey}
+	if currentKey != rc.agentKey {
+		keys = append(keys, rc.agentKey)
+	}
+	for _, key := range keys {
+		record, err := store.get(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		if record == nil {
+			continue
+		}
+		switch protocol {
+		case agent_api.AgentProtocolResponses:
+			if record.Response != nil || record.CurrentInvocationProtocol == protocol {
+				return record, nil
+			}
+		case agent_api.AgentProtocolInvocations:
+			if record.Invocation != nil || record.CurrentInvocationProtocol == protocol {
+				return record, nil
+			}
+		default:
+			if record.CurrentInvocationProtocol != "" || record.Response != nil || record.Invocation != nil {
+				return record, nil
+			}
+		}
+	}
+	return nil, nil
+}
+
 // resolveCurrentInvocationID uses an explicit ID or the selected protocol's saved ID.
 func resolveCurrentInvocationID(
 	ctx context.Context,
@@ -278,31 +318,36 @@ func resolveCurrentInvocationID(
 		return "", exterrors.Validation(exterrors.CodeInvalidParameter,
 			"current invocation state is unavailable", "provide --id or run through azd after invoking the agent")
 	}
-	var id string
-	switch protocol {
-	case agent_api.AgentProtocolResponses:
-		record, err := newResponseStateStore(rc.azdClient).Get(ctx, rc.agentKey)
-		if err != nil {
+	record, err := readSavedInvocationState(ctx, rc, protocol)
+	if err != nil {
+		if protocol == agent_api.AgentProtocolResponses {
 			return "", classifyResponseStateReadError(err)
 		}
-		if record != nil {
-			id = record.ResponseID
-		}
-	case agent_api.AgentProtocolInvocations:
-		record, err := newInvocationStateStore(rc.azdClient).Get(ctx, rc.agentKey)
-		if err != nil {
-			return "", classifyInvocationStateReadError(err)
-		}
-		if record != nil {
-			id = record.InvocationID
+		return "", classifyInvocationStateReadError(err)
+	}
+	var id string
+	if record != nil {
+		switch protocol {
+		case agent_api.AgentProtocolResponses:
+			if record.Response != nil {
+				id = record.Response.ResponseID
+			}
+		case agent_api.AgentProtocolInvocations:
+			if record.Invocation != nil {
+				id = record.Invocation.InvocationID
+			}
 		}
 	}
 	if id == "" {
-		return "", exterrors.Validation(exterrors.CodeInvalidParameter,
-			fmt.Sprintf("no current invocation is saved for the selected agent and %s protocol", protocol),
-			"invoke the agent first or provide --id")
+		return "", noCurrentInvocationError(protocol)
 	}
 	return id, nil
+}
+
+func noCurrentInvocationError(protocol agent_api.AgentProtocol) error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("no current invocation is saved for the selected agent and %s protocol", protocol),
+		"invoke the agent first or provide --id")
 }
 
 // runInvocationOperation resolves the target and executes its lifecycle operation.

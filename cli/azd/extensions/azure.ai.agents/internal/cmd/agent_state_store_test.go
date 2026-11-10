@@ -161,7 +161,13 @@ func TestAgentStateStoreDoesNotUseUserConfig(t *testing.T) {
 	}
 	require.NoError(t, responses.Delete(t.Context(), agentKey))
 	require.NoError(t, invocations.Delete(t.Context(), agentKey))
-	assert.Nil(t, loadAgentStateForTest(t, client, agentKey))
+	record := loadAgentStateForTest(t, client, agentKey)
+	require.NotNil(t, record)
+	assert.Empty(t, record.SessionID)
+	assert.Empty(t, record.ConversationID)
+	assert.Empty(t, record.StateStore)
+	assert.Nil(t, record.Response)
+	assert.Nil(t, record.Invocation)
 }
 
 func TestClassifyAgentStateReadError(t *testing.T) {
@@ -470,6 +476,101 @@ func TestResolveStoredIDFromAgentState(t *testing.T) {
 			stored, err := getAgentSpecificContextValue(t.Context(), client, "sessions", agentKey)
 			require.NoError(t, err)
 			assert.Equal(t, wantStored, stored)
+		})
+	}
+}
+
+func TestAgentStateStoreClearSessionPreservesConcurrentReplacement(t *testing.T) {
+	store, err := newAgentStateStoreAt(t.TempDir())
+	require.NoError(t, err)
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	key := buildAgentKey(endpoint, "agent", "7", false)
+	require.NoError(t, store.mutate(t.Context(), key, func(record *agentStateRecord) {
+		record.SessionID = "deleted"
+		record.ConversationID = "conversation"
+	}))
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	var workers sync.WaitGroup
+	t.Cleanup(func() {
+		cancel()
+		workers.Wait()
+	})
+	entered, release := make(chan struct{}), make(chan struct{})
+	saved := make(chan error, 1)
+	workers.Go(func() {
+		saved <- store.mutate(ctx, key, func(record *agentStateRecord) {
+			close(entered)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			record.SessionID = "replacement"
+		})
+	})
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("mutation did not acquire the agent lock")
+	}
+	cleared := make(chan error, 1)
+	workers.Go(func() {
+		cleared <- store.clearSession(ctx, buildAgentKey(endpoint, "agent", "2", false), "deleted")
+	})
+	require.Never(t, func() bool {
+		select {
+		case <-cleared:
+			return true
+		default:
+			return false
+		}
+	}, 100*time.Millisecond, 10*time.Millisecond)
+	close(release)
+	require.NoError(t, <-saved)
+	require.NoError(t, <-cleared)
+	record, err := store.get(t.Context(), key)
+	require.NoError(t, err)
+	require.NotNil(t, record)
+	assert.Equal(t, "replacement", record.SessionID)
+	assert.Equal(t, "conversation", record.ConversationID)
+}
+
+func TestAgentStateStoreClearSessionDoesNotReviveLegacyVersions(t *testing.T) {
+	for _, source := range []string{"user config", "project file"} {
+		t.Run(source, func(t *testing.T) {
+			const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+			key := buildAgentKey(endpoint, "agent", "7", false)
+			oldKey := buildAgentKey(endpoint, "agent", "2", false)
+			otherKey := buildAgentKey(endpoint, "other", "7", false)
+			legacy := legacyProjectState{Sessions: map[string]string{
+				key: "deleted", oldKey: "keep", otherKey: "deleted",
+			}}
+			data, err := json.Marshal(legacy)
+			require.NoError(t, err)
+			projectPath := t.TempDir()
+			config := newInvokeUserConfigServer()
+			if source == "user config" {
+				config.values["extensions.ai-agents"] = data
+			} else {
+				directory := filepath.Join(projectPath, ".azure", "test")
+				require.NoError(t, os.MkdirAll(directory, 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(directory, ".foundry-agent.json"), data, 0o600))
+			}
+			client := newInvokeTestAzdClientWithProject(t, config,
+				&helpersProjectServer{project: &azdext.ProjectConfig{Path: projectPath}},
+				&testEnvironmentServiceServer{current: &azdext.Environment{Name: "test"}})
+			store, err := newAgentStateStoreForClient(client)
+			require.NoError(t, err)
+			require.NoError(t, store.clearSession(t.Context(), oldKey, "deleted"))
+			for range 2 {
+				id, err := getAgentSpecificContextValue(t.Context(), client, "sessions", key)
+				require.NoError(t, err)
+				assert.Empty(t, id)
+			}
+			for _, saved := range []struct{ key, id string }{{oldKey, "keep"}, {otherKey, "deleted"}} {
+				id, err := getAgentSpecificContextValue(t.Context(), client, "sessions", saved.key)
+				require.NoError(t, err)
+				assert.Equal(t, saved.id, id)
+			}
 		})
 	}
 }

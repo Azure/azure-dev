@@ -936,6 +936,11 @@ func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName
 		log.Printf("cleanupAgentState: failed to clean State Store selection for %s: %v", target.agentKey, err)
 		return false
 	}
+	currentKey := buildAgentKey(projectResp.Value, nameResp.Value, "", false)
+	if err := store.delete(ctx, currentKey); err != nil {
+		log.Printf("cleanupAgentState: failed to clean current invocation for %s: %v", currentKey, err)
+		return false
+	}
 	return true
 }
 
@@ -950,6 +955,12 @@ func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, a
 	if err := store.delete(ctx, agentKey); err != nil {
 		log.Printf("cleanupAgentState: failed to clean state for %s: %v", agentKey, err)
 		failed = true
+	}
+	if currentKey := buildInvocationStateKey(agentKey); currentKey != agentKey {
+		if err := store.delete(ctx, currentKey); err != nil {
+			log.Printf("cleanupAgentState: failed to clean current invocation for %s: %v", currentKey, err)
+			failed = true
+		}
 	}
 	// Session keys include the version and /remote suffix. Store selection is
 	// keyed only by project and agent; deleting the versioned key would miss it.

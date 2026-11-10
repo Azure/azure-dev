@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -455,6 +456,144 @@ func TestInvocationsCommandValidation(t *testing.T) {
 			cmd.SetArgs(tt.args)
 			err := cmd.Execute()
 			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
+func TestExplicitVersionInvokePreservesLifecycleSelection(t *testing.T) {
+	for _, protocol := range []string{"responses", "invocations"} {
+		t.Run(protocol, func(t *testing.T) {
+			endpoint, environment := newVersionedSessionTestProject(t)
+			oldKey := buildAgentKey(endpoint, "agent", "2", false)
+			key := buildAgentKey(endpoint, "agent", "7", false)
+			currentKey := buildAgentKey(endpoint, "agent", "", false)
+			saveAgentStateForTest(t, nil, oldKey, agentStateRecord{
+				SessionID: "cached-v2", Response: &savedResponse{ResponseID: "resp_v2"},
+				Invocation: &savedInvocation{InvocationID: "inv_v2"}, CurrentInvocationProtocol: agent_api.AgentProtocol(protocol),
+			})
+			saveAgentStateForTest(t, nil, key, agentStateRecord{SessionID: "cached-v7", ConversationID: "conv_v7"})
+			var sends int
+			transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.Method == http.MethodGet {
+					require.Equal(t, protocol, "invocations")
+					require.Equal(t, "/api/projects/project/agents/agent/endpoint/protocols/invocations/docs/openapi.json",
+						r.URL.Path)
+					return &http.Response{
+						StatusCode: http.StatusOK, Request: r,
+						Header: http.Header{"Content-Type": {"application/json"}},
+						Body:   io.NopCloser(strings.NewReader(`{"openapi":"3.1.0","paths":{}}`)),
+					}, nil
+				}
+				sends++
+				require.Equal(t, http.MethodPost, r.Method)
+				if protocol == "responses" {
+					require.Equal(t, "/api/projects/project/agents/agent/endpoint/protocols/openai/responses", r.URL.Path)
+					var body map[string]any
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+					require.Equal(t, "cached-v7", body["agent_session_id"])
+					return &http.Response{
+						StatusCode: http.StatusOK, Request: r,
+						Header: http.Header{"Content-Type": {"text/event-stream"}},
+						Body: io.NopCloser(strings.NewReader("event: response.created\ndata: " +
+							`{"response":{"id":"resp_v7","status":"queued"}}` + "\n\n")),
+					}, nil
+				}
+				require.Equal(t, "/api/projects/project/agents/agent/endpoint/protocols/invocations", r.URL.Path)
+				require.Equal(t, "cached-v7", r.URL.Query().Get("agent_session_id"))
+				return &http.Response{
+					StatusCode: http.StatusOK, Request: r,
+					Header: http.Header{
+						"Content-Type": {"application/json"}, "X-Agent-Invocation-Id": {"inv_v7"},
+					},
+					Body: io.NopCloser(strings.NewReader(`{"output":"version 7"}`)),
+				}, nil
+			})
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				response, err := transport.RoundTrip(r)
+				require.NoError(t, err)
+				defer response.Body.Close()
+				maps.Copy(w.Header(), response.Header)
+				w.WriteHeader(response.StatusCode)
+				_, err = io.Copy(w, response.Body)
+				require.NoError(t, err)
+			}))
+			t.Cleanup(server.Close)
+			httpTransport, ok := server.Client().Transport.(*http.Transport)
+			require.True(t, ok)
+			httpTransport = httpTransport.Clone()
+			httpTransport.TLSClientConfig.ServerName = "127.0.0.1"
+			httpTransport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+				var dialer net.Dialer
+				return dialer.DialContext(ctx, network, server.Listener.Addr().String())
+			}
+			previous := http.DefaultTransport
+			http.DefaultTransport = httpTransport
+			t.Cleanup(func() {
+				http.DefaultTransport = previous
+				httpTransport.CloseIdleConnections()
+			})
+			action := &InvokeAction{
+				flags: &invokeFlags{
+					name: "target", version: "7", protocol: protocol, message: "hello",
+					longRunning: protocol == "responses", noWait: protocol == "responses",
+				},
+				noPrompt: true, credential: responseTestCredential{}, invocationsTransport: transport,
+			}
+			output, err := captureStdout(t, func() error { return action.Run(t.Context()) })
+			require.NoError(t, err)
+			require.Equal(t, 1, sends)
+			if protocol == "responses" {
+				assert.Contains(t, output, `invocations follow --id "resp_v7" --protocol responses --agent-name "target"`)
+			}
+			wantID := "inv_v7"
+			if protocol == "responses" {
+				wantID = "resp_v7"
+			}
+			for _, version := range []string{"2", "9"} {
+				environment.values["test"]["AGENT_TARGET_VERSION"] = version
+				environment.values["test"]["AGENT_TARGET_ENDPOINT"] = endpoint + "/agents/agent/versions/" + version
+				for _, operation := range []invocationOperation{invocationShow, invocationFollow, invocationCancel} {
+					selected, rc, id, err := resolveInvocationCommand(t.Context(),
+						&invocationCommandFlags{agentName: "target", noPrompt: true}, operation)
+					if protocol == "invocations" && operation == invocationFollow {
+						require.ErrorContains(t, err, "invocations follow is not supported with the invocations protocol")
+						continue
+					}
+					require.NoError(t, err)
+					require.Equal(t, protocol, selected.flags.protocol)
+					require.Equal(t, wantID, id)
+					require.False(t, rc.agentRead)
+					rc.azdClient.Close()
+				}
+			}
+			oldState := loadAgentStateForTest(t, nil, oldKey)
+			state := loadAgentStateForTest(t, nil, key)
+			require.NotNil(t, oldState)
+			require.NotNil(t, state)
+			assert.Equal(t, "cached-v2", oldState.SessionID)
+			assert.Equal(t, "cached-v7", state.SessionID)
+			accepted := loadAgentStateForTest(t, nil, currentKey)
+			require.NotNil(t, accepted)
+			assert.Equal(t, agent_api.AgentProtocol(protocol), accepted.CurrentInvocationProtocol)
+			environment.values["test"]["AGENT_TARGET_VERSION"] = "2"
+			environment.values["test"]["AGENT_TARGET_ENDPOINT"] = endpoint + "/agents/agent/versions/2"
+			otherProtocol, otherID := "responses", "resp_v2"
+			if protocol == "responses" {
+				otherProtocol, otherID = "invocations", "inv_v2"
+			}
+			_, rc, id, err := resolveInvocationCommand(t.Context(),
+				&invocationCommandFlags{agentName: "target", protocol: otherProtocol, noPrompt: true}, invocationShow)
+			require.NoError(t, err)
+			assert.Equal(t, otherID, id, "explicit protocol retains legacy work without changing current selection")
+			rc.azdClient.Close()
+			if protocol == "responses" {
+				require.NoError(t, newResponseStateStore(nil).Delete(t.Context(), currentKey))
+			} else {
+				require.NoError(t, newInvocationStateStore(nil).Delete(t.Context(), currentKey))
+			}
+			_, _, _, err = resolveInvocationCommand(t.Context(),
+				&invocationCommandFlags{agentName: "target", noPrompt: true}, invocationShow)
+			require.ErrorContains(t, err, "no current invocation is saved")
 		})
 	}
 }

@@ -762,7 +762,9 @@ provide routing hints, but only currently enabled protocols are selected when li
 configuration is available. Explicit Responses/Invocations requests and lifecycle
 commands skip this capability metadata read. Lifecycle commands use the protocol
 saved with the current invocation for the selected target, so protocol changes
-do not redirect them to older work. Older state with one saved work type can be
+or an explicit `invoke --version` do not redirect them to older work. Current
+work is tracked independently of session versions, and printed follow commands
+include the accepted Response ID. Older state with one saved work type can be
 inferred; if it contains both Response and Invocation IDs without a current
 selection, pass `--protocol` explicitly. Saved endpoint routing is only a fallback
 when no saved invocation identifies a protocol.
@@ -775,8 +777,11 @@ timeout. If metadata cannot be read, such as for an endpoint-only consumer witho
 failure as a disabled protocol. Use `--protocol` explicitly when routing is
 ambiguous. If `--version` matches the saved deployment, azd can retain its single
 saved protocol while it remains enabled, even when a newer agent version is latest.
-An explicit `--version` uses version-scoped state and cannot reuse a session cached
-under a different saved deployment version.
+An explicit `--version` uses version-scoped session/conversation state and cannot
+reuse a session cached under a different saved deployment version. `sessions create`
+uses the same version mapping, so `invoke --version` reuses a session created for
+that version. `sessions delete` clears matching session IDs across the selected
+target's version caches without changing saved conversations or invocation IDs.
 Version-specific compatibility remains enforced by Foundry for the
 selected version or session, not inferred from the latest working-tree source.
 Request and file-argument validation remain blocking. Translation availability

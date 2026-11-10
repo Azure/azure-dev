@@ -44,25 +44,20 @@ func TestResponseLifecycleCommand(t *testing.T) {
 	const endpoint = "https://example.services.ai.azure.com/api/projects/project/agents/agent/" +
 		"endpoint/protocols/openai/responses?api-version=v1"
 	for _, tt := range []struct {
-		name       string
-		useCurrent bool
-		endpoint   string
-		want       string
+		name     string
+		endpoint string
+		want     string
 	}{
 		{
-			name: "immediate project follow selects agent and protocol", useCurrent: true,
-			want: `azd ai agent invocations follow --protocol responses --agent-name "resp-test"`,
-		},
-		{
-			name: "recovery requires explicit identity",
+			name: "project follow retains accepted identity",
 			want: `azd ai agent invocations follow --id "resp_test" --protocol responses --agent-name "resp-test"`,
 		},
 		{
-			name: "endpoint mode retains targeting", useCurrent: true, endpoint: endpoint,
+			name: "endpoint mode retains targeting", endpoint: endpoint,
 			want: `azd ai agent invocations follow --id "resp_test" --agent-endpoint "` + endpoint + `"`,
 		},
 		{
-			name: "endpoint credentials are not disclosed", useCurrent: true,
+			name: "endpoint credentials are not disclosed",
 			endpoint: strings.Replace(endpoint, "https://", "https://private-user:private-password@", 1) +
 				"&sig=private-signature&token=private-token#private-fragment",
 			want: `azd ai agent invocations follow --id "resp_test" --agent-endpoint "` + endpoint + `"`,
@@ -76,9 +71,9 @@ func TestResponseLifecycleCommand(t *testing.T) {
 				action.endpoint = parsed
 			}
 			rc := &remoteContext{name: "deployed-agent", serviceName: "resp-test"}
-			assert.Equal(t, tt.want, action.responseLifecycleCommand(rc, "resp_test", invocationFollow, tt.useCurrent))
+			assert.Equal(t, tt.want, action.responseLifecycleCommand(rc, "resp_test", invocationFollow))
 			assert.Equal(t, strings.Replace(tt.want, "invocations follow", "invocations show", 1),
-				action.responseLifecycleCommand(rc, "resp_test", invocationShow, tt.useCurrent))
+				action.responseLifecycleCommand(rc, "resp_test", invocationShow))
 		})
 	}
 }
@@ -695,6 +690,9 @@ func TestCleanupAgentStateForKey(t *testing.T) {
 		SessionID: "sess_123", ConversationID: "conv_123",
 		Response: &savedResponse{ResponseID: "resp_123"}, Invocation: &savedInvocation{InvocationID: "inv_123"},
 	})
+	saveAgentStateForTest(t, client, buildInvocationStateKey(agentKey), agentStateRecord{
+		Response: &savedResponse{ResponseID: "resp_version_7"},
+	})
 	saveAgentStateForTest(t, client, otherKey, agentStateRecord{
 		SessionID: "sess_other", ConversationID: "conv_other",
 		Response: &savedResponse{ResponseID: "resp_other"}, Invocation: &savedInvocation{InvocationID: "inv_other"},
@@ -704,6 +702,7 @@ func TestCleanupAgentStateForKey(t *testing.T) {
 
 	assert.Nil(t, loadAgentStateForTest(t, client, agentKey))
 	assert.Nil(t, loadAgentStateForTest(t, client, selectionKey))
+	assert.Nil(t, loadAgentStateForTest(t, client, buildInvocationStateKey(agentKey)))
 	selection := loadAgentStateForTest(t, client, "another-agent")
 	require.NotNil(t, selection)
 	assert.Equal(t, "other-store", selection.StateStore)
@@ -753,6 +752,10 @@ func TestCleanupAgentStateFromEnvironment(t *testing.T) {
 			saveAgentStateForTest(t, client, selectionKey, agentStateRecord{StateStore: "checkpoints"})
 			saveAgentStateForTest(t, client, "another-agent", agentStateRecord{StateStore: "other-store"})
 			saveAgentStateForTest(t, client, agentKey, agentStateRecord{SessionID: "sess_123"})
+			currentKey := buildInvocationStateKey(agentKey)
+			saveAgentStateForTest(t, client, currentKey, agentStateRecord{
+				Response: &savedResponse{ResponseID: "resp_version_7"},
+			})
 
 			assert.Equal(t, tt.wantCleaned, cleanupAgentState(t.Context(), client, "dev", "worker"))
 
@@ -766,6 +769,14 @@ func TestCleanupAgentStateFromEnvironment(t *testing.T) {
 			otherSelection := loadAgentStateForTest(t, client, "another-agent")
 			require.NotNil(t, otherSelection)
 			assert.Equal(t, "other-store", otherSelection.StateStore)
+			current := loadAgentStateForTest(t, client, currentKey)
+			if tt.wantCleaned {
+				assert.Nil(t, current)
+			} else {
+				require.NotNil(t, current)
+				require.NotNil(t, current.Response)
+				assert.Equal(t, "resp_version_7", current.Response.ResponseID)
+			}
 
 			session := loadAgentStateForTest(t, client, agentKey)
 			if tt.wantSessionGone {

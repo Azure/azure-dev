@@ -98,6 +98,34 @@ func delegatedSubnetCheck(
 	return resourceResult(c, Pass, "ARM CIDR containment/non-overlap and Microsoft.App/environments delegation verified")
 }
 
+func (c *sdkResourceChecker) selectAgentPool(
+	ctx context.Context, plan Plan, cluster *armcontainerservice.ManagedCluster,
+	pools []*armcontainerservice.AgentPool,
+) (*armcontainerservice.AgentPool, Report) {
+	networks := map[*armcontainerservice.AgentPool]Report{}
+	for _, pool := range pools {
+		if ctx.Err() != nil {
+			break
+		}
+		if pool == nil || pool.Properties == nil || resourceValue(pool.Properties.Mode) != "User" ||
+			slices.ContainsFunc(agentPoolChecks(pool), Check.blocks) {
+			continue
+		}
+		network := c.networkChecks(ctx, plan, cluster, pool)
+		networks[pool] = network
+		if !slices.ContainsFunc(network, Check.blocks) {
+			return pool, network
+		}
+	}
+	// With no fully qualifying pool, retain the original configuration ranking for diagnostics only.
+	selected, _ := selectedAgentPool(pools)
+	network, checked := networks[selected]
+	if !checked {
+		network = c.networkChecks(ctx, plan, cluster, selected)
+	}
+	return selected, network
+}
+
 func (c *sdkResourceChecker) networkChecks(
 	ctx context.Context, plan Plan, cluster *armcontainerservice.ManagedCluster,
 	selected *armcontainerservice.AgentPool,

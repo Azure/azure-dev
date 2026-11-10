@@ -19,6 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/stretchr/testify/assert"
@@ -212,6 +213,191 @@ func TestResourceCheckerReadsOnlySupportingResources(t *testing.T) {
 	for _, request := range fake.requests {
 		assert.Equal(t, http.MethodGet, request.method)
 		assert.NotContains(t, request.path, "Microsoft.Network")
+	}
+}
+
+func TestResourceCheckerSelectsOnePoolWithCompleteNetworkEvidence(t *testing.T) {
+	for _, test := range []struct {
+		name, firstNetwork, secondNetwork, secondConfig, want string
+		noSubnet, firstInvalid, blocked                       bool
+		invalidAgentSubnet, invalidCluster                    bool
+	}{
+		{name: "both pass", want: "baseline"},
+		{name: "first pool already qualifies", secondNetwork: "forbidden", want: "first"},
+		{name: "overlapping first subnet", firstNetwork: "overlap", want: "second"},
+		{name: "unreadable first subnet", firstNetwork: "forbidden", want: "second"},
+		{name: "missing first subnet CIDR", firstNetwork: "missing CIDR", want: "second"},
+		{name: "mismatched first subnet ID", firstNetwork: "wrong ID", want: "second"},
+		{name: "unfinished first subnet", firstNetwork: "updating", want: "second"},
+		{name: "unresolved managed first subnet", firstNetwork: "managed", want: "second"},
+		{name: "neither subnet qualifies", firstNetwork: "overlap", secondNetwork: "forbidden",
+			want: "baseline", blocked: true},
+		{name: "neither subnet readable", firstNetwork: "forbidden", secondNetwork: "forbidden",
+			want: "baseline", blocked: true},
+		{name: "cannot combine runtime and network", firstNetwork: "overlap", secondConfig: "runtime",
+			want: "first", blocked: true},
+		{name: "cannot combine image and network", firstNetwork: "overlap", secondConfig: "image",
+			want: "first", blocked: true},
+		{name: "cannot combine label and network", firstNetwork: "overlap", secondConfig: "label",
+			want: "first", blocked: true},
+		{name: "cannot combine count and network", firstNetwork: "overlap", secondConfig: "count",
+			want: "first", blocked: true},
+		{name: "no fully configured pool", firstInvalid: true, secondConfig: "image",
+			want: "second", blocked: true},
+		{name: "no existing Agent subnet", firstNetwork: "forbidden", noSubnet: true, want: "baseline"},
+		{name: "invalid Agent subnet still blocks", invalidAgentSubnet: true, want: "baseline", blocked: true},
+		{name: "cluster failure still blocks with a qualifying pool", firstNetwork: "overlap", invalidCluster: true,
+			want: "second", blocked: true},
+	} {
+		for _, reverse := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/reverse=%t", test.name, reverse), func(t *testing.T) {
+				fake := resourceFake()
+				raw, err := json.Marshal(fake.replies[strings.ToLower(testCluster+"/agentPools")].body)
+				require.NoError(t, err)
+				var response struct {
+					Value []*armcontainerservice.AgentPool `json:"value"`
+				}
+				require.NoError(t, json.Unmarshal(raw, &response))
+				require.Len(t, response.Value, 2)
+				first := response.Value[1]
+				require.NotNil(t, first)
+				require.NotNil(t, first.Properties)
+				second := &armcontainerservice.AgentPool{
+					ID: new(testCluster + "/agentPools/alternative"), Name: new("alternative"),
+					Properties: new(*first.Properties),
+				}
+				second.Properties.NodeLabels = maps.Clone(first.Properties.NodeLabels)
+				first.Properties.VMSize, second.Properties.VMSize = new("First_Size"), new("Second_Size")
+				networkID := testGroup + "/providers/Microsoft.Network/virtualNetworks/network"
+				agentSubnetID := networkID + "/subnets/agents"
+				firstSubnetID, secondSubnetID := networkID+"/subnets/first", networkID+"/subnets/second"
+				first.Properties.VnetSubnetID, second.Properties.VnetSubnetID = new(firstSubnetID), new(secondSubnetID)
+				if test.firstInvalid {
+					first.Properties.Count = new(int32(0))
+				}
+				switch test.secondConfig {
+				case "runtime":
+					second.Properties.WorkloadRuntime = new(armcontainerservice.WorkloadRuntime("OCIContainer"))
+				case "image":
+					second.Properties.NodeImageVersion = nil
+				case "label":
+					second.Properties.NodeLabels = nil
+				case "count":
+					second.Properties.Count = new(int32(0))
+				}
+				for i, state := range []string{test.firstNetwork, test.secondNetwork} {
+					subnetID := []string{firstSubnetID, secondSubnetID}[i]
+					body := &armnetwork.Subnet{ID: new(subnetID), Properties: &armnetwork.SubnetPropertiesFormat{
+						AddressPrefix: new("10.0.2.0/24"), ProvisioningState: new(armnetwork.ProvisioningStateSucceeded),
+					}}
+					switch state {
+					case "overlap":
+						body.Properties.AddressPrefix = new("10.0.1.0/24")
+					case "missing CIDR":
+						body.Properties.AddressPrefix = nil
+					case "wrong ID":
+						body.ID = new(subnetID + "-other")
+					case "updating":
+						body.Properties.ProvisioningState = new(armnetwork.ProvisioningStateUpdating)
+					case "managed":
+						first.Properties.VnetSubnetID = nil
+					}
+					reply := readReply{200, body}
+					if state == "forbidden" {
+						reply = readReply{403, map[string]any{"error": map[string]string{
+							"code": "AuthorizationFailed", "message": "offline subnet forbidden",
+						}}}
+					}
+					fake.replies[strings.ToLower(subnetID)] = reply
+				}
+				response.Value = append(response.Value, second)
+				if reverse {
+					response.Value[1], response.Value[2] = second, first
+				}
+				fake.replies[strings.ToLower(testCluster+"/agentPools")] = readReply{200, response}
+				fake.replies[strings.ToLower(networkID)] = readReply{200, &armnetwork.VirtualNetwork{
+					ID: new(networkID), Properties: &armnetwork.VirtualNetworkPropertiesFormat{
+						ProvisioningState: new(armnetwork.ProvisioningStateSucceeded),
+						AddressSpace:      &armnetwork.AddressSpace{AddressPrefixes: []*string{new("10.0.0.0/16")}},
+					},
+				}}
+				fake.replies[strings.ToLower(agentSubnetID)] = readReply{200, &armnetwork.Subnet{
+					ID: new(agentSubnetID), Properties: &armnetwork.SubnetPropertiesFormat{
+						AddressPrefix: new("10.0.1.0/27"),
+						Delegations: []*armnetwork.Delegation{{Properties: &armnetwork.ServiceDelegationPropertiesFormat{
+							ServiceName: new("Microsoft.App/environments"),
+						}}},
+					},
+				}}
+				plan := suppliedPlan(t)
+				if !test.noSubnet {
+					plan.AgentSubnet = Resource{ID: agentSubnetID, Supplied: true}
+				}
+				if test.invalidAgentSubnet {
+					fake.replies[strings.ToLower(agentSubnetID)] = readReply{200, &armnetwork.Subnet{
+						ID: new(agentSubnetID), Properties: &armnetwork.SubnetPropertiesFormat{
+							AddressPrefix: new("10.0.1.0/27"),
+						},
+					}}
+				}
+				if test.invalidCluster {
+					body, ok := fake.replies[strings.ToLower(testCluster)].body.(map[string]any)
+					require.True(t, ok)
+					body["sku"] = map[string]any{"name": "Automatic"}
+				}
+				_, report, err := NewResourceChecker(testCredential{}, fake.options(), nil).Check(t.Context(), plan)
+				if test.blocked {
+					require.Error(t, err)
+					require.Error(t, report.Err())
+					if test.firstNetwork == "forbidden" {
+						service, ok := errors.AsType[*azcore.ResponseError](err)
+						require.True(t, ok)
+						assert.Equal(t, http.StatusForbidden, service.StatusCode)
+					}
+				} else {
+					require.NoError(t, err)
+				}
+				selected, otherSubnetID := first, secondSubnetID
+				if test.want == "second" || test.want == "baseline" && reverse {
+					selected, otherSubnetID = second, firstSubnetID
+				}
+				for _, id := range []string{"agent-pool", "agent-image", "agent-label"} {
+					check := checkWithID(t, report, id)
+					assert.Equal(t, *selected.ID, check.Scope)
+					if !test.blocked {
+						assert.Equal(t, Pass, check.Status)
+					}
+				}
+				capacity := checkWithID(t, report, "agent-pool")
+				assert.Contains(t, capacity.Warning, "Pool "+*selected.Name+":")
+				assert.Equal(t, Pass, checkWithID(t, report, "system-pool").Status)
+				for _, check := range report {
+					assert.NotEqual(t, otherSubnetID, check.Scope, "do not retain another pool's network report")
+				}
+				assert.LessOrEqual(t, fake.count(firstSubnetID), 1, "reuse the diagnostic candidate's network evidence")
+				assert.LessOrEqual(t, fake.count(secondSubnetID), 1, "reuse the diagnostic candidate's network evidence")
+				if test.secondConfig != "" && test.want == "first" {
+					assert.Zero(t, fake.count(secondSubnetID), "an incompatible pool cannot qualify through its network")
+				}
+				if !test.blocked && !test.noSubnet {
+					for _, check := range report {
+						assert.False(t, check.blocks(), "all required checks must pass for the same pool")
+					}
+				}
+				if test.noSubnet {
+					assert.Equal(t, NotApplicable, checkWithID(t, report, "agent-subnet").Status)
+					assert.Zero(t, fake.count(networkID))
+					assert.Zero(t, fake.count(firstSubnetID))
+					assert.Zero(t, fake.count(secondSubnetID))
+				}
+				if test.name == "both pass" {
+					assert.Zero(t, fake.count(otherSubnetID), "do not read alternatives after a complete match")
+				}
+				for _, request := range fake.requests {
+					assert.Equal(t, http.MethodGet, request.method)
+				}
+			})
+		}
 	}
 }
 

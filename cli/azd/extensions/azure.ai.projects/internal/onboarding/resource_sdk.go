@@ -188,7 +188,6 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	var pools []*armcontainerservice.AgentPool
 	var poolsKnown bool
 	var clusterReport Report
-	var selected *armcontainerservice.AgentPool
 	tasks := []func(){func() {
 		cluster, pools, poolsKnown, clusterReport = c.readCluster(ctx, plan.Cluster)
 	}}
@@ -216,9 +215,9 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	}
 	report = append(report, storageReport...)
 	report = append(report, clusterReport...)
+	selected, networkReport := c.selectAgentPool(ctx, plan, cluster, pools)
 	if cluster != nil {
-		kubelet, checks, pool := aksResourceChecks(*cluster, pools, poolsKnown)
-		selected = pool
+		kubelet, checks := aksResourceChecks(*cluster, pools, poolsKnown, selected)
 		c.poolCapacityWarnings(ctx, *cluster, pools, selected, checks)
 		facts.KubeletObjectID = kubelet
 		report = append(report, checks...)
@@ -250,7 +249,7 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 				NotApplicable, "Storage uses the default ARM creation/update path"))
 		}
 	}
-	report = append(report, c.networkChecks(ctx, plan, cluster, selected)...)
+	report = append(report, networkReport...)
 	if err := ctx.Err(); err != nil {
 		return facts, report, err
 	}

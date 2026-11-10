@@ -242,9 +242,9 @@ func selectedAgentPool(pools []*armcontainerservice.AgentPool) (*armcontainerser
 
 func aksResourceChecks(
 	cluster armcontainerservice.ManagedCluster, pools []*armcontainerservice.AgentPool, poolsKnown bool,
-) (string, Report, *armcontainerservice.AgentPool) {
+	selectedPool *armcontainerservice.AgentPool,
+) (string, Report) {
 	scope := resourceValue(cluster.ID)
-	selectedPool, selectedChecks := selectedAgentPool(pools)
 	report := Report{}
 	add := func(id, expected string, known, valid bool, observed string) {
 		report = append(report, resourceKnown(resourceCheck(id, scope, expected), known, valid, observed))
@@ -254,7 +254,7 @@ func aksResourceChecks(
 		for _, id := range aksCheckIDs {
 			report = append(report, resourceCheck(id, scope, "readable AKS properties"))
 		}
-		return "", report, selectedPool
+		return "", report
 	}
 	skuName := ""
 	if cluster.SKU != nil {
@@ -345,7 +345,7 @@ func aksResourceChecks(
 			report = append(report, check)
 		}
 	} else {
-		report = append(report, selectedChecks...)
+		report = append(report, agentPoolChecks(selectedPool)...)
 	}
 	if n == nil {
 		add("network-policy", "supported network policy engine enabled", false, false, "networkProfile is absent")
@@ -356,7 +356,7 @@ func aksResourceChecks(
 		add("network-policy", "Azure/Calico policy or supported Cilium dataplane",
 			known, valid, "networkPolicy="+policy+"; networkDataplane="+dataplane)
 	}
-	return kubelet, report, selectedPool
+	return kubelet, report
 }
 
 func storageResourceChecks(account armstorage.Account) Report {

@@ -31,7 +31,7 @@ func TestAutomaticProvisionInputsValidateAuthoredBindings(t *testing.T) {
 		{name: "conflicting bootstrap bindings", document: `{"parameters":{
 			"databaseAdministratorName":{"value":"${DATABASE_ADMIN_NAME}"},
 			"databaseAdministratorObjectId":{"value":"${DATABASE_ADMIN_OBJECT_ID}"},
-			"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD}"}}`, wantError: true},
+			"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD}"}}}`, wantError: true},
 		{name: "MI app with password bootstrap",
 			document: `{"parameters":{"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD:-}"}}}`,
 			managed:  true, wantError: true},

@@ -837,6 +837,52 @@ func TestCheckHostedContainerImagePolicyAndViolationsError(t *testing.T) {
 		)
 		_, isServiceErr := errors.AsType[*azdext.ServiceError](hostedRBACErr)
 		assert.True(t, isServiceErr)
+
+		// 6. Never leaks secrets from request URL or raw error.message (or missing error.message)
+		secretBody := `{"error":{"code":"agent_policy_denied",` +
+			`"message":"Creating agent is noncompliant with policy ` +
+			`/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/providers/Microsoft.Authorization/policyAssignments/restrict-foundry-tools:\n` +
+			`MCP endpoint https://secret.example.com/mcp?api_key=SUPER_SECRET_TOKEN is not allowed (` +
+			`Count of Microsoft.CognitiveServices.Data/accounts/projects/agents/tools[*])"}}`
+		secretReq, reqErr := http.NewRequestWithContext(
+			t.Context(),
+			http.MethodPost,
+			"https://secret.example.com/mcp?api_key=SUPER_SECRET_TOKEN",
+			nil,
+		)
+		require.NoError(t, reqErr)
+		secretRespErr := &azcore.ResponseError{
+			StatusCode: http.StatusForbidden,
+			ErrorCode:  "agent_policy_denied",
+			RawResponse: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Body:       io.NopCloser(strings.NewReader(secretBody)),
+				Request:    secretReq,
+			},
+		}
+		classifiedSecret, okSecret := TryClassifyRuntimePolicyError(secretRespErr, "my-agent", testPolicyProjectID)
+		require.True(t, okSecret)
+		localSecret, isLocalSecret := errors.AsType[*azdext.LocalError](classifiedSecret)
+		require.True(t, isLocalSecret)
+		assert.NotContains(t, localSecret.Message, "SUPER_SECRET_TOKEN")
+		assert.NotContains(t, localSecret.Suggestion, "SUPER_SECRET_TOKEN")
+
+		emptyMsgBody := `{"error":{"code":"agent_policy_denied"}}`
+		emptyMsgRespErr := &azcore.ResponseError{
+			StatusCode: http.StatusForbidden,
+			ErrorCode:  "agent_policy_denied",
+			RawResponse: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Body:       io.NopCloser(strings.NewReader(emptyMsgBody)),
+				Request:    secretReq,
+			},
+		}
+		classifiedEmptyMsg, okEmptyMsg := TryClassifyRuntimePolicyError(emptyMsgRespErr, "my-agent", testPolicyProjectID)
+		require.True(t, okEmptyMsg)
+		localEmptyMsg, isLocalEmptyMsg := errors.AsType[*azdext.LocalError](classifiedEmptyMsg)
+		require.True(t, isLocalEmptyMsg)
+		assert.NotContains(t, localEmptyMsg.Message, "SUPER_SECRET_TOKEN")
+		assert.NotContains(t, localEmptyMsg.Suggestion, "SUPER_SECRET_TOKEN")
 	})
 
 	t.Run("evaluates ARM model policies even when loadInventory fails", func(t *testing.T) {
@@ -1158,9 +1204,49 @@ func TestEvaluateCandidateWithCredentialDeadlinePropagation(t *testing.T) {
 
 		res, err := EvaluateCandidateWithCredential(shortCtx, fakePolicyTokenCredential{}, cand, ops)
 		require.NoError(t, err)
-		assert.Equal(t, callerDeadline, invDeadline)
+		assert.False(t, invDeadline.After(callerDeadline))
 		assert.Equal(t, callerDeadline, modelDeadline)
 		assert.Equal(t, foundrypolicy.OutcomeIndeterminate, res.Outcome)
 		assert.Contains(t, res.IncompleteReason, context.DeadlineExceeded.Error())
+	})
+
+	t.Run("reserves deadline budget for evaluateModel fallback when loadInventory times out", func(t *testing.T) {
+		t.Parallel()
+		callerCtx, cancel := context.WithTimeout(t.Context(), 120*time.Millisecond)
+		defer cancel()
+
+		var modelCtxErr error
+		ops := policyPreflightOperations{
+			evalCache: newCandidateEvaluationCache(0, nil),
+			loadInventory: func(invCtx context.Context, _ azcore.TokenCredential, _ string) (foundrypolicy.Inventory, error) {
+				<-invCtx.Done()
+				return foundrypolicy.Inventory{}, invCtx.Err()
+			},
+			evaluateModel: func(
+				evalCtx context.Context,
+				_ azcore.TokenCredential,
+				_ string,
+				models []foundrypolicy.ModelCandidate,
+			) (foundrypolicy.ModelPolicyEvaluation, error) {
+				modelCtxErr = evalCtx.Err()
+				return foundrypolicy.ModelPolicyEvaluation{
+					ResolvedModels: models,
+					Violations: []foundrypolicy.Violation{{
+						Target:       foundrypolicy.TargetModel,
+						TargetValue:  "gpt-4o",
+						AssignmentID: "/subscriptions/sub/policyassignments/deny-gpt4o",
+						DisplayName:  "Deny GPT-4o",
+						Message:      `The "Deny GPT-4o" policy doesn't allow model "gpt-4o" in this project.`,
+					}},
+				}, nil
+			},
+		}
+
+		res, err := EvaluateCandidateWithCredential(callerCtx, fakePolicyTokenCredential{}, cand, ops)
+		require.NoError(t, err)
+		assert.NoError(t, modelCtxErr, "evaluateModel must receive a live context after loadInventory times out")
+		assert.Equal(t, foundrypolicy.OutcomeBlocked, res.Outcome)
+		require.Len(t, res.Violations, 1)
+		assert.Equal(t, "Deny GPT-4o", res.Violations[0].DisplayName)
 	})
 }

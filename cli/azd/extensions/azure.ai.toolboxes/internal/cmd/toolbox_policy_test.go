@@ -485,3 +485,178 @@ func TestDeployAndCreateToolboxPolicyCallSites(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, mockOpenCreate.createVersionCalls, 1)
 }
+
+func TestToolboxPolicyApplicabilityAndExemptions(t *testing.T) {
+	t.Parallel()
+
+	scope := newTestToolboxScope(t)
+	mgScope := "/providers/microsoft.management/managementgroups/corp-mg"
+	subScope := "/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19"
+	rgScope := subScope + "/resourceGroups/rg"
+
+	baseDenyAssignment := func(modify func(*toolboxPolicyAssignment)) toolboxPolicyAssignment {
+		a := toolboxPolicyAssignment{
+			AssignmentID:          subScope + "/providers/Microsoft.Authorization/policyAssignments/deny-ci",
+			AssignmentScope:       subScope,
+			PolicyDefinitionID:    toolboxDeniedToolsPolicyID,
+			AssignmentDisplayName: "Deny Code Interpreter",
+			AssignmentParameters: map[string]any{
+				"effect":          map[string]any{"value": "Deny"},
+				"deniedToolTypes": map[string]any{"value": []any{"code_interpreter"}},
+			},
+			EnforcementMode: "Default",
+		}
+		if modify != nil {
+			modify(&a)
+		}
+		return a
+	}
+
+	type exemptionFixture struct {
+		ExemptionID        string `json:"exemptionId"`
+		PolicyAssignmentID string `json:"policyAssignmentId"`
+		ExpiresOn          string `json:"expiresOn,omitempty"`
+	}
+
+	for _, tc := range []struct {
+		name        string
+		assignment  toolboxPolicyAssignment
+		mgScopes    []string
+		exemptions  []exemptionFixture
+		wantBlocked bool
+	}{
+		{
+			name: "Audit effect is ignored",
+			assignment: baseDenyAssignment(func(a *toolboxPolicyAssignment) {
+				a.AssignmentParameters["effect"] = map[string]any{"value": "Audit"}
+			}),
+			wantBlocked: false,
+		},
+		{
+			name: "Disabled effect is ignored",
+			assignment: baseDenyAssignment(func(a *toolboxPolicyAssignment) {
+				a.AssignmentParameters["effect"] = map[string]any{"value": "Disabled"}
+			}),
+			wantBlocked: false,
+		},
+		{
+			name: "DoNotEnforce enforcementMode is ignored",
+			assignment: baseDenyAssignment(func(a *toolboxPolicyAssignment) {
+				a.EnforcementMode = "DoNotEnforce"
+			}),
+			wantBlocked: false,
+		},
+		{
+			name: "assignmentScope outside project hierarchy is ignored",
+			assignment: baseDenyAssignment(func(a *toolboxPolicyAssignment) {
+				a.AssignmentScope = subScope + "/resourceGroups/other-rg"
+			}),
+			wantBlocked: false,
+		},
+		{
+			name: "notScopes excluding project resource group is ignored",
+			assignment: baseDenyAssignment(func(a *toolboxPolicyAssignment) {
+				a.NotScopes = []string{rgScope}
+			}),
+			wantBlocked: false,
+		},
+		{
+			name: "notScopes excluding ancestor management group is ignored",
+			assignment: baseDenyAssignment(func(a *toolboxPolicyAssignment) {
+				a.AssignmentScope = mgScope
+				a.NotScopes = []string{mgScope}
+			}),
+			mgScopes:    []string{mgScope},
+			wantBlocked: false,
+		},
+		{
+			name: "policyEffect override is ignored",
+			assignment: baseDenyAssignment(func(a *toolboxPolicyAssignment) {
+				a.AssignmentOverrides = []any{map[string]any{"kind": "policyEffect", "value": "Deny"}}
+			}),
+			wantBlocked: false,
+		},
+		{
+			name: "non-empty resourceSelectors is ignored",
+			assignment: baseDenyAssignment(func(a *toolboxPolicyAssignment) {
+				a.ResourceSelectors = []any{map[string]any{"name": "eastus-only"}}
+			}),
+			wantBlocked: false,
+		},
+		{
+			name:       "active in-scope exemption suppresses violation",
+			assignment: baseDenyAssignment(nil),
+			exemptions: []exemptionFixture{{
+				ExemptionID:        rgScope + "/providers/Microsoft.Authorization/policyExemptions/ex-active",
+				PolicyAssignmentID: subScope + "/providers/Microsoft.Authorization/policyAssignments/deny-ci",
+				ExpiresOn:          "2999-01-01T00:00:00Z",
+			}},
+			wantBlocked: false,
+		},
+		{
+			name:       "expired exemption still enforces violation",
+			assignment: baseDenyAssignment(nil),
+			exemptions: []exemptionFixture{{
+				ExemptionID:        rgScope + "/providers/Microsoft.Authorization/policyExemptions/ex-expired",
+				PolicyAssignmentID: subScope + "/providers/Microsoft.Authorization/policyAssignments/deny-ci",
+				ExpiresOn:          "2020-01-01T00:00:00Z",
+			}},
+			wantBlocked: true,
+		},
+		{
+			name:       "out-of-scope exemption still enforces violation",
+			assignment: baseDenyAssignment(nil),
+			exemptions: []exemptionFixture{{
+				ExemptionID:        subScope + "/resourceGroups/other-rg/providers/Microsoft.Authorization/policyExemptions/ex-other",
+				PolicyAssignmentID: subScope + "/providers/Microsoft.Authorization/policyAssignments/deny-ci",
+			}},
+			wantBlocked: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			access := &toolboxAccess{
+				policyQuery: func(_ context.Context, req toolboxResourceGraphRequest) ([]json.RawMessage, error) {
+					qLower := strings.ToLower(req.Query)
+					var payload any
+					switch {
+					case strings.Contains(qLower, "resourcecontainers"):
+						var rows []map[string]string
+						for _, s := range tc.mgScopes {
+							rows = append(rows, map[string]string{"scope": s})
+						}
+						payload = rows
+					case strings.Contains(qLower, "policyexemptions"):
+						payload = tc.exemptions
+					default:
+						payload = []toolboxPolicyAssignment{tc.assignment}
+					}
+					if payload == nil {
+						return nil, nil
+					}
+					b, err := json.Marshal(payload)
+					if err != nil {
+						return nil, err
+					}
+					var rawRows []json.RawMessage
+					if err := json.Unmarshal(b, &rawRows); err != nil {
+						return nil, err
+					}
+					return rawRows, nil
+				},
+			}
+
+			err := checkToolboxToolsPolicy(t.Context(), access, scope, "research-tb", []map[string]any{
+				{"type": "code_interpreter"},
+			})
+			if tc.wantBlocked {
+				require.Error(t, err)
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, exterrors.CodeToolBlockedByPolicy, localErr.Code)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

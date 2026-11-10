@@ -797,6 +797,22 @@ func checkHostedContainerImagePolicy(
 	return PolicyViolationsToError(serviceName, res.Violations)
 }
 
+func loadInventoryContextForModelFallback(
+	ctx context.Context,
+	hasModelFallback bool,
+) (context.Context, context.CancelFunc) {
+	if !hasModelFallback || ctx.Err() != nil {
+		return ctx, func() {}
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining > 0 {
+			return context.WithTimeout(ctx, remaining/2)
+		}
+	}
+	return context.WithTimeout(ctx, foundrypolicy.DefaultPolicyPreflightTimeout/2)
+}
+
 // EvaluateCandidateWithCredential loads the policy inventory for candidate.ProjectResourceID
 // and evaluates all candidate fields (agent kind, container image/registry, tools, models).
 func EvaluateCandidateWithCredential(
@@ -828,7 +844,9 @@ func EvaluateCandidateWithCredential(
 		}
 	}
 
-	inv, err := ops.loadInventory(ctx, cred, candidate.ProjectResourceID)
+	invCtx, cancelInv := loadInventoryContextForModelFallback(ctx, len(candidate.Models) > 0 && modelEval != nil)
+	inv, err := ops.loadInventory(invCtx, cred, candidate.ProjectResourceID)
+	cancelInv()
 	if err != nil {
 		if len(candidate.Models) > 0 && modelEval != nil {
 			res := foundrypolicy.EvaluateCandidate(
@@ -923,7 +941,33 @@ func PolicyViolationsToError(serviceName string, violations []foundrypolicy.Viol
 	return exterrors.Validation(code, fullMessage, suggestion)
 }
 
-var runtimePolicyAssignmentRegex = regexp.MustCompile(`(?i)noncompliant with policy (/[^\s:]+):`)
+var (
+	runtimePolicyAssignmentRegex   = regexp.MustCompile(`(?i)noncompliant with policy (/[^\s:]+):`)
+	validPolicyAssignmentIDPattern = regexp.MustCompile(
+		`(?i)^(?:/subscriptions/[^/?#\s]+(?:/[^/?#\s]+)*|` +
+			`/providers/Microsoft\.Management/managementGroups/[^/?#\s]+)/providers/Microsoft\.Authorization/policyAssignments/[^/?#\s]+$`,
+	)
+)
+
+func isValidPolicyAssignmentResourceID(assignmentID string) bool {
+	trimmed := strings.TrimRight(strings.TrimSpace(assignmentID), "/")
+	return trimmed != "" && validPolicyAssignmentIDPattern.MatchString(trimmed)
+}
+
+func safeRuntimePolicyViolationMessage(displayName string, target foundrypolicy.TargetKind) string {
+	switch target {
+	case foundrypolicy.TargetTool:
+		return fmt.Sprintf("The %q policy doesn't allow one or more tools configured on this agent.", displayName)
+	case foundrypolicy.TargetAgentKind:
+		return fmt.Sprintf("The %q policy doesn't allow this agent kind in this project.", displayName)
+	case foundrypolicy.TargetContainerImage, foundrypolicy.TargetContainerRegistry:
+		return fmt.Sprintf("The %q policy doesn't allow the container image configured for this agent.", displayName)
+	case foundrypolicy.TargetModel:
+		return fmt.Sprintf("The %q policy doesn't allow the model configured for this agent.", displayName)
+	default:
+		return fmt.Sprintf("The %q policy blocks this agent in this project.", displayName)
+	}
+}
 
 // TryClassifyRuntimePolicyError inspects a runtime Azure SDK error from Foundry agent
 // creation/update and converts confirmed HTTP 403 Azure Policy denials into a structured
@@ -937,9 +981,18 @@ func TryClassifyRuntimePolicyError(
 	if !ok || respErr == nil || respErr.StatusCode != http.StatusForbidden {
 		return nil, false
 	}
+	if respErr.RawResponse == nil || respErr.RawResponse.Body == nil {
+		return nil, false
+	}
+	body, readErr := runtime.Payload(respErr.RawResponse)
+	if readErr != nil || len(body) == 0 {
+		return nil, false
+	}
 
 	type runtimePolicyErrorEnvelope struct {
-		Error *struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Error   *struct {
 			Code           string `json:"code"`
 			Message        string `json:"message"`
 			AdditionalInfo *struct {
@@ -951,21 +1004,22 @@ func TryClassifyRuntimePolicyError(
 	}
 
 	var parsed runtimePolicyErrorEnvelope
-	if respErr.RawResponse != nil && respErr.RawResponse.Body != nil {
-		if body, readErr := runtime.Payload(respErr.RawResponse); readErr == nil && len(body) > 0 {
-			_ = json.Unmarshal(body, &parsed)
-		}
+	if json.Unmarshal(body, &parsed) != nil {
+		return nil, false
 	}
 
 	code := strings.TrimSpace(respErr.ErrorCode)
-	message := strings.TrimSpace(respErr.Error())
+	rawMsg := strings.TrimSpace(parsed.Message)
+	if strings.TrimSpace(parsed.Code) != "" {
+		code = strings.TrimSpace(parsed.Code)
+	}
 	var policyAssignmentID, policyDefinitionID string
 	if parsed.Error != nil {
 		if strings.TrimSpace(parsed.Error.Code) != "" {
 			code = strings.TrimSpace(parsed.Error.Code)
 		}
 		if strings.TrimSpace(parsed.Error.Message) != "" {
-			message = strings.TrimSpace(parsed.Error.Message)
+			rawMsg = strings.TrimSpace(parsed.Error.Message)
 		}
 		if parsed.Error.AdditionalInfo != nil {
 			policyAssignmentID = strings.TrimSpace(parsed.Error.AdditionalInfo.PolicyAssignmentID)
@@ -973,7 +1027,7 @@ func TryClassifyRuntimePolicyError(
 		}
 	}
 
-	msgLower := strings.ToLower(message)
+	msgLower := strings.ToLower(rawMsg)
 	isPolicyDenied := strings.EqualFold(code, "agent_policy_denied") ||
 		strings.EqualFold(respErr.ErrorCode, "agent_policy_denied") ||
 		((strings.EqualFold(code, "forbidden") || strings.EqualFold(respErr.ErrorCode, "forbidden")) &&
@@ -984,15 +1038,16 @@ func TryClassifyRuntimePolicyError(
 	}
 
 	var assignmentIDs []string
-	if policyAssignmentID != "" {
-		assignmentIDs = []string{policyAssignmentID}
+	if isValidPolicyAssignmentResourceID(policyAssignmentID) {
+		assignmentIDs = []string{strings.TrimRight(policyAssignmentID, "/")}
 	} else {
-		for _, m := range runtimePolicyAssignmentRegex.FindAllStringSubmatch(message, -1) {
+		for _, m := range runtimePolicyAssignmentRegex.FindAllStringSubmatch(rawMsg, -1) {
 			if len(m) >= 2 {
-				id := strings.TrimSpace(m[1])
-				if id != "" && !slices.ContainsFunc(assignmentIDs, func(existing string) bool {
-					return strings.EqualFold(existing, id)
-				}) {
+				id := strings.TrimRight(strings.TrimSpace(m[1]), "/")
+				if isValidPolicyAssignmentResourceID(id) &&
+					!slices.ContainsFunc(assignmentIDs, func(existing string) bool {
+						return strings.EqualFold(existing, id)
+					}) {
 					assignmentIDs = append(assignmentIDs, id)
 				}
 			}
@@ -1028,11 +1083,6 @@ func TryClassifyRuntimePolicyError(
 		target = foundrypolicy.TargetKind("")
 	}
 
-	displayMsg := message
-	if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
-		displayMsg, _, _ = strings.Cut(strings.TrimSpace(parsed.Error.Message), "\n")
-	}
-
 	violations := make([]foundrypolicy.Violation, 0, len(assignmentIDs))
 	for _, id := range assignmentIDs {
 		displayName := "Azure Policy assignment"
@@ -1042,12 +1092,14 @@ func TryClassifyRuntimePolicyError(
 				displayName = last
 			}
 		}
+		// Never copy rawMsg or respErr.Error() into Violation.Message: request URLs
+		// and service error text may contain connection credentials or tokens.
 		violations = append(violations, foundrypolicy.Violation{
 			Target:       target,
 			AssignmentID: foundrypolicy.NormalizeScope(id),
 			DisplayName:  displayName,
 			PortalURL:    foundrypolicy.BuildPolicyAssignmentPortalURL(projectResourceID, id),
-			Message:      displayMsg,
+			Message:      safeRuntimePolicyViolationMessage(displayName, target),
 		})
 	}
 

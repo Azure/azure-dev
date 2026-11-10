@@ -31,7 +31,7 @@ func TestContainerEngineConcurrent(t *testing.T) {
 		{
 			name: "docker first", engine: tools.ContainerEngineDocker, engineName: "Docker",
 			installURL: "https://aka.ms/azure-dev/docker-install",
-			version: "Docker version 20.10.17, build 100c701",
+			version:    "Docker version 20.10.17, build 100c701",
 		},
 		{
 			name: "podman discovery", dockerErr: errors.New("docker not found"),
@@ -47,7 +47,7 @@ func TestContainerEngineConcurrent(t *testing.T) {
 			name: "docker override", override: "docker",
 			engine: tools.ContainerEngineDocker, engineName: "Docker",
 			installURL: "https://aka.ms/azure-dev/docker-install",
-			version:   "Docker version 20.10.17, build 100c701",
+			version:    "Docker version 20.10.17, build 100c701",
 		},
 	}
 

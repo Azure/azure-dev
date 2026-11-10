@@ -273,8 +273,11 @@ This principle applies to all error types below.
 
 3. **Tool-Specific Installation and Verification**
    
-   azd requires a `docker` or `podman` CLI on PATH, with the corresponding
-   container engine running and accessible.
+   For local builds that use Docker or Podman, azd requires the corresponding
+   CLI on PATH and its container engine running and accessible. A successful
+   remote build (`remoteBuild: true`) or image passthrough (`imagePassthrough`)
+   does not require a local runtime. A remote build can fall back to a local
+   build if Azure Container Registry cannot schedule it.
 
    **Docker:**
    ```bash
@@ -294,6 +297,8 @@ This principle applies to all error types below.
    - Linux: Install Podman using your distribution's package manager
    - Windows and macOS: Install Podman and initialize and start a Podman machine
    - See https://aka.ms/azure-dev/podman-install for platform-specific instructions
+   - By default, azd prefers Docker when both CLIs are on PATH. Set the `AZD_CONTAINER_RUNTIME`
+     environment variable to `podman` before running azd to select Podman.
 
    **Node.js and npm:**
    ```bash

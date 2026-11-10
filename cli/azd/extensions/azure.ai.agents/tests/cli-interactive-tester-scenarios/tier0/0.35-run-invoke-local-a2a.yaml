@@ -12,6 +12,7 @@ env:
   AZD_ALPHA_ENABLE_AGENTS_A2A: "true"
 notes: |
   This is a local CLI transport fixture, not an A2A SDK/interoperability or hosted execution test.
+  Its synthetic CancelTask reply qualifies CLI exit/output handling, not service-side cancellation.
   Python 3 must already be installed. No packages, credentials, models, or cloud resources are needed.
   Start run and invoke sessions with the same scenario_path AND instance_id/session_vars.instance
   so both use this instance's allocated port. Use session IDs local-a2a-run-{instance} and
@@ -53,6 +54,8 @@ pre:
       request["id"] = "stream-1"
       request["method"] = "SendStreamingMessage"
       (work / "stream.json").write_text(json.dumps(request, indent=2) + "\n")
+      cancel = dict(jsonrpc="2.0", id="cancel-1", method="CancelTask", params=dict(id="fixture-cancel-task"))
+      (work / "cancel.json").write_text(json.dumps(cancel, indent=2) + "\n")
       (work / "server.py").write_text('''import base64
       import json
       import os
@@ -69,11 +72,16 @@ pre:
                   self.send_error(404)
                   return
               request = json.loads(body)
-              text = request["params"]["message"]["parts"][0]["text"]
-              context_id = request["params"]["message"].get("contextId") or "context-" + str(uuid4())
-              reply = dict(jsonrpc="2.0", id=request["id"], result=dict(task=dict(
-                  id="task-" + str(uuid4()), contextId=context_id, status=dict(state="TASK_STATE_COMPLETED"),
-                  artifacts=[dict(artifactId="echo", parts=[dict(text="Echo: " + text)])])))
+              if request["method"] == "CancelTask":
+                  reply = dict(jsonrpc="2.0", id=request["id"], result=dict(
+                      id=request["params"]["id"], contextId="fixture-cancel-context",
+                      status=dict(state="TASK_STATE_CANCELED")))
+              else:
+                  text = request["params"]["message"]["parts"][0]["text"]
+                  context_id = request["params"]["message"].get("contextId") or "context-" + str(uuid4())
+                  reply = dict(jsonrpc="2.0", id=request["id"], result=dict(task=dict(
+                      id="task-" + str(uuid4()), contextId=context_id, status=dict(state="TASK_STATE_COMPLETED"),
+                      artifacts=[dict(artifactId="echo", parts=[dict(text="Echo: " + text)])])))
               streaming = request["method"] == "SendStreamingMessage"
               payload = json.dumps(reply).encode()
               if streaming:
@@ -105,7 +113,8 @@ goals:
   - 'Run azd ai agent invoke --local -p a2a --port {agent} --a2a-version 1.0 --input-file request.json. Confirm exit 0 and formatted reply [local] Echo: file hello.'
   - 'Run azd ai agent invoke --local -p a2a --port {agent} --a2a-version 1.0 --input-file request.json --output raw > raw.txt. Confirm exit 0. Inspect raw.txt: HTTP 200 status line, response headers, and the complete JSON-RPC envelope with id file-1 and Echo: file hello must be present. Target/Input/Context ID/Task ID/State/Session/Client elapsed summaries must be absent.'
   - 'Run azd ai agent invoke --local -p a2a --port {agent} --a2a-version 1.0 --input-file stream.json --output raw > stream.txt. Confirm exit 0, Content-Type text/event-stream, and a data: SSE event containing the response with id stream-1; no formatted reply or timing summary may be added.'
-  - "Inspect requests.jsonl. Confirm exactly seven POSTs, all to /a2a, and A2A-Version 1.0 and Content-Type application/json on each (header names are case-insensitive). Decode body_base64: the first two are SendMessage requests without contextId, using ROLE_USER and the specified text; the next two carry params.message.contextId A and B respectively; the next two bodies match request.json byte-for-byte, and the seventh matches stream.json byte-for-byte. Confirm no Authorization, session, conversation, identity, call-ID, or x-client-* headers."
+  - 'Run azd ai agent invoke --local -p a2a --port {agent} --a2a-version 1.0 --input-file cancel.json. Confirm exit 0, Context ID fixture-cancel-context, Task ID fixture-cancel-task, and State TASK_STATE_CANCELED, rather than a terminal-task error. This synthetic reply tests command semantics only.'
+  - "Inspect requests.jsonl. Confirm exactly eight POSTs, all to /a2a, and A2A-Version 1.0 and Content-Type application/json on each (header names are case-insensitive). Decode body_base64: the first two are SendMessage requests without contextId, using ROLE_USER and the specified text; the next two carry params.message.contextId A and B respectively; the next two bodies match request.json byte-for-byte, the seventh matches stream.json, and the eighth matches cancel.json byte-for-byte. Confirm no Authorization, session, conversation, identity, call-ID, or x-client-* headers."
   - 'Run azd ai agent invoke --local -p a2a --port {agent} --session-id test "Hello!". Confirm non-zero exit naming --session-id as unsupported with local a2a invocation.'
   - 'Run azd ai agent invoke --local -p a2a --port {agent} --new-session "Hello!". Confirm non-zero exit naming --new-session as unsupported with local a2a invocation.'
   - 'Run azd ai agent invoke --local -p a2a --port {agent} --conversation-id test "Hello!". Confirm non-zero exit naming --conversation-id as unsupported with local a2a invocation.'
@@ -115,7 +124,7 @@ goals:
   - 'Run azd ai agent invoke --local -p a2a --port {agent} --call-id test "Hello!". Confirm non-zero exit naming --call-id as unsupported with local a2a invocation.'
   - 'Run azd ai agent invoke --local -p a2a --port {agent} --client-header "x-client-test: value" "Hello!". Confirm non-zero exit explaining --client-header is unsupported with local a2a or the a2a protocol.'
   - 'Run azd ai agent invoke --local -p a2a --port {agent} --input-file request.json. Confirm non-zero exit requiring explicit --a2a-version for A2A file input; the message default must not apply.'
-  - "Confirm requests.jsonl still contains exactly seven entries after every invalid command: validation must not send requests. Confirm no session/conversation IDs were persisted by the successful A2A calls. Do not initialize, provision, deploy, invoke Foundry, or install dependencies. This fixture requires only localhost traffic."
+  - "Confirm requests.jsonl still contains exactly eight entries after every invalid command: validation must not send requests. Confirm no session/conversation IDs were persisted by the successful A2A calls. Do not initialize, provision, deploy, invoke Foundry, or install dependencies. This fixture requires only localhost traffic."
   - 'Run azd ai agent run echo --port {agent} --inspector-port 9002 --no-prompt in the second session. Confirm non-zero exit explaining --inspector-port is unsupported for A2A-only agents, with no second agent started; the original server must remain running.'
   - "Take best-effort terminal screenshots of the ready/Next block, formatted reply, raw captures, and validation output. Stop the run session with Ctrl-C and confirm the fixture shuts down and releases port {agent}. Always stop and finish both sessions, including after a failed goal."
   - "Report a finding for unexpected prompts, any graphical client launch, incorrect port/path/version/body/headers, persisted A2A session state, accepted unsupported flags, raw-output contamination, or failed shutdown."

@@ -106,7 +106,9 @@ func validateInvokeContextIDFlags(flags *invokeFlags, protocol agent_api.AgentPr
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
 			"cannot use --context-id with --input-file",
-			"set params.message.contextId in the JSON-RPC file; file contents are sent unchanged",
+			"set params.message.contextId in the JSON-RPC file; file contents are sent unchanged; "+
+				"for hosted agents, omit --version and use --new-session to skip cached routing, "+
+				"or --session-id for a matching session",
 		)
 	}
 	if flags.newSession || flags.newConversation || flags.conversation != "" {
@@ -308,7 +310,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
 
 	// An explicit context must not be overridden by the last cached hosted session.
 	sid := a.flags.session
-	if a.flags.contextID == "" || rc.version != "" {
+	if a.flags.contextID == "" || a.flags.session != "" || rc.version != "" {
 		sid, err = a.resolveRemoteSessionID(ctx, rc)
 		if err != nil {
 			return err
@@ -353,7 +355,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "")
 
 	sessionCode := resp.Header.Get("x-adc-response-details")
-	if err := handleA2AResponse(resp, rc.name, raw, version); err != nil {
+	if err := handleA2AResponse(resp, rc.name, raw, version, body); err != nil {
 		if !raw && resp.StatusCode >= 400 {
 			a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), sessionCode)
 		}
@@ -373,11 +375,15 @@ func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
 // agent error, and the agent's reply text is extracted from the JSON-RPC
 // `result` (a Message or Task) and printed. Non-JSON-RPC bodies fall back to
 // pretty-printed JSON or the raw body.
-func handleA2AResponse(resp *http.Response, agentName string, raw bool, version string) error {
-	return handleA2AResponseTo(os.Stdout, resp, agentName, raw, version)
+func handleA2AResponse(
+	resp *http.Response, agentName string, raw bool, version string, requestBody []byte,
+) error {
+	return handleA2AResponseTo(os.Stdout, resp, agentName, raw, version, requestBody)
 }
 
-func handleA2AResponseTo(w io.Writer, resp *http.Response, agentName string, raw bool, version string) error {
+func handleA2AResponseTo(
+	w io.Writer, resp *http.Response, agentName string, raw bool, version string, requestBody []byte,
+) error {
 	if raw {
 		if err := writeRawResponse(w, resp); err != nil {
 			return err
@@ -412,7 +418,12 @@ func handleA2AResponseTo(w io.Writer, resp *http.Response, agentName string, raw
 		return agentErr
 	}
 
-	return printA2AResultTo(w, respBody, agentName, version)
+	// Inspect only for response semantics; do not validate or rewrite request-file bytes.
+	var request struct {
+		Method string `json:"method"`
+	}
+	_ = json.Unmarshal(requestBody, &request)
+	return printA2AResultTo(w, respBody, agentName, version, request.Method)
 }
 
 // a2aRequestURL returns the request URL of a response for error messages,
@@ -445,10 +456,10 @@ func a2aErrorFromBody(respBody []byte) error {
 	return fmt.Errorf("agent error: %s", envelope.Error.Message)
 }
 
-// printA2AResultTo prints IDs/state and the agent's reply. Failed terminal Tasks
-// retain their IDs but return an error. When no text can be found, it keeps the
-// JSON/raw fallback for other results.
-func printA2AResultTo(w io.Writer, respBody []byte, agentName string, version string) error {
+// printA2AResultTo prints IDs/state and the agent's reply. Unsuccessful terminal
+// Tasks retain their IDs and return errors; successful cancellations keep status.
+// When no text can be found, other results keep the JSON/raw fallback.
+func printA2AResultTo(w io.Writer, respBody []byte, agentName, version, requestMethod string) error {
 	result := parseA2AResult(respBody, version)
 	contextID, _ := result["contextId"].(string)
 	status, _ := result["status"].(map[string]any)
@@ -466,9 +477,18 @@ func printA2AResultTo(w io.Writer, respBody []byte, agentName string, version st
 			}
 		}
 	}
+	message, _ := status["message"].(map[string]any)
+	cancelRequested := (version == "0.3" && requestMethod == "tasks/cancel") ||
+		(version == "1.0" && requestMethod == "CancelTask")
+	if cancelRequested && (state == "canceled" || state == "TASK_STATE_CANCELED") {
+		if text := a2aTextFromParts(message["parts"]); text != "" {
+			_, err := fmt.Fprintf(w, "[%s] %s\n", agentName, text)
+			return err
+		}
+		return nil
+	}
 	switch state {
 	case "failed", "canceled", "rejected", "TASK_STATE_FAILED", "TASK_STATE_CANCELED", "TASK_STATE_REJECTED":
-		message, _ := status["message"].(map[string]any)
 		if detail := a2aTextFromParts(message["parts"]); detail != "" {
 			return fmt.Errorf("agent task ended with state %s: %s", state, detail)
 		}

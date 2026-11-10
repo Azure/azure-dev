@@ -58,6 +58,10 @@ It is not a Foundry session ID. Unless --session-id or --version is explicit,
 azd omits cached session routing so Foundry can resolve the selected context.
 Do not combine --context-id with --input-file, --conversation-id, or reset flags.
 
+For hosted A2A request files, an embedded contextId does not bypass cached sessions.
+Use --new-session without --version to omit cached routing, or --session-id for
+the matching session. File bytes are sent unchanged.
+
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
@@ -82,6 +86,7 @@ suppressed in raw mode.
 Default A2A output shows the returned Context ID and, for Tasks, their ID and state.
 Failed, canceled, and rejected Tasks return an error while keeping their IDs visible;
 input-required and auth-required states remain visible for follow-up.
+A successful A2A cancellation returns canceled state without failing the command.
 For completed A2A Tasks, default output prefers answer artifacts over generic
 status messages such as "Done". Tasks awaiting completion prefer status messages,
 falling back to artifacts when no status text is present. History is the final fallback.

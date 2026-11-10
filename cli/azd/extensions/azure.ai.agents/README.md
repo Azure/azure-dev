@@ -786,6 +786,8 @@ Tasks also show their **Task ID** and **State**, retaining the protocol's native
 spellings. Failed, canceled, and rejected Tasks return an error rather than displaying
 partial artifacts as completed answers; their IDs remain available for inspection.
 Input-required and auth-required states show the agent's prompt for follow-up.
+Successful `tasks/cancel` (0.3) and `CancelTask` (1.0) requests instead return success
+with the canceled Task's IDs, state, and any status detail, not partial artifacts.
 
 Use `--context-id` to return to an earlier context after using another one. For an
 Echo agent, prepare two first-turn request files from the JSON-RPC examples below:
@@ -816,6 +818,10 @@ If the response omits a context ID, azd does not invent one from another identif
 The flag is for plain A2A messages only. Do not combine it with `--input-file`,
 `--conversation-id`, `--new-session`, or `--new-conversation`. For complete
 JSON-RPC files, put `contextId` in `params.message`; the file is still sent unchanged.
+For hosted files, an embedded context ID alone does not bypass the cached session.
+Omit `--version` and pass `--new-session` to omit that cached route, or use
+`--session-id` to select the matching hosted session explicitly. These hosted
+routing flags remain unsupported with `--local`.
 Raw output keeps the original response, including its `contextId`, without adding
 ID/state summaries. Other protocols keep their existing session/conversation flags.
 This feature adds no context-reset flag or new local context-persistence mechanism.

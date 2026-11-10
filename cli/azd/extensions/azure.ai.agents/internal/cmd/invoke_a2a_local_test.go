@@ -562,7 +562,7 @@ func TestLocalA2AReadAndWriteErrors(t *testing.T) {
 		})
 	}
 	resp := localA2ATestResponse(nil, 200, `{"result":{"message":{"contextId":"context-1","parts":[{"text":"hello"}]}}}`)
-	require.ErrorIs(t, handleA2AResponseTo(localA2AFailingWriter{failure}, resp, "local", false, "1.0"), failure)
+	require.ErrorIs(t, handleA2AResponseTo(localA2AFailingWriter{failure}, resp, "local", false, "1.0", nil), failure)
 }
 
 type localA2AFailingWriter struct{ err error }

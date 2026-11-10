@@ -2590,6 +2590,17 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		}
 	}
 
+	if err := CheckHostedContainerImagePolicy(
+		ctx,
+		azdEnv["AZURE_AI_PROJECT_ID"],
+		p.credential,
+		serviceConfig.GetName(),
+		fullImageURL,
+		azdEnv,
+	); err != nil {
+		return nil, err
+	}
+
 	progress("Preparing hosted agent configuration")
 	prep, err := p.prepareDeploy(serviceConfig, agentDef, azdEnv, []agent_yaml.AgentBuildOption{
 		agent_yaml.WithImageURL(fullImageURL),

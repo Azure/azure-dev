@@ -95,6 +95,7 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 	grant := grantRequests(suppliedPlan(t), Identity{}, suppliedFacts().WorkloadIdentity)[3]
 	for _, state := range []string{
 		"inherited", "management group", "unrelated", "conditional", "missing", "incomplete", "paged",
+		"null final page", "paged null final page",
 	} {
 		t.Run(state, func(t *testing.T) {
 			fake := authorizationFake()
@@ -106,6 +107,9 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 			}
 			evidence := assignment(scope, "workload-principal", blobOwnerRole)
 			page := map[string]any{"value": []any{evidence}}
+			if strings.Contains(state, "null final page") {
+				page["nextLink"] = nil
+			}
 			switch state {
 			case "conditional":
 				evidence["properties"].(map[string]any)["condition"] = "unsupported"
@@ -113,7 +117,7 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 				page["value"] = []any{}
 			case "incomplete":
 				delete(evidence["properties"].(map[string]any), "roleDefinitionId")
-			case "paged":
+			case "paged", "paged null final page":
 				fake.replies["/next-role-page"] = readReply{200, page}
 				page = map[string]any{"value": []any{}, "nextLink": "https://management.azure.com/next-role-page"}
 			}
@@ -122,13 +126,53 @@ func TestIdentityEvidenceHonorsInheritanceConditionsAndPaging(t *testing.T) {
 			status, _, err := authorizer.identityGrantAllows(t.Context(), grant)
 			assert.Equal(t, state == "incomplete", err != nil)
 			switch state {
-			case "inherited", "management group", "paged", "unrelated":
+			case "inherited", "management group", "paged", "unrelated", "null final page", "paged null final page":
 				assert.Equal(t, Pass, status)
 			case "incomplete":
 				assert.Equal(t, Unverified, status)
 			case "missing", "conditional":
 				assert.Equal(t, Fail, status)
 			}
+		})
+	}
+}
+
+func TestRoleAssignmentPaginationValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		nextLink  any
+		wantError string
+	}{
+		{"null", nil, ""},
+		{"empty string", "", ""},
+		{"number", 1, "decode role assignment nextLink"},
+		{"boolean", true, "decode role assignment nextLink"},
+		{"object", map[string]any{}, "decode role assignment nextLink"},
+		{"array", []any{}, "decode role assignment nextLink"},
+		{"repeated page", "https://management.azure.com/next-role-page", "pagination repeated a page"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := authorizationFake()
+			first := assignment(testStorage, "hosting-principal", ownerRole)
+			last := assignment(testStorage, "workload-principal", blobOwnerRole)
+			fake.replies[strings.ToLower(testStorage+assignmentSuffix)] = readReply{200, map[string]any{
+				"value": []any{first}, "nextLink": "https://management.azure.com/next-role-page",
+			}}
+			fake.replies["/next-role-page"] = readReply{200, map[string]any{
+				"value": []any{last}, "nextLink": tt.nextLink,
+			}}
+			evidence := NewAuthorizationEvidence(testCredential{}, fake.options())
+			assignments, err := evidence.readAssignments(t.Context(), testStorage, false)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				assert.Nil(t, assignments, "invalid pagination must not expose partial authorization evidence")
+			} else {
+				require.NoError(t, err)
+				require.Len(t, assignments, 2)
+				assert.Equal(t, "hosting-principal", authString(assignments[0].Properties.PrincipalID))
+				assert.Equal(t, "workload-principal", authString(assignments[1].Properties.PrincipalID))
+			}
+			assert.Equal(t, 1, fake.count("/next-role-page"))
 		})
 	}
 }
@@ -152,6 +196,7 @@ func TestExistingRoleAssignmentKeysDistinguishConditions(t *testing.T) {
 		"missing", "unconditional", "conditional", "unrelated principal", "unrelated role", "inherited scope",
 		"conditional then unconditional", "unconditional then conditional", "paged", "new principal",
 		"unconditional new principal", "missing ID", "credential URL",
+		"null final page", "paged null final page",
 	} {
 		t.Run(state, func(t *testing.T) {
 			plan, facts := suppliedPlan(t), suppliedFacts()
@@ -163,7 +208,8 @@ func TestExistingRoleAssignmentKeysDistinguishConditions(t *testing.T) {
 			require.True(t, ok)
 			properties, ok := value["properties"].(map[string]any)
 			require.True(t, ok)
-			if state != "unconditional" && state != "unconditional new principal" {
+			if state != "unconditional" && state != "unconditional new principal" &&
+				!strings.Contains(state, "null final page") {
 				properties["condition"] = "container name equals allowed"
 				properties["conditionVersion"] = "2.0"
 			}
@@ -190,7 +236,10 @@ func TestExistingRoleAssignmentKeysDistinguishConditions(t *testing.T) {
 			}
 			fake := authorizationFake()
 			page := map[string]any{"value": values}
-			if state == "paged" {
+			if strings.Contains(state, "null final page") {
+				page["nextLink"] = nil
+			}
+			if state == "paged" || state == "paged null final page" {
 				fake.replies["/next-role-page"] = readReply{200, page}
 				page = map[string]any{"value": []any{}, "nextLink": "https://management.azure.com/next-role-page"}
 			}
@@ -221,7 +270,8 @@ func TestExistingRoleAssignmentKeysDistinguishConditions(t *testing.T) {
 				require.NoError(t, err)
 			}
 			assert.Equal(t, state == "unconditional" || state == "conditional then unconditional" ||
-				state == "unconditional then conditional" || state == "unconditional new principal",
+				state == "unconditional then conditional" || state == "unconditional new principal" ||
+				strings.Contains(state, "null final page"),
 				slices.Contains(keys, expectedKey))
 		})
 	}

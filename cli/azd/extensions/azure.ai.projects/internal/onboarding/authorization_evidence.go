@@ -176,9 +176,6 @@ func (e *AuthorizationEvidence) readAssignments(
 		assignments = append(assignments, (*page.Value)...)
 		uri = ""
 		if len(page.NextLink) > 0 {
-			if string(page.NextLink) == "null" {
-				return nil, fmt.Errorf("role assignment nextLink is not a string at %s", scope)
-			}
 			if err := json.Unmarshal(page.NextLink, &uri); err != nil {
 				return nil, fmt.Errorf("decode role assignment nextLink at %s: %w", scope, err)
 			}

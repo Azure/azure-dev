@@ -58,6 +58,7 @@ type toolboxAccess struct {
 	account       toolboxAccessAccount
 	newCredential func(string) (azcore.TokenCredential, error)
 	roleClient    *armauthorization.RoleAssignmentsClient
+	policyQuery   toolboxPolicyQueryFunc
 	wait          func(context.Context, time.Duration) error
 	attempts      int
 	timeout       time.Duration
@@ -423,6 +424,9 @@ func toolboxWriteError(
 ) error {
 	if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
 		return cancelErr
+	}
+	if policyErr, ok := tryClassifyToolboxPolicyError(err, "", scope); ok {
+		return policyErr
 	}
 	_, authenticationFailed := errors.AsType[*azidentity.AuthenticationFailedError](err)
 	_, authenticationRequired := errors.AsType[*azidentity.AuthenticationRequiredError](err)

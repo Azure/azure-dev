@@ -71,6 +71,11 @@ func (r Report) Write(w io.Writer) error {
 			RedactDiagnostic(c.Missing), RedactDiagnostic(c.Remediation)); err != nil {
 			return err
 		}
+		if c.Cause != nil {
+			if _, err := fmt.Fprintf(w, "  Cause: %s\n", RedactDiagnostic(c.Cause.Error())); err != nil {
+				return err
+			}
+		}
 	}
 	for _, c := range r {
 		if c.Warning != "" {

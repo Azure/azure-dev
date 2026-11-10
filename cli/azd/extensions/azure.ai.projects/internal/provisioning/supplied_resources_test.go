@@ -6,6 +6,7 @@ package provisioning
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -382,6 +383,78 @@ func TestBYOConditionalGrantRetainsExitDiagnostic(t *testing.T) {
 				} {
 					assert.Contains(t, exitOutput, detail)
 				}
+			})
+		}
+	}
+}
+
+func TestBYOReadFailureCauseRetainsExitDiagnostic(t *testing.T) {
+	const endpoint = "https://cause-user:cause-password@example.test/resource?sig=cause-secret#cause-fragment"
+	for _, failure := range []string{"transport", "authentication", "decoding"} {
+		for _, preview := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/preview=%t", failure, preview), func(t *testing.T) {
+				p, fake, _ := suppliedProvider(t, 7)
+				cause := errors.New("connection reset while reading " + endpoint)
+				expected := "connection reset while reading https://example.test/resource"
+				if failure == "authentication" {
+					expected = "authentication challenge failed for https://example.test/resource"
+				} else if failure == "decoding" {
+					expected = "cannot unmarshal"
+				}
+				p.armClientOptions.Transport = acrTestTransport(func(request *http.Request) (*http.Response, error) {
+					if request.Method != http.MethodGet || request.URL.Path != offlineClusterID {
+						return fake.Do(request)
+					}
+					switch failure {
+					case "authentication":
+						return fake.base.response(request, http.StatusForbidden, map[string]any{
+							"error": map[string]any{
+								"code": "AuthorizationFailed", "message": "authentication challenge failed for " + endpoint,
+							},
+						}), nil
+					case "decoding":
+						return fake.base.response(request, http.StatusOK, map[string]any{"properties": "invalid"}), nil
+					default:
+						return nil, cause
+					}
+				})
+				var progress strings.Builder
+				writeProgress := func(message string) { progress.WriteString(message) }
+				var err error
+				if preview {
+					_, err = p.Preview(t.Context(), writeProgress)
+				} else {
+					_, err = p.Deploy(t.Context(), writeProgress)
+				}
+				require.ErrorContains(t, err, "BYO-AKS preflight blocked")
+				if failure == "transport" {
+					require.ErrorIs(t, err, cause)
+				} else if failure == "authentication" {
+					service, ok := errors.AsType[*azcore.ResponseError](err)
+					require.True(t, ok)
+					assert.Equal(t, http.StatusForbidden, service.StatusCode)
+					assert.Equal(t, "AuthorizationFailed", service.ErrorCode)
+				}
+				envelope := azdext.NewProvisioningEnvelope()
+				message := new(azdext.ProvisioningMessage)
+				envelope.SetError(message, err)
+				wire, marshalErr := proto.Marshal(message)
+				require.NoError(t, marshalErr)
+				received := new(azdext.ProvisioningMessage)
+				require.NoError(t, proto.Unmarshal(wire, received))
+				exitErr := fmt.Errorf("provisioning failed: %w", envelope.GetError(received))
+				exitOutput := (&ux.ActionResult{Err: exitErr}).ToString("")
+				assert.Contains(t, exitOutput, "ERROR:")
+				for _, output := range []string{progress.String(), exitOutput} {
+					assert.Contains(t, output, "Cause:")
+					assert.Contains(t, output, expected)
+					for _, secret := range []string{"cause-user", "cause-password", "sig=", "cause-secret", "cause-fragment"} {
+						assert.NotContains(t, output, secret)
+					}
+				}
+				assert.Zero(t, fake.base.writes)
+				assert.Zero(t, fake.base.previews)
+				assert.Empty(t, p.virtualEnv)
 			})
 		}
 	}

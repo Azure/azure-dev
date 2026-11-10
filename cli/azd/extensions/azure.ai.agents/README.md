@@ -1,6 +1,6 @@
 # Azure Developer CLI (azd) Agents Extension
 
-<!-- cspell:ignore strconv -->
+<!-- cspell:ignore strconv kubelet -->
 ## Project monitoring
 
 New Foundry projects created for agents automatically provision and connect
@@ -1688,10 +1688,17 @@ access grants and related resources it can establish it owns. Customers manage
 network reachability and image-publisher push permissions. See
 [non-interactive configuration](../ai-non-interactive.md#azureaiprojects).
 
-Do not combine an external source-build registry selection with `agentHosting`,
-even for a project-only configuration: reuse does not manage AKS node pull
-access. Remove the selector to use an azd-created registry, or use explicit
-prebuilt images with user-managed registry authentication.
+An external source-build registry selection supports `agentHosting`. The
+Projects provider checks and grants image-pull access to the AKS kubelet
+identity only; ordinary Foundry hosting uses the Project identity. Existing
+registry network settings are retained, and customers must ensure AKS can reach
+the registry. Re-eject older BYO AKS Bicep templates for the kubelet-only access
+contract. See [Projects registry reuse](../azure.ai.projects/README.md#reuse-an-external-container-registry).
+
+Both ordinary Foundry and BYO AKS reject automatic registry creation when account
+network isolation is enabled. Select an external registry for source builds in
+that case. Registry connections continue to use the Foundry Project identity,
+separately from the kubelet's pull grants.
 
 An `image` value alone still defaults to a source build, including with
 `--no-prompt`. Explicit prebuilt selection requires

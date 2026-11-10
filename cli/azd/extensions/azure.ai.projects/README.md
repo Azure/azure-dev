@@ -296,7 +296,7 @@ services:
       clusterResourceId: ${AKS_CLUSTER_ID}
 ```
 
-`agentHosting` does not require a `network` block or additional subnets. Omit `network` for public networking, or supply it to use the standard account network injection and private-endpoint resources. Existing AKS hosting supports an automatically created ACR with private account networking. Without `agentHosting`, private networking supports prebuilt images, code/ZIP deployments, and source builds using an external registry; it does not support an automatically created ACR.
+`agentHosting` does not require a `network` block or additional subnets. Omit `network` for public networking, or supply it to use the standard account network injection and private-endpoint resources. Both ordinary Foundry and existing AKS hosting reject automatic ACR creation with private account networking. Use prebuilt images, code/ZIP deployments, or select an external registry for source builds. Selecting an external registry does not change or verify its network connectivity.
 
 Use an existing AKS cluster configured for Foundry agent hosting. Before deployment, the provider reads the cluster and its AgentPool children to check the Foundry hosting prerequisites. Regional VM-size capabilities are read for non-blocking capacity recommendations. When effective hosting is enabled, it always reads and validates the selected cluster's actual kubelet principal object ID, regardless of `includeAcr` or an explicit kubelet binding. It resolves the built-in federation role when that deployment binding is needed. These checks do not create or reconfigure AKS, inspect Kubernetes node Ready conditions, or test runtime connectivity.
 
@@ -304,10 +304,10 @@ The default resource graph creates:
 
 - One StorageV2 account (`st<resourceToken>`), with shared keys, anonymous blobs, and insecure transport disabled.
 - Separate hosting-management and workload user-assigned managed identities.
-- When an Agent requires building a container image, one native azd Container Registry (`cr<resourceToken>`), its Project connection, and `AcrPull` for the Project and AKS kubelet identities. A project without such an Agent does not automatically create a registry; pre-built images and code/ZIP configurations follow the standard Foundry ACR selection.
+- When an Agent requires building a container image, one native azd Container Registry (`cr<resourceToken>`) and its Project connection, or a selected external registry and connection. New BYO AKS deployments grant registry pull access only to the AKS kubelet identity, not the Project identity. Upgrades retain any Project grants created by older versions; see [legacy registry access](#legacy-byo-aks-registry-access). A project without such an Agent does not automatically create a registry; pre-built images and code/ZIP configurations follow the standard Foundry ACR selection.
 - Hosting-management Reader and Kubernetes Extension Contributor roles on the existing cluster, federation-management permission on the workload identity, and workload Storage Blob Data Contributor permission on the storage account.
 
-The account receives a `ManagedCluster` / `default` hosting configuration. Its data-plane access follows the optional `network` configuration. **Storage and any automatically created ACR use public authenticated endpoints**, so the cluster must be able to reach them. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. ARM authorizes resource creation and role assignments when executing the deployment.
+The account receives a `ManagedCluster` / `default` hosting configuration. Its data-plane access follows the optional `network` configuration. **Storage uses a public authenticated endpoint. An ACR is automatically created only without account network isolation and also uses a public authenticated endpoint.** The cluster must be able to reach the selected stores. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. ARM authorizes resource creation and role assignments when executing the deployment.
 
 Storage and the two identities can each be supplied independently using complete ARM resource IDs:
 
@@ -340,7 +340,7 @@ Embedded provisioning and Bicep eject are supported through `microsoft.foundry`;
 
 BYO AKS uses the standard Foundry resource-group creation/update behavior. The deployment applies the configured location and tags; an existing target resource group's location must match the deployment location.
 
-The provider fills `federatedIdentityRoleDefinitionId`, the selected identities' required `hostingPrincipalId` / `workloadPrincipalId` bindings, and `byoAksExistingRoleAssignmentKeys` only when the template declares the parameter and the user has not provided it. The same rule applies to `kubeletObjectId` when `includeAcr=true`. Explicit parameter values and envelopes take precedence, with parameter names matched ignoring case, and are forwarded unchanged. User parameters absent from the template are also forwarded so ARM reports the error. Location, resource-name salt and resource-group parameters follow the normal on-disk parameter precedence and ARM validation.
+The provider fills `federatedIdentityRoleDefinitionId`, the selected identities' required `hostingPrincipalId` / `workloadPrincipalId` bindings, and `byoAksExistingRoleAssignmentKeys` only when the template declares the parameter and the user has not provided it. The same rule applies to `kubeletObjectId` when `includeAcr=true`. Explicit parameter values and envelopes take precedence, with parameter names matched ignoring case. With BYO AKS and `includeAcr=true`, an explicit `kubeletObjectId` must be supplied once in a value envelope containing a literal principal object ID GUID matching the actual kubelet identity read from the effective AKS cluster. Invalid inputs or mismatches fail before registry access preparation; matching values are forwarded unchanged. When `includeAcr=false`, this additional binding validation does not apply. Other explicit bindings retain their existing forwarding behavior. User parameters absent from the template are also forwarded so ARM reports the error. Location, resource-name salt and resource-group parameters follow the normal on-disk parameter precedence and ARM validation.
 
 Provision and preview run read-only preflight for every BYO AKS plan, including plans that supply only AKS and create all supporting resources. Checks cover resource existence and identity metadata, subscription owning tenants, supplied-identity grants, AKS hosting prerequisites, and the selected existing Agent subnet. Ordinary Foundry projects without `agentHosting` do not enter this pipeline.
 
@@ -388,6 +388,24 @@ Subscription responses are shared only within one preparation. Template scope re
 For both default and supplied supporting resources, preflight identifies resources from the actual compiled ARM template and merged parameters, including local nested modules, resolvable conditions, names, resource scopes, and the selected Agent subnet. Lifecycle classification excludes same-type candidates whose known scopes cannot match the selected resource; unresolved names in those scopes do not affect its classification. Candidates with potentially matching or unresolved scopes retain their dependent uncertainty. It does not compare the template against a standard-template digest or substitute standard names for rewritten resources.
 
 The local plan adapter is bounded, not a general ARM interpreter. Nested-deployment expression scope follows the containing template's `languageVersion`: `2.0` defaults to `inner`, while earlier templates default to `outer`. The adapter supports only inner-scoped evaluation, including the ARM 2.0 default; those nested templates use their own `deployment().name`. Ordinary `reference()` returns resource properties; `reference(..., 'Full')` returns the full resource shape. Runtime-only reference properties, unavailable linked templates and unsupported expressions remain unresolved; dependent checks warn and skip individually. Supported constant `uniqueString` and `guid` expressions use the existing azd-managed Bicep tool. Failures evaluating these functions, including Bicep download or execution failures, stop preparation for deployment and preview. Explicit deployment bindings retain their normal precedence.
+
+#### Legacy BYO AKS registry access
+
+Upgrading or re-ejecting templates does not automatically revoke `AcrPull`
+assignments previously created for the Foundry Project identity. ARM incremental
+deployment leaves those assignments in place even though the current template
+no longer creates them for BYO AKS. azd does not automatically delete or migrate
+these legacy grants.
+
+A resource administrator can review the registry's **Access control (IAM)** role
+assignments in the Azure portal. Identify the Foundry Project's managed identity
+principal ID and distinguish it from the selected AKS cluster's kubelet object ID.
+Before removing an old Project `AcrPull` assignment, confirm its registry scope,
+principal and role, verify that the kubelet has the required pull access, and
+check that no other workload relies on the Project grant. Remove only the
+specific assignment approved for removal; do not remove the Project identity
+or registry connection, which remain necessary for project association and
+binding recovery.
 
 ### Infrastructure layers
 
@@ -536,11 +554,32 @@ registry is outside the groups named in environment values.
 Cross-subscription registry reuse is not supported. You are responsible for
 registry network connectivity and appropriate image push permissions.
 
-An external source-build registry selection cannot be combined with
-`agentHosting`, including an unused project-only selection. Reuse does not
-manage AKS node pull access. Remove the selector and let azd create a registry
-when a source build needs one, or use explicit prebuilt images with
-user-managed registry authentication.
+An external source-build registry selection supports `agentHosting`. Before
+provisioning, the provider checks the selected AKS kubelet identity for a matching
+registry pull role assignment and creates a missing grant during ARM deployment.
+Classic registries use `AcrPull`; ABAC registries use Container Registry Repository
+Reader. New BYO AKS deployments grant pull access only to the kubelet identity;
+ordinary Foundry hosting continues to use the Project identity. Existing Project
+grants from older BYO AKS deployments are retained as described under
+[legacy registry access](#legacy-byo-aks-registry-access). The Project connection
+continues to use the Project identity as its Managed Identity credential and
+retains the registry address and resource ID for discovery and binding recovery.
+The connection does not itself grant registry access or supply the kubelet's credentials.
+Existing registry networking is not modified, and the provider does not perform
+a connectivity or image-pull test. You must make the registry reachable from AKS.
+Creating missing grants requires role-assignment write permission and nested
+deployment permission on the registry resource group.
+When account network isolation is enabled, source builds require an explicitly
+selected external registry; automatic registry creation is rejected before deployment.
+With isolation disabled, both automatic creation and external reuse are supported.
+Re-eject existing BYO AKS Bicep templates to obtain the kubelet-only access
+contract; older ejected templates are rejected when registry access is enabled.
+
+On teardown, the external registry and pre-existing grants are retained. Only
+verified environment-owned grants and their deployment records are removed.
+If multiple environments share one AKS kubelet identity and registry, a grant
+created by one environment may also be used by another; deleting the owning
+environment can remove that shared access.
 
 Embedded and currently generated ejected Bicep keep the
 `microsoft.foundry` provider, which enforces the switch for provision, preview,
@@ -559,7 +598,7 @@ permission alone does not make that remote request supported. Use local Docker
 with Repository Writer push permission, a prebuilt image, or a classic RBAC
 registry instead. Code deployments, prebuilt images, and project-only selections
 without source-build demand do not trigger this remote-build restriction.
-The scope and `agentHosting` restrictions still apply to the selector.
+The subscription and teardown-scope restrictions still apply to the selector.
 
 An `image` value alone does not select a prebuilt deployment: source build is
 the default, including with `--no-prompt`. To use an existing image, set
@@ -634,6 +673,11 @@ only in JSON, `.bicepparam`, or a template default are honored. Setting
 parameters remains authoritative.
 Registry access parameter declarations are matched ignoring case, including
 the owned-grant recovery metadata, consistent with ARM parameter matching.
+For BYO AKS, the provider resolves `acrPullPrincipalId` from the effective
+`kubeletObjectId` binding, which must be a literal principal object ID GUID.
+The registry binding retains the Project identity separately from the pull
+identity. Provision and preview reject changes to an external registry's bound
+pull identity rather than transferring an existing access operation.
 When creating an ACR, a declared `enableNetworkIsolation` parameter must have a
 literal boolean value for local compatibility checks; ARM expressions are not
 evaluated locally.

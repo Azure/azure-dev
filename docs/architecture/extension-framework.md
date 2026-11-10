@@ -1,6 +1,6 @@
 # Extension Framework
 
-<!-- cspell:ignore azdext -->
+<!-- cspell:ignore azdext kubelet -->
 
 Architecture of the gRPC-based extension system in azd.
 
@@ -71,6 +71,13 @@ is separate from the [gRPC service and invocation store](../../cli/azd/internal/
 
 See the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
 for the API, host compatibility, and contribution ordering rules.
+
+The Foundry provisioning extension also manages external registry access through
+deployment planning and persisted grant ownership. BYO AKS uses the cluster's
+kubelet identity for image pulls; ordinary Foundry hosting uses the Project
+identity. Project connections remain separate from role assignments. See
+[Foundry registry reuse](../../cli/azd/extensions/azure.ai.projects/README.md#reuse-an-external-container-registry)
+for the feature gate, network requirements, and teardown behavior.
 
 ## Capabilities
 

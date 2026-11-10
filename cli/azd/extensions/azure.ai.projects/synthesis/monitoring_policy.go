@@ -22,6 +22,13 @@ func MonitoringProperties(resource *armresources.GenericResource) (map[string]an
 
 // MonitoringKeyPolicy rejects policy changes needed to enable ApiKey ingestion.
 func MonitoringKeyPolicy(properties map[string]any) error {
+	return MonitoringKeyPolicyFor(properties, false)
+}
+
+// MonitoringKeyPolicyFor is MonitoringKeyPolicy for a deployment that owns its
+// private monitoring path. Disabled public ingestion is then the intended
+// configuration, so only the local-authentication checks apply.
+func MonitoringKeyPolicyFor(properties map[string]any, privateNetwork bool) error {
 	if value, present := properties["DisableLocalAuth"]; present {
 		disabled, ok := value.(bool)
 		if !ok || disabled {
@@ -36,6 +43,9 @@ func MonitoringKeyPolicy(properties map[string]any) error {
 		if disabled, present := values["disableLocalAuth"]; present && disabled != false {
 			return fmt.Errorf("automatic ApiKey monitoring cannot change or bypass disabled workspace local authentication")
 		}
+	}
+	if privateNetwork {
+		return nil
 	}
 	return MonitoringNetworkPolicy(properties)
 }

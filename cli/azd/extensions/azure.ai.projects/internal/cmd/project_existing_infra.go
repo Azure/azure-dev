@@ -971,7 +971,10 @@ func writeExistingProjectBicep(
 			}
 		}
 	}
-	for _, name := range []string{"monitoring.bicep", "monitoring-connection.bicep"} {
+	for _, name := range []string{
+		"monitoring.bicep", "monitoring-connection.bicep", "monitor-private-link.bicep", "monitoring-resync.bicep",
+		"network-approver-role-assignment.bicep",
+	} {
 		data, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/modules/"+name)
 		if err != nil {
 			return fmt.Errorf("read monitoring Bicep module: %w", err)

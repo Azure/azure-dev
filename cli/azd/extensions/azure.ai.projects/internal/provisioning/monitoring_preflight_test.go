@@ -21,6 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -71,7 +72,14 @@ type monitoringCloudFixture struct {
 	deploymentStatus       int
 	deploymentOutputs      map[string]any
 	deploymentResources    []any
+	vnetStatus             int
+	foreignEndpointScope   string
 }
+
+const (
+	monitoringTestVNet     = "/subscriptions/sub/resourceGroups/net-rg/providers/Microsoft.Network/virtualNetworks/vnet"
+	monitoringTestEndpoint = "/subscriptions/sub/resourceGroups/net-rg/providers/Microsoft.Network/privateEndpoints/pe"
+)
 
 func newMonitoringCloudFixture(t *testing.T, fixture *monitoringCloudFixture) *FoundryProvisioningProvider {
 	t.Helper()
@@ -90,6 +98,24 @@ func newMonitoringCloudFixture(t *testing.T, fixture *monitoringCloudFixture) *F
 			}})
 		}
 		switch {
+		case strings.Contains(request.URL.Path, "/providers/Microsoft.Network/virtualNetworks/"):
+			if fixture.vnetStatus != 0 {
+				failure(fixture.vnetStatus)
+				return
+			}
+			endpoints := []any{}
+			if fixture.foreignEndpointScope != "" {
+				endpoints = append(endpoints, map[string]any{"id": monitoringTestEndpoint})
+			}
+			reply(http.StatusOK, map[string]any{"id": request.URL.Path, "properties": map[string]any{
+				"subnets": []any{map[string]any{"properties": map[string]any{"privateEndpoints": endpoints}}},
+			}})
+		case strings.EqualFold(request.URL.Path, monitoringTestEndpoint):
+			reply(http.StatusOK, map[string]any{"id": request.URL.Path, "properties": map[string]any{
+				"privateLinkServiceConnections": []any{map[string]any{"properties": map[string]any{
+					"groupIds": []any{"azuremonitor"}, "privateLinkServiceId": fixture.foreignEndpointScope,
+				}}},
+			}})
 		case strings.EqualFold(request.URL.Path, "/subscriptions/sub/resourceGroups/adjunct-rg"):
 			if request.Method == http.MethodDelete {
 				fixture.deletions = append(fixture.deletions, request.URL.Path)
@@ -473,20 +499,84 @@ func TestMonitoringPreflightImplicitExistingProjectIsNotConsent(t *testing.T) {
 	assert.Len(t, fixture.requests, 3, "only deployment binding, What-If and project identity are read; no setup or discovery")
 }
 
-func TestMonitoringPreflightPrivateNetworkSkipsMonitoring(t *testing.T) {
+func TestMonitoringPreflightPrivateNetworkConnectsExistingComponent(t *testing.T) {
 	t.Parallel()
-	fixture := monitoringCloudFixture{}
-	p := newMonitoringCloudFixture(t, &fixture)
-	p.synthResult = &synthesis.Result{MonitoringExplicit: true}
-	source := monitoringTestSource("create")
-	source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
-	client, err := p.deploymentsClient(t.Context())
-	require.NoError(t, err)
-	require.NoError(t, p.prepareMonitoring(t.Context(), source, client, func(string) {}))
-	assert.Equal(t, "none", source.parameters["monitoringMode"].(map[string]any)["value"])
-	fixture.mu.Lock()
-	defer fixture.mu.Unlock()
-	assert.Empty(t, fixture.writes)
+	tests := []struct {
+		name      string
+		component map[string]any
+		wantErr   string
+	}{
+		{
+			name:      "component with public ingestion disabled",
+			component: map[string]any{"publicNetworkAccessForIngestion": "Disabled"},
+		},
+		{name: "component with public ingestion enabled"},
+		{
+			name:      "local authentication disabled",
+			component: map[string]any{"DisableLocalAuth": true},
+			wantErr:   "disabled local authentication",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := monitoringCloudFixture{componentPolicy: tt.component}
+			p := newMonitoringCloudFixture(t, &fixture)
+			p.synthResult = &synthesis.Result{MonitoringExplicit: true}
+			source := monitoringTestSource("reuse-connect")
+			source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+			client, err := p.deploymentsClient(t.Context())
+			require.NoError(t, err)
+			err = p.prepareMonitoring(t.Context(), source, client, func(string) {})
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "reuse-connect", source.parameters["monitoringMode"].(map[string]any)["value"])
+			fixture.mu.Lock()
+			defer fixture.mu.Unlock()
+			assert.Empty(t, fixture.writes)
+		})
+	}
+}
+
+func TestMonitoringPreflightPrivateNetworkGates(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		extra    map[string]any
+		declared bool
+		wantMode string
+		approved bool
+	}{
+		{name: "managed egress is verified and approved", extra: map[string]any{"useManagedEgress": true}, declared: true, wantMode: "reuse-connect", approved: true},
+		{name: "shared DNS zones are skipped", extra: map[string]any{"dnsZonesResourceGroup": "dns-rg"}, wantMode: "none"},
+		{name: "verified network is approved", declared: true, wantMode: "reuse-connect", approved: true},
+		{name: "template without the gate is left alone", wantMode: "reuse-connect"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := monitoringCloudFixture{}
+			p := newMonitoringCloudFixture(t, &fixture)
+			p.synthResult = &synthesis.Result{MonitoringExplicit: true}
+			source := monitoringTestSource("reuse-connect")
+			source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+			for name, value := range tt.extra {
+				source.parameters[name] = map[string]any{"value": value}
+			}
+			if tt.declared {
+				source.armTemplate["parameters"] = map[string]any{"monitoringPrivateLinkApproved": map[string]any{}}
+			}
+			client, err := p.deploymentsClient(t.Context())
+			require.NoError(t, err)
+			require.NoError(t, p.prepareMonitoring(t.Context(), source, client, func(string) {}))
+			assert.Equal(t, tt.wantMode, source.parameters["monitoringMode"].(map[string]any)["value"])
+			approved, present := source.parameters["monitoringPrivateLinkApproved"].(map[string]any)
+			assert.Equal(t, tt.approved, present && approved["value"] == true)
+		})
+	}
 }
 
 func TestMonitoringPreflightOwnedExistingProjectRetainsCreateGraph(t *testing.T) {
@@ -575,6 +665,181 @@ func TestMonitoringPreflightFreshNativeTargetComesFromARM(t *testing.T) {
 	for _, request := range fixture.requests {
 		assert.NotContains(t, request, "-stale")
 	}
+}
+
+func TestMonitoringPreflightPrivateCreatePlansWithApproval(t *testing.T) {
+	t.Parallel()
+	component := "/subscriptions/sub/resourceGroups/project-rg/providers/Microsoft.Insights/components/new"
+	workspace := "/subscriptions/sub/resourceGroups/project-rg/providers/Microsoft.OperationalInsights/workspaces/new"
+	fixture := monitoringCloudFixture{
+		projectStatus: http.StatusNotFound, accountStatus: http.StatusNotFound,
+		plannedChanges: []any{
+			map[string]any{"resourceId": monitoringTestProject, "changeType": "Create"},
+			map[string]any{"resourceId": component, "changeType": "Create"},
+			map[string]any{"resourceId": workspace, "changeType": "Create"},
+		},
+	}
+	p := newMonitoringCloudFixture(t, &fixture)
+	p.synthResult = &synthesis.Result{}
+	source := monitoringTestSource("create")
+	delete(source.parameters, "projectResourceId")
+	source.parameters["applicationInsightsResourceId"] = map[string]any{"value": ""}
+	source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+	source.armTemplate["parameters"] = map[string]any{"monitoringPrivateLinkApproved": map[string]any{}}
+	for name, value := range map[string]string{
+		"location": "westus3", "resourceGroupName": "project-rg", "foundryProjectName": "project", "resourceTokenSalt": "test",
+	} {
+		source.parameters[name] = map[string]any{"value": value}
+	}
+	client, err := p.deploymentsClient(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, p.prepareMonitoring(t.Context(), source, client, func(string) {}))
+	assert.Equal(t, "create", source.parameters["monitoringMode"].(map[string]any)["value"])
+	fixture.mu.Lock()
+	defer fixture.mu.Unlock()
+	require.Len(t, fixture.plans, 1)
+	planned := fixture.plans[0]["properties"].(map[string]any)["parameters"].(map[string]any)
+	assert.Equal(t, true, planned["monitoringPrivateLinkApproved"].(map[string]any)["value"],
+		"the planning What-If must include the monitoring graph")
+}
+
+func TestMonitoringPrivateMonitoringSkipReasonDecisions(t *testing.T) {
+	t.Parallel()
+	owned := "/subscriptions/sub/resourceGroups/project-rg/providers/Microsoft.Insights/privateLinkScopes/owned"
+	foreign := "/subscriptions/sub/resourceGroups/other/providers/Microsoft.Insights/privateLinkScopes/foreign"
+	ownedOutputs := map[string]any{"azd_monitoring_private_link_scope_id": map[string]any{"value": owned}}
+	planWith := func(id string) *armresources.WhatIfOperationResult {
+		kind := armresources.ChangeTypeCreate
+		return &armresources.WhatIfOperationResult{Properties: &armresources.WhatIfOperationProperties{
+			Changes: []*armresources.WhatIfChange{{ResourceID: &id, ChangeType: &kind}},
+		}}
+	}
+	tests := []struct {
+		name       string
+		foreign    string
+		vnetStatus int
+		previous   *monitoringTargetBinding
+		extra      map[string]any
+		wantSkip   bool
+		wantErr    bool
+	}{
+		{name: "new environment with a free network proceeds"},
+		{name: "new environment conflict skips", foreign: foreign, wantSkip: true},
+		{name: "new environment read failure skips", vnetStatus: http.StatusInternalServerError, wantSkip: true},
+		{
+			name: "owned environment conflict errors", foreign: foreign,
+			previous: &monitoringTargetBinding{owned: true}, wantErr: true,
+		},
+		{
+			name: "owned environment read failure errors", vnetStatus: http.StatusInternalServerError,
+			previous: &monitoringTargetBinding{owned: true}, wantErr: true,
+		},
+		{
+			name: "owned environment shared DNS errors", previous: &monitoringTargetBinding{owned: true},
+			extra: map[string]any{"dnsZonesResourceGroup": "dns-rg"}, wantErr: true,
+		},
+		{
+			name: "own scope from mixed-case outputs is exempt", foreign: owned,
+			previous: &monitoringTargetBinding{outputs: ownedOutputs},
+		},
+		{
+			name: "own scope from a failed retry plan is exempt", foreign: owned,
+			previous: &monitoringTargetBinding{retry: true, plan: planWith(owned)},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := monitoringCloudFixture{foreignEndpointScope: tt.foreign, vnetStatus: tt.vnetStatus}
+			p := newMonitoringCloudFixture(t, &fixture)
+			source := monitoringTestSource("reuse-connect")
+			source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+			source.parameters["vnetId"] = map[string]any{"value": monitoringTestVNet}
+			source.parameters["resourceGroupName"] = map[string]any{"value": "project-rg"}
+			for name, value := range tt.extra {
+				source.parameters[name] = map[string]any{"value": value}
+			}
+			resolver := synthesis.MonitoringResolver{
+				Credential: p.credential, ClientOptions: p.armClientOptions, PrivateNetwork: true,
+			}
+			reason, err := p.privateMonitoringSkipReason(t.Context(), source, &resolver, tt.previous)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Empty(t, reason)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSkip, reason != "", reason)
+		})
+	}
+}
+
+func TestMonitoringPreflightPrivateNetworkPreservesKeylessConnection(t *testing.T) {
+	t.Parallel()
+	fixture := monitoringCloudFixture{
+		componentPolicy:    map[string]any{"DisableLocalAuth": true},
+		accountConnections: []any{monitoringTestConnection("shared-monitoring", monitoringTestComponent, "AAD", true)},
+	}
+	p := newMonitoringCloudFixture(t, &fixture)
+	p.synthResult = &synthesis.Result{MonitoringExplicit: true}
+	source := monitoringTestSource("reuse-connect")
+	source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+	client, err := p.deploymentsClient(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, p.prepareMonitoring(t.Context(), source, client, func(string) {}))
+	assert.Equal(t, "reuse-connect", source.parameters["monitoringMode"].(map[string]any)["value"])
+	assert.Equal(t, false, source.parameters["monitoringCreateConnection"].(map[string]any)["value"])
+}
+
+func TestMonitoringPlannedPrivateLinkScope(t *testing.T) {
+	t.Parallel()
+	prefix := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Insights/privateLinkScopes/"
+	result := func(changes ...*armresources.WhatIfChange) *armresources.WhatIfOperationResult {
+		return &armresources.WhatIfOperationResult{Properties: &armresources.WhatIfOperationProperties{Changes: changes}}
+	}
+	change := func(id string, kind armresources.ChangeType) *armresources.WhatIfChange {
+		return &armresources.WhatIfChange{ResourceID: &id, ChangeType: &kind}
+	}
+	assert.Equal(t, prefix+"a", monitoringPlannedPrivateLinkScope(
+		result(change(prefix+"a", armresources.ChangeTypeCreate)), "SUB", "RG"))
+	assert.Empty(t, monitoringPlannedPrivateLinkScope(
+		result(change(prefix+"a", armresources.ChangeTypeCreate), change(prefix+"b", armresources.ChangeTypeCreate)), "sub", "rg"))
+	assert.Empty(t, monitoringPlannedPrivateLinkScope(
+		result(change(prefix+"a", armresources.ChangeTypeIgnore)), "sub", "rg"))
+	assert.Empty(t, monitoringPlannedPrivateLinkScope(
+		result(change(prefix+"a", armresources.ChangeTypeCreate)), "sub", "other"))
+	assert.Empty(t, monitoringPlannedPrivateLinkScope(nil, "sub", "rg"))
+}
+
+func TestMonitoringPreflightPrivateReuseConnectRetryMismatchSuggestsRecovery(t *testing.T) {
+	t.Parallel()
+	source := monitoringTestSource("reuse-connect")
+	delete(source.parameters, "projectResourceId")
+	for name, value := range map[string]string{
+		"location": "westus3", "resourceGroupName": "project-rg", "foundryProjectName": "project", "resourceTokenSalt": "test",
+	} {
+		source.parameters[name] = map[string]any{"value": value}
+	}
+	source.parameters["enableNetworkIsolation"] = map[string]any{"value": true}
+	fixture := monitoringCloudFixture{
+		plannedStatus: http.StatusOK,
+		plannedChanges: []any{
+			map[string]any{"resourceId": monitoringTestProject, "changeType": "NoChange"},
+		},
+		previous: map[string]any{
+			"provisioningState": "Failed", "parameters": source.parameters,
+			"template": map[string]any{"resources": []any{"different"}},
+		},
+	}
+	p := newMonitoringCloudFixture(t, &fixture)
+	p.synthResult = &synthesis.Result{}
+	client, err := p.deploymentsClient(t.Context())
+	require.NoError(t, err)
+	err = p.prepareMonitoring(t.Context(), source, client, func(string) {})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "different monitoring graph")
+	assert.Contains(t, err.Error(), "monitoring.enabled: false")
+	assert.NotContains(t, err.Error(), "explicitly configure existing-component reuse")
 }
 
 func TestMonitoringPreflightFailedNativeAttemptCanRetryWithoutTrustingOutputs(t *testing.T) {

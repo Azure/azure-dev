@@ -18,9 +18,9 @@ import (
 const foundryGovernPortalFallback = "https://ai.azure.com/?flight=govern_ignite"
 
 var (
-	policyARMSubResourceRE = regexp.MustCompile(`(?i)/subscriptions/[^\s"',)]+`)
-	policyARMMGScopeRE     = regexp.MustCompile(`(?i)/providers/Microsoft\.Management/managementGroups/[^\s"',)]+`)
-	policyPortalURLRE      = regexp.MustCompile(`(?i)https://ai\.azure\.com/[^\s"',)]+`)
+	embeddedSubscriptionRegex    = regexp.MustCompile(`(?i)/subscriptions/[^\s"',)]+`)
+	embeddedManagementGroupRegex = regexp.MustCompile(`(?i)/providers/Microsoft\.Management/managementGroups/[^\s"',)]+`)
+	embeddedPortalURLRegex       = regexp.MustCompile(`(?i)https://ai\.azure\.com/[^\s"',)]+`)
 )
 
 func redactARMResourceID(raw string) string {
@@ -33,13 +33,13 @@ func sanitizePolicyText(text string, unredacted bool) string {
 	if unredacted || text == "" {
 		return text
 	}
-	text = policyPortalURLRE.ReplaceAllStringFunc(text, func(raw string) string {
+	text = embeddedPortalURLRegex.ReplaceAllStringFunc(text, func(raw string) string {
 		trimmed := strings.TrimRight(raw, ".:;]")
 		suffix := raw[len(trimmed):]
 		return redactedPlaceholder + suffix
 	})
-	text = policyARMSubResourceRE.ReplaceAllStringFunc(text, redactARMResourceID)
-	text = policyARMMGScopeRE.ReplaceAllStringFunc(text, redactARMResourceID)
+	text = embeddedSubscriptionRegex.ReplaceAllStringFunc(text, redactARMResourceID)
+	text = embeddedManagementGroupRegex.ReplaceAllStringFunc(text, redactARMResourceID)
 	return text
 }
 

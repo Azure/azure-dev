@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"maps"
@@ -100,8 +101,8 @@ func candidateCacheKey(candidate foundrypolicy.Candidate, inv foundrypolicy.Inve
 	if normProj == "" {
 		return "", false
 	}
-	normalizedCand := candidate
-	normalizedCand.ProjectResourceID = normProj
+	normalizedCandidate := candidate
+	normalizedCandidate.ProjectResourceID = normProj
 
 	fingerprints := make([]policyAssignmentCacheFingerprint, 0, len(inv.Assignments))
 	for _, a := range inv.Assignments {
@@ -117,7 +118,7 @@ func candidateCacheKey(candidate foundrypolicy.Candidate, inv foundrypolicy.Inve
 		ProjectID   string                             `json:"projectId"`
 		Assignments []policyAssignmentCacheFingerprint `json:"assignments"`
 	}{
-		Candidate:   normalizedCand,
+		Candidate:   normalizedCandidate,
 		ProjectID:   foundrypolicy.NormalizeScope(inv.ProjectID),
 		Assignments: fingerprints,
 	}
@@ -168,6 +169,25 @@ func (c *candidateEvaluationCache) put(
 	}
 }
 
+func loadProjectPolicyInventoryFromCache(
+	ctx context.Context,
+	cache *foundrypolicy.InventoryCache,
+	projectID string,
+	fetch func(context.Context) (foundrypolicy.Inventory, error),
+) (foundrypolicy.Inventory, error) {
+	if cache == nil {
+		cache = foundrypolicy.DefaultCache
+	}
+	res, err := cache.GetFresh(ctx, projectID, fetch)
+	if err != nil {
+		return foundrypolicy.Inventory{}, err
+	}
+	if res.Freshness == foundrypolicy.FreshnessStale {
+		return foundrypolicy.Inventory{}, errors.New("policy inventory cache is stale and refresh failed")
+	}
+	return res.Inventory, nil
+}
+
 func loadProjectPolicyInventory(
 	ctx context.Context,
 	cred azcore.TokenCredential,
@@ -179,9 +199,14 @@ func loadProjectPolicyInventory(
 	}
 	pipeline := foundrypolicy.NewARMPipeline(cred)
 	queryFn := foundrypolicy.NewResourceGraphQueryFunc(pipeline, "", nil)
-	return foundrypolicy.DefaultCache.Get(ctx, projectID, func(fetchCtx context.Context) (foundrypolicy.Inventory, error) {
-		return foundrypolicy.LoadInventory(fetchCtx, projectID, parsed.SubscriptionID, queryFn)
-	})
+	return loadProjectPolicyInventoryFromCache(
+		ctx,
+		foundrypolicy.DefaultCache,
+		projectID,
+		func(fetchCtx context.Context) (foundrypolicy.Inventory, error) {
+			return foundrypolicy.LoadInventory(fetchCtx, projectID, parsed.SubscriptionID, queryFn)
+		},
+	)
 }
 
 func evaluateProjectModelPolicies(
@@ -396,11 +421,19 @@ func ExtractServicePolicyCandidateWithServices(
 				svc.GetDocker().GetImagePassthrough() ||
 				(image != "" && skipACR) {
 				candidate.ContainerImage = image
-			} else if acrEndpoint := strings.TrimSpace(azdEnv["AZURE_CONTAINER_REGISTRY_ENDPOINT"]); acrEndpoint != "" {
-				candidate.ContainerRegistry = acrEndpoint
+			} else if image == "" {
+				acrEndpoint := strings.TrimSpace(azdEnv["AZURE_CONTAINER_REGISTRY_ENDPOINT"])
+				if acrEndpoint == "" {
+					acrEndpoint = expandPolicyEnv(svc.GetDocker().GetRegistry(), toolEnv)
+				}
+				if acrEndpoint != "" {
+					candidate.ContainerRegistry = acrEndpoint
+				}
 			}
 		}
 	}
+
+	isHostedAgent := strings.EqualFold(candidate.AgentKind, string(agent_yaml.AgentKindHosted))
 
 	if targetCfg, cfgErr := LoadServiceTargetAgentConfig(svc); cfgErr == nil && targetCfg != nil {
 		for _, dep := range targetCfg.Deployments {
@@ -428,18 +461,20 @@ func ExtractServicePolicyCandidateWithServices(
 				addModel(foundrypolicy.ModelCandidate{DeploymentName: emb})
 			}
 			storeName := expandPolicyEnv(ms.Name, toolEnv)
-			if !hasToolOfType(memorySearchToolType) || storeName != "" {
+			if !isHostedAgent && (!hasToolOfType(memorySearchToolType) || storeName != "") {
 				addTool(foundrypolicy.ToolCandidate{Type: memorySearchToolType, Name: storeName})
 			}
 		}
 		for _, tb := range targetCfg.Toolboxes {
-			if tbName := expandPolicyEnv(tb.Name, toolEnv); tbName != "" {
-				tbURL := expandPolicyEnv(toolEnv[envkey.ToolboxMCPEndpoint(tbName)], toolEnv)
-				addTool(foundrypolicy.ToolCandidate{
-					Type:      "mcp",
-					Name:      "toolbox:" + tbName,
-					ServerURL: tbURL,
-				})
+			if !isHostedAgent {
+				if tbName := expandPolicyEnv(tb.Name, toolEnv); tbName != "" {
+					tbURL := expandPolicyEnv(toolEnv[envkey.ToolboxMCPEndpoint(tbName)], toolEnv)
+					addTool(foundrypolicy.ToolCandidate{
+						Type:      "mcp",
+						Name:      "toolbox:" + tbName,
+						ServerURL: tbURL,
+					})
+				}
 			}
 			for _, rawTool := range tb.Tools {
 				for _, tc := range extractToolCandidatesFromAny(rawTool, toolEnv) {
@@ -476,14 +511,13 @@ func ExtractServicePolicyCandidateWithServices(
 		}
 	}
 
-	if envDeps, present, decErr := DecodeProjectDeploymentsEnv(azdEnv["AI_PROJECT_DEPLOYMENTS"]); present && decErr == nil {
-		hasExplicitModels := len(candidate.Models) > 0
-		for _, dep := range envDeps {
-			depName := expandPolicyEnv(dep.Name, azdEnv)
-			if depName == "" {
-				continue
-			}
-			if hasExplicitModels {
+	if len(candidate.Models) > 0 {
+		if envDeps, present, decErr := DecodeProjectDeploymentsEnv(azdEnv["AI_PROJECT_DEPLOYMENTS"]); present && decErr == nil {
+			for _, dep := range envDeps {
+				depName := expandPolicyEnv(dep.Name, azdEnv)
+				if depName == "" {
+					continue
+				}
 				matched := false
 				for _, existing := range candidate.Models {
 					if strings.EqualFold(existing.DeploymentName, depName) ||
@@ -495,13 +529,16 @@ func ExtractServicePolicyCandidateWithServices(
 				if !matched {
 					continue
 				}
+				envCandidate := foundrypolicy.ModelCandidate{
+					DeploymentName: depName,
+					Name:           expandPolicyEnv(dep.Model.Name, azdEnv),
+					Format:         expandPolicyEnv(dep.Model.Format, azdEnv),
+					Version:        expandPolicyEnv(dep.Model.Version, azdEnv),
+				}
+				candidate.Models = foundrypolicy.MergeModelCandidates(
+					append([]foundrypolicy.ModelCandidate{envCandidate}, candidate.Models...),
+				)
 			}
-			addModel(foundrypolicy.ModelCandidate{
-				DeploymentName: depName,
-				Name:           expandPolicyEnv(dep.Model.Name, azdEnv),
-				Format:         expandPolicyEnv(dep.Model.Format, azdEnv),
-				Version:        expandPolicyEnv(dep.Model.Version, azdEnv),
-			})
 		}
 	}
 
@@ -797,12 +834,15 @@ func CheckCandidateWithCredential(
 }
 
 func shouldSkipPolicyChecks(azdEnv map[string]string) bool {
-	for _, key := range []string{skipPolicyPreflightEnvKey, legacySkipPolicyPreflightEnvKey} {
+	keys := []string{skipPolicyPreflightEnvKey, legacySkipPolicyPreflightEnvKey}
+	for _, key := range keys {
 		if val := strings.TrimSpace(azdEnv[key]); val != "" {
 			if skip, err := strconv.ParseBool(val); err == nil {
 				return skip
 			}
 		}
+	}
+	for _, key := range keys {
 		if val := strings.TrimSpace(os.Getenv(key)); val != "" {
 			if skip, err := strconv.ParseBool(val); err == nil {
 				return skip

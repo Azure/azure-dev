@@ -75,6 +75,9 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
 		}).
+		WithServiceEventHandler("prebuild", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+			return prepackageHandler(ctx, azdClient, args)
+		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return prepackageHandler(ctx, azdClient, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).

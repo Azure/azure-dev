@@ -250,7 +250,7 @@ func TestExtractServicePolicyCandidate(t *testing.T) {
 		assert.Equal(t, "https://toolbox.example.com/mcp", cand.Tools[1].ServerURL)
 	})
 
-	t.Run("hosted container agent with Dockerfile uses registry candidate", func(t *testing.T) {
+	t.Run("hosted container agent with Dockerfile uses registry candidate or docker.registry fallback", func(t *testing.T) {
 		t.Parallel()
 		svc := inlineAgentService(t, map[string]any{
 			"kind": "hosted",
@@ -263,6 +263,104 @@ func TestExtractServicePolicyCandidate(t *testing.T) {
 		assert.Equal(t, "hosted", cand.AgentKind)
 		assert.Empty(t, cand.ContainerImage)
 		assert.Equal(t, "myacr.azurecr.io", cand.ContainerRegistry)
+
+		// Fallback to docker.registry when AZURE_CONTAINER_REGISTRY_ENDPOINT is unset
+		svc.Docker = &azdext.DockerProjectOptions{Registry: "${CUSTOM_ACR}"}
+		candFallback := ExtractServicePolicyCandidate(svc, t.TempDir(), map[string]string{
+			"AZURE_AI_PROJECT_ID": testPolicyProjectID,
+			"CUSTOM_ACR":          "fallbackacr.azurecr.io",
+		})
+		assert.Equal(t, "fallbackacr.azurecr.io", candFallback.ContainerRegistry)
+
+		// When image != "" without imagePassthrough or AZD_AGENT_SKIP_ACR=true, neither
+		// ContainerImage nor ContainerRegistry is pre-populated before interactive selection.
+		svcAmbiguous := inlineAgentService(t, map[string]any{
+			"kind":  "hosted",
+			"name":  "my-hosted",
+			"image": "prebuilt.example.com/team/agent:v1",
+		})
+		candAmbiguous := ExtractServicePolicyCandidate(svcAmbiguous, t.TempDir(), map[string]string{
+			"AZURE_AI_PROJECT_ID":               testPolicyProjectID,
+			"AZURE_CONTAINER_REGISTRY_ENDPOINT": "myacr.azurecr.io",
+		})
+		assert.Empty(t, candAmbiguous.ContainerImage)
+		assert.Empty(t, candAmbiguous.ContainerRegistry)
+		assert.Empty(t, candAmbiguous.Models)
+	})
+
+	t.Run("hosted agent excludes synthetic memory_search_preview and toolbox MCP wrapper tools and ignores unrelated AI_PROJECT_DEPLOYMENTS", func(t *testing.T) {
+		t.Parallel()
+		encodedDeps, err := EncodeProjectDeploymentsEnv([]Deployment{
+			{
+				Name: "unrelated-project-dep",
+				Model: DeploymentModel{
+					Name:    "gpt-4o",
+					Format:  "OpenAI",
+					Version: "2024-08-06",
+				},
+			},
+			{
+				Name: "chat",
+				Model: DeploymentModel{
+					Name:    "gpt-4.1",
+					Format:  "OpenAI",
+					Version: "2025-04-14",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		// Hosted agent with no models does not inherit unrelated AI_PROJECT_DEPLOYMENTS
+		svcNoModels := inlineAgentService(t, map[string]any{
+			"kind": "hosted",
+			"name": "hosted-no-models",
+		})
+		candNoModels := ExtractServicePolicyCandidate(svcNoModels, t.TempDir(), map[string]string{
+			"AZURE_AI_PROJECT_ID":    testPolicyProjectID,
+			"AI_PROJECT_DEPLOYMENTS": encodedDeps,
+		})
+		assert.Empty(t, candNoModels.Models)
+
+		// Hosted agent with memoryStores, toolboxes, and static deployments:
+		// - AI_PROJECT_DEPLOYMENTS takes precedence over static targetCfg.Deployments
+		// - memoryStore models and explicit toolbox tools are extracted, but synthetic
+		//   memory_search_preview and toolbox:<name> MCP wrapper tools are NOT added.
+		svcHosted := inlineAgentService(t, map[string]any{
+			"kind": "hosted",
+			"name": "hosted-with-stores",
+			"deployments": []any{
+				map[string]any{
+					"name": "chat",
+					"model": map[string]any{
+						"name":    "gpt-35-turbo",
+						"format":  "OpenAI",
+						"version": "0613",
+					},
+				},
+			},
+			"memoryStores": []any{
+				map[string]any{
+					"name":           "my-store",
+					"chatModel":      "chat",
+					"embeddingModel": "text-embedding-3-small",
+				},
+			},
+			"toolboxes": []any{
+				map[string]any{
+					"name": "my-tb",
+				},
+			},
+		})
+		candHosted := ExtractServicePolicyCandidate(svcHosted, t.TempDir(), map[string]string{
+			"AZURE_AI_PROJECT_ID":    testPolicyProjectID,
+			"AI_PROJECT_DEPLOYMENTS": encodedDeps,
+		})
+		require.Len(t, candHosted.Models, 2)
+		assert.Equal(t, "chat", candHosted.Models[0].DeploymentName)
+		assert.Equal(t, "gpt-4.1", candHosted.Models[0].Name)
+		assert.Equal(t, "2025-04-14", candHosted.Models[0].Version)
+		assert.Equal(t, "text-embedding-3-small", candHosted.Models[1].DeploymentName)
+		assert.Empty(t, candHosted.Tools)
 	})
 
 	t.Run("hosted container agent with imagePassthrough uses full image candidate", func(t *testing.T) {
@@ -509,6 +607,73 @@ func TestCheckHostedContainerImagePolicyAndViolationsError(t *testing.T) {
 		assert.Empty(t, resOtherMG.Violations)
 	})
 
+	t.Run("loadProjectPolicyInventoryFromCache fails open when cached inventory is stale and refresh fails", func(t *testing.T) {
+		t.Parallel()
+		now := time.Unix(1000, 0)
+		cache := foundrypolicy.NewInventoryCache(
+			5*time.Minute,
+			func() time.Time { return now },
+			func(string) {},
+			5*time.Minute,
+			time.Second,
+		)
+
+		denyInv := foundrypolicy.Inventory{
+			ProjectID: testPolicyProjectID,
+			Assignments: []foundrypolicy.PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/deny-prompt",
+					AssignmentDisplayName: "Deny Prompt Agents",
+					PolicyDefinitionID:    foundrypolicy.DeniedAgentKindsPolicyID,
+					AssignmentParameters: map[string]any{
+						"effect":           map[string]any{"value": "Deny"},
+						"deniedAgentKinds": map[string]any{"value": []any{"prompt"}},
+					},
+					EnforcementMode: "Default",
+				},
+			},
+		}
+
+		// Initial fresh populate succeeds.
+		inv1, err1 := loadProjectPolicyInventoryFromCache(
+			t.Context(),
+			cache,
+			testPolicyProjectID,
+			func(_ context.Context) (foundrypolicy.Inventory, error) {
+				return denyInv, nil
+			},
+		)
+		require.NoError(t, err1)
+		require.Len(t, inv1.Assignments, 1)
+
+		// Advance past TTL and fail refresh -> GetFresh returns FreshnessStale, which
+		// loadProjectPolicyInventoryFromCache rejects with an error so preflight fails open.
+		now = now.Add(6 * time.Minute)
+		_, errStale := loadProjectPolicyInventoryFromCache(
+			t.Context(),
+			cache,
+			testPolicyProjectID,
+			func(_ context.Context) (foundrypolicy.Inventory, error) {
+				return foundrypolicy.Inventory{}, errors.New("Resource Graph unavailable")
+			},
+		)
+		require.ErrorContains(t, errStale, "stale")
+
+		// Advance past retry throttle and succeed refresh -> returns updated FreshnessFresh inventory.
+		now = now.Add(6 * time.Minute)
+		updatedInv := foundrypolicy.Inventory{ProjectID: testPolicyProjectID}
+		invFresh, errFresh := loadProjectPolicyInventoryFromCache(
+			t.Context(),
+			cache,
+			testPolicyProjectID,
+			func(_ context.Context) (foundrypolicy.Inventory, error) {
+				return updatedInv, nil
+			},
+		)
+		require.NoError(t, errFresh)
+		assert.Empty(t, invFresh.Assignments)
+	})
+
 	t.Run("selects specific and combined error codes across target kinds", func(t *testing.T) {
 		t.Parallel()
 		assert.Equal(t, exterrors.CodeAgentKindBlockedByPolicy, selectPolicyErrorCode([]foundrypolicy.Violation{
@@ -588,6 +753,12 @@ func TestPolicyOptOutEnvVars(t *testing.T) {
 		nil,
 		blockingOps,
 	))
+
+	// 4. azdEnv legacy fallback key takes precedence over process env primary key = false
+	t.Setenv("AZD_AI_AGENT_SKIP_POLICY_CHECKS", "false")
+	assert.True(t, shouldSkipPolicyChecks(map[string]string{
+		"AZD_AGENT_SKIP_POLICY_CHECKS": "true",
+	}))
 }
 
 func TestEvaluateCandidateWithCredentialDeadlinePropagation(t *testing.T) {

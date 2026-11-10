@@ -1046,6 +1046,106 @@ func TestARMDeploymentPolicyEffectsAndEnrichment(t *testing.T) {
 		assert.Equal(t, "deny-two", res.Violations[1].DisplayName)
 		assert.NotContains(t, res.Violations[1].Message, "audit-only")
 	})
+
+	t.Run("preserves both violations when one assignment denies two different models", func(t *testing.T) {
+		t.Parallel()
+		eval := newEvaluatorWithResponse(`{
+			"results": {
+				"chat-dep": {
+					"evaluationOutcome": "NonCompliant",
+					"nonCompliantAssignments": [
+						{"assignmentId": "/subscriptions/sub/policyAssignments/approve-models", "effect": "Deny"}
+					]
+				},
+				"embed-dep": {
+					"evaluationOutcome": "NonCompliant",
+					"nonCompliantAssignments": [
+						{"assignmentId": "/subscriptions/sub/policyAssignments/approve-models", "effect": "Deny"}
+					]
+				}
+			}
+		}`)
+
+		res := EvaluateCandidate(
+			t.Context(),
+			Inventory{ProjectID: testProjectID},
+			Candidate{
+				ProjectResourceID: testProjectID,
+				Models: []ModelCandidate{
+					{DeploymentName: "chat-dep", Name: "gpt-35-turbo", Format: "OpenAI", Version: "0613"},
+					{DeploymentName: "embed-dep", Name: "text-embedding-ada-002", Format: "OpenAI", Version: "2"},
+				},
+			},
+			eval,
+		)
+		require.Equal(t, OutcomeBlocked, res.Outcome)
+		require.Len(t, res.Violations, 2)
+		assert.Equal(t, "gpt-35-turbo (version 0613)", res.Violations[0].TargetValue)
+		assert.Equal(t, "text-embedding-ada-002 (version 2)", res.Violations[1].TargetValue)
+	})
+
+	t.Run("preserves ARM violations for two versions of the same model while deduplicating against inventory violations", func(t *testing.T) {
+		t.Parallel()
+		eval := newEvaluatorWithResponse(`{
+			"results": {
+				"chat-v1": {
+					"evaluationOutcome": "NonCompliant",
+					"nonCompliantAssignments": [
+						{"assignmentId": "/subscriptions/sub/policyAssignments/approve-models", "effect": "Deny"}
+					]
+				},
+				"chat-v2": {
+					"evaluationOutcome": "NonCompliant",
+					"nonCompliantAssignments": [
+						{"assignmentId": "/subscriptions/sub/policyAssignments/approve-models", "effect": "Deny"}
+					]
+				}
+			}
+		}`)
+
+		models := []ModelCandidate{
+			{DeploymentName: "chat-v1", Name: "gpt-4o", Format: "OpenAI", Version: "2024-05-13"},
+			{DeploymentName: "chat-v2", Name: "gpt-4o", Format: "OpenAI", Version: "2024-08-06"},
+		}
+
+		// When inventory has no violation for approve-models, both version-specific ARM violations are preserved.
+		resBothARM := EvaluateCandidate(
+			t.Context(),
+			Inventory{ProjectID: testProjectID},
+			Candidate{ProjectResourceID: testProjectID, Models: models},
+			eval,
+		)
+		require.Equal(t, OutcomeBlocked, resBothARM.Outcome)
+		require.Len(t, resBothARM.Violations, 2)
+		assert.Equal(t, "gpt-4o (version 2024-05-13)", resBothARM.Violations[0].TargetValue)
+		assert.Equal(t, "gpt-4o (version 2024-08-06)", resBothARM.Violations[1].TargetValue)
+
+		// When inventory already reported approve-models for gpt-4o, ARM violations for the same assignment & model deduplicate.
+		invWithDeny := Inventory{
+			ProjectID: testProjectID,
+			Assignments: []PolicyAssignment{
+				{
+					AssignmentID:          "/subscriptions/sub/policyassignments/approve-models",
+					AssignmentDisplayName: "Deny GPT-4o",
+					DefinitionDisplayName: "[Preview]: Microsoft Foundry agents should not use denied models",
+					AssignmentParameters: map[string]any{
+						"effect":       map[string]any{"value": "Deny"},
+						"deniedModels": map[string]any{"value": []any{"gpt-4o"}},
+					},
+					EnforcementMode: "Default",
+				},
+			},
+		}
+		resDeduped := EvaluateCandidate(
+			t.Context(),
+			invWithDeny,
+			Candidate{ProjectResourceID: testProjectID, Models: models[:1]},
+			eval,
+		)
+		require.Equal(t, OutcomeBlocked, resDeduped.Outcome)
+		require.Len(t, resDeduped.Violations, 1)
+		assert.Equal(t, "gpt-4o", resDeduped.Violations[0].TargetValue)
+	})
 }
 
 func TestModelCandidateMergingAndAllowedModelsAliasHandling(t *testing.T) {

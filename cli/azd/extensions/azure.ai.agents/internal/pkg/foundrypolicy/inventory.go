@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore endswith policyresources policyassignments policydefinitions policyexemptions resourcecontainers objectarray skipToken donotenforce
+
 package foundrypolicy
 
 import (
@@ -530,6 +532,20 @@ func enrichViolationFromInventory(v Violation, inventory Inventory) Violation {
 	return v
 }
 
+func normalizeModelTargetName(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if before, _, ok := strings.Cut(trimmed, " (version "); ok {
+		return strings.TrimSpace(before)
+	}
+	return trimmed
+}
+
+func sameModelTargetValue(a, b string) bool {
+	na := normalizeModelTargetName(a)
+	nb := normalizeModelTargetName(b)
+	return na != "" && strings.EqualFold(na, nb)
+}
+
 // EvaluateCandidate evaluates all populated fields on candidate (agent kind, container image/registry,
 // tools, and models) against the loaded inventory and optional ARM deployment policy evaluator.
 func EvaluateCandidate(
@@ -544,13 +560,8 @@ func EvaluateCandidate(
 
 	addIncompleteReason := func(reason string) {
 		reason = strings.TrimSpace(reason)
-		if reason == "" {
+		if reason == "" || slices.Contains(incompleteReasons, reason) {
 			return
-		}
-		for _, r := range incompleteReasons {
-			if r == reason {
-				return
-			}
 		}
 		incompleteReasons = append(incompleteReasons, reason)
 	}
@@ -612,12 +623,13 @@ func EvaluateCandidate(
 			if err == nil {
 				for _, v := range armEval.Violations {
 					v = enrichViolationFromInventory(v, inventory)
-					// Deduplicate if the same assignment & target were already reported by inventory.
+					// Deduplicate if the same assignment & model target were already reported by inventory.
 					duplicate := false
-					for _, existing := range violations {
+					for _, existing := range invModelRes.Violations {
 						if existing.Target == v.Target &&
 							existing.AssignmentID != "" &&
-							NormalizeScope(existing.AssignmentID) == NormalizeScope(v.AssignmentID) {
+							NormalizeScope(existing.AssignmentID) == NormalizeScope(v.AssignmentID) &&
+							sameModelTargetValue(existing.TargetValue, v.TargetValue) {
 							duplicate = true
 							break
 						}

@@ -24,7 +24,7 @@ import (
 //
 // Keep these views aligned with:
 //   - agent environmentVariables values
-//   - connection target, credentials, and metadata
+//   - connection target, credentials, metadata, and OAuth fields
 //   - project network VNet IDs and DNS subscription
 //   - routine action input
 //   - toolbox endpoint and tools
@@ -38,9 +38,15 @@ type azureYamlEnvironmentVariable struct {
 }
 
 type azureYamlConnectionEnvironmentConfig struct {
-	Target      string            `yaml:"target,omitempty"`
-	Credentials map[string]any    `yaml:"credentials,omitempty"`
-	Metadata    map[string]string `yaml:"metadata,omitempty"`
+	Target           string            `yaml:"target,omitempty"`
+	Credentials      map[string]any    `yaml:"credentials,omitempty"`
+	Metadata         map[string]string `yaml:"metadata,omitempty"`
+	Audience         string            `yaml:"audience,omitempty"`
+	AuthorizationURL string            `yaml:"authorizationUrl,omitempty"`
+	TokenURL         string            `yaml:"tokenUrl,omitempty"`
+	RefreshURL       string            `yaml:"refreshUrl,omitempty"`
+	ConnectorName    string            `yaml:"connectorName,omitempty"`
+	Scopes           []string          `yaml:"scopes,omitempty"`
 }
 
 type azureYamlProjectEnvironmentConfig struct {
@@ -384,6 +390,21 @@ func collectAzureYamlServiceEnvironmentReferences(
 		}
 		if err := collect(config.Metadata, "metadata", false); err != nil {
 			return err
+		}
+		for _, field := range []struct {
+			path  string
+			value any
+		}{
+			{"audience", config.Audience},
+			{"authorizationUrl", config.AuthorizationURL},
+			{"tokenUrl", config.TokenURL},
+			{"refreshUrl", config.RefreshURL},
+			{"connectorName", config.ConnectorName},
+			{"scopes", config.Scopes},
+		} {
+			if err := collect(field.value, field.path, false); err != nil {
+				return err
+			}
 		}
 	case "azure.ai.project", "microsoft.foundry":
 		var config azureYamlProjectEnvironmentConfig

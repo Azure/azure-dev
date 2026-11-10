@@ -108,7 +108,7 @@ func TestServiceEnvironmentTemplates(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	environment, err := serviceEnvironmentTemplates(cfg)
+	environment, err := serviceEnvironmentTemplates(AiConnectionHost, cfg)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
 		"SEARCH_KEY":   "${SEARCH_KEY}",
@@ -133,7 +133,7 @@ func TestServiceEnvironmentTemplatesDeterministic(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	environment, err := serviceEnvironmentTemplates(cfg)
+	environment, err := serviceEnvironmentTemplates(AiConnectionHost, cfg)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
 		"TOPIC": "${TOPIC}",
@@ -144,7 +144,7 @@ func TestServiceEnvironmentTemplatesRejectsWithoutPartialResult(t *testing.T) {
 	t.Parallel()
 
 	cfg, err := structpb.NewStruct(map[string]any{
-		"first": "${VALID}",
+		"credentials": map[string]any{"key": "${VALID}"},
 		"metadata": map[string]any{
 			"a": "${BAR:=x}",
 			"z": "${OTHER:=x}",
@@ -153,7 +153,7 @@ func TestServiceEnvironmentTemplatesRejectsWithoutPartialResult(t *testing.T) {
 	require.NoError(t, err)
 
 	for range 10 {
-		environment, err := serviceEnvironmentTemplates(cfg)
+		environment, err := serviceEnvironmentTemplates(AiConnectionHost, cfg)
 		require.ErrorContains(t, err, "metadata.a:")
 		require.Nil(t, environment)
 	}
@@ -162,11 +162,33 @@ func TestServiceEnvironmentTemplatesRejectsWithoutPartialResult(t *testing.T) {
 func TestServiceEnvironmentTemplatesEmpty(t *testing.T) {
 	t.Parallel()
 
-	for _, cfg := range []*structpb.Struct{nil, {}} {
-		environment, err := serviceEnvironmentTemplates(cfg)
-		require.NoError(t, err)
-		require.Nil(t, environment)
+	for _, host := range []string{AiConnectionHost, AiToolboxHost, AiSkillHost, AiProjectHost} {
+		for _, cfg := range []*structpb.Struct{nil, {}} {
+			environment, err := serviceEnvironmentTemplates(host, cfg)
+			require.NoError(t, err)
+			require.Nil(t, environment)
+		}
 	}
+}
+
+func TestServiceEnvironmentTemplatesToolboxFields(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := structpb.NewStruct(map[string]any{
+		"description": "Uses ${LITERAL} and ${LITERAL:=default}",
+		"endpoint":    "${ENDPOINT}",
+		"tools": []any{
+			map[string]any{"configuration": map[string]any{"key": "${TOOL_KEY}"}},
+		},
+	})
+	require.NoError(t, err)
+
+	environment, err := serviceEnvironmentTemplates(AiToolboxHost, cfg)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"ENDPOINT": "${ENDPOINT}",
+		"TOOL_KEY": "${TOOL_KEY}",
+	}, environment)
 }
 
 func TestEscapeFoundryTemplates(t *testing.T) {
@@ -203,8 +225,17 @@ func TestEscapeFoundryTemplates(t *testing.T) {
 func TestAddResourceServiceWritesEnvironment(t *testing.T) {
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
+	//nolint:gosec // Test templates, not credentials.
 	cfg, err := project.MarshalStruct(&project.Connection{
-		Credentials: map[string]any{"key": "${SEARCH_KEY}"},
+		Target:           "${TARGET}",
+		Credentials:      map[string]any{"key": "${SEARCH_KEY}"},
+		Metadata:         map[string]string{"resourceId": "${RESOURCE_ID}"},
+		Audience:         "${AUDIENCE}",
+		AuthorizationUrl: "${AUTHORIZATION_URL}",
+		TokenUrl:         "${TOKEN_URL}",
+		RefreshUrl:       "${REFRESH_URL}",
+		ConnectorName:    "${CONNECTOR_NAME}",
+		Scopes:           []string{"${SCOPE}"},
 	})
 	require.NoError(t, err)
 
@@ -221,9 +252,123 @@ func TestAddResourceServiceWritesEnvironment(t *testing.T) {
 	defer server.mu.Unlock()
 	require.Len(t, server.added, 1)
 	assert.Empty(t, server.added[0].GetEnvironment())
+	//nolint:gosec // Test templates, not credentials.
 	assert.Equal(t, map[string]any{
-		"SEARCH_KEY": "${SEARCH_KEY}",
+		"TARGET":            "${TARGET}",
+		"SEARCH_KEY":        "${SEARCH_KEY}",
+		"RESOURCE_ID":       "${RESOURCE_ID}",
+		"AUDIENCE":          "${AUDIENCE}",
+		"AUTHORIZATION_URL": "${AUTHORIZATION_URL}",
+		"TOKEN_URL":         "${TOKEN_URL}",
+		"REFRESH_URL":       "${REFRESH_URL}",
+		"CONNECTOR_NAME":    "${CONNECTOR_NAME}",
+		"SCOPE":             "${SCOPE}",
 	}, server.env["search"])
+}
+
+func TestAddResourceServiceIgnoresUnexpandedFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		host   string
+		values map[string]any
+	}{
+		{
+			name: "connection",
+			host: AiConnectionHost,
+			values: map[string]any{
+				"name":           "${NAME}",
+				"category":       "${CATEGORY:=literal}",
+				"authType":       "${AUTH_TYPE}",
+				"expiryTime":     "${UNCLOSED",
+				"sharedUserList": []any{"${USER:?literal}"},
+				"peRequirement":  "${REQUIREMENT}",
+				"peStatus":       "${STATUS:=literal}",
+				"error":          "${ERROR}",
+			},
+		},
+		{
+			name: "toolbox",
+			host: AiToolboxHost,
+			values: map[string]any{
+				"name":        "${NAME}",
+				"description": "Uses ${VALUE} and ${VALUE:=literal}",
+				"metadata":    map[string]any{"literal": "${UNCLOSED"},
+			},
+		},
+		{
+			name: "skill",
+			host: AiSkillHost,
+			values: map[string]any{
+				"description": "Uses ${VALUE} and ${VALUE:=literal}",
+				"archive":     "./skills/${LITERAL}",
+			},
+		},
+		{
+			name: "project",
+			host: AiProjectHost,
+			values: map[string]any{
+				"network": map[string]any{"agentSubnet": map[string]any{"vnet": "${VNET:=literal}"}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := structpb.NewStruct(tt.values)
+			require.NoError(t, err)
+			server := &recordingProjectServer{}
+			client := newProjectRecorderClient(t, server)
+			require.NoError(t, addResourceService(
+				t.Context(), client, "sample", tt.host, cfg, []string{aiProjectServiceName},
+			))
+
+			server.mu.Lock()
+			defer server.mu.Unlock()
+			require.Len(t, server.added, 1)
+			assert.Equal(t, tt.values, server.added[0].GetAdditionalProperties().AsMap())
+			assert.Empty(t, server.env)
+			assert.Equal(t, []string{aiProjectServiceName}, server.uses["sample"])
+		})
+	}
+}
+
+func TestAddResourceServiceValidatesConnectionExpandedFields(t *testing.T) {
+	t.Parallel()
+
+	for _, field := range []string{
+		"target", "audience", "authorizationUrl", "tokenUrl", "refreshUrl", "connectorName", "scopes",
+	} {
+		for _, value := range []string{"${VALUE:=fallback}", "${OUTER:-${INNER}}"} {
+			t.Run(field+"/"+value, func(t *testing.T) {
+				t.Parallel()
+
+				values := map[string]any{field: value}
+				fieldPath := field
+				if field == "scopes" {
+					values[field] = []any{value}
+					fieldPath += "[0]"
+				}
+				cfg, err := structpb.NewStruct(values)
+				require.NoError(t, err)
+				server := &recordingProjectServer{}
+				client := newProjectRecorderClient(t, server)
+				err = addResourceService(
+					t.Context(), client, "sample", AiConnectionHost, cfg, []string{aiProjectServiceName},
+				)
+				require.ErrorContains(t, err, `service "sample"`)
+				require.ErrorContains(t, err, fieldPath+":")
+
+				server.mu.Lock()
+				defer server.mu.Unlock()
+				assert.Empty(t, server.added)
+				assert.Empty(t, server.env)
+				assert.Empty(t, server.uses)
+			})
+		}
+	}
 }
 
 func TestAddResourceServiceRejectsUnsupportedReferencesBeforeChanges(t *testing.T) {
@@ -882,14 +1027,16 @@ func TestPromptResourceServices(t *testing.T) {
 	t.Run("connections and skill bundles become siblings", func(t *testing.T) {
 		t.Parallel()
 
+		const description = "Uses ${VALUE}, ${OTHER:=fallback}, and ${UNCLOSED"
 		dir := t.TempDir()
 		bundle := filepath.Join(dir, "skills", "code-review")
 		require.NoError(t, os.MkdirAll(bundle, 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(bundle, "SKILL.md"), []byte(
-			"---\nname: code-review\ndescription: reviews code\n---\n\nDo the review.\n",
+			"---\nname: code-review\ndescription: "+description+"\n---\n\nDo the review.\n",
 		), 0o600))
 
-		client := newProjectRecorderClient(t, &recordingProjectServer{})
+		server := &recordingProjectServer{}
+		client := newProjectRecorderClient(t, server)
 		agent := &agent_yaml.PromptAgent{
 			Connections: []string{"search"},
 		}
@@ -904,8 +1051,17 @@ func TestPromptResourceServices(t *testing.T) {
 		require.Len(t, got.Skills, 1)
 		skill, ok := got.Skills["code-review"]
 		require.True(t, ok, "the skill is keyed by the name SKILL.md declares")
-		assert.Equal(t, "reviews code", skill.Description)
+		assert.Equal(t, description, skill.Description)
 		assert.Equal(t, "./"+path.Join(filepath.ToSlash(dir), "skills/code-review"), skill.Archive)
+
+		_, err = emitResourceServices(t.Context(), client, "agent", got)
+		require.NoError(t, err)
+		server.mu.Lock()
+		defer server.mu.Unlock()
+		require.Len(t, server.added, 1)
+		assert.Equal(t, description, server.added[0].GetAdditionalProperties().AsMap()["description"])
+		assert.Empty(t, server.env)
+		assert.Contains(t, server.uses["agent"], "code-review")
 	})
 
 	t.Run("toolbox reference is only wired when the service exists", func(t *testing.T) {

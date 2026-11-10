@@ -1208,11 +1208,15 @@ Nested environment references such as `${OUTER:-${INNER}}` are also rejected.
 Replace them with a single `${VAR}` set in the azd environment, or use a
 literal default.
 
-Adoption checks the fields that the owning Foundry provider expands: agent
-`environmentVariables[*].value`; connection `target`, `credentials`, and
-`metadata`; project network VNet IDs and DNS subscription; routine
-`action.input`; and toolbox `endpoint` and `tools`. It does not interpret
-unrelated service fields, hooks, or other service hosts as Foundry templates.
+Discovery checks the fields that the owning Foundry provider expands: agent
+`environmentVariables[*].value`; connection `target`, `credentials`, `metadata`,
+`audience`, `authorizationUrl`, `tokenUrl`, `refreshUrl`, `connectorName`, and
+`scopes`; project network VNet IDs and DNS subscription; routine `action.input`;
+and toolbox `endpoint` and `tools`. Resource service `env:` generation uses
+the same connection and toolbox fields. Skill fields, toolbox descriptions,
+and connection fields such as `category` and `authType` stay literal and do not
+produce environment entries. Unrelated service fields, hooks, and other service
+hosts are not interpreted as Foundry templates.
 
 ## Migrating Legacy Agent Configuration
 

@@ -211,7 +211,7 @@ func agentPoolChecks(pool *armcontainerservice.AgentPool) Report {
 	imageKnown, imageValid := agentImage(resourceValue(p.NodeImageVersion))
 	checks[1] = resourceKnown(checks[1], imageKnown, imageValid, resourceValue(p.NodeImageVersion))
 	label, labelExists := p.NodeLabels["agents.ai.azure.com/sandbox-node"]
-	checks[2] = resourceKnown(checks[2], p.NodeLabels != nil, labelExists && resourceValue(label) == "true",
+	checks[2] = resourceKnown(checks[2], true, labelExists && resourceValue(label) == "true",
 		"persisted pool sandbox-node label="+resourceValue(label))
 	return checks
 }

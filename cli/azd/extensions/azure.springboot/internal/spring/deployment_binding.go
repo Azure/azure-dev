@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -158,9 +159,7 @@ func boundDeploymentValues(
 	outputs currentDeploymentOutputs,
 ) (map[string]string, error) {
 	result := make(map[string]string, len(values)+8)
-	for key, value := range values {
-		result[key] = value
-	}
+	maps.Copy(result, values)
 	_, original, err := findDeploymentOutput(outputs, "DATABASE_SERVER_ID")
 	if err != nil {
 		return nil, err

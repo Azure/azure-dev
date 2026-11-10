@@ -176,8 +176,8 @@ func springArchiveResource(location, relative string) (string, error) {
 	name, classpath := strings.CutPrefix(location, "classpath:")
 	if classpath {
 		name = strings.TrimPrefix(name, "/")
-	} else if strings.HasPrefix(relative, "classpath:/") {
-		name = path.Join(path.Dir(strings.TrimPrefix(relative, "classpath:/")), location)
+	} else if after, ok := strings.CutPrefix(relative, "classpath:/"); ok {
+		name = path.Join(path.Dir(after), location)
 	} else {
 		return "", configurationError("the packaged Spring configuration location cannot be mapped")
 	}

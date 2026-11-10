@@ -32,7 +32,7 @@ const (
 	petclinicBranch          = "main"
 	petclinicTemplateCommit  = "215d42251c4960c67bd86167a0a67ef8a24cf3ff"
 	proposedTemplateRepo     = "https://github.com/XiaofeiCao/petclinic-rest-azd"
-	proposedTemplateCommit   = "1490c0943c70e2a83b51647b1fea47f72127887c"
+	proposedTemplateCommit   = "a882069c33ccdcff1f2068c589e077d9e35be670"
 	gitMetadataAccommodation = "Packaging Maven project without Git commit metadata because the repository has no commits."
 )
 
@@ -107,8 +107,17 @@ func verifyProposedPetclinicTemplate(t *testing.T, projectDir string) {
 	applicationText := strings.ReplaceAll(string(applicationBicep), "\r\n", "\n")
 	require.Contains(t, applicationText, "sslmode=verify-full")
 	require.Contains(t, applicationText, "azure.managedIdentityEnabled=true")
-	require.Contains(t, applicationText, "SPRING_PROFILES_ACTIVE")
-	require.Contains(t, applicationText, "postgres,spring-data-jpa")
+	require.Contains(t, applicationText, "name: 'SPRING_PROFILES_ACTIVE', value: 'azure-postgres,spring-data-jpa'")
+	require.NotContains(t, applicationText, "SPRING_DATASOURCE_PASSWORD")
+
+	azureProfile, err := os.ReadFile(
+		filepath.Join(projectDir, "src", "main", "resources", "application-azure-postgres.properties"))
+	require.NoError(t, err)
+	require.NotContains(t, string(azureProfile), "spring.datasource.password")
+
+	localProfile, err := os.ReadFile(filepath.Join(projectDir, "src", "main", "resources", "application-postgres.properties"))
+	require.NoError(t, err)
+	require.Contains(t, string(localProfile), "spring.datasource.password")
 
 	databaseBicep, err := os.ReadFile(filepath.Join(projectDir, "infra", "database.bicep"))
 	require.NoError(t, err)
@@ -117,6 +126,18 @@ func verifyProposedPetclinicTemplate(t *testing.T, projectDir string) {
 	require.NotContains(t, databaseText, "bootstrap-local-ip")
 	require.NotContains(t, databaseText, "startIpAddress: '0.0.0.0'")
 	require.NotContains(t, databaseText, "endIpAddress: '255.255.255.255'")
+
+	for _, path := range []string{
+		"Configure-Database.ps1",
+		"Initialize-DatabaseIdentity.ps1",
+		"Prepare-Database.ps1",
+		"Sync-DatabaseFirewall.ps1",
+		"Update-DatabaseFirewall.ps1",
+		"database-identity.sql",
+	} {
+		_, err := os.Stat(filepath.Join(projectDir, "scripts", path))
+		require.ErrorIs(t, err, os.ErrNotExist)
+	}
 }
 
 func Test_CLI_SpringExtension_BundleInstallsWithoutBaseTarget(t *testing.T) {

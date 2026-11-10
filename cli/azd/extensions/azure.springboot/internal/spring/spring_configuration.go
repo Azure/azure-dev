@@ -73,8 +73,8 @@ func springPropertyKey(key string) string {
 	if len(parts) == 5 && compactSpringKey(strings.Join(parts[:4], ".")) == compactSpringKey(hikariPropertiesPrefix) {
 		return compactSpringKey(hikariPropertiesPrefix) + ":" + parts[4]
 	}
-	if strings.HasPrefix(key, "spring.profiles.group.") {
-		return compactSpringKey("spring.profiles.group") + ":" + strings.TrimPrefix(key, "spring.profiles.group.")
+	if after, ok := strings.CutPrefix(key, "spring.profiles.group."); ok {
+		return compactSpringKey("spring.profiles.group") + ":" + after
 	}
 	return compactSpringKey(key)
 }
@@ -374,7 +374,7 @@ func (l *springConfigLoader) loadLocations(overrides springProperties) error {
 	locations = append(locations, overrides.list("spring.config.additional-location")...)
 	for _, group := range locations {
 		for _, profile := range append([]string{""}, l.profiles...) {
-			for _, location := range strings.Split(group, ";") {
+			for location := range strings.SplitSeq(group, ";") {
 				if err := l.loadLocation(location, "", names, profile); err != nil {
 					return err
 				}

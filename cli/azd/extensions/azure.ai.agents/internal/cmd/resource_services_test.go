@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/servicekey"
 	"azureaiagent/internal/project"
@@ -1016,6 +1018,59 @@ func TestEmitResourceServicesWiresExistingProject(t *testing.T) {
 	assert.Empty(t, server.added)
 	assert.Empty(t, server.configValues)
 	assert.Equal(t, []string{aiProjectServiceName}, server.uses["myagent"])
+}
+
+func TestEmitResourceServicesRejectsInvalidSiblingBeforeChanges(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		resources foundryResources
+		field     string
+	}{
+		{
+			name: "later connection",
+			resources: foundryResources{Connections: []project.Connection{
+				{Name: "valid", Target: "${TARGET}"},
+				{Name: "invalid", Target: "${VAR:=x}"},
+			}},
+			field: "target:",
+		},
+		{
+			name: "later toolbox",
+			resources: foundryResources{
+				Connections: []project.Connection{{Name: "valid", Target: "${TARGET}"}},
+				Toolboxes: []project.Toolbox{{
+					Name:  "invalid",
+					Tools: []map[string]any{{"endpoint": "${VAR:=x}"}},
+				}},
+			},
+			field: "tools[0].endpoint:",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			server := &recordingProjectServer{}
+			client := newProjectRecorderClient(t, server)
+
+			count, err := emitResourceServices(t.Context(), client, "agent", tt.resources)
+			require.ErrorContains(t, err, `service "invalid" has invalid environment variable references`)
+			require.ErrorContains(t, err, tt.field)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+			assert.Zero(t, count)
+
+			server.mu.Lock()
+			defer server.mu.Unlock()
+			assert.Empty(t, server.added)
+			assert.Empty(t, server.env)
+			assert.Empty(t, server.uses)
+			assert.Empty(t, server.configValues)
+			assert.Empty(t, server.configSections)
+		})
+	}
 }
 
 // TestPromptResourceServices covers the translation from a prompt agent's own

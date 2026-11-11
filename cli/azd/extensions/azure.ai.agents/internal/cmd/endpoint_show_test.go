@@ -407,7 +407,11 @@ func TestRunEndpointShowUsesSelectedEnvironment(t *testing.T) {
 			current: &azdext.Environment{Name: "default"},
 			values: map[string]map[string]string{
 				"default": {"FOUNDRY_PROJECT_ENDPOINT": defaultEndpoint},
-				"staging": {"FOUNDRY_PROJECT_ENDPOINT": selectedEndpoint},
+				"staging": {
+					"FOUNDRY_PROJECT_ENDPOINT":                        selectedEndpoint,
+					"AGENT_ENGINE_NAME":                               "hosted-agent",
+					"AGENT_ENGINE_VOICE_CONVERSATION_ENGINE_ENDPOINT": "wss://staging.services.ai.azure.com/api/projects/staging/agents/hosted-agent/endpoint/protocols/voice_conversation_engine?api-version=v1",
+				},
 			},
 		}
 		client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
@@ -418,6 +422,7 @@ func TestRunEndpointShowUsesSelectedEnvironment(t *testing.T) {
 				t.Context(),
 				client,
 				"hosted-agent",
+				"engine",
 				"staging",
 				"json",
 				func(
@@ -427,16 +432,20 @@ func TestRunEndpointShowUsesSelectedEnvironment(t *testing.T) {
 					resolverCalls++
 					require.Equal(t, selectedEndpoint, projectEndpoint)
 					require.Equal(t, "hosted-agent", agentName)
-					return &agent_api.AgentObject{Name: agentName}, nil
+					return &agent_api.AgentObject{Name: agentName, AgentEndpoint: &agent_api.AgentEndpoint{
+						Protocols: []agent_api.AgentEndpointProtocol{"responses"},
+					}}, nil
 				},
 			)
 		})
 
 		require.Contains(t, output, `"name": "hosted-agent"`)
+		require.Contains(t, output, `"voice_conversation_engine": "wss://staging.services.ai.azure.com/`)
+		require.Contains(t, output, `"responses"`)
 		require.NotContains(t, output, defaultEndpoint)
 		require.Equal(t, 1, resolverCalls)
 		require.Equal(t, 0, env.getCurrentCalls)
-		require.Equal(t, 1, env.getValuesCalls)
+		require.Equal(t, 2, env.getValuesCalls)
 	})
 
 	tests := []struct {

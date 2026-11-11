@@ -4,18 +4,24 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	provisioningTest "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -88,8 +94,8 @@ func Test_ExtensionActivator_providerResolvable(t *testing.T) {
 
 	activator := newTestExtensionActivator(t, mockCtx, nil)
 
-	require.True(t, activator.providerResolvable("microsoft.foundry"))
-	require.False(t, activator.providerResolvable("bicep"))
+	require.True(t, activator.providerResolvable("microsoft.foundry", extensions.ProvisioningProviderCapability))
+	require.False(t, activator.providerResolvable("bicep", extensions.ProvisioningProviderCapability))
 }
 
 func Test_EnsureProvisioningProviders_NoMatchingExtension(t *testing.T) {
@@ -126,6 +132,124 @@ func Test_EnsureProvisioningProviders_EmptyRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cleanup)
 	cleanup()
+}
+
+func Test_EnsureInfraGenerationProviders_IgnoresUnrelatedExtensions(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		capability extensions.CapabilityType
+		provider   extensions.Provider
+	}{
+		{
+			name:       "other generator",
+			capability: extensions.InfraGenerationProviderCapability,
+			provider:   extensions.Provider{Name: "other", Type: extensions.InfraGenerationProviderType},
+		},
+		{
+			name:       "provisioning only",
+			capability: extensions.ProvisioningProviderCapability,
+			provider:   extensions.Provider{Name: "resources", Type: extensions.ProvisioningProviderType},
+		},
+		{
+			name:       "wrong provider type",
+			capability: extensions.InfraGenerationProviderCapability,
+			provider:   extensions.Provider{Name: "resources", Type: extensions.ProvisioningProviderType},
+		},
+		{
+			name:       "lifecycle only",
+			capability: extensions.LifecycleEventsCapability,
+			provider:   extensions.Provider{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mockCtx := mocks.NewMockContext(t.Context())
+			activator := newTestExtensionActivator(t, mockCtx, map[string]*extensions.Extension{
+				"unrelated": {
+					Id: "unrelated", Capabilities: []extensions.CapabilityType{tt.capability},
+					Providers: []extensions.Provider{tt.provider},
+				},
+			})
+			cleanup, err := activator.EnsureInfraGenerationProviders(t.Context(), []string{"resources"}, "")
+			require.NoError(t, err, "unrelated extensions must not require a gRPC server or a process")
+			cleanup()
+		})
+	}
+}
+
+type activatorTestGenerator struct{}
+
+func (*activatorTestGenerator) Generate(
+	context.Context, *v1beta.InfraGenerateRequest,
+) (*v1beta.InfraGenerateResponse, error) {
+	panic("activation must not invoke generation")
+}
+
+func Test_EnsureInfraGenerationProviders_AlreadyResolvable(t *testing.T) {
+	t.Parallel()
+	mockCtx := mocks.NewMockContext(t.Context())
+	ioc.RegisterNamedInstance[project.InfrastructureGenerator](
+		mockCtx.Container, project.InfraGenerationProviderKey("resources"), &activatorTestGenerator{})
+	activator := newTestExtensionActivator(t, mockCtx, map[string]*extensions.Extension{
+		"azure.resources": {
+			Id: "azure.resources", Capabilities: []extensions.CapabilityType{extensions.InfraGenerationProviderCapability},
+			Providers: []extensions.Provider{{Name: "resources", Type: extensions.InfraGenerationProviderType}},
+		},
+	})
+	cleanup, err := activator.EnsureInfraGenerationProviders(t.Context(), []string{"resources"}, "")
+	require.NoError(t, err)
+	cleanup()
+}
+
+func Test_EnsureInfraGenerationProviders_StartsOnlyMatchingListenerAndStopsIt(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	mockCtx := mocks.NewMockContext(t.Context())
+	extensionPath := filepath.Join("extensions", "resources", "resources")
+	fullPath := filepath.Join(configDir, extensionPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o700))
+	require.NoError(t, os.WriteFile(fullPath, []byte("mock executable"), 0o600))
+	activator := newTestExtensionActivator(t, mockCtx, map[string]*extensions.Extension{
+		"azure.resources": {
+			Id: "azure.resources", Path: extensionPath,
+			Capabilities: []extensions.CapabilityType{extensions.InfraGenerationProviderCapability},
+			Providers:    []extensions.Provider{{Name: "resources", Type: extensions.InfraGenerationProviderType}},
+		},
+		"unrelated": {
+			Id: "unrelated", Capabilities: []extensions.CapabilityType{extensions.LifecycleEventsCapability},
+		},
+	})
+	installed, err := activator.extensionManager.ListInstalled()
+	require.NoError(t, err)
+	started := make(chan exec.RunArgs, 2)
+	stopped := make(chan struct{})
+	mockCtx.CommandRunner.When(func(exec.RunArgs, string) bool { return true }).
+		RespondContextFn(func(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
+			started <- args
+			installed["azure.resources"].Initialize()
+			<-ctx.Done()
+			close(stopped)
+			return exec.RunResult{}, ctx.Err()
+		})
+	activator.extensionRunner = extensions.NewRunner(mockCtx.CommandRunner)
+	ioc.RegisterInstance[*grpcserver.Server](mockCtx.Container, newExtensionsMiddlewareTestServer())
+	cleanup, err := activator.EnsureInfraGenerationProviders(t.Context(), []string{"resources", "resources"}, "test-env")
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+	require.Len(t, started, 1)
+	args := <-started
+	require.Equal(t, fullPath, args.Cmd)
+	require.Equal(t, []string{"listen"}, args.Args)
+	require.Contains(t, args.Env, "AZD_ENVIRONMENT=test-env")
+	cleanup()
+	select {
+	case <-stopped:
+	default:
+		t.Fatal("listener must stop before cleanup returns")
+	}
 }
 
 func Test_EnsureProvisioningProviders_InvalidInstalledConfig(t *testing.T) {
@@ -619,8 +743,8 @@ func Test_declaredProviders(t *testing.T) {
 
 	require.Equal(t,
 		[]string{"provider.one", "provider.two"},
-		declaredProviders(ext, []string{"provider.one", "bicep", "provider.two"}))
-	require.Empty(t, declaredProviders(ext, []string{"bicep"}))
+		declaredProviders(ext, []string{"provider.one", "bicep", "provider.two"}, extensions.ProvisioningProviderCapability))
+	require.Empty(t, declaredProviders(ext, []string{"bicep"}, extensions.ProvisioningProviderCapability))
 }
 
 // Requests that reduce to no candidate provider names (empty/NotSpecified) must short-circuit

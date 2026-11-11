@@ -23,6 +23,16 @@ const (
 	CodeInvalidFileRef = "invalid_file_ref"
 	// CodeAuthFailed is emitted when Azure authentication fails or is required.
 	CodeAuthFailed = "auth_failed"
+	// CodeAgentBlockedByPolicy is emitted when an Azure Policy assignment blocks an agent.
+	CodeAgentBlockedByPolicy = "agent_blocked_by_policy"
+	// CodeContainerImageBlockedByPolicy is emitted when an Azure Policy assignment blocks a container image or registry.
+	CodeContainerImageBlockedByPolicy = "container_image_blocked_by_policy"
+	// CodeModelBlockedByPolicy is emitted when an Azure Policy assignment blocks a model or deployment.
+	CodeModelBlockedByPolicy = "model_blocked_by_policy"
+	// CodeToolBlockedByPolicy is emitted when an Azure Policy assignment blocks an agent or toolbox tool.
+	CodeToolBlockedByPolicy = "tool_blocked_by_policy"
+	// CodeToolboxBlockedByPolicy is emitted when an Azure Policy assignment blocks a toolbox.
+	CodeToolboxBlockedByPolicy = "toolbox_blocked_by_policy"
 )
 
 // Error is a typed shared-module error with a stable code, category, message,

@@ -7,12 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
-	"os"
-	"regexp"
-	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,23 +17,18 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/google/uuid"
+	"github.com/azure/azure-dev/cli/shared/foundry/access"
+	"github.com/azure/azure-dev/cli/shared/foundry/ferrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-const foundryUserRole = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
+const foundryUserRole = access.FoundryUserRoleID
 
-var sufficientToolboxRoles = []string{
-	foundryUserRole,
-	"a97b65f3-24c7-4388-baec-2e87135dc908", // Cognitive Services User
-	"eadc314b-1a2d-4efa-be10-5d325db5065e", // Foundry Project Manager
-	"c883944f-8b7b-4483-af10-35834be79c4a", // Foundry Owner
-}
+var sufficientToolboxRoles = access.SufficientDataPlaneRoles
 
 type toolboxAccessEnvironment interface {
 	GetValues(context.Context, *azdext.GetEnvironmentRequest, ...grpc.CallOption) (*azdext.KeyValueListResponse, error)
@@ -69,21 +58,20 @@ type toolboxAccessScope struct {
 	skip     bool
 }
 
-type toolboxReadPolicy int
+type toolboxReadPolicy = access.ReadPolicy
 
 const (
-	toolboxReadRequired toolboxReadPolicy = iota
-	toolboxReadOptionalForDeploy
+	toolboxReadRequired          = access.ReadRequired
+	toolboxReadOptionalForDeploy = access.ReadOptionalForDeploy
 )
 
 func newToolboxAccess(client *azdext.AzdClient) *toolboxAccess {
 	return &toolboxAccess{
-		environment: client.Environment(), account: client.Account(),
+		environment:   client.Environment(),
+		account:       client.Account(),
 		newCredential: foundry.NewCredential,
 	}
 }
-
-var safeScopeSegment = regexp.MustCompile(`^[A-Za-z0-9_.()-]+$`)
 
 func resolveToolboxWriteEndpoint(ctx context.Context, flag string) (*projectctx.Resolved, error) {
 	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: flag})
@@ -98,377 +86,184 @@ func resolveToolboxWriteEndpoint(ctx context.Context, flag string) (*projectctx.
 }
 
 func toolboxProjectResource(scope string) *arm.ResourceID {
-	resource, err := arm.ParseResourceID(strings.TrimSpace(scope))
-	if err != nil || len(strings.Split(resource.String(), "/")) != 11 ||
-		!strings.EqualFold(resource.ResourceType.String(), "Microsoft.CognitiveServices/accounts/projects") ||
-		resource.Parent == nil {
-		return nil
-	}
-	for _, part := range []string{
-		resource.SubscriptionID, resource.ResourceGroupName, resource.Parent.Name, resource.Name,
-	} {
-		if !safeScopeSegment.MatchString(part) {
-			return nil
-		}
-	}
-	return resource
-}
-
-func toolboxEndpointIdentity(raw string) string {
-	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || !strings.EqualFold(u.Scheme, "https") || u.User != nil ||
-		u.RawQuery != "" || u.Fragment != "" || u.Port() != "" ||
-		!strings.HasSuffix(strings.ToLower(u.Hostname()), ".services.ai.azure.com") {
-		return ""
-	}
-	return "https://" + strings.ToLower(u.Hostname()) + strings.TrimRight(u.EscapedPath(), "/")
+	return access.ParseProjectResourceID(scope)
 }
 
 func toolboxScopeFromEnvironment(endpoint string, values map[string]string) *arm.ResourceID {
-	configured := strings.TrimSpace(values["FOUNDRY_PROJECT_ENDPOINT"])
-	if configured == "" {
-		configured = strings.TrimSpace(values["AZURE_AI_PROJECT_ENDPOINT"])
+	return access.ScopeFromEnvironment(endpoint, values)
+}
+
+func (a *toolboxAccess) sharedClient() *access.Client {
+	client := &access.Client{
+		IsCanceled:       isGrpcCanceled,
+		ResourceNoun:     "toolbox",
+		DefaultOperation: exterrors.OpGetToolbox,
 	}
-	selected := toolboxEndpointIdentity(endpoint)
-	if selected == "" || selected != toolboxEndpointIdentity(configured) {
+	if a == nil {
+		return client
+	}
+	if a.environment != nil {
+		client.Environment = toolboxEnvAdapter{a.environment}
+	}
+	if a.account != nil {
+		client.Account = toolboxAccountAdapter{a.account}
+	}
+	client.NewCredential = a.newCredential
+	client.RoleClient = a.roleClient
+	client.Wait = a.wait
+	client.Attempts = a.attempts
+	client.Timeout = a.timeout
+	return client
+}
+
+func toSharedScope(scope *toolboxAccessScope) *access.Scope {
+	if scope == nil {
 		return nil
 	}
-	resource := toolboxProjectResource(values["AZURE_AI_PROJECT_ID"])
-	if resource == nil || !strings.EqualFold(strings.TrimSpace(values["AZURE_SUBSCRIPTION_ID"]), resource.SubscriptionID) {
-		return nil
+	return &access.Scope{
+		Resource: scope.resource,
+		TenantID: scope.tenantID,
+		Skip:     scope.skip,
 	}
-	// This is an offline binding, not an assertion that all accounts use their ARM
-	// name as their hostname. Custom subdomains conservatively use existing access.
-	if !strings.EqualFold(selected, "https://"+resource.Parent.Name+".services.ai.azure.com/api/projects/"+resource.Name) {
-		return nil
-	}
-	return resource
 }
 
 func (a *toolboxAccess) resolve(ctx context.Context, endpoint string) (*toolboxAccessScope, error) {
-	if err := toolboxAccessCancellation(ctx, nil); err != nil {
+	shared, err := a.sharedClient().Resolve(ctx, endpoint)
+	if err != nil || shared == nil {
 		return nil, err
 	}
-	if a == nil || a.environment == nil {
-		return nil, nil
-	}
-	response, err := a.environment.GetValues(ctx, &azdext.GetEnvironmentRequest{})
-	if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
-		return nil, cancelErr
-	}
-	if err != nil {
-		return nil, nil // Actual Foundry access, not optional ARM access, is authoritative.
-	}
-	values := make(map[string]string, len(response.GetKeyValues()))
-	for _, kv := range response.GetKeyValues() {
-		values[kv.GetKey()] = kv.GetValue()
-	}
-	resource := toolboxScopeFromEnvironment(endpoint, values)
-	if resource == nil {
-		return nil, nil
-	}
-	skipValue := values["AZD_AGENT_SKIP_ROLE_ASSIGNMENTS"]
-	if skipValue == "" {
-		skipValue = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
-	}
-	skip, _ := strconv.ParseBool(skipValue)
-	scope := &toolboxAccessScope{resource: resource, skip: skip}
-	if a.account != nil {
-		tenant, err := a.account.LookupTenant(ctx, &azdext.LookupTenantRequest{SubscriptionId: resource.SubscriptionID})
-		if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
-			return nil, cancelErr
-		}
-		if err == nil {
-			scope.tenantID = strings.TrimSpace(tenant.GetTenantId())
-		}
-	}
-	return scope, nil
+	return &toolboxAccessScope{
+		resource: shared.Resource,
+		tenantID: shared.TenantID,
+		skip:     shared.Skip,
+	}, nil
 }
 
 func (a *toolboxAccess) prepareRole(
 	ctx context.Context, scope *toolboxAccessScope, report func(string),
 ) (confirmed, assigned bool, principalID string, principalType armauthorization.PrincipalType, err error) {
-	if a == nil || scope == nil || scope.skip || scope.tenantID == "" || a.account == nil {
-		return
-	}
-	if scope.resource == nil || toolboxProjectResource(scope.resource.String()) == nil {
-		return false, false, "", "", fmt.Errorf("a verified Foundry project scope is required")
-	}
-	principal, err := a.account.GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{
-		SubscriptionId: scope.resource.SubscriptionID,
-	})
-	if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
-		return false, false, "", "", cancelErr
-	}
-	if err != nil {
-		return false, false, "", "", err
-	}
-	objectID, parseErr := uuid.Parse(principal.GetObjectId())
-	if parseErr != nil {
-		return false, false, "", "", fmt.Errorf("azd returned an invalid resource-tenant principal")
-	}
-	principalID = objectID.String()
-	switch principal.GetPrincipalType() {
-	case azdext.PrincipalType_PRINCIPAL_TYPE_USER:
-		principalType = armauthorization.PrincipalTypeUser
-	case azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
-		principalType = armauthorization.PrincipalTypeServicePrincipal
-	default:
-		return false, false, "", "", fmt.Errorf("azd returned an unsupported principal type")
-	}
-	credential, credErr := a.newCredential(scope.tenantID)
-	if credErr != nil {
-		return false, false, principalID, principalType, credErr
-	}
-	client := a.roleClient
-	if client == nil {
-		client, err = armauthorization.NewRoleAssignmentsClient(scope.resource.SubscriptionID, credential, nil)
-		if err != nil {
-			return false, false, principalID, principalType, err
-		}
-	}
-	scopeID := scope.resource.String()
-	pager := client.NewListForScopePager(scopeID, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: new(fmt.Sprintf("assignedTo('%s')", principalID)),
-	})
-	for pager.More() {
-		page, pageErr := pager.NextPage(ctx)
-		if pageErr != nil {
-			return false, false, principalID, principalType, pageErr
-		}
-		for _, assignment := range page.Value {
-			if toolboxRoleSufficient(assignment, scopeID) {
-				return true, false, principalID, principalType, nil
-			}
-		}
-	}
-	if report != nil {
-		report("Assigning Foundry User on the toolbox's Foundry project.")
-	}
-	name := uuid.NewSHA1(uuid.NameSpaceURL, []byte(strings.ToLower(scopeID+"/"+principalID+"/"+foundryUserRole))).String()
-	_, err = client.Create(ctx, scopeID, name, armauthorization.RoleAssignmentCreateParameters{
-		Properties: &armauthorization.RoleAssignmentProperties{
-			RoleDefinitionID: new("/subscriptions/" + scope.resource.SubscriptionID +
-				"/providers/Microsoft.Authorization/roleDefinitions/" + foundryUserRole),
-			PrincipalID: new(principalID), PrincipalType: new(principalType),
-		},
-	}, nil)
-	if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
-		return false, false, principalID, principalType, cancelErr
-	}
-	if response, ok := errors.AsType[*azcore.ResponseError](err); ok &&
-		response.StatusCode == http.StatusConflict && response.ErrorCode == "RoleAssignmentExists" {
-		err = nil
-	}
-	return err == nil, err == nil, principalID, principalType, err
+	return a.sharedClient().PrepareRole(ctx, toSharedScope(scope), report)
 }
 
 func toolboxRoleSufficient(assignment *armauthorization.RoleAssignment, scope string) bool {
-	if assignment == nil || assignment.Properties == nil {
-		return false
-	}
-	props := assignment.Properties
-	if props.Scope == nil || props.RoleDefinitionID == nil || (props.Condition != nil && *props.Condition != "") {
-		return false
-	}
-	inherited := strings.ToLower(strings.TrimRight(*props.Scope, "/"))
-	target := strings.ToLower(scope)
-	const groupPrefix = "/providers/microsoft.management/managementgroups/" // cspell:ignore managementgroups
-	managementGroup := strings.HasPrefix(inherited, groupPrefix) &&
-		safeScopeSegment.MatchString(strings.TrimPrefix(inherited, groupPrefix))
-	if inherited == "" || (target != inherited && !strings.HasPrefix(target, inherited+"/") && !managementGroup) {
-		return false
-	}
-	role := (*props.RoleDefinitionID)[strings.LastIndex(*props.RoleDefinitionID, "/")+1:]
-	return slices.ContainsFunc(sufficientToolboxRoles, func(sufficient string) bool {
-		return strings.EqualFold(role, sufficient)
-	})
+	return access.IsRoleSufficient(assignment, scope)
+}
+
+func isGrpcCanceled(err error) bool {
+	code := status.Code(err)
+	return code == codes.Canceled || code == codes.DeadlineExceeded
 }
 
 func toolboxAccessCancellation(ctx context.Context, err error) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
-	if code := status.Code(err); code == codes.Canceled || code == codes.DeadlineExceeded {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || isGrpcCanceled(err) {
 		return err
 	}
 	return nil
 }
 
-func toolboxAccessDenied(err error) bool {
-	response, ok := errors.AsType[*azcore.ResponseError](err)
-	if !ok || response.StatusCode != http.StatusForbidden {
-		return false
-	}
-	// cspell:ignore permissiondenied authorizationfailed authorizationpermissionmismatch aiservices
-	switch strings.ToLower(response.ErrorCode) {
-	case "permissiondenied", "authorizationfailed", "authorizationpermissionmismatch":
-		return true
-	default:
-		return strings.Contains(strings.ToLower(response.Error()), "microsoft.cognitiveservices/accounts/aiservices/agents/")
-	}
-}
-
-func toolboxProjectNotFound(err error) bool {
-	return isAzureNotFound(err) && strings.Contains(strings.ToLower(err.Error()), "project not found")
-}
-
 func waitToolboxAccess(ctx context.Context, duration time.Duration) error {
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
+	return access.Wait(ctx, duration)
 }
 
-// ensure returns the already-read toolbox (nil for an authorized missing toolbox).
-// ARM failures are deferred, never warned on successful custom-role access.
-// toolboxReadOptionalForDeploy also permits an unconfirmed authorization denial:
-// the caller must attempt the deployment write to establish actual access.
 func (a *toolboxAccess) ensure(
 	ctx context.Context, scope *toolboxAccessScope, client toolboxClient, name string,
 	readPolicy toolboxReadPolicy, report func(string),
-) (toolbox *azure.ToolboxObject, resultErr error) {
-	parent := ctx
-	timeout := 5 * time.Minute
-	if a != nil && a.timeout > 0 {
-		timeout = a.timeout
+) (*azure.ToolboxObject, error) {
+	toolbox, err := access.Ensure(ctx, a.sharedClient(), toSharedScope(scope), readPolicy, report, func(ctx context.Context) (*azure.ToolboxObject, error) {
+		return client.GetToolbox(ctx, name)
+	})
+	if err != nil {
+		return nil, convertSharedAccessError(err, exterrors.OpGetToolbox)
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	var lastProbeError error
-	var principalID string
-	var principalType armauthorization.PrincipalType
-	defer func() {
-		// The internal readiness budget is not a caller deadline. Retain the last
-		// service failure and its remediation when that budget is exhausted.
-		if parent.Err() != nil {
-			toolbox, resultErr = nil, parent.Err()
-		} else if errors.Is(resultErr, context.DeadlineExceeded) && ctx.Err() != nil && lastProbeError != nil {
-			toolbox, resultErr = nil, toolboxWriteError(parent, lastProbeError, exterrors.OpGetToolbox, scope, principalID, principalType)
-		}
-		cancel()
-	}()
-	if err := toolboxAccessCancellation(ctx, nil); err != nil {
-		return nil, err
-	}
-	confirmed, assigned, principalID, principalType, err := a.prepareRole(ctx, scope, report)
-	if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
-		return nil, cancelErr
-	}
-	wait := waitToolboxAccess
-	attempts := 60
-	if a != nil {
-		if a.wait != nil {
-			wait = a.wait
-		}
-		if a.attempts > 0 {
-			attempts = a.attempts
-		}
-	}
-	waitMessage := ""
-	if assigned {
-		waitMessage = "Waiting for Foundry access to propagate."
-		if report != nil {
-			report(waitMessage)
-		}
-		if err := wait(ctx, 15*time.Second); err != nil {
-			return nil, err
-		}
-	}
-	for attempt := range attempts {
-		toolbox, err := client.GetToolbox(ctx, name)
-		if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
-			return nil, cancelErr
-		}
-		projectMissing := toolboxProjectNotFound(err)
-		if err == nil || (isAzureNotFound(err) && !projectMissing) {
-			if report != nil && (assigned || waitMessage != "") {
-				report("Foundry toolbox access is ready.")
-			}
-			return toolbox, nil
-		}
-		// A custom role may allow the deployment write without granting agents/read.
-		if readPolicy == toolboxReadOptionalForDeploy && !confirmed && toolboxAccessDenied(err) {
-			return nil, nil
-		}
-		lastProbeError = err
-		retry := projectMissing || (confirmed && toolboxAccessDenied(err))
-		if !retry || attempt == attempts-1 {
-			return nil, toolboxWriteError(ctx, err, exterrors.OpGetToolbox, scope, principalID, principalType)
-		}
-		message := "Waiting for Foundry access to propagate."
-		if projectMissing {
-			message = "Waiting for the Foundry project to synchronize."
-		}
-		if report != nil && message != waitMessage {
-			report(message)
-		}
-		waitMessage = message
-		if err := wait(ctx, 5*time.Second); err != nil {
-			return nil, err
-		}
-	}
-	return nil, exterrors.Internal(exterrors.OpGetToolbox, "Foundry access readiness could not be established")
+	return toolbox, nil
 }
 
 func toolboxWriteError(
 	ctx context.Context, err error, operation string, scope *toolboxAccessScope,
 	principalID string, principalType armauthorization.PrincipalType,
 ) error {
-	if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
-		return cancelErr
-	}
-	_, authenticationFailed := errors.AsType[*azidentity.AuthenticationFailedError](err)
-	_, authenticationRequired := errors.AsType[*azidentity.AuthenticationRequiredError](err)
-	if authenticationFailed || authenticationRequired {
-		return exterrors.Auth(exterrors.CodeAuthFailed,
-			"could not authenticate to Foundry", "run 'azd auth login' to authenticate, then retry")
-	}
-	// Never serialize the SDK error text: request URLs and response bodies may
-	// contain credentials. Preserve the service status and code, not its payload.
-	if response, ok := errors.AsType[*azcore.ResponseError](err); ok {
-		code := response.ErrorCode
-		if !safeScopeSegment.MatchString(code) {
-			code = strconv.Itoa(response.StatusCode)
-		}
-		converted := &azdext.ServiceError{
-			Message:   fmt.Sprintf("%s: Foundry request failed (HTTP %d).", operation, response.StatusCode),
-			ErrorCode: operation + "." + code, StatusCode: response.StatusCode, ServiceName: "foundry",
-		}
-		if toolboxProjectNotFound(err) {
-			converted.Message = operation + ": the Foundry project has not synchronized."
-			converted.Suggestion = "Wait for the Foundry project to synchronize, then retry."
-		}
-		if response.StatusCode == http.StatusUnauthorized {
-			converted.Suggestion = "Run 'azd auth login' to authenticate, then retry."
-		}
-		if toolboxAccessDenied(err) {
-			converted.Suggestion = "Verify Foundry project data-plane access, then wait for role propagation and retry. " +
-				"Azure Owner and Contributor do not grant this access."
-			if scope != nil && scope.resource != nil && toolboxProjectResource(scope.resource.String()) != nil {
-				if principalID == "" {
-					principalID = "<resource-tenant-object-id>"
-					principalType = armauthorization.PrincipalTypeUser
-				}
-				converted.Suggestion += fmt.Sprintf(
-					" Ask an administrator to run: az role assignment create --assignee-object-id %q "+
-						"--assignee-principal-type %s --role %s --scope %q. "+
-						"Use the resource-tenant object ID and User or ServicePrincipal type for your login.",
-					principalID, principalType, foundryUserRole, scope.resource.String())
-			} else {
-				converted.Suggestion += " Ask an administrator to assign Foundry User on the intended Foundry project."
-			}
-		}
-		return converted
-	}
 	if _, ok := errors.AsType[*azdext.LocalError](err); ok {
 		return err
 	}
-	return exterrors.Internal(operation, operation+": could not complete the Foundry request")
+	sharedErr := (&access.Client{IsCanceled: isGrpcCanceled}).WriteError(
+		ctx, err, operation, toSharedScope(scope), principalID, principalType,
+	)
+	if cancelErr := toolboxAccessCancellation(ctx, sharedErr); cancelErr != nil {
+		return cancelErr
+	}
+	return convertSharedAccessError(sharedErr, operation)
+}
+
+func convertSharedAccessError(err error, fallbackOperation string) error {
+	shared, ok := errors.AsType[*ferrors.Error](err)
+	if !ok {
+		return err
+	}
+	switch shared.Category {
+	case ferrors.CategoryAuth:
+		return exterrors.Auth(exterrors.CodeAuthFailed, shared.Message, shared.Suggestion)
+	case ferrors.CategoryService:
+		return &azdext.ServiceError{
+			Message:     shared.Message,
+			ErrorCode:   shared.Code,
+			StatusCode:  shared.StatusCode,
+			ServiceName: shared.ServiceName,
+			Suggestion:  shared.Suggestion,
+		}
+	default:
+		return exterrors.Internal(fallbackOperation, shared.Message)
+	}
+}
+
+type toolboxEnvAdapter struct {
+	env toolboxAccessEnvironment
+}
+
+func (e toolboxEnvAdapter) Values(ctx context.Context) (map[string]string, error) {
+	response, err := e.env.GetValues(ctx, &azdext.GetEnvironmentRequest{})
+	if err != nil {
+		return nil, err
+	}
+	values := make(map[string]string, len(response.GetKeyValues()))
+	for _, kv := range response.GetKeyValues() {
+		values[kv.GetKey()] = kv.GetValue()
+	}
+	return values, nil
+}
+
+type toolboxAccountAdapter struct {
+	account toolboxAccessAccount
+}
+
+func (a toolboxAccountAdapter) LookupTenant(ctx context.Context, subscriptionID string) (string, error) {
+	tenant, err := a.account.LookupTenant(ctx, &azdext.LookupTenantRequest{SubscriptionId: subscriptionID})
+	if err != nil {
+		return "", err
+	}
+	return tenant.GetTenantId(), nil
+}
+
+func (a toolboxAccountAdapter) CurrentPrincipal(ctx context.Context, subscriptionID string) (access.Principal, error) {
+	principal, err := a.account.GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{
+		SubscriptionId: subscriptionID,
+	})
+	if err != nil {
+		return access.Principal{}, err
+	}
+	var principalType armauthorization.PrincipalType
+	switch principal.GetPrincipalType() {
+	case azdext.PrincipalType_PRINCIPAL_TYPE_USER:
+		principalType = armauthorization.PrincipalTypeUser
+	case azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
+		principalType = armauthorization.PrincipalTypeServicePrincipal
+	default:
+		return access.Principal{}, fmt.Errorf("azd returned an unsupported principal type")
+	}
+	return access.Principal{
+		ObjectID: principal.GetObjectId(),
+		Type:     principalType,
+	}, nil
 }

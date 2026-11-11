@@ -7,8 +7,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -101,17 +99,7 @@ func TestResolveAzdTenantIDFallsBackWhenTheHostCannotAnswer(t *testing.T) {
 // Guards the other half of the wiring: the resolved tenant has to reach
 // `azd auth token`. A stand-in azd on PATH records the arguments it gets.
 func TestNewAzdTokenCredentialPassesTheTenantToAzd(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses a POSIX shell script as the azd stand-in")
-	}
-	dir := t.TempDir()
-	argsFile := filepath.Join(dir, "args")
-	script := "#!/bin/sh\n" +
-		"echo \"$@\" > '" + argsFile + "'\n" +
-		"echo '{\"token\":\"t\",\"expiresOn\":\"2099-01-01T00:00:00Z\"}'\n"
-	// The stand-in has to be executable.
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "azd"), []byte(script), 0o700)) //nolint:gosec
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	argsFile := installAzdStandIn(t)
 
 	cases := map[string]struct {
 		tenant string
@@ -144,11 +132,34 @@ func TestNewAzdTokenCredentialPassesTheTenantToAzd(t *testing.T) {
 	}
 }
 
-// Only an endpoint taken from the azd environment is known to belong to that
+type fakeDotenv struct {
+	values map[string]map[string]string
+	err    error
+}
+
+func (f *fakeDotenv) GetValues(
+	_ context.Context, in *azdext.GetEnvironmentRequest, _ ...grpc.CallOption,
+) (*azdext.KeyValueListResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	resp := &azdext.KeyValueListResponse{}
+	for k, v := range f.values[in.Name] {
+		resp.KeyValues = append(resp.KeyValues, &azdext.KeyValue{Key: k, Value: v})
+	}
+	return resp, nil
+}
+
+const tenantTestEndpoint = "https://example.services.ai.azure.com/api/projects/p"
+
+// Only an endpoint persisted in the azd environment is known to belong to that
 // environment's subscription. One from --project-endpoint, global config or
 // the host environment can sit in another tenant (often the home tenant), so
 // those keep azd's default rather than being forced onto the environment's.
 func TestTenantEnvNameOnlyForEnvironmentSourcedEndpoints(t *testing.T) {
+	persisted := &fakeDotenv{values: map[string]map[string]string{
+		"dev": {projectEndpointEnvKey: tenantTestEndpoint + "/"},
+	}}
 	cases := []struct {
 		source projectctx.EndpointSource
 		want   string
@@ -161,12 +172,59 @@ func TestTenantEnvNameOnlyForEnvironmentSourcedEndpoints(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(string(tc.source), func(t *testing.T) {
 			resolved := &projectctx.Resolved{
-				Endpoint:   "https://example.services.ai.azure.com/api/projects/p",
+				Endpoint:   tenantTestEndpoint,
 				Source:     tc.source,
 				AzdEnvName: "dev",
 			}
-			assert.Equal(t, tc.want, tenantEnvName(resolved))
+			assert.Equal(t, tc.want, tenantEnvName(t.Context(), persisted, resolved))
 		})
 	}
-	assert.Empty(t, tenantEnvName(nil))
+	assert.Empty(t, tenantEnvName(t.Context(), persisted, nil))
+}
+
+// azd's GetValue falls back to the process environment, so an endpoint
+// exported in the shell resolves as SourceAzdEnv even when the environment
+// never stored it. That endpoint can sit in the home tenant, so it must not
+// get the environment subscription's tenant forced onto it.
+func TestTenantEnvNameRequiresTheEndpointPersistedInTheEnvironment(t *testing.T) {
+	resolved := &projectctx.Resolved{
+		Endpoint:   tenantTestEndpoint,
+		Source:     projectctx.SourceAzdEnv,
+		AzdEnvName: "dev",
+	}
+
+	cases := map[string]struct {
+		env  *fakeDotenv
+		want string
+	}{
+		"persisted under FOUNDRY_PROJECT_ENDPOINT": {
+			env:  &fakeDotenv{values: map[string]map[string]string{"dev": {projectEndpointEnvKey: tenantTestEndpoint}}},
+			want: "dev",
+		},
+		"persisted under AZURE_AI_PROJECT_ENDPOINT": {
+			env: &fakeDotenv{values: map[string]map[string]string{
+				"dev": {azureAIProjectEndpointEnvKey: tenantTestEndpoint},
+			}},
+			want: "dev",
+		},
+		"only in the process environment": {
+			env:  &fakeDotenv{values: map[string]map[string]string{"dev": {"AZURE_SUBSCRIPTION_ID": "sub-1"}}},
+			want: "",
+		},
+		"environment stores a different endpoint": {
+			env: &fakeDotenv{values: map[string]map[string]string{
+				"dev": {azureAIProjectEndpointEnvKey: "https://other.services.ai.azure.com/api/projects/q"},
+			}},
+			want: "",
+		},
+		"values cannot be read": {
+			env:  &fakeDotenv{err: errors.New("rpc error: code = Unavailable")},
+			want: "",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.want, tenantEnvName(t.Context(), tc.env, resolved))
+		})
+	}
 }

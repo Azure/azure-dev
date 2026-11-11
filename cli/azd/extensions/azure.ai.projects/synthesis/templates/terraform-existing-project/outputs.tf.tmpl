@@ -22,6 +22,7 @@ output "FOUNDRY_PROJECT_ENDPOINT" {
       local.foundry_account_subdomain_valid &&
       local.project_endpoint_account != "" &&
       lower(local.project_endpoint_account) == lower(local.expected_endpoint_account) &&
+      lower(local.expected_endpoint_account) == lower(local.foundry_account_subdomain) &&
       lower(local.project_endpoint_project) == lower(local.foundry_project_name) &&
       lower(local.expected_endpoint_project) == lower(local.foundry_project_name)
     )

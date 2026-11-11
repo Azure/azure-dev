@@ -60,12 +60,14 @@ func LookupFoundryProject(
 
 func (p *FoundryProjectMetadata) resolveEndpoints(accountName, projectName string) error {
 	subdomain := accountName
+	customSubdomain := ""
 	if p.Account.Properties != nil && p.Account.Properties.CustomSubDomainName != nil &&
 		*p.Account.Properties.CustomSubDomainName != "" {
-		subdomain = *p.Account.Properties.CustomSubDomainName
-		if !foundrySubdomainPattern.MatchString(subdomain) {
+		customSubdomain = *p.Account.Properties.CustomSubDomainName
+		if !foundrySubdomainPattern.MatchString(customSubdomain) {
 			return fmt.Errorf("Foundry account metadata contains an invalid custom subdomain")
 		}
+		subdomain = customSubdomain
 	}
 	endpoint := fmt.Sprintf("https://%s%s/api/projects/%s", subdomain, foundryProjectHostSuffix, projectName)
 	if p.Project.Properties != nil {
@@ -81,10 +83,13 @@ func (p *FoundryProjectMetadata) resolveEndpoints(accountName, projectName strin
 	if !strings.EqualFold(strings.TrimPrefix(strings.TrimPrefix(parsed.Path, "/api"), "/projects/"), projectName) {
 		return fmt.Errorf("ARM-advertised Foundry endpoint identifies a different project")
 	}
+	endpointSubdomain := strings.TrimSuffix(parsed.Hostname(), foundryProjectHostSuffix)
+	if customSubdomain != "" && !strings.EqualFold(endpointSubdomain, customSubdomain) {
+		return fmt.Errorf("ARM-advertised Foundry endpoint does not match account custom subdomain")
+	}
 	p.Endpoint = normalized
-	if p.Account.Properties == nil || p.Account.Properties.CustomSubDomainName == nil ||
-		*p.Account.Properties.CustomSubDomainName == "" {
-		subdomain = strings.TrimSuffix(parsed.Hostname(), foundryProjectHostSuffix)
+	if customSubdomain == "" {
+		subdomain = endpointSubdomain
 	}
 	p.OpenAIEndpoint = fmt.Sprintf("https://%s.openai.azure.com/", strings.ToLower(subdomain))
 	return nil

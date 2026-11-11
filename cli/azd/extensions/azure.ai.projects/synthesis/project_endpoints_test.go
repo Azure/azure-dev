@@ -44,6 +44,12 @@ func TestLookupFoundryProjectEndpoints(t *testing.T) {
 			endpoint:          customEndpoint, openAI: "https://custom-dns.openai.azure.com/",
 		},
 		{
+			name:              "advertised endpoint and custom subdomain match case-insensitively",
+			projectProperties: `{"endpoints":{"AI Foundry API":"https://Custom-DNS.services.ai.azure.com/api/projects/proj/"}}`,
+			accountProperties: `{"customSubDomainName":"custom-DNS"}`,
+			endpoint:          customEndpoint, openAI: "https://custom-dns.openai.azure.com/",
+		},
+		{
 			name:              "advertised endpoint without account subdomain",
 			projectProperties: `{"endpoints":{"AI Foundry API":"` + customEndpoint + `"}}`,
 			accountProperties: `{}`,
@@ -115,14 +121,20 @@ func TestLookupFoundryProjectDoesNotHideFailures(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range []struct {
-		name, advertised, subdomain string
-		failAccount                 bool
-		serviceError                error
-		status                      int
+		name, advertised, subdomain, wantError string
+		failAccount                            bool
+		serviceError                           error
+		status                                 int
 	}{
 		{name: "invalid advertised host", advertised: "https://example.com/api/projects/proj"},
 		{name: "invalid advertised scheme", advertised: "http://acct.services.ai.azure.com/api/projects/proj"},
 		{name: "wrong project", advertised: "https://acct.services.ai.azure.com/api/projects/other"},
+		{
+			name:       "mismatched advertised host and custom subdomain",
+			advertised: "https://other-dns.services.ai.azure.com/api/projects/proj",
+			subdomain:  "custom-dns",
+			wantError:  "does not match account custom subdomain",
+		},
 		{name: "invalid subdomain", subdomain: "custom.example.com"},
 		{name: "project transport failure", serviceError: errors.New("project request failed")},
 		{name: "account transport failure", failAccount: true, serviceError: errors.New("account request failed")},
@@ -162,6 +174,9 @@ func TestLookupFoundryProjectDoesNotHideFailures(t *testing.T) {
 			metadata, err := LookupFoundryProject(t.Context(), id, endpointTestCredential{}, options)
 			require.Error(t, err)
 			require.Nil(t, metadata)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+			}
 			if tt.serviceError != nil {
 				require.ErrorIs(t, err, tt.serviceError)
 			}

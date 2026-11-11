@@ -179,4 +179,15 @@ run "invalid_account_metadata" {
   }
   expect_failures = [output.FOUNDRY_PROJECT_ENDPOINT]
 }
+run "mismatched_advertised_and_account_subdomain" {
+  command = plan
+  variables { project_endpoint = "https://other-dns.services.ai.azure.com/api/projects/project" }
+  override_data {
+    target = data.azapi_resource.project
+    values = { output = { properties = {
+      endpoints = { "AI Foundry API" = "https://other-dns.services.ai.azure.com/api/projects/project" }
+    } } }
+  }
+  expect_failures = [output.FOUNDRY_PROJECT_ENDPOINT]
+}
 `

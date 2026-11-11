@@ -1492,8 +1492,12 @@ func emitNextAfterBind(
 	if ctx.Err() != nil {
 		return
 	}
+	suggestions := nextstep.ResolveAfterRun(state, serviceName, readmeExistsForProject(ctx, azdClient))
+	if len(suggestions) == 0 {
+		return
+	}
 	fmt.Println("\nAgent ready. In another terminal, try:")
-	_ = printNextIfTerminal(os.Stdout, nextstep.ResolveAfterRun(state, serviceName, readmeExistsForProject(ctx, azdClient)))
+	_ = printNextIfTerminal(os.Stdout, suggestions)
 }
 
 // portReadyBudget is the wall-clock ceiling for waitForPortReady, which

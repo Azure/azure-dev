@@ -1593,7 +1593,7 @@ func TestEmitNextAfterBind_ReturnsSilentlyWhenPortNeverBinds(t *testing.T) {
 		// ctx-cancel path takes over.
 		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 		defer cancel()
-		emitNextAfterBind(ctx, nil, "svc", port, false)
+		emitNextAfterBind(ctx, nil, "svc", port, "")
 	}()
 	select {
 	case <-done:
@@ -1615,7 +1615,7 @@ func TestEmitNextAfterBind_ReturnsSilentlyOnContextCancellation(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		emitNextAfterBind(ctx, nil, "svc", port, false)
+		emitNextAfterBind(ctx, nil, "svc", port, "")
 	}()
 	select {
 	case <-done:

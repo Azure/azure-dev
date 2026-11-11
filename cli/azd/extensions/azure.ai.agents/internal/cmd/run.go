@@ -159,8 +159,10 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// Resolve the activity profile before registering session cleanup. Port
 	// validation can fail without starting a process, and such a failure must
 	// not clear a session belonging to an already-running agent.
-	activityProfile, a2aOnly := resolveRunClientProfile(runCtx.Definition)
-	suppressClient := flags.noInspector || flags.noClient || a2aOnly
+	activityProfile, protocolOnly := resolveRunClientProfile(runCtx.Definition)
+	resolvedProtocol := protocolOnlyRunTarget(runCtx.Definition)
+	a2aOnly := resolvedProtocol == nextstep.ProtocolA2A
+	suppressClient := flags.noInspector || flags.noClient || protocolOnly
 	reportLocalClientRouteSelected(
 		ctx,
 		foundryTelemetry.NewReporter(azdClient.Telemetry(), nil),
@@ -366,7 +368,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	nextDone := make(chan struct{})
 	go func() {
 		defer close(nextDone)
-		emitNextAfterBind(ctx, azdClient, runCtx.ServiceName, flags.port, a2aOnly)
+		emitNextAfterBind(ctx, azdClient, runCtx.ServiceName, flags.port, resolvedProtocol)
 	}()
 
 	// Handle Ctrl+C / SIGTERM: forward signal to child, then wait for it to exit.
@@ -1460,7 +1462,7 @@ func emitNextAfterBind(
 	azdClient *azdext.AzdClient,
 	serviceName string,
 	port int,
-	a2aOnly bool,
+	resolvedProtocol string,
 ) {
 	// Honor the nextstep call-site TTY-gating contract: when stdout
 	// is redirected (e.g., `azd ai agent run > log`), the human-only
@@ -1478,14 +1480,14 @@ func emitNextAfterBind(
 	}
 	opts := []nextstep.Option{nextstep.WithLocalPort(port)}
 	// Use the already resolved run target, even if next-step state assembly
-	// cannot reload the project. A2A-only servers have no invocations spec.
-	if !a2aOnly {
+	// cannot reload the project. Protocol-only servers have no invocations spec.
+	if resolvedProtocol == "" {
 		opts = append(opts,
 			nextstep.WithOpenAPIProbe(serviceName, "local"),
 			nextstep.WithLiveOpenAPIProbe(liveFetch))
 	}
 	state, _ := nextstep.AssembleState(ctx, azdClient, opts...)
-	state = withResolvedRunTarget(state, serviceName, a2aOnly)
+	state = withResolvedRunTarget(state, serviceName, resolvedProtocol)
 	// Re-check ctx after AssembleState: if Ctrl+C arrived mid-call,
 	// the user already saw "Stopping agent..."/"Agent stopped." and
 	// printing "Agent ready" now would be factually wrong.

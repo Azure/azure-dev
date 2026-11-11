@@ -90,7 +90,7 @@ func TestResolvedRunTargetNextSteps(t *testing.T) {
 			t.Parallel()
 			state := &nextstep.State{Services: tc.services, LocalPort: 9091, HasOpenAPI: true, OpenAPIPayload: `{"stale":true}`}
 			original := append([]nextstep.ServiceState(nil), state.Services...)
-			resolved := withResolvedRunTarget(state, "agent", true)
+			resolved := withResolvedRunTarget(state, "agent", nextstep.ProtocolA2A)
 			require.Equal(t, original, state.Services, "must not mutate the reloaded services")
 			for _, svc := range resolved.Services {
 				if svc.Name == "other" {
@@ -100,7 +100,7 @@ func TestResolvedRunTargetNextSteps(t *testing.T) {
 			suggestions := nextstep.ResolveAfterRun(resolved, "agent", func(string) bool { return true })
 			require.Len(t, suggestions, 1)
 			require.Equal(t, "azd ai agent invoke 'agent' --local --protocol a2a --port 9091 'Hello!'", suggestions[0].Command)
-			require.Same(t, state, withResolvedRunTarget(state, "agent", false), "other routes must remain unchanged")
+			require.Same(t, state, withResolvedRunTarget(state, "agent", ""), "other routes must remain unchanged")
 		})
 	}
 }

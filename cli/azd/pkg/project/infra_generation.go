@@ -98,8 +98,14 @@ func (m *InfraGenerationManager) Generate(
 		return nil, fmt.Errorf("infrastructure generation requires a non-nil options message")
 	}
 
+	// TODO: this first pass just assumes we want to convert _everything_, but I'd like to change
+	// it to allow you to select specific layers to convert.
 	entries := config.InfrastructureConfigs()
 
+	// TODO: right now we're treating these paths (.net import, resources) as a
+	// completely distinct code path. I need to look into this more to see if there's
+	// some merging, or if these are considered their own private world and don't need
+	// to mesh with our extensions based providers.
 	if !slices.ContainsFunc(entries, isExtensionInfraEntry) {
 		files, err := m.importer.GenerateAllInfrastructure(ctx, config)
 		return &GeneratedInfrastructure{Files: files}, err

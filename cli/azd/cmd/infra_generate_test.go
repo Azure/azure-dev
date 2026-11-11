@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
@@ -96,7 +98,7 @@ func Test_NewInfraGenerateAction_Constructor(t *testing.T) {
 	flags := &infraGenerateFlags{}
 	console := mockinput.NewMockConsole()
 	calledAs := CmdCalledAs("infra generate")
-	a := newInfraGenerateAction(nil, nil, flags, console, nil, nil, calledAs)
+	a := newInfraGenerateAction(nil, nil, nil, flags, console, nil, nil, calledAs)
 	ia := a.(*infraGenerateAction)
 	require.Same(t, flags, ia.flags)
 	require.Equal(t, calledAs, ia.calledAs)
@@ -140,6 +142,61 @@ func Test_DetermineDuplicates_AllDuplicates(t *testing.T) {
 	dups, err := determineDuplicates(source, target)
 	require.NoError(t, err)
 	require.Len(t, dups, 2)
+}
+
+func Test_PromptForDuplicates(t *testing.T) {
+	t.Parallel()
+
+	newDirs := func(t *testing.T) (string, string) {
+		source := t.TempDir()
+		target := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(source, "main.bicep"), []byte("new"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(target, "main.bicep"), []byte("old"), 0600))
+		return source, target
+	}
+
+	t.Run("accept", func(t *testing.T) {
+		t.Parallel()
+		source, target := newDirs(t)
+		console := mockinput.NewMockConsole()
+		console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
+
+		a := &infraGenerateAction{console: console}
+		require.NoError(t, a.promptForDuplicates(t.Context(), source, target))
+	})
+
+	t.Run("decline", func(t *testing.T) {
+		t.Parallel()
+		source, target := newDirs(t)
+		console := mockinput.NewMockConsole()
+		console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(false)
+
+		a := &infraGenerateAction{console: console}
+		require.ErrorIs(t, a.promptForDuplicates(t.Context(), source, target), internal.ErrAbortedByUser)
+	})
+
+	t.Run("no_prompt", func(t *testing.T) {
+		t.Parallel()
+		source, target := newDirs(t)
+		console := mockinput.NewMockConsole()
+		console.SetNoPromptMode(true)
+
+		a := &infraGenerateAction{console: console}
+		err := a.promptForDuplicates(t.Context(), source, target)
+		suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+		require.True(t, ok, "expected ErrorWithSuggestion, got %v", err)
+		require.Contains(t, suggestion.Suggestion, "--force")
+	})
+
+	t.Run("no_duplicates_does_not_prompt", func(t *testing.T) {
+		t.Parallel()
+		source := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(source, "main.bicep"), []byte("new"), 0600))
+
+		// No Confirm expectation is registered, so a prompt would fail the test.
+		a := &infraGenerateAction{console: mockinput.NewMockConsole()}
+		require.NoError(t, a.promptForDuplicates(t.Context(), source, t.TempDir()))
+	})
 }
 
 func Test_NewInfraGenerateFlags(t *testing.T) {
@@ -197,10 +254,11 @@ func Test_InfraGenerateAction_RecordsInfraProvider(t *testing.T) {
 				projectConfig: &project.ProjectConfig{
 					Infra: provisioning.Options{Provider: tt.provider},
 				},
-				importManager: project.NewImportManager(nil),
-				flags:         &infraGenerateFlags{},
-				console:       mockinput.NewMockConsole(),
-				calledAs:      CmdCalledAs("infra generate"),
+				generationManager:  project.NewInfraGenerationManager(project.NewImportManager(nil), nil),
+				extensionActivator: &actionGenerationActivator{},
+				flags:              &infraGenerateFlags{EnvFlag: &internal.EnvFlag{}},
+				console:            mockinput.NewMockConsole(),
+				calledAs:           CmdCalledAs("infra generate"),
 			}
 
 			// The empty project has no infrastructure to generate, so Run returns an error after the

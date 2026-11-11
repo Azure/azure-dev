@@ -10,12 +10,15 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -23,7 +26,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -34,6 +36,7 @@ type infraGenerateFlags struct {
 	force bool
 }
 
+// newInfraGenerateFlags binds environment and force flags to cmd and associates them with global options.
 func newInfraGenerateFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *infraGenerateFlags {
 	flags := &infraGenerateFlags{
 		EnvFlag: &internal.EnvFlag{},
@@ -49,6 +52,7 @@ func (f *infraGenerateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalC
 	local.BoolVar(&f.force, "force", false, "Overwrite any existing files without prompting")
 }
 
+// newInfraGenerateCmd creates the infrastructure generate command with its aliases.
 func newInfraGenerateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "generate",
@@ -57,19 +61,27 @@ func newInfraGenerateCmd() *cobra.Command {
 	}
 }
 
-type infraGenerateAction struct {
-	projectConfig *project.ProjectConfig
-	importManager *project.ImportManager
-	console       input.Console
-	azdCtx        *azdcontext.AzdContext
-	flags         *infraGenerateFlags
-	alphaManager  *alpha.FeatureManager
-	calledAs      CmdCalledAs
+type infraGenerationProviderActivator interface {
+	EnsureInfraGenerationProviders(context.Context, []string, string) (func(), error)
 }
 
+type infraGenerateAction struct {
+	projectConfig      *project.ProjectConfig
+	generationManager  *project.InfraGenerationManager
+	extensionActivator infraGenerationProviderActivator
+	console            input.Console
+	azdCtx             *azdcontext.AzdContext
+	flags              *infraGenerateFlags
+	alphaManager       *alpha.FeatureManager
+	calledAs           CmdCalledAs
+}
+
+// newInfraGenerateAction creates an infrastructure generation action with the supplied dependencies.
+// calledAs identifies the invoked command name for alias-specific warnings.
 func newInfraGenerateAction(
 	projectConfig *project.ProjectConfig,
-	importManager *project.ImportManager,
+	generationManager *project.InfraGenerationManager,
+	extensionActivator *middleware.ExtensionActivator,
 	flags *infraGenerateFlags,
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
@@ -77,13 +89,14 @@ func newInfraGenerateAction(
 	calledAs CmdCalledAs,
 ) actions.Action {
 	return &infraGenerateAction{
-		projectConfig: projectConfig,
-		importManager: importManager,
-		flags:         flags,
-		console:       console,
-		azdCtx:        azdCtx,
-		alphaManager:  alphaManager,
-		calledAs:      calledAs,
+		projectConfig:      projectConfig,
+		flags:              flags,
+		console:            console,
+		azdCtx:             azdCtx,
+		alphaManager:       alphaManager,
+		calledAs:           calledAs,
+		generationManager:  generationManager,
+		extensionActivator: extensionActivator,
 	}
 }
 
@@ -118,15 +131,25 @@ func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, e
 			output.WithHighLightFormat("azd infra generate"))
 	}
 
+	cleanup, err := a.activateInfraGenerationProviders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
 	spinnerMessage := "Generating infrastructure"
 
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-	synthFS, err := a.importManager.GenerateAllInfrastructure(ctx, a.projectConfig)
+	generated, err := a.generationManager.Generate(ctx, a.projectConfig, &v1beta.InfraGenerateOptions{Force: a.flags.force})
 	if err != nil {
 		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return nil, err
 	}
 	a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+	synthFS := generated.Files
+	if synthFS == nil {
+		return nil, nil
+	}
 
 	staging, err := os.MkdirTemp("", "infra-generate")
 	if err != nil {
@@ -159,36 +182,73 @@ func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, err
 	}
 
-	options := copy.Options{}
-
-	if a.flags.force {
-		options.Skip = func(fileInfo os.FileInfo, src, dest string) (bool, error) {
-			return false, nil
-		}
-
-	} else {
-		skipStagingFiles, err := a.promptForDuplicates(ctx, staging, a.azdCtx.ProjectDirectory())
-		if err != nil {
+	if !a.flags.force {
+		if err := a.promptForDuplicates(ctx, staging, a.azdCtx.ProjectDirectory()); err != nil {
 			return nil, err
 		}
-
-		if skipStagingFiles != nil {
-			options.Skip = func(fileInfo os.FileInfo, src, dest string) (bool, error) {
-				_, skip := skipStagingFiles[src]
-				return skip, nil
-			}
-		}
 	}
 
-	if err := copy.Copy(staging, a.azdCtx.ProjectDirectory(), options); err != nil {
-		return nil, fmt.Errorf("copying contents from temp staging directory: %w", err)
+	root, err := os.OpenRoot(a.azdCtx.ProjectDirectory())
+	if err != nil {
+		return nil, fmt.Errorf("opening infrastructure destination: %w", err)
 	}
-
+	defer root.Close()
+	if err := writeGeneratedInfrastructureFiles(ctx, root, synthFS); err != nil {
+		return nil, err
+	}
 	return nil, nil
 }
 
-func (a *infraGenerateAction) promptForDuplicates(
-	ctx context.Context, staging string, target string) (skipSourceFiles map[string]struct{}, err error) {
+// activateInfraGenerationProviders activates extensions for configured non-built-in infrastructure providers
+// using the environment name from the flags. On success, the caller must invoke the returned cleanup function,
+// which is a no-op when no extensions are started.
+func (a *infraGenerateAction) activateInfraGenerationProviders(ctx context.Context) (func(), error) {
+	var providerNames []string
+	for _, entry := range a.projectConfig.InfrastructureConfigs() {
+		if entry.Provider != provisioning.NotSpecified &&
+			!slices.Contains(provisioning.BuiltInProviderKinds(), entry.Provider) {
+			providerNames = append(providerNames, string(entry.Provider))
+		}
+	}
+	if len(providerNames) == 0 {
+		return func() {}, nil
+	}
+
+	return a.extensionActivator.EnsureInfraGenerationProviders(ctx, providerNames, a.flags.EnvironmentName)
+}
+
+// writeGeneratedInfrastructureFiles writes files from synthFS to root, overwriting existing files.
+// Errors or cancellation can leave previously written files in place.
+func writeGeneratedInfrastructureFiles(ctx context.Context, root *os.Root, synthFS fs.FS) error {
+	if err := fs.WalkDir(synthFS, ".", func(name string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		contents, err := fs.ReadFile(synthFS, name)
+		if err != nil {
+			return err
+		}
+		if err := root.MkdirAll(filepath.Dir(name), osutil.PermissionDirectory); err != nil {
+			return err
+		}
+		return root.WriteFile(name, contents, osutil.PermissionFile)
+	}); err != nil {
+		return fmt.Errorf("writing generated infrastructure: %w", err)
+	}
+
+	return nil
+}
+
+// promptForDuplicates asks whether to overwrite existing target paths that match files in staging.
+// It returns nil when there are no duplicates or the user accepts the overwrite, and
+// [internal.ErrAbortedByUser] when the user declines. In --no-prompt mode, existing files are an error.
+func (a *infraGenerateAction) promptForDuplicates(ctx context.Context, staging string, target string) error {
 	log.Printf(
 		"infrastructure generate, checking for duplicates. source: %s target: %s",
 		staging,
@@ -197,50 +257,48 @@ func (a *infraGenerateAction) promptForDuplicates(
 
 	duplicateFiles, err := determineDuplicates(staging, target)
 	if err != nil {
-		return nil, fmt.Errorf("checking for overwrites: %w", err)
+		return fmt.Errorf("checking for overwrites: %w", err)
 	}
 
-	if len(duplicateFiles) > 0 {
-		a.console.StopSpinner(ctx, "", input.StepDone)
-		a.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: "The following files would be overwritten by generated versions:",
-		})
+	if len(duplicateFiles) == 0 {
+		return nil
+	}
 
-		for _, file := range duplicateFiles {
-			a.console.Message(ctx, fmt.Sprintf(" * %s", file))
-		}
-
-		selection, err := a.console.Select(ctx, input.ConsoleOptions{
-			Message: "What would you like to do with these files?",
-			Options: []string{
-				"Overwrite with the generated versions",
-				"Keep my existing files unchanged",
-			},
-		})
-
-		if err != nil {
-			return nil, fmt.Errorf("prompting to overwrite: %w", err)
-		}
-
-		switch selection {
-		case 0: // overwrite
-			return nil, nil
-		case 1: // keep
-			skipSourceFiles = make(map[string]struct{}, len(duplicateFiles))
-			for _, file := range duplicateFiles {
-				// this also cleans the result, which is important for matching
-				sourceFile := filepath.Join(staging, file)
-				skipSourceFiles[sourceFile] = struct{}{}
-			}
-			return skipSourceFiles, nil
+	if a.console.IsNoPromptMode() {
+		return &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("%d generated file(s) already exist in the project", len(duplicateFiles)),
+			Message:    "Generated infrastructure files would overwrite existing files.",
+			Suggestion: "Rerun with --force to overwrite the existing files.",
 		}
 	}
 
-	return nil, nil
+	a.console.StopSpinner(ctx, "", input.StepDone)
+	a.console.MessageUxItem(ctx, &ux.WarningMessage{
+		Description: "The following files would be overwritten by generated versions:",
+	})
+
+	for _, file := range duplicateFiles {
+		a.console.Message(ctx, fmt.Sprintf(" * %s", file))
+	}
+
+	overwrite, err := a.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      "Overwrite these files?",
+		DefaultValue: false,
+	})
+	if err != nil {
+		return fmt.Errorf("prompting to overwrite: %w", err)
+	}
+
+	if !overwrite {
+		a.console.Message(ctx, "No files were written.")
+		return internal.ErrAbortedByUser
+	}
+
+	return nil
 }
 
-// Returns files that are both present in source and target.
-// The files returned are expressed in their relative paths to source/target.
+// determineDuplicates returns paths of source files that also exist under target.
+// The returned paths are relative to source and target.
 func determineDuplicates(source string, target string) ([]string, error) {
 	var duplicateFiles []string
 	if err := filepath.WalkDir(source, func(path string, d fs.DirEntry, walkErr error) error {

@@ -584,6 +584,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Currently caches manifest across command executions
 	container.MustRegisterSingleton(project.NewDotNetImporter)
 	container.MustRegisterScoped(project.NewImportManager)
+	container.MustRegisterScoped(project.NewInfraGenerationManager)
 	container.MustRegisterScoped(project.NewServiceManager)
 
 	// Unified up action: the exegraph-backed `azd up` entry point that
@@ -1037,6 +1038,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
 	container.MustRegisterSingleton(grpcserver.NewProvisioningService)
+	container.MustRegisterSingleton(grpcserver.NewInfraGenerationService)
 	container.MustRegisterSingleton(grpcserver.NewValidationService)
 	// Bind the concrete ValidationService to both the gRPC interface and
 	// the dispatcher interface so DI resolves both from the same instance.

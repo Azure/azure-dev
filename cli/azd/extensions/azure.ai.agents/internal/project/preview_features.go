@@ -16,16 +16,50 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
+// foldValues returns the values of every key that matches name
+// case-insensitively. encoding/json decodes any of them into the same struct
+// field, and a null or false under one spelling does not cancel a value under
+// another, so gates must consider all of them, not just the first match.
+func foldValues(m map[string]any, name string) []any {
+	var values []any
+	for k, v := range m {
+		if strings.EqualFold(k, name) {
+			values = append(values, v)
+		}
+	}
+	return values
+}
+
+// hasFold reports whether any key matches name case-insensitively,
+// including keys whose value is null.
+func hasFold(m map[string]any, name string) bool {
+	return len(foldValues(m, name)) > 0
+}
+
+// anyFoldTrue reports whether any spelling of name is set to true.
+func anyFoldTrue(m map[string]any, name string) bool {
+	for _, v := range foldValues(m, name) {
+		if b, _ := v.(bool); b {
+			return true
+		}
+	}
+	return false
+}
+
 // PreviewFeature identifies a resolved definition's capability.
 // Ordinary definitions return an empty feature.
 func PreviewFeature(definition map[string]any) featureflags.Feature {
 	kind, _ := definition["kind"].(string)
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "prompt":
-		harness, _ := definition["harness"].(map[string]any)
-		harnessType, _ := harness["type"].(string)
-		if agent_api.IsCopilotHarness(strings.TrimSpace(harnessType)) {
-			return featureflags.ManagedHarness
+		for _, value := range foldValues(definition, "harness") {
+			harness, _ := value.(map[string]any)
+			for _, name := range foldValues(harness, "type") {
+				harnessType, _ := name.(string)
+				if agent_api.IsCopilotHarness(strings.TrimSpace(harnessType)) {
+					return featureflags.ManagedHarness
+				}
+			}
 		}
 	case "voice", "prompt-voice":
 		return featureflags.Voice
@@ -33,12 +67,16 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 		// Manifests use protocols. Foundry API definitions use protocol_versions
 		// or the legacy container_protocol_versions.
 		for _, key := range []string{"protocols", "protocol_versions", "container_protocol_versions"} {
-			protocols, _ := definition[key].([]any)
-			for _, entry := range protocols {
-				protocol, _ := entry.(map[string]any)
-				name, _ := protocol["protocol"].(string)
-				if strings.TrimSpace(name) == "invocations_ws" {
-					return featureflags.Voice
+			for _, value := range foldValues(definition, key) {
+				protocols, _ := value.([]any)
+				for _, entry := range protocols {
+					protocol, _ := entry.(map[string]any)
+					for _, name := range foldValues(protocol, "protocol") {
+						text, _ := name.(string)
+						if strings.TrimSpace(text) == "invocations_ws" {
+							return featureflags.Voice
+						}
+					}
 				}
 			}
 		}
@@ -91,9 +129,7 @@ func RequireDefinitionFeatureNotices(definition map[string]any) ([]string, error
 // DefinitionFeatures returns the preview features used by a definition.
 func DefinitionFeatures(definition map[string]any) []featureflags.Feature {
 	var features []featureflags.Feature
-	yamlSnapshot, _ := definition["enableMemorySnapshot"].(bool)
-	apiSnapshot, _ := definition["enable_memory_snapshot"].(bool)
-	if yamlSnapshot || apiSnapshot {
+	if anyFoldTrue(definition, "enableMemorySnapshot") || anyFoldTrue(definition, "enable_memory_snapshot") {
 		features = append(features, featureflags.MemorySnapshot)
 	}
 	feature := PreviewFeature(definition)

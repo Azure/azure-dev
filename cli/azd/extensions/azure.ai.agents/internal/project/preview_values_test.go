@@ -292,3 +292,24 @@ func TestPreviewSanitizesTypedInlineValues(t *testing.T) {
 	value = strings.ReplaceAll(value, "https", "HTTPS")
 	require.NotContains(t, previewDisplayValue("metadata.url", value, redactPreviewURLs), "private-")
 }
+
+func TestPreviewRegistryConnectionIDIgnoresPropertyCase(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(`
+name: preview
+services:
+  agent:
+    RegistryConnectionId: ${CONN_SECRET}
+`), 0600))
+	service := previewService(t)
+	service.AdditionalProperties.Fields["RegistryConnectionId"] = structpb.NewStringValue("conn")
+	service.Image = ""
+
+	source, err := previewSourceInputs(root, service, map[string]string{"CONN_SECRET": "private-connection-secret"})
+	require.NoError(t, err)
+	require.Contains(t, source.Secrets, "private-connection-secret")
+
+	definition, _, _, _, err := AgentDefinitionFromService(service)
+	require.NoError(t, err)
+	require.True(t, previewDeclaredFields(service, definition)["definition.container_configuration.registry_connection_id"])
+}

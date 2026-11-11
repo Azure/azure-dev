@@ -184,3 +184,119 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 		})
 	}
 }
+
+func TestPreviewGatesIgnorePropertyCase(t *testing.T) {
+	t.Setenv(featureflags.MemorySnapshot.EnvVar, "false")
+	t.Setenv(featureflags.Voice.EnvVar, "false")
+	t.Setenv(featureflags.ManagedHarness.EnvVar, "false")
+
+	ws := []any{map[string]any{"protocol": "invocations_ws"}}
+	for _, tc := range []struct {
+		name       string
+		definition map[string]any
+		feature    featureflags.Feature
+	}{
+		{"snapshot upper", map[string]any{"kind": "hosted", "EnableMemorySnapshot": true}, featureflags.MemorySnapshot},
+		{"snapshot colliding", map[string]any{"kind": "hosted",
+			"enableMemorySnapshot": false, "enablememorysnapshot": true}, featureflags.MemorySnapshot},
+		{"snapshot off", map[string]any{"kind": "hosted", "EnableMemorySnapshot": false}, featureflags.Feature{}},
+		{"protocols upper", map[string]any{"kind": "hosted", "Protocols": ws}, featureflags.Voice},
+		{"protocol key upper", map[string]any{"kind": "hosted",
+			"protocols": []any{map[string]any{"Protocol": "invocations_ws"}}}, featureflags.Voice},
+		{"protocol null collision", map[string]any{"kind": "hosted",
+			"protocols": []any{map[string]any{"protocol": nil, "Protocol": "invocations_ws"}}}, featureflags.Voice},
+		{"harness type upper", map[string]any{"kind": "prompt",
+			"harness": map[string]any{"Type": "microsoft_copilot_preview"}}, featureflags.ManagedHarness},
+		{"harness key upper", map[string]any{"kind": "prompt",
+			"Harness": map[string]any{"type": "microsoft_copilot_preview"}}, featureflags.ManagedHarness},
+		{"harness type collision", map[string]any{"kind": "prompt",
+			"harness": map[string]any{"type": nil, "Type": "microsoft_copilot_preview"}}, featureflags.ManagedHarness},
+		{"harness key collision", map[string]any{"kind": "prompt",
+			"harness": nil, "Harness": map[string]any{"type": "microsoft_copilot_preview"}}, featureflags.ManagedHarness},
+		{"protocols collision", map[string]any{"kind": "hosted",
+			"protocols": []any{}, "Protocols": ws}, featureflags.Voice},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			content, err := json.Marshal(tc.definition)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "agent.json"), content, 0600))
+			for name, props := range map[string]map[string]any{
+				"inline": tc.definition,
+				"ref":    {"$ref": "agent.json"},
+			} {
+				service := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost,
+					AdditionalProperties: mustStruct(t, props)}
+				err := RequireAgentFeatures(service, root, io.Discard)
+				if tc.feature.ID == "" {
+					require.NoError(t, err, name)
+				} else {
+					require.ErrorContains(t, err, tc.feature.ID, name)
+				}
+			}
+		})
+	}
+}
+
+func TestRegistryConnectionCheckIgnoresPropertyCase(t *testing.T) {
+	for name, props := range map[string]map[string]any{
+		"exact":     {"registryConnectionId": "conn"},
+		"upper":     {"RegistryConnectionId": "conn"},
+		"null":      {"registryConnectionId": nil},
+		"collision": {"registryConnectionId": nil, "RegistryConnectionId": "conn"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			props["kind"] = "hosted"
+			service := &azdext.ServiceConfig{
+				Name: "agent", Host: foundryAgentHost, AdditionalProperties: mustStruct(t, props),
+			}
+			require.ErrorContains(t, validateRegistryConnectionServiceConfig(service), "imagePassthrough")
+
+			service.Docker = &azdext.DockerProjectOptions{ImagePassthrough: true, RemoteBuild: true}
+			require.ErrorContains(t, validateRegistryConnectionServiceConfig(service), "remoteBuild")
+		})
+	}
+}
+
+func TestMixedCaseDefinitionsDecodeThroughInitialize(t *testing.T) {
+	t.Setenv(featureflags.ManagedHarness.EnvVar, "false")
+
+	t.Run("registry connection rejected inline and ref", func(t *testing.T) {
+		for _, props := range []map[string]any{
+			{"kind": "hosted", "RegistryConnectionId": "conn"},
+			{"kind": "hosted", "registryConnectionId": nil, "RegistryConnectionId": "conn"},
+		} {
+			root := t.TempDir()
+			content, err := json.Marshal(props)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "agent.json"), content, 0600))
+			for name, serviceProps := range map[string]map[string]any{
+				"inline": props,
+				"ref":    {"$ref": "agent.json"},
+			} {
+				service := &azdext.ServiceConfig{
+					Name: "agent", Host: foundryAgentHost, AdditionalProperties: mustStruct(t, serviceProps),
+					Docker: &azdext.DockerProjectOptions{ImagePassthrough: true, RemoteBuild: true},
+				}
+				provider := &AgentServiceTargetProvider{projectPath: root}
+				require.ErrorContains(t, provider.Initialize(t.Context(), service), "remoteBuild", name)
+			}
+		}
+	})
+
+	t.Run("harness decodes and is gated", func(t *testing.T) {
+		props := map[string]any{
+			"kind": "prompt", "name": "agent", "model": "gpt-4.1-mini", "instructions": "Be helpful.",
+			"Harness": map[string]any{"Type": "microsoft_copilot_preview"},
+		}
+		root := t.TempDir()
+		service := &azdext.ServiceConfig{
+			Name: "agent", Host: foundryAgentHost, AdditionalProperties: mustStruct(t, props),
+		}
+		prompt, found, err := PromptAgentFromResolvedService(service, root)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, "microsoft_copilot_preview", prompt.HarnessType())
+		require.ErrorContains(t, RequireAgentFeatures(service, root, io.Discard), "agents.managed_harness")
+	})
+}

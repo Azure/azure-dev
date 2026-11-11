@@ -4,10 +4,15 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"testing"
 
+	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -138,4 +143,108 @@ func TestProjectAddMutationIncludesDeploymentReconciliation(t *testing.T) {
 			))
 		})
 	}
+}
+
+func TestReconcileAdoptedDeploymentsEmitsPolicyWarningWhenModelDenied(t *testing.T) {
+	const (
+		projectID = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-foundry/" +
+			"providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project"
+		endpoint = "https://my-account.services.ai.azure.com/api/projects/my-project"
+	)
+
+	declared := synthesis.Deployment{
+		Name:  "chat",
+		Model: synthesis.DeploymentModel{Format: "OpenAI", Name: "gpt-4o", Version: "2024-08-06"},
+		Sku:   synthesis.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+	}
+
+	root := t.TempDir()
+	client, projectServer, envServer, _, _ := newSelfInitializingDeploymentClient(t, root)
+	projectServer.services["project"] = map[string]any{
+		"host":        aiProjectHost,
+		"endpoint":    endpoint,
+		"deployments": []any{deploymentMap(declared)},
+	}
+
+	var warnBuf bytes.Buffer
+	prevOut := reconcilePolicyWarningOut
+	prevEval := evaluateReconciledModelPolicies
+	prevList := listLiveProjectDeployments
+	reconcilePolicyWarningOut = &warnBuf
+	listLiveProjectDeployments = func(
+		_ context.Context,
+		_ *resolvedProject,
+		_ azcore.TokenCredential,
+	) ([]liveProjectDeployment, error) {
+		return []liveProjectDeployment{
+			{
+				Name:  "existing-chat",
+				Model: declared.Model,
+				Sku:   declared.Sku,
+			},
+		}, nil
+	}
+	evaluateReconciledModelPolicies = func(
+		_ context.Context,
+		_ azcore.TokenCredential,
+		gotProjectID string,
+		deployments []synthesis.Deployment,
+	) ([]provisioning.ModelPolicyViolation, error) {
+		assert.Equal(t, projectID, gotProjectID)
+		require.NotEmpty(t, deployments)
+		return []provisioning.ModelPolicyViolation{
+			{
+				DeploymentName: "existing-chat",
+				ModelFormat:    "OpenAI",
+				ModelName:      "gpt-4o",
+				ModelVersion:   "2024-08-06",
+				DisplayName:    "approved-models",
+				PortalURL:      "https://ai.azure.com/?flight=govern_ignite",
+			},
+		}, errors.New("batch 2 failed")
+	}
+	t.Cleanup(func() {
+		reconcilePolicyWarningOut = prevOut
+		evaluateReconciledModelPolicies = prevEval
+		listLiveProjectDeployments = prevList
+	})
+
+	target := &resolvedProject{
+		Mode:              projectModeExistingID,
+		ResourceId:        projectID,
+		SubscriptionId:    "00000000-0000-0000-0000-000000000001",
+		UserTenantId:      "tenant",
+		ResourceGroupName: "rg-foundry",
+		AccountName:       "my-account",
+		ProjectName:       "my-project",
+		Endpoint:          endpoint,
+		Location:          "eastus",
+	}
+
+	defaultName, changed, _, err := reconcileAdoptedDeployments(
+		t.Context(),
+		client,
+		root,
+		"test",
+		target,
+		"project",
+		true,
+	)
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Equal(t, "existing-chat", defaultName)
+	assert.Equal(t, "existing-chat", envServer.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
+
+	warningOutput := warnBuf.String()
+	assert.Contains(
+		t,
+		warningOutput,
+		"Warning: One or more model deployments do not comply with Azure Policy in the selected project:",
+	)
+	assert.Contains(
+		t,
+		warningOutput,
+		`The "approved-models" policy doesn't allow model "gpt-4o (version 2024-08-06)" for deployment "existing-chat" in this project.`,
+	)
+	assert.Contains(t, warningOutput, "View policy: https://ai.azure.com/?flight=govern_ignite")
 }

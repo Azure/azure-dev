@@ -6,6 +6,10 @@
 
 - [[#10823]](https://github.com/Azure/azure-dev/pull/10823) Allow `infra.layers[]` entries that explicitly specify an extension-defined infrastructure provider to omit `path`, and add provider-specific `infra.config` to the `azure.yaml` schema.
 
+### Breaking Changes
+
+- [[#10823]](https://github.com/Azure/azure-dev/pull/10823) `azd add` and `azd infra gen` now reject projects that use extension-defined infrastructure providers, including projects with legacy resource declarations.
+
 ### Bugs Fixed
 
 - [[#10861]](https://github.com/Azure/azure-dev/pull/10861) Fix extension command errors in JSON mode by emitting JSON-formatted errors on stderr instead of plain-text errors on stdout.

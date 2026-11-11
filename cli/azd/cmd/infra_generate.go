@@ -5,12 +5,14 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -131,6 +133,16 @@ func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, e
 			output.WithHighLightFormat("azd infra generate"))
 	}
 
+	force := a.flags.force
+	if !force {
+		// When the user accepts, generators (including extensions) may overwrite existing files.
+		var err error
+		force, err = a.confirmOverwrite(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	cleanup, err := a.activateInfraGenerationProviders(ctx)
 	if err != nil {
 		return nil, err
@@ -140,7 +152,7 @@ func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, e
 	spinnerMessage := "Generating infrastructure"
 
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-	generated, err := a.generationManager.Generate(ctx, a.projectConfig, &v1beta.InfraGenerateOptions{Force: a.flags.force})
+	generated, err := a.generationManager.Generate(ctx, a.projectConfig, &v1beta.InfraGenerateOptions{Force: force})
 	if err != nil {
 		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return nil, err
@@ -149,43 +161,6 @@ func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, e
 	synthFS := generated.Files
 	if synthFS == nil {
 		return nil, nil
-	}
-
-	staging, err := os.MkdirTemp("", "infra-generate")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(staging)
-
-	err = fs.WalkDir(synthFS, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if d.IsDir() {
-			return nil
-		}
-
-		contents, err := fs.ReadFile(synthFS, path)
-		if err != nil {
-			return err
-		}
-
-		err = os.MkdirAll(filepath.Join(staging, filepath.Dir(path)), osutil.PermissionDirectory)
-		if err != nil {
-			return err
-		}
-
-		return os.WriteFile(filepath.Join(staging, path), contents, osutil.PermissionFile)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if !a.flags.force {
-		if err := a.promptForDuplicates(ctx, staging, a.azdCtx.ProjectDirectory()); err != nil {
-			return nil, err
-		}
 	}
 
 	root, err := os.OpenRoot(a.azdCtx.ProjectDirectory())
@@ -245,83 +220,82 @@ func writeGeneratedInfrastructureFiles(ctx context.Context, root *os.Root, synth
 	return nil
 }
 
-// promptForDuplicates asks whether to overwrite existing target paths that match files in staging.
-// It returns nil when there are no duplicates or the user accepts the overwrite, and
-// [internal.ErrAbortedByUser] when the user declines. In --no-prompt mode, existing files are an error.
-func (a *infraGenerateAction) promptForDuplicates(ctx context.Context, staging string, target string) error {
-	log.Printf(
-		"infrastructure generate, checking for duplicates. source: %s target: %s",
-		staging,
-		target,
-	)
+// confirmOverwrite checks whether any folder that generation writes into already contains files, and if so,
+// asks the user whether to overwrite. It returns true only when the user accepted overwriting, false when every
+// folder is empty or missing, and [internal.ErrAbortedByUser] when the user declines. In --no-prompt mode, a
+// non-empty folder is an error.
+func (a *infraGenerateAction) confirmOverwrite(ctx context.Context) (bool, error) {
+	projectDir := a.azdCtx.ProjectDirectory()
 
-	duplicateFiles, err := determineDuplicates(staging, target)
-	if err != nil {
-		return fmt.Errorf("checking for overwrites: %w", err)
+	var nonEmpty []string
+
+	for _, folder := range a.generationManager.OutputPaths(a.projectConfig) {
+		full := folder
+		if !filepath.IsAbs(full) {
+			full = filepath.Join(projectDir, full)
+		}
+
+		hasFiles, err := folderHasEntries(full)
+		if err != nil {
+			return false, fmt.Errorf("checking for existing infrastructure: %w", err)
+		}
+
+		if hasFiles {
+			nonEmpty = append(nonEmpty, folder)
+		}
 	}
 
-	if len(duplicateFiles) == 0 {
-		return nil
+	if len(nonEmpty) == 0 {
+		return false, nil
 	}
 
 	if a.console.IsNoPromptMode() {
-		return &internal.ErrorWithSuggestion{
-			Err:        fmt.Errorf("%d generated file(s) already exist in the project", len(duplicateFiles)),
-			Message:    "Generated infrastructure files would overwrite existing files.",
+		return false, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("infrastructure output folders are not empty: %s", strings.Join(nonEmpty, ", ")),
+			Message:    "Generated infrastructure would be written into folders that already contain files.",
 			Suggestion: "Rerun with --force to overwrite the existing files.",
 		}
 	}
 
-	a.console.StopSpinner(ctx, "", input.StepDone)
 	a.console.MessageUxItem(ctx, &ux.WarningMessage{
-		Description: "The following files would be overwritten by generated versions:",
+		Description: "The following folders already contain files that generated versions may overwrite:",
 	})
 
-	for _, file := range duplicateFiles {
-		a.console.Message(ctx, fmt.Sprintf(" * %s", file))
+	for _, folder := range nonEmpty {
+		a.console.Message(ctx, fmt.Sprintf(" * %s", folder))
 	}
 
 	overwrite, err := a.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      "Overwrite these files?",
+		Message:      "Overwrite existing files?",
 		DefaultValue: false,
 	})
 	if err != nil {
-		return fmt.Errorf("prompting to overwrite: %w", err)
+		return false, fmt.Errorf("prompting to overwrite: %w", err)
 	}
 
 	if !overwrite {
 		a.console.Message(ctx, "No files were written.")
-		return internal.ErrAbortedByUser
+		return false, internal.ErrAbortedByUser
 	}
 
-	return nil
+	return true, nil
 }
 
-// determineDuplicates returns paths of source files that also exist under target.
-// The returned paths are relative to source and target.
-func determineDuplicates(source string, target string) ([]string, error) {
-	var duplicateFiles []string
-	if err := filepath.WalkDir(source, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-
-		if d.IsDir() {
-			return nil
-		}
-
-		partial, err := filepath.Rel(source, path)
-		if err != nil {
-			return fmt.Errorf("computing relative path: %w", err)
-		}
-
-		if _, err := os.Stat(filepath.Join(target, partial)); err == nil {
-			duplicateFiles = append(duplicateFiles, partial)
-		}
-
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("enumerating template files: %w", err)
+// folderHasEntries returns true if dir exists and contains at least one entry.
+func folderHasEntries(dir string) (bool, error) {
+	f, err := os.Open(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
 	}
-	return duplicateFiles, nil
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	_, err = f.Readdirnames(1)
+	if errors.Is(err, io.EOF) {
+		return false, nil
+	}
+
+	return err == nil, err
 }

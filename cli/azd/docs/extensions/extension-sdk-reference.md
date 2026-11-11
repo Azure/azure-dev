@@ -718,6 +718,11 @@ type InfraGenerationProvider interface {
 
 The request includes the project directory, infrastructure entry, planned
 project-relative output directory, and an explicit `*v1beta.InfraGenerateOptions`.
+Without an explicit entry path, core uses `infra/<name>` (or `infra` for an unnamed
+entry). The directory name replaces control characters and `<>:"/\|?*` with
+underscores and removes trailing periods and spaces. On Windows, reserved device
+names are prefixed with `_` using Go's `filepath.IsLocal` check.
+A name reduced to empty becomes `_`. The YAML entry name is unchanged.
 Options are required, and the SDK rejects `nil`. `options.force` carries the
 command's `--force` flag. Extensions own file writes, path safety, and overwrite
 handling. They must not silently overwrite existing files when `force` is false.

@@ -42,7 +42,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 			"Uses prebuilt-layout when no analyzer is specified or configured.\n" +
 			"Results use YAML front matter and Markdown by default. Batches save source-relative result files.\n" +
 			"Single-result terminal output is pretty by default, including when redirected.\n" +
-			"Use --pretty=false for original content. Do not specify --pretty with --output-file or --output-dir.\n" +
+			"Use --pretty=false for original content. Do not specify --pretty when saving results.\n" +
 			"--llm-input is removed: use --output markdown or json. --output none is no longer supported.\n" +
 			"Use --output json for complete JSON, or --dry-run to inspect the plan without service calls.",
 		Example: `  azd ai cu analyze invoice.pdf
@@ -85,7 +85,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 	flags.BoolVar(&options.usage, "usage", false,
 		"Include usage in Markdown front matter, JSON output, summaries, and reports")
 	flags.BoolVarP(&options.pretty, "pretty", "p", true,
-		"Pretty-print terminal output; false keeps original content; do not specify with --output-file/--output-dir")
+		"Pretty-print terminal output; false keeps original content; do not specify when saving results")
 	flags.StringVar(&options.output.File, "output-file", "", "Save one result to this file")
 	flags.StringVarP(&options.output.Directory, "output-dir", "d", "", "Save source-relative result files in this directory")
 	flags.StringVar(&options.output.Existing, "on-existing", "",
@@ -164,10 +164,14 @@ func runAnalyzeCommand(
 	if err != nil {
 		return err
 	}
-	if options.pretty && !options.dryRun && len(plan.Outputs) != 1 {
-		return commandError("conflicting_analyze_options",
-			"--pretty requires one input and cannot preview a batch.",
-			"Select one input, or use --output-dir without specifying --pretty to save batch results.")
+	if !options.dryRun && len(plan.Outputs) > 1 {
+		if cmd.Flags().Changed("pretty") {
+			return commandError("conflicting_analyze_options",
+				"--pretty is not applicable when saving batch results, even when false.",
+				"Remove --pretty to save batch results, or select one input without a result destination "+
+					"to pretty-print terminal content.")
+		}
+		options.pretty = false
 	}
 	if err := ctx.Err(); err != nil {
 		return err

@@ -167,7 +167,7 @@ azd ai cu analyze invoice.pdf --pretty=false > invoice.result.md
 Use `--pretty=false` (or `-p=false`) for original content:
 
 ```bash
-azd ai cu analyze invoice.pdf --pretty
+azd ai cu analyze invoice.pdf --pretty=false
 ```
 
 Pretty-printing formats Markdown for terminal reading. The preview includes
@@ -177,9 +177,8 @@ breaks. Reference-style links work across tables.
 HTML tables display all columns and switch to labeled cards when they are too wide
 for the terminal.
 
-When color is enabled, metadata, page comments, and generated row labels are gray.
-Headings share a consistent color, tables use a distinct color, and layout notices
-are yellow.
+Pretty-printed output uses syntax highlighting when color is enabled. Colors may
+change in future versions.
 
 Keep these limitations in mind:
 
@@ -188,7 +187,8 @@ Keep these limitations in mind:
 - Long values can overflow, and some Unicode text or emoji may not align correctly.
   Right-to-left text display depends on your terminal. Markdown tables may shorten
   long links.
-- Preview text removes terminal controls. Links and images are not fetched.
+- Pretty-printed terminal output removes terminal control characters. Links and
+  images are not fetched.
 - Piped or redirected previews are uncolored and use an 80-column layout.
 
 Analysis previews require one resolved input. Pretty also supports JSON, usage,
@@ -198,10 +198,13 @@ tables. `NO_COLOR` and redirected output disable color, not pretty presentation.
 JSON uses theme-adaptive syntax highlighting. Colors distinguish JSON syntax,
 not success or failure; actual shades depend on the terminal color scheme.
 
-With `--output-file` or `--output-dir`, pretty is automatically disabled when
-omitted, and the terminal prints the existing execution summary. Do not explicitly
-specify `--pretty` in result-file mode, even as `--pretty=false`: both true and
-false are rejected. `--report-file` remains compatible with terminal previews.
+When saving results, including local batches without an output directory, pretty
+is automatically disabled when omitted, and the terminal prints the existing JSON
+execution summary. Saved results retain original Markdown and HTML tables, or the
+complete response for `--output json`; pretty affects only terminal presentation.
+Do not explicitly specify `--pretty` in result-file mode, even as `--pretty=false`:
+both true and false are rejected. `--report-file` remains compatible with terminal
+previews.
 
 ### Complete JSON response
 
@@ -246,10 +249,9 @@ for `none`'s stdout suppression. Use `--pretty=false` when consuming original
 stdout content; omit the pretty flag entirely with result-file destinations.
 `--no-prompt` does not disable pretty.
 
-Local batches without an output directory now require `--pretty=false` to save
-results beside their inputs. Otherwise, default pretty rejects the batch because
-analysis previews support only one input. Alternatively, supply `--output-dir`
-and omit the pretty flag.
+Local batches without an output directory continue to save original results beside
+their inputs, with pretty automatically disabled. Omit the pretty flag when saving
+batch results, whether beside the inputs or under `--output-dir`.
 
 Analyze an HTTPS or Azure Blob SAS URL without downloading it first:
 
@@ -306,15 +308,15 @@ stdout, JSON output, and dry runs. It is never saved in result or report files.
 - More than 50 selected inputs require confirmation or explicit `--yes`.
 - Existing results fail by default. Use `--on-existing skip` to keep them or
   `--on-existing reanalyze` to replace them.
-- Without an output directory, local batches require `--pretty=false` and write
-  beside their inputs. Batches containing URLs require an output directory.
+- Without an output directory, local batches write beside their inputs with
+  pretty automatically disabled. Batches containing URLs require an output directory.
 - A requested report records successes, failures, and skipped inputs. Partial
   failures or cancellation return nonzero while retaining completed result
   files and the requested report. Reports never overwrite existing files.
 
 ```bash
 # Save original results beside each local input.
-azd ai cu analyze first.pdf second.pdf --pretty=false
+azd ai cu analyze first.pdf second.pdf
 
 # Save original results under an explicit directory; omit the pretty flag.
 azd ai cu analyze first.pdf second.pdf --output-dir ./results

@@ -103,14 +103,23 @@ func TestAnalyzeRenderRejectsConflictsBeforeAuthentication(t *testing.T) {
 				assert.Empty(t, entries)
 			})
 		}
-		if !strings.HasSuffix(pretty, "=false") {
+		t.Run("batch/"+pretty, func(t *testing.T) {
 			fixture := newAnalyzeFixture(t)
-			first, second := schemaFile(t, "first"), schemaFile(t, "second")
-			_, _, err := fixture.execute(t.Context(), first, second, pretty)
-			require.ErrorContains(t, err, "batch")
+			directory := testutil.TempDir(t)
+			first, second := filepath.Join(directory, "first.pdf"), filepath.Join(directory, "second.pdf")
+			for _, input := range []string{first, second} {
+				require.NoError(t, os.WriteFile(input, []byte("input"), 0o600))
+			}
+			stdout, stderr, err := fixture.execute(t.Context(), first, second, pretty)
+			require.ErrorContains(t, err, "--pretty is not applicable when saving batch results")
+			assert.Empty(t, stdout)
+			assert.Empty(t, stderr)
 			assert.Zero(t, fixture.opens)
 			assert.Zero(t, fixture.client.calls.Load())
-		}
+			entries, err := os.ReadDir(directory)
+			require.NoError(t, err)
+			assert.Len(t, entries, 2, "invalid invocation must not create results")
+		})
 	}
 }
 

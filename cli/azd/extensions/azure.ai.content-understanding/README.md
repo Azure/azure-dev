@@ -192,8 +192,10 @@ Pretty is enabled by default, including when redirected. Use `--pretty=false`
 to obtain original content through stdout. Terminal previews format Markdown and simple HTML tables as
 tables or labeled cards. Colors distinguish headings and tables when enabled.
 Analysis previews apply to one input and also support JSON, usage, and dry-run.
-Result-file options automatically disable implicit pretty; explicitly supplying
-`--pretty` with them is rejected, even as false. See
+Saving results automatically disables implicit pretty, including local batches
+that save beside their inputs. Saved results retain original Markdown/HTML tables
+or the complete JSON response. Explicitly supplying `--pretty` when saving results
+is rejected, even as false. See
 [pretty-print behavior and limitations](docs/usage.md#pretty-print-results-in-the-terminal).
 
 For the complete JSON response, including service warnings and usage when

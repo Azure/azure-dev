@@ -95,9 +95,47 @@ func TestAnalyzePrettyDryRun(t *testing.T) {
 	}
 }
 
+func TestAnalyzeBatchPrettyDryRun(t *testing.T) {
+	for _, format := range []string{"default", "markdown", "json"} {
+		for _, pretty := range [][]string{nil, {"--pretty"}, {"-p"}, {"--pretty=false"}, {"-p=false"}} {
+			t.Run(format+"/"+strings.Join(pretty, " "), func(t *testing.T) {
+				fixture := newAnalyzeFixture(t)
+				directory := testutil.TempDir(t)
+				inputs := []string{filepath.Join(directory, "first.pdf"), filepath.Join(directory, "second.pdf")}
+				for _, input := range inputs {
+					require.NoError(t, os.WriteFile(input, []byte("input"), 0o600))
+				}
+				args := append([]string{"--output", format, "--dry-run"}, inputs...)
+				args = append(args, pretty...)
+				stdout, stderr, err := fixture.execute(t.Context(), args...)
+				require.NoError(t, err)
+				assert.Empty(t, stderr)
+				assert.NotContains(t, stdout, "\x1b")
+				var plan analysis.DryRun
+				require.NoError(t, json.Unmarshal([]byte(stdout), &plan))
+				assert.True(t, plan.DryRun)
+				require.Len(t, plan.Outputs, len(inputs))
+				suffix := ".result.md"
+				if format == "json" {
+					suffix = ".result.json"
+				}
+				for index, input := range inputs {
+					assert.Equal(t, input, plan.Outputs[index].Input)
+					require.NotNil(t, plan.Outputs[index].Output)
+					assert.Equal(t, input+suffix, *plan.Outputs[index].Output)
+				}
+				assert.Zero(t, fixture.client.calls.Load())
+				entries, err := os.ReadDir(directory)
+				require.NoError(t, err)
+				assert.Len(t, entries, len(inputs), "dry runs must not create results")
+			})
+		}
+	}
+}
+
 func TestAnalyzeLocalBatchOutputDestinations(t *testing.T) {
 	for _, format := range []string{"default", "markdown", "json"} {
-		for _, mode := range []string{"implicit", "beside-inputs", "directory"} {
+		for _, mode := range []string{"implicit", "source", "directory"} {
 			t.Run(format+"/"+mode, func(t *testing.T) {
 				fixture := newAnalyzeFixture(t)
 				body := previewResponse(t, fixture)
@@ -109,25 +147,15 @@ func TestAnalyzeLocalBatchOutputDestinations(t *testing.T) {
 				outputDirectory := filepath.Join(directory, "results")
 				args := append([]string{"--output", format}, inputs...)
 				switch mode {
-				case "beside-inputs":
-					args = append(args, "--pretty=false")
+				case "source":
+					args = []string{"--output", format, "--source", directory}
 				case "directory":
 					args = append(args, "--output-dir", outputDirectory)
 				}
 				stdout, stderr, err := fixture.execute(t.Context(), args...)
-				if mode == "implicit" {
-					require.ErrorContains(t, err, "batch")
-					assert.Empty(t, stdout)
-					assert.Empty(t, stderr)
-					assert.Zero(t, fixture.opens)
-					assert.Zero(t, fixture.client.calls.Load())
-					entries, err := os.ReadDir(directory)
-					require.NoError(t, err)
-					assert.Len(t, entries, len(inputs), "invalid invocation must not create results")
-					return
-				}
 				require.NoError(t, err)
 				assert.Empty(t, stderr)
+				assert.NotContains(t, stdout, "\x1b")
 				assert.EqualValues(t, len(inputs), fixture.client.calls.Load())
 				var records []analysis.Record
 				require.NoError(t, json.Unmarshal([]byte(stdout), &records))
@@ -152,12 +180,14 @@ func TestAnalyzeLocalBatchOutputDestinations(t *testing.T) {
 					// #nosec G304 -- Result paths are in this test's private directory.
 					saved, err := os.ReadFile(output)
 					require.NoError(t, err)
+					assert.NotContains(t, string(saved), "\x1b")
 					if format == "json" {
 						assert.JSONEq(t, string(body), string(saved))
 					} else {
 						assert.Equal(t, markdown, string(saved), "saved results must retain original HTML tables")
 					}
 				}
+
 			})
 		}
 	}

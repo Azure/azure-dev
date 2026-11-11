@@ -17,10 +17,10 @@
   `--output json` for false. Remove analyze's `--output none` without replacement.
 - Redirected analysis output now uses uncolored pretty presentation by default;
   use `--pretty=false` to retain original Markdown/HTML.
-- Result-file options disable implicit pretty and reject any explicitly supplied
-  pretty flag, including false. Omit the flag when saving analysis results.
-- Local batches without an output directory now require `--pretty=false` to save
-  beside their inputs. Alternatively, supply `--output-dir` and omit the pretty flag.
+- Saving results disables implicit pretty and rejects any explicitly supplied
+  pretty flag, including false. Omit the flag when saving analysis results,
+  including local batches that save beside their inputs. Saved results retain
+  original Markdown/HTML tables or the complete JSON response.
 - Markdown stdout with `--usage` no longer uses a JSON wrapper.
 
 ### Other Changes

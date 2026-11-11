@@ -10,8 +10,7 @@ import (
 	"testing"
 )
 
-func TestGeneratorGenerate(t *testing.T) {
-	generator := &Generator{}
+func TestGenerateFromConfig(t *testing.T) {
 	request := GenerateRequest{
 		Name: "backend",
 		Config: map[string]any{
@@ -19,7 +18,7 @@ func TestGeneratorGenerate(t *testing.T) {
 		},
 	}
 
-	files, err := generator.Generate(t.Context(), request)
+	files, err := GenerateFromConfig(t.Context(), request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,8 +30,8 @@ func TestGeneratorGenerate(t *testing.T) {
 	}
 }
 
-func TestGeneratorRejectsInvalidConfig(t *testing.T) {
-	_, err := (&Generator{}).Generate(t.Context(), GenerateRequest{
+func TestGenerateFromConfigRejectsInvalidConfig(t *testing.T) {
+	_, err := GenerateFromConfig(t.Context(), GenerateRequest{
 		Config: map[string]any{
 			"database": map[string]any{"type": Mongo, "unknown": true},
 		},
@@ -42,11 +41,11 @@ func TestGeneratorRejectsInvalidConfig(t *testing.T) {
 	}
 }
 
-func TestGeneratorHonorsCancellation(t *testing.T) {
+func TestGenerateFromConfigHonorsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	_, err := (&Generator{}).Generate(ctx, GenerateRequest{})
+	_, err := GenerateFromConfig(ctx, GenerateRequest{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected cancellation, got %v", err)
 	}

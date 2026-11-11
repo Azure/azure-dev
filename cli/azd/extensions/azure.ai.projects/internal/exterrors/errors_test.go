@@ -247,3 +247,49 @@ func TestServiceFromAzure_PolicyViolationMessageWithManagementGroupAssignment(t 
 	)
 	assert.Contains(t, serviceErr.Suggestion, assignmentID)
 }
+
+func TestServiceFromAzure_PollingPropertiesErrorRequestDisallowedByPolicyUsesPolicyGuidance(t *testing.T) {
+	assignmentID := "/subscriptions/00000000-0000-0000-0000-000000000001/providers/" +
+		"Microsoft.Authorization/policyAssignments/approved-models"
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(`{
+			"properties": {
+				"provisioningState": "Failed",
+				"error": {
+					"code": "DeploymentFailed",
+					"details": [{
+						"code": "RequestDisallowedByPolicy",
+						"message": "Resource 'chat' was disallowed by policy.",
+						"additionalInfo": [{
+							"type": "PolicyViolation",
+							"info": {
+								"policyAssignmentId": "` + assignmentID + `"
+							}
+						}]
+					}]
+				}
+			}
+		}`)),
+		Request: &http.Request{
+			Host: "management.azure.com",
+			URL:  &url.URL{Scheme: "https", Host: "management.azure.com"},
+		},
+	}
+	err := &azcore.ResponseError{
+		ErrorCode:   "DeploymentFailed",
+		StatusCode:  http.StatusOK,
+		RawResponse: response,
+	}
+
+	result := ServiceFromAzure(err, OpArmDeploymentCreate)
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](result)
+	require.True(t, ok)
+	assert.Contains(
+		t,
+		serviceErr.Suggestion,
+		"Update the model deployment or project configuration to comply with your organization's Azure Policy assignments.",
+	)
+	assert.Contains(t, serviceErr.Suggestion, assignmentID)
+}

@@ -406,8 +406,15 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return rollbackProjectAdd(err, restoreService, restoreProvider)
 	}
-	reconciledDefault, reconciledChanged, restoreReconciled, err := reconcileAdoptedDeployments(
-		ctx, client, projectRoot, envName, target, serviceName, a.flags.noPrompt,
+	reconciledDefault, reconciledChanged, restoreReconciled, err := reconcileAdoptedDeploymentsWithWriter(
+		ctx,
+		client,
+		projectRoot,
+		envName,
+		target,
+		serviceName,
+		a.flags.noPrompt,
+		policyWarningWriterForOutput(a.stderr, a.flags),
 	)
 	if err != nil {
 		return rollbackProjectAdd(err, restoreEnvironment, restoreService, restoreProvider)
@@ -585,6 +592,13 @@ func withProjectRollbackContext(
 	)
 	defer cancel()
 	return rollback(rollbackCtx)
+}
+
+func policyWarningWriterForOutput(stderr io.Writer, flags *projectAddFlags) io.Writer {
+	if flags != nil && (flags.output == "json" || flags.output == "none") {
+		return nil
+	}
+	return stderr
 }
 
 func writeProjectEndpointWarning(

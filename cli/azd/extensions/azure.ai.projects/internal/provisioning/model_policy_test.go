@@ -261,6 +261,7 @@ func TestParseFoundryProjectResourceIDAndPortalURL(t *testing.T) {
 		"/subscriptions/not-a-uuid/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acc/projects/proj",
 		"/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/" +
 			"providers/Microsoft.CognitiveServices/accounts/acc/projects/proj/extra",
+		testPolicyProjectID + "//",
 	} {
 		_, _, _, _, ok := ParseFoundryProjectResourceID(invalidID)
 		assert.False(t, ok, "expected invalid project ID: %s", invalidID)
@@ -375,6 +376,11 @@ func TestParseFoundryProjectResourceIDAndPortalURL(t *testing.T) {
 			name: "forbidden whitespace character",
 			assignmentID: "/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/providers/" +
 				"Microsoft.Authorization/policyAssignments/deny policy",
+		},
+		{
+			name: "trailing double slash // in assignment ID",
+			assignmentID: "/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/providers/" +
+				"Microsoft.Authorization/policyAssignments/deny//",
 		},
 	}
 
@@ -576,6 +582,8 @@ func TestFoundryProvisioningProviderDeploy_ModelPolicyCheck(t *testing.T) {
 		}
 		p.onDiskSource = monitoringTestSource("none")
 		p.onDiskSource.mode = templateModeBicep
+		p.onDiskSource.parameters["projectResourceId"] = map[string]any{"value": testPolicyProjectID}
+		p.onDiskSource.parameters["deployments"] = map[string]any{"value": deployments}
 
 		var policyChecked bool
 		p.modelPolicyCheck = func(
@@ -645,6 +653,8 @@ func TestFoundryProvisioningProviderDeploy_ModelPolicyCheck(t *testing.T) {
 		}
 		p.onDiskSource = monitoringTestSource("none")
 		p.onDiskSource.mode = templateModeBicep
+		p.onDiskSource.parameters["projectResourceId"] = map[string]any{"value": testPolicyProjectID}
+		p.onDiskSource.parameters["deployments"] = map[string]any{"value": deployments}
 		p.modelPolicyCheck = CheckProjectModelDeploymentsPolicy
 
 		_, err := p.Deploy(t.Context(), func(string) {})
@@ -666,6 +676,7 @@ func TestFoundryProvisioningProviderDeploy_ModelPolicyCheck(t *testing.T) {
 		}
 		p.onDiskSource = monitoringTestSource("none")
 		p.onDiskSource.mode = templateModeBicep
+		p.onDiskSource.parameters["projectResourceId"] = map[string]any{"value": testPolicyProjectID}
 		p.onDiskSource.parameters["deployments"] = map[string]any{
 			"value": []any{
 				map[string]any{
@@ -714,6 +725,7 @@ func TestFoundryProvisioningProviderDeploy_ModelPolicyCheck(t *testing.T) {
 		}
 		p.onDiskSource = monitoringTestSource("none")
 		p.onDiskSource.mode = templateModeBicep
+		p.onDiskSource.parameters["projectResourceId"] = map[string]any{"value": testPolicyProjectID}
 		p.onDiskSource.parameters["deployments"] = map[string]any{
 			"value": []any{},
 		}
@@ -733,6 +745,106 @@ func TestFoundryProvisioningProviderDeploy_ModelPolicyCheck(t *testing.T) {
 		_, err := p.Deploy(t.Context(), func(string) {})
 		require.NoError(t, err)
 		assert.False(t, policyCalled, "must not evaluate stale synthResult deployments when src.parameters overrides to []")
+	})
+
+	t.Run("uses overridden projectResourceId from src.parameters", func(t *testing.T) {
+		const overrideProjectID = "/subscriptions/00000000-0000-0000-0000-000000000002/resourceGroups/rg-override/" +
+			"providers/Microsoft.CognitiveServices/accounts/override-account/projects/override-project"
+
+		fixture := monitoringCloudFixture{}
+		p := newMonitoringCloudFixture(t, &fixture)
+		p.existingProjectID = testPolicyProjectID
+		p.synthResult = &synthesis.Result{
+			Parameters: map[string]any{
+				"deployments": deployments,
+			},
+		}
+		p.onDiskSource = monitoringTestSource("none")
+		p.onDiskSource.mode = templateModeBicep
+		p.onDiskSource.parameters["projectResourceId"] = map[string]any{"value": overrideProjectID}
+		p.onDiskSource.parameters["deployments"] = map[string]any{"value": deployments}
+
+		var gotProjectID string
+		var gotDeployments []synthesis.Deployment
+		p.modelPolicyCheck = func(
+			_ context.Context,
+			_ azcore.TokenCredential,
+			projectID string,
+			deps []synthesis.Deployment,
+			_ map[string]string,
+		) error {
+			gotProjectID = projectID
+			gotDeployments = deps
+			return nil
+		}
+
+		_, err := p.Deploy(t.Context(), func(string) {})
+		require.NoError(t, err)
+		assert.Equal(t, overrideProjectID, gotProjectID)
+		require.Len(t, gotDeployments, 1)
+		assert.Equal(t, "chat", gotDeployments[0].Name)
+	})
+
+	t.Run("skips policy check when src.parameters projectResourceId is non-literal or invalid", func(t *testing.T) {
+		fixture := monitoringCloudFixture{}
+		p := newMonitoringCloudFixture(t, &fixture)
+		p.existingProjectID = testPolicyProjectID
+		p.synthResult = &synthesis.Result{
+			Parameters: map[string]any{
+				"deployments": deployments,
+			},
+		}
+		p.onDiskSource = monitoringTestSource("none")
+		p.onDiskSource.mode = templateModeBicep
+		p.onDiskSource.parameters["projectResourceId"] = map[string]any{"value": "[parameters('dynamicProjectId')]"}
+		p.onDiskSource.parameters["deployments"] = map[string]any{"value": deployments}
+
+		var policyCalled bool
+		p.modelPolicyCheck = func(
+			_ context.Context,
+			_ azcore.TokenCredential,
+			_ string,
+			_ []synthesis.Deployment,
+			_ map[string]string,
+		) error {
+			policyCalled = true
+			return nil
+		}
+
+		_, err := p.Deploy(t.Context(), func(string) {})
+		require.NoError(t, err)
+		assert.False(t, policyCalled, "must skip policy check when overridden projectResourceId is non-literal/invalid")
+	})
+
+	t.Run("does not revive stale synthResult deployments when resolved template omits deployments parameter", func(t *testing.T) {
+		fixture := monitoringCloudFixture{}
+		p := newMonitoringCloudFixture(t, &fixture)
+		p.existingProjectID = testPolicyProjectID
+		p.synthResult = &synthesis.Result{
+			Parameters: map[string]any{
+				"deployments": deployments,
+			},
+		}
+		p.onDiskSource = monitoringTestSource("none")
+		p.onDiskSource.mode = templateModeBicep
+		p.onDiskSource.parameters["projectResourceId"] = map[string]any{"value": testPolicyProjectID}
+		delete(p.onDiskSource.parameters, "deployments")
+
+		var policyCalled bool
+		p.modelPolicyCheck = func(
+			_ context.Context,
+			_ azcore.TokenCredential,
+			_ string,
+			_ []synthesis.Deployment,
+			_ map[string]string,
+		) error {
+			policyCalled = true
+			return nil
+		}
+
+		_, err := p.Deploy(t.Context(), func(string) {})
+		require.NoError(t, err)
+		assert.False(t, policyCalled, "must not evaluate stale synthResult deployments when src.parameters has no deployments key")
 	})
 
 	t.Run("matches case-insensitive Deployments key in src.parameters", func(t *testing.T) {

@@ -1381,26 +1381,23 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	if p.existingProjectID != "" && (p.synthResult != nil || src != nil) {
-		var srcParams map[string]any
-		if src != nil {
-			srcParams = src.parameters
+	if projectID, deployments := effectiveModelPolicyTarget(
+		src,
+		p.existingProjectID,
+		p.synthResult,
+	); projectID != "" && len(deployments) > 0 && !ShouldSkipModelPolicyChecks(p.synthesisEnv) {
+		if err := p.ensureCredential(ctx); err != nil {
+			return nil, err
 		}
-		deployments := extractEffectiveModelDeployments(srcParams, p.synthResult)
-		if len(deployments) > 0 && !ShouldSkipModelPolicyChecks(p.synthesisEnv) {
-			if err := p.ensureCredential(ctx); err != nil {
+		if p.modelPolicyCheck != nil {
+			if err := p.modelPolicyCheck(
+				ctx,
+				p.credential,
+				projectID,
+				deployments,
+				p.synthesisEnv,
+			); err != nil {
 				return nil, err
-			}
-			if p.modelPolicyCheck != nil {
-				if err := p.modelPolicyCheck(
-					ctx,
-					p.credential,
-					p.existingProjectID,
-					deployments,
-					p.synthesisEnv,
-				); err != nil {
-					return nil, err
-				}
 			}
 		}
 	}

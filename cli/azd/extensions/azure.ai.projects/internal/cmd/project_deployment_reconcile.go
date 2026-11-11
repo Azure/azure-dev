@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"slices"
 	"strings"
 
@@ -27,9 +26,8 @@ import (
 )
 
 var (
-	evaluateReconciledModelPolicies           = provisioning.EvaluateProjectModelDeploymentsPolicy
-	reconcilePolicyWarningOut       io.Writer = os.Stderr
-	listLiveProjectDeployments                = fetchLiveProjectDeployments
+	evaluateReconciledModelPolicies = provisioning.EvaluateProjectModelDeploymentsPolicy
+	listLiveProjectDeployments      = fetchLiveProjectDeployments
 )
 
 func reconcileAdoptedDeployments(
@@ -40,6 +38,28 @@ func reconcileAdoptedDeployments(
 	target *resolvedProject,
 	serviceName string,
 	noPrompt bool,
+) (string, bool, func() error, error) {
+	return reconcileAdoptedDeploymentsWithWriter(
+		ctx,
+		client,
+		projectRoot,
+		envName,
+		target,
+		serviceName,
+		noPrompt,
+		nil,
+	)
+}
+
+func reconcileAdoptedDeploymentsWithWriter(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	projectRoot string,
+	envName string,
+	target *resolvedProject,
+	serviceName string,
+	noPrompt bool,
+	warningWriter io.Writer,
 ) (string, bool, func() error, error) {
 	if target == nil || target.Mode != projectModeExistingID ||
 		target.ResourceId == "" {
@@ -109,7 +129,7 @@ func reconcileAdoptedDeployments(
 	}
 
 	return reconcileAdoptedDeploymentChoicesWithCredential(
-		ctx, client, envName, target, declared, live, environmentValues, noPrompt, credential,
+		ctx, client, envName, target, declared, live, environmentValues, noPrompt, credential, warningWriter,
 	)
 }
 
@@ -178,7 +198,7 @@ func reconcileAdoptedDeploymentChoices(
 	noPrompt bool,
 ) (string, bool, func() error, error) {
 	return reconcileAdoptedDeploymentChoicesWithCredential(
-		ctx, client, envName, target, declared, live, environmentValues, noPrompt, nil,
+		ctx, client, envName, target, declared, live, environmentValues, noPrompt, nil, nil,
 	)
 }
 
@@ -192,6 +212,7 @@ func reconcileAdoptedDeploymentChoicesWithCredential(
 	environmentValues map[string]string,
 	noPrompt bool,
 	credential azcore.TokenCredential,
+	warningWriter io.Writer,
 ) (string, bool, func() error, error) {
 	originalDefault := environmentValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"]
 	bindings, err := synthesis.DecodeDeploymentBindings(
@@ -401,6 +422,7 @@ func reconcileAdoptedDeploymentChoicesWithCredential(
 		referenced,
 		remaining,
 		environmentValues,
+		warningWriter,
 	)
 	return defaultName, changed, restore, nil
 }
@@ -412,6 +434,7 @@ func warnReconciledModelPolicies(
 	referenced []synthesis.Deployment,
 	remaining []synthesis.Deployment,
 	environmentValues map[string]string,
+	warningWriter io.Writer,
 ) {
 	if target == nil || strings.TrimSpace(target.ResourceId) == "" ||
 		provisioning.ShouldSkipModelPolicyChecks(environmentValues) {
@@ -451,11 +474,11 @@ func warnReconciledModelPolicies(
 	if err != nil {
 		log.Printf("[FoundryPolicy] Reconciled model policy check failed (failing open): %v", err)
 	}
-	if len(violations) == 0 || reconcilePolicyWarningOut == nil {
+	if len(violations) == 0 || warningWriter == nil {
 		return
 	}
 	if warning := provisioning.FormatModelPolicyViolationsWarning(violations); warning != "" {
-		_, _ = fmt.Fprint(reconcilePolicyWarningOut, warning)
+		_, _ = fmt.Fprint(warningWriter, warning)
 	}
 }
 

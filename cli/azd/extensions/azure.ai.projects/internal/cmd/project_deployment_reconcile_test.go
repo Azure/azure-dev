@@ -167,10 +167,9 @@ func TestReconcileAdoptedDeploymentsEmitsPolicyWarningWhenModelDenied(t *testing
 	}
 
 	var warnBuf bytes.Buffer
-	prevOut := reconcilePolicyWarningOut
+	var evaluated bool
 	prevEval := evaluateReconciledModelPolicies
 	prevList := listLiveProjectDeployments
-	reconcilePolicyWarningOut = &warnBuf
 	listLiveProjectDeployments = func(
 		_ context.Context,
 		_ *resolvedProject,
@@ -190,6 +189,7 @@ func TestReconcileAdoptedDeploymentsEmitsPolicyWarningWhenModelDenied(t *testing
 		gotProjectID string,
 		deployments []synthesis.Deployment,
 	) ([]provisioning.ModelPolicyViolation, error) {
+		evaluated = true
 		assert.Equal(t, projectID, gotProjectID)
 		require.NotEmpty(t, deployments)
 		return []provisioning.ModelPolicyViolation{
@@ -204,7 +204,6 @@ func TestReconcileAdoptedDeploymentsEmitsPolicyWarningWhenModelDenied(t *testing
 		}, errors.New("batch 2 failed")
 	}
 	t.Cleanup(func() {
-		reconcilePolicyWarningOut = prevOut
 		evaluateReconciledModelPolicies = prevEval
 		listLiveProjectDeployments = prevList
 	})
@@ -221,7 +220,7 @@ func TestReconcileAdoptedDeploymentsEmitsPolicyWarningWhenModelDenied(t *testing
 		Location:          "eastus",
 	}
 
-	defaultName, changed, _, err := reconcileAdoptedDeployments(
+	defaultName, changed, _, err := reconcileAdoptedDeploymentsWithWriter(
 		t.Context(),
 		client,
 		root,
@@ -229,8 +228,10 @@ func TestReconcileAdoptedDeploymentsEmitsPolicyWarningWhenModelDenied(t *testing
 		target,
 		"project",
 		true,
+		policyWarningWriterForOutput(&warnBuf, &projectAddFlags{output: "default"}),
 	)
 	require.NoError(t, err)
+	assert.True(t, evaluated)
 	assert.True(t, changed)
 	assert.Equal(t, "existing-chat", defaultName)
 	assert.Equal(t, "existing-chat", envServer.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
@@ -247,4 +248,31 @@ func TestReconcileAdoptedDeploymentsEmitsPolicyWarningWhenModelDenied(t *testing
 		`The "approved-models" policy doesn't allow model "gpt-4o (version 2024-08-06)" for deployment "existing-chat" in this project.`,
 	)
 	assert.Contains(t, warningOutput, "View policy: https://ai.azure.com/?flight=govern_ignite")
+
+	for _, outputFormat := range []string{"json", "none"} {
+		t.Run("suppresses warning when output is "+outputFormat, func(t *testing.T) {
+			delete(envServer.values, projectDeploymentsEnvKey)
+			evaluated = false
+
+			var suppressedBuf bytes.Buffer
+			writer := policyWarningWriterForOutput(&suppressedBuf, &projectAddFlags{output: outputFormat})
+			assert.Nil(t, writer)
+
+			gotDefault, gotChanged, _, err := reconcileAdoptedDeploymentsWithWriter(
+				t.Context(),
+				client,
+				root,
+				"test",
+				target,
+				"project",
+				true,
+				writer,
+			)
+			require.NoError(t, err)
+			assert.True(t, evaluated)
+			assert.True(t, gotChanged)
+			assert.Equal(t, "existing-chat", gotDefault)
+			assert.Empty(t, suppressedBuf.String())
+		})
+	}
 }

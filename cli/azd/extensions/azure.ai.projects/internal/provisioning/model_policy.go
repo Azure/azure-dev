@@ -103,10 +103,11 @@ func ShouldSkipModelPolicyChecks(env map[string]string) bool {
 
 // ParseFoundryProjectResourceID parses and validates a Microsoft Foundry project ARM resource ID.
 func ParseFoundryProjectResourceID(projectID string) (subID, rg, account, project string, ok bool) {
-	trimmed := strings.TrimRight(strings.TrimSpace(projectID), "/")
-	if trimmed == "" || !strings.HasPrefix(trimmed, "/") {
+	raw := strings.TrimSpace(projectID)
+	if raw == "" || !strings.HasPrefix(raw, "/") || strings.Contains(raw, "//") {
 		return "", "", "", "", false
 	}
+	trimmed := strings.TrimSuffix(raw, "/")
 	matches := foundryProjectResourceIDPattern.FindStringSubmatch(trimmed)
 	if len(matches) != 5 {
 		return "", "", "", "", false
@@ -118,12 +119,13 @@ func ParseFoundryProjectResourceID(projectID string) (subID, rg, account, projec
 }
 
 func isValidModelPolicyAssignmentID(assignmentID string) bool {
-	trimmed := strings.TrimRight(strings.TrimSpace(assignmentID), "/")
-	if trimmed == "" || !strings.HasPrefix(trimmed, "/") ||
-		strings.Contains(trimmed, "//") ||
-		strings.ContainsAny(trimmed, "?#@\\ \t\r\n") {
+	raw := strings.TrimSpace(assignmentID)
+	if raw == "" || !strings.HasPrefix(raw, "/") ||
+		strings.Contains(raw, "//") ||
+		strings.ContainsAny(raw, "?#@\\ \t\r\n") {
 		return false
 	}
+	trimmed := strings.TrimSuffix(raw, "/")
 	resID, err := arm.ParseResourceID(trimmed)
 	if err != nil || resID == nil ||
 		!strings.EqualFold(resID.ResourceType.String(), "Microsoft.Authorization/policyAssignments") ||
@@ -154,7 +156,7 @@ func isValidPolicyAssignmentResourceID(assignmentID string) bool {
 }
 
 func lastSegment(resourceID string) string {
-	trimmed := strings.TrimRight(strings.TrimSpace(resourceID), "/")
+	trimmed := strings.TrimSuffix(strings.TrimSpace(resourceID), "/")
 	if trimmed == "" {
 		return ""
 	}
@@ -167,10 +169,11 @@ func lastSegment(resourceID string) string {
 // projectResourceID or assignmentID cannot be validated.
 func BuildModelPolicyAssignmentPortalURL(projectResourceID, assignmentID string) string {
 	subID, rg, account, project, ok := ParseFoundryProjectResourceID(projectResourceID)
-	trimmedAssignment := strings.TrimRight(strings.TrimSpace(assignmentID), "/")
-	if !ok || !isValidPolicyAssignmentResourceID(trimmedAssignment) {
+	rawAssignment := strings.TrimSpace(assignmentID)
+	if !ok || !isValidPolicyAssignmentResourceID(rawAssignment) {
 		return defaultFoundryGovernPortalURL
 	}
+	trimmedAssignment := strings.TrimSuffix(rawAssignment, "/")
 
 	parsedUUID, err := uuid.Parse(subID)
 	if err != nil {
@@ -186,7 +189,7 @@ func BuildModelPolicyAssignmentPortalURL(projectResourceID, assignmentID string)
 	)
 	assignmentKey := base64.RawURLEncoding.EncodeToString([]byte(trimmedAssignment))
 
-	trimmedProjectID := strings.TrimRight(strings.TrimSpace(projectResourceID), "/")
+	trimmedProjectID := strings.TrimSuffix(strings.TrimSpace(projectResourceID), "/")
 	query := url.Values{}
 	query.Set("subscriptionId", subID)
 	query.Set(
@@ -249,21 +252,73 @@ type armGetDeploymentResponse struct {
 	} `json:"properties,omitempty"`
 }
 
+func hasParameterKey(parameters map[string]any, name string) bool {
+	for k := range parameters {
+		if strings.EqualFold(k, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveTemplateParameterValue(src *templateSource, name string) any {
+	if src == nil {
+		return nil
+	}
+	for k, rawParam := range src.parameters {
+		if !strings.EqualFold(k, name) {
+			continue
+		}
+		if paramMap, ok := rawParam.(map[string]any); ok {
+			if inner, hasValue := paramMap["value"]; hasValue {
+				return inner
+			}
+		}
+		return rawParam
+	}
+	return parameterValue(src, name)
+}
+
+func effectiveModelPolicyTarget(
+	src *templateSource,
+	fallbackProjectID string,
+	synthResult *synthesis.Result,
+) (string, []synthesis.Deployment) {
+	projectID := strings.TrimSpace(fallbackProjectID)
+	if src != nil &&
+		(templateDeclaresParameter(src, "projectResourceId") ||
+			hasParameterKey(src.parameters, "projectResourceId")) {
+		rawID, _ := resolveTemplateParameterValue(src, "projectResourceId").(string)
+		projectID = strings.TrimSpace(rawID)
+	}
+	if _, _, _, _, ok := ParseFoundryProjectResourceID(projectID); !ok {
+		return "", nil
+	}
+
+	if src != nil && src.parameters != nil {
+		return projectID, decodeModelDeploymentsValue(resolveTemplateParameterValue(src, "deployments"))
+	}
+	return projectID, extractEffectiveModelDeployments(nil, synthResult)
+}
+
 func extractEffectiveModelDeployments(
 	parameters map[string]any,
 	synthResult *synthesis.Result,
 ) []synthesis.Deployment {
-	for k, rawParam := range parameters {
-		if !strings.EqualFold(k, "deployments") {
-			continue
-		}
-		val := rawParam
-		if paramMap, ok := rawParam.(map[string]any); ok {
-			if inner, hasValue := paramMap["value"]; hasValue {
-				val = inner
+	if parameters != nil {
+		for k, rawParam := range parameters {
+			if !strings.EqualFold(k, "deployments") {
+				continue
 			}
+			val := rawParam
+			if paramMap, ok := rawParam.(map[string]any); ok {
+				if inner, hasValue := paramMap["value"]; hasValue {
+					val = inner
+				}
+			}
+			return decodeModelDeploymentsValue(val)
 		}
-		return decodeModelDeploymentsValue(val)
+		return nil
 	}
 	if synthResult != nil && synthResult.Parameters != nil {
 		for k, rawParam := range synthResult.Parameters {
@@ -576,8 +631,9 @@ func evaluateDeploymentBatch(
 			if !strings.EqualFold(strings.TrimSpace(a.Effect), "deny") {
 				continue
 			}
-			rawAssignmentID := strings.TrimRight(strings.TrimSpace(a.AssignmentID), "/")
-			normalizedID := strings.ToLower(rawAssignmentID)
+			rawAssignmentID := strings.TrimSpace(a.AssignmentID)
+			trimmedAssignmentID := strings.TrimSuffix(rawAssignmentID, "/")
+			normalizedID := strings.ToLower(trimmedAssignmentID)
 			if normalizedID != "" && seenAssignments[normalizedID] {
 				continue
 			}
@@ -588,8 +644,8 @@ func evaluateDeploymentBatch(
 			displayName := "Azure Policy"
 			validAssignmentID := ""
 			if isValidModelPolicyAssignmentID(rawAssignmentID) {
-				validAssignmentID = rawAssignmentID
-				if seg := lastSegment(rawAssignmentID); seg != "" {
+				validAssignmentID = trimmedAssignmentID
+				if seg := lastSegment(trimmedAssignmentID); seg != "" {
 					displayName = seg
 				}
 			}

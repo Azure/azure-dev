@@ -279,10 +279,18 @@ func responseErrorPayload(responseErr *azcore.ResponseError) *armresources.Error
 	}
 
 	var envelope struct {
-		Error *armresources.ErrorResponse `json:"error"`
+		Error      *armresources.ErrorResponse `json:"error"`
+		Properties *struct {
+			Error *armresources.ErrorResponse `json:"error"`
+		} `json:"properties"`
 	}
-	if json.Unmarshal(body, &envelope) == nil && envelope.Error != nil {
-		return envelope.Error
+	if json.Unmarshal(body, &envelope) == nil {
+		if envelope.Error != nil {
+			return envelope.Error
+		}
+		if envelope.Properties != nil && envelope.Properties.Error != nil {
+			return envelope.Properties.Error
+		}
 	}
 
 	var payload armresources.ErrorResponse

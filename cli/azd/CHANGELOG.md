@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[#10823]](https://github.com/Azure/azure-dev/pull/10823) Add support for extension-defined infrastructure providers in `infra.layers[]`, enabling the `azure.resources` extension to scaffold and deploy custom resources.
+- [[#10823]](https://github.com/Azure/azure-dev/pull/10823) Allow `infra.layers[]` entries that use extension-defined infrastructure providers to omit `path`, and add provider-specific `infra.config` to the `azure.yaml` schema.
 
 ### Bugs Fixed
 

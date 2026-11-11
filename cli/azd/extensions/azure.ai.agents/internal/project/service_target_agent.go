@@ -3742,7 +3742,7 @@ func fetchAndValidateHostedVoiceTarget(
 		return exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("hosted voice target is not compatible: %s", err),
-			"deploy an active Voice Bridge 1.0 hosted agent with invocations_ws/1.0.0, then retry",
+			"deploy an active hosted agent with voice_conversation_engine/1.0.0, then retry",
 		)
 	}
 	return nil
@@ -3780,15 +3780,17 @@ func validateHostedVoiceTargetVersion(version *agent_api.AgentVersionObject) err
 	if definition.Kind != agent_api.AgentKindHosted {
 		return fmt.Errorf("target kind is %q, expected hosted", definition.Kind)
 	}
-	compatibleProtocol := false
+	legacyProtocol := false
 	for _, protocol := range definition.ProtocolVersions {
+		if protocol.Protocol == agent_api.AgentProtocolVoiceConversationEngine && protocol.Version == "1.0.0" {
+			return nil
+		}
 		if protocol.Protocol == agent_api.AgentProtocolInvocationsWS && protocol.Version == "1.0.0" {
-			compatibleProtocol = true
-			break
+			legacyProtocol = true
 		}
 	}
-	if !compatibleProtocol {
-		return fmt.Errorf("target does not declare invocations_ws/1.0.0")
+	if !legacyProtocol {
+		return fmt.Errorf("target does not declare voice_conversation_engine/1.0.0")
 	}
 	if !strings.EqualFold(strings.TrimSpace(version.Metadata["voiceLiveCompatible"]), "true") {
 		return fmt.Errorf("target metadata voiceLiveCompatible must be true")

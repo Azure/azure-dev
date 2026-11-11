@@ -222,6 +222,22 @@ func TestValidateHostedVoiceTargetAcceptsLowercaseActiveStatus(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestValidateHostedVoiceTargetAcceptsConversationEngineProtocol(t *testing.T) {
+	err := validateHostedVoiceTargetVersion(&agent_api.AgentVersionObject{
+		Name:    "remote-target",
+		Version: "4",
+		Status:  "active",
+		Definition: map[string]any{
+			"kind": "hosted",
+			"protocol_versions": []any{map[string]any{
+				"protocol": "voice_conversation_engine",
+				"version":  "1.0.0",
+			}},
+		},
+	})
+	require.NoError(t, err)
+}
+
 func TestValidateHostedVoiceTargetRejectsIncompatibleProtocol(t *testing.T) {
 	err := validateHostedVoiceTargetVersion(&agent_api.AgentVersionObject{
 		Status: "active",
@@ -232,10 +248,10 @@ func TestValidateHostedVoiceTargetRejectsIncompatibleProtocol(t *testing.T) {
 		Definition: map[string]any{
 			"kind": "hosted",
 			"protocol_versions": []any{map[string]any{
-				"protocol": "responses",
+				"protocol": "voice_conversation_engine",
 				"version":  "2.0.0",
 			}},
 		},
 	})
-	require.ErrorContains(t, err, "invocations_ws/1.0.0")
+	require.ErrorContains(t, err, "voice_conversation_engine/1.0.0")
 }

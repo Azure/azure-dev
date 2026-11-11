@@ -278,6 +278,12 @@ func TestOptionsValidate(t *testing.T) {
 		require.NoError(t, opts.Validate())
 	})
 
+	t.Run("ValidateProjectLayers remains compatible", func(t *testing.T) {
+		opts := &Options{Layers: []Options{{Name: "application", Provider: "custom"}}}
+
+		require.NoError(t, opts.ValidateProjectLayers())
+	})
+
 	t.Run("extension configuration remains opaque", func(t *testing.T) {
 		opts := &Options{Layers: []Options{{
 			Name: "application", Provider: "custom",

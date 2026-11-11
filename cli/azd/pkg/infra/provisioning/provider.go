@@ -184,6 +184,11 @@ func (o *Options) Validate() error {
 	return nil
 }
 
+// ValidateProjectLayers validates infrastructure entries declared under top-level project layers.
+func (o *Options) ValidateProjectLayers() error {
+	return o.Validate()
+}
+
 func wrapValidateErr(scope string, err error) error {
 	if err == nil {
 		return nil

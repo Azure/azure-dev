@@ -18,80 +18,12 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
-
-func TestDetermineDuplicates(t *testing.T) {
-	t.Parallel()
-
-	t.Run("no_duplicates", func(t *testing.T) {
-		t.Parallel()
-
-		source := t.TempDir()
-		target := t.TempDir()
-
-		// Create files only in source
-		require.NoError(t, os.WriteFile(filepath.Join(source, "main.bicep"), []byte("source"), 0600))
-
-		duplicates, err := determineDuplicates(source, target)
-		require.NoError(t, err)
-		assert.Empty(t, duplicates)
-	})
-
-	t.Run("with_duplicates", func(t *testing.T) {
-		t.Parallel()
-
-		source := t.TempDir()
-		target := t.TempDir()
-
-		// Create same file in both
-		require.NoError(t, os.WriteFile(filepath.Join(source, "main.bicep"), []byte("source"), 0600))
-		require.NoError(t, os.WriteFile(filepath.Join(target, "main.bicep"), []byte("target"), 0600))
-
-		duplicates, err := determineDuplicates(source, target)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"main.bicep"}, duplicates)
-	})
-
-	t.Run("nested_duplicates", func(t *testing.T) {
-		t.Parallel()
-
-		source := t.TempDir()
-		target := t.TempDir()
-
-		// Create nested directory structure
-		require.NoError(t, os.MkdirAll(filepath.Join(source, "modules"), 0700))
-		require.NoError(t, os.MkdirAll(filepath.Join(target, "modules"), 0700))
-
-		require.NoError(t, os.WriteFile(
-			filepath.Join(source, "modules", "storage.bicep"), []byte("s"), 0600))
-		require.NoError(t, os.WriteFile(
-			filepath.Join(target, "modules", "storage.bicep"), []byte("t"), 0600))
-
-		// Also create a non-duplicate
-		require.NoError(t, os.WriteFile(
-			filepath.Join(source, "main.bicep"), []byte("s"), 0600))
-
-		duplicates, err := determineDuplicates(source, target)
-		require.NoError(t, err)
-		assert.Len(t, duplicates, 1)
-		assert.Contains(t, duplicates[0], "storage.bicep")
-	})
-
-	t.Run("empty_source", func(t *testing.T) {
-		t.Parallel()
-
-		source := t.TempDir()
-		target := t.TempDir()
-
-		duplicates, err := determineDuplicates(source, target)
-		require.NoError(t, err)
-		assert.Empty(t, duplicates)
-	})
-}
 
 func Test_NewInfraGenerateAction_Constructor(t *testing.T) {
 	t.Parallel()
@@ -104,98 +36,61 @@ func Test_NewInfraGenerateAction_Constructor(t *testing.T) {
 	require.Equal(t, calledAs, ia.calledAs)
 }
 
-func Test_DetermineDuplicates_NoDuplicates(t *testing.T) {
-	t.Parallel()
-	source := t.TempDir()
-	target := t.TempDir()
-	require.NoError(t, os.WriteFile(source+"/file1.bicep", []byte("a"), 0600))
-	require.NoError(t, os.WriteFile(source+"/file2.bicep", []byte("b"), 0600))
-
-	dups, err := determineDuplicates(source, target)
-	require.NoError(t, err)
-	require.Empty(t, dups)
-}
-
-func Test_DetermineDuplicates_WithDuplicates(t *testing.T) {
-	t.Parallel()
-	source := t.TempDir()
-	target := t.TempDir()
-	require.NoError(t, os.WriteFile(source+"/file1.bicep", []byte("a"), 0600))
-	require.NoError(t, os.WriteFile(source+"/file2.bicep", []byte("b"), 0600))
-	require.NoError(t, os.WriteFile(target+"/file1.bicep", []byte("c"), 0600))
-
-	dups, err := determineDuplicates(source, target)
-	require.NoError(t, err)
-	require.Len(t, dups, 1)
-	require.Contains(t, dups, "file1.bicep")
-}
-
-func Test_DetermineDuplicates_AllDuplicates(t *testing.T) {
-	t.Parallel()
-	source := t.TempDir()
-	target := t.TempDir()
-	require.NoError(t, os.WriteFile(source+"/file1.bicep", []byte("a"), 0600))
-	require.NoError(t, os.WriteFile(source+"/file2.bicep", []byte("b"), 0600))
-	require.NoError(t, os.WriteFile(target+"/file1.bicep", []byte("c"), 0600))
-	require.NoError(t, os.WriteFile(target+"/file2.bicep", []byte("d"), 0600))
-
-	dups, err := determineDuplicates(source, target)
-	require.NoError(t, err)
-	require.Len(t, dups, 2)
-}
-
-func Test_PromptForDuplicates(t *testing.T) {
+func Test_ConfirmOverwrite(t *testing.T) {
 	t.Parallel()
 
-	newDirs := func(t *testing.T) (string, string) {
-		source := t.TempDir()
-		target := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(source, "main.bicep"), []byte("new"), 0600))
-		require.NoError(t, os.WriteFile(filepath.Join(target, "main.bicep"), []byte("old"), 0600))
-		return source, target
+	// newAction returns an action for a built-in project whose infra folder optionally contains a file.
+	newAction := func(t *testing.T, existing bool) (*infraGenerateAction, *mockinput.MockConsole) {
+		dir := t.TempDir()
+		if existing {
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0700))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "infra", "unrelated.txt"), []byte("old"), 0600))
+		}
+
+		console := mockinput.NewMockConsole()
+		return &infraGenerateAction{
+			projectConfig:     &project.ProjectConfig{Path: dir},
+			generationManager: project.NewInfraGenerationManager(project.NewImportManager(nil), nil),
+			azdCtx:            azdcontext.NewAzdContextWithDirectory(dir),
+			console:           console,
+		}, console
 	}
+
+	t.Run("empty_folder_does_not_prompt", func(t *testing.T) {
+		t.Parallel()
+		// No Confirm expectation is registered, so a prompt would fail the test.
+		a, _ := newAction(t, false)
+		overwrite, err := a.confirmOverwrite(t.Context())
+		require.NoError(t, err)
+		require.False(t, overwrite)
+	})
 
 	t.Run("accept", func(t *testing.T) {
 		t.Parallel()
-		source, target := newDirs(t)
-		console := mockinput.NewMockConsole()
+		a, console := newAction(t, true)
 		console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
-
-		a := &infraGenerateAction{console: console}
-		require.NoError(t, a.promptForDuplicates(t.Context(), source, target))
+		overwrite, err := a.confirmOverwrite(t.Context())
+		require.NoError(t, err)
+		require.True(t, overwrite)
 	})
 
 	t.Run("decline", func(t *testing.T) {
 		t.Parallel()
-		source, target := newDirs(t)
-		console := mockinput.NewMockConsole()
+		a, console := newAction(t, true)
 		console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(false)
-
-		a := &infraGenerateAction{console: console}
-		require.ErrorIs(t, a.promptForDuplicates(t.Context(), source, target), internal.ErrAbortedByUser)
+		_, err := a.confirmOverwrite(t.Context())
+		require.ErrorIs(t, err, internal.ErrAbortedByUser)
 	})
 
 	t.Run("no_prompt", func(t *testing.T) {
 		t.Parallel()
-		source, target := newDirs(t)
-		console := mockinput.NewMockConsole()
+		a, console := newAction(t, true)
 		console.SetNoPromptMode(true)
 
-		a := &infraGenerateAction{console: console}
-		err := a.promptForDuplicates(t.Context(), source, target)
+		_, err := a.confirmOverwrite(t.Context())
 		suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
 		require.True(t, ok, "expected ErrorWithSuggestion, got %v", err)
 		require.Contains(t, suggestion.Suggestion, "--force")
-	})
-
-	t.Run("no_duplicates_does_not_prompt", func(t *testing.T) {
-		t.Parallel()
-		source := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(source, "main.bicep"), []byte("new"), 0600))
-
-		// No Confirm expectation is registered, so a prompt would fail the test.
-		a := &infraGenerateAction{console: mockinput.NewMockConsole()}
-		require.NoError(t, a.promptForDuplicates(t.Context(), source, t.TempDir()))
 	})
 }
 
@@ -256,6 +151,7 @@ func Test_InfraGenerateAction_RecordsInfraProvider(t *testing.T) {
 				},
 				generationManager:  project.NewInfraGenerationManager(project.NewImportManager(nil), nil),
 				extensionActivator: &actionGenerationActivator{},
+				azdCtx:             azdcontext.NewAzdContextWithDirectory(t.TempDir()),
 				flags:              &infraGenerateFlags{EnvFlag: &internal.EnvFlag{}},
 				console:            mockinput.NewMockConsole(),
 				calledAs:           CmdCalledAs("infra generate"),

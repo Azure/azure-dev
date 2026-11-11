@@ -15,6 +15,7 @@ import (
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -130,6 +131,29 @@ func TestInfraGenerateActivatesOnlyConfiguredGenerators(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, cleaned)
 	require.False(t, active)
+}
+
+func TestInfraGenerateNonEmptyExtensionFolderPromptsAndForces(t *testing.T) {
+	generator := &actionInfrastructureGenerator{}
+	action, dir := generationExtensionAction(t, generator)
+	action.flags.force = false
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "data"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "infra", "data", "notes.txt"), []byte("x"), 0o600))
+
+	console := mockinput.NewMockConsole()
+	console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
+	action.console = console
+
+	generator.generate = func(
+		_ context.Context, request *v1beta.InfraGenerateRequest,
+	) (*v1beta.InfraGenerateResponse, error) {
+		require.True(t, request.Options.Force, "accepting the prompt must allow the extension to overwrite")
+		return &v1beta.InfraGenerateResponse{Entry: &v1beta.ProvisioningOptions{
+			Provider: "bicep", Path: request.OutputPath, Module: "main",
+		}}, nil
+	}
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
 }
 
 func TestInfraGenerateBuiltInDoesNotActivateExtensions(t *testing.T) {

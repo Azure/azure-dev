@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -148,6 +149,64 @@ func (m *InfraGenerationManager) Generate(
 	return &GeneratedInfrastructure{}, nil
 }
 
+// OutputPaths returns the folders that Generate writes into for config. Paths are project-relative unless the
+// project configures an absolute infra path.
+func (m *InfraGenerationManager) OutputPaths(config *ProjectConfig) []string {
+	infraEntries := config.InfrastructureConfigs()
+
+	// Mirrors Generate: without extension entries, the built-in generators write to the project's infra path.
+	if !slices.ContainsFunc(infraEntries, isExtensionInfraEntry) {
+		if config.Infra.Path != "" {
+			return []string{config.Infra.Path}
+		}
+
+		return []string{DefaultProvisioningOptions.Path}
+	}
+
+	var paths []string
+
+	for _, entry := range infraEntries {
+		if isExtensionInfraEntry(entry) {
+			paths = append(paths, generationOutputPath(entry))
+		}
+	}
+
+	return paths
+}
+
+// generationOutputPath returns the forward-slash-separated, project-relative folder an extension
+// entry generates into.
+func generationOutputPath(entry provisioning.Options) string {
+	if entry.Path != "" {
+		return filepath.ToSlash(entry.Path)
+	}
+
+	if entry.Name == "" {
+		return "infra"
+	}
+
+	return path.Join("infra", sanitizeGenerationDirectoryName(entry.Name))
+}
+
+// The range \x00-\x1f covers ASCII control characters, including NUL, tab, and newline.
+var invalidGenerationDirectoryCharacters = regexp.MustCompile(`[\x00-\x1f<>:"/\\|?*]`)
+
+// sanitizeGenerationDirectoryName replaces characters unsuitable for a directory name with underscores.
+func sanitizeGenerationDirectoryName(name string) string {
+	name = invalidGenerationDirectoryCharacters.ReplaceAllString(name, "_")
+	name = strings.TrimRight(name, ". ")
+	if name == "" {
+		return "_"
+	}
+
+	// IsLocal rejects Windows device names only on Windows, so other platforms leave those names unchanged.
+	if !filepath.IsLocal(name) {
+		return "_" + name
+	}
+
+	return name
+}
+
 // isExtensionInfraEntry returns true if entry uses a provider that isn't built into azd.
 func isExtensionInfraEntry(entry provisioning.Options) bool {
 	return entry.Provider != provisioning.NotSpecified &&
@@ -164,10 +223,7 @@ func (m *InfraGenerationManager) prepareEntry(
 		return generatedInfraEntry{}, err
 	}
 
-	outputPath := filepath.ToSlash(entry.Path)
-	if outputPath == "" {
-		outputPath = path.Join("infra", entry.Name)
-	}
+	outputPath := generationOutputPath(entry)
 
 	if !validGenerationPath(outputPath) {
 		return generatedInfraEntry{}, fmt.Errorf(

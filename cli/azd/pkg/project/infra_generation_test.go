@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -20,6 +21,41 @@ import (
 
 type testInfrastructureGenerator struct {
 	generate func(context.Context, *v1beta.InfraGenerateRequest) (*v1beta.InfraGenerateResponse, error)
+}
+
+func TestGenerationOutputPathSanitizesDefaultDirectory(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"data-store", "infra/data-store"},
+		{"data store", "infra/data store"},
+		{`data<>:"/\|?*`, "infra/data_________"},
+		{"data\x00\n", "infra/data__"},
+		{"data. ", "infra/data"},
+		{"../data", "infra/.._data"},
+		{"..", "infra/_"},
+		{"", "infra"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, generationOutputPath(provisioning.Options{Name: tt.name}))
+		})
+	}
+
+	require.Equal(t, "custom/output", generationOutputPath(provisioning.Options{
+		Name: "data?", Path: "custom/output",
+	}))
+}
+
+func TestGenerationOutputPathWindowsDeviceNames(t *testing.T) {
+	for _, name := range []string{"con", "LPT1.logs"} {
+		want := "infra/" + name
+		if runtime.GOOS == "windows" {
+			want = "infra/_" + name
+		}
+		require.Equal(t, want, generationOutputPath(provisioning.Options{Name: name}))
+	}
 }
 
 func (g *testInfrastructureGenerator) Generate(

@@ -6,6 +6,12 @@ Use this guide together with the entire [CLI handbook](../AGENTS.md) and the
 affected extension's local `AGENTS.md`, when present. Local guides describe
 extension-specific contracts, ownership, and exceptions.
 
+## Extension workflows
+
+For the seven Foundry extensions, select the relevant workflow from the
+[extension-owned routing index](skills/README.md). Add new workflows and their
+routes there; root skill and agent files are discovery/compatibility entry points.
+
 ## Security and safe operations
 
 - Redact credentials from URLs before terminal output, logs, error messages,

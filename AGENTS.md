@@ -47,3 +47,6 @@ For CLI UX, telemetry, and release work, follow the relevant sections of the
 [CLI handbook](cli/azd/AGENTS.md). Use the [skills](.github/skills/) and
 [custom agents](.github/agents/) that fit the task. Do not load every procedure.
 Some tasks require a skill, such as the extension review pass above.
+
+For Foundry extension workflows, use the `azd-extensions` skill and its
+[extension-owned routing index](cli/azd/extensions/skills/README.md).

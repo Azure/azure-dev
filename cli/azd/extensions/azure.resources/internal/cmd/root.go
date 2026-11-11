@@ -48,5 +48,6 @@ func configureResourcesProvider(host *azdext.ExtensionHost) *provider.Provider {
 	host.WithProvisioningProvider("resources", func() azdext.ProvisioningProvider {
 		return resourcesProvider
 	})
+	host.WithInfraGenerationProvider("resources", provider.NewGenerationProvider())
 	return resourcesProvider
 }

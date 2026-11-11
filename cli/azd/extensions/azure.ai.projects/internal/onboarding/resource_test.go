@@ -637,7 +637,7 @@ func TestStorageRulesRetainSourceStandardsAndDefaults(t *testing.T) {
 		value                 any
 		status                Status
 	}{
-		{"HNS missing", "isHnsEnabled", "storage-type", nil, Unverified},
+		{"HNS missing", "isHnsEnabled", "storage-type", nil, Pass},
 		{"HNS enabled", "isHnsEnabled", "storage-type", true, Fail},
 		{"Cool tier", "accessTier", "storage-type", "Cool", Fail},
 		{"tier missing", "accessTier", "storage-type", nil, Unverified},
@@ -663,7 +663,7 @@ func TestStorageRulesRetainSourceStandardsAndDefaults(t *testing.T) {
 			report := storageResourceChecks(account)
 			assert.Equal(t, test.status, checkWithID(t, report, test.check).Status)
 			typeCheck := checkWithID(t, report, "storage-type")
-			hns := "unavailable"
+			hns := "false (default)"
 			if value, ok := properties["isHnsEnabled"]; ok {
 				hns = fmt.Sprint(value)
 			}

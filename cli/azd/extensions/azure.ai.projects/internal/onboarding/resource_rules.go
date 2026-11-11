@@ -374,16 +374,16 @@ func aksResourceChecks(
 
 func storageResourceChecks(account armstorage.Account) Report {
 	scope := resourceValue(account.ID)
-	typeCheck := resourceCheck("storage-type", scope, "StorageV2; Hot tier; HNS explicitly disabled")
+	typeCheck := resourceCheck("storage-type", scope, "StorageV2; Hot tier; HNS disabled")
 	security := resourceCheck("storage-security", scope, "HTTPS only; TLS >= 1.2")
 	p := account.Properties
 	if p == nil {
 		return Report{typeCheck, security}
 	}
-	known := account.Kind != nil && p.AccessTier != nil && p.IsHnsEnabled != nil
+	known := account.Kind != nil && p.AccessTier != nil
 	valid := resourceValue(account.Kind) == "StorageV2" && resourceValue(p.AccessTier) == "Hot" &&
-		p.IsHnsEnabled != nil && !*p.IsHnsEnabled
-	hns := "unavailable"
+		!resourceBool(p.IsHnsEnabled)
+	hns := "false (default)"
 	if p.IsHnsEnabled != nil {
 		hns = strconv.FormatBool(*p.IsHnsEnabled)
 	}

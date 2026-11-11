@@ -29,6 +29,13 @@ func toolboxNotFoundOrService(err error, name, op string) error {
 	return exterrors.ServiceFromAzure(err, op)
 }
 
+func toolboxVersionWriteError(err error, name, op string) error {
+	if policyErr, ok := tryClassifyToolboxPolicyError(err, name, nil); ok {
+		return policyErr
+	}
+	return exterrors.ServiceFromAzure(err, op)
+}
+
 // forEachToolConnectionID invokes fn for every project_connection_id reference
 // in tools[] (top-level on mcp entries, nested under azure_ai_search.indexes
 // on search entries). fn returns true to stop early.

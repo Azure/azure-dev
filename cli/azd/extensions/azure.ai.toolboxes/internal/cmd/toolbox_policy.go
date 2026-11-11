@@ -1,8 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore endswith policyresources policyassignments policydefinitions policyexemptions resourcecontainers
+// cspell:ignore endswith policyresources policyassignments policydefinitions policyexemptions resourcecontainers foundrypolicy
 // cspell:ignore skipToken donotenforce policyeffect notScopes nextgen unpadded noncompliant tolower strcat tostring todatetime isempty
+
+// NOTE: The Resource Graph queries, tool policy evaluation rules, and Foundry Govern
+// portal URL builder in this file mirror cli/azd/extensions/azure.ai.agents/internal/pkg/foundrypolicy.
 
 package cmd
 
@@ -54,7 +57,7 @@ const (
 
 var (
 	toolboxProjectIDRegex = regexp.MustCompile(
-		`(?i)/subscriptions/([^/?#]+)/resourceGroups/([^/?#]+)/providers/[^/?#]+/accounts/([^/?#]+)/projects/([^/?#]+)$`,
+		`(?i)^/subscriptions/([^/?#\\@]+)/resourceGroups/([^/?#\\@]+)/providers/[^/?#\\@]+/accounts/([^/?#\\@]+)/projects/([^/?#\\@]+)$`,
 	)
 	toolboxHexGUIDRegex         = regexp.MustCompile(`(?i)^[0-9a-f]{32}$`)
 	toolboxPolicyAssignmentIDRe = regexp.MustCompile(
@@ -132,9 +135,9 @@ func isValidToolboxPolicyAssignmentID(assignmentID string) bool {
 }
 
 func buildToolboxPolicyPortalURL(projectResourceID, assignmentID string) string {
-	trimmedProject := strings.TrimSpace(projectResourceID)
+	trimmedProject := strings.TrimRight(strings.TrimSpace(projectResourceID), "/")
 	trimmedAssignment := strings.TrimRight(strings.TrimSpace(assignmentID), "/")
-	if trimmedProject == "" || !isValidToolboxPolicyAssignmentID(trimmedAssignment) {
+	if trimmedProject == "" || !strings.HasPrefix(trimmedProject, "/") || !isValidToolboxPolicyAssignmentID(trimmedAssignment) {
 		return toolboxDefaultGovernPortalURL
 	}
 	matches := toolboxProjectIDRegex.FindStringSubmatch(trimmedProject)

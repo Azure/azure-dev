@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -497,16 +498,24 @@ func VerifyPolicyAssignmentsReadAccess(
 	armEndpoint string,
 	projectResourceID string,
 ) error {
-	if _, ok := ParseFoundryProjectID(projectResourceID); !ok {
+	parsed, ok := ParseFoundryProjectID(projectResourceID)
+	if !ok {
 		return fmt.Errorf("invalid Foundry project resource ID: %s", projectResourceID)
 	}
 	if strings.TrimSpace(armEndpoint) == "" {
 		armEndpoint = defaultARMEndpoint
 	}
+	projectPath := fmt.Sprintf(
+		"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.CognitiveServices/accounts/%s/projects/%s",
+		url.PathEscape(parsed.SubscriptionID),
+		url.PathEscape(parsed.ResourceGroup),
+		url.PathEscape(parsed.ProjectResourceName),
+		url.PathEscape(parsed.ProjectName),
+	)
 	reqURL := fmt.Sprintf(
 		"%s%s/providers/Microsoft.Authorization/policyAssignments?api-version=%s&$filter=atScope()&$top=1",
 		strings.TrimRight(strings.TrimSpace(armEndpoint), "/"),
-		strings.TrimRight(strings.TrimSpace(projectResourceID), "/"),
+		projectPath,
 		policyAssignmentsAPIVersion,
 	)
 	req, err := runtime.NewRequest(ctx, http.MethodGet, reqURL)
@@ -522,9 +531,13 @@ func VerifyPolicyAssignmentsReadAccess(
 	switch resp.StatusCode {
 	case http.StatusOK:
 		return nil
-	case http.StatusForbidden, http.StatusUnauthorized:
+	case http.StatusForbidden:
 		return fmt.Errorf(
 			"current identity does not have Microsoft.Authorization/policyAssignments/read permission on the selected project",
+		)
+	case http.StatusUnauthorized:
+		return fmt.Errorf(
+			"authentication failed when verifying Azure Policy access (HTTP 401); run 'azd auth login' and retry",
 		)
 	default:
 		return fmt.Errorf("verify Azure Policy read access returned HTTP %d", resp.StatusCode)

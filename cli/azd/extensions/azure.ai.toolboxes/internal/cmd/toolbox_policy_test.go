@@ -18,6 +18,7 @@ import (
 
 	"azure.ai.toolboxes/internal/definition"
 	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/foundry/connections"
 	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -294,6 +295,16 @@ func TestToolboxPolicyAssignmentScopesAndResourceGraphPagination(t *testing.T) {
 			require.NoError(t, err)
 			assert.Contains(t, parsed.Path, "/manage/govern/assignments/")
 		}
+
+		// Rejects prefixed @attacker.example project IDs
+		assert.Equal(
+			t,
+			toolboxDefaultGovernPortalURL,
+			buildToolboxPolicyPortalURL(
+				"@attacker.example"+testToolboxPolicyProjectID,
+				"/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/providers/Microsoft.Authorization/policyAssignments/sub-policy",
+			),
+		)
 	})
 
 	t.Run("follows Resource Graph $skipToken pagination and rejects repeated tokens or truncated responses without token", func(t *testing.T) {
@@ -484,6 +495,53 @@ func TestDeployAndCreateToolboxPolicyCallSites(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, mockOpenCreate.createVersionCalls, 1)
+
+	// 5. runConnectionAddWith classifies runtime 403 policy denials on CreateToolboxVersion
+	// without exposing secrets in the error message.
+	connAddClient := newMockToolboxClient(accessTestEndpoint)
+	connAddClient.getResults["research"] = toolboxGetResult{obj: &azure.ToolboxObject{
+		Name: "research", DefaultVersion: "1",
+	}}
+	connAddClient.versionResults["research/1"] = toolboxVersionResult{obj: &azure.ToolboxVersionObject{
+		Name: "research", Version: "1", Tools: []map[string]any{
+			{"type": "mcp", "name": "existing", "project_connection_id": "/c/existing"},
+		},
+	}}
+	connAddPolicyBody := `{"error":{"code":"agent_policy_denied",` +
+		`"message":"Updating toolbox is noncompliant with policy ` +
+		`/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/providers/Microsoft.Authorization/policyAssignments/restrict-foundry-tools:\n` +
+		`MCP endpoint https://secret.example.com/mcp?api_key=CONN_ADD_SECRET is not allowed (` +
+		`Count of Microsoft.CognitiveServices.Data/accounts/projects/toolboxes/tools[*])"}}`
+	connAddClient.createVersionErr = &azcore.ResponseError{
+		StatusCode: http.StatusForbidden,
+		ErrorCode:  "agent_policy_denied",
+		RawResponse: &http.Response{
+			StatusCode: http.StatusForbidden,
+			Body:       io.NopCloser(strings.NewReader(connAddPolicyBody)),
+		},
+	}
+	connResolver := newStubConnectionResolver()
+	connResolver.byName["new-mcp"] = &projectConnection{
+		ID: "/c/new-mcp", Category: connections.ConnectionTypeRemoteTool, Name: "new-mcp", Target: "https://secret.example.com/mcp",
+	}
+	connAddErr := runConnectionAddWith(
+		t.Context(),
+		connAddClient,
+		connResolver,
+		accessTestEndpoint,
+		"research",
+		"new-mcp",
+		connectionAddFlags{},
+		toolboxFlags{output: "json"},
+	)
+	require.Error(t, connAddErr)
+	localConnAddErr, ok := errors.AsType[*azdext.LocalError](connAddErr)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeToolBlockedByPolicy, localConnAddErr.Code)
+	assert.Contains(t, localConnAddErr.Message, `"research"`)
+	assert.Contains(t, localConnAddErr.Suggestion, "View policy (restrict-foundry-tools):")
+	assert.NotContains(t, localConnAddErr.Message, "CONN_ADD_SECRET")
+	assert.NotContains(t, localConnAddErr.Suggestion, "CONN_ADD_SECRET")
 }
 
 func TestToolboxPolicyApplicabilityAndExemptions(t *testing.T) {

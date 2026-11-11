@@ -680,6 +680,16 @@ func TestBuildPolicyAssignmentPortalURL(t *testing.T) {
 		"https://ai.azure.com/?flight=govern_ignite",
 		BuildPolicyAssignmentPortalURL("invalid-project-id", assignmentID),
 	)
+
+	prefixedAttackerID := "@attacker.example/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/" +
+		"resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj"
+	_, ok := ParseFoundryProjectID(prefixedAttackerID)
+	assert.False(t, ok, "prefixed string must not pass ParseFoundryProjectID")
+	assert.Equal(
+		t,
+		"https://ai.azure.com/?flight=govern_ignite",
+		BuildPolicyAssignmentPortalURL(prefixedAttackerID, assignmentID),
+	)
 }
 
 func TestLoadInventoryAndResourceGraphPagination(t *testing.T) {
@@ -1601,9 +1611,9 @@ func TestVerifyPolicyAssignmentsReadAccess(t *testing.T) {
 	}{
 		{name: "200 OK succeeds", statusCode: http.StatusOK},
 		{
-			name:           "401 Unauthorized returns permission error",
+			name:           "401 Unauthorized returns authentication error",
 			statusCode:     http.StatusUnauthorized,
-			wantErrContain: "Microsoft.Authorization/policyAssignments/read",
+			wantErrContain: "authentication failed when verifying Azure Policy access (HTTP 401)",
 		},
 		{
 			name:           "403 Forbidden returns permission error",
@@ -1650,4 +1660,22 @@ func TestVerifyPolicyAssignmentsReadAccess(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("rejects prefixed @attacker.example project ID without invoking HTTP transport", func(t *testing.T) {
+		t.Parallel()
+		callCount := 0
+		pipeline := newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			callCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+				Request:    req,
+			}, nil
+		})
+		prefixedID := "@attacker.example/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/" +
+			"resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj"
+		err := VerifyPolicyAssignmentsReadAccess(t.Context(), pipeline, "https://management.azure.com", prefixedID)
+		require.ErrorContains(t, err, "invalid Foundry project resource ID")
+		assert.Equal(t, 0, callCount)
+	})
 }

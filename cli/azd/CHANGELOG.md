@@ -6,7 +6,6 @@
 
 - [[#10823]](https://github.com/Azure/azure-dev/pull/10823) Add support for extension-defined infrastructure providers in `infra.layers[]`, enabling the `azure.resources` extension to scaffold and deploy custom resources. Thanks @richardpark-msft for the contribution!
 - [[#10855]](https://github.com/Azure/azure-dev/pull/10855) Add stable 1.0.0 releases of the Foundry agents, routines, and toolboxes extensions to the extension registry.
-- [[#10856]](https://github.com/Azure/azure-dev/pull/10856) Add the stable Microsoft Foundry extension bundle to the registry, installing its component extensions at 1.0.0.
 
 ### Bugs Fixed
 

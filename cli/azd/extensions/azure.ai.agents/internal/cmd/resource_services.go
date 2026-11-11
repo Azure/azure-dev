@@ -182,6 +182,13 @@ func emitResourceServices(
 	// the project is provisioned first.
 	siblingUses := []string{projectServiceName}
 	connectionServiceNames := map[string]string{}
+	type resourceService struct {
+		name string
+		host string
+		cfg  *structpb.Struct
+		uses []string
+	}
+	var services []resourceService
 
 	for i := range resources.Connections {
 		conn := resources.Connections[i]
@@ -200,9 +207,7 @@ func emitResourceServices(
 		if err != nil {
 			return 0, fmt.Errorf("marshaling connection service %q config: %w", connName, err)
 		}
-		if err := addResourceService(ctx, azdClient, connName, AiConnectionHost, connCfg, siblingUses); err != nil {
-			return 0, err
-		}
+		services = append(services, resourceService{connName, AiConnectionHost, connCfg, siblingUses})
 		connectionServiceNames[conn.Name] = connName
 		agentUses = append(agentUses, connName)
 		emittedConnections++
@@ -232,9 +237,7 @@ func emitResourceServices(
 				toolboxUses = append(toolboxUses, connectionServiceName)
 			}
 		}
-		if err := addResourceService(ctx, azdClient, toolboxName, AiToolboxHost, toolboxCfg, toolboxUses); err != nil {
-			return 0, err
-		}
+		services = append(services, resourceService{toolboxName, AiToolboxHost, toolboxCfg, toolboxUses})
 		agentUses = append(agentUses, toolboxName)
 	}
 
@@ -258,10 +261,20 @@ func emitResourceServices(
 		if err != nil {
 			return 0, fmt.Errorf("marshaling skill service %q config: %w", skillName, err)
 		}
-		if err := addResourceService(ctx, azdClient, skillName, AiSkillHost, skillCfg, siblingUses); err != nil {
+		services = append(services, resourceService{skillName, AiSkillHost, skillCfg, siblingUses})
+		agentUses = append(agentUses, skillName)
+	}
+
+	// Validate all generated services before writing any of them.
+	for _, service := range services {
+		if _, err := serviceEnvironmentTemplates(service.host, service.cfg); err != nil {
+			return 0, invalidServiceEnvironmentReferences(service.name, err)
+		}
+	}
+	for _, service := range services {
+		if err := addResourceService(ctx, azdClient, service.name, service.host, service.cfg, service.uses); err != nil {
 			return 0, err
 		}
-		agentUses = append(agentUses, skillName)
 	}
 
 	for _, name := range resources.ExtraUses {

@@ -44,14 +44,18 @@ channel. If evidence or output capacity is unavailable, report `blocked`, not
 
 ## Core dependency changes
 
-For `azure.ai.agents`, `azure.ai.connections`, `azure.ai.inspector`,
-`azure.ai.projects`, `azure.ai.routines`, `azure.ai.skills`, and
-`azure.ai.toolboxes`, use two PRs when an extension needs a new core change:
+Use two PRs when an extension needs a new core change:
 
 1. Land the core change in `cli/azd`.
 2. Update the extension's azd dependency with
    `go get github.com/azure/azure-dev/cli/azd && go mod tidy`, then land the
    extension change.
+
+For larger changes that build on each other, especially across core and
+extension code, use
+[stacked PRs](https://docs.github.com/en/pull-requests/how-tos/stacked-pull-requests)
+to keep reviews small. Stacked PRs must be opened from `Azure/azure-dev`;
+PRs from forks are not supported.
 
 For local development, draft work, or joint validation before the core PR
 merges, you may temporarily add this directive to the extension's `go.mod`:

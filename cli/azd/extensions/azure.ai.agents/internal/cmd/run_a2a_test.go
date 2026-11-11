@@ -25,6 +25,7 @@ func TestA2AOnlyRunTargetRouting(t *testing.T) {
 		{"missing", "", false},
 		{"empty", "kind: hosted", false},
 		{"A2A", "protocols: [{protocol: a2a, version: 1.0.0}]", true},
+		{"conversation engine", "protocols: [{protocol: voice_conversation_engine, version: 1.0.0}]", true},
 		{"trimmed", "protocols: [{protocol: ' a2a ', version: 0.3.0}]", true},
 		{"Responses", "protocols: [{protocol: responses}]", false},
 		{"mixed Responses", "protocols: [{protocol: a2a}, {protocol: responses}]", false},
@@ -45,7 +46,6 @@ func TestA2AOnlyRunTargetRouting(t *testing.T) {
 			}
 			profile, suppressed := resolveRunClientProfile(def)
 			require.Equal(t, tc.wantSuppressed, suppressed)
-			require.Equal(t, isA2AOnlyRunTarget(def), suppressed)
 			if !suppressed {
 				// Endpoint-only A2A must not suppress Inspector, and mixed
 				// container protocols must preserve the existing client route.

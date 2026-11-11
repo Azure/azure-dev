@@ -92,6 +92,11 @@ var displayableProtocols = []displayableProtocolEntry{
 		EnvSuffix: "INVOCATIONS_WS",
 		BuildURL:  buildInvocationsWSProtocolURL,
 	},
+	{
+		Protocol:  agent_api.AgentProtocolVoiceConversationEngine,
+		EnvSuffix: "VOICE_CONVERSATION_ENGINE",
+		BuildURL:  buildVoiceConversationEngineProtocolURL,
+	},
 }
 
 // buildResponsesProtocolURL builds the per-agent HTTPS URL for the "responses" protocol.
@@ -138,6 +143,18 @@ func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
 
 	return fmt.Sprintf(
 		"wss://%s%s/agents/%s/endpoint/protocols/invocations_ws?api-version=%s",
+		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
+	)
+}
+
+func buildVoiceConversationEngineProtocolURL(projectEndpoint, agentName string) string {
+	projectEndpoint = strings.TrimSpace(projectEndpoint)
+	u, err := url.Parse(projectEndpoint)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"wss://%s%s/agents/%s/endpoint/protocols/voice_conversation_engine?api-version=%s",
 		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
 	)
 }
@@ -3742,8 +3759,7 @@ func fetchAndValidateHostedVoiceTarget(
 		return exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("hosted voice target is not compatible: %s", err),
-			"deploy an active hosted agent with voice_conversation_engine/1.0.0, or legacy "+
-				"invocations_ws/1.0.0 plus voiceLiveCompatible=true and bridgeProtocolVersion=1.0, then retry",
+			"deploy an active hosted agent with voice_conversation_engine/1.0.0, then retry",
 		)
 	}
 	return nil
@@ -3781,25 +3797,12 @@ func validateHostedVoiceTargetVersion(version *agent_api.AgentVersionObject) err
 	if definition.Kind != agent_api.AgentKindHosted {
 		return fmt.Errorf("target kind is %q, expected hosted", definition.Kind)
 	}
-	legacyProtocol := false
 	for _, protocol := range definition.ProtocolVersions {
 		if protocol.Protocol == agent_api.AgentProtocolVoiceConversationEngine && protocol.Version == "1.0.0" {
 			return nil
 		}
-		if protocol.Protocol == agent_api.AgentProtocolInvocationsWS && protocol.Version == "1.0.0" {
-			legacyProtocol = true
-		}
 	}
-	if !legacyProtocol {
-		return fmt.Errorf("target does not declare voice_conversation_engine/1.0.0")
-	}
-	if !strings.EqualFold(strings.TrimSpace(version.Metadata["voiceLiveCompatible"]), "true") {
-		return fmt.Errorf("target metadata voiceLiveCompatible must be true")
-	}
-	if strings.TrimSpace(version.Metadata["bridgeProtocolVersion"]) != "1.0" {
-		return fmt.Errorf("target metadata bridgeProtocolVersion must be 1.0")
-	}
-	return nil
+	return fmt.Errorf("target does not declare voice_conversation_engine/1.0.0")
 }
 
 func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject) error {

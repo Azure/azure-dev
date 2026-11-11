@@ -13,11 +13,15 @@ import (
 
 // isA2AOnlyRunTarget checks container protocols, not remote endpoint enablement.
 func isA2AOnlyRunTarget(def *agent_yaml.ContainerAgent) bool {
+	return isProtocolOnlyRunTarget(def, "a2a")
+}
+
+func isProtocolOnlyRunTarget(def *agent_yaml.ContainerAgent, protocol string) bool {
 	if def == nil {
 		return false
 	}
-	for _, protocol := range def.Protocols {
-		if strings.TrimSpace(protocol.Protocol) != "a2a" {
+	for _, declared := range def.Protocols {
+		if strings.TrimSpace(declared.Protocol) != protocol {
 			return false
 		}
 	}
@@ -26,7 +30,7 @@ func isA2AOnlyRunTarget(def *agent_yaml.ContainerAgent) bool {
 
 // resolveRunClientProfile keeps A2A-only containers out of Activity client setup.
 func resolveRunClientProfile(def *agent_yaml.ContainerAgent) (activityRunProfile, bool) {
-	if isA2AOnlyRunTarget(def) {
+	if isA2AOnlyRunTarget(def) || isProtocolOnlyRunTarget(def, "voice_conversation_engine") {
 		return activityRunProfile{}, true
 	}
 	return resolveActivityRunProfile(def), false

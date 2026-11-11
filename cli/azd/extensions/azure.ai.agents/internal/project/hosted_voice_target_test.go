@@ -88,14 +88,10 @@ func compatibleHostedVoiceVersion() *agent_api.AgentVersionObject {
 		Name:    "target",
 		Version: "7",
 		Status:  "active",
-		Metadata: map[string]string{
-			"voiceLiveCompatible":   "true",
-			"bridgeProtocolVersion": "1.0",
-		},
 		Definition: map[string]any{
 			"kind": "hosted",
 			"protocol_versions": []any{map[string]any{
-				"protocol": "invocations_ws",
+				"protocol": "voice_conversation_engine",
 				"version":  "1.0.0",
 			}},
 		},
@@ -207,14 +203,10 @@ func TestValidateHostedVoiceTargetAcceptsLowercaseActiveStatus(t *testing.T) {
 		Name:    "remote-target",
 		Version: "4",
 		Status:  "active",
-		Metadata: map[string]string{
-			"voiceLiveCompatible":   "true",
-			"bridgeProtocolVersion": "1.0",
-		},
 		Definition: map[string]any{
 			"kind": "hosted",
 			"protocol_versions": []any{map[string]any{
-				"protocol": "invocations_ws",
+				"protocol": "voice_conversation_engine",
 				"version":  "1.0.0",
 			}},
 		},
@@ -238,13 +230,26 @@ func TestValidateHostedVoiceTargetAcceptsConversationEngineProtocol(t *testing.T
 	require.NoError(t, err)
 }
 
+func TestValidateHostedVoiceTargetRejectsInvocationsWSOnly(t *testing.T) {
+	version := compatibleHostedVoiceVersion()
+	version.Definition.(map[string]any)["protocol_versions"] = []any{map[string]any{
+		"protocol": "invocations_ws", "version": "1.0.0",
+	}}
+	require.ErrorContains(t, validateHostedVoiceTargetVersion(version), "voice_conversation_engine/1.0.0")
+}
+
+func TestValidateHostedVoiceTargetAcceptsBothProtocols(t *testing.T) {
+	version := compatibleHostedVoiceVersion()
+	version.Definition.(map[string]any)["protocol_versions"] = []any{
+		map[string]any{"protocol": "invocations_ws", "version": "1.0.0"},
+		map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"},
+	}
+	require.NoError(t, validateHostedVoiceTargetVersion(version))
+}
+
 func TestValidateHostedVoiceTargetRejectsIncompatibleProtocol(t *testing.T) {
 	err := validateHostedVoiceTargetVersion(&agent_api.AgentVersionObject{
 		Status: "active",
-		Metadata: map[string]string{
-			"voiceLiveCompatible":   "true",
-			"bridgeProtocolVersion": "1.0",
-		},
 		Definition: map[string]any{
 			"kind": "hosted",
 			"protocol_versions": []any{map[string]any{

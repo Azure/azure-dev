@@ -1493,7 +1493,7 @@ func emitNextAfterBind(
 		return
 	}
 	suggestions := nextstep.ResolveAfterRun(state, serviceName, readmeExistsForProject(ctx, azdClient))
-	if len(suggestions) == 0 {
+	if ctx.Err() != nil || len(suggestions) == 0 {
 		return
 	}
 	fmt.Println("\nAgent ready. In another terminal, try:")

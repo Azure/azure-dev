@@ -180,71 +180,135 @@ func TestExistingProjectOpenAIOutputUsesARMSubdomain(t *testing.T) {
 
 func TestTerraformExistingProjectEndpointPlans(t *testing.T) {
 	terraform := os.Getenv("AZD_TEST_TERRAFORM_PATH")
-	if terraform == "" {
-		t.Skip("set AZD_TEST_TERRAFORM_PATH to opt in to Terraform/provider integration tests")
-	}
 	main, err := existingProjectTerraformTemplatesFS.ReadFile("templates/terraform-existing-project/main.tf")
+	require.NoError(t, err)
+	provider, err := existingProjectTerraformTemplatesFS.ReadFile("templates/terraform-existing-project/provider.tf")
+	require.NoError(t, err)
+	variables, err := existingProjectTerraformTemplatesFS.ReadFile("templates/terraform-existing-project/variables.tf")
+	require.NoError(t, err)
+	modelDeployments, err := existingProjectTerraformTemplatesFS.ReadFile(
+		"templates/terraform-existing-project/model-deployments.tf")
+	require.NoError(t, err)
+	adjunctResourceGroup, err := existingProjectTerraformTemplatesFS.ReadFile(
+		"templates/terraform-existing-project/adjunct-resource-group.tf")
 	require.NoError(t, err)
 	outputTemplate, err := existingProjectTerraformTemplatesFS.ReadFile(
 		"templates/terraform-existing-project/outputs.tf.tmpl")
 	require.NoError(t, err)
 	parsed, err := template.New("outputs").Parse(string(outputTemplate))
 	require.NoError(t, err)
-	var outputs bytes.Buffer
-	require.NoError(t, parsed.Execute(&outputs, map[string]any{"IncludeAdjunct": false, "AcrMode": "none"}))
-	dir := t.TempDir()
-	for name, content := range map[string][]byte{
-		"main.tf": main, "outputs.tf": outputs.Bytes(),
-		"providers.tf": []byte(endpointPlanTestRoot), "endpoints.tftest.hcl": []byte(endpointPlanTestCases),
+	for _, tt := range []struct {
+		name, mode        string
+		includeRegistryTF string
+	}{
+		{name: "none", mode: "none"},
+		{name: "create", mode: "create", includeRegistryTF: "container-registry-create.tf"},
+		{name: "reuse-connect", mode: "reuse-connect", includeRegistryTF: "container-registry-reuse.tf"},
+		{
+			name:              "reuse-connect-pull-assigned",
+			mode:              "reuse-connect",
+			includeRegistryTF: "container-registry-connect.tf",
+		},
+		{name: "already-connected", mode: "already-connected"},
 	} {
-		require.NoError(t, os.WriteFile(filepath.Join(dir, name), content, 0o600))
+		t.Run(tt.name, func(t *testing.T) {
+			var outputs bytes.Buffer
+			require.NoError(t, parsed.Execute(&outputs, map[string]any{
+				"IncludeAdjunct": false,
+				"AcrMode":        tt.mode,
+			}))
+			dir := t.TempDir()
+			for name, content := range map[string][]byte{
+				"main.tf":                   main,
+				"outputs.tf":                outputs.Bytes(),
+				"provider.tf":               provider,
+				"variables.tf":              variables,
+				"model-deployments.tf":      modelDeployments,
+				"test.auto.tfvars":          []byte(endpointPlanTFVars),
+				"endpoints.tftest.hcl":      []byte(endpointPlanTestCases),
+				"adjunct-resource-group.tf": adjunctResourceGroup,
+			} {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, name), content, 0o600))
+			}
+			if tt.includeRegistryTF != "" {
+				registry, err := existingProjectTerraformTemplatesFS.ReadFile(
+					"templates/terraform-existing-project/" + tt.includeRegistryTF)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "container-registry.tf"), registry, 0o600))
+			}
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			declarations := 0
+			for _, entry := range entries {
+				if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".tf") {
+					continue
+				}
+				// #nosec G304 -- path is under the test-owned root.
+				content, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+				require.NoError(t, err)
+				declarations += strings.Count(string(content), `data "azapi_resource" "project"`)
+			}
+			require.Equal(t, 1, declarations,
+				"exactly one project data declaration must exist in the emitted Terraform templates")
+
+			if terraform == "" {
+				t.Skip("set AZD_TEST_TERRAFORM_PATH to opt in to Terraform/provider integration tests")
+			}
+			run := func(arguments ...string) {
+				t.Helper()
+				//nolint:gosec // The opt-in selects a Terraform executable.
+				cmd := exec.CommandContext(t.Context(), terraform, arguments...)
+				cmd.Dir = dir
+				output, err := cmd.CombinedOutput()
+				require.NoError(t, err, "%s", output)
+				t.Logf("%s", output)
+			}
+			initArguments := []string{"init", "-backend=false", "-input=false", "-no-color"}
+			if pluginDir := os.Getenv("AZD_TEST_TERRAFORM_PLUGIN_DIR"); pluginDir != "" {
+				initArguments = append(initArguments, "-plugin-dir="+pluginDir)
+			}
+			run(initArguments...)
+			run("validate", "-no-color")
+			run("test", "-no-color")
+		})
 	}
-	run := func(arguments ...string) {
-		t.Helper()
-		//nolint:gosec // The opt-in selects a Terraform executable.
-		cmd := exec.CommandContext(t.Context(), terraform, arguments...)
-		cmd.Dir = dir
-		output, err := cmd.CombinedOutput()
-		require.NoError(t, err, "%s", output)
-		t.Logf("%s", output)
-	}
-	initArguments := []string{"init", "-backend=false", "-input=false", "-no-color"}
-	if pluginDir := os.Getenv("AZD_TEST_TERRAFORM_PLUGIN_DIR"); pluginDir != "" {
-		initArguments = append(initArguments, "-plugin-dir="+pluginDir)
-	}
-	run(initArguments...)
-	run("validate", "-no-color")
-	run("test", "-no-color")
 }
 
 const endpointPlanProjectID = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/" +
 	"providers/Microsoft.CognitiveServices/accounts/resource-account/projects/project"
 
-const endpointPlanTestRoot = `
-terraform {
-  required_providers {
-    azapi = { source = "Azure/azapi", version = "~> 2.7" }
-  }
-}
-variable "project_resource_id" {
-  default = "` + endpointPlanProjectID + `"
-}
-variable "project_endpoint" {
-  default = "https://custom-dns.services.ai.azure.com/api/projects/project"
-}
+const endpointPlanTFVars = `
+subscription_id = "00000000-0000-0000-0000-000000000001"
+tenant_id = "00000000-0000-0000-0000-000000000002"
+project_resource_id = "` + endpointPlanProjectID + `"
+project_endpoint = "https://custom-dns.services.ai.azure.com/api/projects/project"
+location = "eastus"
+resource_group_name = "rg-adjunct"
+environment_name = "test"
+resource_token_salt = "salt"
+existing_acr_endpoint = "registry.azurecr.io"
+existing_acr_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/registry"
+existing_acr_connection_name = "registry-conn"
 `
 
 const endpointPlanTestCases = `
 mock_provider "azapi" {}
+mock_provider "azurerm" {}
+mock_provider "azurerm" {
+  alias = "existing_acr"
+}
 override_data {
   target = data.azapi_resource.foundry_account
   values = { output = { properties = { customSubDomainName = "custom-dns" } } }
 }
 override_data {
   target = data.azapi_resource.project
-  values = { output = { properties = {
-    endpoints = { "AI Foundry API" = "https://custom-dns.services.ai.azure.com/api/projects/project" }
-  } } }
+  values = { output = {
+    identity = { principalId = "project-principal" }
+    properties = {
+      endpoints = { "AI Foundry API" = "https://custom-dns.services.ai.azure.com/api/projects/project" }
+    }
+  } }
 }
 run "custom_subdomain" {
   command = plan
@@ -266,7 +330,7 @@ run "missing_project_endpoint" {
   command = plan
   override_data {
     target = data.azapi_resource.project
-    values = { output = { properties = {} } }
+    values = { output = { identity = { principalId = "project-principal" }, properties = {} } }
   }
   assert {
     condition = output.AZURE_OPENAI_ENDPOINT == "https://custom-dns.openai.azure.com/"
@@ -293,7 +357,7 @@ run "missing_all_endpoint_metadata" {
   }
   override_data {
     target = data.azapi_resource.project
-    values = { output = { properties = {} } }
+    values = { output = { identity = { principalId = "project-principal" }, properties = {} } }
   }
   assert {
     condition = output.AZURE_OPENAI_ENDPOINT == "https://resource-account.openai.azure.com/"
@@ -323,9 +387,12 @@ run "mismatched_advertised_and_account_subdomain" {
   variables { project_endpoint = "https://other-dns.services.ai.azure.com/api/projects/project" }
   override_data {
     target = data.azapi_resource.project
-    values = { output = { properties = {
-      endpoints = { "AI Foundry API" = "https://other-dns.services.ai.azure.com/api/projects/project" }
-    } } }
+    values = { output = {
+      identity = { principalId = "project-principal" }
+      properties = {
+        endpoints = { "AI Foundry API" = "https://other-dns.services.ai.azure.com/api/projects/project" }
+      }
+    } }
   }
   expect_failures = [output.FOUNDRY_PROJECT_ENDPOINT]
 }

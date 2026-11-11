@@ -8,6 +8,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"maps"
 	"net/http"
@@ -72,6 +73,56 @@ func resolvedCustomSubdomainProject(t *testing.T) *resolvedProject {
 	require.Equal(t, "https://custom-dns.services.ai.azure.com/api/projects/project", project.Endpoint)
 	require.Equal(t, "https://custom-dns.openai.azure.com/", project.OpenAIEndpoint)
 	return project
+}
+
+func TestHydrateResolvedProjectClassifiesLookupFailures(t *testing.T) {
+	const projectID = "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/resource-account/projects/project"
+	baseProject, err := projectFromResourceID(projectID)
+	require.NoError(t, err)
+
+	t.Run("arm response error becomes service error", func(t *testing.T) {
+		project := *baseProject
+		_, err := hydrateResolvedProject(t.Context(), &project, endpointTestCredential{},
+			&arm.ClientOptions{ClientOptions: policy.ClientOptions{
+				Retry: policy.RetryOptions{MaxRetries: -1},
+				Transport: endpointTestTransport(func(request *http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusForbidden, Header: http.Header{"Content-Type": {"application/json"}},
+						Body: io.NopCloser(strings.NewReader(
+							`{"error":{"code":"AuthorizationFailed","message":"access denied"}}`)),
+						Request: request,
+					}, nil
+				}),
+			}})
+		require.Error(t, err)
+		serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusForbidden, serviceErr.StatusCode)
+		require.Contains(t, serviceErr.Message, "AuthorizationFailed")
+		require.Contains(t, serviceErr.ErrorCode, "cognitive_account_list")
+	})
+
+	t.Run("malformed metadata becomes validation error", func(t *testing.T) {
+		project := *baseProject
+		_, err := hydrateResolvedProject(t.Context(), &project, endpointTestCredential{},
+			&arm.ClientOptions{ClientOptions: policy.ClientOptions{
+				Transport: endpointTestTransport(func(request *http.Request) (*http.Response, error) {
+					body := `{"properties":{"endpoints":{"AI Foundry API":"https://example.com/api/projects/project"}}}`
+					if request.URL.Path != projectID {
+						body = `{"properties":{"customSubDomainName":"custom-dns"}}`
+					}
+					return &http.Response{
+						StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+						Body: io.NopCloser(strings.NewReader(body)), Request: request,
+					}, nil
+				}),
+			}})
+		require.Error(t, err)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+	})
 }
 
 func TestProjectCustomSubdomainAuthoringAndEndpointRepair(t *testing.T) {
@@ -153,6 +204,7 @@ func TestProjectDeploymentAddAfterCustomSubdomainAuthoring(t *testing.T) {
 		wantReads                                   int
 		capacity                                    int32
 		malformedDeployments, malformedBindings     bool
+		missingAdvertisedEndpoint                   bool
 	}{
 		{name: "custom subdomain", wantReads: 2},
 		{name: "legacy project path", endpoint: "https://custom-dns.services.ai.azure.com/projects/project",
@@ -167,8 +219,12 @@ func TestProjectDeploymentAddAfterCustomSubdomainAuthoring(t *testing.T) {
 			wantErr:  "identify different projects", wantReads: 2},
 		{name: "project read denied", projectStatus: http.StatusForbidden,
 			wantErr: "AuthorizationFailed", wantReads: 1},
-		{name: "account read denied", accountStatus: http.StatusForbidden,
-			wantErr: "AuthorizationFailed", wantReads: 2},
+		{name: "account read denied uses advertised endpoint", accountStatus: http.StatusForbidden, wantReads: 2},
+		{name: "account read denied without advertised endpoint", accountStatus: http.StatusForbidden,
+			missingAdvertisedEndpoint: true, wantErr: "AuthorizationFailed", wantReads: 2},
+		{name: "account read denied with wrong project advertisement", accountStatus: http.StatusForbidden,
+			advertisedEndpoint: "https://custom-dns.services.ai.azure.com/api/projects/other",
+			wantErr:            "different project", wantReads: 2},
 		{name: "project missing", projectStatus: http.StatusNotFound, wantErr: "ResourceNotFound", wantReads: 1},
 		{name: "account missing", accountStatus: http.StatusNotFound, wantErr: "ResourceNotFound", wantReads: 2},
 		{name: "invalid advertised endpoint", advertisedEndpoint: "https://example.com/api/projects/project",
@@ -227,6 +283,9 @@ func TestProjectDeploymentAddAfterCustomSubdomainAuthoring(t *testing.T) {
 								body = `{"properties":{"customSubDomainName":"custom-dns"}}`
 							} else {
 								require.Equal(t, project.ResourceId, request.URL.Path)
+								if tt.missingAdvertisedEndpoint {
+									body = `{"properties":{}}`
+								}
 							}
 							if statusCode == 0 {
 								statusCode = http.StatusOK

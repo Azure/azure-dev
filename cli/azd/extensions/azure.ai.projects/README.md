@@ -748,10 +748,14 @@ assuming the account resource name is its DNS prefix. Azure custom subdomains
 are supported for adoption and generated Bicep/Terraform infrastructure; arbitrary
 domains and reverse proxies are not. Missing endpoint metadata falls back to the
 account's custom subdomain, then its resource name; failed lookups and invalid
-metadata remain errors. `project deployment add` also verifies the configured
-endpoint against ARM metadata, so custom subdomains remain valid when adding
-managed deployment declarations. Rerunning `project add --project-id` for the
-same project repairs stale endpoints without clearing registry or deployment bindings.
+metadata remain errors, except one compatibility case: if account metadata is
+forbidden (HTTP 403), the extension accepts a valid ARM-advertised endpoint
+that still matches the selected project. Missing or invalid advertised
+endpoints, and all other account lookup failures, remain errors.
+`project deployment add` also verifies the configured endpoint against ARM
+metadata, so custom subdomains remain valid when adding managed deployment
+declarations. Rerunning `project add --project-id` for the same project repairs
+stale endpoints without clearing registry or deployment bindings.
 Selecting a different configured project clears the old project-bound state,
 even when agent initialization has already saved the newly selected ARM ID.
 Provisioning with resource declarations verifies that the endpoint belongs to

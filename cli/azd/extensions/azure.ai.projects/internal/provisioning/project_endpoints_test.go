@@ -6,6 +6,7 @@ package provisioning
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
 	"net/http"
 	"os"
@@ -36,14 +37,19 @@ func TestExistingProjectEffectiveParametersValidateBeforeMutation(t *testing.T) 
 		{name: "case-insensitive parameter names", projectID: projectID, endpoint: endpoint, upperCase: true},
 		{name: "mismatched parameter endpoint", projectID: projectID,
 			endpoint:  "https://other-dns.services.ai.azure.com/api/projects/project",
-			wantError: "does not identify the project"},
+			wantError: "projectEndpoint must match the existing Foundry project selected during initialization"},
 		{name: "omitted parameter retains host value", projectID: projectID, defaults: true,
 			endpoint: "https://other-dns.services.ai.azure.com/api/projects/project"},
 		{name: "overridden ARM identity", projectID: strings.Replace(projectID, "resource-account", "another-account", 1),
-			endpoint: endpoint, wantError: "does not identify the project"},
-		{name: "consistent identity override",
+			endpoint:  endpoint,
+			wantError: "projectResourceId must match the existing Foundry project selected during initialization"},
+		{name: "mutually matching override must still match initialized identity",
 			projectID: strings.Replace(projectID, "resource-account", "another-account", 1),
-			endpoint:  "https://another-dns.services.ai.azure.com/api/projects/project"},
+			endpoint:  "https://another-dns.services.ai.azure.com/api/projects/project",
+			wantError: "projectResourceId must match the existing Foundry project selected during initialization"},
+		{name: "matching identity with endpoint normalization",
+			projectID: projectID,
+			endpoint:  " HTTPS://CUSTOM-DNS.services.ai.azure.com/projects/%70roject/// "},
 		// #nosec G101 -- synthetic URL for credential rejection.
 		{name: "credential-bearing endpoint", projectID: projectID,
 			endpoint:  "https://endpoint-user:endpoint-password@custom-dns.services.ai.azure.com/api/projects/project",
@@ -144,7 +150,8 @@ func TestExistingProjectEffectiveParametersValidateBeforeMutation(t *testing.T) 
 					require.ErrorContains(t, err, "TestDeploymentReached")
 					require.NotEmpty(t, writes, "a verified custom domain must reach ARM deployment")
 				}
-				if strings.Contains(tt.projectID, "/accounts/another-account") {
+				if strings.Contains(tt.projectID, "/accounts/another-account") &&
+					!strings.Contains(tt.wantError, "must match the existing Foundry project selected during initialization") {
 					require.Contains(t, reads, tt.projectID, "validate the effective ID rather than the environment default")
 				}
 				require.Equal(t, before, env.get)
@@ -155,6 +162,64 @@ func TestExistingProjectEffectiveParametersValidateBeforeMutation(t *testing.T) 
 			})
 		}
 	}
+}
+
+func TestValidateProjectIdentityClassifiesLookupFailures(t *testing.T) {
+	const (
+		projectID = "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/resource-account/projects/project"
+		endpoint = "https://custom-dns.services.ai.azure.com/api/projects/project"
+	)
+	t.Run("arm response error becomes service error", func(t *testing.T) {
+		p := &FoundryProvisioningProvider{
+			credential: acrTestCredential{},
+			armClientOptions: &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+				Retry: policy.RetryOptions{MaxRetries: -1},
+				Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+					if request.URL.Path == projectID {
+						return acrTestHTTPReply(t, request, http.StatusForbidden, map[string]any{
+							"error": map[string]any{"code": "AuthorizationFailed", "message": "access denied"},
+						})
+					}
+					return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{
+						"properties": map[string]any{"customSubDomainName": "custom-dns"},
+					})
+				}),
+			}},
+		}
+		err := p.validateProjectIdentity(t.Context(), projectID, endpoint)
+		require.Error(t, err)
+		serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusForbidden, serviceErr.StatusCode)
+		require.Contains(t, serviceErr.Message, "AuthorizationFailed")
+	})
+
+	t.Run("invalid metadata becomes validation error", func(t *testing.T) {
+		p := &FoundryProvisioningProvider{
+			credential: acrTestCredential{},
+			armClientOptions: &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+				Retry: policy.RetryOptions{MaxRetries: -1},
+				Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+					if request.URL.Path == projectID {
+						return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{
+							"properties": map[string]any{"endpoints": map[string]any{
+								"AI Foundry API": "https://example.com/api/projects/project",
+							}},
+						})
+					}
+					return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{
+						"properties": map[string]any{"customSubDomainName": "custom-dns"},
+					})
+				}),
+			}},
+		}
+		err := p.validateProjectIdentity(t.Context(), projectID, endpoint)
+		require.Error(t, err)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+	})
 }
 
 func TestExistingProjectIdentityParametersRejectAmbiguity(t *testing.T) {
@@ -355,9 +420,8 @@ func TestExistingProjectDestroyVerifiesIdentity(t *testing.T) {
 			configured: "https://other-account.services.ai.azure.com/api/projects/project",
 			wantError:  "does not identify the project"},
 		{name: "project access denied", configured: endpoint, projectStatus: http.StatusForbidden,
-			wantError: "verify existing Foundry project identity"},
-		{name: "account access denied", configured: endpoint, accountStatus: http.StatusForbidden,
-			wantError: "verify existing Foundry project identity"},
+			wantError: "ResourceUnavailable"},
+		{name: "account access denied with valid project metadata", configured: endpoint, accountStatus: http.StatusForbidden},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()

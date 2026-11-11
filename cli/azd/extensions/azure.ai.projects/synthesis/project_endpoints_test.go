@@ -56,6 +56,13 @@ func TestLookupFoundryProjectEndpoints(t *testing.T) {
 			endpoint:          customEndpoint, openAI: "https://custom-dns.openai.azure.com/",
 		},
 		{
+			name:              "advertised legacy endpoint without account subdomain",
+			projectProperties: `{"endpoints":{"AI Foundry API":"https://custom-dns.services.ai.azure.com/projects/proj"}}`,
+			accountProperties: `{}`,
+			endpoint:          "https://custom-dns.services.ai.azure.com/projects/proj",
+			openAI:            "https://custom-dns.openai.azure.com/",
+		},
+		{
 			name:              "missing endpoint uses account subdomain",
 			projectProperties: `{"endpoints":{}}`, accountProperties: `{"customSubDomainName":"custom-dns"}`,
 			endpoint: customEndpoint, openAI: "https://custom-dns.openai.azure.com/",
@@ -189,12 +196,126 @@ func TestLookupFoundryProjectDoesNotHideFailures(t *testing.T) {
 	}
 }
 
+func TestLookupFoundryProjectAccountForbiddenCompatibility(t *testing.T) {
+	t.Parallel()
+
+	const (
+		projectID  = testProjectID
+		advertised = "https://custom-dns.services.ai.azure.com/api/projects/proj"
+	)
+	for _, tt := range []struct {
+		name                 string
+		projectStatus        int
+		accountStatus        int
+		projectProperties    string
+		accountProperties    string
+		wantError            string
+		wantEndpoint, openAI string
+	}{
+		{
+			name:              "account 403 allowed when project advertises a valid endpoint",
+			accountStatus:     http.StatusForbidden,
+			projectProperties: `{"endpoints":{"AI Foundry API":"` + advertised + `"}}`,
+			wantEndpoint:      advertised,
+			openAI:            "https://custom-dns.openai.azure.com/",
+		},
+		{
+			name:          "project 403 still fails",
+			projectStatus: http.StatusForbidden,
+			wantError:     "read Foundry project",
+		},
+		{
+			name:              "account 500 still fails",
+			accountStatus:     http.StatusInternalServerError,
+			projectProperties: `{"endpoints":{"AI Foundry API":"` + advertised + `"}}`,
+			wantError:         "read Foundry account",
+		},
+		{
+			name:              "account 404 still fails",
+			accountStatus:     http.StatusNotFound,
+			projectProperties: `{"endpoints":{"AI Foundry API":"` + advertised + `"}}`,
+			wantError:         "read Foundry account",
+		},
+		{
+			name:              "account 403 with invalid endpoint still fails",
+			accountStatus:     http.StatusForbidden,
+			projectProperties: `{"endpoints":{"AI Foundry API":"https://example.com/api/projects/proj"}}`,
+			wantError:         "invalid ARM-advertised",
+		},
+		{
+			name:              "account 403 with wrong project still fails",
+			accountStatus:     http.StatusForbidden,
+			projectProperties: `{"endpoints":{"AI Foundry API":"https://custom-dns.services.ai.azure.com/api/projects/other"}}`,
+			wantError:         "identifies a different project",
+		},
+		{
+			name:              "account 403 with missing endpoint still fails",
+			accountStatus:     http.StatusForbidden,
+			projectProperties: `{"endpoints":{}}`,
+			wantError:         "read Foundry account",
+		},
+		{
+			name:              "account 403 allowed with legacy project endpoint",
+			accountStatus:     http.StatusForbidden,
+			projectProperties: `{"endpoints":{"AI Foundry API":"https://custom-dns.services.ai.azure.com/projects/proj"}}`,
+			wantEndpoint:      "https://custom-dns.services.ai.azure.com/projects/proj",
+			openAI:            "https://custom-dns.openai.azure.com/",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			id, err := arm.ParseResourceID(projectID)
+			require.NoError(t, err)
+			options := &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+				Retry: policy.RetryOptions{MaxRetries: -1},
+				Transport: endpointTestTransport(func(request *http.Request) (*http.Response, error) {
+					account := request.URL.Path == id.Parent.String()
+					statusCode := tt.projectStatus
+					properties := tt.projectProperties
+					if properties == "" {
+						properties = `{"endpoints":{"AI Foundry API":"` + advertised + `"}}`
+					}
+					if account {
+						statusCode = tt.accountStatus
+						properties = tt.accountProperties
+						if properties == "" {
+							properties = `{"customSubDomainName":"custom-dns"}`
+						}
+					}
+					if statusCode == 0 {
+						statusCode = http.StatusOK
+					}
+					body := `{"properties":` + properties + `}`
+					if statusCode >= 400 {
+						body = `{"error":{"code":"AccessDenied","message":"denied"}}`
+					}
+					return &http.Response{
+						StatusCode: statusCode, Header: http.Header{"Content-Type": {"application/json"}},
+						Body: io.NopCloser(strings.NewReader(body)), Request: request,
+					}, nil
+				}),
+			}}
+			metadata, err := LookupFoundryProject(t.Context(), id, endpointTestCredential{}, options)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				require.Nil(t, metadata)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, metadata)
+			require.Equal(t, tt.wantEndpoint, metadata.Endpoint)
+			require.Equal(t, tt.openAI, metadata.OpenAIEndpoint)
+		})
+	}
+}
+
 func TestValidateFoundryProjectEndpoint(t *testing.T) {
 	t.Parallel()
 
 	for _, endpoint := range []string{
 		"", "https://example.com/api/projects/proj", "http://acct.services.ai.azure.com/api/projects/proj",
 		"https://acct.services.ai.azure.com:443/api/projects/proj", "//acct.services.ai.azure.com/api/projects/proj",
+		"https://acct.services.ai.azure.com//api/projects/proj",
 		"https://acct.services.ai.azure.com:/api/projects/proj",
 		"https://acct.services.ai.azure.com.evil.test/api/projects/proj", "https://.services.ai.azure.com/api/projects/proj",
 		"https://acct.services.ai.azure.com/api/projects/", "https://acct.services.ai.azure.com/api/projects/proj/child",
@@ -217,4 +338,16 @@ func TestValidateFoundryProjectEndpoint(t *testing.T) {
 	normalized, err := ValidateFoundryProjectEndpoint(" HTTPS://Custom-DNS.services.ai.azure.com/api/projects/proj/ ")
 	require.NoError(t, err)
 	require.Equal(t, "https://custom-dns.services.ai.azure.com/api/projects/proj", normalized)
+	normalized, err = ValidateFoundryProjectEndpoint("https://Custom-DNS.services.ai.azure.com/projects/%70roject")
+	require.NoError(t, err)
+	require.Equal(t, "https://custom-dns.services.ai.azure.com/projects/project", normalized)
+	normalized, err = ValidateFoundryProjectEndpoint("https://Custom-DNS.services.ai.azure.com/api/projects/%70roject%2f")
+	require.NoError(t, err)
+	require.Equal(t, "https://custom-dns.services.ai.azure.com/api/projects/project", normalized)
+	normalized, err = ValidateFoundryProjectEndpoint("https://custom-dns.services.ai.azure.com/projects/a%25b")
+	require.NoError(t, err)
+	require.Equal(t, "https://custom-dns.services.ai.azure.com/projects/a%25b", normalized)
+	normalized, err = ValidateFoundryProjectEndpoint("https://custom-dns.services.ai.azure.com/projects/a%20b")
+	require.NoError(t, err)
+	require.Equal(t, "https://custom-dns.services.ai.azure.com/projects/a%20b", normalized)
 }

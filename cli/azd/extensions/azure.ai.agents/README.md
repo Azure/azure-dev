@@ -1076,8 +1076,12 @@ always keeps the real account name. These resolved endpoints are also used for
 connection discovery and saved environment values. Missing endpoint metadata
 uses the account's custom subdomain, then the account name as a compatibility
 fallback. Failed metadata lookups or invalid endpoints stop initialization
-instead of guessing. Only Azure `*.services.ai.azure.com` project endpoints
-are supported, not arbitrary domains or reverse proxies.
+instead of guessing, except one compatibility case: if account metadata is
+forbidden (HTTP 403), init accepts a valid ARM-advertised project endpoint that
+still matches the selected project. Missing or invalid advertised endpoints, and
+all other account lookup failures, remain errors. Only Azure
+`*.services.ai.azure.com` project endpoints are supported, not arbitrary
+domains or reverse proxies.
 
 Exporting an existing project with `--infra=bicep` or `--infra=terraform`
 also verifies the configured endpoint against its ARM project before writing

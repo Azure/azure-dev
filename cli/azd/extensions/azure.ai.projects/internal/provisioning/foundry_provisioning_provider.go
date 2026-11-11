@@ -747,17 +747,38 @@ func (p *FoundryProvisioningProvider) validateProjectIdentity(
 			"the configured project resource ID is not a Foundry project resource ID",
 			"set projectResourceId to a Microsoft.CognitiveServices/accounts/projects resource ID")
 	}
+	if p.existingProjectID != "" && !strings.EqualFold(strings.TrimSpace(projectID), strings.TrimSpace(p.existingProjectID)) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"projectResourceId must match the existing Foundry project selected during initialization",
+			"set projectResourceId to AZURE_AI_PROJECT_ID or rerun `azd ai project add --project-id <resource-id>`",
+		)
+	}
 	if _, err := synthesis.ValidateFoundryProjectEndpoint(endpoint); err != nil {
 		return exterrors.Validation(exterrors.CodeInvalidServiceConfig,
 			fmt.Sprintf("invalid existing Foundry project endpoint: %s", err),
 			"set projectEndpoint to a valid Azure Foundry project endpoint")
+	}
+	if p.brownfieldEndpoint != "" && !sameExistingProjectEndpoint(endpoint, p.brownfieldEndpoint) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"projectEndpoint must match the existing Foundry project selected during initialization",
+			"set projectEndpoint to FOUNDRY_PROJECT_ENDPOINT or rerun `azd ai project add --project-id <resource-id>`",
+		)
 	}
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
 	metadata, err := synthesis.LookupFoundryProject(ctx, id, p.credential, p.armClientOptions)
 	if err != nil {
-		return fmt.Errorf("verify existing Foundry project identity: %w", err)
+		if synthesis.IsFoundryProjectMetadataValidationError(err) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				err.Error(),
+				"verify the selected Foundry project metadata and retry",
+			)
+		}
+		return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountList)
 	}
 	if !sameExistingProjectEndpoint(endpoint, metadata.Endpoint) {
 		return exterrors.Validation(
@@ -3159,8 +3180,12 @@ func armResourcesToProto(in []*armresources.ResourceReference) []*azdext.Provisi
 	return out
 }
 
-// isNotFound reports whether the wrapped azcore.ResponseError is a 404.
+// isNotFound reports whether err is a 404 ServiceError or ResponseError.
 func isNotFound(err error) bool {
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	if ok {
+		return serviceErr.StatusCode == 404
+	}
 	respErr, ok := errors.AsType[*azcore.ResponseError](err)
 	return ok && respErr.StatusCode == 404
 }

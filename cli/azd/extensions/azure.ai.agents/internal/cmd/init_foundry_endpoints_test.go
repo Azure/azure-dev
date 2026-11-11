@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -137,6 +138,10 @@ func TestExistingProjectInfraEjectUsesARMEndpoint(t *testing.T) {
 		for _, tt := range []struct {
 			name, configured, advertised, wantError string
 			accountStatus                           int
+			projectStatus                           int
+			wantServiceStatus                       int
+			wantValidation                          bool
+			missingAdvertised                       bool
 			noLookup                                bool
 		}{
 			{name: "custom subdomain", configured: endpoint},
@@ -148,9 +153,18 @@ func TestExistingProjectInfraEjectUsesARMEndpoint(t *testing.T) {
 			{name: "invalid URL", configured: endpoint + "?sig=secret",
 				wantError: "does not match", noLookup: true},
 			{name: "invalid metadata", configured: endpoint, advertised: "https://example.com/api/projects/project",
-				wantError: "invalid ARM-advertised"},
-			{name: "account read denied", configured: endpoint, accountStatus: http.StatusForbidden,
-				wantError: "read Foundry account"},
+				wantError: "invalid ARM-advertised", wantValidation: true},
+			{name: "project read denied", configured: endpoint, projectStatus: http.StatusForbidden,
+				wantError: "AuthorizationFailed", wantServiceStatus: http.StatusForbidden},
+			{name: "account read denied uses advertised endpoint", configured: endpoint,
+				accountStatus: http.StatusForbidden},
+			{name: "account read denied without advertised endpoint", configured: endpoint,
+				accountStatus: http.StatusForbidden, missingAdvertised: true,
+				wantError: "AuthorizationFailed", wantServiceStatus: http.StatusForbidden},
+			{name: "account read denied with wrong project advertisement", configured: endpoint,
+				accountStatus: http.StatusForbidden,
+				advertised:    "https://custom-dns.services.ai.azure.com/api/projects/other",
+				wantError:     "different project", wantValidation: true},
 		} {
 			t.Run(provider+"/"+tt.name, func(t *testing.T) {
 				root := t.TempDir()
@@ -178,7 +192,15 @@ func TestExistingProjectInfraEjectUsesARMEndpoint(t *testing.T) {
 					}
 					code := http.StatusOK
 					body := `{"properties":{"endpoints":{"AI Foundry API":"` + advertised + `"}}}`
-					if request.URL.Path != projectID {
+					if request.URL.Path == projectID {
+						if tt.missingAdvertised {
+							body = `{"properties":{}}`
+						}
+						if tt.projectStatus != 0 {
+							code = tt.projectStatus
+							body = `{"error":{"code":"AuthorizationFailed","message":"Access denied"}}`
+						}
+					} else {
 						require.Equal(t, strings.TrimSuffix(projectID, "/projects/project"), request.URL.Path)
 						body = `{"properties":{"customSubDomainName":"custom-dns"}}`
 						if tt.accountStatus != 0 {
@@ -202,6 +224,16 @@ func TestExistingProjectInfraEjectUsesARMEndpoint(t *testing.T) {
 				})
 				if tt.wantError != "" {
 					require.ErrorContains(t, err, tt.wantError)
+					if tt.wantServiceStatus != 0 {
+						serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+						require.True(t, ok)
+						require.Equal(t, tt.wantServiceStatus, serviceErr.StatusCode)
+					}
+					if tt.wantValidation {
+						localErr, ok := errors.AsType[*azdext.LocalError](err)
+						require.True(t, ok)
+						require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+					}
 					require.NotContains(t, err.Error(), "sig=secret")
 					require.NoDirExists(t, filepath.Join(root, "infra"))
 					//nolint:gosec // Test-owned path.
@@ -236,7 +268,11 @@ func TestExistingProjectInfraEjectUsesARMEndpoint(t *testing.T) {
 				if tt.noLookup {
 					require.Empty(t, requests)
 				} else {
-					require.Equal(t, []string{projectID, strings.TrimSuffix(projectID, "/projects/project")}, requests)
+					expectedRequests := []string{projectID, strings.TrimSuffix(projectID, "/projects/project")}
+					if tt.projectStatus != 0 {
+						expectedRequests = []string{projectID}
+					}
+					require.Equal(t, expectedRequests, requests)
 				}
 			})
 		}

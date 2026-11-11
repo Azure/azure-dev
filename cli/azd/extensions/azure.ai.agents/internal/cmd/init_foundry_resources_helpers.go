@@ -374,7 +374,14 @@ func hydrateFoundryProject(
 	}
 	metadata, err := synthesis.LookupFoundryProject(ctx, id, credential, options)
 	if err != nil {
-		return nil, err
+		if synthesis.IsFoundryProjectMetadataValidationError(err) {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				err.Error(),
+				"verify the selected Foundry project metadata and retry",
+			)
+		}
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetFoundryProject)
 	}
 	updateFoundryProjectInfo(project, &metadata.Project)
 	project.ProjectEndpoint = metadata.Endpoint

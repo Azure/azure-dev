@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[#10823]](https://github.com/Azure/azure-dev/pull/10823) Allow `infra.layers[]` entries that use extension-defined infrastructure providers to omit `path`, and add provider-specific `infra.config` to the `azure.yaml` schema.
+- [[#10823]](https://github.com/Azure/azure-dev/pull/10823) Allow `infra.layers[]` entries that explicitly specify an extension-defined infrastructure provider to omit `path`, and add provider-specific `infra.config` to the `azure.yaml` schema.
 
 ### Bugs Fixed
 

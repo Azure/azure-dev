@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"sync"
 	"testing"
@@ -59,6 +60,7 @@ func TestPhaseAndStepsUseActualTimesAndOneAttempt(t *testing.T) {
 	require.Equal(t, "deploy", complete.Attributes["agent.phase.name"])
 	require.Equal(t, "provider", complete.Attributes["agent.phase.scope"])
 	require.Equal(t, "success", complete.Attributes["agent.phase.outcome"])
+	require.NotContains(t, complete.Attributes, "agent.memory.snapshot")
 	require.Equal(t, "10.000", complete.Attributes["agent.phase.duration_ms"])
 	started, err := time.Parse(time.RFC3339Nano, complete.Attributes["agent.phase.start_time"])
 	require.NoError(t, err)
@@ -82,9 +84,10 @@ func TestOutcomesAndCancellationPreserveBusinessErrorsAndTrace(t *testing.T) {
 		err     error
 		outcome string
 	}{
-		{nil, "success"}, {errors.New("secret contents"), "error"},
+		{nil, "success"}, {errors.New("secret contents"), "canceled"},
 		{fmt.Errorf("private URL: %w", context.Canceled), "canceled"},
 		{context.DeadlineExceeded, "timeout"},
+		{&net.DNSError{Err: "private name", IsTimeout: true}, "timeout"},
 		{status.Error(codes.Canceled, "private name"), "canceled"},
 		{status.Error(codes.DeadlineExceeded, "private name"), "timeout"},
 		{&azdext.LocalError{Code: "cancelled", Category: azdext.LocalErrorCategoryUser}, "canceled"},
@@ -154,5 +157,60 @@ func TestObservedPollingTimeoutDoesNotReplaceTheBusinessError(t *testing.T) {
 		phase.End(ctx, test.err)
 		require.Len(t, reporter.events, 1)
 		require.Equal(t, test.outcome, reporter.events[0].Attributes["agent.phase.outcome"])
+	}
+}
+
+func TestSnapshotSettingSharesThePhaseOutcome(t *testing.T) {
+	for _, setting := range []*bool{nil, new(false), new(true)} {
+		for _, cause := range []error{nil, context.Canceled, context.DeadlineExceeded} {
+			reporter := &recordingReporter{}
+			ctx, cancel := context.WithCancelCause(t.Context())
+			ctx, phase := Begin(ctx, Deploy, Provider, reporter)
+			phase.MemorySnapshot(setting)
+			var deploymentErr error
+			if cause != nil {
+				cancel(cause)
+				deploymentErr = &azdext.LocalError{Code: "environment_values_failed"}
+			}
+			phase.End(ctx, deploymentErr)
+			cancel(nil)
+			require.Len(t, reporter.events, 1)
+			event := reporter.events[0]
+			require.Equal(t, "agent.phase.completed", event.Name)
+			if setting != nil && *setting {
+				require.Equal(t, "true", event.Attributes["agent.memory.snapshot"])
+			} else {
+				require.NotContains(t, event.Attributes, "agent.memory.snapshot")
+			}
+			want := "success"
+			if errors.Is(cause, context.Canceled) {
+				want = "canceled"
+			}
+			if errors.Is(cause, context.DeadlineExceeded) {
+				want = "timeout"
+			}
+			require.Equal(t, want, event.Attributes["agent.phase.outcome"])
+		}
+	}
+}
+
+func TestDeployTerminationDoesNotDependOnSnapshotAttribution(t *testing.T) {
+	for _, attributed := range []bool{false, true} {
+		for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+			reporter := &recordingReporter{}
+			ctx, cancel := context.WithCancelCause(t.Context())
+			ctx, phase := Begin(ctx, Deploy, Provider, reporter)
+			if attributed {
+				phase.MemorySnapshot(new(true))
+			}
+			cancel(cause)
+			phase.End(ctx, errors.New("converted dependency error"))
+			require.Len(t, reporter.events, 1)
+			want := "canceled"
+			if errors.Is(cause, context.DeadlineExceeded) {
+				want = "timeout"
+			}
+			require.Equal(t, want, reporter.events[0].Attributes["agent.phase.outcome"])
+		}
 	}
 }

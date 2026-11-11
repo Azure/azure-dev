@@ -598,6 +598,8 @@ func TestPreviewInvokeLocalBypassesAndReadAccess(t *testing.T) {
 		{"kind": "prompt", "harness": map[string]any{"type": "microsoft_copilot_preview"}},
 		{"kind": "prompt-voice"},
 		{"kind": "hosted", "protocols": []any{map[string]any{"protocol": "invocations_ws"}}},
+		{"kind": "hosted", "enableMemorySnapshot": true},
+		{"kind": "hosted", "EnableMemorySnapshot": true},
 	} {
 		props, err := structpb.NewStruct(definition)
 		require.NoError(t, err)

@@ -1670,6 +1670,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 				"use a supported kind: 'hosted'",
 			)
 		}
+		timing.MemorySnapshot(agentDef.EnableMemorySnapshot)
 		if err := validateEnvironmentVariableNames(
 			serviceConfig.GetEnvironment(),
 			agentDef.EnvironmentVariables,

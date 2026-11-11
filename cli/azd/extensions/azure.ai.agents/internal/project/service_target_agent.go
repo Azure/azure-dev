@@ -3742,7 +3742,8 @@ func fetchAndValidateHostedVoiceTarget(
 		return exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("hosted voice target is not compatible: %s", err),
-			"deploy an active hosted agent with voice_conversation_engine/1.0.0, then retry",
+			"deploy an active hosted agent with voice_conversation_engine/1.0.0, or legacy "+
+				"invocations_ws/1.0.0 plus voiceLiveCompatible=true and bridgeProtocolVersion=1.0, then retry",
 		)
 	}
 	return nil

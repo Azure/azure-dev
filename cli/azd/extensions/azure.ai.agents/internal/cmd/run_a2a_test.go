@@ -45,6 +45,7 @@ func TestA2AOnlyRunTargetRouting(t *testing.T) {
 				require.NoError(t, yaml.Unmarshal([]byte(tc.definition), def))
 			}
 			profile, suppressed := resolveRunClientProfile(def)
+			protocol := protocolOnlyRunTarget(def)
 			require.Equal(t, tc.wantSuppressed, suppressed)
 			if !suppressed {
 				// Endpoint-only A2A must not suppress Inspector, and mixed
@@ -61,8 +62,8 @@ func TestA2AOnlyRunTargetRouting(t *testing.T) {
 			require.Equal(t, telemetry.LocalClientRouteSelected(telemetry.LocalClientRouteSuppressed), reporter.event)
 			require.ErrorContains(t, validateInspectorPortForProfile(&runFlags{
 				port: 9090, inspectorPort: 9090, inspectorPortSet: true,
-			}, profile.IsActivity, suppressed), "not supported for A2A-only agents")
-			require.NoError(t, validateInspectorPortForProfile(&runFlags{port: 9090}, profile.IsActivity, suppressed))
+			}, profile.IsActivity, protocol), protocol+"-only agents")
+			require.NoError(t, validateInspectorPortForProfile(&runFlags{port: 9090}, profile.IsActivity, protocol))
 			// A nil workflow would panic if Inspector tried to launch.
 			var stderr bytes.Buffer
 			handleInspectorAutoLaunch(t.Context(), nil, 9090, 0, suppressed, true, nil, &stderr)
@@ -103,4 +104,11 @@ func TestResolvedRunTargetNextSteps(t *testing.T) {
 			require.Same(t, state, withResolvedRunTarget(state, "agent", ""), "other routes must remain unchanged")
 		})
 	}
+}
+
+func TestResolvedConversationEngineRunTargetHasNoInvokeGuidance(t *testing.T) {
+	state := &nextstep.State{LocalPort: 9091, HasOpenAPI: true, OpenAPIPayload: `{"stale":true}`}
+	resolved := withResolvedRunTarget(state, "engine", nextstep.ProtocolVoiceConversationEngine)
+	require.Equal(t, nextstep.ProtocolVoiceConversationEngine, resolved.Services[0].Protocol)
+	require.Empty(t, nextstep.ResolveAfterRun(resolved, "engine", func(string) bool { return true }))
 }

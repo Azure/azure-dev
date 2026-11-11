@@ -1789,11 +1789,8 @@ services:
     uses:
       - ai-project
     protocols:
-      - protocol: invocations_ws
+      - protocol: voice_conversation_engine
         version: 1.0.0
-    metadata:
-      voiceLiveCompatible: "true"
-      bridgeProtocolVersion: "1.0"
     container:
       resources:
         cpu: "1"

@@ -161,7 +161,6 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// not clear a session belonging to an already-running agent.
 	activityProfile, protocolOnly := resolveRunClientProfile(runCtx.Definition)
 	resolvedProtocol := protocolOnlyRunTarget(runCtx.Definition)
-	a2aOnly := resolvedProtocol == nextstep.ProtocolA2A
 	suppressClient := flags.noInspector || flags.noClient || protocolOnly
 	reportLocalClientRouteSelected(
 		ctx,
@@ -169,7 +168,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 		activityProfile,
 		suppressClient,
 	)
-	if err := validateInspectorPortForProfile(flags, activityProfile.IsActivity, a2aOnly); err != nil {
+	if err := validateInspectorPortForProfile(flags, activityProfile.IsActivity, resolvedProtocol); err != nil {
 		return err
 	}
 
@@ -603,16 +602,16 @@ func validateInspectorPortFlags(flags *runFlags) error {
 	return nil
 }
 
-// validateInspectorPortForProfile rejects unsupported A2A-only options and Inspector port collisions.
-func validateInspectorPortForProfile(flags *runFlags, isActivity, a2aOnly bool) error {
-	if a2aOnly && flags.inspectorPortSet {
+// validateInspectorPortForProfile rejects unsupported protocol-only options and Inspector port collisions.
+func validateInspectorPortForProfile(flags *runFlags, isActivity bool, protocolOnly string) error {
+	if protocolOnly != "" && flags.inspectorPortSet {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
-			"--inspector-port is not supported for A2A-only agents, which do not open Agent Inspector",
+			fmt.Sprintf("--inspector-port is not supported for %s-only agents, which do not open Agent Inspector", protocolOnly),
 			"omit --inspector-port to run the agent without a browser client",
 		)
 	}
-	if !isActivity && !a2aOnly && flags.inspectorPortSet && flags.inspectorPort == flags.port {
+	if !isActivity && protocolOnly == "" && flags.inspectorPortSet && flags.inspectorPort == flags.port {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
 			fmt.Sprintf(

@@ -1,6 +1,6 @@
 # Azure Spring Boot extension
 
-`azure.springboot` packages Maven-based Spring Boot applications for Azure
+`azure.springboot` packages Maven- and Gradle-based Java Spring Boot applications for Azure
 Container Apps, deploys project-owned Bicep service modules, and prepares
 PostgreSQL application access. This is an **unpublished development prototype**:
 use azd 1.37.2 or newer and a matching locally built extension bundle. The
@@ -11,17 +11,55 @@ packaging, deployment, and PostgreSQL access verification.
 
 ## Packaging
 
-The host JDK 17+ and checked-in Maven Wrapper build the Spring Boot JAR.
+The host JDK 17+ and checked-in Maven or Gradle Wrapper build the Spring Boot JAR.
 Application classes must target Java 17 or earlier; packaging rejects newer
 bytecode before container staging. The extension stages the JAR with its Java
 17 runtime recipe in an isolated temporary context and sends it through azd's
 container pipeline. Project `Dockerfile` and `.dockerignore` files are not read
 or modified.
 
-Packaging requires Docker, `pom.xml`, `mvnw`,
-`.mvn/wrapper/maven-wrapper.properties`, and `src`. Deployment also requires
+Packaging requires Docker and a supported project at the service's `project`
+path. Maven projects require `pom.xml`, `mvnw`,
+`.mvn/wrapper/maven-wrapper.properties`, and `src`. Gradle projects require
+`build.gradle` or `build.gradle.kts`, `src`, `gradle/wrapper/gradle-wrapper.jar`,
+`gradle/wrapper/gradle-wrapper.properties`, and the platform wrapper (`gradlew`
+on Unix, `gradlew.bat` on Windows). On Unix, check in the executable bit for
+`gradlew`; the extension does not change permissions. A global Gradle installation
+is not used. Deployment also requires
 Bicep (azd can install it when missing). Application SQL and infrastructure
 remain project-owned.
+
+When both build systems are present, **Maven takes precedence**. An invalid Maven
+project fails as Maven; it does not fall back to Gradle. Gradle support is limited
+to a single root application, not subprojects or composite builds. Kotlin build
+scripts are supported for Java applications; Kotlin/Groovy application bootstrap
+remains outside the automatic datasource-discovery contract.
+
+The Gradle path resolves production `runtimeClasspath` dependencies, compiles
+with `classes` when a build is requested, and packages with `bootJar` without
+running tests. Packaging can run without a separate restore or build. It reads
+the task's actual archive path, including custom names and contained output
+directories; it never chooses a JAR by filename glob or modification time.
+Missing, disabled, or skipped `bootJar` tasks fail instead of reusing stale or
+plain JARs. If supplied, `dist`/output must identify that exact archive or its
+directory; otherwise the extension reports a conflict.
+
+The same standard service entry works with either build system:
+
+```yaml
+services:
+  app:
+    project: .
+    language: java
+    host: springbootapp
+```
+
+Initial validation and provisioning can evaluate the Gradle build to obtain
+production dependency evidence before a packaged JAR exists. These wrapper
+invocations can download the distribution/dependencies and execute authored
+build logic. Temporary extension init scripts and metadata reports are owned
+and removed by the extension; authored build files are not changed. Calls use
+plain console output, no persistent daemon, and no configuration cache.
 
 ## Service configuration and datasource discovery
 
@@ -37,6 +75,8 @@ arguments, environment variables, and deployed Container App settings. Final
 deployment validation uses the packaged Spring Boot JAR's classpath resources
 and runtime libraries. H2 requires positive runtime datasource evidence;
 test-only H2, missing configuration, or a PostgreSQL error never becomes H2.
+Source-only Gradle checks use resolved production dependencies, including
+transitive libraries, not text parsing of the build DSL or test dependencies.
 
 Unresolved infrastructure-dependent profile, configuration-location, and
 datasource selectors remain pending during preparation. Final resolution must
@@ -131,3 +171,19 @@ test suite is self-contained and does not vendor application repositories:
 ```shell
 go test ./...
 ```
+
+The opt-in local Gradle package gate uses checksum-verified Gradle 8.14.4 wrappers
+and Spring Boot 3.5.13 Java fixtures for both build DSLs. Set
+`AZD_TEST_SPRING_GRADLE_PACKAGE=1` and `CLI_TEST_AZD_PATH` to an official azd
+1.37.2+ executable, provide JDK 17+ and a running Docker engine, then run:
+
+```shell
+go test ./test/functional -run '^Test_CLI_SpringGradle_Package$' -count=1 -timeout 35m
+```
+
+This gate initializes isolated projects, packages twice, verifies the exact
+`bootJar` artifact, and starts the generated image with healthy H2 and non-root
+execution. It downloads public build dependencies but does not deploy to Azure.
+Current real Gradle packaging acceptance is on Windows with JDK 21 compiling
+Java 17 application classes. Unix wrapper execution and Azure Gradle deployment
+remain unverified.

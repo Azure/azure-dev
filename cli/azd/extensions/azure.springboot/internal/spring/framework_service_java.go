@@ -36,9 +36,10 @@ type javaFrameworkService struct {
 
 	mu      sync.Mutex
 	service *project.ServiceConfig
+	build   javaBuildSystem
 }
 
-// NewJavaFrameworkService creates a Java framework provider that preserves azd's native Maven behavior.
+// NewJavaFrameworkService supports Spring Gradle builds while preserving azd's native Maven behavior.
 func NewJavaFrameworkService(client *azdext.AzdClient) azdext.FrameworkServiceProvider {
 	return newJavaFrameworkService(client, azdexec.NewCommandRunner(&azdexec.RunnerOptions{
 		Stdin:  strings.NewReader(""),
@@ -59,6 +60,7 @@ func (p *javaFrameworkService) Initialize(ctx context.Context, serviceConfig *az
 	defer p.mu.Unlock()
 
 	p.service = nil
+	p.build = mavenBuild
 	if err := validateAuthoredSpringServiceConfiguration(ctx, p.client, serviceConfig); err != nil {
 		return err
 	}
@@ -67,6 +69,17 @@ func (p *javaFrameworkService) Initialize(ctx context.Context, serviceConfig *az
 		return err
 	}
 	p.service = service
+	if service.Host == project.ServiceTargetKind(SpringHost) {
+		p.build, err = detectJavaBuild(service.Path())
+		if err != nil {
+			return err
+		}
+		if p.build == gradleBuild {
+			if _, err := servicePath(&azdext.ProjectConfig{Path: service.Project.Path}, serviceConfig); err != nil {
+				return err
+			}
+		}
+	}
 
 	framework := p.nativeFramework(environment.New(""))
 	if err := framework.Initialize(ctx, service); err != nil {
@@ -228,6 +241,9 @@ func (p *javaFrameworkService) nativeFrameworkWithProgress(
 	env *environment.Environment,
 	progress grpcbroker.ProgressFunc,
 ) project.FrameworkService {
+	if p.build == gradleBuild {
+		return &gradleProject{runner: p.runner, env: env}
+	}
 	runner := &mavenPackageCommandRunner{
 		base:     p.runner,
 		spring:   p.service != nil && p.service.Host == project.ServiceTargetKind(SpringHost),

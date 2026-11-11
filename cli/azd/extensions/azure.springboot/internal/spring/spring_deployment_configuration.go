@@ -203,7 +203,7 @@ func (r *Runtime) readServiceDatasource(
 		input.root = root
 	}
 	if serviceContext != nil {
-		input.jarPath, err = findMavenJar(serviceContext)
+		input.jarPath, err = findSpringJar(serviceContext, root)
 		if err != nil {
 			return nil, err
 		}

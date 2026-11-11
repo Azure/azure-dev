@@ -126,8 +126,8 @@ func (t *serviceTarget) Package(
 		for _, artifact := range artifacts {
 			if artifact.GetKind() == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER {
 				return nil, validationError("ambiguous_native_container_artifacts",
-					"native Maven packaging cannot reuse an unrelated container build or package artifact",
-					"rerun azd package with only this service's current Maven package artifacts")
+					"Java packaging cannot reuse an unrelated container build or package artifact",
+					"rerun azd package with only this service's current Java package artifacts")
 			}
 		}
 	}

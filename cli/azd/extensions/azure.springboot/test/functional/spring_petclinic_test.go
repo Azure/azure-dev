@@ -649,6 +649,15 @@ func verifyH2ContainerStartupAt(
 		}
 	})
 
+	// #nosec G204 -- validated test-owned Docker container ID and fixed UID inspection.
+	uidCommand := osexec.CommandContext(ctx, "docker", "exec", containerID, "id", "-u")
+	uidCommand.Env = dockerEnvironment
+	uidOutput, err := uidCommand.CombinedOutput()
+	require.NoError(t, err)
+	uid, err := strconv.Atoi(strings.TrimSpace(string(uidOutput)))
+	require.NoError(t, err)
+	require.Positive(t, uid, "generated Spring image must run as non-root")
+
 	// #nosec G204 -- validated Docker container ID and fixed inventory arguments, without shell interpolation.
 	portCommand := osexec.CommandContext(ctx, "docker", "port", containerID, containerPort+"/tcp")
 	portCommand.Env = dockerEnvironment

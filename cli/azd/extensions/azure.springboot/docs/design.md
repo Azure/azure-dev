@@ -1,7 +1,7 @@
 # `springbootapp` design
 
-`azure.springboot` provides one automatic Spring Boot workflow for Maven
-projects deployed to Azure Container Apps. The extension discovers the
+`azure.springboot` provides one automatic Spring Boot workflow for Maven and
+single-project Gradle Java applications deployed to Azure Container Apps. The extension discovers the
 application contract from Spring Boot's effective configuration and verifies
 that contract against the current deployment.
 
@@ -19,15 +19,51 @@ file staging, or Azure operations.
 
 ## Packaging
 
-The extension requires a Maven Wrapper project containing:
+Build-system detection prefers Maven whenever `pom.xml` exists; malformed Maven
+input does not trigger a fallback to Gradle. Otherwise, `build.gradle` or
+`build.gradle.kts` selects the extension-local Gradle adapter. Other Java hosts
+retain native Maven behavior, and core existing-code discovery is unchanged.
+
+A Maven Wrapper project contains:
 
 - `pom.xml`
 - `mvnw`
 - `.mvn/wrapper/maven-wrapper.properties`
 - `src`
 
-The Java framework provider restores and packages the application with the
-Maven Wrapper. The service target stages the resulting executable JAR and an
+A Gradle project contains a build script, `src`, the platform wrapper
+(`gradlew` with executable permission on Unix or `gradlew.bat` on Windows),
+`gradle/wrapper/gradle-wrapper.properties`, and `gradle/wrapper/gradle-wrapper.jar`
+at its configured service root. Wrapper inputs, scripts, and archive outputs
+must be contained regular files, not links. Gradle's normal build-file selection
+applies when both build DSL files exist. The evaluated model must contain one
+root project without subprojects or included builds.
+
+The Java framework provider keeps native Maven restore/build/package behavior.
+For Gradle, an extension-owned temporary init script registers a metadata task.
+Restore strictly resolves production `runtimeClasspath`; build also invokes
+`classes`; package invokes `bootJar` with tests excluded and is self-sufficient.
+A fresh bounded JSON report supplies the evaluated dependency coordinates and
+`bootJar.archiveFile`, avoiding build-DSL regexes, console parsing, output globs,
+and stale/plain-JAR selection. Missing or disabled tasks, failed dependency
+resolution, skipped packaging, unsafe paths, and malformed reports fail
+explicitly. Valid up-to-date or build-cache-restored output is verified normally.
+Custom contained archive names/directories are supported. Standard `dist`/output,
+when supplied, must agree with the task's archive or its directory.
+
+Gradle commands inherit the build environment, propagate cancellation, and use
+plain console output with no persistent daemon or configuration cache. Wrapper
+execution is a deliberate boundary after static service/file validation: it can
+download dependencies and execute authored build logic, including during
+source-only datasource discovery. It does not modify authored configuration or
+write azd state to manufacture dependency evidence. Metadata is not persisted
+across commands. Errors use the existing URL non-disclosure boundary.
+
+Both paths normalize the selected executable JAR to a local package directory
+containing `app.jar`, with `framework: maven` or `framework: gradle` metadata.
+Consumers require a single package artifact matching the selected build system.
+Gradle additionally verifies the executable Spring Boot manifest and archive
+layout. The service target stages the resulting executable JAR and an
 extension-owned Java 17 runtime Dockerfile in a new temporary directory. It
 then uses azd's container build and package APIs. Project `Dockerfile` and
 `.dockerignore` files are neither read nor modified. Application classes must
@@ -42,6 +78,13 @@ line arguments, JVM properties, environment variables, and deployed Container
 App settings. Preparation may retain an unresolved selection when values depend
 on infrastructure outputs. Provisioning and deployment require a final,
 unambiguous selection.
+
+Without a package context, Maven dependency discovery reads its supported POM
+declarations; Gradle dependency discovery evaluates the production runtime
+classpath, including transitive libraries. Test-only dependencies are not
+datasource evidence. With a package context, the actual JAR resources/libraries
+remain authoritative for both build systems. Kotlin build DSL support does not
+expand the existing Java-only application-bootstrap analysis.
 
 For PostgreSQL, the extension follows Spring Boot, HikariCP, and pgJDBC
 precedence:

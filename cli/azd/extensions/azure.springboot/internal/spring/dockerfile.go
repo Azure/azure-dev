@@ -89,44 +89,55 @@ func servicePath(project *azdext.ProjectConfig, service *azdext.ServiceConfig) (
 		)
 	}
 
-	required := []string{
-		"pom.xml",
-		"mvnw",
-		filepath.Join(".mvn", "wrapper", "maven-wrapper.properties"),
-		"src",
-	}
-	for _, path := range required {
-		if _, err := os.Stat(filepath.Join(servicePath, path)); err != nil {
-			return "", validationError(
-				"unsupported_spring_project",
-				fmt.Sprintf("service %q is missing required Maven project path %q", service.Name, path),
-				"azure.springboot currently requires a Maven Wrapper, pom.xml, and src directory",
-			)
-		}
+	if err := validateJavaBuild(servicePath, service.Name); err != nil {
+		return "", err
 	}
 	return servicePath, nil
 }
 
-func findMavenJar(serviceContext *azdext.ServiceContext) (string, error) {
+func findSpringJar(serviceContext *azdext.ServiceContext, root string) (string, error) {
+	system, err := detectJavaBuild(root)
+	if err != nil {
+		return "", err
+	}
+	return findJavaJar(serviceContext, system)
+}
+
+func findJavaJar(serviceContext *azdext.ServiceContext, system javaBuildSystem) (string, error) {
+	label := "Maven"
+	if system == gradleBuild {
+		label = "Gradle"
+	}
 	if serviceContext == nil {
 		return "", validationError(
 			"missing_service_context",
 			"the service package context is missing",
-			"rerun azd package so the Maven package is produced before container packaging",
+			"rerun azd package so the Java package is produced before container packaging",
 		)
 	}
 	var packageDirectory string
 	for _, artifact := range serviceContext.GetPackage() {
 		if artifact == nil ||
 			artifact.GetKind() != azdext.ArtifactKind_ARTIFACT_KIND_DIRECTORY ||
-			artifact.GetLocationKind() != azdext.LocationKind_LOCATION_KIND_LOCAL ||
-			artifact.GetMetadata()["framework"] != "maven" {
+			artifact.GetLocationKind() != azdext.LocationKind_LOCATION_KIND_LOCAL {
 			continue
+		}
+		framework := artifact.GetMetadata()["framework"]
+		if framework != string(system) {
+			if framework == string(mavenBuild) || framework == string(gradleBuild) {
+				return "", validationError("mismatched_java_package", "the Java package uses a different build system",
+					"rerun azd package with only the current service's package artifacts")
+			}
+			continue
+		}
+		if strings.TrimSpace(artifact.GetLocation()) == "" {
+			return "", validationError("invalid_"+string(system)+"_package", "the Java package artifact has no location",
+				"rerun azd package to produce one local Java package directory")
 		}
 		if packageDirectory != "" {
 			return "", validationError(
-				"ambiguous_maven_package",
-				"more than one Maven package artifact was supplied for the Spring service",
+				"ambiguous_"+string(system)+"_package",
+				"more than one "+label+" package artifact was supplied for the Spring service",
 				"remove duplicate package artifacts and retry",
 			)
 		}
@@ -134,24 +145,24 @@ func findMavenJar(serviceContext *azdext.ServiceContext) (string, error) {
 	}
 	if packageDirectory == "" {
 		return "", validationError(
-			"missing_maven_package",
-			"the Spring service did not produce a local Maven package directory",
+			"missing_"+string(system)+"_package",
+			"the Spring service did not produce a local "+label+" package directory",
 			"verify language: java and rerun azd package",
 		)
 	}
 
 	resolvedDirectory, err := filepath.EvalSymlinks(packageDirectory)
 	if err != nil {
-		return "", fmt.Errorf("resolving Maven package directory: %w", err)
+		return "", fmt.Errorf("resolving Java package directory: %w", err)
 	}
 	info, err := os.Stat(resolvedDirectory)
 	if err != nil {
-		return "", fmt.Errorf("reading Maven package directory: %w", err)
+		return "", fmt.Errorf("reading Java package directory: %w", err)
 	}
 	if !info.IsDir() {
 		return "", validationError(
-			"invalid_maven_package",
-			"the Maven package artifact is not a directory",
+			"invalid_"+string(system)+"_package",
+			"the "+label+" package artifact is not a directory",
 			"rerun azd package and verify the Java package output",
 		)
 	}
@@ -160,14 +171,14 @@ func findMavenJar(serviceContext *azdext.ServiceContext) (string, error) {
 	linkInfo, err := os.Lstat(jarPath)
 	if err != nil {
 		return "", validationError(
-			"missing_maven_jar",
-			"the Maven package directory does not contain app.jar",
-			"configure Maven to produce a Spring Boot JAR and rerun azd package",
+			"missing_"+string(system)+"_jar",
+			"the "+label+" package directory does not contain app.jar",
+			"configure the build to produce a Spring Boot JAR and rerun azd package",
 		)
 	}
 	if linkInfo.Mode()&os.ModeSymlink != 0 || !linkInfo.Mode().IsRegular() {
 		return "", validationError(
-			"invalid_maven_jar",
+			"invalid_"+string(system)+"_jar",
 			"the packaged app.jar must be a regular file, not a link or special file",
 			"rerun azd package with a regular Spring Boot JAR",
 		)
@@ -178,7 +189,7 @@ func findMavenJar(serviceContext *azdext.ServiceContext) (string, error) {
 	}
 	if !osutil.IsPathContained(resolvedDirectory, resolvedJar) {
 		return "", validationError(
-			"invalid_maven_jar",
+			"invalid_"+string(system)+"_jar",
 			"the packaged app.jar resolves outside its package directory",
 			"rerun azd package with a self-contained Spring Boot JAR",
 		)
@@ -195,7 +206,7 @@ func validateSpringJarRuntime(ctx context.Context, jarPath string) (err error) {
 		return validationError(
 			"invalid_maven_jar",
 			"the packaged app.jar is not a valid JAR archive",
-			"configure Maven to produce an executable Spring Boot JAR and rerun azd package",
+			"configure the build to produce an executable Spring Boot JAR and rerun azd package",
 		)
 	}
 	defer func() {
@@ -221,14 +232,14 @@ func validateSpringJarRuntime(ctx context.Context, jarPath string) (err error) {
 			return validationError(
 				"invalid_maven_jar",
 				"a packaged application class is invalid",
-				"configure Maven to produce a valid executable Spring Boot JAR and rerun azd package",
+				"configure the build to produce a valid executable Spring Boot JAR and rerun azd package",
 			)
 		}
 		if binary.BigEndian.Uint32(header[:4]) != 0xcafebabe {
 			return validationError(
 				"invalid_maven_jar",
 				"a packaged application class has an invalid class header",
-				"configure Maven to produce a valid executable Spring Boot JAR and rerun azd package",
+				"configure the build to produce a valid executable Spring Boot JAR and rerun azd package",
 			)
 		}
 
@@ -241,7 +252,7 @@ func validateSpringJarRuntime(ctx context.Context, jarPath string) (err error) {
 					"packaged application bytecode requires Java %d, but the generated runtime uses Java 17",
 					javaVersion,
 				),
-				"set the Maven compiler release to Java 17 and rerun azd package",
+				"set the Java compiler release to Java 17 and rerun azd package",
 			)
 		}
 	}
@@ -257,10 +268,11 @@ func prepareContainerContext(
 	if err := validateServiceConfiguration(service); err != nil {
 		return nil, err
 	}
-	if _, err := servicePath(project, service); err != nil {
+	root, err := servicePath(project, service)
+	if err != nil {
 		return nil, err
 	}
-	jarPath, err := findMavenJar(serviceContext)
+	jarPath, err := findSpringJar(serviceContext, root)
 	if err != nil {
 		return nil, err
 	}

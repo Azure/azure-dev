@@ -52,8 +52,9 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 ### Spring Boot prototype composition
 
 The unpublished [`azure.springboot` prototype](../../cli/azd/extensions/azure.springboot/README.md)
-combines Java framework and Container Apps target providers. Host Maven builds
-the JAR, and an extension-owned Java 17 runtime recipe packages it in an
+combines Java framework and Container Apps target providers. The project's Maven
+Wrapper or single-project Gradle Wrapper builds the executable JAR (Maven takes
+precedence when both build systems are present), and an extension-owned Java 17 runtime recipe packages it in an
 isolated temporary context through azd's container pipeline. Project
 Dockerfiles and ignore files stay unchanged and unused.
 
@@ -75,6 +76,10 @@ credential rather than rotating an existing role. Endpoint selection recognizes
 Container App hostname. Source-only discovery rejects recognizable custom
 bootstrap mechanisms but does not prove arbitrary programmatic or generated
 configuration.
+Source-only Gradle discovery evaluates the production runtime classpath through
+the wrapper; it may download dependencies and execute authored build logic.
+See the [extension design](../../cli/azd/extensions/azure.springboot/docs/design.md)
+for build-system limitations and exact `bootJar` artifact selection.
 
 Extension command metadata can set `"launch": {"noAzdEnvironment": true}` on a command.
 For that command only (not its descendants), azd skips loading the selected

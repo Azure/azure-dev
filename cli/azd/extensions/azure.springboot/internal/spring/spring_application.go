@@ -14,6 +14,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 )
 
 type springDependencies struct {
@@ -119,6 +121,20 @@ func readSpringDependencies(ctx context.Context, root string) (springDependencie
 	if err := ctx.Err(); err != nil {
 		return springDependencies{}, err
 	}
+	system, err := detectJavaBuild(root)
+	if err != nil {
+		return springDependencies{}, err
+	}
+	if system == gradleBuild {
+		runner := azdexec.NewCommandRunner(&azdexec.RunnerOptions{
+			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
+		})
+		report, err := runGradle(ctx, runner, root, nil, "restore")
+		if err != nil {
+			return springDependencies{}, err
+		}
+		return springDependenciesFromCoordinates(report.Dependencies), nil
+	}
 	file, err := os.Open(filepath.Join(root, "pom.xml"))
 	if err != nil {
 		return springDependencies{}, configurationError("the application Maven dependency declaration cannot be read")
@@ -151,12 +167,20 @@ func readSpringDependencies(ctx context.Context, root string) (springDependencie
 			}
 		}
 	}
-	result := springDependencies{}
+	var coordinates []string
 	for _, dependency := range pom.Dependencies {
 		if dependency.Scope == "test" || dependency.Scope == "provided" || dependency.Scope == "system" {
 			continue
 		}
-		switch dependency.Group + ":" + dependency.Artifact {
+		coordinates = append(coordinates, dependency.Group+":"+dependency.Artifact)
+	}
+	return springDependenciesFromCoordinates(coordinates), nil
+}
+
+func springDependenciesFromCoordinates(coordinates []string) springDependencies {
+	var result springDependencies
+	for _, coordinate := range coordinates {
+		switch coordinate {
 		case "com.h2database:h2":
 			result.h2 = true
 		case "org.postgresql:postgresql":
@@ -164,12 +188,10 @@ func readSpringDependencies(ctx context.Context, root string) (springDependencie
 		case "com.azure:azure-identity-extensions":
 			result.azureIdentity = true
 		case "com.azure.spring:spring-cloud-azure-starter-jdbc-postgresql":
-			result.azureJDBC = true
-			result.azureIdentity = true
-			result.postgresql = true
+			result.azureJDBC, result.azureIdentity, result.postgresql = true, true, true
 		}
 	}
-	return result, nil
+	return result
 }
 
 func springArchiveResource(location, relative string) (string, error) {

@@ -67,7 +67,11 @@ for the stream requirements and legacy-client behavior.
 When combining framework and service-target providers, keep packaging ownership
 explicit. The unpublished
 [`azure.springboot` example](../../cli/azd/extensions/azure.springboot/README.md)
-uses host Maven and an owned generated Java runtime recipe. Project Dockerfiles
+uses the project Maven or single-project Gradle Wrapper and an owned generated
+Java runtime recipe. Gradle selects the actual `bootJar` output, not an arbitrary
+JAR in the build directory. See its
+[packaging contract](../../cli/azd/extensions/azure.springboot/docs/design.md#packaging)
+for wrapper requirements, precedence, and dependency evaluation. Project Dockerfiles
 must not be silently adopted, overwritten, or treated as evidence of the
 packaged application's effective configuration.
 

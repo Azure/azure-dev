@@ -205,7 +205,7 @@ func identityResourceID(database resolvedDatabase) string {
 	return strings.ToLower(database.AppIdentity.ResourceID)
 }
 
-// ValidateService performs initialization-time validation without side effects.
+// ValidateService validates before azd writes or Azure operations. Gradle discovery evaluates the build's runtime classpath.
 func (r *Runtime) ValidateService(
 	ctx context.Context, service *azdext.ServiceConfig, projects ...*azdext.ProjectConfig,
 ) error {

@@ -644,19 +644,22 @@ overrides:
   - filename: docs/environment-variables.md
     words:
       - springboot
-  - filename: "extensions/azure.springboot/**/*.{go,md}"
+  - filename: "extensions/azure.springboot/**/*.{go,md,gradle}"
     words:
       - abcdefghijkmnopqrstuvwxyz
       - ABCDEFGHJKLMNPQRSTUVWXYZ
       - armpostgresqlflexibleservers
       - authid
+      - allprojects
       - azurespringboot
+      - Dazd
       - datdba
       - datname
       - dbname
       - Dmaven
       - extensionless
       - gitcommitid
+      - gradlew
       - hashtextextended
       - Hikari
       - isadmin
@@ -694,6 +697,7 @@ overrides:
       - shobj
       - springboot
       - springbootapp
+      - subprojects
       - sslfactory
       - sslfactoryarg
       - sslhostnameverifier

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -45,7 +46,8 @@ func newInvocationsCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 The protocol comes from --agent-endpoint or the latest saved invocation for
 the selected target. Without saved work, use deployment routing. Older saved
-state containing multiple protocols requires --protocol. Available operations
+state with competing legacy records can be selected explicitly with --protocol and --id.
+State containing multiple protocols also requires --protocol. Available operations
 and service results depend on the protocol; unsupported operations are rejected.
 
 When --id is omitted, use the latest ID saved for the selected agent and
@@ -230,6 +232,9 @@ func (a *InvokeAction) resolveSavedInvocation(
 	if rc.azdClient != nil && rc.agentKey != "" {
 		record, err := readSavedInvocationState(ctx, rc, "")
 		if err != nil {
+			if _, ok := errors.AsType[*azdext.LocalError](err); ok {
+				return "", "", err
+			}
 			return "", "", classifyInvocationStateReadError(err)
 		}
 		if record != nil {
@@ -263,7 +268,7 @@ func (a *InvokeAction) resolveSavedInvocation(
 	return protocol, "", err
 }
 
-// readSavedInvocationState prefers target-level work, retaining older version-keyed selections.
+// readSavedInvocationState prefers marked target-level work and rejects ambiguous legacy selections.
 func readSavedInvocationState(
 	ctx context.Context,
 	rc *remoteContext,
@@ -278,6 +283,7 @@ func readSavedInvocationState(
 	if currentKey != rc.agentKey {
 		keys = append(keys, rc.agentKey)
 	}
+	var selected *agentStateRecord
 	for _, key := range keys {
 		record, err := store.get(ctx, key)
 		if err != nil {
@@ -286,22 +292,31 @@ func readSavedInvocationState(
 		if record == nil {
 			continue
 		}
+		var matches bool
 		switch protocol {
 		case agent_api.AgentProtocolResponses:
-			if record.Response != nil || record.CurrentInvocationProtocol == protocol {
-				return record, nil
-			}
+			matches = record.Response != nil || record.CurrentInvocationProtocol == protocol
 		case agent_api.AgentProtocolInvocations:
-			if record.Invocation != nil || record.CurrentInvocationProtocol == protocol {
-				return record, nil
-			}
+			matches = record.Invocation != nil || record.CurrentInvocationProtocol == protocol
 		default:
-			if record.CurrentInvocationProtocol != "" || record.Response != nil || record.Invocation != nil {
-				return record, nil
-			}
+			matches = record.CurrentInvocationProtocol != "" || record.Response != nil || record.Invocation != nil
 		}
+		if !matches {
+			continue
+		}
+		if key == currentKey && record.CurrentInvocationProtocol != "" {
+			return record, nil
+		}
+		if selected != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidInvocationState,
+				"saved invocation selection is ambiguous across legacy version keys",
+				"pass --protocol and --id explicitly to select the work to inspect or cancel",
+			)
+		}
+		selected = record
 	}
-	return nil, nil
+	return selected, nil
 }
 
 // resolveCurrentInvocationID uses an explicit ID or the selected protocol's saved ID.
@@ -320,6 +335,9 @@ func resolveCurrentInvocationID(
 	}
 	record, err := readSavedInvocationState(ctx, rc, protocol)
 	if err != nil {
+		if _, ok := errors.AsType[*azdext.LocalError](err); ok {
+			return "", err
+		}
 		if protocol == agent_api.AgentProtocolResponses {
 			return "", classifyResponseStateReadError(err)
 		}

@@ -535,6 +535,46 @@ func TestAgentStateStoreClearSessionPreservesConcurrentReplacement(t *testing.T)
 	assert.Equal(t, "conversation", record.ConversationID)
 }
 
+func TestFullAgentCleanupDoesNotReviveLegacyVersions(t *testing.T) {
+	for _, source := range []string{"user config", "project file"} {
+		t.Run(source, func(t *testing.T) {
+			const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+			const name = "MyAgent"
+			versionKey := buildAgentKey(endpoint, name, "7", false)
+			conversationKey := buildAgentKey(endpoint, name, "3", false)
+			localKey := buildAgentKey(endpoint, name, "", true)
+			legacy := legacyProjectState{
+				Sessions: map[string]string{
+					name: "old-latest", strings.TrimSuffix(versionKey, "/remote") + "#legacy/remote": "old-v7",
+					localKey: "local-session",
+				},
+				Conversations: map[string]string{conversationKey: "old-conversation"},
+			}
+			data, err := json.Marshal(legacy)
+			require.NoError(t, err)
+			projectPath := t.TempDir()
+			config := newInvokeUserConfigServer()
+			if source == "user config" {
+				config.values["extensions.ai-agents"] = data
+			} else {
+				directory := filepath.Join(projectPath, ".azure", "test")
+				require.NoError(t, os.MkdirAll(directory, 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(directory, ".foundry-agent.json"), data, 0o600))
+			}
+			client := newInvokeTestAzdClientWithProject(t, config,
+				&helpersProjectServer{project: &azdext.ProjectConfig{Path: projectPath}},
+				&testEnvironmentServiceServer{current: &azdext.Environment{Name: "test"}})
+			require.True(t, cleanupAgentStateForKey(t.Context(), client, buildAgentKey(endpoint, name, "2", false)))
+			for _, key := range []string{buildAgentKey(endpoint, name, "", false), versionKey, conversationKey} {
+				assert.Nil(t, loadAgentStateForTest(t, client, key), "deleted target must not reimport legacy work")
+			}
+			local := loadAgentStateForTest(t, client, localKey)
+			require.NotNil(t, local)
+			assert.Equal(t, "local-session", local.SessionID)
+		})
+	}
+}
+
 func TestAgentStateStoreClearSessionDoesNotReviveLegacyVersions(t *testing.T) {
 	for _, source := range []string{"user config", "project file"} {
 		t.Run(source, func(t *testing.T) {

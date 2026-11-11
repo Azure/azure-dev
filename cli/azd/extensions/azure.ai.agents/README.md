@@ -782,6 +782,9 @@ reuse a session cached under a different saved deployment version. `sessions cre
 uses the same version mapping, so `invoke --version` reuses a session created for
 that version. `sessions delete` clears matching session IDs across the selected
 target's version caches without changing saved conversations or invocation IDs.
+Full-agent deletion clears that target's remote version caches and legacy imports,
+without clearing other agents or local state. Select competing unmarked legacy
+invocation records with explicit `--protocol` and `--id` rather than guessing which is newer.
 Version-specific compatibility remains enforced by Foundry for the
 selected version or session, not inferred from the latest working-tree source.
 Request and file-argument validation remain blocking. Translation availability

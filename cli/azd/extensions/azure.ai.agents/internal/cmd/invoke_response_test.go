@@ -697,10 +697,30 @@ func TestCleanupAgentStateForKey(t *testing.T) {
 		SessionID: "sess_other", ConversationID: "conv_other",
 		Response: &savedResponse{ResponseID: "resp_other"}, Invocation: &savedInvocation{InvocationID: "inv_other"},
 	})
+	alternateKeys := []string{selectionKey + "/versions/2/remote", selectionKey + "/versions/7/remote"}
+	for _, key := range alternateKeys {
+		saveAgentStateForTest(t, client, key, agentStateRecord{
+			SessionID: "sess_alternate", ConversationID: "conv_alternate",
+			Response: &savedResponse{ResponseID: "resp_alternate"},
+		})
+	}
+	localKey := selectionKey + "/versions/7/local"
+	otherProjectKey := "acct.services.ai.azure.com/api/projects/other/agents/worker/versions/7/remote"
+	for _, key := range []string{localKey, otherProjectKey} {
+		saveAgentStateForTest(t, client, key, agentStateRecord{SessionID: "sess_preserved"})
+	}
 
 	require.True(t, cleanupAgentStateForKey(t.Context(), client, agentKey))
 
 	assert.Nil(t, loadAgentStateForTest(t, client, agentKey))
+	for _, key := range alternateKeys {
+		assert.Nil(t, loadAgentStateForTest(t, client, key), "full-agent cleanup must include alternate versions")
+	}
+	for _, key := range []string{localKey, otherProjectKey} {
+		record := loadAgentStateForTest(t, client, key)
+		require.NotNil(t, record)
+		assert.Equal(t, "sess_preserved", record.SessionID)
+	}
 	assert.Nil(t, loadAgentStateForTest(t, client, selectionKey))
 	assert.Nil(t, loadAgentStateForTest(t, client, buildInvocationStateKey(agentKey)))
 	selection := loadAgentStateForTest(t, client, "another-agent")
@@ -733,7 +753,7 @@ func TestCleanupAgentStateFromEnvironment(t *testing.T) {
 		wantSessionGone bool
 	}{
 		{"versioned endpoint", projectEndpoint + "/agents/worker/versions/1", "", "", true, true},
-		{"project metadata only", "", projectEndpoint, "worker", true, false},
+		{"project metadata only", "", projectEndpoint, "worker", true, true},
 		{"missing project endpoint", "", "", "worker", false, false},
 		{"missing deployed name", "", projectEndpoint, "", false, false},
 	} {

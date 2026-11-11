@@ -256,10 +256,33 @@ func (s *agentStateStore) clearSession(ctx context.Context, agentKey, sessionID 
 	for _, key := range keys {
 		selected[key] = true
 	}
+	cached, err := s.cachedRemoteAgentKeys(prefix, sessionID)
+	if err != nil {
+		failures = append(failures, err)
+	}
+	for _, key := range cached {
+		selected[key] = true
+	}
+	for key := range selected {
+		if err := s.mutate(ctx, key, func(record *agentStateRecord) {
+			if record.SessionID == sessionID {
+				record.SessionID = ""
+			}
+		}); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
+}
+
+// cachedRemoteAgentKeys uses an empty session ID to include all remote version records.
+func (s *agentStateStore) cachedRemoteAgentKeys(prefix, sessionID string) ([]string, error) {
 	entries, err := os.ReadDir(s.agentsDir)
 	if err != nil {
-		return errors.Join(append(failures, fmt.Errorf("list cached agent sessions: %w", err))...)
+		return nil, fmt.Errorf("list cached agent state: %w", err)
 	}
+	var keys []string
+	var failures []error
 	for _, entry := range entries {
 		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -278,17 +301,43 @@ func (s *agentStateStore) clearSession(ctx context.Context, agentKey, sessionID 
 			failures = append(failures, fmt.Errorf("parse cached agent session: %w", err))
 			continue
 		}
-		if record.SessionID == sessionID && strings.HasPrefix(record.AgentKey, prefix) &&
+		if (sessionID == "" || record.SessionID == sessionID) && strings.HasPrefix(record.AgentKey, prefix) &&
 			strings.HasSuffix(record.AgentKey, "/remote") && s.statePath(record.AgentKey) == path {
-			selected[record.AgentKey] = true
+			keys = append(keys, record.AgentKey)
 		}
 	}
-	for key := range selected {
-		if err := s.mutate(ctx, key, func(record *agentStateRecord) {
-			if record.SessionID == sessionID {
-				record.SessionID = ""
-			}
-		}); err != nil {
+	return keys, errors.Join(failures...)
+}
+
+func (s *agentStateStore) deleteRemoteAgent(ctx context.Context, agentKey string) error {
+	agentKey = normalizeEndpoint(agentKey)
+	versionIndex := strings.LastIndex(agentKey, "/versions/")
+	if versionIndex < 0 || !strings.HasSuffix(agentKey, "/remote") {
+		return errors.New("agent cleanup requires a remote agent key")
+	}
+	prefix := agentKey[:versionIndex] + "/versions/"
+	known := map[string]bool{
+		agentKey: true, prefix + "latest/remote": true, agentKey[:versionIndex]: true,
+	}
+	var failures []error
+	legacy, err := s.legacyRemoteAgentKeys(ctx, prefix)
+	if err != nil {
+		failures = append(failures, err)
+	}
+	for _, key := range legacy {
+		known[key] = true
+	}
+	for key := range known {
+		if err := s.delete(ctx, key); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	keys, err := s.cachedRemoteAgentKeys(prefix, "")
+	if err != nil {
+		failures = append(failures, err)
+	}
+	for _, key := range keys {
+		if err := s.delete(ctx, key); err != nil {
 			failures = append(failures, err)
 		}
 	}

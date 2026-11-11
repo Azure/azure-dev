@@ -99,6 +99,38 @@ func TestSessionCreateThenInvokeUsesRequestedVersion(t *testing.T) {
 	assert.Equal(t, "created-v7", loadAgentStateForTest(t, rc.azdClient, key).SessionID)
 }
 
+func TestFullAgentCleanupCreatesAlternateVersionSession(t *testing.T) {
+	endpoint, _ := newVersionedSessionTestProject(t)
+	key := buildAgentKey(endpoint, "agent", "1", false)
+	saveAgentStateForTest(t, nil, key, agentStateRecord{SessionID: "terminated-v1"})
+	client, err := azdext.NewAzdClient()
+	require.NoError(t, err)
+	defer client.Close()
+	require.True(t, cleanupAgentState(t.Context(), client, "test", "target"))
+	previous := createInvokeVersionSession
+	t.Cleanup(func() { createInvokeVersionSession = previous })
+	var creates int
+	createInvokeVersionSession = func(
+		_ context.Context, projectEndpoint, name, version, _ string,
+	) (*agent_api.AgentSessionResource, error) {
+		creates++
+		assert.Equal(t, endpoint, projectEndpoint)
+		assert.Equal(t, "agent", name)
+		assert.Equal(t, "1", version)
+		return &agent_api.AgentSessionResource{AgentSessionID: "fresh-v1"}, nil
+	}
+	action := &InvokeAction{
+		flags: &invokeFlags{name: "target", version: "1", protocol: "invocations"}, noPrompt: true,
+	}
+	rc, err := action.resolveRemoteContextForInvoke(t.Context())
+	require.NoError(t, err)
+	defer rc.azdClient.Close()
+	id, err := action.resolveRemoteSessionID(t.Context(), rc)
+	require.NoError(t, err)
+	assert.Equal(t, "fresh-v1", id)
+	assert.Equal(t, 1, creates)
+}
+
 func TestSessionDeleteClearsRequestedVersionBeforeInvoke(t *testing.T) {
 	for _, status := range []int{http.StatusNoContent, http.StatusNotFound, http.StatusForbidden} {
 		t.Run(http.StatusText(status), func(t *testing.T) {

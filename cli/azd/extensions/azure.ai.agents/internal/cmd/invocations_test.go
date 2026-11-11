@@ -363,6 +363,59 @@ func TestResolveInvocationCommandProjectSkipsLiveCapabilities(t *testing.T) {
 	}
 }
 
+func TestLegacyInvocationKeysRequireExplicitSelection(t *testing.T) {
+	for _, protocol := range []string{"responses", "invocations"} {
+		t.Run(protocol, func(t *testing.T) {
+			endpoint, _ := newVersionedSessionTestProject(t)
+			currentKey := buildAgentKey(endpoint, "agent", "", false)
+			deployedKey := buildAgentKey(endpoint, "agent", "2", false)
+			saveAgentStateForTest(t, nil, currentKey, agentStateRecord{
+				Response: &savedResponse{ResponseID: "resp_older_endpoint"},
+			})
+			deployed := agentStateRecord{Invocation: &savedInvocation{InvocationID: "inv_newer_project"}}
+			deployedID := "inv_newer_project"
+			if protocol == "responses" {
+				deployed = agentStateRecord{Response: &savedResponse{ResponseID: "resp_newer_project"}}
+				deployedID = "resp_newer_project"
+			}
+			saveAgentStateForTest(t, nil, deployedKey, deployed)
+			for _, operation := range []invocationOperation{invocationShow, invocationCancel} {
+				t.Run(string(operation), func(t *testing.T) {
+					_, _, _, err := resolveInvocationCommand(t.Context(),
+						&invocationCommandFlags{agentName: "target", noPrompt: true}, operation)
+					require.ErrorContains(t, err, "ambiguous")
+					suggestion := azdext.WrapError(err).GetSuggestion()
+					assert.Contains(t, suggestion, "--protocol")
+					assert.Contains(t, suggestion, "--id")
+				})
+			}
+			if protocol == "responses" {
+				_, _, _, err := resolveInvocationCommand(t.Context(),
+					&invocationCommandFlags{agentName: "target", protocol: protocol, noPrompt: true}, invocationShow)
+				require.ErrorContains(t, err, "ambiguous")
+				assert.Contains(t, azdext.WrapError(err).GetSuggestion(), "--id")
+			}
+			action, rc, id, err := resolveInvocationCommand(t.Context(), &invocationCommandFlags{
+				agentName: "target", protocol: protocol, id: deployedID, noPrompt: true,
+			}, invocationShow)
+			require.NoError(t, err)
+			defer rc.azdClient.Close()
+			assert.Equal(t, protocol, action.flags.protocol)
+			assert.Equal(t, deployedID, id)
+			legacy := loadAgentStateForTest(t, rc.azdClient, currentKey)
+			require.NotNil(t, legacy)
+			require.NotNil(t, legacy.Response)
+			assert.Empty(t, legacy.CurrentInvocationProtocol)
+			assert.Equal(t, "resp_older_endpoint", legacy.Response.ResponseID)
+			retained := loadAgentStateForTest(t, rc.azdClient, deployedKey)
+			require.NotNil(t, retained)
+			assert.Equal(t, deployed.Response, retained.Response)
+			assert.Equal(t, deployed.Invocation, retained.Invocation)
+			assert.Empty(t, retained.CurrentInvocationProtocol, "explicit selection must not rewrite legacy state")
+		})
+	}
+}
+
 func TestAutomaticInvokeAfterProtocolDriftSelectsSavedInvocation(t *testing.T) {
 	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
 	t.Setenv("PATH", t.TempDir())

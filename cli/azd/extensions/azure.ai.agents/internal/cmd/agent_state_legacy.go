@@ -166,21 +166,58 @@ func (s *agentStateStore) loadLegacyProjectState(ctx context.Context) (*legacyPr
 	return &legacy, nil
 }
 
-// legacySessionKeys includes not-yet-migrated caches so deletion cannot revive a session later.
-func (s *agentStateStore) legacySessionKeys(ctx context.Context, prefix, sessionID string) ([]string, error) {
+func (s *agentStateStore) readLegacyStates(
+	ctx context.Context,
+) (legacyAgentState, *legacyProjectState, error) {
+	var legacy legacyAgentState
 	if s.client == nil {
-		return nil, nil
+		return legacy, nil, nil
 	}
 	helper, err := azdext.NewConfigHelper(s.client)
 	if err != nil {
-		return nil, err
+		return legacy, nil, err
 	}
-	var legacy legacyAgentState
 	if _, err := helper.GetUserJSON(ctx, "extensions.ai-agents", &legacy); err != nil &&
 		status.Code(err) != codes.Unimplemented {
-		return nil, fmt.Errorf("read legacy agent sessions: %w", err)
+		return legacy, nil, fmt.Errorf("read legacy agent state: %w", err)
 	}
 	project, err := s.loadLegacyProjectState(ctx)
+	return legacy, project, err
+}
+
+func (s *agentStateStore) legacyRemoteAgentKeys(ctx context.Context, prefix string) ([]string, error) {
+	legacy, project, err := s.readLegacyStates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	candidates := slices.Collect(maps.Keys(legacy.Sessions))
+	candidates = append(candidates, slices.Collect(maps.Keys(legacy.Conversations))...)
+	candidates = append(candidates, slices.Collect(maps.Keys(legacy.Responses))...)
+	candidates = append(candidates, slices.Collect(maps.Keys(legacy.Invocations))...)
+	candidates = append(candidates, slices.Collect(maps.Keys(legacy.StateStores))...)
+	if project != nil {
+		candidates = append(candidates, slices.Collect(maps.Keys(project.Sessions))...)
+		candidates = append(candidates, slices.Collect(maps.Keys(project.Conversations))...)
+		candidates = append(candidates, slices.Collect(maps.Keys(project.Invocations))...)
+	}
+	_, name, _ := strings.Cut(strings.TrimSuffix(prefix, "/versions/"), "/agents/")
+	var keys []string
+	for _, key := range candidates {
+		if key == name {
+			keys = append(keys, prefix+"latest/remote")
+			continue
+		}
+		key = normalizeLegacyAgentKey(key)
+		if strings.HasPrefix(key, prefix) && strings.HasSuffix(key, "/remote") {
+			keys = append(keys, key)
+		}
+	}
+	return keys, nil
+}
+
+// legacySessionKeys includes not-yet-migrated caches so deletion cannot revive a session later.
+func (s *agentStateStore) legacySessionKeys(ctx context.Context, prefix, sessionID string) ([]string, error) {
+	legacy, project, err := s.readLegacyStates(ctx)
 	if err != nil {
 		return nil, err
 	}

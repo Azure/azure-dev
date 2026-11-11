@@ -1350,6 +1350,7 @@ func writeExistingProjectBicepTemplates(
 		target string
 	}{
 		{"templates/modules/foundry-project.bicep", "modules/foundry-project.bicep"},
+		{"templates/modules/foundry-project-identity.bicep", "modules/foundry-project-identity.bicep"},
 		{"templates/modules/monitoring.bicep", "modules/monitoring.bicep"},
 		{"templates/modules/monitoring-connection.bicep", "modules/monitoring-connection.bicep"},
 		{"templates/modules/monitor-private-link.bicep", "modules/monitor-private-link.bicep"},

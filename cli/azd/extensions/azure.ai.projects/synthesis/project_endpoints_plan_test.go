@@ -1,21 +1,160 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore tftest
+// cspell:ignore tftest bicepconfig
 
 package synthesis
 
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"text/template"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestBicepExistingProjectIdentityGate(t *testing.T) {
+	bicep := lookupBicep(t)
+	for _, tt := range []struct {
+		AcrMode         string
+		AcrPullAssigned bool
+	}{
+		{AcrMode: "none"},
+		{AcrMode: "create"},
+		{AcrMode: "reuse-connect"},
+		{AcrMode: "reuse-connect", AcrPullAssigned: true},
+		{AcrMode: "already-connected"},
+	} {
+		t.Run(fmt.Sprintf("%s/pull-assigned-%t", tt.AcrMode, tt.AcrPullAssigned), func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.Mkdir(filepath.Join(dir, "modules"), 0o750))
+			entries, err := fs.ReadDir(templatesFS, "templates/modules")
+			require.NoError(t, err)
+			for _, entry := range entries {
+				if strings.HasSuffix(entry.Name(), ".bicep") {
+					content, err := templatesFS.ReadFile("templates/modules/" + entry.Name())
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(dir, "modules", entry.Name()), content, 0o600))
+				}
+			}
+			for source, target := range map[string]string{
+				"templates/existing-project-eject.bicep.tmpl": "main.bicep",
+				"templates/modules/container-registry-eject.bicep.tmpl": filepath.Join(
+					"modules", "container-registry.bicep",
+				),
+			} {
+				content, err := templatesFS.ReadFile(source)
+				require.NoError(t, err)
+				parsed, err := template.New("bicep").Parse(string(content))
+				require.NoError(t, err)
+				var rendered bytes.Buffer
+				require.NoError(t, parsed.Execute(&rendered, tt))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, target), rendered.Bytes(), 0o600))
+			}
+			//nolint:gosec // The validated local Bicep compiler.
+			command := exec.CommandContext(t.Context(), bicep, "build", filepath.Join(dir, "main.bicep"), "--stdout")
+			output, err := command.Output()
+			require.NoError(t, err)
+			type resource struct {
+				Existing   bool
+				Type       string
+				DependsOn  []string
+				Properties struct {
+					Template json.RawMessage
+				}
+			}
+			var compiled struct{ Resources map[string]resource }
+			require.NoError(t, json.Unmarshal(output, &compiled))
+			const gateName = "projectIdentityValidation"
+			require.Contains(t, compiled.Resources, gateName)
+			gate := compiled.Resources[gateName]
+			require.Equal(t, "Microsoft.Resources/deployments", gate.Type)
+			require.Empty(t, gate.DependsOn)
+			var validation struct {
+				Resources map[string]struct{ Existing bool }
+				Outputs   map[string]struct{ Value string }
+			}
+			require.NoError(t, json.Unmarshal(gate.Properties.Template, &validation))
+			require.NotEmpty(t, validation.Resources)
+			for name, resource := range validation.Resources {
+				require.True(t, resource.Existing, "identity validation must not change resource %s", name)
+			}
+			require.Contains(t, validation.Outputs["valid"].Value, "fail(")
+			for name, resource := range compiled.Resources {
+				if !resource.Existing && name != gateName {
+					require.Contains(t, resource.DependsOn, gateName,
+						"every resource-changing path must wait for successful identity validation: %s", name)
+				}
+			}
+		})
+	}
+}
+
+func TestBicepExistingProjectEndpointIdentity(t *testing.T) {
+	bicep := lookupBicep(t)
+	const endpoint = "https://custom-dns.services.ai.azure.com/api/projects/project"
+	cases := []struct {
+		name, endpoint, subdomain, advertised string
+		valid                                 bool
+	}{
+		{name: "custom_domain", endpoint: endpoint, subdomain: "custom-dns", advertised: endpoint, valid: true},
+		{name: "wrong_account", endpoint: strings.Replace(endpoint, "custom-dns", "another", 1),
+			subdomain: "custom-dns", advertised: endpoint},
+		{name: "wrong_project", endpoint: endpoint + "-other", subdomain: "custom-dns", advertised: endpoint},
+		{name: "missing_project_metadata", endpoint: endpoint, subdomain: "custom-dns", valid: true},
+		{name: "missing_account_metadata", endpoint: endpoint, advertised: endpoint, valid: true},
+		{name: "legacy_fallback", endpoint: strings.Replace(endpoint, "custom-dns", "resource-account", 1), valid: true},
+		{name: "normalized_endpoint", endpoint: " HTTPS://CUSTOM-DNS.services.ai.azure.com/projects/%70roject/// ",
+			subdomain: "custom-dns", advertised: endpoint, valid: true},
+		{name: "encoded_origin", endpoint: strings.Replace(endpoint, "https://", "https%3A%2F%2F", 1),
+			subdomain: "custom-dns", advertised: endpoint},
+		{name: "encoded_hostname", endpoint: strings.Replace(endpoint, "-", "%2d", 1),
+			subdomain: "custom-dns", advertised: endpoint},
+		{name: "credentials", endpoint: strings.Replace(endpoint, "https://", "https://user:password@", 1),
+			subdomain: "custom-dns", advertised: endpoint},
+		{name: "query", endpoint: endpoint + "?sig=test-token", subdomain: "custom-dns", advertised: endpoint},
+		{name: "invalid_subdomain", endpoint: endpoint, subdomain: "invalid.example.com", advertised: endpoint},
+		{name: "invalid_advertised_endpoint", endpoint: endpoint, advertised: "https://example.com/api/projects/project"},
+		{name: "conflicting_metadata", endpoint: endpoint, subdomain: "custom-dns",
+			advertised: strings.Replace(endpoint, "custom-dns", "another", 1)},
+	}
+	dir := t.TempDir()
+	module, err := templatesFS.ReadFile("templates/modules/foundry-project-identity.bicep")
+	require.NoError(t, err)
+	var tests strings.Builder
+	for _, tt := range cases {
+		fmt.Fprintf(&tests, "test %s 'case.bicep' = {\n  params: {\n"+
+			"    endpoint: '%s'\n    subdomain: '%s'\n    advertised: '%s'\n    expected: %t\n  }\n}\n",
+			tt.name, tt.endpoint, tt.subdomain, tt.advertised, tt.valid)
+	}
+	for name, content := range map[string][]byte{
+		"identity.bicep": module, "tests.bicep": []byte(tests.String()),
+		"bicepconfig.json": []byte(`{"experimentalFeaturesEnabled":{"testFramework":true,"assertions":true}}`),
+		"case.bicep": []byte(`
+import { projectEndpointIdentityMatches } from './identity.bicep'
+param endpoint string
+param subdomain string
+param advertised string
+param expected bool
+assert matches = projectEndpointIdentityMatches(endpoint, 'resource-account', 'project', subdomain, advertised) == expected
+`),
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), content, 0o600))
+	}
+	//nolint:gosec // The validated local Bicep compiler.
+	command := exec.CommandContext(t.Context(), bicep, "test", filepath.Join(dir, "tests.bicep"), "--no-restore")
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	require.Contains(t, string(output), fmt.Sprintf("All %d evaluations passed!", len(cases)))
+	t.Logf("%s", output)
+}
 
 func TestExistingProjectOpenAIOutputUsesARMSubdomain(t *testing.T) {
 	raw, err := ExistingProjectARMTemplate()

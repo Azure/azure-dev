@@ -689,22 +689,82 @@ func (p *FoundryProvisioningProvider) validateExistingProjectIdentity(ctx contex
 	if p.brownfieldEndpoint == "" || p.existingProjectReuseOnly {
 		return nil
 	}
-	if err := p.ensureCredential(ctx); err != nil {
+	return p.validateProjectIdentity(ctx, p.existingProjectID, p.brownfieldEndpoint)
+}
+
+func (p *FoundryProvisioningProvider) validateExistingProjectTemplateIdentity(
+	ctx context.Context, source *templateSource,
+) error {
+	if p.brownfieldEndpoint == "" {
+		return nil
+	}
+	projectID, err := projectIdentityParameter(source, "projectResourceId")
+	if err != nil {
 		return err
 	}
-	id, err := arm.ParseResourceID(p.existingProjectID)
+	endpoint, err := projectIdentityParameter(source, "projectEndpoint")
 	if err != nil {
-		return fmt.Errorf("parse existing Foundry project resource ID: %w", err)
+		return err
+	}
+	return p.validateProjectIdentity(ctx, projectID, endpoint)
+}
+
+func projectIdentityParameter(source *templateSource, name string) (string, error) {
+	supplied := false
+	for key, parameter := range source.parameters {
+		if !strings.EqualFold(key, name) {
+			continue
+		}
+		if supplied {
+			return "", exterrors.Validation(exterrors.CodeConflictingArguments,
+				fmt.Sprintf("multiple %s deployment parameters differ only by case", name),
+				fmt.Sprintf("supply %s only once using the template's parameter name", name))
+		}
+		supplied = true
+		envelope, ok := parameter.(map[string]any)
+		if !ok || len(envelope) != 1 || envelope["value"] == nil {
+			return "", exterrors.Validation(exterrors.CodeInvalidParameter,
+				fmt.Sprintf("%s deployment parameter must use a value envelope", name),
+				fmt.Sprintf("supply parameters.%s.value as a literal string", name))
+		}
+	}
+	value, ok := parameterValue(source, name).(string)
+	if !ok || strings.TrimSpace(value) == "" || strings.HasPrefix(strings.TrimSpace(value), "[") {
+		return "", exterrors.Validation(exterrors.CodeInvalidParameter,
+			fmt.Sprintf("%s must resolve to a non-empty literal string before provisioning", name),
+			"set matching projectResourceId and projectEndpoint values in the infrastructure parameters")
+	}
+	return value, nil
+}
+
+func (p *FoundryProvisioningProvider) validateProjectIdentity(
+	ctx context.Context, projectID, endpoint string,
+) error {
+	id, err := arm.ParseResourceID(projectID)
+	if err != nil || id.Parent == nil || id.SubscriptionID == "" || id.ResourceGroupName == "" ||
+		!strings.EqualFold(id.ResourceType.String(), "Microsoft.CognitiveServices/accounts/projects") {
+		return exterrors.Validation(exterrors.CodeInvalidServiceConfig,
+			"the configured project resource ID is not a Foundry project resource ID",
+			"set projectResourceId to a Microsoft.CognitiveServices/accounts/projects resource ID")
+	}
+	if _, err := synthesis.ValidateFoundryProjectEndpoint(endpoint); err != nil {
+		return exterrors.Validation(exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid existing Foundry project endpoint: %s", err),
+			"set projectEndpoint to a valid Azure Foundry project endpoint")
+	}
+	if err := p.ensureCredential(ctx); err != nil {
+		return err
 	}
 	metadata, err := synthesis.LookupFoundryProject(ctx, id, p.credential, p.armClientOptions)
 	if err != nil {
 		return fmt.Errorf("verify existing Foundry project identity: %w", err)
 	}
-	if !sameExistingProjectEndpoint(p.brownfieldEndpoint, metadata.Endpoint) {
+	if !sameExistingProjectEndpoint(endpoint, metadata.Endpoint) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			"AZURE_AI_PROJECT_ID does not identify the project configured by the azure.yaml endpoint",
-			"rerun `azd ai project add --project-id <resource-id>` to select the intended project",
+			"the configured project resource ID does not identify the project configured by the endpoint",
+			"set matching projectResourceId and projectEndpoint values, or rerun "+
+				"`azd ai project add --project-id <resource-id>` to select the intended project",
 		)
 	}
 	return nil
@@ -1408,9 +1468,6 @@ func (p *FoundryProvisioningProvider) Deploy(
 			Outputs: p.existingProjectReuseOutputs(),
 		}}, nil
 	}
-	if err := p.validateExistingProjectIdentity(ctx); err != nil {
-		return nil, err
-	}
 	progress("Preparing Foundry provisioning template...")
 
 	// provision.network_mode telemetry: none | byo | managed. Lets us measure
@@ -1424,6 +1481,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
+		return nil, err
+	}
+	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {
 		return nil, err
 	}
 	if projectID, deployments := effectiveModelPolicyTarget(
@@ -1803,13 +1863,13 @@ func (p *FoundryProvisioningProvider) Preview(
 			Preview: &azdext.ProvisioningDeploymentPreview{},
 		}, nil
 	}
-	if err := p.validateExistingProjectIdentity(ctx); err != nil {
-		return nil, err
-	}
 	progress("Computing deployment plan...")
 
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
+		return nil, err
+	}
+	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {
 		return nil, err
 	}
 	if err := p.prepareBYO(ctx, src); err != nil {

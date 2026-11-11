@@ -1084,6 +1084,12 @@ also verifies the configured endpoint against its ARM project before writing
 infrastructure files. This requires Azure read access to the project and account,
 including when exporting an already initialized project.
 
+The exported Bicep validates the final project ID and endpoint parameters in a
+read-only deployment before its resource-changing modules and supporting resource
+group can run. Mismatches fail without changing those resources, although the
+validation deployment's history can remain. Keep both parameters consistent when
+editing the generated files or switching environments.
+
 When `azd ai agent init` scaffolds into a subdirectory, the `Next:` block starts
 with `cd <folder>` before the provisioning command, even if that folder already
 existed. Run the `cd` command first: init does not change your shell's working

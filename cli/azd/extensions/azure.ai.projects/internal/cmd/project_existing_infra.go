@@ -979,16 +979,17 @@ func writeExistingProjectBicep(
 		}
 	}
 	for _, name := range []string{
+		"foundry-project-identity.bicep",
 		"monitoring.bicep", "monitoring-connection.bicep", "monitor-private-link.bicep", "monitoring-resync.bicep",
 		"network-approver-role-assignment.bicep",
 	} {
 		data, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/modules/"+name)
 		if err != nil {
-			return fmt.Errorf("read monitoring Bicep module: %w", err)
+			return fmt.Errorf("read existing-project Bicep module: %w", err)
 		}
 		// #nosec G306
 		if err := os.WriteFile(filepath.Join(moduleDir, name), data, 0644); err != nil {
-			return fmt.Errorf("write monitoring Bicep module: %w", err)
+			return fmt.Errorf("write existing-project Bicep module: %w", err)
 		}
 	}
 

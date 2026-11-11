@@ -13,11 +13,178 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.projects/synthesis"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/require"
 )
+
+func TestExistingProjectEffectiveParametersValidateBeforeMutation(t *testing.T) {
+	const (
+		projectID = "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/resource-account/projects/project"
+		endpoint = "https://custom-dns.services.ai.azure.com/api/projects/project"
+	)
+	for _, tt := range []struct {
+		name, projectID, endpoint, wantError string
+		defaults, upperCase                  bool
+	}{
+		{name: "matching custom domain", projectID: projectID, endpoint: endpoint},
+		{name: "case-insensitive parameter names", projectID: projectID, endpoint: endpoint, upperCase: true},
+		{name: "mismatched parameter endpoint", projectID: projectID,
+			endpoint:  "https://other-dns.services.ai.azure.com/api/projects/project",
+			wantError: "does not identify the project"},
+		{name: "omitted parameter retains host value", projectID: projectID, defaults: true,
+			endpoint: "https://other-dns.services.ai.azure.com/api/projects/project"},
+		{name: "overridden ARM identity", projectID: strings.Replace(projectID, "resource-account", "another-account", 1),
+			endpoint: endpoint, wantError: "does not identify the project"},
+		{name: "consistent identity override",
+			projectID: strings.Replace(projectID, "resource-account", "another-account", 1),
+			endpoint:  "https://another-dns.services.ai.azure.com/api/projects/project"},
+		// #nosec G101 -- synthetic URL for credential rejection.
+		{name: "credential-bearing endpoint", projectID: projectID,
+			endpoint:  "https://endpoint-user:endpoint-password@custom-dns.services.ai.azure.com/api/projects/project",
+			wantError: "must not contain credentials"},
+		{name: "invalid ARM identity", projectID: "invalid", endpoint: endpoint,
+			wantError: "not a Foundry project resource ID"},
+	} {
+		for _, operation := range []string{"deploy", "preview"} {
+			t.Run(tt.name+"/"+operation, func(t *testing.T) {
+				template, err := synthesis.ExistingProjectARMTemplate()
+				require.NoError(t, err)
+				var compiled map[string]any
+				require.NoError(t, json.Unmarshal(template, &compiled))
+				parameters := map[string]any{
+					"projectResourceId": map[string]any{"value": tt.projectID},
+					"projectEndpoint":   map[string]any{"value": tt.endpoint},
+				}
+				if tt.upperCase {
+					parameters = map[string]any{
+						strings.ToUpper("projectResourceId"): parameters["projectResourceId"],
+						strings.ToUpper("projectEndpoint"):   parameters["projectEndpoint"],
+					}
+				}
+				if tt.defaults {
+					declarations, ok := compiled["parameters"].(map[string]any)
+					require.True(t, ok)
+					declarations["projectEndpoint"] = map[string]any{"type": "string", "defaultValue": tt.endpoint}
+					delete(parameters, "projectEndpoint")
+				}
+				root := t.TempDir()
+				infraDir := filepath.Join(root, onDiskInfraDir)
+				require.NoError(t, os.MkdirAll(infraDir, 0o750))
+				require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte("// template\n"), 0o600))
+				template, err = json.Marshal(compiled)
+				require.NoError(t, err)
+				parameterFile, err := json.Marshal(map[string]any{"parameters": parameters})
+				require.NoError(t, err)
+				parameterPath := filepath.Join(infraDir, onDiskParamsFile)
+				require.NoError(t, os.WriteFile(parameterPath, parameterFile, 0o600))
+				env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
+					"AZURE_AI_PROJECT_ID": projectID, "FOUNDRY_PROJECT_ENDPOINT": endpoint,
+				}}
+				before := maps.Clone(env.get)
+				p := &FoundryProvisioningProvider{
+					subID: "sub", location: "eastus", envName: "test",
+					existingProjectID: projectID, brownfieldEndpoint: endpoint,
+					projectPath:      root,
+					bicepCliInstance: &stubCompiler{buildResult: bicep.BuildResult{Compiled: string(template)}},
+					azdClient:        newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{}),
+					credential:       acrTestCredential{},
+				}
+				var reads, writes []string
+				p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+					Retry: policy.RetryOptions{MaxRetries: -1},
+					Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+						if request.Method != http.MethodGet {
+							writes = append(writes, request.URL.Path)
+							return acrTestHTTPReply(t, request, http.StatusBadRequest, map[string]any{
+								"error": map[string]any{"code": "TestDeploymentReached"},
+							})
+						}
+						reads = append(reads, request.URL.Path)
+						resolvedEndpoint := endpoint
+						subdomain := "custom-dns"
+						if strings.Contains(request.URL.Path, "/accounts/another-account") {
+							resolvedEndpoint = "https://another-dns.services.ai.azure.com/api/projects/project"
+							subdomain = "another-dns"
+						}
+						if strings.HasSuffix(request.URL.Path, "/projects/project") {
+							return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{
+								"properties": map[string]any{
+									"endpoints": map[string]any{"AI Foundry API": resolvedEndpoint},
+								},
+							})
+						}
+						if strings.Contains(request.URL.Path, "/accounts/") {
+							return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{
+								"properties": map[string]any{"customSubDomainName": subdomain},
+							})
+						}
+						return acrTestHTTPReply(t, request, http.StatusNotFound, map[string]any{
+							"error": map[string]any{"code": "DeploymentNotFound"},
+						})
+					}),
+				}}
+				switch operation {
+				case "deploy":
+					_, err = p.Deploy(t.Context(), func(string) {})
+				case "preview":
+					_, err = p.Preview(t.Context(), func(string) {})
+				}
+				require.Error(t, err)
+				require.NotContains(t, err.Error(), "endpoint-password")
+				if tt.wantError != "" {
+					require.ErrorContains(t, err, tt.wantError)
+					require.Empty(t, writes, "identity validation must precede every remote mutation")
+				} else {
+					require.ErrorContains(t, err, "TestDeploymentReached")
+					require.NotEmpty(t, writes, "a verified custom domain must reach ARM deployment")
+				}
+				if strings.Contains(tt.projectID, "/accounts/another-account") {
+					require.Contains(t, reads, tt.projectID, "validate the effective ID rather than the environment default")
+				}
+				require.Equal(t, before, env.get)
+				// #nosec G304 -- path is under the test-owned root.
+				saved, readErr := os.ReadFile(parameterPath)
+				require.NoError(t, readErr)
+				require.Equal(t, parameterFile, saved)
+			})
+		}
+	}
+}
+
+func TestExistingProjectIdentityParametersRejectAmbiguity(t *testing.T) {
+	for _, tt := range []struct {
+		name, wantError string
+		parameters      map[string]any
+	}{
+		{name: "case aliases", wantError: "differ only by case", parameters: map[string]any{
+			"projectEndpoint":                  map[string]any{"value": "endpoint"},
+			strings.ToUpper("projectEndpoint"): map[string]any{"value": "another"},
+		}},
+		{name: "reference envelope", wantError: "value envelope", parameters: map[string]any{
+			"projectEndpoint": map[string]any{"reference": map[string]any{"secretName": "endpoint"}},
+		}},
+		{name: "empty endpoint", wantError: "non-empty literal string", parameters: map[string]any{
+			"projectEndpoint": map[string]any{"value": ""},
+		}},
+		{name: "ARM expression", wantError: "non-empty literal string", parameters: map[string]any{
+			"projectEndpoint": map[string]any{"value": "[parameters('endpoint')]"},
+		}},
+		{name: "non-string endpoint", wantError: "non-empty literal string", parameters: map[string]any{
+			"projectEndpoint": map[string]any{"value": 42},
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := projectIdentityParameter(&templateSource{parameters: tt.parameters}, "projectEndpoint")
+			require.ErrorContains(t, err, tt.wantError)
+		})
+	}
+}
 
 func TestExistingProjectCustomSubdomainValidation(t *testing.T) {
 	const (

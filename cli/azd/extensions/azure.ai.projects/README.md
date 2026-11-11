@@ -756,6 +756,14 @@ Selecting a different configured project clears the old project-bound state,
 even when agent initialization has already saved the newly selected ARM ID.
 Provisioning with resource declarations verifies that the endpoint belongs to
 that ARM project before making changes; provider initialization remains offline.
+
+For on-disk Bicep, this check uses the final `projectResourceId` and
+`projectEndpoint` parameter values, including user overrides and template
+defaults. These values must resolve to literal strings. Exported Bicep also
+includes a read-only identity-validation deployment that every resource-changing
+module and supporting resource group depends on. A mismatch fails that deployment
+before those resources are changed. Its deployment-history record can remain.
+
 Teardown also verifies this identity before cleanup. If the project or account
 has already been deleted, teardown leaves project connections untouched and
 continues cleaning up only ownership-verified supporting resources. Other lookup

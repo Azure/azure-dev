@@ -68,10 +68,19 @@ var accountSubdomain = !empty(foundryAccount.properties.?customSubDomainName)
   ? foundryAccount.properties.customSubDomainName
   : first(split(last(split(projectEndpoint, '://')), '.'))
 
+module projectIdentityValidation 'modules/foundry-project-identity.bicep' = {
+  name: 'foundry-project-identity-${uniqueString(deployment().name, projectResourceId)}'
+  params: {
+    projectResourceId: projectResourceId
+    projectEndpoint: projectEndpoint
+  }
+}
+
 resource adjunctResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = if (createAdjunctGroup) {
   name: resourceGroupName
   location: location
   tags: tags
+  dependsOn: [projectIdentityValidation]
 }
 {{- if eq .AcrMode "create" }}
 
@@ -84,7 +93,7 @@ module containerRegistry 'modules/container-registry.bicep' = {
     registryName: acrName
     projectPrincipalId: foundryAccount::project.identity.principalId
   }
-  dependsOn: [adjunctResourceGroup]
+  dependsOn: [projectIdentityValidation, adjunctResourceGroup]
 }
 {{- else if and (eq .AcrMode "reuse-connect") (not .AcrPullAssigned) }}
 
@@ -95,6 +104,7 @@ module containerRegistry 'modules/container-registry.bicep' = {
     registryName: acrName
     projectPrincipalId: foundryAccount::project.identity.principalId
   }
+  dependsOn: [projectIdentityValidation]
 }
 {{- end }}
 
@@ -119,6 +129,7 @@ module projectResources 'modules/foundry-project.bicep' = {
     existingAcrConnectionName: existingAcrConnectionName
 {{- end }}
   }
+  dependsOn: [projectIdentityValidation]
 }
 
 module monitoring 'modules/monitoring.bicep' = if (monitoringMode != 'none') {
@@ -135,7 +146,7 @@ module monitoring 'modules/monitoring.bicep' = if (monitoringMode != 'none') {
     environmentName: contains(tags, 'azd-env-name') ? string(tags['azd-env-name']) : ''
     resourceTokenSalt: resourceTokenSalt
   }
-  dependsOn: [adjunctResourceGroup]
+  dependsOn: [projectIdentityValidation, adjunctResourceGroup]
 }
 
 output AZURE_AI_PROJECT_ID string = projectResourceId

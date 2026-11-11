@@ -195,6 +195,9 @@ Analysis previews require one resolved input. Pretty also supports JSON, usage,
 and dry-run plans; JSON uses indentation and optional syntax coloring rather than
 tables. `NO_COLOR` and redirected output disable color, not pretty presentation.
 
+JSON uses theme-adaptive syntax highlighting. Colors distinguish JSON syntax,
+not success or failure; actual shades depend on the terminal color scheme.
+
 With `--output-file` or `--output-dir`, pretty is automatically disabled when
 omitted, and the terminal prints the existing execution summary. Do not explicitly
 specify `--pretty` in result-file mode, even as `--pretty=false`: both true and

@@ -12,7 +12,9 @@ import (
 	"os"
 	"unicode"
 
-	"github.com/alecthomas/chroma/v2/quick"
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/lexers"
+	terminalColor "github.com/fatih/color"
 )
 
 // RenderJSON preserves JSON values and numeric precision while styling terminal output.
@@ -35,8 +37,33 @@ func RenderJSON(ctx context.Context, writer io.Writer, source []byte, color bool
 	}
 	var styled bytes.Buffer
 	if color && os.Getenv("NO_COLOR") == "" {
-		if err := quick.Highlight(&styled, safe.String(), "json", "terminal256", "monokai"); err != nil {
+		lexer := lexers.Get("json")
+		if lexer == nil {
+			return fmt.Errorf("JSON preview lexer is unavailable")
+		}
+		tokens, err := lexer.Tokenise(nil, safe.String())
+		if err != nil {
 			return fmt.Errorf("style JSON preview: %w", err)
+		}
+		keyColor := terminalColor.New(terminalColor.FgBlue)
+		stringColor := terminalColor.New(terminalColor.FgGreen)
+		nullColor := terminalColor.New(terminalColor.FgHiBlack)
+		keyColor.EnableColor()
+		stringColor.EnableColor()
+		nullColor.EnableColor()
+		for token := tokens(); token != chroma.EOF; token = tokens() {
+			value := token.Value
+			switch token.Type {
+			case chroma.NameTag:
+				value = keyColor.Sprint(value)
+			case chroma.LiteralStringDouble:
+				value = stringColor.Sprint(value)
+			case chroma.KeywordConstant:
+				if value == "null" {
+					value = nullColor.Sprint(value)
+				}
+			}
+			styled.WriteString(value)
 		}
 	} else {
 		styled = safe

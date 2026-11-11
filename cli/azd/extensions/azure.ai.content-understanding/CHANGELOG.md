@@ -8,6 +8,7 @@
   and JSON syntax coloring. Use `--pretty=false` (`-p=false`) for original stdout
   content. Usage and dry-run support pretty presentation.
 - Add explicit `--output markdown`, equivalent to `default`.
+- Use theme-adaptive syntax highlighting for JSON terminal previews.
 - Include requested Markdown usage in YAML front matter for stdout and saved results.
 
 ### Breaking Changes

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
@@ -34,6 +35,27 @@ func TestJSONPreviewPreservesContent(t *testing.T) {
 	var output bytes.Buffer
 	require.NoError(t, RenderJSON(t.Context(), &output, source, true))
 	assert.NotContains(t, output.String(), "\x1b")
+}
+
+func TestJSONPreviewUsesThemeAdaptiveColors(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	source := []byte(`{"text":"hello","number":9007199254740993,"decimal":1.234567890123456789,` +
+		`"yes":true,"no":false,"empty":null,"null":"null","array":["hello",null,42,false]}`)
+	var output bytes.Buffer
+	require.NoError(t, RenderJSON(t.Context(), &output, source, true))
+	actual := output.String()
+	for _, key := range []string{"text", "number", "decimal", "yes", "no", "empty", "null", "array"} {
+		assert.Contains(t, actual, "\x1b[34m\""+key+"\"\x1b[0m")
+	}
+	assert.Equal(t, 2, strings.Count(actual, "\x1b[32m\"hello\"\x1b[0m"))
+	assert.Contains(t, actual, "\x1b[32m\"null\"\x1b[0m", "a string named null is not a null value")
+	assert.Equal(t, 2, strings.Count(actual, "\x1b[90mnull\x1b[0m"))
+	for _, value := range []string{": 9007199254740993,", ": 1.234567890123456789,", ": true,", ": false,", "    42,"} {
+		assert.Contains(t, actual, value, "numbers and booleans must use the default foreground")
+	}
+	assert.NotContains(t, actual, "\x1b[38;", "do not use fixed 256-color or RGB foregrounds")
+	assert.NotContains(t, actual, "\x1b[48;", "do not set a background color")
+	assert.JSONEq(t, string(source), ansi.Strip(actual))
 }
 
 type jsonFailureWriter struct{}

@@ -410,6 +410,8 @@ func TestRunEndpointShowUsesSelectedEnvironment(t *testing.T) {
 				"staging": {
 					"FOUNDRY_PROJECT_ENDPOINT":                        selectedEndpoint,
 					"AGENT_ENGINE_NAME":                               "hosted-agent",
+					"AGENT_ENGINE_PROJECT_ENDPOINT":                   selectedEndpoint,
+					"AGENT_ENGINE_PROTOCOL_ENDPOINTS_VERSION":         "1",
 					"AGENT_ENGINE_VOICE_CONVERSATION_ENGINE_ENDPOINT": "wss://staging.services.ai.azure.com/api/projects/staging/agents/hosted-agent/endpoint/protocols/voice_conversation_engine?api-version=v1",
 				},
 			},
@@ -542,6 +544,48 @@ func TestRunEndpointShowUsesSelectedEnvironment(t *testing.T) {
 			require.Equal(t, 1, env.getValuesCalls)
 		})
 	}
+}
+
+func TestHostedEndpointShowIgnoresStaleConversationEngineSnapshot(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	for _, stale := range []string{"project", "incomplete"} {
+		t.Run(stale, func(t *testing.T) {
+			values := map[string]string{
+				"FOUNDRY_PROJECT_ENDPOINT": endpoint, "AGENT_ENGINE_NAME": "engine",
+				"AGENT_ENGINE_PROJECT_ENDPOINT": endpoint, "AGENT_ENGINE_PROTOCOL_ENDPOINTS_VERSION": "1",
+				"AGENT_ENGINE_VOICE_CONVERSATION_ENGINE_ENDPOINT": "wss://saved.example/voice_conversation_engine",
+			}
+			if stale == "project" {
+				values["AGENT_ENGINE_PROJECT_ENDPOINT"] = "https://other.example/api/projects/other"
+			} else {
+				values["AGENT_ENGINE_PROTOCOL_ENDPOINTS_VERSION"] = ""
+			}
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{},
+				&testEnvironmentServiceServer{values: map[string]map[string]string{"dev": values}})
+			output := captureEndpointOutput(t, func() error {
+				return runHostedEndpointShow(t.Context(), client, "engine", "engine", "dev", "json",
+					func(context.Context, string, string) (*agent_api.AgentObject, error) {
+						return &agent_api.AgentObject{Name: "engine"}, nil
+					})
+			})
+			require.NotContains(t, output, "saved.example")
+		})
+	}
+}
+
+func TestHostedEndpointShowWithoutDefaultEnvironment(t *testing.T) {
+	t.Setenv("AZD_ENVIRONMENT", "")
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://account.services.ai.azure.com/api/projects/project")
+	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{},
+		&invokeEnvironmentFailureServer{err: errors.New("default environment not found")})
+	output := captureEndpointOutput(t, func() error {
+		return runHostedEndpointShow(t.Context(), client, "engine", "engine", "", "json",
+			func(context.Context, string, string) (*agent_api.AgentObject, error) {
+				return &agent_api.AgentObject{Name: "engine"}, nil
+			})
+	})
+	require.Contains(t, output, `"name": "engine"`)
+	require.NotContains(t, output, `"endpoints"`)
 }
 
 func TestRunEndpointShowRejectsWorkflowKind(t *testing.T) {

@@ -177,11 +177,15 @@ func runHostedEndpointShow(
 	}
 	envValues, err := promptEnvValues(ctx, azdClient, environmentName)
 	if err != nil {
-		return fmt.Errorf("reading the azd environment: %w", err)
+		if environmentName != "" || os.Getenv("AZD_ENVIRONMENT") != "" || !isDefaultEnvironmentMissing(err) {
+			return fmt.Errorf("reading the azd environment: %w", err)
+		}
 	}
 	key := "AGENT_" + toServiceKey(serviceName)
-	if envValues[key+"_NAME"] == agent.Name {
-		if endpoint := strings.TrimSpace(envValues[key+"_VOICE_CONVERSATION_ENGINE_ENDPOINT"]); endpoint != "" {
+	endpoints, present, stale, incomplete := resolveAgentProtocolEndpointsFromValues(envValues, serviceName)
+	if present && !stale && !incomplete && envValues[key+"_NAME"] == agent.Name &&
+		strings.TrimRight(envValues[key+"_PROJECT_ENDPOINT"], "/") == strings.TrimRight(projectEndpoint, "/") {
+		if endpoint := endpoints[agent_api.AgentProtocolVoiceConversationEngine]; endpoint != "" {
 			result.Endpoints = map[string]string{"voice_conversation_engine": endpoint}
 		}
 	}

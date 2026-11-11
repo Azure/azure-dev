@@ -62,9 +62,11 @@ behavior and inspecting response headers (for example, the agent version
 header). Friendly summaries such as Context ID, Task ID, State, Session, and Invocation are
 suppressed in raw mode.
 Default A2A output shows the returned Context ID and, for Tasks, their ID and state.
-Failed, canceled, and rejected Tasks return an error while keeping their IDs visible;
+Failed, canceled, and rejected send Tasks return an error with IDs and status details;
 input-required and auth-required states remain visible for follow-up.
 A successful A2A cancellation returns canceled state without failing the command.
+Successful task-status lookups return success even when the Task failed or was canceled.
+Text or structured status diagnostics are retained without rendering partial artifacts.
 For completed A2A Tasks, default output prefers answer artifacts over generic
 status messages such as "Done". Tasks awaiting completion prefer status messages,
 falling back to artifacts when no status text is present. History is the final fallback.

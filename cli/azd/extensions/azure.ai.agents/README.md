@@ -783,11 +783,15 @@ With the preview disabled, plain messages use A2A 0.3. To preserve that behavior
 
 Formatted A2A output prints the returned **Context ID** instead of a session summary.
 Tasks also show their **Task ID** and **State**, retaining the protocol's native enum
-spellings. Failed, canceled, and rejected Tasks return an error rather than displaying
-partial artifacts as completed answers; their IDs remain available for inspection.
+spellings. Failed, canceled, and rejected send Tasks return an error rather than
+displaying partial artifacts as completed answers; their IDs and text or structured
+status-message diagnostics remain available for inspection.
 Input-required and auth-required states show the agent's prompt for follow-up.
 Successful `tasks/cancel` (0.3) and `CancelTask` (1.0) requests instead return success
 with the canceled Task's IDs, state, and any status detail, not partial artifacts.
+Successful `tasks/get` (0.3) and `GetTask` (1.0) lookups also return success for
+failed, canceled, or rejected Tasks, showing IDs, state, and status detail instead
+of formatting partial artifacts as completed answers.
 
 Use `--context-id` to return to an earlier context after using another one. For an
 Echo agent, prepare two first-turn request files from the JSON-RPC examples below:

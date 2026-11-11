@@ -686,14 +686,79 @@ func TestA2AExplicitSessionContextPersistsForNextInvoke(t *testing.T) {
 	}
 }
 
-func TestA2ATaskCancellationRequestSemantics(t *testing.T) {
+func TestA2AContextIDPreservesVersionSessionRouting(t *testing.T) {
+	for _, version := range []string{"0.3", "1.0"} {
+		t.Run(version, func(t *testing.T) {
+			requests := make(chan struct{}, 3)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests <- struct{}{}
+				assert.Equal(t, "version-session", r.URL.Query().Get("agent_session_id"))
+				assert.Equal(t, version, r.Header.Get(a2aVersionHeader))
+				var request struct {
+					Params struct {
+						Message struct {
+							ContextID string `json:"contextId"`
+						} `json:"message"`
+					} `json:"params"`
+				}
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				assert.Equal(t, "earlier-context", request.Params.Message.ContextID)
+				message := map[string]any{
+					"contextId": "earlier-context", "parts": []any{map[string]any{"text": "continued"}},
+				}
+				var result any = message
+				if version == "1.0" {
+					result = map[string]any{"message": message}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"result": result}))
+			}))
+			defer server.Close()
+			previous := createInvokeVersionSession
+			t.Cleanup(func() { createInvokeVersionSession = previous })
+			var creates int
+			createInvokeVersionSession = func(
+				_ context.Context, endpoint, name, selectedVersion, apiVersion string,
+			) (*agent_api.AgentSessionResource, error) {
+				creates++
+				assert.Equal(t, server.URL, endpoint)
+				assert.Equal(t, "agent", name)
+				assert.Equal(t, "7", selectedVersion)
+				assert.Equal(t, "v1", apiVersion)
+				return &agent_api.AgentSessionResource{AgentSessionID: "version-session"}, nil
+			}
+			stateDir := t.TempDir()
+			config := newInvokeUserConfigServer()
+			key := buildAgentKey(server.URL, "agent", "7", false)
+			for range 2 {
+				client := newInvokeTestAzdClient(t, config)
+				agentStateStoreRootOverrides.Store(client, stateDir)
+				action := &InvokeAction{
+					flags: &invokeFlags{
+						message: "continue", protocol: "a2a", contextID: "earlier-context", version: "7",
+					},
+					credential: responseTestCredential{},
+					resolvedRemoteContext: &remoteContext{
+						name: "agent", projectEndpoint: server.URL, apiVersion: "v1", version: "7",
+						deployedVersion: "7", agentKey: key, azdClient: client,
+					},
+				}
+				_, err := captureStdout(t, func() error { return action.a2aRemote(t.Context(), version) })
+				require.NoError(t, err)
+			}
+			assert.Equal(t, 1, creates)
+			assert.Len(t, requests, 2)
+		})
+	}
+}
+
+func TestA2ATaskRequestSemantics(t *testing.T) {
 	for _, version := range []string{"0.3", "1.0"} {
 		for _, local := range []bool{false, true} {
 			for _, tt := range []struct {
-				name                       string
-				cancel, noDetail, rpc, raw bool
-				state                      string
-				wantError                  string
+				name                                         string
+				cancel, lookup, noDetail, dataOnly, rpc, raw bool
+				state, wantError                             string
 			}{
 				{name: "successful cancellation", cancel: true, state: "canceled"},
 				{name: "cancellation without detail", cancel: true, noDetail: true, state: "canceled"},
@@ -701,6 +766,16 @@ func TestA2ATaskCancellationRequestSemantics(t *testing.T) {
 				{name: "failed cancellation remains failure", cancel: true, state: "failed", wantError: "agent task ended"},
 				{name: "RPC cancellation error remains failure", cancel: true, rpc: true, wantError: "agent error (-32002)"},
 				{name: "raw message response unchanged", state: "canceled", raw: true},
+				{name: "failed task lookup", lookup: true, state: "failed"},
+				{name: "canceled task lookup", lookup: true, state: "canceled"},
+				{name: "rejected task lookup", lookup: true, state: "rejected"},
+				{name: "lookup without detail", lookup: true, noDetail: true, state: "failed"},
+				{name: "structured lookup detail", lookup: true, dataOnly: true, state: "failed"},
+				{name: "structured send failure", dataOnly: true, state: "failed", wantError: "agent task ended"},
+				{name: "structured cancellation failure", cancel: true, dataOnly: true, state: "failed",
+					wantError: "agent task ended"},
+				{name: "RPC lookup error remains failure", lookup: true, rpc: true, wantError: "agent error (-32002)"},
+				{name: "raw lookup unchanged", lookup: true, dataOnly: true, state: "failed", raw: true},
 			} {
 				t.Run(fmt.Sprintf("%s/local=%t/%s", version, local, tt.name), func(t *testing.T) {
 					method, state := "message/send", tt.state
@@ -714,6 +789,12 @@ func TestA2ATaskCancellationRequestSemantics(t *testing.T) {
 							method = "CancelTask"
 						}
 					}
+					if tt.lookup {
+						method = "tasks/get"
+						if version == "1.0" {
+							method = "GetTask"
+						}
+					}
 					request, err := json.Marshal(a2aJSONRPCRequest{
 						JSONRPC: "2.0", ID: "request-1", Method: method, Params: map[string]any{"id": "task-1"},
 					})
@@ -725,12 +806,19 @@ func TestA2ATaskCancellationRequestSemantics(t *testing.T) {
 					if !tt.noDetail {
 						status["message"] = map[string]any{"parts": []any{map[string]any{"text": "Task status detail"}}}
 					}
+					if tt.dataOnly {
+						part := map[string]any{"data": map[string]any{"code": "quota_exceeded"}}
+						if version == "0.3" {
+							part["kind"] = "data"
+						}
+						status["message"] = map[string]any{"parts": []any{part}}
+					}
 					task := map[string]any{
 						"id": "task-1", "contextId": "context-1", "status": status,
 						"artifacts": []any{map[string]any{"parts": []any{map[string]any{"text": "partial artifact"}}}},
 					}
 					var result any = task
-					if version == "1.0" && !tt.cancel {
+					if version == "1.0" && !tt.cancel && !tt.lookup {
 						result = map[string]any{"task": task}
 					}
 					envelope := map[string]any{"jsonrpc": "2.0", "id": "request-1", "result": result}
@@ -775,6 +863,9 @@ func TestA2ATaskCancellationRequestSemantics(t *testing.T) {
 					}
 					if tt.wantError != "" {
 						require.ErrorContains(t, err, tt.wantError)
+						if tt.dataOnly {
+							require.ErrorContains(t, err, "quota_exceeded")
+						}
 						require.NotContains(t, output, "Client elapsed:")
 					} else {
 						require.NoError(t, err)
@@ -788,8 +879,11 @@ func TestA2ATaskCancellationRequestSemantics(t *testing.T) {
 						require.Contains(t, output, "Task ID:      task-1")
 						require.Contains(t, output, "State:        "+state)
 						require.NotContains(t, output, "partial artifact")
-						if tt.cancel && tt.wantError == "" && !tt.noDetail {
+						if (tt.cancel || tt.lookup) && tt.wantError == "" && !tt.noDetail && !tt.dataOnly {
 							require.Contains(t, output, "Task status detail")
+						}
+						if tt.lookup && tt.dataOnly {
+							require.Contains(t, output, "quota_exceeded")
 						}
 					}
 				})

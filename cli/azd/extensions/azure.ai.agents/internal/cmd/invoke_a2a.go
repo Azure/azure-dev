@@ -456,8 +456,8 @@ func a2aErrorFromBody(respBody []byte) error {
 	return fmt.Errorf("agent error: %s", envelope.Error.Message)
 }
 
-// printA2AResultTo prints IDs/state and the agent's reply. Unsuccessful terminal
-// Tasks retain their IDs and return errors; successful cancellations keep status.
+// printA2AResultTo prints IDs/state and the agent's reply. Unsuccessful sends and
+// cancellations return errors; task lookups retain terminal status without failing.
 // When no text can be found, other results keep the JSON/raw fallback.
 func printA2AResultTo(w io.Writer, respBody []byte, agentName, version, requestMethod string) error {
 	result := parseA2AResult(respBody, version)
@@ -478,18 +478,26 @@ func printA2AResultTo(w io.Writer, respBody []byte, agentName, version, requestM
 		}
 	}
 	message, _ := status["message"].(map[string]any)
+	detail := a2aTextFromParts(message["parts"])
+	if detail == "" && len(message) > 0 {
+		if encoded, err := json.Marshal(message); err == nil {
+			detail = string(encoded)
+		}
+	}
 	cancelRequested := (version == "0.3" && requestMethod == "tasks/cancel") ||
 		(version == "1.0" && requestMethod == "CancelTask")
-	if cancelRequested && (state == "canceled" || state == "TASK_STATE_CANCELED") {
-		if text := a2aTextFromParts(message["parts"]); text != "" {
-			_, err := fmt.Fprintf(w, "[%s] %s\n", agentName, text)
-			return err
-		}
-		return nil
-	}
+	lookupRequested := (version == "0.3" && requestMethod == "tasks/get") ||
+		(version == "1.0" && requestMethod == "GetTask")
 	switch state {
 	case "failed", "canceled", "rejected", "TASK_STATE_FAILED", "TASK_STATE_CANCELED", "TASK_STATE_REJECTED":
-		if detail := a2aTextFromParts(message["parts"]); detail != "" {
+		if lookupRequested || (cancelRequested && (state == "canceled" || state == "TASK_STATE_CANCELED")) {
+			if detail != "" {
+				_, err := fmt.Fprintf(w, "[%s] %s\n", agentName, detail)
+				return err
+			}
+			return nil
+		}
+		if detail != "" {
 			return fmt.Errorf("agent task ended with state %s: %s", state, detail)
 		}
 		return fmt.Errorf("agent task ended with state %s", state)

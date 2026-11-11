@@ -193,6 +193,7 @@ func Test_Server_Start(t *testing.T) {
 		echoValidationService{},
 		newTelemetryService(stubExtensionLookup{extension: reportingExtension}),
 		v1beta.UnimplementedCommandResultServiceServer{},
+		v1beta.UnimplementedInfraGenerationServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -232,7 +233,7 @@ func Test_Server_Start(t *testing.T) {
 		}
 
 		services := server.grpcServer.GetServiceInfo()
-		require.Len(t, services, 3*len(serviceNames)+5)
+		require.Len(t, services, 3*len(serviceNames)+6)
 		for _, serviceName := range serviceNames {
 			require.Contains(t, services, "azd.extensions.v1."+serviceName)
 			require.Contains(t, services, "azd.extensions.v1beta."+serviceName)
@@ -246,6 +247,9 @@ func Test_Server_Start(t *testing.T) {
 		require.NotContains(t, services, "azd.extensions.v1.CommandResultService")
 		require.Contains(t, services, "azd.extensions.v1beta.CommandResultService")
 		require.NotContains(t, services, "azdext.CommandResultService")
+		require.Contains(t, services, "azd.extensions.v1beta.InfraGenerationService")
+		require.NotContains(t, services, "azd.extensions.v1.InfraGenerationService")
+		require.NotContains(t, services, "azdext.InfraGenerationService")
 		for _, serviceName := range []string{
 			"azd.extensions.v1.FollowUpService",
 			"azd.extensions.v1beta.FollowUpService",
@@ -573,6 +577,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		azdext.UnimplementedValidationServiceServer{},
 		azdext.UnimplementedTelemetryServiceServer{},
 		v1beta.UnimplementedCommandResultServiceServer{},
+		v1beta.UnimplementedInfraGenerationServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -703,6 +708,7 @@ func TestServer_RelaysExtensionErrorOverGRPC(t *testing.T) {
 		azdext.UnimplementedValidationServiceServer{},
 		newTelemetryService(stubExtensionLookup{}),
 		v1beta.UnimplementedCommandResultServiceServer{},
+		v1beta.UnimplementedInfraGenerationServiceServer{},
 	)
 	serverInfo, err := server.Start()
 	require.NoError(t, err)
@@ -1054,6 +1060,7 @@ func newTestServer(
 		azdext.UnimplementedValidationServiceServer{},
 		azdext.UnimplementedTelemetryServiceServer{},
 		v1beta.UnimplementedCommandResultServiceServer{},
+		v1beta.UnimplementedInfraGenerationServiceServer{},
 	).WithOptions(options...)
 }
 
@@ -1897,7 +1904,7 @@ func TestNewServer(t *testing.T) {
 	t.Parallel()
 	s := NewServer(
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	require.NotNil(t, s)
 	assert.Nil(t, s.grpcServer, "grpcServer should be nil before Start")
@@ -1907,7 +1914,7 @@ func TestNewServerRegistersBetaEventOverride(t *testing.T) {
 	events, _ := createTestEventService()
 	server := NewServer(
 		nil, nil, nil, nil, nil, events, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	override, ok := server.betaServiceOverrides[BetaEventService].(*betaEventService)
 	require.True(t, ok)

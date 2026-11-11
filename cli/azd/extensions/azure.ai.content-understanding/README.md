@@ -182,18 +182,18 @@ Without a specified or configured analyzer, analysis uses `prebuilt-layout`.
 Use `--analyzer` (or `-a`) to select a different analyzer.
 
 Analysis displays YAML front matter and Markdown in the console by default.
-`--llm-input` is enabled by default, so you can omit it. To save that text:
+`--output default` and `--output markdown` select this format. To save that text:
 
 ```bash
 azd ai cu analyze invoice.pdf --output-file invoice.result.md
 ```
 
-By default, stdout contains Markdown and HTML tables as text, including when
-redirected. Use `azd ai cu analyze invoice.pdf --pretty` (or `-p`) to pretty-print results
-in the terminal, with formatted Markdown and simple HTML tables displayed as
+Pretty is enabled by default, including when redirected. Use `--pretty=false`
+to obtain original content through stdout. Terminal previews format Markdown and simple HTML tables as
 tables or labeled cards. Colors distinguish headings and tables when enabled.
-The flag only applies to one streamed LLM-input
-result and cannot be combined with saved-output options or JSON. See
+Analysis previews apply to one input and also support JSON, usage, and dry-run.
+Result-file options automatically disable implicit pretty; explicitly supplying
+`--pretty` with them is rejected, even as false. See
 [pretty-print behavior and limitations](docs/usage.md#pretty-print-results-in-the-terminal).
 
 For the complete JSON response, including service warnings and usage when
@@ -205,6 +205,11 @@ azd ai cu analyze invoice.pdf --output json
 # Save the same JSON response instead of the default Markdown view.
 azd ai cu analyze invoice.pdf --output json --output-file invoice.result.json
 ```
+
+The preview options `--llm-input` and analyze's `--output none` have been removed.
+Use `--output markdown` instead of `--llm-input=true`, or `--output json` instead
+of `--llm-input=false`. There is no equivalent CLI mode for `none`. In Markdown
+mode, `--usage` adds usage to YAML front matter in stdout and saved results.
 
 Content Understanding also provides
 [prebuilt analyzers](https://learn.microsoft.com/azure/ai-services/content-understanding/concepts/prebuilt-analyzers)

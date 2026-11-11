@@ -39,7 +39,7 @@ type analysisProgress struct {
 
 func progressTerminal(writer io.Writer, format string) (*os.File, bool) {
 	file, ok := writer.(*os.File)
-	return file, ok && format == "default" && azdext.IsInteractiveTerminal(file)
+	return file, ok && (format == "default" || format == "markdown") && azdext.IsInteractiveTerminal(file)
 }
 
 func newAnalysisProgress(ctx context.Context, writer io.Writer, width int) *analysisProgress {

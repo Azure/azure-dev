@@ -53,7 +53,7 @@ func TestAnalyzePrettyFlagContract(t *testing.T) {
 	assert.Zero(t, fixture.client.calls.Load())
 }
 
-func TestAnalyzeRenderingIsOptIn(t *testing.T) {
+func TestAnalyzeRenderingIsDefault(t *testing.T) {
 	for _, flags := range [][]string{
 		nil, {"--pretty=false"}, {"-p=false"}, {"--pretty"}, {"-p"}, {"--pretty=true"}, {"-p=true"},
 	} {
@@ -65,7 +65,7 @@ func TestAnalyzeRenderingIsOptIn(t *testing.T) {
 			assert.Empty(t, stderr)
 			assert.NotContains(t, stdout, "\x1b", "injected/redirected output must not contain ANSI")
 			assert.EqualValues(t, 1, fixture.client.calls.Load())
-			if len(flags) != 0 && !strings.HasSuffix(flags[0], "=false") {
+			if len(flags) == 0 || !strings.HasSuffix(flags[0], "=false") {
 				assert.NotContains(t, stdout, "Preview only")
 				assert.Contains(t, stdout, "Important")
 				assert.Contains(t, stdout, "Example")
@@ -84,9 +84,8 @@ func TestAnalyzeRenderingIsOptIn(t *testing.T) {
 }
 
 func TestAnalyzeRenderRejectsConflictsBeforeAuthentication(t *testing.T) {
-	for _, pretty := range []string{"--pretty", "-p"} {
+	for _, pretty := range []string{"--pretty", "-p", "--pretty=false", "-p=false"} {
 		for _, flags := range [][]string{
-			{"--output", "json"}, {"--output", "none"}, {"--llm-input=false"}, {"--usage"}, {"--dry-run"},
 			{"--output-file", "result.md"}, {"--output-dir", "results"}, {"--output-file="}, {"--output-dir="},
 		} {
 			t.Run(pretty+" "+strings.Join(flags, " "), func(t *testing.T) {
@@ -104,22 +103,24 @@ func TestAnalyzeRenderRejectsConflictsBeforeAuthentication(t *testing.T) {
 				assert.Empty(t, entries)
 			})
 		}
-		fixture := newAnalyzeFixture(t)
-		first, second := schemaFile(t, "first"), schemaFile(t, "second")
-		_, _, err := fixture.execute(t.Context(), first, second, pretty)
-		require.ErrorContains(t, err, "batch")
-		assert.Zero(t, fixture.opens)
-		assert.Zero(t, fixture.client.calls.Load())
+		if !strings.HasSuffix(pretty, "=false") {
+			fixture := newAnalyzeFixture(t)
+			first, second := schemaFile(t, "first"), schemaFile(t, "second")
+			_, _, err := fixture.execute(t.Context(), first, second, pretty)
+			require.ErrorContains(t, err, "batch")
+			assert.Zero(t, fixture.opens)
+			assert.Zero(t, fixture.client.calls.Load())
+		}
 	}
 }
 
 func TestAnalyzeOriginalFilesAndJSONRemainUnchanged(t *testing.T) {
-	for _, format := range []string{"default", "json"} {
+	for _, format := range []string{"default", "markdown", "json"} {
 		fixture := newAnalyzeFixture(t)
 		body := previewResponse(t, fixture)
 		path := filepath.Join(testutil.TempDir(t), "result.md")
 		_, stderr, err := fixture.execute(t.Context(), "https://example.com/doc.pdf",
-			"--pretty=false", "--output-file", path, "--output", format)
+			"--output-file", path, "--output", format)
 		require.NoError(t, err)
 		assert.Empty(t, stderr)
 		saved, err := os.ReadFile(path) // #nosec G304 -- Fixed filename inside the test's private temporary directory.
@@ -150,6 +151,8 @@ func TestAnalyzeRedirectedStdout(t *testing.T) {
 		flags := []string{"analyze", "https://example.com/doc.pdf"}
 		if render {
 			flags = append(flags, "--pretty")
+		} else {
+			flags = append(flags, "--pretty=false")
 		}
 		root.SetArgs(flags)
 		runErr := root.ExecuteContext(t.Context())

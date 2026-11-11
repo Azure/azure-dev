@@ -131,7 +131,7 @@ func Execute(ctx context.Context, client cuclient.Client, plan Plan, options Run
 			}
 		} else {
 			result.Stream = item.payload
-			if options.Usage {
+			if options.Usage && !plan.LLMInput {
 				result.Stream = struct {
 					Result any             `json:"result"`
 					Usage  json.RawMessage `json:"usage"`
@@ -280,7 +280,11 @@ func analyzeOne(
 		}
 	}
 	if llm {
-		text, err := RenderLLM(envelope["result"])
+		var requestedUsage json.RawMessage
+		if options.Usage {
+			requestedUsage = usage
+		}
+		text, err := renderLLM(envelope["result"], requestedUsage)
 		return text, usage, err
 	}
 	return response.JSON, usage, nil

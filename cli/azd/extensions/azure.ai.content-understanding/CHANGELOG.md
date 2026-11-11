@@ -4,9 +4,23 @@
 
 ### Features Added
 
-- Add `azd ai cu analyze --pretty` (`-p`) to pretty-print a single result in the
-  terminal, with formatted Markdown, colored headings, and simple HTML tables
-  displayed as tables or labeled cards.
+- Pretty-print single analysis results by default, with Markdown tables/cards
+  and JSON syntax coloring. Use `--pretty=false` (`-p=false`) for original stdout
+  content. Usage and dry-run support pretty presentation.
+- Add explicit `--output markdown`, equivalent to `default`.
+- Include requested Markdown usage in YAML front matter for stdout and saved results.
+
+### Breaking Changes
+
+- Remove `--llm-input` immediately: use `--output markdown` for true or
+  `--output json` for false. Remove analyze's `--output none` without replacement.
+- Redirected analysis output now uses uncolored pretty presentation by default;
+  use `--pretty=false` to retain original Markdown/HTML.
+- Result-file options disable implicit pretty and reject any explicitly supplied
+  pretty flag, including false. Omit the flag when saving analysis results.
+- Local batches without an output directory now require `--pretty=false` to save
+  beside their inputs. Alternatively, supply `--output-dir` and omit the pretty flag.
+- Markdown stdout with `--usage` no longer uses a JSON wrapper.
 
 ### Other Changes
 

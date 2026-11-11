@@ -178,6 +178,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: extensions/azure.ai.content-understanding/internal/preview/json.go
+    words:
+      - alecthomas
   - filename: pkg/output/colors.go
     words:
       - termenv

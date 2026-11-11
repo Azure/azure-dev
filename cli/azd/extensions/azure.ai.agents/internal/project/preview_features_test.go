@@ -76,13 +76,10 @@ func TestMemorySnapshotFeatureSwitch(t *testing.T) {
 		require.ErrorContains(t, RequireDefinitionFeatures(definition, io.Discard), featureflags.MemorySnapshot.ID)
 	}
 	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
-	t.Setenv(featureflags.Voice.EnvVar, "false")
 	definition := map[string]any{
 		"kind": "hosted", "enableMemorySnapshot": true,
 		"protocols": []any{map[string]any{"protocol": "invocations_ws"}},
 	}
-	require.ErrorContains(t, RequireDefinitionFeatures(definition, io.Discard), featureflags.Voice.ID)
-	t.Setenv(featureflags.Voice.EnvVar, "true")
 	require.NoError(t, RequireDefinitionFeatures(definition, io.Discard))
 }
 
@@ -127,14 +124,14 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 			"kind": "prompt", "name": "agent", "model": "gpt-4.1-mini", "instructions": "Be helpful.",
 			"harness": map[string]any{"type": " \tgithub_copilot_preview\r\n "},
 		}, featureflags.ManagedHarness},
-		{"voice", map[string]any{"kind": "voice"}, featureflags.Voice},
-		{"prompt voice", map[string]any{"kind": "prompt-voice"}, featureflags.Voice},
+		{"voice", map[string]any{"kind": "voice"}, featureflags.Feature{}},
+		{"prompt voice", map[string]any{"kind": "prompt-voice"}, featureflags.Feature{}},
 		{"hosted voice bridge", map[string]any{"kind": "hosted",
-			"protocols": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Voice},
+			"protocols": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Feature{}},
 		{"api hosted voice bridge", map[string]any{"kind": "hosted",
-			"protocol_versions": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Voice},
+			"protocol_versions": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Feature{}},
 		{"legacy api hosted voice bridge", map[string]any{"kind": "hosted",
-			"container_protocol_versions": []any{map[string]any{"protocol": " invocations_ws "}}}, featureflags.Voice},
+			"container_protocol_versions": []any{map[string]any{"protocol": " invocations_ws "}}}, featureflags.Feature{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()

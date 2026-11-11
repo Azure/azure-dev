@@ -5,11 +5,11 @@
 ## Status and goal
 
 - **Component:** `cli/azd/extensions/azure.ai.agents`
-- **Scope:** Independent, default-off agent previews, BYO AKS initialization/adoption/provisioning/preview, retained RBAC warnings, and the shared Foundry existing-ACR-reuse gate.
+- **Scope:** Independent, default-off agent previews, BYO AKS initialization/adoption/provisioning/preview, retained RBAC warnings, and the shared Foundry existing-ACR-reuse gate. Voice is GA and is not gated.
 
 Keep preview opt-in decisions inside the owning extensions until the extension framework supports discovery and evaluation. The Agents extension owns its private preview evaluator; the Projects extension independently checks the shared BYO AKS switch for provisioning and provisioning preview when effective AKS hosting is enabled. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality without new ACR reuse intent are not gated.
 
-Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws`. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
+Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice, prompt-voice, and hosted definitions advertising `invocations_ws` are available unconditionally. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
 
 ## Ownership and code organization
 
@@ -69,7 +69,7 @@ func Lookup(id string) (Feature, bool)
 `ID` is a capability identity, not a user-config contract. `EnvVar` is the process environment key to read, set in the shell or CI before running azd (or through scenario `env:`). `Description` is optional for evaluation and supplies a short scope summary in help. `DefaultEnabled` applies only when the variable is absent; all declared features default to `false`.
 
 ```go
-if err := featureflags.RequireWithWriter(featureflags.Voice, out); err != nil {
+if err := featureflags.RequireWithWriter(featureflags.ManagedHarness, out); err != nil {
     return err
 }
 ```
@@ -85,7 +85,6 @@ if err := featureflags.RequireWithWriter(featureflags.Voice, out); err != nil {
 | Declaration | Feature ID | Process environment key | Scope |
 | --- | --- | --- | --- |
 | `ManagedHarness` | `agents.managed_harness` | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` | Prompt agents that run on a Copilot harness |
-| `Voice` | `agents.voice` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` | Voice, prompt-voice, and hosted voice agents |
 | `LongRunning` | `agents.long_running` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations |
 | `A2A` | `agents.a2a` | `AZD_ALPHA_ENABLE_AGENTS_A2A` | A2A init selection, explicit wire versions, and the 1.0 message default |
 | `MemorySnapshot` | `agents.memory_snapshot` | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` | Hosted agent memory snapshots |
@@ -263,14 +262,14 @@ A2A-only `run` targets open no browser client. Their invocation guidance include
 Set the desired variable in the shell or CI process environment before running azd. For example:
 
 ```sh
-export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
+export AZD_ALPHA_ENABLE_AGENTS_A2A=true
 azd ai agent init --help
 ```
 
 In PowerShell:
 
 ```powershell
-$env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
+$env:AZD_ALPHA_ENABLE_AGENTS_A2A = 'true'
 azd ai agent init --help
 ```
 
@@ -282,7 +281,7 @@ Each feature is independent. There is no global toggle, experimentation default,
 
 `IsEnabled` reads only the declared key from the current process environment with `os.LookupEnv`, using `DefaultEnabled` only when the key is absent. Set switches in the shell or CI before running azd, or through scenario YAML `env:`. The extension inherits those process values at startup.
 
-The azd host listen/extension startup path does not flatten `.azure/<env>/.env` into the extension process for these switches. It may set `AZD_ENVIRONMENT` to the selected environment name, but that does not load its dotenv values. Persisting `AZD_ALPHA_ENABLE_*` with `azd env set` therefore does not enable or override these switches for the listener. Direct `azd ai agent ...` command launches still append selected-environment values after shell/CI values, so persisted dotenv values can override shell opt-ins there. This boundary is the same for Voice, A2A, RBAC warnings, and the other Agents preview switches.
+The azd host listen/extension startup path does not flatten `.azure/<env>/.env` into the extension process for these switches. It may set `AZD_ENVIRONMENT` to the selected environment name, but that does not load its dotenv values. Persisting `AZD_ALPHA_ENABLE_*` with `azd env set` therefore does not enable or override these switches for the listener. Direct `azd ai agent ...` command launches still append selected-environment values after shell/CI values, so persisted dotenv values can override shell opt-ins there. This boundary is the same for A2A, RBAC warnings, and the other Agents preview switches.
 
 The evaluator does not query azd user config (including `alpha.all`), open selected or default environment files, or read project/service environment mappings. It does not filter process values by where they came from.
 
@@ -296,13 +295,13 @@ Normal project configuration, deployment environments, runtime settings, and com
 
 | Annotation | Placed on | Effect |
 | --- | --- | --- |
-| `previewFlag(cmd, name, feature)` | `invoke --long-running`, `invoke --no-wait`, `invoke --a2a-version`, `init --voice`, `init --acr-resource-id` | Setting the flag requires the feature (a bool only when true). The flag is hidden while the feature is off |
-| `previewFlag(cmd, name, feature, values...)` | `init --kind prompt-voice`, `init --harness microsoft_copilot_preview` or `github_copilot_preview`, `init --protocol invocations_ws` | Only the listed values require the feature, including repeated or comma-separated slice values. The flag stays visible |
+| `previewFlag(cmd, name, feature)` | `invoke --long-running`, `invoke --no-wait`, `invoke --a2a-version`, `init --acr-resource-id` | Setting the flag requires the feature (a bool only when true). The flag is hidden while the feature is off |
+| `previewFlag(cmd, name, feature, values...)` | `init --harness microsoft_copilot_preview` or `github_copilot_preview`, `init --protocol a2a` | Only the listed values require the feature, including repeated or comma-separated slice values. The flag stays visible |
 | `previewCommand(cmd, feature)` | none today | The command and its children require the feature and are hidden while off |
 | `discoverCommand(cmd, feature)` | `invocations` | Hidden from help while off. The group and its subcommands still run |
-| `previewHelp(cmd, feature, long, examples)` | Voice, long-running, and A2A version help blocks | The blocks are removed while off |
+| `previewHelp(cmd, feature, long, examples)` | Long-running and A2A version help blocks | The blocks are removed while off |
 | `previewHelpText(cmd, feature, onText, offText)` | Existing inline preview mentions in command descriptions | Replaces the text only while off; enabled help retains its original wording |
-| `previewFlagUsage(cmd, name, feature, usage)` | `init --kind`, `--protocol`, `--acr-connection`, `--model`, `--instructions` | The flag keeps working. Its usage omits the feature while off |
+| `previewFlagUsage(cmd, name, feature, usage)` | `init --protocol`, `--instructions` | The flag keeps working. Its usage omits the feature while off |
 | `gateAgentServices(cmd)` | `invoke`, `run`, `optimize deploy`, `optimize apply`, `endpoint update` | Marks the context so shared selectors classify every selected agent service |
 
 **Service layer.** Shared service selectors call `requireSelectedServiceFeatures`. It runs `project.RequireAgentFeatures` only when the command carries `gateAgentServices`. Read and cleanup selectors stay outside the gate. A gate failure is wrapped so callers that recover from selection errors return it unchanged instead of falling back to another lookup. Definition and service environment values do not enable a gate.
@@ -317,8 +316,7 @@ These entry points classify content that only exists at run time, so an annotati
 | --- | --- |
 | `init` existing project and explicit local `azure.yaml` | Services come from content read during the command |
 | `init` staged template adoption | Effective definitions are checked after staging, before adoption. Explicit remote `--template` inputs are staged and checked before Azure authentication; adoption reuses the validated directory |
-| `init` picker | Discovery only. It omits the voice choice while off |
-| Hosted `init` protocol picker | It omits `invocations_ws` while voice is off and validates selection before project/environment creation. Explicit ordinary protocols and the no-prompt Responses default need no feature check |
+| Hosted `init` protocol picker | It omits `a2a` while that preview is off and validates explicit A2A selection before project/environment creation. `invocations_ws`, ordinary protocols, and the no-prompt Responses default need no additional feature check |
 | `agent add` | Definitions come from `--file` content |
 | `invoke --local` | The local path uses the gated selector when an agent service exists. A web-only project retains ordinary local invocation |
 | `optimize` submission | The actual target is resolved before checking its local service. Matching config-file targets are checked; independent remote targets retain their authored identity and version |

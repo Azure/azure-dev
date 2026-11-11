@@ -149,6 +149,10 @@ func TestFoundryReleaseMetadata(t *testing.T) {
 			require.NoError(t, err)
 			_, latest, found := strings.Cut(string(changelog), "\n## ")
 			require.True(t, found)
+			if strings.HasPrefix(latest, "Unreleased\n") {
+				_, latest, found = strings.Cut(latest, "\n## ")
+				require.True(t, found)
+			}
 			assert.True(t, strings.HasPrefix(latest, manifest.Version+" ("), "latest changelog must match version")
 		})
 	}

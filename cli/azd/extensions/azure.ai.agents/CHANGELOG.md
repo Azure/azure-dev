@@ -2,6 +2,12 @@
 
 <!-- cspell:ignore Deeksharma JerryYangKai vebudumu yiliuTo Yimin -->
 
+## Unreleased
+
+### Other Changes
+
+- Make Voice, prompt-voice, and hosted voice agent features generally available without `AZD_ALPHA_ENABLE_AGENTS_VOICE`.
+
 ## 1.0.0 (2026-11-05)
 
 ### Breaking Changes

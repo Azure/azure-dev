@@ -14,7 +14,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,8 +21,6 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -128,44 +125,6 @@ func TestPreviewLocalResponsesWithWebOnlyProject(t *testing.T) {
 	require.EqualValues(t, 1, requests.Load())
 }
 
-func TestPreviewHostedProtocolsRejectBeforeAuthOrWrites(t *testing.T) {
-	for _, route := range []string{"image", "code"} {
-		for _, protocols := range [][]string{
-			{"--protocol", "invocations_ws"},
-			{"--protocol", "responses,invocations_ws"},
-			{"--protocol", "responses", "--protocol", "invocations_ws"},
-		} {
-			t.Run(route+"/"+strings.Join(protocols, "_"), func(t *testing.T) {
-				clearPreviewProcess(t)
-				root := t.TempDir()
-				t.Chdir(root)
-				startPreviewCommandServer(t, map[string]any{"agents": map[string]any{
-					"managed_harness": "on", "long_running": "on",
-				}}, nil, nil)
-				args := []string{"init", "--no-prompt", "--agent-name", "test-agent"}
-				if route == "image" {
-					args = append(args, "--image", "registry.example.com/agent:v1")
-				} else {
-					require.NoError(t, os.WriteFile("main.py", []byte("print('hello')\n"), 0600))
-					args = append(args, "--src", root, "--deploy-mode", "code",
-						"--runtime", "python_3_13", "--entry-point", "main.py")
-				}
-				args = append(args, protocols...)
-				_, err := executeRoot(t, args...)
-				require.ErrorContains(t, err, featureflags.Voice.ID)
-				entries, err := os.ReadDir(root)
-				require.NoError(t, err)
-				if route == "image" {
-					require.Empty(t, entries)
-				} else {
-					require.Len(t, entries, 1)
-					require.Equal(t, "main.py", entries[0].Name())
-				}
-			})
-		}
-	}
-}
-
 func TestPreviewHostedProtocolValidationPrecedesGate(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
@@ -187,37 +146,42 @@ func TestPreviewHostedProtocolValidationPrecedesGate(t *testing.T) {
 	}
 }
 
-func TestPreviewHostedProtocolPreRun(t *testing.T) {
-	clearPreviewProcess(t)
-	for _, enabled := range []bool{false, true} {
-		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+func TestVoiceGraduationIgnoresLegacyFlagForInitAndLifecycle(t *testing.T) {
+	const legacyVoiceFlag = "AZD_ALPHA_ENABLE_AGENTS_VOICE"
+	for _, value := range []string{"unset", "false"} {
+		t.Run(value, func(t *testing.T) {
 			clearPreviewProcess(t)
-			t.Setenv(featureflags.Voice.EnvVar, strconv.FormatBool(enabled))
-			_, env := startPreviewCommandServer(t, nil, nil, nil)
-			for _, protocols := range [][]string{
-				nil, {"--protocol", "responses"}, {"--protocol", "invocations"},
-				{"--protocol", "activity"}, {"--protocol", "invocations_ws"},
-				{"--protocol", "responses,invocations_ws"},
-				{"--protocol", "responses", "--protocol", "invocations_ws"},
+			t.Setenv(legacyVoiceFlag, "restore-after-test")
+			if value == "unset" {
+				require.NoError(t, os.Unsetenv(legacyVoiceFlag))
+			} else {
+				t.Setenv(legacyVoiceFlag, value)
+			}
+
+			root := t.TempDir()
+			manifest := []byte("name: voice-ga\nservices:\n" +
+				"  prompt-voice:\n    host: azure.ai.agent\n    kind: prompt-voice\n" +
+				"  hosted-voice:\n    host: azure.ai.agent\n    kind: hosted\n" +
+				"    protocols:\n      - protocol: invocations_ws\n        version: 1.0.0\n")
+			require.NoError(t, requireManifestPreviewFeatures(manifest, root, io.Discard),
+				"Voice init definitions must not use the retired preview gate")
+
+			records, err := selectHostedProtocols(
+				t.Context(), nil, true, []string{"invocations_ws"}, io.Discard)
+			require.NoError(t, err)
+			require.Equal(t, "invocations_ws", records[0].Protocol)
+
+			for _, definition := range []map[string]any{
+				{"kind": "prompt-voice"},
+				{"kind": "hosted", "protocols": []any{map[string]any{"protocol": "invocations_ws"}}},
 			} {
-				root := NewRootCommand()
-				cmd, _, err := root.Find([]string{"init"})
+				props, err := structpb.NewStruct(definition)
 				require.NoError(t, err)
-				cmd.SetContext(t.Context())
-				require.NoError(t, cmd.ParseFlags(protocols))
-				before := env.reads.Load()
-				err = enforcePreviewFeatures(cmd, nil)
-				if !strings.Contains(strings.Join(protocols, ","), "invocations_ws") {
-					require.NoError(t, err)
-					require.Empty(t, requiredPreviewFeatures(cmd))
-					require.Equal(t, before, env.reads.Load())
-				} else if enabled {
-					require.NoError(t, err)
-					require.Equal(t, []featureflags.Feature{featureflags.Voice}, requiredPreviewFeatures(cmd))
-				} else {
-					require.ErrorContains(t, err, featureflags.Voice.ID)
+				service := &azdext.ServiceConfig{
+					Name: "voice-agent", Host: AiAgentHost, AdditionalProperties: props,
 				}
-				require.Equal(t, before, env.reads.Load())
+				require.NoError(t, requireSelectedServiceFeatures(gatedContext(t.Context()), service, root),
+					"Voice lifecycle selection must not use the retired preview gate")
 			}
 		})
 	}
@@ -258,107 +222,6 @@ func (s *protocolSelectionServer) MultiSelect(
 	_ context.Context, request *azdext.MultiSelectRequest,
 ) (*azdext.MultiSelectResponse, error) {
 	return s.selectProtocols(request)
-}
-
-func TestPreviewHostedProtocolPickerBeforeMutation(t *testing.T) {
-	for _, route := range []string{"image", "code"} {
-		for _, enabled := range []bool{false, true} {
-			t.Run(route+"/"+strconv.FormatBool(enabled), func(t *testing.T) {
-				clearPreviewProcess(t)
-				root := t.TempDir()
-				t.Chdir(root)
-				var calls atomic.Int32
-				prompts := &protocolSelectionServer{selectProtocols: func(req *azdext.MultiSelectRequest) (
-					*azdext.MultiSelectResponse, error,
-				) {
-					calls.Add(1)
-					var names []string
-					for _, choice := range req.Options.Choices {
-						names = append(names, choice.Value)
-						require.Equal(t, choice.Value == "responses", choice.Selected)
-					}
-					if enabled {
-						require.Equal(t, []string{"responses", "invocations", "invocations_ws", "activity"}, names)
-					} else {
-						require.Equal(t, []string{"responses", "invocations", "activity"}, names)
-					}
-					return nil, status.Error(codes.Canceled, "stop before project setup")
-				}}
-				t.Setenv(featureflags.Voice.EnvVar, strconv.FormatBool(enabled))
-				client, _ := startPreviewCommandServer(t, nil, nil, prompts)
-				flags := &initFlags{agentName: "agent"}
-				if route == "image" {
-					flags.image = "registry.example.com/agent:v1"
-				} else {
-					require.NoError(t, os.WriteFile("main.py", []byte("print('hello')\n"), 0600))
-					flags.src = root
-				}
-				action := &InitFromCodeAction{azdClient: client, flags: flags, sourceValidated: true}
-				err := action.Run(t.Context())
-				require.ErrorContains(t, err, "protocol selection was cancelled")
-				require.EqualValues(t, 1, calls.Load())
-				require.Nil(t, action.projectConfig)
-				require.Nil(t, action.environment)
-				entries, err := os.ReadDir(root)
-				require.NoError(t, err)
-				require.Len(t, entries, map[string]int{"image": 0, "code": 1}[route])
-			})
-		}
-	}
-}
-
-func TestPreviewHostedProtocolSelection(t *testing.T) {
-	clearPreviewProcess(t)
-	for _, explicit := range [][]string{nil, {"responses"}, {"invocations"}, {"activity"}, {"responses", "invocations"}} {
-		records, err := selectHostedProtocols(t.Context(), nil, true, explicit, io.Discard)
-		require.NoError(t, err, "ordinary explicit/default protocols need no feature reads")
-		require.NotEmpty(t, records)
-	}
-	for _, enabled := range []bool{false, true} {
-		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
-			clearPreviewProcess(t)
-			t.Setenv(featureflags.Voice.EnvVar, strconv.FormatBool(enabled))
-			prompts := &protocolSelectionServer{selectProtocols: func(*azdext.MultiSelectRequest) (
-				*azdext.MultiSelectResponse, error,
-			) {
-				return &azdext.MultiSelectResponse{Values: []*azdext.MultiSelectChoice{
-					{Value: "invocations_ws", Selected: true},
-				}}, nil
-			}}
-			client, env := startPreviewCommandServer(t, nil, nil, prompts)
-			var notice bytes.Buffer
-			records, err := selectHostedProtocols(t.Context(), client, false, nil, &notice)
-			if enabled {
-				require.NoError(t, err)
-				require.Contains(t, notice.String(), featureflags.Voice.EnvVar)
-				require.Equal(t, []agent_yaml.ProtocolVersionRecord{
-					{Protocol: "invocations_ws", Version: "2.0.0"},
-				}, records)
-			} else {
-				require.ErrorContains(t, err, "unexpected protocol")
-				require.Empty(t, notice.String())
-			}
-			before := env.reads.Load()
-			_, err = selectHostedProtocols(t.Context(), client, true, []string{"responses", "invocations_ws"}, io.Discard)
-			if enabled {
-				require.NoError(t, err)
-			} else {
-				require.ErrorContains(t, err, featureflags.Voice.ID)
-			}
-			require.Equal(t, before, env.reads.Load())
-			env.mu.Lock()
-			require.Empty(t, env.selected)
-			env.err = status.Error(codes.PermissionDenied, "selection source failure")
-			env.mu.Unlock()
-			_, err = selectHostedProtocols(t.Context(), client, false, nil, io.Discard)
-			if enabled {
-				require.NoError(t, err)
-			} else {
-				require.ErrorContains(t, err, "unexpected protocol")
-			}
-			require.Equal(t, before+1, env.reads.Load(), "only the protocol prompt calls the host")
-		})
-	}
 }
 
 func clearPreviewProcess(t *testing.T) {
@@ -410,8 +273,6 @@ func TestPersistedConfigCannotUnlockPreviewGates(t *testing.T) {
 			}{
 				{[]string{"init", "--no-prompt", "--kind", "prompt", "--harness", "microsoft_copilot_preview"},
 					featureflags.ManagedHarness},
-				{[]string{"init", "--no-prompt", "--kind", "prompt-voice", "--agent-name", "voice-agent"},
-					featureflags.Voice},
 				{[]string{"invoke", "--long-running", "--no-wait", "hello"}, featureflags.LongRunning},
 			} {
 				_, err := executeRoot(t, tc.args...)
@@ -428,7 +289,7 @@ func TestPersistedConfigCannotUnlockPreviewGates(t *testing.T) {
 func TestIndependentPreviewGates(t *testing.T) {
 	clearPreviewProcess(t)
 	features := []featureflags.Feature{
-		featureflags.ManagedHarness, featureflags.Voice, featureflags.LongRunning,
+		featureflags.ManagedHarness, featureflags.A2A, featureflags.LongRunning,
 	}
 	for _, enabled := range features {
 		t.Run(enabled.ID, func(t *testing.T) {
@@ -448,7 +309,7 @@ func TestIndependentPreviewGates(t *testing.T) {
 func TestPreviewGuidanceDoesNotExposeServiceOptIn(t *testing.T) {
 	clearPreviewProcess(t)
 	for _, feature := range []featureflags.Feature{
-		featureflags.ManagedHarness, featureflags.Voice, featureflags.LongRunning,
+		featureflags.ManagedHarness, featureflags.A2A, featureflags.LongRunning,
 	} {
 		t.Run(feature.ID, func(t *testing.T) {
 			err := featureflags.RequireWithWriter(feature, io.Discard)
@@ -475,10 +336,6 @@ func TestPreviewInitRejectsBeforeAuthOrProjectWrites(t *testing.T) {
 	}{
 		{[]string{"--kind", "prompt", "--harness", "microsoft_copilot_preview"}, featureflags.ManagedHarness},
 		{[]string{"--kind", "prompt", "--harness", "github_copilot_preview"}, featureflags.ManagedHarness},
-		{[]string{"--kind", "prompt-voice", "--agent-name", "voice-agent"}, featureflags.Voice},
-		{[]string{"--kind", " Prompt-Voice ", "--agent-name", "voice-agent"}, featureflags.Voice},
-		{[]string{"--voice", "en-US-Ava:DragonHDLatestNeural", "--kind", "prompt-voice",
-			"--agent-name", "voice-agent"}, featureflags.Voice},
 	} {
 		t.Run(tc.feature.ID+"/"+tc.args[len(tc.args)-1], func(t *testing.T) {
 			t.Chdir(t.TempDir())
@@ -492,46 +349,6 @@ func TestPreviewInitRejectsBeforeAuthOrProjectWrites(t *testing.T) {
 			require.Zero(t, env.reads.Load())
 		})
 	}
-}
-
-func TestPreviewVoiceDiscovery(t *testing.T) {
-	clearPreviewProcess(t)
-	t.Chdir(t.TempDir())
-	prompts := &helpersPromptServer{selectIndex: 0}
-	client, _ := startPreviewCommandServer(t, nil, nil, prompts)
-	mode, err := promptInitMode(t.Context(), client, false)
-	require.NoError(t, err)
-	require.Equal(t, initModeTemplate, mode)
-	require.Len(t, prompts.lastSelect.Options.Choices, 1)
-	require.NotContains(t, prompts.lastSelect.Options.Choices[0].Label, "voice")
-	t.Setenv(featureflags.Voice.EnvVar, "true")
-	_, err = promptInitMode(t.Context(), client, false)
-	require.NoError(t, err)
-	require.Len(t, prompts.lastSelect.Options.Choices, 2)
-}
-
-func TestPreviewStagedManifestUsesProcessSwitch(t *testing.T) {
-	clearPreviewProcess(t)
-	root := t.TempDir()
-	content := []byte("name: preview-test\nservices:\n  voice:\n    host: azure.ai.agent\n    kind: prompt-voice\n")
-	require.ErrorContains(t, requireManifestPreviewFeatures(content, root, io.Discard), "agents.voice")
-	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0600))
-	require.ErrorContains(t, requireStagedPreviewFeatures(root, io.Discard), "agents.voice")
-	require.ErrorContains(t, requireManifestPreviewFeatures(
-		append(content, []byte("  web:\n    host: containerapp\n    env:\n      "+
-			featureflags.Voice.EnvVar+": 'true'\n")...), root, io.Discard), "agents.voice")
-	require.ErrorContains(t, requireManifestPreviewFeatures(
-		append(content, []byte("    env:\n      "+featureflags.Voice.EnvVar+": true\n")...), root, io.Discard), "agents.voice")
-	require.ErrorContains(t, project.RequireDefinitionFeatures(map[string]any{
-		"kind": "prompt-voice", "env": map[string]any{featureflags.Voice.EnvVar: true},
-	}, io.Discard), "agents.voice")
-	t.Setenv(featureflags.Voice.EnvVar, "true")
-	require.NoError(t, requireManifestPreviewFeatures(content, root, io.Discard))
-	require.NoError(t, requireStagedPreviewFeatures(root, io.Discard))
-	require.NoError(t, project.RequireDefinitionFeatures(map[string]any{"kind": "prompt-voice"}, io.Discard))
-	got, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
-	require.NoError(t, err)
-	require.Equal(t, content, got)
 }
 
 func TestBYOAKSManifestFeatureGate(t *testing.T) {
@@ -587,23 +404,10 @@ func TestBYOAKSManifestFeatureGate(t *testing.T) {
 	}
 }
 
-func TestPreviewDefinitionGateNeedsNoHost(t *testing.T) {
-	clearPreviewProcess(t)
-	t.Setenv("AZD_SERVER", "127.0.0.1:1")
-	definition := map[string]any{
-		"kind": "prompt-voice", "env": map[string]any{featureflags.Voice.EnvVar: true},
-	}
-	require.ErrorContains(t, project.RequireDefinitionFeatures(definition, io.Discard), "agents.voice")
-	t.Setenv(featureflags.Voice.EnvVar, "true")
-	require.NoError(t, project.RequireDefinitionFeatures(definition, io.Discard))
-}
-
 func TestPreviewInvokeLocalBypassesAndReadAccess(t *testing.T) {
 	clearPreviewProcess(t)
 	for _, definition := range []map[string]any{
 		{"kind": "prompt", "harness": map[string]any{"type": "microsoft_copilot_preview"}},
-		{"kind": "prompt-voice"},
-		{"kind": "hosted", "protocols": []any{map[string]any{"protocol": "invocations_ws"}}},
 	} {
 		props, err := structpb.NewStruct(definition)
 		require.NoError(t, err)
@@ -660,9 +464,6 @@ func TestPreviewMutationCommandsRejectDisabledServices(t *testing.T) {
 		args       []string
 		feature    string
 	}{
-		{"endpoint update", map[string]any{
-			"kind": "hosted", "protocols": []any{map[string]any{"protocol": "invocations_ws"}},
-		}, []string{"endpoint", "update", "agent"}, "agents.voice"},
 		{"optimize apply", map[string]any{
 			"kind": "prompt", "harness": map[string]any{"type": "microsoft_copilot_preview"},
 		}, []string{"optimize", "apply", "--agent", "agent", "--candidate", "candidate-test"}, "agents.managed_harness"},
@@ -686,28 +487,6 @@ func TestPreviewMutationCommandsRejectDisabledServices(t *testing.T) {
 			require.Empty(t, entries, "disabled previews must not write project files")
 		})
 	}
-}
-
-func TestPreviewExplicitLocalTemplateBeforeAuth(t *testing.T) {
-	clearPreviewProcess(t)
-	root := t.TempDir()
-	t.Chdir(root)
-	content := []byte("name: preview-test\nservices:\n  voice:\n    host: azure.ai.agent\n" +
-		"    kind: prompt-voice\n    name: voice-test\n    modelType: managed\n" +
-		"    model:\n      id: gpt-realtime\n")
-	require.NoError(t, os.WriteFile("azure.yaml", content, 0600))
-	startPreviewCommandServer(t, nil, nil, nil)
-	command := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
-	command.SetOut(io.Discard)
-	command.SetErr(io.Discard)
-	command.SetArgs([]string{"--template", filepath.Join(root, "azure.yaml")})
-	require.ErrorContains(t, command.Execute(), "agents.voice")
-	actual, err := os.ReadFile("azure.yaml")
-	require.NoError(t, err)
-	require.Equal(t, content, actual)
-	entries, err := os.ReadDir(root)
-	require.NoError(t, err)
-	require.Len(t, entries, 1)
 }
 
 func TestPreviewLongRunningDirectEndpoint(t *testing.T) {

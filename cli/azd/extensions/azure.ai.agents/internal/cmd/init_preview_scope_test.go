@@ -149,14 +149,9 @@ func TestInitPreviewNamedCreationScope(t *testing.T) {
 		feature featureflags.Feature
 		args    []string
 	}{
-		{"voice", featureflags.Voice,
-			[]string{"--kind", "prompt-voice", "--agent-name", "voice-agent", "--model", "gpt-realtime"}},
 		{"harness", featureflags.ManagedHarness,
 			[]string{"--kind", "prompt", "--harness", "microsoft_copilot_preview",
 				"--agent-name", "harness-agent", "--model", "gpt-4.1-mini"}},
-		{"hosted voice", featureflags.Voice,
-			[]string{"--image", "registry.example.com/agent:v1", "--agent-name", "hosted-agent",
-				"--protocol", "invocations_ws"}},
 	} {
 		for _, scope := range []string{"fresh", "existing project", "existing environment"} {
 			for _, source := range []string{"off", "process", "config", "dotenv"} {
@@ -223,71 +218,64 @@ func TestInitPreviewNamedCreationScope(t *testing.T) {
 func TestInitInteractiveNamedCreationScope(t *testing.T) {
 	for _, scope := range []string{"fresh", "existing project"} {
 		for _, withCode := range []bool{false, true} {
-			for _, voiceEnabled := range []bool{false, true} {
-				t.Run(strings.Join([]string{scope, strconv.FormatBool(withCode), strconv.FormatBool(voiceEnabled)}, "/"), func(t *testing.T) {
-					clearPreviewProcess(t)
-					root := t.TempDir()
-					t.Chdir(root)
-					if withCode {
-						require.NoError(t, os.WriteFile("main.py", []byte("print('hello')\n"), 0o600))
-					}
-					modeCalls, protocolCalls := 0, 0
-					host := &initScopeHost{prompts: &initScopePromptServer{
-						selectMode: func(request *azdext.SelectRequest) (*azdext.SelectResponse, error) {
-							modeCalls++
-							var choices []string
-							for _, choice := range request.Options.Choices {
-								choices = append(choices, choice.Value)
-							}
-							expected := []string{initModeTemplate}
-							if withCode {
-								expected = append([]string{initModeFromCode}, expected...)
-							}
-							if voiceEnabled {
-								expected = append(expected, initModeVoice)
-							}
-							require.Equal(t, expected, choices)
-							if !withCode {
-								return nil, status.Error(codes.Canceled, "fixture stopped at template choice")
-							}
-							return &azdext.SelectResponse{Value: new(int32(0))}, nil
-						},
-						protocols: func(request *azdext.MultiSelectRequest) (*azdext.MultiSelectResponse, error) {
-							protocolCalls++
-							var choices []string
-							for _, choice := range request.Options.Choices {
-								choices = append(choices, choice.Value)
-								require.Equal(t, choice.Value == "responses", choice.Selected)
-							}
-							require.Equal(t, voiceEnabled, slices.Contains(choices, "invocations_ws"))
-							return nil, status.Error(codes.Canceled, "fixture stopped before init writes")
-						},
-					}}
-					if scope == "fresh" {
-						host.project.err = status.Error(codes.Unknown, initScopeNoProject)
-					} else {
-						host.project.project = &azdext.ProjectConfig{Path: root}
-						host.env.err = status.Error(codes.Unknown, "environment not found")
-					}
-					if voiceEnabled {
-						t.Setenv(featureflags.Voice.EnvVar, "true")
-					}
-					host.start(t)
-					initScopeAuthFixture(t, true)
-					err := runInitScopeRoot(t, "-e", "new-env")
-					require.ErrorContains(t, err, "cancelled")
-					require.Equal(t, 1, modeCalls)
-					if withCode {
-						require.Equal(t, 1, protocolCalls)
-					} else {
-						require.Zero(t, protocolCalls)
-					}
-					require.Zero(t, host.workflow.runCalls)
-					entries, readErr := os.ReadDir(root)
-					require.NoError(t, readErr)
-					require.Len(t, entries, map[bool]int{false: 0, true: 1}[withCode])
-				})
-			}
+			t.Run(strings.Join([]string{scope, strconv.FormatBool(withCode)}, "/"), func(t *testing.T) {
+				clearPreviewProcess(t)
+				root := t.TempDir()
+				t.Chdir(root)
+				if withCode {
+					require.NoError(t, os.WriteFile("main.py", []byte("print('hello')\n"), 0o600))
+				}
+				modeCalls, protocolCalls := 0, 0
+				host := &initScopeHost{prompts: &initScopePromptServer{
+					selectMode: func(request *azdext.SelectRequest) (*azdext.SelectResponse, error) {
+						modeCalls++
+						var choices []string
+						for _, choice := range request.Options.Choices {
+							choices = append(choices, choice.Value)
+						}
+						expected := []string{initModeTemplate}
+						if withCode {
+							expected = append([]string{initModeFromCode}, expected...)
+						}
+						expected = append(expected, initModeVoice)
+						require.Equal(t, expected, choices)
+						if !withCode {
+							return nil, status.Error(codes.Canceled, "fixture stopped at template choice")
+						}
+						return &azdext.SelectResponse{Value: new(int32(0))}, nil
+					},
+					protocols: func(request *azdext.MultiSelectRequest) (*azdext.MultiSelectResponse, error) {
+						protocolCalls++
+						var choices []string
+						for _, choice := range request.Options.Choices {
+							choices = append(choices, choice.Value)
+							require.Equal(t, choice.Value == "responses", choice.Selected)
+						}
+						require.True(t, slices.Contains(choices, "invocations_ws"))
+						return nil, status.Error(codes.Canceled, "fixture stopped before init writes")
+					},
+				}}
+				if scope == "fresh" {
+					host.project.err = status.Error(codes.Unknown, initScopeNoProject)
+				} else {
+					host.project.project = &azdext.ProjectConfig{Path: root}
+					host.env.err = status.Error(codes.Unknown, "environment not found")
+				}
+				host.start(t)
+				initScopeAuthFixture(t, true)
+				err := runInitScopeRoot(t, "-e", "new-env")
+				require.ErrorContains(t, err, "cancelled")
+				require.Equal(t, 1, modeCalls)
+				if withCode {
+					require.Equal(t, 1, protocolCalls)
+				} else {
+					require.Zero(t, protocolCalls)
+				}
+				require.Zero(t, host.workflow.runCalls)
+				entries, readErr := os.ReadDir(root)
+				require.NoError(t, readErr)
+				require.Len(t, entries, map[bool]int{false: 0, true: 1}[withCode])
+			})
 		}
 	}
 }
@@ -345,12 +333,6 @@ func TestInitExplicitRemoteTemplatePreviewBeforeAuth(t *testing.T) {
 		content string
 		feature featureflags.Feature
 	}{
-		{
-			name: "voice",
-			content: "kind: prompt-voice\nname: remote-agent\nmodelType: managed\n" +
-				"model:\n  id: gpt-realtime",
-			feature: featureflags.Voice,
-		},
 		{
 			name: "managed harness",
 			content: "kind: prompt\nname: remote-agent\nmodelType: managed\n" +

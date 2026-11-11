@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
@@ -90,9 +89,6 @@ The agent name is resolved from the azd environment when omitted.` + deleteVoice
 		AllowedValues: []string{"json", "none"},
 		Default:       "none",
 	})
-	previewHelpText(cmd, featureflags.Voice, "a prompt, hosted, or voice agent", "an agent")
-	previewHelp(cmd, featureflags.Voice, []string{deleteVoiceHelp}, nil)
-
 	return cmd
 }
 

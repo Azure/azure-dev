@@ -17,12 +17,11 @@ requirements, and Bicep/Terraform ejection and cleanup semantics.
 
 ## Preview feature switches
 
-All eight preview capabilities are off by default. Each switch is controlled independently.
+All seven preview capabilities are off by default. Each switch is controlled independently.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
 | `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
-| `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 | `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
@@ -34,19 +33,12 @@ Override a switch in your shell or CI before running azd:
 
 ```bash
 export AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
-export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
 export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
 export AZD_ALPHA_ENABLE_AGENTS_A2A=true
 export AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
 export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
 export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true
 export AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true
-```
-
-In PowerShell, for example:
-
-```powershell
-$env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
 ```
 
 When a variable is absent, its feature is off.
@@ -63,7 +55,7 @@ The Projects provisioning listener likewise requires the BYO AKS switch in
 the current shell or CI process environment for `azd provision` and
 `azd provision --preview`; `azd env set` alone does not enable it.
 
-User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
+User config keys such as `alpha.all`, and the former
 `AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary
 hosted and plain prompt agents without BYO AKS hosting or new ACR reuse intent
 need no opt-in.
@@ -72,20 +64,16 @@ Root help always lists the canonical switches and their scopes. While a
 feature is off, its command-specific flags and help sections are hidden.
 Enabling a feature preserves the existing help without adding new text or
 revealing flags that were already hidden, including `--harness`.
-This covers `invoke --long-running`, `invoke --no-wait`, the
-`invocations` group, `init --voice`, and the `prompt-voice` choice of
-`init --kind`. Hidden commands still run. Using a disabled preview fails with a
+This covers `invoke --long-running`, `invoke --no-wait`, and the
+`invocations` group. Hidden commands still run. Using a disabled preview fails with a
 `feature_not_enabled` error that names the preview feature ID and suggests
 setting its canonical variable to `true` in the shell or CI.
 
 Checks cover preview flags on init and invoke, `agent add` definitions,
 existing and staged project definitions, the selected service for invoke, run,
 optimize submissions, optimize deploy, optimize apply, and endpoint update,
-provisioning, and package, publish, and deploy. The init
-picker omits voice while it is off. Hosted init also omits `invocations_ws`
-from protocol help and selection while voice is off. Explicit `--protocol`
-values, including repeated flags and comma-separated lists, require the voice
-opt-in for `invocations_ws`. Protocol selection completes before project or
+provisioning, and package, publish, and deploy. Voice, prompt-voice, and hosted
+voice bridge initialization and deployment are always available. Protocol selection completes before project or
 environment creation; ordinary protocols and the no-prompt Responses default
 need no additional feature check. Template catalogs do not identify
 capabilities, so templates are checked after staging and before adoption.
@@ -718,8 +706,8 @@ Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI before initializin
 an A2A hosted agent. With the preview off, init hides the `a2a` choice and rejects
 explicit `--protocol a2a` selections (including repeated or comma-separated flags)
 before authentication or writes. Responses remains the no-prompt default.
-`invocations_ws` independently requires the Voice preview. Existing declarations
-are not gated during deployment or lifecycle operations by this init selection check.
+`invocations_ws` is always available. Existing declarations are not gated during
+deployment or lifecycle operations by this init selection check.
 
 Foundry forwards requests directly to A2A hosted agents instead of converting them
 to Responses requests. Select `a2a` during init and deselect `responses` if your
@@ -1249,11 +1237,14 @@ Details:
   managed agents, `azd ai agent init` lists the policies on the selected account
   and can bind one for you; see `--rai-policy`.
 
-## Voice agents (public preview)
+## Voice agents
 
-Voice initialization needs the `agents.voice` [opt-in](#preview-feature-switches).
-Use the existing commands to discover options and create a managed prompt voice
-agent:
+The azd Voice authoring and lifecycle experience is generally available and no
+longer requires `AZD_ALPHA_ENABLE_AGENTS_VOICE`. This graduation applies to the
+CLI feature gate; individual models, protocols, service features, subscriptions,
+and regions can still have their own preview status and availability requirements.
+
+Use the existing commands to discover options and create a managed prompt voice agent:
 
 ```bash
 azd ai agent --help
@@ -1274,7 +1265,7 @@ azd deploy
 The following `azure.yaml` example uses a service-hosted model; no separate model
 deployment is required. `kind: voice` and the compatibility alias
 `kind: prompt-voice` are both accepted. Initialization retains its existing
-`prompt-voice` output; changing the kind is not required to use public preview.
+`prompt-voice` output; changing the kind is not required.
 
 ```yaml
 name: support-voice
@@ -1334,7 +1325,7 @@ Use `audio.input.format.rate` or `audio.output.format.rate` only for PCM sample
 rate (`24000`); omit format rate for G.711. Use `audio.output.speed` for speech
 speed. Legacy `handoff` and `audio.output.voice.rate` values are unsupported by
 the GA API.
-See [hosted voice wrappers](#hosted-voice-wrapper-preview) for `conversationEngine`
+See [hosted voice wrappers](#hosted-voice-wrapper-service-preview) for `conversationEngine`
 and [telephony bindings](#prompt-voice-telephony-bindings) for phone-provider setup.
 
 To try a prompt voice agent or hosted voice wrapper, open your project in the
@@ -1754,7 +1745,7 @@ connections, and unused project-only selections do not trigger the ABAC
 remote-build restriction; selector scope and `agentHosting` validation still
 apply.
 
-### Hosted voice wrapper (preview)
+### Hosted voice wrapper (service preview)
 
 A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
 and text-to-speech while routing conversation logic to a hosted agent in the

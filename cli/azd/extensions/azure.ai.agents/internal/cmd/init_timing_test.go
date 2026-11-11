@@ -448,7 +448,6 @@ func TestInitStepTimingVoiceConfigurationBothEntryPoints(t *testing.T) {
 		t.Run(fmt.Sprintf("explicit-kind=%t", explicit), func(t *testing.T) {
 			root := t.TempDir()
 			t.Chdir(root)
-			t.Setenv("AZD_ALPHA_ENABLE_AGENTS_VOICE", "true")
 			project := &helpersProjectServer{project: &azdext.ProjectConfig{
 				Path: root, Infra: &azdext.InfraOptions{Provider: "microsoft.foundry"},
 			}}

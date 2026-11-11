@@ -1040,7 +1040,7 @@ func TestResolveTemplateRef(t *testing.T) {
 }
 
 func TestAgentListenersDoNotProjectSplitConnections(t *testing.T) {
-	t.Setenv(featureflags.Voice.EnvVar, "true")
+	t.Setenv(featureflags.A2A.EnvVar, "true")
 
 	for _, event := range []string{"preprovision", "predeploy"} {
 		t.Run(event, func(t *testing.T) {
@@ -1402,13 +1402,9 @@ func TestPredeployAgentRBACRunsPerService(t *testing.T) {
 }
 
 func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
-	clearPreviewProcess(t)
-	t.Setenv(featureflags.Voice.EnvVar, "true")
 	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
 	for _, kind := range []string{"voice", "prompt-voice"} {
 		t.Run(kind, func(t *testing.T) {
-			clearPreviewProcess(t)
-			t.Setenv(featureflags.Voice.EnvVar, "true")
 			t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
 			svc := &azdext.ServiceConfig{
 				Name: "voice-agent",
@@ -1430,8 +1426,7 @@ func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
 				Project: proj, Service: svc,
 			})
 			require.NoError(t, err)
-			require.Len(t, response.Messages, 1)
-			require.Contains(t, response.Messages[0].Message, "Preview feature enabled:")
+			require.Empty(t, response.Messages)
 			require.GreaterOrEqual(t, envServer.getCurrentCalls, 2)
 		})
 	}
@@ -1467,35 +1462,6 @@ func TestPredeployReturnsPreviewFeatureNotice(t *testing.T) {
 	require.Contains(t, response.Messages[0].Message, "Preview feature enabled:")
 	require.Contains(t, response.Messages[0].Message, featureflags.MemorySnapshot.EnvVar+"=true")
 	require.Contains(t, response.Messages[0].Message, "Preview behavior may change.")
-}
-
-func TestPredeployRejectsDisabledVoiceBeforeMutation(t *testing.T) {
-	t.Setenv(featureflags.Voice.EnvVar, "")
-	t.Setenv("AGENT_DEFINITION_PATH", "")
-	svc := &azdext.ServiceConfig{
-		Name: "voice-agent", Host: AiAgentHost,
-		AdditionalProperties: mustStruct(t, map[string]any{
-			"kind": "voice", "name": "voice-agent", "modelType": "managed",
-			"model": map[string]any{"id": "gpt-realtime"},
-		}),
-	}
-	proj := &azdext.ProjectConfig{
-		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{"voice-agent": svc},
-	}
-	before := proto.Clone(proj)
-	envServer := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
-	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
-
-	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
-		Project: proj, Service: svc,
-	})
-
-	require.Nil(t, response)
-	require.ErrorContains(t, err, featureflags.Voice.ID)
-	require.True(t, proto.Equal(before, proj))
-	require.Zero(t, envServer.getCurrentCalls)
-	require.Zero(t, envServer.getValuesCalls)
-	require.Empty(t, envServer.setKeys)
 }
 
 func TestPredownRejectsUnsupportedRuntimeSourcesBeforeCleanup(t *testing.T) {

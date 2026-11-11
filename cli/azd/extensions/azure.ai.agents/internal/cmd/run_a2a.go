@@ -15,7 +15,7 @@ func protocolOnlyRunTarget(def *agent_yaml.ContainerAgent) string {
 	if def == nil || len(def.Protocols) == 0 {
 		return ""
 	}
-	conversationEngine, onlyVoiceProtocols, onlyA2A := false, true, true
+	conversationEngine, hasA2A, onlyClientFreeProtocols, onlyA2A := false, false, true, true
 	for _, declared := range def.Protocols {
 		protocol := strings.TrimSpace(declared.Protocol)
 		onlyA2A = onlyA2A && protocol == nextstep.ProtocolA2A
@@ -23,11 +23,16 @@ func protocolOnlyRunTarget(def *agent_yaml.ContainerAgent) string {
 		case nextstep.ProtocolVoiceConversationEngine:
 			conversationEngine = true
 		case nextstep.ProtocolInvocationsWS:
+		case nextstep.ProtocolA2A:
+			hasA2A = true
 		default:
-			onlyVoiceProtocols = false
+			onlyClientFreeProtocols = false
 		}
 	}
-	if conversationEngine && onlyVoiceProtocols {
+	if conversationEngine && onlyClientFreeProtocols {
+		if hasA2A {
+			return nextstep.ProtocolA2A
+		}
 		return nextstep.ProtocolVoiceConversationEngine
 	}
 	if onlyA2A {
@@ -36,7 +41,7 @@ func protocolOnlyRunTarget(def *agent_yaml.ContainerAgent) string {
 	return ""
 }
 
-// resolveRunClientProfile suppresses clients for A2A-only and CE/WebSocket-only targets.
+// resolveRunClientProfile suppresses clients for A2A-only and CE/A2A/WebSocket-only targets.
 func resolveRunClientProfile(def *agent_yaml.ContainerAgent) (activityRunProfile, bool) {
 	if protocolOnlyRunTarget(def) != "" {
 		return activityRunProfile{}, true

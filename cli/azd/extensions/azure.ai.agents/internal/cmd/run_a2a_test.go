@@ -28,6 +28,10 @@ func TestA2AOnlyRunTargetRouting(t *testing.T) {
 		{"conversation engine", "protocols: [{protocol: voice_conversation_engine, version: 1.0.0}]", true},
 		{"CE and WebSocket", "protocols: [{protocol: voice_conversation_engine}, {protocol: invocations_ws}]", true},
 		{"WebSocket and CE", "protocols: [{protocol: invocations_ws}, {protocol: voice_conversation_engine}]", true},
+		{"CE and A2A", "protocols: [{protocol: voice_conversation_engine}, {protocol: a2a}]", true},
+		{"A2A and CE", "protocols: [{protocol: a2a}, {protocol: voice_conversation_engine}]", true},
+		{"CE and A2A and WebSocket", "protocols: [{protocol: voice_conversation_engine}, {protocol: a2a}, {protocol: invocations_ws}]", true},
+		{"CE and A2A and Responses", "protocols: [{protocol: voice_conversation_engine}, {protocol: a2a}, {protocol: responses}]", false},
 		{"CE and Responses", "protocols: [{protocol: voice_conversation_engine}, {protocol: responses}]", false},
 		{"CE and Invocations", "protocols: [{protocol: voice_conversation_engine}, {protocol: invocations}]", false},
 		{"CE and Activity", "protocols: [{protocol: voice_conversation_engine}, {protocol: activity}]", false},
@@ -51,6 +55,13 @@ func TestA2AOnlyRunTargetRouting(t *testing.T) {
 			}
 			profile, suppressed := resolveRunClientProfile(def)
 			protocol := protocolOnlyRunTarget(def)
+			if tc.name == "CE and A2A" || tc.name == "A2A and CE" || tc.name == "CE and A2A and WebSocket" {
+				require.Equal(t, nextstep.ProtocolA2A, protocol)
+				state := withResolvedRunTarget(nil, "engine", protocol)
+				suggestions := nextstep.ResolveAfterRun(state, "engine", func(string) bool { return true })
+				require.Len(t, suggestions, 1)
+				require.Contains(t, suggestions[0].Command, "--protocol a2a")
+			}
 			if tc.name == "CE and WebSocket" || tc.name == "WebSocket and CE" {
 				require.Equal(t, nextstep.ProtocolVoiceConversationEngine, protocol)
 				state := withResolvedRunTarget(nil, "engine", protocol)

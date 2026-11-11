@@ -38,8 +38,8 @@ func metadataValidationErrorf(format string, args ...any) error {
 
 // IsFoundryProjectMetadataValidationError reports whether err is metadata validation failure.
 func IsFoundryProjectMetadataValidationError(err error) bool {
-	var target *FoundryProjectMetadataValidationError
-	return errors.As(err, &target)
+	_, ok := errors.AsType[*FoundryProjectMetadataValidationError](err)
+	return ok
 }
 
 // FoundryProjectMetadata binds data-plane endpoints to ARM resources.

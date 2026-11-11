@@ -4,7 +4,8 @@
 
 ### Features Added
 
-- [[#10823]](https://github.com/Azure/azure-dev/pull/10823) Add support for extension-defined infrastructure providers in `infra.layers[]`, enabling the `azure.resources` extension to scaffold and deploy custom resources. Thanks @richardpark-msft for the contribution!
+- [[#10823]](https://github.com/Azure/azure-dev/pull/10823) Add support for extension-defined infrastructure providers in `infra.layers[]`, enabling the `azure.resources` extension to scaffold and deploy custom resources.
+
 ### Bugs Fixed
 
 - [[#10861]](https://github.com/Azure/azure-dev/pull/10861) Fix extension command errors in JSON mode by emitting JSON-formatted errors on stderr instead of plain-text errors on stdout.

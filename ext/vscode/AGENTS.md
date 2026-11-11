@@ -8,8 +8,7 @@ A file for [guiding coding agents](https://agents.md/).
 - **Build:** `npm run build`
 - **Lint:** `npm run lint`
 - **Spell Check:** `npx cspell "src/**/*.ts" --config .vscode/cspell.yaml`
-- **Unit Tests:** `npm run unit-test`
-- **Watch mode:** `npm run watch`
+- **Unit Tests:** `npm run test`
 - **Package extension:** `npm run package`
 
 ## Directory Structure
@@ -29,7 +28,7 @@ A file for [guiding coding agents](https://agents.md/).
 
 1. Run `npm run lint` and fix all issues
 2. Run `npx cspell "src/**/*.ts" --config .vscode/cspell.yaml` and fix spelling errors
-3. Run `npm run unit-test` and ensure all tests pass
+3. Run `npm run test` and ensure all tests pass
 4. Update README.md if functionality changed
 5. Verify no merge conflict markers in code
 

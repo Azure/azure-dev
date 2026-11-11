@@ -1,14 +1,10 @@
 # Release History
 
-## 1.38.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.37.4 (2026-11-11)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#10861]](https://github.com/Azure/azure-dev/pull/10861) Fix extension command errors in JSON mode by emitting JSON-formatted errors on stderr instead of plain-text errors on stdout.
 
 ## 1.37.3 (2026-11-04)
 

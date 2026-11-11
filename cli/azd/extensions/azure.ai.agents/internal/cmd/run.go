@@ -605,6 +605,9 @@ func validateInspectorPortFlags(flags *runFlags) error {
 // validateInspectorPortForProfile rejects unsupported protocol-only options and Inspector port collisions.
 func validateInspectorPortForProfile(flags *runFlags, isActivity bool, protocolOnly string) error {
 	if protocolOnly != "" && flags.inspectorPortSet {
+		if protocolOnly == nextstep.ProtocolA2A {
+			protocolOnly = "A2A"
+		}
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
 			fmt.Sprintf("--inspector-port is not supported for %s-only agents, which do not open Agent Inspector", protocolOnly),

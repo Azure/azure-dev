@@ -11,28 +11,32 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 )
 
-// isA2AOnlyRunTarget checks container protocols, not remote endpoint enablement.
-func isA2AOnlyRunTarget(def *agent_yaml.ContainerAgent) bool {
-	return protocolOnlyRunTarget(def) == "a2a"
-}
-
 func protocolOnlyRunTarget(def *agent_yaml.ContainerAgent) string {
 	if def == nil || len(def.Protocols) == 0 {
 		return ""
 	}
-	protocol := strings.TrimSpace(def.Protocols[0].Protocol)
-	if protocol != "a2a" && protocol != nextstep.ProtocolVoiceConversationEngine {
-		return ""
-	}
+	conversationEngine, onlyVoiceProtocols, onlyA2A := false, true, true
 	for _, declared := range def.Protocols {
-		if strings.TrimSpace(declared.Protocol) != protocol {
-			return ""
+		protocol := strings.TrimSpace(declared.Protocol)
+		onlyA2A = onlyA2A && protocol == nextstep.ProtocolA2A
+		switch protocol {
+		case nextstep.ProtocolVoiceConversationEngine:
+			conversationEngine = true
+		case nextstep.ProtocolInvocationsWS:
+		default:
+			onlyVoiceProtocols = false
 		}
 	}
-	return protocol
+	if conversationEngine && onlyVoiceProtocols {
+		return nextstep.ProtocolVoiceConversationEngine
+	}
+	if onlyA2A {
+		return nextstep.ProtocolA2A
+	}
+	return ""
 }
 
-// resolveRunClientProfile keeps A2A-only containers out of Activity client setup.
+// resolveRunClientProfile suppresses clients for A2A-only and CE/WebSocket-only targets.
 func resolveRunClientProfile(def *agent_yaml.ContainerAgent) (activityRunProfile, bool) {
 	if protocolOnlyRunTarget(def) != "" {
 		return activityRunProfile{}, true

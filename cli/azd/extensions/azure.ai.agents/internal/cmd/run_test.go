@@ -506,13 +506,13 @@ func TestValidateInspectorPortForProfile(t *testing.T) {
 			name:        "A2A-only agent rejects an explicit distinct Inspector port",
 			flags:       runFlags{port: 9091, inspectorPort: 9002, inspectorPortSet: true},
 			protocol:    "a2a",
-			wantErrPart: "not supported for a2a-only agents",
+			wantErrPart: "not supported for A2A-only agents",
 		},
 		{
 			name:        "A2A-only agent rejects an explicit equal Inspector port",
 			flags:       runFlags{port: 9091, inspectorPort: 9091, inspectorPortSet: true},
 			protocol:    "a2a",
-			wantErrPart: "not supported for a2a-only agents",
+			wantErrPart: "not supported for A2A-only agents",
 		},
 	}
 

@@ -1822,6 +1822,9 @@ points at the hosted target service, and `version: deployed` pins the wrapper
 to the target version produced by the current azd environment.
 
 The target must be active and declare `voice_conversation_engine/1.0.0`.
+The target and wrapper currently require `AZD_ALPHA_ENABLE_AGENTS_VOICE=true`.
+Configure the conversation engine through the complete manifest shown above;
+this protocol is not offered by the Hosted Agent init protocol picker.
 `invocations_ws` remains an independent Hosted Agent protocol and does not
 substitute for the conversation-engine endpoint. Model, instructions, tools,
 and other conversation controls belong to the target;

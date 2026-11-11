@@ -214,22 +214,6 @@ func TestValidateHostedVoiceTargetAcceptsLowercaseActiveStatus(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestValidateHostedVoiceTargetAcceptsConversationEngineProtocol(t *testing.T) {
-	err := validateHostedVoiceTargetVersion(&agent_api.AgentVersionObject{
-		Name:    "remote-target",
-		Version: "4",
-		Status:  "active",
-		Definition: map[string]any{
-			"kind": "hosted",
-			"protocol_versions": []any{map[string]any{
-				"protocol": "voice_conversation_engine",
-				"version":  "1.0.0",
-			}},
-		},
-	})
-	require.NoError(t, err)
-}
-
 func TestValidateHostedVoiceTargetRejectsInvocationsWSOnly(t *testing.T) {
 	version := compatibleHostedVoiceVersion()
 	version.Definition.(map[string]any)["protocol_versions"] = []any{map[string]any{

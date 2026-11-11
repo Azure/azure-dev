@@ -135,27 +135,23 @@ func buildInvocationsProtocolURL(projectEndpoint, agentName string) string {
 // (for the wss:// authority) to be callable, so emitting a partial URL would only register a
 // non-callable endpoint. Callers (agentInvocationEndpoints) filter out empty results.
 func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
-	projectEndpoint = strings.TrimSpace(projectEndpoint)
-	u, err := url.Parse(projectEndpoint)
-	if err != nil || u.Host == "" {
-		return ""
-	}
-
-	return fmt.Sprintf(
-		"wss://%s%s/agents/%s/endpoint/protocols/invocations_ws?api-version=%s",
-		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
-	)
+	return buildHostedWSProtocolURL(projectEndpoint, agentName, agent_api.AgentProtocolInvocationsWS)
 }
 
 func buildVoiceConversationEngineProtocolURL(projectEndpoint, agentName string) string {
+	return buildHostedWSProtocolURL(projectEndpoint, agentName, agent_api.AgentProtocolVoiceConversationEngine)
+}
+
+func buildHostedWSProtocolURL(projectEndpoint, agentName string, protocol agent_api.AgentProtocol) string {
 	projectEndpoint = strings.TrimSpace(projectEndpoint)
 	u, err := url.Parse(projectEndpoint)
 	if err != nil || u.Host == "" {
 		return ""
 	}
+
 	return fmt.Sprintf(
-		"wss://%s%s/agents/%s/endpoint/protocols/voice_conversation_engine?api-version=%s",
-		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
+		"wss://%s%s/agents/%s/endpoint/protocols/%s?api-version=%s",
+		u.Host, strings.TrimRight(u.Path, "/"), agentName, protocol, agent_api.AgentEndpointAPIVersion,
 	)
 }
 

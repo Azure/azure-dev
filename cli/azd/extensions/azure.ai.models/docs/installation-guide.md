@@ -59,7 +59,8 @@ azd ext install azure.ai.models
 azd ai models -h
 ```
 
-You should see the help output with available commands: `init`, `custom`, and `version`.
+You should see the help output, including `init`, `list`, `download`, `create`,
+`show`, `update`, `delete`, and `version`.
 
 ![Verify Extension is Installed](images/04%20-%20verify%20extension%20is%20installed.jpg)
 
@@ -187,6 +188,7 @@ azd ai models init --project-endpoint "https://my-account.services.ai.azure.com/
 | `azd ai models init` | Set up project, environment, and Azure context |
 | `azd ai models list` | List all custom models |
 | `azd ai models list --connection <connection> --account <account>` | List models in a connected Fireworks account |
+| `azd ai models download --connection <connection> --account <account> --model <model> --output-dir <new-directory>` | Download a connected Fireworks model locally |
 | `azd ai models create --name <n> --source <path>` | Upload and register a model |
 | `azd ai models show --name <n>` | Show model details |
 | `azd ai models delete --name <n>` | Delete a model |
@@ -204,8 +206,10 @@ azd ai models init --project-endpoint "https://my-account.services.ai.azure.com/
 | `--source` | | Local path or remote URL for model files |
 | `--source-file` | | File containing the source URL |
 | `--base-model` | | Base model architecture tag |
-| `--connection` | | Saved Fireworks project connection (list only) |
-| `--account` | | Fireworks account ID (list only) |
+| `--connection` | | Saved Fireworks project connection (list and download) |
+| `--account` | | Fireworks account ID (list and download) |
+| `--model` | | Fireworks model ID (download only) |
+| `--output-dir` | | New local directory for downloaded model files |
 
 ### List models through a Fireworks connection
 
@@ -226,3 +230,40 @@ This command follows all Fireworks listing pages and returns a JSON array with
 `--account` must be supplied together and cannot be combined with `--source-job-id`.
 Use an account ID, not an `accounts/...` resource path.
 Listing does not import, register, or deploy a model.
+
+### Download models through a Fireworks connection
+
+```bash
+azd ai models download \
+  --project-endpoint "https://my-account.services.ai.azure.com/api/projects/my-project" \
+  --connection fireworks --account my-fireworks-account \
+  --model my-model --output-dir ./downloaded-model --output json
+```
+
+This command reuses the saved connection and Azure permissions described above.
+Fireworks must enable model downloads for the account and permit the connection's
+API key to request download endpoints. The API documentation describes API-key
+authentication, but access can still be restricted. Provider errors such as
+`API keys cannot download models` or
+`model downloading is restricted, please contact Fireworks AI to get access`
+are returned without trying interactive credentials.
+
+The command requests `filenameToSignedUrls` from
+[`getDownloadEndpoint`](https://docs.fireworks.ai/api-reference/get-model-download-endpoint)
+and streams every exported file directly to disk. Sources must be direct HTTPS
+URLs; redirects are not followed. Fireworks credentials are sent only to its
+management API, never to the signed download URLs. Signed URLs and storage error
+bodies are not printed.
+
+`--output-dir` must be a new directory under an existing parent. Existing
+directories and files are not overwritten. All filenames and URLs are checked
+before creating the directory, and writes stay within it. Each file becomes
+available under its final name only after the transfer completes.
+Normal cancellation or a failed transfer removes its partial file; already
+completed files remain. Retry with a new directory to request fresh URLs.
+A forced process termination can leave `.azd-download-*.partial` files.
+Transfers have no whole-file timeout; cancel the command to interrupt a download.
+
+The JSON or table summary contains `directory`, `files`, and `bytes`; it contains
+no source credentials. This is a local download only: it does not upload, register,
+or deploy a Foundry model.

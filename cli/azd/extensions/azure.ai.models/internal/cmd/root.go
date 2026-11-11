@@ -56,8 +56,8 @@ func NewRootCommand() *cobra.Command {
 	return rootCmd
 }
 
-// newTopLevelCustomCommands creates top-level create/list/show/delete commands
-// that behave identically to their "custom" subgroup counterparts.
+// newTopLevelCustomCommands creates top-level model commands, including download.
+// Existing commands behave identically to their "custom" subgroup counterparts.
 // These are the preferred commands; the "custom" subgroup is deprecated.
 func newTopLevelCustomCommands() []*cobra.Command {
 	flags := &customFlags{}
@@ -68,6 +68,7 @@ func newTopLevelCustomCommands() []*cobra.Command {
 		newCustomShowCommand(flags),
 		newCustomUpdateCommand(flags),
 		newCustomDeleteCommand(flags),
+		newCustomDownloadCommand(flags),
 	}
 
 	for _, cmd := range cmds {

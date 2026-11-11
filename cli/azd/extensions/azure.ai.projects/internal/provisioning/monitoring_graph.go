@@ -14,8 +14,33 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 )
 
+// monitoringPlannedPrivateLinkScope returns the Azure Monitor Private Link Scope
+// ARM plans in the owned resource group, or "" unless there is exactly one.
+func monitoringPlannedPrivateLinkScope(result *armresources.WhatIfOperationResult, subscriptionID, resourceGroup string) string {
+	if result == nil || result.Properties == nil {
+		return ""
+	}
+	selected := ""
+	for _, change := range result.Properties.Changes {
+		if change == nil || change.ResourceID == nil || change.ChangeType == nil ||
+			*change.ChangeType == armresources.ChangeTypeIgnore {
+			continue
+		}
+		id, err := arm.ParseResourceID(*change.ResourceID)
+		if err != nil || !strings.EqualFold(id.ResourceType.String(), "Microsoft.Insights/privateLinkScopes") ||
+			!strings.EqualFold(id.SubscriptionID, subscriptionID) || !strings.EqualFold(id.ResourceGroupName, resourceGroup) {
+			continue
+		}
+		if selected != "" && !strings.EqualFold(selected, id.String()) {
+			return ""
+		}
+		selected = id.String()
+	}
+	return selected
+}
+
 func monitoringPlannedResource(
-	result *armresources.WhatIfOperationResult, resourceType, subscriptionID, resourceGroup string,
+	result *armresources.WhatIfOperationResult, resourceType, subscriptionID, resourceGroup string, privateNetwork bool,
 ) (string, error) {
 	if result == nil || result.Properties == nil {
 		return "", fmt.Errorf("ARM What-If did not resolve monitoring resources; no monitoring writes were authorized")
@@ -44,7 +69,7 @@ func monitoringPlannedResource(
 		}
 		if after, ok := change.After.(map[string]any); ok {
 			if properties, ok := after["properties"].(map[string]any); ok {
-				if err := synthesis.MonitoringKeyPolicy(properties); err != nil {
+				if err := synthesis.MonitoringKeyPolicyFor(properties, privateNetwork); err != nil {
 					return "", err
 				}
 			}
@@ -92,7 +117,9 @@ func (p *FoundryProvisioningProvider) validateMonitoringCreateGraph(
 	if err != nil {
 		return err
 	}
-	resolver := synthesis.MonitoringResolver{Credential: p.credential, ClientOptions: p.armClientOptions}
+	resolver := synthesis.MonitoringResolver{
+		Credential: p.credential, ClientOptions: p.armClientOptions, PrivateNetwork: monitoringPrivateNetwork(source),
+	}
 	outputs := armOutputsToProto(binding.outputs)
 	for _, resource := range []struct {
 		resourceType string
@@ -102,7 +129,8 @@ func (p *FoundryProvisioningProvider) validateMonitoringCreateGraph(
 		{"Microsoft.Insights/components", "AZURE_APPLICATION_INSIGHTS_RESOURCE_ID", "2020-02-02"},
 		{"Microsoft.OperationalInsights/workspaces", "AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID", "2023-09-01"},
 	} {
-		id, err := monitoringPlannedResource(binding.plan, resource.resourceType, p.subID, group)
+		id, err := monitoringPlannedResource(
+			binding.plan, resource.resourceType, p.subID, group, monitoringPrivateNetwork(source))
 		if err != nil {
 			return err
 		}
@@ -130,7 +158,7 @@ func (p *FoundryProvisioningProvider) validateMonitoringCreateGraph(
 		if err != nil {
 			return err
 		}
-		if err := synthesis.MonitoringKeyPolicy(properties); err != nil {
+		if err := synthesis.MonitoringKeyPolicyFor(properties, monitoringPrivateNetwork(source)); err != nil {
 			return err
 		}
 	}

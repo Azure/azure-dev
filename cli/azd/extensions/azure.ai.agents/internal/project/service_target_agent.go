@@ -1947,7 +1947,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 		}
 	}
 
-	return p.finalizeDeploy(
+	monitoringWarning := ""
+	if identity := result.agentVersion.InstanceIdentity; identity != nil && privateMonitoringComponentID(azdEnv) != "" {
+		progress("Granting agent identity access to Application Insights")
+		monitoringWarning = p.ensureHostedAgentMonitoringPublisher(ctx, azdEnv, identity.PrincipalID)
+	}
+
+	deployResult, err := p.finalizeDeploy(
 		ctx,
 		progress,
 		serviceConfig,
@@ -1960,6 +1966,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		activityProfile,
 		serviceTargetConfig.Activity,
 	)
+	if err != nil {
+		return nil, err
+	}
+	appendDeployWarning(deployResult, privateMonitoringComponentID(azdEnv), monitoringWarning)
+	return deployResult, nil
 }
 
 func activityBotOwnership(
@@ -2588,6 +2599,17 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 					"or run 'azd package' and 'azd publish' to build from a Dockerfile",
 			)
 		}
+	}
+
+	if err := CheckHostedContainerImagePolicy(
+		ctx,
+		azdEnv["AZURE_AI_PROJECT_ID"],
+		p.credential,
+		serviceConfig.GetName(),
+		fullImageURL,
+		azdEnv,
+	); err != nil {
+		return nil, err
 	}
 
 	progress("Preparing hosted agent configuration")

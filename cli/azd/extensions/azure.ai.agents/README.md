@@ -471,6 +471,29 @@ Use `--debug` for per-connection findings and `--unredacted` to include identity
 and resource identifiers when sharing them is safe. `--local-only` skips this
 remote check along with the other remote diagnostics.
 
+## Foundry Azure Policy preflight and diagnostics
+
+When bound to a Microsoft Foundry project, the extension evaluates active Azure
+Policy assignments (`Deny` effect) for agent kinds, container images/registries,
+models, and tools:
+
+- `azd ai agent init` emits a non-blocking warning when a policy assignment on
+  the selected project would block the configured agent.
+- `azd package` / `azd deploy` / `azd up` run a preflight check before packaging
+  and deployment, and again on the resolved container image before creating a
+  hosted agent version. Transient query failures fail open so the Microsoft
+  Foundry service remains authoritative.
+- `azd ai agent doctor` runs the `remote.policy` check (`--unredacted` includes
+  full ARM scopes and Foundry Govern portal links).
+
+To skip client-side Azure Policy preflight checks during packaging and
+deployment, set `AZD_AI_AGENT_SKIP_POLICY_CHECKS` to a boolean value accepted by
+`strconv.ParseBool` (`1`, `t`, `T`, `true`, `TRUE`, `True`; defaults to
+`false`). Values in the active `azd` environment take precedence over the
+process environment (`AZD_AGENT_SKIP_POLICY_CHECKS` is also accepted as a
+backward-compatible alias). Skipping client-side preflight does not bypass
+server-side Azure Policy enforcement by Microsoft Foundry.
+
 ## Choosing a Foundry project name
 
 During interactive `azd ai agent init`, azd prompts for the name of a new

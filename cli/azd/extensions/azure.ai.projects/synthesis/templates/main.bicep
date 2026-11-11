@@ -157,6 +157,16 @@ param dnsZonesResourceGroup string = ''
 @description('Subscription holding existing private DNS zones. Empty defaults to this subscription.')
 param dnsZonesSubscription string = ''
 
+@description('Set by azd after it verified the VNet has no conflicting Azure Monitor private endpoint. A network-isolated deployment without it never creates the private monitoring path.')
+param monitoringPrivateLinkApproved bool = false
+
+// Private monitoring needs a verified network. Managed egress reaches the private scope through a managed-network outbound rule.
+var privateMonitoringBlocked = enableNetworkIsolation && !monitoringPrivateLinkApproved && (monitoringMode == 'create' || monitoringMode == 'reuse-connect')
+var effectiveMonitoringMode = privateMonitoringBlocked ? 'none' : monitoringMode
+var managedMonitoringRule = enableNetworkIsolation && useManagedEgress && (effectiveMonitoringMode == 'create' || effectiveMonitoringMode == 'reuse-connect')
+// The outbound rule needs the managed network resource, so an unset mode defaults to AllowInternetOutbound.
+var effectiveManagedIsolationMode = managedMonitoringRule && empty(managedIsolationMode) ? 'AllowInternetOutbound' : managedIsolationMode
+
 // Resources
 
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -193,17 +203,17 @@ module resources 'modules/resources.bicep' = {
     peSubnetName: peSubnetName
     peSubnetPrefix: peSubnetPrefix
     createPESubnet: createPESubnet
-    managedIsolationMode: managedIsolationMode
+    managedIsolationMode: effectiveManagedIsolationMode
     dnsZonesResourceGroup: dnsZonesResourceGroup
     dnsZonesSubscription: dnsZonesSubscription
   }
 }
 
-module monitoring 'modules/monitoring.bicep' = if (monitoringMode != 'none') {
+module monitoring 'modules/monitoring.bicep' = if (effectiveMonitoringMode != 'none') {
   name: 'foundry-monitoring'
   scope: resourceGroup
   params: {
-    mode: monitoringMode
+    mode: effectiveMonitoringMode
     location: location
     tags: tags
     projectResourceId: resources.outputs.AZURE_AI_PROJECT_ID
@@ -212,6 +222,13 @@ module monitoring 'modules/monitoring.bicep' = if (monitoringMode != 'none') {
     existingConnectionName: monitoringConnectionName
     environmentName: contains(tags, 'azd-env-name') ? string(tags['azd-env-name']) : ''
     resourceTokenSalt: resourceTokenSalt
+    privateNetwork: enableNetworkIsolation
+    vnetId: resources.outputs.NETWORK_VNET_ID
+    vnetLocation: resources.outputs.NETWORK_VNET_LOCATION
+    peSubnetId: resources.outputs.NETWORK_PE_SUBNET_ID
+    managedEgressRule: managedMonitoringRule
+    dnsZonesResourceGroup: dnsZonesResourceGroup
+    dnsZonesSubscription: dnsZonesSubscription
   }
 }
 
@@ -229,8 +246,9 @@ output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = resources.outputs.AZURE_CON
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = resources.outputs.AZURE_AI_PROJECT_ACR_CONNECTION_NAME
 output AZURE_FOUNDRY_NETWORK_MODE string = resources.outputs.AZURE_FOUNDRY_NETWORK_MODE
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = resources.outputs.AZURE_FOUNDRY_MANAGED_ISOLATION_MODE
-output AZURE_APPLICATION_INSIGHTS_RESOURCE_ID string = monitoringMode != 'none' ? monitoring!.outputs.applicationInsightsResourceId : ''
-output AZURE_APPLICATION_INSIGHTS_APP_ID string = monitoringMode != 'none' ? monitoring!.outputs.applicationInsightsAppId : ''
-output AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID string = monitoringMode != 'none' ? monitoring!.outputs.logAnalyticsWorkspaceResourceId : ''
-output AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME string = monitoringMode != 'none' ? monitoring!.outputs.projectConnectionName : ''
-output AZD_FOUNDRY_MONITORING_MODE string = monitoringMode
+output AZURE_APPLICATION_INSIGHTS_RESOURCE_ID string = effectiveMonitoringMode != 'none' ? monitoring!.outputs.applicationInsightsResourceId : ''
+output AZURE_APPLICATION_INSIGHTS_APP_ID string = effectiveMonitoringMode != 'none' ? monitoring!.outputs.applicationInsightsAppId : ''
+output AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID string = effectiveMonitoringMode != 'none' ? monitoring!.outputs.logAnalyticsWorkspaceResourceId : ''
+output AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME string = effectiveMonitoringMode != 'none' ? monitoring!.outputs.projectConnectionName : ''
+output AZD_FOUNDRY_MONITORING_MODE string = effectiveMonitoringMode
+output AZD_MONITORING_PRIVATE_LINK_SCOPE_ID string = effectiveMonitoringMode != 'none' ? monitoring!.outputs.privateLinkScopeResourceId : ''

@@ -2191,6 +2191,17 @@ func (a *InitAction) addVoiceAgentToProject(
 		return err
 	}
 
+	warnInitServicePolicyIfBlocked(
+		ctx,
+		a.azdClient,
+		a.credential,
+		a.environment,
+		a.selectedFoundryProject,
+		serviceConfig,
+		a.projectConfig.GetPath(),
+		nil,
+	)
+
 	fmt.Print(voiceAgentAddedMessage(a.serviceNameOverride))
 
 	var stateOpts []nextstep.Option

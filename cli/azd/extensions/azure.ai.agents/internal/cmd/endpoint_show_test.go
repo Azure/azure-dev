@@ -410,7 +410,7 @@ func TestRunEndpointShowUsesSelectedEnvironment(t *testing.T) {
 				"staging": {
 					"FOUNDRY_PROJECT_ENDPOINT":                        selectedEndpoint,
 					"AGENT_ENGINE_NAME":                               "hosted-agent",
-					"AGENT_ENGINE_PROJECT_ENDPOINT":                   selectedEndpoint,
+					"AGENT_ENGINE_PROJECT_ENDPOINT":                   "https://STAGING.services.ai.azure.com/api/projects/staging/",
 					"AGENT_ENGINE_PROTOCOL_ENDPOINTS_VERSION":         "1",
 					"AGENT_ENGINE_VOICE_CONVERSATION_ENGINE_ENDPOINT": "wss://staging.services.ai.azure.com/api/projects/staging/agents/hosted-agent/endpoint/protocols/voice_conversation_engine?api-version=v1",
 				},

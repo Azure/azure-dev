@@ -183,8 +183,9 @@ func runHostedEndpointShow(
 	}
 	key := "AGENT_" + toServiceKey(serviceName)
 	endpoints, present, stale, incomplete := resolveAgentProtocolEndpointsFromValues(envValues, serviceName)
+	savedProject, _, projectErr := validateProjectEndpoint(envValues[key+"_PROJECT_ENDPOINT"])
 	if present && !stale && !incomplete && envValues[key+"_NAME"] == agent.Name &&
-		strings.TrimRight(envValues[key+"_PROJECT_ENDPOINT"], "/") == strings.TrimRight(projectEndpoint, "/") {
+		projectErr == nil && savedProject == projectEndpoint {
 		if endpoint := endpoints[agent_api.AgentProtocolVoiceConversationEngine]; endpoint != "" {
 			result.Endpoints = map[string]string{"voice_conversation_engine": endpoint}
 		}

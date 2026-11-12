@@ -136,6 +136,11 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 	}
 	parallelReads(tasks...)
 	var tenant string
+	for i, subscription := range keys {
+		if strings.EqualFold(subscription, plan.SubscriptionID) {
+			tenant = tenants[i]
+		}
+	}
 	for i, check := range checks {
 		if tenants[i] != "" {
 			if tenant == "" {

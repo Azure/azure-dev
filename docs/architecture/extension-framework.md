@@ -1,6 +1,6 @@
 # Extension Framework
 
-<!-- cspell:ignore azdext kubelet -->
+<!-- cspell:ignore azdext -->
 
 Architecture of the gRPC-based extension system in azd.
 

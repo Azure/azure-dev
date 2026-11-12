@@ -196,6 +196,10 @@ func (r *templatePlanResolver) walk(env *planEnvironment, inheritedMissing strin
 			}
 		}
 		for index := range count {
+			if len(r.nodes) >= 2048 {
+				r.unresolved = append(r.unresolved, env.path+": local module/resource enumeration limit reached")
+				return
+			}
 			local := *env
 			local.copyIndex = index
 			local.variables, local.active = map[string]any{}, map[string]bool{}

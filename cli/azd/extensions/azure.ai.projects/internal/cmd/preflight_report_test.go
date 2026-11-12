@@ -266,13 +266,10 @@ func TestPreflightReportListener(t *testing.T) {
 						require.Equal(t, fmt.Sprintf("report-%d", index), result.GetRequestId())
 						handler := result.GetProjectHandlerStatus()
 						require.NotNil(t, handler)
-						if test.name == "publication failure" && index == 0 {
-							require.Equal(t, "failed", handler.GetStatus())
-							require.Contains(t, handler.GetMessage(), "follow-up rejected")
-							require.NotNil(t, handler.GetError())
-						} else {
-							require.Equal(t, "completed", handler.GetStatus())
-						}
+						require.Equal(t, "completed", handler.GetStatus())
+						require.Empty(t, handler.GetMessage())
+						require.Nil(t, handler.GetError())
+						require.Nil(t, result.GetError())
 					case <-finished:
 						t.Fatalf("listener exited before publishing reports: %v", commandError)
 					case <-ctx.Done():

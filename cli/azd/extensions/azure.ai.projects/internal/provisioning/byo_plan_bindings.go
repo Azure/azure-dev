@@ -73,8 +73,9 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 		} {
 			*entry.out = onboarding.Resource{Origin: entry.kind + " at " + root.path, Missing: reason}
 		}
-		plan.SkippedChecks = append(plan.SkippedChecks,
-			onboarding.SkippedCheck("agent-subnet", root.path, "selected Agent subnet configuration", reason))
+		plan.AgentSubnet = onboarding.Resource{
+			Origin: "Microsoft.Network/virtualNetworks/subnets at " + root.path, Missing: reason,
+		}
 		return
 	}
 	account := accounts[0]

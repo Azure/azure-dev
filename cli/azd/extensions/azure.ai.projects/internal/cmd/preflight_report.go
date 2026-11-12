@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -47,7 +48,9 @@ func (r *preflightReports) postProvision(
 			InvocationId: request.GetInvocationId(),
 			Text:         "BYO-AKS preflight report:\n" + text,
 		}); err != nil {
-			return nil, fmt.Errorf("publish BYO-AKS preflight report: %w\nBYO-AKS preflight report:\n%s", err, text)
+			// Extensions cannot guarantee a user-visible fallback without azd core changes.
+			// Log publication failures without blocking subsequent service deployment.
+			log.Printf("publish BYO-AKS preflight report: %v\nBYO-AKS preflight report:\n%s", err, text)
 		}
 	}
 	return &v1beta.EventMessage{

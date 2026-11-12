@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -332,7 +333,9 @@ func (c *sdkResourceChecker) poolCapacityWarnings(
 	id, err := existingResourceID(resourceValue(cluster.ID), "Microsoft.ContainerService/managedClusters")
 	var skus []*armcompute.ResourceSKU
 	if err == nil {
-		skus, err = c.readSKUs(ctx, id.SubscriptionID, resourceValue(cluster.Location))
+		capacityCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		skus, err = c.readSKUs(capacityCtx, id.SubscriptionID, resourceValue(cluster.Location))
 	}
 	warnings := map[string][]string{}
 	for _, pool := range candidates {

@@ -27,10 +27,11 @@ RUN tdnf install -y \
         python3 \
         unzip \
     && tdnf clean all \
-    && case "$TARGETARCH" in \
-        amd64) protoc_arch=x86_64 ;; \
-        arm64) protoc_arch=aarch_64 ;; \
-        *) echo "unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+    && arch="${TARGETARCH:-$(uname -m)}" \
+    && case "$arch" in \
+        amd64|x86_64) protoc_arch=x86_64 ;; \
+        arm64|aarch64) protoc_arch=aarch_64 ;; \
+        *) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
     esac \
     && curl --fail --location --silent --show-error \
         --output /tmp/protoc.zip \
@@ -53,8 +54,9 @@ ENV GOMODCACHE=/tmp/go-mod
 ENV HOME=/tmp
 ENV PATH="/usr/local/go/bin:/opt/proto-tools/bin:${PATH}"
 
-COPY --chmod=0755 generate-protos.sh /usr/local/bin/generate-protos
-COPY --chmod=0755 validate-scaffold-compatibility.py /usr/local/bin/validate-scaffold-compatibility.py
+COPY generate-protos.sh /usr/local/bin/generate-protos
+COPY validate-scaffold-compatibility.py /usr/local/bin/validate-scaffold-compatibility.py
+RUN chmod 0755 /usr/local/bin/generate-protos /usr/local/bin/validate-scaffold-compatibility.py
 
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/generate-protos"]

@@ -26,6 +26,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	sharedpolicy "github.com/azure/azure-dev/cli/shared/foundry/policy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -211,6 +212,11 @@ func TestTryClassifyToolboxPolicyError(t *testing.T) {
 	require.True(t, isLocal)
 	assert.Equal(t, exterrors.CodeToolBlockedByPolicy, localLive.Code)
 	assert.Contains(t, localLive.Message, `"research-tb"`)
+	assert.Contains(
+		t,
+		localLive.Message,
+		`The "restrict-foundry-tools" policy doesn't allow one or more tools in this toolbox.`,
+	)
 	assert.Contains(t, localLive.Suggestion, "View policy (restrict-foundry-tools): https://ai.azure.com/nextgen/r/")
 
 	// 2. Skylight #6450-style 403 forbidden
@@ -275,6 +281,44 @@ func TestTryClassifyToolboxPolicyError(t *testing.T) {
 	assert.NotContains(t, localSecret.Message, "SUPER_SECRET_TOKEN")
 	assert.NotContains(t, localSecret.Suggestion, "SUPER_SECRET_TOKEN")
 	assert.Contains(t, localSecret.Message, `"restrict-foundry-tools"`)
+
+	// 5. Non-tool policy denials (e.g. agent kind or container image) are not classified as toolbox tool denials
+	nonToolDefBody := `{"error":{"code":"agent_policy_denied",` +
+		`"message":"Creating agent is noncompliant with policy ` +
+		`/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/providers/` +
+		`Microsoft.Authorization/policyAssignments/deny-hosted-kind:\n` +
+		`Agent kind is not allowed",` +
+		`"additionalInfo":{` +
+		`"policy_assignment_id":"/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/` +
+		`providers/Microsoft.Authorization/policyAssignments/deny-hosted-kind",` +
+		`"policy_definition_id":"` + sharedpolicy.DeniedAgentKindsPolicyID + `",` +
+		`"effect":"Deny"}}}`
+	nonToolDefErr := &azcore.ResponseError{
+		StatusCode: http.StatusForbidden,
+		ErrorCode:  "agent_policy_denied",
+		RawResponse: &http.Response{
+			StatusCode: http.StatusForbidden,
+			Body:       io.NopCloser(strings.NewReader(nonToolDefBody)),
+		},
+	}
+	_, okNonToolDef := tryClassifyToolboxPolicyError(nonToolDefErr, "research-tb", scope)
+	assert.False(t, okNonToolDef)
+
+	nonToolPathBody := `{"error":{"code":"forbidden",` +
+		`"message":"Saving agent is noncompliant with policy ` +
+		`/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/providers/` +
+		`Microsoft.Authorization/policyAssignments/deny-images:\n` +
+		`Field Microsoft.CognitiveServices.Data/accounts/projects/agents/image is not allowed"}}`
+	nonToolPathErr := &azcore.ResponseError{
+		StatusCode: http.StatusForbidden,
+		ErrorCode:  "forbidden",
+		RawResponse: &http.Response{
+			StatusCode: http.StatusForbidden,
+			Body:       io.NopCloser(strings.NewReader(nonToolPathBody)),
+		},
+	}
+	_, okNonToolPath := tryClassifyToolboxPolicyError(nonToolPathErr, "research-tb", scope)
+	assert.False(t, okNonToolPath)
 }
 
 func TestToolboxPolicyAssignmentScopesAndResourceGraphPagination(t *testing.T) {
@@ -347,7 +391,7 @@ func TestToolboxPolicyAssignmentScopesAndResourceGraphPagination(t *testing.T) {
 			}, nil
 		}))
 		_, err = repeatQuery(t.Context(), toolboxResourceGraphRequest{Subscriptions: []string{"sub"}, Query: "q"})
-		require.ErrorContains(t, err, "repeated Resource Graph continuation token")
+		require.EqualError(t, err, "unable to evaluate Azure Policy for the selected project")
 
 		// 3. resultTruncated: true without $skipToken error
 		truncQuery := newToolboxResourceGraphQueryFunc(newPipeline(func(req *http.Request) (*http.Response, error) {
@@ -359,7 +403,7 @@ func TestToolboxPolicyAssignmentScopesAndResourceGraphPagination(t *testing.T) {
 			}, nil
 		}))
 		_, err = truncQuery(t.Context(), toolboxResourceGraphRequest{Subscriptions: []string{"sub"}, Query: "q"})
-		require.ErrorContains(t, err, "truncated without a continuation token")
+		require.EqualError(t, err, "unable to evaluate Azure Policy for the selected project")
 	})
 }
 

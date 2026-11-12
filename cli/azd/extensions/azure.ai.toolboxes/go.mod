@@ -7,7 +7,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0
 	github.com/azure/azure-dev/cli/azd v1.37.0
-	github.com/azure/azure-dev/cli/shared/foundry v0.1.0
+	github.com/azure/azure-dev/cli/shared/foundry v0.2.0
 	github.com/fatih/color v1.19.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2

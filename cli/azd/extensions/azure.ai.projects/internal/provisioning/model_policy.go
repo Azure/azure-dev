@@ -6,64 +6,37 @@
 package provisioning
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"net/url"
-	"os"
-	"regexp"
 	"slices"
-	"strconv"
 	"strings"
-	"time"
 
 	"azure.ai.projects/internal/azure"
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/google/uuid"
+	"github.com/azure/azure-dev/cli/shared/foundry/policy"
 )
 
 const (
 	// SkipModelPolicyChecksEnvKey opts out of client-side Azure Policy pre-checks.
-	SkipModelPolicyChecksEnvKey = "AZD_AI_AGENT_SKIP_POLICY_CHECKS"
+	SkipModelPolicyChecksEnvKey = policy.SkipPolicyChecksEnvKey
 	// LegacySkipModelPolicyChecksEnvKey is the legacy opt-out environment variable.
-	LegacySkipModelPolicyChecksEnvKey = "AZD_AGENT_SKIP_POLICY_CHECKS"
+	LegacySkipModelPolicyChecksEnvKey = policy.LegacySkipPolicyChecksEnvKey
 
 	defaultARMEndpoint                    = "https://management.azure.com"
 	cognitiveServicesDeploymentAPIVersion = "2025-10-01-preview"
 	evaluateDeploymentPoliciesAPIVersion  = "2026-03-15-preview"
 	defaultFoundryGovernPortalURL         = "https://ai.azure.com/?flight=govern_ignite"
-	modelPolicyEvaluationTimeout          = 30 * time.Second
-	maxDeploymentsPerPolicyBatch          = 100
+	modelPolicyEvaluationTimeout          = policy.DefaultPolicyPreflightTimeout
 )
 
 var (
-	foundryProjectResourceIDPattern = regexp.MustCompile(
-		`(?i)^/subscriptions/([^/?#\\\s@]+)/resourceGroups/([^/?#\\\s@]+)/` +
-			`providers/Microsoft\.CognitiveServices/accounts/([^/?#\\\s@]+)/projects/([^/?#\\\s@]+)$`,
-	)
-	policyAssignmentSuffixPattern = regexp.MustCompile(
-		`(?i)/providers/Microsoft\.Authorization/policyAssignments/[^/]+$`,
-	)
-	managementGroupScopePattern = regexp.MustCompile(
-		`(?i)^/providers/Microsoft\.Management/managementGroups/[^/]+$`,
-	)
-	subscriptionScopeHierarchyPattern = regexp.MustCompile(
-		`(?i)^/subscriptions/([^/]+)(?:/resourceGroups/[^/]+(?:/providers/[^/]+(?:/[^/]+/[^/]+)+)?)?$`,
-	)
-
 	modelPolicyARMEndpoint = defaultARMEndpoint
 	newModelPolicyPipeline = defaultModelPolicyPipeline
 )
@@ -83,173 +56,31 @@ type ModelPolicyViolation struct {
 // ShouldSkipModelPolicyChecks reports whether client-side model deployment Azure Policy
 // pre-checks are disabled via environment configuration.
 func ShouldSkipModelPolicyChecks(env map[string]string) bool {
-	keys := []string{SkipModelPolicyChecksEnvKey, LegacySkipModelPolicyChecksEnvKey}
-	for _, key := range keys {
-		if val := strings.TrimSpace(env[key]); val != "" {
-			if skip, err := strconv.ParseBool(val); err == nil {
-				return skip
-			}
-		}
-	}
-	for _, key := range keys {
-		if val := strings.TrimSpace(os.Getenv(key)); val != "" {
-			if skip, err := strconv.ParseBool(val); err == nil {
-				return skip
-			}
-		}
-	}
-	return false
+	return policy.ShouldSkipPolicyChecks(env)
 }
 
 // ParseFoundryProjectResourceID parses and validates a Microsoft Foundry project ARM resource ID.
 func ParseFoundryProjectResourceID(projectID string) (subID, rg, account, project string, ok bool) {
-	raw := strings.TrimSpace(projectID)
-	if raw == "" || !strings.HasPrefix(raw, "/") || strings.Contains(raw, "//") {
+	parsed, valid := policy.ParseFoundryProjectID(projectID)
+	if !valid || parsed == nil {
 		return "", "", "", "", false
 	}
-	trimmed := strings.TrimSuffix(raw, "/")
-	matches := foundryProjectResourceIDPattern.FindStringSubmatch(trimmed)
-	if len(matches) != 5 {
-		return "", "", "", "", false
-	}
-	if _, err := uuid.Parse(matches[1]); err != nil {
-		return "", "", "", "", false
-	}
-	return matches[1], matches[2], matches[3], matches[4], true
+	return parsed.SubscriptionID, parsed.ResourceGroup, parsed.ProjectResourceName, parsed.ProjectName, true
 }
 
 func isValidModelPolicyAssignmentID(assignmentID string) bool {
-	raw := strings.TrimSpace(assignmentID)
-	if raw == "" || !strings.HasPrefix(raw, "/") ||
-		strings.Contains(raw, "//") ||
-		strings.ContainsAny(raw, "?#@\\ \t\r\n") {
-		return false
-	}
-	trimmed := strings.TrimSuffix(raw, "/")
-	resID, err := arm.ParseResourceID(trimmed)
-	if err != nil || resID == nil ||
-		!strings.EqualFold(resID.ResourceType.String(), "Microsoft.Authorization/policyAssignments") ||
-		strings.TrimSpace(resID.Name) == "" {
-		return false
-	}
-	loc := policyAssignmentSuffixPattern.FindStringIndex(trimmed)
-	if loc == nil || loc[0] == 0 {
-		return false
-	}
-	scope := trimmed[:loc[0]]
-	if strings.HasPrefix(strings.ToLower(scope), "/providers/microsoft.management/managementgroups/") {
-		return managementGroupScopePattern.MatchString(scope)
-	}
-	subMatch := subscriptionScopeHierarchyPattern.FindStringSubmatch(scope)
-	if len(subMatch) != 2 || uuid.Validate(subMatch[1]) != nil {
-		return false
-	}
-	if strings.EqualFold(scope, "/subscriptions/"+subMatch[1]) {
-		return true
-	}
-	scopeRes, err := arm.ParseResourceID(scope)
-	return err == nil && scopeRes != nil && scopeRes.ResourceGroupName != ""
-}
-
-func isValidPolicyAssignmentResourceID(assignmentID string) bool {
-	return isValidModelPolicyAssignmentID(assignmentID)
-}
-
-func lastSegment(resourceID string) string {
-	trimmed := strings.TrimSuffix(strings.TrimSpace(resourceID), "/")
-	if trimmed == "" {
-		return ""
-	}
-	parts := strings.Split(trimmed, "/")
-	return parts[len(parts)-1]
+	return policy.IsValidPolicyAssignmentID(assignmentID)
 }
 
 // BuildModelPolicyAssignmentPortalURL constructs the Foundry Portal Manage -> Govern deep link
 // for a blocking Azure Policy assignment. Falls back to the generic Foundry Govern URL when
 // projectResourceID or assignmentID cannot be validated.
 func BuildModelPolicyAssignmentPortalURL(projectResourceID, assignmentID string) string {
-	subID, rg, account, project, ok := ParseFoundryProjectResourceID(projectResourceID)
-	rawAssignment := strings.TrimSpace(assignmentID)
-	if !ok || !isValidPolicyAssignmentResourceID(rawAssignment) {
-		return defaultFoundryGovernPortalURL
-	}
-	trimmedAssignment := strings.TrimSuffix(rawAssignment, "/")
-
-	parsedUUID, err := uuid.Parse(subID)
-	if err != nil {
-		return defaultFoundryGovernPortalURL
-	}
-	base64Sub := url.PathEscape(base64.RawURLEncoding.EncodeToString(parsedUUID[:]))
-	route := fmt.Sprintf(
-		"%s%%2C%s%%2C%%2C%s%%2C%s",
-		base64Sub,
-		url.PathEscape(rg),
-		url.PathEscape(account),
-		url.PathEscape(project),
-	)
-	assignmentKey := base64.RawURLEncoding.EncodeToString([]byte(trimmedAssignment))
-
-	trimmedProjectID := strings.TrimSuffix(strings.TrimSpace(projectResourceID), "/")
-	query := url.Values{}
-	query.Set("subscriptionId", subID)
-	query.Set(
-		"resourceGroupId",
-		fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subID, rg),
-	)
-	query.Set("projectId", trimmedProjectID)
-	query.Set("flight", "govern_ignite")
-
-	rawPath := fmt.Sprintf("/nextgen/r/%s/manage/govern/assignments/%s", route, assignmentKey)
-	encodedQuery := strings.ReplaceAll(query.Encode(), "+", "%20")
-	return fmt.Sprintf("https://ai.azure.com%s?%s", rawPath, encodedQuery)
+	return policy.BuildPolicyAssignmentPortalURL(projectResourceID, assignmentID)
 }
 
 func defaultModelPolicyPipeline(cred azcore.TokenCredential) runtime.Pipeline {
-	armOpts := azure.NewArmClientOptions()
-	clientOpts := armOpts.ClientOptions
-	if cred != nil {
-		clientOpts.PerCallPolicies = append(
-			[]policy.Policy{
-				runtime.NewBearerTokenPolicy(cred, []string{defaultARMEndpoint + "/.default"}, nil),
-			},
-			clientOpts.PerCallPolicies...,
-		)
-	}
-	return runtime.NewPipeline("azure-ai-projects-policy", "v1.0.0", runtime.PipelineOptions{}, &clientOpts)
-}
-
-type evaluateDeploymentPoliciesModel struct {
-	Format  string `json:"format"`
-	Name    string `json:"name"`
-	Version string `json:"version"`
-}
-
-type evaluateDeploymentPoliciesItem struct {
-	Name       string `json:"name"`
-	Properties struct {
-		Model evaluateDeploymentPoliciesModel `json:"model"`
-	} `json:"properties"`
-}
-
-type evaluateDeploymentPoliciesRequest struct {
-	Deployments []evaluateDeploymentPoliciesItem `json:"deployments"`
-}
-
-type evaluateDeploymentPoliciesResponse struct {
-	Results map[string]struct {
-		EvaluationOutcome       string `json:"evaluationOutcome"`
-		ErrorMessage            string `json:"errorMessage"`
-		NonCompliantAssignments []struct {
-			AssignmentID string `json:"assignmentId"`
-			Effect       string `json:"effect"`
-		} `json:"nonCompliantAssignments"`
-	} `json:"results"`
-}
-
-type armGetDeploymentResponse struct {
-	Properties *struct {
-		Model *evaluateDeploymentPoliciesModel `json:"model,omitempty"`
-	} `json:"properties,omitempty"`
+	return policy.NewARMPipeline(cred, "azure-ai-projects-policy", "v1.0.0", azure.NewArmClientOptions())
 }
 
 func hasParameterKey(parameters map[string]any, name string) bool {
@@ -443,238 +274,50 @@ func evaluateModelDeploymentsWithPipeline(
 	pipeline runtime.Pipeline,
 	armEndpoint string,
 	projectResourceID string,
-	subID string,
-	rg string,
-	account string,
+	_ string,
+	_ string,
+	_ string,
 	deployments []synthesis.Deployment,
 ) ([]ModelPolicyViolation, error) {
 	evalCtx, cancel := context.WithTimeout(ctx, modelPolicyEvaluationTimeout)
 	defer cancel()
 
-	if strings.TrimSpace(armEndpoint) == "" {
-		armEndpoint = defaultARMEndpoint
-	}
-	armEndpoint = strings.TrimRight(strings.TrimSpace(armEndpoint), "/")
-
-	accountPath := fmt.Sprintf(
-		"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.CognitiveServices/accounts/%s",
-		url.PathEscape(subID),
-		url.PathEscape(rg),
-		url.PathEscape(account),
-	)
-
-	items := make([]evaluateDeploymentPoliciesItem, 0, len(deployments))
+	candidates := make([]policy.ModelCandidate, 0, len(deployments))
 	for _, dep := range deployments {
-		format := strings.TrimSpace(dep.Model.Format)
-		name := strings.TrimSpace(dep.Model.Name)
-		version := strings.TrimSpace(dep.Model.Version)
-		if format == "" || name == "" || version == "" {
-			fetched, err := fetchDeploymentModelMetadata(evalCtx, pipeline, armEndpoint, accountPath, dep.Name)
-			if err != nil {
-				log.Printf("[FoundryPolicy] Could not resolve model metadata for deployment %q: %v", dep.Name, err)
-				continue
-			}
-			if fetched != nil {
-				fetchedFormat := strings.TrimSpace(fetched.Format)
-				fetchedName := strings.TrimSpace(fetched.Name)
-				fetchedVersion := strings.TrimSpace(fetched.Version)
-				if (format == "" || strings.EqualFold(format, fetchedFormat)) &&
-					(name == "" || strings.EqualFold(name, fetchedName)) {
-					if format == "" {
-						format = fetchedFormat
-					}
-					if name == "" {
-						name = fetchedName
-					}
-					if version == "" {
-						version = fetchedVersion
-					}
-				}
-			}
+		candidates = append(candidates, policy.ModelCandidate{
+			DeploymentName: dep.Name,
+			Format:         dep.Model.Format,
+			Name:           dep.Model.Name,
+			Version:        dep.Model.Version,
+		})
+	}
+
+	evaluator := policy.NewARMDeploymentPolicyEvaluator(pipeline, armEndpoint).
+		WithRequireMatchingDeploymentModel(true)
+	evalRes, err := evaluator.EvaluateModelDeployments(evalCtx, projectResourceID, candidates)
+	violations := make([]ModelPolicyViolation, 0, len(evalRes.Violations))
+	for _, v := range evalRes.Violations {
+		displayName := v.DisplayName
+		if v.AssignmentID == "" && displayName == "Azure Policy assignment" {
+			displayName = "Azure Policy"
 		}
-		if format == "" || name == "" || version == "" {
-			log.Printf("[FoundryPolicy] Skipping deployment %q with incomplete model metadata", dep.Name)
-			continue
-		}
-		item := evaluateDeploymentPoliciesItem{Name: dep.Name}
-		item.Properties.Model = evaluateDeploymentPoliciesModel{
-			Format:  format,
-			Name:    name,
-			Version: version,
-		}
-		items = append(items, item)
-	}
-
-	if len(items) == 0 {
-		return nil, nil
-	}
-
-	var violations []ModelPolicyViolation
-	for start := 0; start < len(items); start += maxDeploymentsPerPolicyBatch {
-		batch := items[start:min(start+maxDeploymentsPerPolicyBatch, len(items))]
-		batchViolations, err := evaluateDeploymentBatch(
-			evalCtx,
-			pipeline,
-			armEndpoint,
-			accountPath,
-			projectResourceID,
-			batch,
-		)
-		if err != nil {
-			return violations, err
-		}
-		violations = append(violations, batchViolations...)
-	}
-	return violations, nil
-}
-
-func fetchDeploymentModelMetadata(
-	ctx context.Context,
-	pipeline runtime.Pipeline,
-	armEndpoint string,
-	accountPath string,
-	deploymentName string,
-) (*evaluateDeploymentPoliciesModel, error) {
-	reqURL := fmt.Sprintf(
-		"%s%s/deployments/%s?api-version=%s",
-		armEndpoint,
-		accountPath,
-		url.PathEscape(deploymentName),
-		cognitiveServicesDeploymentAPIVersion,
-	)
-	req, err := runtime.NewRequest(ctx, http.MethodGet, reqURL)
-	if err != nil {
-		return nil, err
-	}
-	req.Raw().Header.Set("Accept", "application/json")
-	resp, err := pipeline.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("GET deployment returned HTTP %d", resp.StatusCode)
-	}
-	var body armGetDeploymentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, err
-	}
-	if body.Properties == nil {
-		return nil, nil
-	}
-	return body.Properties.Model, nil
-}
-
-func evaluateDeploymentBatch(
-	ctx context.Context,
-	pipeline runtime.Pipeline,
-	armEndpoint string,
-	accountPath string,
-	projectResourceID string,
-	batch []evaluateDeploymentPoliciesItem,
-) ([]ModelPolicyViolation, error) {
-	reqURL := fmt.Sprintf(
-		"%s%s/evaluateDeploymentPolicies?api-version=%s",
-		armEndpoint,
-		accountPath,
-		evaluateDeploymentPoliciesAPIVersion,
-	)
-	bodyBytes, err := json.Marshal(evaluateDeploymentPoliciesRequest{Deployments: batch})
-	if err != nil {
-		return nil, fmt.Errorf("marshal evaluateDeploymentPolicies request: %w", err)
-	}
-	req, err := runtime.NewRequest(ctx, http.MethodPost, reqURL)
-	if err != nil {
-		return nil, fmt.Errorf("create evaluateDeploymentPolicies request: %w", err)
-	}
-	req.Raw().Header.Set("Accept", "application/json")
-	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(bodyBytes)), "application/json"); err != nil {
-		return nil, fmt.Errorf("set evaluateDeploymentPolicies body: %w", err)
-	}
-
-	resp, err := pipeline.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("send evaluateDeploymentPolicies request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read evaluateDeploymentPolicies response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("evaluateDeploymentPolicies returned HTTP %d", resp.StatusCode)
-	}
-
-	var parsedResp evaluateDeploymentPoliciesResponse
-	if err := json.Unmarshal(respBytes, &parsedResp); err != nil {
-		return nil, fmt.Errorf("decode evaluateDeploymentPolicies response: %w", err)
-	}
-
-	var violations []ModelPolicyViolation
-	for _, item := range batch {
-		res, exists := parsedResp.Results[item.Name]
-		if !exists {
-			for k, v := range parsedResp.Results {
-				if strings.EqualFold(k, item.Name) {
-					res = v
-					exists = true
-					break
-				}
-			}
-		}
-		if !exists || !strings.EqualFold(strings.TrimSpace(res.EvaluationOutcome), "NonCompliant") {
-			continue
-		}
-
-		modelLabel := item.Properties.Model.Name
-		if item.Properties.Model.Version != "" {
-			modelLabel = fmt.Sprintf("%s (version %s)", item.Properties.Model.Name, item.Properties.Model.Version)
-		}
-
-		seenAssignments := map[string]bool{}
-		for _, a := range res.NonCompliantAssignments {
-			if !strings.EqualFold(strings.TrimSpace(a.Effect), "deny") {
-				continue
-			}
-			rawAssignmentID := strings.TrimSpace(a.AssignmentID)
-			trimmedAssignmentID := strings.TrimSuffix(rawAssignmentID, "/")
-			normalizedID := strings.ToLower(trimmedAssignmentID)
-			if normalizedID != "" && seenAssignments[normalizedID] {
-				continue
-			}
-			if normalizedID != "" {
-				seenAssignments[normalizedID] = true
-			}
-
-			displayName := "Azure Policy"
-			validAssignmentID := ""
-			if isValidModelPolicyAssignmentID(rawAssignmentID) {
-				validAssignmentID = trimmedAssignmentID
-				if seg := lastSegment(trimmedAssignmentID); seg != "" {
-					displayName = seg
-				}
-			}
-
-			msg := fmt.Sprintf(
+		violations = append(violations, ModelPolicyViolation{
+			DeploymentName: v.DeploymentName,
+			ModelFormat:    v.ModelFormat,
+			ModelName:      v.ModelName,
+			ModelVersion:   v.ModelVersion,
+			AssignmentID:   v.AssignmentID,
+			DisplayName:    displayName,
+			PortalURL:      v.PortalURL,
+			Message: fmt.Sprintf(
 				"The %q policy doesn't allow model %q for deployment %q in this project.",
 				displayName,
-				modelLabel,
-				item.Name,
-			)
-			violations = append(violations, ModelPolicyViolation{
-				DeploymentName: item.Name,
-				ModelFormat:    item.Properties.Model.Format,
-				ModelName:      item.Properties.Model.Name,
-				ModelVersion:   item.Properties.Model.Version,
-				AssignmentID:   validAssignmentID,
-				DisplayName:    displayName,
-				PortalURL:      BuildModelPolicyAssignmentPortalURL(projectResourceID, validAssignmentID),
-				Message:        msg,
-			})
-		}
+				v.TargetValue,
+				v.DeploymentName,
+			),
+		})
 	}
-	return violations, nil
+	return violations, err
 }
 
 // CheckProjectModelDeploymentsPolicy evaluates model deployments against Azure Policy and returns

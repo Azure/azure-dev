@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/useragent"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -118,6 +119,7 @@ func TestInvocationsRemotePersistsCurrentID(t *testing.T) {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					methods = append(methods, r.Method)
 					assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+					assert.Equal(t, useragent.Default(), r.Header.Get("User-Agent"))
 					assert.Equal(t, "v1", r.URL.Query().Get("api-version"))
 					path := "/agents/agent/endpoint/protocols/invocations"
 					if r.Method == http.MethodGet {
@@ -188,6 +190,7 @@ func TestInvocationsProtocolDispatchHTTP(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				methods = append(methods, r.Method)
 				assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+				assert.Equal(t, useragent.Default(), r.Header.Get("User-Agent"))
 				assert.Equal(t, "v1", r.URL.Query().Get("api-version"))
 				assert.Empty(t, r.URL.Query().Get("agent_session_id"))
 				path := "/agents/agent/endpoint/protocols/invocations/inv_test"

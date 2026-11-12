@@ -911,3 +911,17 @@ existing Foundry project should be reused instead, configure its endpoint and se
 full project resource ID before retrying.
 
 The `azd ai project set`, `show`, and `unset` commands manage the default Foundry project endpoint context. Use `azd ai project add` to author the project service in `azure.yaml`.
+
+## Azure Policy model deployment checks
+
+When targeting an existing Foundry project (`AZURE_AI_PROJECT_ID`), `azd provision` / `azd up` and `azd ai project deployment add` evaluate effective model deployments against the Cognitive Services account's ARM `evaluateDeploymentPolicies` endpoint before submitting deployment changes.
+
+- **Blocking pre-checks (`provision`, `up`, `project deployment add`)**: Assignments with a `Deny` effect fail fast with a validation error (`model_blocked_by_policy`) and a Foundry Portal Govern deep link for the blocking assignment. Assignments with an `Audit` effect are treated as non-blocking. Transport, authentication, or service errors during preflight evaluation fail open so ARM remains the final authority.
+- **Brownfield reconciliation warnings (`project add`)**: Adopting an existing project via `azd ai project add` evaluates reconciled and retained deployments and prints a non-blocking warning to `stderr` (suppressed when `--output` is `json` or `none`) if any deployment is denied by Azure Policy.
+- **Opting out of client-side pre-checks**: Set `AZD_AI_AGENT_SKIP_POLICY_CHECKS=true` (or the legacy alias `AZD_AGENT_SKIP_POLICY_CHECKS=true`) in the active `azd` environment or OS environment:
+
+  ```sh
+  azd env set AZD_AI_AGENT_SKIP_POLICY_CHECKS true
+  ```
+
+  Values are parsed with `strconv.ParseBool`, and values set in the active `azd` environment take precedence over OS environment variables. Skipping client-side pre-checks only bypasses local preflight calls; server-side Azure Policy enforcement in ARM still applies during deployment.

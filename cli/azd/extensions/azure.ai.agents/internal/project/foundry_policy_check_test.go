@@ -1,16 +1,22 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore noncompliant
+
 package project
 
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/foundrypolicy"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -690,6 +696,367 @@ func TestCheckHostedContainerImagePolicyAndViolationsError(t *testing.T) {
 			{Target: foundrypolicy.TargetModel},
 		}))
 	})
+
+	t.Run("deduplicates View policy link lines when multiple violations share the same assignment", func(t *testing.T) {
+		t.Parallel()
+		err := PolicyViolationsToError("my-agent", []foundrypolicy.Violation{
+			{
+				Target:       foundrypolicy.TargetTool,
+				TargetValue:  "code_interpreter",
+				AssignmentID: "/subscriptions/sub/policyassignments/approve-tools",
+				DisplayName:  "Foundry approved tools",
+				PortalURL:    "https://ai.azure.com/nextgen/r/test/manage/govern/assignments/123",
+				Message:      `The "Foundry approved tools" policy doesn't allow tool "code_interpreter" in this project.`,
+			},
+			{
+				Target:       foundrypolicy.TargetTool,
+				TargetValue:  "file_search",
+				AssignmentID: "/subscriptions/sub/policyassignments/approve-tools",
+				DisplayName:  "Foundry approved tools",
+				PortalURL:    "https://ai.azure.com/nextgen/r/test/manage/govern/assignments/123",
+				Message:      `The "Foundry approved tools" policy doesn't allow tool "file_search" in this project.`,
+			},
+		})
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		assert.Equal(t, 1, strings.Count(localErr.Suggestion, "View policy (Foundry approved tools):"))
+	})
+
+	t.Run("classifies runtime 403 Azure Policy denials and ignores ordinary 403 RBAC errors", func(t *testing.T) {
+		t.Parallel()
+
+		// 1. Live 403 agent_policy_denied with additionalInfo.policy_assignment_id
+		liveBody := `{"error":{"code":"agent_policy_denied",` +
+			`"message":"Creating or updating agent 'my-agent' is noncompliant with policy ` +
+			`/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/providers/Microsoft.Authorization/policyAssignments/restrict-foundry-tools:\n` +
+			`Count of Microsoft.CognitiveServices.Data/accounts/projects/agents/tools[*]",` +
+			`"additionalInfo":{` +
+			`"policy_assignment_id":"/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/providers/Microsoft.Authorization/policyAssignments/restrict-foundry-tools",` +
+			`"policy_definition_id":"/providers/Microsoft.Authorization/policyDefinitions/e7352ad2-6c86-4a07-9573-47f67b557ba8",` +
+			`"effect":"Deny"}}}`
+		liveRespErr := &azcore.ResponseError{
+			StatusCode: http.StatusForbidden,
+			ErrorCode:  "agent_policy_denied",
+			RawResponse: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Body:       io.NopCloser(strings.NewReader(liveBody)),
+			},
+		}
+		classifiedLive, okLive := TryClassifyRuntimePolicyError(liveRespErr, "my-agent", testPolicyProjectID)
+		require.True(t, okLive)
+		localLive, isLocal := errors.AsType[*azdext.LocalError](classifiedLive)
+		require.True(t, isLocal)
+		assert.Equal(t, exterrors.CodeToolBlockedByPolicy, localLive.Code)
+		assert.Contains(t, localLive.Suggestion, "View policy (restrict-foundry-tools): https://ai.azure.com/nextgen/r/")
+
+		// 2. Skylight #6450-style 403 forbidden with noncompliant policy message
+		skylightBody := `{"error":{"code":"forbidden",` +
+			`"message":"Saving agent is noncompliant with policy ` +
+			`/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/providers/Microsoft.Authorization/policyAssignments/approved-tools:\n` +
+			`Count of Microsoft.CognitiveServices.Data/accounts/projects/agents/tools[*]"}}`
+		skylightRespErr := &azcore.ResponseError{
+			StatusCode: http.StatusForbidden,
+			ErrorCode:  "forbidden",
+			RawResponse: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Body:       io.NopCloser(strings.NewReader(skylightBody)),
+			},
+		}
+		classifiedSky, okSky := TryClassifyRuntimePolicyError(skylightRespErr, "my-agent", testPolicyProjectID)
+		require.True(t, okSky)
+		localSky, isLocalSky := errors.AsType[*azdext.LocalError](classifiedSky)
+		require.True(t, isLocalSky)
+		assert.Equal(t, exterrors.CodeToolBlockedByPolicy, localSky.Code)
+		assert.Contains(t, localSky.Suggestion, "View policy (approved-tools): https://ai.azure.com/nextgen/r/")
+
+		// 3. Ordinary 403 RBAC error is NOT misclassified as a policy denial
+		rbacBody := `{"error":{"code":"forbidden","message":"The caller does not have permission."}}`
+		rbacRespErr := &azcore.ResponseError{
+			StatusCode: http.StatusForbidden,
+			ErrorCode:  "forbidden",
+			RawResponse: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Body:       io.NopCloser(strings.NewReader(rbacBody)),
+			},
+		}
+		_, okRBAC := TryClassifyRuntimePolicyError(rbacRespErr, "my-agent", testPolicyProjectID)
+		assert.False(t, okRBAC)
+
+		// 4. promptCreateError uses the azure.yaml service key ("customer-support-svc") over managed.Name ("support-bot")
+		promptPolicyErr := promptCreateError(
+			&azcore.ResponseError{
+				StatusCode: http.StatusForbidden,
+				ErrorCode:  "agent_policy_denied",
+				RawResponse: &http.Response{
+					StatusCode: http.StatusForbidden,
+					Body:       io.NopCloser(strings.NewReader(liveBody)),
+				},
+			},
+			&agent_yaml.PromptAgent{
+				AgentDefinition: agent_yaml.AgentDefinition{Name: "support-bot"},
+			},
+			"customer-support-svc",
+			testPolicyProjectID,
+		)
+		localPromptErr, isLocalPrompt := errors.AsType[*azdext.LocalError](promptPolicyErr)
+		require.True(t, isLocalPrompt)
+		assert.Equal(t, exterrors.CodeToolBlockedByPolicy, localPromptErr.Code)
+		assert.Contains(t, localPromptErr.Message, `"customer-support-svc"`)
+
+		// 5. hostedAgentCreateError classifies policy-denied 403s and leaves ordinary RBAC 403s to ServiceFromAzure
+		hostedPolicyErr := hostedAgentCreateError(
+			&azcore.ResponseError{
+				StatusCode: http.StatusForbidden,
+				ErrorCode:  "agent_policy_denied",
+				RawResponse: &http.Response{
+					StatusCode: http.StatusForbidden,
+					Body:       io.NopCloser(strings.NewReader(liveBody)),
+				},
+			},
+			"my-hosted-svc",
+			nil,
+			testPolicyProjectID,
+		)
+		localHostedErr, isLocalHosted := errors.AsType[*azdext.LocalError](hostedPolicyErr)
+		require.True(t, isLocalHosted)
+		assert.Equal(t, exterrors.CodeToolBlockedByPolicy, localHostedErr.Code)
+		assert.Contains(t, localHostedErr.Message, `"my-hosted-svc"`)
+
+		hostedRBACErr := hostedAgentCreateError(
+			&azcore.ResponseError{
+				StatusCode: http.StatusForbidden,
+				ErrorCode:  "forbidden",
+				RawResponse: &http.Response{
+					StatusCode: http.StatusForbidden,
+					Body:       io.NopCloser(strings.NewReader(rbacBody)),
+				},
+			},
+			"my-hosted-svc",
+			nil,
+			testPolicyProjectID,
+		)
+		_, isServiceErr := errors.AsType[*azdext.ServiceError](hostedRBACErr)
+		assert.True(t, isServiceErr)
+
+		// 6. Never leaks secrets from request URL or raw error.message (or missing error.message)
+		secretBody := `{"error":{"code":"agent_policy_denied",` +
+			`"message":"Creating agent is noncompliant with policy ` +
+			`/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/providers/Microsoft.Authorization/policyAssignments/restrict-foundry-tools:\n` +
+			`MCP endpoint https://secret.example.com/mcp?api_key=SUPER_SECRET_TOKEN is not allowed (` +
+			`Count of Microsoft.CognitiveServices.Data/accounts/projects/agents/tools[*])"}}`
+		secretReq, reqErr := http.NewRequestWithContext(
+			t.Context(),
+			http.MethodPost,
+			"https://secret.example.com/mcp?api_key=SUPER_SECRET_TOKEN",
+			nil,
+		)
+		require.NoError(t, reqErr)
+		secretRespErr := &azcore.ResponseError{
+			StatusCode: http.StatusForbidden,
+			ErrorCode:  "agent_policy_denied",
+			RawResponse: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Body:       io.NopCloser(strings.NewReader(secretBody)),
+				Request:    secretReq,
+			},
+		}
+		classifiedSecret, okSecret := TryClassifyRuntimePolicyError(secretRespErr, "my-agent", testPolicyProjectID)
+		require.True(t, okSecret)
+		localSecret, isLocalSecret := errors.AsType[*azdext.LocalError](classifiedSecret)
+		require.True(t, isLocalSecret)
+		assert.NotContains(t, localSecret.Message, "SUPER_SECRET_TOKEN")
+		assert.NotContains(t, localSecret.Suggestion, "SUPER_SECRET_TOKEN")
+
+		emptyMsgBody := `{"error":{"code":"agent_policy_denied"}}`
+		emptyMsgRespErr := &azcore.ResponseError{
+			StatusCode: http.StatusForbidden,
+			ErrorCode:  "agent_policy_denied",
+			RawResponse: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Body:       io.NopCloser(strings.NewReader(emptyMsgBody)),
+				Request:    secretReq,
+			},
+		}
+		classifiedEmptyMsg, okEmptyMsg := TryClassifyRuntimePolicyError(emptyMsgRespErr, "my-agent", testPolicyProjectID)
+		require.True(t, okEmptyMsg)
+		localEmptyMsg, isLocalEmptyMsg := errors.AsType[*azdext.LocalError](classifiedEmptyMsg)
+		require.True(t, isLocalEmptyMsg)
+		assert.NotContains(t, localEmptyMsg.Message, "SUPER_SECRET_TOKEN")
+		assert.NotContains(t, localEmptyMsg.Suggestion, "SUPER_SECRET_TOKEN")
+	})
+
+	t.Run("evaluates ARM model policies even when loadInventory fails", func(t *testing.T) {
+		t.Parallel()
+		svc := inlineAgentService(t, map[string]any{
+			"kind":         "prompt",
+			"name":         "my-prompt",
+			"model":        "gpt-4.1",
+			"instructions": "Help users.",
+		})
+		services := map[string]*azdext.ServiceConfig{
+			svc.GetName(): svc,
+		}
+		info, err := parseAgentIdentityInfo(testPolicyProjectID)
+		require.NoError(t, err)
+		azdEnv := map[string]string{
+			"AZURE_AI_PROJECT_ID": testPolicyProjectID,
+		}
+
+		// 1. When loadInventory fails (e.g. policyAssignments/read denied) and evaluateModel
+		// returns a confirmed Deny violation, both EvaluateCandidateWithCredential and
+		// queryProjectPolicyServices surface OutcomeBlocked.
+		blockingModelOps := policyPreflightOperations{
+			evalCache: newCandidateEvaluationCache(0, nil),
+			loadInventory: func(_ context.Context, _ azcore.TokenCredential, _ string) (foundrypolicy.Inventory, error) {
+				return foundrypolicy.Inventory{}, errors.New("current identity does not have Microsoft.Authorization/policyAssignments/read permission")
+			},
+			evaluateModel: func(
+				_ context.Context,
+				_ azcore.TokenCredential,
+				_ string,
+				models []foundrypolicy.ModelCandidate,
+			) (foundrypolicy.ModelPolicyEvaluation, error) {
+				return foundrypolicy.ModelPolicyEvaluation{
+					ResolvedModels: models,
+					Violations: []foundrypolicy.Violation{{
+						Target:       foundrypolicy.TargetModel,
+						TargetValue:  "gpt-4.1",
+						AssignmentID: "/subscriptions/sub/policyassignments/deny-gpt41",
+						DisplayName:  "Deny GPT-4.1",
+						Message:      `The "Deny GPT-4.1" policy doesn't allow model "gpt-4.1" in this project.`,
+					}},
+				}, nil
+			},
+		}
+
+		cand := ExtractServicePolicyCandidateWithServices(svc, services, t.TempDir(), azdEnv)
+		evalRes, evalErr := EvaluateCandidateWithCredential(t.Context(), fakePolicyTokenCredential{}, cand, blockingModelOps)
+		require.NoError(t, evalErr)
+		assert.Equal(t, foundrypolicy.OutcomeBlocked, evalRes.Outcome)
+		require.Len(t, evalRes.Violations, 1)
+		assert.Equal(t, "Deny GPT-4.1", evalRes.Violations[0].DisplayName)
+
+		projRes, projErr := queryProjectPolicyServices(
+			t.Context(),
+			fakePolicyTokenCredential{},
+			info,
+			services,
+			t.TempDir(),
+			azdEnv,
+			blockingModelOps,
+		)
+		require.NoError(t, projErr)
+		require.NotNil(t, projRes)
+		require.Len(t, projRes.Services, 1)
+		assert.Equal(t, foundrypolicy.OutcomeBlocked, projRes.Services[0].Outcome)
+		require.Len(t, projRes.Services[0].Violations, 1)
+
+		// 2. When loadInventory fails and evaluateModel returns no violations,
+		// EvaluateCandidateWithCredential and queryProjectPolicyServices return the inventory error.
+		allowingModelOps := policyPreflightOperations{
+			evalCache: newCandidateEvaluationCache(0, nil),
+			loadInventory: func(_ context.Context, _ azcore.TokenCredential, _ string) (foundrypolicy.Inventory, error) {
+				return foundrypolicy.Inventory{}, errors.New("current identity does not have Microsoft.Authorization/policyAssignments/read permission")
+			},
+			evaluateModel: func(
+				_ context.Context,
+				_ azcore.TokenCredential,
+				_ string,
+				models []foundrypolicy.ModelCandidate,
+			) (foundrypolicy.ModelPolicyEvaluation, error) {
+				return foundrypolicy.ModelPolicyEvaluation{
+					ResolvedModels: models,
+				}, nil
+			},
+		}
+
+		evalRes2, evalErr2 := EvaluateCandidateWithCredential(t.Context(), fakePolicyTokenCredential{}, cand, allowingModelOps)
+		require.ErrorContains(t, evalErr2, "Microsoft.Authorization/policyAssignments/read")
+		assert.Equal(t, foundrypolicy.OutcomeIndeterminate, evalRes2.Outcome)
+
+		_, projErr2 := queryProjectPolicyServices(
+			t.Context(),
+			fakePolicyTokenCredential{},
+			info,
+			services,
+			t.TempDir(),
+			azdEnv,
+			allowingModelOps,
+		)
+		require.ErrorContains(t, projErr2, "Microsoft.Authorization/policyAssignments/read")
+
+		// 3. Multi-service project when loadInventory fails: loadInventory is called only once
+		// across all services, the service with a confirmed model Deny is OutcomeBlocked, and
+		// the other service retains OutcomeIndeterminate with the inventory error reason.
+		svc1 := inlineAgentService(t, map[string]any{
+			"kind":         "prompt",
+			"name":         "svc-allowed-model",
+			"model":        "gpt-4o",
+			"instructions": "Help users.",
+		})
+		svc1.Name = "svc-allowed-model"
+		svc2 := inlineAgentService(t, map[string]any{
+			"kind":         "prompt",
+			"name":         "svc-blocked-model",
+			"model":        "gpt-35-turbo",
+			"instructions": "Help users.",
+		})
+		svc2.Name = "svc-blocked-model"
+		multiServices := map[string]*azdext.ServiceConfig{
+			"svc-allowed-model": svc1,
+			"svc-blocked-model": svc2,
+		}
+
+		loadInvCount := 0
+		multiOps := policyPreflightOperations{
+			evalCache: newCandidateEvaluationCache(0, nil),
+			loadInventory: func(_ context.Context, _ azcore.TokenCredential, _ string) (foundrypolicy.Inventory, error) {
+				loadInvCount++
+				return foundrypolicy.Inventory{}, errors.New("current identity does not have Microsoft.Authorization/policyAssignments/read permission")
+			},
+			evaluateModel: func(
+				_ context.Context,
+				_ azcore.TokenCredential,
+				_ string,
+				models []foundrypolicy.ModelCandidate,
+			) (foundrypolicy.ModelPolicyEvaluation, error) {
+				if len(models) > 0 && models[0].DeploymentName == "gpt-35-turbo" {
+					return foundrypolicy.ModelPolicyEvaluation{
+						ResolvedModels: models,
+						Violations: []foundrypolicy.Violation{{
+							Target:       foundrypolicy.TargetModel,
+							TargetValue:  "gpt-35-turbo",
+							AssignmentID: "/subscriptions/sub/policyassignments/deny-gpt35",
+							DisplayName:  "Deny GPT-3.5",
+							Message:      `The "Deny GPT-3.5" policy doesn't allow model "gpt-35-turbo" in this project.`,
+						}},
+					}, nil
+				}
+				return foundrypolicy.ModelPolicyEvaluation{ResolvedModels: models}, nil
+			},
+		}
+
+		multiRes, multiErr := queryProjectPolicyServices(
+			t.Context(),
+			fakePolicyTokenCredential{},
+			info,
+			multiServices,
+			t.TempDir(),
+			azdEnv,
+			multiOps,
+		)
+		require.NoError(t, multiErr)
+		assert.Equal(t, 1, loadInvCount, "loadInventory must be called only once across all services")
+		require.NotNil(t, multiRes)
+		require.Len(t, multiRes.Services, 2)
+		assert.Equal(t, "svc-allowed-model", multiRes.Services[0].ServiceName)
+		assert.Equal(t, foundrypolicy.OutcomeIndeterminate, multiRes.Services[0].Outcome)
+		assert.Contains(t, multiRes.Services[0].IncompleteReason, "Microsoft.Authorization/policyAssignments/read")
+		assert.Equal(t, "svc-blocked-model", multiRes.Services[1].ServiceName)
+		assert.Equal(t, foundrypolicy.OutcomeBlocked, multiRes.Services[1].Outcome)
+		require.Len(t, multiRes.Services[1].Violations, 1)
+		assert.Equal(t, "Deny GPT-3.5", multiRes.Services[1].Violations[0].DisplayName)
+	})
 }
 
 func TestPolicyOptOutEnvVars(t *testing.T) {
@@ -837,9 +1204,49 @@ func TestEvaluateCandidateWithCredentialDeadlinePropagation(t *testing.T) {
 
 		res, err := EvaluateCandidateWithCredential(shortCtx, fakePolicyTokenCredential{}, cand, ops)
 		require.NoError(t, err)
-		assert.Equal(t, callerDeadline, invDeadline)
+		assert.False(t, invDeadline.After(callerDeadline))
 		assert.Equal(t, callerDeadline, modelDeadline)
 		assert.Equal(t, foundrypolicy.OutcomeIndeterminate, res.Outcome)
 		assert.Contains(t, res.IncompleteReason, context.DeadlineExceeded.Error())
+	})
+
+	t.Run("reserves deadline budget for evaluateModel fallback when loadInventory times out", func(t *testing.T) {
+		t.Parallel()
+		callerCtx, cancel := context.WithTimeout(t.Context(), 120*time.Millisecond)
+		defer cancel()
+
+		var modelCtxErr error
+		ops := policyPreflightOperations{
+			evalCache: newCandidateEvaluationCache(0, nil),
+			loadInventory: func(invCtx context.Context, _ azcore.TokenCredential, _ string) (foundrypolicy.Inventory, error) {
+				<-invCtx.Done()
+				return foundrypolicy.Inventory{}, invCtx.Err()
+			},
+			evaluateModel: func(
+				evalCtx context.Context,
+				_ azcore.TokenCredential,
+				_ string,
+				models []foundrypolicy.ModelCandidate,
+			) (foundrypolicy.ModelPolicyEvaluation, error) {
+				modelCtxErr = evalCtx.Err()
+				return foundrypolicy.ModelPolicyEvaluation{
+					ResolvedModels: models,
+					Violations: []foundrypolicy.Violation{{
+						Target:       foundrypolicy.TargetModel,
+						TargetValue:  "gpt-4o",
+						AssignmentID: "/subscriptions/sub/policyassignments/deny-gpt4o",
+						DisplayName:  "Deny GPT-4o",
+						Message:      `The "Deny GPT-4o" policy doesn't allow model "gpt-4o" in this project.`,
+					}},
+				}, nil
+			},
+		}
+
+		res, err := EvaluateCandidateWithCredential(callerCtx, fakePolicyTokenCredential{}, cand, ops)
+		require.NoError(t, err)
+		assert.NoError(t, modelCtxErr, "evaluateModel must receive a live context after loadInventory times out")
+		assert.Equal(t, foundrypolicy.OutcomeBlocked, res.Outcome)
+		require.Len(t, res.Violations, 1)
+		assert.Equal(t, "Deny GPT-4o", res.Violations[0].DisplayName)
 	})
 }

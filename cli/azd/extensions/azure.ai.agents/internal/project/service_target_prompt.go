@@ -214,7 +214,21 @@ const raiPolicyEnvVarName = "RAI_POLICY_ID"
 // neither rai_config nor the policy. Without this, the only visible difference
 // between "your policy is wrong" and "this harness does not take policies yet"
 // is a message that mentions neither.
-func promptCreateError(err error, managed *agent_yaml.PromptAgent) error {
+func promptCreateError(err error, managed *agent_yaml.PromptAgent, serviceAndProject ...string) error {
+	var svcName, projID string
+	if len(serviceAndProject) >= 1 {
+		svcName = strings.TrimSpace(serviceAndProject[0])
+	}
+	if len(serviceAndProject) >= 2 {
+		projID = strings.TrimSpace(serviceAndProject[1])
+	}
+	if svcName == "" && managed != nil {
+		svcName = managed.Name
+	}
+	if policyErr, ok := TryClassifyRuntimePolicyError(err, svcName, projID); ok {
+		return policyErr
+	}
+
 	converted := exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 
 	if !declaresRaiPolicy(managed) {
@@ -403,7 +417,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	headers := promptAgentRequestHeaders(&managed, settings)
 	agent, err := p.createOrUpdatePromptAgent(ctx, client, request, settings, headers)
 	if err != nil {
-		return nil, promptCreateError(err, &managed)
+		return nil, promptCreateError(err, &managed, serviceConfig.GetName(), env["AZURE_AI_PROJECT_ID"])
 	}
 
 	latest := agent.Versions.Latest

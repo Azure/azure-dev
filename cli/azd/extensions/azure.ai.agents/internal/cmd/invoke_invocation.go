@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/useragent"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -125,6 +126,7 @@ func (a *InvokeAction) cancelInvocation(
 		return fmt.Errorf("create Invocation cancel request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", useragent.Default())
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
 	//nolint:gosec // URL is built from a validated Foundry endpoint.
@@ -182,6 +184,7 @@ func (a *InvokeAction) getInvocation(
 		return invocationSnapshotResult{}, fmt.Errorf("create Invocation show request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", useragent.Default())
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
 	//nolint:gosec // URL is built from a validated Foundry endpoint.

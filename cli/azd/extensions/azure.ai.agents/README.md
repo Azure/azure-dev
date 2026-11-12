@@ -22,7 +22,7 @@ All eight preview capabilities are off by default. Each switch is controlled ind
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
 | `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
-| `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
+| `agents.voice` | Voice / prompt-voice agents, including hosted targets with `invocations_ws` or `voice_conversation_engine` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 | `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
@@ -1896,11 +1896,8 @@ services:
     uses:
       - ai-project
     protocols:
-      - protocol: invocations_ws
+      - protocol: voice_conversation_engine
         version: 1.0.0
-    metadata:
-      voiceLiveCompatible: "true"
-      bridgeProtocolVersion: "1.0"
     container:
       resources:
         cpu: "1"
@@ -1931,9 +1928,17 @@ The `uses` edge deploys the target before the wrapper. `conversationEngine`
 points at the hosted target service, and `version: deployed` pins the wrapper
 to the target version produced by the current azd environment.
 
-The target must be active, declare `invocations_ws/1.0.0`, and include
-`voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,
-instructions, tools, and other conversation controls belong to the target;
+The target must be active. New targets declare `voice_conversation_engine/1.0.0`.
+For backward compatibility, azd also accepts the existing `invocations_ws/1.0.0`
+contract with both `voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0`
+metadata. This preserves existing Hosted Voice manifests without making the two
+protocol endpoints interchangeable.
+The target and wrapper currently require `AZD_ALPHA_ENABLE_AGENTS_VOICE=true`.
+Configure the conversation engine through the complete manifest shown above;
+this protocol is not offered by the Hosted Agent init protocol picker.
+`invocations_ws` remains an independent Hosted Agent protocol and does not
+substitute for the conversation-engine endpoint. Model, instructions, tools,
+and other conversation controls belong to the target;
 the wrapper owns audio, voice, store, avatar, and greeting configuration.
 
 ## Invocations metadata discovery

@@ -25,6 +25,16 @@ func TestA2AOnlyRunTargetRouting(t *testing.T) {
 		{"missing", "", false},
 		{"empty", "kind: hosted", false},
 		{"A2A", "protocols: [{protocol: a2a, version: 1.0.0}]", true},
+		{"conversation engine", "protocols: [{protocol: voice_conversation_engine, version: 1.0.0}]", true},
+		{"CE and WebSocket", "protocols: [{protocol: voice_conversation_engine}, {protocol: invocations_ws}]", true},
+		{"WebSocket and CE", "protocols: [{protocol: invocations_ws}, {protocol: voice_conversation_engine}]", true},
+		{"CE and A2A", "protocols: [{protocol: voice_conversation_engine}, {protocol: a2a}]", true},
+		{"A2A and CE", "protocols: [{protocol: a2a}, {protocol: voice_conversation_engine}]", true},
+		{"CE and A2A and WebSocket", "protocols: [{protocol: voice_conversation_engine}, {protocol: a2a}, {protocol: invocations_ws}]", true},
+		{"CE and A2A and Responses", "protocols: [{protocol: voice_conversation_engine}, {protocol: a2a}, {protocol: responses}]", false},
+		{"CE and Responses", "protocols: [{protocol: voice_conversation_engine}, {protocol: responses}]", false},
+		{"CE and Invocations", "protocols: [{protocol: voice_conversation_engine}, {protocol: invocations}]", false},
+		{"CE and Activity", "protocols: [{protocol: voice_conversation_engine}, {protocol: activity}]", false},
 		{"trimmed", "protocols: [{protocol: ' a2a ', version: 0.3.0}]", true},
 		{"Responses", "protocols: [{protocol: responses}]", false},
 		{"mixed Responses", "protocols: [{protocol: a2a}, {protocol: responses}]", false},
@@ -44,8 +54,20 @@ func TestA2AOnlyRunTargetRouting(t *testing.T) {
 				require.NoError(t, yaml.Unmarshal([]byte(tc.definition), def))
 			}
 			profile, suppressed := resolveRunClientProfile(def)
+			protocol := protocolOnlyRunTarget(def)
+			if tc.name == "CE and A2A" || tc.name == "A2A and CE" || tc.name == "CE and A2A and WebSocket" {
+				require.Equal(t, nextstep.ProtocolA2A, protocol)
+				state := withResolvedRunTarget(nil, "engine", protocol)
+				suggestions := nextstep.ResolveAfterRun(state, "engine", func(string) bool { return true })
+				require.Len(t, suggestions, 1)
+				require.Contains(t, suggestions[0].Command, "--protocol a2a")
+			}
+			if tc.name == "CE and WebSocket" || tc.name == "WebSocket and CE" {
+				require.Equal(t, nextstep.ProtocolVoiceConversationEngine, protocol)
+				state := withResolvedRunTarget(nil, "engine", protocol)
+				require.Empty(t, nextstep.ResolveAfterRun(state, "engine", func(string) bool { return true }))
+			}
 			require.Equal(t, tc.wantSuppressed, suppressed)
-			require.Equal(t, isA2AOnlyRunTarget(def), suppressed)
 			if !suppressed {
 				// Endpoint-only A2A must not suppress Inspector, and mixed
 				// container protocols must preserve the existing client route.
@@ -59,10 +81,14 @@ func TestA2AOnlyRunTargetRouting(t *testing.T) {
 			reporter := &recordingUsageReporter{}
 			reportLocalClientRouteSelected(t.Context(), reporter, profile, suppressed)
 			require.Equal(t, telemetry.LocalClientRouteSelected(telemetry.LocalClientRouteSuppressed), reporter.event)
+			displayProtocol := protocol
+			if protocol == nextstep.ProtocolA2A {
+				displayProtocol = "A2A"
+			}
 			require.ErrorContains(t, validateInspectorPortForProfile(&runFlags{
 				port: 9090, inspectorPort: 9090, inspectorPortSet: true,
-			}, profile.IsActivity, suppressed), "not supported for A2A-only agents")
-			require.NoError(t, validateInspectorPortForProfile(&runFlags{port: 9090}, profile.IsActivity, suppressed))
+			}, profile.IsActivity, protocol), displayProtocol+"-only agents")
+			require.NoError(t, validateInspectorPortForProfile(&runFlags{port: 9090}, profile.IsActivity, protocol))
 			// A nil workflow would panic if Inspector tried to launch.
 			var stderr bytes.Buffer
 			handleInspectorAutoLaunch(t.Context(), nil, 9090, 0, suppressed, true, nil, &stderr)
@@ -90,7 +116,7 @@ func TestResolvedRunTargetNextSteps(t *testing.T) {
 			t.Parallel()
 			state := &nextstep.State{Services: tc.services, LocalPort: 9091, HasOpenAPI: true, OpenAPIPayload: `{"stale":true}`}
 			original := append([]nextstep.ServiceState(nil), state.Services...)
-			resolved := withResolvedRunTarget(state, "agent", true)
+			resolved := withResolvedRunTarget(state, "agent", nextstep.ProtocolA2A)
 			require.Equal(t, original, state.Services, "must not mutate the reloaded services")
 			for _, svc := range resolved.Services {
 				if svc.Name == "other" {
@@ -100,7 +126,14 @@ func TestResolvedRunTargetNextSteps(t *testing.T) {
 			suggestions := nextstep.ResolveAfterRun(resolved, "agent", func(string) bool { return true })
 			require.Len(t, suggestions, 1)
 			require.Equal(t, "azd ai agent invoke 'agent' --local --protocol a2a --port 9091 'Hello!'", suggestions[0].Command)
-			require.Same(t, state, withResolvedRunTarget(state, "agent", false), "other routes must remain unchanged")
+			require.Same(t, state, withResolvedRunTarget(state, "agent", ""), "other routes must remain unchanged")
 		})
 	}
+}
+
+func TestResolvedConversationEngineRunTargetHasNoInvokeGuidance(t *testing.T) {
+	state := &nextstep.State{LocalPort: 9091, HasOpenAPI: true, OpenAPIPayload: `{"stale":true}`}
+	resolved := withResolvedRunTarget(state, "engine", nextstep.ProtocolVoiceConversationEngine)
+	require.Equal(t, nextstep.ProtocolVoiceConversationEngine, resolved.Services[0].Protocol)
+	require.Empty(t, nextstep.ResolveAfterRun(resolved, "engine", func(string) bool { return true }))
 }

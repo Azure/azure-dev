@@ -1,6 +1,6 @@
 # Release History
 
-## 0.1.2-preview (Unreleased)
+## 0.1.2-preview (2026-11-11)
 
 ### Features Added
 

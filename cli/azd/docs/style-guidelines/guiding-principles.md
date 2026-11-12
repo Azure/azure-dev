@@ -10,27 +10,20 @@ Start with the user's workflow and existing `azd` capabilities. Consider an exte
 
 Check [project configuration and hooks](../../../../docs/reference/azure-yaml-schema.md) first. For example, a project-specific script that runs after deployment can use a `postdeploy` hook. Use the decision tree to choose a boundary, and discuss core changes or exceptions with maintainers.
 
-```text
-Describe the user workflow and check existing capabilities.
-|
-+-- Can existing configuration, templates, or hooks meet the need?
-|   +-- Yes: reuse them; no new extension or core feature is needed.
-|   +-- No: consider an extension.
-|
-+-- Must existing host-owned behavior change (selection/auth/dispatch)?
-|   +-- Yes: fix the core boundary; keep domain logic in extensions.
-|   +-- No: evaluate the supported extension contracts.
-|
-+-- Can supported extension contracts implement the workflow?
-|   +-- Yes: prefer an extension; reuse lifecycle events or providers.
-|   +-- No: identify the specific host API or orchestration gap.
-|
-+-- Can a reusable host capability close that gap?
-|   +-- Yes: propose a small core API/extension point plus an extension.
-|   +-- No: propose a justified core exception with maintainers.
-|
-+-- Record ownership, compatibility, and tradeoffs in the design/PR.
-```
+1. **Can existing configuration, templates, or hooks meet the need?**
+   - Yes: reuse them. Record the decision.
+   - No: continue to question 2.
+2. **Must existing host-owned behavior change, such as selection, authentication, or dispatch?**
+   - Yes: fix the host boundary and keep domain logic in an extension where possible. Record the decision.
+   - No: continue to question 3.
+3. **Can supported extension contracts implement the workflow?**
+   - Yes: prefer an extension and reuse lifecycle events or providers. Record the decision.
+   - No: identify the host API or orchestration gap and continue to question 4.
+4. **Can a reusable host capability close that gap?**
+   - Yes: propose a small core API or extension point plus an extension. Record the decision.
+   - No: propose a core exception with maintainers. Record the decision.
+
+For each outcome, record ownership, compatibility, and tradeoffs in the design or PR.
 
 Choose the boundary based on the workflow and ownership, even when a feature serves many users. Keep shared environment selection, authentication, and deployment orchestration in the host. Compare installation and update costs, independent release needs, core binary dependencies, and long-term ownership before choosing.
 

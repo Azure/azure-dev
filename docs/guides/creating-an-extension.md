@@ -10,7 +10,7 @@ Start with the [extension-versus-core decision framework](../../cli/azd/docs/sty
 
 Use the [extensions style guide](../../cli/azd/docs/extensions/extensions-style-guide.md) to plan commands, flags, help, and errors. Read [contract versioning](../../cli/azd/docs/extensions/contract-versioning.md) before choosing APIs for calling azd, and identify the published software development kit (SDK) and minimum azd version your extension needs.
 
-You can develop an external extension in your own repository. First-party extension development happens in `Azure/azure-dev`; the repository directory and CI instructions below apply to that work. The [root contribution guide](../../CONTRIBUTING.md) routes repository contributors to build, test, submission, and agent guidance.
+You can develop a community-authored or organization-internal extension in your own repository. Microsoft-authored extension development happens in `Azure/azure-dev`; the repository directory and CI instructions below apply to that work. The [root contribution guide](../../CONTRIBUTING.md) routes repository contributors to build, test, submission, and agent guidance.
 
 ## Overview
 
@@ -27,7 +27,7 @@ azd extensions use a gRPC-based framework to add functionality. The extension fr
 ## Prerequisites
 
 - Go 1.26 or later for Go extensions
-- A fork of the [azure-dev](https://github.com/Azure/azure-dev) repository for first-party repository contributions
+- A fork of the [azure-dev](https://github.com/Azure/azure-dev) repository for Microsoft-authored extension contributions
 - The `azd` Developer Extension installed (`azd extension install microsoft.azd.extensions`)
 - One of the supported languages: Go (best support), .NET (C#), Python, or JavaScript
 
@@ -35,9 +35,9 @@ azd extensions use a gRPC-based framework to add functionality. The extension fr
 
 ### 1. Create the extension
 
-For an external extension, use your own project directory. The Developer Extension provides `azd x init` to create a project from a template; its `--internal` option creates first-party repository files and currently supports Go only.
+For a community-authored or organization-internal extension, use your own project directory. The Developer Extension provides `azd x init` to create a project from a template; its `--internal` option creates files for Microsoft-authored extensions in this repository and currently supports Go only.
 
-For first-party repository work, extensions live under `cli/azd/extensions/`. The following directory example uses that layout:
+For Microsoft-authored extension work, extensions live under `cli/azd/extensions/`. The following directory example uses that layout:
 
 ```bash
 mkdir -p cli/azd/extensions/my.extension
@@ -82,15 +82,19 @@ azd x build
 go build
 ```
 
-### 5. Register in the Main Extension Registry
+<a id="5-register-in-the-main-extension-registry"></a>
+<a id="6-publish-to-the-dev-registry-first-recommended"></a>
 
-When your extension is stable and ready for production use, add an entry to `cli/azd/extensions/registry.json` with version, capabilities, and download URLs.
+### 5. Publish and share
 
-`ext-registry-ci` validates `requiredAzdVersion` for added or modified versions in both registries against [the latest published azd version](https://aka.ms/azure-dev/versions/cli/latest). This endpoint is updated by the core release pipeline's final `PublishVersionTxt` stage. Extension binaries may be published earlier, but registry updates must wait for core publishing to finish. Rerun the workflow once publishing completes.
+Choose the publishing path for your extension:
 
-### 6. Publish to the Dev Registry First (Recommended)
+- **Microsoft-authored:** Submit to the azd dev registry first. Once the extension is stable and meets the quality bar, submit it to the main registry.
+- **Community-authored or organization-internal:** Host your own registry for now. Follow the [publishing workflow](../../cli/azd/docs/extensions/extension-framework.md#publishing-workflow) to package and release your extension, then provide a file or URL registry source to your users. See [extension sources](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#extension-sources) for source formats and registration.
 
-For extensions that are still in development or preview, consider publishing to the **dev (experimental) registry** first to gather feedback before graduating to the main registry:
+#### Microsoft-authored extensions: dev registry
+
+For Microsoft-authored extensions, publish to the **dev (experimental) registry** first to gather feedback:
 
 1. Add your extension entry to `cli/azd/extensions/registry.dev.json` in a PR to the [azure-dev](https://github.com/Azure/azure-dev) repository.
 2. Your entry must pass schema validation (CI checks this automatically) and include all required metadata — `id`, `namespace`, `displayName`, `versions` with artifacts and SHA256/SHA512 checksums.
@@ -101,12 +105,20 @@ For extensions that are still in development or preview, consider publishing to 
    azd extension install my.extension --source dev
    ```
 
-4. Once your extension is stable and meets the quality bar, submit a follow-up PR to add it to `cli/azd/extensions/registry.json`. Users who installed from the dev registry will be **automatically promoted** to the main registry on their next `azd extension update`.
+4. Once your extension is stable and meets the quality bar, submit a follow-up PR to add it to `cli/azd/extensions/registry.json`. Users who installed from the dev registry can be automatically promoted to the main registry on `azd extension update` when the [promotion conditions](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#update-and-devmain-promotion) are met.
 
 > [!NOTE]
 > Extensions in the dev registry have no stability guarantees, are unsigned, and are not covered by Azure support. This is expected and appropriate for pre-release testing. See the [Dev/Experimental Extension Registry](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#devexperimental-extension-registry) guide for full details.
 
-## First-party user contract review
+#### Microsoft-authored extensions: main registry
+
+When your extension is stable and ready for production use, add an entry to `cli/azd/extensions/registry.json` with version, capabilities, and download URLs.
+
+`ext-registry-ci` validates `requiredAzdVersion` for added or modified versions in both registries against [the latest published azd version](https://aka.ms/azure-dev/versions/cli/latest). This endpoint is updated by the core release pipeline's final `PublishVersionTxt` stage. Extension binaries may be published earlier, but registry updates must wait for core publishing to finish. Rerun the workflow once publishing completes.
+
+<a id="first-party-user-contract-review"></a>
+
+## Microsoft-authored extension user contract review
 
 The PR reviewer applies the
 [`extension-user-contract-review` skill](../../.github/skills/extension-user-contract-review/SKILL.md)
@@ -137,9 +149,11 @@ that invokes the parent reviewer and checks the returned inline comments. From t
 `waza run .github/skills/extension-user-contract-review/evals/eval.yaml` for real-agent cases.
 The latter requires Copilot authentication and consumes model usage; it does not post GitHub comments.
 
-## First-party CI builds
+<a id="first-party-ci-builds"></a>
 
-Go extensions in this repository keep a thin `ci-build.ps1` wrapper in each extension directory. The wrapper calls [`cli/azd/extensions/scripts/ci-build.ps1`](../../cli/azd/extensions/scripts/ci-build.ps1), which owns the common build flags, target policy, coverage, record builds, and error handling. The first-party generation template creates the wrapper. Keep the shared script in the checkout when building an extension.
+## Microsoft-authored extension CI builds
+
+Go extensions in this repository keep a thin `ci-build.ps1` wrapper in each extension directory. The wrapper calls [`cli/azd/extensions/scripts/ci-build.ps1`](../../cli/azd/extensions/scripts/ci-build.ps1), which owns the common build flags, target policy, coverage, record builds, and error handling. The Microsoft-authored extension generation template creates the wrapper. Keep the shared script in the checkout when building an extension.
 
 Run the script from the extension directory with an explicit output filename:
 
@@ -181,7 +195,7 @@ multiple handlers and workflow steps are resolved.
 - **Integrate with help** — Make your extension discoverable through `azd help`
 - **Error handling** — Use `ServiceError` for Azure API errors and `LocalError` for client-side errors
 - **Telemetry** — Follow the [extension telemetry guide](../../cli/azd/docs/extensions/extension-telemetry.md);
-  first-party `ReportUsage` attributes must be declared and classified in
+  Microsoft-authored extension `ReportUsage` attributes must be declared and classified in
   `cli/azd/extensions/telemetry/fields.go`
 - **Deployment preview** — To support `azd deploy --preview`, register the host with
   `WithServiceTargetPreview` and implement `azdext.ServiceTargetPreviewProvider`

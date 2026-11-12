@@ -58,7 +58,7 @@ powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' 
 brew trust azure/azd && brew install --cask azure/azd/azd
 ```
 
-> **Note:** `brew trust azure/azd` trusts azd's Homebrew source (the `azure/azd` tap for `github.com/Azure/homebrew-azd`). Homebrew requires this before it will install casks from third-party sources.
+> **Note:** `brew trust azure/azd` trusts azd's Homebrew source (the `azure/azd` tap for `github.com/Azure/homebrew-azd`). Homebrew requires this before it will install casks from sources outside its default repositories.
 >
 > **Note:** If upgrading from a non-Homebrew installation, remove the existing `azd` binary first.
 
@@ -132,7 +132,7 @@ Microsoft employees and partners contributing official templates should follow t
 
 ## Trademarks
 
-This project may contain Microsoft trademarks or logos. Use of these must follow [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/legal/intellectualproperty/trademarks). Third-party trademarks are subject to their respective policies.
+This project may contain Microsoft trademarks or logos. Use of these must follow [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/legal/intellectualproperty/trademarks). Trademarks owned by others are subject to their respective policies.
 
 ## License
 

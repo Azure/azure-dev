@@ -46,7 +46,7 @@ func TestSuggestRemoteBuildErrorAttribution(t *testing.T) {
 				ToolNames: []string{"Docker", "other"},
 				Errs:      []error{errors.New("Docker is not installed"), errors.New("other service is not running")},
 			},
-			wantAdvice: "install Docker",
+			wantAdvice: "install a container runtime",
 		},
 		{
 			name: "canceled probe has no runtime advice",

@@ -49,7 +49,7 @@ func hasDotOrEmptySegments(resourceID string) bool {
 		return true
 	}
 	trimmed := strings.Trim(resourceID, "/")
-	for _, seg := range strings.Split(trimmed, "/") {
+	for seg := range strings.SplitSeq(trimmed, "/") {
 		if seg == "" || seg == "." || seg == ".." {
 			return true
 		}

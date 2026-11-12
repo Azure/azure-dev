@@ -163,6 +163,16 @@ func Execute(ctx context.Context, client cuclient.Client, plan Plan, options Run
 		}
 	}
 	if summary.Counts.Failed != 0 {
+		var message strings.Builder
+		fmt.Fprintf(&message, "%d analysis input(s) failed (analyzer: %s).", summary.Counts.Failed, options.Analyzer)
+		for _, record := range result.Records {
+			if record.Status == "succeeded" && record.Output != nil {
+				message.WriteString(" Successful result files were retained.")
+				break
+			}
+		}
+		fmt.Fprintf(&message, "\nSummary: %d succeeded, %d failed, %d skipped.",
+			summary.Counts.Succeeded, summary.Counts.Failed, summary.Counts.Skipped)
 		var details strings.Builder
 		shown := 0
 		for index, record := range result.Records {
@@ -183,9 +193,7 @@ func Execute(ctx context.Context, client cuclient.Client, plan Plan, options Run
 		}
 		return result, &cuclient.Error{
 			Kind: cuclient.ErrorService, Code: "analysis_failed",
-			Message: fmt.Sprintf(
-				"%d analysis input(s) failed; successful result files were retained.%s",
-				summary.Counts.Failed, details.String()),
+			Message: message.String() + details.String(),
 			Suggestion: "Correct the reported input or analyzer problem before retrying. " +
 				"Use --report-file on future runs to save all per-input outcomes.",
 		}

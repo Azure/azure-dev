@@ -273,7 +273,7 @@ func TestAnalysisSubmissionsAreNotReplayed(t *testing.T) {
 					t.Run(fmt.Sprintf("%s/%s/binary_%t/%d", version, mode, binary, status), func(t *testing.T) {
 						request, step, reader := analysisSubmission(mode, binary)
 						step.status = status
-						step.response = `{"error":{"code":"ServiceCode","message":"private-service-error"}}`
+						step.response = `{"error":{"code":"ServiceCode","message":"content: private-service-error"}}`
 						step.headers = http.Header{
 							"Retry-After":      {"1"},
 							"Www-Authenticate": {`Bearer error="insufficient_claims", claims="private-claims"`},
@@ -420,8 +420,8 @@ func TestAnalysisTerminalFailures(t *testing.T) {
 		for _, state := range []string{"Failed", "Canceled", "cancelled"} {
 			t.Run(string(mode)+"/"+state, func(t *testing.T) {
 				request, submit, _ := analysisSubmission(mode, false)
-				body := `{"status":"` + state + `","error":{"code":"OperationCode","message":"private-token",
-					"target":"private-token","details":[{"code":"InvalidField","message":"private-token",
+				body := `{"status":"` + state + `","error":{"code":"OperationCode","message":"token: private-token",
+					"target":"private-token","details":[{"code":"InvalidField","message":"token: private-token",
 						"target":"private-token"}]}}`
 				steps := []wireStep{submit}
 				if mode == AnalysisModeAsync {

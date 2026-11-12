@@ -12,8 +12,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -27,13 +30,14 @@ const (
 )
 
 type agentStateRecord struct {
-	Version        int              `json:"version"`
-	AgentKey       string           `json:"agentKey"`
-	SessionID      string           `json:"sessionId,omitempty"`
-	ConversationID string           `json:"conversationId,omitempty"`
-	Response       *savedResponse   `json:"response,omitempty"`
-	Invocation     *savedInvocation `json:"invocation,omitempty"`
-	StateStore     string           `json:"stateStore,omitempty"`
+	Version                   int                     `json:"version"`
+	AgentKey                  string                  `json:"agentKey"`
+	SessionID                 string                  `json:"sessionId,omitempty"`
+	ConversationID            string                  `json:"conversationId,omitempty"`
+	Response                  *savedResponse          `json:"response,omitempty"`
+	Invocation                *savedInvocation        `json:"invocation,omitempty"`
+	CurrentInvocationProtocol agent_api.AgentProtocol `json:"currentInvocationProtocol,omitempty"`
+	StateStore                string                  `json:"stateStore,omitempty"`
 }
 
 func (r *agentStateRecord) empty() bool {
@@ -41,6 +45,7 @@ func (r *agentStateRecord) empty() bool {
 		r.ConversationID == "" &&
 		r.Response == nil &&
 		r.Invocation == nil &&
+		r.CurrentInvocationProtocol == "" &&
 		r.StateStore == ""
 }
 
@@ -232,6 +237,111 @@ func (s *agentStateStore) delete(ctx context.Context, agentKey string) error {
 	return s.withLock(ctx, agentKey, func(path string) error {
 		return s.remove(path, agentKey)
 	})
+}
+
+// clearSession clears matching sessions across the target's cached versions.
+func (s *agentStateStore) clearSession(ctx context.Context, agentKey, sessionID string) error {
+	agentKey = normalizeEndpoint(agentKey)
+	versionIndex := strings.LastIndex(agentKey, "/versions/")
+	if versionIndex < 0 || !strings.HasSuffix(agentKey, "/remote") {
+		return errors.New("session cleanup requires a remote agent key")
+	}
+	prefix := agentKey[:versionIndex] + "/versions/"
+	keys, err := s.legacySessionKeys(ctx, prefix, sessionID)
+	var failures []error
+	if err != nil {
+		failures = append(failures, err)
+	}
+	selected := map[string]bool{agentKey: true}
+	for _, key := range keys {
+		selected[key] = true
+	}
+	cached, err := s.cachedRemoteAgentKeys(prefix, sessionID)
+	if err != nil {
+		failures = append(failures, err)
+	}
+	for _, key := range cached {
+		selected[key] = true
+	}
+	for key := range selected {
+		if err := s.mutate(ctx, key, func(record *agentStateRecord) {
+			if record.SessionID == sessionID {
+				record.SessionID = ""
+			}
+		}); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
+}
+
+// cachedRemoteAgentKeys uses an empty session ID to include all remote version records.
+func (s *agentStateStore) cachedRemoteAgentKeys(prefix, sessionID string) ([]string, error) {
+	entries, err := os.ReadDir(s.agentsDir)
+	if err != nil {
+		return nil, fmt.Errorf("list cached agent state: %w", err)
+	}
+	var keys []string
+	var failures []error
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		path := filepath.Join(s.agentsDir, entry.Name())
+		data, err := os.ReadFile(path) //nolint:gosec // path is an entry in the extension-owned state directory.
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			failures = append(failures, fmt.Errorf("read cached agent session: %w", err))
+			continue
+		}
+		var record agentStateRecord
+		if err := json.Unmarshal(data, &record); err != nil {
+			failures = append(failures, fmt.Errorf("parse cached agent session: %w", err))
+			continue
+		}
+		if (sessionID == "" || record.SessionID == sessionID) && strings.HasPrefix(record.AgentKey, prefix) &&
+			strings.HasSuffix(record.AgentKey, "/remote") && s.statePath(record.AgentKey) == path {
+			keys = append(keys, record.AgentKey)
+		}
+	}
+	return keys, errors.Join(failures...)
+}
+
+func (s *agentStateStore) deleteRemoteAgent(ctx context.Context, agentKey string) error {
+	agentKey = normalizeEndpoint(agentKey)
+	versionIndex := strings.LastIndex(agentKey, "/versions/")
+	if versionIndex < 0 || !strings.HasSuffix(agentKey, "/remote") {
+		return errors.New("agent cleanup requires a remote agent key")
+	}
+	prefix := agentKey[:versionIndex] + "/versions/"
+	known := map[string]bool{
+		agentKey: true, prefix + "latest/remote": true, agentKey[:versionIndex]: true,
+	}
+	var failures []error
+	legacy, err := s.legacyRemoteAgentKeys(ctx, prefix)
+	if err != nil {
+		failures = append(failures, err)
+	}
+	for _, key := range legacy {
+		known[key] = true
+	}
+	for key := range known {
+		if err := s.delete(ctx, key); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	keys, err := s.cachedRemoteAgentKeys(prefix, "")
+	if err != nil {
+		failures = append(failures, err)
+	}
+	for _, key := range keys {
+		if err := s.delete(ctx, key); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 func (s *agentStateStore) remove(path, agentKey string) error {

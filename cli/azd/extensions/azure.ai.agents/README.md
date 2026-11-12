@@ -790,12 +790,41 @@ For plain messages, azd composes both the version-specific JSON-RPC body and
 the `A2A-Version` header. Because azd controls both, `1.0` is a convenience
 default when `--a2a-version` is omitted. A deployed hosted A2A implementation must
 support `1.0` (`1.0.0` in deployment YAML) and match the requested wire version,
-regardless of other protocols. Local working-tree definitions are not authoritative
-for the deployed target, even when `--version` selects the current deployment.
-Local inspection failures and compatibility findings are advisory diagnostics
-shown with `--debug`; Foundry enforces deployed target support. Request and
-file-argument validation remain blocking. Translation availability and restrictions
-can vary by service rollout.
+regardless of other protocols. For automatic remote protocol selection and A2A enablement
+checks, azd reads the current Foundry endpoint configuration when the caller can
+read agent metadata. Local working-tree definitions and saved deployment protocol
+lists are not authoritative for deployed capabilities. Saved endpoints can still
+provide routing hints, but only currently enabled protocols are selected when live
+configuration is available. Explicit Responses/Invocations requests and lifecycle
+commands skip this capability metadata read. Lifecycle commands use the protocol
+saved with the current invocation for the selected target, so protocol changes
+or an explicit `invoke --version` do not redirect them to older work. Current
+work is tracked independently of session versions, and printed follow commands
+include the accepted Response ID. Older state with one saved work type can be
+inferred; if it contains both Response and Invocation IDs without a current
+selection, pass `--protocol` explicitly. Saved endpoint routing is only a fallback
+when no saved invocation identifies a protocol.
+
+A prompt agent's public endpoint must enable both `a2a` and `responses`; declaring
+a hosted implementation protocol in local YAML does not publish that endpoint.
+Optional metadata inspection is limited to five seconds, or a shorter invocation
+timeout. If metadata cannot be read, such as for an endpoint-only consumer without
+`agents/read`, azd leaves validation to Foundry rather than treating the read
+failure as a disabled protocol. Use `--protocol` explicitly when routing is
+ambiguous. If `--version` matches the saved deployment, azd can retain its single
+saved protocol while it remains enabled, even when a newer agent version is latest.
+An explicit `--version` uses version-scoped session/conversation state and cannot
+reuse a session cached under a different saved deployment version. `sessions create`
+uses the same version mapping, so `invoke --version` reuses a session created for
+that version. `sessions delete` clears matching session IDs across the selected
+target's version caches without changing saved conversations or invocation IDs.
+Full-agent deletion clears that target's remote version caches and legacy imports,
+without clearing other agents or local state. Select competing unmarked legacy
+invocation records with explicit `--protocol` and `--id` rather than guessing which is newer.
+Version-specific compatibility remains enforced by Foundry for the
+selected version or session, not inferred from the latest working-tree source.
+Request and file-argument validation remain blocking. Translation availability
+and restrictions can vary by service rollout.
 
 ```bash
 azd ai agent invoke -p a2a "Hello!"

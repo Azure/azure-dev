@@ -4,13 +4,11 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,7 +27,6 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 )
 
 // Version validation and builders.
@@ -1531,83 +1528,13 @@ func TestA2ARequestURL(t *testing.T) {
 	})
 }
 
-// A2A hosted capabilities and target validation.
-
-func TestValidateHostedA2ACompatibility(t *testing.T) {
-	t.Parallel()
-	for _, tt := range []struct {
-		name      string
-		versions  []string
-		wantError string
-	}{
-		{name: "no A2A declaration defers to Foundry"},
-		{name: "major minor", versions: []string{"1.0"}},
-		{name: "deployment version", versions: []string{"1.0.0"}},
-		{name: "compatible patch", versions: []string{"1.0.7"}},
-		{name: "duplicate normalized", versions: []string{"1.0", "1.0.0", "1.0.7"}},
-		{name: "conflicting", versions: []string{"1.0.0", "0.3.0"}, wantError: "conflicting A2A versions"},
-		{name: "conflicting unsupported", versions: []string{"0.2", "2.0"}, wantError: "conflicting A2A versions"},
-		{name: "legacy", versions: []string{"0.3.0"}, wantError: "version 0.3 is not supported"},
-		{name: "old", versions: []string{"0.2"}, wantError: "version 0.2 is not supported"},
-		{name: "future minor", versions: []string{"1.1.0"}, wantError: "version 1.1 is not supported"},
-		{name: "future major", versions: []string{"2.0.0"}, wantError: "version 2.0 is not supported"},
-		{name: "empty", versions: []string{""}, wantError: "malformed A2A version"},
-		{name: "malformed", versions: []string{"latest"}, wantError: "malformed A2A version"},
-		{name: "negative patch", versions: []string{"1.0.-1"}, wantError: "malformed A2A version"},
-		{name: "extra component", versions: []string{"1.0.0.0"}, wantError: "malformed A2A version"},
-		{name: "leading zero", versions: []string{"01.0"}, wantError: "malformed A2A version"},
-		{name: "signed", versions: []string{"+1.0"}, wantError: "malformed A2A version"},
-		{name: "whitespace", versions: []string{" 1.0"}, wantError: "malformed A2A version"},
-		{name: "valid then malformed", versions: []string{"1.0", "latest"}, wantError: "malformed A2A version"},
-		{name: "malformed then valid", versions: []string{"latest", "1.0"}, wantError: "malformed A2A version"},
-	} {
-		for _, responses := range []bool{false, true} {
-			for _, requested := range []string{"1.0", "0.3"} {
-				t.Run(fmt.Sprintf("%s/responses=%t/requested=%s", tt.name, responses, requested), func(t *testing.T) {
-					t.Parallel()
-					protocols := []agent_yaml.ProtocolVersionRecord{{Protocol: "other", Version: "ignored"}}
-					for _, version := range tt.versions {
-						protocols = append(protocols, agent_yaml.ProtocolVersionRecord{Protocol: "a2a", Version: version})
-					}
-					if responses {
-						protocols = append(protocols, agent_yaml.ProtocolVersionRecord{Protocol: "responses", Version: "ignored"})
-					}
-					wantError := tt.wantError
-					if wantError == "" && len(tt.versions) > 0 && requested == "0.3" {
-						wantError = "does not match the hosted-agent declaration"
-					}
-					err := validateHostedA2ACompatibility(protocols, requested)
-					if wantError != "" {
-						require.ErrorContains(t, err, wantError)
-					} else {
-						require.NoError(t, err)
-					}
-				})
-			}
-		}
-	}
-}
-
-func TestNormalizeA2AWireVersion(t *testing.T) {
-	t.Parallel()
-	for _, tt := range []struct{ declared, want string }{
-		{"1.0", "1.0"}, {"1.0.7", "1.0"}, {"0.3.0", "0.3"}, {"1.1.0", "1.1"}, {"2.0", "2.0"},
-	} {
-		t.Run(tt.declared, func(t *testing.T) {
-			t.Parallel()
-			got, err := normalizeA2AWireVersion(tt.declared)
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
+// A2A deployed capabilities and target validation.
 
 func TestHostedA2ARemoteTarget(t *testing.T) {
 	t.Setenv(featureflags.A2A.EnvVar, "true")
 	for _, tt := range []struct {
 		name, explicit, wantError       string
 		version, deployed               string
-		wantDiagnostic                  string
 		native                          any
 		inputFile                       string
 		fileBacked                      bool
@@ -1617,8 +1544,7 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 		previewOff                      bool
 	}{
 		{name: "inline A2A hosted agent", native: "1.0.0"},
-		{name: "preview off ignores local 1.0 declaration for wire default", native: "1.0.0", previewOff: true,
-			wantDiagnostic: "requested A2A version 0.3 does not match"},
+		{name: "preview off ignores local 1.0 declaration for wire default", native: "1.0.0", previewOff: true},
 		{name: "file still requires explicit version", native: "1.0.0", inputFile: "missing.json",
 			wantError: "requires an explicit --a2a-version"},
 		{name: "unreadable request file remains blocking", native: "0.3", explicit: "1.0", inputFile: "missing.json",
@@ -1633,17 +1559,15 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 		{name: "Responses-only defers to Foundry", responsesOnly: true},
 		{name: "public A2A is not an implementation", responsesOnly: true, explicit: "0.3"},
 		{name: "file-backed native", native: "1.0.0", fileBacked: true},
-		{name: "numeric inline version is advisory", native: 0.3,
-			wantDiagnostic: "could not inspect local A2A capabilities"},
+		{name: "numeric inline version is ignored remotely", native: 0.3},
 		{name: "boolean inline version is advisory", native: true},
 		{name: "numeric reference version is advisory", native: 0.3, fileBacked: true},
 		{name: "local A2A 0.3 is advisory", native: "0.3.0"},
 		{name: "local malformed version is advisory", native: "latest"},
 		{name: "local explicit conflict is advisory", native: "1.0.0", explicit: "0.3"},
-		{name: "edited local 0.3 current deployment omitted version", native: "0.3", explicit: "1.0", deployed: "7",
-			wantDiagnostic: "local A2A compatibility finding (advisory"},
+		{name: "edited local 0.3 current deployment omitted version", native: "0.3", explicit: "1.0", deployed: "7"},
 		{name: "edited local 0.3 explicit current deployment", native: "0.3", explicit: "1.0",
-			version: "7", deployed: "7", wantDiagnostic: "local A2A compatibility finding (advisory"},
+			version: "7", deployed: "7"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.previewOff {
@@ -1693,10 +1617,6 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 			client, err := azdext.NewAzdClient()
 			require.NoError(t, err)
 			defer client.Close()
-			var diagnostics bytes.Buffer
-			previousWriter := log.Writer()
-			log.SetOutput(&diagnostics)
-			t.Cleanup(func() { log.SetOutput(previousWriter) })
 			var sessionCreates int
 			previous := createInvokeVersionSession
 			t.Cleanup(func() { createInvokeVersionSession = previous })
@@ -1750,9 +1670,6 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 				},
 			}
 			output, err := captureStdout(t, func() error { return action.Run(t.Context()) })
-			if tt.wantDiagnostic != "" {
-				assert.Contains(t, diagnostics.String(), tt.wantDiagnostic)
-			}
 			if tt.version != "" {
 				assert.Equal(t, 1, sessionCreates)
 			} else {
@@ -1782,7 +1699,7 @@ func TestA2ATargetServiceLookupFailure(t *testing.T) {
 				cancel()
 			}
 
-			err := action.validateA2ATarget(ctx, rc, "1.0")
+			err := action.validateA2ATarget(ctx, rc)
 			if cancelled {
 				require.ErrorIs(t, err, context.Canceled)
 			} else {
@@ -1866,7 +1783,7 @@ func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {
 			if tt.noService {
 				rc.serviceName = ""
 			}
-			err = action.validateA2ATarget(t.Context(), rc, "1.0")
+			err = action.validateA2ATarget(t.Context(), rc)
 			require.NoError(t, err)
 		})
 	}

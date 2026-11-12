@@ -153,7 +153,7 @@ func TestA2ALiveRetained(t *testing.T) {
 		r.invoke(ctx, hostedDir, "hosted-file-10", true, "1.0", nativeFile, nativeMarker, true)
 
 		// Stale local source is deliberately NOT deployed. Explicit remote invokes
-		// must still reach the deployed 1.0 agent; local capability advice is not a gate.
+		// must still use the deployed configuration, not the edited local declaration.
 		nativeService["protocols"] = []any{map[string]any{"protocol": "a2a", "version": "0.3.0"}}
 		stale, err := yaml.Marshal(hostedConfig)
 		require.NoError(t, err)

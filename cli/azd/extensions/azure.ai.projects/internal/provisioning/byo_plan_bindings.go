@@ -32,7 +32,7 @@ func (r *templatePlanResolver) bindResources(plan *onboarding.Plan, root *planEn
 				hostingType, typeMissing := planString(typeValue)
 				if missing == "" && id != "" {
 					if _, unknown := typeValue.(planUnknown); !unknown &&
-						(typeMissing != "" || hostingType != "ManagedCluster") {
+						(typeMissing != "" || !strings.EqualFold(hostingType, "ManagedCluster")) {
 						r.err = errors.Join(r.err, fmt.Errorf(
 							"resource-plan: actual Foundry hostingType must be ManagedCluster at %s", node.path))
 						continue

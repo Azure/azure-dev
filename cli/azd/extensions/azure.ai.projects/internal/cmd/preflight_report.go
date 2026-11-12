@@ -21,15 +21,26 @@ import (
 )
 
 type preflightReports struct {
-	client *azdext.AzdClient
-	mu     sync.Mutex
-	text   []string
+	client   *azdext.AzdClient
+	mu       sync.Mutex
+	text     []string
+	disabled bool
 }
 
 func (r *preflightReports) add(text string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.disabled {
+		return
+	}
 	r.text = append(r.text, text)
+}
+
+func (r *preflightReports) disable() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.disabled = true
+	r.text = nil
 }
 
 func (r *preflightReports) postProvision(
@@ -74,49 +85,60 @@ func newListenCommand(configure func(*azdext.ExtensionHost, func(string))) *cobr
 		}
 		defer client.Close()
 		reports := &preflightReports{client: client}
-		stream, err := client.EventsBeta().EventStream(ctx)
-		if err != nil {
-			return fmt.Errorf("open postprovision report event stream: %w", err)
-		}
-		broker := grpcbroker.NewMessageBroker(stream, &preflightEventEnvelope{}, "azure.ai.projects", nil)
-		defer broker.Close()
-		if err := broker.On(reports.postProvision); err != nil {
-			return fmt.Errorf("register postprovision report handler: %w", err)
-		}
+		reportCtx, cancelReports := context.WithCancel(ctx)
 		var workers sync.WaitGroup
-		failures := make(chan error, 2)
-		workers.Go(func() {
-			err := broker.Run(ctx)
-			if ctx.Err() == nil && err == nil {
-				err = fmt.Errorf("postprovision report event stream closed unexpectedly")
-			}
-			failures <- err
-		})
 		defer func() {
-			cancel()
+			cancelReports()
 			workers.Wait()
 		}()
-		registrationCtx, registrationCancel := context.WithTimeout(ctx, 5*time.Second)
-		defer registrationCancel()
-		if err := broker.Ready(registrationCtx); err != nil {
-			return fmt.Errorf("prepare postprovision report event stream: %w", err)
-		}
-		response, err := broker.SendAndWait(registrationCtx, &v1beta.EventMessage{
-			RequestId: uuid.NewString(),
-			MessageType: &v1beta.EventMessage_SubscribeProjectEvent{
-				SubscribeProjectEvent: &v1beta.SubscribeProjectEvent{EventNames: []string{"postprovision"}},
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("subscribe to postprovision reports: %w", err)
-		}
-		if response.GetSubscribeProjectEventResponse() == nil {
-			return fmt.Errorf("invalid postprovision report subscription response")
+		// Report transport is optional; only host.Run controls the extension host's lifetime.
+		if err := func() error {
+			stream, err := client.EventsBeta().EventStream(reportCtx)
+			if err != nil {
+				return fmt.Errorf("open postprovision report event stream: %w", err)
+			}
+			broker := grpcbroker.NewMessageBroker(stream, &preflightEventEnvelope{}, "azure.ai.projects", nil)
+			if err := broker.On(reports.postProvision); err != nil {
+				broker.Close()
+				return fmt.Errorf("register postprovision report handler: %w", err)
+			}
+			workers.Go(func() {
+				err := broker.Run(reportCtx)
+				reports.disable()
+				if reportCtx.Err() == nil {
+					if err == nil {
+						err = fmt.Errorf("postprovision report event stream closed unexpectedly")
+					}
+					log.Printf("stop BYO-AKS preflight reporting: %v", err)
+				}
+				cancelReports()
+			})
+			registrationCtx, registrationCancel := context.WithTimeout(reportCtx, 5*time.Second)
+			defer registrationCancel()
+			if err := broker.Ready(registrationCtx); err != nil {
+				return fmt.Errorf("prepare postprovision report event stream: %w", err)
+			}
+			response, err := broker.SendAndWait(registrationCtx, &v1beta.EventMessage{
+				RequestId: uuid.NewString(),
+				MessageType: &v1beta.EventMessage_SubscribeProjectEvent{
+					SubscribeProjectEvent: &v1beta.SubscribeProjectEvent{EventNames: []string{"postprovision"}},
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("subscribe to postprovision reports: %w", err)
+			}
+			if response.GetSubscribeProjectEventResponse() == nil {
+				return fmt.Errorf("invalid postprovision report subscription response")
+			}
+			return nil
+		}(); err != nil {
+			reports.disable()
+			cancelReports()
+			log.Printf("disable BYO-AKS preflight reporting: %v", err)
 		}
 		host := azdext.NewExtensionHost(client)
 		configure(host, reports.add)
-		workers.Go(func() { failures <- host.Run(ctx) })
-		err = <-failures
+		err = host.Run(ctx)
 		if command.Context().Err() != nil && errors.Is(err, context.Canceled) {
 			return nil
 		}

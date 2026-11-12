@@ -252,7 +252,11 @@ func (p *FoundryProvisioningProvider) writeBYOPreflight(
 	}
 	if output.Len() > 0 {
 		p.preflightReport.WriteString(output.String())
-		progress(output.String())
+		if preflightErr != nil {
+			progress("BYO AKS preflight checks failed")
+		} else {
+			progress("BYO AKS preflight checks completed")
+		}
 	}
 	return preflightErr
 }

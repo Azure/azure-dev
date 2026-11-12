@@ -873,7 +873,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				require.ErrorContains(t, err, "does not exist")
 				assert.Contains(t, requests.requests, "GET "+missingStorage)
 				assert.Zero(t, requests.writes)
-				assert.NotContains(t, progress.String(), "storage-type SKIPPED")
+				assert.NotContains(t, provider.preflightReport.String(), "storage-type SKIPPED")
 			} else if scenario == "overlapping selected Node subnet" {
 				require.ErrorContains(t, err, "agent-subnet FAIL")
 				assert.Zero(t, requests.writes)
@@ -882,14 +882,14 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				assert.Equal(t, 1, requests.writes)
 			}
 			if strings.HasPrefix(scenario, "unknown Storage") {
-				assert.Contains(t, progress.String(), "utcNow")
+				assert.Contains(t, provider.preflightReport.String(), "utcNow")
 			}
 			if scenario == "unknown workload name" || scenario == "cross subscription unknown workload" {
-				assert.Contains(t, progress.String(), "utcNow")
+				assert.Contains(t, provider.preflightReport.String(), "utcNow")
 				assert.Equal(t, map[string]any{"value": "/subscriptions/" + subscription + "/providers/" +
 					"Microsoft.Authorization/roleDefinitions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
 					requests.parameters["federatedIdentityRoleDefinitionId"])
-				assert.Contains(t, progress.String(), "resource-refs PASS [/subscriptions/target-sub]")
+				assert.Contains(t, provider.preflightReport.String(), "resource-refs PASS [/subscriptions/target-sub]")
 			}
 			if scenario == "actual cluster selection" {
 				assert.Contains(t, requests.requests, "GET "+requests.clusterID)
@@ -899,15 +899,15 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 			}
 			if network {
 				if noNetworkSelection {
-					assert.Contains(t, progress.String(), "agent-subnet NOT_APPLICABLE")
+					assert.Contains(t, provider.preflightReport.String(), "agent-subnet NOT_APPLICABLE")
 				}
 				if scenario == "new selected subnets" {
-					assert.Contains(t, progress.String(), "agent-subnet NOT_APPLICABLE")
+					assert.Contains(t, provider.preflightReport.String(), "agent-subnet NOT_APPLICABLE")
 					assert.NotContains(t, requests.requests, "GET "+offlineVNetID+"/subnets/agents")
 				} else if unknownField == "networkInjections" {
-					assert.Contains(t, progress.String(), "agent-subnet SKIPPED")
+					assert.Contains(t, provider.preflightReport.String(), "agent-subnet SKIPPED")
 				} else if scenario != "overlapping selected Node subnet" && !noNetworkSelection {
-					assert.Contains(t, progress.String(), "agent-subnet PASS")
+					assert.Contains(t, provider.preflightReport.String(), "agent-subnet PASS")
 				}
 			}
 			assert.NotContains(t, requests.requests, "GET "+defaultStorageID,

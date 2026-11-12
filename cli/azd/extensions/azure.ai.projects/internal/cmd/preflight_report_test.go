@@ -43,12 +43,13 @@ type preflightListenerServer struct {
 	v1beta.UnimplementedCommandResultServiceServer
 	azdext.UnimplementedProvisioningServiceServer
 	azdext.UnimplementedExtensionServiceServer
-	mode        string
-	ready       chan struct{}
-	deployed    chan struct{}
-	completed   chan *v1beta.EventMessage
-	followUps   chan *v1beta.SetFollowUpRequest
-	eventClosed chan struct{}
+	mode            string
+	reportsDisabled bool
+	ready           chan struct{}
+	deployed        chan struct{}
+	completed       chan *v1beta.EventMessage
+	followUps       chan *v1beta.SetFollowUpRequest
+	eventClosed     chan struct{}
 }
 
 func (s *preflightListenerServer) Ready(context.Context, *azdext.ReadyRequest) (*azdext.ReadyResponse, error) {
@@ -167,6 +168,13 @@ func (s *preflightListenerServer) Stream(
 	case <-stream.Context().Done():
 		return stream.Context().Err()
 	}
+	if s.reportsDisabled {
+		select {
+		case <-s.eventClosed:
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
 	if err := stream.Send(&azdext.ProvisioningMessage{
 		RequestId: "initialize",
 		MessageType: &azdext.ProvisioningMessage_InitializeRequest{
@@ -207,12 +215,13 @@ func (s *preflightListenerServer) Stream(
 func TestPreflightReportListener(t *testing.T) {
 	for _, test := range []struct {
 		name, text, wantError string
+		reportsDisabled       bool
 	}{
 		{name: "persistent report", text: "agent-pool: PASS; capacity warning\nrole-assignment-keys: SKIPPED"},
 		{name: "empty report"},
-		{name: "subscription failure", wantError: "subscription denied"},
-		{name: "invalid acknowledgement", wantError: "invalid postprovision report subscription response"},
-		{name: "stream failure", wantError: "report stream disconnected"},
+		{name: "subscription failure", text: "capacity warning", reportsDisabled: true},
+		{name: "invalid acknowledgement", text: "capacity warning", reportsDisabled: true},
+		{name: "stream failure", text: "capacity warning", reportsDisabled: true},
 		{name: "registration failure", wantError: "provider registration denied"},
 		{name: "publication failure", text: "capacity warning"},
 	} {
@@ -221,8 +230,9 @@ func TestPreflightReportListener(t *testing.T) {
 			defer cancel()
 			services := &preflightListenerServer{
 				mode: test.name, ready: make(chan struct{}), deployed: make(chan struct{}),
-				completed: make(chan *v1beta.EventMessage, 2),
-				followUps: make(chan *v1beta.SetFollowUpRequest, 2), eventClosed: make(chan struct{}),
+				reportsDisabled: test.reportsDisabled,
+				completed:       make(chan *v1beta.EventMessage, 2),
+				followUps:       make(chan *v1beta.SetFollowUpRequest, 2), eventClosed: make(chan struct{}),
 			}
 			server := grpc.NewServer()
 			v1beta.RegisterEventServiceServer(server, services)
@@ -259,7 +269,23 @@ func TestPreflightReportListener(t *testing.T) {
 					t.Error("listener did not shut down")
 				}
 			})
-			if test.wantError == "" {
+			if test.reportsDisabled {
+				select {
+				case <-services.deployed:
+				case <-finished:
+					t.Fatalf("listener exited before deployment completed: %v", commandError)
+				case <-ctx.Done():
+					t.Fatal("deployment did not complete after reporting was disabled")
+				}
+				select {
+				case <-finished:
+					t.Fatalf("listener exited after reporting was disabled: %v", commandError)
+				default:
+				}
+				require.Empty(t, services.completed)
+				require.Empty(t, services.followUps)
+				cancel()
+			} else if test.wantError == "" {
 				for index := range 2 {
 					select {
 					case result := <-services.completed:

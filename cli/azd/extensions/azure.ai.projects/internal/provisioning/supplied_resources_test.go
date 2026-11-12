@@ -446,7 +446,9 @@ func TestBYOReadFailureCauseRetainsExitDiagnostic(t *testing.T) {
 				exitErr := fmt.Errorf("provisioning failed: %w", envelope.GetError(received))
 				exitOutput := (&ux.ActionResult{Err: exitErr}).ToString("")
 				assert.Contains(t, exitOutput, "ERROR:")
-				for _, output := range []string{progress.String(), exitOutput} {
+				assert.Contains(t, progress.String(), "BYO AKS preflight checks failed")
+				assert.NotContains(t, progress.String(), "Cause:")
+				for _, output := range []string{p.preflightReport.String(), exitOutput} {
 					assert.Contains(t, output, "Cause:")
 					assert.Contains(t, output, expected)
 					for _, secret := range []string{"cause-user", "cause-password", "sig=", "cause-secret", "cause-fragment"} {
@@ -478,7 +480,9 @@ func TestBYODefaultStorageRetainsOrdinaryARMUpdate(t *testing.T) {
 	require.NoError(t, err)
 	hosting := fake.base.parameters["agentHosting"].(map[string]any)["value"].(map[string]any)
 	assert.Equal(t, "", hosting["storageAccountResourceId"])
-	assert.Contains(t, progress.String(), "storage-type NOT_APPLICABLE")
+	assert.Contains(t, progress.String(), "BYO AKS preflight checks completed")
+	assert.NotContains(t, progress.String(), "storage-type NOT_APPLICABLE")
+	assert.Contains(t, p.preflightReport.String(), "storage-type NOT_APPLICABLE")
 	assert.Equal(t, 1, fake.base.writes)
 }
 

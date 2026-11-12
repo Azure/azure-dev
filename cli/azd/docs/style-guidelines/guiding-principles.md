@@ -2,7 +2,7 @@
 
 ## Overview
 
-Start with the workflow people need to complete. Use familiar `azd` commands and consistent patterns so people can discover new functionality and complete common tasks efficiently. Design those patterns to support extensions and future capabilities.
+The Azure Developer CLI (`azd`) follows a systematic approach to command structure design that ensures discoverability, consistency, and extensibility across all features and future enhancements. These principles provide a foundation for building any new functionality while maintaining user familiarity and operational efficiency.
 
 Consider an extension before adding functionality to core. Keep shared orchestration in core and service-specific behavior in extensions where the supported contracts allow it.
 

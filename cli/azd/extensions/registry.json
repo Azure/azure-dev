@@ -12214,6 +12214,82 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_1.0.0/azure-ai-projects-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "1.1.0",
+          "requiredAzdVersion": ">=1.37.0",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "service-target-provider",
+            "provisioning-provider",
+            "validation-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.project",
+              "type": "service-target",
+              "description": "Owns the azure.ai.project host so azd can walk the Foundry project service in azure.yaml"
+            },
+            {
+              "name": "microsoft.foundry",
+              "type": "provisioning-provider",
+              "description": "Provisions Microsoft Foundry projects from azure.yaml"
+            }
+          ],
+          "usage": "azd ai project <command> [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3260a9e2d183163a474c658defa8a204d7b17df215e738c9c1a3a5fc87a04913"
+              },
+              "entryPoint": "azure-ai-projects-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_1.1.0/azure-ai-projects-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "48edc38f935e3f423066f6ba8cb0c9ed8f135b4e306f53c17024dc4d1fe393b3"
+              },
+              "entryPoint": "azure-ai-projects-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_1.1.0/azure-ai-projects-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f5ef003b89e679323c45f47a18c726fc096a168817c883dae2f8474983003fad"
+              },
+              "entryPoint": "azure-ai-projects-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_1.1.0/azure-ai-projects-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2f456150ecec0fffb729626376a09c18b97ee6b649da3f99f7cb1652a289339e"
+              },
+              "entryPoint": "azure-ai-projects-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_1.1.0/azure-ai-projects-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "4f121ec83dbd2ac316747bb2bd98bd2b01d37619d70b56813e35da6b4757a00c"
+              },
+              "entryPoint": "azure-ai-projects-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_1.1.0/azure-ai-projects-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "94f0e5fc8102486a4d6e4e2eccf99b170c33ebb326abf4c893e1477a428ce867"
+              },
+              "entryPoint": "azure-ai-projects-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-projects_1.1.0/azure-ai-projects-windows-arm64.zip"
+            }
+          }
         }
       ],
       "tags": [

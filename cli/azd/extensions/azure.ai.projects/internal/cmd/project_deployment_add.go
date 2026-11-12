@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"slices"
 	"strings"
@@ -17,8 +18,15 @@ import (
 	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
+)
+
+var (
+	evaluateProjectDeploymentPolicy = provisioning.CheckProjectModelDeploymentsPolicy
+	newDeploymentPolicyCredential   = createDeploymentPolicyCredential
 )
 
 type projectDeploymentFlags struct {
@@ -291,6 +299,26 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			"the selected model deployment is missing a required version, SKU, or capacity",
 			"specify a deployable model tuple and retry",
 		)
+	}
+	if projectID := strings.TrimSpace(values["AZURE_AI_PROJECT_ID"]); projectID != "" &&
+		!provisioning.ShouldSkipModelPolicyChecks(values) {
+		cred, credErr := newDeploymentPolicyCredential(
+			ctx,
+			client,
+			azureContext.GetScope().GetSubscriptionId(),
+			azureContext.GetScope().GetTenantId(),
+		)
+		if credErr != nil {
+			log.Printf("[FoundryPolicy] Skipping model deployment policy check (credential unavailable): %v", credErr)
+		} else if err := evaluateProjectDeploymentPolicy(
+			ctx,
+			cred,
+			projectID,
+			[]synthesis.Deployment{selected.Deployment},
+			values,
+		); err != nil {
+			return err
+		}
 	}
 	environmentWriteAttempted := map[string]bool{}
 	restoreEnvironment := func() error {
@@ -656,4 +684,32 @@ func (a *ProjectDeploymentAddAction) environmentName() string {
 		return a.extCtx.Environment
 	}
 	return ""
+}
+
+func createDeploymentPolicyCredential(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	subscriptionID string,
+	tenantID string,
+) (azcore.TokenCredential, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	subscriptionID = strings.TrimSpace(subscriptionID)
+	if tenantID == "" && client != nil && subscriptionID != "" {
+		resp, err := client.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+			SubscriptionId: subscriptionID,
+		})
+		if err != nil {
+			log.Printf(
+				"[FoundryPolicy] Tenant lookup failed for subscription %s (continuing with default tenant): %v",
+				subscriptionID,
+				err,
+			)
+		} else {
+			tenantID = strings.TrimSpace(resp.GetTenantId())
+		}
+	}
+	return azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   tenantID,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
 }

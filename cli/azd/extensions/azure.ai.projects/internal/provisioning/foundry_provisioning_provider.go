@@ -116,6 +116,13 @@ type FoundryProvisioningProvider struct {
 	acrDeferPromptedEnv       bool
 	acrPromptedEnv            map[string]string
 	acrRequest                func(context.Context, string, string, string, any) error
+	modelPolicyCheck          func(
+		ctx context.Context,
+		cred azcore.TokenCredential,
+		projectResourceID string,
+		deployments []synthesis.Deployment,
+		env map[string]string,
+	) error
 
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
@@ -139,7 +146,10 @@ func readProjectFile(projectRoot string) ([]byte, string, error) {
 // NewFoundryProvisioningProvider constructs the provider with a live
 // AzdClient. The host calls Initialize before any other method.
 func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient) azdext.ProvisioningProvider {
-	return &FoundryProvisioningProvider{azdClient: azdClient}
+	return &FoundryProvisioningProvider{
+		azdClient:        azdClient,
+		modelPolicyCheck: CheckProjectModelDeploymentsPolicy,
+	}
 }
 
 // Initialize loads azure.yaml, decides between the embedded ARM template
@@ -1370,6 +1380,26 @@ func (p *FoundryProvisioningProvider) Deploy(
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
 		return nil, err
+	}
+	if projectID, deployments := effectiveModelPolicyTarget(
+		src,
+		p.existingProjectID,
+		p.synthResult,
+	); projectID != "" && len(deployments) > 0 && !ShouldSkipModelPolicyChecks(p.synthesisEnv) {
+		if err := p.ensureCredential(ctx); err != nil {
+			return nil, err
+		}
+		if p.modelPolicyCheck != nil {
+			if err := p.modelPolicyCheck(
+				ctx,
+				p.credential,
+				projectID,
+				deployments,
+				p.synthesisEnv,
+			); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := p.validateACRRemoteBuild(ctx, src); err != nil {
 		return nil, err

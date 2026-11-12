@@ -17,6 +17,7 @@ import (
 	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1369,4 +1370,88 @@ func TestProjectDeploymentEjectedInfraError(t *testing.T) {
 	assert.Equal(t, exterrors.CodeProjectDeploymentEjected, localErr.Code)
 	assert.Contains(t, localErr.Message, "main.parameters.json")
 	assert.Contains(t, localErr.Suggestion, "azd provision")
+}
+
+func TestProjectDeploymentAddBlocksPolicyDeniedModelBeforeMutation(t *testing.T) {
+	const (
+		projectID = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-foundry/" +
+			"providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project"
+		endpoint = "https://my-account.services.ai.azure.com/api/projects/my-project"
+	)
+
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte("name: test\n"),
+		0600,
+	))
+
+	client, projectServer, envServer, _, _ := newSelfInitializingDeploymentClient(t, root)
+	projectServer.project.Services["project"] = &azdext.ServiceConfig{
+		Name: "project",
+		Host: aiProjectHost,
+	}
+	projectServer.services["project"] = map[string]any{
+		"host":     aiProjectHost,
+		"endpoint": endpoint,
+	}
+	envServer.values["AZURE_AI_PROJECT_ID"] = projectID
+	envServer.values["FOUNDRY_PROJECT_ENDPOINT"] = endpoint
+
+	prevEval := evaluateProjectDeploymentPolicy
+	var called bool
+	evaluateProjectDeploymentPolicy = func(
+		_ context.Context,
+		_ azcore.TokenCredential,
+		gotProjectID string,
+		deployments []synthesis.Deployment,
+		_ map[string]string,
+	) error {
+		called = true
+		assert.Equal(t, projectID, gotProjectID)
+		require.Len(t, deployments, 1)
+		assert.Equal(t, "chat", deployments[0].Name)
+		assert.Equal(t, "gpt-4.1", deployments[0].Model.Name)
+		return provisioning.ModelPolicyViolationsToError([]provisioning.ModelPolicyViolation{
+			{
+				DeploymentName: "chat",
+				ModelFormat:    "OpenAI",
+				ModelName:      "gpt-4.1",
+				ModelVersion:   "2025-04-14",
+				DisplayName:    "approved-models",
+				PortalURL:      "https://ai.azure.com/?flight=govern_ignite",
+			},
+		})
+	}
+	t.Cleanup(func() {
+		evaluateProjectDeploymentPolicy = prevEval
+	})
+
+	beforeEnv := maps.Clone(envServer.values)
+	action := &ProjectDeploymentAddAction{
+		client: client,
+		flags: &projectDeploymentFlags{
+			model:  "gpt-4.1",
+			name:   "chat",
+			output: "none",
+		},
+		extCtx: &azdext.ExtensionContext{
+			Environment:  "test",
+			NoPrompt:     true,
+			OutputFormat: "none",
+		},
+	}
+
+	err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.True(t, called)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeModelBlockedByPolicy, localErr.Code)
+	assert.False(t, projectServer.deploymentSet, "denied deployment must not be written to azure.yaml")
+	assert.Empty(t, envServer.setLog, "denied deployment must not mutate environment values")
+	assert.Equal(t, beforeEnv, envServer.values)
 }

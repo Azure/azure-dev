@@ -5,6 +5,7 @@ package onboarding
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -178,6 +179,16 @@ func (e *AuthorizationEvidence) readAssignments(
 		if len(page.NextLink) > 0 {
 			if err := json.Unmarshal(page.NextLink, &uri); err != nil {
 				return nil, fmt.Errorf("decode role assignment nextLink at %s: %w", scope, err)
+			}
+			if uri != "" {
+				next, err := url.Parse(uri)
+				endpoint, endpointErr := url.Parse(client.Endpoint())
+				if err != nil || endpointErr != nil || next.Scheme != "https" || next.User != nil ||
+					!strings.EqualFold(next.Scheme, endpoint.Scheme) ||
+					!strings.EqualFold(next.Hostname(), endpoint.Hostname()) ||
+					cmp.Or(next.Port(), "443") != cmp.Or(endpoint.Port(), "443") {
+					return nil, fmt.Errorf("invalid role assignment nextLink at %s", scope)
+				}
 			}
 		}
 	}

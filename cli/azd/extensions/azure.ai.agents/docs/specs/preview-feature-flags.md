@@ -9,7 +9,7 @@
 
 Keep preview opt-in decisions inside the owning extensions until the extension framework supports discovery and evaluation. The Agents extension owns its private preview evaluator; the Projects extension independently checks the shared BYO AKS switch for provisioning and provisioning preview when effective AKS hosting is enabled. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality without new ACR reuse intent are not gated.
 
-Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws`. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
+Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws` or `voice_conversation_engine`. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
 
 ## Ownership and code organization
 

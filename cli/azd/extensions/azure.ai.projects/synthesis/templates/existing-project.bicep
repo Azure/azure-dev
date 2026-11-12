@@ -92,7 +92,7 @@ module newContainerRegistry 'modules/container-registry.bicep' = if (createAcr) 
     location: location
     tags: tags
     registryName: acrName
-    projectPrincipalId: foundryAccount::project.identity.principalId
+    pullPrincipalId: foundryAccount::project.identity.principalId
   }
   dependsOn: [adjunctResourceGroup]
 }
@@ -105,7 +105,7 @@ module existingContainerRegistry 'modules/container-registry.bicep' = if (acrMod
     location: location
     tags: tags
     registryName: effectiveAcrName
-    projectPrincipalId: foundryAccount::project.identity.principalId
+    pullPrincipalId: foundryAccount::project.identity.principalId
   }
 }
 

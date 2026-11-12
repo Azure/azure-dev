@@ -283,7 +283,7 @@
     },
     "protocols": {
       "type": "array",
-      "description": "Invocation protocols the agent implements (e.g., responses, invocations, invocations_ws, a2a).",
+      "description": "Invocation protocols the agent implements (e.g., responses, invocations, invocations_ws, voice_conversation_engine, a2a).",
       "items": { "$ref": "#/definitions/ProtocolVersionRecord" }
     },
     "registryConnectionId": {
@@ -788,7 +788,7 @@
       "type": "object",
       "description": "A protocol the agent implements, with its version.",
       "properties": {
-        "protocol": { "type": "string", "description": "Protocol name (e.g., 'responses', 'invocations', 'invocations_ws', 'a2a')." },
+        "protocol": { "type": "string", "description": "Protocol name (e.g., 'responses', 'invocations', 'invocations_ws', 'voice_conversation_engine', 'a2a')." },
         "version": { "type": "string", "description": "Protocol version." }
       },
       "required": ["protocol"],

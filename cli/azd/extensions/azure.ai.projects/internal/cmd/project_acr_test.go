@@ -84,15 +84,20 @@ func TestProjectACRSelectionSpecificGuidance(t *testing.T) {
 		{"hosting", "services:\n  project:\n    host: azure.ai.project\n    agentHosting:\n" +
 			"      clusterResourceId: /subscriptions/sub/resourceGroups/aks/providers/" +
 			"Microsoft.ContainerService/managedClusters/aks\n",
-			"remove agentHosting"},
+			""},
 		{"unknown scope", "infra:\n  provider: bicep\nservices:\n  project:\n    host: azure.ai.project\n",
 			"Use Foundry-only infrastructure"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := projectACRSelection([]byte(tt.manifest), t.TempDir(), "test",
+			id, err := projectACRSelection([]byte(tt.manifest), t.TempDir(), "test",
 				map[string]string{"AZURE_SUBSCRIPTION_ID": "subscription"},
 				&resolvedProject{ACRResourceID: testExternalRegistryID}, nil)
-			require.ErrorContains(t, err, tt.want)
+			if tt.want == "" {
+				require.NoError(t, err)
+				assert.Equal(t, testExternalRegistryID, id)
+			} else {
+				require.ErrorContains(t, err, tt.want)
+			}
 			assert.Empty(t, azdext.ErrorSuggestion(err))
 		})
 	}

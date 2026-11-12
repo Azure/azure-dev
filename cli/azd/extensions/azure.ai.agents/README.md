@@ -1,6 +1,6 @@
 # Azure Developer CLI (azd) Agents Extension
 
-<!-- cspell:ignore strconv -->
+<!-- cspell:ignore strconv kubelet -->
 ## Project monitoring
 
 New Foundry projects created for agents automatically provision and connect
@@ -22,7 +22,7 @@ All eight preview capabilities are off by default. Each switch is controlled ind
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
 | `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
-| `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
+| `agents.voice` | Voice / prompt-voice agents, including hosted targets with `invocations_ws` or `voice_conversation_engine` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 | `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
@@ -1818,10 +1818,17 @@ access grants and related resources it can establish it owns. Customers manage
 network reachability and image-publisher push permissions. See
 [non-interactive configuration](../ai-non-interactive.md#azureaiprojects).
 
-Do not combine an external source-build registry selection with `agentHosting`,
-even for a project-only configuration: reuse does not manage AKS node pull
-access. Remove the selector to use an azd-created registry, or use explicit
-prebuilt images with user-managed registry authentication.
+An external source-build registry selection supports `agentHosting`. The
+Projects provider checks and grants image-pull access to the AKS kubelet
+identity only; ordinary Foundry hosting uses the Project identity. Existing
+registry network settings are retained, and customers must ensure AKS can reach
+the registry. Re-eject older BYO AKS Bicep templates for the kubelet-only access
+contract. See [Projects registry reuse](../azure.ai.projects/README.md#reuse-an-external-container-registry).
+
+Both ordinary Foundry and BYO AKS reject automatic registry creation when account
+network isolation is enabled. Select an external registry for source builds in
+that case. Registry connections continue to use the Foundry Project identity,
+separately from the kubelet's pull grants.
 
 An `image` value alone still defaults to a source build, including with
 `--no-prompt`. Explicit prebuilt selection requires
@@ -1896,11 +1903,8 @@ services:
     uses:
       - ai-project
     protocols:
-      - protocol: invocations_ws
+      - protocol: voice_conversation_engine
         version: 1.0.0
-    metadata:
-      voiceLiveCompatible: "true"
-      bridgeProtocolVersion: "1.0"
     container:
       resources:
         cpu: "1"
@@ -1931,9 +1935,17 @@ The `uses` edge deploys the target before the wrapper. `conversationEngine`
 points at the hosted target service, and `version: deployed` pins the wrapper
 to the target version produced by the current azd environment.
 
-The target must be active, declare `invocations_ws/1.0.0`, and include
-`voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,
-instructions, tools, and other conversation controls belong to the target;
+The target must be active. New targets declare `voice_conversation_engine/1.0.0`.
+For backward compatibility, azd also accepts the existing `invocations_ws/1.0.0`
+contract with both `voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0`
+metadata. This preserves existing Hosted Voice manifests without making the two
+protocol endpoints interchangeable.
+The target and wrapper currently require `AZD_ALPHA_ENABLE_AGENTS_VOICE=true`.
+Configure the conversation engine through the complete manifest shown above;
+this protocol is not offered by the Hosted Agent init protocol picker.
+`invocations_ws` remains an independent Hosted Agent protocol and does not
+substitute for the conversation-engine endpoint. Model, instructions, tools,
+and other conversation controls belong to the target;
 the wrapper owns audio, voice, store, avatar, and greeting configuration.
 
 ## Invocations metadata discovery
@@ -2193,7 +2205,7 @@ deployment.
 
 Foundry project services can be provisioned as network-secured, VNet-bound accounts by adding a `network:` block to the `host: azure.ai.project` service in `azure.yaml`. The `azure.ai.projects` extension owns that service and the `microsoft.foundry` provider; this extension still authors the block during agent init. See [Private networking for `host: azure.ai.project`](docs/private-networking.md) for the schema reference, BYO-image requirements, and VNet deployment cheatsheet.
 
-For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes default or independently supplied Storage and hosting/workload identities, required grants, and lifecycle limitations. A native registry is created only when an Agent requires building a container image, following the standard Foundry rules. Foundry networking is optional through `network:` and can be combined with an automatically created registry when using AKS hosting. Terraform eject is not supported for this mode.
+For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes default or independently supplied Storage and hosting/workload identities, read-only preflight, required grants, and lifecycle limitations. A native registry is created only when an Agent requires building a container image and the Foundry account uses public networking. Foundry networking is optional through `network:`. Private account networking rejects automatic registry creation, including with AKS hosting; select an external registry for source builds, or use prebuilt images with `docker.imagePassthrough: true` or code/ZIP deployments without automatic registry creation. Customers must ensure build and AKS access to an external registry. Terraform eject is not supported for this mode.
 
 ## Skill optimization from traces
 

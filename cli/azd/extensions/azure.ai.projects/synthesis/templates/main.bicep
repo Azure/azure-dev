@@ -1,4 +1,5 @@
 // Provisioning template for a Foundry project service.
+// cspell:ignore kubelet
 //
 // Inputs are derived from the host: azure.ai.project service body in
 // azure.yaml by internal/synthesis. This entry point creates a new Foundry
@@ -96,11 +97,17 @@ param kubeletObjectId string = ''
 @description('Federation-management role; resolved by microsoft.foundry when omitted.')
 param federatedIdentityRoleDefinitionId string = ''
 
+@description('Existing scope/principal/role keys used to avoid duplicate BYO AKS role assignments; resolved by microsoft.foundry when omitted.')
+param byoAksExistingRoleAssignmentKeys string[] = []
+
 @description('Full ARM ID of an existing container registry to reuse instead of creating one.')
 param existingAcrResourceId string = ''
 
-@description('Project already has effective registry pull access.')
+@description('The selected pull identity already has a matching registry pull role assignment.')
 param acrPullAssigned bool = false
+
+@description('AKS kubelet principal receiving registry pull access in BYO AKS deployments; resolved by microsoft.foundry.')
+param acrPullPrincipalId string = ''
 
 @description('Unique access operation ID persisted by azd before deployment.')
 param acrAccessOperationId string = ''
@@ -188,8 +195,10 @@ module resources 'modules/resources.bicep' = {
     agentHosting: agentHosting
     kubeletObjectId: kubeletObjectId
     federatedIdentityRoleDefinitionId: federatedIdentityRoleDefinitionId
+    byoAksExistingRoleAssignmentKeys: byoAksExistingRoleAssignmentKeys
     existingAcrResourceId: existingAcrResourceId
     acrPullAssigned: acrPullAssigned
+    acrPullPrincipalId: acrPullPrincipalId
     acrAccessOperationId: acrAccessOperationId
     hostingPrincipalId: hostingPrincipalId
     workloadPrincipalId: workloadPrincipalId

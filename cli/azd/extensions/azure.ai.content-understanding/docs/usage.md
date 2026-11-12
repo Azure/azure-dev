@@ -144,7 +144,7 @@ When no analyzer is specified or configured, analysis defaults to
 By default, a single analysis displays YAML front matter and Markdown in the
 console with pretty presentation. `--output default` and `--output markdown`
 select this same content format.
-Save the same text with `--output-file`:
+Save the original Markdown with `--output-file`:
 
 ```bash
 azd ai cu analyze \
@@ -156,19 +156,14 @@ azd ai cu analyze \
 
 ### Pretty-print results in the terminal
 
-Pretty presentation is enabled by default for a single terminal result, including
-redirected or piped output. To save original Markdown and HTML tables through stdout:
+Pretty presentation is enabled by default for a single terminal result.
+Use `--pretty` (or `-p`) to enable it explicitly:
 
 ```bash
-azd ai cu analyze invoice.pdf --pretty=false > invoice.result.md
+azd ai cu analyze invoice.pdf --pretty
 ```
 
-`--pretty` (or `-p`) explicitly enables the default presentation.
-Use `--pretty=false` (or `-p=false`) for original content:
-
-```bash
-azd ai cu analyze invoice.pdf --pretty=false
-```
+Omitting `--pretty` produces the same presentation.
 
 Pretty-printing formats Markdown for terminal reading. The preview includes
 document metadata with `---` delimiters and page comments, and keeps source line
@@ -180,6 +175,36 @@ for the terminal.
 Pretty-printed output uses syntax highlighting when color is enabled. Colors may
 change in future versions.
 
+Analysis previews require one resolved input. Pretty also supports JSON, usage,
+and dry-run plans; JSON uses indentation and optional syntax coloring rather than
+tables.
+
+JSON uses theme-adaptive syntax highlighting. Colors distinguish JSON syntax,
+not success or failure; actual shades depend on the terminal color scheme.
+
+Use `--pretty=false` (or `-p=false`) to display original Markdown and HTML tables
+without pretty presentation:
+
+```bash
+azd ai cu analyze invoice.pdf --pretty=false
+```
+
+Piping or redirecting stdout disables color, but not pretty presentation.
+To save original Markdown and HTML tables through stdout, disable pretty:
+
+```bash
+azd ai cu analyze invoice.pdf --pretty=false > invoice.result.md
+```
+
+Alternatively, use `--output-file` to save original results directly.
+When saving results, including local batches without an output directory, pretty
+is automatically disabled when omitted, and the terminal prints the existing JSON
+execution summary. Saved results retain original Markdown and HTML tables, or the
+complete response for `--output json`; pretty affects only terminal presentation.
+Do not explicitly specify `--pretty` in result-file mode, even as `--pretty=false`:
+both true and false are rejected. `--report-file` remains compatible with terminal
+previews.
+
 Keep these limitations in mind:
 
 - Unsupported tables, such as those with merged cells or complex headers, display
@@ -190,21 +215,7 @@ Keep these limitations in mind:
 - Pretty-printed terminal output removes terminal control characters. Links and
   images are not fetched.
 - Piped or redirected previews are uncolored and use an 80-column layout.
-
-Analysis previews require one resolved input. Pretty also supports JSON, usage,
-and dry-run plans; JSON uses indentation and optional syntax coloring rather than
-tables. `NO_COLOR` and redirected output disable color, not pretty presentation.
-
-JSON uses theme-adaptive syntax highlighting. Colors distinguish JSON syntax,
-not success or failure; actual shades depend on the terminal color scheme.
-
-When saving results, including local batches without an output directory, pretty
-is automatically disabled when omitted, and the terminal prints the existing JSON
-execution summary. Saved results retain original Markdown and HTML tables, or the
-complete response for `--output json`; pretty affects only terminal presentation.
-Do not explicitly specify `--pretty` in result-file mode, even as `--pretty=false`:
-both true and false are rejected. `--report-file` remains compatible with terminal
-previews.
+  `NO_COLOR` also disables color, not pretty presentation.
 
 ### Complete JSON response
 

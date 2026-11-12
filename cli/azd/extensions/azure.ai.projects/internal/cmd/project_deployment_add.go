@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -17,8 +19,15 @@ import (
 	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
+)
+
+var (
+	evaluateProjectDeploymentPolicy = provisioning.CheckProjectModelDeploymentsPolicy
+	newDeploymentPolicyCredential   = createDeploymentPolicyCredential
 )
 
 type projectDeploymentFlags struct {
@@ -92,11 +101,27 @@ func newProjectDeploymentAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 }
 
 func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
+	return a.runWithProjectLookup(ctx, lookupResolvedProject)
+}
+
+func (a *ProjectDeploymentAddAction) runWithProjectLookup(
+	ctx context.Context,
+	lookupProject func(context.Context, *azdext.AzdClient, string) (*resolvedProject, error),
+) error {
 	endValidation := phasetelemetry.Start(ctx, phasetelemetry.Validation)
 	defer endValidation()
 
 	if a.flags == nil {
 		a.flags = &projectDeploymentFlags{}
+	}
+	selection := deploymentSelectionOptions{
+		Version:  a.flags.version,
+		SKU:      a.flags.sku,
+		Capacity: a.flags.capacity,
+		Location: a.flags.location,
+	}
+	if err := validateDeploymentSelection(selection); err != nil {
+		return err
 	}
 	if strings.TrimSpace(a.flags.model) == "" {
 		if a.noPrompt() {
@@ -231,9 +256,6 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	} else if ejected != nil {
 		return projectDeploymentEjectedInfraError(ejected.parameterFile)
 	}
-	if err := validateConfiguredProjectIdentity(values, service); err != nil {
-		return err
-	}
 	envDeployments, deploymentsPresent, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey])
 	if err != nil {
 		return err
@@ -251,6 +273,9 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 				"before adding managed deployments",
 		)
 	}
+	if err := validateConfiguredProjectIdentity(ctx, client, values, service, lookupProject); err != nil {
+		return err
+	}
 	azureContext, err := resolveDeploymentAzureContext(
 		ctx, client, values, a.flags.location, a.noPrompt(),
 	)
@@ -263,12 +288,6 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	}
 	force := a.flags.force
 	setAsDefault := true
-	selection := deploymentSelectionOptions{
-		Version:  a.flags.version,
-		SKU:      a.flags.sku,
-		Capacity: a.flags.capacity,
-		Location: a.flags.location,
-	}
 	selected, err := selectModelDeployment(
 		ctx, client, azureContext, model, selection, a.noPrompt(),
 	)
@@ -291,6 +310,26 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			"the selected model deployment is missing a required version, SKU, or capacity",
 			"specify a deployable model tuple and retry",
 		)
+	}
+	if projectID := strings.TrimSpace(values["AZURE_AI_PROJECT_ID"]); projectID != "" &&
+		!provisioning.ShouldSkipModelPolicyChecks(values) {
+		cred, credErr := newDeploymentPolicyCredential(
+			ctx,
+			client,
+			azureContext.GetScope().GetSubscriptionId(),
+			azureContext.GetScope().GetTenantId(),
+		)
+		if credErr != nil {
+			log.Printf("[FoundryPolicy] Skipping model deployment policy check (credential unavailable): %v", credErr)
+		} else if err := evaluateProjectDeploymentPolicy(
+			ctx,
+			cred,
+			projectID,
+			[]synthesis.Deployment{selected.Deployment},
+			values,
+		); err != nil {
+			return err
+		}
 	}
 	environmentWriteAttempted := map[string]bool{}
 	restoreEnvironment := func() error {
@@ -606,8 +645,11 @@ func fillEmptyAzureScope(dst, src *azdext.AzureContext) {
 }
 
 func validateConfiguredProjectIdentity(
+	ctx context.Context,
+	client *azdext.AzdClient,
 	values map[string]string,
 	service *projectServiceInfo,
+	lookupProject func(context.Context, *azdext.AzdClient, string) (*resolvedProject, error),
 ) error {
 	projectID := strings.TrimSpace(values["AZURE_AI_PROJECT_ID"])
 	if projectID == "" {
@@ -621,14 +663,39 @@ func validateConfiguredProjectIdentity(
 		return nil
 	}
 	endpoint := serviceEndpoint(service.Resolved)
-	if endpoint == "" || equalProjectEndpoint(endpoint, project.Endpoint) {
+	if endpoint == "" {
 		return nil
 	}
-	return exterrors.Validation(
+	normalized, err := synthesis.ValidateFoundryProjectEndpoint(endpoint)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("the configured project endpoint is invalid: %s", err),
+			"rerun `azd ai project add` with the intended project target",
+		)
+	}
+	parsed, _ := url.Parse(normalized)
+	mismatch := exterrors.Validation(
 		"project_target_mismatch",
 		"the configured project endpoint and AZURE_AI_PROJECT_ID identify different projects",
 		"rerun `azd ai project add` with the intended project target",
 	)
+	projectName := strings.TrimPrefix(strings.TrimPrefix(parsed.Path, "/api"), "/projects/")
+	if !strings.EqualFold(projectName, project.ProjectName) {
+		return mismatch
+	}
+	resolved, err := lookupProject(ctx, client, project.ResourceId)
+	if err != nil {
+		return err
+	}
+	expected, err := url.Parse(resolved.Endpoint)
+	if err != nil {
+		return fmt.Errorf("parse resolved Foundry project endpoint: %w", err)
+	}
+	if !strings.EqualFold(parsed.Hostname(), expected.Hostname()) {
+		return mismatch
+	}
+	return nil
 }
 
 func requiresExistingProjectID(
@@ -656,4 +723,32 @@ func (a *ProjectDeploymentAddAction) environmentName() string {
 		return a.extCtx.Environment
 	}
 	return ""
+}
+
+func createDeploymentPolicyCredential(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	subscriptionID string,
+	tenantID string,
+) (azcore.TokenCredential, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	subscriptionID = strings.TrimSpace(subscriptionID)
+	if tenantID == "" && client != nil && subscriptionID != "" {
+		resp, err := client.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+			SubscriptionId: subscriptionID,
+		})
+		if err != nil {
+			log.Printf(
+				"[FoundryPolicy] Tenant lookup failed for subscription %s (continuing with default tenant): %v",
+				subscriptionID,
+				err,
+			)
+		} else {
+			tenantID = strings.TrimSpace(resp.GetTenantId())
+		}
+	}
+	return azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   tenantID,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
 }

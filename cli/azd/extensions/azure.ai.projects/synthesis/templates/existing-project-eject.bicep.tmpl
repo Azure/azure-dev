@@ -64,10 +64,23 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
   }
 }
 
+var accountSubdomain = !empty(foundryAccount.properties.?customSubDomainName)
+  ? foundryAccount.properties.customSubDomainName
+  : first(split(last(split(projectEndpoint, '://')), '.'))
+
+module projectIdentityValidation 'modules/foundry-project-identity.bicep' = {
+  name: 'foundry-project-identity-${uniqueString(deployment().name, projectResourceId)}'
+  params: {
+    projectResourceId: projectResourceId
+    projectEndpoint: projectEndpoint
+  }
+}
+
 resource adjunctResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = if (createAdjunctGroup) {
   name: resourceGroupName
   location: location
   tags: tags
+  dependsOn: [projectIdentityValidation]
 }
 {{- if eq .AcrMode "create" }}
 
@@ -80,7 +93,7 @@ module containerRegistry 'modules/container-registry.bicep' = {
     registryName: acrName
     projectPrincipalId: foundryAccount::project.identity.principalId
   }
-  dependsOn: [adjunctResourceGroup]
+  dependsOn: [projectIdentityValidation, adjunctResourceGroup]
 }
 {{- else if and (eq .AcrMode "reuse-connect") (not .AcrPullAssigned) }}
 
@@ -91,6 +104,7 @@ module containerRegistry 'modules/container-registry.bicep' = {
     registryName: acrName
     projectPrincipalId: foundryAccount::project.identity.principalId
   }
+  dependsOn: [projectIdentityValidation]
 }
 {{- end }}
 
@@ -115,6 +129,7 @@ module projectResources 'modules/foundry-project.bicep' = {
     existingAcrConnectionName: existingAcrConnectionName
 {{- end }}
   }
+  dependsOn: [projectIdentityValidation]
 }
 
 module monitoring 'modules/monitoring.bicep' = if (monitoringMode != 'none') {
@@ -131,13 +146,13 @@ module monitoring 'modules/monitoring.bicep' = if (monitoringMode != 'none') {
     environmentName: contains(tags, 'azd-env-name') ? string(tags['azd-env-name']) : ''
     resourceTokenSalt: resourceTokenSalt
   }
-  dependsOn: [adjunctResourceGroup]
+  dependsOn: [projectIdentityValidation, adjunctResourceGroup]
 }
 
 output AZURE_AI_PROJECT_ID string = projectResourceId
 output AZURE_AI_ACCOUNT_NAME string = accountName
 output AZURE_AI_PROJECT_NAME string = projectName
-output AZURE_OPENAI_ENDPOINT string = 'https://${accountName}.openai.azure.com/'
+output AZURE_OPENAI_ENDPOINT string = 'https://${accountSubdomain}.openai.azure.com/'
 output FOUNDRY_PROJECT_ENDPOINT string = projectEndpoint
 output AZURE_FOUNDRY_RESOURCE_GROUP string = createAdjunctGroup ? resourceGroupName : ''
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = {{ if eq .AcrMode "create" }}containerRegistry.outputs.endpoint{{ else if or (eq .AcrMode "reuse-connect") (eq .AcrMode "already-connected") }}existingAcrEndpoint{{ else }}''{{ end }}

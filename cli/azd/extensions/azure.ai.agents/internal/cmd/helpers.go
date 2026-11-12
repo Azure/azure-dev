@@ -1284,6 +1284,11 @@ func resolveAgentServiceFromProject(
 		if reference == nil {
 			break
 		}
+		projectEndpoint, _, err := validateProjectEndpoint(reference.projectEndpoint)
+		if err != nil {
+			return info, err
+		}
+		reference.projectEndpoint = projectEndpoint
 		if resolutionOptions.brownfieldAgentExists == nil {
 			return info, fmt.Errorf("brownfield agent existence resolver is not configured")
 		}
@@ -1558,72 +1563,6 @@ func resolveAgentProtocol(
 		return "", "", err
 	}
 	return protocol, svc.Name, nil
-}
-
-func resolveAgentInvocableProtocols(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	name string,
-	noPrompt bool,
-) ([]agent_api.AgentProtocol, error) {
-	svc, proj, err := resolveAgentService(ctx, azdClient, name, noPrompt)
-	if isServiceGateError(err) {
-		return nil, err
-	}
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf(
-				"could not resolve agent service in azd project: %s",
-				err,
-			),
-			"run from your project directory and ensure "+
-				"azure.yaml contains an azure.ai.agent service",
-		)
-	}
-
-	hosted, isHosted, source, err := projectpkg.LoadHostedAgentDefinition(svc, proj.Path)
-	if err != nil {
-		return nil, exterrors.ValidationFromError(
-			err,
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("could not resolve the agent definition for %s", svc.Name),
-			"ensure the agent definition is present in azure.yaml or "+
-				"run `azd ai agent init`",
-		)
-	}
-	if source.IsLegacy() {
-		projectpkg.WarnLegacyAgentShape(source)
-	}
-	if !isHosted {
-		return nil, exterrors.Validation(
-			exterrors.CodeUnsupportedAgentKind,
-			fmt.Sprintf("agent service %s is not a hosted agent", svc.Name),
-			"only hosted agents can be invoked",
-		)
-	}
-
-	var protocols []agent_api.AgentProtocol
-	seen := make(map[agent_api.AgentProtocol]struct{})
-	for _, rec := range hosted.Protocols {
-		protocol := agent_api.AgentProtocol(strings.TrimSpace(rec.Protocol))
-		if protocol == "" {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"agent definition declares a protocol entry with an "+
-					"empty protocol field",
-				"set a non-empty protocol value in the agent definition",
-			)
-		}
-		if protocol.IsInvocable() {
-			if _, ok := seen[protocol]; ok {
-				continue
-			}
-			seen[protocol] = struct{}{}
-			protocols = append(protocols, protocol)
-		}
-	}
-	return protocols, nil
 }
 
 // protocolFromContainerAgent extracts the protocol to use for invocation from a

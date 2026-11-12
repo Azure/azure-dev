@@ -1,4 +1,5 @@
 // Resource-group-scoped resources for a microsoft.foundry service: the
+// cspell:ignore kubelet abbrs managednetworks
 // Foundry (AIServices) account, its project, model deployments, the optional
 // container registry.
 //
@@ -71,6 +72,7 @@ param agentHosting agentHostingType = {
 
 param kubeletObjectId string = ''
 param federatedIdentityRoleDefinitionId string = ''
+param byoAksExistingRoleAssignmentKeys string[] = []
 param hostingPrincipalId string = ''
 param workloadPrincipalId string = ''
 
@@ -78,6 +80,7 @@ param workloadPrincipalId string = ''
 param existingAcrResourceId string = ''
 
 param acrPullAssigned bool = false
+param acrPullPrincipalId string = ''
 param acrAccessOperationId string = ''
 param acrPullRoleDefinitionId string = ''
 
@@ -170,6 +173,7 @@ module prerequisites 'byo-prerequisites.bicep' = if (agentHosting.enabled) {
     hostingIdentityName: hostingIdentityName
     workloadIdentityName: workloadIdentityName
     federatedIdentityRoleDefinitionId: federatedIdentityRoleDefinitionId
+    existingRoleAssignmentKeys: byoAksExistingRoleAssignmentKeys
     hostingIdentityResourceId: suppliedHostingIdentityResourceId
     workloadIdentityResourceId: suppliedWorkloadIdentityResourceId
     storageAccountResourceId: suppliedStorageAccountResourceId
@@ -409,8 +413,8 @@ module existingAcr 'container-registry.bicep' = if (includeAcr && !empty(existin
     mode: 'reuse-connect'
     location: location
     registryName: last(split(existingAcrResourceId, '/'))
-    projectPrincipalId: agentHosting.enabled
-      ? byoFoundryAccount::project!.identity.principalId
+    pullPrincipalId: agentHosting.enabled
+      ? acrPullPrincipalId
       : foundryAccount::project!.identity.principalId
     pullAssigned: acrPullAssigned
     accessOperationId: acrAccessOperationId

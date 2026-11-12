@@ -986,7 +986,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--protocol', '-p'],
-											description: 'Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)',
+											description: 'Protocol to use: responses, invocations, or a2a (inferred from current invocation or saved deployment; operation support varies)',
 											args: [
 												{
 													name: 'protocol',
@@ -1047,7 +1047,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--protocol', '-p'],
-											description: 'Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)',
+											description: 'Protocol to use: responses, invocations, or a2a (inferred from current invocation or saved deployment; operation support varies)',
 											args: [
 												{
 													name: 'protocol',
@@ -1108,7 +1108,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--protocol', '-p'],
-											description: 'Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)',
+											description: 'Protocol to use: responses, invocations, or a2a (inferred from current invocation or saved deployment; operation support varies)',
 											args: [
 												{
 													name: 'protocol',
@@ -1166,6 +1166,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'client-header',
+										},
+									],
+								},
+								{
+									name: ['--context-id'],
+									description: 'A2A context ID returned by a previous invocation (plain messages only)',
+									args: [
+										{
+											name: 'context-id',
 										},
 									],
 								},

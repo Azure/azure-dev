@@ -5,8 +5,9 @@ go 1.26.4
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3 v3.0.0-beta.3
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0
 	github.com/azure/azure-dev/cli/azd v1.37.0
+	github.com/azure/azure-dev/cli/shared/foundry v0.1.0
 	github.com/braydonk/yaml v0.9.0
 	github.com/distribution/reference v0.6.0
 	github.com/drone/envsubst v1.0.3 // indirect

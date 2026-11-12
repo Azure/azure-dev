@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"slices"
 	"strings"
 
@@ -16,10 +18,16 @@ import (
 	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
+)
+
+var (
+	evaluateReconciledModelPolicies = provisioning.EvaluateProjectModelDeploymentsPolicy
+	listLiveProjectDeployments      = fetchLiveProjectDeployments
 )
 
 func reconcileAdoptedDeployments(
@@ -30,6 +38,28 @@ func reconcileAdoptedDeployments(
 	target *resolvedProject,
 	serviceName string,
 	noPrompt bool,
+) (string, bool, func() error, error) {
+	return reconcileAdoptedDeploymentsWithWriter(
+		ctx,
+		client,
+		projectRoot,
+		envName,
+		target,
+		serviceName,
+		noPrompt,
+		nil,
+	)
+}
+
+func reconcileAdoptedDeploymentsWithWriter(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	projectRoot string,
+	envName string,
+	target *resolvedProject,
+	serviceName string,
+	noPrompt bool,
+	warningWriter io.Writer,
 ) (string, bool, func() error, error) {
 	if target == nil || target.Mode != projectModeExistingID ||
 		target.ResourceId == "" {
@@ -93,11 +123,26 @@ func reconcileAdoptedDeployments(
 			"run `azd auth login` and retry",
 		)
 	}
+	live, err := listLiveProjectDeployments(ctx, target, credential)
+	if err != nil {
+		return "", false, nil, err
+	}
+
+	return reconcileAdoptedDeploymentChoicesWithCredential(
+		ctx, client, envName, target, declared, live, environmentValues, noPrompt, credential, warningWriter,
+	)
+}
+
+func fetchLiveProjectDeployments(
+	ctx context.Context,
+	target *resolvedProject,
+	credential azcore.TokenCredential,
+) ([]liveProjectDeployment, error) {
 	deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(
 		target.SubscriptionId, credential, azure.NewArmClientOptions(),
 	)
 	if err != nil {
-		return "", false, nil, fmt.Errorf("create model deployments client: %w", err)
+		return nil, fmt.Errorf("create model deployments client: %w", err)
 	}
 	pager := deploymentsClient.NewListPager(
 		target.ResourceGroupName, target.AccountName, nil,
@@ -108,7 +153,7 @@ func reconcileAdoptedDeployments(
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return "", false, nil, exterrors.ServiceFromAzure(
+			return nil, exterrors.ServiceFromAzure(
 				err, exterrors.OpCognitiveDeploymentList,
 			)
 		}
@@ -139,11 +184,7 @@ func reconcileAdoptedDeployments(
 	slices.SortFunc(live, func(a, b liveProjectDeployment) int {
 		return strings.Compare(a.Name, b.Name)
 	})
-	endQuery()
-
-	return reconcileAdoptedDeploymentChoices(
-		ctx, client, envName, target, declared, live, environmentValues, noPrompt,
-	)
+	return live, nil
 }
 
 func reconcileAdoptedDeploymentChoices(
@@ -155,6 +196,23 @@ func reconcileAdoptedDeploymentChoices(
 	live []liveProjectDeployment,
 	environmentValues map[string]string,
 	noPrompt bool,
+) (string, bool, func() error, error) {
+	return reconcileAdoptedDeploymentChoicesWithCredential(
+		ctx, client, envName, target, declared, live, environmentValues, noPrompt, nil, nil,
+	)
+}
+
+func reconcileAdoptedDeploymentChoicesWithCredential(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	envName string,
+	target *resolvedProject,
+	declared []synthesis.Deployment,
+	live []liveProjectDeployment,
+	environmentValues map[string]string,
+	noPrompt bool,
+	credential azcore.TokenCredential,
+	warningWriter io.Writer,
 ) (string, bool, func() error, error) {
 	originalDefault := environmentValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"]
 	bindings, err := synthesis.DecodeDeploymentBindings(
@@ -357,7 +415,71 @@ func reconcileAdoptedDeploymentChoices(
 		}
 		return "", false, nil, operationErr
 	}
+	warnReconciledModelPolicies(
+		ctx,
+		credential,
+		target,
+		referenced,
+		remaining,
+		environmentValues,
+		warningWriter,
+	)
 	return defaultName, changed, restore, nil
+}
+
+func warnReconciledModelPolicies(
+	ctx context.Context,
+	credential azcore.TokenCredential,
+	target *resolvedProject,
+	referenced []synthesis.Deployment,
+	remaining []synthesis.Deployment,
+	environmentValues map[string]string,
+	warningWriter io.Writer,
+) {
+	if warningWriter == nil || target == nil || strings.TrimSpace(target.ResourceId) == "" ||
+		provisioning.ShouldSkipModelPolicyChecks(environmentValues) {
+		return
+	}
+	var toCheck []synthesis.Deployment
+	for _, dep := range referenced {
+		if strings.TrimSpace(dep.Model.Name) != "" {
+			toCheck = append(toCheck, dep)
+		}
+	}
+	for _, dep := range remaining {
+		if expanded, err := expandDeployment(dep, environmentValues); err == nil {
+			dep = expanded
+		}
+		if strings.TrimSpace(dep.Model.Name) != "" {
+			toCheck = append(toCheck, dep)
+		}
+	}
+	if len(toCheck) == 0 {
+		return
+	}
+	if credential == nil {
+		cred, err := azidentity.NewAzureDeveloperCLICredential(
+			&azidentity.AzureDeveloperCLICredentialOptions{
+				TenantID:                   target.UserTenantId,
+				AdditionallyAllowedTenants: []string{"*"},
+			},
+		)
+		if err != nil {
+			log.Printf("[FoundryPolicy] Skipping reconciled model policy warning (credential unavailable): %v", err)
+			return
+		}
+		credential = cred
+	}
+	violations, err := evaluateReconciledModelPolicies(ctx, credential, target.ResourceId, toCheck)
+	if err != nil {
+		log.Printf("[FoundryPolicy] Reconciled model policy check failed (failing open): %v", err)
+	}
+	if len(violations) == 0 || warningWriter == nil {
+		return
+	}
+	if warning := provisioning.FormatModelPolicyViolationsWarning(violations); warning != "" {
+		_, _ = fmt.Fprint(warningWriter, warning)
+	}
 }
 
 // selectAlternativeAdoptedDeployment lets the user pick any live deployment in

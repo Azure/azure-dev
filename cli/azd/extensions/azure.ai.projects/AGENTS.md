@@ -1,10 +1,11 @@
 # Azure AI Projects Extension - Agent Instructions
 
-Use this file together with `cli/azd/AGENTS.md`. This guide supplements the root azd instructions with the conventions that are specific to this extension.
+Use this file together with the [shared extension guide](../AGENTS.md) and
+`cli/azd/AGENTS.md`. This guide adds conventions specific to this extension.
 
 ## Overview
 
-`azure.ai.projects` is a first-party azd extension under `cli/azd/extensions/azure.ai.projects/`. It runs as a separate Go binary and talks to the azd host over gRPC.
+`azure.ai.projects` is a Microsoft-authored azd extension under `cli/azd/extensions/azure.ai.projects/`. It runs as a separate Go binary and talks to the azd host over gRPC.
 
 It owns the `azure.ai.project` service target and the `microsoft.foundry` provisioning provider. The provider handles greenfield and existing-project provisioning, preview, and teardown.
 
@@ -46,18 +47,7 @@ go build
 go test ./... -count=1
 ```
 
-If extension work depends on a new azd core change, plan for two PRs:
-
-1. Land the core change in `cli/azd` first.
-2. Land the extension change after that, updating this module to the newer azd dependency with `go get github.com/azure/azure-dev/cli/azd && go mod tidy`.
-
-For local development, draft work, or validating both sides together before the core PR is merged, you may temporarily add:
-
-```go
-replace github.com/azure/azure-dev/cli/azd => ../../
-```
-
-That `replace` points this extension at your local `cli/azd` checkout instead of the version in `go.mod`. Do not merge the extension with that `replace` still present.
+For changes that depend on core, follow the [core dependency guidance](../AGENTS.md#core-dependency-changes).
 
 ## Error handling
 
@@ -187,8 +177,3 @@ fmt.Printf("normalized URL: %s\n", normalized)    // use log.Printf
 // ❌ log used for user-facing info — user never sees it without --debug
 log.Printf("No project endpoint resolved")        // return an exterrors.Dependency instead
 ```
-
-## Other extension conventions
-
-- Use modern Go 1.26 patterns where they help readability
-- When using `PromptSubscription()`, create credentials with `Subscription.UserTenantId`, not `Subscription.TenantId`

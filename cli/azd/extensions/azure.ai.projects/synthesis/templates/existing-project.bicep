@@ -80,6 +80,10 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
   }
 }
 
+var accountSubdomain = !empty(foundryAccount.properties.?customSubDomainName)
+  ? foundryAccount.properties.customSubDomainName
+  : first(split(last(split(projectEndpoint, '://')), '.'))
+
 module newContainerRegistry 'modules/container-registry.bicep' = if (createAcr) {
   name: 'container-registry'
   scope: resourceGroup(resourceGroupName)
@@ -88,7 +92,7 @@ module newContainerRegistry 'modules/container-registry.bicep' = if (createAcr) 
     location: location
     tags: tags
     registryName: acrName
-    projectPrincipalId: foundryAccount::project.identity.principalId
+    pullPrincipalId: foundryAccount::project.identity.principalId
   }
   dependsOn: [adjunctResourceGroup]
 }
@@ -101,7 +105,7 @@ module existingContainerRegistry 'modules/container-registry.bicep' = if (acrMod
     location: location
     tags: tags
     registryName: effectiveAcrName
-    projectPrincipalId: foundryAccount::project.identity.principalId
+    pullPrincipalId: foundryAccount::project.identity.principalId
   }
 }
 
@@ -140,7 +144,7 @@ module monitoring 'modules/monitoring.bicep' = if (monitoringMode != 'none') {
 output AZURE_AI_PROJECT_ID string = projectResourceId
 output AZURE_AI_ACCOUNT_NAME string = accountName
 output AZURE_AI_PROJECT_NAME string = projectName
-output AZURE_OPENAI_ENDPOINT string = 'https://${accountName}.openai.azure.com/'
+output AZURE_OPENAI_ENDPOINT string = 'https://${accountSubdomain}.openai.azure.com/'
 output FOUNDRY_PROJECT_ENDPOINT string = projectEndpoint
 output AZURE_FOUNDRY_RESOURCE_GROUP string = createAdjunctGroup ? resourceGroupName : ''
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = acrMode == 'none'

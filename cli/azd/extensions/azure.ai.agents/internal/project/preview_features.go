@@ -37,7 +37,8 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 			for _, entry := range protocols {
 				protocol, _ := entry.(map[string]any)
 				name, _ := protocol["protocol"].(string)
-				if strings.TrimSpace(name) == "invocations_ws" {
+				name = strings.TrimSpace(name)
+				if name == "invocations_ws" || name == string(agent_api.AgentProtocolVoiceConversationEngine) {
 					return featureflags.Voice
 				}
 			}

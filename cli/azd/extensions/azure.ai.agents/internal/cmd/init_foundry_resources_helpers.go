@@ -14,16 +14,18 @@ import (
 	"slices"
 	"strings"
 
+	"azure.ai.projects/synthesis"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/azure/azure-dev/cli/shared/foundry/access"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -37,37 +39,45 @@ type FoundryProjectInfo struct {
 	ProjectName       string
 	Location          string // may be empty when parsed from resource ID alone
 	ResourceId        string // full ARM resource ID
+	ProjectEndpoint   string
+	OpenAIEndpoint    string
 	// NetworkInjected is true when the owning Foundry account has VNET network
 	// injection (agent scenario); used to disable remote build.
 	NetworkInjected bool
 	PrincipalId     string
 }
 
-// Endpoint returns the Foundry project data-plane endpoint derived from the
-// account and project names, or "" when the project is nil or either name is
-// missing. The projects extension uses this endpoint to select an
-// existing project during authoring.
+// Endpoint returns the resolved data-plane endpoint when available.
+// Resource IDs without metadata retain name-based compatibility URLs.
 func (p *FoundryProjectInfo) Endpoint() string {
+	if p != nil && p.ProjectEndpoint != "" {
+		return p.ProjectEndpoint
+	}
 	if p == nil || p.AccountName == "" || p.ProjectName == "" {
 		return ""
 	}
 	return fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", p.AccountName, p.ProjectName)
 }
 
+func (p *FoundryProjectInfo) openAIEndpoint() string {
+	if p.OpenAIEndpoint != "" {
+		return p.OpenAIEndpoint
+	}
+	return fmt.Sprintf("https://%s.openai.azure.com/", p.AccountName)
+}
+
 type foundryConnectionsLoader func(
 	context.Context,
 	azcore.TokenCredential,
-	string,
 	string,
 ) ([]azure.Connection, error)
 
 func listFoundryProjectConnections(
 	ctx context.Context,
 	credential azcore.TokenCredential,
-	accountName string,
-	projectName string,
+	projectEndpoint string,
 ) ([]azure.Connection, error) {
-	client, err := azure.NewFoundryProjectsClient(accountName, projectName, credential)
+	client, err := azure.NewFoundryProjectsClient(projectEndpoint, credential)
 	if err != nil {
 		return nil, fmt.Errorf("creating Foundry projects client: %w", err)
 	}
@@ -81,7 +91,7 @@ func verifyFoundryProjectConnection(
 	connectionRef string,
 	load foundryConnectionsLoader,
 ) error {
-	connections, err := load(ctx, credential, project.AccountName, project.ProjectName)
+	connections, err := load(ctx, credential, project.Endpoint())
 	if err != nil {
 		return fmt.Errorf("listing connections on project %q: %w", project.ProjectName, err)
 	}
@@ -349,60 +359,43 @@ func getFoundryProject(
 		return nil, fmt.Errorf("provided project resource ID does not match the selected subscription")
 	}
 
-	projectsClient, err := armcognitiveservices.NewProjectsClient(
-		project.SubscriptionId, credential, azure.NewArmClientOptions())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create projects client: %w", err)
-	}
-
-	response, err := projectsClient.Get(
-		ctx, project.ResourceGroupName, project.AccountName, project.ProjectName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Foundry project: %w", err)
-	}
-
-	updateFoundryProjectInfo(project, &response.Project)
-
-	return project, nil
+	return hydrateFoundryProject(ctx, credential, project, azure.NewArmClientOptions())
 }
 
-// foundryAccountNetworkInjected reports whether the Foundry account that owns the
-// project has VNET network injection (agent scenario), used to disable remote
-// build. Best-effort: any failure returns false with a logged warning so init is
-// never blocked.
-func foundryAccountNetworkInjected(
+func hydrateFoundryProject(
 	ctx context.Context,
 	credential azcore.TokenCredential,
 	project *FoundryProjectInfo,
-) bool {
-	accountsClient, err := armcognitiveservices.NewAccountsClient(
-		project.SubscriptionId, credential, azure.NewArmClientOptions())
+	options *arm.ClientOptions,
+) (*FoundryProjectInfo, error) {
+	id, err := arm.ParseResourceID(project.ResourceId)
 	if err != nil {
-		log.Printf("warning: could not create Cognitive Services accounts client for "+
-			"network-injection check, assuming no injection: %v", err)
-		return false
+		return nil, fmt.Errorf("parse Foundry project resource ID: %w", err)
 	}
-
-	response, err := accountsClient.Get(ctx, project.ResourceGroupName, project.AccountName, nil)
+	metadata, err := synthesis.LookupFoundryProject(ctx, id, credential, options)
 	if err != nil {
-		log.Printf("warning: could not read Foundry account '%s' for network-injection "+
-			"check, assuming no injection: %v", project.AccountName, err)
-		return false
+		if synthesis.IsFoundryProjectMetadataValidationError(err) {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				err.Error(),
+				"verify the selected Foundry project metadata and retry",
+			)
+		}
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetFoundryProject)
 	}
-
-	props := response.Account.Properties
-	if props == nil {
-		return false
-	}
-
-	for _, injection := range props.NetworkInjections {
-		if injection != nil && injection.Scenario != nil &&
-			*injection.Scenario == armcognitiveservices.ScenarioTypeAgent {
-			return true
+	updateFoundryProjectInfo(project, &metadata.Project)
+	project.ProjectEndpoint = metadata.Endpoint
+	project.OpenAIEndpoint = metadata.OpenAIEndpoint
+	if props := metadata.Account.Properties; props != nil {
+		for _, injection := range props.NetworkInjections {
+			if injection != nil && injection.Scenario != nil &&
+				*injection.Scenario == armcognitiveservices.ScenarioTypeAgent {
+				project.NetworkInjected = true
+				break
+			}
 		}
 	}
-
-	return false
+	return project, nil
 }
 
 // listProjectDeployments lists all model deployments in a Foundry account.
@@ -503,29 +496,14 @@ func hasAcrPullAssignment(
 	resourceID string,
 	principalID string,
 ) (bool, error) {
-	subscriptionID := extractSubscriptionId(resourceID)
-	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, credential, azure.NewArmClientOptions())
-	if err != nil {
-		return false, fmt.Errorf("create role assignments client: %w", err)
-	}
-	filter := fmt.Sprintf("assignedTo('%s')", principalID)
-	pager := client.NewListForScopePager(resourceID, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: &filter,
-	})
-	roleSuffix := "/roleDefinitions/" + acrPullRoleDefinitionID
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return false, fmt.Errorf("list ACR role assignments: %w", err)
-		}
-		for _, assignment := range page.Value {
-			if assignment.Properties != nil && assignment.Properties.RoleDefinitionID != nil &&
-				strings.HasSuffix(*assignment.Properties.RoleDefinitionID, roleSuffix) {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
+	return access.HasAnyRoleAssignment(
+		ctx,
+		credential,
+		principalID,
+		[]string{acrPullRoleDefinitionID},
+		resourceID,
+		azure.NewArmClientOptions(),
+	)
 }
 
 // configureFoundryProjectEnv sets all Foundry project environment variables and discovers
@@ -577,8 +555,7 @@ func configureFoundryProjectEnv(
 		return err
 	}
 
-	aoaiEndpoint := fmt.Sprintf("https://%s.openai.azure.com/", project.AccountName)
-	if err := setEnvValue(ctx, azdClient, envName, "AZURE_OPENAI_ENDPOINT", aoaiEndpoint); err != nil {
+	if err := setEnvValue(ctx, azdClient, envName, "AZURE_OPENAI_ENDPOINT", project.openAIEndpoint()); err != nil {
 		return err
 	}
 
@@ -594,7 +571,7 @@ func configureFoundryProjectEnv(
 	}
 
 	// Discover and configure connections (ACR, AppInsights)
-	foundryClient, err := azure.NewFoundryProjectsClient(project.AccountName, project.ProjectName, credential)
+	foundryClient, err := azure.NewFoundryProjectsClient(project.Endpoint(), credential)
 	if err != nil {
 		return fmt.Errorf("creating Foundry client: %w", err)
 	}
@@ -670,7 +647,7 @@ func configureExistingProjectAcrWithConnectionsLoader(
 	loadConnections foundryConnectionsLoader,
 ) error {
 	var acrConnections []azure.Connection
-	connections, err := loadConnections(ctx, credential, project.AccountName, project.ProjectName)
+	connections, err := loadConnections(ctx, credential, project.Endpoint())
 	if err != nil {
 		return fmt.Errorf("listing connections on project %q: %w", project.ProjectName, err)
 	}
@@ -2048,10 +2025,13 @@ func selectFoundryProject(
 
 	selectedProject := projects[selectedIdx]
 
-	// Resolve the account's VNET network-injection status for the chosen project
-	// (best-effort) so remote build is disabled when injection is present. Done here
-	// so both the provided-id and interactive-picker paths are covered from one place.
-	selectedProject.NetworkInjected = foundryAccountNetworkInjected(ctx, credential, &selectedProject)
+	if projectResourceId == "" {
+		hydrated, err := getFoundryProject(ctx, credential, subscriptionId, selectedProject.ResourceId)
+		if err != nil {
+			return nil, err
+		}
+		selectedProject = *hydrated
+	}
 
 	// Set location from the selected project
 	azureContext.Scope.Location = selectedProject.Location

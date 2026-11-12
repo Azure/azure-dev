@@ -5613,7 +5613,8 @@ interactions:
         status: 200 OK
         code: 200
         duration: 328.246781ms
-    - id: 2
+    - &foundryProjectRead
+      id: 2
       request:
         proto: HTTP/1.1
         proto_major: 1
@@ -5850,7 +5851,8 @@ interactions:
         status: 200 OK
         code: 200
         duration: 213.9859ms
-    - id: 5
+    - &foundryAccountRead
+      id: 5
       request:
         proto: HTTP/1.1
         proto_major: 1
@@ -9123,6 +9125,13 @@ interactions:
         status: 404 Not Found
         code: 404
         duration: 1ms
+    # Authoring and deployment validation each resolve ARM metadata.
+    - <<: *foundryAccountRead
+      id: 51
+    - <<: *foundryProjectRead
+      id: 52
+    - <<: *foundryAccountRead
+      id: 53
 ---
 model_deployment: gpt-4o
 project_id: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test-agents-recording-0000000000000000000/providers/Microsoft.CognitiveServices/accounts/test-ai-account-000/projects/test-proj0

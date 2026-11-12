@@ -6,6 +6,15 @@ Use this guide together with the entire [CLI handbook](../AGENTS.md) and the
 affected extension's local `AGENTS.md`, when present. Local guides describe
 extension-specific contracts, ownership, and exceptions.
 
+## Unit test authoring
+
+When writing or reviewing Go unit tests for `azure.ai.agents`,
+`azure.ai.connections`, `azure.ai.inspector`, `azure.ai.projects`,
+`azure.ai.routines`, `azure.ai.skills`, or `azure.ai.toolboxes`, read and follow
+the [unit-testing skill](.github/skills/azd-extension-unit-testing/SKILL.md).
+This is extension-local guidance; clients may need this explicit link rather
+than automatically discovering a nested skill directory.
+
 ## Security and safe operations
 
 - Redact credentials from URLs before terminal output, logs, error messages,

@@ -17,6 +17,7 @@ func TestAutomaticProvisionInputsValidateAuthoredBindings(t *testing.T) {
 		name        string
 		document    string
 		h2          bool
+		noDatabase  bool
 		managed     bool
 		wantManaged bool
 		wantError   bool
@@ -52,6 +53,11 @@ func TestAutomaticProvisionInputsValidateAuthoredBindings(t *testing.T) {
 		{name: "malformed JSON", document: "{", wantError: true},
 		{name: "PostgreSQL without parameters", wantError: true},
 		{name: "positive H2 without parameters", h2: true},
+		{name: "database-free without parameters", noDatabase: true},
+		{name: "database-free generic parameters", noDatabase: true,
+			document: `{"parameters":{"location":{"value":"${AZURE_LOCATION}"}}}`},
+		{name: "database-free rejects bootstrap", noDatabase: true, wantError: true,
+			document: `{"parameters":{"databasePassword":{"value":"${SPRING_DATABASE_PASSWORD}"}}}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			project := &azdext.ProjectConfig{Path: t.TempDir()}
@@ -63,6 +69,9 @@ func TestAutomaticProvisionInputsValidateAuthoredBindings(t *testing.T) {
 			selected := resolvedDatabase{Type: databasePostgreSQL, Authentication: databaseAuthenticationPassword}
 			if test.h2 {
 				selected.Type = databaseH2
+			}
+			if test.noDatabase {
+				selected.Type = databaseNone
 			}
 			if test.managed {
 				selected.Authentication = databaseAuthenticationManagedIdentity

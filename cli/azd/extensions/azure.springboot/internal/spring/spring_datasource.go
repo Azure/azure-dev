@@ -106,6 +106,21 @@ func inferSpringDatasource(
 			*selected = properties[key]
 		}
 	}
+	if !dependencies.database && !dependencies.h2 && !dependencies.postgresql && !dependencies.azureJDBC {
+		hasDatabaseConfiguration := false
+		for key := range config.properties {
+			for _, prefix := range []string{
+				"spring.datasource.", "spring.jpa.", "spring.jdbc.", "spring.r2dbc.",
+				"spring.data.", "spring.flyway.", "spring.liquibase.",
+			} {
+				hasDatabaseConfiguration = hasDatabaseConfiguration ||
+					strings.HasPrefix(key, compactSpringKey(prefix))
+			}
+		}
+		if !hasDatabaseConfiguration {
+			return &discoveredDatasource{engine: databaseNone}, nil
+		}
+	}
 	if strings.HasPrefix(jdbcURL, "jdbc:h2:") || (jdbcURL == "" && dependencies.h2 && driver != "org.postgresql.Driver") {
 		if !dependencies.h2 || (driver != "" && driver != "org.h2.Driver") {
 			return nil, configurationError("the H2 datasource does not match the application runtime dependencies")

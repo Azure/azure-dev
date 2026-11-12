@@ -86,6 +86,21 @@ datasource evidence. With a package context, the actual JAR resources/libraries
 remain authoritative for both build systems. Kotlin build DSL support does not
 expand the existing Java-only application-bootstrap analysis.
 
+An internal no-database result requires positive evidence: no database runtime
+dependencies and no authored database settings, after pending selectors have
+been checked. JDBC/JPA/R2DBC integrations, unsupported drivers, unresolved
+Maven dependency declarations or nonstandard inherited parents require
+appropriate runtime/package evidence rather than becoming database-free.
+This result is not exported as `SPRING_DATABASE_TYPE=none`.
+
+Database-free services retain generic build, packaging, deployment ownership,
+application binding, and endpoint checks. They skip database state writes,
+identity selection, bootstrap-image checks, SQL reconciliation, and database
+network preparation. H2 likewise does not enter PostgreSQL preparation.
+Project database selection ignores database-free services; a verified per-service
+Container App binding prevents them from inheriting another service's PostgreSQL
+settings or identity. Generic application outputs do not require database outputs.
+
 For PostgreSQL, the extension follows Spring Boot, HikariCP, and pgJDBC
 precedence:
 
@@ -194,7 +209,7 @@ The job receives only a versioned, non-secret input value. Its managed identity
 acquires a token for Azure Database for PostgreSQL and connects with
 hostname-verified TLS. The temporary session administrator is used only for the
 connection. Database and initialization-marker ownership checks continue to
-expect the deployment-verified developer administrator, preserving the
+expect the deployment-verified configured User administrator, preserving the
 `app-owned-v2` policy.
 
 The extension creates the job and its PostgreSQL administrator dynamically
@@ -226,26 +241,69 @@ does not provide private networking.
 For automatic managed-identity provisioning, azd initializes the Bicep provider
 before it invokes the extension's `preprovision` event. A template that maps
 required Bicep parameters directly to unset `DATABASE_ADMIN_*` values therefore
-fails before the extension can resolve the signed-in developer. Supported
+fails before the extension can prepare the selected administrator. Supported
 templates use this exact deferred binding pair in `main.parameters.json`:
 
 ```json
 {
-  "databaseAdministratorName": {
-    "value": "${DATABASE_ADMIN_NAME=azd-preprovision-pending}"
-  },
-  "databaseAdministratorObjectId": {
-    "value": "${DATABASE_ADMIN_OBJECT_ID=00000000-0000-0000-0000-000000000000}"
+  "parameters": {
+    "databaseAdministratorName": {
+      "value": "${DATABASE_ADMIN_NAME=azd-preprovision-pending}"
+    },
+    "databaseAdministratorObjectId": {
+      "value": "${DATABASE_ADMIN_OBJECT_ID=00000000-0000-0000-0000-000000000000}"
+    }
   }
 }
 ```
 
 The placeholders satisfy only the provider's initial required-input check.
-Before the deployment plan is created, `preprovision` resolves the current
-developer, persists the real values, and azd reloads the parameter file. The
-extension rejects mixed or different fallback bindings. If the lifecycle event
+Normal azd subscription/location selection completes before extension
+preparation; interactive users do not need manual environment seeding.
+An explicit
+`DATABASE_ADMIN_OBJECT_ID`/`SPRING_DATABASE_ADMINISTRATOR_OBJECT_ID` selects a
+User independently of the deployer. Missing interactive object IDs use a host
+prompt with the current User's ID as the default. A missing
+`DATABASE_ADMIN_NAME`/`SPRING_DATABASE_ADMINISTRATOR_NAME` uses a second host
+prompt for the selected User's principal name. Configured values bypass their
+prompts. The current User comes from the host principal API in the
+subscription's resource tenant.
+The host's `LookupTenant` supplies the user-access tenant for credentials, not
+the selected administrator's resource tenant. No JWT name decoding, Microsoft
+Graph lookup, Azure CLI login or object-ID-derived name is used.
+The host-resolved user-access tenant can change with the deploying User and is
+refreshed without changing the saved administrator; it is not administrator
+identity or a substitute for the live server's authentication tenant.
+
+`preprovision` validates supplied values and aliases before identity lookup or
+extension state writes, then collects and validates the complete administrator
+selection before persisting it. Invalid prompt responses can be corrected;
+cancellation persists no partial selection. Persistence errors propagate;
+multiple environment RPC writes are not a transaction. azd's already selected
+subscription/location are not rolled back.
+
+The SDK/global no-prompt state is propagated to the runtime. In no-prompt mode,
+the absent object ID retains the current-User default, but a missing name fails
+before identity lookup or extension writes. Both modes retain the User-only
+PostgreSQL Entra policy. Saved administrator values survive a change of deployer.
+azd rereads the parameter file against the prepared environment before
+deployment, so only real name/ID values may reach the deployment plan. Existing
+direct paired bindings remain supported when values are already supplied.
+There is no name-free route, TTY-based policy, duplicate `preup` preparation,
+or Spring-specific setup command. The extension rejects mixed or different
+fallback bindings. If the lifecycle event
 does not run, the zero principal causes deployment to fail closed rather than
-configure a different administrator.
+configure a different administrator; this is not a guarantee that no other
+resource could be created when the extension event is bypassed.
+
+The real PostgreSQL 2024-08-01 API rejected a fresh omitted-name administrator
+request, while the otherwise identical explicitly named control succeeded.
+Keep names and ARM `principalName` required. Live administrator verification
+checks the exact ARM ID, object ID, User type, server authentication tenant and
+explicit name. The existing named v1 runner payload, ownership policy and
+recovery contract remain unchanged; an OID-only payload or protocol bump is not
+part of this implementation. Revised live lifecycle acceptance remains separate
+from this API control and unit-level preparation evidence.
 
 Release builds enable remote reconciliation only with a digest-pinned runner
 from `mcr.microsoft.com/azure-dev/azd-spring-postgres-bootstrap`. The release

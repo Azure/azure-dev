@@ -26,9 +26,26 @@ type deploymentBinding struct {
 	automatic   bool
 	outboundIPs []string
 	app         *armappcontainers.ContainerApp
+	apps        map[string]*armappcontainers.ContainerApp
 }
 
 type deploymentBindingKey struct{}
+
+func bindServiceContext(ctx context.Context, serviceName string) (context.Context, error) {
+	binding, present := ctx.Value(deploymentBindingKey{}).(*deploymentBinding)
+	if !present || binding.apps == nil {
+		return ctx, nil
+	}
+	app := binding.apps[serviceName]
+	if app == nil || app.ID == nil {
+		return ctx, configurationError("the current deployment did not establish this service's application")
+	}
+	selected := *binding
+	selected.app = app
+	selected.values = maps.Clone(binding.values)
+	selected.values[containerAppIDEnv] = *app.ID
+	return context.WithValue(ctx, deploymentBindingKey{}, &selected), nil
+}
 
 func (b *deploymentBinding) requireResource(resourceID string) error {
 	if !b.resources[strings.ToLower(resourceID)] {
@@ -164,15 +181,34 @@ func boundDeploymentValues(
 	if err != nil {
 		return nil, err
 	}
+	for _, binding := range []struct{ authored, internal string }{
+		{"AZURE_RESOURCE_GROUP", azureResourceGroupEnv},
+		{"CONTAINER_APP_ENVIRONMENT_ID", "CONTAINER_APP_ENVIRONMENT_ID"},
+		{"AZURE_CONTAINER_REGISTRY_ENDPOINT", "AZURE_CONTAINER_REGISTRY_ENDPOINT"},
+	} {
+		output, present, err := findDeploymentOutput(outputs, binding.authored)
+		if err != nil {
+			return nil, err
+		}
+		if !present && !original {
+			continue
+		}
+		value, stringValue := output.Value.(string)
+		if !present || !stringValue || !strings.EqualFold(output.Type, "string") ||
+			strings.TrimSpace(value) == "" || !strings.EqualFold(value, values[binding.authored]) {
+			return nil, fmt.Errorf("%s was not emitted consistently by the current root deployment", binding.authored)
+		}
+		if existing := values[binding.internal]; existing != "" && !strings.EqualFold(existing, value) {
+			return nil, fmt.Errorf("%s conflicts with the selected root deployment", binding.internal)
+		}
+		result[binding.internal] = value
+	}
 	if !original {
 		return result, nil
 	}
 	for _, binding := range []struct{ authored, internal string }{
-		{"AZURE_RESOURCE_GROUP", azureResourceGroupEnv},
 		{"DATABASE_SERVER_ID", postgresServerIDEnv},
 		{"DATABASE_HOST", postgresHostEnv},
-		{"CONTAINER_APP_ENVIRONMENT_ID", "CONTAINER_APP_ENVIRONMENT_ID"},
-		{"AZURE_CONTAINER_REGISTRY_ENDPOINT", "AZURE_CONTAINER_REGISTRY_ENDPOINT"},
 	} {
 		output, present, err := findDeploymentOutput(outputs, binding.authored)
 		if err != nil {
@@ -313,7 +349,16 @@ func bindApplication(
 	if err != nil {
 		return err
 	}
-	candidates := []string{}
+	return bindApplicationsWithClient(ctx, apps, project, binding)
+}
+
+func bindApplicationsWithClient(
+	ctx context.Context,
+	apps *armappcontainers.ContainerAppsClient,
+	project *azdext.ProjectConfig,
+	binding *deploymentBinding,
+) error {
+	applications := map[string]*armappcontainers.ContainerApp{}
 	for resourceID := range binding.resources {
 		identity, err := arm.ParseResourceID(resourceID)
 		if err != nil || !strings.EqualFold(identity.ResourceType.String(), containerAppType) {
@@ -338,19 +383,33 @@ func bindApplication(
 				); err != nil {
 					return err
 				}
-				candidates = append(candidates, resourceID)
-				binding.app = &app.ContainerApp
+				if applications[service.GetName()] != nil {
+					return errors.New("the current deployment identifies multiple applications for one Spring service")
+				}
+				applications[service.GetName()] = &app.ContainerApp
 			}
 		}
 	}
-	if len(candidates) != 1 {
-		return errors.New("the current deployment must identify exactly one matching Spring application")
+	if len(applications) == 0 || len(applications) != len(springServices(project)) {
+		return errors.New("the current deployment must identify exactly one matching application per Spring service")
 	}
-	if persisted := binding.values[containerAppIDEnv]; persisted != "" &&
-		!strings.EqualFold(persisted, candidates[0]) {
-		return errors.New("the saved Container App identity conflicts with the current deployment")
+	if persisted := binding.values[containerAppIDEnv]; persisted != "" {
+		matches := false
+		for _, app := range applications {
+			matches = matches || strings.EqualFold(persisted, *app.ID)
+		}
+		if !matches {
+			return errors.New("the saved Container App identity conflicts with the current deployment")
+		}
 	}
-	binding.values[containerAppIDEnv] = candidates[0]
+	binding.apps = applications
+	delete(binding.values, containerAppIDEnv)
+	if len(applications) == 1 {
+		for _, app := range applications {
+			binding.app = app
+			binding.values[containerAppIDEnv] = *app.ID
+		}
+	}
 	return nil
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/postgresql/armpostgresqlflexibleservers"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
@@ -410,6 +411,84 @@ type postgresPolicyCredential struct{}
 
 func (postgresPolicyCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	return azcore.AccessToken{Token: "offline-test-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+}
+
+func TestPostgresAdministratorVerifiesIdentityTenantAndExplicitName(t *testing.T) {
+	const objectID = "11111111-2222-3333-4444-555555555555"
+	const resourceTenant = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	const accessTenant = "22222222-3333-4444-5555-666666666666"
+	serverID := "/subscriptions/" + resourceTenant +
+		"/resourceGroups/rg/providers/Microsoft.DBforPostgreSQL/flexibleServers/server"
+	administratorID := serverID + "/administrators/" + objectID
+	for _, test := range []struct {
+		name  string
+		field string
+		value any
+	}{
+		{name: "verified-separate-user-access-tenant"},
+		{name: "wrong-object-with-matching-name", field: "objectId", value: accessTenant},
+		{name: "missing-object", field: "objectId"},
+		{name: "access-tenant-is-not-resource-tenant", field: "tenantId", value: accessTenant},
+		{name: "missing-tenant", field: "tenantId"},
+		{name: "wrong-type", field: "principalType", value: "ServicePrincipal"},
+		{name: "wrong-name", field: "principalName", value: "private-name-must-not-leak"},
+		{name: "wrong-resource-id", field: "id", value: administratorID + "-other"},
+		{name: "missing-resource-id", field: "id"},
+		{name: "unverified-server-tenant", field: "authTenant", value: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			properties := map[string]any{
+				"objectId": objectID, "principalType": "User",
+				"principalName": "selected@example.test", "tenantId": resourceTenant,
+			}
+			metadata := map[string]any{"id": administratorID, "properties": properties}
+			auth := map[string]any{"tenantId": resourceTenant}
+			switch test.field {
+			case "":
+			case "id":
+				metadata["id"] = test.value
+			case "authTenant":
+				auth["tenantId"] = test.value
+			default:
+				properties[test.field] = test.value
+			}
+			encoded, err := json.Marshal(metadata)
+			require.NoError(t, err)
+			reads := 0
+			client, err := armresources.NewClient(resourceTenant, postgresPolicyCredential{}, &arm.ClientOptions{
+				ClientOptions: policy.ClientOptions{Transport: postgresPolicyTransport(
+					func(request *http.Request) (*http.Response, error) {
+						reads++
+						require.Equal(t, http.MethodGet, request.Method)
+						require.Equal(t, administratorID, request.URL.Path)
+						return &http.Response{
+							StatusCode: http.StatusOK, Request: request,
+							Header: http.Header{"Content-Type": []string{"application/json"}},
+							Body:   io.NopCloser(strings.NewReader(string(encoded))),
+						}, nil
+					},
+				)},
+			})
+			require.NoError(t, err)
+			err = verifyPostgresAdministrator(t.Context(), client, resolvedDatabase{
+				ServerResourceID: serverID, AdministratorName: "selected@example.test",
+			}, map[string]string{
+				databaseAdministratorObjectIDEnv: objectID, databaseUserAccessTenantIDEnv: accessTenant,
+			}, auth)
+			if test.field == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.NotContains(t, err.Error(), "private-name-must-not-leak")
+				require.NotContains(t, err.Error(), "offline-test-token")
+			}
+			if test.field == "authTenant" {
+				require.Zero(t, reads)
+			} else {
+				require.Equal(t, 1, reads)
+			}
+		})
+	}
 }
 
 func TestPostgresAuthoredAllPublicFirewallBypassesTemporaryAccess(t *testing.T) {

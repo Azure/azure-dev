@@ -12,7 +12,11 @@ import (
 )
 
 func configureExtensionHost(host *azdext.ExtensionHost) {
-	runtime := spring.NewRuntime(host.Client())
+	configureExtensionHostWithNoPrompt(host, false)
+}
+
+func configureExtensionHostWithNoPrompt(host *azdext.ExtensionHost, noPrompt bool) {
+	runtime := spring.NewRuntime(host.Client(), noPrompt)
 
 	host.
 		WithFrameworkService("java", func() azdext.FrameworkServiceProvider {

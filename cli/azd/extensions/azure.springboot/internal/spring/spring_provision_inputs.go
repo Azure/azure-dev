@@ -49,7 +49,7 @@ func automaticProvisionInputs(
 		return resolvedDatabase{}, configurationError("the Bicep parameter path is outside the project")
 	}
 	resolved, err := filepath.EvalSymlinks(name)
-	if errors.Is(err, os.ErrNotExist) && selected.Type == databaseH2 {
+	if errors.Is(err, os.ErrNotExist) && (selected.Type == databaseH2 || selected.Type == databaseNone) {
 		return selected, nil
 	}
 	if err != nil || !osutil.IsPathContained(root, resolved) {
@@ -103,6 +103,11 @@ func automaticProvisionInputs(
 	}
 	if managed && password {
 		return resolvedDatabase{}, configurationError("the infrastructure mixes incompatible database bootstrap credentials")
+	}
+	if selected.Type == databaseNone && (managed || password) {
+		return resolvedDatabase{}, configurationError(
+			"database bootstrap bindings conflict with the database-free application",
+		)
 	}
 	if managed {
 		return resolvedDatabase{Type: databasePostgreSQL, Authentication: databaseAuthenticationManagedIdentity}, nil

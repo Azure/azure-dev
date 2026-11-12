@@ -9,6 +9,30 @@ version requirement in the examples is not a public release guarantee.
 See the [extension design](docs/design.md) for automatic datasource discovery,
 packaging, deployment, and PostgreSQL access verification.
 
+## Local development installation
+
+Install Go 1.26.4 or newer and azd 1.37.2 or newer. From this extension's directory
+in the matching development checkout, build and explicitly install a local bundle:
+
+```shell
+azd extension install microsoft.azd.extensions --version 0.14.0
+azd x build --skip-install
+azd x pack --bundle --output azure-springboot-local.zip
+azd extension install azure-springboot-local.zip --force
+azd extension show azure.springboot
+```
+
+The final command should report `Source: bundle` and the installed version.
+No `azd x publish` or local registry setup is needed. `azd x build` alone copies
+binaries but does not register a first-time installation.
+Use the same azd executable and profile for installation and template initialization.
+If `AZD_CONFIG_DIR` is set, use an absolute path so changing directories does not
+select another profile.
+
+These commands install the development extension; PostgreSQL Entra bootstrap
+also requires its release-configured, digest-pinned MCR runner image. An
+unconfigured build does not provide that image or bypass its repository guard.
+
 ## Packaging
 
 The host JDK 17+ and checked-in Maven or Gradle Wrapper build the Spring Boot JAR.
@@ -78,6 +102,16 @@ test-only H2, missing configuration, or a PostgreSQL error never becomes H2.
 Source-only Gradle checks use resolved production dependencies, including
 transitive libraries, not text parsing of the build DSL or test dependencies.
 
+Database-free applications are supported when configuration and dependency
+evidence positively establish that no database integration is present. JDBC,
+JPA, R2DBC, unsupported database libraries, authored database settings, unresolved
+selectors, and incomplete dependency evidence are not treated as database-free.
+These apps keep normal Java/container packaging and deployment verification,
+but do not require PostgreSQL outputs, administrator inputs, a User login,
+the bootstrap image, SQL access, or database firewall preparation. No
+`SPRING_DATABASE_TYPE=none` value is exported. A database-free service also
+remains independent of PostgreSQL services in the same project.
+
 Unresolved infrastructure-dependent profile, configuration-location, and
 datasource selectors remain pending during preparation. Final resolution must
 succeed before access setup. The standard local `file:./config/*/` search visits
@@ -107,10 +141,66 @@ empty JVM properties, indexed environment profile groups, and both managed
 identity modes. Full live lifecycle acceptance remains pending. The extension
 maps a verified system-assigned or attached user-assigned identity to an
 ordinary non-admin PostgreSQL login, or verifies the effective Spring password
-login when the application uses password authentication. The verified azd
-developer user remains the Entra administrator. Existing password roles must
+login when the application uses password authentication. A configured User
+remains the Entra administrator independently of the deploying User. Existing password roles must
 authenticate with the effective Spring credential; a mismatch fails without
 rotating it.
+
+### Administrator selection
+
+Start interactive provisioning normally:
+
+```shell
+azd up
+```
+
+azd selects the environment, subscription, and location through its normal host
+experience; no manual subscription `azd env set` is required. For PostgreSQL
+Entra authentication, the extension then prompts for a missing User object ID,
+defaulting to azd's current User in the selected subscription's resource tenant,
+and for the selected User's missing principal name. You can enter another
+User's object ID instead of accepting the default. These prompts also apply to
+standalone `azd provision`.
+
+Valid configured `DATABASE_ADMIN_OBJECT_ID` and `DATABASE_ADMIN_NAME` values
+bypass their respective prompts. A name alone never selects another principal.
+The existing
+`SPRING_DATABASE_ADMINISTRATOR_NAME`/`SPRING_DATABASE_ADMINISTRATOR_OBJECT_ID`
+aliases remain supported; supplied aliases and process/environment values must
+agree. Empty/zero/malformed IDs, empty names, placeholders and conflicting
+configured inputs fail before identity lookup or extension environment writes.
+Invalid prompt responses can be corrected; cancellation saves no partial
+administrator selection. Accepted values are persisted for later operations.
+
+The extension does not obtain a name from access-token claims, Microsoft Graph,
+Azure CLI, or the object ID. `principalName` is required on the tested PostgreSQL
+API path; it is not silently omitted or replaced by a generated label. Prompt
+validation checks input format, not directory identity.
+
+With `--no-prompt`, supply the administrator name through the supported
+environment inputs before provisioning. An absent object ID uses the host's
+current User; supply the object ID too when selecting another User. Missing
+names fail deterministically before identity lookup or extension preparation
+writes. Native azd subscription/location inputs must also be available for
+automation. No-prompt policy comes from azd's SDK, not subprocess TTY detection.
+The PostgreSQL Entra path still requires an azd User login; provisioning with
+a service principal is not supported on that path.
+
+Supported `preprovision`/`postprovision` lifecycle handlers own preparation;
+templates must not duplicate it in `preup` or provision hooks. Normal azd
+subscription/location selection remains host-owned. Identity and credential
+tenant resolution use host account APIs and the existing azd User login, not a
+second Azure CLI login. Saved administrator inputs survive a different deployer;
+host-resolved user-access tenant state is refreshed for that deployer's login.
+Live verification checks the exact ARM resource/object ID, User type, server
+authentication tenant and supplied name; name matching alone is not identity
+proof. The template owns resources, sizing and parameter bindings. Fresh
+environments need the exact deferred administrator parameter bindings described
+in the [design](docs/design.md), because Bicep initializes before
+`preprovision` and resolves the prepared values again before deployment.
+Non-Spring projects, database-free Spring apps, and H2 do not require
+administrator preparation or the bootstrap image. Docker remains necessary
+for application-container packaging, not administrator selection.
 
 ## Application-owned startup initialization
 

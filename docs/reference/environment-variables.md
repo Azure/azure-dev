@@ -79,6 +79,16 @@ The unpublished `azure.springboot` development extension reads and prepares the
 verifies database and identity outputs against the datasource discovered from
 effective Spring configuration, and owns `SPRING_DATABASE_*` readiness state.
 These are not universal core azd settings.
+For PostgreSQL managed-identity provisioning, interactive `up`/`provision`
+prompts for a missing User object ID (defaulting to the host's current User),
+then a missing principal name. Valid configured values bypass their prompts;
+`--no-prompt` requires a supplied name and retains the current-User ID default.
+No token decoding or name lookup is performed. A supplied User object ID is
+preserved independently of the deployer. Existing
+`SPRING_DATABASE_ADMINISTRATOR_*` aliases must agree. User-access tenant state
+is separate from the server/administrator's resource tenant. Database-free apps
+and H2 do not require administrator inputs. Normal azd subscription/location
+selection remains host-owned.
 See the [canonical Spring Boot variable reference](../../cli/azd/docs/environment-variables.md#azurespringboot-development-prototype)
 and [extension README](../../cli/azd/extensions/azure.springboot/README.md).
 

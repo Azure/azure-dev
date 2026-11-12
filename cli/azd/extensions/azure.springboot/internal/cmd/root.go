@@ -25,7 +25,9 @@ func NewRootCommand() *cobra.Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.SetHelpCommand(&cobra.Command{Hidden: true})
 
-	root.AddCommand(azdext.NewListenCommand(configureExtensionHost))
+	root.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
+		configureExtensionHostWithNoPrompt(host, extCtx.NoPrompt)
+	}))
 	root.AddCommand(azdext.NewVersionCommand(extensionID, version.Version, &extCtx.OutputFormat))
 	root.AddCommand(azdext.NewMetadataCommand("1.0", extensionID, func() *cobra.Command {
 		return root

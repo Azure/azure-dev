@@ -652,24 +652,42 @@ overrides:
       - authid
       - allprojects
       - azurespringboot
+      - bicepprovider
+      - bypassrls
+      - coreproject
+      - createdb
+      - createrole
       - Dazd
       - datdba
       - datname
       - dbname
       - Dmaven
+      - Dspring
+      - dbcp
+      - esac
       - extensionless
+      - flywaydb
       - gitcommitid
+      - goruntime
       - gradlew
       - hashtextextended
       - Hikari
+      - hikaricp
+      - hsqldb
       - isadmin
       - jackc
       - JNDI
+      - jedis
+      - jooq
+      - liquibase
       - managedidentity
       - managedidentityenabled
+      - mybatis
+      - nonstring
       - nonsymlink
       - nspname
       - nspowner
+      - ojdbc
       - passwordless
       - PETCLINIC
       - pgaadauth

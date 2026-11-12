@@ -18,6 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/postgresql/armpostgresqlflexibleservers"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -102,6 +103,60 @@ func TestOriginalOutputBindingsAcceptSystemAssignedPrincipalOnly(t *testing.T) {
 	require.Equal(t, values["APPLICATION_PRINCIPAL_ID"], bound[serviceIdentityPrincipalIDEnv])
 	require.NotContains(t, bound, serviceIdentityIDEnv)
 	require.NotContains(t, bound, serviceIdentityClientIDEnv)
+}
+
+func TestGenericDeploymentBindingsDoNotRequirePostgresOutputs(t *testing.T) {
+	values := map[string]string{
+		azureResourceGroupEnv: "rg", "CONTAINER_APP_ENVIRONMENT_ID": "environment",
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT": "registry.azurecr.io",
+	}
+	outputs := deploymentOutputsFromValues(values)
+	bound, err := boundDeploymentValues(values, outputs)
+	require.NoError(t, err)
+	require.Equal(t, values, bound)
+	require.NotContains(t, bound, postgresServerIDEnv)
+	outputs["CONTAINER_APP_ENVIRONMENT_ID"] = currentDeploymentOutput{Type: "string", Value: "foreign"}
+	_, err = boundDeploymentValues(values, outputs)
+	require.ErrorContains(t, err, "CONTAINER_APP_ENVIRONMENT_ID was not emitted consistently")
+}
+
+func TestDeploymentBindsEachSpringServiceToItsOwnApplication(t *testing.T) {
+	project := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
+		"web": {Name: "web", Host: SpringHost}, "database": {Name: "database", Host: SpringHost},
+	}}
+	binding := &deploymentBinding{
+		values:    map[string]string{"AZURE_ENV_NAME": "test", "CONTAINER_APP_ENVIRONMENT_ID": "environment"},
+		resources: map[string]bool{},
+	}
+	for _, name := range []string{"web", "database"} {
+		id := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/" + name
+		binding.resources[strings.ToLower(id)] = true
+	}
+	client, err := armappcontainers.NewContainerAppsClient("sub", bindingTestCredential{}, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{Transport: bindingTestTransport(func(
+			request *http.Request,
+		) (*http.Response, error) {
+			parts := strings.Split(request.URL.Path, "/")
+			name := parts[len(parts)-1]
+			return bindingTestResponse(t, map[string]any{
+				"id": request.URL.Path, "tags": map[string]string{azdServiceNameTag: name, azdEnvironmentTag: "test"},
+				"properties": map[string]any{"environmentId": "environment"},
+			}), nil
+		})},
+	})
+	require.NoError(t, err)
+	require.NoError(t, bindApplicationsWithClient(t.Context(), client, project, binding))
+	require.Nil(t, binding.app, "a project-wide binding must not select an arbitrary service")
+	for _, name := range []string{"web", "database"} {
+		ctx, err := bindServiceContext(context.WithValue(t.Context(), deploymentBindingKey{}, binding), name)
+		require.NoError(t, err)
+		selected := ctx.Value(deploymentBindingKey{}).(*deploymentBinding)
+		require.True(t, strings.HasSuffix(selected.values[containerAppIDEnv], "/"+name))
+		require.Equal(t, selected.values[containerAppIDEnv], *selected.app.ID)
+	}
+	require.NotContains(t, binding.values, containerAppIDEnv, "service selection must remain operation-local")
+	_, err = bindServiceContext(context.WithValue(t.Context(), deploymentBindingKey{}, binding), "missing")
+	require.Error(t, err)
 }
 
 type bindingTestCredential struct{}

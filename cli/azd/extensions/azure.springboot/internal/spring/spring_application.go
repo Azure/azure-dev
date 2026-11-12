@@ -19,6 +19,7 @@ import (
 )
 
 type springDependencies struct {
+	database      bool
 	h2            bool
 	postgresql    bool
 	azureIdentity bool
@@ -59,6 +60,7 @@ func openSpringArchive(filename string) (*springArchive, error) {
 			archive.resources[name] = file
 		}
 		if name, present := strings.CutPrefix(file.Name, "BOOT-INF/lib/"); present && strings.HasSuffix(name, ".jar") {
+			archive.dependencies.database = archive.dependencies.database || isDatabaseDependency(name)
 			switch {
 			case strings.HasPrefix(name, "h2-"):
 				archive.dependencies.h2 = true
@@ -150,6 +152,10 @@ func readSpringDependencies(ctx context.Context, root string) (springDependencie
 		Scope    string `xml:"scope"`
 	}
 	var pom struct {
+		Parent struct {
+			Group    string `xml:"groupId"`
+			Artifact string `xml:"artifactId"`
+		} `xml:"parent"`
 		Dependencies []dependency `xml:"dependencies>dependency"`
 		Profiles     []struct {
 			Dependencies []dependency `xml:"dependencies>dependency"`
@@ -172,14 +178,29 @@ func readSpringDependencies(ctx context.Context, root string) (springDependencie
 		if dependency.Scope == "test" || dependency.Scope == "provided" || dependency.Scope == "system" {
 			continue
 		}
+		if dependency.Group == "" || dependency.Artifact == "" ||
+			strings.Contains(dependency.Group+dependency.Artifact+dependency.Scope, "${") {
+			return springDependencies{}, configurationError(
+				"unresolved Maven runtime dependencies require packaged JAR evidence",
+			)
+		}
 		coordinates = append(coordinates, dependency.Group+":"+dependency.Artifact)
 	}
-	return springDependenciesFromCoordinates(coordinates), nil
+	result := springDependenciesFromCoordinates(coordinates)
+	if !result.h2 && !result.postgresql && pom.Parent.Artifact != "" &&
+		(pom.Parent.Group != "org.springframework.boot" || pom.Parent.Artifact != "spring-boot-starter-parent") {
+		return springDependencies{}, configurationError(
+			"inherited Maven runtime dependencies require packaged JAR evidence",
+		)
+	}
+	return result, nil
 }
 
 func springDependenciesFromCoordinates(coordinates []string) springDependencies {
 	var result springDependencies
 	for _, coordinate := range coordinates {
+		_, artifact, _ := strings.Cut(coordinate, ":")
+		result.database = result.database || isDatabaseDependency(artifact)
 		switch coordinate {
 		case "com.h2database:h2":
 			result.h2 = true
@@ -192,6 +213,24 @@ func springDependenciesFromCoordinates(coordinates []string) springDependencies 
 		}
 	}
 	return result
+}
+
+func isDatabaseDependency(artifact string) bool {
+	name := strings.ToLower(artifact)
+	if strings.Contains(name, "jdbc") || strings.Contains(name, "r2dbc") {
+		return true
+	}
+	for _, prefix := range []string{
+		"spring-boot-starter-data-", "spring-data-", "hibernate-", "mybatis-", "hikaricp", "commons-dbcp",
+		"mysql-connector", "mariadb-java-client", "hsqldb", "derby", "ojdbc", "mongodb-driver",
+		"mongo-java-driver", "lettuce-core", "jedis", "neo4j-java-driver", "spring-boot-starter-jooq",
+		"jooq", "flyway-", "liquibase-", "c3p0",
+	} {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func springArchiveResource(location, relative string) (string, error) {

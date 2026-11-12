@@ -147,7 +147,8 @@ func (r *Runtime) bindAutomaticProject(
 	if err != nil {
 		return ctx, values, err
 	}
-	if binding == nil || binding.app == nil || binding.app.ID == nil {
+	if binding == nil || (binding.app == nil && len(binding.apps) == 0) ||
+		(binding.app != nil && binding.app.ID == nil) {
 		return ctx, values, configurationError("the current root deployment did not establish the application configuration")
 	}
 	binding.automatic = true
@@ -162,6 +163,10 @@ func (r *Runtime) discoverServiceDatabase(
 	values map[string]string,
 	requireFinal bool,
 ) (resolvedDatabase, error) {
+	ctx, err := bindServiceContext(ctx, service.GetName())
+	if err != nil {
+		return resolvedDatabase{}, err
+	}
 	intent, err := r.readServiceDatasource(ctx, project, service, serviceContext, requireFinal)
 	if err != nil {
 		return resolvedDatabase{}, err
@@ -232,7 +237,7 @@ func bindDiscoveredDatasource(
 		discovered: true, appPassword: intent.password,
 		selectionPending: intent.selectionPending,
 	}
-	if intent.engine == databaseH2 {
+	if intent.engine == databaseH2 || intent.engine == databaseNone {
 		return result, nil
 	}
 

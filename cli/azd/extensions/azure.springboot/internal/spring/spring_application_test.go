@@ -107,3 +107,30 @@ func TestSpringProfileDependenciesRequirePackagedEvidenceOnlyForNonTestScope(t *
 		})
 	}
 }
+
+func TestDatabaseFreeDependencyEvidenceRejectsUnresolvedMavenInputs(t *testing.T) {
+	for _, pom := range []string{
+		`<project><dependencies><dependency><groupId>${group}</groupId>
+			<artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></project>`,
+		`<project><parent><groupId>example</groupId><artifactId>custom-parent</artifactId></parent></project>`,
+		`<project><dependencies><dependency><groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-web</artifactId><scope>${scope}</scope></dependency></dependencies></project>`,
+	} {
+		root := springConfigFixture(t, map[string]string{"pom.xml": pom})
+		_, err := readSpringDependencies(t.Context(), root)
+		require.ErrorContains(t, err, "packaged JAR evidence")
+	}
+}
+
+func TestPackagedJDBCEvidenceIsNotDatabaseFree(t *testing.T) {
+	for _, dependency := range []string{"spring-jdbc-6.jar", "spring-data-jpa-3.jar", "mysql-connector-j-9.jar"} {
+		archive, err := openSpringArchive(springJarFixture(t, [][2]string{
+			{"BOOT-INF/classes/application.properties", "server.port=8080"},
+			{"BOOT-INF/lib/" + dependency, ""},
+		}))
+		require.NoError(t, err)
+		require.NoError(t, archive.reader.Close())
+		_, err = inferSpringDatasource(datasourceProperties(t, ""), archive.dependencies, true)
+		require.Error(t, err)
+	}
+}

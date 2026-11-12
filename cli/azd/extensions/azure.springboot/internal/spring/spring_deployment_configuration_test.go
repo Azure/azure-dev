@@ -52,11 +52,13 @@ func TestAutomaticPreProvisionPreparesOnlyBoundAdministratorInputs(t *testing.T)
 		clearProcessValue(t, key)
 	}
 	project, _ := automaticPostgresProject(t)
-	store := &fakeEnvironmentStore{name: "dev", data: map[string]string{azureSubscriptionIDEnv: "subscription"}}
-	identities := &fakeDeveloperIdentityResolver{identity: &developerIdentity{
-		AdministratorName: "developer@example.test", ObjectID: testSpringClientID, UserAccessTenantID: testSpringClientID,
+	store := &fakeEnvironmentStore{name: "dev", data: map[string]string{
+		azureSubscriptionIDEnv: "subscription", "DATABASE_ADMIN_NAME": "developer@example.test",
 	}}
-	runtime := &Runtime{environments: store, identities: identities}
+	identities := &fakeDeveloperIdentityResolver{identity: &developerIdentity{
+		ObjectID: testSpringClientID, UserAccessTenantID: testSpringClientID,
+	}}
+	runtime := &Runtime{environments: store, identities: identities, noPrompt: true}
 	require.NoError(t, runtime.PreProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
 	require.Equal(t, 1, identities.calls)
 	require.Equal(t, "developer@example.test", store.data["DATABASE_ADMIN_NAME"])

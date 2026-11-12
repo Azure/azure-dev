@@ -49,6 +49,7 @@ const (
 type databaseType string
 
 const (
+	databaseNone       databaseType = "none"
 	databaseH2         databaseType = "h2"
 	databasePostgreSQL databaseType = "postgresql"
 )

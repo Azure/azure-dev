@@ -218,7 +218,11 @@ func TestAutomaticPostProvisionCleanupRunsBeforeCompletionAndSurvivesHandlerFail
 				reconcile: func(context.Context, map[string]string) error { return nil },
 			}
 			err := runtime.PostProvision(ctx, &azdext.ProjectEventArgs{Project: project})
-			require.Equal(t, 1, cleanups)
+			if scenario == "inference-failure" || scenario == "unresolved-final" {
+				require.Zero(t, cleanups, "invalid datasource selection must not begin network preparation")
+			} else {
+				require.Equal(t, 1, cleanups)
+			}
 			if scenario == "success" {
 				require.NoError(t, err)
 				require.Equal(t, 1, sqlCalls)

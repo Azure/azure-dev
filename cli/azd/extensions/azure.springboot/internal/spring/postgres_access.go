@@ -319,6 +319,7 @@ func (r *postgresAccessReconciler) verifyResources(
 			generic,
 			database,
 			values,
+			authConfig,
 		); err != nil {
 			return nil, nil, err
 		}
@@ -344,13 +345,22 @@ func verifyPostgresAdministrator(
 	resources *armresources.Client,
 	database resolvedDatabase,
 	values map[string]string,
+	authConfig map[string]any,
 ) error {
 	objectID := strings.TrimSpace(values[databaseAdministratorObjectIDEnv])
-	if objectID == "" {
+	if !validAdministratorObjectID(objectID) {
 		return validationError(
 			"missing_database_administrator_object_id",
-			"the current developer object ID is unavailable",
-			"run azd provision again while signed in as the configured developer administrator",
+			"the selected PostgreSQL User administrator object ID is missing or invalid",
+			"run azd provision again with the configured User administrator inputs",
+		)
+	}
+	tenantID, _ := authConfig["tenantId"].(string)
+	if !validAdministratorObjectID(tenantID) {
+		return validationError(
+			"postgres_administrator_unverified",
+			"the PostgreSQL authentication tenant could not be verified",
+			"restore the server's Entra authentication configuration and reprovision",
 		)
 	}
 	administratorID := database.ServerResourceID + "/administrators/" + objectID
@@ -359,21 +369,26 @@ func verifyPostgresAdministrator(
 		return fmt.Errorf("reading the PostgreSQL Entra administrator: %w", err)
 	}
 	properties, ok := response.GenericResource.Properties.(map[string]any)
-	if !ok {
+	if !ok || response.GenericResource.ID == nil ||
+		!strings.EqualFold(*response.GenericResource.ID, administratorID) {
 		return validationError(
 			"postgres_administrator_unverified",
 			"the PostgreSQL Entra administrator returned invalid metadata",
-			"reprovision the server with the current developer as its Entra administrator",
+			"reprovision the server with the configured User as its Entra administrator",
 		)
 	}
 	principalName, _ := properties["principalName"].(string)
 	principalType, _ := properties["principalType"].(string)
+	actualObjectID, _ := properties["objectId"].(string)
+	actualTenantID, _ := properties["tenantId"].(string)
 	if principalName != database.AdministratorName ||
-		!strings.EqualFold(principalType, "User") {
+		!strings.EqualFold(principalType, "User") ||
+		!strings.EqualFold(actualObjectID, objectID) ||
+		!strings.EqualFold(actualTenantID, tenantID) {
 		return validationError(
 			"postgres_administrator_unverified",
-			"the actual PostgreSQL Entra administrator does not match the current developer user",
-			"reprovision the server with the current developer or create a new azd environment",
+			"the actual PostgreSQL Entra administrator does not match the configured User identity, tenant and name",
+			"reprovision with the selected User administrator or create a new azd environment",
 		)
 	}
 	return nil

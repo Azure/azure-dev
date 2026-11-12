@@ -269,6 +269,6 @@ func TestGradleArchiveAndArtifactSafety(t *testing.T) {
 func TestGradleProductionDatasourceDependencies(t *testing.T) {
 	require.Equal(t, springDependencies{}, springDependenciesFromCoordinates(nil))
 	require.Equal(t, springDependencies{h2: true}, springDependenciesFromCoordinates([]string{"com.h2database:h2"}))
-	require.Equal(t, springDependencies{postgresql: true, azureIdentity: true, azureJDBC: true},
+	require.Equal(t, springDependencies{database: true, postgresql: true, azureIdentity: true, azureJDBC: true},
 		springDependenciesFromCoordinates([]string{"com.azure.spring:spring-cloud-azure-starter-jdbc-postgresql"}))
 }

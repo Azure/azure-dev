@@ -203,3 +203,48 @@ func TestSpringDatasourceDoesNotDefaultFailuresToH2(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, databaseH2, intent.engine)
 }
+
+func TestSpringDatasourcePositivelyIdentifiesDatabaseFreeApplications(t *testing.T) {
+	for _, final := range []bool{false, true} {
+		intent, err := inferSpringDatasource(datasourceProperties(t, "server.port=8080"),
+			springDependenciesFromCoordinates([]string{"org.springframework.boot:spring-boot-starter-web"}), final)
+		require.NoError(t, err)
+		require.Equal(t, databaseNone, intent.engine)
+		require.False(t, intent.pending)
+		require.Empty(t, intent.authentication)
+	}
+	for _, configuration := range []string{
+		"spring.datasource.username=",
+		"spring.datasource.url=jdbc:postgresql://invalid",
+		"spring.jpa.hibernate.ddl-auto=update",
+		"spring.r2dbc.url=r2dbc:postgresql://invalid",
+		"spring.data.mongodb.uri=mongodb://invalid",
+	} {
+		_, err := inferSpringDatasource(datasourceProperties(t, configuration), springDependencies{}, true)
+		require.Error(t, err, "database configuration must not become a database-free selection")
+	}
+	for _, coordinate := range []string{
+		"org.springframework.boot:spring-boot-starter-jdbc",
+		"org.springframework.boot:spring-boot-starter-data-jpa",
+		"org.springframework:spring-jdbc",
+		"com.zaxxer:HikariCP",
+		"com.mysql:mysql-connector-j",
+		"io.r2dbc:r2dbc-postgresql",
+		"org.springframework.boot:spring-boot-starter-jooq",
+		"org.jooq:jooq",
+		"org.flywaydb:flyway-core",
+		"org.liquibase:liquibase-core",
+	} {
+		dependencies := springDependenciesFromCoordinates([]string{coordinate})
+		_, err := inferSpringDatasource(datasourceProperties(t, ""), dependencies, true)
+		require.Error(t, err, "missing or unsupported drivers must not become a database-free selection")
+	}
+	config := datasourceProperties(t, "")
+	config.selectionPending = true
+	intent, err := inferSpringDatasource(config, springDependencies{}, false)
+	require.NoError(t, err)
+	require.True(t, intent.selectionPending)
+	require.Empty(t, intent.engine)
+	_, err = inferSpringDatasource(config, springDependencies{}, true)
+	require.Error(t, err)
+}

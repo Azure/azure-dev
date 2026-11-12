@@ -70,10 +70,12 @@ type Runtime struct {
 	reconcile       func(context.Context, map[string]string) error
 	configureAccess func(context.Context, string, resolvedDatabase, map[string]string) error
 	prepareNetwork  func(context.Context, *deploymentBinding) (func(context.Context) error, error)
+	noPrompt        bool
+	prompt          func(context.Context, *azdext.PromptOptions) (string, error)
 }
 
 // NewRuntime creates a Spring lifecycle runtime backed by azd's stable services.
-func NewRuntime(client *azdext.AzdClient) *Runtime {
+func NewRuntime(client *azdext.AzdClient, noPrompt bool) *Runtime {
 	return &Runtime{
 		client:          client,
 		environments:    &grpcEnvironmentStore{client: client},
@@ -84,6 +86,14 @@ func NewRuntime(client *azdext.AzdClient) *Runtime {
 		reconcile:       newFirewallReconciler(client).Reconcile,
 		configureAccess: newPostgresAccessDispatcher(client),
 		prepareNetwork:  newFirewallReconciler(client).PrepareAutomatic,
+		noPrompt:        noPrompt,
+		prompt: func(ctx context.Context, options *azdext.PromptOptions) (string, error) {
+			response, err := client.Prompt().Prompt(ctx, &azdext.PromptRequest{Options: options})
+			if err != nil {
+				return "", err
+			}
+			return response.GetValue(), nil
+		},
 	}
 }
 
@@ -119,7 +129,8 @@ func (r *Runtime) resolveService(
 	if err != nil {
 		return nil, err
 	}
-	if provisioned := values[provisionedDatabaseTypeEnv]; requireLate && provisioned != "" &&
+	if provisioned := values[provisionedDatabaseTypeEnv]; requireLate &&
+		database.Type != databaseNone && provisioned != "" &&
 		!strings.EqualFold(provisioned, string(database.Type)) {
 		return nil, validationError(
 			"database_type_change",
@@ -159,25 +170,32 @@ func (r *Runtime) resolveProject(
 
 	resolved := make([]*resolvedService, 0, len(services))
 	var selected resolvedDatabase
+	hasDatabase := false
 	for _, service := range services {
 		item, err := r.resolveService(ctx, project, service, nil, values, requireLate)
 		if err != nil {
 			return nil, resolvedDatabase{}, err
 		}
-		if len(resolved) > 0 && !compatibleDatabaseSelection(selected, item.database) {
+		if hasDatabase && item.mode != databaseNone && !compatibleDatabaseSelection(selected, item.database) {
 			return nil, resolvedDatabase{}, validationError(
 				"conflicting_service_database_configuration",
 				"Spring services in one project resolve to incompatible database targets or application identities",
 				fmt.Sprintf("use one compatible managed database access configuration for all %s services", SpringHost),
 			)
 		}
-		selected = item.database
+		if item.mode != databaseNone {
+			selected = item.database
+			hasDatabase = true
+		}
 		if validateFiles {
 			if err := validateSpringBuild(project, service); err != nil {
 				return nil, resolvedDatabase{}, err
 			}
 		}
 		resolved = append(resolved, item)
+	}
+	if !hasDatabase {
+		selected = resolvedDatabase{Type: databaseNone, discovered: true}
 	}
 	return resolved, selected, nil
 }
@@ -252,13 +270,18 @@ func (r *Runtime) PreProvision(ctx context.Context, args *azdext.ProjectEventArg
 			return err
 		}
 	}
-	if err := validateBootstrapClientIPEnvironment(os.LookupEnv); err != nil {
-		return err
-	}
 	preparation := database
 	if database.discovered {
 		preparation, err = automaticProvisionInputs(ctx, args.Project, database)
 		if err != nil {
+			return err
+		}
+	}
+	if preparation.Type == databaseNone {
+		return nil
+	}
+	if preparation.Type == databasePostgreSQL {
+		if err := validateBootstrapClientIPEnvironment(os.LookupEnv); err != nil {
 			return err
 		}
 	}
@@ -372,36 +395,64 @@ func (r *Runtime) PreProvision(ctx context.Context, args *azdext.ProjectEventArg
 					)
 				}
 			}
-			administratorOverride, resolveErr := resolveAdministratorInputs(preparation, values)
+			administrator, resolveErr := resolveAdministratorInputs(preparation, values)
 			if resolveErr != nil {
 				return resolveErr
+			}
+			if r.noPrompt && administrator.Name == "" {
+				return validationError(
+					"missing_database_administrator_name",
+					"a PostgreSQL Entra administrator name is required in no-prompt mode",
+					"provide DATABASE_ADMIN_NAME; optionally provide DATABASE_ADMIN_OBJECT_ID to select another User",
+				)
 			}
 			subscriptionID := strings.TrimSpace(values[azureSubscriptionIDEnv])
 			if subscriptionID == "" {
 				return validationError(
 					"missing_azure_subscription",
-					"AZURE_SUBSCRIPTION_ID is required to resolve the developer database administrator",
+					"AZURE_SUBSCRIPTION_ID is required to prepare the database administrator",
 					"select the target azd subscription before provisioning",
 				)
 			}
-			identity, resolveErr := r.identities.Resolve(
-				ctx,
-				subscriptionID,
-				administratorOverride,
-			)
+			identity, resolveErr := r.identities.Resolve(ctx, subscriptionID)
 			if resolveErr != nil {
 				return resolveErr
+			}
+			if administrator.ObjectID == "" {
+				administrator.ObjectID = identity.ObjectID
+				if !r.noPrompt {
+					administrator.ObjectID, resolveErr = r.promptAdministratorInput(ctx, &azdext.PromptOptions{
+						Message:      "PostgreSQL Entra administrator User object ID:",
+						HelpMessage:  "Use the signed-in User or enter another User's object ID in the subscription tenant.",
+						DefaultValue: identity.ObjectID, Required: true,
+					}, validAdministratorObjectID)
+					if resolveErr != nil {
+						return resolveErr
+					}
+				}
+			}
+			if administrator.Name == "" {
+				administrator.Name, resolveErr = r.promptAdministratorInput(ctx, &azdext.PromptOptions{
+					Message:     "PostgreSQL Entra administrator principal name:",
+					HelpMessage: "Enter the selected User's PostgreSQL login name; azd does not verify directory ownership.",
+					Required:    true,
+				}, func(value string) bool {
+					return validAdministratorName(value) && value != "azd-preprovision-pending"
+				})
+				if resolveErr != nil {
+					return resolveErr
+				}
 			}
 			for _, binding := range []struct {
 				name          string
 				value         string
 				caseSensitive bool
 			}{
-				{databaseAdministratorNameEnv, identity.AdministratorName, true},
-				{databaseAdministratorObjectIDEnv, identity.ObjectID, false},
+				{databaseAdministratorNameEnv, administrator.Name, true},
+				{databaseAdministratorObjectIDEnv, administrator.ObjectID, false},
 				{databaseUserAccessTenantIDEnv, identity.UserAccessTenantID, false},
-				{"DATABASE_ADMIN_NAME", identity.AdministratorName, true},
-				{"DATABASE_ADMIN_OBJECT_ID", identity.ObjectID, false},
+				{"DATABASE_ADMIN_NAME", administrator.Name, true},
+				{"DATABASE_ADMIN_OBJECT_ID", administrator.ObjectID, false},
 			} {
 				conflicts := func(existing string) bool {
 					if binding.caseSensitive {
@@ -409,17 +460,18 @@ func (r *Runtime) PreProvision(ctx context.Context, args *azdext.ProjectEventArg
 					}
 					return !strings.EqualFold(existing, binding.value)
 				}
-				if existing, present := values[binding.name]; present && conflicts(existing) {
+				if existing, present := values[binding.name]; present &&
+					binding.name != databaseUserAccessTenantIDEnv && conflicts(existing) {
 					return validationError(
-						"conflicting_developer_identity",
-						fmt.Sprintf("%s conflicts with the current developer identity", binding.name),
-						"use the original developer login or create a new azd environment",
+						"conflicting_database_administrator_inputs",
+						fmt.Sprintf("%s conflicts with the selected administrator", binding.name),
+						"remove conflicting administrator inputs before provisioning",
 					)
 				}
 				if existing, present := os.LookupEnv(binding.name); present && conflicts(existing) {
 					return validationError(
-						"conflicting_developer_identity",
-						fmt.Sprintf("%s conflicts with the current developer identity", binding.name),
+						"conflicting_database_administrator_inputs",
+						fmt.Sprintf("%s conflicts with the prepared administrator or access tenant", binding.name),
 						"remove the conflicting process override before provisioning",
 					)
 				}
@@ -439,9 +491,47 @@ func (r *Runtime) PreProvision(ctx context.Context, args *azdext.ProjectEventArg
 	return persistEnvironmentWrites(ctx, r.environments, envName, values, writes)
 }
 
-func resolveAdministratorInputs(database resolvedDatabase, values map[string]string) (string, error) {
-	administrator := database.AdministratorName
-	objectID := ""
+func (r *Runtime) promptAdministratorInput(
+	ctx context.Context, options *azdext.PromptOptions, valid func(string) bool,
+) (string, error) {
+	if r.prompt == nil {
+		return "", errors.New("host administrator input is unavailable")
+	}
+	message := options.Message
+	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		value, err := r.prompt(ctx, options)
+		if err != nil {
+			return "", fmt.Errorf("collecting the PostgreSQL administrator input: %w", err)
+		}
+		if valid(value) {
+			return value, nil
+		}
+		options.Message = "The value is invalid. " + message
+	}
+}
+
+type administratorInputs struct {
+	Name     string
+	ObjectID string
+}
+
+func resolveAdministratorInputs(database resolvedDatabase, values map[string]string) (administratorInputs, error) {
+	administrator := administratorInputs{Name: database.AdministratorName}
+	for _, lookup := range []func(string) (string, bool){
+		func(key string) (string, bool) { value, present := values[key]; return value, present },
+		os.LookupEnv,
+	} {
+		if tenantID, present := lookup(databaseUserAccessTenantIDEnv); present && !validAdministratorObjectID(tenantID) {
+			return administratorInputs{}, validationError(
+				"invalid_database_administrator_input",
+				fmt.Sprintf("%s is not a valid user-access tenant ID", databaseUserAccessTenantIDEnv),
+				"remove the override and let azd resolve the selected subscription's user-access tenant",
+			)
+		}
+	}
 	for _, field := range []struct {
 		name string
 		isID bool
@@ -459,17 +549,17 @@ func resolveAdministratorInputs(database resolvedDatabase, values map[string]str
 			candidates = append(candidates, value)
 		}
 		for _, candidate := range candidates {
-			valid := validAdministratorName(candidate)
-			selected := &administrator
+			valid := validAdministratorName(candidate) && candidate != "azd-preprovision-pending"
+			selected := &administrator.Name
 			if field.isID {
-				valid = databasePrincipalIDPattern.MatchString(candidate)
-				selected = &objectID
+				valid = validAdministratorObjectID(candidate)
+				selected = &administrator.ObjectID
 			}
 			if !valid {
-				return "", validationError(
+				return administratorInputs{}, validationError(
 					"invalid_database_administrator_input",
 					fmt.Sprintf("%s is not a valid administrator identity", field.name),
-					"provide the current signed-in developer's administrator name and object ID",
+					"provide a nonempty User administrator name and, when selecting another User, a nonzero object ID",
 				)
 			}
 			matches := *selected == candidate
@@ -477,10 +567,10 @@ func resolveAdministratorInputs(database resolvedDatabase, values map[string]str
 				matches = strings.EqualFold(*selected, candidate)
 			}
 			if *selected != "" && !matches {
-				return "", validationError(
+				return administratorInputs{}, validationError(
 					"conflicting_database_administrator_inputs",
 					fmt.Sprintf("%s conflicts with another explicit administrator input", field.name),
-					"make DATABASE_ADMIN_* and SPRING_DATABASE_ADMINISTRATOR_* identify the same developer",
+					"make DATABASE_ADMIN_* and SPRING_DATABASE_ADMINISTRATOR_* identify the same User administrator",
 				)
 			}
 			*selected = candidate
@@ -546,15 +636,6 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 	if err != nil {
 		return err
 	}
-	closeNetwork, err := r.beginAutomaticNetwork(ctx)
-	defer func() {
-		if cleanupErr := closeNetwork(); cleanupErr != nil && !errors.Is(resultErr, cleanupErr) {
-			resultErr = errors.Join(resultErr, cleanupErr)
-		}
-	}()
-	if err != nil {
-		return err
-	}
 	services, database, err := r.resolveProject(ctx, args.Project, values, false, true)
 	if err != nil || len(services) == 0 {
 		return err
@@ -564,13 +645,34 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 			return err
 		}
 	}
+	if database.Type == databaseNone {
+		return nil
+	}
 	if database.Type != databasePostgreSQL {
-		if err := closeNetwork(); err != nil {
-			return err
-		}
 		return persistEnvironmentWrites(ctx, r.environments, envName, values, map[string]string{
 			provisionedDatabaseTypeEnv: string(database.Type),
 		})
+	}
+	for _, service := range services {
+		if service.mode == databasePostgreSQL {
+			ctx, err = bindServiceContext(ctx, service.service.GetName())
+			if err != nil {
+				return err
+			}
+			break
+		}
+	}
+	if binding, present := ctx.Value(deploymentBindingKey{}).(*deploymentBinding); present {
+		values = binding.values
+	}
+	closeNetwork, err := r.beginAutomaticNetwork(ctx)
+	defer func() {
+		if cleanupErr := closeNetwork(); cleanupErr != nil && !errors.Is(resultErr, cleanupErr) {
+			resultErr = errors.Join(resultErr, cleanupErr)
+		}
+	}()
+	if err != nil {
+		return err
 	}
 	if !database.managedAccess() {
 		if err := r.reconcile(ctx, values); err != nil {
@@ -622,16 +724,16 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 		if !validAdministratorName(database.AdministratorName) {
 			return validationError(
 				"missing_database_administrator_name",
-				"the verified developer PostgreSQL administrator login is missing or invalid",
-				"run azd provision again while signed in as the configured developer administrator",
+				"the configured PostgreSQL User administrator login is missing or invalid",
+				"set DATABASE_ADMIN_NAME and run azd provision again",
 			)
 		}
 		if strings.TrimSpace(values[databaseAdministratorObjectIDEnv]) == "" ||
 			strings.TrimSpace(values[databaseUserAccessTenantIDEnv]) == "" {
 			return validationError(
 				"missing_database_administrator_identity",
-				"the verified developer PostgreSQL administrator identity is incomplete",
-				"run azd provision again while signed in as the configured developer administrator",
+				"the configured PostgreSQL User administrator identity is incomplete",
+				"run azd provision again with the selected administrator inputs and subscription",
 			)
 		}
 	}
@@ -762,14 +864,12 @@ func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEven
 	if err != nil {
 		return err
 	}
-	closeNetwork, err := r.beginAutomaticNetwork(ctx)
-	defer func() {
-		if cleanupErr := closeNetwork(); cleanupErr != nil && !errors.Is(resultErr, cleanupErr) {
-			resultErr = errors.Join(resultErr, cleanupErr)
-		}
-	}()
+	ctx, err = bindServiceContext(ctx, args.Service.GetName())
 	if err != nil {
 		return err
+	}
+	if binding, present := ctx.Value(deploymentBindingKey{}).(*deploymentBinding); present {
+		values = binding.values
 	}
 	resolved, err := r.resolveService(ctx, args.Project, args.Service, args.ServiceContext, values, true)
 	if err != nil {
@@ -779,6 +879,18 @@ func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEven
 		if _, err := resolveProjectServiceModules(ctx, r.client, args.Project); err != nil {
 			return err
 		}
+	}
+	if resolved.mode != databasePostgreSQL {
+		return nil
+	}
+	closeNetwork, err := r.beginAutomaticNetwork(ctx)
+	defer func() {
+		if cleanupErr := closeNetwork(); cleanupErr != nil && !errors.Is(resultErr, cleanupErr) {
+			resultErr = errors.Join(resultErr, cleanupErr)
+		}
+	}()
+	if err != nil {
+		return err
 	}
 	if resolved.database.managedAccess() {
 		if values[databaseAccessConfiguredEnv] != databaseAccessPolicyVersion ||

@@ -19,7 +19,7 @@ or import `github.com/azure/azure-dev/cli/azd` or extension-internal packages.
   propagation/sync polling (`Ensure[T]`, `PollReadiness`), and sanitized write
   error remediation (`WriteError`).
 - **`ferrors/`**: Module-owned typed errors (`*ferrors.Error`, `Category`,
-  `CodeAuthFailed`, `CodeAgentBlockedByPolicy`,
+  `CodeAuthFailed`, `CodeAgentPolicyBlocked`, `CodeAgentKindBlockedByPolicy`,
   `CodeContainerImageBlockedByPolicy`, `CodeModelBlockedByPolicy`,
   `CodeToolBlockedByPolicy`, `CodeToolboxBlockedByPolicy`) that extensions
   translate into their local `exterrors` or `azdext.LocalError` /

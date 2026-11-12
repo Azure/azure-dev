@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore noncompliant
+// cspell:ignore noncompliant agentkind
 
 package policy
 
@@ -82,14 +82,14 @@ func inferRuntimeTargetKind(policyDefinitionID, msgLower string) TargetKind {
 	default:
 		switch {
 		case strings.Contains(msgLower, "microsoft.cognitiveservices.data/accounts/projects/agents/tools") ||
-			strings.Contains(msgLower, "microsoft.cognitiveservices.data/accounts/projects/toolboxes/tools"):
+			strings.Contains(msgLower, "microsoft.cognitiveservices.data/accounts/projects/toolboxes/tools") ||
+			strings.Contains(msgLower, "/agents/tools[") ||
+			strings.Contains(msgLower, "/toolboxes/tools["):
 			return TargetTool
-		case strings.Contains(msgLower, "container") || strings.Contains(msgLower, "image"):
-			return TargetContainerImage
-		case strings.Contains(msgLower, "model"):
-			return TargetModel
-		case strings.Contains(msgLower, "agent"):
+		case strings.Contains(msgLower, "/agents/agentkind"):
 			return TargetAgentKind
+		case strings.Contains(msgLower, "/agents/image"):
+			return TargetContainerImage
 		default:
 			return ""
 		}
@@ -209,7 +209,7 @@ func ClassifyDataPlanePolicyError(err error, projectResourceID string) ([]Violat
 func selectPolicyErrorCode(defaultCode string, violations []Violation) string {
 	fallback := strings.TrimSpace(defaultCode)
 	if fallback == "" {
-		fallback = ferrors.CodeAgentBlockedByPolicy
+		fallback = ferrors.CodeAgentPolicyBlocked
 	}
 	if len(violations) == 0 {
 		return fallback
@@ -222,7 +222,7 @@ func selectPolicyErrorCode(defaultCode string, violations []Violation) string {
 	}
 	switch firstTarget {
 	case TargetAgentKind:
-		return ferrors.CodeAgentBlockedByPolicy
+		return ferrors.CodeAgentKindBlockedByPolicy
 	case TargetContainerImage, TargetContainerRegistry:
 		return ferrors.CodeContainerImageBlockedByPolicy
 	case TargetModel:
@@ -238,9 +238,10 @@ func selectPolicyErrorCode(defaultCode string, violations []Violation) string {
 }
 
 // ViolationsToError converts one or more Azure Policy violations into a structured
-// *ferrors.Error (CategoryValidation) with a target-specific error code (or defaultCode
-// when provided/overridden), deduplicated violation messages, and Foundry Govern portal links.
-func ViolationsToError(subjectLabel string, defaultCode string, violations []Violation) *ferrors.Error {
+// error (*ferrors.Error with CategoryValidation) carrying a target-specific error code
+// (or defaultCode when provided/overridden), deduplicated violation messages, and
+// Foundry Govern portal links. When violations is empty, it returns nil.
+func ViolationsToError(subjectLabel string, defaultCode string, violations []Violation) error {
 	if len(violations) == 0 {
 		return nil
 	}

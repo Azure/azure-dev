@@ -315,11 +315,14 @@ type ARMDeploymentPolicyEvaluator struct {
 	armEndpoint string
 	// RequireMatchingDeploymentModel controls how GET deployment metadata is applied when a
 	// ModelCandidate is missing Format or Version:
-	//   - false (default): GET deployment is authoritative and replaces Format, Name, and Version
-	//     (used when evaluating an agent that references an existing deployment on the account).
+	//   - false (default): GET deployment is authoritative and replaces Format, Name, Version,
+	//     Publisher, and AssetID (used when evaluating an agent that references an existing
+	//     deployment on the account).
 	//   - true: GET deployment only backfills missing Format/Version when the live deployment's
-	//     Format and Name match any non-empty Format and Name on the candidate (used when
-	//     evaluating desired project deployments before provisioning/reconciliation).
+	//     Format and Name match any non-empty Format and Name on the candidate, preserves explicit
+	//     candidate Publisher/AssetID, and only backfills AssetID when the effective Version
+	//     matches the live deployment Version (used when evaluating desired project deployments
+	//     before provisioning/reconciliation).
 	RequireMatchingDeploymentModel bool
 }
 
@@ -482,19 +485,32 @@ func (e *ARMDeploymentPolicyEvaluator) EvaluateModelDeployments(
 			if fetchedAssetID == "" {
 				fetchedAssetID = strings.TrimSpace(fetched.Source)
 			}
-			if fetchedAssetID == "" {
-				fetchedAssetID = modelMeta.AssetID
-			}
 			fetchedPublisher := strings.TrimSpace(fetched.Publisher)
-			if fetchedPublisher == "" {
-				fetchedPublisher = modelMeta.Publisher
+
+			effectiveAssetID := fetchedAssetID
+			if effectiveAssetID == "" {
+				effectiveAssetID = modelMeta.AssetID
+			}
+			effectivePublisher := fetchedPublisher
+			if effectivePublisher == "" {
+				effectivePublisher = modelMeta.Publisher
+			}
+			if e.RequireMatchingDeploymentModel {
+				effectiveAssetID = modelMeta.AssetID
+				if effectiveAssetID == "" && strings.EqualFold(effectiveVersion, fetchedVersion) {
+					effectiveAssetID = fetchedAssetID
+				}
+				effectivePublisher = modelMeta.Publisher
+				if effectivePublisher == "" {
+					effectivePublisher = fetchedPublisher
+				}
 			}
 			modelMeta = armDeploymentModel{
 				Format:    effectiveFormat,
 				Name:      effectiveName,
 				Version:   effectiveVersion,
-				Publisher: fetchedPublisher,
-				AssetID:   fetchedAssetID,
+				Publisher: effectivePublisher,
+				AssetID:   effectiveAssetID,
 			}
 		}
 

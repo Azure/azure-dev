@@ -23,8 +23,11 @@ const (
 	CodeInvalidFileRef = "invalid_file_ref"
 	// CodeAuthFailed is emitted when Azure authentication fails or is required.
 	CodeAuthFailed = "auth_failed"
-	// CodeAgentBlockedByPolicy is emitted when an Azure Policy assignment blocks an agent.
-	CodeAgentBlockedByPolicy = "agent_blocked_by_policy"
+	// CodeAgentPolicyBlocked is emitted when an Azure Policy assignment blocks an agent
+	// with mixed or unspecified policy targets.
+	CodeAgentPolicyBlocked = "agent_policy_blocked"
+	// CodeAgentKindBlockedByPolicy is emitted when an Azure Policy assignment blocks an agent kind.
+	CodeAgentKindBlockedByPolicy = "agent_kind_blocked_by_policy"
 	// CodeContainerImageBlockedByPolicy is emitted when an Azure Policy assignment blocks a container image or registry.
 	CodeContainerImageBlockedByPolicy = "container_image_blocked_by_policy"
 	// CodeModelBlockedByPolicy is emitted when an Azure Policy assignment blocks a model or deployment.

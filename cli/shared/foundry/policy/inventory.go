@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	azpolicy "github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
@@ -247,9 +249,40 @@ func isActiveExemption(exemption policyExemptionRow, now time.Time) bool {
 	return expiresAt.After(now)
 }
 
+func resolveARMTokenScope(options *arm.ClientOptions) string {
+	audience := ""
+	if options != nil {
+		rmCfg := options.Cloud.Services[cloud.ResourceManager]
+		audience = strings.TrimRight(strings.TrimSpace(rmCfg.Audience), "/")
+		if audience == "" {
+			audience = strings.TrimRight(strings.TrimSpace(rmCfg.Endpoint), "/")
+		}
+	}
+	if audience == "" {
+		audience = defaultARMEndpoint
+	}
+	const defaultSuffix = "/.default"
+	if len(audience) >= len(defaultSuffix) &&
+		strings.EqualFold(audience[len(audience)-len(defaultSuffix):], defaultSuffix) {
+		base := strings.TrimRight(strings.TrimSpace(audience[:len(audience)-len(defaultSuffix)]), "/")
+		if base == "" {
+			base = defaultARMEndpoint
+		}
+		return base + defaultSuffix
+	}
+	return audience + defaultSuffix
+}
+
 // NewARMPipeline creates a runtime.Pipeline configured for Azure Resource Manager requests.
 // When moduleName or moduleVersion are empty, they default to "azd-foundry-policy" and "v0.2.0".
-func NewARMPipeline(cred azcore.TokenCredential, moduleName, moduleVersion string) runtime.Pipeline {
+// When options is non-nil, its ClientOptions (transport, retry, logging, telemetry, cloud, and
+// per-call/per-retry policies) are preserved without mutating caller slices, and the bearer token
+// scope is resolved from options.Cloud.Services[cloud.ResourceManager].
+func NewARMPipeline(
+	cred azcore.TokenCredential,
+	moduleName, moduleVersion string,
+	options *arm.ClientOptions,
+) runtime.Pipeline {
 	if strings.TrimSpace(moduleName) == "" {
 		moduleName = defaultPipelineModuleName
 	}
@@ -257,10 +290,24 @@ func NewARMPipeline(cred azcore.TokenCredential, moduleName, moduleVersion strin
 		moduleVersion = defaultPipelineModuleVersion
 	}
 	clientOpts := azpolicy.ClientOptions{}
+	if options != nil {
+		clientOpts = options.ClientOptions
+		clientOpts.PerCallPolicies = slices.Clone(options.PerCallPolicies)
+		clientOpts.PerRetryPolicies = slices.Clone(options.PerRetryPolicies)
+	}
 	if cred != nil {
-		clientOpts.PerCallPolicies = []azpolicy.Policy{
-			runtime.NewBearerTokenPolicy(cred, []string{defaultARMEndpoint + "/.default"}, nil),
+		scope := resolveARMTokenScope(options)
+		var tokenOpts *azpolicy.BearerTokenOptions
+		if clientOpts.InsecureAllowCredentialWithHTTP {
+			tokenOpts = &azpolicy.BearerTokenOptions{
+				InsecureAllowCredentialWithHTTP: true,
+			}
 		}
+		tokenPolicy := runtime.NewBearerTokenPolicy(cred, []string{scope}, tokenOpts)
+		perCall := make([]azpolicy.Policy, 0, 1+len(clientOpts.PerCallPolicies))
+		perCall = append(perCall, tokenPolicy)
+		perCall = append(perCall, clientOpts.PerCallPolicies...)
+		clientOpts.PerCallPolicies = perCall
 	}
 	return runtime.NewPipeline(moduleName, moduleVersion, runtime.PipelineOptions{}, &clientOpts)
 }

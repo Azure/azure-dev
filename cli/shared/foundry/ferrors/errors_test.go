@@ -43,7 +43,8 @@ func TestErrors(t *testing.T) {
 		code string
 		want string
 	}{
-		{CodeAgentBlockedByPolicy, "agent_blocked_by_policy"},
+		{CodeAgentPolicyBlocked, "agent_policy_blocked"},
+		{CodeAgentKindBlockedByPolicy, "agent_kind_blocked_by_policy"},
 		{CodeContainerImageBlockedByPolicy, "container_image_blocked_by_policy"},
 		{CodeModelBlockedByPolicy, "model_blocked_by_policy"},
 		{CodeToolBlockedByPolicy, "tool_blocked_by_policy"},

@@ -2,7 +2,9 @@
 
 ## Overview
 
-Start with the workflow people need to complete. Consider an extension before adding functionality to core, and build on familiar `azd` commands. Keep shared orchestration in core and service-specific behavior in extensions where the supported contracts allow it.
+Start with the workflow people need to complete. Use familiar `azd` commands and consistent patterns so people can discover new functionality and complete common tasks efficiently. Design those patterns to support extensions and future capabilities.
+
+Consider an extension before adding functionality to core. Keep shared orchestration in core and service-specific behavior in extensions where the supported contracts allow it.
 
 This is the authoritative home for extension-versus-core design decisions. Use the linked implementation and contract references for API details rather than treating this page as a second API specification.
 

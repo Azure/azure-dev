@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"testing"
@@ -438,6 +439,36 @@ func TestPinnedCardsUnicodeAlignmentCharacterization(t *testing.T) {
 type failingWriter struct{ err error }
 
 func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
+
+type shortPreviewWriter struct {
+	bytes.Buffer
+}
+
+func (w *shortPreviewWriter) Write(data []byte) (int, error) {
+	return w.Buffer.Write(data[:len(data)/2])
+}
+
+func (w *shortPreviewWriter) WriteString(value string) (int, error) {
+	return w.Buffer.WriteString(value[:len(value)/2])
+}
+
+func TestPreviewRejectsShortWrites(t *testing.T) {
+	for _, color := range []bool{false, true} {
+		for _, stringWriter := range []bool{false, true} {
+			t.Run(fmt.Sprintf("color=%t/stringWriter=%t", color, stringWriter), func(t *testing.T) {
+				var output shortPreviewWriter
+				var writer io.Writer = &output
+				if !stringWriter {
+					writer = struct{ io.Writer }{&output}
+				}
+				err := Render(t.Context(), writer, "# Result\n\nDocument content.\n", 80, color)
+				require.ErrorIs(t, err, io.ErrShortWrite)
+				assert.ErrorContains(t, err, "write rendered preview")
+				assert.Positive(t, output.Len())
+			})
+		}
+	}
+}
 
 func TestPreviewErrorsAndCancellation(t *testing.T) {
 	errWrite := errors.New("writer unavailable")

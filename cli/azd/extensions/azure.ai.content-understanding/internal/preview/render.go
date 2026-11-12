@@ -203,8 +203,10 @@ func Render(ctx context.Context, writer io.Writer, source string, width int, col
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(writer, rendered); err != nil {
+	if n, err := io.WriteString(writer, rendered); err != nil {
 		return fmt.Errorf("write rendered preview: %w", err)
+	} else if n != len(rendered) {
+		return fmt.Errorf("write rendered preview: %w", io.ErrShortWrite)
 	}
 	return nil
 }

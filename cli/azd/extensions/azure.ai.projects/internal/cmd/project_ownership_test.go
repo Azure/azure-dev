@@ -99,7 +99,7 @@ func TestEjectProjectInfraIgnoresSplitConnectionSecrets(t *testing.T) {
 					client := newTransactionProjectClient(t, projectServer)
 					require.NoError(t, ejectProjectInfraWithTarget(
 						t.Context(), client, root, "project", target.provider,
-						selectedEndpoint, selectedID,
+						&resolvedProject{Endpoint: selectedEndpoint, ResourceId: selectedID},
 						// #nosec G101 -- synthetic secret used only to assert it is never emitted.
 						map[string]string{"SPLIT_CONNECTION_SECRET": "split-environment-secret"},
 					))
@@ -511,32 +511,49 @@ func TestValidateConfiguredProjectIdentity(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
 	const projectID = "/subscriptions/sub/resourceGroups/rg/providers/" +
 		"Microsoft.CognitiveServices/accounts/account/projects/project"
-	service := &projectServiceInfo{
-		Resolved: map[string]any{"endpoint": endpoint},
+	for _, tt := range []struct {
+		name, projectID, endpoint, wantErr string
+		wantLookup                         bool
+	}{
+		{name: "matching project", projectID: projectID, endpoint: endpoint, wantLookup: true},
+		{name: "legacy project path", projectID: projectID,
+			endpoint: strings.Replace(endpoint, "/api/projects/", "/projects/", 1), wantLookup: true},
+		{name: "escaped project name", projectID: projectID,
+			endpoint: "https://account.services.ai.azure.com/api/projects/%70%72%6f%6a%65%63%74", wantLookup: true},
+		{name: "different project", projectID: strings.Replace(projectID, "/projects/project", "/projects/other", 1),
+			endpoint: endpoint, wantErr: "identify different projects"},
+		{name: "invalid resource ID", projectID: "project-id",
+			endpoint: endpoint, wantErr: "must be a Microsoft.CognitiveServices project"},
+		{name: "non-Azure endpoint", projectID: projectID,
+			endpoint: "https://example.com/api/projects/project", wantErr: "endpoint is invalid"},
+		{name: "credential-bearing endpoint", projectID: projectID,
+			endpoint: strings.Replace(endpoint, "https://", "https://endpoint-user:endpoint-password@", 1),
+			wantErr:  "endpoint is invalid"},
+		{name: "query-bearing endpoint", projectID: projectID,
+			endpoint: endpoint + "?sig=endpoint-token", wantErr: "endpoint is invalid"},
+		{name: "missing resource ID", endpoint: endpoint},
+		{name: "greenfield project", projectID: projectID},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			lookedUp := false
+			lookup := func(_ context.Context, _ *azdext.AzdClient, id string) (*resolvedProject, error) {
+				lookedUp = true
+				require.Equal(t, projectID, id)
+				return projectFromResourceID(id)
+			}
+			service := &projectServiceInfo{Resolved: map[string]any{"endpoint": tt.endpoint}}
+			err := validateConfiguredProjectIdentity(t.Context(), nil,
+				map[string]string{"AZURE_AI_PROJECT_ID": tt.projectID}, service, lookup)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.NotContains(t, err.Error(), "endpoint-password")
+				assert.NotContains(t, err.Error(), "endpoint-token")
+			}
+			assert.Equal(t, tt.wantLookup, lookedUp)
+		})
 	}
-
-	require.NoError(t, validateConfiguredProjectIdentity(
-		map[string]string{"AZURE_AI_PROJECT_ID": projectID},
-		service,
-	))
-
-	err := validateConfiguredProjectIdentity(
-		map[string]string{
-			"AZURE_AI_PROJECT_ID": strings.Replace(
-				projectID, "/projects/project", "/projects/other", 1,
-			),
-		},
-		service,
-	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "identify different projects")
-
-	err = validateConfiguredProjectIdentity(
-		map[string]string{"AZURE_AI_PROJECT_ID": "project-id"},
-		service,
-	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "must be a Microsoft.CognitiveServices project")
 }
 
 func TestValidateDeploymentSelectionRejectsNegativeCapacity(t *testing.T) {
@@ -1160,7 +1177,10 @@ func TestProjectEjectIdentityRejectsEndpointMismatch(t *testing.T) {
 	err := func() error {
 		_, err := projectEjectIdentity(
 			"https://other.services.ai.azure.com/api/projects/project",
-			resourceID,
+			&resolvedProject{
+				ResourceId: resourceID,
+				Endpoint:   "https://account.services.ai.azure.com/api/projects/project",
+			},
 			nil,
 		)
 		return err
@@ -1726,19 +1746,19 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 		"AZURE_LOCATION":                       "eastus",
 	}
 	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
-		"project", "terraform", "", "", environment), "not supported with Terraform")
+		"project", "terraform", &resolvedProject{}, environment), "not supported with Terraform")
 	assert.NoDirExists(t, filepath.Join(root, "infra"))
 	environment["AZURE_RESOURCE_GROUP"] = "shared"
 	environment["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
 	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
-		"project", "bicep", "", "", environment), "azd down deletes")
+		"project", "bicep", &resolvedProject{}, environment), "azd down deletes")
 	delete(environment, "AZD_FOUNDRY_ACR_MODE")
 	assert.NoDirExists(t, filepath.Join(root, "infra"))
 	assert.Empty(t, envServer.values, "invalid eject must not persist the inferred mode")
 	environment["AZURE_RESOURCE_GROUP"] = "foundry"
 	envServer.failAt = 1
 	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
-		"project", "bicep", "", "", environment), "persist ACR mode")
+		"project", "bicep", &resolvedProject{}, environment), "persist ACR mode")
 	assert.NoDirExists(t, filepath.Join(root, "infra"), "failed persistence must roll back the ejected files")
 	assert.Empty(t, envServer.values)
 	envServer.failAt = 0
@@ -1748,8 +1768,7 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 		root,
 		"project",
 		"bicep",
-		"",
-		"",
+		&resolvedProject{},
 		environment,
 	))
 
@@ -1827,7 +1846,7 @@ func TestEjectProjectInfraRecordedRegistryMode(t *testing.T) {
 					env["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = "registry.azurecr.io"
 				}
 				err = ejectProjectInfraWithTarget(t.Context(), client, root,
-					"project", provider, "", "", env)
+					"project", provider, &resolvedProject{}, env)
 				switch {
 				case mode == "already-connected":
 					require.ErrorContains(t, err, "AZD_FOUNDRY_ACR_MODE")

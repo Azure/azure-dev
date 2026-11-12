@@ -243,14 +243,17 @@ func projectDeploymentEjectedInfraError(parameterFile string) error {
 }
 
 // ejectProjectInfraWithTarget preserves the target selected by init.
+// The target includes ARM-verified endpoints and resource identity.
 // The endpoint is needed when the daemon persists the service after
 // the local azure.yaml has been read.
 func ejectProjectInfraWithTarget(
 	ctx context.Context,
 	client *azdext.AzdClient,
-	projectRoot, serviceName, provider, endpoint, resourceID string,
+	projectRoot, serviceName, provider string,
+	selected *resolvedProject,
 	environments ...map[string]string,
 ) error {
+	endpoint := selected.Endpoint
 	projectFile, err := projectFilePath(projectRoot)
 	if err != nil {
 		return err
@@ -291,7 +294,7 @@ func ejectProjectInfraWithTarget(
 
 	return ejectExistingProjectInfra(
 		ctx, client, projectRoot, serviceName, provider, raw, endpoint,
-		resourceID, environments...,
+		selected, environments...,
 	)
 }
 
@@ -300,7 +303,8 @@ func ejectExistingProjectInfra(
 	client *azdext.AzdClient,
 	projectRoot, serviceName, provider string,
 	raw []byte,
-	endpoint, resourceID string,
+	endpoint string,
+	selected *resolvedProject,
 	environments ...map[string]string,
 ) error {
 	if provider != provisioning.BicepProviderName &&
@@ -344,10 +348,10 @@ func ejectExistingProjectInfra(
 	if strings.TrimSpace(endpoint) != "" {
 		environment["FOUNDRY_PROJECT_ENDPOINT"] = endpoint
 	}
-	if strings.TrimSpace(resourceID) != "" {
-		environment["AZURE_AI_PROJECT_ID"] = resourceID
+	if strings.TrimSpace(selected.ResourceId) != "" {
+		environment["AZURE_AI_PROJECT_ID"] = selected.ResourceId
 	}
-	identity, err := projectEjectIdentity(endpoint, resourceID, environment)
+	identity, err := projectEjectIdentity(endpoint, selected, environment)
 	if err != nil {
 		return err
 	}
@@ -651,8 +655,9 @@ func installProjectEjectStage(
 }
 
 func projectEjectIdentity(
-	endpoint, resourceID string, values map[string]string,
+	endpoint string, selected *resolvedProject, values map[string]string,
 ) (*resolvedProject, error) {
+	resourceID := selected.ResourceId
 	if strings.TrimSpace(resourceID) == "" {
 		resourceID = strings.TrimSpace(values["AZURE_AI_PROJECT_ID"])
 	}
@@ -668,13 +673,15 @@ func projectEjectIdentity(
 	if err != nil {
 		return nil, err
 	}
-	if endpoint != "" && !equalProjectEndpoint(endpoint, project.Endpoint) {
+	if endpoint != "" && !equalProjectEndpoint(endpoint, selected.Endpoint) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"the Foundry project endpoint does not match the project resource ID",
 			"rerun `project add` against the same existing project",
 		)
 	}
+	project.Endpoint = selected.Endpoint
+	project.OpenAIEndpoint = selected.OpenAIEndpoint
 	return project, nil
 }
 
@@ -972,16 +979,17 @@ func writeExistingProjectBicep(
 		}
 	}
 	for _, name := range []string{
+		"foundry-project-identity.bicep",
 		"monitoring.bicep", "monitoring-connection.bicep", "monitor-private-link.bicep", "monitoring-resync.bicep",
 		"network-approver-role-assignment.bicep",
 	} {
 		data, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/modules/"+name)
 		if err != nil {
-			return fmt.Errorf("read monitoring Bicep module: %w", err)
+			return fmt.Errorf("read existing-project Bicep module: %w", err)
 		}
 		// #nosec G306
 		if err := os.WriteFile(filepath.Join(moduleDir, name), data, 0644); err != nil {
-			return fmt.Errorf("write monitoring Bicep module: %w", err)
+			return fmt.Errorf("write existing-project Bicep module: %w", err)
 		}
 	}
 

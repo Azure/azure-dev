@@ -162,7 +162,8 @@ func TestEjectProjectInfraPreservesEffectiveDeployments(t *testing.T) {
 						targetEndpoint, targetID = endpoint, resourceID
 					}
 					err := ejectProjectInfraWithTarget(
-						t.Context(), client, root, "project", provider, targetEndpoint, targetID, env,
+						t.Context(), client, root, "project", provider,
+						&resolvedProject{Endpoint: targetEndpoint, ResourceId: targetID}, env,
 					)
 					if value == "{" {
 						require.ErrorContains(t, err, projectDeploymentsEnvKey)
@@ -202,7 +203,8 @@ func TestEjectProjectInfraPreservesEffectiveDeployments(t *testing.T) {
 					const userContent = "{\"deployments\": []}\n"
 					require.NoError(t, os.WriteFile(userFile, []byte(userContent), 0600))
 					require.Error(t, ejectProjectInfraWithTarget(
-						t.Context(), client, root, "project", provider, targetEndpoint, targetID, env,
+						t.Context(), client, root, "project", provider,
+						&resolvedProject{Endpoint: targetEndpoint, ResourceId: targetID}, env,
 					))
 					// #nosec G304 -- test-owned path.
 					after, err := os.ReadFile(userFile)

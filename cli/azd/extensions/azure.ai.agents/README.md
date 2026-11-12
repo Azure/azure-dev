@@ -1148,6 +1148,34 @@ launch.
 
 ## Initializing a Project
 
+When selecting an existing Microsoft Foundry project, init reads its project
+endpoint and the account's custom subdomain from Azure Resource Manager. The
+custom subdomain can differ from the account resource name; the ARM project ID
+always keeps the real account name. These resolved endpoints are also used for
+connection discovery and saved environment values. Missing endpoint metadata
+uses the account's custom subdomain, then the account name as a compatibility
+fallback. Failed metadata lookups or invalid endpoints stop initialization
+instead of guessing, except one compatibility case: if account metadata is
+forbidden (HTTP 403), init accepts a valid ARM-advertised project endpoint that
+still matches the selected project. Missing or invalid advertised endpoints, and
+all other account lookup failures, remain errors. Only Azure
+`*.services.ai.azure.com` project endpoints are supported, not arbitrary
+domains or reverse proxies.
+
+Exporting an existing project with `--infra=bicep` or `--infra=terraform`
+also verifies the configured endpoint against its ARM project before writing
+infrastructure files, including when exporting an already initialized project.
+Export requires Azure read access to the project and uses the same HTTP 403
+account-read fallback as `init` when the project advertises a valid matching
+endpoint; provisioning the exported Bicep or Terraform templates requires read
+access to both the project and account.
+
+The exported Bicep validates the final project ID and endpoint parameters in a
+read-only deployment before its resource-changing modules and supporting resource
+group can run. Mismatches fail without changing those resources, although the
+validation deployment's history can remain. Keep both parameters consistent when
+editing the generated files or switching environments.
+
 When `azd ai agent init` scaffolds into a subdirectory, the `Next:` block starts
 with `cd <folder>` before the provisioning command, even if that folder already
 existed. Run the `cd` command first: init does not change your shell's working

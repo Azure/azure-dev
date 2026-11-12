@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "19133302460120456"
+      "templateHash": "8945515781842841592"
     }
   },
   "definitions": {
@@ -1504,7 +1504,7 @@
     },
     "AZURE_OPENAI_ENDPOINT": {
       "type": "string",
-      "value": "[format('https://{0}.openai.azure.com/', variables('accountName'))]"
+      "value": "[format('https://{0}.openai.azure.com/', if(not(empty(tryGet(reference('foundryAccount'), 'customSubDomainName'))), reference('foundryAccount').customSubDomainName, first(split(last(split(parameters('projectEndpoint'), '://')), '.'))))]"
     },
     "FOUNDRY_PROJECT_ENDPOINT": {
       "type": "string",

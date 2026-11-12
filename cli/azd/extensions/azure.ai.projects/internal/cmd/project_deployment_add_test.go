@@ -1444,7 +1444,12 @@ func TestProjectDeploymentAddBlocksPolicyDeniedModelBeforeMutation(t *testing.T)
 		},
 	}
 
-	err := action.Run(t.Context())
+	err := action.runWithProjectLookup(
+		t.Context(),
+		func(_ context.Context, _ *azdext.AzdClient, id string) (*resolvedProject, error) {
+			return projectFromResourceID(id)
+		},
+	)
 	require.Error(t, err)
 	assert.True(t, called)
 

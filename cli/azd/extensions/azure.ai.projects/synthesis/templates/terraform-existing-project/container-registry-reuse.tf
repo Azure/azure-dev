@@ -1,9 +1,3 @@
-data "azapi_resource" "project" {
-  type                   = "Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview"
-  resource_id            = local.normalized_project_id
-  response_export_values = ["identity.principalId"]
-}
-
 provider "azurerm" {
   alias           = "existing_acr"
   subscription_id = split("/", var.existing_acr_resource_id)[2]

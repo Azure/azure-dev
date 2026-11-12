@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
@@ -592,7 +593,10 @@ services:
 		"bicep",
 		mustReadProjectFile(t, root),
 		"https://account.services.ai.azure.com/api/projects/new",
-		newID,
+		&resolvedProject{
+			ResourceId: newID,
+			Endpoint:   "https://account.services.ai.azure.com/api/projects/new",
+		},
 		env,
 	)
 	require.NoError(t, err)
@@ -632,7 +636,10 @@ func TestEjectExistingProjectRollbackRemovesStagedFiles(t *testing.T) {
 		"bicep",
 		mustReadProjectFile(t, root),
 		"https://account.services.ai.azure.com/api/projects/project",
-		resourceID,
+		&resolvedProject{
+			ResourceId: resourceID,
+			Endpoint:   "https://account.services.ai.azure.com/api/projects/project",
+		},
 		map[string]string{"AZD_AGENT_SKIP_ACR": "true"},
 	)
 
@@ -704,6 +711,49 @@ func TestWriteExistingProjectTerraformAcrModes(t *testing.T) {
 			require.NoError(t, err)
 			assert.Contains(t, string(outputs), `AZD_FOUNDRY_ACR_MODE`)
 			assertProjectEjectionOmitsConnections(t, dir)
+		})
+	}
+}
+
+func TestWriteExistingProjectTerraformAcrTemplateSetsAvoidDuplicateProjectData(t *testing.T) {
+	params := map[string]any{
+		"deployments": []synthesis.Deployment{},
+	}
+	tests := []struct {
+		name         string
+		mode         projectEjectAcrMode
+		pullAssigned bool
+	}{
+		{name: "none", mode: projectEjectAcrNone},
+		{name: "create", mode: projectEjectAcrCreate},
+		{name: "reuse-connect", mode: projectEjectAcrReuseConnect},
+		{name: "reuse-connect-pull-assigned", mode: projectEjectAcrReuseConnect, pullAssigned: true},
+		{name: "already-connected", mode: projectEjectAcrAlreadyConnected},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			values := map[string]string{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT": "https://registry.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+					"Microsoft.ContainerRegistry/registries/registry",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED": map[bool]string{true: "true", false: "false"}[test.pullAssigned],
+			}
+			require.NoError(t, writeExistingProjectTerraform(dir, "main", params, test.mode, values))
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			declarations := 0
+			for _, entry := range entries {
+				if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".tf") {
+					continue
+				}
+				// #nosec G304 -- path is under the test-owned root.
+				content, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+				require.NoError(t, err)
+				declarations += strings.Count(string(content), `data "azapi_resource" "project"`)
+			}
+			require.Equal(t, 1, declarations,
+				"exactly one project data declaration must exist in the rendered Terraform template set")
 		})
 	}
 }

@@ -436,7 +436,7 @@ func warnReconciledModelPolicies(
 	environmentValues map[string]string,
 	warningWriter io.Writer,
 ) {
-	if target == nil || strings.TrimSpace(target.ResourceId) == "" ||
+	if warningWriter == nil || target == nil || strings.TrimSpace(target.ResourceId) == "" ||
 		provisioning.ShouldSkipModelPolicyChecks(environmentValues) {
 		return
 	}

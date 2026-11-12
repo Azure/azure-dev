@@ -475,14 +475,20 @@ func evaluateModelDeploymentsWithPipeline(
 				continue
 			}
 			if fetched != nil {
-				if format == "" {
-					format = strings.TrimSpace(fetched.Format)
-				}
-				if name == "" {
-					name = strings.TrimSpace(fetched.Name)
-				}
-				if version == "" {
-					version = strings.TrimSpace(fetched.Version)
+				fetchedFormat := strings.TrimSpace(fetched.Format)
+				fetchedName := strings.TrimSpace(fetched.Name)
+				fetchedVersion := strings.TrimSpace(fetched.Version)
+				if (format == "" || strings.EqualFold(format, fetchedFormat)) &&
+					(name == "" || strings.EqualFold(name, fetchedName)) {
+					if format == "" {
+						format = fetchedFormat
+					}
+					if name == "" {
+						name = fetchedName
+					}
+					if version == "" {
+						version = fetchedVersion
+					}
 				}
 			}
 		}

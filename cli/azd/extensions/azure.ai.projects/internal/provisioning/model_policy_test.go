@@ -174,6 +174,17 @@ func TestEvaluateProjectModelDeploymentsPolicy_ResolvesMissingMetadataViaGetDepl
 					},
 				},
 			})
+		case r.Method == http.MethodGet &&
+			strings.HasSuffix(r.URL.Path, "/accounts/my-account/deployments/mismatched-chat"):
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"properties": map[string]any{
+					"model": map[string]any{
+						"format":  "OpenAI",
+						"name":    "gpt-4o",
+						"version": "2024-08-06",
+					},
+				},
+			})
 		case r.Method == http.MethodPost &&
 			strings.HasSuffix(r.URL.Path, "/accounts/my-account/evaluateDeploymentPolicies"):
 			postCalled = true
@@ -217,6 +228,10 @@ func TestEvaluateProjectModelDeploymentsPolicy_ResolvesMissingMetadataViaGetDepl
 				Name:  "existing-chat",
 				Model: synthesis.DeploymentModel{Name: "gpt-4o"}, // missing Format and Version
 			},
+			{
+				Name:  "mismatched-chat",
+				Model: synthesis.DeploymentModel{Name: "gpt-4.1"}, // different model name than live deployment
+			},
 		},
 	)
 	require.NoError(t, err)
@@ -224,6 +239,7 @@ func TestEvaluateProjectModelDeploymentsPolicy_ResolvesMissingMetadataViaGetDepl
 	assert.True(t, getCalled)
 	assert.True(t, postCalled)
 	require.Len(t, postBody.Deployments, 1)
+	assert.Equal(t, "existing-chat", postBody.Deployments[0].Name)
 	assert.Equal(t, "OpenAI", postBody.Deployments[0].Properties.Model.Format)
 	assert.Equal(t, "gpt-4o", postBody.Deployments[0].Properties.Model.Name)
 	assert.Equal(t, "2024-11-20", postBody.Deployments[0].Properties.Model.Version)

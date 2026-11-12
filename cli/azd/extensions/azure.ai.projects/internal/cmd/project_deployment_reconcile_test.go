@@ -269,7 +269,7 @@ func TestReconcileAdoptedDeploymentsEmitsPolicyWarningWhenModelDenied(t *testing
 				writer,
 			)
 			require.NoError(t, err)
-			assert.True(t, evaluated)
+			assert.False(t, evaluated)
 			assert.True(t, gotChanged)
 			assert.Equal(t, "existing-chat", gotDefault)
 			assert.Empty(t, suppressedBuf.String())

@@ -16,7 +16,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
+	resources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -143,7 +144,7 @@ func TestAzureBackendOfflineARMRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	groups, err := armresources.NewResourceGroupsClient("sub", testCredential{}, options)
+	groups, err := resources.NewResourceGroupsClient("sub", testCredential{}, options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +156,8 @@ func TestAzureBackendOfflineARMRequests(t *testing.T) {
 		subscription: "sub", deployments: deployments, groups: groups, operations: operations,
 	}
 	request := armresources.Deployment{Location: new("eastus"), Properties: &armresources.DeploymentProperties{
-		Mode: new(armresources.DeploymentModeIncremental), Template: map[string]any{}, Parameters: map[string]any{},
+		Mode: new(armresources.DeploymentModeIncremental), Template: map[string]any{},
+		Parameters: map[string]*armresources.DeploymentParameter{},
 	}}
 	deployed, err := azure.deploy(t.Context(), "layer", request, nil)
 	if err != nil || deployed.Properties == nil {

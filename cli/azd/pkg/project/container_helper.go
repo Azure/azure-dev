@@ -19,7 +19,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistrytasks"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -1169,14 +1169,14 @@ func (ch *ContainerHelper) runRemoteBuild(
 
 	progress.SetProgress(NewServiceProgress("Running remote build"))
 
-	buildRequest := &armcontainerregistry.DockerBuildRequest{
+	buildRequest := &armcontainerregistrytasks.DockerBuildRequest{
 		SourceLocation: source.RelativePath,
 		DockerFilePath: &dockerPath,
 		IsPushEnabled:  new(true),
 		ImageNames:     []*string{new(imageName)},
-		Platform: &armcontainerregistry.PlatformProperties{
-			OS:           to.Ptr(armcontainerregistry.OSLinux),
-			Architecture: to.Ptr(armcontainerregistry.ArchitectureAmd64),
+		Platform: &armcontainerregistrytasks.PlatformProperties{
+			OS:           to.Ptr(armcontainerregistrytasks.OSLinux),
+			Architecture: to.Ptr(armcontainerregistrytasks.ArchitectureAmd64),
 		},
 	}
 	if len(acrBuildArgs) > 0 {
@@ -1204,12 +1204,12 @@ func (ch *ContainerHelper) runRemoteBuild(
 func dockerBuildArgsToAcrArguments(
 	buildArgs []string,
 	lookupEnv func(string) (string, bool),
-) ([]*armcontainerregistry.Argument, error) {
+) ([]*armcontainerregistrytasks.Argument, error) {
 	if len(buildArgs) == 0 {
 		return nil, nil
 	}
 
-	acrArgs := make([]*armcontainerregistry.Argument, 0, len(buildArgs))
+	acrArgs := make([]*armcontainerregistrytasks.Argument, 0, len(buildArgs))
 	for i, arg := range buildArgs {
 		name, value, hasValue := strings.Cut(arg, "=")
 		if name == "" {
@@ -1230,7 +1230,7 @@ func dockerBuildArgsToAcrArguments(
 			}
 		}
 
-		acrArgs = append(acrArgs, &armcontainerregistry.Argument{
+		acrArgs = append(acrArgs, &armcontainerregistrytasks.Argument{
 			Name:     new(name),
 			Value:    new(value),
 			IsSecret: new(false),

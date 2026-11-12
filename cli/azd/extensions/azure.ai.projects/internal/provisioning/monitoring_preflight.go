@@ -15,7 +15,8 @@ import (
 
 	"azure.ai.projects/synthesis"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
+	resources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
 
@@ -277,7 +278,7 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 			return nil
 		}
 	} else {
-		for _, resource := range []*armresources.GenericResource{account, projectResource} {
+		for _, resource := range []*resources.GenericResource{account, projectResource} {
 			if resource == nil {
 				continue
 			}
@@ -339,10 +340,14 @@ func (p *FoundryProvisioningProvider) resolveMonitoringTarget(
 	if existingID != "" && mode != "create" {
 		return existingID, previous, nil
 	}
+	parameters, err := deploymentParameters(source.parameters)
+	if err != nil {
+		return "", nil, err
+	}
 	poller, err := client.BeginWhatIfAtSubscriptionScope(ctx, p.deploymentName(), armresources.DeploymentWhatIf{
 		Location: new(p.location),
 		Properties: &armresources.DeploymentWhatIfProperties{
-			Template: source.armTemplate, Parameters: source.parameters,
+			Template: source.armTemplate, Parameters: parameters,
 			Mode: new(armresources.DeploymentModeIncremental),
 		},
 	}, nil)

@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -54,7 +54,7 @@ type ResourceManager interface {
 // Returning a non-nil error will halt the traversal and return that error.
 // Returning SkipExpand() will prevent traversal of any nested deployments within the current operation,
 // but will continue traversal of sibling operations.
-type WalkDeploymentOperationFunc func(ctx context.Context, operation *armresources.DeploymentOperation) error
+type WalkDeploymentOperationFunc func(ctx context.Context, operation *armdeployments.DeploymentOperation) error
 
 // errSkipExpand is the unexported sentinel error used to skip expanding nested deployments.
 var errSkipExpand = errors.New("skip deployment expansion")
@@ -95,7 +95,7 @@ func (rm *AzureResourceManager) WalkDeploymentOperations(
 	defer cancel()
 
 	jobs := make(chan *arm.ResourceID, maxConcurrentDeploymentFetches)
-	results := make(chan []*armresources.DeploymentOperation, maxConcurrentDeploymentFetches)
+	results := make(chan []*armdeployments.DeploymentOperation, maxConcurrentDeploymentFetches)
 	errCh := make(chan error, 1)
 
 	var workers sync.WaitGroup
@@ -149,7 +149,7 @@ func (rm *AzureResourceManager) WalkDeploymentOperations(
 
 	queueNestedDeployments := func(
 		queue []*arm.ResourceID,
-		operations []*armresources.DeploymentOperation,
+		operations []*armdeployments.DeploymentOperation,
 	) ([]*arm.ResourceID, error) {
 		for _, operation := range operations {
 			if operation.ID == nil || operation.Properties == nil {
@@ -473,7 +473,7 @@ func (rm *AzureResourceManager) getRedisEnterpriseResourceTypeDisplayName(
 	}
 }
 
-func isNestedDeployment(operation *armresources.DeploymentOperation) bool {
+func isNestedDeployment(operation *armdeployments.DeploymentOperation) bool {
 	if operation.Properties.TargetResource == nil ||
 		operation.Properties.ProvisioningOperation == nil ||
 		operation.Properties.TargetResource.ResourceType == nil {
@@ -481,7 +481,7 @@ func isNestedDeployment(operation *armresources.DeploymentOperation) bool {
 	}
 
 	return *operation.Properties.TargetResource.ResourceType == string(azapi.AzureResourceTypeDeployment) &&
-		*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate
+		*operation.Properties.ProvisioningOperation == armdeployments.ProvisioningOperationCreate
 }
 
 func isTerminalProvisioningState(state *string) bool {
@@ -490,9 +490,9 @@ func isTerminalProvisioningState(state *string) bool {
 	}
 
 	switch *state {
-	case string(armresources.ProvisioningStateSucceeded),
-		string(armresources.ProvisioningStateFailed),
-		string(armresources.ProvisioningStateCanceled):
+	case string(armdeployments.ProvisioningStateSucceeded),
+		string(armdeployments.ProvisioningStateFailed),
+		string(armdeployments.ProvisioningStateCanceled):
 		return true
 	default:
 		return false
@@ -502,7 +502,7 @@ func isTerminalProvisioningState(state *string) bool {
 func (rm *AzureResourceManager) fetchNestedOperations(
 	ctx context.Context,
 	resourceID *arm.ResourceID,
-) ([]*armresources.DeploymentOperation, error) {
+) ([]*armdeployments.DeploymentOperation, error) {
 	if resourceID.ResourceGroupName == "" {
 		return rm.deploymentService.ListSubscriptionDeploymentOperations(ctx, resourceID.SubscriptionID, resourceID.Name)
 	}

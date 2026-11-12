@@ -4,15 +4,22 @@
 package azapi
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDeploymentStackDefaultActions(t *testing.T) {
+	encoded, err := json.Marshal(defaultDeploymentStackOptions.ActionOnUnmanage)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"managementGroups":"delete","resourceGroups":"delete","resources":"delete"}`, string(encoded))
+}
 
 func Test_ParseDeploymentStackOptions(t *testing.T) {
 	t.Run("nil", func(t *testing.T) {
@@ -44,9 +51,9 @@ func Test_ParseDeploymentStackOptions(t *testing.T) {
 	t.Run("override action on unmanage", func(t *testing.T) {
 		customOptions := &deploymentStackOptions{
 			ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
-				ManagementGroups: to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDetach),
-				ResourceGroups:   to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDetach),
-				Resources:        to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDetach),
+				ManagementGroups: new(armdeploymentstacks.UnmanageActionManagementGroupModeDetach),
+				ResourceGroups:   new(armdeploymentstacks.UnmanageActionResourceGroupModeDetach),
+				Resources:        new(armdeploymentstacks.UnmanageActionResourceModeDetach),
 			},
 		}
 
@@ -94,9 +101,9 @@ func Test_ParseDeploymentStackOptions(t *testing.T) {
 		customOptions := &deploymentStackOptions{
 			BypassStackOutOfSyncError: new(true),
 			ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
-				ManagementGroups: to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDetach),
-				ResourceGroups:   to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDetach),
-				Resources:        to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDetach),
+				ManagementGroups: new(armdeploymentstacks.UnmanageActionManagementGroupModeDetach),
+				ResourceGroups:   new(armdeploymentstacks.UnmanageActionResourceGroupModeDetach),
+				Resources:        new(armdeploymentstacks.UnmanageActionResourceModeDetach),
 			},
 			DenySettings: &armdeploymentstacks.DenySettings{
 				Mode:               to.Ptr(armdeploymentstacks.DenySettingsModeDenyDelete),

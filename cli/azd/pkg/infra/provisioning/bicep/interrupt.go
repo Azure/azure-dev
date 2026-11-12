@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -538,7 +538,7 @@ func isTerminalProvisioningState(state azapi.DeploymentProvisioningState) bool {
 // child Microsoft.Resources/deployments resource. Mirrors the predicate
 // used by pkg/infra.WalkDeploymentOperations so we can reuse the same
 // "child deployment" semantics without exporting that package's internal.
-func isNestedDeployment(op *armresources.DeploymentOperation) bool {
+func isNestedDeployment(op *armdeployments.DeploymentOperation) bool {
 	if op == nil || op.Properties == nil ||
 		op.Properties.TargetResource == nil ||
 		op.Properties.TargetResource.ResourceType == nil ||
@@ -547,7 +547,7 @@ func isNestedDeployment(op *armresources.DeploymentOperation) bool {
 	}
 	return *op.Properties.TargetResource.ResourceType ==
 		string(azapi.AzureResourceTypeDeployment) &&
-		*op.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate
+		*op.Properties.ProvisioningOperation == armdeployments.ProvisioningOperationCreate
 }
 
 // cancelAndAwaitNested discovers the descendant deployments of a freshly
@@ -598,7 +598,7 @@ func (p *BicepProvider) discoverDescendantDeployments(
 	factory func(*arm.ResourceID) infra.Deployment,
 ) ([]infra.Deployment, error) {
 	type frame struct {
-		ops []*armresources.DeploymentOperation
+		ops []*armdeployments.DeploymentOperation
 	}
 
 	rootOps, err := parent.Operations(ctx)

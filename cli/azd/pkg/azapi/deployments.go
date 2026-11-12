@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 )
@@ -77,10 +77,10 @@ type ResourceDeployment struct {
 	Timestamp time.Time
 
 	// The resources created from the deployment
-	Resources []*armresources.ResourceReference
+	Resources []*armdeployments.ResourceReference
 
 	// The dependencies of the deployment
-	Dependencies []*armresources.Dependency
+	Dependencies []*armdeployments.Dependency
 
 	// The status of the deployment
 	ProvisioningState DeploymentProvisioningState
@@ -124,13 +124,13 @@ type DeploymentService interface {
 		ctx context.Context,
 		subscriptionId string,
 		deploymentName string,
-	) ([]*armresources.ResourceReference, error)
+	) ([]*armdeployments.ResourceReference, error)
 	ListResourceGroupDeploymentResources(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		deploymentName string,
-	) ([]*armresources.ResourceReference, error)
+	) ([]*armdeployments.ResourceReference, error)
 	ListSubscriptionDeployments(
 		ctx context.Context,
 		subscriptionId string,
@@ -175,13 +175,13 @@ type DeploymentService interface {
 		ctx context.Context,
 		subscriptionId string,
 		deploymentName string,
-	) ([]*armresources.DeploymentOperation, error)
+	) ([]*armdeployments.DeploymentOperation, error)
 	ListResourceGroupDeploymentOperations(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		deploymentName string,
-	) ([]*armresources.DeploymentOperation, error)
+	) ([]*armdeployments.DeploymentOperation, error)
 	ValidatePreflightToSubscription(
 		ctx context.Context,
 		subscriptionId string,
@@ -209,7 +209,7 @@ type DeploymentService interface {
 		deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
-	) (*armresources.WhatIfOperationResult, error)
+	) (*armdeployments.WhatIfOperationResult, error)
 	WhatIfDeployToResourceGroup(
 		ctx context.Context,
 		subscriptionId,
@@ -217,7 +217,7 @@ type DeploymentService interface {
 		deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
-	) (*armresources.WhatIfOperationResult, error)
+	) (*armdeployments.WhatIfOperationResult, error)
 	DeleteSubscriptionDeployment(
 		ctx context.Context,
 		subscriptionId string,
@@ -422,7 +422,7 @@ func createDeploymentError(err error, operation DeploymentOperation) error {
 // the HTTP error path, so nested details are surfaced and the error-suggestion
 // pipeline can match on any DeploymentErrorLine in the tree.
 func NewAzureDeploymentErrorFromResponse(
-	errResp *armresources.ErrorResponse,
+	errResp *armdeployments.ErrorResponse,
 	operation DeploymentOperation,
 ) error {
 	raw, err := json.Marshal(errResp)

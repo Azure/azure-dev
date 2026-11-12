@@ -9,7 +9,8 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -100,7 +101,7 @@ func Test_ResourceService_ListResourceGroupResources(t *testing.T) {
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet &&
-				strings.Contains(req.URL.Path, "/resourceGroups/RG1/resources")
+				strings.Contains(req.URL.Path, "/resourcegroups/RG1/resources")
 		}).RespondFn(func(req *http.Request) (*http.Response, error) {
 			return mocks.CreateHttpResponseWithBody(req, http.StatusOK, armresources.ResourceListResult{
 				Value: []*armresources.GenericResourceExpanded{
@@ -365,7 +366,7 @@ func Test_ResourceService_DeleteResourceGroup(t *testing.T) {
 
 func Test_GroupByResourceGroup(t *testing.T) {
 	t.Run("GroupsCorrectly", func(t *testing.T) {
-		resources := []*armresources.ResourceReference{
+		resources := []*armdeployments.ResourceReference{
 			{ID: new(
 				"/subscriptions/SUB/resourceGroups/rg1/providers/Microsoft.Web/sites/app1")},
 			{ID: new(
@@ -381,7 +382,7 @@ func Test_GroupByResourceGroup(t *testing.T) {
 	})
 
 	t.Run("SkipsResourceGroupType", func(t *testing.T) {
-		resources := []*armresources.ResourceReference{
+		resources := []*armdeployments.ResourceReference{
 			{ID: new(
 				"/subscriptions/S/resourceGroups/rg1/providers/Microsoft.Resources/resourceGroups/rg1")},
 			{ID: new(
@@ -394,7 +395,7 @@ func Test_GroupByResourceGroup(t *testing.T) {
 	})
 
 	t.Run("InvalidResourceID", func(t *testing.T) {
-		_, err := GroupByResourceGroup([]*armresources.ResourceReference{
+		_, err := GroupByResourceGroup([]*armdeployments.ResourceReference{
 			{ID: new("bad-id")},
 		})
 		require.Error(t, err)

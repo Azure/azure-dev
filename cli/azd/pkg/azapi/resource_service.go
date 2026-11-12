@@ -13,7 +13,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
@@ -388,7 +389,7 @@ func (rs *ResourceService) createResourceGroupClient(
 
 // GroupByResourceGroup creates a map of resources group by their resource group name.
 // The key is the resource group name and the value is a list of resources in that group.
-func GroupByResourceGroup(resources []*armresources.ResourceReference) (map[string][]*Resource, error) {
+func GroupByResourceGroup(resources []*armdeployments.ResourceReference) (map[string][]*Resource, error) {
 	resourceMap := map[string][]*Resource{}
 
 	for _, resource := range resources {

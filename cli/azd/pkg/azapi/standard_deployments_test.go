@@ -13,7 +13,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -21,6 +22,42 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
+
+func TestConvertToDeploymentParams(t *testing.T) {
+	require.Nil(t, convertToDeploymentParams(nil))
+	require.Empty(t, convertToDeploymentParams(azure.ArmParameters{}))
+
+	for name, value := range map[string]any{
+		"string": "text",
+		"bool":   false,
+		"number": 42,
+		"array":  []any{"a", 1},
+		"object": map[string]any{"nested": true},
+		"null":   nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			converted := convertToDeploymentParams(azure.ArmParameters{"input": {Value: value}})
+			expected, err := json.Marshal(map[string]any{"input": map[string]any{"value": value}})
+			require.NoError(t, err)
+			actual, err := json.Marshal(converted)
+			require.NoError(t, err)
+			require.JSONEq(t, string(expected), string(actual))
+			require.Nil(t, converted["input"].Reference)
+		})
+	}
+	reference := &azure.KeyVaultParameterReference{
+		KeyVault: azure.KeyVaultReference{
+			ID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/kv",
+		},
+		SecretName:    "password",
+		SecretVersion: "version",
+	}
+	converted := convertToDeploymentParams(azure.ArmParameters{"secret": {KeyVaultReference: reference}})
+	require.Equal(t, reference.KeyVault.ID, *converted["secret"].Reference.KeyVault.ID)
+	require.Equal(t, reference.SecretName, *converted["secret"].Reference.SecretName)
+	require.Equal(t, reference.SecretVersion, *converted["secret"].Reference.SecretVersion)
+	require.Nil(t, converted["secret"].Value)
+}
 
 func Test_StandardDeployments_GenerateDeploymentName(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
@@ -90,7 +127,7 @@ func TestCreatedResourceGroupsFromDeployment(t *testing.T) {
 			},
 			ProvisioningState: DeploymentProvisioningStateFailed,
 			Timestamp:         time.Now(),
-			Dependencies: []*armresources.Dependency{
+			Dependencies: []*armdeployments.Dependency{
 				{
 					//nolint:lll
 					ID: new(
@@ -98,7 +135,7 @@ func TestCreatedResourceGroupsFromDeployment(t *testing.T) {
 					),
 					ResourceName: new("resources"),
 					ResourceType: new("Microsoft.Resources/deployments"),
-					DependsOn: []*armresources.BasicDependency{
+					DependsOn: []*armdeployments.BasicDependency{
 						{
 							//nolint:lll
 							ID: new(
@@ -120,7 +157,7 @@ func TestCreatedResourceGroupsFromDeployment(t *testing.T) {
 		mockDeployment := ResourceDeployment{
 			Id:   "DEPLOYMENT_ID",
 			Name: "test-env",
-			Resources: []*armresources.ResourceReference{
+			Resources: []*armdeployments.ResourceReference{
 				{
 					ID: new("/subscriptions/sub-id/resourceGroups/groupA"),
 				},
@@ -167,21 +204,21 @@ func newStdDeployments(mockCtx *mocks.MockContext) *StandardDeployments {
 	)
 }
 
-func makeDeploymentExtended(name string, state armresources.ProvisioningState) armresources.DeploymentExtended {
+func makeDeploymentExtended(name string, state armdeployments.ProvisioningState) armdeployments.DeploymentExtended {
 	now := time.Now()
-	return armresources.DeploymentExtended{
+	return armdeployments.DeploymentExtended{
 		ID:       new("/subscriptions/SUB/providers/Microsoft.Resources/deployments/" + name),
 		Name:     new(name),
 		Type:     new("Microsoft.Resources/deployments"),
 		Location: new("eastus"),
 		Tags:     map[string]*string{"env": new("test")},
-		Properties: &armresources.DeploymentPropertiesExtended{
+		Properties: &armdeployments.DeploymentPropertiesExtended{
 			ProvisioningState: new(state),
 			Timestamp:         &now,
 			TemplateHash:      new("hash123"),
 			Outputs:           nil,
-			OutputResources:   []*armresources.ResourceReference{},
-			Dependencies:      []*armresources.Dependency{},
+			OutputResources:   []*armdeployments.ResourceReference{},
+			Dependencies:      []*armdeployments.Dependency{},
 		},
 	}
 }
@@ -195,7 +232,7 @@ func Test_StdDeployments_CalculateTemplateHash(t *testing.T) {
 			strings.Contains(req.URL.Path, "calculateTemplateHash")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
-			armresources.TemplateHashResult{
+			armdeployments.TemplateHashResult{
 				TemplateHash: new("abc123hash"),
 			})
 	})
@@ -214,9 +251,9 @@ func Test_StdDeployments_ListSubscriptionDeployments(t *testing.T) {
 		return req.Method == http.MethodGet &&
 			strings.Contains(req.URL.Path, "/providers/Microsoft.Resources/deployments")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
-		dep := makeDeploymentExtended("deploy1", armresources.ProvisioningStateSucceeded)
+		dep := makeDeploymentExtended("deploy1", armdeployments.ProvisioningStateSucceeded)
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
-			armresources.DeploymentListResult{Value: []*armresources.DeploymentExtended{&dep}})
+			armdeployments.DeploymentListResult{Value: []*armdeployments.DeploymentExtended{&dep}})
 	})
 
 	deployments, err := sd.ListSubscriptionDeployments(*mockCtx.Context, "SUB")
@@ -235,7 +272,7 @@ func Test_StdDeployments_GetSubscriptionDeployment(t *testing.T) {
 			return req.Method == http.MethodGet &&
 				strings.Contains(req.URL.Path, "/deployments/deploy1")
 		}).RespondFn(func(req *http.Request) (*http.Response, error) {
-			dep := makeDeploymentExtended("deploy1", armresources.ProvisioningStateSucceeded)
+			dep := makeDeploymentExtended("deploy1", armdeployments.ProvisioningStateSucceeded)
 			return mocks.CreateHttpResponseWithBody(req, http.StatusOK, dep)
 		})
 
@@ -270,8 +307,8 @@ func Test_StdDeployments_ListSubscriptionDeploymentResources_OnlyCreatedResource
 		return req.Method == http.MethodGet &&
 			strings.Contains(strings.ToLower(req.URL.Path), "/providers/microsoft.resources/deployments/deploy1")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
-		dep := makeDeploymentExtended("deploy1", armresources.ProvisioningStateSucceeded)
-		dep.Properties.OutputResources = []*armresources.ResourceReference{
+		dep := makeDeploymentExtended("deploy1", armdeployments.ProvisioningStateSucceeded)
+		dep.Properties.OutputResources = []*armdeployments.ResourceReference{
 			{ID: new("/subscriptions/SUB/resourceGroups/RG1")},
 			{ID: new("/subscriptions/SUB/resourceGroups/RG1/providers/Microsoft.Web/sites/app1")},
 			{ID: new("/subscriptions/SUB/resourceGroups/EXISTING/providers/Microsoft.Web/sites/app2")},
@@ -316,9 +353,9 @@ func Test_StdDeployments_ListResourceGroupDeployments(t *testing.T) {
 			strings.Contains(req.URL.Path, "/resourcegroups/RG1") &&
 			strings.Contains(req.URL.Path, "/deployments")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
-		dep := makeDeploymentExtended("rgDeploy", armresources.ProvisioningStateFailed)
+		dep := makeDeploymentExtended("rgDeploy", armdeployments.ProvisioningStateFailed)
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
-			armresources.DeploymentListResult{Value: []*armresources.DeploymentExtended{&dep}})
+			armdeployments.DeploymentListResult{Value: []*armdeployments.DeploymentExtended{&dep}})
 	})
 
 	deployments, err := sd.ListResourceGroupDeployments(*mockCtx.Context, "SUB", "RG1")
@@ -336,7 +373,7 @@ func Test_StdDeployments_GetResourceGroupDeployment(t *testing.T) {
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet
 		}).RespondFn(func(req *http.Request) (*http.Response, error) {
-			dep := makeDeploymentExtended("rgDeploy", armresources.ProvisioningStateRunning)
+			dep := makeDeploymentExtended("rgDeploy", armdeployments.ProvisioningStateRunning)
 			return mocks.CreateHttpResponseWithBody(req, http.StatusOK, dep)
 		})
 
@@ -371,12 +408,12 @@ func Test_StdDeployments_ListSubscriptionDeploymentOperations(t *testing.T) {
 			strings.Contains(req.URL.Path, "/operations")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
-			armresources.DeploymentOperationsListResult{
-				Value: []*armresources.DeploymentOperation{
+			armdeployments.DeploymentOperationsListResult{
+				Value: []*armdeployments.DeploymentOperation{
 					{
 						ID:          new("op1"),
 						OperationID: new("op1-id"),
-						Properties: &armresources.DeploymentOperationProperties{
+						Properties: &armdeployments.DeploymentOperationProperties{
 							ProvisioningState: new("Succeeded"),
 						},
 					},
@@ -399,12 +436,12 @@ func Test_StdDeployments_ListResourceGroupDeploymentOperations(t *testing.T) {
 			strings.Contains(req.URL.Path, "/operations")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
-			armresources.DeploymentOperationsListResult{
-				Value: []*armresources.DeploymentOperation{
+			armdeployments.DeploymentOperationsListResult{
+				Value: []*armdeployments.DeploymentOperation{
 					{
 						ID:          new("op2"),
 						OperationID: new("op2-id"),
-						Properties: &armresources.DeploymentOperationProperties{
+						Properties: &armdeployments.DeploymentOperationProperties{
 							ProvisioningState: new("Failed"),
 						},
 					},
@@ -426,7 +463,7 @@ func Test_StdDeployments_DeployToSubscription(t *testing.T) {
 		return req.Method == http.MethodPut &&
 			strings.Contains(req.URL.Path, "/deployments/sub-deploy")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
-		dep := makeDeploymentExtended("sub-deploy", armresources.ProvisioningStateSucceeded)
+		dep := makeDeploymentExtended("sub-deploy", armdeployments.ProvisioningStateSucceeded)
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, dep)
 	})
 
@@ -449,7 +486,7 @@ func Test_StdDeployments_DeployToResourceGroup(t *testing.T) {
 		return req.Method == http.MethodPut &&
 			strings.Contains(req.URL.Path, "/deployments/rg-deploy")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
-		dep := makeDeploymentExtended("rg-deploy", armresources.ProvisioningStateSucceeded)
+		dep := makeDeploymentExtended("rg-deploy", armdeployments.ProvisioningStateSucceeded)
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, dep)
 	})
 
@@ -490,7 +527,7 @@ func Test_StdDeployments_DeployToSubscription_Transient404(t *testing.T) {
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
 		return req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/deployments/sub-deploy")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
-		dep := makeDeploymentExtended("sub-deploy", armresources.ProvisioningStateRunning)
+		dep := makeDeploymentExtended("sub-deploy", armdeployments.ProvisioningStateRunning)
 		return mocks.CreateHttpResponseWithBody(req, http.StatusCreated, dep)
 	})
 
@@ -502,7 +539,7 @@ func Test_StdDeployments_DeployToSubscription_Transient404(t *testing.T) {
 		if atomic.AddInt32(&polls, 1) == 1 {
 			return mocks.CreateEmptyHttpResponse(req, http.StatusNotFound)
 		}
-		dep := makeDeploymentExtended("sub-deploy", armresources.ProvisioningStateSucceeded)
+		dep := makeDeploymentExtended("sub-deploy", armdeployments.ProvisioningStateSucceeded)
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, dep)
 	})
 
@@ -526,7 +563,7 @@ func Test_StdDeployments_DeployToResourceGroup_Transient404(t *testing.T) {
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
 		return req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/deployments/rg-deploy")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
-		dep := makeDeploymentExtended("rg-deploy", armresources.ProvisioningStateRunning)
+		dep := makeDeploymentExtended("rg-deploy", armdeployments.ProvisioningStateRunning)
 		return mocks.CreateHttpResponseWithBody(req, http.StatusCreated, dep)
 	})
 
@@ -537,7 +574,7 @@ func Test_StdDeployments_DeployToResourceGroup_Transient404(t *testing.T) {
 		if atomic.AddInt32(&polls, 1) == 1 {
 			return mocks.CreateEmptyHttpResponse(req, http.StatusNotFound)
 		}
-		dep := makeDeploymentExtended("rg-deploy", armresources.ProvisioningStateSucceeded)
+		dep := makeDeploymentExtended("rg-deploy", armdeployments.ProvisioningStateSucceeded)
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, dep)
 	})
 
@@ -564,7 +601,7 @@ func Test_StdDeployments_DeployToSubscription_Persistent404(t *testing.T) {
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
 		return req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/deployments/sub-deploy")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
-		dep := makeDeploymentExtended("sub-deploy", armresources.ProvisioningStateRunning)
+		dep := makeDeploymentExtended("sub-deploy", armdeployments.ProvisioningStateRunning)
 		return mocks.CreateHttpResponseWithBody(req, http.StatusCreated, dep)
 	})
 
@@ -613,7 +650,7 @@ func Test_StdDeployments_WhatIfDeployToSubscription(t *testing.T) {
 			strings.Contains(req.URL.Path, "/whatIf")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
-			armresources.WhatIfOperationResult{
+			armdeployments.WhatIfOperationResult{
 				Status: new("Succeeded"),
 			})
 	})
@@ -634,7 +671,7 @@ func Test_StdDeployments_WhatIfDeployToResourceGroup(t *testing.T) {
 			strings.Contains(req.URL.Path, "/whatIf")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
-			armresources.WhatIfOperationResult{
+			armdeployments.WhatIfOperationResult{
 				Status: new("Succeeded"),
 			})
 	})
@@ -655,9 +692,9 @@ func Test_StdDeployments_ValidatePreflightToSubscription(t *testing.T) {
 			strings.Contains(req.URL.Path, "/validate")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
-			armresources.DeploymentValidateResult{
-				Properties: &armresources.DeploymentPropertiesExtended{
-					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+			armdeployments.DeploymentValidateResult{
+				Properties: &armdeployments.DeploymentPropertiesExtended{
+					ProvisioningState: to.Ptr(armdeployments.ProvisioningStateSucceeded),
 				},
 			})
 	})
@@ -677,9 +714,9 @@ func Test_StdDeployments_ValidatePreflightToResourceGroup(t *testing.T) {
 			strings.Contains(req.URL.Path, "/validate")
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
-			armresources.DeploymentValidateResult{
-				Properties: &armresources.DeploymentPropertiesExtended{
-					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+			armdeployments.DeploymentValidateResult{
+				Properties: &armdeployments.DeploymentPropertiesExtended{
+					ProvisioningState: to.Ptr(armdeployments.ProvisioningStateSucceeded),
 				},
 			})
 	})
@@ -693,20 +730,20 @@ func Test_StdDeployments_ValidatePreflightToResourceGroup(t *testing.T) {
 func Test_ConvertFromStandardProvisioningState_AllStates(t *testing.T) {
 	// Exercise all provisioning state conversions through GetSubscriptionDeployment
 	states := []struct {
-		arm      armresources.ProvisioningState
+		arm      armdeployments.ProvisioningState
 		expected DeploymentProvisioningState
 	}{
-		{armresources.ProvisioningStateAccepted, DeploymentProvisioningStateAccepted},
-		{armresources.ProvisioningStateCanceled, DeploymentProvisioningStateCanceled},
-		{armresources.ProvisioningStateCreating, DeploymentProvisioningStateCreating},
-		{armresources.ProvisioningStateDeleted, DeploymentProvisioningStateDeleted},
-		{armresources.ProvisioningStateDeleting, DeploymentProvisioningStateDeleting},
-		{armresources.ProvisioningStateFailed, DeploymentProvisioningStateFailed},
-		{armresources.ProvisioningStateNotSpecified, DeploymentProvisioningStateNotSpecified},
-		{armresources.ProvisioningStateReady, DeploymentProvisioningStateReady},
-		{armresources.ProvisioningStateRunning, DeploymentProvisioningStateRunning},
-		{armresources.ProvisioningStateSucceeded, DeploymentProvisioningStateSucceeded},
-		{armresources.ProvisioningStateUpdating, DeploymentProvisioningStateUpdating},
+		{armdeployments.ProvisioningStateAccepted, DeploymentProvisioningStateAccepted},
+		{armdeployments.ProvisioningStateCanceled, DeploymentProvisioningStateCanceled},
+		{armdeployments.ProvisioningStateCreating, DeploymentProvisioningStateCreating},
+		{armdeployments.ProvisioningStateDeleted, DeploymentProvisioningStateDeleted},
+		{armdeployments.ProvisioningStateDeleting, DeploymentProvisioningStateDeleting},
+		{armdeployments.ProvisioningStateFailed, DeploymentProvisioningStateFailed},
+		{armdeployments.ProvisioningStateNotSpecified, DeploymentProvisioningStateNotSpecified},
+		{armdeployments.ProvisioningStateReady, DeploymentProvisioningStateReady},
+		{armdeployments.ProvisioningStateRunning, DeploymentProvisioningStateRunning},
+		{armdeployments.ProvisioningStateSucceeded, DeploymentProvisioningStateSucceeded},
+		{armdeployments.ProvisioningStateUpdating, DeploymentProvisioningStateUpdating},
 	}
 
 	for _, tc := range states {
@@ -735,7 +772,7 @@ func Test_ConvertFromStandardProvisioningState_AllStates(t *testing.T) {
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet
 		}).RespondFn(func(req *http.Request) (*http.Response, error) {
-			dep := makeDeploymentExtended("d", armresources.ProvisioningState("SomeNewState"))
+			dep := makeDeploymentExtended("d", armdeployments.ProvisioningState("SomeNewState"))
 			return mocks.CreateHttpResponseWithBody(req, http.StatusOK, dep)
 		})
 

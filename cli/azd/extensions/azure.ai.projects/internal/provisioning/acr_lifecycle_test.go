@@ -3285,6 +3285,79 @@ func TestACRCustomRolePullAccess(t *testing.T) {
 	}
 }
 
+func TestACRDeploymentRetryRefreshesParameters(t *testing.T) {
+	p, _ := acrTestProvider(t)
+	p.projectPath = t.TempDir()
+	p.location = "eastus2"
+	p.credential = acrTestCredential{}
+	p.resourceGroupState = func(context.Context) (map[string]*string, bool, error) {
+		return nil, true, nil
+	}
+	p.onDiskSource = acrTestSource()
+	p.acrBinding = acrTestBinding()
+	p.acrPending = acrTestPending()
+	submissions := 0
+	p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+		require.Equal(t, http.MethodGet, method)
+		switch {
+		case path == testACRProject:
+			return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+		case path == testACRID:
+			return acrTestReply(out, map[string]any{"properties": map[string]any{}})
+		case path == acrTestPending().assignmentID():
+			if submissions == 0 {
+				return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+			}
+			return acrTestReply(out, acrTestAssignment())
+		case strings.Contains(path, "/roleAssignments?"):
+			assignments := []acrRoleAssignment{}
+			if submissions > 0 {
+				assignments = append(assignments, acrTestAssignment())
+			}
+			return acrTestReply(out, map[string]any{"value": assignments})
+		default:
+			t.Fatalf("unexpected registry request: %s %s", method, path)
+			return errors.New("unexpected registry request")
+		}
+	}
+	p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+		Retry: policy.RetryOptions{MaxRetries: -1},
+		Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+			require.Equal(t, http.MethodPut, request.Method)
+			require.Equal(t, "/subscriptions/sub/providers/Microsoft.Resources/deployments/"+p.deploymentName(),
+				request.URL.Path)
+			var deployment struct {
+				Properties struct {
+					Parameters map[string]struct{ Value any }
+				}
+			}
+			require.NoError(t, json.NewDecoder(request.Body).Decode(&deployment))
+			require.Contains(t, deployment.Properties.Parameters, "acrPullAssigned")
+			assert.Equal(t, submissions > 0, deployment.Properties.Parameters["acrPullAssigned"].Value,
+				"the retry must use the registry access discovered after the conflict")
+			submissions++
+			if submissions == 1 {
+				return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{"properties": map[string]any{
+					"provisioningState": "Failed",
+					"error":             map[string]any{"code": "RoleAssignmentExists", "message": "assignment exists"},
+				}})
+			}
+			return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{"properties": map[string]any{
+				"provisioningState": "Succeeded",
+				"outputs": map[string]any{
+					"AZURE_AI_PROJECT_ID":                  map[string]any{"type": "string", "value": testACRProject},
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"type": "string", "value": testACRID},
+				},
+			}})
+		}),
+	}}
+
+	result, err := p.Deploy(t.Context(), func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 2, submissions)
+}
+
 func TestACRRoleAssignmentConflictIsNarrow(t *testing.T) {
 	assert.True(t, acrRoleAssignmentConflict(&azcore.ResponseError{ErrorCode: "RoleAssignmentExists", StatusCode: 409}))
 	assert.False(t, acrRoleAssignmentConflict(&azcore.ResponseError{ErrorCode: "RoleAssignmentExists", StatusCode: 403}))

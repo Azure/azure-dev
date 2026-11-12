@@ -6,7 +6,6 @@ package containerregistry
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,7 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistrytasks"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
@@ -122,39 +121,39 @@ func (r *RemoteBuildManager) UploadBuildSource(
 	resourceGroupName string,
 	registryName string,
 	buildSourcePath string,
-) (armcontainerregistry.SourceUploadDefinition, error) {
+) (armcontainerregistrytasks.SourceUploadDefinition, error) {
 	cred, err := r.credentialProvider.CredentialForSubscription(ctx, subscriptionID)
 	if err != nil {
-		return armcontainerregistry.SourceUploadDefinition{}, err
+		return armcontainerregistrytasks.SourceUploadDefinition{}, err
 	}
 
 	uploadClientOptions := remoteBuildArmClientOptions(r.armClientOptions)
-	regClient, err := armcontainerregistry.NewRegistriesClient(subscriptionID, cred, uploadClientOptions)
+	regClient, err := armcontainerregistrytasks.NewRegistriesClient(subscriptionID, cred, uploadClientOptions)
 	if err != nil {
-		return armcontainerregistry.SourceUploadDefinition{}, err
+		return armcontainerregistrytasks.SourceUploadDefinition{}, err
 	}
 
 	sourceUploadRes, err := regClient.GetBuildSourceUploadURL(ctx, resourceGroupName, registryName, nil)
 	if err != nil {
-		return armcontainerregistry.SourceUploadDefinition{}, err
+		return armcontainerregistrytasks.SourceUploadDefinition{}, err
 	}
 
 	blobClient, err := blockblob.NewClientWithNoCredential(*sourceUploadRes.UploadURL, &blockblob.ClientOptions{
 		ClientOptions: r.armClientOptions.ClientOptions,
 	})
 	if err != nil {
-		return armcontainerregistry.SourceUploadDefinition{}, err
+		return armcontainerregistrytasks.SourceUploadDefinition{}, err
 	}
 
 	dockerContext, err := os.Open(buildSourcePath)
 	if err != nil {
-		return armcontainerregistry.SourceUploadDefinition{}, err
+		return armcontainerregistrytasks.SourceUploadDefinition{}, err
 	}
 	defer dockerContext.Close()
 
 	_, err = blobClient.UploadFile(ctx, dockerContext, nil)
 	if err != nil {
-		return armcontainerregistry.SourceUploadDefinition{}, err
+		return armcontainerregistrytasks.SourceUploadDefinition{}, err
 	}
 
 	return sourceUploadRes.SourceUploadDefinition, nil
@@ -178,7 +177,7 @@ func (e *RemoteBuildUnavailableError) Unwrap() error {
 
 // RemoteBuildRunError represents a terminal failure reported by an Azure Container Registry remote build.
 type RemoteBuildRunError struct {
-	Status   armcontainerregistry.RunStatus
+	Status   armcontainerregistrytasks.RunStatus
 	buildLog string
 }
 
@@ -198,29 +197,26 @@ func (e *RemoteBuildRunError) DiagnosticCode() string {
 	}
 
 	switch e.Status {
-	case armcontainerregistry.RunStatusFailed:
+	case armcontainerregistrytasks.RunStatusFailed:
 		return "acr_run_failed"
-	case armcontainerregistry.RunStatusError:
+	case armcontainerregistrytasks.RunStatusError:
 		return "acr_run_error"
-	case armcontainerregistry.RunStatusTimeout:
+	case armcontainerregistrytasks.RunStatusTimeout:
 		return "acr_run_timeout"
-	case armcontainerregistry.RunStatusCanceled:
+	case armcontainerregistrytasks.RunStatusCanceled:
 		return "acr_run_canceled"
 	default:
 		return ""
 	}
 }
 
-// terminalContainerRegistryRunStates is the list of states we consider terminal when waiting for a container registry run
-// to complete. Unfortunately, in the current version of the armcontainerregistry package, the poller returned by
-// BeginScheduleRun treats all states as terminal and so calling `PollUntilDone` will return even if if the run is still
-// progressing.  So we open code this polling loop ourselves.
-var terminalContainerRegistryRunStates = []armcontainerregistry.RunStatus{
-	armcontainerregistry.RunStatusCanceled,
-	armcontainerregistry.RunStatusError,
-	armcontainerregistry.RunStatusFailed,
-	armcontainerregistry.RunStatusSucceeded,
-	armcontainerregistry.RunStatusTimeout,
+// terminalContainerRegistryRunStates identifies completed runs; ScheduleRun only submits the build.
+var terminalContainerRegistryRunStates = []armcontainerregistrytasks.RunStatus{
+	armcontainerregistrytasks.RunStatusCanceled,
+	armcontainerregistrytasks.RunStatusError,
+	armcontainerregistrytasks.RunStatusFailed,
+	armcontainerregistrytasks.RunStatusSucceeded,
+	armcontainerregistrytasks.RunStatusTimeout,
 }
 
 // RunDockerBuildRequestWithLogs initiates a remote build on the specified registry and streams the logs to the provided
@@ -228,7 +224,7 @@ var terminalContainerRegistryRunStates = []armcontainerregistry.RunStatus{
 func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 	ctx context.Context,
 	subscriptionID, resourceGroupName, registryName string,
-	buildRequest *armcontainerregistry.DockerBuildRequest,
+	buildRequest *armcontainerregistrytasks.DockerBuildRequest,
 	writer io.Writer,
 ) error {
 	tracing.IncrementUsageAttribute(fields.RemoteBuildCount.Int(1))
@@ -238,12 +234,12 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 		return err
 	}
 
-	regClient, err := armcontainerregistry.NewRegistriesClient(subscriptionID, cred, r.armClientOptions)
+	regClient, err := armcontainerregistrytasks.NewRegistriesClient(subscriptionID, cred, r.armClientOptions)
 	if err != nil {
 		return err
 	}
 
-	runPoller, err := regClient.BeginScheduleRun(ctx, resourceGroupName, registryName, buildRequest, nil)
+	runResp, err := regClient.ScheduleRun(ctx, resourceGroupName, registryName, buildRequest, nil)
 	if err != nil {
 		if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
 			responseErr.ErrorCode == "TasksOperationsNotAllowed" {
@@ -252,17 +248,11 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 		return err
 	}
 
-	resp, err := runPoller.Poll(ctx)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	var runResp armcontainerregistry.RegistriesClientScheduleRunResponse
-	if err := json.NewDecoder(resp.Body).Decode(&runResp); err != nil {
-		return err
+	if runResp.Properties == nil || runResp.Properties.RunID == nil || *runResp.Properties.RunID == "" {
+		return errors.New("remote build scheduling response is missing the run ID")
 	}
 
-	runClient, err := armcontainerregistry.NewRunsClient(subscriptionID, cred, r.armClientOptions)
+	runClient, err := armcontainerregistrytasks.NewRunsClient(subscriptionID, cred, r.armClientOptions)
 	if err != nil {
 		return err
 	}
@@ -285,11 +275,7 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 		return err
 	}
 
-	// Poll until the run is complete - we do this ourselves because the poller returned by BeginScheduleRun treats all
-	// states as terminal and so calling `PollUntilDone` will return even if if the run is still progressing.
-	//
-	// Since the call to streamLogs above will block until the log is complete, we expect the final status will be
-	// available shortly, and so we used an exponential backoff with a capped duration and a short initial delay.
+	// Log completion may precede the final run status; poll with bounded exponential backoff.
 	return retry.Do(ctx, retry.WithCappedDuration(30*time.Second, retry.NewExponential(1*time.Second)),
 		func(ctx context.Context) error {
 			runRes, err := runClient.Get(ctx, resourceGroupName, registryName, *runResp.Properties.RunID, nil)
@@ -304,7 +290,7 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 				return retry.RetryableError(errors.New("remote build still in progress"))
 			}
 
-			if *runRes.Properties.Status != armcontainerregistry.RunStatusSucceeded {
+			if *runRes.Properties.Status != armcontainerregistrytasks.RunStatusSucceeded {
 				return &RemoteBuildRunError{
 					Status:   *runRes.Properties.Status,
 					buildLog: buildLog.String(),

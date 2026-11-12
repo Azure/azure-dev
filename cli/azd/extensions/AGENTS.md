@@ -8,12 +8,19 @@ extension-specific contracts, ownership, and exceptions.
 
 ## Unit test authoring
 
-When writing or reviewing Go unit tests for `azure.ai.agents`,
-`azure.ai.connections`, `azure.ai.inspector`, `azure.ai.projects`,
-`azure.ai.routines`, `azure.ai.skills`, or `azure.ai.toolboxes`, read and follow
-the [unit-testing skill](.github/skills/azd-extension-unit-testing/SKILL.md).
-This is extension-local guidance; clients may need this explicit link rather
-than automatically discovering a nested skill directory.
+For behavior changes in `azure.ai.agents`, `azure.ai.connections`,
+`azure.ai.inspector`, `azure.ai.projects`, `azure.ai.routines`, `azure.ai.skills`,
+or `azure.ai.toolboxes`, assess existing unit tests and add or update relevant
+tests in the same change. If no test changes are needed, explain why.
+
+Before planning, writing, or reviewing these unit tests, read and follow the
+[unit-testing skill](.github/skills/azd-extension-unit-testing/SKILL.md).
+Derive expected behavior from requirements, not only the implementation.
+Do not run live services for unit tests. For documentation-only changes, do not
+add unrelated tests.
+
+This link is the extension-local entry point, not a guarantee of independent
+skill discovery. Verify instruction loading with the intended client.
 
 ## Security and safe operations
 

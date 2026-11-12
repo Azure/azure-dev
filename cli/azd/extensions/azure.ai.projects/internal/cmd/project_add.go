@@ -2084,7 +2084,8 @@ func ejectProjectInfra(
 			}
 		}
 	} else {
-		if err := copyEmbeddedBicep(infraDir, target.module); err != nil {
+		_, byoAks := result.Parameters["agentHosting"]
+		if err := copyEmbeddedBicep(infraDir, target.module, byoAks); err != nil {
 			return cleanup(err)
 		}
 		parameters := map[string]any{"parameters": map[string]any{}}
@@ -2166,17 +2167,52 @@ func projectFilePath(projectRoot string) (string, error) {
 	)
 }
 
-func copyEmbeddedBicep(destination, module string) error {
-	if err := copyEmbeddedTree(
-		synthesis.TemplatesFS(),
-		"templates",
-		destination,
-		map[string]struct{}{
-			"main.arm.json":       {},
-			"brownfield.bicep":    {},
-			"brownfield.arm.json": {},
-		},
-	); err != nil {
+func copyEmbeddedBicep(destination, module string, byoAks bool) error {
+	const root = "templates"
+	files := synthesis.TemplatesFS()
+	// #nosec G301
+	if err := os.MkdirAll(destination, 0755); err != nil {
+		return err
+	}
+	if err := fs.WalkDir(files, root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == root {
+			return nil
+		}
+		relative, err := filepath.Rel(root, filepath.FromSlash(path))
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(destination, relative)
+		if entry.IsDir() {
+			// #nosec G301
+			return os.MkdirAll(target, 0755)
+		}
+		base := filepath.Base(path)
+		if strings.HasSuffix(base, ".tmpl") || !byoAks && strings.HasPrefix(base, "byo-") ||
+			strings.HasPrefix(base, "container-registry-") {
+			return nil
+		}
+		switch base {
+		case "main.arm.json", "existing-project.bicep",
+			"existing-project-eject.bicep", "existing-project.arm.json":
+			return nil
+		}
+		var data []byte
+		switch path {
+		case "templates/main.bicep", "templates/modules/resources.bicep", "templates/modules/acr.bicep":
+			data, err = synthesis.RenderBicepTemplate(path, byoAks)
+		default:
+			data, err = fs.ReadFile(files, path)
+		}
+		if err != nil {
+			return err
+		}
+		// #nosec G306
+		return os.WriteFile(target, data, 0644)
+	}); err != nil {
 		return err
 	}
 	if module == "" || module == "main" {

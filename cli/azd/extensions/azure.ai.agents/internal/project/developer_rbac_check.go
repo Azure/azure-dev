@@ -20,9 +20,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/shared/foundry/access"
 	"google.golang.org/grpc/status"
 )
 
@@ -89,12 +90,7 @@ var sufficientACRAbacRoles = []string{
 //   - roleAzureAIDeveloper: dataActions cover only OpenAI/Speech/ContentSafety/MaaS,
 //     NOT the AIServices.* namespace used by Foundry agents; Azure docs state
 //     "For Foundry project access, use the Foundry User or Foundry Owner roles instead"
-var sufficientAIUserRoles = []string{
-	roleAzureAIUser,           // 53ca6127-... Foundry User: dataActions Microsoft.CognitiveServices/*
-	roleCognitiveServicesUser, // a97b65f3-... backward compat: same dataActions, assigned by older Bicep
-	roleAzureAIProjectManager, // eadc314b-... Foundry Project Manager: dataActions Microsoft.CognitiveServices/*
-	roleFoundryOwner,          // c883944f-... Foundry Owner: dataActions Microsoft.CognitiveServices/*
-}
+var sufficientAIUserRoles = access.SufficientDataPlaneRoles
 
 // sufficientRoleAssignWriteRoles lists every role that grants
 // Microsoft.Authorization/roleAssignments/write on Azure Resource Manager.
@@ -171,13 +167,13 @@ func checkDeveloperRBAC(
 	skipValue := ""
 	skipResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envName,
-		Key:     "AZD_AGENT_SKIP_ROLE_ASSIGNMENTS",
+		Key:     access.SkipRoleAssignmentsEnvKey,
 	})
 	if err == nil {
 		skipValue = skipResp.Value
 	}
 	if skipValue == "" {
-		skipValue = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
+		skipValue = os.Getenv(access.SkipRoleAssignmentsEnvKey)
 	}
 	if skip, parseErr := strconv.ParseBool(skipValue); parseErr == nil && skip {
 		fmt.Println("  (-) Skipping developer RBAC pre-flight check (AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set)")
@@ -431,34 +427,8 @@ func probeFoundryAccess(
 	return err
 }
 
-func foundryAccessDenied(err error) bool {
-	response, ok := errors.AsType[*azcore.ResponseError](err)
-	if !ok || response.StatusCode != http.StatusForbidden {
-		return false
-	}
-	// cspell:ignore permissiondenied authorizationfailed authorizationpermissionmismatch aiservices
-	switch strings.ToLower(response.ErrorCode) {
-	case "permissiondenied", "authorizationfailed", "authorizationpermissionmismatch":
-		return true
-	default:
-		return strings.Contains(strings.ToLower(response.Error()), "microsoft.cognitiveservices/accounts/aiservices/agents/")
-	}
-}
-
-func isFoundryNotFound(err error) bool {
-	response, ok := errors.AsType[*azcore.ResponseError](err)
-	return ok && response.StatusCode == http.StatusNotFound
-}
-
 func waitDeveloperRBAC(ctx context.Context, duration time.Duration) error {
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
+	return access.Wait(ctx, duration)
 }
 
 func ensureFoundryAccess(
@@ -468,78 +438,24 @@ func ensureFoundryAccess(
 	confirmed bool,
 	assigned bool,
 	ops developerRBACOperations,
-) (resultErr error) {
+) error {
 	if ops.probeFoundryAccess == nil || strings.TrimSpace(projectEndpoint) == "" {
 		return nil
 	}
-	parent := ctx
-	timeout := 5 * time.Minute
-	if ops.timeout > 0 {
-		timeout = ops.timeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	var lastProbeError error
-	defer func() {
-		if parent.Err() != nil {
-			resultErr = parent.Err()
-		} else if errors.Is(resultErr, context.DeadlineExceeded) && ctx.Err() != nil && lastProbeError != nil {
-			resultErr = lastProbeError
-		}
-		cancel()
-	}()
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	wait := waitDeveloperRBAC
-	if ops.wait != nil {
-		wait = ops.wait
-	}
-	attempts := 60
-	if ops.attempts > 0 {
-		attempts = ops.attempts
-	}
-	waitMessage := ""
-	if assigned {
-		waitMessage = "Waiting for Foundry access to propagate."
-		fmt.Println("  " + waitMessage)
-		if err := wait(ctx, 15*time.Second); err != nil {
-			return err
-		}
-	}
-	for attempt := range attempts {
-		err := ops.probeFoundryAccess(ctx, cred, projectEndpoint)
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		projectMissing := isFoundryNotFound(err)
-		if err == nil {
-			if assigned || waitMessage != "" {
-				fmt.Println("  ✓ Foundry access is ready")
-			}
-			return nil
-		}
-		// A custom role may allow the deployment write without granting agents/read.
-		if !confirmed && foundryAccessDenied(err) {
-			return nil
-		}
-		lastProbeError = err
-		retry := projectMissing || (confirmed && foundryAccessDenied(err))
-		if !retry || attempt == attempts-1 {
-			return err
-		}
-		message := "Waiting for Foundry access to propagate."
-		if projectMissing {
-			message = "Waiting for the Foundry project to synchronize."
-		}
-		if message != waitMessage {
+	return access.PollReadiness(ctx, access.PollOptions{
+		Confirmed:                confirmed,
+		Assigned:                 assigned,
+		Wait:                     ops.wait,
+		Attempts:                 ops.attempts,
+		Timeout:                  ops.timeout,
+		TreatAll404AsProjectSync: true,
+		Report: func(message string) {
 			fmt.Println("  " + message)
-			waitMessage = message
-		}
-		if err := wait(ctx, 5*time.Second); err != nil {
-			return err
-		}
-	}
-	return lastProbeError
+		},
+		ReadyMessage: "✓ Foundry access is ready",
+	}, func(ctx context.Context) error {
+		return ops.probeFoundryAccess(ctx, cred, projectEndpoint)
+	})
 }
 
 // Retained messages must not include raw HTTP bodies or credentials.
@@ -589,7 +505,6 @@ func developerRBACPrincipal(
 
 // hasAnyRoleAssignment checks whether the given principal has any of the specified roles
 // at the given scope (including inherited assignments from parent scopes).
-// Uses server-side filtering by principal to reduce API load on large subscriptions.
 func hasAnyRoleAssignment(
 	ctx context.Context,
 	cred *azidentity.AzureDeveloperCLICredential,
@@ -597,46 +512,7 @@ func hasAnyRoleAssignment(
 	roleIDs []string,
 	scope string,
 ) (bool, error) {
-	subscriptionID := extractSubscriptionID(scope)
-	if subscriptionID == "" {
-		return false, fmt.Errorf("could not extract subscription ID from scope: %s", scope)
-	}
-
-	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, cred, nil)
-	if err != nil {
-		return false, fmt.Errorf("failed to create role assignments client: %w", err)
-	}
-
-	// Build a set of suffixes to match against.
-	suffixes := make(map[string]bool, len(roleIDs))
-	for _, id := range roleIDs {
-		suffixes[fmt.Sprintf("/roleDefinitions/%s", id)] = true
-	}
-
-	// Use server-side assignedTo filter to only return assignments for this principal.
-	filter := fmt.Sprintf("assignedTo('%s')", principalID)
-	pager := client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: &filter,
-	})
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return false, fmt.Errorf("failed to list role assignments: %w", err)
-		}
-		for _, assignment := range page.Value {
-			if assignment.Properties == nil || assignment.Properties.RoleDefinitionID == nil {
-				continue
-			}
-			roleDefID := *assignment.Properties.RoleDefinitionID
-			for suffix := range suffixes {
-				if strings.HasSuffix(roleDefID, suffix) {
-					return true, nil
-				}
-			}
-		}
-	}
-
-	return false, nil
+	return access.HasAnyRoleAssignment(ctx, cred, principalID, roleIDs, scope, nil)
 }
 
 // normalizeLoginServer strips protocol prefixes, trailing slashes, and lowercases

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/useragent"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -125,6 +126,7 @@ func TestResponsesHTTP(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls = append(calls, r.Method)
 				assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+				assert.Equal(t, useragent.Default(), r.Header.Get("User-Agent"))
 				assert.Equal(t, "test-user", r.Header.Get("x-ms-user-identity"))
 				assert.Equal(t, "v1", r.URL.Query().Get("api-version"))
 				assert.False(t, r.URL.Query().Has("starting_after"))

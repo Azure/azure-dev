@@ -45,8 +45,8 @@ func TestExtensionUsageAttribute(t *testing.T) {
 			key := ExtensionUsageAttribute(tt.key)
 
 			require.Equal(t, tt.want, key.Key)
-			require.Equal(t, SystemMetadata, key.Classification)
-			require.Equal(t, FeatureInsight, key.Purpose)
+			require.Empty(t, key.Classification)
+			require.Empty(t, key.Purpose)
 		})
 	}
 }

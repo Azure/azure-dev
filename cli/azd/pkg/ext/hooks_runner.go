@@ -6,6 +6,7 @@ package ext
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -126,13 +127,12 @@ func (h *HooksRunner) RunHooks(
 }
 
 // setHookSpanAttributes records the hook name and scope on span. Built-in
-// lifecycle hook names are emitted raw; user- or extension-defined names are
-// hashed via HookNameAttribute to avoid leaking identifiers in telemetry.
+// lifecycle hook names are emitted raw; unknown names are omitted.
 func setHookSpanAttributes(span tracing.Span, hookName, hookType string) {
-	span.SetAttributes(
-		HookNameAttribute(hookName),
-		fields.HooksTypeKey.String(hookType),
-	)
+	span.SetAttributes(fields.HooksTypeKey.String(hookType))
+	if nameAttr, ok := HookNameAttribute(hookName); ok {
+		span.SetAttributes(nameAttr)
+	}
 }
 
 func (h *HooksRunner) execHook(
@@ -183,9 +183,7 @@ func (h *HooksRunner) execHook(
 		}
 	}
 
-	// Set name and type on span — known before validation. Built-in lifecycle
-	// hook names are emitted raw; user- or extension-defined names are hashed
-	// to avoid leaking identifiers via telemetry (see setHookSpanAttributes).
+	// Record only fixed lifecycle names, never custom inputs or their hashes.
 	setHookSpanAttributes(span, hookConfig.Name, hookType)
 
 	// validate() resolves the hook's kind, path, shell type,
@@ -336,7 +334,7 @@ func (h *HooksRunner) configureExecContext(
 			},
 		)
 		execCtx.StdOut = previewer
-		return true
+		return previewer != io.Discard
 	}
 
 	return false

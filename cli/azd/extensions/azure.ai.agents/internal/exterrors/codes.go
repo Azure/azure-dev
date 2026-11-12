@@ -10,44 +10,50 @@ const (
 
 // Error codes commonly used for validation errors.
 //
-// These are usually paired with [Validation] when user input, manifests,
+// These are usually paired with [Validation] when user input, definitions,
 // or configuration values fail validation.
 const (
-	// CodeInvalidAgentManifest is retained while azd still reads the deprecated
-	// on-disk agent manifest (agent.yaml/agent.manifest.yaml) during the
-	// migration window. Rename or retire it once the on-disk manifest path is
-	// removed and the agent definition is read only from azure.yaml (see the
-	// unify-azure-yaml design, §2.9).
-	CodeInvalidAgentManifest      = "invalid_agent_manifest"
-	CodeInvalidManifestPointer    = "invalid_manifest_pointer"
-	CodeInvalidProjectResourceId  = "invalid_project_resource_id"
-	CodeInvalidFoundryResourceId  = "invalid_foundry_resource_id"
-	CodeInvalidAiProjectId        = "invalid_ai_project_id"
-	CodeInvalidServiceConfig      = "invalid_service_config"
-	CodeInvalidAgentRequest       = "invalid_agent_request"
-	CodeInvalidAgentName          = "invalid_agent_name"
-	CodeInvalidAgentVersion       = "invalid_agent_version"
-	CodeTelephonyBindingDrift     = "telephony_binding_drift"
-	CodeInvalidSessionId          = "invalid_session_id"
-	CodeInvalidParameter          = "invalid_parameter"
-	CodeUnsupportedHost           = "unsupported_host"
-	CodeUnsupportedAgentKind      = "unsupported_agent_kind"
-	CodeMissingAgentKind          = "missing_agent_kind"
-	CodeAgentDefinitionNotFound   = "agent_definition_not_found"
-	CodeSubscriptionMismatch      = "subscription_mismatch"
-	CodeLocationMismatch          = "location_mismatch"
-	CodeTenantMismatch            = "tenant_mismatch"
-	CodeMissingPublishedContainer = "missing_published_container_artifact"
-	CodeMissingCodeZipArtifact    = "missing_code_zip_artifact"
-	CodeModelDeploymentNotFound   = "model_deployment_not_found"
-	CodeConflictingArguments      = "conflicting_arguments"
-	CodeInvalidPositionalArg      = "invalid_positional_arg"
+	// CodeInvalidAgentManifest remains the stable structured code for malformed
+	// direct definitions and explicit migration errors. Its legacy name is kept
+	// for compatibility even though azure.yaml is the only project entrypoint.
+	CodeInvalidAgentManifest           = "invalid_agent_manifest"
+	CodeInvalidManifestPointer         = "invalid_manifest_pointer"
+	CodeInvalidProjectResourceId       = "invalid_project_resource_id"
+	CodeInvalidFoundryResourceId       = "invalid_foundry_resource_id"
+	CodeInvalidAiProjectId             = "invalid_ai_project_id"
+	CodeInvalidServiceConfig           = "invalid_service_config"
+	CodeInvalidAgentRequest            = "invalid_agent_request"
+	CodeInvalidAgentName               = "invalid_agent_name"
+	CodeInvalidAgentVersion            = "invalid_agent_version"
+	CodeTelephonyBindingDrift          = "telephony_binding_drift"
+	CodeInvalidSessionId               = "invalid_session_id"
+	CodeInvalidParameter               = "invalid_parameter"
+	CodeUnsupportedHost                = "unsupported_host"
+	CodeUnsupportedAgentKind           = "unsupported_agent_kind"
+	CodeDeploymentPreviewUnsupported   = "deployment_preview_unsupported"
+	CodeUnsupportedAgentDefinitionPath = "unsupported_agent_definition_path"
+	CodeDeprecatedAgentServiceConfig   = "deprecated_agent_service_config"
+	CodeAgentDefinitionNotFound        = "agent_definition_not_found"
+	CodeSubscriptionMismatch           = "subscription_mismatch"
+	CodeLocationMismatch               = "location_mismatch"
+	CodeTenantMismatch                 = "tenant_mismatch"
+	CodeMissingPublishedContainer      = "missing_published_container_artifact"
+	CodeMissingCodeZipArtifact         = "missing_code_zip_artifact"
+	CodeModelDeploymentNotFound        = "model_deployment_not_found"
+	CodeConflictingArguments           = "conflicting_arguments"
+	CodeInvalidPositionalArg           = "invalid_positional_arg"
 )
 
 // Error codes for malformed locally saved protocol resource state.
 const (
 	CodeInvalidResponseState   = "invalid_response_state"
 	CodeInvalidInvocationState = "invalid_invocation_state"
+)
+
+// Error codes for State Store operations and locally saved selection.
+const (
+	CodeStateStoreOperation = "state_store_operation"
+	CodeStateStoreSelection = "state_store_selection"
 )
 
 // CodeInvalidEnvironmentVariableName identifies a hosted-agent
@@ -103,8 +109,13 @@ const (
 // These are usually paired with [Compatibility] for version mismatches.
 const (
 	CodeIncompatibleAzdVersion          = "incompatible_azd_version"
+	CodeIncompatibleProjectsExtension   = "incompatible_projects_extension"
 	CodeIncompleteAgentProtocolMetadata = "incomplete_agent_protocol_metadata"
 	CodeLegacyAgentProtocolMetadata     = "legacy_agent_protocol_metadata"
+	CodeAgentEndpointProtocolNotEnabled = "agent_endpoint_protocol_not_enabled"
+	CodeDeprecatedEvalCommand           = "deprecated_eval_command"
+	// CodeFeatureNotEnabled is returned when an opt-in extension feature is off.
+	CodeFeatureNotEnabled = "feature_not_enabled"
 )
 
 // Error codes for azd host AI service errors.
@@ -185,6 +196,15 @@ const (
 	CodeACRResolutionFailed                 = "acr_resolution_failed"
 )
 
+// Error codes for Azure Policy pre-flight checks.
+const (
+	CodeAgentPolicyBlocked            = "agent_policy_blocked"
+	CodeAgentKindBlockedByPolicy      = "agent_kind_blocked_by_policy"
+	CodeContainerImageBlockedByPolicy = "container_image_blocked_by_policy"
+	CodeModelBlockedByPolicy          = "model_blocked_by_policy"
+	CodeToolBlockedByPolicy           = "tool_blocked_by_policy"
+)
+
 // Error codes commonly used for internal errors.
 //
 // These are usually paired with [Internal] for unexpected failures
@@ -202,31 +222,33 @@ const (
 // Operation names for [ServiceFromAzure] errors.
 // These are prefixed to the Azure error code (e.g., "create_agent.NotFound").
 const (
-	OpGetFoundryProject      = "get_foundry_project"
-	OpContainerBuild         = "container_build"
-	OpContainerPackage       = "container_package"
-	OpContainerPublish       = "container_publish"
-	OpCreateAgent            = "create_agent"
-	OpCreateTelephonyBinding = "create_telephony_binding"
-	OpGetAgent               = "get_agent"
-	OpGetTelephonyBinding    = "get_telephony_binding"
-	OpUpdateAgent            = "update_agent"
-	OpGetActivityBot         = "get_activity_bot"
-	OpEnsureActivityBot      = "ensure_activity_bot"
-	OpEnsureTeamsChannel     = "ensure_teams_channel"
-	OpDeleteAgent            = "delete_agent"
-	OpStartContainer         = "start_container"
-	OpGetContainerOperation  = "get_container_operation"
-	OpCreateSession          = "create_session"
-	OpGetSession             = "get_session"
-	OpDeleteSession          = "delete_session"
-	OpStopSession            = "stop_session"
-	OpListSessions           = "list_sessions"
-	OpCreateToolboxVersion   = "create_toolbox_version"
-	OpGetToolbox             = "get_toolbox"
-	OpProvisionMemoryStore   = "provision_memory_store"
-	OpPackTeamsApp           = "pack_teams_app"
-	OpPublishTeamsApp        = "publish_teams_app"
+	OpGetFoundryProject       = "get_foundry_project"
+	OpContainerBuild          = "container_build"
+	OpContainerPackage        = "container_package"
+	OpContainerPublish        = "container_publish"
+	OpCreateAgent             = "create_agent"
+	OpCreateConversation      = "create_conversation"
+	OpCreateTelephonyBinding  = "create_telephony_binding"
+	OpGetAgent                = "get_agent"
+	OpGetTelephonyBinding     = "get_telephony_binding"
+	OpUpdateAgent             = "update_agent"
+	OpGetActivityBot          = "get_activity_bot"
+	OpEnsureActivityBot       = "ensure_activity_bot"
+	OpEnsureTeamsChannel      = "ensure_teams_channel"
+	OpDeleteAgent             = "delete_agent"
+	OpStartContainer          = "start_container"
+	OpGetContainerOperation   = "get_container_operation"
+	OpCreateSession           = "create_session"
+	OpGetSession              = "get_session"
+	OpDeleteSession           = "delete_session"
+	OpStopSession             = "stop_session"
+	OpListSessions            = "list_sessions"
+	OpCreateToolboxVersion    = "create_toolbox_version"
+	OpGetToolbox              = "get_toolbox"
+	OpEnsureToolboxConnection = "ensure_toolbox_connection"
+	OpProvisionMemoryStore    = "provision_memory_store"
+	OpPackTeamsApp            = "pack_teams_app"
+	OpPublishTeamsApp         = "publish_teams_app"
 )
 
 // Operation names for Responses and Invocations protocol resources.

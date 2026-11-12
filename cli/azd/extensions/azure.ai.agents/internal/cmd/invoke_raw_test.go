@@ -184,24 +184,9 @@ func TestCaptureResponseSession_SilentInRawMode(t *testing.T) {
 		t.Errorf("expected silent stdout in raw mode, got: %q", stdout)
 	}
 
-	// Session must still have been persisted to the sessions store. The whole
-	// "sessions" map is JSON-encoded at the "extensions.ai-agents.sessions"
-	// path, so we check that the session ID appears in any value at any
-	// recorded path.
-	configSrv.mu.Lock()
-	defer configSrv.mu.Unlock()
-	persisted := false
-	for path, val := range configSrv.values {
-		if strings.Contains(path, ".sessions") && bytes.Contains(val, []byte(newSid)) {
-			persisted = true
-			break
-		}
-	}
-	if !persisted {
-		t.Errorf(
-			"expected session %q to be persisted under *.sessions path, configSrv.values = %v",
-			newSid, configSrv.values,
-		)
+	record := loadAgentStateForTest(t, azdClient, agentKey)
+	if record == nil || record.SessionID != newSid {
+		t.Errorf("expected session %q to be persisted in extension state", newSid)
 	}
 }
 
@@ -245,7 +230,7 @@ func TestHandleInvocationResponse_RawDumpsErrorBody(t *testing.T) {
 
 	stdout, err := captureStdout(t, func() error {
 		return handleInvocationResponse(
-			t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, true, nil,
+			t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, true, nil, nil,
 		)
 	})
 
@@ -302,7 +287,7 @@ func TestHandleInvocationLRO_Raw(t *testing.T) {
 
 	stdout, err := captureStdout(t, func() error {
 		return handleInvocationLRO(
-			t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, true, nil,
+			t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, true, nil, nil,
 		)
 	})
 	if err != nil {
@@ -363,7 +348,7 @@ func TestHandleInvocationLRO_RawPollErrorDoesNotDuplicateBody(t *testing.T) {
 
 	stdout, err := captureStdout(t, func() error {
 		return handleInvocationLRO(
-			t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, true, nil,
+			t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, true, nil, nil,
 		)
 	})
 

@@ -10,9 +10,10 @@ tags: ["tier:0", "cmd:init", "picker", "parallel-safe"]
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
+  AZD_ALPHA_ENABLE_AGENTS_VOICE: "true"
 
-# Seed a file so the picker includes the existing-code option as well as
-# template and prompt voice. Empty directories offer template and prompt voice.
+# Voice is explicitly enabled for this picker-navigation scenario.
+# Seed a file so the picker also includes the existing-code option.
 pre:
   - run: "rm -rf ~/working/azd-agents-picker-{instance}"
     cwd: "~/working"

@@ -37,6 +37,7 @@ type Server struct {
 	userConfigService    azdext.UserConfigServiceServer
 	deploymentService    azdext.DeploymentServiceServer
 	eventService         azdext.EventServiceServer
+	commandResultService v1beta.CommandResultServiceServer
 	composeService       v1beta.ComposeServiceServer
 	workflowService      azdext.WorkflowServiceServer
 	extensionService     azdext.ExtensionServiceServer
@@ -48,7 +49,7 @@ type Server struct {
 	copilotService       v1beta.CopilotServiceServer
 	provisioningService  azdext.ProvisioningServiceServer
 	validationService    azdext.ValidationServiceServer
-	telemetryService     v1beta.TelemetryServiceServer
+	telemetryService     azdext.TelemetryServiceServer
 	betaServiceOverrides map[BetaService]any
 }
 
@@ -58,7 +59,7 @@ func NewServer(
 	promptService azdext.PromptServiceServer,
 	userConfigService azdext.UserConfigServiceServer,
 	deploymentService azdext.DeploymentServiceServer,
-	eventService azdext.EventServiceServer,
+	eventServiceImpl azdext.EventServiceServer,
 	composeService v1beta.ComposeServiceServer,
 	workflowService azdext.WorkflowServiceServer,
 	extensionService azdext.ExtensionServiceServer,
@@ -70,15 +71,17 @@ func NewServer(
 	copilotService v1beta.CopilotServiceServer,
 	provisioningService azdext.ProvisioningServiceServer,
 	validationService azdext.ValidationServiceServer,
-	telemetryService v1beta.TelemetryServiceServer,
+	telemetryService azdext.TelemetryServiceServer,
+	commandResultService v1beta.CommandResultServiceServer,
 ) *Server {
-	return &Server{
+	server := &Server{
 		projectService:       projectService,
 		environmentService:   environmentService,
 		promptService:        promptService,
 		userConfigService:    userConfigService,
 		deploymentService:    deploymentService,
-		eventService:         eventService,
+		eventService:         eventServiceImpl,
+		commandResultService: commandResultService,
 		composeService:       composeService,
 		workflowService:      workflowService,
 		extensionService:     extensionService,
@@ -93,6 +96,12 @@ func NewServer(
 		telemetryService:     telemetryService,
 		betaServiceOverrides: map[BetaService]any{},
 	}
+	if events, ok := eventServiceImpl.(*eventService); ok {
+		server.WithOptions(WithBetaServiceOverride(
+			BetaEventService, &betaEventService{service: events},
+		))
+	}
+	return server
 }
 
 // WithOptions applies optional beta service configuration before the server starts.
@@ -181,7 +190,7 @@ func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 	) (any, error) {
 		resp, err := handler(ctx, req)
 		if err != nil {
-			err = mapHostError(err)
+			err = mapHostErrorForMethod(info.FullMethod, err)
 			if strings.HasPrefix(info.FullMethod, "/azd.extensions.v1beta.") {
 				err = translateBetaStatusDetails(err)
 			} else if legacybridge.IsLegacyMethod(info.FullMethod) {
@@ -246,6 +255,11 @@ func (s *Server) tokenAuthInterceptor(serverInfo *ServerInfo) grpc.UnaryServerIn
 	) (any, error) {
 		ctx, err := s.validateAuthToken(ctx, serverInfo)
 		if err != nil {
+			if info.FullMethod == azdext.TelemetryService_ReportUsage_FullMethodName ||
+				info.FullMethod == v1beta.TelemetryService_ReportUsage_FullMethodName ||
+				info.FullMethod == "/azdext.TelemetryService/ReportUsage" {
+				recordExtensionUsageDrop(unattributedExtensionId, extensionUsageDropReasonUnauthenticated)
+			}
 			return nil, err
 		}
 

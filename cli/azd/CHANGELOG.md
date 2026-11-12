@@ -1,14 +1,142 @@
 # Release History
 
-## 1.35.0-beta.1 (Unreleased)
+## 1.38.0 (2026-11-11)
 
 ### Features Added
 
-### Breaking Changes
+- [[#10823]](https://github.com/Azure/azure-dev/pull/10823) Add extension metadata and project support for extension-provided infrastructure layers, enabling extensions to own resource generation and provisioning.
 
 ### Bugs Fixed
 
+- [[#10861]](https://github.com/Azure/azure-dev/pull/10861) Fix extension command errors in JSON output mode being written as plain text to stdout instead of structured JSON to stderr.
+
+## 1.37.3 (2026-11-04)
+
+### Features Added
+
+- [[#10696]](https://github.com/Azure/azure-dev/pull/10696) Add support for stable-to-stable `azd update` from an elevated terminal for machine-wide Windows x64 MSI installations, preserving custom installation directories.
+
+### Bugs Fixed
+
+- [[#10763]](https://github.com/Azure/azure-dev/pull/10763) Fix workflow steps ignoring their explicit `--cwd` when a parent `-C` or `--cwd` is set, preventing agent initialization from splitting project configuration across directories.
+- [[#10699]](https://github.com/Azure/azure-dev/pull/10699) Fix subprocess cancellation leaving child processes running or reporting ordinary command failures, including clearer cancellation errors for `azd exec`.
+
 ### Other Changes
+
+- [[#10720]](https://github.com/Azure/azure-dev/pull/10720) Improve telemetry data minimization by omitting unsupported or unmatched hook names and removing builder image and tag collection. Thanks @JeffreyCA for the contribution!
+- [[#9783]](https://github.com/Azure/azure-dev/pull/9783) Add bounded diagnostic telemetry for dropped or rejected extension telemetry reports without recording rejected payload content.
+
+## 1.37.2 (2026-10-28)
+
+### Bugs Fixed
+
+- [[#10516]](https://github.com/Azure/azure-dev/pull/10516) Fix unresolved or empty environment variables in composite Deployment Stacks deny-list values being sent to Azure when the `deployment.stacks` alpha feature is enabled. Thanks @saikeerthan-14 for the contribution!
+- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Fix provisioning validation with clearer scope-aware warnings, default-No confirmation for critical warnings, errors for `--no-prompt` or unanswered critical confirmations, and cancellation that skips post-provision hooks without hiding parallel-layer failures. Thanks @hyoshis for the contribution!
+
+## 1.37.1 (2026-10-21)
+
+### Bugs Fixed
+
+- [[#10353]](https://github.com/Azure/azure-dev/pull/10353) Fix Ctrl+C cancellation not propagating across extension processes, RPC calls, and extension-started workflows, leaving work running after cancellation.
+- [[#10353]](https://github.com/Azure/azure-dev/pull/10353) Fix extension cancellations and timeouts being reported as generic failures.
+
+## 1.37.0 (2026-10-19)
+
+### Features Added
+
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Add per-command `launch.noAzdEnvironment` extension metadata to skip loading the selected azd environment and resolving its Key Vault references.
+- [[#10628]](https://github.com/Azure/azure-dev/pull/10628) Add stable v1 deployment-preview gRPC contracts and SDK APIs while preserving existing beta compatibility.
+- [[#10362]](https://github.com/Azure/azure-dev/pull/10362) Add beta `azd env unset`.
+
+### Bugs Fixed
+
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension service edits rewriting unrelated `azure.yaml` settings, including empty mappings, large integers, and environment templates.
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension selection prompts mixing terminal UI into JSON output instead of using the injected stderr writer.
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension command metadata, canonical paths, and flag resolution when using parent or child aliases and global flags.
+
+### Other Changes
+
+- [[#10572]](https://github.com/Azure/azure-dev/pull/10572) Update Go dependencies across core and first-party extensions, including gRPC v1.84.0 and OpenTelemetry v1.47.0.
+
+## 1.36.0 (2026-10-14)
+
+### Features Added
+
+- [[#9878]](https://github.com/Azure/azure-dev/pull/9878) Add support for extension-defined infrastructure providers in `azd pipeline config`, including installing required extensions in generated pipelines.
+- [[#10439]](https://github.com/Azure/azure-dev/pull/10439) Add stable v1 extension APIs for usage telemetry and current Azure principal lookup, while preserving existing preview routes.
+- [[#10334]](https://github.com/Azure/azure-dev/pull/10334) Add preview extension APIs to discover project-service save capabilities and confirm completed service additions with typed acknowledgments.
+- [[#9950]](https://github.com/Azure/azure-dev/pull/9950) Add structured informational and warning messages from extension service deployment hooks to `azd deploy` and `azd up` terminal and JSON results, including failed deployments.
+- [[#9794]](https://github.com/Azure/azure-dev/pull/9794) Add a preview extension API for contributing follow-up guidance to successful core command completion messages.
+
+### Breaking Changes
+
+- [[#10439]](https://github.com/Azure/azure-dev/pull/10439) Update `AzdClient.Telemetry()` and the shared Foundry telemetry client to use stable v1 types; extension source adopting SDK v1.36.0 must migrate beta-typed requests and mocks.
+- [[#10243]](https://github.com/Azure/azure-dev/pull/10243) Update exported environment and state path APIs to return errors and require an `AzdContext` when constructing state cache managers; see the [migration guide](docs/environment-state-api-migration.md).
+
+### Bugs Fixed
+
+- [[#10315]](https://github.com/Azure/azure-dev/pull/10315) Fix failed or cancelled extension upgrades losing the previously installed extension by restoring its files and metadata.
+- [[#10445]](https://github.com/Azure/azure-dev/pull/10445) Fix prompts advertising a question-mark hint when hint keys are disabled.
+- [[#10376]](https://github.com/Azure/azure-dev/pull/10376) Fix `azd exec --shell` rejecting inline shell expressions containing operators, assignments, or expansions without spaces. Thanks @jongio for the contribution!
+- [[#10304]](https://github.com/Azure/azure-dev/pull/10304) Fix extension namespace `--docs` requests opening the wrong documentation.
+- [[#10304]](https://github.com/Azure/azure-dev/pull/10304) Fix deployment progress updates hanging on cancellation or panicking when their progress channel closes.
+- [[#10243]](https://github.com/Azure/azure-dev/pull/10243) Fix invalid environment names and unsafe local state paths being accepted during environment operations.
+- [[#10334]](https://github.com/Azure/azure-dev/pull/10334) Fix failed extension service additions leaving unsaved changes in the in-memory project configuration.
+- [[#10375]](https://github.com/Azure/azure-dev/pull/10375) Fix `azd exec` mistaking inline commands containing path arguments for missing script files. Thanks @jongio for the contribution!
+- [[#10300]](https://github.com/Azure/azure-dev/pull/10300) Fix file watching losing changes or retaining removed files during watch registration and shutdown.
+
+### Other Changes
+
+- [[#10456]](https://github.com/Azure/azure-dev/pull/10456) Update the bundled GitHub CLI to v2.102.0.
+- [[#10251]](https://github.com/Azure/azure-dev/pull/10251) Update MSAL Go to v1.10.1.
+- [[#10322]](https://github.com/Azure/azure-dev/pull/10322) Update the bundled Bicep CLI to v0.48.1.
+
+## 1.35.1 (2026-10-07)
+
+### Bugs Fixed
+
+- [[#10181]](https://github.com/Azure/azure-dev/pull/10181) Fix non-interactive extension installs returning success when an explicit version pin cannot be applied without confirmation.
+- [[#10181]](https://github.com/Azure/azure-dev/pull/10181) Fix registered file extension sources becoming unavailable after changing working directories.
+- [[#10181]](https://github.com/Azure/azure-dev/pull/10181) Fix the Foundry SDK accepting multiple objects or documents in a selected file reference.
+- [[#10254]](https://github.com/Azure/azure-dev/pull/10254) Fix nested dependency injection scopes overwriting registrations in parent or sibling scopes.
+- [[#10254]](https://github.com/Azure/azure-dev/pull/10254) Fix extension auto-install diagnostics ignoring the command's selected output format.
+- [[#10294]](https://github.com/Azure/azure-dev/pull/10294) Fix environment access failing after project initialization when an earlier lookup found no project.
+- [[#10282]](https://github.com/Azure/azure-dev/pull/10282) Fix directly invoked extension commands losing their process exit codes.
+- [[#10280]](https://github.com/Azure/azure-dev/pull/10280) Fix repeated unchanged progress lines during extension installs and updates when output is not a terminal.
+- [[#10317]](https://github.com/Azure/azure-dev/pull/10317) Fix stale in-memory authentication entries surviving cache cleanup during re-login.
+
+## 1.35.0 (2026-09-30)
+
+### Features Added
+
+- [[#10055]](https://github.com/Azure/azure-dev/pull/10055) Add extension SDK contracts for read-only service-target deployment previews.
+- [[#10204]](https://github.com/Azure/azure-dev/pull/10204) Add `azd deploy --preview` support for built-in service hosts, including App Service, Container Apps, Functions, Static Web Apps, AKS, and AI endpoints.
+- [[#10223]](https://github.com/Azure/azure-dev/pull/10223) Add support for deploying to Container Apps Express environments.
+
+### Bugs Fixed
+
+- [[#10157]](https://github.com/Azure/azure-dev/pull/10157) Fix deployment timeouts being shown as skipped steps or obscured by their underlying errors.
+- [[#10191]](https://github.com/Azure/azure-dev/pull/10191) Fix incomplete environment configuration updates and a race in task-list rendering.
+
+## 1.34.2 (2026-09-23)
+
+### Features Added
+
+- [[#9866]](https://github.com/Azure/azure-dev/pull/9866) Add dependency-aware `azd extension uninstall` that records why each extension was installed, blocks removing extensions other extensions depend on unless `--force` is used, and offers to remove dependencies that are no longer needed unless `--no-dependencies` is set.
+- [[#10049]](https://github.com/Azure/azure-dev/pull/10049) Add `Account.GetCurrentPrincipal` to the preview extension gRPC contract so extensions can read the current identity's object ID and principal type without decoding access tokens.
+
+### Bugs Fixed
+
+- [[#10033]](https://github.com/Azure/azure-dev/pull/10033) Fix project-level `predeploy` and `postdeploy` hook output not being shown during `azd up`. Thanks @jongio for the contribution!
+- [[#10049]](https://github.com/Azure/azure-dev/pull/10049) Fix login details for system-assigned managed identities being reported as not logged in.
+
+### Other Changes
+
+- [[#9866]](https://github.com/Azure/azure-dev/pull/9866) Update `azd extension show` to display compatibility, ownership, dependencies, and installed dependents. JSON output now uses camelCase keys and omits empty fields.
+- [[#10052]](https://github.com/Azure/azure-dev/pull/10052) Update the agentic `azd init` flow to report AI credits instead of premium requests.
+- [[#10061]](https://github.com/Azure/azure-dev/pull/10061) Update the `execution.environment` telemetry field to report `agency` when `azd` runs inside an Agency session.
+- [[#10095]](https://github.com/Azure/azure-dev/pull/10095) Update the published Homebrew casks to use Homebrew's declarative `postflight_steps`.
+- [[#10132]](https://github.com/Azure/azure-dev/pull/10132) Update the bundled GitHub CLI to v2.101.0.
 
 ## 1.34.1 (2026-09-16)
 

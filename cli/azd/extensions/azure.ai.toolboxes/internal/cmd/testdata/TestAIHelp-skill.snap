@@ -1,0 +1,33 @@
+Manage skill references attached to a toolbox.
+
+Each add/remove creates a new immutable version branched from the toolbox's
+latest version, so sequential operations accumulate. Use --from-version to
+branch from a specific version instead. The toolbox's default version is
+unchanged; use 'azd ai toolbox publish <toolbox> <version>' to promote a
+version.
+
+Usage
+  azd ai toolbox skill [command]
+
+Available Commands
+  add    : Attach one or more skill references to a toolbox.
+  list   : List the skill references attached to a toolbox.
+  remove : Detach one or more skill references from a toolbox.
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for skill
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+      --project-endpoint string : Foundry project endpoint URL for remote operations only (not local add or extension version).
+
+Examples
+  List skills attached to a toolbox
+    azd ai toolbox skill list research
+
+  Add a versioned skill reference in a new toolbox version
+    azd ai toolbox skill add research my-skill@2
+
+Use azd ai toolbox skill [command] --help to view examples and more information about a specific command.

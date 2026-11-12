@@ -4,6 +4,7 @@ Deploy application to Azure.
   • By default, deploys all services listed in 'azure.yaml' in the current directory, or the service described in the project that matches the current directory.
   • When <service> is set, only the specific service is deployed.
   • After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.
+  • When --preview is set, services whose host supports deployment preview report the changes a deployment would make. Nothing is packaged, published, or deployed, and hooks do not run.
 
 Usage
   azd deploy <service> [flags]
@@ -12,6 +13,7 @@ Flags
         --all                 	: Deploys all services that are listed in azure.yaml
     -e, --environment string  	: The name of the environment to use.
         --from-package string 	: Deploys the packaged service located at the provided path. Supports zipped file packages (file path) or container images (image tag).
+        --preview             	: Preview changes to services without deploying them.
         --timeout int         	: Maximum time in seconds for azd to wait for each service deployment. This stops azd from waiting but does not cancel the Azure-side deployment. (default: 1200)
 
 Global Flags

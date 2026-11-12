@@ -7,9 +7,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -43,7 +46,15 @@ func resolvePromptHarnessTarget(
 	flags *initFlags,
 	env *azdext.Environment,
 	settings *project.PromptAgentSettings,
+	harness string,
 ) (*project.Deployment, bool, *FoundryProjectInfo, azcore.TokenCredential, error) {
+	ctx = withHarnessRegionPolicy(ctx, harness)
+	defer inittelemetry.Start(ctx, inittelemetry.PromptAgentConfiguration)()
+
+	allowedLocations, err := promptHarnessRegionsForInit(ctx, harness)
+	if err != nil {
+		return nil, false, nil, nil, err
+	}
 	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
 	if err != nil {
 		return nil, false, nil, nil, err
@@ -63,13 +74,19 @@ func resolvePromptHarnessTarget(
 	// scaffold has already been written, mirror the hosted flow: finish the
 	// scaffold, warn, and print exactly which values to set before
 	// `azd provision`. The agent's model still comes from --model /
-	// --model-deployment / the manifest, so agent.yaml is complete.
+	// --model-deployment / adopted service, so the definition is complete.
 	if strings.TrimSpace(flags.projectResourceId) == "" &&
 		shouldDeferInitAzureContext(flags.noPrompt, azureContext) {
 		if err := configureDeferredInitAzureContext(
 			ctx, azdClient, env.Name, azureContext, true, false,
 		); err != nil {
 			return nil, false, nil, nil, err
+		}
+		if len(allowedLocations) > 0 {
+			fmt.Println(output.WithWarningFormat(
+				"The Microsoft Copilot harness requires a Foundry project in one of these regions: %s.",
+				strings.Join(allowedLocations, ", "),
+			))
 		}
 		return nil, false, nil, nil, nil
 	}
@@ -84,7 +101,7 @@ func resolvePromptHarnessTarget(
 	}
 
 	proj, err := selectPromptFoundryProject(
-		ctx, azdClient, cred, azureContext, env.Name, flags.projectResourceId, flags.noPrompt,
+		ctx, azdClient, cred, azureContext, env.Name, flags.projectResourceId, flags.noPrompt, allowedLocations,
 	)
 	if err != nil {
 		return nil, false, nil, nil, err
@@ -104,7 +121,8 @@ func resolvePromptHarnessTarget(
 			"No existing Foundry project selected. `azd up` will provision one " +
 				"with the model deployment you choose next.",
 		))
-		if err := ensureLocation(ctx, azdClient, azureContext, env.Name); err != nil {
+		err = ensureNewProjectLocation(ctx, azdClient, azureContext, env.Name, flags.noPrompt, allowedLocations)
+		if err != nil {
 			return nil, false, nil, nil, err
 		}
 		if err := setEnvValue(ctx, azdClient, env.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
@@ -116,6 +134,16 @@ func resolvePromptHarnessTarget(
 		// A new project is provisioned by `azd up`; its endpoint is resolved from
 		// the provisioned environment at deploy time.
 		deployment, err := resolvePromptModelDeployment(ctx, azdClient, azureContext, env, flags)
+		if err == nil {
+			err = validateInitLocation(ctx, azureContext.Scope.Location, allowedLocations)
+		}
+		if err == nil && len(allowedLocations) > 0 {
+			location, locationErr := getEnvValue(ctx, azdClient, env.Name, "AZURE_LOCATION")
+			if locationErr != nil {
+				return nil, false, nil, nil, locationErr
+			}
+			err = validateNewProjectLocation(location, azureContext.Scope.Location)
+		}
 		return deployment, true, nil, cred, err
 	}
 
@@ -123,12 +151,12 @@ func resolvePromptHarnessTarget(
 	// from the project (no location prompt).
 	settings.SubscriptionID = proj.SubscriptionId
 	settings.ResourceGroup = proj.ResourceGroupName
-	settings.ModelEndpoint = fmt.Sprintf("https://%s.services.ai.azure.com", proj.AccountName)
-	// Record the Foundry project data-plane endpoint so all managed agent
-	// operations route to https://<account>.services.ai.azure.com/api/projects/<project>/agents.
-	settings.ProjectEndpoint = fmt.Sprintf(
-		"https://%s.services.ai.azure.com/api/projects/%s", proj.AccountName, proj.ProjectName,
-	)
+	endpoint, err := url.Parse(proj.Endpoint())
+	if err != nil {
+		return nil, false, nil, nil, fmt.Errorf("parse resolved Foundry project endpoint: %w", err)
+	}
+	settings.ModelEndpoint = endpoint.Scheme + "://" + endpoint.Host
+	settings.ProjectEndpoint = proj.Endpoint()
 
 	azureContext.Scope.Location = proj.Location
 	if proj.Location != "" {
@@ -158,6 +186,9 @@ func resolvePromptHarnessTarget(
 	deployment, provision, err := resolvePromptModelForExistingProject(
 		ctx, azdClient, cred, azureContext, env, flags, proj,
 	)
+	if err == nil {
+		err = validateInitLocation(ctx, azureContext.Scope.Location, allowedLocations)
+	}
 	return deployment, provision, proj, cred, err
 }
 
@@ -167,8 +198,8 @@ func resolvePromptHarnessTarget(
 // prompting. Returns nil when the user chose "Create a new Foundry project" or
 // no existing projects were found.
 //
-// Unlike the hosted selectFoundryProject this does NOT filter by region or
-// configure ACR/AppInsights connections, which are irrelevant to prompt agents.
+// Unlike the hosted selectFoundryProject this only filters regions when a harness
+// requires it and does not configure ACR/AppInsights connections.
 //
 // In non-interactive mode without --project-id there is no basis for picking
 // one of the subscription's existing projects, so it returns nil to take the
@@ -183,10 +214,18 @@ func selectPromptFoundryProject(
 	envName string,
 	projectResourceId string,
 	noPrompt bool,
+	allowedLocations []string,
 ) (*FoundryProjectInfo, error) {
 	subscriptionId := azureContext.Scope.SubscriptionId
 	if strings.TrimSpace(projectResourceId) != "" {
-		return getFoundryProject(ctx, credential, subscriptionId, projectResourceId)
+		proj, err := getFoundryProject(ctx, credential, subscriptionId, projectResourceId)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateInitLocation(ctx, proj.Location, allowedLocations); err != nil {
+			return nil, err
+		}
+		return proj, nil
 	}
 	if noPrompt {
 		return nil, nil
@@ -215,7 +254,16 @@ func selectPromptFoundryProject(
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}
+	projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
+		return !initLocationAllowed(ctx, p.Location, allowedLocations)
+	})
 	if len(projects) == 0 {
+		if len(allowedLocations) > 0 {
+			fmt.Println(output.WithWarningFormat(
+				"No Foundry projects were found in regions supported for the Microsoft Copilot harness. " +
+					"Continue by configuring a new project.",
+			))
+		}
 		return nil, nil
 	}
 
@@ -249,7 +297,7 @@ func selectPromptFoundryProject(
 
 	idx := int(*resp.Value)
 	selected := projects[idx]
-	return &selected, nil
+	return getFoundryProject(ctx, credential, subscriptionId, selected.ResourceId)
 }
 
 // setPromptFoundryProjectEnv persists the core Foundry project identifiers to
@@ -269,15 +317,13 @@ func setPromptFoundryProjectEnv(
 			proj.SubscriptionId, proj.ResourceGroupName, proj.AccountName, proj.ProjectName,
 		)
 	}
-	foundryEndpoint := fmt.Sprintf(
-		"https://%s.services.ai.azure.com/api/projects/%s", proj.AccountName, proj.ProjectName,
-	)
 	values := map[string]string{
 		"AZURE_AI_PROJECT_ID":      resourceId,
 		"AZURE_RESOURCE_GROUP":     proj.ResourceGroupName,
 		"AZURE_AI_ACCOUNT_NAME":    proj.AccountName,
 		"AZURE_AI_PROJECT_NAME":    proj.ProjectName,
-		"FOUNDRY_PROJECT_ENDPOINT": foundryEndpoint,
+		"FOUNDRY_PROJECT_ENDPOINT": proj.Endpoint(),
+		"AZURE_OPENAI_ENDPOINT":    proj.openAIEndpoint(),
 	}
 	for k, v := range values {
 		if err := setEnvValue(ctx, azdClient, envName, k, v); err != nil {

@@ -29,6 +29,11 @@ latest version, so sequential operations accumulate. Use --from-version to
 branch from a specific version instead. The toolbox's default version is
 unchanged; use 'azd ai toolbox publish <toolbox> <version>' to promote a
 version.`,
+		Example: `  # Inspect a toolbox's connections
+  azd ai toolbox connection list research
+
+  # Attach an existing project connection in a new version
+  azd ai toolbox connection add research my-mcp`,
 	}
 	cmd.AddCommand(newToolboxConnectionAddCommand(extCtx))
 	cmd.AddCommand(newToolboxConnectionRemoveCommand(extCtx))

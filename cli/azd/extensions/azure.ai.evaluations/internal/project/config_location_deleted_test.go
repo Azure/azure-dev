@@ -21,7 +21,7 @@ import (
 func TestADeletedConfigurationIsStillAFileName(t *testing.T) {
 	dir := t.TempDir()
 
-	for _, base := range []string{EvalConfigBase, LegacyEvalConfigBase} {
+	for _, base := range []string{EvalConfigBase, LegacyEvalConfigBase, "custom.yaml", "custom.yml", "custom.YAML"} {
 		gone := filepath.Join(dir, base)
 
 		assert.Equal(t, dir, EvalDirOf(gone),

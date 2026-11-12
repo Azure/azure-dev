@@ -54,14 +54,14 @@ func (m *MockEnvManager) Reload(ctx context.Context, env *environment.Environmen
 	return args.Error(0)
 }
 
-func (m *MockEnvManager) EnvPath(env *environment.Environment) string {
+func (m *MockEnvManager) EnvPath(env *environment.Environment) (string, error) {
 	args := m.Called(env)
-	return args.String(0)
+	return args.String(0), args.Error(1)
 }
 
-func (m *MockEnvManager) ConfigPath(env *environment.Environment) string {
+func (m *MockEnvManager) ConfigPath(env *environment.Environment) (string, error) {
 	args := m.Called(env)
-	return args.String(0)
+	return args.String(0), args.Error(1)
 }
 
 func (m *MockEnvManager) Delete(ctx context.Context, name string) error {

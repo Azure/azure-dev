@@ -6,18 +6,23 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/internal/provisioning"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-const projectDeploymentsEnvKey = "AI_PROJECT_DEPLOYMENTS"
+const projectDeploymentsEnvKey = provisioning.ProjectDeploymentsEnvKey
 
 type projectServiceConfig struct {
 	Endpoint    string                 `json:"endpoint,omitempty"`
@@ -35,6 +40,23 @@ func firstProjectDeploymentName(value map[string]any) string {
 	}
 	name, _ := deployment["name"].(string)
 	return strings.TrimSpace(name)
+}
+
+// defaultModelDeploymentName chooses AZURE_AI_MODEL_DEPLOYMENT_NAME.
+// A present environment override supplies the name, and [] stays empty.
+// YAML is used only when AI_PROJECT_DEPLOYMENTS is missing.
+func defaultModelDeploymentName(envValue string, service map[string]any) (string, error) {
+	deployments, present, err := provisioning.DecodeProjectDeployments(envValue)
+	if err != nil {
+		return "", err
+	}
+	if present {
+		if len(deployments) == 0 {
+			return "", nil
+		}
+		return strings.TrimSpace(deployments[0].Name), nil
+	}
+	return firstProjectDeploymentName(service), nil
 }
 
 func projectLifecycleHandler(
@@ -57,17 +79,48 @@ func projectLifecycleHandler(
 		return nil
 	}
 
-	current, err := azdClient.Environment().GetCurrent(
-		ctx,
-		&azdext.EmptyRequest{},
-	)
+	envName, values, err := projectLifecycleEnvironment(ctx, azdClient)
 	if err != nil {
-		return fmt.Errorf("resolving current azd environment: %w", err)
+		return err
 	}
-	if current.GetEnvironment().GetName() == "" {
-		return fmt.Errorf("current azd environment has no name")
+	if err := provisioning.NewACRRemoteBuildCheck(azdClient).ValidateProject(
+		ctx, args.Project, envName, values,
+	); err != nil {
+		return err
 	}
-
+	if err := synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project); err != nil {
+		return err
+	}
+	onDisk, err := projectOnDiskFoundryTemplatePresent(args.Project)
+	if err != nil {
+		return err
+	}
+	if deployments, present, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey]); err != nil {
+		return err
+	} else if present {
+		if onDisk {
+			return nil
+		}
+		return seedProjectModelDeploymentName(ctx, azdClient, envName, values, deployments)
+	}
+	if len(cfg.Deployments) > 0 && !azdext.DetectInteractive().NoPrompt {
+		if !onDisk {
+			location := values["AZURE_AI_DEPLOYMENTS_LOCATION"]
+			if location == "" {
+				location = values["AZURE_LOCATION"]
+			}
+			cfg.Deployments, err = provisioning.PromptProjectDeployments(ctx, azdClient, &azdext.AzureContext{
+				Scope: &azdext.AzureScope{
+					SubscriptionId: values["AZURE_SUBSCRIPTION_ID"],
+					TenantId:       values["AZURE_TENANT_ID"],
+					Location:       location,
+				},
+			}, cfg.Deployments)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	value, err := encodeProjectDeployments(cfg.Deployments)
 	if err != nil {
 		return err
@@ -75,7 +128,7 @@ func projectLifecycleHandler(
 	if _, err := azdClient.Environment().SetValue(
 		ctx,
 		&azdext.SetEnvRequest{
-			EnvName: current.GetEnvironment().GetName(),
+			EnvName: envName,
 			Key:     projectDeploymentsEnvKey,
 			Value:   value,
 		},
@@ -87,6 +140,72 @@ func projectLifecycleHandler(
 		)
 	}
 
+	if onDisk {
+		return nil
+	}
+	return seedProjectModelDeploymentName(ctx, azdClient, envName, values, cfg.Deployments)
+}
+
+func validateProjectACRBuilds(ctx context.Context, client *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	if args == nil || args.Project == nil {
+		return fmt.Errorf("project lifecycle event has no project")
+	}
+	_, found, err := loadProjectServiceConfig(args.Project.Services, args.Project.Path)
+	if err != nil || !found {
+		return err
+	}
+	current, err := synthesis.CurrentEnvironment(ctx, client)
+	if err != nil {
+		if os.Getenv("AZD_ENVIRONMENT") == "" && projectACREnvironmentMissing(args.Project.Path, "", err) {
+			// Still gate on-disk existingAcrResourceId when no environment is selected.
+			return provisioning.NewACRRemoteBuildCheck(client).ValidateProject(
+				ctx, args.Project, "", map[string]string{})
+		}
+		return fmt.Errorf("resolving current azd environment: %w", err)
+	}
+	envName := current.GetEnvironment().GetName()
+	if envName == "" {
+		return provisioning.NewACRRemoteBuildCheck(client).ValidateProject(
+			ctx, args.Project, "", map[string]string{})
+	}
+	values, err := currentProjectEnvironment(ctx, client, envName)
+	if err != nil {
+		return err
+	}
+	return provisioning.NewACRRemoteBuildCheck(client).ValidateProject(ctx, args.Project, envName, values)
+}
+
+func projectLifecycleEnvironment(ctx context.Context, client *azdext.AzdClient) (string, map[string]string, error) {
+	current, err := synthesis.CurrentEnvironment(ctx, client)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolving current azd environment: %w", err)
+	}
+	envName := current.GetEnvironment().GetName()
+	if envName == "" {
+		return "", nil, fmt.Errorf("current azd environment has no name")
+	}
+	values, err := currentProjectEnvironment(ctx, client, envName)
+	return envName, values, err
+}
+
+func seedProjectModelDeploymentName(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	values map[string]string,
+	deployments []synthesis.Deployment,
+) error {
+	const key = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
+	if strings.TrimSpace(values[key]) != "" || len(deployments) == 0 {
+		return nil
+	}
+	if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: envName,
+		Key:     key,
+		Value:   deployments[0].Name,
+	}); err != nil {
+		return fmt.Errorf("setting %s in azd environment: %w", key, err)
+	}
 	return nil
 }
 
@@ -164,14 +283,56 @@ func projectServiceProperties(
 func encodeProjectDeployments(
 	deployments []synthesis.Deployment,
 ) (string, error) {
-	if deployments == nil {
-		deployments = []synthesis.Deployment{}
+	return provisioning.EncodeProjectDeployments(deployments)
+}
+
+// projectOnDiskFoundryTemplatePresent detects ejected infrastructure
+// and user-authored Bicep. Their parameters own the deployments, so
+// model prompts and inferred runtime defaults must be skipped.
+func projectOnDiskFoundryTemplatePresent(project *azdext.ProjectConfig) (bool, error) {
+	if project == nil || project.GetPath() == "" {
+		return false, nil
 	}
-	data, err := json.Marshal(deployments)
+	if ejected, err := findEjectedFoundryProjectInfrastructure(project); err != nil {
+		return false, err
+	} else if ejected != nil {
+		return true, nil
+	}
+	declaration, err := readProjectInfraDeclaration(project)
 	if err != nil {
-		return "", fmt.Errorf("encoding project deployments: %w", err)
+		return false, err
 	}
 
-	escaped := strings.ReplaceAll(string(data), "\\", "\\\\")
-	return strings.ReplaceAll(escaped, "\"", "\\\""), nil
+	path := "infra"
+	module := "main"
+	if declaration.layerCount > 0 {
+		if declaration.foundryLayer == nil {
+			return false, nil
+		}
+		if declaration.foundryLayer.path != "" {
+			path = declaration.foundryLayer.path
+		}
+		if declaration.foundryLayer.module != "" {
+			module = normalizeProjectInfraEjectModule(declaration.foundryLayer.module)
+		}
+	} else {
+		if declaration.rootModule != "" {
+			module = normalizeProjectInfraEjectModule(declaration.rootModule)
+		}
+		if _, infraPath := projectInfraConfig(project); strings.TrimSpace(infraPath) != "" {
+			path = strings.TrimSpace(infraPath)
+		}
+	}
+
+	infraDir := filepath.Join(project.GetPath(), filepath.FromSlash(path))
+	for _, name := range []string{module + ".bicepparam", module + ".bicep"} {
+		info, err := os.Stat(filepath.Join(infraDir, name))
+		if err == nil && !info.IsDir() {
+			return true, nil
+		}
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return false, fmt.Errorf("inspect on-disk infrastructure %q: %w", filepath.Join(infraDir, name), err)
+		}
+	}
+	return false, nil
 }

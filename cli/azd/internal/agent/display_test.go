@@ -111,15 +111,19 @@ func TestGetUsageMetrics(t *testing.T) {
 	outputTokens1 := int64(500)
 	cost1 := float64(1.0)
 	duration1 := int64(5000)
+	nanoAiu1 := 1_500_000_000.0
 
 	// Simulate usage events
 	d.HandleEvent(copilot.SessionEvent{
 		Data: &copilot.AssistantUsageData{
 			InputTokens:  &inputTokens1,
 			OutputTokens: &outputTokens1,
-			Cost:         &cost1,
-			Duration:     &duration1,
-			Model:        "gpt-4.1",
+			CopilotUsage: &copilot.AssistantUsageCopilotUsage{
+				TotalNanoAiu: nanoAiu1,
+			},
+			Cost:     &cost1,
+			Duration: &duration1,
+			Model:    "gpt-4.1",
 		},
 	})
 
@@ -127,19 +131,27 @@ func TestGetUsageMetrics(t *testing.T) {
 	outputTokens2 := int64(800)
 	cost2 := float64(1.0)
 	duration2 := int64(3000)
+	nanoAiu2 := 1_000_000_000.0
 
 	d.HandleEvent(copilot.SessionEvent{
 		Data: &copilot.AssistantUsageData{
 			InputTokens:  &inputTokens2,
 			OutputTokens: &outputTokens2,
-			Cost:         &cost2,
-			Duration:     &duration2,
+			CopilotUsage: &copilot.AssistantUsageCopilotUsage{
+				TotalNanoAiu: nanoAiu2,
+			},
+			Cost:     &cost2,
+			Duration: &duration2,
 		},
 	})
+	d.HandleEvent(copilot.SessionEvent{Data: &copilot.AssistantMessageData{}})
+	d.HandleEvent(copilot.SessionEvent{Data: &copilot.SessionIdleData{}})
+	require.NoError(t, d.WaitForIdle(t.Context()))
 
 	metrics := d.GetUsageMetrics()
 	require.Equal(t, float64(3000), metrics.InputTokens)
 	require.Equal(t, float64(1300), metrics.OutputTokens)
+	require.Equal(t, 2.5, metrics.AICredits)
 	require.Equal(t, float64(1.0), metrics.BillingRate) // last value, not sum
 	require.Equal(t, float64(8000), metrics.DurationMS)
 	require.Equal(t, "gpt-4.1", metrics.Model)

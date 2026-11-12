@@ -176,3 +176,5 @@ type envFlagKey string
 var envFlagCtxKey envFlagKey = "envFlag"
 
 const referenceDocumentationUrl = "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#"
+
+const extensionsDocumentationURL = "https://learn.microsoft.com/azure/developer/azure-developer-cli/extensions/overview"

@@ -20,16 +20,29 @@ func TestPromptAgentRequestHeaders(t *testing.T) {
 		features string
 	}{
 		{name: "plain"},
-		{name: "managed", agent: agent_yaml.PromptAgent{
+		{name: "Microsoft Copilot", agent: agent_yaml.PromptAgent{
+			Harness: agent_yaml.NewPromptHarness(agent_api.ManagedAgentHarnessMicrosoftCopilot),
+		}, features: "MicrosoftCopilot=V1Preview"},
+		{name: "legacy GitHub Copilot", agent: agent_yaml.PromptAgent{
 			Harness: agent_yaml.NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
-		}, features: "GitHubCopilot=V1Preview"},
+		}, features: "MicrosoftCopilot=V1Preview"},
+		{name: "other harness", agent: agent_yaml.PromptAgent{
+			Harness: agent_yaml.NewPromptHarness("other"),
+		}},
+		{name: "Copilot prefix is not a match", agent: agent_yaml.PromptAgent{
+			Harness: agent_yaml.NewPromptHarness("microsoft_copilot_preview_other"),
+		}},
 		{name: "plain skills", agent: agent_yaml.PromptAgent{
 			ResolvedSkills: []agent_yaml.HarnessSkillRef{{Name: "skill", Version: "1"}},
 		}, features: "Skills=V1Preview"},
-		{name: "managed skills", agent: agent_yaml.PromptAgent{
+		{name: "Microsoft Copilot skills", agent: agent_yaml.PromptAgent{
+			Harness:        agent_yaml.NewPromptHarness(agent_api.ManagedAgentHarnessMicrosoftCopilot),
+			ResolvedSkills: []agent_yaml.HarnessSkillRef{{Name: "skill", Version: "1"}},
+		}, features: "MicrosoftCopilot=V1Preview,Skills=V1Preview"},
+		{name: "legacy GitHub Copilot skills", agent: agent_yaml.PromptAgent{
 			Harness:        agent_yaml.NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
 			ResolvedSkills: []agent_yaml.HarnessSkillRef{{Name: "skill", Version: "1"}},
-		}, features: "GitHubCopilot=V1Preview,Skills=V1Preview"},
+		}, features: "MicrosoftCopilot=V1Preview,Skills=V1Preview"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			headers := promptAgentRequestHeaders(&tt.agent, settings)

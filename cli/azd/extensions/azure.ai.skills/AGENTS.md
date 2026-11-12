@@ -1,10 +1,11 @@
 # Azure AI Skills Extension - Agent Instructions
 
-Use this file together with `cli/azd/AGENTS.md`. This guide supplements the root azd instructions with the conventions that are specific to this extension.
+Use this file together with the [shared extension guide](../AGENTS.md) and
+`cli/azd/AGENTS.md`. This guide adds conventions specific to this extension.
 
 ## Overview
 
-`azure.ai.skills` is a first-party azd extension under `cli/azd/extensions/azure.ai.skills/`. It runs as a separate Go binary and talks to the azd host over gRPC. It exposes the `azd ai skill <verb>` command group for managing Foundry Skills.
+`azure.ai.skills` is a Microsoft-authored azd extension under `cli/azd/extensions/azure.ai.skills/`. It runs as a separate Go binary and talks to the azd host over gRPC. It exposes the `azd ai skill <verb>` command group for managing Foundry Skills.
 
 Useful places to start:
 
@@ -33,18 +34,7 @@ azd x build
 go build
 ```
 
-If extension work depends on a new azd core change, plan for two PRs:
-
-1. Land the core change in `cli/azd` first.
-2. Land the extension change after that, updating this module to the newer azd dependency with `go get github.com/azure/azure-dev/cli/azd && go mod tidy`.
-
-For local development, draft work, or validating both sides together before the core PR is merged, you may temporarily add:
-
-```go
-replace github.com/azure/azure-dev/cli/azd => ../../
-```
-
-That `replace` points this extension at your local `cli/azd` checkout instead of the version in `go.mod`. Do not merge the extension with that `replace` still present.
+For changes that depend on core, follow the [core dependency guidance](../AGENTS.md#core-dependency-changes).
 
 ## Error handling
 
@@ -63,7 +53,8 @@ Each `--debug` run writes to `azd-ai-skills-<date>.log` in the current working d
 
 ## File handling
 
-- `--file` is **not** a manifest. It is read at invocation time only; the CLI does not track or re-read it after the command returns.
+- `--file` is **not** a manifest. For remote `create` and `update`, it is read only at invocation time. Declarative `add` embeds a `SKILL.md`'s content in `azure.yaml`, but stores ZIP and directory references that deploy re-reads.
+- `add`: inline and `SKILL.md` inputs require a non-empty description and instructions. Preserve literal instruction text through the explicit `instructions: {inline: ...}` form when it could be mistaken for a path. Deploy also accepts `instructions: {file: ...}` for unambiguous file references, including filenames with spaces; legacy string instructions remain supported.
 - `create`: accepts `.md`, `.zip`, or a **directory** whose root contains `SKILL.md`. Mode is inferred from the path: directories take precedence over extension matching so callers can hand the output of `azd ai skill download` straight back. Conflicting modes (inline + `--file`) are rejected. `.md` and inline modes send `inline_content` JSON; `.zip` and directory modes upload `multipart/form-data` with a single `files[]` part. Directory mode packages the directory into an in-memory zip using `skill_api.ArchiveDirectory`, which enforces the same safety caps as `SafeExtract` on the way down (no symlinks / non-regular entries, 10,000-entry / 512 MB total cap).
 - `update`: accepts `.md`, `.zip`, or a **directory** whose root contains `SKILL.md` — the same three shapes as `create`, routed through the same `selectUpdateMode` mode dispatch. `update` is non-destructive: every upload (inline / md / zip / directory) creates a new immutable version via `POST /skills/{name}/versions` and promotes it to `default_version`; prior versions remain reachable. Conflicting modes (inline + `--file`) are rejected. Pass `--set-default-version <ver>` to repoint `default_version` at an existing immutable version without uploading new content. Unlike `create`, `update` has no `--force` flag because there is nothing to delete.
 - `download`: writes either an extracted directory (default) or the unmodified zip archive (`--raw`). Pass `--version <ver>` to download a non-default version. The server always returns `application/zip` (from `GET /skills/{name}/content` or `GET /skills/{name}/versions/{version}/content`).

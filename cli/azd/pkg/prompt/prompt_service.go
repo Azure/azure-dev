@@ -246,7 +246,8 @@ func (ps *promptService) PromptSubscription(
 	// Load subscriptions under a spinner first
 	var subscriptionList []account.Subscription
 	loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text: mergedOptions.LoadingMessage,
+		Text:   mergedOptions.LoadingMessage,
+		Writer: mergedOptions.Writer,
 	})
 
 	err := loadingSpinner.Run(ctx, func(ctx context.Context) error {
@@ -903,7 +904,8 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 			}
 		} else {
 			loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
-				Text: mergedSelectorOptions.LoadingMessage,
+				Text:   mergedSelectorOptions.LoadingMessage,
+				Writer: mergedSelectorOptions.Writer,
 			})
 			if err := loadingSpinner.Run(ctx, func(ctx context.Context) error {
 				return loadData(ctx)

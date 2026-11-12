@@ -39,6 +39,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
@@ -74,6 +75,14 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
+			name: "WithExternalServiceTargetResponseError",
+			err: &project.ExternalServiceTargetResponseError{
+				Operation: "deploy",
+				Detail:    "missing deploy result",
+			},
+			wantErrReason: "internal.extension_invalid_response",
+		},
+		{
 			name: "WithToolExitError",
 			err: &exec.ExitError{
 				Cmd:      "any",
@@ -84,6 +93,42 @@ func Test_MapError(t *testing.T) {
 				fields.ErrorKey(fields.ToolName.Key).String("any"),
 				fields.ErrorKey(fields.ToolExitCode.Key).Int(51),
 			},
+		},
+		{
+			name: "WithInterruptedToolExitAndContextCanceled",
+			err: errors.Join(
+				&exec.ExitError{
+					Cmd:      "any",
+					ExitCode: 130,
+				},
+				context.Canceled,
+			),
+			wantErrReason:  "user.canceled",
+			wantErrDetails: nil,
+		},
+		{
+			name: "WithKilledToolExitAndContextCanceled",
+			err: errors.Join(
+				&exec.ExitError{
+					Cmd:      "any",
+					ExitCode: -1,
+				},
+				context.Canceled,
+			),
+			wantErrReason:  "user.canceled",
+			wantErrDetails: nil,
+		},
+		{
+			name: "WithKilledToolExitAndContextDeadlineExceeded",
+			err: errors.Join(
+				&exec.ExitError{
+					Cmd:      "any",
+					ExitCode: -1,
+				},
+				context.DeadlineExceeded,
+			),
+			wantErrReason:  "internal.timeout",
+			wantErrDetails: nil,
 		},
 		{
 			name: "WithArmDeploymentError",
@@ -322,6 +367,158 @@ func Test_MapError(t *testing.T) {
 			wantErrDetails: nil,
 		},
 		{
+			name: "WithCanceledExtensionRunError",
+			err: &extensions.ExtensionRunError{
+				ExtensionId:      "test.ext",
+				ExtensionVersion: "1.2.3",
+				Err:              context.Canceled,
+			},
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
+			name: "WithDeadlineExtensionRunError",
+			err: &extensions.ExtensionRunError{
+				ExtensionId:      "test.ext",
+				ExtensionVersion: "1.2.3",
+				Err:              context.DeadlineExceeded,
+			},
+			wantErrReason: "internal.timeout",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
+			name: "WithInterruptedDeadlineExtensionRunError",
+			err: &extensions.ExtensionRunError{
+				ExtensionId:      "test.ext",
+				ExtensionVersion: "1.2.3",
+				Err: errors.Join(
+					&exec.ExitError{
+						Cmd:      "test.ext",
+						ExitCode: 130,
+					},
+					context.DeadlineExceeded,
+				),
+			},
+			wantErrReason: "internal.timeout",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
+			name: "WithReportedErrorAndCanceledExtensionRunError",
+			err: fmt.Errorf(
+				"%w: %w",
+				&azdext.LocalError{
+					Message:  "extension reported a failure",
+					Code:     "reported_failure",
+					Category: azdext.LocalErrorCategoryInternal,
+				},
+				&extensions.ExtensionRunError{
+					ExtensionId:      "test.ext",
+					ExtensionVersion: "1.2.3",
+					Err:              context.Canceled,
+				},
+			),
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
+			name: "WithReportedCancellationAndFailedExtensionRunError",
+			err: fmt.Errorf(
+				"%w: %w",
+				&azdext.LocalError{
+					Message:  "operation cancelled",
+					Code:     "cancelled",
+					Category: azdext.LocalErrorCategoryUser,
+				},
+				&extensions.ExtensionRunError{
+					ExtensionId:      "test.ext",
+					ExtensionVersion: "1.2.3",
+					Err:              errors.New("exit code 1"),
+				},
+			),
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("user"),
+				fields.ErrorKey(fields.ErrCode.Key).String("cancelled"),
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
+			name: "WithReportedCancellationAndCanceledExtensionRunError",
+			err: fmt.Errorf(
+				"%w: %w",
+				&azdext.LocalError{
+					Message:  "operation cancelled",
+					Code:     "cancelled",
+					Category: azdext.LocalErrorCategoryUser,
+				},
+				&extensions.ExtensionRunError{
+					ExtensionId:      "test.ext",
+					ExtensionVersion: "1.2.3",
+					Err:              context.Canceled,
+				},
+			),
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("user"),
+				fields.ErrorKey(fields.ErrCode.Key).String("cancelled"),
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
+			name: "WithJoinedExtServiceErrorAndContextCanceled",
+			err: errors.Join(
+				&azdext.ServiceError{
+					Message:     "request failed",
+					ErrorCode:   "Conflict",
+					StatusCode:  409,
+					ServiceName: "management.azure.com",
+				},
+				context.Canceled,
+			),
+			wantErrReason:  "user.canceled",
+			wantErrDetails: nil,
+		},
+		{
+			name: "WithJoinedExtToolErrorAndContextDeadlineExceeded",
+			err: errors.Join(
+				&azdext.ToolError{
+					Message:  "tool failed",
+					ToolName: "docker",
+					Kind:     azdext.ToolErrorKindFailed,
+				},
+				context.DeadlineExceeded,
+			),
+			wantErrReason:  "internal.timeout",
+			wantErrDetails: nil,
+		},
+		{
+			name: "WithFailedExtensionRunError",
+			err: &extensions.ExtensionRunError{
+				ExtensionId:      "test.ext",
+				ExtensionVersion: "1.2.3",
+				Err:              errors.New("exit code 1"),
+			},
+			wantErrReason: "ext.run.failed",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ExtensionId.String("test.ext"),
+				fields.ExtensionVersion.String("1.2.3"),
+			},
+		},
+		{
 			name:          "WithErrNoCurrentUser",
 			err:           auth.ErrNoCurrentUser,
 			wantErrReason: "auth.not_logged_in",
@@ -440,6 +637,63 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
+			name: "WithExtLocalErrorUserCanceled",
+			err: &azdext.LocalError{
+				Message:  "operation canceled",
+				Code:     "canceled",
+				Category: azdext.LocalErrorCategoryUser,
+			},
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("user"),
+				fields.ErrorKey(fields.ErrCode.Key).String("canceled"),
+			},
+		},
+		{
+			name:          "WithTransportedExtLocalErrorUserCanceled",
+			err:           azdext.UnwrapError(azdext.WrapError(context.Canceled)),
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("user"),
+				fields.ErrorKey(fields.ErrCode.Key).String("canceled"),
+			},
+		},
+		{
+			name: "WithExtLocalErrorUserCancelled",
+			err: &azdext.LocalError{
+				Message:  "operation cancelled",
+				Code:     "cancelled",
+				Category: azdext.LocalErrorCategoryUser,
+			},
+			wantErrReason: "user.canceled",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("user"),
+				fields.ErrorKey(fields.ErrCode.Key).String("cancelled"),
+			},
+		},
+		{
+			name: "WithExtLocalErrorDeadlineExceeded",
+			err: &azdext.LocalError{
+				Message:  "operation timed out",
+				Code:     "deadline_exceeded",
+				Category: azdext.LocalErrorCategoryInternal,
+			},
+			wantErrReason: "internal.timeout",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("internal"),
+				fields.ErrorKey(fields.ErrCode.Key).String("deadline_exceeded"),
+			},
+		},
+		{
+			name:          "WithTransportedExtLocalErrorDeadlineExceeded",
+			err:           azdext.UnwrapError(azdext.WrapError(context.DeadlineExceeded)),
+			wantErrReason: "internal.timeout",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("internal"),
+				fields.ErrorKey(fields.ErrCode.Key).String("deadline_exceeded"),
+			},
+		},
+		{
 			name: "WithSuggestionWrappingResponseError",
 			err: &internal.ErrorWithSuggestion{
 				Err: &azcore.ResponseError{
@@ -495,6 +749,28 @@ func Test_MapError(t *testing.T) {
 		// Sentinel error test cases — verify typed errors wrapped in
 		// ErrorWithSuggestion produce error.suggestion ResultCode with
 		// the sentinel code in error.type via classifySentinel.
+		{
+			name:          "WithErrUnsafeEnvironmentPath",
+			err:           azdcontext.ErrUnsafeEnvironmentPath,
+			wantErrReason: "internal.unsafe_environment_path",
+		},
+		{
+			name: "WithWrappedErrUnsafeEnvironmentPath",
+			err: fmt.Errorf("loading environment: %w: %q must not be a symbolic link",
+				azdcontext.ErrUnsafeEnvironmentPath, filepath.Join("private-project", ".azure", "prod")),
+			wantErrReason: "internal.unsafe_environment_path",
+		},
+		{
+			name: "WithSuggestedErrUnsafeEnvironmentPath",
+			err: &internal.ErrorWithSuggestion{
+				Err:        azdcontext.ErrUnsafeEnvironmentPath,
+				Suggestion: "Remove the link before accessing environment state.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.unsafe_environment_path"),
+			},
+		},
 		{
 			name: "WithErrNoProject",
 			err: &internal.ErrorWithSuggestion{
@@ -814,6 +1090,19 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
+			name: "WithErrInteractiveRequired",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"removing environment keys requires confirmation: %w", internal.ErrInteractiveRequired),
+				Message:    "Removing environment keys requires confirmation. No keys were removed.",
+				Suggestion: "Run the command again with --force to skip removal confirmation.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.interactive_required"),
+			},
+		},
+		{
 			name: "WithErrValidationFailed",
 			err: &internal.ErrorWithSuggestion{
 				Err:        internal.ErrValidationFailed,
@@ -1086,6 +1375,34 @@ func Test_MapError_InvocationMetadata(t *testing.T) {
 	require.NotContains(t, attributes, attribute.Key("error.extension.event"))
 }
 
+func Test_MapError_ServiceTargetResponseInvocation(t *testing.T) {
+	t.Parallel()
+
+	err := extensions.WrapInvocationError(
+		&project.ExternalServiceTargetResponseError{
+			Operation: "deploy",
+			Detail:    "missing deploy result",
+		},
+		"test.extension",
+		"1.2.3",
+		"service_target.deploy",
+	)
+	span := &mocktracing.Span{}
+
+	MapError(err, span)
+
+	require.Equal(t, "internal.extension_invalid_response", span.Status.Description)
+
+	attributes := make(map[attribute.Key]attribute.Value, len(span.Attributes))
+	for _, attr := range span.Attributes {
+		attributes[attr.Key] = attr.Value
+	}
+
+	require.Equal(t, attribute.StringValue("test.extension"), attributes[fields.ExtensionId.Key])
+	require.Equal(t, attribute.StringValue("1.2.3"), attributes[fields.ExtensionVersion.Key])
+	require.Equal(t, attribute.StringValue("service_target.deploy"), attributes[fields.ExtensionEvent.Key])
+}
+
 func Test_MapError_RemoteCauseTypes(t *testing.T) {
 	t.Parallel()
 
@@ -1228,6 +1545,26 @@ func TestMapError_GRPCStatus(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	canceledStatus, err := status.New(codes.Canceled, "operation canceled").WithDetails(
+		azdext.WrapError(&azdext.ServiceError{
+			Message:     "service failed",
+			ErrorCode:   "Conflict",
+			StatusCode:  409,
+			ServiceName: "management.azure.com",
+		}),
+	)
+	require.NoError(t, err)
+
+	deadlineStatus, err := status.New(codes.DeadlineExceeded, "operation timed out").WithDetails(
+		azdext.WrapError(&azdext.ServiceError{
+			Message:     "service failed",
+			ErrorCode:   "Conflict",
+			StatusCode:  409,
+			ServiceName: "management.azure.com",
+		}),
+	)
+	require.NoError(t, err)
+
 	tests := []struct {
 		name      string
 		err       error
@@ -1274,6 +1611,16 @@ func TestMapError_GRPCStatus(t *testing.T) {
 		{
 			name:     "DeadlineExceeded",
 			err:      status.Error(codes.DeadlineExceeded, "deadline exceeded"),
+			wantCode: "internal.timeout",
+		},
+		{
+			name:     "CanceledOverridesRelayedFailure",
+			err:      canceledStatus.Err(),
+			wantCode: "user.canceled",
+		},
+		{
+			name:     "DeadlineOverridesRelayedFailure",
+			err:      deadlineStatus.Err(),
 			wantCode: "internal.timeout",
 		},
 		{
@@ -1695,8 +2042,10 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 
 		// Errors that are always caught/handled before reaching MapError
 		"ErrArchivedTemplateDeclined":          "caught in cmd/init.go and converted to a successful cancellation result",
+		"ErrRestartRequired":                   "caught in cmd/update.go and converted to a successful update result",
 		"ErrEnsureEnvPreReqBicepCompileFailed": "caught in cmd/env.go and cmd/up.go before reaching telemetry",
 		"ErrAzdOperationsNotEnabled":           "caught in pkg/project/dotnet_importer.go before reaching telemetry",
+		"ErrDeployPreviewNotSupported":         "caught in internal/cmd/deploy.go and reported as a skipped service",
 		"ErrAzCliSecretNotFound":               "caught in pkg/cmdsubst before reaching telemetry",
 		"ErrNoSuchRemote":                      "caught in pkg/pipeline/pipeline_manager.go before reaching telemetry",
 		"ErrRemoteHostIsNotGitHub":             "caught in pkg/pipeline and pkg/github before reaching telemetry",
@@ -1754,7 +2103,6 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrNoResourceSelected": "pkg/prompt: interactive prompt error, caught in command callers",
 
 		// Subscription filter errors surfaced as user-facing messages in sub-filter commands
-		"ErrInteractiveRequired":  "internal: sub-filter requires interactive mode, caught in command action",
 		"ErrNoSubscriptionsFound": "internal: no subscriptions available, caught in command action",
 		"ErrNoTenantsFound":       "internal: no tenants available, caught in command action",
 		"ErrNoFilterExists":       "internal: no filter to remove, caught in command action",

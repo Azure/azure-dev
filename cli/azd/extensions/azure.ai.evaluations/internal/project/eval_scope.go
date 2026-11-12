@@ -39,8 +39,23 @@ func EvalScope(projectRoot, configPath string) string {
 	}
 	rel := configPath
 	if projectRoot != "" {
-		if r, err := filepath.Rel(projectRoot, configPath); err == nil {
-			rel = r
+		// filepath.Rel refuses to mix an absolute base with a relative
+		// target (and vice versa) -- it returns an error rather than
+		// resolving one against the current directory. A `--path`/
+		// `--from-file` flag is taken as typed, so a relative one next to
+		// the (normally absolute) project root hit exactly that error and
+		// fell through to the raw configPath below: the
+		// scope then read as whatever the caller happened to spell, not
+		// the configuration it names, so the same file scoped differently
+		// from a bare name than from an explicit relative flag.
+		// Canonicalizing both to absolute first makes the comparison
+		// well-defined regardless of which form the caller used.
+		root, rootErr := filepath.Abs(projectRoot)
+		path, pathErr := filepath.Abs(configPath)
+		if rootErr == nil && pathErr == nil {
+			if r, err := filepath.Rel(root, path); err == nil {
+				rel = r
+			}
 		}
 	}
 	rel = filepath.ToSlash(rel)

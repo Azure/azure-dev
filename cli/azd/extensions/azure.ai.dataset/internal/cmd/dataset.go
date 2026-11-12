@@ -15,6 +15,7 @@ import (
 	"azureaidataset/internal/exterrors"
 	"azureaidataset/internal/messages"
 	"azureaidataset/internal/pkg/dataset_api"
+	"azureaidataset/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -223,6 +224,19 @@ func (a *datasetWriteAction) Run() error {
 	}
 	defer ec.Close()
 
+	return a.publishAndReport(ctx, ec, content)
+}
+
+// publishAndReport is the half of the write that needs a resolved context.
+//
+// Split from Run so a test can drive it against a stub service: reaching it
+// through Run means holding a credential, and what has to be pinned here is
+// that a version is reported exactly when one was published.
+func (a *datasetWriteAction) publishAndReport(
+	ctx context.Context,
+	ec *datasetContext,
+	content string,
+) error {
 	exists, absenceCertain, err := datasetPresence(ctx, ec.datasetClient, a.name)
 	if err != nil {
 		return err
@@ -235,6 +249,8 @@ func (a *datasetWriteAction) Run() error {
 	if err != nil {
 		return messages.RegisteringDataset(a.name, err)
 	}
+
+	reportUsage(ctx, telemetry.DatasetPublished(a.verb))
 
 	if err := ec.setEnvValue(ctx, envKeyDatasetVersion, ds.Version); err != nil {
 		// Persisting is a convenience, so this never fails the command. It goes

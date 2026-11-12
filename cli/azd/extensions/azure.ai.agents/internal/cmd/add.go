@@ -5,9 +5,11 @@ package cmd
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -241,11 +243,28 @@ func acquireAgentAddProjectLock(ctx context.Context, projectPath string) (*flock
 	if projectPath == "" {
 		return nil, nil
 	}
-	lockDirectory := filepath.Join(projectPath, ".azure")
+	projectRoot, err := filepath.Abs(projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolving agent project lock path: %w", err)
+	}
+	projectRoot, err = filepath.EvalSymlinks(projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolving agent project lock directory: %w", err)
+	}
+	if runtime.GOOS == "windows" {
+		projectRoot = strings.ToLower(projectRoot)
+	}
+	cacheDirectory, err := os.UserCacheDir()
+	if err != nil {
+		return nil, fmt.Errorf("locating agent project lock cache: %w", err)
+	}
+	lockDirectory := filepath.Join(cacheDirectory, "azd", "agent-add-locks")
 	if err := os.MkdirAll(lockDirectory, 0o700); err != nil {
 		return nil, fmt.Errorf("creating agent dependency lock directory: %w", err)
 	}
-	projectLock := flock.New(filepath.Join(lockDirectory, "agent-add.lock"))
+	// Keep the file after unlocking so waiters share the same lock.
+	lockName := fmt.Sprintf("%x.lock", sha256.Sum256([]byte(projectRoot)))
+	projectLock := flock.New(filepath.Join(lockDirectory, lockName))
 	locked, err := projectLock.TryLockContext(ctx, 100*time.Millisecond)
 	if err != nil {
 		return nil, fmt.Errorf("locking agent dependency configuration: %w", err)

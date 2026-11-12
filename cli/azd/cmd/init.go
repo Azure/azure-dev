@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -594,11 +595,13 @@ func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.Az
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
 		agent.OnSessionStarted(func(sessionID string) {
 			if azdCtx != nil {
-				_ = azdCtx.SetCopilotSession(&azdcontext.CopilotSession{
+				if err := azdCtx.SetCopilotSession(&azdcontext.CopilotSession{
 					SessionID: sessionID,
 					Command:   "init",
 					StartedAt: time.Now().UTC().Format(time.RFC3339),
-				})
+				}); err != nil {
+					log.Printf("saving session state: %v", err)
+				}
 			}
 		}),
 	)
@@ -631,7 +634,11 @@ func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.Az
 	// Check for an in-progress session to resume
 	opts := []agent.SendOption{}
 	if azdCtx != nil {
-		if session := azdCtx.GetCopilotSession(); session != nil {
+		session, err := azdCtx.GetCopilotSession()
+		if err != nil {
+			return fmt.Errorf("reading session state: %w", err)
+		}
+		if session != nil {
 			timeDisplay := agent.FormatSessionTime(session.StartedAt)
 			defaultYes := true
 			confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
@@ -678,9 +685,12 @@ When complete, provide a brief summary of what was accomplished.`
 		return err
 	}
 
-	// Clear session on success
+	// Clear session on success. The agent work is already complete, so a failure here must not
+	// fail the command.
 	if azdCtx != nil {
-		_ = azdCtx.ClearCopilotSession()
+		if err := azdCtx.ClearCopilotSession(); err != nil {
+			log.Printf("clearing session state: %v", err)
+		}
 	}
 
 	// Show session metrics (usage + file changes)

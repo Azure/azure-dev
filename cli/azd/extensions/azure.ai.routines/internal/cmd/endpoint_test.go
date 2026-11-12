@@ -148,14 +148,39 @@ func TestResolveProjectEndpoint_FlagWins(t *testing.T) {
 func TestResolveProjectEndpoint_AzdEnv(t *testing.T) {
 	isolateFromAzdDaemon(t)
 	stubAzdProjectSources(t, azdProjectSources{
-		EnvValue: "https://envaccount.services.ai.azure.com/api/projects/env",
-		EnvName:  "my-env",
+		EnvValue:       "https://envaccount.services.ai.azure.com/api/projects/env",
+		LegacyEnvValue: "https://legacy.services.ai.azure.com/api/projects/legacy",
+		EnvName:        "my-env",
 	}, nil)
 
 	got, err := resolveProjectEndpoint(t.Context(), "")
 	require.NoError(t, err)
 	assert.Equal(t, SourceAzdEnv, got.Source)
 	assert.Equal(t, "https://envaccount.services.ai.azure.com/api/projects/env", got.Endpoint)
+}
+
+func TestResolveProjectEndpoint_LegacyAzdEnv(t *testing.T) {
+	isolateFromAzdDaemon(t)
+	stubAzdProjectSources(t, azdProjectSources{
+		LegacyEnvValue: "https://legacy.services.ai.azure.com/api/projects/legacy",
+		EnvName:        "my-env",
+	}, nil)
+
+	got, err := resolveProjectEndpoint(t.Context(), "")
+	require.NoError(t, err)
+	assert.Equal(t, SourceAzdEnv, got.Source)
+	assert.Equal(t, "https://legacy.services.ai.azure.com/api/projects/legacy", got.Endpoint)
+}
+
+func TestResolveProjectEndpoint_InvalidCanonicalAzdEnvDoesNotFallBack(t *testing.T) {
+	isolateFromAzdDaemon(t)
+	stubAzdProjectSources(t, azdProjectSources{
+		EnvValue:       "http://invalid.services.ai.azure.com/api/projects/project",
+		LegacyEnvValue: "https://legacy.services.ai.azure.com/api/projects/legacy",
+	}, nil)
+
+	_, err := resolveProjectEndpoint(t.Context(), "")
+	require.ErrorContains(t, err, "project endpoint must use https")
 }
 
 func TestResolveProjectEndpoint_GlobalConfig(t *testing.T) {
@@ -223,6 +248,7 @@ func TestResolveProjectEndpoint_NoSourceReturnsError(t *testing.T) {
 	require.True(t, errors.As(err, &le), "expected a LocalError")
 	assert.Contains(t, le.Suggestion, "azd ai project set",
 		"the dependency-error suggestion should point at the supported `azd ai project set` command")
+	assert.Contains(t, le.Suggestion, foundryProjectEndpointEnvVar)
 }
 
 func TestResolveProjectEndpoint_FlagNormalizesURL(t *testing.T) {

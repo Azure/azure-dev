@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"

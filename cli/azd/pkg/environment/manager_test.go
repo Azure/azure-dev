@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -23,6 +25,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -38,7 +42,7 @@ var (
 		{
 			Name:       "env2",
 			IsDefault:  false,
-			DotEnvPath: ".azure/env1/.env",
+			DotEnvPath: ".azure/env2/.env",
 		},
 	}
 	remoteEnvList []*contracts.EnvListEnvironment = []*contracts.EnvListEnvironment{
@@ -147,8 +151,71 @@ func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
 		env, err := envManager.LoadOrInitInteractive(*mockContext.Context, invalidEnvName)
 		require.Error(t, err)
 		require.Nil(t, env)
-		require.ErrorContains(t, err, fmt.Sprintf("environment name '%s' is invalid", invalidEnvName))
+		require.ErrorContains(t, err, fmt.Sprintf("environment name %q is invalid", invalidEnvName))
 	})
+}
+
+func Test_EnvManager_RejectsInvalidNamesBeforeDataStoreAccess(t *testing.T) {
+	for _, name := range []string{"..", ".", "../../trusted-project/.azure/prod", `..\prod`} {
+		t.Run(name, func(t *testing.T) {
+			for _, operation := range []string{"Get", "LoadOrInit", "Save", "Reload", "Delete"} {
+				t.Run(operation, func(t *testing.T) {
+					local := &MockDataStore{}
+					remote := &MockDataStore{}
+					// No console or datastore calls should be needed to reject the name.
+					manager := newManagerForTest(nil, nil, local, remote)
+					var err error
+					switch operation {
+					case "Get":
+						_, err = manager.Get(t.Context(), name)
+					case "LoadOrInit":
+						_, err = manager.LoadOrInitInteractive(t.Context(), name)
+					case "Save":
+						err = manager.Save(t.Context(), New(name))
+					case "Reload":
+						err = manager.Reload(t.Context(), New(name))
+					case "Delete":
+						err = manager.Delete(t.Context(), name)
+					}
+					require.ErrorContains(t, err, "is invalid")
+					require.Empty(t, local.Calls)
+					require.Empty(t, remote.Calls)
+				})
+			}
+		})
+	}
+}
+
+func Test_EnvManager_RejectsInvalidDefaultBeforeDataStoreAccess(t *testing.T) {
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	require.NoError(t, os.MkdirAll(azdContext.EnvironmentDirectory(), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(azdContext.EnvironmentDirectory(), ConfigFileName),
+		[]byte(`{"defaultEnvironment":"../../trusted-project/.azure/prod"}`), 0600))
+	local := &MockDataStore{}
+	remote := &MockDataStore{}
+	manager := newManagerForTest(azdContext, nil, local, remote)
+
+	env, err := manager.LoadOrInitInteractive(t.Context(), "")
+	require.ErrorContains(t, err, "is invalid")
+	require.Nil(t, env)
+	envs, err := manager.List(t.Context())
+	require.ErrorContains(t, err, "is invalid")
+	require.Nil(t, envs)
+	require.Empty(t, local.Calls)
+	require.Empty(t, remote.Calls)
+}
+
+func Test_EnvManager_ListWithoutProject(t *testing.T) {
+	local := &MockDataStore{}
+	remote := &MockDataStore{}
+	manager := newManagerForTest(nil, nil, local, remote)
+
+	envs, err := manager.List(t.Context())
+
+	require.ErrorIs(t, err, azdcontext.ErrNoProject)
+	require.Nil(t, envs)
+	require.Empty(t, local.Calls)
+	require.Empty(t, remote.Calls)
 }
 
 func Test_EnvManager_List(t *testing.T) {
@@ -211,6 +278,136 @@ func Test_EnvManager_List(t *testing.T) {
 		require.Equal(t, true, envList[0].HasRemote)
 		require.Equal(t, ".azure/env1/.env", envList[0].DotEnvPath)
 	})
+}
+
+func Test_EnvManager_ListSkipsInvalidLocalRemoteDestination(t *testing.T) {
+	for _, entry := range []string{"root-link", ".env", "config.json", ".env.lock", ".state.json", "cache-link"} {
+		t.Run(entry, func(t *testing.T) {
+			ctx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			root := filepath.Join(ctx.EnvironmentDirectory(), "prod")
+			require.NoError(t, os.MkdirAll(ctx.EnvironmentDirectory(), 0700))
+			if entry == "root-link" {
+				ostest.DirectoryLink(t, t.TempDir(), root)
+			} else if entry == "cache-link" {
+				require.NoError(t, os.MkdirAll(root, 0700))
+				ostest.DirectoryLink(t, t.TempDir(), filepath.Join(root, state.StateCacheFileName))
+			} else {
+				require.NoError(t, os.MkdirAll(filepath.Join(root, entry), 0700))
+			}
+			local := NewLocalFileDataStore(ctx, config.NewFileConfigManager(config.NewManager()))
+			require.NoError(t, local.Save(t.Context(), New("valid"), nil))
+			remote := &MockDataStore{}
+			remote.On("List", t.Context()).Return([]*contracts.EnvListEnvironment{
+				{Name: "prod"}, {Name: "valid"}, {Name: "new"},
+			}, nil).Once()
+			manager := newManagerForTest(ctx, nil, local, remote)
+
+			envs, err := manager.List(t.Context())
+			require.NoError(t, err)
+			require.Len(t, envs, 2)
+			require.Equal(t, "new", envs[0].Name)
+			require.True(t, envs[0].HasRemote)
+			require.False(t, envs[0].HasLocal)
+			require.Equal(t, "valid", envs[1].Name)
+			require.True(t, envs[1].HasRemote)
+			require.True(t, envs[1].HasLocal)
+			remote.AssertExpectations(t)
+		})
+	}
+}
+
+func Test_EnvManager_ListSkipsInvalidDataStoreNames(t *testing.T) {
+	invalidNames := []string{
+		"", ".", "..", "...", "invalid name", "a/b", `a\b`, strings.Repeat("a", 65), "bad\nname", "bad\x1b[31mname",
+	}
+	if runtime.GOOS == "windows" {
+		invalidNames = append(invalidNames, "prod.", "NUL")
+	}
+	invalidEnvs := make([]*contracts.EnvListEnvironment, 0, len(invalidNames))
+	for _, name := range invalidNames {
+		invalidEnvs = append(invalidEnvs, &contracts.EnvListEnvironment{Name: name})
+	}
+
+	for _, tt := range []struct {
+		name     string
+		local    []*contracts.EnvListEnvironment
+		remote   []*contracts.EnvListEnvironment
+		expected []*Description
+	}{
+		{
+			name:     "AllInvalid",
+			local:    emptyEnvList,
+			remote:   invalidEnvs,
+			expected: []*Description{},
+		},
+		{
+			name:     "AllInvalidLocal",
+			local:    invalidEnvs,
+			remote:   emptyEnvList,
+			expected: []*Description{},
+		},
+		{
+			name:   "MixedLocal",
+			local:  append(append([]*contracts.EnvListEnvironment{}, localEnvList...), invalidEnvs...),
+			remote: emptyEnvList,
+			expected: []*Description{
+				{Name: "env1", HasLocal: true, DotEnvPath: ".azure/env1/.env"},
+				{Name: "env2", HasLocal: true, DotEnvPath: ".azure/env2/.env"},
+			},
+		},
+		{
+			name:  "MixedLocalAndRemote",
+			local: localEnvList,
+			remote: append([]*contracts.EnvListEnvironment{
+				{Name: "env3"},
+				{Name: "env1"},
+			}, invalidEnvs...),
+			expected: []*Description{
+				{Name: "env1", HasLocal: true, HasRemote: true, DotEnvPath: ".azure/env1/.env"},
+				{Name: "env2", HasLocal: true, DotEnvPath: ".azure/env2/.env"},
+				{Name: "env3", HasRemote: true},
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			local := &MockDataStore{}
+			remote := &MockDataStore{}
+			local.On("List", t.Context()).Return(tt.local, nil).Once()
+			remote.On("List", t.Context()).Return(tt.remote, nil).Once()
+			manager := newManagerForTest(azdContext, nil, local, remote)
+
+			envs, err := manager.List(t.Context())
+
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, envs)
+			local.AssertExpectations(t)
+			remote.AssertExpectations(t)
+		})
+	}
+}
+
+func Test_EnvManager_GetPreservesLocalReadErrors(t *testing.T) {
+	for _, localErr := range []error{
+		errors.New("malformed local configuration"),
+		os.ErrPermission,
+		azdcontext.ErrUnsafeEnvironmentPath,
+	} {
+		t.Run(localErr.Error(), func(t *testing.T) {
+			local := &MockDataStore{}
+			remote := &MockDataStore{}
+			local.On("Get", t.Context(), "prod").Return(nil, localErr).Once()
+			manager := newManagerForTest(nil, nil, local, remote)
+
+			env, err := manager.Get(t.Context(), "prod")
+
+			require.Same(t, localErr, err)
+			require.Nil(t, env)
+			require.Empty(t, remote.Calls)
+			local.AssertNotCalled(t, "Save", mock.Anything, mock.Anything, mock.Anything)
+			local.AssertExpectations(t)
+		})
+	}
 }
 
 func Test_EnvManager_Get(t *testing.T) {
@@ -328,6 +525,95 @@ func Test_EnvManager_Save(t *testing.T) {
 	})
 }
 
+func TestEnvManagerSaveSelectedKeys(t *testing.T) {
+	t.Parallel()
+	mockContext := mocks.NewMockContext(t.Context())
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	local := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	seed := NewWithValues("test", map[string]string{
+		"KEY": "remove-me", "KEEP": "original", "DYLD_KEEP": "raw-unrelated",
+	})
+	require.NoError(t, seed.Config.Set("app.enabled", true))
+	require.NoError(t, local.Save(t.Context(), seed, nil))
+	env, err := local.Get(t.Context(), "test")
+	require.NoError(t, err)
+	concurrent, err := local.Get(t.Context(), "test")
+	require.NoError(t, err)
+	concurrent.DotenvSet("KEEP", "concurrent-value")
+	concurrent.DotenvSet("ADDED", "concurrent-addition")
+	require.NoError(t, concurrent.Config.Set("app.enabled", false))
+	require.NoError(t, local.Save(t.Context(), concurrent, nil))
+	env.DotenvDelete("KEY")
+	env.DotenvSet("PENDING", "pending")
+	env.DotenvSet("DYLD_PENDING", "raw-pending")
+	require.NoError(t, env.Config.Set("app.pending", true))
+	options := &SaveOptions{DotenvKeys: []string{"KEY"}}
+	remote := &MockDataStore{}
+	remote.On("Save", t.Context(), mock.MatchedBy(func(saved *Environment) bool {
+		return saved != env
+	}), options).Run(func(args mock.Arguments) {
+		saved, ok := args.Get(1).(*Environment)
+		require.True(t, ok)
+		require.NotNil(t, saved)
+		marshalled, err := marshallDotEnv(saved)
+		require.NoError(t, err)
+		values, err := godotenv.Unmarshal(marshalled)
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{
+			"KEEP": "concurrent-value", "ADDED": "concurrent-addition", "DYLD_KEEP": "raw-unrelated",
+		}, values)
+		require.Equal(t, map[string]any{"app": map[string]any{"enabled": false}}, saved.Config.Raw())
+	}).Return(nil).Once()
+
+	manager := newManagerForTest(azdCtx, mockContext.Console, local, remote)
+	require.NoError(t, manager.SaveWithOptions(t.Context(), env, options))
+	require.Equal(t, "pending", env.Getenv("PENDING"))
+	value, exists := env.LookupDotenv("DYLD_PENDING")
+	require.True(t, exists)
+	require.Equal(t, "raw-pending", value)
+	require.Equal(t, map[string]any{"app": map[string]any{"enabled": true, "pending": true}}, env.Config.Raw())
+	remote.AssertExpectations(t)
+}
+
+func TestEnvManagerSaveSelectedKeysRemoteErrors(t *testing.T) {
+	t.Parallel()
+	for _, stage := range []string{"LocalRead", "RemoteSave"} {
+		t.Run(stage, func(t *testing.T) {
+			t.Parallel()
+			mockContext := mocks.NewMockContext(t.Context())
+			azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			local := &MockDataStore{}
+			remote := &MockDataStore{}
+			env := New("test")
+			env.DotenvSet("PENDING", "pending")
+			env.DotenvDelete("KEY")
+			saved := New("test")
+			options := &SaveOptions{DotenvKeys: []string{"KEY"}}
+			saveErr := errors.New("save failed")
+			local.On("Save", t.Context(), env, options).Return(nil).Once()
+			errorText := "saving remote environment"
+			if stage == "LocalRead" {
+				local.On("Get", t.Context(), "test").Return(nil, saveErr).Once()
+				errorText = "loading saved local environment for remote persistence"
+			} else {
+				local.On("Get", t.Context(), "test").Return(saved, nil).Once()
+				remote.On("Save", t.Context(), saved, options).Return(saveErr).Once()
+			}
+
+			manager := newManagerForTest(azdCtx, mockContext.Console, local, remote)
+			err := manager.SaveWithOptions(t.Context(), env, options)
+			require.ErrorIs(t, err, saveErr)
+			require.ErrorContains(t, err, errorText)
+			require.Equal(t, "pending", env.Getenv("PENDING"))
+			local.AssertExpectations(t)
+			remote.AssertExpectations(t)
+			if stage == "LocalRead" {
+				remote.AssertNotCalled(t, "Save", mock.Anything, mock.Anything, mock.Anything)
+			}
+		})
+	}
+}
+
 func Test_EnvManager_CreateFromContainer(t *testing.T) {
 	t.Run("WithRemoteConfig", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(t.Context())
@@ -438,14 +724,14 @@ type MockDataStore struct {
 	mock.Mock
 }
 
-func (m *MockDataStore) EnvPath(env *Environment) string {
+func (m *MockDataStore) EnvPath(env *Environment) (string, error) {
 	args := m.Called(env)
-	return args.String(0)
+	return args.String(0), args.Error(1)
 }
 
-func (m *MockDataStore) ConfigPath(env *Environment) string {
+func (m *MockDataStore) ConfigPath(env *Environment) (string, error) {
 	args := m.Called(env)
-	return args.String(0)
+	return args.String(0), args.Error(1)
 }
 
 func (m *MockDataStore) List(ctx context.Context) ([]*contracts.EnvListEnvironment, error) {
@@ -799,6 +1085,22 @@ func Test_EnvManager_Create_NoPrompt_AutoName(t *testing.T) {
 		require.NotNil(t, env)
 		require.Equal(t, "my-explicit-env", env.Name())
 	})
+}
+
+func Test_EnvManager_AutoNameQuotesDirectory(t *testing.T) {
+	for _, name := range []string{"\x1b", strings.Repeat(".", 64) + "\x1b"} {
+		t.Run(strconv.Quote(name), func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			mockContext.Console.SetNoPromptMode(true)
+			ctx := azdcontext.NewAzdContextWithDirectory(filepath.Join(t.TempDir(), name))
+			manager := &manager{azdContext: ctx, console: mockContext.Console}
+
+			err := manager.ensureValidEnvironmentName(t.Context(), &Spec{})
+
+			require.ErrorContains(t, err, "directory "+strconv.Quote(name))
+			require.NotContains(t, err.Error(), "\x1b")
+		})
+	}
 }
 
 func Test_CleanName_EdgeCases(t *testing.T) {

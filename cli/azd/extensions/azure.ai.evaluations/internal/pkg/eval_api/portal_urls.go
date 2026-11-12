@@ -55,6 +55,11 @@ func NewPortalPrefix(projectResourceID string) (*PortalPrefix, error) {
 	return &PortalPrefix{prefix: prefix}, nil
 }
 
+// EvalURL returns the portal URL for an eval.
+func (p *PortalPrefix) EvalURL(evalID string) string {
+	return fmt.Sprintf("%s/build/evaluations/%s", p.prefix, url.PathEscape(evalID))
+}
+
 // EvalRunURL returns the portal URL for an eval run report.
 func (p *PortalPrefix) EvalRunURL(evalID, runID string) string {
 	return fmt.Sprintf("%s/build/evaluations/%s/run/%s",

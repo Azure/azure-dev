@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
+	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -303,4 +304,32 @@ func TestAiModelService_ConvertToAiModels_UsesNow(t *testing.T) {
 	models := svc.convertToAiModels(raw)
 	require.Len(t, models, 1)
 	require.Equal(t, "m1", models[0].Name)
+}
+
+func TestAiModelService_ListModels_UsesInjectedClockForDeprecation(t *testing.T) {
+	t.Parallel()
+
+	recordedAt := time.Date(2026, 6, 22, 7, 54, 35, 0, time.UTC)
+	deprecationDate := time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC)
+	mockClock := clock.NewMock()
+	mockClock.Set(recordedAt)
+
+	model := sampleModel("gpt-4.1", "2025-04-14", "GlobalStandard", "OpenAI.GlobalStandard.gpt-4.1", true)
+	model.Model.Deprecation = &armcognitiveservices.ModelDeprecationInfo{
+		Inference: new(deprecationDate.Format(time.RFC3339)),
+	}
+	model.Model.SKUs[0].DeprecationDate = &deprecationDate
+
+	svc := NewAiModelServiceWithClock(nil, nil, mockClock)
+	svc.catalogCache["sub-1:southeastasia"] = []*armcognitiveservices.Model{model}
+
+	models, err := svc.ListModels(t.Context(), "sub-1", []string{"southeastasia"})
+	require.NoError(t, err)
+	require.Len(t, models, 1)
+	require.Equal(t, "gpt-4.1", models[0].Name)
+
+	mockClock.Set(deprecationDate)
+	models, err = svc.ListModels(t.Context(), "sub-1", []string{"southeastasia"})
+	require.NoError(t, err)
+	require.Empty(t, models)
 }

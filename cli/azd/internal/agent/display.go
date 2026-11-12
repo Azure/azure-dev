@@ -53,6 +53,7 @@ type AgentDisplay struct {
 	// Usage metrics — accumulated from assistant.usage events
 	totalInputTokens  float64
 	totalOutputTokens float64
+	totalNanoAiu      float64
 	billingRate       float64
 	totalDurationMS   float64
 	premiumRequests   float64
@@ -331,6 +332,9 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			}
 			if data.OutputTokens != nil {
 				d.totalOutputTokens += float64(*data.OutputTokens)
+			}
+			if data.CopilotUsage != nil {
+				d.totalNanoAiu += data.CopilotUsage.TotalNanoAiu
 			}
 			if data.Cost != nil {
 				d.billingRate = *data.Cost // per-request multiplier, not cumulative
@@ -643,6 +647,7 @@ func (d *AgentDisplay) GetUsageMetrics() UsageMetrics {
 		Model:           d.lastModel,
 		InputTokens:     d.totalInputTokens,
 		OutputTokens:    d.totalOutputTokens,
+		AICredits:       nanoAiuToCredits(d.totalNanoAiu),
 		BillingRate:     d.billingRate,
 		PremiumRequests: d.premiumRequests,
 		DurationMS:      d.totalDurationMS,

@@ -13,7 +13,7 @@ import (
 
 // fixedAssembler returns an assembleState stub that yields the given
 // State on every call. Used by check tests to inject manifest-walker
-// outputs (HasModels / HasToolboxes / HasConnections, ModelRefs, etc.)
+// outputs (HasToolboxes / HasConnections, resource refs, etc.)
 // without touching disk or invoking the production walker.
 func fixedAssembler(
 	state *nextstep.State,
@@ -37,9 +37,7 @@ func fixedProjectIDReader(
 
 // validProjectResourceID is a canonical Foundry project ARM resource
 // ID used by remote check tests that derive an ARM scope from
-// AZURE_AI_PROJECT_ID. It parses cleanly through both
-// `parseAccountProjectFromProjectID` (connections check) and any
-// other ARM-ID parser into:
+// AZURE_AI_PROJECT_ID. Its ARM identity is:
 //
 //	subscription = 00000000-0000-0000-0000-000000000000
 //	resourceGroup = rg-bugbash

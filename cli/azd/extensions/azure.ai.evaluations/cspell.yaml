@@ -3,6 +3,7 @@ words:
   # Go module and package names
   - azureaieval
   - evalcore
+  - failuretext
   - exterrors
   - httptest
   - projectctx

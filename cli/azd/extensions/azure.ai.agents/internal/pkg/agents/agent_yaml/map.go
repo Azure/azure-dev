@@ -4,9 +4,11 @@
 package agent_yaml
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -118,10 +120,11 @@ func mapInvocationsModeration(moderation *InvocationsModeration) *agent_api.Invo
 	}
 
 	for _, selector := range moderation.StreamSelectors {
-		mapped.StreamSelectors = append(mapped.StreamSelectors, agent_api.SseTextSelector{
-			EventType: selector.EventType,
-			TextField: selector.TextField,
-		})
+		mappedSelector := agent_api.SseTextSelector{EventType: selector.EventType}
+		if selector.TextField != nil {
+			mappedSelector.TextField = *selector.TextField
+		}
+		mapped.StreamSelectors = append(mapped.StreamSelectors, mappedSelector)
 	}
 
 	return mapped
@@ -410,8 +413,7 @@ func mapSessionConfiguration(sc *SessionConfiguration) (*agent_api.SessionConfig
 	if idle < MinSessionIdleTimeoutSeconds || idle > MaxSessionIdleTimeoutSeconds {
 		return nil, fmt.Errorf(
 			"session idle timeout must be between %d and %d seconds, got %d "+
-				"('sessionConfiguration.idleTimeoutSeconds' in azure.yaml, "+
-				"'session_configuration.idle_timeout_seconds' in agent.yaml)",
+				"('sessionConfiguration.idleTimeoutSeconds' in the agent definition)",
 			MinSessionIdleTimeoutSeconds, MaxSessionIdleTimeoutSeconds, idle)
 	}
 
@@ -491,6 +493,7 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 				DependencyResolution: depRes,
 			},
 			SessionConfiguration: sessionConfig,
+			EnableMemorySnapshot: hostedAgent.EnableMemorySnapshot,
 		}
 
 		return createAgentAPIRequest(hostedAgent.AgentDefinition, codeDef,
@@ -520,6 +523,7 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 			RegistryConnectionID: registryConnectionID,
 		},
 		SessionConfiguration: sessionConfig,
+		EnableMemorySnapshot: hostedAgent.EnableMemorySnapshot,
 	}
 
 	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageDef,
@@ -546,7 +550,7 @@ func mapHarness(promptAgent PromptAgent) *agent_api.ManagedAgentHarness {
 // PromptAgentSkillReferences returns the top-level versioned skill references
 // sent in a prompt-agent definition.
 func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillReference {
-	seen := map[string]struct{}{}
+	seen := map[string]int{}
 	var skills []agent_api.SkillReference
 	add := func(name, version string) {
 		name = strings.TrimSpace(name)
@@ -554,17 +558,25 @@ func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillRefere
 			return
 		}
 		key := strings.ToLower(name)
-		if _, ok := seen[key]; ok {
+		if index, ok := seen[key]; ok {
+			if skills[index].Version == "" {
+				skills[index].Version = strings.TrimSpace(version)
+			}
 			return
 		}
-		seen[key] = struct{}{}
-		skills = append(skills, agent_api.SkillReference{Name: name, Version: strings.TrimSpace(version)})
+		seen[key] = len(skills)
+		skills = append(skills, agent_api.SkillReference{
+			Type:    "skill_reference",
+			Name:    name,
+			Version: strings.TrimSpace(version),
+		})
+	}
+	// Authored pins take precedence; local resolution only fills missing versions.
+	for _, skill := range promptAgent.Skills {
+		add(skill.Name, skill.Version)
 	}
 	for _, skill := range promptAgent.ResolvedSkills {
 		add(skill.Name, skill.Version)
-	}
-	for _, skill := range promptAgent.Skills {
-		add(skill, "")
 	}
 	return skills
 }
@@ -577,7 +589,7 @@ func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillRefere
 //
 // The agent's Harness is omitted entirely when nil: a harness-less prompt
 // agent is run directly by Foundry, while a managed agent names its harness
-// (e.g. "github_copilot_preview") and the platform provisions a Brain+Hand
+// (e.g. "microsoft_copilot_preview") and the platform provisions a Brain+Hand
 // sandbox for it.
 func CreatePromptAgentAPIRequest(
 	promptAgent PromptAgent,
@@ -604,9 +616,17 @@ func CreatePromptAgentAPIRequest(
 	if err := promptAgent.ValidatePolicies(); err != nil {
 		return nil, err
 	}
+	if err := promptAgent.ValidateAuthoredSkills(); err != nil {
+		return nil, err
+	}
 	for _, skill := range PromptAgentSkillReferences(promptAgent) {
 		if strings.TrimSpace(skill.Version) == "" {
-			return nil, fmt.Errorf("prompt skill %q has no published version", skill.Name)
+			return nil, fmt.Errorf(
+				"prompt skill %q requires a version; specify skills: [{name: %q, version: \"<published-version>\"}], "+
+					"or deploy the matching local skill dependency with 'azd deploy --all'. "+
+					"azd does not automatically resolve the default version of an existing Foundry skill",
+				skill.Name, skill.Name,
+			)
 		}
 	}
 
@@ -622,9 +642,9 @@ func CreatePromptAgentAPIRequest(
 	}
 
 	// Tools and the camelCase authored fields toolChoice and structuredInputs are
-	// passed through to their snake_case Foundry API fields.
+	// translated to their snake_case Foundry API fields.
 	if len(promptAgent.Tools) > 0 {
-		promptDef.Tools = promptAgent.Tools
+		promptDef.Tools = promptToolsForAPI(promptAgent.Tools)
 	}
 	if promptAgent.ToolChoice != nil {
 		promptDef.ToolChoice = promptAgent.ToolChoice
@@ -823,7 +843,6 @@ func mapVoiceConfig(voice *VoiceConfig, fallbackName string) *agent_api.VoiceCon
 		out := buildVoiceConfig(name)
 		out.Style = voice.Style
 		out.Pitch = voice.Pitch
-		out.Rate = voice.Rate
 		out.Locale = voice.Locale
 		out.Volume = voice.Volume
 		return out
@@ -836,7 +855,6 @@ func mapVoiceConfig(voice *VoiceConfig, fallbackName string) *agent_api.VoiceCon
 		Name:   name,
 		Style:  voice.Style,
 		Pitch:  voice.Pitch,
-		Rate:   voice.Rate,
 		Locale: voice.Locale,
 		Volume: voice.Volume,
 	}
@@ -870,6 +888,9 @@ func mapVoiceStructuredInputs(inputs map[string]any) map[string]any {
 // voice agent. It translates the authoring kind "prompt-voice" into the
 // data-plane service kind "voice" and defaults the audio pipeline.
 func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
+	if voiceAgent.SubProtocol == VoiceSubProtocolLive {
+		return createLiveVoiceAgentAPIRequest(voiceAgent)
+	}
 	return createVoiceAgentAPIRequest(voiceAgent, nil)
 }
 
@@ -882,10 +903,31 @@ func CreateHostedVoiceAgentAPIRequest(
 	return createVoiceAgentAPIRequest(voiceAgent, &target)
 }
 
+// ValidateVoiceDefinitionOverlay applies the same deterministic merge-safety
+// checks used by create/update request construction without requiring service access.
+func ValidateVoiceDefinitionOverlay(voiceAgent VoiceAgent) error {
+	if voiceAgent.SubProtocol == VoiceSubProtocolLive {
+		_, err := createLiveVoiceAgentAPIRequest(voiceAgent)
+		return err
+	}
+	var target *agent_api.VoiceTargetAgentReference
+	if isHostedConversationEngine(voiceAgent.ConversationEngine) {
+		target = &agent_api.VoiceTargetAgentReference{Name: "overlay-validation", Version: "validation"}
+	}
+	_, err := createVoiceAgentAPIRequest(voiceAgent, target)
+	return err
+}
+
 func createVoiceAgentAPIRequest(
 	voiceAgent VoiceAgent,
 	target *agent_api.VoiceTargetAgentReference,
 ) (*agent_api.CreateAgentRequest, error) {
+	if voiceAgent.SubProtocol != "" && voiceAgent.SubProtocol != VoiceSubProtocolRealtime {
+		return nil, fmt.Errorf("subProtocol %q is not supported by the realtime voice runtime", voiceAgent.SubProtocol)
+	}
+	if voiceAgent.Delegation != nil || (voiceAgent.Audio != nil && voiceAgent.Audio.Format != nil) {
+		return nil, fmt.Errorf("GPT Live audio and delegation require subProtocol 'live'")
+	}
 	if voiceAgent.ModelType == VoiceModelTypeHostedAgent || voiceAgent.TargetAgent != nil {
 		return nil, fmt.Errorf("model_type hosted_agent and target_agent are not supported; use conversation_engine")
 	}
@@ -898,13 +940,10 @@ func createVoiceAgentAPIRequest(
 		if target == nil || strings.TrimSpace(target.Name) == "" || strings.TrimSpace(target.Version) == "" {
 			return nil, fmt.Errorf("resolved target agent name and version are required when model_type is 'hosted_agent'")
 		}
-		if voiceAgent.Model != nil || voiceAgent.InputSchema != nil || voiceAgent.OutputSchema != nil ||
-			voiceAgent.Instructions != nil || len(voiceAgent.StructuredInputs) > 0 ||
-			len(voiceAgent.Tools) > 0 || voiceAgent.ToolChoice != nil || voiceAgent.ParallelToolCalls != nil ||
-			voiceAgent.MaxOutputTokens != nil || len(voiceAgent.Include) > 0 || len(voiceAgent.Handoff) > 0 {
+		if voiceAgent.Model != nil || voiceAgent.ModelType != "" || voiceAgent.Instructions != nil ||
+			len(voiceAgent.Tools) > 0 || voiceAgent.ToolChoice != nil {
 			return nil, fmt.Errorf(
-				"model, input_schema, output_schema, instructions, structured_inputs, tools, tool_choice, " +
-					"parallel_tool_calls, max_output_tokens, include, and handoff belong to the target hosted agent",
+				"model, model_type, instructions, tools, and tool_choice belong to the target hosted agent",
 			)
 		}
 	} else if modelType != agent_api.VoiceModelTypeManaged && modelType != agent_api.VoiceModelTypeSelfDeployed {
@@ -959,7 +998,11 @@ func createVoiceAgentAPIRequest(
 		}
 		if voiceAgent.Audio.Output != nil {
 			outputFormat = mapVoiceAudioFormat(voiceAgent.Audio.Output.Format, outputFormat)
-			outputVoice = mapVoiceConfig(voiceAgent.Audio.Output.Voice, voiceName)
+			voice, err := realtimeVoiceConfig(voiceAgent.Audio.Output.Voice)
+			if err != nil {
+				return nil, err
+			}
+			outputVoice = mapVoiceConfig(voice, voiceName)
 			outputSpeed = voiceAgent.Audio.Output.Speed
 		}
 	}
@@ -982,8 +1025,8 @@ func createVoiceAgentAPIRequest(
 			Kind: agent_api.AgentKindVoice,
 		},
 		ModelType:          voiceWireModelType(modelType, hostedAgent),
+		SubProtocol:        string(voiceAgent.SubProtocol),
 		Model:              modelID,
-		TargetAgent:        nil,
 		ConversationEngine: voiceWireConversationEngine(voiceAgent.ConversationEngine, target),
 		Instructions:       instructions,
 		StructuredInputs:   mapVoiceStructuredInputs(voiceAgent.StructuredInputs),
@@ -996,7 +1039,6 @@ func createVoiceAgentAPIRequest(
 				VoiceLocale: voiceWireLocale(outputVoice),
 				Style:       outputVoice.Style,
 				Pitch:       outputVoice.Pitch,
-				Rate:        outputVoice.Rate,
 				Volume:      outputVoice.Volume,
 				Speed:       outputSpeed,
 			},
@@ -1006,14 +1048,246 @@ func createVoiceAgentAPIRequest(
 		Tools:             voiceAgent.Tools,
 		Avatar:            voiceAgent.Avatar,
 		Greeting:          voiceAgent.Greeting,
-		Handoff:           voiceAgent.Handoff,
 		ToolChoice:        voiceAgent.ToolChoice,
 		ParallelToolCalls: voiceAgent.ParallelToolCalls,
 		MaxOutputTokens:   voiceAgent.MaxOutputTokens,
 		Include:           voiceAgent.Include,
 	}
+	definition, err := applyVoiceDefinitionOverlay(voiceDef, voiceAgent.DefinitionOverlay)
+	if err != nil {
+		return nil, err
+	}
 
-	return createAgentAPIRequest(voiceAgent.AgentDefinition, voiceDef, nil, nil)
+	return createAgentAPIRequest(voiceAgent.AgentDefinition, definition, nil, nil)
+}
+
+func applyVoiceDefinitionOverlay(definition agent_api.VoiceAgentDefinition, overlay map[string]any) (any, error) {
+	if len(overlay) == 0 {
+		return definition, nil
+	}
+	encoded, err := json.Marshal(definition)
+	if err != nil {
+		return nil, fmt.Errorf("marshal voice definition for definitionOverlay: %w", err)
+	}
+	var merged map[string]any
+	if err := json.Unmarshal(encoded, &merged); err != nil {
+		return nil, fmt.Errorf("decode voice definition for definitionOverlay: %w", err)
+	}
+	if err := mergeVoiceDefinitionOverlay(merged, overlay, "$", true); err != nil {
+		return nil, err
+	}
+	return merged, nil
+}
+
+func mergeVoiceDefinitionOverlay(target, overlay map[string]any, path string, root bool) error {
+	for _, key := range slices.Sorted(maps.Keys(overlay)) {
+		value := overlay[key]
+		fieldPath := path + "." + key
+		if root && slices.ContainsFunc(
+			[]string{"kind", "model_type", "model", "conversation_engine", "sub_protocol", "subProtocol"},
+			func(reserved string) bool { return strings.EqualFold(key, reserved) },
+		) {
+			return fmt.Errorf("definitionOverlay at %s uses reserved root key %q", fieldPath, key)
+		}
+		if err := validateOverlayValue(value, fieldPath); err != nil {
+			return err
+		}
+		existingKey, found := key, false
+		for _, candidate := range slices.Sorted(maps.Keys(target)) {
+			if strings.EqualFold(candidate, key) {
+				existingKey, found = candidate, true
+				break
+			}
+		}
+		if !found {
+			target[key] = cloneOverlayValue(value)
+			continue
+		}
+		if existingKey != key {
+			return fmt.Errorf("definitionOverlay conflicts with typed voice definition at %s (existing key %q)",
+				fieldPath, existingKey)
+		}
+		existing := target[existingKey]
+		existingObject, existingOK := existing.(map[string]any)
+		overlayObject, overlayOK := value.(map[string]any)
+		if existingOK && overlayOK {
+			if err := mergeVoiceDefinitionOverlay(existingObject, overlayObject, fieldPath, false); err != nil {
+				return err
+			}
+			continue
+		}
+		return fmt.Errorf("definitionOverlay conflicts with typed voice definition at %s", fieldPath)
+	}
+	return nil
+}
+
+func validateOverlayValue(value any, path string) error {
+	if value == nil {
+		return fmt.Errorf("definitionOverlay contains null at %s", path)
+	}
+	switch value := value.(type) {
+	case map[string]any:
+		for _, key := range slices.Sorted(maps.Keys(value)) {
+			child := value[key]
+			if err := validateOverlayValue(child, path+"."+key); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for index, child := range value {
+			if err := validateOverlayValue(child, fmt.Sprintf("%s[%d]", path, index)); err != nil {
+				return err
+			}
+		}
+	case float64:
+		if math.IsNaN(value) || math.IsInf(value, 0) || math.Abs(value) >= 1<<53 {
+			return fmt.Errorf("definitionOverlay at %s must use a finite JSON-safe number with absolute value below 2^53", path)
+		}
+	case float32:
+		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+			return fmt.Errorf("definitionOverlay at %s must use a finite JSON-safe number", path)
+		}
+	default:
+		number := reflect.ValueOf(value)
+		if number.Kind() >= reflect.Int && number.Kind() <= reflect.Int64 &&
+			(number.Int() <= -(1<<53) || number.Int() >= 1<<53) {
+			return fmt.Errorf("definitionOverlay at %s must use a JSON-safe integer with absolute value below 2^53", path)
+		}
+		if (number.Kind() >= reflect.Uint && number.Kind() <= reflect.Uint64 || number.Kind() == reflect.Uintptr) &&
+			number.Uint() >= 1<<53 {
+			return fmt.Errorf("definitionOverlay at %s must use a JSON-safe integer below 2^53", path)
+		}
+	}
+	return nil
+}
+
+func cloneOverlayValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		clone := make(map[string]any, len(value))
+		for key, child := range value {
+			clone[key] = cloneOverlayValue(child)
+		}
+		return clone
+	case []any:
+		clone := make([]any, len(value))
+		for index, child := range value {
+			clone[index] = cloneOverlayValue(child)
+		}
+		return clone
+	default:
+		return value
+	}
+}
+
+func realtimeVoiceConfig(value any) (*VoiceConfig, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if voice, ok := value.(*VoiceConfig); ok {
+		return voice, nil
+	}
+	if voice, ok := value.(VoiceConfig); ok {
+		return &voice, nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("audio.output.voice is not valid: %w", err)
+	}
+	var voice VoiceConfig
+	if err := json.Unmarshal(data, &voice); err != nil {
+		return nil, fmt.Errorf("audio.output.voice must be an object with type and name for realtime voice agents")
+	}
+	return &voice, nil
+}
+
+func createLiveVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
+	if voiceAgent.ModelType != VoiceModelTypeSelfDeployed {
+		return nil, fmt.Errorf("GPT Live requires modelType %q", VoiceModelTypeSelfDeployed)
+	}
+	if voiceAgent.Model == nil || strings.TrimSpace(voiceAgent.Model.Id) == "" {
+		return nil, fmt.Errorf("model.id is required for a GPT Live voice agent")
+	}
+	if errors := validateLiveVoiceAgent(voiceAgent); len(errors) > 0 {
+		return nil, fmt.Errorf("invalid GPT Live configuration: %s", strings.Join(errors, "; "))
+	}
+	definition := agent_api.VoiceAgentDefinition{
+		AgentDefinition: agent_api.AgentDefinition{
+			Kind:      agent_api.AgentKindVoice,
+			RaiConfig: mapRaiConfig(voiceAgent.Policies),
+		},
+		SubProtocol:      string(VoiceSubProtocolLive),
+		ModelType:        agent_api.VoiceModelTypeSelfDeployed,
+		Model:            strings.TrimSpace(voiceAgent.Model.Id),
+		StructuredInputs: mapVoiceStructuredInputs(voiceAgent.StructuredInputs),
+		Store:            voiceAgent.Store,
+		LiveAudio:        mapLiveVoiceAudio(voiceAgent.Audio),
+		Delegation:       mapLiveVoiceDelegation(voiceAgent.Delegation),
+	}
+	if voiceAgent.Instructions != nil {
+		definition.Instructions = *voiceAgent.Instructions
+	}
+	if len(voiceAgent.Greeting) > 0 {
+		definition.Greeting = voiceAgent.Greeting
+	}
+	mergedDefinition, err := applyVoiceDefinitionOverlay(definition, voiceAgent.DefinitionOverlay)
+	if err != nil {
+		return nil, err
+	}
+	return createAgentAPIRequest(voiceAgent.AgentDefinition, mergedDefinition, nil, nil)
+}
+
+func mapLiveVoiceAudio(audio *VoiceAudio) *agent_api.LiveVoiceAudio {
+	if audio == nil {
+		return nil
+	}
+	result := &agent_api.LiveVoiceAudio{}
+	if audio.Format != nil {
+		result.Format = &agent_api.LiveAudioFormat{Type: strings.TrimSpace(audio.Format.Type), Rate: audio.Format.Rate}
+	}
+	if audio.Output != nil && audio.Output.Voice != nil {
+		result.Output = &agent_api.LiveAudioOutput{Voice: audio.Output.Voice.LiveValue()}
+	}
+	return result
+}
+
+func mapLiveVoiceDelegation(delegation *LiveVoiceDelegation) *agent_api.LiveVoiceDelegation {
+	if delegation == nil {
+		return nil
+	}
+	result := &agent_api.LiveVoiceDelegation{
+		Type: delegation.Type, AgentName: delegation.AgentName, AgentVersion: delegation.AgentVersion,
+	}
+	if delegation.Responses != nil {
+		responses := delegation.Responses
+		result.Responses = &agent_api.LiveResponsesDelegation{
+			Model: responses.Model, Instructions: responses.Instructions,
+			MaxOutputTokens: responses.MaxOutputTokens, ParallelToolCalls: responses.ParallelToolCalls,
+			ServiceTier: responses.ServiceTier, ToolChoice: mapLiveToolChoice(responses.ToolChoice), Tools: responses.Tools,
+		}
+		if responses.Reasoning != nil {
+			result.Responses.Reasoning = &agent_api.LiveResponsesReasoning{
+				Effort: responses.Reasoning.Effort, Summary: responses.Reasoning.Summary,
+			}
+		}
+		if responses.Text != nil {
+			result.Responses.Text = &agent_api.LiveResponsesText{Verbosity: responses.Text.Verbosity}
+		}
+	}
+	return result
+}
+
+func mapLiveToolChoice(choice any) any {
+	object, ok := choice.(map[string]any)
+	if !ok {
+		return choice
+	}
+	mapped := maps.Clone(object)
+	if value, found := mapped["serverLabel"]; found {
+		mapped["server_label"] = value
+		delete(mapped, "serverLabel")
+	}
+	return mapped
 }
 
 func isHostedConversationEngine(engine *VoiceConversationEngine) bool {
@@ -1065,9 +1339,16 @@ func createAgentAPIRequest(
 				metadata["authors"] = strings.Join(authorsStr, ",")
 			}
 		}
+		if tags, exists := (*agentDefinition.Metadata)["tags"]; exists {
+			value, err := agentMetadataTags(tags)
+			if err != nil {
+				return nil, err
+			}
+			metadata["tags"] = value
+		}
 		// Copy other metadata as strings
 		for key, value := range *agentDefinition.Metadata {
-			if key != "authors" {
+			if key != "authors" && key != "tags" {
 				if strValue, ok := value.(string); ok {
 					metadata[key] = strValue
 				}
@@ -1205,4 +1486,35 @@ func createAgentAPIRequest(
 	}
 
 	return request, nil
+}
+
+func agentMetadataTags(value any) (string, error) {
+	if text, ok := value.(string); ok {
+		return text, nil
+	}
+	var tags []string
+	switch values := value.(type) {
+	case []string:
+		tags = values
+	case []any:
+		tags = make([]string, len(values))
+		for i, value := range values {
+			text, ok := value.(string)
+			if !ok {
+				return "", fmt.Errorf("metadata.tags must be a string or a list of strings")
+			}
+			tags[i] = text
+		}
+	default:
+		return "", fmt.Errorf("metadata.tags must be a string or a list of strings")
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+	// Foundry metadata values are strings; JSON preserves commas and empty list items.
+	encoded, err := json.Marshal(tags)
+	if err != nil {
+		return "", fmt.Errorf("encode metadata.tags: %w", err)
+	}
+	return string(encoded), nil
 }

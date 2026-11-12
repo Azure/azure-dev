@@ -76,3 +76,52 @@ func TestADeclaredFileSkipsTheAmbiguityGuard(t *testing.T) {
 	require.NoError(t, err, "naming the file is how a project says which one it means")
 	assert.Equal(t, declared, got)
 }
+
+func TestWriteResolutionPreservesNonSymlinkSelection(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	require.NoError(t, os.Mkdir("quality.yaml", 0o700))
+	require.NoError(t, os.WriteFile("nightly", []byte("evals: []\n"), 0o600))
+	for _, location := range []string{
+		"quality.yaml", "." + string(filepath.Separator) + "quality.yaml",
+		"quality.yaml" + string(filepath.Separator), "nightly", "custom.yml", "not-created-yet",
+	} {
+		t.Run(location, func(t *testing.T) {
+			want, err := ResolveEvalConfigPath(location)
+			require.NoError(t, err)
+			got, err := ResolveEvalConfigPathForWrite(location)
+			require.NoError(t, err)
+			assert.Equal(t, want, got, "write validation must not change the selected path identity")
+		})
+	}
+}
+
+func TestWriteResolutionDoesNotRejectAncestorSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	require.NoError(t, os.MkdirAll(filepath.Join(target, "nested"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(target, EvalConfigBase), []byte("evals: []\n"), 0o600))
+	link := filepath.Join(dir, "linked ancestor")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("creating test symlinks is unavailable: %v", err)
+	}
+	readPath, err := ResolveEvalConfigPath(link)
+	require.NoError(t, err, "read resolution may still follow the selected directory link")
+	assert.Equal(t, filepath.Join(link, EvalConfigBase), readPath)
+	for _, child := range []string{EvalConfigBase, "nested"} {
+		t.Run(child, func(t *testing.T) {
+			location := filepath.Join(link, child)
+			want, err := ResolveEvalConfigPath(location)
+			require.NoError(t, err)
+			got, err := ResolveEvalConfigPathForWrite(location)
+			require.NoError(t, err, "only the selected path is checked, not unrelated ancestors")
+			assert.Equal(t, want, got)
+			require.NoError(t, SaveEvalConfig(location, &EvalConfig{Evals: []Eval{{Name: "new"}}}))
+			cfg, err := OpenEvalConfig(filepath.Join(target, child))
+			require.NoError(t, err)
+			require.NotNil(t, cfg)
+			require.Len(t, cfg.Evals, 1)
+			assert.Equal(t, "new", cfg.Evals[0].Name)
+		})
+	}
+}

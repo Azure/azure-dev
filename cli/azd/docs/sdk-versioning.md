@@ -42,6 +42,10 @@ This takes precedence during local builds. The `require` version still specifies
 - **Minor versions** (1.x.0 → 1.y.0): New features, backward compatible
 - **Major versions**: Would require a module path change (e.g., `/v2` suffix) per [Go module versioning](https://go.dev/ref/mod#versions)
 
+The environment-state validation update is an intentional source-incompatible exception.
+See [Environment-state API migration](environment-state-api-migration.md) for affected APIs
+and migration guidance.
+
 ## Version Synchronization
 
 The SDK version in `pkg/azdext/version.go` mirrors the CLI version in `cli/version.txt`. Both are updated automatically by `eng/scripts/Update-CliVersion.ps1` during the release process.

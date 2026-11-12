@@ -3,16 +3,26 @@
 
 package scripting
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/exec/internal/process"
+)
 
 // ValidationError indicates that input validation failed.
 type ValidationError struct {
 	Field  string
 	Reason string
+	Err    error
 }
 
 func (e *ValidationError) Error() string {
 	return fmt.Sprintf("validation error for %s: %s", e.Field, e.Reason)
+}
+
+// Unwrap returns the underlying validation cause, if any.
+func (e *ValidationError) Unwrap() error {
+	return e.Err
 }
 
 // ScriptNotFoundError indicates that a script file could not be found.
@@ -51,4 +61,25 @@ func (e *ExecutionError) Error() string {
 	}
 	return fmt.Sprintf(
 		"script exited with code %d (shell: %s)", e.ExitCode, e.Shell)
+}
+
+// Interrupted reports whether script execution ended because of Ctrl+C.
+func (e *ExecutionError) Interrupted() bool {
+	return e != nil && process.IsInterruptExitCode(e.ExitCode)
+}
+
+type executionErrorWithCause struct {
+	*ExecutionError
+	cause error
+}
+
+func (e *executionErrorWithCause) Unwrap() []error {
+	return []error{e.ExecutionError, e.cause}
+}
+
+func wrapExecutionError(err *ExecutionError, cause error) error {
+	return &executionErrorWithCause{
+		ExecutionError: err,
+		cause:          cause,
+	}
 }

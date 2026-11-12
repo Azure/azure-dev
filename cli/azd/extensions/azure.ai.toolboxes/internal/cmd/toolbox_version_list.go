@@ -31,6 +31,8 @@ func newToolboxVersionListCommand(extCtx *azdext.ExtensionContext) *cobra.Comman
 
 Shows one row per published version and marks which one is currently the
 default. Use this when choosing a target for 'toolbox publish'.`,
+		Example: `  # List published versions and identify the current default
+  azd ai toolbox versions list research`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToolboxVersionList(cmd.Context(), args[0], readToolboxFlags(cmd, extCtx))

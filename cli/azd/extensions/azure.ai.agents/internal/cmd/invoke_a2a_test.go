@@ -4,58 +4,922 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
-// TestBuildA2ARequestBody_WrapsMessage verifies a plain message is wrapped into
-// a JSON-RPC 2.0 message/send request with a single user text part.
+// Version validation and builders.
+
+func TestA2APreviewGateAndLocalValidation(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-p", "a2a", "--a2a-version", "1.0", "hi"}, `preview feature "agents.a2a" is disabled`},
+		{[]string{"-p", "a2a", "--a2a-version", "0.3", "-f", "missing.json"}, `preview feature "agents.a2a" is disabled`},
+		{[]string{"--a2a-version", "1.0", "hi"}, `preview feature "agents.a2a" is disabled`},
+		{[]string{"-p", "a2a", "--a2a-version=", "hi"}, "invalid --a2a-version"},
+		{[]string{"-p", "a2a", "--a2a-version", "2.0", "hi"}, "supported versions are 0.3 and 1.0"},
+		{[]string{"-p", "responses", "--a2a-version", "1.0", "hi"}, "only supported with the a2a protocol"},
+		{[]string{"--a2a-version", "1.0", "--no-wait", "hi"}, "--no-wait requires --long-running"},
+		{[]string{"--a2a-version", "1.0", "--client-header", "bad", "hi"}, "invalid --client-header"},
+		{[]string{"--a2a-version", "1.0", "agent", "hi", "-f", "missing.json"}, "cannot use --input-file and a message"},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			clearPreviewProcess(t)
+			t.Chdir(t.TempDir())
+			_, env := startPreviewCommandServer(t, nil, nil, nil)
+			_, err := executeRoot(t, append([]string{"invoke"}, tc.args...)...)
+			require.ErrorContains(t, err, tc.want)
+			require.Zero(t, env.reads.Load())
+			entries, err := os.ReadDir(".")
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		})
+	}
+}
+
+func TestA2APreviewFilePolicy(t *testing.T) {
+	for _, preview := range []bool{false, true} {
+		for _, protocol := range []agent_api.AgentProtocol{"", agent_api.AgentProtocolA2A, agent_api.AgentProtocolResponses} {
+			flags := &invokeFlags{inputFile: "missing.json"}
+			err := validateInvokeA2AVersionFlags(flags, protocol, preview)
+			if preview && protocol == agent_api.AgentProtocolA2A {
+				require.ErrorContains(t, err, "requires an explicit --a2a-version")
+			} else {
+				require.NoError(t, err)
+			}
+			require.Empty(t, flags.a2aVersion)
+		}
+	}
+}
+
+func TestValidateInvokeArgsUsesPreviewDecision(t *testing.T) {
+	for _, value := range []string{"false", "true", "invalid"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(featureflags.A2A.EnvVar, value)
+			command := newInvokeCommand(nil)
+			require.NoError(t, command.ParseFlags([]string{"--protocol", "a2a", "--input-file", "missing.json"}))
+			flags := invokeFlags{protocol: "a2a", inputFile: "missing.json"}
+			before := flags
+			for range 2 {
+				require.NoError(t, validateInvokeArgs(command, &flags, false))
+				require.ErrorContains(t, validateInvokeArgs(command, &flags, true), "requires an explicit --a2a-version")
+				require.Equal(t, before, flags)
+				require.Empty(t, flags.a2aVersion, "validation must not resolve a version")
+				value, err := command.Flags().GetString("input-file")
+				require.NoError(t, err)
+				require.Equal(t, "missing.json", value)
+				require.True(t, command.Flags().Changed("input-file"))
+				require.False(t, command.Flags().Changed("a2a-version"))
+			}
+		})
+	}
+}
+
+func TestValidateInvokeA2AVersionFlags(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name, version, file string
+		protocol            agent_api.AgentProtocol
+		wantError           string
+	}{
+		{"default plain", "", "", agent_api.AgentProtocolA2A, ""},
+		{"explicit 0.3", "0.3", "", agent_api.AgentProtocolA2A, ""},
+		{"explicit 1.0", "1.0", "", agent_api.AgentProtocolA2A, ""},
+		{"file 0.3", "0.3", "request.json", agent_api.AgentProtocolA2A, ""},
+		{"file 1.0", "1.0", "request.json", agent_api.AgentProtocolA2A, ""},
+		{"file missing version", "", "request.json", agent_api.AgentProtocolA2A, "requires an explicit --a2a-version"},
+		{"invalid version", "2.0", "", agent_api.AgentProtocolA2A, "supported versions are 0.3 and 1.0"},
+		{"no normalization", " 1.0", "", agent_api.AgentProtocolA2A, "invalid --a2a-version"},
+		{"responses", "1.0", "", agent_api.AgentProtocolResponses, "only supported with the a2a protocol"},
+		{"invocations", "0.3", "", agent_api.AgentProtocolInvocations, "only supported with the a2a protocol"},
+		{"other protocol without flag", "", "request.json", agent_api.AgentProtocolResponses, ""},
+		{"unresolved explicit", "1.0", "", "", ""},
+		{"unresolved file", "", "request.json", "", ""},
+		{"unresolved invalid", "latest", "", "", "invalid --a2a-version"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateInvokeA2AVersionFlags(&invokeFlags{
+				a2aVersion: tt.version, inputFile: tt.file,
+			}, tt.protocol, true)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestInvokeA2AVersionCommandValidation(t *testing.T) {
+	t.Setenv("AZD_ALPHA_ENABLE_AGENTS_A2A", "true")
+	for _, tt := range []struct {
+		name     string
+		args     []string
+		want     string
+		wantCode string
+	}{
+		{"missing file version", []string{"-p", "a2a", "-f", "missing.json"},
+			"requires an explicit --a2a-version", exterrors.CodeInvalidParameter},
+		{"invalid version", []string{"-p", "a2a", "--a2a-version", "2.0", "hello"},
+			"supported versions are 0.3 and 1.0", exterrors.CodeInvalidParameter},
+		{"empty version", []string{"-p", "a2a", "--a2a-version=", "hello"},
+			"invalid --a2a-version", exterrors.CodeInvalidParameter},
+		{"responses", []string{"-p", "responses", "--a2a-version", "1.0", "hello"},
+			"only supported with the a2a protocol", exterrors.CodeConflictingArguments},
+		{"invocations", []string{"-p", "invocations", "--a2a-version", "0.3", "hello"},
+			"only supported with the a2a protocol", exterrors.CodeConflictingArguments},
+		{"endpoint file", []string{"--agent-endpoint",
+			"https://acct.services.ai.azure.com/api/projects/project/agents/agent/endpoint/protocols/a2a",
+			"-f", "missing.json"}, "requires an explicit --a2a-version", exterrors.CodeInvalidParameter},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			command := newInvokeCommand(&azdext.ExtensionContext{NoPrompt: true})
+			command.SetOut(io.Discard)
+			command.SetErr(io.Discard)
+			command.SetArgs(tt.args)
+			err := command.Execute()
+			require.ErrorContains(t, err, tt.want)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected a structured local error")
+			require.Equal(t, tt.wantCode, localErr.Code)
+		})
+	}
+}
+
+func TestA2AProtocolVersion(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct{ name, explicit, want string }{
+		{"default", "", "1.0"},
+		{"explicit 0.3", "0.3", "0.3"},
+		{"explicit 1.0", "1.0", "1.0"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, resolveA2AVersion(tt.explicit, true))
+			wantOff := tt.explicit
+			if wantOff == "" {
+				wantOff = "0.3"
+			}
+			require.Equal(t, wantOff, resolveA2AVersion(tt.explicit, false))
+		})
+	}
+}
+
+func TestBuildA2ARequestBody_ValidatesVersion(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name, explicit, file, wantError string
+	}{
+		{"invalid explicit", "2.0", "", "invalid --a2a-version"},
+		{"empty unresolved version", "", "missing.json", "invalid --a2a-version"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a := &InvokeAction{
+				flags: &invokeFlags{message: "hello", inputFile: tt.file, a2aVersion: tt.explicit},
+			}
+			_, _, err := a.buildA2ARequestBody(tt.explicit)
+			require.ErrorContains(t, err, tt.wantError)
+		})
+	}
+}
+
+func TestA2ARequestBuilderRejectsUnknownVersion(t *testing.T) {
+	t.Parallel()
+	for _, version := range []string{"", "latest", "1.1", "2.0", "1.0.0", " 1.0"} {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			build, err := a2aRequestBuilderForVersion(version)
+			require.ErrorContains(t, err, "supported versions are 0.3 and 1.0")
+			require.Nil(t, build)
+			require.EqualError(t, validateA2AVersion(version), err.Error())
+		})
+	}
+}
+
+// TestBuildA2ARequestBody_WrapsMessage verifies dialect-specific wire shapes,
+// preserving 0.3's unspecified defaults and 1.0's synchronous text configuration.
 func TestBuildA2ARequestBody_WrapsMessage(t *testing.T) {
 	t.Parallel()
 
-	a := &InvokeAction{flags: &invokeFlags{message: "Hello!"}}
-	body, label, err := a.buildA2ARequestBody()
-	if err != nil {
-		t.Fatalf("buildA2ARequestBody: %v", err)
+	for _, tt := range []struct {
+		name, explicit, method, role string
+		part                         map[string]any
+		configuration                map[string]any
+	}{
+		{"default", "", "SendMessage", "ROLE_USER",
+			map[string]any{"text": "Hello!"},
+			map[string]any{"returnImmediately": false, "acceptedOutputModes": []any{"text/plain"}}},
+		{"1.0", "1.0", "SendMessage", "ROLE_USER",
+			map[string]any{"text": "Hello!"},
+			map[string]any{"returnImmediately": false, "acceptedOutputModes": []any{"text/plain"}}},
+		{"0.3", "0.3", "message/send", "user",
+			map[string]any{"kind": "text", "text": "Hello!"}, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a := &InvokeAction{
+				flags: &invokeFlags{message: "Hello!", a2aVersion: tt.explicit},
+			}
+			body, label, err := a.buildA2ARequestBody(resolveA2AVersion(tt.explicit, true))
+			require.NoError(t, err)
+			require.Equal(t, `"Hello!"`, label)
+			var req struct {
+				JSONRPC string `json:"jsonrpc"`
+				ID      string `json:"id"`
+				Method  string `json:"method"`
+				Params  struct {
+					Message struct {
+						Kind      string           `json:"kind"`
+						Role      string           `json:"role"`
+						MessageID string           `json:"messageId"`
+						Parts     []map[string]any `json:"parts"`
+					} `json:"message"`
+					Configuration map[string]any `json:"configuration"`
+				} `json:"params"`
+			}
+			require.NoError(t, json.Unmarshal(body, &req))
+			require.Equal(t, "2.0", req.JSONRPC)
+			require.NotEmpty(t, req.ID)
+			require.Equal(t, tt.method, req.Method)
+			require.Equal(t, tt.role, req.Params.Message.Role)
+			if tt.role == "user" {
+				require.Equal(t, "message", req.Params.Message.Kind, "0.3 requires the message discriminator")
+			} else {
+				require.Empty(t, req.Params.Message.Kind)
+			}
+			require.NotEmpty(t, req.Params.Message.MessageID)
+			require.Equal(t, []map[string]any{tt.part}, req.Params.Message.Parts)
+			require.Equal(t, tt.configuration, req.Params.Configuration)
+		})
 	}
-	if label != `"Hello!"` {
-		t.Errorf("label = %q, want %q", label, `"Hello!"`)
-	}
+}
 
-	var req map[string]any
-	if err := json.Unmarshal(body, &req); err != nil {
-		t.Fatalf("body is not valid JSON: %v (%s)", err, string(body))
+func TestInvokeContextIDValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name, contextID, protocol, inputFile, conversation string
+		newSession, newConversation                        bool
+		wantError                                          string
+	}{
+		{name: "A2A", contextID: "context-1", protocol: "a2a"},
+		{name: "unresolved", contextID: "context-1"},
+		{name: "empty", protocol: "a2a", wantError: "--context-id cannot be empty"},
+		{name: "blank", contextID: " \t ", protocol: "a2a", wantError: "--context-id cannot be empty"},
+		{name: "Responses", contextID: "context-1", protocol: "responses", wantError: "only supported with the a2a protocol"},
+		{name: "Invocations", contextID: "context-1", protocol: "invocations", wantError: "only supported with the a2a protocol"},
+		{name: "raw file", contextID: "context-1", protocol: "a2a", inputFile: "request.json", wantError: "--input-file"},
+		{name: "new session", contextID: "context-1", protocol: "a2a", newSession: true, wantError: "--new-session"},
+		{name: "new conversation", contextID: "context-1", protocol: "a2a", newConversation: true,
+			wantError: "--new-conversation"},
+		{name: "conversation ID", contextID: "context-1", protocol: "a2a", conversation: "conv-1",
+			wantError: "--conversation-id"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := newInvokeCommand(nil)
+			require.NoError(t, cmd.ParseFlags([]string{"--context-id=" + tt.contextID}))
+			flags := invokeFlags{
+				message: "hello", protocol: tt.protocol, contextID: tt.contextID, inputFile: tt.inputFile,
+				newSession: tt.newSession, newConversation: tt.newConversation,
+				conversation: tt.conversation,
+			}
+			if tt.inputFile != "" {
+				flags.message = ""
+				flags.a2aVersion = "1.0"
+			}
+			err := validateInvokeArgs(cmd, &flags, true)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
-	if req["jsonrpc"] != "2.0" {
-		t.Errorf("jsonrpc = %v, want 2.0", req["jsonrpc"])
+}
+
+func TestBuildA2ARequestBodyContextID(t *testing.T) {
+	t.Parallel()
+	for _, version := range []string{"0.3", "1.0"} {
+		for _, contextID := range []string{"", "ctxt_older-conversation", "opaque\"\\context"} {
+			t.Run(version+"/"+contextID, func(t *testing.T) {
+				t.Parallel()
+				action := &InvokeAction{flags: &invokeFlags{message: "continue", contextID: contextID}}
+				body, _, err := action.buildA2ARequestBody(version)
+				require.NoError(t, err)
+				var request struct {
+					Params struct {
+						Message map[string]any `json:"message"`
+					} `json:"params"`
+				}
+				require.NoError(t, json.Unmarshal(body, &request))
+				value, present := request.Params.Message["contextId"]
+				require.Equal(t, contextID != "", present)
+				if contextID != "" {
+					require.Equal(t, contextID, value)
+				}
+			})
+		}
 	}
-	if req["method"] != "message/send" {
-		t.Errorf("method = %v, want message/send", req["method"])
+}
+
+func TestInvokeContextIDCommandValidation(t *testing.T) {
+	for _, tt := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-p", "a2a", "--context-id=", "hi"}, "--context-id cannot be empty"},
+		{[]string{"-p", "responses", "--context-id", "context-1", "hi"}, "only supported with the a2a protocol"},
+		{[]string{"-p", "invocations", "--context-id", "context-1", "hi"}, "only supported with the a2a protocol"},
+		{[]string{"-p", "a2a", "--context-id", "context-1", "-f", "missing.json"},
+			"cannot use --context-id with --input-file"},
+	} {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			command := newInvokeCommand(&azdext.ExtensionContext{NoPrompt: true})
+			command.SetOut(io.Discard)
+			command.SetErr(io.Discard)
+			command.SetArgs(tt.args)
+			require.ErrorContains(t, command.ExecuteContext(t.Context()), tt.want)
+		})
 	}
-	if req["id"] == nil || req["id"] == "" {
-		t.Error("request id must be set")
+}
+
+func TestA2AContextIDDoesNotRewriteInputFile(t *testing.T) {
+	action := &InvokeAction{flags: &invokeFlags{inputFile: "missing.json", contextID: "context-1"}}
+	_, _, err := action.buildA2ARequestBody("1.0")
+	require.ErrorContains(t, err, "--context-id")
+	require.ErrorContains(t, err, "--input-file")
+}
+
+func TestA2AResponseReturnsContextID(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ name, version, result string }{
+		{"0.3 Message", "0.3", `{"contextId":"context-1","parts":[{"kind":"text","text":"answer"}]}`},
+		{"0.3 Task", "0.3", `{"contextId":"context-1","status":{"state":"completed"},` +
+			`"artifacts":[{"parts":[{"kind":"text","text":"answer"}]}]}`},
+		{"1.0 Message", "1.0", `{"message":{"contextId":"context-1","parts":[{"text":"answer"}]}}`},
+		{"1.0 Task", "1.0", `{"task":{"contextId":"context-1","status":{"state":"TASK_STATE_COMPLETED"},` +
+			`"artifacts":[{"parts":[{"text":"answer"}]}]}}`},
+		{"1.0 GetTask", "1.0", `{"contextId":"context-1","status":{"state":"TASK_STATE_WORKING",` +
+			`"message":{"parts":[{"text":"answer"}]}}}`},
+	} {
+		for _, raw := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/raw=%t", tt.name, raw), func(t *testing.T) {
+				t.Parallel()
+				body := `{"jsonrpc":"2.0","id":"request-1","result":` + tt.result + `}`
+				resp := &http.Response{
+					StatusCode: http.StatusOK, Status: "200 OK", ProtoMajor: 1, ProtoMinor: 1,
+					Header: http.Header{"X-Agent-Session-Id": {"session-not-context"}},
+					Body:   io.NopCloser(strings.NewReader(body)),
+				}
+				var output bytes.Buffer
+				require.NoError(t, handleA2AResponseTo(&output, resp, "agent", raw, tt.version, nil))
+				if raw {
+					require.NotContains(t, output.String(), "Context ID:")
+					require.True(t, strings.HasSuffix(output.String(), "\r\n\r\n"+body))
+				} else {
+					require.Contains(t, output.String(), "Context ID:   context-1")
+					require.Contains(t, output.String(), "[agent] answer")
+					require.NotContains(t, output.String(), "session-not-context")
+				}
+			})
+		}
 	}
-	params, _ := req["params"].(map[string]any)
-	msg, _ := params["message"].(map[string]any)
-	if msg["role"] != "user" {
-		t.Errorf("message.role = %v, want user", msg["role"])
+}
+
+func TestA2ATaskDefaultOutputReflectsState(t *testing.T) {
+	t.Parallel()
+	for _, version := range []string{"0.3", "1.0"} {
+		for _, state := range []string{"completed", "input-required", "auth-required", "failed", "canceled", "rejected"} {
+			t.Run(version+"/"+state, func(t *testing.T) {
+				t.Parallel()
+				wireState := state
+				if version == "1.0" {
+					wireState = "TASK_STATE_" + strings.ToUpper(strings.ReplaceAll(state, "-", "_"))
+				}
+				task := map[string]any{
+					"id": "task-1", "contextId": "context-1",
+					"status": map[string]any{
+						"state": wireState, "message": map[string]any{"parts": []any{map[string]any{"text": "Status detail"}}},
+					},
+					"artifacts": []any{map[string]any{"parts": []any{map[string]any{"text": "artifact answer"}}}},
+				}
+				result := task
+				if version == "1.0" {
+					result = map[string]any{"task": task}
+				} else {
+					task["kind"] = "task"
+				}
+				body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": "request-1", "result": result})
+				require.NoError(t, err)
+				resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}
+				var output bytes.Buffer
+				err = handleA2AResponseTo(&output, resp, "agent", false, version, nil)
+				require.Contains(t, output.String(), "Context ID:   context-1")
+				require.Contains(t, output.String(), "Task ID:      task-1")
+				require.Contains(t, output.String(), "State:        "+wireState)
+				if state == "failed" || state == "canceled" || state == "rejected" {
+					require.ErrorContains(t, err, wireState)
+					require.ErrorContains(t, err, "Status detail")
+					require.NotContains(t, output.String(), "[agent] artifact answer")
+				} else {
+					require.NoError(t, err)
+					want := "Status detail"
+					if state == "completed" {
+						want = "artifact answer"
+					}
+					require.Contains(t, output.String(), "[agent] "+want)
+				}
+			})
+		}
 	}
-	if msg["messageId"] == nil || msg["messageId"] == "" {
-		t.Error("message.messageId must be set")
+}
+
+func TestA2ARemoteTaskFailureDoesNotReplay(t *testing.T) {
+	requests := make(chan struct{}, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- struct{}{}
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"task":{"id":"failed-task","contextId":"context-1",`+
+			`"status":{"state":"TASK_STATE_FAILED"},"artifacts":[{"parts":[{"text":"partial artifact"}]}]}}}`)
+	}))
+	defer server.Close()
+	action := &InvokeAction{
+		flags: &invokeFlags{message: "continue", contextID: "context-1"}, credential: responseTestCredential{},
+		resolvedRemoteContext: &remoteContext{name: "agent", projectEndpoint: server.URL, apiVersion: "v1"},
 	}
-	parts, _ := msg["parts"].([]any)
-	if len(parts) != 1 {
-		t.Fatalf("want 1 part, got %d", len(parts))
+	output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context(), "1.0") })
+	require.ErrorContains(t, err, "TASK_STATE_FAILED")
+	require.Contains(t, output, "Context ID:   context-1")
+	require.Contains(t, output, "Task ID:      failed-task")
+	require.Contains(t, output, "State:        TASK_STATE_FAILED")
+	require.NotContains(t, output, "[agent] partial artifact")
+	require.NotContains(t, output, "Client elapsed:")
+	require.Len(t, requests, 1)
+}
+
+func TestA2ARemoteResumesContextsABAB(t *testing.T) {
+	// The fixture owns first-turn creation; this qualifies CLI routing, not deployed session affinity.
+	config := newInvokeUserConfigServer()
+	contexts := make([]string, 0, 2)
+	requests := make(chan string, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/agents/agent/endpoint/protocols/a2a", r.URL.Path)
+		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+		var request struct {
+			ID     string `json:"id"`
+			Params struct {
+				Message struct {
+					ContextID string `json:"contextId"`
+					Parts     []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"message"`
+			} `json:"params"`
+		}
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) || !assert.Len(t, request.Params.Message.Parts, 1) {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		turn := len(requests) + 1
+		contextID := request.Params.Message.ContextID
+		switch turn {
+		case 1:
+			assert.Empty(t, contextID)
+			assert.Empty(t, r.URL.Query().Get("agent_session_id"))
+			contextID = "context-a"
+		case 2:
+			assert.Empty(t, contextID)
+			assert.Equal(t, "session-context-a", r.URL.Query().Get("agent_session_id"),
+				"no override must retain existing implicit routing")
+			contextID = "context-b"
+		default:
+			assert.Empty(t, r.URL.Query().Get("agent_session_id"), "explicit context must not inherit the last session")
+		}
+		requests <- contextID
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("x-agent-session-id", "session-"+contextID)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"jsonrpc": "2.0", "id": request.ID,
+			"result": map[string]any{"task": map[string]any{
+				"id": fmt.Sprintf("task-%d", turn), "contextId": contextID,
+				"status": map[string]any{"state": "TASK_STATE_COMPLETED"},
+				"artifacts": []any{map[string]any{"parts": []any{
+					map[string]any{"text": "Echo: " + request.Params.Message.Parts[0].Text},
+				}}},
+			}},
+		})
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	stateDir := t.TempDir()
+	for turn, text := range []string{"Start A", "Start B", "Return to A", "Return to B"} {
+		flags := &invokeFlags{protocol: "a2a", message: text}
+		if turn < 2 {
+			flags.message = ""
+			flags.outputFmt = outputRaw
+			flags.inputFile = filepath.Join(dir, fmt.Sprintf("start-%d.json", turn))
+			body := fmt.Sprintf(`{"jsonrpc":"2.0","id":"request-%d","method":"SendMessage","params":`+
+				`{"message":{"messageId":"message-%d","role":"ROLE_USER","parts":[{"text":%q}]},`+
+				`"configuration":{"returnImmediately":false}}}`, turn, turn, text)
+			require.NoError(t, os.WriteFile(flags.inputFile, []byte(body), 0o600))
+		} else {
+			flags.contextID = contexts[turn-2]
+		}
+		client := newInvokeTestAzdClient(t, config)
+		agentStateStoreRootOverrides.Store(client, stateDir)
+		action := &InvokeAction{
+			flags: flags, credential: responseTestCredential{},
+			resolvedRemoteContext: &remoteContext{
+				name: "agent", projectEndpoint: server.URL, apiVersion: "v1",
+				agentKey: buildAgentKey(server.URL, "agent", "", false), azdClient: client,
+			},
+		}
+		output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context(), "1.0") })
+		require.NoError(t, err)
+		if turn < 2 {
+			_, body, found := strings.Cut(output, "\r\n\r\n")
+			require.True(t, found)
+			var envelope struct {
+				Result struct {
+					Task struct {
+						ContextID string `json:"contextId"`
+					} `json:"task"`
+				} `json:"result"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(body), &envelope))
+			require.NotEmpty(t, envelope.Result.Task.ContextID)
+			contexts = append(contexts, envelope.Result.Task.ContextID)
+			require.NotContains(t, output, "Context ID:")
+		} else {
+			require.Contains(t, output, "Context ID:   "+contexts[turn-2])
+			require.Contains(t, output, fmt.Sprintf("Task ID:      task-%d", turn+1))
+			require.Contains(t, output, "State:        TASK_STATE_COMPLETED")
+			require.Contains(t, output, "[agent] Echo: "+text)
+			require.NotContains(t, output, "Session:")
+		}
 	}
-	p0, _ := parts[0].(map[string]any)
-	if p0["kind"] != "text" || p0["text"] != "Hello!" {
-		t.Errorf("part = %+v, want {kind:text, text:Hello!}", p0)
+	require.NotEqual(t, contexts[0], contexts[1])
+	require.Len(t, requests, 4, "each turn must send exactly once")
+	for _, want := range []string{contexts[0], contexts[1], contexts[0], contexts[1]} {
+		require.Equal(t, want, <-requests)
+	}
+}
+
+func TestA2ARemoteContextIDBypassesCachedSession(t *testing.T) {
+	for _, tt := range []struct{ name, contextID, session, wantSession string }{
+		{"single turn preserves existing session routing", "", "", "most-recent-session"},
+		{"earlier context bypasses the cached session", "earlier-context", "", ""},
+		{"explicit session is preserved", "earlier-context", "explicit-session", "explicit-session"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, tt.wantSession, r.URL.Query().Get("agent_session_id"))
+				var request struct {
+					Params struct {
+						Message struct {
+							ContextID string `json:"contextId"`
+						} `json:"message"`
+					} `json:"params"`
+				}
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				assert.Equal(t, tt.contextID, request.Params.Message.ContextID)
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("x-agent-session-id", "earlier-session")
+				_, _ = io.WriteString(w, `{"result":{"message":{"contextId":"earlier-context",`+
+					`"parts":[{"text":"earlier-conversation-answer"}]}}}`)
+			}))
+			defer server.Close()
+			config := newInvokeUserConfigServer()
+			client := newInvokeTestAzdClient(t, config)
+			key := buildAgentKey(server.URL, "agent", "", false)
+			saveContextValue(t.Context(), client, key, "most-recent-session", "sessions")
+			action := &InvokeAction{
+				flags:      &invokeFlags{message: "continue", protocol: "a2a", contextID: tt.contextID, session: tt.session},
+				credential: responseTestCredential{},
+				resolvedRemoteContext: &remoteContext{
+					name: "agent", projectEndpoint: server.URL, apiVersion: "v1", agentKey: key, azdClient: client,
+				},
+			}
+			output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context(), "1.0") })
+			require.NoError(t, err)
+			require.Contains(t, output, "Context ID:   earlier-context")
+			require.Contains(t, output, "earlier-conversation-answer")
+			require.NotContains(t, output, "Session:")
+		})
+	}
+}
+
+func TestA2AExplicitSessionContextPersistsForNextInvoke(t *testing.T) {
+	for _, version := range []string{"0.3", "1.0"} {
+		t.Run(version, func(t *testing.T) {
+			requests := make(chan string, 2)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "chosen-session", r.URL.Query().Get("agent_session_id"))
+				assert.Equal(t, version, r.Header.Get(a2aVersionHeader))
+				requests <- r.URL.Query().Get("agent_session_id")
+				message := map[string]any{
+					"contextId": "earlier-context", "parts": []any{map[string]any{"text": "continued"}},
+				}
+				var result any = message
+				if version == "1.0" {
+					result = map[string]any{"message": message}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("x-agent-session-id", "chosen-session")
+				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"result": result}))
+			}))
+			defer server.Close()
+			config := newInvokeUserConfigServer()
+			stateDir := t.TempDir()
+			key := buildAgentKey(server.URL, "agent", "", false)
+			for turn := range 2 {
+				client := newInvokeTestAzdClient(t, config)
+				agentStateStoreRootOverrides.Store(client, stateDir)
+				flags := &invokeFlags{message: "continue", protocol: "a2a"}
+				if turn == 0 {
+					saveContextValue(t.Context(), client, key, "previous-session", "sessions")
+					flags.contextID, flags.session = "earlier-context", "chosen-session"
+				}
+				action := &InvokeAction{
+					flags: flags, credential: responseTestCredential{},
+					resolvedRemoteContext: &remoteContext{
+						name: "agent", projectEndpoint: server.URL, apiVersion: "v1", agentKey: key, azdClient: client,
+					},
+				}
+				_, err := captureStdout(t, func() error { return action.a2aRemote(t.Context(), version) })
+				require.NoError(t, err)
+				state := loadAgentStateForTest(t, client, key)
+				require.NotNil(t, state)
+				assert.Equal(t, "chosen-session", state.SessionID)
+			}
+			require.Len(t, requests, 2)
+		})
+	}
+}
+
+func TestA2AContextIDPreservesVersionSessionRouting(t *testing.T) {
+	for _, version := range []string{"0.3", "1.0"} {
+		t.Run(version, func(t *testing.T) {
+			requests := make(chan struct{}, 3)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests <- struct{}{}
+				assert.Equal(t, "version-session", r.URL.Query().Get("agent_session_id"))
+				assert.Equal(t, version, r.Header.Get(a2aVersionHeader))
+				var request struct {
+					Params struct {
+						Message struct {
+							ContextID string `json:"contextId"`
+						} `json:"message"`
+					} `json:"params"`
+				}
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				assert.Equal(t, "earlier-context", request.Params.Message.ContextID)
+				message := map[string]any{
+					"contextId": "earlier-context", "parts": []any{map[string]any{"text": "continued"}},
+				}
+				var result any = message
+				if version == "1.0" {
+					result = map[string]any{"message": message}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"result": result}))
+			}))
+			defer server.Close()
+			previous := createInvokeVersionSession
+			t.Cleanup(func() { createInvokeVersionSession = previous })
+			var creates int
+			createInvokeVersionSession = func(
+				_ context.Context, endpoint, name, selectedVersion, apiVersion string,
+			) (*agent_api.AgentSessionResource, error) {
+				creates++
+				assert.Equal(t, server.URL, endpoint)
+				assert.Equal(t, "agent", name)
+				assert.Equal(t, "7", selectedVersion)
+				assert.Equal(t, "v1", apiVersion)
+				return &agent_api.AgentSessionResource{AgentSessionID: "version-session"}, nil
+			}
+			stateDir := t.TempDir()
+			config := newInvokeUserConfigServer()
+			key := buildAgentKey(server.URL, "agent", "7", false)
+			for range 2 {
+				client := newInvokeTestAzdClient(t, config)
+				agentStateStoreRootOverrides.Store(client, stateDir)
+				action := &InvokeAction{
+					flags: &invokeFlags{
+						message: "continue", protocol: "a2a", contextID: "earlier-context", version: "7",
+					},
+					credential: responseTestCredential{},
+					resolvedRemoteContext: &remoteContext{
+						name: "agent", projectEndpoint: server.URL, apiVersion: "v1", version: "7",
+						deployedVersion: "7", agentKey: key, azdClient: client,
+					},
+				}
+				_, err := captureStdout(t, func() error { return action.a2aRemote(t.Context(), version) })
+				require.NoError(t, err)
+			}
+			assert.Equal(t, 1, creates)
+			assert.Len(t, requests, 2)
+		})
+	}
+}
+
+func TestA2ATaskRequestSemantics(t *testing.T) {
+	for _, version := range []string{"0.3", "1.0"} {
+		for _, local := range []bool{false, true} {
+			for _, tt := range []struct {
+				name                                         string
+				cancel, lookup, noDetail, dataOnly, rpc, raw bool
+				state, wantError                             string
+			}{
+				{name: "successful cancellation", cancel: true, state: "canceled"},
+				{name: "cancellation without detail", cancel: true, noDetail: true, state: "canceled"},
+				{name: "canceled message remains failure", state: "canceled", wantError: "agent task ended"},
+				{name: "failed cancellation remains failure", cancel: true, state: "failed", wantError: "agent task ended"},
+				{name: "RPC cancellation error remains failure", cancel: true, rpc: true, wantError: "agent error (-32002)"},
+				{name: "raw message response unchanged", state: "canceled", raw: true},
+				{name: "failed task lookup", lookup: true, state: "failed"},
+				{name: "canceled task lookup", lookup: true, state: "canceled"},
+				{name: "rejected task lookup", lookup: true, state: "rejected"},
+				{name: "lookup without detail", lookup: true, noDetail: true, state: "failed"},
+				{name: "structured lookup detail", lookup: true, dataOnly: true, state: "failed"},
+				{name: "structured send failure", dataOnly: true, state: "failed", wantError: "agent task ended"},
+				{name: "structured cancellation failure", cancel: true, dataOnly: true, state: "failed",
+					wantError: "agent task ended"},
+				{name: "RPC lookup error remains failure", lookup: true, rpc: true, wantError: "agent error (-32002)"},
+				{name: "raw lookup unchanged", lookup: true, dataOnly: true, state: "failed", raw: true},
+			} {
+				t.Run(fmt.Sprintf("%s/local=%t/%s", version, local, tt.name), func(t *testing.T) {
+					method, state := "message/send", tt.state
+					if version == "1.0" {
+						method = "SendMessage"
+						state = "TASK_STATE_" + strings.ToUpper(state)
+					}
+					if tt.cancel {
+						method = "tasks/cancel"
+						if version == "1.0" {
+							method = "CancelTask"
+						}
+					}
+					if tt.lookup {
+						method = "tasks/get"
+						if version == "1.0" {
+							method = "GetTask"
+						}
+					}
+					request, err := json.Marshal(a2aJSONRPCRequest{
+						JSONRPC: "2.0", ID: "request-1", Method: method, Params: map[string]any{"id": "task-1"},
+					})
+					require.NoError(t, err)
+					request = append(append([]byte(" \r\n"), request...), '\n')
+					inputFile := filepath.Join(t.TempDir(), "request.json")
+					require.NoError(t, os.WriteFile(inputFile, request, 0o600))
+					status := map[string]any{"state": state}
+					if !tt.noDetail {
+						status["message"] = map[string]any{"parts": []any{map[string]any{"text": "Task status detail"}}}
+					}
+					if tt.dataOnly {
+						part := map[string]any{"data": map[string]any{"code": "quota_exceeded"}}
+						if version == "0.3" {
+							part["kind"] = "data"
+						}
+						status["message"] = map[string]any{"parts": []any{part}}
+					}
+					task := map[string]any{
+						"id": "task-1", "contextId": "context-1", "status": status,
+						"artifacts": []any{map[string]any{"parts": []any{map[string]any{"text": "partial artifact"}}}},
+					}
+					var result any = task
+					if version == "1.0" && !tt.cancel && !tt.lookup {
+						result = map[string]any{"task": task}
+					}
+					envelope := map[string]any{"jsonrpc": "2.0", "id": "request-1", "result": result}
+					if tt.rpc {
+						delete(envelope, "result")
+						envelope["error"] = map[string]any{"code": -32002, "message": "task cannot be canceled"}
+					}
+					response, err := json.Marshal(envelope)
+					require.NoError(t, err)
+					requests := make(chan struct{}, 2)
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						requests <- struct{}{}
+						assert.Equal(t, http.MethodPost, r.Method)
+						assert.Equal(t, version, r.Header.Get(a2aVersionHeader))
+						body, err := io.ReadAll(r.Body)
+						assert.NoError(t, err)
+						assert.Equal(t, request, body, "method inspection must not rewrite file bytes")
+						w.Header().Set("Content-Type", "application/json")
+						_, _ = w.Write(response)
+					}))
+					defer server.Close()
+					flags := &invokeFlags{protocol: "a2a", inputFile: inputFile, a2aVersion: version, local: local}
+					if tt.raw {
+						flags.outputFmt = outputRaw
+					}
+					action := &InvokeAction{flags: flags, noticeWriter: io.Discard, credential: responseTestCredential{}}
+					var output string
+					if local {
+						parsed, parseErr := url.Parse(server.URL)
+						require.NoError(t, parseErr)
+						flags.port, parseErr = strconv.Atoi(parsed.Port())
+						require.NoError(t, parseErr)
+						var writer bytes.Buffer
+						action.a2aWriter, action.a2aErrorWriter = &writer, io.Discard
+						err = action.a2aLocal(t.Context(), version)
+						output = writer.String()
+					} else {
+						action.resolvedRemoteContext = &remoteContext{
+							name: "agent", projectEndpoint: server.URL, apiVersion: "v1",
+						}
+						output, err = captureStdout(t, func() error { return action.a2aRemote(t.Context(), version) })
+					}
+					if tt.wantError != "" {
+						require.ErrorContains(t, err, tt.wantError)
+						if tt.dataOnly {
+							require.ErrorContains(t, err, "quota_exceeded")
+						}
+						require.NotContains(t, output, "Client elapsed:")
+					} else {
+						require.NoError(t, err)
+					}
+					require.Len(t, requests, 1, "do not replay a cancellation or message-send request")
+					if tt.raw {
+						require.True(t, strings.HasSuffix(output, "\r\n\r\n"+string(response)))
+						require.NotContains(t, output, "Context ID:")
+					} else if !tt.rpc {
+						require.Contains(t, output, "Context ID:   context-1")
+						require.Contains(t, output, "Task ID:      task-1")
+						require.Contains(t, output, "State:        "+state)
+						require.NotContains(t, output, "partial artifact")
+						if (tt.cancel || tt.lookup) && tt.wantError == "" && !tt.noDetail && !tt.dataOnly {
+							require.Contains(t, output, "Task status detail")
+						}
+						if tt.lookup && tt.dataOnly {
+							require.Contains(t, output, "quota_exceeded")
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestA2AFileContextGuidanceIncludesSessionRouting(t *testing.T) {
+	err := validateInvokeContextIDFlags(
+		&invokeFlags{contextID: "context-1", inputFile: "request.json"}, agent_api.AgentProtocolA2A, true,
+	)
+	require.Error(t, err)
+	suggestion := azdext.WrapError(err).GetSuggestion()
+	require.Contains(t, suggestion, "params.message.contextId")
+	require.Contains(t, suggestion, "--new-session")
+	require.Contains(t, suggestion, "--session-id")
+}
+
+func TestA2AResponseDoesNotInventContextID(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{
+		`{"result":{"message":{"messageId":"message-1","parts":[{"text":"answer"}]}}}`,
+		`{"result":{"task":{"id":"task-1","status":{"state":"TASK_STATE_COMPLETED"},` +
+			`"artifacts":[{"parts":[{"text":"answer"}]}]}}}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			t.Parallel()
+			resp := &http.Response{
+				StatusCode: http.StatusOK, Header: http.Header{"X-Agent-Session-Id": {"session-not-context"}},
+				Body: io.NopCloser(strings.NewReader(body)),
+			}
+			var output bytes.Buffer
+			require.NoError(t, handleA2AResponseTo(&output, resp, "agent", false, "1.0", nil))
+			require.Contains(t, output.String(), "[agent] answer\n")
+			require.NotContains(t, output.String(), "Context ID:")
+			require.NotContains(t, output.String(), "session-not-context")
+		})
 	}
 }
 
@@ -66,23 +930,367 @@ func TestBuildA2ARequestBody_PassesFileVerbatim(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a2a.json")
-	content := `{"jsonrpc":"2.0","id":"x","method":"message/send","params":{"message":{"role":"user","parts":[]}}}`
+	content := " \r\n" +
+		`{"jsonrpc":"2.0","id":"x","method":"message/send","params":{"message":{"role":"user","parts":[]}}}` + "\n\t"
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("write temp file: %v", err)
 	}
 
-	a := &InvokeAction{flags: &invokeFlags{inputFile: path}}
-	body, label, err := a.buildA2ARequestBody()
-	if err != nil {
-		t.Fatalf("buildA2ARequestBody: %v", err)
-	}
-	if string(body) != content {
-		t.Errorf("body = %q, want verbatim %q", string(body), content)
-	}
-	if label == "" {
-		t.Error("expected a non-empty body label for file input")
+	for _, version := range []string{"0.3", "1.0"} {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			a := &InvokeAction{flags: &invokeFlags{inputFile: path, a2aVersion: version}}
+			body, label, err := a.buildA2ARequestBody(version)
+			require.NoError(t, err)
+			require.Equal(t, content, string(body))
+			require.NotEmpty(t, label)
+		})
 	}
 }
+
+func TestBuildA2ARequestBody_OpaqueFile(t *testing.T) {
+	t.Parallel()
+
+	// A file stays opaque on the wire: do not validate, normalize, or convert its body.
+	content := []byte(" \r\nnot JSON\x00\xff\n")
+	path := filepath.Join(t.TempDir(), "opaque.bin")
+	require.NoError(t, os.WriteFile(path, content, 0600))
+	for _, version := range []string{"0.3", "1.0"} {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			a := &InvokeAction{flags: &invokeFlags{inputFile: path, a2aVersion: version}}
+			body, _, err := a.buildA2ARequestBody(version)
+			require.NoError(t, err)
+			require.Equal(t, content, body)
+		})
+	}
+}
+
+func TestA2ATextRequestBuildersPreserveText(t *testing.T) {
+	t.Parallel()
+	const text = "A quote: \"hello\"\nA backslash: \\ and Unicode: \u4f60\u597d"
+	for _, version := range []string{"0.3", "1.0"} {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			build, err := a2aRequestBuilderForVersion(version)
+			require.NoError(t, err)
+			body, err := json.Marshal(build(text, "request-id", "message-id", ""))
+			require.NoError(t, err)
+			var request struct {
+				ID     string `json:"id"`
+				Params struct {
+					Message struct {
+						MessageID string `json:"messageId"`
+						Parts     []struct {
+							Text string `json:"text"`
+						} `json:"parts"`
+					} `json:"message"`
+				} `json:"params"`
+			}
+			require.NoError(t, json.Unmarshal(body, &request))
+			require.Equal(t, "request-id", request.ID)
+			require.Equal(t, "message-id", request.Params.Message.MessageID)
+			require.Len(t, request.Params.Message.Parts, 1)
+			require.Equal(t, text, request.Params.Message.Parts[0].Text)
+		})
+	}
+}
+
+// Wire and docs fixtures.
+
+func TestA2ATextRequestBuilders(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		version string
+		build   a2aTextRequestBuilder
+	}{
+		{"0.3", buildA2A03TextRequest},
+		{"1.0", buildA2A10TextRequest},
+	} {
+		t.Run(tt.version, func(t *testing.T) {
+			t.Parallel()
+			request := tt.build("Hello!", "hello-1", "hello-message-1", "")
+			body, err := json.Marshal(request)
+			require.NoError(t, err)
+			golden, err := os.ReadFile(filepath.Join("testdata", "a2a", "request-"+tt.version+".json"))
+			require.NoError(t, err)
+			require.JSONEq(t, string(golden), string(body))
+
+			// The selector must select this exact dialect, not a default body
+			// subsequently patched by version-dependent branches.
+			selected, err := a2aRequestBuilderForVersion(tt.version)
+			require.NoError(t, err)
+			selectedBody, err := json.Marshal(selected("Hello!", "hello-1", "hello-message-1", ""))
+			require.NoError(t, err)
+			require.JSONEq(t, string(golden), string(selectedBody))
+		})
+	}
+}
+
+func TestA2AReadmeRequestsMatchWireFixtures(t *testing.T) {
+	t.Parallel()
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	require.NoError(t, err)
+	lfReadme := strings.ReplaceAll(string(readme), "\r\n", "\n")
+	for _, tt := range []struct{ name, text string }{
+		{"LF", lfReadme},
+		{"CRLF", strings.ReplaceAll(lfReadme, "\n", "\r\n")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			// Windows checkouts may use CRLF; markdown and JSON semantics do not depend on it.
+			text := strings.ReplaceAll(tt.text, "\r\n", "\n")
+			_, section, found := strings.Cut(text, "## Invoking agents over A2A\n")
+			require.True(t, found)
+			section, _, _ = strings.Cut(section, "\n## ")
+			examples := regexp.MustCompile("(?s)```json\\n(.*?)\\n```").FindAllStringSubmatch(section, -1)
+			seen := map[string]bool{}
+			for _, example := range examples {
+				var request struct {
+					Method string `json:"method"`
+				}
+				require.NoError(t, json.Unmarshal([]byte(example[1]), &request))
+				var version string
+				switch request.Method {
+				case "message/send":
+					version = "0.3"
+				case "SendMessage":
+					version = "1.0"
+				default:
+					continue
+				}
+				golden, err := os.ReadFile(filepath.Join("testdata", "a2a", "request-"+version+".json"))
+				require.NoError(t, err)
+				require.JSONEq(t, string(golden), example[1], "README A2A %s request must remain usable", version)
+				seen[version] = true
+			}
+			require.Equal(t, map[string]bool{"0.3": true, "1.0": true}, seen)
+		})
+	}
+}
+
+func TestA2ARemoteSelectedDialect(t *testing.T) {
+	for _, tc := range []struct{ version, preview string }{
+		{"", "false"}, {"", "true"}, {"0.3", "true"}, {"1.0", "true"},
+	} {
+		version := tc.version
+		t.Run("version="+version+"/preview="+tc.preview, func(t *testing.T) {
+			t.Setenv(featureflags.A2A.EnvVar, tc.preview)
+			wireVersion, method, role := "1.0", "SendMessage", "ROLE_USER"
+			if version == "0.3" || tc.preview == "false" {
+				wireVersion, method, role = "0.3", "message/send", "user"
+			}
+			var sends int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sends++
+				assert.Equal(t, http.MethodPost, r.Method)
+				assert.Equal(t, "/agents/agent/endpoint/protocols/a2a", r.URL.Path)
+				assert.Equal(t, wireVersion, r.Header.Get("A2A-Version"))
+				assert.NotEmpty(t, r.Header.Get("Authorization"))
+				var request struct {
+					Method string `json:"method"`
+					Params struct {
+						Message struct {
+							Role string `json:"role"`
+						} `json:"message"`
+						Configuration *struct {
+							AcceptedOutputModes []string `json:"acceptedOutputModes"`
+						} `json:"configuration"`
+					} `json:"params"`
+				}
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				assert.Equal(t, method, request.Method)
+				assert.Equal(t, role, request.Params.Message.Role)
+				w.Header().Set("Content-Type", "application/json")
+				if wireVersion == "0.3" {
+					assert.Nil(t, request.Params.Configuration, "preserve unspecified 0.3 execution/output modes")
+				} else {
+					// Explicit 1.0 negotiation uses media types, not the part kind "text".
+					if !assert.NotNil(t, request.Params.Configuration) {
+						return
+					}
+					if !slices.Contains(request.Params.Configuration.AcceptedOutputModes, "text/plain") {
+						_, _ = io.WriteString(w, `{"jsonrpc":"2.0","error":{"code":-32602,`+
+							`"message":"No acceptable output media type; this agent offers text/plain"}}`)
+						return
+					}
+				}
+				if wireVersion == "1.0" {
+					_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"message":{"parts":[{"text":"dialect-ok"}]}}}`)
+				} else {
+					_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"parts":[{"kind":"text","text":"dialect-ok"}]}}`)
+				}
+			}))
+			defer server.Close()
+			action := &InvokeAction{
+				flags:      &invokeFlags{message: "hello", protocol: "a2a", a2aVersion: version},
+				credential: responseTestCredential{},
+				resolvedRemoteContext: &remoteContext{
+					name: "agent", projectEndpoint: server.URL, apiVersion: "v1",
+				},
+			}
+			output, err := captureStdout(t, func() error { return action.Run(t.Context()) })
+			require.NoError(t, err)
+			assert.Equal(t, 1, sends)
+			assert.Contains(t, output, "[agent] dialect-ok")
+		})
+	}
+}
+
+func TestA2A03LegacyOneShotRequests(t *testing.T) {
+	for _, preview := range []string{"false", "true"} {
+		for _, tc := range []struct{ name, response, want string }{
+			{"pending task", `{"jsonrpc":"2.0","result":{"kind":"task","id":"pending-task",` +
+				`"status":{"state":"working","message":{"parts":[{"kind":"text","text":"Still working"}]}}}}`,
+				"Still working"},
+			{"non-text output", `{"jsonrpc":"2.0","result":{"kind":"task","id":"data-task",` +
+				`"status":{"state":"completed"},"artifacts":[{"parts":[{"kind":"data","data":{"answer":42}}]}]}}`,
+				`"answer": 42`},
+		} {
+			t.Run(preview+"/"+tc.name, func(t *testing.T) {
+				t.Setenv(featureflags.A2A.EnvVar, preview)
+				var sends int
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					sends++
+					assert.Equal(t, http.MethodPost, r.Method)
+					assert.Equal(t, "0.3", r.Header.Get(a2aVersionHeader))
+					var request struct {
+						Method string         `json:"method"`
+						Params map[string]any `json:"params"`
+					}
+					if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
+						return
+					}
+					assert.Equal(t, "message/send", request.Method)
+					// Neither a long-running server nor a non-text server should
+					// receive newly imposed execution/output preferences.
+					if _, present := request.Params["configuration"]; present {
+						http.Error(w, "unexpected blocking or output-mode configuration", http.StatusBadRequest)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = io.WriteString(w, tc.response)
+				}))
+				defer server.Close()
+				explicit := ""
+				if preview == "true" {
+					explicit = "0.3"
+				}
+				action := &InvokeAction{
+					flags:      &invokeFlags{message: "hello", protocol: "a2a", a2aVersion: explicit},
+					credential: responseTestCredential{},
+					resolvedRemoteContext: &remoteContext{
+						name: "agent", projectEndpoint: server.URL, apiVersion: "v1",
+					},
+				}
+				output, err := captureStdout(t, func() error { return action.Run(t.Context()) })
+				require.NoError(t, err)
+				require.Equal(t, 1, sends, "one-shot invocation must not poll or resubmit")
+				require.Contains(t, output, tc.want)
+			})
+		}
+	}
+}
+
+func TestA2AFileWirePolicy(t *testing.T) {
+	for _, tc := range []struct{ preview, explicit, wire string }{
+		{"false", "", "0.3"}, {"true", "0.3", "0.3"}, {"true", "1.0", "1.0"},
+	} {
+		t.Run(tc.preview+"/"+tc.explicit, func(t *testing.T) {
+			t.Setenv(featureflags.A2A.EnvVar, tc.preview)
+			content := []byte(" \r\nopaque\x00\xff\n")
+			path := filepath.Join(t.TempDir(), "request.bin")
+			require.NoError(t, os.WriteFile(path, content, 0600))
+			var sends int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sends++
+				assert.Equal(t, tc.wire, r.Header.Get(a2aVersionHeader))
+				body, err := io.ReadAll(r.Body)
+				assert.NoError(t, err)
+				assert.Equal(t, content, body)
+				_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"parts":[{"text":"ok"}]}}`)
+			}))
+			defer server.Close()
+			action := &InvokeAction{
+				flags:      &invokeFlags{protocol: "a2a", inputFile: path, a2aVersion: tc.explicit},
+				credential: responseTestCredential{},
+				resolvedRemoteContext: &remoteContext{
+					name: "agent", projectEndpoint: server.URL, apiVersion: "v1",
+				},
+			}
+			_, err := captureStdout(t, func() error { return action.Run(t.Context()) })
+			require.NoError(t, err)
+			require.Equal(t, 1, sends)
+		})
+	}
+}
+
+func TestA2AHelpVisibility(t *testing.T) {
+	for _, initial := range []string{"false", "true"} {
+		for _, value := range []string{"false", "true"} {
+			t.Run(initial+"/"+value, func(t *testing.T) {
+				clearPreviewProcess(t)
+				t.Setenv(featureflags.A2A.EnvVar, initial)
+				root := NewRootCommand()
+				command, _, err := root.Find([]string{"invoke"})
+				require.NoError(t, err)
+				require.Contains(t, command.Long, invokeA2AVersionHelp)
+				require.Contains(t, command.Example, invokeA2APreviewExamples, "static metadata must be complete")
+				require.NotContains(t, command.Example, invokeA2ALegacyExamples)
+				require.Contains(t, command.Example, "Use the A2A 1.0 convenience default for a plain message")
+				require.NotContains(t, command.Example, "a2a-request.json")
+				require.False(t, command.Flags().Lookup("a2a-version").Hidden)
+
+				// Help must use fresh process states, not construction-time states.
+				t.Setenv(featureflags.A2A.EnvVar, value)
+				var output strings.Builder
+				root.SetOut(&output)
+				root.SetErr(&output)
+				root.SetArgs([]string{"invoke", "--help"})
+				require.NoError(t, root.ExecuteContext(t.Context()))
+				text := output.String()
+				require.Contains(t, text, "JSON-RPC request with the a2a protocol")
+				if value == "true" {
+					require.Contains(t, text, `invoke -p a2a "Hello!"`)
+					require.Contains(t, text, "--a2a-version")
+					require.Contains(t, text, "1.0 is a convenience default")
+					require.Contains(t, text, "Use the A2A 1.0 convenience default for a plain message")
+					require.Contains(t, text, "a2a-request-1.0.json")
+					require.NotContains(t, text, "Invoke a deployed agent over the a2a protocol")
+					require.NotContains(t, text, "a2a-request.json")
+				} else {
+					require.NotContains(t, text, "--a2a-version")
+					require.NotContains(t, text, "1.0")
+					require.Contains(t, text, "Invoke a deployed agent over the a2a protocol")
+					require.Contains(t, text, `invoke --protocol a2a "Hello!"`)
+					require.Contains(t, text, "invoke --protocol a2a -f a2a-request.json")
+				}
+			})
+		}
+	}
+}
+
+// HTTP headers.
+
+// TestApplyA2ARequestHeaders verifies the explicit A2A-Version header (so the
+// server negotiates deterministically), the bearer token, and the user identity
+// header are set on the request.
+func TestApplyA2ARequestHeaders(t *testing.T) {
+	t.Parallel()
+	for _, version := range []string{"0.3", "1.0"} {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://example.com/a2a", nil)
+			require.NoError(t, err)
+			applyA2ARequestHeaders(req, "test-token", &userIdentityFlags{userIdentity: "user-1"}, version)
+			require.Equal(t, version, req.Header.Get(a2aVersionHeader))
+			require.Equal(t, "Bearer test-token", req.Header.Get("Authorization"))
+			require.Equal(t, "user-1", req.Header.Get(agent_api.UserIdentityHeader))
+		})
+	}
+}
+
+// Responses and errors.
 
 func TestExtractA2AText(t *testing.T) {
 	t.Parallel()
@@ -138,10 +1346,114 @@ func TestExtractA2AText(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := extractA2AText([]byte(tt.body)); got != tt.want {
+			if got := extractA2AText(parseA2AResult([]byte(tt.body), "0.3")); got != tt.want {
 				t.Errorf("extractA2AText(%s) = %q, want %q", tt.body, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExtractA2AText_Versions(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct{ name, version, body, want string }{
+		{"1.0 message", "1.0", `{"result":{"message":{"role":"ROLE_AGENT","parts":[{"text":"hello"}]}}}`, "hello"},
+		{"1.0 task status", "1.0",
+			`{"result":{"task":{"status":{"message":{"parts":[{"text":"done"}]}}}}}`, "done"},
+		{"1.0 task artifacts", "1.0",
+			`{"result":{"task":{"artifacts":[{"parts":[{"text":"one"},{"text":"two"}]}]}}}`, "one\ntwo"},
+		{"1.0 GetTask direct result", "1.0",
+			`{"result":{"id":"task-1","contextId":"context-1","status":{"state":"TASK_STATE_COMPLETED"},` +
+				`"artifacts":[{"parts":[{"text":"lookup answer"}]}]}}`, "lookup answer"},
+		{"1.0 CancelTask direct result", "1.0",
+			`{"result":{"id":"task-1","contextId":"context-1","status":{"state":"TASK_STATE_CANCELED",` +
+				`"message":{"parts":[{"text":"Canceled"}]}}}}`, "Canceled"},
+		{"1.0 task history skips user", "1.0",
+			`{"result":{"task":{"history":[{"role":"ROLE_AGENT","parts":[{"text":"answer"}]},` +
+				`{"role":"ROLE_USER","parts":[{"text":"question"}]}]}}}`, "answer"},
+		{"0.3 history skips both user spellings", "0.3",
+			`{"result":{"history":[{"role":"agent","parts":[{"text":"answer"}]},` +
+				`{"role":"user","parts":[{"text":"q1"}]},{"role":"ROLE_USER","parts":[{"text":"q2"}]}]}}`, "answer"},
+		{"1.0 user only history", "1.0",
+			`{"result":{"task":{"history":[{"role":"ROLE_USER","parts":[{"text":"question"}]}]}}}`, ""},
+		{"1.0 rejects unwrapped message", "1.0", `{"result":{"parts":[{"text":"legacy"}]}}`, ""},
+		{"0.3 does not unwrap 1.0", "0.3", `{"result":{"message":{"parts":[{"text":"new"}]}}}`, ""},
+		{"1.0 malformed wrapper", "1.0", `{"result":{"task":"not a task"}}`, ""},
+		{"1.0 null result", "1.0", `{"result":null}`, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, extractA2AText(parseA2AResult([]byte(tt.body), tt.version)))
+		})
+	}
+}
+
+func TestExtractA2ATextPrefersTaskArtifacts(t *testing.T) {
+	t.Parallel()
+	for _, version := range []string{"0.3", "1.0"} {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			// A completed task can have generic status text alongside its answer.
+			state := "completed"
+			if version == "1.0" {
+				state = "TASK_STATE_COMPLETED"
+			}
+			task := map[string]any{
+				"status": map[string]any{
+					"state":   state,
+					"message": map[string]any{"parts": []any{map[string]any{"text": "Done"}}},
+				},
+				"artifacts": []any{
+					map[string]any{"parts": []any{map[string]any{"text": "native answer"}}},
+				},
+			}
+			result := task
+			if version == "1.0" {
+				result = map[string]any{"task": task}
+			}
+			body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "result": result})
+			require.NoError(t, err)
+			require.Equal(t, "native answer", extractA2AText(parseA2AResult(body, version)))
+		})
+	}
+}
+
+func TestExtractA2ATextPreservesNonCompletedStatus(t *testing.T) {
+	t.Parallel()
+	for _, version := range []string{"0.3", "1.0"} {
+		for _, state := range []string{
+			"input-required", "auth-required", "failed", "canceled", "rejected", "submitted", "working", "",
+		} {
+			t.Run(version+"/"+state, func(t *testing.T) {
+				t.Parallel()
+				wireState := state
+				if version == "1.0" && state != "" {
+					wireState = "TASK_STATE_" + strings.ToUpper(strings.ReplaceAll(state, "-", "_"))
+				}
+				for _, statusText := range []string{"Follow-up or failure details", ""} {
+					task := map[string]any{
+						"status": map[string]any{
+							"state":   wireState,
+							"message": map[string]any{"parts": []any{map[string]any{"text": statusText}}},
+						},
+						"artifacts": []any{map[string]any{
+							"parts": []any{map[string]any{"text": "Partial artifact"}},
+						}},
+					}
+					result := task
+					if version == "1.0" {
+						result = map[string]any{"task": task}
+					}
+					body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "result": result})
+					require.NoError(t, err)
+					want := statusText
+					if want == "" {
+						want = "Partial artifact"
+					}
+					require.Equal(t, want, extractA2AText(parseA2AResult(body, version)))
+				}
+			})
+		}
 	}
 }
 
@@ -181,37 +1493,21 @@ func TestA2AErrorFromBody(t *testing.T) {
 	}
 }
 
-// TestA2ALocal_NotSupported verifies A2A fails fast for local invocation.
-func TestA2ALocal_NotSupported(t *testing.T) {
+func TestHandleA2AResponse_HTTP200JSONRPCError(t *testing.T) {
 	t.Parallel()
-	a := &InvokeAction{flags: &invokeFlags{local: true, message: "hi"}}
-	if err := a.a2aLocal(t.Context()); err == nil {
-		t.Fatal("expected an error for local a2a invocation, got nil")
-	}
-}
 
-// TestApplyA2ARequestHeaders verifies the explicit A2A-Version header (so the
-// server negotiates deterministically), the bearer token, and the user identity
-// header are set on the request.
-func TestApplyA2ARequestHeaders(t *testing.T) {
-	t.Parallel()
-	req, err := http.NewRequest(http.MethodPost, "https://example.com/a2a", nil)
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	applyA2ARequestHeaders(req, "test-token", &userIdentityFlags{userIdentity: "user-1"})
-
-	if got := req.Header.Get(a2aVersionHeader); got != a2aProtocolVersion {
-		t.Errorf("%s = %q, want %q", a2aVersionHeader, got, a2aProtocolVersion)
-	}
-	if a2aProtocolVersion != "0.3" {
-		t.Errorf("a2aProtocolVersion = %q, want %q (must match the message/send body shape)", a2aProtocolVersion, "0.3")
-	}
-	if got := req.Header.Get("Authorization"); got != "Bearer test-token" {
-		t.Errorf("Authorization = %q, want %q", got, "Bearer test-token")
-	}
-	if got := req.Header.Get(agent_api.UserIdentityHeader); got != "user-1" {
-		t.Errorf("%s = %q, want %q", agent_api.UserIdentityHeader, got, "user-1")
+	for _, version := range []string{"0.3", "1.0"} {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(
+					`{"jsonrpc":"2.0","error":{"code":-32601,"message":"method not found"}}`,
+				)),
+			}
+			err := handleA2AResponse(resp, "agent", false, version, nil)
+			require.ErrorContains(t, err, "agent error (-32601): method not found")
+		})
 	}
 }
 
@@ -231,4 +1527,265 @@ func TestA2ARequestURL(t *testing.T) {
 			t.Errorf("a2aRequestURL = %q, want %q", got, "/a2a")
 		}
 	})
+}
+
+// A2A deployed capabilities and target validation.
+
+func TestHostedA2ARemoteTarget(t *testing.T) {
+	t.Setenv(featureflags.A2A.EnvVar, "true")
+	for _, tt := range []struct {
+		name, explicit, wantError       string
+		version, deployed               string
+		native                          any
+		inputFile                       string
+		fileBacked                      bool
+		missingRef                      bool
+		responsesOnly                   bool
+		responses, prompt, noDefinition bool
+		previewOff                      bool
+	}{
+		{name: "inline A2A hosted agent", native: "1.0.0"},
+		{name: "preview off ignores local 1.0 declaration for wire default", native: "1.0.0", previewOff: true},
+		{name: "file still requires explicit version", native: "1.0.0", inputFile: "missing.json",
+			wantError: "requires an explicit --a2a-version"},
+		{name: "unreadable request file remains blocking", native: "0.3", explicit: "1.0", inputFile: "missing.json",
+			wantError: "failed to read input file"},
+		{name: "A2A with Responses", native: "1.0.0", responses: true},
+		{name: "Responses local mismatch is advisory", native: "1.0.0", responses: true, explicit: "0.3"},
+		{name: "Responses local unsupported version is advisory", native: "0.3", responses: true},
+		{name: "Responses local malformed version is advisory", native: "latest", responses: true},
+		{name: "prompt definition bypass", prompt: true, explicit: "0.3"},
+		{name: "missing definition bypass", noDefinition: true, explicit: "0.3"},
+		{name: "missing local reference still invokes", missingRef: true},
+		{name: "Responses-only defers to Foundry", responsesOnly: true},
+		{name: "public A2A is not an implementation", responsesOnly: true, explicit: "0.3"},
+		{name: "file-backed native", native: "1.0.0", fileBacked: true},
+		{name: "numeric inline version is ignored remotely", native: 0.3},
+		{name: "boolean inline version is advisory", native: true},
+		{name: "numeric reference version is advisory", native: 0.3, fileBacked: true},
+		{name: "local A2A 0.3 is advisory", native: "0.3.0"},
+		{name: "local malformed version is advisory", native: "latest"},
+		{name: "local explicit conflict is advisory", native: "1.0.0", explicit: "0.3"},
+		{name: "edited local 0.3 current deployment omitted version", native: "0.3", explicit: "1.0", deployed: "7"},
+		{name: "edited local 0.3 explicit current deployment", native: "0.3", explicit: "1.0",
+			version: "7", deployed: "7"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.previewOff {
+				t.Setenv(featureflags.A2A.EnvVar, "false")
+			}
+			dir := t.TempDir()
+			properties := map[string]any{
+				"kind": "hosted", "name": "deployed-agent",
+				"protocols":     []any{map[string]any{"protocol": "a2a", "version": tt.native}},
+				"agentEndpoint": map[string]any{"protocols": []any{"a2a"}},
+			}
+			if tt.responses {
+				properties["protocols"] = []any{
+					map[string]any{"protocol": "a2a", "version": tt.native},
+					map[string]any{"protocol": "responses", "version": "2.0.0"},
+				}
+			}
+			if tt.prompt {
+				properties = map[string]any{"kind": "prompt", "name": "deployed-agent", "model": "test-model"}
+			}
+			if tt.noDefinition {
+				properties = map[string]any{}
+			}
+			if tt.fileBacked {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "native.yaml"), fmt.Appendf(nil,
+					"kind: hosted\nname: deployed-agent\nprotocols:\n  - protocol: a2a\n    version: %v\n", tt.native), 0600))
+				properties = map[string]any{"$ref": "./native.yaml"}
+			}
+			if tt.missingRef {
+				properties = map[string]any{"$ref": "./missing.yaml"}
+			}
+			if tt.responsesOnly {
+				properties["protocols"] = []any{map[string]any{"protocol": "responses", "version": "2.0.0"}}
+			}
+			wireVersion := resolveA2AVersion("", !tt.previewOff)
+			if tt.explicit != "" {
+				wireVersion = tt.explicit
+			}
+			project := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: dir,
+				Services: map[string]*azdext.ServiceConfig{"target": {
+					Name: "target", Host: AiAgentHost, AdditionalProperties: mustStruct(t, properties),
+				}},
+			}}
+			address := newInvokeRemoteContextTestAzdServer(t, project, &testEnvironmentServiceServer{})
+			t.Setenv("AZD_SERVER", address)
+			client, err := azdext.NewAzdClient()
+			require.NoError(t, err)
+			defer client.Close()
+			var sessionCreates int
+			previous := createInvokeVersionSession
+			t.Cleanup(func() { createInvokeVersionSession = previous })
+			createInvokeVersionSession = func(
+				_ context.Context, endpoint, name, version, apiVersion string,
+			) (*agent_api.AgentSessionResource, error) {
+				sessionCreates++
+				assert.NotEmpty(t, endpoint)
+				assert.Equal(t, "deployed-agent", name)
+				assert.Equal(t, "7", version)
+				assert.Equal(t, "v1", apiVersion)
+				return &agent_api.AgentSessionResource{AgentSessionID: "version-session"}, nil
+			}
+			var sends int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sends++
+				assert.Equal(t, wireVersion, r.Header.Get("A2A-Version"))
+				assert.Equal(t, "/agents/deployed-agent/endpoint/protocols/a2a", r.URL.Path)
+				if tt.version != "" {
+					assert.Equal(t, "version-session", r.URL.Query().Get("agent_session_id"))
+				}
+				var request a2aJSONRPCRequest
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				if wireVersion == "1.0" {
+					assert.Equal(t, "SendMessage", request.Method)
+				} else {
+					assert.Equal(t, "message/send", request.Method)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if wireVersion == "0.3" {
+					_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":`+
+						`{"artifacts":[{"parts":[{"text":"native-mock-result"}]}]}}`)
+				} else {
+					_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"task":`+
+						`{"artifacts":[{"parts":[{"text":"native-mock-result"}]}]}}}`)
+				}
+			}))
+			defer server.Close()
+			message := "hello"
+			if tt.inputFile != "" {
+				message = ""
+			}
+			action := &InvokeAction{
+				flags: &invokeFlags{
+					protocol: "a2a", message: message, a2aVersion: tt.explicit, inputFile: tt.inputFile,
+				},
+				credential: responseTestCredential{}, noPrompt: true,
+				resolvedRemoteContext: &remoteContext{
+					name: "deployed-agent", serviceName: "target", projectEndpoint: server.URL,
+					apiVersion: "v1", azdClient: client, version: tt.version, deployedVersion: tt.deployed,
+				},
+			}
+			output, err := captureStdout(t, func() error { return action.Run(t.Context()) })
+			if tt.version != "" {
+				assert.Equal(t, 1, sessionCreates)
+			} else {
+				assert.Zero(t, sessionCreates)
+			}
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				assert.Zero(t, sends)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, 1, sends)
+				assert.Contains(t, output, "native-mock-result")
+			}
+		})
+	}
+}
+
+func TestA2ATargetServiceLookupFailure(t *testing.T) {
+	for _, cancelled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cancelled=%t", cancelled), func(t *testing.T) {
+			client := newInvokeTestAzdClient(t, newInvokeUserConfigServer())
+			action := &InvokeAction{flags: &invokeFlags{a2aVersion: "1.0"}, noPrompt: true}
+			rc := &remoteContext{serviceName: "a2a-agent", azdClient: client}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if cancelled {
+				cancel()
+			}
+
+			err := action.validateA2ATarget(ctx, rc)
+			if cancelled {
+				require.ErrorIs(t, err, context.Canceled)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestA2ARemoteServiceLookupFailureStillInvokes(t *testing.T) {
+	client := newInvokeTestAzdClient(t, newInvokeUserConfigServer())
+	var sends int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sends++
+		assert.Equal(t, "/agents/deployed-agent/endpoint/protocols/a2a", r.URL.Path)
+		assert.Equal(t, "1.0", r.Header.Get("A2A-Version"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"task":`+
+			`{"artifacts":[{"parts":[{"text":"lookup-failure-result"}]}]}}}`)
+	}))
+	defer server.Close()
+	action := &InvokeAction{
+		flags:      &invokeFlags{protocol: "a2a", message: "hello", a2aVersion: "1.0"},
+		credential: responseTestCredential{}, noPrompt: true,
+		resolvedRemoteContext: &remoteContext{
+			name: "deployed-agent", serviceName: "target", projectEndpoint: server.URL,
+			apiVersion: "v1", azdClient: client,
+		},
+	}
+
+	output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context(), "1.0") })
+	require.NoError(t, err)
+	assert.Equal(t, 1, sends)
+	assert.Contains(t, output, "lookup-failure-result")
+}
+
+func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		endpoint  bool
+		noClient  bool
+		noService bool
+		version   string
+		deployed  string
+		session   string
+	}{
+		{name: "explicit endpoint ignores project definition", endpoint: true},
+		{name: "explicit session ignores project definition", session: "existing-session", version: "2", deployed: "2"},
+		{name: "no local client", noClient: true},
+		{name: "no selected service", noService: true},
+		{name: "historical agent version", version: "1", deployed: "2"},
+		{name: "unknown deployed agent version", version: "1"},
+		{name: "current version matches deployed is still advisory", version: "2", deployed: "2"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// A readable unsupported working-tree definition must never block remote invocation.
+			project := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{"a2a-agent": {
+					Name: "a2a-agent", Host: AiAgentHost, AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "hosted", "name": "deployed-agent",
+						"protocols": []any{map[string]any{"protocol": "a2a", "version": "0.3"}},
+					}),
+				}},
+			}}
+			address := newInvokeRemoteContextTestAzdServer(t, project, &testEnvironmentServiceServer{})
+			t.Setenv("AZD_SERVER", address)
+			client, err := azdext.NewAzdClient()
+			require.NoError(t, err)
+			defer client.Close()
+			action := &InvokeAction{flags: &invokeFlags{a2aVersion: "1.0", session: tt.session}, noPrompt: true}
+			if tt.endpoint {
+				action.endpoint = &parsedAgentEndpoint{}
+			}
+			rc := &remoteContext{
+				serviceName: "a2a-agent", azdClient: client, version: tt.version, deployedVersion: tt.deployed,
+			}
+			if tt.noClient {
+				rc.azdClient = nil
+			}
+			if tt.noService {
+				rc.serviceName = ""
+			}
+			err = action.validateA2ATarget(t.Context(), rc)
+			require.NoError(t, err)
+		})
+	}
 }

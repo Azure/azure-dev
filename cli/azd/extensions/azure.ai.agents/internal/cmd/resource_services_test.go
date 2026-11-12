@@ -54,6 +54,8 @@ func agentService(t *testing.T, name string, toolConnections ...project.ToolConn
 	svc := mustMarshalConfig(t, &project.ServiceTargetAgentConfig{ToolConnections: toolConnections})
 	svc.Name = name
 	svc.Host = AiAgentHost
+	svc.AdditionalProperties = svc.Config
+	svc.Config = nil
 	return svc
 }
 
@@ -335,7 +337,7 @@ func TestCollectConnections_IgnoresBundledAgentConfig(t *testing.T) {
 	require.ErrorContains(t, err, "bundled connections")
 }
 
-func TestCollectConnections_IgnoresBundledAgentFileRef(t *testing.T) {
+func TestCollectConnections_RejectsMixedDirectAndNestedConfig(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -378,9 +380,8 @@ func TestCollectConnections_IgnoresBundledAgentFileRef(t *testing.T) {
 	connections, err := collectConnections(services, root)
 	require.NoError(t, err)
 	require.Empty(t, connections)
-	require.NoError(t, project.ResolveServiceConfigInPlace(services["agent"], root))
-	_, err = project.LoadServiceTargetAgentConfig(services["agent"])
-	require.ErrorContains(t, err, "bundled connections")
+	err = project.ResolveServiceConfigInPlace(services["agent"], root)
+	require.ErrorContains(t, err, "unsupported nested config block")
 }
 
 func TestCollectResourceServices_ResolvesFileRefs(t *testing.T) {
@@ -493,6 +494,8 @@ func TestCollect_FallbackToLegacyProjectDeployments(t *testing.T) {
 	svc := mustMarshalConfig(t, bundled)
 	svc.Name = "my-agent"
 	svc.Host = AiAgentHost
+	svc.AdditionalProperties = svc.Config
+	svc.Config = nil
 	services := map[string]*azdext.ServiceConfig{"my-agent": svc}
 
 	deployments, err := collectLegacyProjectDeployments(services, "")
@@ -845,7 +848,7 @@ func TestPromptResourceServices(t *testing.T) {
 	t.Run("toolbox reference is only wired when the service exists", func(t *testing.T) {
 		t.Parallel()
 
-		agent := &agent_yaml.PromptAgent{Toolbox: &agent_yaml.ToolboxReference{Name: "my-toolbox"}}
+		agent := &agent_yaml.PromptAgent{Toolboxes: []agent_yaml.ToolboxReference{{Name: "my-toolbox"}}}
 
 		// A dangling uses: entry would fail the project load, so a toolbox with
 		// no service in azure.yaml contributes no edge at all.
@@ -861,18 +864,6 @@ func TestPromptResourceServices(t *testing.T) {
 			},
 		})
 		got, err = promptResourceServices(t.Context(), withToolbox, agent, dir, dir)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"my-toolbox"}, got.ExtraUses)
-
-		// projectConnectionId is an API value, not an azure.yaml service key.
-		agent.Toolbox.ProjectConnectionID = "toolbox-auth"
-		withConnection := newProjectRecorderClient(t, &recordingProjectServer{
-			existing: map[string]*azdext.ServiceConfig{
-				"my-toolbox":   {Name: "my-toolbox", Host: AiToolboxHost},
-				"toolbox-auth": {Name: "toolbox-auth", Host: AiConnectionHost},
-			},
-		})
-		got, err = promptResourceServices(t.Context(), withConnection, agent, dir, dir)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"my-toolbox"}, got.ExtraUses)
 	})

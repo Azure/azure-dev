@@ -5,6 +5,7 @@ package devcenter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -46,13 +47,16 @@ func NewEnvironmentStore(
 }
 
 // EnvPath returns the path for the environment
-func (s *EnvironmentStore) EnvPath(env *environment.Environment) string {
-	return fmt.Sprintf("projects/%s/users/me/environments/%s", s.config.Project, env.Name())
+func (s *EnvironmentStore) EnvPath(env *environment.Environment) (string, error) {
+	if !environment.IsValidEnvironmentName(env.Name()) {
+		return "", environment.InvalidEnvironmentNameError(env.Name())
+	}
+	return fmt.Sprintf("projects/%s/users/me/environments/%s", s.config.Project, env.Name()), nil
 }
 
-// ConfigPath returns the path for the environment configuration
-func (s *EnvironmentStore) ConfigPath(env *environment.Environment) string {
-	return ""
+// ConfigPath returns errors.ErrUnsupported because Dev Center does not expose a configuration file path.
+func (s *EnvironmentStore) ConfigPath(env *environment.Environment) (string, error) {
+	return "", fmt.Errorf("Dev Center does not expose an environment configuration file path: %w", errors.ErrUnsupported)
 }
 
 // List returns a list of environments for the devcenter configuration
@@ -136,11 +140,12 @@ func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environm
 		return fmt.Errorf("failed to get devcenter environment: %w", err)
 	}
 
-	if err := s.syncEnvironment(env, environment); err != nil {
+	resolvedConfig, err := s.syncEnvironment(env, environment)
+	if err != nil {
 		return fmt.Errorf("failed to sync devcenter environment to azd environment: %w", err)
 	}
 
-	outputs, err := s.manager.Outputs(ctx, s.config, environment)
+	outputs, err := s.manager.Outputs(ctx, resolvedConfig, environment)
 	if err != nil {
 		return fmt.Errorf("failed to get environment outputs: %w", err)
 	}
@@ -150,6 +155,8 @@ func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environm
 		env.DotenvSet(key, fmt.Sprintf("%v", outputParam.Value))
 	}
 
+	*s.config = *resolvedConfig
+	s.cachedConfig = nil
 	return nil
 }
 
@@ -239,7 +246,9 @@ func (s *EnvironmentStore) ensureDevCenterConfig(ctx context.Context) error {
 }
 
 // Syncs the devcenter environment to the azd environment
-func (s *EnvironmentStore) syncEnvironment(env *environment.Environment, environment *devcentersdk.Environment) error {
+func (s *EnvironmentStore) syncEnvironment(
+	env *environment.Environment, environment *devcentersdk.Environment,
+) (*Config, error) {
 	var currentConfig Config
 	if s.cachedConfig == nil {
 		currentConfig = *s.config
@@ -247,58 +256,59 @@ func (s *EnvironmentStore) syncEnvironment(env *environment.Environment, environ
 		currentConfig = *s.cachedConfig
 	}
 
-	// Set missing configuration values from the environment
-	if s.config.Catalog == "" {
-		s.config.Catalog = environment.CatalogName
+	resolvedConfig := new(*s.config)
+	// Stage discovered settings until output retrieval succeeds.
+	if resolvedConfig.Catalog == "" {
+		resolvedConfig.Catalog = environment.CatalogName
 	}
 
-	if s.config.EnvironmentType == "" {
-		s.config.EnvironmentType = environment.EnvironmentType
+	if resolvedConfig.EnvironmentType == "" {
+		resolvedConfig.EnvironmentType = environment.EnvironmentType
 	}
 
-	if s.config.EnvironmentDefinition == "" {
-		s.config.EnvironmentDefinition = environment.EnvironmentDefinitionName
+	if resolvedConfig.EnvironmentDefinition == "" {
+		resolvedConfig.EnvironmentDefinition = environment.EnvironmentDefinitionName
 	}
 
-	if s.config.User == "" {
-		s.config.User = environment.User
+	if resolvedConfig.User == "" {
+		resolvedConfig.User = environment.User
 	}
 
 	// Set any missing config values in environment configuration for future use
 	// Some values are set at the global / project level so we only want to set missing values in the environment config
 	if currentConfig.Name == "" {
-		if err := env.Config.Set(DevCenterNamePath, s.config.Name); err != nil {
-			return err
+		if err := env.Config.Set(DevCenterNamePath, resolvedConfig.Name); err != nil {
+			return nil, err
 		}
 	}
 
 	if currentConfig.Project == "" {
-		if err := env.Config.Set(DevCenterProjectPath, s.config.Project); err != nil {
-			return err
+		if err := env.Config.Set(DevCenterProjectPath, resolvedConfig.Project); err != nil {
+			return nil, err
 		}
 	}
 
 	if currentConfig.Catalog == "" {
-		if err := env.Config.Set(DevCenterCatalogPath, s.config.Catalog); err != nil {
-			return err
+		if err := env.Config.Set(DevCenterCatalogPath, resolvedConfig.Catalog); err != nil {
+			return nil, err
 		}
 	}
 
 	if currentConfig.EnvironmentType == "" {
-		if err := env.Config.Set(DevCenterEnvTypePath, s.config.EnvironmentType); err != nil {
-			return err
+		if err := env.Config.Set(DevCenterEnvTypePath, resolvedConfig.EnvironmentType); err != nil {
+			return nil, err
 		}
 	}
 
 	if currentConfig.EnvironmentDefinition == "" {
-		if err := env.Config.Set(DevCenterEnvDefinitionPath, s.config.EnvironmentDefinition); err != nil {
-			return err
+		if err := env.Config.Set(DevCenterEnvDefinitionPath, resolvedConfig.EnvironmentDefinition); err != nil {
+			return nil, err
 		}
 	}
 
 	if currentConfig.User == "" {
-		if err := env.Config.Set(DevCenterUserPath, s.config.User); err != nil {
-			return err
+		if err := env.Config.Set(DevCenterUserPath, resolvedConfig.User); err != nil {
+			return nil, err
 		}
 	}
 
@@ -306,11 +316,9 @@ func (s *EnvironmentStore) syncEnvironment(env *environment.Environment, environ
 	for key, value := range environment.Parameters {
 		path := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, key)
 		if err := env.Config.Set(path, value); err != nil {
-			return fmt.Errorf("failed setting config value %s: %w", path, err)
+			return nil, fmt.Errorf("failed setting config value %s: %w", path, err)
 		}
 	}
 
-	s.cachedConfig = nil
-
-	return nil
+	return resolvedConfig, nil
 }

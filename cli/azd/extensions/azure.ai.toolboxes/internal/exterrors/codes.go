@@ -12,6 +12,7 @@ const (
 const (
 	CodeInvalidParameter     = "invalid_parameter"
 	CodeInvalidPositionalArg = "invalid_positional_arg"
+	CodeConflictingArguments = "conflicting_arguments"
 )
 
 // Error codes for dependency failures (missing resources, services, env values).
@@ -58,6 +59,7 @@ const (
 	CodeConnectionMissingTarget       = "connection_missing_target"
 	CodeLastToolRemoval               = "last_tool_removal"
 	CodePendingToolboxStoreFailed     = "pending_toolbox_store_failed"
+	CodeToolBlockedByPolicy           = "tool_blocked_by_policy"
 )
 
 // Operation names for [ServiceFromAzure] errors.

@@ -98,7 +98,7 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 			}
 
 			// Start test credential server for Playback mode
-			credentialServer := startTestCredentialServer(t)
+			credentialServer := StartTestCredentialServer(t)
 			t.Cleanup(func() {
 				credentialServer.Close()
 			})
@@ -153,7 +153,12 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 	return cli
 }
 
+// RunCommandWithStdIn runs a command with the supplied input. An empty string produces EOF.
 func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...string) (*CliResult, error) {
+	return cli.runCommand(ctx, strings.NewReader(stdin), args...)
+}
+
+func (cli *CLI) runCommand(ctx context.Context, stdin io.Reader, args ...string) (*CliResult, error) {
 	description := "azd " + strings.Join(args, " ") + " in " + cli.WorkingDirectory
 
 	/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
@@ -162,12 +167,7 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 		cmd.Dir = cli.WorkingDirectory
 	}
 
-	if stdin != "" {
-		cmd.Stdin = strings.NewReader(stdin)
-	} else {
-		cmd.Stdin = os.Stdin
-	}
-
+	cmd.Stdin = stdin
 	cmd.Env = cli.Env
 
 	// Disable agent detection in the child azd process so that the test's parent process tree
@@ -248,7 +248,7 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 }
 
 func (cli *CLI) RunCommand(ctx context.Context, args ...string) (*CliResult, error) {
-	return cli.RunCommandWithStdIn(ctx, "", args...)
+	return cli.runCommand(ctx, os.Stdin, args...)
 }
 
 func (cli *CLI) heartbeat(description string, done <-chan struct{}) {
@@ -372,9 +372,9 @@ type tokenRequestBody struct {
 	TenantId string   `json:"tenantId,omitempty"`
 }
 
-// startTestCredentialServer creates a mock HTTP server that implements the remote credential protocol.
-// This is used in Playback mode to provide OAuth tokens for functional tests
-func startTestCredentialServer(t *testing.T) *httptest.Server {
+// StartTestCredentialServer serves synthetic tokens using the remote credential protocol for local CLI
+// and playback tests. The caller must close the server.
+func StartTestCredentialServer(t *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check method and path
 		if r.Method != http.MethodPost {

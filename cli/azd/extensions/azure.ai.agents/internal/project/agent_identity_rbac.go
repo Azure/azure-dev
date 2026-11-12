@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
-	"github.com/google/uuid"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
+	"github.com/azure/azure-dev/cli/shared/foundry/access"
 )
 
-const roleAzureAIUser = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
+const roleAzureAIUser = access.FoundryUserRoleID
 
 // agentIdentityInfo holds the parsed project information needed for agent identity RBAC.
 type agentIdentityInfo struct {
@@ -82,79 +82,19 @@ func assignRoleToIdentity(
 	scope string,
 	principalType armauthorization.PrincipalType,
 ) (bool, error) {
-	subscriptionID := extractSubscriptionID(scope)
-	if subscriptionID == "" {
-		return false, fmt.Errorf("could not extract subscription ID from scope %s for role %s", scope, roleName)
-	}
+	return access.AssignRole(ctx, cred, principalID, roleID, roleName, scope, principalType, nil)
+}
 
-	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, cred, nil)
-	if err != nil {
-		return false, fmt.Errorf("failed to create role assignments client for role %s: %w", roleName, err)
-	}
-
-	roleDefinitionSuffix := fmt.Sprintf("/roleDefinitions/%s", roleID)
-
-	// Check for existing assignment
-	pager := client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: new("atScope()"),
-	})
-
-	alreadyExists := false
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return false, fmt.Errorf("failed to list role assignments for role %s: %w", roleName, err)
-		}
-		for _, assignment := range page.Value {
-			if assignment.Properties != nil &&
-				assignment.Properties.PrincipalID != nil &&
-				assignment.Properties.RoleDefinitionID != nil &&
-				*assignment.Properties.PrincipalID == principalID &&
-				strings.HasSuffix(*assignment.Properties.RoleDefinitionID, roleDefinitionSuffix) {
-				alreadyExists = true
-				break
-			}
-		}
-		if alreadyExists {
-			break
-		}
-	}
-
-	if alreadyExists {
-		return false, nil
-	}
-
-	// Create assignment
-	fullRoleDefinitionID := fmt.Sprintf(
-		"%s/providers/Microsoft.Authorization/roleDefinitions/%s", scope, roleID)
-	roleAssignmentName := uuid.New().String()
-	parameters := armauthorization.RoleAssignmentCreateParameters{
-		Properties: &armauthorization.RoleAssignmentProperties{
-			RoleDefinitionID: new(fullRoleDefinitionID),
-			PrincipalID:      new(principalID),
-			PrincipalType:    &principalType,
-		},
-	}
-
-	_, err = client.Create(ctx, scope, roleAssignmentName, parameters, nil)
-	if err != nil {
-		if strings.Contains(err.Error(), "RoleAssignmentExists") ||
-			strings.Contains(err.Error(), "409") {
-			return false, nil
-		}
-		return false, fmt.Errorf("failed to create role assignment for role %s: %w", roleName, err)
-	}
-
-	return true, nil
+func assignRoleToIdentityWithClient(
+	ctx context.Context,
+	client *armauthorization.RoleAssignmentsClient,
+	principalID, roleID, roleName, scope string,
+	principalType armauthorization.PrincipalType,
+) (bool, error) {
+	return access.AssignRoleWithClient(ctx, client, principalID, roleID, roleName, scope, principalType)
 }
 
 // extractSubscriptionID pulls the subscription ID from an Azure resource ID.
 func extractSubscriptionID(resourceID string) string {
-	parts := strings.Split(resourceID, "/")
-	for i, part := range parts {
-		if part == "subscriptions" && i+1 < len(parts) {
-			return parts[i+1]
-		}
-	}
-	return ""
+	return access.ExtractSubscriptionID(resourceID)
 }

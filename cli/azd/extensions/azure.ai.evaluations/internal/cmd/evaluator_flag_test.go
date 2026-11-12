@@ -4,8 +4,12 @@
 package cmd
 
 import (
+	"errors"
 	"testing"
 
+	"azureaieval/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,8 +66,16 @@ func TestEvaluatorRefsRejectWhatCannotNameAnEvaluator(t *testing.T) {
 	err := validateEvaluatorRefs([]string{"builtin.relevance", ""})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--evaluator")
+	// ADO 5572140: this refusal used to reach -o json with a message and no
+	// code at all.
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "an empty --evaluator reference must carry a structured code")
+	assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
 
 	err = validateEvaluatorRefs([]string{"two words"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "two words")
+	local, ok = errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "a malformed --evaluator reference must carry a structured code")
+	assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
 }

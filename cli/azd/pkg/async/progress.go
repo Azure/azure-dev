@@ -3,6 +3,8 @@
 
 package async
 
+import "context"
+
 // Progress is a wrapper around a channel which can be used to report progress of an operation. The zero value of Progress
 // is invalid. Use [NewProgress] to create a new instance.
 type Progress[T comparable] struct {
@@ -43,6 +45,20 @@ func (p *Progress[T]) Done() {
 // SetProgress reports progress to the channel.
 func (p *Progress[T]) SetProgress(progress T) {
 	p.progressChannel <- progress
+}
+
+// SetProgressWithContext reports progress or returns the context error if delivery is canceled.
+// As with SetProgress, callers must finish sending before calling Done.
+func (p *Progress[T]) SetProgressWithContext(ctx context.Context, progress T) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case p.progressChannel <- progress:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // RunWithProgress runs a function with a background goroutine reporting and progress to an observer.

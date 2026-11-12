@@ -4,18 +4,248 @@
 package cmd
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"maps"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"testing"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+type reuseInitACREnvironmentServer struct {
+	testEnvironmentServiceServer
+}
+
+func (s *reuseInitACREnvironmentServer) List(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentListResponse, error) {
+	response := &azdext.EnvironmentListResponse{}
+	for name := range s.environments {
+		response.Environments = append(response.Environments, &azdext.EnvironmentDescription{
+			Name: name, Default: s.current.GetName() == name,
+		})
+	}
+	return response, nil
+}
+
+type reuseInitACRPromptServer struct {
+	initACRPromptServer
+}
+
+func (s *reuseInitACRPromptServer) Confirm(
+	context.Context, *azdext.ConfirmRequest,
+) (*azdext.ConfirmResponse, error) {
+	return &azdext.ConfirmResponse{Value: new(true)}, nil
+}
+
+func executeReuseInitACR(
+	t *testing.T,
+	environments *reuseInitACREnvironmentServer,
+	workflow *recordingProjectWorkflowServer,
+	prompts azdext.PromptServiceServer,
+	project azdext.ProjectServiceServer,
+	account *sourceInitACRAccountServer,
+	noPrompt bool,
+	envName string,
+	args ...string,
+) error {
+	t.Helper()
+	setTimedInitAuth(t)
+	server := grpc.NewServer()
+	azdext.RegisterEnvironmentServiceServer(server, environments)
+	azdext.RegisterWorkflowServiceServer(server, workflow)
+	azdext.RegisterProjectServiceServer(server, project)
+	azdext.RegisterPromptServiceServer(server, prompts)
+	azdext.RegisterAccountServiceServer(server, account)
+	azdext.RegisterAiModelServiceServer(server, &initAuthOrderingAiServer{})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	command := newInitCommand(
+		&azdext.ExtensionContext{NoPrompt: noPrompt, Environment: envName}, testProjectsACRHelp(workflow),
+	)
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs(args)
+	return command.Execute()
+}
+
+func TestInitACRReusePlansBeforeEnvironmentCreation(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+	for _, tt := range []struct {
+		name               string
+		prompted           string
+		subscription       string
+		envName            string
+		registry           string
+		wantError          string
+		promptError        error
+		existing, noPrompt bool
+		wantPrompts        int
+		directoryGroup     bool
+	}{
+		{name: "prompted mismatch", envName: "fresh", prompted: "other",
+			wantError: "same subscription", wantPrompts: 1},
+		{name: "cancelled subscription", envName: "fresh",
+			promptError: status.Error(codes.Canceled, "subscription selection cancelled"),
+			wantError:   "cancelled", wantPrompts: 1},
+		{name: "derived teardown group", prompted: "sub",
+			registry:  strings.Replace(testInitACRID, "/registry-rg/", "/rg-test-agent-dev/", 1),
+			wantError: "resource group"},
+		{name: "configured teardown group", existing: true, envName: "test-agent-dev", subscription: "sub",
+			registry:  strings.Replace(testInitACRID, "/registry-rg/", "/rg-test-agent-dev/", 1),
+			wantError: "azd down deletes"},
+		{name: "headless teardown group", noPrompt: true,
+			registry:  strings.Replace(testInitACRID, "/registry-rg/", "/rg-test-agent-dev/", 1),
+			wantError: "resource group"},
+		{name: "configured mismatch", existing: true, envName: "test", subscription: "other",
+			wantError: "same subscription"},
+		{name: "matching prompted subscription", envName: "fresh", prompted: "SUB", wantPrompts: 1},
+		{name: "matching derived environment", prompted: "sub", wantPrompts: 1},
+		{name: "unused directory group", prompted: "sub", wantPrompts: 1, directoryGroup: true},
+		{name: "headless unused directory group", noPrompt: true, directoryGroup: true},
+		{name: "existing environment without subscription", existing: true, envName: "test",
+			prompted: "sub", wantPrompts: 1},
+		{name: "matching configured subscription", existing: true, envName: "test", subscription: "sub"},
+		{name: "headless missing scope defers", envName: "fresh", noPrompt: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n" +
+				"  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: test-agent\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
+			project := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					"agent": inlineAgentService(t, "agent", "test-agent"),
+				},
+			}}
+			beforeProject := proto.Clone(project.project)
+			environments := &reuseInitACREnvironmentServer{testEnvironmentServiceServer: testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{},
+				values:       map[string]map[string]string{},
+				config:       map[string][]byte{},
+			}}
+			if tt.existing {
+				environments.current = &azdext.Environment{Name: tt.envName}
+				environments.environments[tt.envName] = environments.current
+				environments.values[tt.envName] = map[string]string{
+					"AZURE_SUBSCRIPTION_ID": tt.subscription,
+					"AZURE_TENANT_ID":       "resource-tenant",
+				}
+			}
+			beforeValues := maps.Clone(environments.values[tt.envName])
+			beforeCurrent := proto.Clone(environments.current)
+			beforeConfig := maps.Clone(environments.config)
+			beforeEnvironmentCount := len(environments.environments)
+			prompts := &reuseInitACRPromptServer{initACRPromptServer: initACRPromptServer{
+				subscription: &azdext.Subscription{
+					Id: tt.prompted, TenantId: "resource-tenant", UserTenantId: "user-tenant",
+				},
+				err: tt.promptError,
+			}}
+			account := &sourceInitACRAccountServer{}
+			envName := tt.envName
+			if envName == "" {
+				envName = "test-agent-dev"
+			}
+			workflow := &recordingProjectWorkflowServer{}
+			workflow.runHook = func(call int) error {
+				args := workflow.requests[call-1].Workflow.Steps[0].Command.Args
+				if len(args) >= 2 && args[0] == "env" && args[1] == "new" {
+					if !slices.Equal(args, []string{"env", "new", envName}) {
+						return fmt.Errorf("unexpected environment creation arguments: %v", args)
+					}
+					environment := &azdext.Environment{Name: envName}
+					environments.environments[envName] = environment
+					environments.current = environment
+					environments.values[envName] = map[string]string{}
+					return nil
+				}
+				if tt.wantError != "" {
+					return errors.New("authoring reached before registry scope preflight")
+				}
+				if !tt.noPrompt {
+					values := environments.values[envName]
+					if values["AZURE_SUBSCRIPTION_ID"] == "" || values["AZURE_TENANT_ID"] != "user-tenant" {
+						return errors.New("authoring would require another subscription selection")
+					}
+				}
+				return nil
+			}
+			registry := tt.registry
+			if registry == "" {
+				registry = testInitACRID
+			}
+			if tt.directoryGroup {
+				group := "rg-" + deriveEnvName(&initFlags{}, ".")
+				require.NotEqual(t, "rg-"+envName, group)
+				registry = strings.Replace(testInitACRID, "/registry-rg/", "/"+group+"/", 1)
+			}
+			args := []string{"--acr-resource-id", registry}
+			err := executeReuseInitACR(t, environments, workflow, prompts, project, account, tt.noPrompt, tt.envName, args...)
+			require.Equal(t, tt.wantPrompts, prompts.calls)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				require.Empty(t, workflow.requests)
+				require.Empty(t, environments.setKeys)
+				require.Equal(t, beforeValues, environments.values[tt.envName])
+				require.Equal(t, beforeConfig, environments.config)
+				require.True(t, proto.Equal(beforeCurrent, environments.current))
+				require.Empty(t, account.subscriptions)
+				require.Len(t, environments.environments, beforeEnvironmentCount)
+			} else {
+				require.NoError(t, err)
+				wantCalls := 2
+				if tt.existing {
+					wantCalls = 1
+				}
+				require.Len(t, workflow.requests, wantCalls)
+				projectArgs := []string{"ai", "project", "add"}
+				if tt.noPrompt {
+					projectArgs = append(projectArgs, "--no-prompt")
+					require.Empty(t, environments.setKeys)
+					require.Empty(t, account.subscriptions)
+				} else {
+					values := environments.values[envName]
+					require.True(t, strings.EqualFold("sub", values["AZURE_SUBSCRIPTION_ID"]))
+					require.Equal(t, "user-tenant", values["AZURE_TENANT_ID"])
+					require.Equal(t, []string{values["AZURE_SUBSCRIPTION_ID"]}, account.subscriptions)
+				}
+				projectArgs = append(projectArgs, "--output", "none", "--new-project", "--acr-resource-id", registry)
+				require.Equal(t, expectedProjectWorkflowArgs(t, root, projectArgs...),
+					workflowArgs(t, workflow, wantCalls-1))
+				require.Equal(t, envName, environments.current.GetName())
+			}
+			require.True(t, proto.Equal(beforeProject, project.project))
+			after, readErr := os.ReadFile(filepath.Join(root, "azure.yaml"))
+			require.NoError(t, readErr)
+			require.Equal(t, content, after)
+			require.NoDirExists(t, filepath.Join(root, ".azure"))
+		})
+	}
+}
 
 // legacyConfigAgentService builds the deprecated shape, where the agent
 // definition is nested under config: rather than inline on the service entry.
@@ -34,10 +264,10 @@ func TestProjectAgentServicesFrom(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		services     map[string]*azdext.ServiceConfig
-		want         []projectAgentService
-		wantErrCount int
+		name     string
+		services map[string]*azdext.ServiceConfig
+		want     []projectAgentService
+		wantErr  string
 	}{
 		{
 			name: "inline agent definition on the service entry",
@@ -51,14 +281,14 @@ func TestProjectAgentServicesFrom(t *testing.T) {
 			services: map[string]*azdext.ServiceConfig{
 				"chat": legacyConfigAgentService("chat", "legacy-agent"),
 			},
-			want: []projectAgentService{{ServiceName: "chat", AgentName: "legacy-agent"}},
+			wantErr: "unsupported nested config block",
 		},
 		{
 			name: "service without a definition is not reusable",
 			services: map[string]*azdext.ServiceConfig{
 				"chat": {Name: "chat", Host: AiAgentHost},
 			},
-			wantErrCount: 1,
+			wantErr: "agent definition not found",
 		},
 		{
 			name: "multiple agents are sorted by service name",
@@ -90,9 +320,14 @@ func TestProjectAgentServicesFrom(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, errs := projectAgentServicesFrom(tt.services, t.TempDir())
+			got, err := projectAgentServicesFrom(tt.services, t.TempDir())
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.Empty(t, got)
+				return
+			}
+			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
-			assert.Len(t, errs, tt.wantErrCount)
 		})
 	}
 }
@@ -100,33 +335,32 @@ func TestProjectAgentServicesFrom(t *testing.T) {
 func TestProjectAgentServicesFrom_DiskDefinition(t *testing.T) {
 	t.Parallel()
 
-	projectRoot := t.TempDir()
-	serviceDir := filepath.Join(projectRoot, "src", "chat")
-	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(serviceDir, "agent.yaml"),
-		[]byte("kind: hosted\nname: disk-agent\nprotocols:\n"+
-			"  - protocol: responses\n    version: \"1.0.0\"\n"),
-		0o600,
-	))
+	for _, filename := range []string{"agent.yaml", "agent.yml"} {
+		t.Run(filename, func(t *testing.T) {
+			t.Parallel()
 
-	services, errs := projectAgentServicesFrom(map[string]*azdext.ServiceConfig{
-		"chat": {
-			Name:         "chat",
-			Host:         AiAgentHost,
-			RelativePath: "src/chat",
-		},
-	}, projectRoot)
+			projectRoot := t.TempDir()
+			serviceDir := filepath.Join(projectRoot, "src", "chat")
+			require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(serviceDir, filename),
+				[]byte("kind: hosted\nname: disk-agent\nprotocols:\n"+
+					"  - protocol: responses\n    version: \"1.0.0\"\n"),
+				0o600,
+			))
 
-	require.Empty(t, errs)
-	assert.Equal(t,
-		[]projectAgentService{{
-			ServiceName:  "chat",
-			AgentName:    "disk-agent",
-			RelativePath: "src/chat",
-		}},
-		services,
-	)
+			services, err := projectAgentServicesFrom(map[string]*azdext.ServiceConfig{
+				"chat": {
+					Name:         "chat",
+					Host:         AiAgentHost,
+					RelativePath: "src/chat",
+				},
+			}, projectRoot)
+
+			require.ErrorContains(t, err, "legacy file")
+			assert.Empty(t, services)
+		})
+	}
 }
 
 func TestProjectAgentServicesFrom_RejectsUnsafeServicePaths(t *testing.T) {
@@ -156,20 +390,17 @@ func TestProjectAgentServicesFrom_RejectsUnsafeServicePaths(t *testing.T) {
 			svc := inlineAgentService(t, "chat", "inline-agent")
 			svc.RelativePath = tt.relativePath
 
-			services, diagnostics := projectAgentServicesFrom(
+			services, err := projectAgentServicesFrom(
 				map[string]*azdext.ServiceConfig{"chat": svc},
 				projectRoot,
 			)
 			assert.Empty(t, services)
-			require.Len(t, diagnostics, 1)
-			assert.Contains(t, diagnostics[0], "invalid project path")
+			require.ErrorContains(t, err, "invalid project path")
 		})
 	}
 }
 
-// Project detection runs before the bare agent.yaml reuse path. A service that
-// already owns an on-disk definition must therefore be recognized from a
-// service subdirectory instead of being scaffolded as a second service.
+// An implicit on-disk definition is not a reusable unified project service.
 func TestDetectProjectAgentServices_ConfiguredDiskDefinitionFromServiceDir(t *testing.T) {
 	projectRoot := t.TempDir()
 	serviceDir := filepath.Join(projectRoot, "src", "chat")
@@ -196,18 +427,9 @@ func TestDetectProjectAgentServices_ConfiguredDiskDefinitionFromServiceDir(t *te
 		&helpersPromptServer{},
 	)
 
-	detection := detectProjectAgentServices(t.Context(), client)
-	assert.Equal(t, projectRoot, detection.projectRoot)
-	assert.Equal(t,
-		[]projectAgentService{{
-			ServiceName:  "chat",
-			AgentName:    "disk-agent",
-			RelativePath: "src/chat",
-		}},
-		detection.services,
-	)
-	assert.False(t, positionalSourceOptsOutOfReuse(".", projectRoot, detection.services),
-		"a positional dot from the configured service directory must reuse the project service")
+	detection, err := detectProjectAgentServices(t.Context(), client)
+	require.Error(t, err)
+	assert.Empty(t, detection.services)
 }
 
 // Ordering must not depend on Go's randomized map iteration, so the same input
@@ -230,10 +452,136 @@ func TestProjectAgentServicesFrom_OrderingIsStable(t *testing.T) {
 	projectRoot := t.TempDir()
 
 	for range 20 {
-		got, errs := projectAgentServicesFrom(services, projectRoot)
-		require.Empty(t, errs)
+		got, err := projectAgentServicesFrom(services, projectRoot)
+		require.NoError(t, err)
 		assert.Equal(t, want, got)
 	}
+}
+
+func TestValidateExistingProjectAgentServices(t *testing.T) {
+	t.Run("direct and root ref ignore stale unreferenced legacy files", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "definition.yaml"),
+			[]byte("kind: hosted\nname: referenced-agent\n"),
+			0o600,
+		))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(root, "agent.yaml"),
+			[]byte("not: [valid"),
+			0o600,
+		))
+		refProps, err := structpb.NewStruct(map[string]any{"$ref": "./definition.yaml"})
+		require.NoError(t, err)
+
+		project := &azdext.ProjectConfig{
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"direct": inlineAgentService(t, "direct", "direct-agent"),
+				"ref": {
+					Name:                 "ref",
+					Host:                 AiAgentHost,
+					AdditionalProperties: refProps,
+				},
+			},
+		}
+		require.NoError(t, validateExistingProjectAgentServices(project))
+	})
+
+	for _, tt := range []struct {
+		name    string
+		setup   func(t *testing.T, root string) *azdext.ServiceConfig
+		wantErr string
+	}{
+		{
+			name: "implicit legacy file",
+			setup: func(t *testing.T, root string) *azdext.ServiceConfig {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "agent.yaml"),
+					[]byte("kind: hosted\nname: legacy\n"),
+					0o600,
+				))
+				return &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost}
+			},
+			wantErr: "found legacy file agent.yaml",
+		},
+		{
+			name: "missing definition",
+			setup: func(*testing.T, string) *azdext.ServiceConfig {
+				return &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost}
+			},
+			wantErr: "agent definition not found",
+		},
+		{
+			name: "nested config",
+			setup: func(*testing.T, string) *azdext.ServiceConfig {
+				return legacyConfigAgentService("agent", "legacy")
+			},
+			wantErr: "unsupported nested config block",
+		},
+		{
+			name: "malformed authoritative ref",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				props, err := structpb.NewStruct(map[string]any{"$ref": "./missing.yaml"})
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{
+					Name:                 "agent",
+					Host:                 AiAgentHost,
+					AdditionalProperties: props,
+				}
+			},
+			wantErr: "missing.yaml",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			err := validateExistingProjectAgentServices(&azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					"agent": tt.setup(t, root),
+				},
+			})
+			require.ErrorContains(t, err, tt.wantErr)
+			_, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected structured validation error, got %T", err)
+		})
+	}
+
+	t.Run("environment override is rejected", func(t *testing.T) {
+		root := t.TempDir()
+		t.Setenv("AGENT_DEFINITION_PATH", filepath.Join(root, "agent.yaml"))
+		err := validateExistingProjectAgentServices(&azdext.ProjectConfig{
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": inlineAgentService(t, "agent", "agent"),
+			},
+		})
+		require.ErrorContains(t, err, "AGENT_DEFINITION_PATH")
+	})
+
+	t.Run("no agent services is allowed", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, validateExistingProjectAgentServices(&azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"web": {Name: "web", Host: "containerapp"},
+			},
+		}))
+	})
+
+	t.Run("validation order is deterministic", func(t *testing.T) {
+		t.Parallel()
+		err := validateExistingProjectAgentServices(&azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"zeta":  {Name: "zeta", Host: AiAgentHost},
+				"alpha": {Name: "alpha", Host: AiAgentHost},
+			},
+		})
+		require.ErrorContains(t, err, `service "alpha"`)
+	})
 }
 
 // Reuse is only safe when the caller did not describe an agent to set up.
@@ -321,7 +669,7 @@ func TestCanReuseExistingAgentConfiguration(t *testing.T) {
 		},
 		{
 			name:  "manifest pointer blocks reuse",
-			flags: &initFlags{manifestPointer: "agent.manifest.yaml"},
+			flags: &initFlags{templatePointer: "agent.manifest.yaml"},
 		},
 		{
 			name:  "force blocks reuse",

@@ -258,6 +258,13 @@ func HostedSourceAbsent(err error) bool {
 	return hostedSourceAbsent(err)
 }
 
+// ProjectAbsent reports the host's confirmed no-project response, not a missing
+// environment or an unsupported/unreachable Project RPC.
+func ProjectAbsent(err error) bool {
+	st, ok := azdext.GRPCStatusFromError(err)
+	return ok && st.Code() == codes.Unknown && st.Message() == azdNoProject
+}
+
 // DaemonUnreachable reports the one absence that is not an answer about
 // anything: there was nobody to ask.
 //

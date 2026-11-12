@@ -44,7 +44,8 @@ func newRoutineAddCommandWithDependencies(
 
 This command only updates azure.yaml. Run azd deploy <name> or azd up to
 create or update the routine in Microsoft Foundry.`,
-		Example: `  azd ai routine add nightly-summary --file ./routines/nightly-summary.yaml
+		Example: `  # Add a local service declaration, then deploy it
+  azd ai routine add nightly-summary --file ./routines/nightly-summary.yaml
   azd deploy nightly-summary`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

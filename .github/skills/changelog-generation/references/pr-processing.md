@@ -69,6 +69,7 @@ Each entry uses this exact format:
 - Describe the user-visible impact, not the implementation detail
 - Keep entries to one concise sentence
 - For bugs: prefer "Fix \<user-visible problem\>" phrasing (e.g., "Fix panic when deploying without Docker installed")
+- For included dependency updates, name only the dependency and target version, for example, `Update gRPC to v1.83.2.` Do not include vulnerability identifiers, advisory descriptions, or other update rationale.
 
 **Attribution** — append for external contributors only:
 

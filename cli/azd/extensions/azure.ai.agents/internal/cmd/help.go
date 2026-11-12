@@ -1,9 +1,20 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore featureflags
+
 package cmd
 
-const agentHelpFooter = `Environments & Environment Variables:
+import (
+	"fmt"
+	"strings"
+
+	"azureaiagent/internal/featureflags"
+)
+
+func agentHelpFooter() string {
+	var footer strings.Builder
+	footer.WriteString(`Environments & Environment Variables:
   An azd environment is a named deployment configuration, such as dev or prod.
   Its values are stored locally in .azure/<environment>/.env.
   Use 'azd env new <name>' to create one, 'azd env select <name>' to change the
@@ -27,6 +38,29 @@ const agentHelpFooter = `Environments & Environment Variables:
   Use 'azd ai agent run' for local development and 'azd deploy' to apply changes
   to the deployed agent.
 
+Preview Feature Switches:
+  We recommend setting overrides in your shell or CI before running azd:
+`)
+	for _, feature := range featureflags.All() {
+		fmt.Fprintf(&footer, "  %s=true\n    %s.\n", feature.EnvVar, feature.Description)
+	}
+	footer.WriteString(`
+  All preview switches default to off.
+  A notice appears only when a command uses an enabled preview feature.
+  Preview behavior may change.
+  When set, only 1, t, T, true, TRUE, or True enable a switch.
+  False, empty, and invalid values disable a switch.
+  Set these switches in your shell or CI before running azd.
+  The evaluator reads only process environment values, not azd config.
+  Lifecycle listeners do not load selected-environment dotenv values, so
+  'azd env set' does not enable these switches for the listener.
+  Direct 'azd ai agent ...' commands receive selected-environment values after
+  shell/CI values, so a persisted .azure/<env>/.env switch can override a
+  shell opt-in for those commands.
+  Regular hosted and plain prompt agents are outside these preview scopes.
+
 Learn More:
   Agent documentation: https://aka.ms/azd-ai-agent-docs
-  Environment commands: 'azd env --help'`
+  Environment commands: 'azd env --help'`)
+	return footer.String()
+}

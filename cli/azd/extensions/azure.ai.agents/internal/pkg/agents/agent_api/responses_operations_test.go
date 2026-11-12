@@ -66,6 +66,38 @@ func TestCreateResponseUsesProjectEndpoint(t *testing.T) {
 	}
 }
 
+func TestCreateConversationAt(t *testing.T) {
+	client, transport := newCaptureClient(http.StatusCreated, `{"id":"conv_123"}`)
+	endpoint := "https://test.example.com/api/projects/proj/agents/managed/endpoint/protocols/openai/conversations?api-version=v1"
+	id, err := client.CreateConversationAt(t.Context(), endpoint, map[string]string{
+		"Foundry-Features": "MicrosoftCopilot=V1Preview",
+	})
+	if err != nil {
+		t.Fatalf("CreateConversationAt: %v", err)
+	}
+	if id != "conv_123" {
+		t.Fatalf("id: got %q", id)
+	}
+	request := transport.requests[0]
+	if request.URL.Path != "/api/projects/proj/agents/managed/endpoint/protocols/openai/conversations" ||
+		request.URL.Query().Get("api-version") != "v1" {
+		t.Fatalf("url: %s", request.URL)
+	}
+	if request.Header.Get("Foundry-Features") != "MicrosoftCopilot=V1Preview" {
+		t.Fatalf("feature header missing")
+	}
+	if request.Method != http.MethodPost {
+		t.Fatalf("method: got %q", request.Method)
+	}
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(body) != "{}" {
+		t.Fatalf("body: got %q", body)
+	}
+}
+
 func TestResponseLifecycleUsesProjectEndpoint(t *testing.T) {
 	client, transport := newCaptureClient(http.StatusOK, `{"id":"resp_1"}`)
 	if _, _, err := client.GetResponse(t.Context(), "resp/1"); err != nil {
@@ -99,7 +131,7 @@ func TestCreateResponseStreamAtUsesExplicitEndpoint(t *testing.T) {
 
 	stream, _, err := client.CreateResponseStreamAt(
 		t.Context(), endpoint, []byte(`{"input":"hello"}`),
-		map[string]string{"Foundry-Features": "GitHubCopilot=V1Preview"})
+		map[string]string{"Foundry-Features": "MicrosoftCopilot=V1Preview"})
 	if err != nil {
 		t.Fatalf("CreateResponseStreamAt: %v", err)
 	}
@@ -112,7 +144,7 @@ func TestCreateResponseStreamAtUsesExplicitEndpoint(t *testing.T) {
 	if request.URL.String() != endpoint {
 		t.Errorf("endpoint: got %q, want %q", request.URL.String(), endpoint)
 	}
-	if request.Header.Get("Foundry-Features") != "GitHubCopilot=V1Preview" {
+	if request.Header.Get("Foundry-Features") != "MicrosoftCopilot=V1Preview" {
 		t.Errorf("feature header: got %q", request.Header.Get("Foundry-Features"))
 	}
 }

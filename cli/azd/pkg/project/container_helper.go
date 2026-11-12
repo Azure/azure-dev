@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/url"
@@ -534,7 +535,9 @@ func (ch *ContainerHelper) buildLocalImage(
 		dockerOptions.Network,
 		previewerWriter,
 	)
-	ch.console.StopPreviewer(ctx, false)
+	if previewerWriter != io.Discard {
+		ch.console.StopPreviewer(ctx, false)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err)
 	}
@@ -1188,7 +1191,9 @@ func (ch *ContainerHelper) runRemoteBuild(
 		})
 	err = ch.remoteBuildManager.RunDockerBuildRequestWithLogs(
 		ctx, target.SubscriptionId(), registryResourceGroup, registryResourceName, buildRequest, previewerWriter)
-	ch.console.StopPreviewer(ctx, false)
+	if previewerWriter != io.Discard {
+		ch.console.StopPreviewer(ctx, false)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -1402,19 +1407,6 @@ func (ch *ContainerHelper) packBuild(
 		events.PackBuildEvent,
 		trace.WithAttributes(fields.ProjectServiceLanguageKey.String(string(svc.Language))))
 
-	img, tag := docker.SplitDockerImage(builder)
-	if userDefinedImage {
-		span.SetAttributes(
-			fields.StringHashed(fields.PackBuilderImage, img),
-			fields.StringHashed(fields.PackBuilderTag, tag),
-		)
-	} else {
-		span.SetAttributes(
-			fields.PackBuilderImage.String(img),
-			fields.PackBuilderTag.String(tag),
-		)
-	}
-
 	err = packCli.Build(
 		ctx,
 		buildContext,
@@ -1422,7 +1414,9 @@ func (ch *ContainerHelper) packBuild(
 		imageName,
 		environ,
 		previewer)
-	ch.console.StopPreviewer(ctx, false)
+	if previewer != io.Discard {
+		ch.console.StopPreviewer(ctx, false)
+	}
 	if err != nil {
 		span.EndWithStatus(err)
 

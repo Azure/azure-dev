@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"azure.ai.toolboxes/internal/definition"
 	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/foundry/connections"
 	"azure.ai.toolboxes/internal/pkg/azure"
@@ -533,26 +534,32 @@ skills:
 func TestRunToolboxCreateWith_AlreadyExists(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
 	client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{Name: "tb", DefaultVersion: "1"}}
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, definition.Save(inputPath, &definition.Definition{
+		Tools: []map[string]any{{"type": "web_search"}},
+	}))
 
 	err := runToolboxCreateWith(
 		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
-		toolboxCreateFlags{}, toolboxFlags{output: "table"},
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
 }
 
 func TestRunToolboxCreateWith_NoEntriesRejected(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, definition.Save(inputPath, &definition.Definition{}))
 
 	err := runToolboxCreateWith(
 		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
-		toolboxCreateFlags{}, toolboxFlags{output: "table"},
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "table"},
 	)
 	requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
 	assert.Empty(t, client.createVersionCalls)
 }
 
-// policies.rai_config in --from-file is forwarded to the data-plane request
+// policies.raiConfig in --from-file is forwarded to the data-plane request
 // as ToolboxPolicies.RaiConfig.RaiPolicyName.
 func TestRunToolboxCreateWith_ForwardsRaiPolicy(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
@@ -568,8 +575,8 @@ description: tb with rai
 connections:
   - name: mcp
 policies:
-  rai_config:
-    rai_policy_name: Microsoft.Default
+  raiConfig:
+    raiPolicyName: Microsoft.Default
 `), 0o600))
 
 	err := runToolboxCreateWith(
@@ -584,7 +591,7 @@ policies:
 	assert.Equal(t, "Microsoft.Default", req.Policies.RaiConfig.RaiPolicyName)
 }
 
-// policies.rai_config with an empty/whitespace name is rejected locally with a
+// policies.raiConfig with an empty/whitespace name is rejected locally with a
 // fix-it suggestion rather than forwarded to the data plane.
 func TestRunToolboxCreateWith_EmptyRaiPolicyNameRejected(t *testing.T) {
 	client := newMockToolboxClient("https://e/")
@@ -599,8 +606,8 @@ func TestRunToolboxCreateWith_EmptyRaiPolicyNameRejected(t *testing.T) {
 connections:
   - name: mcp
 policies:
-  rai_config:
-    rai_policy_name: "   "
+  raiConfig:
+    raiPolicyName: "   "
 `), 0o600))
 
 	err := runToolboxCreateWith(

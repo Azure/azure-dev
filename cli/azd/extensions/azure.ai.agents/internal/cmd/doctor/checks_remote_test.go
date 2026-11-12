@@ -13,9 +13,10 @@ import (
 // ---- NewRemoteChecks contract ----
 
 // TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusConnections
-// pins the current shape of the remote chain: exactly five checks,
+// pins the current shape of the remote chain: exactly six checks,
 // in the order `remote.auth` → `remote.foundry-endpoint` →
-// `remote.rbac` → `remote.agent-status` → `remote.connections`, all
+// `remote.rbac` → `remote.agent-status` → `remote.connections` →
+// `remote.project-storage-rbac`, all
 // with Remote=true. The ordering matters because
 // `remote.foundry-endpoint` skip-cascades against `remote.auth`'s
 // prior Result, `remote.rbac` skip-cascades against `remote.auth`
@@ -27,6 +28,8 @@ import (
 // `remote.auth` + `remote.foundry-endpoint` plus `state.HasConnections`
 // because it lists Foundry connections via the data plane. Any future
 // re-ordering or insertion has to come through this assertion.
+// Project storage RBAC depends on authentication and environment selection,
+// not on the preceding developer or data-plane check outcomes.
 //
 // Note: a `remote.agent-identity-roles` check used to sit between
 // agent-status and connections; it was removed because the Foundry
@@ -38,9 +41,9 @@ func TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusConnections(t *tes
 
 	got := NewRemoteChecks(Dependencies{})
 
-	require.Len(t, got, 5,
-		"NewRemoteChecks should contain auth, foundry-endpoint, rbac, agent-status, "+
-			"and connections today")
+	require.Len(t, got, 7,
+		"NewRemoteChecks should contain auth, foundry-endpoint, rbac, policy, agent-status, "+
+			"connections, and project storage permissions")
 	require.Equal(t, "remote.auth", got[0].ID)
 	require.Equal(t, "authentication", got[0].Name)
 	require.True(t, got[0].Remote, "remote.auth must declare Remote=true")
@@ -53,14 +56,22 @@ func TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusConnections(t *tes
 	require.Equal(t, "Developer has required role on Foundry project", got[2].Name)
 	require.True(t, got[2].Remote, "remote.rbac must declare Remote=true")
 	require.NotNil(t, got[2].Fn, "remote.rbac must have a non-nil Fn")
-	require.Equal(t, "remote.agent-status", got[3].ID)
-	require.Equal(t, "Hosted agents are active", got[3].Name)
-	require.True(t, got[3].Remote, "remote.agent-status must declare Remote=true")
-	require.NotNil(t, got[3].Fn, "remote.agent-status must have a non-nil Fn")
-	require.Equal(t, "remote.connections", got[4].ID)
-	require.Equal(t, "Configured connections exist on Foundry project", got[4].Name)
-	require.True(t, got[4].Remote, "remote.connections must declare Remote=true")
-	require.NotNil(t, got[4].Fn, "remote.connections must have a non-nil Fn")
+	require.Equal(t, "remote.policy", got[3].ID)
+	require.Equal(t, "Agent configuration complies with Foundry Azure Policy", got[3].Name)
+	require.True(t, got[3].Remote, "remote.policy must declare Remote=true")
+	require.NotNil(t, got[3].Fn, "remote.policy must have a non-nil Fn")
+	require.Equal(t, "remote.agent-status", got[4].ID)
+	require.Equal(t, "Hosted agents are active", got[4].Name)
+	require.True(t, got[4].Remote, "remote.agent-status must declare Remote=true")
+	require.NotNil(t, got[4].Fn, "remote.agent-status must have a non-nil Fn")
+	require.Equal(t, "remote.connections", got[5].ID)
+	require.Equal(t, "Configured connections exist on Foundry project", got[5].Name)
+	require.True(t, got[5].Remote, "remote.connections must declare Remote=true")
+	require.NotNil(t, got[5].Fn, "remote.connections must have a non-nil Fn")
+	require.Equal(t, "remote.project-storage-rbac", got[6].ID)
+	require.Equal(t, "Project storage permissions", got[6].Name)
+	require.True(t, got[6].Remote)
+	require.NotNil(t, got[6].Fn)
 }
 
 // TestNewLocalAndRemoteChecks_ProductionCompositionLocalsFirst pins the

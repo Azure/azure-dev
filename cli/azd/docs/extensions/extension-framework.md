@@ -37,7 +37,7 @@ Table of Contents
 
 ## Getting Started
 
-The `azd` extension framework is generally available. Individual extensions or capabilities might have their own preview status.
+The `azd` extension framework is generally available (GA). See the [Azure Developer CLI extension framework is GA](https://devblogs.microsoft.com/azure-sdk/azd-extension-framework-ga/) announcement for release context. Individual extensions or capabilities might have their own preview status.
 
 - Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
 - Extension binaries are shipped as Github releases to the same repo through our official pipelines.
@@ -209,6 +209,19 @@ if err := host.Run(ctx); err != nil {
   return fmt.Errorf("failed to run extension: %w", err)
 }
 ```
+
+##### Command-level follow-up text
+
+Successful beta project `post*` handlers may provide command-level guidance
+by calling `CommandResult().SetFollowUp` with the invocation ID from
+`EventsBeta()` before sending a completed project handler status.
+
+azd appends committed text to the parent command's human-readable completion
+message; JSON output is unchanged. Published extensions using this preview
+API should set `requiredAzdVersion` to `>=1.35.0` for the current release
+line. See [Project lifecycle follow-up](extension-sdk-reference.md#project-lifecycle-follow-up)
+for beta stream subscription and host compatibility requirements, clearing contributions,
+and how multiple handlers and workflow steps are resolved.
 
 #### Service Target Providers
 
@@ -1134,12 +1147,12 @@ Extensions can declare the following capabilities in their manifest:
 Telemetry is not a capability. Internal telemetry is currently available to
 Microsoft-built extensions in this repository after a privacy review and
 publication to the official `azd` registry. Those extensions can call the
-preview telemetry gRPC service using request and response types from
-`pkg/azdext/contracts/v1beta`, and events are recorded when the configured source
+stable telemetry gRPC service using request and response types from
+`pkg/azdext` or `pkg/azdext/contracts/v1`, and events are recorded when the configured source
 matches the verified official `azd` registry name, type, and normalized URL —
 see [Extension Telemetry](./extension-telemetry.md). Published versions that
-depend on the service should set `requiredAzdVersion` to the first `azd`
-release that includes it.
+depend on the stable service should set `requiredAzdVersion: ">=1.36.0"`
+and consume the published azd SDK v1.36.0 or later.
 
 #### Complete Extension Manifest Example
 
@@ -1370,7 +1383,11 @@ When `azd` invokes an extension command, the following steps occur:
     - Additional environment variables from the current `azd` environment are also set.
 3. The extension command can communicate with `azd` through [extension framework gRPC services](#grpc-services).
 4. `azd` waits for the extension command to complete:
-    - If a non-zero exit code is returned, `azd` reports the operation as an error.
+    - If the extension succeeds, `azd` exits with code `0`.
+    - If the extension returns a positive exit code, `azd` reports the operation as an error and exits with the same code. For example, an extension can use code `2` for a quality gate breach and code `1` for an operational failure so scripts can distinguish them.
+    - If invocation fails before an extension exit code is available, `azd` exits with code `1`.
+
+Structured error reporting preserves the extension's exit code while providing diagnostics and telemetry classification. These exit-code rules apply to directly invoked extension commands, not lifecycle event handlers or service target providers.
 
 To enable interaction with `azd` from within the extension, the extension must leverage a gRPC client and connect to the server using the address specified in the `AZD_SERVER` environment variable.
 
@@ -1577,6 +1594,61 @@ if err := host.Run(ctx); err != nil {
 }
 
 ```
+
+## Deployment Preview
+
+`azd deploy --preview` asks each selected service's target to describe the
+changes a deployment would make. Nothing is packaged, published, or deployed,
+service targets are not initialized, and deploy hooks do not run. Services whose
+host does not support preview are reported and skipped. The flag cannot be
+combined with `--from-package` or `--timeout`.
+
+Core built-in service targets resolve their Azure resource before generating the
+preview. Extension service targets receive the effective service configuration
+through the contract below and can perform their own read-only lookups as needed.
+
+Extension service targets opt in through the **stable v1** contract, targeting
+azd 1.37.0. Register the host with `ExtensionHost.WithServiceTargetPreview`
+instead of `WithServiceTarget`, and implement `azdext.ServiceTargetPreviewProvider`
+alongside `azdext.ServiceTargetProvider`:
+
+```go
+host.WithServiceTargetPreview("my.host", func() azdext.ServiceTargetProvider {
+    return &MyProvider{}
+})
+
+func (p *MyProvider) Preview(
+    ctx context.Context,
+    serviceConfig *azdext.ServiceConfig,
+) (*azdext.ServiceDeployPreviewResult, error)
+```
+
+`WithServiceTargetPreview` registers the host on the stable service target
+stream exactly like `WithServiceTarget`, so normal deployments are unchanged.
+It also registers the host on a dedicated v1 stream that carries only
+`RegisterServiceTargetRequest` (with `supports_preview`) and the preview
+request and response messages. Registration does not invoke the factory.
+The preview registration is sent after the stable registration succeeds and is
+best effort: azd versions without deployment preview reject it, and the service
+target keeps working with preview reported as unsupported.
+
+For each preview request the SDK creates a fresh provider from the factory and
+calls only `Preview`; `Initialize` and the deployment instance cache are not used.
+`Preview` must not build, package, publish, deploy, or persist deployment state.
+`ServiceDeployPreviewResult` carries a human-readable `Message`, shown in text
+output, and a `Data` struct, returned under `services.<name>.data` with
+`--output json`. Redact secrets from both. Provider errors, missing `Preview`
+implementations, and nil results fail the command.
+
+New stable consumers must use the published SDK v1.37.0 or later and declare
+`requiredAzdVersion: ">=1.37.0"`. Do not pin the target SDK until it is published.
+The deprecated `WithBetaServiceTargetPreview`, `preview.ServiceTargetPreviewProvider`,
+`BetaServiceTarget()`, and beta preview envelope/types remain source-compatible.
+Already-built extensions still use the retained beta route, which delegates to
+the same stable host implementation. No beta removal date is set.
+See the [second graduation record](contract-versioning.md#october-2026-second-graduation-target-azd-1370)
+for release and consumer migration tracking. Structured predeploy/postdeploy
+messages are a separate capability and remain beta-only.
 
 ## Developer Artifacts
 
@@ -2387,7 +2459,14 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - Invoke event handlers.
   - Send status updates regarding event processing.
 
-> See [event.proto](../../grpc/proto/azd/extensions/v1/event.proto) for more details.
+The message types below describe the stable
+[v1 event contract](../../grpc/proto/azd/extensions/v1/event.proto). The
+[v1beta event contract](../../grpc/proto/azd/extensions/v1beta/event.proto)
+also adds `request_id` for correlating stream requests and responses,
+structured `error` details, and project and service subscription
+acknowledgements. Its `InvokeProjectHandler` includes an `invocation_id`
+used with the beta
+[CommandResultService](../../grpc/proto/azd/extensions/v1beta/command_result.proto).
 
 #### Message Types
 
@@ -2437,6 +2516,32 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - `service_name`: The name of the service.
   - `status`: Status such as "running", "completed", or "failed".
   - `message`: Optional additional details.
+- **ServiceEventMessage**
+  Carries a non-blocking info or warning returned by a service deploy hook.
+
+  Contains:
+  - `kind`: Whether the message is informational or a warning.
+  - `message`: The text displayed by azd.
+  - `suggestion`: Optional next-step guidance.
+  - `links`: Optional references with titles and URLs.
+
+Structured messages are available only on the beta
+`ServiceHandlerStatus.messages` field and only for service `predeploy` and
+`postdeploy` handlers. Go extensions opt in with
+`ExtensionHost.WithBetaServiceEventHandler`; the stable event API and default
+language scaffolds remain unchanged.
+
+The beta event stream must begin with a subscription containing a
+`request_id`, and service statuses carrying messages must echo the invocation
+ID. Statuses without messages retain service/event correlation. Legacy beta
+streams whose first subscription has no request ID keep their existing
+behavior but cannot send structured messages. Returned messages are displayed
+after the deploy table and included in deploy/up JSON results, including when
+the handler also returns an error.
+
+See [contract versioning](contract-versioning.md#host-registration-and-adaptation)
+for the stream routing rules and the [SDK reference](extension-sdk-reference.md#structured-deploy-messages-beta)
+for registration details.
 
 #### ServiceContext and Service Event Arguments
 
@@ -2927,6 +3032,14 @@ This service executes workflows defined within the project.
 
 Executes a workflow consisting of sequential steps.
 
+Command steps inherit the parent's working directory unless they explicitly
+provide `-C` or `--cwd`. A step-level directory overrides the parent's selection
+for both core and extension commands. Relative paths resolve from the workflow's
+current working directory. A step's directory override does not replace the
+parent selection. If a step fails, the workflow stops after restoring the previous
+directory and parent selection. Restoration errors are returned alongside the
+step error.
+
 - **Request:** _RunWorkflowRequest_
   - Contains:
     - `workflow`: _Workflow_ (with `name` and `steps`)
@@ -3070,6 +3183,41 @@ func getSubscriptionDetails(ctx context.Context, azdClient *azdext.AzdClient, su
 - Validate subscription access before performing operations
 - Set up proper authentication context for Azure SDK calls
 
+#### GetCurrentPrincipal
+
+This stable method (since azd 1.36.0) resolves the current identity for role assignments in a specified subscription. The host returns the object ID in the subscription's resource tenant, which can differ from a guest user's home-tenant object ID. Unlike `LookupTenant`, this method uses the resource tenant rather than the user access tenant.
+
+| Field | Description |
+|---|---|
+| Request `subscription_id` | Required subscription ID. No active environment or default subscription is used. |
+| Response `object_id` | Object ID of the signed-in identity in the resource tenant, not an application client ID. |
+| Response `principal_type` | `PRINCIPAL_TYPE_USER` or `PRINCIPAL_TYPE_SERVICE_PRINCIPAL`, determined from azd's login details. |
+
+The host reuses its principal lookup, including the ARM token `oid` claim and Graph fallback. Service-principal logins and both system-assigned and user-assigned managed identities return `PRINCIPAL_TYPE_SERVICE_PRINCIPAL`. Access tokens are neither accepted nor returned by this RPC. An empty subscription ID returns `InvalidArgument`; authentication, subscription, and principal lookup failures return errors rather than an empty identity.
+
+```go
+// Import "github.com/azure/azure-dev/cli/azd/pkg/azdext".
+principal, err := azdClient.Account().GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{
+    SubscriptionId: subscriptionId,
+})
+if err != nil {
+    return fmt.Errorf("resolving current principal: %w", err)
+}
+
+var principalType string
+switch principal.PrincipalType {
+case azdext.PrincipalType_PRINCIPAL_TYPE_USER:
+    principalType = "User"
+case azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
+    principalType = "ServicePrincipal"
+default:
+    return fmt.Errorf("unsupported principal type: %v", principal.PrincipalType)
+}
+// Pass principal.ObjectId and principalType to the role assignment.
+```
+
+This method and its request, response, and enum types are available in [`v1`](../../grpc/proto/azd/extensions/v1/account.proto). Use `Account()` with stable types from `azdext` or `contracts/v1`, pin the published SDK to v1.36.0 or later, and set `requiredAzdVersion: ">=1.36.0"`. Older hosts return `Unimplemented` on the stable route. The equivalent beta symbols and `AccountBeta()` are deprecated, but released beta binaries remain supported. See [contract graduation](contract-versioning.md#october-2026-graduation-azd-1360).
+
 ---
 
 ### Copilot Service
@@ -3138,8 +3286,9 @@ Returns cumulative usage metrics cached for a session.
     - `input_tokens` (double): Total input tokens consumed
     - `output_tokens` (double): Total output tokens consumed
     - `total_tokens` (double): Sum of input + output tokens
-    - `billing_rate` (double): Per-request cost multiplier (e.g., 1.0x, 2.0x)
-    - `premium_requests` (double): Number of premium requests used
+    - `billing_rate` (double, deprecated): Legacy per-request cost multiplier; use `ai_credits` instead
+    - `premium_requests` (double, deprecated): Legacy premium request count; use `ai_credits` instead
+    - `ai_credits` (double): Total AI credits consumed
     - `duration_ms` (double): Total API duration in milliseconds
 
 #### GetFileChanges
@@ -3233,8 +3382,8 @@ metricsResp, err := copilot.GetUsageMetrics(ctx, &v1beta.GetCopilotUsageMetricsR
 if err != nil {
     return fmt.Errorf("failed to get metrics: %w", err)
 }
-fmt.Printf("Total tokens: %.0f, Premium requests: %.0f\n",
-    metricsResp.Usage.TotalTokens, metricsResp.Usage.PremiumRequests)
+fmt.Printf("Total tokens: %.0f, AI credits: %.2f AIC\n",
+  metricsResp.Usage.TotalTokens, metricsResp.Usage.AiCredits)
 
 // Retrieve file changes
 changesResp, err := copilot.GetFileChanges(ctx, &v1beta.GetCopilotFileChangesRequest{

@@ -1,3 +1,5 @@
+<!-- cspell:ignore runbooks -->
+
 # Reviewers
 
 Definitions for the 9 fixed specialist lenses and dynamic domain detection rules.
@@ -25,6 +27,7 @@ findings:
   - severity: critical | suggestion | nit | praise
     file: path/to/file.go
     line: 42
+    side: RIGHT
     summary: One-line description of the finding
     detail: |
       Full explanation with rationale. Why does this matter?
@@ -33,6 +36,10 @@ findings:
 ```
 
 `file` and `line` are optional — some findings are PR-level, not line-level. When `line` is provided, it MUST be a line that appears in the diff (GitHub API rejects comments on lines outside the diff).
+
+Use `side: RIGHT` with new-file line numbers for additions and modifications, and `side: LEFT` with old-file line
+numbers for deletion-only findings. `side` defaults to `RIGHT` when omitted by existing lenses; extension contract
+findings must include it explicitly. Preserve both fields through triage and final output, including for deleted files.
 
 ## Fixed Lenses
 
@@ -69,6 +76,7 @@ Focus areas:
 - Azure SDK usage: correct client initialization, credential handling, retry policies
 - Service API patterns: proper resource lifecycle (create, update, delete), error handling for Azure-specific errors
 - Managed identity: prefer managed identity over connection strings/keys where possible
+- Permission diagnostics: evaluate active resources, scopes, and identities; distinguish proven missing access from access the API cannot verify.
 - Resource naming: Azure naming constraints and conventions
 - Telemetry: are Azure operations properly instrumented with distributed tracing? Are correlation IDs propagated?
 - Cost implications: resource SKU choices, unnecessary resource creation, missing cleanup
@@ -173,6 +181,7 @@ Focus areas:
 - Backwards compatibility: can old and new code coexist during rollout?
 - Rollback/migration safety: if this needs to be reverted, can it be done cleanly? Are there data migrations that are irreversible?
 - Failure mode design: what happens when a dependency is down? Timeout? Retry storm? Partial failure?
+- Partial updates: after a failed mutation, is prior state restored or a usable retry/recovery path retained? Cleanup after cancellation needs a separate bounded context.
 - Blast radius: if this code is wrong, what is the worst case? One user? All users? Data loss?
 - Operational burden: does this create new things that need monitoring, alerting, or runbooks?
 - Cross-cutting concerns: auth, rate limiting, audit logging -- are they handled consistently with the rest of the system?
@@ -191,7 +200,10 @@ You are a testing specialist. Evaluate the quality and completeness of tests in 
 
 Focus areas:
 - Coverage: are the changed code paths tested? Are edge cases covered?
-- Assertion quality: do tests assert the RIGHT things? Are there tests that pass but do not actually verify behavior?
+- Assertion quality: would the test fail if the behavior it protects were removed? Confirm mock expectations are consumed.
+- Production wiring: do loader, decoding, and fallback tests enter through the production path with actual library types?
+- Telemetry assertions: do tests inspect the emitted span attributes, not only response payloads?
+- Goroutine safety: keep `t.Fatal` and `require.*` assertions on the test goroutine, not in HTTP handlers or background workers.
 - Test design: are tests isolated, readable, and maintainable? Do they test behavior, not implementation?
 - Edge cases: empty inputs, nil values, boundary conditions, error paths, concurrent access
 - Table-driven tests: for Go, are parameterized tests used where multiple cases share logic?
@@ -229,6 +241,7 @@ Focus areas:
 - Interactive prompts: are they skippable with flags for CI/automation?
 - Progress feedback: for long operations, is there progress indication?
 - Writer propagation: do nested formatters, spinners, prompts, and cursors use the injected writer without leaking terminal output to global stdout?
+- Warning visibility: do required warnings reach users and CI, rather than only a virtual terminal or RPC subprocess stderr?
 - Exit codes: are they meaningful and documented?
 - Consistency: does this match the patterns in existing azd commands?
 
@@ -315,6 +328,9 @@ If there are no {domain}-specific concerns, contribute no findings.
 
 When applying the Observability Expert lens to telemetry field changes:
 
+- Follow the [privacy checklist's reviewer guidance](../../../docs/specs/metrics-audit/privacy-review-checklist.md#for-reviewers), which covers the actual values and the maintainer's coverage decision.
+- For new or renamed extension fields, apply the
+  [attribute naming rules](../../../cli/azd/docs/extensions/extension-telemetry.md#name-attributes-for-their-scope).
 - Verify every new or modified exported, package-level `fields.AttributeKey` sets non-empty
   `Classification` and `Purpose` metadata.
 - Compare each runtime key string with existing `AttributeKey` declarations. A telemetry key must be

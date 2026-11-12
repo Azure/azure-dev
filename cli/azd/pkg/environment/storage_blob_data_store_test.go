@@ -8,14 +8,45 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func TestStorageBlobReloadFailurePreservesState(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		dotenv string
+		config string
+		want   string
+	}{
+		{name: "malformed dotenv", dotenv: "invalid='", want: "loading .env"},
+		{name: "invalid config", dotenv: "VALUE=on-disk", config: "{invalid", want: "loading config"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &MockBlobClient{}
+			store := NewStorageBlobDataStore(config.NewManager(), client)
+			env := New("test")
+			env.DotenvSet("VALUE", "in-memory")
+			env.DotenvDelete("PENDING")
+			client.On("Download", t.Context(), "test/.env").
+				Return(io.NopCloser(strings.NewReader(tt.dotenv)), nil).Once()
+			client.On("Download", t.Context(), "test/config.json").
+				Return(io.NopCloser(strings.NewReader(tt.config)), nil).Maybe()
+
+			require.ErrorContains(t, store.Reload(t.Context(), env), tt.want)
+			require.Equal(t, "in-memory", env.Getenv("VALUE"))
+			require.Contains(t, env.deletedKeys, "PENDING")
+			client.AssertExpectations(t)
+		})
+	}
+}
 
 var validBlobItems []*storage.Blob = []*storage.Blob{
 	{
@@ -24,7 +55,7 @@ var validBlobItems []*storage.Blob = []*storage.Blob{
 	},
 	{
 		Name: "config.json",
-		Path: "env1/config.env",
+		Path: "env1/config.json",
 	},
 	{
 		Name: ".env",
@@ -32,8 +63,34 @@ var validBlobItems []*storage.Blob = []*storage.Blob{
 	},
 	{
 		Name: "config.json",
-		Path: "env2/config.env",
+		Path: "env2/config.json",
 	},
+}
+
+func TestStorageBlobDataStore_ListSkipsInvalidLayouts(t *testing.T) {
+	client := &MockBlobClient{}
+	items := append([]*storage.Blob{}, validBlobItems...)
+	for _, key := range []string{
+		"archive/prod/.env", "other/prod/config.json", "/prod/.env", "prod//.env",
+		"prod/.env/extra", "prod/config.env", "prod/unrelated", ".env", "../.env",
+		`prod\.env`, "invalid name/.env", "bad\nname/.env",
+	} {
+		items = append(items, &storage.Blob{Name: DotEnvFileName, Path: key})
+	}
+	client.On("Items", t.Context()).Return(items, nil).Twice()
+	store := NewStorageBlobDataStore(config.NewManager(), client)
+
+	envs, err := store.List(t.Context())
+
+	require.NoError(t, err)
+	require.Equal(t, []*contracts.EnvListEnvironment{
+		{Name: "env1", DotEnvPath: "env1/.env", ConfigPath: "env1/config.json"},
+		{Name: "env2", DotEnvPath: "env2/.env", ConfigPath: "env2/config.json"},
+	}, envs)
+	_, err = store.Get(t.Context(), "prod")
+	require.ErrorIs(t, err, ErrNotFound)
+	client.AssertNotCalled(t, "Download", mock.Anything, mock.Anything)
+	client.AssertExpectations(t)
 }
 
 func Test_StorageBlobDataStore_List(t *testing.T) {
@@ -100,7 +157,8 @@ func Test_StorageBlobDataStore_Path(t *testing.T) {
 
 	env := New("env1")
 	expected := fmt.Sprintf("%s/%s", env.name, DotEnvFileName)
-	actual := dataStore.EnvPath(env)
+	actual, err := dataStore.EnvPath(env)
+	require.NoError(t, err)
 
 	require.Equal(t, expected, actual)
 }
@@ -112,7 +170,8 @@ func Test_StorageBlobDataStore_ConfigPath(t *testing.T) {
 
 	env := New("env1")
 	expected := fmt.Sprintf("%s/%s", env.name, ConfigFileName)
-	actual := dataStore.ConfigPath(env)
+	actual, err := dataStore.ConfigPath(env)
+	require.NoError(t, err)
 
 	require.Equal(t, expected, actual)
 }

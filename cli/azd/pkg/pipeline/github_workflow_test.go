@@ -20,7 +20,7 @@ func TestRenderPipelineDefinitionGitHubEnvironment(t *testing.T) {
 
 	props := projectProperties{
 		CiProvider:        ciProviderGitHubActions,
-		InfraProvider:     infraProviderBicep,
+		IsTerraform:       false,
 		BranchName:        "main",
 		AuthType:          AuthTypeFederated,
 		GitHubEnvironment: "development",
@@ -297,7 +297,7 @@ func TestValidateGitHubWorkflowUpgradesLegacyGeneratedWorkflow(t *testing.T) {
 	props := projectProperties{
 		CiProvider:        ciProviderGitHubActions,
 		RepoRoot:          repoRoot,
-		InfraProvider:     infraProviderBicep,
+		IsTerraform:       false,
 		BranchName:        "main",
 		AuthType:          AuthTypeFederated,
 		GitHubEnvironment: "development",

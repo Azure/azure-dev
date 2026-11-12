@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: containerappexpress
+metadata:
+  template: azd-test/containerappexpress@v1
+services:
+  web:
+    host: containerapp
+    image: mcr.microsoft.com/azuredocs/containerapps-helloworld:latest
+    docker:
+      imagePassthrough: true

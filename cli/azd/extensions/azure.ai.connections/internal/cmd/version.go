@@ -11,5 +11,8 @@ import (
 )
 
 func newVersionCommand(outputFormat *string) *cobra.Command {
-	return azdext.NewVersionCommand("azure.ai.connections", version.Version, outputFormat)
+	cmd := azdext.NewVersionCommand("azure.ai.connections", version.Version, outputFormat)
+	cmd.Example = `  # Display the installed connection extension version
+  azd ai connection version`
+	return cmd
 }

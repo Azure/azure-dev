@@ -315,6 +315,7 @@ func convertUsageMetrics(usage agent.UsageMetrics) *azdext.CopilotUsageMetrics {
 		BillingRate:     usage.BillingRate,
 		PremiumRequests: usage.PremiumRequests,
 		DurationMs:      usage.DurationMS,
+		AiCredits:       usage.AICredits,
 	}
 }
 

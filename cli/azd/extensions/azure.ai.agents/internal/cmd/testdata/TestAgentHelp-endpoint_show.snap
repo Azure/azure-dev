@@ -1,7 +1,9 @@
-Show the current endpoint and card configuration of an agent.
+Show endpoint information for a hosted, prompt, or voice agent.
 
-Displays protocols, version selector (traffic split), authorization schemes,
-and agent card (A2A discovery) as configured on the live agent.
+Hosted agents display live protocols, version selector (traffic split),
+authorization schemes, and agent card (A2A discovery). Prompt agents display
+their deployed Responses endpoint. Voice agents display their deployed WebSocket
+endpoint.
 
 Usage
   azd ai agent endpoint show [name] [flags]

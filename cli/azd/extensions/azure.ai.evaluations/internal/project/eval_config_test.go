@@ -28,13 +28,13 @@ evals:
   - name: support-agent-smoke
     description: Quality gate for the support agent
     dataset: support-golden
-    evaluation_level: conversation
-    max_samples: 100
+    evaluationLevel: conversation
+    maxSamples: 100
     evaluators:
       - evaluator: builtin.task_adherence
       - evaluator: support-quality
         name: quality_strict
-        initialization_parameters:
+        initializationParameters:
           deployment_name: gpt-4.1-nano
     target:
       type: agent
@@ -43,8 +43,8 @@ evals:
   - name: support-agent-trace-eval
     source:
       type: traces
-      agent_name: support-agent
-      max_traces: 20
+      agentName: support-agent
+      maxTraces: 20
     evaluators:
       - evaluator: builtin.task_adherence
 `
@@ -88,7 +88,7 @@ func TestEval_SelectsByName(t *testing.T) {
 	require.Equal(t, "support-agent", eval.Target.Name)
 }
 
-// A trace-backed eval invokes nothing, so agent_name filters rather than targets.
+// A trace-backed eval invokes nothing, so agentName filters rather than targets.
 func TestEval_TraceSourceHasNoTarget(t *testing.T) {
 	cfg := loadFromString(t, sampleEvalConfig)
 
@@ -218,7 +218,7 @@ func TestValidate_Rejects(t *testing.T) {
 			name: "trace source naming no agent",
 			body: "evals:\n  - name: e\n    source:\n      type: traces\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "source.agent_name is required",
+			wantErr: "source.agentName is required",
 		},
 		{
 			// A model target names a deployment. The run refuses to filter
@@ -228,40 +228,40 @@ func TestValidate_Rejects(t *testing.T) {
 			body: "evals:\n  - name: e\n    source:\n      type: traces\n" +
 				"    target:\n      type: model\n      name: gpt-4o-mini\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "source.agent_name is required",
+			wantErr: "source.agentName is required",
 		},
 		{
 			name: "responses source listing no ids",
 			body: "evals:\n  - name: e\n    source:\n      type: responses\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "source.response_ids is required",
+			wantErr: "source.responseIds is required",
 		},
 		{
 			// A window bound the run path cannot parse is dropped by the
 			// service, which then grades a default seven days and says nothing.
 			name: "window bound that is not a time",
-			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
-				"      start_time: yesterday\n    evaluators:\n      - evaluator: builtin.relevance\n",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agentName: a\n" +
+				"      startTime: yesterday\n    evaluators:\n      - evaluator: builtin.relevance\n",
 			wantErr: "which is not a time",
 		},
 		{
 			name: "window ending before it starts",
-			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
-				"      start_time: \"2026-08-02T00:00:00Z\"\n      end_time: \"2026-08-01T00:00:00Z\"\n" +
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agentName: a\n" +
+				"      startTime: \"2026-08-02T00:00:00Z\"\n      endTime: \"2026-08-01T00:00:00Z\"\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
 			wantErr: "holds no traces",
 		},
 		{
 			name: "window declared twice over",
-			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
-				"      start_time: \"2026-08-01T00:00:00Z\"\n      lookback_hours: 24\n" +
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agentName: a\n" +
+				"      startTime: \"2026-08-01T00:00:00Z\"\n      lookbackHours: 24\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
 			wantErr: "keep one",
 		},
 		{
 			name: "lookback reaching forwards",
-			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
-				"      lookback_hours: -24\n    evaluators:\n      - evaluator: builtin.relevance\n",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agentName: a\n" +
+				"      lookbackHours: -24\n    evaluators:\n      - evaluator: builtin.relevance\n",
 			wantErr: "how far back to look cannot be negative",
 		},
 		{
@@ -269,16 +269,16 @@ func TestValidate_Rejects(t *testing.T) {
 			// trace ever recorded. Checked one past it, so raising the constant
 			// without meaning to fails here.
 			name: "lookback beyond what a window may cover",
-			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
-				"      lookback_hours: 87601\n    evaluators:\n      - evaluator: builtin.relevance\n",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agentName: a\n" +
+				"      lookbackHours: 87601\n    evaluators:\n      - evaluator: builtin.relevance\n",
 			wantErr: "is beyond the 87600 hours a window can reach back",
 		},
 		{
 			// Parses, then reads as "no bound" everywhere after, so the bound
 			// the file declared would be dropped from the request in silence.
 			name: "window bound at the zero time",
-			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
-				"      start_time: \"0001-01-01T00:00:00Z\"\n" +
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agentName: a\n" +
+				"      startTime: \"0001-01-01T00:00:00Z\"\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
 			wantErr: "not a time any traces were recorded at",
 		},
@@ -286,25 +286,25 @@ func TestValidate_Rejects(t *testing.T) {
 			// The wire drops a zero as readily as Go does, so an end bound at
 			// the epoch is the same silence one field over.
 			name: "end bound at the unix epoch",
-			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
-				"      end_time: \"1970-01-01T00:00:00Z\"\n" +
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agentName: a\n" +
+				"      endTime: \"1970-01-01T00:00:00Z\"\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "source.end_time",
+			wantErr: "source.endTime",
 		},
 		{
 			name: "negative trace cap",
-			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agent_name: a\n" +
-				"      max_traces: -5\n    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "source.max_traces is -5",
+			body: "evals:\n  - name: e\n    source:\n      type: traces\n      agentName: a\n" +
+				"      maxTraces: -5\n    evaluators:\n      - evaluator: builtin.relevance\n",
+			wantErr: "source.maxTraces is -5",
 		},
 		{
 			// A responses source reads no traces, so a window on it bounds
 			// nothing and only looks as though it does.
 			name: "trace window on a responses source",
 			body: "evals:\n  - name: e\n    source:\n      type: responses\n" +
-				"      response_ids: [resp_1]\n      lookback_hours: 24\n" +
+				"      responseIds: [resp_1]\n      lookbackHours: 24\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "source declares lookback_hours, which a \"responses\" source does not read",
+			wantErr: "source declares lookbackHours, which a \"responses\" source does not read",
 		},
 		{
 			name:    "dataset without a name",
@@ -391,9 +391,9 @@ func TestValidate_Rejects(t *testing.T) {
 		},
 		{
 			name: "invalid evaluation level",
-			body: "evals:\n  - name: e\n    evaluation_level: sentence\n" +
+			body: "evals:\n  - name: e\n    evaluationLevel: sentence\n" +
 				"    evaluators:\n      - evaluator: builtin.relevance\n",
-			wantErr: "evaluation_level",
+			wantErr: "evaluationLevel",
 		},
 		{
 			name: "two evals differing only by name",
@@ -444,12 +444,12 @@ func TestValidateForLookupStillRefusesADuplicateName(t *testing.T) {
 func TestValidateForLookupLeavesAnEvalsOwnDeclarationToDeploying(t *testing.T) {
 	cases := map[string]string{
 		"a field the source does not read": "evals:\n  - name: a\n    source:\n" +
-			"      type: traces\n      agent_name: x\n      max_turns: 3\n" +
+			"      type: traces\n      agentName: x\n      maxTurns: 3\n" +
 			"    evaluators:\n      - evaluator: builtin.relevance\n",
 		"a mistyped source type": "evals:\n  - name: a\n    source:\n      type: tracs\n" +
 			"    evaluators:\n      - evaluator: builtin.relevance\n",
 		"an unusable window": "evals:\n  - name: a\n    source:\n      type: traces\n" +
-			"      agent_name: x\n      lookback_hours: -1\n" +
+			"      agentName: x\n      lookbackHours: -1\n" +
 			"    evaluators:\n      - evaluator: builtin.relevance\n",
 	}
 

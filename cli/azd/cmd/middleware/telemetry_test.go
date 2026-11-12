@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -331,6 +332,21 @@ func TestTelemetryMiddleware_extensionCmdInfo_ResolvesCommandAndFlags(t *testing
 					{Name: "output", Type: "string"},
 				},
 			},
+			{
+				Name: []string{"legacy"},
+				Flags: []extensions.Flag{
+					{Name: "project-endpoint", Shorthand: "e", Type: "string"},
+				},
+			},
+			{
+				Name:    []string{"connection"},
+				Aliases: []string{"conn"},
+				Subcommands: []extensions.Command{{
+					Name:    []string{"connection", "add"},
+					Aliases: []string{"create"},
+					Flags:   []extensions.Flag{{Name: "file", Type: "string"}},
+				}},
+			},
 		},
 	}
 	metadataBytes, err := json.Marshal(metadata)
@@ -353,6 +369,52 @@ func TestTelemetryMiddleware_extensionCmdInfo_ResolvesCommandAndFlags(t *testing
 		eventName, flags := m.extensionCmdInfo("test.ext")
 		require.Equal(t, events.GetCommandEventName("azd test ext build"), eventName)
 		require.ElementsMatch(t, []string{"verbose", "output"}, flags)
+	})
+
+	t.Run("resolves command path after leading global flags", func(t *testing.T) {
+		m := &TelemetryMiddleware{
+			options: &Options{
+				Args: []string{"--no-prompt", "-C", "dir", "--environment=dev", "build", "--verbose"},
+			},
+			extensionManager: manager,
+		}
+
+		eventName, flags := m.extensionCmdInfo("test.ext")
+		require.Equal(t, events.GetCommandEventName("azd test ext build"), eventName)
+		require.ElementsMatch(t, []string{"verbose"}, flags)
+	})
+
+	t.Run("legacy shorthand collision", func(t *testing.T) {
+		for _, args := range [][]string{
+			{"legacy"},
+			{"legacy", "--project-endpoint", "endpoint"},
+		} {
+			m := &TelemetryMiddleware{
+				options:          &Options{Args: args},
+				extensionManager: manager,
+			}
+			original := slices.Clone(args)
+			eventName, flags := m.extensionCmdInfo("test.ext")
+			require.Equal(t, events.GetCommandEventName("azd test ext legacy"), eventName)
+			if len(args) == 1 {
+				require.Nil(t, flags)
+			} else {
+				require.Equal(t, []string{"project-endpoint"}, flags)
+			}
+			require.Equal(t, original, m.options.Args)
+		}
+	})
+
+	t.Run("interspersed global flags and aliases", func(t *testing.T) {
+		m := &TelemetryMiddleware{
+			options: &Options{
+				Args: []string{"conn", "--debug", "-e", "list", "create", "--file", "config.yaml"},
+			},
+			extensionManager: manager,
+		}
+		eventName, flags := m.extensionCmdInfo("test.ext")
+		require.Equal(t, events.GetCommandEventName("azd test ext connection add"), eventName)
+		require.Equal(t, []string{"file"}, flags)
 	})
 
 	t.Run("returns flags without an unknown command event", func(t *testing.T) {

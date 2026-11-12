@@ -4,10 +4,7 @@
 package cmd
 
 import (
-	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -311,15 +308,12 @@ func TestResolveMonitorSession_UsesDirectAgentKey(t *testing.T) {
 		"",
 		false,
 	)
-	userConfig.setJSON(t, configPath("sessions"), map[string]string{
-		agentKey: "persisted-session",
-	})
+	saveAgentStateForTest(t, azdClient, agentKey, agentStateRecord{SessionID: "persisted-session"})
 
 	sessionID := resolveMonitorSession(
 		t.Context(),
 		azdClient,
 		agentKey,
-		legacyKeysForRemote("hosted-agent")...,
 	)
 	assert.Equal(t, "persisted-session", sessionID)
 }
@@ -405,62 +399,6 @@ func TestValidateMonitorFlags_TableDriven(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestLoadLocalContext_WithSessions(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, ConfigFile)
-
-	ctx := &AgentLocalContext{
-		AgentName: "my-agent",
-		Sessions: map[string]string{
-			"agent-a": "session-123",
-			"agent-b": "session-456",
-		},
-	}
-	data, err := json.MarshalIndent(ctx, "", "  ")
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(configPath, data, 0600))
-
-	loaded := loadLocalContext(configPath)
-	assert.Equal(t, "my-agent", loaded.AgentName)
-	assert.Equal(t, "session-123", loaded.Sessions["agent-a"])
-	assert.Equal(t, "session-456", loaded.Sessions["agent-b"])
-}
-
-func TestLoadLocalContext_MissingFile(t *testing.T) {
-	t.Parallel()
-
-	loaded := loadLocalContext(filepath.Join(t.TempDir(), "nonexistent.json"))
-	assert.NotNil(t, loaded)
-	assert.Nil(t, loaded.Sessions)
-}
-
-func TestLoadLocalContext_InvalidJSON(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, ConfigFile)
-	require.NoError(t, os.WriteFile(configPath, []byte("{invalid json"), 0600))
-
-	loaded := loadLocalContext(configPath)
-	assert.NotNil(t, loaded)
-	assert.Nil(t, loaded.Sessions)
-}
-
-func TestLoadLocalContext_EmptyFile(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, ConfigFile)
-	require.NoError(t, os.WriteFile(configPath, []byte("{}"), 0600))
-
-	loaded := loadLocalContext(configPath)
-	assert.NotNil(t, loaded)
-	assert.Empty(t, loaded.AgentName)
-	assert.Nil(t, loaded.Sessions)
 }
 
 func TestBuildAgentKey(t *testing.T) {
@@ -552,46 +490,4 @@ func TestProjectHash(t *testing.T) {
 
 	// Hash is 16 hex chars (8 bytes)
 	assert.Len(t, h1, 16)
-}
-
-func TestLegacyKeysForRemote(t *testing.T) {
-	t.Parallel()
-
-	keys := legacyKeysForRemote("my-agent")
-	assert.Contains(t, keys, "my-agent")
-}
-
-func TestLegacyKeysForLocal(t *testing.T) {
-	t.Parallel()
-
-	keys := legacyKeysForLocal("my-service", "my-agent")
-	assert.Contains(t, keys, "my-service-local")
-	assert.Contains(t, keys, "my-agent-local")
-	assert.Contains(t, keys, "local")
-}
-
-func TestResolveStoredIDFromPath_ExplicitID(t *testing.T) {
-	t.Parallel()
-
-	got, err := resolveStoredIDFromPath("", "agent-key", "explicit-id", false, "sessions", false)
-	require.NoError(t, err)
-	assert.Equal(t, "explicit-id", got)
-}
-
-func TestResolveStoredIDFromPath_GenerateWhenMissing(t *testing.T) {
-	t.Parallel()
-
-	got, err := resolveStoredIDFromPath("", "agent-key", "", false, "sessions", true)
-	require.NoError(t, err)
-	assert.NotEmpty(t, got)
-	// Should be a UUID format
-	assert.Len(t, got, 36)
-}
-
-func TestResolveStoredIDFromPath_EmptyWhenNotGenerating(t *testing.T) {
-	t.Parallel()
-
-	got, err := resolveStoredIDFromPath("", "agent-key", "", false, "sessions", false)
-	require.NoError(t, err)
-	assert.Empty(t, got)
 }

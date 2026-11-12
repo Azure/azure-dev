@@ -19,6 +19,7 @@ import (
 func finishedRun() *eval_api.OpenAIEvalRun {
 	return &eval_api.OpenAIEvalRun{
 		ID:     "evalrun_abc123",
+		EvalID: "eval_abc123",
 		Status: "completed",
 		ResultCounts: &eval_api.EvalRunResultCounts{
 			Total: 10, Passed: 7, Failed: 3,
@@ -47,9 +48,9 @@ func TestRenderRunReportsEveryEvaluator(t *testing.T) {
 	}
 	assert.Contains(t, text, "90.0%", "relevance passed 9 of 10")
 	assert.Contains(t, text, "70.0%", "coherence passed 7 of 10")
-	assert.Contains(t, text, "(7 / (7 passed + 3 failed))",
+	assert.Contains(t, text, "(7 passed / 10 total test cases)",
 		"the counts behind the rate must be shown, and the denominator named: "+
-			"a bare 7/10 does not say whether the 3 failed or never ran")
+			"a bare 7/10 does not say what the denominator represents")
 }
 
 // The two tables count different things, so each says which.
@@ -106,10 +107,10 @@ func TestRenderRunSeparatesErrorsFromFailures(t *testing.T) {
 
 	assert.Contains(t, text, "Errored       2",
 		"a run that errored on two rows says so in its own line, not as a footnote")
-	assert.Contains(t, text, "87.5%",
-		"the pass rate is over what was scored, not over what was attempted")
-	assert.Contains(t, text, "(7 / (7 passed + 1 failed))",
-		"and names the two rows it divided, so the errored two are visibly outside it")
+	assert.Contains(t, text, "70.0%",
+		"the two errored rows did not pass and must count against the run-level rate")
+	assert.Contains(t, text, "(7 passed / 10 total test cases)",
+		"the display must name the same total denominator the gate uses")
 }
 
 // A rate over nothing is not zero. Printing 0.0% for a criterion that scored
@@ -122,11 +123,17 @@ func TestFormatRateHasNoOpinionAboutNothing(t *testing.T) {
 }
 
 // The next thing anyone does after seeing failures is look at them, so the
-// command that shows them is named — and it has to be a command that exists.
+// command that shows them is named — and it has to be a command that exists,
+// carrying the ids it needs so it can be run as printed.
 func TestRenderRunPointsAtTheFailingSamples(t *testing.T) {
 	var out bytes.Buffer
 	require.NoError(t, renderRun(&out, finishedRun(), nil))
-	assert.Contains(t, out.String(), "azd ai eval run output list --failed-only")
+	assert.Contains(t, out.String(), "azd ai eval run output list")
+	assert.Contains(t, out.String(), "--failed-only")
+	assert.Contains(t, out.String(), "--run evalrun_abc123",
+		"a command missing the run it refers to has to be retyped before it works")
+	assert.Contains(t, out.String(), "azd ai eval run output export",
+		"reading the whole run is the other half of investigating one")
 
 	clean := finishedRun()
 	clean.ResultCounts = &eval_api.EvalRunResultCounts{Total: 10, Passed: 10}
@@ -137,6 +144,29 @@ func TestRenderRunPointsAtTheFailingSamples(t *testing.T) {
 	require.NoError(t, renderRun(&cleanOut, clean, nil))
 	assert.NotContains(t, cleanOut.String(), "--failed-only",
 		"a run with nothing to look at must not send anyone looking")
+	assert.NotContains(t, cleanOut.String(), "Investigate:",
+		"nothing failed and nothing errored, so there is nothing to investigate")
+}
+
+// A run whose rows errored closed with the word "failed" and a count, and
+// nothing saying where to look. Errored rows are not offered --failed-only,
+// because that filter holds back exactly the rows nothing scored. ADO 5595070.
+func TestRenderRunPointsSomewhereUsefulWhenRowsErrored(t *testing.T) {
+	run := finishedRun()
+	run.ResultCounts = &eval_api.EvalRunResultCounts{Total: 10, Passed: 4, Failed: 0, Errored: 6}
+	run.PerTestingCriteria = []eval_api.EvalRunCriteriaResult{
+		{TestingCriteria: "relevance", Passed: 4, Errored: 6},
+	}
+
+	var out bytes.Buffer
+	require.NoError(t, renderRun(&out, run, nil))
+
+	text := out.String()
+	assert.Contains(t, text, "Investigate:")
+	assert.Contains(t, text, "azd ai eval run output list")
+	assert.Contains(t, text, "azd ai eval run output export")
+	assert.NotContains(t, text, "--failed-only",
+		"nothing failed; --failed-only would open an empty list for the run that most needs reading")
 }
 
 // A run that never produced counts still has to render. The service returns

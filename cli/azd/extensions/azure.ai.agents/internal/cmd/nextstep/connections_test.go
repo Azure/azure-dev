@@ -4,6 +4,8 @@
 package nextstep
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -78,45 +80,6 @@ func TestAssembleState_ConnectionUsesPayloadName(t *testing.T) {
 	assert.Equal(t, "azure-search", state.Connections[0].ServiceName)
 }
 
-func TestAssembleState_DisabledConnectionIsSkipped(t *testing.T) {
-	t.Parallel()
-
-	src := &fakeSource{
-		envName: "dev",
-		configValues: map[string]*structpb.Value{
-			"off-conn/condition": structpb.NewBoolValue(false),
-		},
-		project: &azdext.ProjectConfig{
-			Services: map[string]*azdext.ServiceConfig{
-				"live-conn": {
-					Name: "live-conn",
-					Host: connectionHost,
-					AdditionalProperties: mustStruct(t, map[string]any{
-						"category": "ApiKey",
-						"target":   "https://live.example",
-					}),
-				},
-				"off-conn": {
-					Name: "off-conn",
-					Host: connectionHost,
-					AdditionalProperties: mustStruct(t, map[string]any{
-						"category":    "ApiKey",
-						"target":      "https://off.example",
-						"credentials": map[string]any{"key": "super-secret"},
-					}),
-				},
-			},
-		},
-	}
-
-	state, errs := assembleState(t.Context(), src)
-	require.Empty(t, errs)
-	require.Empty(t, state.ConnectionLoadErrors)
-	require.Len(t, state.Connections, 1)
-	assert.Equal(t, "live-conn", state.Connections[0].Name)
-	assert.NotContains(t, state.Connections[0].Detail, "super-secret")
-}
-
 func TestAssembleState_DisabledConnectionSkipsRefErrors(t *testing.T) {
 	t.Parallel()
 
@@ -146,103 +109,41 @@ func TestAssembleState_DisabledConnectionSkipsRefErrors(t *testing.T) {
 	assert.Empty(t, state.Connections)
 }
 
-func TestEvaluateConditionString_EmptyIsTrue(t *testing.T) {
-	t.Parallel()
-
-	enabled, err := evaluateConditionString("", nil)
-	require.NoError(t, err)
-	assert.True(t, enabled)
-}
-
-func TestEvaluateConditionString_WhitespaceOnlyIsFalse(t *testing.T) {
-	t.Parallel()
-
-	for _, value := range []string{" ", "\t", "\n", " \t\n"} {
-		enabled, err := evaluateConditionString(value, nil)
-		require.NoError(t, err)
-		assert.False(t, enabled)
-	}
-}
-
 func TestAssembleState_ResolvedConnectionConditionUsesRootField(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name          string
-		rootCondition *structpb.Value
-		wantEnabled   bool
-		wantLoadError bool
-	}{
-		{
-			name:          "root false short circuits ref",
-			rootCondition: structpb.NewBoolValue(false),
-			wantLoadError: false,
-		},
-		{
-			name:          "root true remains authoritative",
-			rootCondition: structpb.NewBoolValue(true),
-			wantEnabled:   true,
-			wantLoadError: true,
-		},
-		{
-			name:          "root condition absent",
-			wantEnabled:   true,
-			wantLoadError: true,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			root := t.TempDir()
-			writeProjectFile(t, root, "connection.yaml", `
+	root := t.TempDir()
+	writeProjectFile(t, root, "connection.yaml", `
 category: ApiKey
 target: https://connection.example
 condition: false
 `)
-			configValues := map[string]*structpb.Value{}
-			if tc.rootCondition != nil {
-				configValues["conn/condition"] = tc.rootCondition
-			}
-			src := &fakeSource{
-				envName:      "dev",
-				configValues: configValues,
-				project: &azdext.ProjectConfig{
-					Path: root,
-					Services: map[string]*azdext.ServiceConfig{
-						"conn": {
-							Name: "conn",
-							Host: connectionHost,
-							AdditionalProperties: mustStruct(t, map[string]any{
-								"$ref": "./connection.yaml",
-							}),
-						},
-					},
+	src := &fakeSource{
+		envName: "dev",
+		configValues: map[string]*structpb.Value{
+			"conn/condition": structpb.NewBoolValue(true),
+		},
+		project: &azdext.ProjectConfig{
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"conn": {
+					Name: "conn",
+					Host: connectionHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"$ref": "./connection.yaml",
+					}),
 				},
-			}
-
-			state, errs := assembleState(t.Context(), src)
-			require.Equal(t, tc.wantLoadError, len(errs) > 0)
-			require.Equal(t, tc.wantLoadError, len(state.ConnectionLoadErrors) > 0)
-			require.Equal(t, tc.wantEnabled, state.HasConnections)
-			if tc.wantLoadError {
-				require.Len(t, state.ConnectionLoadErrors, 1)
-				assert.Contains(t, state.ConnectionLoadErrors[0], "resolved $ref")
-				assert.Contains(
-					t,
-					state.ConnectionLoadErrors[0],
-					"put condition beside host in azure.yaml",
-				)
-			}
-			if tc.wantEnabled {
-				require.Len(t, state.Connections, 1)
-				assert.Equal(t, "conn", state.Connections[0].Name)
-			} else {
-				assert.Empty(t, state.Connections)
-			}
-		})
+			},
+		},
 	}
+
+	state, errs := assembleState(t.Context(), src)
+	require.NotEmpty(t, errs)
+	require.Len(t, state.ConnectionLoadErrors, 1)
+	require.True(t, state.HasConnections)
+	require.Len(t, state.Connections, 1)
+	assert.Contains(t, state.ConnectionLoadErrors[0], "resolved $ref")
+	assert.Contains(t, state.ConnectionLoadErrors[0], "put condition beside host in azure.yaml")
 }
 
 func TestAssembleState_InvalidConnectionConditionIsLoadError(t *testing.T) {
@@ -275,89 +176,13 @@ func TestAssembleState_InvalidConnectionConditionIsLoadError(t *testing.T) {
 	assert.Contains(t, state.ConnectionLoadErrors[0], "invalid deployment condition")
 }
 
-func TestAssembleState_InvalidBundledAgentConditionIsLoadError(t *testing.T) {
-	t.Parallel()
-
-	src := &fakeSource{
-		envName: "dev",
-		configValues: map[string]*structpb.Value{
-			"agent/condition": structpb.NewStringValue("${"),
-		},
-		project: &azdext.ProjectConfig{
-			Services: map[string]*azdext.ServiceConfig{
-				"agent": {
-					Name: "agent",
-					Host: agentHost,
-					AdditionalProperties: mustStruct(t, map[string]any{
-						"kind": "hostedAgent",
-						"connections": []any{
-							map[string]any{
-								"name":     "search",
-								"category": "ApiKey",
-								"target":   "https://search.example",
-							},
-						},
-					}),
-				},
-			},
-		},
-	}
-
-	state, errs := assembleState(t.Context(), src)
-	require.NotEmpty(t, errs)
-	require.False(t, state.HasConnections)
-	require.Len(t, state.ConnectionLoadErrors, 1)
-	assert.Contains(t, state.ConnectionLoadErrors[0], `agent service "agent"`)
-	assert.Contains(t, state.ConnectionLoadErrors[0], "deployment condition")
-}
-
-func TestAssembleState_InvalidManifestAgentConditionIsLoadError(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeManifest(t, root, "src/echo", `
-template:
-  kind: containerAgent
-  name: echo
-resources:
-  - name: search
-    kind: connection
-    category: ApiKey
-    target: https://search.example
-`)
-	src := &fakeSource{
-		envName: "dev",
-		configValues: map[string]*structpb.Value{
-			"echo/condition": structpb.NewStringValue("${"),
-		},
-		project: &azdext.ProjectConfig{
-			Path: root,
-			Services: map[string]*azdext.ServiceConfig{
-				"echo": {
-					Name:         "echo",
-					Host:         agentHost,
-					RelativePath: "src/echo",
-				},
-			},
-		},
-	}
-
-	state, errs := assembleState(t.Context(), src)
-	require.NotEmpty(t, errs)
-	require.False(t, state.HasConnections)
-	require.Len(t, state.ConnectionLoadErrors, 1)
-	assert.Contains(t, state.ConnectionLoadErrors[0], `agent service "echo"`)
-	assert.Contains(t, state.ConnectionLoadErrors[0], "deployment condition")
-}
-
 func TestAssembleState_ActiveConnectionRefErrorIsLoadError(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
 	src := &fakeSource{
 		envName: "dev",
 		project: &azdext.ProjectConfig{
-			Path: root,
+			Path: t.TempDir(),
 			Services: map[string]*azdext.ServiceConfig{
 				"broken-conn": {
 					Name: "broken-conn",
@@ -376,59 +201,6 @@ func TestAssembleState_ActiveConnectionRefErrorIsLoadError(t *testing.T) {
 	require.Len(t, state.ConnectionLoadErrors, 1)
 	assert.Contains(t, state.ConnectionLoadErrors[0], `connection service "broken-conn"`)
 	assert.Contains(t, state.ConnectionLoadErrors[0], "resolve $ref")
-}
-
-func TestAssembleState_UnifiedLoadErrorSuppressesFallbackSources(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeManifest(t, root, "src/echo", `
-template:
-  kind: containerAgent
-  name: echo
-resources:
-  - name: manifest-connection
-    kind: connection
-    category: ApiKey
-    target: https://manifest.example
-`)
-
-	agent := newAgentService(t, map[string]any{
-		"kind": "hostedAgent",
-		"connections": []any{
-			map[string]any{
-				"name":     "bundled-connection",
-				"category": "ApiKey",
-				"target":   "https://bundled.example",
-			},
-		},
-	})
-	agent.RelativePath = "src/echo"
-
-	src := &fakeSource{
-		envName: "dev",
-		project: &azdext.ProjectConfig{
-			Path: root,
-			Services: map[string]*azdext.ServiceConfig{
-				"echo": agent,
-				"broken-conn": {
-					Name: "broken-conn",
-					Host: connectionHost,
-					AdditionalProperties: mustStruct(t, map[string]any{
-						"$ref": "./missing-connection.yaml",
-					}),
-				},
-			},
-		},
-	}
-
-	state, errs := assembleState(t.Context(), src)
-	require.NotEmpty(t, errs)
-	require.Len(t, state.ConnectionLoadErrors, 1)
-	assert.Contains(t, state.ConnectionLoadErrors[0],
-		`connection service "broken-conn"`)
-	assert.False(t, state.HasConnections)
-	assert.Empty(t, state.Connections)
 }
 
 func TestAssembleState_ConnectionTargetKeepsVarRef(t *testing.T) {
@@ -458,209 +230,42 @@ func TestAssembleState_ConnectionTargetKeepsVarRef(t *testing.T) {
 	assert.NotContains(t, state.Connections[0].Detail, "super-secret")
 }
 
-func TestAssembleState_UnifiedConnectionsSuppressFallbackSources(t *testing.T) {
+func TestAssembleState_IgnoresUnsupportedAgentConnectionSources(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	writeManifest(t, root, "src/echo", `
-template:
-  kind: containerAgent
-  name: echo
+	serviceDir := filepath.Join(root, "src", "echo")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.manifest.yaml"),
+		[]byte(`
 resources:
-  - name: shared-conn
-    kind: connection
-    category: BingLLMSearch
-    target: https://manifest.example
-  - name: manifest-only
+  - name: manifest-connection
     kind: connection
     category: ApiKey
-    target: https://manifest-only.example
-`)
+    target: https://manifest.example
+`),
+		0o600,
+	))
 
 	agent := newAgentService(t, map[string]any{
 		"kind": "hostedAgent",
 		"connections": []any{
 			map[string]any{
-				"name":     "shared-conn",
+				"name":     "object-connection",
 				"category": "ApiKey",
-				"target":   "https://bundled.example",
-			},
-			map[string]any{
-				"name":     "bundled-only",
-				"category": "RemoteTool",
-				"target":   "https://bundled-only.example",
+				"target":   "https://object.example",
 			},
 		},
 	})
 	agent.RelativePath = "src/echo"
-
-	src := &fakeSource{
-		envName: "dev",
-		project: &azdext.ProjectConfig{
-			Path: root,
-			Services: map[string]*azdext.ServiceConfig{
-				"echo": agent,
-				"split-service": {
-					Name: "split-service",
-					Host: connectionHost,
-					AdditionalProperties: mustStruct(t, map[string]any{
-						"name":     "shared-conn",
-						"category": "CognitiveSearch",
-						"target":   "https://split.example",
-					}),
-				},
-			},
-		},
-	}
-
-	state, errs := assembleState(t.Context(), src)
-	require.Empty(t, errs)
-	require.True(t, state.HasConnections)
-	require.Len(t, state.Connections, 1)
-	assert.Equal(t, "shared-conn", state.Connections[0].Name)
-	assert.Equal(t, "split-service", state.Connections[0].ServiceName)
-	assert.Equal(
-		t,
-		"CognitiveSearch | https://split.example",
-		state.Connections[0].Detail,
-	)
-}
-
-func TestAssembleState_BundledWinsOverManifest(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeManifest(t, root, "src/echo", `
-template:
-  kind: containerAgent
-  name: echo
-resources:
-  - name: shared-conn
-    kind: connection
-    category: BingLLMSearch
-    target: https://manifest.example
-`)
-
-	agent := newAgentService(t, map[string]any{
-		"kind": "hostedAgent",
-		"connections": []any{
-			map[string]any{
-				"name":     "shared-conn",
-				"category": "ApiKey",
-				"target":   "https://bundled.example",
-			},
-		},
-	})
-	agent.RelativePath = "src/echo"
-
-	src := &fakeSource{
-		envName: "dev",
-		project: &azdext.ProjectConfig{
-			Path: root,
-			Services: map[string]*azdext.ServiceConfig{
-				"echo": agent,
-			},
-		},
-	}
-
-	state, errs := assembleState(t.Context(), src)
-	require.Empty(t, errs)
-	require.Len(t, state.Connections, 1)
-	assert.Equal(t, "ApiKey | https://bundled.example", state.Connections[0].Detail)
-}
-
-func TestAssembleState_BundledConnectionsDoNotRequireKind(t *testing.T) {
-	t.Parallel()
-
-	agent := newAgentService(t, map[string]any{
-		"connections": []any{
-			map[string]any{
-				"name":     "legacy-bundled",
-				"category": "ApiKey",
-				"target":   "https://legacy.example",
-			},
-		},
-	})
-
-	src := &fakeSource{
-		envName: "dev",
-		project: &azdext.ProjectConfig{
-			Services: map[string]*azdext.ServiceConfig{
-				"echo": agent,
-			},
-		},
-	}
-
-	state, errs := assembleState(t.Context(), src)
-	require.Empty(t, errs)
-	require.Len(t, state.Connections, 1)
-	assert.Equal(t, "legacy-bundled", state.Connections[0].Name)
-	assert.Equal(t, "ApiKey | https://legacy.example",
-		state.Connections[0].Detail)
-}
-
-func TestAssembleState_BundledConnectionsUseProvisionConfigPrecedence(t *testing.T) {
-	t.Parallel()
-
-	agent := newAgentService(t, map[string]any{
-		"connections": []any{
-			map[string]any{
-				"name":     "inline-connection",
-				"category": "ApiKey",
-				"target":   "https://inline.example",
-			},
-		},
-	})
 	agent.Config = mustStruct(t, map[string]any{
 		"kind": "hostedAgent",
 		"connections": []any{
 			map[string]any{
-				"name":     "legacy-connection",
+				"name":     "nested-connection",
 				"category": "ApiKey",
-				"target":   "https://legacy.example",
-			},
-		},
-	})
-
-	src := &fakeSource{
-		envName: "dev",
-		project: &azdext.ProjectConfig{
-			Services: map[string]*azdext.ServiceConfig{
-				"echo": agent,
-			},
-		},
-	}
-
-	state, errs := assembleState(t.Context(), src)
-	require.Empty(t, errs)
-	require.Len(t, state.Connections, 1)
-	assert.Equal(t, "legacy-connection", state.Connections[0].Name)
-	assert.Equal(t, "ApiKey | https://legacy.example",
-		state.Connections[0].Detail)
-}
-
-func TestAssembleState_BundledConnectionsUseResolvedInlineConfig(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeProjectFile(t, root, "agent.yaml", `
-kind: hostedAgent
-connections:
-  - name: inline-connection
-    category: ApiKey
-    target: https://inline.example
-`)
-
-	agent := newAgentService(t, map[string]any{
-		"$ref": "./agent.yaml",
-	})
-	agent.Config = mustStruct(t, map[string]any{
-		"kind": "hostedAgent",
-		"connections": []any{
-			map[string]any{
-				"name":     "legacy-connection",
-				"category": "ApiKey",
-				"target":   "https://legacy.example",
+				"target":   "https://nested.example",
 			},
 		},
 	})
@@ -677,56 +282,29 @@ connections:
 
 	state, errs := assembleState(t.Context(), src)
 	require.Empty(t, errs)
-	require.Len(t, state.Connections, 1)
-	assert.Equal(t, "inline-connection", state.Connections[0].Name)
-	assert.Equal(t, "ApiKey | https://inline.example",
-		state.Connections[0].Detail)
+	assert.False(t, state.HasConnections)
+	assert.Empty(t, state.Connections)
+	assert.Empty(t, state.ConnectionLoadErrors)
 }
 
-func TestAssembleState_BundledLegacyConfigFallback(t *testing.T) {
+func TestFormatConnectionDetail(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		path string
+		name     string
+		category string
+		target   string
+		want     string
 	}{
-		{name: "empty project root"},
-		{name: "project root", path: t.TempDir()},
+		{"both populated", "AzureOpenAI", "https://x.openai.azure.com/", "AzureOpenAI | https://x.openai.azure.com/"},
+		{"only category", "AzureOpenAI", "", "AzureOpenAI"},
+		{"only target", "", "https://x.openai.azure.com/", "https://x.openai.azure.com/"},
+		{"both empty", "", "", ""},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-
-			agent := newAgentService(t, map[string]any{
-				"resumeSessionOnDeploy": true,
-			})
-			agent.Config = mustStruct(t, map[string]any{
-				"kind": "hostedAgent",
-				"connections": []any{
-					map[string]any{
-						"name":     "legacy-bundled",
-						"category": "ApiKey",
-						"target":   "https://legacy.example",
-					},
-				},
-			})
-
-			src := &fakeSource{
-				envName: "dev",
-				project: &azdext.ProjectConfig{
-					Path: test.path,
-					Services: map[string]*azdext.ServiceConfig{
-						"echo": agent,
-					},
-				},
-			}
-
-			state, errs := assembleState(t.Context(), src)
-			require.Empty(t, errs)
-			require.Len(t, state.Connections, 1)
-			assert.Equal(t, "legacy-bundled", state.Connections[0].Name)
-			assert.Equal(t, "ApiKey | https://legacy.example",
-				state.Connections[0].Detail)
+			assert.Equal(t, tc.want, formatConnectionDetail(tc.category, tc.target))
 		})
 	}
 }

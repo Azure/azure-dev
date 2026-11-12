@@ -213,13 +213,25 @@ func newTagCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 Create `internal/cmd/mcp.go`:
 
+For the optional audit webhook, replace `audit.example.com` below with an HTTPS
+service you operate or explicitly trust, including its DNS administration. Keep
+this hostname fixed in the extension, not supplied by tool arguments or an AI
+client. The handler accepts only that host on the default HTTPS port and does
+not follow redirects. This trust boundary matters because `CheckURL` checks DNS
+before the HTTP transport resolves it again; it does not pin the dial address
+or protect against DNS rebinding by an attacker who controls an allowed host.
+
 ```go
 package cmd
 
 import (
+    "bytes"
     "context"
-    "fmt"
+    "encoding/json"
+    "net/http"
+    "net/url"
     "os"
+    "time"
 
     "github.com/azure/azure-dev/cli/azd/pkg/azdext"
     mcp "github.com/mark3labs/mcp-go/mcp"
@@ -233,16 +245,18 @@ func newMCPCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
         Short: "Start the MCP server for AI-assisted tagging",
         RunE: func(cmd *cobra.Command, args []string) error {
             // Build the MCP server with the fluent builder API
-            mcpServer := azdext.NewMCPServerBuilder("tagger", "0.1.0").
+            builder := azdext.NewMCPServerBuilder("tagger", "0.1.0").
                 // Rate limit: max 10 concurrent, refill 2/sec
                 WithRateLimit(10, 2.0).
                 // Security policy to validate any user-provided URLs
                 WithSecurityPolicy(azdext.DefaultMCPSecurityPolicy()).
                 // System instructions for AI clients
                 WithInstructions(`Use these tools to manage Azure resource tags.
-Always confirm tag operations with the user before applying.`).
-                // Register tools
-                AddTool("list_tags", listTagsHandler, azdext.MCPToolOptions{
+Always confirm tag operations with the user before applying.`)
+
+            // Register tools. The set_tag handler closes over the builder so it
+            // can explicitly validate URL arguments with the configured policy.
+            mcpServer := builder.AddTool("list_tags", listTagsHandler, azdext.MCPToolOptions{
                     Description: "List tags on resources in a resource group",
                 },
                     mcp.WithString("resourceGroup",
@@ -253,8 +267,9 @@ Always confirm tag operations with the user before applying.`).
                         mcp.Description("Azure subscription ID (uses default if omitted)"),
                     ),
                 ).
-                AddTool("set_tag", setTagHandler, azdext.MCPToolOptions{
+                AddTool("set_tag", newSetTagHandler(builder), azdext.MCPToolOptions{
                     Description: "Set a tag on all resources in a resource group",
+                    Destructive: true,
                 },
                     mcp.WithString("resourceGroup",
                         mcp.Required(),
@@ -267,6 +282,9 @@ Always confirm tag operations with the user before applying.`).
                     mcp.WithString("value",
                         mcp.Required(),
                         mcp.Description("Tag value"),
+                    ),
+                    mcp.WithString("auditWebhookUrl",
+                        mcp.Description("HTTPS audit.example.com webhook for the completed tag operation"),
                     ),
                 ).
                 Build()
@@ -298,36 +316,95 @@ func listTagsHandler(ctx context.Context, args azdext.ToolArgs) (*mcp.CallToolRe
     return azdext.MCPJSONResult(tags), nil
 }
 
-// setTagHandler demonstrates security policy usage and error handling.
-func setTagHandler(ctx context.Context, args azdext.ToolArgs) (*mcp.CallToolResult, error) {
-    rg, err := args.RequireString("resourceGroup")
-    if err != nil {
-        return azdext.MCPErrorResult("missing argument: %v", err), nil
-    }
-    key, err := args.RequireString("key")
-    if err != nil {
-        return azdext.MCPErrorResult("missing argument: %v", err), nil
-    }
-    value, err := args.RequireString("value")
-    if err != nil {
-        return azdext.MCPErrorResult("missing argument: %v", err), nil
-    }
+// newSetTagHandler demonstrates security policy usage and error handling.
+func newSetTagHandler(builder *azdext.MCPServerBuilder) azdext.MCPToolHandler {
+    return func(ctx context.Context, args azdext.ToolArgs) (*mcp.CallToolResult, error) {
+        rg, err := args.RequireString("resourceGroup")
+        if err != nil {
+            return azdext.MCPErrorResult("missing argument: %v", err), nil
+        }
+        key, err := args.RequireString("key")
+        if err != nil {
+            return azdext.MCPErrorResult("missing argument: %v", err), nil
+        }
+        value, err := args.RequireString("value")
+        if err != nil {
+            return azdext.MCPErrorResult("missing argument: %v", err), nil
+        }
+        auditWebhookURL := args.OptionalString("auditWebhookUrl", "")
 
-    logger := azdext.NewLogger("mcp.set_tag")
-    logger.Info("setting tag", "resourceGroup", rg, "key", key, "value", value)
+        if auditWebhookURL != "" {
+            webhook, err := url.Parse(auditWebhookURL)
+            if err != nil || webhook.Scheme != "https" || webhook.User != nil ||
+                (webhook.Host != "audit.example.com" && webhook.Host != "audit.example.com:443") {
+                return azdext.MCPErrorResult(
+                    "audit webhook must use the trusted HTTPS host audit.example.com on port 443 without embedded credentials"), nil
+            }
+            policy := builder.SecurityPolicy()
+            if policy == nil {
+                return azdext.MCPErrorResult("audit webhook URL validation is not configured"), nil
+            }
+            if err := policy.CheckURL(auditWebhookURL); err != nil {
+                return azdext.MCPErrorResult("audit webhook URL blocked by security policy"), nil
+            }
+        }
 
-    // ... Azure SDK call to set tag ...
+        logger := azdext.NewLogger("mcp.set_tag")
+        logger.Info("setting tag", "resourceGroup", rg, "key", key, "value", value)
 
-    return azdext.MCPTextResult("Tag %s=%s applied to resource group %s", key, value, rg), nil
+        // ... Azure SDK call to set tag ...
+
+        if auditWebhookURL != "" {
+            payload, err := json.Marshal(map[string]string{
+                "resourceGroup": rg,
+                "key":           key,
+                "value":         value,
+            })
+            if err != nil {
+                return azdext.MCPErrorResult("encoding audit webhook payload: %v", err), nil
+            }
+            req, err := http.NewRequestWithContext(
+                ctx, http.MethodPost, auditWebhookURL, bytes.NewReader(payload))
+            if err != nil {
+                return azdext.MCPErrorResult("creating audit webhook request failed"), nil
+            }
+            req.Header.Set("Content-Type", "application/json")
+
+            client := &http.Client{
+                Timeout: 10 * time.Second,
+                CheckRedirect: func(req *http.Request, via []*http.Request) error {
+                    return http.ErrUseLastResponse
+                },
+            }
+            resp, err := client.Do(req)
+            if err != nil {
+                return azdext.MCPErrorResult("sending audit webhook failed or timed out"), nil
+            }
+            defer resp.Body.Close()
+            if resp.StatusCode >= http.StatusMultipleChoices {
+                return azdext.MCPErrorResult(
+                    "audit webhook returned unsuccessful status %d (redirects are not followed)", resp.StatusCode), nil
+            }
+        }
+
+        return azdext.MCPTextResult(
+            "Tag %s=%s applied to resource group %s", key, value, rg), nil
+    }
 }
 ```
 
 **Key patterns demonstrated:**
 
-- `MCPServerBuilder` fluent API with rate limiting and security policy.
+- `MCPServerBuilder` fluent API with rate limiting and an attached security policy.
 - `ToolArgs.RequireString` / `OptionalString` for typed argument access.
 - `MCPTextResult`, `MCPJSONResult`, `MCPErrorResult` for response construction.
-- `DefaultMCPSecurityPolicy` for SSRF protection.
+- Explicit, handler-owned URL validation with `SecurityPolicy().CheckURL` before
+  using user-provided URLs. Attaching `DefaultMCPSecurityPolicy` alone does not
+  inspect tool arguments or enforce SSRF protection.
+- A fixed trusted webhook host, no redirects, and a 10-second HTTP timeout.
+  Webhook failures are tool errors; they do not undo the already completed tag
+  operation. Errors omit raw URLs and underlying HTTP errors to avoid exposing
+  embedded URL credentials or query tokens.
 
 ---
 

@@ -25,24 +25,29 @@ func configWith(names ...string) *project.EvalConfig {
 // resolves without a prompt, so none of them reaches the azd client.
 func TestChooseEvalOnlyAsksWhenThereIsAChoice(t *testing.T) {
 	t.Run("a name given is never second-guessed", func(t *testing.T) {
-		got := chooseEval(newEvalCreateCommand(), configWith("a", "b"), "b")
+		got, err := chooseEval(newEvalCreateCommand(), configWith("a", "b"), "b")
+		require.NoError(t, err)
 		assert.Equal(t, "b", got)
 	})
 
 	t.Run("one declared eval needs no question", func(t *testing.T) {
-		got := chooseEval(newEvalCreateCommand(), configWith("only"), "")
+		got, err := chooseEval(newEvalCreateCommand(), configWith("only"), "")
+		require.NoError(t, err)
 		assert.Empty(t, got, "the caller resolves the single eval, so nothing is chosen here")
 	})
 
 	t.Run("no configuration is left to the caller", func(t *testing.T) {
-		assert.Empty(t, chooseEval(newEvalCreateCommand(), nil, ""))
+		got, err := chooseEval(newEvalCreateCommand(), nil, "")
+		require.NoError(t, err)
+		assert.Empty(t, got)
 	})
 
 	t.Run("--no-prompt keeps the error", func(t *testing.T) {
 		cmd := newEvalCreateCommand()
 		cmd.Flags().Bool("no-prompt", true, "")
 
-		got := chooseEval(cmd, configWith("a", "b"), "")
+		got, err := chooseEval(cmd, configWith("a", "b"), "")
+		require.NoError(t, err)
 
 		assert.Empty(t, got,
 			"there is nobody to ask, so the command must still refuse rather than guess")
@@ -59,7 +64,10 @@ func TestSeveralEvalsErrorStillNamesEveryCandidate(t *testing.T) {
 	// This test is about the message, not about network behavior.
 	cmd.Flags().Bool("no-prompt", true, "")
 
-	_, err := cfg.Eval(chooseEval(cmd, cfg, ""))
+	chosen, chooseErr := chooseEval(cmd, cfg, "")
+	require.NoError(t, chooseErr)
+
+	_, err := cfg.Eval(chosen)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "obs-trace-eval")
@@ -70,6 +78,11 @@ func TestSeveralEvalsErrorStillNamesEveryCandidate(t *testing.T) {
 // A directory with no configuration must not turn into a prompt, and must not
 // swallow the error the command that opens it properly will raise.
 func TestChooseEvalInLeavesAnAbsentConfigAlone(t *testing.T) {
-	assert.Empty(t, chooseEvalIn(newEvalCreateCommand(), t.TempDir(), ""))
-	assert.Equal(t, "named", chooseEvalIn(newEvalCreateCommand(), t.TempDir(), "named"))
+	absent, err := chooseEvalIn(newEvalCreateCommand(), t.TempDir(), "")
+	require.NoError(t, err)
+	assert.Empty(t, absent)
+
+	named, err := chooseEvalIn(newEvalCreateCommand(), t.TempDir(), "named")
+	require.NoError(t, err)
+	assert.Equal(t, "named", named)
 }

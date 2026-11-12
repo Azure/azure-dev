@@ -32,11 +32,11 @@ const (
 	// AgentDefinitionSourceInline means the definition was read from the agent
 	// service entry's service-level (inline) properties — the unified shape.
 	AgentDefinitionSourceInline AgentDefinitionSource = iota
-	// AgentDefinitionSourceLegacyConfig means the definition was read from the
-	// deprecated config-nested shape (a populated `config:` on the service).
+	// AgentDefinitionSourceLegacyConfig is retained for compatibility with
+	// callers that report historical source shapes. Runtime loading rejects it.
 	AgentDefinitionSourceLegacyConfig
-	// AgentDefinitionSourceDisk means the definition was read from a legacy
-	// agent.yaml/agent.yml file on disk (the deprecated file-based shape).
+	// AgentDefinitionSourceDisk is retained for compatibility with callers that
+	// report historical source shapes. Runtime loading rejects it.
 	AgentDefinitionSourceDisk
 )
 
@@ -129,7 +129,6 @@ func orphanedConfigEnvNames(svc *azdext.ServiceConfig) []string {
 type AgentDefinitionInline struct {
 	agent_yaml.AgentDefinition `json:",inline"`
 	Language                   string                             `json:"language,omitempty"`
-	Toolbox                    *agent_yaml.ToolboxReference       `json:"toolbox,omitempty"`
 	Protocols                  []agent_yaml.ProtocolVersionRecord `json:"protocols,omitempty"`
 	RegistryConnectionID       string                             `json:"registryConnectionId,omitempty"`
 	// EnvironmentVariables reads the deprecated inline shape.
@@ -140,10 +139,13 @@ type AgentDefinitionInline struct {
 	Container            *ContainerSettings                `json:"container,omitempty"`
 	Policies             []agent_yaml.Policy               `json:"policies,omitempty"`
 	SessionConfiguration *agent_yaml.SessionConfiguration  `json:"sessionConfiguration,omitempty"`
+	EnableMemorySnapshot *bool                             `json:"enableMemorySnapshot,omitempty"`
 
 	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
 	// workflow entries are byte-for-byte unchanged.
+	DefinitionOverlay  map[string]any                      `json:"definitionOverlay,omitempty"`
 	ModelType          agent_yaml.VoiceModelType           `json:"modelType,omitempty"`
+	SubProtocol        agent_yaml.VoiceSubProtocol         `json:"subProtocol,omitempty"`
 	Model              *agent_yaml.Model                   `json:"model,omitempty"`
 	TargetAgent        *agent_yaml.VoiceTargetAgent        `json:"targetAgent,omitempty"`
 	ConversationEngine *agent_yaml.VoiceConversationEngine `json:"conversationEngine,omitempty"`
@@ -162,6 +164,7 @@ type AgentDefinitionInline struct {
 	MaxOutputTokens    any                                 `json:"maxOutputTokens,omitempty"`
 	Include            []string                            `json:"include,omitempty"`
 	Telephony          *agent_yaml.VoiceTelephony          `json:"telephony,omitempty"`
+	Delegation         *agent_yaml.LiveVoiceDelegation     `json:"delegation,omitempty"`
 }
 
 // voiceAgentDefinitionToInline projects a VoiceAgent into the inline definition
@@ -169,7 +172,9 @@ type AgentDefinitionInline struct {
 func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInline {
 	return AgentDefinitionInline{
 		AgentDefinition:    va.AgentDefinition,
+		DefinitionOverlay:  va.DefinitionOverlay,
 		ModelType:          va.ModelType,
+		SubProtocol:        va.SubProtocol,
 		Model:              va.Model,
 		TargetAgent:        va.TargetAgent,
 		ConversationEngine: va.ConversationEngine,
@@ -188,6 +193,8 @@ func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInlin
 		MaxOutputTokens:    va.MaxOutputTokens,
 		Include:            va.Include,
 		Telephony:          va.Telephony,
+		Delegation:         va.Delegation,
+		Policies:           va.Policies,
 	}
 }
 
@@ -195,7 +202,9 @@ func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInlin
 func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 	return agent_yaml.VoiceAgent{
 		AgentDefinition:    d.AgentDefinition,
+		DefinitionOverlay:  d.DefinitionOverlay,
 		ModelType:          d.ModelType,
+		SubProtocol:        d.SubProtocol,
 		Model:              d.Model,
 		TargetAgent:        d.TargetAgent,
 		ConversationEngine: d.ConversationEngine,
@@ -214,6 +223,8 @@ func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 		MaxOutputTokens:    d.MaxOutputTokens,
 		Include:            d.Include,
 		Telephony:          d.Telephony,
+		Delegation:         d.Delegation,
+		Policies:           d.Policies,
 	}
 }
 
@@ -225,7 +236,6 @@ func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInlin
 	inline := AgentDefinitionInline{
 		AgentDefinition:      ca.AgentDefinition,
 		Language:             ca.Language,
-		Toolbox:              ca.Toolbox,
 		Protocols:            ca.Protocols,
 		AgentEndpoint:        ca.AgentEndpoint,
 		AgentCard:            ca.AgentCard,
@@ -233,6 +243,7 @@ func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInlin
 		Policies:             ca.Policies,
 		RegistryConnectionID: ca.RegistryConnectionID,
 		SessionConfiguration: ca.SessionConfiguration,
+		EnableMemorySnapshot: ca.EnableMemorySnapshot,
 	}
 
 	var container *ContainerSettings
@@ -268,7 +279,6 @@ func (d AgentDefinitionInline) toContainerAgent(
 	ca := agent_yaml.ContainerAgent{
 		AgentDefinition:      d.AgentDefinition,
 		Language:             d.Language,
-		Toolbox:              d.Toolbox,
 		Image:                image,
 		RegistryConnectionID: d.RegistryConnectionID,
 		Protocols:            d.Protocols,
@@ -278,6 +288,7 @@ func (d AgentDefinitionInline) toContainerAgent(
 		CodeConfiguration:    d.CodeConfiguration,
 		Policies:             d.Policies,
 		SessionConfiguration: d.SessionConfiguration,
+		EnableMemorySnapshot: d.EnableMemorySnapshot,
 	}
 
 	if container != nil && container.Resources != nil {
@@ -381,19 +392,50 @@ func structKind(s *structpb.Struct) string {
 	return v.GetStringValue()
 }
 
-// LoadAgentDefinition resolves the hosted-agent definition for an azure.ai.agent
-// service. It prefers the unified inline shape (service-level properties), falls
-// back to the deprecated config-nested shape, and finally to a legacy
-// agent.yaml/agent.yml file on disk so older projects keep building and
-// deploying during the deprecation window.
+func validateRuntimeAgentSources(svc *azdext.ServiceConfig) error {
+	if svc != nil && svc.GetHost() != "" && svc.GetHost() != "azure.ai.agent" {
+		return nil
+	}
+	if value := os.Getenv("AGENT_DEFINITION_PATH"); value != "" {
+		return exterrors.Validation(
+			exterrors.CodeUnsupportedAgentDefinitionPath,
+			"AGENT_DEFINITION_PATH is no longer supported for agent runtime configuration",
+			"unset AGENT_DEFINITION_PATH, then move the agent definition to the azure.ai.agent service in azure.yaml, "+
+				"or add an explicit root $ref on the service entry to a direct agent definition",
+		)
+	}
+	if svc != nil && svc.GetHost() == "azure.ai.agent" &&
+		svc.GetConfig() != nil && len(svc.GetConfig().GetFields()) > 0 {
+		return exterrors.Validation(
+			exterrors.CodeDeprecatedAgentServiceConfig,
+			fmt.Sprintf("service %q uses the unsupported nested config block", svc.GetName()),
+			"move the agent definition to service-level properties in azure.yaml, "+
+				"or add an explicit root $ref on the service entry to a direct agent definition",
+		)
+	}
+	return nil
+}
+
+// ValidateRuntimeAgentSources rejects runtime definition sources that are no
+// longer supported before lifecycle hooks normalize or mutate service config.
+func ValidateRuntimeAgentSources(svc *azdext.ServiceConfig) error {
+	return validateRuntimeAgentSources(svc)
+}
+
+// LoadHostedAgentDefinition resolves the hosted-agent definition for an azure.ai.agent
+// service. The definition must be carried by service-level properties, either
+// directly or through the existing root $ref behavior.
 //
 // It returns the parsed ContainerAgent, whether it is a hosted agent (false for
 // other kinds), and the source the definition came from (see
 // [AgentDefinitionSource.IsLegacy]).
-func LoadAgentDefinition(
+func LoadHostedAgentDefinition(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.ContainerAgent, bool, AgentDefinitionSource, error) {
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceInline, err
+	}
 	ca, isHosted, found, source, err :=
 		AgentDefinitionFromResolvedService(svc, projectRoot)
 	if err != nil {
@@ -417,52 +459,60 @@ func AgentDefinitionFromResolvedService(
 	AgentDefinitionSource,
 	error,
 ) {
-	candidates := []struct {
-		props  *structpb.Struct
-		source AgentDefinitionSource
-	}{
-		{svc.GetAdditionalProperties(), AgentDefinitionSourceInline},
-		{svc.GetConfig(), AgentDefinitionSourceLegacyConfig},
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return agent_yaml.ContainerAgent{}, false, false, AgentDefinitionSourceInline, err
 	}
-	for _, candidate := range candidates {
-		if candidate.props == nil ||
-			len(candidate.props.GetFields()) == 0 {
-			continue
-		}
-		resolved, err := resolveServiceProps(
-			candidate.props,
-			svc.GetName(),
-			projectRoot,
-		)
-		if err != nil {
-			return agent_yaml.ContainerAgent{},
-				false,
-				false,
-				candidate.source,
-				err
-		}
-		if !structHasKind(resolved) {
-			continue
-		}
-		image := svc.GetImage()
-		if image == "" {
-			if value := resolved.GetFields()["image"]; value != nil {
-				image = value.GetStringValue()
-			}
-		}
-		ca, isHosted, err := agentDefinitionFromStruct(
-			resolved,
-			image,
-			svc.GetEnvironment(),
-		)
-		return ca, isHosted, true, candidate.source, err
-	}
+	return agentDefinitionFromResolvedService(svc, projectRoot)
+}
 
-	return agent_yaml.ContainerAgent{},
-		false,
-		false,
-		AgentDefinitionSourceInline,
-		nil
+// AgentDefinitionFromResolvedServiceForInit preserves init-only compatibility
+// with legacy service shapes while runtime commands enforce unified sources.
+func AgentDefinitionFromResolvedServiceForInit(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (
+	agent_yaml.ContainerAgent,
+	bool,
+	bool,
+	AgentDefinitionSource,
+	error,
+) {
+	return agentDefinitionFromResolvedService(svc, projectRoot)
+}
+
+func agentDefinitionFromResolvedService(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (
+	agent_yaml.ContainerAgent,
+	bool,
+	bool,
+	AgentDefinitionSource,
+	error,
+) {
+	props := svc.GetAdditionalProperties()
+	if props == nil || len(props.GetFields()) == 0 {
+		return agent_yaml.ContainerAgent{}, false, false, AgentDefinitionSourceInline, nil
+	}
+	resolved, err := resolveServiceProps(props, svc.GetName(), projectRoot)
+	if err != nil {
+		return agent_yaml.ContainerAgent{}, false, false, AgentDefinitionSourceInline, err
+	}
+	if !structHasKind(resolved) {
+		return agent_yaml.ContainerAgent{}, false, false, AgentDefinitionSourceInline, nil
+	}
+	image := svc.GetImage()
+	if image == "" {
+		if value := resolved.GetFields()["image"]; value != nil {
+			image = value.GetStringValue()
+		}
+	}
+	ca, isHosted, err := agentDefinitionFromStruct(
+		resolved,
+		image,
+		svc.GetEnvironment(),
+	)
+	return ca, isHosted, true, AgentDefinitionSourceInline, err
 }
 
 // AgentDefinitionUsesFileRef reports whether a root $ref supplies the
@@ -471,47 +521,39 @@ func AgentDefinitionUsesFileRef(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (bool, error) {
-	for _, props := range []*structpb.Struct{
-		svc.GetAdditionalProperties(),
-		svc.GetConfig(),
-	} {
-		if props == nil || props.GetFields()["$ref"] == nil {
-			continue
-		}
-		refOnly := &structpb.Struct{Fields: map[string]*structpb.Value{
-			"$ref": props.GetFields()["$ref"],
-		}}
-		resolved, err := resolveServiceProps(
-			refOnly,
-			svc.GetName(),
-			projectRoot,
-		)
-		if err != nil {
-			return false, err
-		}
-		if structHasKind(resolved) {
-			return true, nil
-		}
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return false, err
 	}
-	return false, nil
+	props := svc.GetAdditionalProperties()
+	if props == nil || props.GetFields()["$ref"] == nil {
+		return false, nil
+	}
+	refOnly := &structpb.Struct{Fields: map[string]*structpb.Value{
+		"$ref": props.GetFields()["$ref"],
+	}}
+	resolved, err := resolveRawServiceProps(
+		refOnly,
+		svc.GetName(),
+		projectRoot,
+	)
+	if err != nil {
+		return false, err
+	}
+	return structHasKind(resolved), nil
 }
 
-// AgentDefinitionFromService returns the agent definition carried inline on the
-// service entry — the unified service-level shape, or the deprecated
-// config-nested shape. found is false when the entry carries no inline
-// definition, in which case callers fall back to a legacy agent.yaml on disk.
+// AgentDefinitionFromService returns the direct agent definition carried on the
+// service entry. It does not resolve a root $ref.
 func AgentDefinitionFromService(
 	svc *azdext.ServiceConfig,
 ) (agent_yaml.ContainerAgent, bool, bool, AgentDefinitionSource, error) {
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return agent_yaml.ContainerAgent{}, false, false, AgentDefinitionSourceInline, err
+	}
 	inlineStruct := svc.GetAdditionalProperties()
 	source := AgentDefinitionSourceInline
 	if !structHasKind(inlineStruct) {
-		if cfg := svc.GetConfig(); structHasKind(cfg) {
-			inlineStruct = cfg
-			source = AgentDefinitionSourceLegacyConfig
-		} else {
-			return agent_yaml.ContainerAgent{}, false, false, source, nil
-		}
+		return agent_yaml.ContainerAgent{}, false, false, source, nil
 	}
 
 	ca, isHosted, err := agentDefinitionFromStruct(
@@ -525,13 +567,16 @@ func AgentDefinitionFromService(
 // LoadServiceTargetAgentConfig reads the agent service's deploy/provision config
 // (container settings, tool resources, tool connections, startup command, and —
 // for pre-split projects — bundled deployments) from the
-// service-level properties, falling back to the deprecated config-nested shape.
+// service-level properties.
 // Callers resolve file references before loading the effective configuration.
 // Connections and toolbox definitions belong to standalone services, not agents.
 // Prompt connection names stay on the definition for its own validation graph;
 // they are not decoded as generic Connection resources here.
 func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgentConfig, error) {
 	s := ServiceConfigProps(svc)
+	if err := validateHostedAgentContainerSettings(svc.GetName(), s); err != nil {
+		return nil, err
+	}
 	cfg := &ServiceTargetAgentConfig{}
 	if s == nil {
 		return cfg, nil
@@ -562,6 +607,20 @@ func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgen
 		s = &structpb.Struct{Fields: maps.Clone(s.GetFields())}
 		delete(s.Fields, "connections")
 	}
+	if s.GetFields()["toolbox"] != nil {
+		if s.GetFields()["toolboxes"] != nil {
+			return nil, fmt.Errorf(
+				"agent service %q cannot specify both \"toolbox\" and \"toolboxes\"; "+
+					"remove \"toolbox\" and list each azure.ai.toolbox service under \"toolboxes\"",
+				svc.GetName(),
+			)
+		}
+		return nil, fmt.Errorf(
+			"singular \"toolbox\" on agent service %q is no longer supported; "+
+				"use \"toolboxes\" with a list of azure.ai.toolbox service names",
+			svc.GetName(),
+		)
+	}
 	for _, toolbox := range s.GetFields()["toolboxes"].GetListValue().GetValues() {
 		if name, ok := toolbox.Kind.(*structpb.Value_StringValue); ok && strings.TrimSpace(name.StringValue) != "" {
 			continue
@@ -588,18 +647,16 @@ func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgen
 	return cfg, nil
 }
 
-// ServiceConfigProps returns the agent service's service-level (inline)
-// properties when present, otherwise the deprecated config-nested struct. It is
-// the single accessor for code that needs the raw property struct regardless of
-// which shape a project uses.
+// ServiceConfigProps returns non-empty AdditionalProperties first.
+// An azure.ai.agent service never falls back to its nested Config and returns
+// nil when service-level properties are absent. Other providers may fall back
+// to Config.
 func ServiceConfigProps(svc *azdext.ServiceConfig) *structpb.Struct {
 	if s := svc.GetAdditionalProperties(); s != nil && len(s.GetFields()) > 0 {
-		if svc.GetHost() == "azure.ai.agent" &&
-			!structHasKind(s) &&
-			structHasKind(svc.GetConfig()) {
-			return svc.GetConfig()
-		}
 		return s
+	}
+	if svc.GetHost() == "azure.ai.agent" {
+		return nil
 	}
 	return svc.GetConfig()
 }
@@ -616,13 +673,16 @@ func ResolveServiceConfigProps(
 	return resolveServiceProps(props, svc.GetName(), projectRoot)
 }
 
-// ResolveServiceConfigInPlace expands local file references in both
-// service-level properties and legacy config. It also normalizes
+// ResolveServiceConfigInPlace expands local file references in service-level
+// properties and, for non-agent providers, Config. It also normalizes
 // environment scalars so consumers receive an effective config.
 func ResolveServiceConfigInPlace(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) error {
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return err
+	}
 	if props := svc.GetAdditionalProperties(); props != nil &&
 		len(props.GetFields()) > 0 {
 		resolved, err := resolveServiceProps(
@@ -635,18 +695,52 @@ func ResolveServiceConfigInPlace(
 		}
 		svc.AdditionalProperties = resolved
 	}
-	if config := svc.GetConfig(); config != nil &&
-		len(config.GetFields()) > 0 {
-		resolved, err := resolveServiceProps(
-			config,
-			svc.GetName(),
-			projectRoot,
-		)
-		if err != nil {
-			return err
+	if svc.GetHost() != "azure.ai.agent" {
+		config := svc.GetConfig()
+		if config != nil &&
+			len(config.GetFields()) > 0 {
+			resolved, err := resolveServiceProps(
+				config,
+				svc.GetName(),
+				projectRoot,
+			)
+			if err != nil {
+				return err
+			}
+			svc.Config = resolved
 		}
-		svc.Config = resolved
 	}
+	return nil
+}
+
+// ResolveAgentContainerSettings resolves and validates only the hosted container subtree before defaults.
+func ResolveAgentContainerSettings(svc *azdext.ServiceConfig, projectRoot string) error {
+	props := ServiceConfigProps(svc)
+	if structKind(props) != string(agent_yaml.AgentKindHosted) {
+		return nil
+	}
+	container, declared := props.GetFields()["container"]
+	if !declared {
+		return nil
+	}
+	resolved, err := foundry.ResolveFileRefs(
+		map[string]any{"kind": "hosted", "container": container.AsInterface()}, projectRoot,
+	)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("service %q has invalid container references", svc.GetName()),
+			"check that file references in container.resources are readable local files with valid YAML or JSON",
+		)
+	}
+	candidate, err := structpb.NewStruct(resolved)
+	if err != nil {
+		return fmt.Errorf("encode resolved container settings: %w", err)
+	}
+	if err := validateHostedAgentContainerSettings(svc.GetName(), candidate); err != nil {
+		return err
+	}
+	props.Fields["container"] = candidate.Fields["container"]
 	return nil
 }
 
@@ -678,6 +772,21 @@ func resolveServiceProps(
 	serviceName string,
 	projectRoot string,
 ) (*structpb.Struct, error) {
+	resolved, err := resolveRawServiceProps(props, serviceName, projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateMemorySnapshotSetting(resolved); err != nil {
+		return nil, err
+	}
+	return resolved, nil
+}
+
+func resolveRawServiceProps(
+	props *structpb.Struct,
+	serviceName string,
+	projectRoot string,
+) (*structpb.Struct, error) {
 	if err := validateRootRefCoreFields(props, projectRoot); err != nil {
 		return nil, fmt.Errorf(
 			"validating service %q config: %w",
@@ -685,10 +794,32 @@ func resolveServiceProps(
 			err,
 		)
 	}
-	resolved, err := foundry.ResolveFileRefs(
-		props.AsMap(),
-		projectRoot,
-	)
+	values := props.AsMap()
+	var resolved map[string]any
+	var err error
+	if ref, ok := values[AgentDefinitionRefKey].(string); ok && strings.TrimSpace(ref) != "" {
+		// Normalize a direct voice definition while its root-ref provenance is
+		// still known. Inline siblings are camelCase authoring and shallowly
+		// override the normalized file, matching ResolveFileRefs semantics.
+		resolved, err = foundry.ResolveFileRefs(map[string]any{AgentDefinitionRefKey: ref}, projectRoot)
+		if err == nil && agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(fmt.Sprint(resolved["kind"]))) {
+			resolved, err = normalizeRootVoiceDefinitionMap(resolved)
+		}
+		if err == nil {
+			siblings := maps.Clone(values)
+			delete(siblings, AgentDefinitionRefKey)
+			var overlays map[string]any
+			overlays, err = foundry.ResolveFileRefs(siblings, projectRoot)
+			if err == nil && agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(fmt.Sprint(resolved["kind"]))) {
+				overlays, err = rejectRootStyleVoiceOverlayAliases(overlays)
+			}
+			if err == nil {
+				maps.Copy(resolved, overlays)
+			}
+		}
+	} else {
+		resolved, err = foundry.ResolveFileRefs(values, projectRoot)
+	}
 	if err != nil {
 		return nil, fmt.Errorf(
 			"resolving service %q config: %w",
@@ -823,8 +954,12 @@ func SetAgentContainerSettings(
 	svc *azdext.ServiceConfig,
 	container *ContainerSettings,
 ) error {
-	props := ServiceConfigProps(svc)
-	legacy := props != nil && props == svc.GetConfig()
+	props := svc.GetAdditionalProperties()
+	legacy := false
+	if props == nil || (!structHasKind(props) && structHasKind(svc.GetConfig())) {
+		props = svc.GetConfig()
+		legacy = props != nil
+	}
 	if props == nil {
 		props = &structpb.Struct{}
 	}
@@ -846,6 +981,26 @@ func SetAgentContainerSettings(
 	return nil
 }
 
+func validateMemorySnapshotSetting(props *structpb.Struct) error {
+	if setting, exists := props.GetFields()["enableMemorySnapshot"]; exists {
+		if structKind(props) != string(agent_yaml.AgentKindHosted) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"enableMemorySnapshot is only supported on hosted agents",
+				"remove enableMemorySnapshot or configure it on a hosted agent service",
+			)
+		}
+		if _, isBoolean := setting.GetKind().(*structpb.Value_BoolValue); !isBoolean {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"enableMemorySnapshot must be a boolean",
+				"set enableMemorySnapshot to true or false, or omit it to keep memory snapshots disabled",
+			)
+		}
+	}
+	return nil
+}
+
 // agentDefinitionFromStruct builds the ContainerAgent from an inline/config
 // struct that carries the agent definition as service-level properties. coreImage
 // is the value of the service's `image` field, which is carried on the core
@@ -855,6 +1010,12 @@ func agentDefinitionFromStruct(
 	coreImage string,
 	environment map[string]string,
 ) (agent_yaml.ContainerAgent, bool, error) {
+	if err := validateMemorySnapshotSetting(s); err != nil {
+		return agent_yaml.ContainerAgent{}, false, err
+	}
+	if err := validateDefinitionOverlayKind(s); err != nil {
+		return agent_yaml.ContainerAgent{}, false, err
+	}
 	// The kind gate has to come before the decode, not after it. Every agent
 	// kind lands in the same property bag but they do not agree on types: a
 	// prompt agent's `model` is a deployment name, while the hosted and voice
@@ -862,6 +1023,14 @@ func agentDefinitionFromStruct(
 	// valid prompt agent with a type error naming a field it does not have.
 	if structKind(s) == string(agent_yaml.AgentKindPrompt) {
 		return agent_yaml.ContainerAgent{}, false, nil
+	}
+	if agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(structKind(s))) {
+		if err := validateUnsupportedVoiceFields(s); err != nil {
+			return agent_yaml.ContainerAgent{}, false, err
+		}
+		if err := validateVoiceRawProperties(s); err != nil {
+			return agent_yaml.ContainerAgent{}, false, err
+		}
 	}
 
 	var inline AgentDefinitionInline
@@ -872,19 +1041,35 @@ func agentDefinitionFromStruct(
 			"re-run `azd ai agent init` to regenerate the agent service entry",
 		)
 	}
+	copySnakeDefinitionOverlay(s, &inline)
 
 	if inline.Kind != agent_yaml.AgentKindHosted {
 		definition := any(s.AsMap())
 		if agent_yaml.IsVoiceAgentKind(inline.Kind) {
-			if err := validateVoiceInlineAgent(inline); err != nil {
+			if err := validateVoiceInlineAgent(inline, s); err != nil {
 				return agent_yaml.ContainerAgent{}, false, err
 			}
 			definition = inline.toVoiceAgent()
 		}
-		if err := validateAgentServiceDefinition(definition); err != nil {
+		if err := validateDirectAgentDefinition(definition); err != nil {
 			return agent_yaml.ContainerAgent{}, false, err
 		}
 		return agent_yaml.ContainerAgent{}, false, nil
+	}
+
+	if s.GetFields()["toolbox"] != nil {
+		if s.GetFields()["toolboxes"] != nil {
+			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"cannot specify both \"toolbox\" and \"toolboxes\"",
+				"remove 'toolbox' and list each azure.ai.toolbox service under 'toolboxes'",
+			)
+		}
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"field \"toolbox\" is no longer supported; use \"toolboxes\"",
+			"replace 'toolbox' with 'toolboxes' listing your azure.ai.toolbox service names",
+		)
 	}
 
 	if inline.ModelType == agent_yaml.VoiceModelTypeHostedAgent || inline.TargetAgent != nil ||
@@ -914,7 +1099,7 @@ func agentDefinitionFromStruct(
 
 	ca := inline.toContainerAgent(cfg.Container, coreImage, environment)
 
-	if err := validateAgentServiceDefinition(ca); err != nil {
+	if err := validateDirectAgentDefinition(ca); err != nil {
 		return agent_yaml.ContainerAgent{}, false, err
 	}
 
@@ -929,7 +1114,7 @@ func agentDefinitionFromStruct(
 	return ca, true, nil
 }
 
-func validateVoiceInlineAgent(inline AgentDefinitionInline) error {
+func validateVoiceInlineAgent(inline AgentDefinitionInline, s *structpb.Struct) error {
 	if inline.CodeConfiguration != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
@@ -951,21 +1136,56 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline) error {
 			"configure environment variables on the hosted target",
 		)
 	}
-	if len(inline.Protocols) > 0 {
+	if s.GetFields()["protocols"] != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"protocols are not supported on voice agents",
 			"configure protocols on the hosted target",
 		)
 	}
-	if inline.Toolbox != nil {
+	if s.GetFields()["toolbox"] != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"toolbox is not supported on voice agents",
 			"remove toolbox from the voice agent definition",
 		)
 	}
-	if len(inline.Policies) > 0 {
+	if s.GetFields()["toolboxes"] != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"toolboxes is not supported on voice agents",
+			"remove toolboxes from the voice agent definition",
+		)
+	}
+	if s.GetFields()["policies"] != nil {
+		if inline.SubProtocol == agent_yaml.VoiceSubProtocolLive {
+			if len(inline.Policies) != 1 {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"GPT Live policies must contain exactly one named rai_policy",
+					"provide one RAI policy entry or remove the policies field",
+				)
+			}
+			policy := inline.Policies[0]
+			if policy.Type != agent_yaml.PolicyTypeRai || policy.RaiPolicyName == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"GPT Live policies must contain one named rai_policy",
+					"set type to rai_policy and provide raiPolicyName",
+				)
+			}
+			if err := agent_yaml.ValidateRaiPolicyName(policy.RaiPolicyName); err != nil {
+				return exterrors.Validation(exterrors.CodeInvalidAgentManifest, err.Error(), "use a valid RAI policy name or ARM ID")
+			}
+			if policy.InvocationsModeration != nil {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"invocationsModeration is not supported for GPT Live",
+					"remove invocationsModeration from the RAI policy",
+				)
+			}
+			return validateDirectAgentDefinition(inline.toVoiceAgent())
+		}
 		for _, policy := range inline.Policies {
 			if policy.InvocationsModeration != nil {
 				return exterrors.Validation(
@@ -982,13 +1202,67 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline) error {
 				"configuration to the hosted target",
 		)
 	}
-	if err := validateAgentServiceDefinition(inline.toVoiceAgent()); err != nil {
+	if err := validateDirectAgentDefinition(inline.toVoiceAgent()); err != nil {
 		return err
 	}
 	return nil
 }
 
-func validateAgentServiceDefinition(definition any) error {
+func validateDefinitionOverlayKind(s *structpb.Struct) error {
+	fields := s.GetFields()
+	camel, hasCamel := fields["definitionOverlay"]
+	snake, hasSnake := fields["definition_overlay"]
+	if !hasCamel && !hasSnake {
+		return nil
+	}
+	if !agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(structKind(s))) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"definitionOverlay is only supported on voice agents",
+			"remove definitionOverlay or change the service to kind: voice",
+		)
+	}
+	if hasCamel && hasSnake {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"cannot specify both definitionOverlay and definition_overlay",
+			"keep only one definition overlay spelling",
+		)
+	}
+	overlay := camel
+	if hasSnake {
+		overlay = snake
+	}
+	if overlay == nil || overlay.GetStructValue() == nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"definitionOverlay must be an object and cannot be null",
+			"set definitionOverlay to an object or remove it",
+		)
+	}
+	return nil
+}
+
+func copySnakeDefinitionOverlay(s *structpb.Struct, inline *AgentDefinitionInline) {
+	if overlay := s.GetFields()["definition_overlay"]; overlay != nil {
+		inline.DefinitionOverlay = overlay.GetStructValue().AsMap()
+	}
+}
+
+func validateUnsupportedVoiceFields(s *structpb.Struct) error {
+	for _, field := range []string{"subagent_config", "subagentConfig", "interim_response", "interimResponse"} {
+		if _, found := s.GetFields()[field]; found {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("%s is not supported by this azd version", field),
+				"remove the field or upgrade azd",
+			)
+		}
+	}
+	return nil
+}
+
+func validateDirectAgentDefinition(definition any) error {
 	defBytes, err := yaml.Marshal(definition)
 	if err != nil {
 		return exterrors.Validation(
@@ -1010,15 +1284,42 @@ func validateAgentServiceDefinition(definition any) error {
 	return nil
 }
 
-// agentDefinitionFromDisk reads a legacy agent.yaml/agent.yml from the service
-// directory. This is the deprecation fallback for projects written before the
-// definition moved into azure.yaml.
+// agentDefinitionFromDisk detects known legacy filenames using metadata only
+// and returns migration guidance. Runtime never reads these files.
 func agentDefinitionFromDisk(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.ContainerAgent, bool, AgentDefinitionSource, error) {
-	for _, name := range []string{"agent.yaml", "agent.yml"} {
-		defPath, err := paths.JoinAllowRoot(projectRoot, svc.GetRelativePath(), name)
+	type legacyFile struct {
+		name       string
+		suggestion string
+	}
+	files := []legacyFile{
+		{
+			name: "agent.yaml",
+			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"an explicit root $ref on the service entry to the remaining direct definition",
+		},
+		{
+			name: "agent.yml",
+			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"an explicit root $ref on the service entry to the remaining direct definition",
+		},
+		{
+			name: "agent.manifest.yaml",
+			suggestion: "extract the AgentManifest template into a direct agent definition, then move it into " +
+				"the azure.ai.agent service in azure.yaml or reference it with an explicit root $ref on the service entry",
+		},
+		{
+			name: "agent.manifest.yml",
+			suggestion: "extract the AgentManifest template into a direct agent definition, then move it into " +
+				"the azure.ai.agent service in azure.yaml or reference it with an explicit root $ref on the service entry",
+		},
+	}
+	for _, legacy := range files {
+		defPath, err := paths.JoinAllowRoot(projectRoot, svc.GetRelativePath(), legacy.name)
 		if err != nil {
 			return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, exterrors.Validation(
 				exterrors.CodeInvalidServiceConfig,
@@ -1026,150 +1327,42 @@ func agentDefinitionFromDisk(
 				"update azure.yaml so the agent service path stays within the project directory",
 			)
 		}
-		data, err := os.ReadFile(defPath) //nolint:gosec // path derived from azd project config
-		if err != nil {
+		if _, err := os.Stat(defPath); err != nil {
 			continue
 		}
-		ca, isHosted, err := parseContainerAgentYAML(data)
-		return ca, isHosted, AgentDefinitionSourceDisk, err
+		return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, exterrors.Validation(
+			exterrors.CodeAgentDefinitionNotFound,
+			fmt.Sprintf("service %q has no runtime definition in azure.yaml; found legacy file %s",
+				svc.GetName(), legacy.name),
+			legacy.suggestion,
+		)
 	}
 
 	return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, exterrors.Dependency(
 		exterrors.CodeAgentDefinitionNotFound,
 		fmt.Sprintf("agent definition not found for service %q", svc.GetName()),
-		"re-run `azd ai agent init` to write the agent definition into azure.yaml",
+		"add the direct agent definition to the azure.ai.agent service in azure.yaml, "+
+			"or add an explicit root $ref on the service entry to a direct agent definition",
 	)
 }
 
-// parseContainerAgentYAML validates and parses agent.yaml bytes into a
-// ContainerAgent, mirroring the on-disk loader used before the unified shape.
-func parseContainerAgentYAML(data []byte) (agent_yaml.ContainerAgent, bool, error) {
-	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not valid: %s", err),
-			"fix the agent.yaml file according to the schema",
-		)
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid: %s", err),
-			"verify the agent.yaml has valid YAML syntax",
-		)
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeMissingAgentKind,
-			"kind field is missing or not a valid string in agent.yaml",
-			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
-		)
-	}
-
-	if kind != string(agent_yaml.AgentKindHosted) {
-		return agent_yaml.ContainerAgent{}, false, nil
-	}
-
-	var agentDef agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &agentDef); err != nil {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid for hosted agent: %s", err),
-			"fix the agent.yaml to match the hosted agent schema",
-		)
-	}
-
-	if agentDef.Image != "" && !containerref.IsValid(agentDef.Image) {
-		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("invalid container image reference in agent.yaml: %q", agentDef.Image),
-			"use a valid image reference, e.g. 'myregistry.azurecr.io/image:v1'",
-		)
-	}
-
-	return agentDef, true, nil
-}
-
-// voiceAgentFromDefinitionFile reads an agent definition file (an
-// AGENT_DEFINITION_PATH override) and reports whether it declares a prompt-voice
-// agent, returning the parsed VoiceAgent when it does. A non-voice (e.g. hosted)
-// definition returns found=false with no error so the caller can fall through to
-// the container path, mirroring VoiceAgentFromResolvedService's contract. This
-// lets an explicit override drive the voice/container dispatch with the same
-// precedence loadContainerAgentDefinition documents.
-func voiceAgentFromDefinitionFile(path string) (agent_yaml.VoiceAgent, bool, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("failed to read agent manifest file: %s", err),
-			"verify the agent.yaml file exists and is readable",
-		)
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid: %s", err),
-			"verify the agent.yaml has valid YAML syntax",
-		)
-	}
-
-	if kind, _ := genericTemplate["kind"].(string); kind != string(agent_yaml.AgentKindPromptVoice) &&
-		kind != string(agent_yaml.AgentKindVoice) {
-		// Not a voice definition; let the container path handle the override.
-		return agent_yaml.VoiceAgent{}, false, nil
-	}
-
-	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
-		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not valid: %s", err),
-			"fix the agent.yaml file according to the schema",
-		)
-	}
-
-	var va agent_yaml.VoiceAgent
-	if err := yaml.Unmarshal(data, &va); err != nil {
-		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid for a voice agent: %s", err),
-			"fix the agent.yaml to match the prompt-voice schema",
-		)
-	}
-
-	return va, true, nil
-}
-
 // resolveVoiceAgentForDeploy determines whether the service should deploy a
-// prompt-voice agent, honoring the AGENT_DEFINITION_PATH override precedence: an
-// explicit override file wins over the service entry (matching
-// loadContainerAgentDefinition). When agentDefinitionPath is empty the resolved
-// service entry is inspected instead. A non-voice result returns found=false so
-// the caller falls through to the container deploy path unchanged.
+// prompt-voice agent from its azure.yaml service definition. A non-voice result
+// returns found=false so the caller falls through to the container path.
 //
 // The voice/non-voice decision is delegated to the shared agentkind lookup so
 // deploy, Endpoints, and next-step all classify a service identically; this
 // function then parses the definition from whichever source agentkind matched.
 func resolveVoiceAgentForDeploy(
-	agentDefinitionPath string,
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.VoiceAgent, bool, error) {
-	isVoice, err := agentkind.IsPromptVoice(svc, projectRoot, agentDefinitionPath)
+	isVoice, err := agentkind.IsPromptVoice(svc, projectRoot)
 	if err != nil {
 		return agent_yaml.VoiceAgent{}, false, err
 	}
 	if !isVoice {
 		return agent_yaml.VoiceAgent{}, false, nil
-	}
-	if agentDefinitionPath != "" {
-		return voiceAgentFromDefinitionFile(agentDefinitionPath)
 	}
 	return VoiceAgentFromResolvedService(svc, projectRoot)
 }
@@ -1221,6 +1414,9 @@ func VoiceAgentDefinitionToServiceProperties(
 	va agent_yaml.VoiceAgent,
 	extra *ServiceTargetAgentConfig,
 ) (*structpb.Struct, error) {
+	if err := agent_yaml.ValidateVoiceTelephony(va.Telephony); err != nil {
+		return nil, fmt.Errorf("invalid voice telephony definition: %w", err)
+	}
 	inline := voiceAgentDefinitionToInline(va)
 
 	defStruct, err := MarshalStruct(&inline)
@@ -1240,7 +1436,7 @@ func VoiceAgentDefinitionToServiceProperties(
 }
 
 // VoiceAgentFromResolvedService resolves a prompt-voice agent definition from a
-// service entry's inline (preferred) or legacy config properties. It returns the
+// service entry's direct or root-$ref service-level properties. It returns the
 // parsed VoiceAgent and whether a prompt-voice definition was found. Non-voice
 // (or absent) definitions return found=false with no error so callers can fall
 // through to the container path unchanged.
@@ -1248,40 +1444,229 @@ func VoiceAgentFromResolvedService(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.VoiceAgent, bool, error) {
-	candidates := []*structpb.Struct{
-		svc.GetAdditionalProperties(),
-		svc.GetConfig(),
+	if err := validateRuntimeAgentSources(svc); err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
 	}
-	for _, props := range candidates {
-		if props == nil || len(props.GetFields()) == 0 {
-			continue
-		}
-		resolved, err := resolveServiceProps(props, svc.GetName(), projectRoot)
-		if err != nil {
-			return agent_yaml.VoiceAgent{}, false, err
-		}
-		if !structHasKind(resolved) {
-			continue
-		}
-		kind := agent_yaml.AgentKind(resolved.GetFields()["kind"].GetStringValue())
-		if !agent_yaml.IsVoiceAgentKind(kind) {
-			// A definition is present but it is not a voice agent.
-			return agent_yaml.VoiceAgent{}, false, nil
-		}
-
-		var inline AgentDefinitionInline
-		if err := UnmarshalStruct(resolved, &inline); err != nil {
-			return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("voice agent service config is not valid: %s", err),
-				"re-run `azd ai agent init` to regenerate the agent service entry",
-			)
-		}
-		if err := validateVoiceInlineAgent(inline); err != nil {
-			return agent_yaml.VoiceAgent{}, false, err
-		}
-		return inline.toVoiceAgent(), true, nil
+	props := svc.GetAdditionalProperties()
+	if props == nil || len(props.GetFields()) == 0 {
+		return agent_yaml.VoiceAgent{}, false, nil
+	}
+	resolved, err := resolveServiceProps(props, svc.GetName(), projectRoot)
+	if err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
+	}
+	if !structHasKind(resolved) {
+		return agent_yaml.VoiceAgent{}, false, nil
+	}
+	if err := validateDefinitionOverlayKind(resolved); err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
+	}
+	kind := agent_yaml.AgentKind(resolved.GetFields()["kind"].GetStringValue())
+	if !agent_yaml.IsVoiceAgentKind(kind) {
+		return agent_yaml.VoiceAgent{}, false, nil
+	}
+	if err := validateUnsupportedVoiceFields(resolved); err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
+	}
+	if err := validateVoiceRawProperties(resolved); err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
 	}
 
-	return agent_yaml.VoiceAgent{}, false, nil
+	var inline AgentDefinitionInline
+	if err := UnmarshalStruct(resolved, &inline); err != nil {
+		return agent_yaml.VoiceAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("voice agent service config is not valid: %s", err),
+			"re-run `azd ai agent init` to regenerate the agent service entry",
+		)
+	}
+	copySnakeDefinitionOverlay(resolved, &inline)
+	if err := validateVoiceInlineAgent(inline, resolved); err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
+	}
+	return inline.toVoiceAgent(), true, nil
+}
+
+func validateVoiceRawProperties(values *structpb.Struct) error {
+	if alias := inlineVoiceSnakeCaseAlias(values.AsMap()); alias != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("voice agent service config is not valid: %s is not valid inline", alias),
+			"use camelCase in inline azure.yaml authoring",
+		)
+	}
+	if validationErrors := agent_yaml.ValidateVoiceRawProperties(values.AsMap()); len(validationErrors) > 0 {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"voice agent service config is not valid: "+strings.Join(validationErrors, "; "),
+			"fix the voice agent definition in azure.yaml or its root $ref target",
+		)
+	}
+	return nil
+}
+
+func inlineVoiceSnakeCaseAlias(values map[string]any) string {
+	for _, key := range []string{
+		"model_type", "sub_protocol", "target_agent", "conversation_engine", "structured_inputs",
+		"output_modalities", "input_schema", "output_schema", "tool_choice", "parallel_tool_calls",
+		"max_output_tokens", "code_configuration", "session_configuration", "environment_variables",
+	} {
+		if _, found := values[key]; found {
+			return key
+		}
+	}
+	protocol, _ := values["subProtocol"].(string)
+	if protocol != string(agent_yaml.VoiceSubProtocolLive) {
+		return ""
+	}
+	if inputs, ok := values["structuredInputs"].(map[string]any); ok {
+		for name, input := range inputs {
+			if fields, ok := input.(map[string]any); ok {
+				if _, found := fields["default_value"]; found {
+					return "structuredInputs." + name + ".default_value"
+				}
+			}
+		}
+	}
+	delegation, _ := values["delegation"].(map[string]any)
+	for _, key := range []string{"agent_name", "agent_version"} {
+		if _, found := delegation[key]; found {
+			return "delegation." + key
+		}
+	}
+	responses, _ := delegation["responses"].(map[string]any)
+	for _, key := range []string{"max_output_tokens", "parallel_tool_calls", "service_tier", "tool_choice"} {
+		if _, found := responses[key]; found {
+			return "delegation.responses." + key
+		}
+	}
+	choice, _ := responses["toolChoice"].(map[string]any)
+	if _, found := choice["server_label"]; found {
+		return "delegation.responses.toolChoice.server_label"
+	}
+	return ""
+}
+
+func rejectRootStyleVoiceOverlayAliases(values map[string]any) (map[string]any, error) {
+	if alias := inlineVoiceSnakeCaseAlias(values); alias != "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("voice agent $ref sibling overlay contains root-style property %q", alias),
+			"use camelCase for $ref sibling overlays",
+		)
+	}
+	return values, nil
+}
+
+func normalizeRootVoiceDefinitionMap(values map[string]any) (map[string]any, error) {
+	aliases := map[string]string{
+		"model_type": "modelType", "sub_protocol": "subProtocol",
+		"target_agent": "targetAgent", "conversation_engine": "conversationEngine",
+		"structured_inputs": "structuredInputs", "output_modalities": "outputModalities",
+		"tool_choice": "toolChoice", "parallel_tool_calls": "parallelToolCalls",
+		"max_output_tokens": "maxOutputTokens", "code_configuration": "codeConfiguration",
+		"session_configuration": "sessionConfiguration", "environment_variables": "environmentVariables",
+	}
+	for source, target := range aliases {
+		if value, found := values[source]; found {
+			if _, conflict := values[target]; conflict {
+				return nil, exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("voice agent definition contains both %q and %q", source, target),
+					"use snake_case in a root $ref definition and camelCase in inline azure.yaml authoring",
+				)
+			}
+			values[target] = value
+			delete(values, source)
+		}
+	}
+	if delegation, ok := values["delegation"].(map[string]any); ok {
+		for source, target := range map[string]string{"agent_name": "agentName", "agent_version": "agentVersion"} {
+			if value, found := delegation[source]; found {
+				if _, conflict := delegation[target]; conflict {
+					return nil, exterrors.Validation(
+						exterrors.CodeInvalidAgentManifest,
+						fmt.Sprintf("voice delegation contains both %q and %q", source, target),
+						"use snake_case in a root $ref definition",
+					)
+				}
+				delegation[target] = value
+				delete(delegation, source)
+			}
+		}
+		if responses, ok := delegation["responses"].(map[string]any); ok {
+			for source, target := range map[string]string{
+				"max_output_tokens": "maxOutputTokens", "parallel_tool_calls": "parallelToolCalls",
+				"service_tier": "serviceTier", "tool_choice": "toolChoice",
+			} {
+				if value, found := responses[source]; found {
+					if _, conflict := responses[target]; conflict {
+						return nil, exterrors.Validation(
+							exterrors.CodeInvalidAgentManifest,
+							fmt.Sprintf("voice responses delegation contains both %q and %q", source, target),
+							"use snake_case in a root $ref definition",
+						)
+					}
+					responses[target] = value
+					delete(responses, source)
+				}
+			}
+			if choice, ok := responses["toolChoice"].(map[string]any); ok {
+				if value, found := choice["server_label"]; found {
+					if _, conflict := choice["serverLabel"]; conflict {
+						return nil, exterrors.Validation(
+							exterrors.CodeInvalidAgentManifest,
+							"voice tool choice contains both server_label and serverLabel",
+							"use snake_case in a root $ref definition",
+						)
+					}
+					choice["serverLabel"] = value
+					delete(choice, "server_label")
+				}
+			}
+		}
+	}
+	if inputs, ok := values["structuredInputs"].(map[string]any); ok {
+		for name, entry := range inputs {
+			input, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			if value, found := input["default_value"]; found {
+				if _, conflict := input["defaultValue"]; conflict {
+					return nil, exterrors.Validation(
+						exterrors.CodeInvalidAgentManifest,
+						fmt.Sprintf("voice structured input %q contains both default_value and defaultValue", name),
+						"use snake_case in a root $ref definition",
+					)
+				}
+				input["defaultValue"] = value
+				delete(input, "default_value")
+			}
+		}
+	}
+	if policies, ok := values["policies"].([]any); ok {
+		for _, entry := range policies {
+			policy, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			for source, target := range map[string]string{
+				"rai_policy_name": "raiPolicyName", "invocations_moderation": "invocationsModeration",
+			} {
+				if value, found := policy[source]; found {
+					if _, conflict := policy[target]; conflict {
+						return nil, exterrors.Validation(
+							exterrors.CodeInvalidAgentManifest,
+							fmt.Sprintf("voice policy contains both %q and %q", source, target),
+							"use snake_case in a root $ref definition",
+						)
+					}
+					policy[target] = value
+					delete(policy, source)
+				}
+			}
+		}
+	}
+	return values, nil
 }

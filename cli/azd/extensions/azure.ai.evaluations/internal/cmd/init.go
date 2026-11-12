@@ -4,9 +4,13 @@
 package cmd
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"crypto/rand"
+	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -17,12 +21,18 @@ import (
 	"strings"
 	"sync"
 
+	"azureaieval/internal/exterrors"
+	"azureaieval/internal/hostproject"
 	"azureaieval/internal/messages"
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
+	"azureaieval/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -32,8 +42,9 @@ const (
 	initSourceTraces  = "traces"
 )
 
-// newInitCommand scaffolds the eval configuration. It makes no service calls at
-// all, so it works offline and unauthenticated.
+// newInitCommand scaffolds the eval configuration. It asks the project for one
+// thing -- the built-in evaluators it offers, to check a --evaluator reference
+// -- and works offline and unauthenticated without it.
 //
 // It only ever adds. A name already declared is refused rather than
 // overwritten, because the settings a reader tunes by hand — thresholds, judge
@@ -41,16 +52,20 @@ const (
 // reproduce them. Editing an eval is a file edit.
 // initFlags carries what `init` was asked for.
 type initFlags struct {
-	evalName        string
-	target          string
-	source          string
-	dataset         string
-	maxTraces       int
-	traceDays       int
-	evaluationLevel string
-	evaluators      []string
-	judgeModel      string
-	path            string
+	evalName         string
+	target           string
+	source           string
+	dataset          string
+	maxTraces        int
+	traceDays        int
+	evaluationLevel  string
+	conversationMode string
+	simulationModel  string
+	numConversations int
+	maxTurns         int
+	evaluators       []string
+	judgeModel       string
+	path             string
 }
 
 // initAction scaffolds the eval configuration.
@@ -62,55 +77,140 @@ type initFlags struct {
 type initAction struct {
 	cmd   *cobra.Command
 	flags *initFlags
+	// knownBuiltins answers which built-in evaluators the project offers. Held
+	// per action rather than in a package variable so a test that substitutes
+	// it shares nothing with a test running beside it.
+	knownBuiltins        func(context.Context) []string
+	listModelConnections func(context.Context) ([]eval_api.Connection, error)
+	connectionOnce       sync.Once
+	connections          []eval_api.Connection
+	connectionErr        error
+}
+
+// builtinCatalogue is the lookup a builtin. reference is checked against.
+func (a *initAction) builtinCatalogue() func(context.Context) []string {
+	if a.knownBuiltins != nil {
+		return a.knownBuiltins
+	}
+	return readBuiltinEvaluatorCatalogue
+}
+
+func (a *initAction) modelConnectionCatalogue(ctx context.Context) ([]eval_api.Connection, error) {
+	a.connectionOnce.Do(func() {
+		list := a.listModelConnections
+		if list == nil {
+			list = readModelConnectionCatalogue
+		}
+		a.connections, a.connectionErr = list(ctx)
+	})
+	return slices.Clone(a.connections), a.connectionErr
+}
+
+type initCommandOptions struct {
+	listModelConnections func(context.Context) ([]eval_api.Connection, error)
 }
 
 func newInitCommand() *cobra.Command {
+	return newInitCommandWithOptions(initCommandOptions{})
+}
+
+func newInitCommandWithOptions(options initCommandOptions) *cobra.Command {
 	flags := &initFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Scaffold evaluation config for an agent. Makes no service calls.",
+		Short: "Scaffold evaluation config for an agent or completed conversations.",
+		Long: "Scaffold evaluation config without invoking an agent. Existing entries are never replaced.\n\n" +
+			"Turn datasets invoke an agent when run. Conversation datasets can score completed " +
+			"messages (static), or simulate a user against an agent from scenario seeds (simulation).\n" +
+			"--conversation-mode implies --source dataset and --evaluation-level conversation when omitted. " +
+			"Simulation requires an independent model name or connection-name/model-deployment. " +
+			"Init reuses simulator references authored locally. Plain names are passed unchanged; " +
+			"qualified references validate their Azure OpenAI project connection, " +
+			"or discovers eligible connections for --simulation-model. " +
+			"Under --no-prompt or --output json, supply all unresolved inputs explicitly.\n\n" +
+			"Init validates locally available datasets as non-empty JSONL objects before creating " +
+			"locks, directories or configuration. Simulation also validates the seed-row contract. " +
+			"Interactive init asks for a corrected or different dataset when local rows are invalid; " +
+			"--no-prompt and --output json fail without writing configuration. " +
+			"A local file cannot replace a different dataset already declared under its filename stem; " +
+			"use a unique filename to add it, or select the existing dataset by name. " +
+			"Registered datasets without local files are checked later, not fetched by init.\n\n" +
+			"Init works offline except for a bounded, best-effort lookup of selected built-in evaluators " +
+			"and the Foundry project connection lookup for qualified simulation references or connection discovery.\n\n" +
+			"Output formats are default (human-readable) and json. Other formats are rejected before initialization.\n\n" +
+			"Dataset selections create catalog entries intended for publication. To evaluate local bytes without " +
+			"publishing a dataset, author a separate eval with source.type: local and source.file in the configuration.",
 		// Everything init takes is a flag; a positional would be ignored.
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&initAction{cmd: cmd, flags: flags}).Run()
+			return (&initAction{cmd: cmd, flags: flags, listModelConnections: options.listModelConnections}).Run()
 		},
 	}
 
 	cmd.Flags().StringVar(&flags.evalName, "name", "",
-		"Name of the eval. Defaults to <target>-dataset-eval, or <target>-trace-eval "+
-			"under --source traces, numbered when that name is taken.")
+		"Name of the eval. Defaults to <agent>-<source-or-mode>-<level>-eval, "+
+			"using trace, dataset, static or simulation and turn or conversation. "+
+			"Static mode uses the sole local agent as a naming hint, or omits the prefix when ambiguous or absent. "+
+			"Numbered only when that descriptive name is taken.")
 	cmd.Flags().StringVar(&flags.target, "target", "",
-		"Name of the agent to evaluate. Detected when the project has one agent; prompts when it has several.")
+		"Agent to invoke for turn datasets or simulation, or filter for traces. Not allowed in static mode. "+
+			"Detected when the project has one agent; prompts when it has several.")
 	cmd.Flags().StringVar(&flags.source, "source", "",
 		"Where rows come from: dataset or traces. Defaults to traces when the azd "+
 			"environment records an Application Insights connection, otherwise dataset.")
 	cmd.Flags().StringVar(&flags.dataset, "dataset", "",
 		"Path to a local .jsonl, or the name of a registered dataset.")
 	cmd.Flags().IntVar(&flags.maxTraces, "max-traces", project.DefaultScaffoldMaxTraces,
-		"Cap on traces read by a --source traces eval. Delete max_traces from the "+
+		"Cap on traces read by a --source traces eval. Delete maxTraces from the "+
 			"file to take the service default instead.")
 	cmd.Flags().IntVar(&flags.traceDays, "trace-days", defaultTraceWindowDays,
 		"How far back a --source traces eval reads: 1, 7, or 30 days. Set "+
-			"lookback_hours in the file for any other window.")
+			"lookbackHours in the file for any other window.")
 	cmd.Flags().StringVar(&flags.evaluationLevel, "evaluation-level", "",
 		"What one evaluated sample is: turn for a single request and response, "+
 			"conversation for the whole multi-turn interaction. Defaults to turn.")
+	cmd.Flags().StringVar(&flags.conversationMode, "conversation-mode", "",
+		"Conversation dataset mode: static scores completed messages without a target; simulation uses scenario "+
+			"seeds and an agent target. Prompts for conversation datasets; defaults to static without prompts.")
+	cmd.Flags().StringVar(&flags.simulationModel, "simulation-model", "",
+		"Model name or connection-name/model-deployment for the simulated user. Plain names need no connection lookup; "+
+			"qualified references use eligible Azure OpenAI project connections. "+
+			"No whitespace or control characters. Independent of generation and judge models.")
+	cmd.Flags().IntVar(&flags.numConversations, "num-conversations", project.DefaultNumConversations,
+		fmt.Sprintf("Conversations per seed in simulation mode (%d-%d).",
+			project.MinNumConversations, project.MaxNumConversations))
+	cmd.Flags().IntVar(&flags.maxTurns, "max-turns", 0,
+		fmt.Sprintf("Maximum turns per simulated conversation (%d-%d). Omit for the service default.",
+			project.MinSimulationTurns, project.MaxSimulationTurns))
 	cmd.Flags().StringSliceVar(&flags.evaluators, "evaluator", nil,
 		"Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a "+
-			"built-in. Passing this replaces the defaults, so it also opts out of rubric generation.")
+			"built-in, or a declared custom evaluator compatible with the selected level. "+
+			"Defaults to builtin.task_completion. "+
+			"Replaces the defaults; an explicitly empty selection is invalid.")
 	cmd.Flags().StringVar(&flags.judgeModel, "judge-model", "",
-		"Model deployment the graders judge with. Detected from the project when omitted.")
+		"Model deployment the graders judge with. Detected locally when omitted; prompts if unavailable.")
 	// No backticks around init: pflag reads the first back-quoted word in a
 	// usage string as the value placeholder, which rendered this "--path init".
 	cmd.Flags().StringVar(&flags.path, "path", "",
-		"Directory to write the configuration into. Used verbatim, never re-rooted. "+
+		"Configuration file or directory to write into. Used verbatim, never re-rooted. "+
+			"New .yaml or .yml paths are files; existing directories remain directories. "+
+			"Selected symbolic links are rejected; select the target directly. "+
 			"Defaults to the directory an earlier init scaffolded, otherwise ./evals.")
-	return cmd
+	return azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name: "output", Usage: "Output format: default (human-readable) or json.",
+	})
 }
 
 func (a *initAction) Run() error {
+	if _, err := azdext.ParseOutputFormat(outputFormat(a.cmd)); err != nil {
+		return exterrors.Validation(exterrors.CodeInvalidParameter, fmt.Sprintf("--output: %v", err),
+			"Use --output default for human-readable output or --output json for structured output.")
+	}
 	out := a.cmd.OutOrStdout()
+	if err := a.validateConversationFlags(a.flags.source, a.flags.evaluationLevel, a.flags.conversationMode); err != nil {
+		return err
+	}
 
 	source := a.flags.source
 	switch source {
@@ -119,7 +219,7 @@ func (a *initAction) Run() error {
 		return messages.SourceNotADataSource(
 			source, initSourceDataset, initSourceTraces)
 	}
-	if source == initSourceTraces && a.flags.dataset != "" {
+	if source == initSourceTraces && (a.flags.dataset != "" || a.cmd.Flags().Changed("dataset")) {
 		return messages.TracesTakesNoDataset()
 	}
 	// Zero is not a smaller window, it is an eval with nothing to read. It used
@@ -132,8 +232,36 @@ func (a *initAction) Run() error {
 	// written by a command that exits 0, and only fails two commands
 	// later. Answering two prompts first to be told a flag was wrong is
 	// the same defect one step removed.
+	if a.cmd.Flags().Changed("evaluator") && len(a.flags.evaluators) == 0 {
+		return messages.EvaluatorRefEmpty()
+	}
 	if err := validateEvaluatorRefs(a.flags.evaluators); err != nil {
 		return err
+	}
+	knownBuiltins := sync.OnceValue(func() []string {
+		return a.builtinCatalogue()(a.cmd.Context())
+	})
+	evaluatorsToValidate := a.flags.evaluators
+	if len(evaluatorsToValidate) == 0 && noPrompt(a.cmd) {
+		evaluatorsToValidate = defaultEvaluators()
+	}
+	// Asked once, and only when there is a builtin. reference for the catalogue
+	// to answer about. A builtin. reference names something only the project can
+	// confirm, so it used to scaffold cleanly and fail at create. Unreachable
+	// projects answer nothing and leave the reference as written, so this adds a
+	// check offline rather than a requirement.
+	if hasBuiltinRef(evaluatorsToValidate) {
+		known := knownBuiltins()
+		// The lookup's own five-second bound is best effort, but the command's
+		// context being done is the reader interrupting, and that is not the
+		// catalogue being quiet. Collapsing the two carried on to fail several
+		// steps later on something unrelated -- "no azd project" for a Ctrl-C.
+		if err := a.cmd.Context().Err(); err != nil {
+			return err
+		}
+		if err := refuseUnknownBuiltins(evaluatorsToValidate, known); err != nil {
+			return err
+		}
 	}
 	// The same cascade every other command reads the configuration
 	// through. init merges into the configuration it finds, so a second
@@ -152,6 +280,14 @@ func (a *initAction) Run() error {
 	if err != nil {
 		return err
 	}
+	rootPath, err := initRootConfigPath(azdProject.GetPath())
+	if err != nil {
+		return err
+	}
+	rootFilename := rootConfigName
+	if rootPath != "" {
+		rootFilename = filepath.Base(rootPath)
+	}
 
 	configPath, err := project.ResolveEvalConfigPath(path)
 	if err != nil {
@@ -161,12 +297,12 @@ func (a *initAction) Run() error {
 	// reporting it as created would claim a file it only added to.
 	_, configExistedErr := os.Stat(configPath)
 	configExisted := configExistedErr == nil
-	authored, err := project.ReadAuthoredConfig(path)
+	authored, err := project.ReadAuthoredConfig(configPath)
 	if err != nil {
 		return err
 	}
 	cfg := declaredSoFar(authored)
-	evalDir := project.EvalDirOf(path)
+	evalDir := filepath.Dir(configPath)
 
 	// From here to the lock the questions run in the order the spec asks
 	// them, because each one changes what the next is about: the source
@@ -184,19 +320,21 @@ func (a *initAction) Run() error {
 		return tracesConnected(commandContext(a.cmd))
 	})
 	ctx := initContext{
-		cfg:           cfg,
-		azdProject:    azdProject,
-		evalDir:       evalDir,
-		configPath:    configPath,
-		configExisted: configExisted,
-		tracesWired:   tracesWired,
+		cfg:              cfg,
+		azdProject:       azdProject,
+		evalDir:          evalDir,
+		configPath:       configPath,
+		configExisted:    configExisted,
+		simulationModels: authored.SimulationModels(),
+		tracesWired:      tracesWired,
+		knownBuiltins:    knownBuiltins,
 	}
 
 	answers, err := a.ask(ctx)
 	if err != nil {
 		return err
 	}
-	serviceName := answers.target + "-evals"
+	serviceName := cmp.Or(answers.target, "conversation") + "-evals"
 	wiring, serviceName, err := planRootEvalService(a.cmd.Context(), serviceName, configPath)
 	if err != nil {
 		return err
@@ -205,6 +343,7 @@ func (a *initAction) Run() error {
 		decision, err := confirmScaffold(a.cmd, out, scaffoldSummary{
 			answers:    answers,
 			configPath: configPath,
+			rootConfig: rootFilename,
 			wiring:     wiring,
 			maxTraces:  a.flags.maxTraces,
 		})
@@ -224,7 +363,7 @@ func (a *initAction) Run() error {
 		if answers, err = a.ask(ctx); err != nil {
 			return err
 		}
-		serviceName = answers.target + "-evals"
+		serviceName = cmp.Or(answers.target, "conversation") + "-evals"
 		// Replanned with the name, not carried over. The wiring describes an
 		// edit to azure.yaml for one service, so a Change that picks a different
 		// agent made the next confirmation describe the previous one's edit --
@@ -250,13 +389,25 @@ func (a *initAction) Run() error {
 	// a person. The configuration is read again because the copy above
 	// was taken before the prompt, and a `generate` may well have
 	// finished writing to it since.
-	unlockConfig, err := project.LockEvalConfig(a.cmd.Context(), path)
+	if err := checkInitConfigDestination(path, configPath); err != nil {
+		return err
+	}
+	if err := checkInitRootConfig(azdProject.GetPath(), rootPath); err != nil {
+		return err
+	}
+	unlockConfig, err := project.LockEvalConfig(a.cmd.Context(), configPath)
 	if err != nil {
 		return err
 	}
 	defer unlockConfig()
 
-	authored, err = project.ReadAuthoredConfig(path)
+	if err := checkInitConfigDestination(path, configPath); err != nil {
+		return err
+	}
+	if err := checkInitRootConfig(azdProject.GetPath(), rootPath); err != nil {
+		return err
+	}
+	authored, err = project.ReadAuthoredConfig(configPath)
 	if err != nil {
 		return err
 	}
@@ -266,21 +417,16 @@ func (a *initAction) Run() error {
 	if cfg.HasEval(evalName) {
 		return messages.EvalAlreadyDeclared(evalName, filepath.ToSlash(configPath))
 	}
+	// Recheck the local rows and declaration after the confirmation pause.
+	if err := validateInitDataset(commandContext(a.cmd), configPath, answers, cfg); err != nil {
+		return err
+	}
 
 	// What the file already declares, so the write can be limited to what
 	// planScaffold adds to it.
 	declaredDatasets := len(cfg.Datasets)
 	declaredEvaluators := len(cfg.Evaluators)
 	declaredEvals := len(cfg.Evals)
-
-	// The location may be the file azure.yaml names rather than the
-	// directory holding it, and artifacts sit beside the configuration.
-	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultDatasetsDir), 0o750); err != nil {
-		return messages.CreatingDatasetsDir(err)
-	}
-	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultEvaluatorsDir), 0o750); err != nil {
-		return messages.CreatingEvaluatorsDir(err)
-	}
 
 	// --target names the azure.yaml service, which is a local label. The eval's
 	// target has to be the name the agent is published under, or the run grades
@@ -293,62 +439,133 @@ func (a *initAction) Run() error {
 	}
 
 	plan, err := planScaffold(scaffoldInput{
-		evalName:        evalName,
-		target:          target,
-		remoteTarget:    remoteTarget,
-		source:          source,
-		dataset:         datasetRef,
-		maxTraces:       a.flags.maxTraces,
-		lookbackHours:   lookbackHours,
-		evaluationLevel: evaluationLevel,
-		evaluators:      evaluators,
-		judgeModel:      judgeModel,
-		evalDir:         evalDir,
-		cfg:             cfg,
+		evalName:                evalName,
+		target:                  target,
+		remoteTarget:            remoteTarget,
+		source:                  source,
+		dataset:                 datasetRef,
+		maxTraces:               a.flags.maxTraces,
+		lookbackHours:           lookbackHours,
+		evaluationLevel:         evaluationLevel,
+		simulation:              answers.simulation,
+		simulationRowsValidated: answers.simulation != nil,
+		evaluators:              evaluators,
+		judgeModel:              judgeModel,
+		evalDir:                 evalDir,
+		configPath:              configPath,
+		cfg:                     cfg,
 	})
 	if err != nil {
 		return err
 	}
 
-	if err := refuseDuplicateEval(path, plan.eval); err != nil {
+	if err := refuseDuplicateEval(configPath, plan.eval); err != nil {
 		return err
 	}
+	plan.configLocation = path
 
-	if err := project.ApplyScaffold(path, project.ScaffoldWrite{
+	if err := checkInitRootConfig(azdProject.GetPath(), rootPath); err != nil {
+		return err
+	}
+	var rootBefore []byte
+	if rootPath != "" {
+		// #nosec G304 -- snapshot the current azd project's root before wiring it.
+		rootBefore, err = os.ReadFile(rootPath)
+		if err != nil {
+			return messages.ReadingPath(rootPath, err)
+		}
+	}
+	// Recheck resolution and identity, then write the same exact filename the user confirmed.
+	if err := checkInitConfigDestination(path, configPath); err != nil {
+		return err
+	}
+	if source != initSourceTraces {
+		if _, err := resolveInitDatasetLocalPath(configPath, datasetRef, cfg); err != nil {
+			return err
+		}
+	}
+	// The location may be the file azure.yaml names rather than the
+	// directory holding it, and artifacts sit beside the configuration.
+	// Create these only after every planning and path check has succeeded.
+	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultDatasetsDir), 0o750); err != nil {
+		return messages.CreatingDatasetsDir(err)
+	}
+	if err := os.MkdirAll(filepath.Join(evalDir, project.DefaultEvaluatorsDir), 0o750); err != nil {
+		return messages.CreatingEvaluatorsDir(err)
+	}
+	rollback, err := project.ApplyScaffoldWithRollback(configPath, project.ScaffoldWrite{
 		Datasets:   cfg.Datasets[declaredDatasets:],
 		Evaluators: cfg.Evaluators[declaredEvaluators:],
 		Evals:      cfg.Evals[declaredEvals:],
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
 	// Scaffolding a config azd cannot see is half a step: the eval
 	// service has to be referenced from the root config before any of
 	// `azd up`, `azd deploy` or `azd ai eval run` will act on it.
-	rootWiring, serviceName, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath)
+	rootWiring, serviceName, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath, rootFilename)
 	if err != nil {
-		return err
+		if _, uncertain := errors.AsType[*initWiringUncertainError](err); uncertain {
+			return messages.InitWiringRollbackFailed(configPath, err,
+				errors.New("the host may still finish saving the project configuration; the scaffold was retained"))
+		}
+		currentRoot, rootErr := initRootConfigPath(azdProject.GetPath())
+		if rootErr != nil {
+			return messages.InitWiringRollbackFailed(configPath, err, rootErr)
+		}
+		if rootPath == "" || currentRoot != rootPath {
+			return messages.InitWiringRollbackFailed(configPath, err,
+				errors.New("the project configuration path was unavailable or changed during wiring; "+
+					"the scaffold was retained"))
+		}
+		// A lost RPC response can follow a successful root save. Do not remove
+		// a scaffold the root may already reference, or overwrite another edit.
+		// #nosec G304 -- re-read the same project root to determine whether rollback is safe.
+		rootAfter, readErr := os.ReadFile(rootPath)
+		if readErr != nil {
+			return messages.InitWiringRollbackFailed(configPath, err, readErr)
+		}
+		if !bytes.Equal(rootBefore, rootAfter) {
+			return messages.InitWiringRollbackFailed(configPath, err,
+				fmt.Errorf("%s changed during wiring; the scaffold was retained", filepath.Base(rootPath)))
+		}
+		if rollbackErr := rollback(); rollbackErr != nil {
+			return messages.InitWiringRollbackFailed(configPath, err, rollbackErr)
+		}
+		return messages.InitWiringRolledBack(configPath, err)
 	}
+
+	// Reported here rather than from the prompt sequence, which a confirmation
+	// can send the reader back through: this is the source the scaffold on disk
+	// was actually written for, and it happens once.
+	reportUsage(a.cmd.Context(), telemetry.InitCompleted(source))
 
 	if isJSON(a.cmd) {
 		return emitJSON(out, map[string]any{
-			"eval":          evalName,
-			"evalConfig":    configPath,
-			"service":       serviceName,
-			"datasetsDir":   filepath.Join(evalDir, project.DefaultDatasetsDir),
-			"evaluatorsDir": filepath.Join(evalDir, project.DefaultEvaluatorsDir),
-			"rootConfig":    rootWiring,
-			"target":        target,
-			"source":        source,
-			"judgeModel":    judgeModel,
-			"evaluators":    plan.evaluatorNames(),
+			"eval":             evalName,
+			"evalConfig":       configPath,
+			"service":          serviceName,
+			"datasetsDir":      filepath.Join(evalDir, project.DefaultDatasetsDir),
+			"evaluatorsDir":    filepath.Join(evalDir, project.DefaultEvaluatorsDir),
+			"rootConfig":       rootWiring,
+			"target":           target,
+			"source":           source,
+			"evaluationLevel":  evaluationLevel,
+			"conversationMode": answers.conversationMode,
+			"simulation":       answers.simulation,
+			"judgeModel":       judgeModel,
+			"evaluators":       plan.evaluatorNames(),
 		})
 	}
 
-	fmt.Fprint(out, messages.DetectedTarget(target))
+	if target != "" {
+		fmt.Fprint(out, messages.DetectedTarget(target))
+	}
 	if source == initSourceTraces {
-		// Claiming the connection is only honest when it was found. init
-		// makes no service calls, so it cannot verify one it did not see.
+		// Claiming the connection is only honest when it was found. init never
+		// asks the service about one, so it cannot verify one it did not see.
 		fmt.Fprint(out, messages.UsingTraceSource(tracesWired()))
 	}
 	// Only what was settled without asking: a reader who just picked
@@ -364,9 +581,9 @@ func (a *initAction) Run() error {
 	fmt.Fprint(out, messages.ScaffoldConfigLine(filepath.ToSlash(configPath), configExisted))
 	switch rootWiring {
 	case wiringAdded:
-		fmt.Fprint(out, messages.AddedServiceLine(rootConfigName, serviceName))
+		fmt.Fprint(out, messages.AddedServiceLine(rootFilename, serviceName))
 	case wiringPresent:
-		fmt.Fprint(out, messages.AlreadyDeclaresServiceLine(rootConfigName, serviceName))
+		fmt.Fprint(out, messages.AlreadyDeclaresServiceLine(rootFilename, serviceName))
 	}
 
 	// The targeted create is the primary next action: it reconciles the one
@@ -378,9 +595,56 @@ func (a *initAction) Run() error {
 	// has, and printing the two together under one heading read as a single
 	// two-line command; `eval create` prints it once it has something to run.
 	deployCmd := deployCommandName(azdProject)
-	fmt.Fprint(out, messages.FirstNextStep(plan.targetedCreate()))
+	if next := plan.targetedCreate(); next != "" {
+		fmt.Fprint(out, messages.FirstNextStep(next))
+	} else {
+		fmt.Fprint(out, messages.InitCreateManualInputs(plan.evalName(), plan.nextStepConfigLocation()))
+	}
 	if deployCmd == azdUpCommand {
 		fmt.Fprint(out, messages.WholeProjectAlternative(deployCmd))
+	}
+	return nil
+}
+
+type initWiringUncertainError struct{ error }
+
+func (e *initWiringUncertainError) Unwrap() error {
+	return e.error
+}
+
+func checkInitConfigDestination(location, expected string) error {
+	actual, err := project.ResolveEvalConfigPathForWrite(location)
+	if err != nil {
+		return err
+	}
+	if !sameFilePath(filepath.Clean(actual), filepath.Clean(expected)) {
+		return messages.InitConfigDestinationChanged(expected, actual)
+	}
+	return nil
+}
+
+func initRootConfigPath(projectDir string) (string, error) {
+	for _, name := range azdcontext.ProjectFileNames {
+		path := filepath.Join(projectDir, name)
+		info, err := os.Stat(path)
+		if errors.Is(err, os.ErrNotExist) || err == nil && info.IsDir() {
+			continue
+		}
+		if err != nil {
+			return "", messages.ReadingPath(path, err)
+		}
+		return path, nil
+	}
+	return "", nil
+}
+
+func checkInitRootConfig(projectDir, expected string) error {
+	actual, err := initRootConfigPath(projectDir)
+	if err != nil {
+		return err
+	}
+	if actual != expected {
+		return messages.InitRootConfigChanged(expected, actual)
 	}
 	return nil
 }
@@ -433,8 +697,8 @@ func settleInitSource(cmd *cobra.Command, in initSourceInput) (string, error) {
 // chooseInitSource settles an unstated source, asking where it can.
 func chooseInitSource(cmd *cobra.Command, in initSourceInput) (string, error) {
 	// The same signal `generate --from` defaults on, read from the azd
-	// environment rather than the service, so init still makes no service
-	// calls. Traces are real conversations; a project wired to collect them
+	// environment rather than the service, so choosing a source stays offline.
+	// Traces are real conversations; a project wired to collect them
 	// should not have to ask for them by flag.
 	preferred := ""
 	switch {
@@ -566,12 +830,24 @@ func relativeToRoot(projectRoot, configPath string) string {
 	return relative
 }
 
-// defaultEvalName names an eval after what it evaluates and what it reads.
-func defaultEvalName(target, source string) string {
+// defaultEvalName distinguishes the source, conversation mode and evaluation level.
+func defaultEvalName(target, source, level, mode string) string {
 	if source == initSourceTraces {
-		return target + "-trace-eval"
+		source = "trace"
+	} else {
+		source = initSourceDataset
 	}
-	return target + "-dataset-eval"
+	parts := []string{source}
+	if mode != "" {
+		parts = []string{mode}
+	}
+	parts = append(parts, cmp.Or(level, project.EvaluationLevelTurn), "eval")
+	suffix := strings.Join(parts, "-")
+	if target == "" {
+		return suffix
+	}
+	// Shorten the target, not the distinguishing source/mode/level.
+	return trimEvalName(target, len(suffix)+1) + "-" + suffix
 }
 
 // uniqueEvalName is the suggested name, made one the file can still accept.
@@ -620,10 +896,15 @@ type scaffoldInput struct {
 	maxTraces       int
 	lookbackHours   int
 	evaluationLevel string
-	evaluators      []string
-	judgeModel      string
-	evalDir         string
-	cfg             *project.EvalConfig
+	simulation      *project.Simulation
+	// simulationRowsValidated reuses only the fresh seed scan under the config lock.
+	simulationRowsValidated bool
+	evaluators              []string
+	judgeModel              string
+	evalDir                 string
+	// configPath retains an explicit filename separately from the artifact directory.
+	configPath string
+	cfg        *project.EvalConfig
 }
 
 // scaffold is what `init` added, and what it should suggest doing next.
@@ -635,6 +916,8 @@ type scaffold struct {
 	// evalDir is where the configuration was written, so the next steps can
 	// name it when it is not the default.
 	evalDir string
+	// configLocation preserves the resolved file-or-directory selection for next steps.
+	configLocation string
 }
 
 // planScaffold appends one eval to the configuration, adding any catalog
@@ -657,6 +940,7 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 		Name:            in.evalName,
 		Description:     fmt.Sprintf("Basic quality evaluation for %s", in.target),
 		EvaluationLevel: cmp.Or(in.evaluationLevel, project.EvaluationLevelTurn),
+		Simulation:      in.simulation,
 		Target: &project.Target{
 			Type: project.TargetTypeAgent,
 			// The published name, not the service key: this is what the run
@@ -664,6 +948,17 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 			// is what the author typed and recognizes.
 			Name: cmp.Or(in.remoteTarget, in.target),
 		},
+	}
+	if eval.EvaluationLevel == project.EvaluationLevelConversation && in.simulation == nil {
+		eval.Target = nil
+		if in.source != initSourceTraces {
+			eval.Description = "Quality evaluation for completed conversations"
+		}
+	}
+	if in.simulation != nil {
+		if err := in.simulation.Validate(); err != nil {
+			return scaffold{}, err
+		}
 	}
 
 	if in.source == initSourceTraces {
@@ -689,15 +984,24 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 				// A path that names nothing is the same broken reference a
 				// generated declaration used to leave behind: the config passes
 				// validation and the deploy fails on a file that never existed.
-				if _, err := os.Stat(in.dataset); err != nil {
-					return scaffold{}, messages.DatasetFileNotFound(in.dataset, err)
+				decl, err := resolveInitLocalDataset(cmp.Or(in.configPath, in.evalDir), in.dataset, cfg)
+				if err != nil {
+					return scaffold{}, err
+				}
+				// Deploy already refuses a file whose rows are not JSON objects.
+				// init is holding the file and needs nothing from the service to
+				// judge it, so accepting it here only moves the failure to a
+				// deploy, after a declaration nobody can use has been written.
+				if in.simulation == nil || !in.simulationRowsValidated {
+					if err := validateJSONL(in.dataset); err != nil {
+						return scaffold{}, err
+					}
 				}
 				// --dataset is given relative to where the user is standing,
 				// but source: resolves relative to the config, so the path has
 				// to be rebased or the deploy looks for it inside evals/.
-				datasetSource = relativeToConfig(in.dataset, in.evalDir)
-				datasetName = strings.TrimSuffix(
-					filepath.Base(in.dataset), filepath.Ext(in.dataset))
+				datasetSource = decl.File
+				datasetName = decl.Name
 			} else {
 				// A bare name references an already-registered dataset.
 				datasetName = in.dataset
@@ -736,6 +1040,9 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 	}
 
 	refs := evalcore.EvaluatorList{}
+	if err := validateInitEvaluatorLevels(cfg, in.evaluators, eval.EvaluationLevel); err != nil {
+		return scaffold{}, err
+	}
 	if len(in.evaluators) == 0 {
 		for _, ref := range defaultEvaluators() {
 			refs = append(refs, withModel(evalcore.EvaluatorRef{Evaluator: ref}))
@@ -840,17 +1147,18 @@ func refuseDuplicateEval(location string, planned *project.Eval) error {
 // declaredSoFar seeds the accumulator with the names the configuration already
 // declares, so planScaffold can tell an addition from a duplicate.
 //
-// Names only. The write below appends to the document rather than saving this
-// value, so nothing else about the existing entries is needed -- and reading
-// more would mean decoding a configuration whose includes are deliberately left
-// unresolved.
+// Names and local evaluator compatibility only. The write appends to the
+// document rather than saving this value; includes stay unresolved.
 func declaredSoFar(authored *project.AuthoredConfig) *project.EvalConfig {
 	cfg := &project.EvalConfig{}
 	for _, name := range authored.Names(project.SectionDatasets) {
 		cfg.Datasets = append(cfg.Datasets, project.DatasetDecl{Name: name})
 	}
 	for _, name := range authored.Names(project.SectionEvaluators) {
-		cfg.Evaluators = append(cfg.Evaluators, project.EvaluatorDecl{Name: name})
+		entry, _ := authored.Entry(project.SectionEvaluators, name)
+		cfg.Evaluators = append(cfg.Evaluators, project.EvaluatorDecl{
+			Name: name, SupportedEvaluationLevels: slices.Clone(entry.SupportedEvaluationLevels),
+		})
 	}
 	for _, name := range authored.Names(project.SectionEvals) {
 		cfg.Evals = append(cfg.Evals, project.Eval{Name: name})
@@ -874,7 +1182,10 @@ func (s scaffold) evaluatorNames() []string {
 // not run as shown -- the create has to succeed first. `eval create` prints it
 // when there is something to run.
 func (s scaffold) nextSteps() []string {
-	return []string{s.targetedCreate()}
+	if next := s.targetedCreate(); next != "" {
+		return []string{next}
+	}
+	return nil
 }
 
 // targetedCreate reconciles only the eval init just added.
@@ -883,7 +1194,23 @@ func (s scaffold) nextSteps() []string {
 // that it touches one eval: without the name it reconciles whatever the file
 // happens to declare, which is what the reader was choosing to avoid.
 func (s scaffold) targetedCreate() string {
-	return s.withPath("azd ai eval create " + s.evalName())
+	name := s.evalName()
+	if !messages.CanInlineShellArg(name) {
+		return ""
+	}
+	// Some hosts strip joined cwd flags even after "--"; do not suggest a lossy handoff.
+	if strings.HasPrefix(name, "--cwd=") ||
+		len(name) > 2 && strings.HasPrefix(name, "-C") && name[2] != '-' {
+		return ""
+	}
+	if strings.HasPrefix(name, "-") {
+		step := s.withPath("azd ai eval create")
+		if step == "" {
+			return ""
+		}
+		return step + " -- " + messages.ShellArg(name)
+	}
+	return s.withPath("azd ai eval create " + messages.ShellArg(name))
 }
 
 // evalName is the name of the eval this scaffold adds.
@@ -901,13 +1228,20 @@ func (s scaffold) evalName() string {
 // without one. Naming the directory makes the printed step run as printed
 // either way, which is the claim these lines make.
 func (s scaffold) withPath(step string) string {
-	dir := printablePath(s.evalDir)
+	dir := s.nextStepConfigLocation()
+	if !messages.CanInlineShellArg(dir) {
+		return ""
+	}
 	// `evals`, `./evals` and the absolute path to it are one directory, and it is
 	// the one every command already falls back to.
 	if dir == "" || strings.TrimPrefix(dir, "./") == project.DefaultEvalDir {
 		return step
 	}
 	return step + " --path " + quoteForShell(dir)
+}
+
+func (s scaffold) nextStepConfigLocation() string {
+	return filepath.ToSlash(printablePath(cmp.Or(s.configLocation, s.evalDir)))
 }
 
 // printablePath is how a directory should be spelled in a step the reader is
@@ -947,7 +1281,7 @@ func printablePath(dir string) string {
 // and one that resolves ./team and reports the configuration missing. The rule
 // lives in messages, beside the suggested commands that need the same thing.
 func quoteForShell(v string) string {
-	return messages.ShellArg(v)
+	return messages.ShellArg(filepath.ToSlash(v))
 }
 
 // relativeToConfig rewrites a path given relative to the working directory so
@@ -1064,9 +1398,8 @@ const aiModelHost = "azure.ai.model"
 // detectModelDeployments finds the deployments the graders could judge with,
 // from what the project already declares.
 //
-// `init` makes no service calls, so detection is limited to the project file.
-// Coming back empty leaves it to resolveJudgeModel, which reads the Foundry
-// project's deployments: and then asks or names --judge-model.
+// `init` asks the service nothing about deployments, so detection is limited
+// to the project file.
 //
 // Every match is returned rather than the first, because two declared model
 // services is a choice for the author to make, not something to settle here.
@@ -1207,7 +1540,7 @@ func evalServicePointingAt(
 // whatever shape azd gives it.
 func ensureRootEvalService(
 	ctx context.Context,
-	serviceName, target, configPath string,
+	serviceName, target, configPath, rootFilename string,
 ) (string, string, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
@@ -1238,16 +1571,40 @@ func ensureRootEvalService(
 		return "", "", messages.BuildingServiceEntry(err)
 	}
 
-	_, err = azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
-		Service: &azdext.ServiceConfig{
-			Name:                 name,
-			Host:                 project.EvalHost,
-			Uses:                 evalServiceUses(resp.GetProject(), target),
-			AdditionalProperties: props,
-		},
-	})
+	preview, closePreview, err := hostproject.Connect()
 	if err != nil {
-		return "", "", messages.AddingServiceTo(rootConfigName, err)
+		return "", "", messages.ConnectingToAzd(err)
+	}
+	defer func() {
+		if closeErr := closePreview(); closeErr != nil {
+			// Closing a completed transport does not change the mutation outcome.
+			log.Printf("closing azd project transport: %v", closeErr)
+		}
+	}()
+	capable, err := preview.SupportsAcknowledgment(ctx)
+	if err != nil {
+		return "", "", messages.AddingServiceTo(rootFilename, err)
+	}
+	service := &azdext.ServiceConfig{
+		Name:                 name,
+		Host:                 project.EvalHost,
+		Uses:                 evalServiceUses(resp.GetProject(), target),
+		AdditionalProperties: props,
+	}
+	completed := false
+	if capable {
+		completed, err = preview.AddService(ctx, service, rand.Text())
+	} else {
+		// Backward compatibility only: older hosts cannot confirm a failed save completed.
+		// TODO: Remove this fallback after the SDK/core release and minimum host version update.
+		_, err = azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{Service: service},
+			grpc.MaxRetryRPCBufferSize(0))
+	}
+	if err != nil {
+		if !completed {
+			err = &initWiringUncertainError{error: err}
+		}
+		return "", "", messages.AddingServiceTo(rootFilename, err)
 	}
 	return wiringAdded, name, nil
 }

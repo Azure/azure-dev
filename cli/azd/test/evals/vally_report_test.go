@@ -69,10 +69,12 @@ func TestFilteredEntriesHandlesVallyTrialOutcomes(t *testing.T) {
 		{stimulus: "executor-error", status: "error", diagnostic: "The test executor could not start."},
 		{stimulus: "skipped-trial", status: "skipped", diagnostic: "The executor is unsupported."},
 	} {
-		require.Contains(t, failedByStimulus, test.stimulus)
-		entry := failedByStimulus[test.stimulus]
-		require.Equal(t, test.status, entry.status)
-		require.Equal(t, test.diagnostic, entry.diagnostic)
+		t.Run(test.stimulus, func(t *testing.T) {
+			require.Contains(t, failedByStimulus, test.stimulus)
+			entry := failedByStimulus[test.stimulus]
+			require.Equal(t, test.status, entry.status)
+			require.Equal(t, test.diagnostic, entry.diagnostic)
+		})
 	}
 }
 

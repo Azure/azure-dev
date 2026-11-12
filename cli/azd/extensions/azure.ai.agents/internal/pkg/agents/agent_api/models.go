@@ -4,8 +4,10 @@
 package agent_api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"time"
 )
@@ -20,11 +22,12 @@ const (
 	AgentProtocolActivityProtocol AgentProtocol = "activity"
 	// AgentProtocolActivityProtocolLegacy is the pre-rename Activity wire value,
 	// preserved for back-compat when reading manifests authored before the rename.
-	AgentProtocolActivityProtocolLegacy AgentProtocol = "activity_protocol"
-	AgentProtocolInvocations            AgentProtocol = "invocations"
-	AgentProtocolInvocationsWS          AgentProtocol = "invocations_ws"
-	AgentProtocolResponses              AgentProtocol = "responses"
-	AgentProtocolA2A                    AgentProtocol = "a2a"
+	AgentProtocolActivityProtocolLegacy  AgentProtocol = "activity_protocol"
+	AgentProtocolInvocations             AgentProtocol = "invocations"
+	AgentProtocolInvocationsWS           AgentProtocol = "invocations_ws"
+	AgentProtocolVoiceConversationEngine AgentProtocol = "voice_conversation_engine"
+	AgentProtocolResponses               AgentProtocol = "responses"
+	AgentProtocolA2A                     AgentProtocol = "a2a"
 )
 
 // IsActivityProtocolName reports whether the given definition-level protocol name
@@ -36,7 +39,7 @@ func IsActivityProtocolName(p AgentProtocol) bool {
 
 // InvocableProtocols returns the set of protocols that azd can invoke directly.
 // activity is deployment-only — it cannot be used for local or remote
-// invocation through azd. A2A is remote-only (see IsInvocable / IsLocalInvocable).
+// invocation through azd.
 func InvocableProtocols() []AgentProtocol {
 	return []AgentProtocol{
 		AgentProtocolResponses,
@@ -53,13 +56,6 @@ func (p AgentProtocol) IsInvocable() bool {
 	default:
 		return false
 	}
-}
-
-// IsLocalInvocable reports whether the protocol can be invoked against a locally
-// running agent (azd ai agent run). A2A is a remote agent-to-agent protocol and
-// is only invocable against a deployed Foundry agent.
-func (p AgentProtocol) IsLocalInvocable() bool {
-	return p.IsInvocable() && p != AgentProtocolA2A
 }
 
 // AgentKind represents the different types of agents
@@ -107,7 +103,7 @@ const (
 type RaiInvocationContentType string
 
 const (
-	// RaiInvocationContentTypeJSON extracts text from a JSON body using JSONPath expressions.
+	// RaiInvocationContentTypeJSON extracts text from a JSON body using selector expressions.
 	RaiInvocationContentTypeJSON RaiInvocationContentType = "json"
 	// RaiInvocationContentTypeText treats the whole body as the text to moderate.
 	RaiInvocationContentTypeText RaiInvocationContentType = "text"
@@ -129,9 +125,12 @@ const (
 
 // SseTextSelector locates the text to moderate inside a single server-sent event frame.
 type SseTextSelector struct {
-	// EventType is the SSE event name the selector applies to.
+	// EventType is matched exactly against the value of the "type" field inside the frame's
+	// `data:` payload, not against the SSE `event:` line.
 	EventType string `json:"event_type"`
-	// TextField is the JSONPath expression, relative to the frame payload, holding the text.
+	// TextField is the name of a field on the frame payload that holds the text, for example
+	// "delta". It is an exact field name, not a selector expression. Defaults to "delta" when
+	// omitted.
 	TextField string `json:"text_field,omitempty"`
 }
 
@@ -310,7 +309,7 @@ type ContainerConfigurationAPI struct {
 // its own defaults.
 type SessionConfigurationAPI struct {
 	// IdleTimeoutSeconds maps to session_configuration.idle_timeout_seconds. Valid
-	// range is 120–3600 (inclusive). When the field is unset the whole
+	// range is 120–14400 (inclusive). When the field is unset the whole
 	// session_configuration block is omitted and the service default (900) applies.
 	IdleTimeoutSeconds int `json:"idle_timeout_seconds"`
 }
@@ -327,7 +326,8 @@ type HostedAgentDefinition struct {
 	ContainerConfiguration *ContainerConfigurationAPI `json:"container_configuration,omitempty"` // container deploy only
 	CodeConfiguration      *CodeConfigurationAPI      `json:"code_configuration,omitempty"`      // code deploy only
 	SessionConfiguration   *SessionConfigurationAPI   `json:"session_configuration,omitempty"`   // optional session tuning
-	Image                  string                     `json:"image,omitempty"`                   // deprecated: for backward compat deserialization only
+	EnableMemorySnapshot   *bool                      `json:"enable_memory_snapshot,omitempty"`
+	Image                  string                     `json:"image,omitempty"` // deprecated: for backward compat deserialization only
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for HostedAgentDefinition.
@@ -378,14 +378,17 @@ type ManagedEnvironment struct {
 	EnvironmentVariables map[string]string `json:"environment_variables,omitempty"`
 }
 
-// ManagedAgentHarnessGitHubCopilot is the discriminator sent in the managed
-// agent definition's `harness.type` field to run the agent on the GitHub
-// Copilot harness.
-//
-// This is the spelling the managed-agent spec defines, and the `_preview`
-// suffix is part of it: the harness is in preview and the service will version
-// the discriminator when it leaves preview.
+// ManagedAgentHarnessMicrosoftCopilot identifies the Microsoft Copilot preview harness.
+const ManagedAgentHarnessMicrosoftCopilot = "microsoft_copilot_preview"
+
+// ManagedAgentHarnessGitHubCopilot is the legacy Copilot harness discriminator.
+// It remains valid and must retain its original wire value.
 const ManagedAgentHarnessGitHubCopilot = "github_copilot_preview"
+
+// IsCopilotHarness reports whether harnessType exactly matches either Copilot harness discriminator.
+func IsCopilotHarness(harnessType string) bool {
+	return harnessType == ManagedAgentHarnessMicrosoftCopilot || harnessType == ManagedAgentHarnessGitHubCopilot
+}
 
 // SkillReference identifies a Foundry skill available to a prompt agent.
 //
@@ -395,6 +398,7 @@ const ManagedAgentHarnessGitHubCopilot = "github_copilot_preview"
 // published. Skills are published before the agent version is created, so the
 // version is always known by then.
 type SkillReference struct {
+	Type    string `json:"type"`
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
 }
@@ -438,9 +442,8 @@ const (
 	VoiceModelTypeHostedAgent  VoiceModelType = "hosted_agent"
 )
 
-// VoiceTargetAgentReference is the data-plane target_agent object on a managed
-// voice wrapper. Name identifies the hosted agent that receives Voice Bridge
-// turns; Version optionally pins the wrapper to one immutable hosted version.
+// VoiceTargetAgentReference is an internal resolved reference used to construct
+// a hosted wrapper's conversation_engine object. It is not a wire shape.
 type VoiceTargetAgentReference struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
@@ -505,7 +508,6 @@ type VoiceConfig struct {
 	Name   string  `json:"name"`
 	Style  *string `json:"style,omitempty"`
 	Pitch  *string `json:"pitch,omitempty"`
-	Rate   *string `json:"rate,omitempty"`
 	Locale *string `json:"locale,omitempty"`
 	Volume *string `json:"volume,omitempty"`
 }
@@ -520,7 +522,6 @@ type VoiceOutputConfig struct {
 	VoiceLocale string            `json:"voice_locale,omitempty"`
 	Style       *string           `json:"style,omitempty"`
 	Pitch       *string           `json:"pitch,omitempty"`
-	Rate        *string           `json:"rate,omitempty"`
 	Volume      *string           `json:"volume,omitempty"`
 	Speed       *float64          `json:"speed,omitempty"`
 }
@@ -535,23 +536,83 @@ type VoiceAudioConfig struct {
 // prompt voice agent. Its Kind is always AgentKindVoice ("voice").
 type VoiceAgentDefinition struct {
 	AgentDefinition
-	ModelType          VoiceModelType             `json:"model_type,omitempty"`
-	Model              string                     `json:"model,omitempty"`
-	TargetAgent        *VoiceTargetAgentReference `json:"target_agent,omitempty"`
-	ConversationEngine *VoiceConversationEngine   `json:"conversation_engine,omitempty"`
-	Instructions       string                     `json:"instructions,omitempty"`
-	StructuredInputs   map[string]any             `json:"structured_inputs,omitempty"`
-	Audio              *VoiceAudioConfig          `json:"audio,omitempty"`
-	OutputModalities   []string                   `json:"output_modalities,omitempty"`
-	Store              *bool                      `json:"store,omitempty"`
-	Tools              []map[string]any           `json:"tools,omitempty"`
-	Avatar             map[string]any             `json:"avatar,omitempty"`
-	Greeting           map[string]any             `json:"greeting,omitempty"`
-	Handoff            map[string]any             `json:"handoff,omitempty"`
-	ToolChoice         any                        `json:"tool_choice,omitempty"`
-	ParallelToolCalls  *bool                      `json:"parallel_tool_calls,omitempty"`
-	MaxOutputTokens    any                        `json:"max_output_tokens,omitempty"`
-	Include            []string                   `json:"include,omitempty"`
+	SubProtocol        string                   `json:"sub_protocol,omitempty"`
+	ModelType          VoiceModelType           `json:"model_type,omitempty"`
+	Model              string                   `json:"model,omitempty"`
+	ConversationEngine *VoiceConversationEngine `json:"conversation_engine,omitempty"`
+	Instructions       string                   `json:"instructions,omitempty"`
+	StructuredInputs   map[string]any           `json:"structured_inputs,omitempty"`
+	Audio              *VoiceAudioConfig        `json:"audio,omitempty"`
+	OutputModalities   []string                 `json:"output_modalities,omitempty"`
+	Store              *bool                    `json:"store,omitempty"`
+	Tools              []map[string]any         `json:"tools,omitempty"`
+	Avatar             map[string]any           `json:"avatar,omitempty"`
+	Greeting           map[string]any           `json:"greeting,omitempty"`
+	ToolChoice         any                      `json:"tool_choice,omitempty"`
+	ParallelToolCalls  *bool                    `json:"parallel_tool_calls,omitempty"`
+	MaxOutputTokens    any                      `json:"max_output_tokens,omitempty"`
+	Include            []string                 `json:"include,omitempty"`
+	LiveAudio          *LiveVoiceAudio          `json:"-"`
+	Delegation         *LiveVoiceDelegation     `json:"delegation,omitempty"`
+}
+
+// MarshalJSON emits one protocol-specific audio property. Realtime callers keep
+// the typed Audio field; GPT Live uses its incompatible native audio shape.
+func (d VoiceAgentDefinition) MarshalJSON() ([]byte, error) {
+	type definitionAlias VoiceAgentDefinition
+	var audio any
+	if d.Audio != nil {
+		audio = d.Audio
+	}
+	if d.LiveAudio != nil {
+		audio = d.LiveAudio
+	}
+	return json.Marshal(struct {
+		definitionAlias
+		Audio any `json:"audio,omitempty"`
+	}{definitionAlias: definitionAlias(d), Audio: audio})
+}
+
+type LiveVoiceAudio struct {
+	Format *LiveAudioFormat `json:"format,omitempty"`
+	Output *LiveAudioOutput `json:"output,omitempty"`
+}
+
+type LiveAudioFormat struct {
+	Type string `json:"type"`
+	Rate *int   `json:"rate,omitempty"`
+}
+
+type LiveAudioOutput struct {
+	Voice any `json:"voice,omitempty"`
+}
+
+type LiveVoiceDelegation struct {
+	Type         string                   `json:"type"`
+	Responses    *LiveResponsesDelegation `json:"responses,omitempty"`
+	AgentName    string                   `json:"agent_name,omitempty"`
+	AgentVersion string                   `json:"agent_version,omitempty"`
+}
+
+type LiveResponsesDelegation struct {
+	Model             string                  `json:"model"`
+	Instructions      *string                 `json:"instructions,omitempty"`
+	MaxOutputTokens   *int                    `json:"max_output_tokens,omitempty"`
+	ParallelToolCalls *bool                   `json:"parallel_tool_calls,omitempty"`
+	ServiceTier       *string                 `json:"service_tier,omitempty"`
+	Reasoning         *LiveResponsesReasoning `json:"reasoning,omitempty"`
+	Text              *LiveResponsesText      `json:"text,omitempty"`
+	ToolChoice        any                     `json:"tool_choice,omitempty"`
+	Tools             []map[string]any        `json:"tools,omitempty"`
+}
+
+type LiveResponsesReasoning struct {
+	Effort  *string `json:"effort,omitempty"`
+	Summary *string `json:"summary,omitempty"`
+}
+
+type LiveResponsesText struct {
+	Verbosity *string `json:"verbosity,omitempty"`
 }
 
 // TelephonyBindingRequest creates an agent telephony binding.
@@ -572,6 +633,326 @@ type TelephonyBinding struct {
 	ConnectionName  string           `json:"connection_name,omitempty"`
 	TransferTargets []map[string]any `json:"transfer_targets,omitempty"`
 	ETag            string           `json:"etag,omitempty"`
+}
+
+// TelephonyBindingCreateRequest is a provider-specific GA binding request.
+type TelephonyBindingCreateRequest interface {
+	telephonyBindingCreateRequest()
+}
+
+// CreateTwilioTelephonyBindingRequest creates a Twilio phone-number binding.
+type CreateTwilioTelephonyBindingRequest struct {
+	ConnectionName string `json:"connection_name"`
+	PhoneNumber    string `json:"phone_number"`
+	Label          string `json:"label,omitempty"`
+}
+
+func (*CreateTwilioTelephonyBindingRequest) telephonyBindingCreateRequest() {}
+
+func (r CreateTwilioTelephonyBindingRequest) MarshalJSON() ([]byte, error) {
+	type request CreateTwilioTelephonyBindingRequest
+	return json.Marshal(struct {
+		Provider string `json:"provider"`
+		request
+	}{Provider: TelephonyProviderTwilio, request: request(r)})
+}
+
+// CreateTeamsPhoneTelephonyBindingRequest creates a Teams Phone Extensibility binding.
+type CreateTeamsPhoneTelephonyBindingRequest struct {
+	ConnectionName          string `json:"connection_name"`
+	ResourceAccountObjectID string `json:"resource_account_object_id"`
+	PhoneNumber             string `json:"phone_number,omitempty"`
+	Label                   string `json:"label,omitempty"`
+}
+
+func (*CreateTeamsPhoneTelephonyBindingRequest) telephonyBindingCreateRequest() {}
+
+func (r CreateTeamsPhoneTelephonyBindingRequest) MarshalJSON() ([]byte, error) {
+	type request CreateTeamsPhoneTelephonyBindingRequest
+	return json.Marshal(struct {
+		Provider string `json:"provider"`
+		request
+	}{Provider: TelephonyProviderTeamsPhoneExtensibility, request: request(r)})
+}
+
+// UpdateTelephonyBindingRequest contains mutable GA binding fields.
+type UpdateTelephonyBindingRequest struct {
+	Status         *string         `json:"status,omitempty"`
+	Label          *NullableString `json:"label,omitempty"`
+	ConnectionName *string         `json:"connection_name,omitempty"`
+	PhoneNumber    *NullableString `json:"phone_number,omitempty"`
+}
+
+// NullableString distinguishes an omitted PATCH field from an explicit JSON null.
+// Use a nil *NullableString to omit the field, an empty NullableString to clear it,
+// or NewNullableString to replace it.
+type NullableString struct {
+	Value *string
+}
+
+// NewNullableString returns a PATCH value that serializes as a JSON string.
+func NewNullableString(value string) *NullableString {
+	valueCopy := value
+	return &NullableString{Value: &valueCopy}
+}
+
+// MarshalJSON serializes an empty value as null so callers can clear mutable fields.
+func (v NullableString) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
+// GATelephonyBinding is the canonical v1 representation of a binding.
+type GATelephonyBinding struct {
+	ID                      string `json:"id"`
+	Provider                string `json:"provider"`
+	ConnectionName          string `json:"connection_name"`
+	Status                  string `json:"status"`
+	IncomingCallURL         string `json:"incoming_call_url"`
+	PhoneNumber             string `json:"phone_number,omitempty"`
+	ResourceAccountObjectID string `json:"resource_account_object_id,omitempty"`
+	Label                   string `json:"label,omitempty"`
+	ETag                    string `json:"etag,omitempty"`
+}
+
+const (
+	TelephonyBindingStatusActive    = "active"
+	TelephonyBindingStatusSuspended = "suspended"
+)
+
+// TelephonyBindingListOptions controls one page of canonical bindings.
+type TelephonyBindingListOptions struct {
+	Provider string
+	Status   string
+	Limit    int
+	Order    string
+	After    string
+	Before   string
+}
+
+// TelephonyBindingPage is one page of canonical bindings.
+type TelephonyBindingPage struct {
+	Data    []GATelephonyBinding `json:"data"`
+	FirstID string               `json:"first_id,omitempty"`
+	LastID  string               `json:"last_id,omitempty"`
+	HasMore *bool                `json:"has_more"`
+}
+
+// TelephonyRepeatabilityOptions identifies one repeatable create operation.
+type TelephonyRepeatabilityOptions struct {
+	RequestID string
+	FirstSent time.Time
+}
+
+// TelephonyTransferDestination identifies a transfer destination.
+type TelephonyTransferDestination struct {
+	Kind      string          `json:"kind"`
+	Value     string          `json:"-"`
+	RawValue  json.RawMessage `json:"-"`
+	RawObject json.RawMessage `json:"-"`
+	HasValue  bool            `json:"-"`
+}
+
+// UnmarshalJSON decodes known destination values as strings while preserving
+// the complete object for future destination types and legacy kinds.
+func (d *TelephonyTransferDestination) UnmarshalJSON(data []byte) error {
+	*d = TelephonyTransferDestination{}
+	wire, err := decodeTelephonyTransferDestinationObject(data)
+	if err != nil {
+		return err
+	}
+	typeValue, hasType := wire["type"]
+	kindValue, hasKind := wire["kind"]
+	if hasType && hasKind {
+		return fmt.Errorf("telephony transfer destination cannot contain both type and kind")
+	}
+	discriminator := typeValue
+	if !hasType {
+		discriminator = kindValue
+	}
+	if len(discriminator) == 0 || string(discriminator) == "null" {
+		return fmt.Errorf("telephony transfer destination required fields are missing: discriminator")
+	}
+	var wireKind string
+	if err := json.Unmarshal(discriminator, &wireKind); err != nil {
+		return fmt.Errorf("telephony transfer destination discriminator must be a string: %w", err)
+	}
+	kind, known := decodeTelephonyTransferDestinationKind(wireKind, hasType)
+	value := wire["value"]
+	hasValue := len(value) != 0
+	if !hasValue {
+		if known {
+			return fmt.Errorf("known telephony transfer destination value must be a string")
+		}
+		d.Kind = kind
+		d.RawObject = append(d.RawObject, data...)
+		return nil
+	}
+	if known {
+		if string(value) == "null" {
+			return fmt.Errorf("known telephony transfer destination value must be a string")
+		}
+		var decodedValue string
+		if err := json.Unmarshal(value, &decodedValue); err != nil {
+			return fmt.Errorf("known telephony transfer destination value must be a string: %w", err)
+		}
+		d.Kind = kind
+		d.Value = decodedValue
+		d.HasValue = true
+		return nil
+	}
+	d.Kind = kind
+	d.RawObject = append(d.RawObject, data...)
+	d.RawValue = append(d.RawValue, value...)
+	d.HasValue = true
+	if value[0] == '"' {
+		_ = json.Unmarshal(value, &d.Value)
+	}
+	return nil
+}
+
+// MarshalJSON emits service type discriminators for known kinds and preserves
+// the raw object for future types and legacy kinds.
+func (d TelephonyTransferDestination) MarshalJSON() ([]byte, error) {
+	if len(d.RawObject) != 0 {
+		raw, err := decodeTelephonyTransferDestinationObject(d.RawObject)
+		if err != nil {
+			return nil, fmt.Errorf("raw telephony transfer destination does not match kind")
+		}
+		typeValue, hasType := raw["type"]
+		kindValue, hasKind := raw["kind"]
+		if hasType == hasKind {
+			return nil, fmt.Errorf("raw telephony transfer destination does not match kind")
+		}
+		discriminator := typeValue
+		if hasKind {
+			discriminator = kindValue
+		}
+		var rawKind string
+		if err := json.Unmarshal(discriminator, &rawKind); err != nil {
+			return nil, fmt.Errorf("raw telephony transfer destination does not match kind")
+		}
+		semanticKind, _ := decodeTelephonyTransferDestinationKind(rawKind, hasType)
+		if semanticKind != d.Kind {
+			return nil, fmt.Errorf("raw telephony transfer destination does not match kind")
+		}
+		return append([]byte(nil), d.RawObject...), nil
+	}
+	if isKnownTelephonyTransferDestinationKind(d.Kind) {
+		value, _ := json.Marshal(d.Value)
+		return json.Marshal(struct {
+			Type  string          `json:"type"`
+			Value json.RawMessage `json:"value"`
+		}{Type: telephonyTransferDestinationWireType(d.Kind), Value: value})
+	}
+	value := d.RawValue
+	if len(value) == 0 {
+		if !d.HasValue && d.Value == "" {
+			return json.Marshal(struct {
+				Kind string `json:"kind"`
+			}{Kind: d.Kind})
+		}
+		if d.HasValue {
+			value = json.RawMessage("null")
+		} else {
+			value, _ = json.Marshal(d.Value)
+		}
+	}
+	return json.Marshal(struct {
+		Kind  string          `json:"kind"`
+		Value json.RawMessage `json:"value"`
+	}{Kind: d.Kind, Value: value})
+}
+
+func decodeTelephonyTransferDestinationObject(data []byte) (map[string]json.RawMessage, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	start, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delimiter, ok := start.(json.Delim); !ok || delimiter != '{' {
+		return nil, fmt.Errorf("telephony transfer destination must be an object")
+	}
+	wire := make(map[string]json.RawMessage)
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		key := keyToken.(string)
+		if _, exists := wire[key]; exists {
+			return nil, fmt.Errorf("telephony transfer destination contains duplicate key %q", key)
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		wire[key] = value
+	}
+	end, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delimiter, ok := end.(json.Delim); !ok || delimiter != '}' {
+		return nil, fmt.Errorf("telephony transfer destination must be an object")
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("telephony transfer destination has a trailing token")
+		}
+		return nil, err
+	}
+	return wire, nil
+}
+
+func decodeTelephonyTransferDestinationKind(kind string, fromType bool) (string, bool) {
+	if fromType {
+		switch kind {
+		case "phone_number":
+			return TelephonyTransferDestinationPSTN, true
+		case TelephonyTransferDestinationTeams, TelephonyTransferDestinationSIP:
+			return kind, true
+		default:
+			return kind, false
+		}
+	}
+	switch kind {
+	case TelephonyTransferDestinationPSTN, TelephonyTransferDestinationTeams, TelephonyTransferDestinationSIP:
+		return kind, true
+	default:
+		return kind, false
+	}
+}
+
+func telephonyTransferDestinationWireType(kind string) string {
+	if kind == TelephonyTransferDestinationPSTN {
+		return "phone_number"
+	}
+	return kind
+}
+
+func isKnownTelephonyTransferDestinationKind(kind string) bool {
+	return kind == TelephonyTransferDestinationPSTN ||
+		kind == TelephonyTransferDestinationTeams ||
+		kind == TelephonyTransferDestinationSIP
+}
+
+const (
+	TelephonyTransferDestinationPSTN  = "pstn"
+	TelephonyTransferDestinationTeams = "teams"
+	TelephonyTransferDestinationSIP   = "sip"
+)
+
+// TelephonyTransferTarget describes one named transfer destination.
+type TelephonyTransferTarget struct {
+	Name        string                       `json:"name"`
+	Description string                       `json:"description"`
+	Destination TelephonyTransferDestination `json:"destination"`
+}
+
+// TelephonyTransferTargets is the complete transfer-target singleton.
+type TelephonyTransferTargets struct {
+	TransferTargets []TelephonyTransferTarget `json:"transfer_targets"`
+	ETag            string                    `json:"-"`
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version
@@ -648,6 +1029,7 @@ type AgentVersionObject struct {
 type AgentVersionError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Target  string `json:"target,omitempty"`
 }
 
 // AgentObject represents an agent

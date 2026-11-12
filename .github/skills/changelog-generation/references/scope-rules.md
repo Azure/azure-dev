@@ -11,24 +11,11 @@ Files to update:
 - `.vscode/cspell-github-user-aliases.txt` — if spell check additions needed
 
 **Version derivation:**
-1. Check if the triggering issue or user request specifies an explicit version (e.g., "Create changelog for 1.24.2"). If yes, use that version — skip to step 4.
-2. Find the top-most section in `cli/azd/CHANGELOG.md` (e.g., `## X.Y.Z-beta.N (Unreleased)`).
-3. Strip the `-beta.N` suffix and `(Unreleased)` marker.
-4. Format as: `## X.Y.Z (YYYY-MM-DD)` using **today's date** (the date the changelog is being authored/committed, not a future planned ship date).
-5. Set `cli/version.txt` to `X.Y.Z`.
-6. Set the `Version` constant in `cli/azd/pkg/azdext/version.go` to `X.Y.Z`.
-7. If no version can be determined (no explicit version requested and no unreleased header found), ask the user for the release version number via `ask_user`.
-
-**Unreleased placeholder after release:**
-
-After converting the top section from `X.Y.Z-beta.N (Unreleased)` to `X.Y.Z (YYYY-MM-DD)`, add a new `(Unreleased)` placeholder at the top using the **next minor version**, not the next patch:
-
-- If releasing a **patch** (`X.Y.Z` where `Z > 0`), the new placeholder is `X.(Y+1).0-beta.1 (Unreleased)`.
-- If releasing a **minor** (`X.Y.0`), the new placeholder is `X.(Y+1).0-beta.1 (Unreleased)`.
-
-Example: after releasing `1.24.1`, add `## 1.25.0-beta.1 (Unreleased)` at the top — not `## 1.24.2-beta.1`.
-
-This matches the behavior of `eng/scripts/Update-CliVersion.ps1`, which increments the minor version (not the patch) when creating the post-release development placeholder.
+1. Use the version specified in the triggering issue or user request when explicit.
+2. Otherwise, assess the changes included during PR processing and select an appropriate patch or minor version.
+3. Find the top-most `(Unreleased)` section in `cli/azd/CHANGELOG.md`. Treat its preview version as context only; it does not determine the release version.
+4. Replace that section's header with `## <release-version> (YYYY-MM-DD)` using **today's date**. Do not add a new unreleased placeholder above it because release-readiness checks require the first changelog entry to match `cli/version.txt`.
+5. Set `cli/version.txt` and the `Version` constant in `cli/azd/pkg/azdext/version.go` to the release version.
 
 **Do NOT** update any extension files.
 
@@ -40,7 +27,7 @@ Files to update:
 - `<extension>/extension.yaml` — update `version:` field
 
 **Version derivation:**
-1. Ask the user for the new version (SemVer, optional `-preview` suffix).
+1. Use the version specified in the triggering issue or user request when explicit. Otherwise, after PR processing, select the next version by following the extension's own convention in its `CHANGELOG.md` history, such as its bump pattern and any `-preview` suffix, and assessing the included changes.
 2. Update `version.txt` and `extension.yaml` — they **must** match exactly.
 3. Add new top entry: `## {version} (YYYY-MM-DD)` using today's date.
 

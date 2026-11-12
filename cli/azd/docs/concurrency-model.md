@@ -177,7 +177,7 @@ and Go's runtime will panic on a concurrent map write.
 | Lock                       | Protects                                              | Acquired by                                                       |
 |----------------------------|-------------------------------------------------------|-------------------------------------------------------------------|
 | `cacheMu sync.RWMutex`     | `cache map[string]*Environment` (env-name → instance) | `Get`, `LoadOrCreateInteractive`, `Save`, `Reload`, `cachePut`    |
-| `saveMu sync.Mutex`        | The .env file write critical section                  | `Save` (held across read → merge → write to prevent torn writes)  |
+| `saveMu sync.Mutex`        | Environment persistence critical sections             | `Save`, `SaveWithOptions`, `Reload`                               |
 
 **Save path in `local_file_data_store.Save()`**: The reload-merge-write
 cycle snapshots `dotenv`/`deletedKeys` under `env.mu.RLock()`, calls
@@ -186,11 +186,26 @@ then overlays the snapshot and replays deletions under `env.mu.Lock()`.
 This ensures the overlay writes don't race with concurrent `DotenvSet`/
 `DotenvDelete` calls from parallel service publishes.
 
+`Reload` and `Save` acquire locks separately; reloading before saving is
+not a transaction. For selected-key operations, `SaveOptions.DotenvKeys`
+restricts the snapshot and overlay to the listed raw `.env` keys while the
+existing file lock covers reload, merge, and atomic write. Selected keys
+absent from memory are deleted. The disk merge uses a private environment,
+so unrelated values and configuration come from disk without replacing
+the shared environment's pending updates, deletions, or configuration.
+After a successful write, only committed selected-key deletions are
+acknowledged in the shared environment. For an optional remote save, the
+manager reads a fresh local snapshot rather than sending unsaved shared
+state. Ordinary saves can subsequently persist the retained pending changes.
+`azd env unset` uses this option for both removal and error-path restoration.
+A nil `DotenvKeys` retains the existing full-snapshot merge and configuration
+save; an empty non-nil slice persists no in-memory changes.
+
 **Contract**: `cacheMu` ensures every caller asking for env "X" gets the
 **same** `*Environment` instance — without this, parallel deploy steps would
-each get their own copy and writes would diverge. `saveMu` serializes the
-read-modify-write cycle on the .env file so two concurrent `Save` calls
-cannot interleave and clobber each other's writes.
+each get their own copy and writes would diverge. `saveMu` serializes saves
+and reloads within a manager; the local file lock serializes the
+reload-merge-write cycle across processes.
 
 **Why it matters**: A future `Manager` method that loads or persists
 environment state must take the appropriate lock or it will either return
@@ -261,6 +276,55 @@ both attempt initialization; the lock ensures only one succeeds.
 
 ---
 
+## `pkg/watch.fileWatcher`
+
+The watcher has one backend-registration owner and one event consumer. Only the
+registration owner calls backend `Add` and `Close`. The consumer starts before
+initial registration and keeps draining events during cancellation until pending
+registration finishes and the owner closes the backend. This avoids abandoning
+native Windows backend replies or deadlocking on a full backend event buffer.
+
+Directory create events enqueue only the newly discovered subtree. Pending
+ancestor/descendant discoveries are deduplicated under `directoryQueue.mu`;
+the one-slot notification channel never blocks the consumer. The owner drains pending
+paths and registers them outside that lock. Established, unrelated trees are not
+walked again for a continuous stream of new directories.
+
+Both reporting methods send a barrier to the registration owner before taking
+the accounting mutex. The owner completes its in-flight batch and scans pending
+discoveries before acknowledging the barrier. The event consumer continues
+draining while snapshots wait; no queue or accounting lock spans registration
+or its filesystem traversal. This makes a final snapshot followed immediately
+by cancellation include children of already queued directories even when they
+have no individual backend events. Discoveries queued after the barrier drains
+the pending set belong to later work, not an atomic filesystem-wide snapshot.
+Shutdown releases waiting snapshots via `done`; callers needing a complete
+final snapshot must take it before canceling the watcher.
+
+`fileWatcher.mu` protects all reads and writes to `fileChanges`, including
+snapshot reconciliation. `initialFiles` is populated before event consumption
+and remains immutable: it stores startup file-path provenance, not transient
+paths or per-file generation identifiers.
+
+**Snapshot contract**: Both reporting methods reconcile `Created` with `os.Lstat`.
+Missing paths and directory replacements are omitted and reclaimed from the
+internal map; other filesystem errors retain the entry. Rebuilding the map also
+releases its peak transient capacity. Snapshots are cumulative, not a reset of
+live changes, and reconciliation still works after cancellation. New files stay
+`Created` across snapshots and writes. Late writes/removals for reclaimed paths
+absent from the startup inventory cannot turn them into `Modified` or `Deleted`.
+Startup paths retain the existing modified/deleted event accounting.
+
+This is a current-path contract, not inode-level generation tracking: fsnotify
+events do not identify file generations. A recreated non-directory path remains
+`Created` once discovered, and a queued removal cannot clear a currently live
+replacement. A directory at that path is never reported as a created file.
+Deleted startup paths and modified entries are not reconciled by filesystem
+existence. `GetFileChanges` sorts by path; the deprecated printer retains
+created/modified/deleted grouping and sorts paths within each group.
+
+---
+
 ## Lock Acquisition Order
 
 Consistent lock ordering prevents deadlocks. The environment persistence path
@@ -320,6 +384,14 @@ locks held by the parent's hook-launch path.
 ---
 
 ## Adding new concurrent state
+
+### Periodic service progress
+
+The service progress poller's stop function cancels pending channel delivery and
+joins its background goroutine. Call it before closing the progress channel or
+reporting the next operation's progress. `async.Progress.Done` remains owned by
+the operation and must only run after all producers have finished. Cancellable
+progress delivery does not make sending concurrently with `Done` safe.
 
 When you introduce a new field on one of the types above (or a new type that
 will be shared across graph steps), follow this checklist:

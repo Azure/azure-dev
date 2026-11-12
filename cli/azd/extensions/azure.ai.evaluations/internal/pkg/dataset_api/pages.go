@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -43,8 +44,8 @@ func (e pageWalkError) Unwrap() error { return e.cause }
 // page lists incompletely and a latest-version check can decide from a stale
 // first page.
 func (c *DatasetClient) followPages(ctx context.Context, first *DatasetList) (*DatasetList, error) {
-	if first == nil {
-		return nil, nil
+	if first == nil || first.Value == nil {
+		return nil, messages.ParsingResponse(errors.New("dataset listing must contain a value array"))
 	}
 
 	// Copied rather than aliased: appending to first.Value could write into the
@@ -76,6 +77,11 @@ func (c *DatasetClient) followPages(ctx context.Context, first *DatasetList) (*D
 		}
 		if err := json.Unmarshal(body, &page); err != nil {
 			return nil, pageWalkError{cause: messages.ParsingResponse(err)}
+		}
+		if page.Value == nil {
+			return nil, pageWalkError{
+				cause: messages.ParsingResponse(errors.New("dataset listing must contain a value array")),
+			}
 		}
 		out.Value = append(out.Value, page.Value...)
 		next = page.NextLink

@@ -465,6 +465,44 @@ services:
 	require.True(t, promptServer.promptRequests[1].Options.Required)
 	require.False(t, promptServer.promptRequests[1].Options.Secret)
 	require.False(t, promptServer.promptRequests[1].Options.ClearOnCompletion)
+
+	// '?' must stay literal input for every prompt, so no help message is sent:
+	// it could never be opened and would only advertise "[Type ? for hint]".
+	for _, req := range promptServer.promptRequests {
+		require.True(t, req.Options.IgnoreHintKeys)
+		require.Empty(t, req.Options.HelpMessage)
+		require.Empty(t, req.Options.Hint)
+	}
+}
+
+func TestConfigureAzureYamlEnvironmentVariables_PersistsValuesContainingQuestionMark(t *testing.T) {
+	t.Setenv("AZURE_LANGUAGE_MCP_ENDPOINT", "")
+
+	projectDir := t.TempDir()
+	content := `name: toolbox-agent
+services:
+  langmcpconn:
+    host: azure.ai.connection
+    target: '${AZURE_LANGUAGE_MCP_ENDPOINT}'
+`
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "azure.yaml"), []byte(content), 0600))
+	t.Chdir(projectDir)
+
+	const endpoint = "https://example.test/language/mcp?api-version=2025-11-15-preview"
+	envServer := &testEnvironmentServiceServer{values: map[string]map[string]string{"dev": {}}}
+	promptServer := &testPromptServiceServer{promptResponses: []string{endpoint}}
+	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{}, promptServer)
+
+	err := configureAzureYamlEnvironmentVariables(t.Context(), azdClient, "dev", ".", false)
+	require.NoError(t, err)
+
+	require.Len(t, promptServer.promptRequests, 1)
+	opts := promptServer.promptRequests[0].Options
+	require.Equal(t, "Enter a value for AZURE_LANGUAGE_MCP_ENDPOINT", opts.Message)
+	require.False(t, opts.Secret)
+	require.True(t, opts.IgnoreHintKeys)
+	require.Empty(t, opts.HelpMessage)
+	require.Equal(t, endpoint, envServer.values["dev"]["AZURE_LANGUAGE_MCP_ENDPOINT"])
 }
 
 func TestConfigureAzureYamlEnvironmentVariables_NoPromptSkipsPrompts(t *testing.T) {

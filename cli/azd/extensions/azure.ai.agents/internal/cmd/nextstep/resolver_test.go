@@ -4,6 +4,10 @@
 package nextstep
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -258,7 +262,7 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 		out := ResolveAfterInit(state, nil)
 		require.NotEmpty(t, out)
 		assert.Equal(t, "cd my-agent", out[0].Command)
-		assert.Equal(t, "enter your new project folder", out[0].Description)
+		assert.Equal(t, "enter your project folder", out[0].Description)
 		assert.Equal(t, 0, out[0].Priority, "cd suggestion should have highest priority")
 		// Next primary is run, trailing is deploy
 		assert.Contains(t, out[1].Command, "azd ai agent run")
@@ -286,6 +290,203 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 		assert.Equal(t, "cd hello-world", out[0].Command)
 		assert.Equal(t, "azd provision", out[1].Command)
 	})
+}
+
+func TestResolveAfterInit_CreatedFolderQuoting(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		folder string
+		want   string
+	}{
+		{folder: "my-agent", want: "cd my-agent"},
+		{folder: "My Agent", want: "cd 'My Agent'"},
+		{folder: "My\tAgent", want: "cd 'My\tAgent'"},
+		{folder: `My"Agent`, want: `cd 'My"Agent'`},
+		{folder: "My&Agent", want: "cd 'My&Agent'"},
+		{folder: "my-$USER", want: "cd 'my-$USER'"},
+		{folder: "my-$(whoami)", want: "cd 'my-$(whoami)'"},
+		{folder: "Bob's Agent", want: `cd 'Bob'\''s Agent'`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.folder, func(t *testing.T) {
+			t.Parallel()
+			state := &State{
+				HasProjectEndpoint:   true,
+				CreatedFolderDisplay: tt.folder,
+			}
+			out := ResolveAfterInit(state, nil)
+			require.NotEmpty(t, out)
+			assert.Equal(t, tt.want, out[0].Command)
+		})
+	}
+}
+
+func TestCdSuggestionsShellAlternatives(t *testing.T) {
+	t.Parallel()
+	for _, folder := range []string{
+		"My Agent", "my~agent", "Bob's Agent", "my-$USER", "agent[1]", "@agent", "my,agent",
+		"D:/agents/demo", "d:/agents/demo", "D:agents/demo",
+	} {
+		t.Run(folder, func(t *testing.T) {
+			t.Parallel()
+			out := ResolveAfterInit(&State{CreatedFolderDisplay: folder}, nil)
+			require.GreaterOrEqual(t, len(out), 4)
+			assert.Equal(t, "cd "+shellQuoteCdPath(folder), out[0].Command)
+			assert.Equal(t, "Set-Location -LiteralPath '"+
+				strings.ReplaceAll(folder, "'", "''")+"'", out[1].Command)
+			assert.Equal(t, "cd /d \""+folder+"\"", out[2].Command)
+			for i, shell := range []string{"POSIX shells", "PowerShell", "cmd.exe"} {
+				assert.Contains(t, out[i].Description, shell)
+				assert.Contains(t, out[i].Description, "choose one")
+				assert.Less(t, out[i].Priority, out[3].Priority)
+			}
+		})
+	}
+}
+
+func TestCdSuggestionsPowerShellSmartQuotes(t *testing.T) {
+	t.Parallel()
+	for _, quote := range []string{"\u2018", "\u2019", "\u201a", "\u201b"} {
+		for _, suffix := range []string{"s Agent", "sAgent"} {
+			folder := "Bob" + quote + suffix
+			t.Run(folder, func(t *testing.T) {
+				t.Parallel()
+				out := CdSuggestions(folder)
+				require.Len(t, out, 3)
+				assert.Equal(t, "Set-Location -LiteralPath 'Bob"+quote+quote+suffix+"'", out[1].Command)
+				assert.Contains(t, out[1].Description, "PowerShell")
+			})
+		}
+	}
+}
+
+func TestCdSuggestionsPowerShellSmartDoubleQuotes(t *testing.T) {
+	t.Parallel()
+	for _, quote := range []string{"\u201c", "\u201d", "\u201e", "\u201f"} {
+		for _, folder := range []string{"my" + quote + "agent", "my" + quote + "agent" + quote, "my " + quote + "agent"} {
+			t.Run(folder, func(t *testing.T) {
+				t.Parallel()
+				out := CdSuggestions(folder)
+				require.Len(t, out, 3)
+				assert.Equal(t, "cd "+shellQuoteCdPath(folder), out[0].Command)
+				assert.Equal(t, "Set-Location -LiteralPath '"+folder+"'", out[1].Command)
+				assert.Contains(t, out[1].Description, "PowerShell")
+				assert.Equal(t, "cd /d \""+folder+"\"", out[2].Command)
+			})
+		}
+	}
+}
+
+func TestCdSuggestionsPowerShellUnicodeDashes(t *testing.T) {
+	t.Parallel()
+	for _, dash := range []string{"\u2013", "\u2014", "\u2015"} {
+		t.Run(dash, func(t *testing.T) {
+			t.Parallel()
+			folder := dash + "agent"
+			out := CdSuggestions(folder)
+			require.Len(t, out, 3)
+			assert.Equal(t, "cd "+folder, out[0].Command)
+			assert.Equal(t, "Set-Location -LiteralPath '"+folder+"'", out[1].Command)
+			assert.Equal(t, "cd /d \""+folder+"\"", out[2].Command)
+			embedded := "my" + dash + "agent"
+			out = CdSuggestions(embedded)
+			require.Len(t, out, 1)
+			assert.Equal(t, "cd "+embedded, out[0].Command)
+		})
+	}
+}
+
+func TestCdSuggestionsUnsafeCmdPath(t *testing.T) {
+	t.Parallel()
+	for _, folder := range []string{"my-%PATH%", "my-!PATH!", "my\"agent", "my\nagent", "my\ragent"} {
+		t.Run(folder, func(t *testing.T) {
+			t.Parallel()
+			out := CdSuggestions(folder)
+			require.Len(t, out, 3)
+			assert.Equal(t, "cmd.exe: use a shell-specific alternative above", out[2].Command)
+			assert.Contains(t, out[2].Description, "cannot be represented safely")
+		})
+	}
+}
+
+func TestCdSuggestionsOptionLikePath(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX cd round trip; Windows shells are covered in resolver_windows_test.go")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh is not available on PATH")
+	}
+	for _, folder := range []string{"-agent", "-my agent"} {
+		t.Run(folder, func(t *testing.T) {
+			t.Parallel()
+			out := CdSuggestions(folder)
+			require.Len(t, out, 3)
+			assert.Equal(t, "cd -- "+shellQuoteCdPath(folder), out[0].Command)
+
+			root := t.TempDir()
+			target := filepath.Join(root, folder)
+			require.NoError(t, os.Mkdir(target, 0o700))
+			command := exec.Command("sh", "-c", out[0].Command+" && pwd")
+			command.Dir = root
+			output, err := command.Output()
+			require.NoError(t, err)
+			got, err := os.Stat(strings.TrimSpace(string(output)))
+			require.NoError(t, err)
+			want, err := os.Stat(target)
+			require.NoError(t, err)
+			assert.True(t, os.SameFile(got, want), "%s", output)
+		})
+	}
+}
+
+func TestCdSuggestionsUNCPath(t *testing.T) {
+	t.Parallel()
+	out := CdSuggestions("//server/share/agent")
+	require.Len(t, out, 3)
+	assert.Equal(t, "cd //server/share/agent", out[0].Command)
+	assert.Equal(t, "Set-Location -LiteralPath '//server/share/agent'", out[1].Command)
+	assert.Equal(t, "cmd.exe: use a shell-specific alternative above", out[2].Command)
+}
+
+func TestShellQuoteCdPathRoundTrip(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh is not available on PATH")
+	}
+
+	folders := []string{
+		"my-agent",
+		"My Agent",
+		"My\tAgent",
+		`My"Agent`,
+		"My&Agent",
+		"my-$USER",
+		"my-$(whoami)",
+		"Bob's Agent",
+		"my~agent",
+		"my-%PATH%",
+		"my-!PATH!",
+		"agent[1]",
+		"@agent",
+		"my,agent",
+		"my^agent",
+	}
+	for _, folder := range folders {
+		t.Run(folder, func(t *testing.T) {
+			t.Parallel()
+			state := &State{HasProjectEndpoint: true, CreatedFolderDisplay: folder}
+			out := ResolveAfterInit(state, nil)
+			require.NotEmpty(t, out)
+			require.True(t, strings.HasPrefix(out[0].Command, "cd "))
+
+			arg := strings.TrimPrefix(out[0].Command, "cd ")
+			output, err := exec.Command("sh", "-c", "printf %s "+arg).Output()
+			require.NoError(t, err)
+			assert.Equal(t, folder, string(output))
+		})
+	}
 }
 
 // TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape locks the
@@ -392,6 +593,7 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 		protocol string
 	}{
 		{name: "invocations_ws", protocol: ProtocolInvocationsWS},
+		{name: "voice_conversation_engine", protocol: ProtocolVoiceConversationEngine},
 		{name: "activity", protocol: ProtocolActivity},
 		{name: "activity_protocol", protocol: ProtocolActivityLegacy},
 	} {
@@ -449,7 +651,7 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 
 // TestResolveAfterInit_ToolboxReproRendersAllCategories locks the full
 // regression for the toolbox-sample bug end-to-end: the state contains
-// BOTH an unresolved manifest placeholder AND a manifest-declared
+// BOTH an unresolved definition placeholder AND a bundled
 // toolbox whose azd-injected endpoint env var is unset. The rendered
 // "Next:" block must surface the placeholder fix-up AND route the
 // missing toolbox endpoint to split-service migration (NOT to `azd env set`),
@@ -466,7 +668,11 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 		HasProjectEndpoint:     true,
 		UnresolvedPlaceholders: []string{"TOOLBOX_ENDPOINT"},
 		MissingToolboxEndpoints: []ResourceRef{
-			{Name: "web-search-tools", ServiceName: "agent"},
+			{
+				Name:          "web-search-tools",
+				ServiceName:   "agent",
+				ToolboxSource: ToolboxSourceBundled,
+			},
 		},
 	}
 
@@ -475,12 +681,12 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
-		"edit agent configuration: replace {{TOOLBOX_ENDPOINT}} with the actual value",
+		"edit agent definition: replace {{TOOLBOX_ENDPOINT}} with the actual value",
 		"placeholder fix-up missing")
-	assert.Contains(t, rendered, "migrate legacy toolboxes to azure.ai.toolbox services")
+	assert.Contains(t, rendered, "create azure.ai.toolbox service")
+	assert.Contains(t, rendered, "azd ai agent toolbox add")
 	assert.NotContains(t, rendered, "azd provision")
-	assert.Contains(t, rendered, "azd ai agent doctor",
-		"toolbox-endpoint branch should surface doctor as an existence-check follow-up")
+	assert.NotContains(t, rendered, "azd ai agent doctor")
 	// Historical bug: the resolver used to emit `azd env set` for
 	// toolbox-derived endpoint vars. Those vars are azd-managed
 	// outputs of `azd provision`, not operator-supplied, so the
@@ -494,7 +700,7 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 
 // TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal locks the
 // "happy path" for the toolbox-endpoint branch: when the only thing
-// blocking the user is a manifest-declared toolbox whose
+// blocking the user is a bundled toolbox whose
 // TOOLBOX_<NAME>_MCP_ENDPOINT var is unset (no placeholders, no
 // pending provision reasons), the resolver must render the full
 // post-init sequence:
@@ -513,7 +719,11 @@ func TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal(t *testing.T) {
 	state := &State{
 		HasProjectEndpoint: true,
 		MissingToolboxEndpoints: []ResourceRef{
-			{Name: "web-search-tools", ServiceName: "agent"},
+			{
+				Name:          "web-search-tools",
+				ServiceName:   "agent",
+				ToolboxSource: ToolboxSourceBundled,
+			},
 		},
 	}
 
@@ -521,10 +731,10 @@ func TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal(t *testing.T) {
 	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
-	assert.Contains(t, rendered, "migrate legacy toolboxes to azure.ai.toolbox services")
+	assert.Contains(t, rendered, "create azure.ai.toolbox service")
+	assert.Contains(t, rendered, "azd ai agent toolbox add")
 	assert.NotContains(t, rendered, "azd provision")
-	assert.Contains(t, rendered, "azd ai agent doctor",
-		"toolbox-endpoint branch should surface doctor as an existence-check follow-up")
+	assert.NotContains(t, rendered, "azd ai agent doctor")
 	assert.Contains(t, rendered, "azd ai agent run",
 		"toolbox-endpoint branch should emit local run follow-up once deployment completes")
 	assert.Contains(t, rendered, "once toolbox migration and deployment complete",
@@ -559,6 +769,33 @@ func TestResolveAfterInit_SplitToolboxUsesDeployOnce(t *testing.T) {
 		assert.NotContains(t, suggestion.Command, "azd env set")
 	}
 	assert.Equal(t, 1, deployCount)
+}
+
+func TestResolveAfterInit_MixedToolboxSourcesUseGenericRunGuidance(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingToolboxEndpoints: []ResourceRef{
+			{
+				Name:          "split-tools",
+				ServiceName:   "split-tools",
+				ToolboxSource: ToolboxSourceSplit,
+			},
+			{
+				Name:          "bundled-tools",
+				ServiceName:   "agent",
+				ToolboxSource: ToolboxSourceBundled,
+			},
+		},
+	}
+
+	var buf strings.Builder
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
+	rendered := buf.String()
+	assert.Contains(t, rendered, "start the agent locally once the steps above are complete")
+	assert.NotContains(t, rendered, "start the agent locally once deployment completes")
+	assert.NotContains(t, rendered, "start the agent locally once toolbox migration and deployment complete")
 }
 
 func TestResolveAfterInit_BundledToolboxGuidanceMigratesInOrder(t *testing.T) {
@@ -857,7 +1094,11 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexist(t *testing.T) {
 	state := &State{
 		HasProjectEndpoint: true,
 		MissingToolboxEndpoints: []ResourceRef{
-			{Name: "web-search-tools", ServiceName: "agent"},
+			{
+				Name:          "web-search-tools",
+				ServiceName:   "agent",
+				ToolboxSource: ToolboxSourceBundled,
+			},
 		},
 		MissingManualVars: []string{"MY_API_KEY"},
 	}
@@ -866,10 +1107,10 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexist(t *testing.T) {
 	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
-	assert.Contains(t, rendered, "migrate legacy toolboxes to azure.ai.toolbox services")
+	assert.Contains(t, rendered, "create azure.ai.toolbox service")
+	assert.Contains(t, rendered, "azd ai agent toolbox add")
 	assert.NotContains(t, rendered, "azd provision")
-	assert.Contains(t, rendered, "azd ai agent doctor",
-		"coexistence: toolbox sub-branch must still emit doctor follow-up")
+	assert.NotContains(t, rendered, "azd ai agent doctor")
 	assert.Contains(t, rendered, "azd env set MY_API_KEY <value>",
 		"coexistence: manual sub-branch must surface the unrelated env-set line")
 	assert.Contains(t, rendered, "azd ai agent run",
@@ -896,7 +1137,11 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing
 		HasProjectEndpoint:     true,
 		UnresolvedPlaceholders: []string{"AGENT_NAME"},
 		MissingToolboxEndpoints: []ResourceRef{
-			{Name: "web-search-tools", ServiceName: "agent"},
+			{
+				Name:          "web-search-tools",
+				ServiceName:   "agent",
+				ToolboxSource: ToolboxSourceBundled,
+			},
 		},
 		MissingManualVars: []string{"MY_API_KEY"},
 	}
@@ -906,12 +1151,12 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing
 	rendered := buf.String()
 
 	assert.Contains(t, rendered,
-		"edit agent configuration: replace {{AGENT_NAME}} with the actual value",
+		"edit agent definition: replace {{AGENT_NAME}} with the actual value",
 		"placeholder fix-up missing")
-	assert.Contains(t, rendered, "migrate legacy toolboxes to azure.ai.toolbox services")
+	assert.Contains(t, rendered, "create azure.ai.toolbox service")
+	assert.Contains(t, rendered, "azd ai agent toolbox add")
 	assert.NotContains(t, rendered, "azd provision")
-	assert.Contains(t, rendered, "azd ai agent doctor",
-		"coexistence+placeholders: toolbox sub-branch must still emit doctor follow-up")
+	assert.NotContains(t, rendered, "azd ai agent doctor")
 	assert.Contains(t, rendered, "azd env set MY_API_KEY <value>",
 		"coexistence+placeholders: manual sub-branch must still surface env-set")
 	assert.NotContains(t, rendered, "azd ai agent run",
@@ -929,13 +1174,13 @@ func TestRunFollowUpDescription(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name                     string
-		hasToolboxEndpoint       bool
-		hasManualVars            bool
-		hasSplitToolboxEndpoint  bool
-		hasLegacyToolboxEndpoint bool
-		hasEndpointErrors        bool
-		want                     string
+		name                    string
+		hasToolboxEndpoint      bool
+		hasManualVars           bool
+		hasSplitToolboxEndpoint bool
+		hasEndpointErrors       bool
+		hasBundledToolbox       bool
+		want                    string
 	}{
 		{
 			name:               "both",
@@ -950,15 +1195,16 @@ func TestRunFollowUpDescription(t *testing.T) {
 			want:                    "start the agent locally once deployment completes",
 		},
 		{
-			name:                     "mixed split and legacy toolboxes",
-			hasToolboxEndpoint:       true,
-			hasSplitToolboxEndpoint:  true,
-			hasLegacyToolboxEndpoint: true,
-			want:                     "start the agent locally once the steps above are complete",
+			name:                    "mixed split and bundled toolboxes",
+			hasToolboxEndpoint:      true,
+			hasSplitToolboxEndpoint: true,
+			hasBundledToolbox:       true,
+			want:                    "start the agent locally once the steps above are complete",
 		},
 		{
-			name:               "legacy toolbox only",
+			name:               "bundled toolbox only",
 			hasToolboxEndpoint: true,
+			hasBundledToolbox:  true,
 			want:               "start the agent locally once toolbox migration and deployment complete",
 		},
 		{
@@ -986,8 +1232,8 @@ func TestRunFollowUpDescription(t *testing.T) {
 				tc.hasToolboxEndpoint,
 				tc.hasManualVars,
 				tc.hasSplitToolboxEndpoint,
-				tc.hasLegacyToolboxEndpoint,
 				tc.hasEndpointErrors,
+				tc.hasBundledToolbox,
 			)
 			assert.Equal(t, tc.want, got)
 		})
@@ -1074,7 +1320,7 @@ func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {
 			for i, name := range tt.wantPlaceholders {
 				require.Less(t, i, len(out))
 				assert.Equal(t,
-					"edit agent configuration: replace {{"+name+"}} with the actual value",
+					"edit agent definition: replace {{"+name+"}} with the actual value",
 					out[i].Command,
 				)
 			}

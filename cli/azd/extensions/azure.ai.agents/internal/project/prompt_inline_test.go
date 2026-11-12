@@ -4,11 +4,16 @@
 package project
 
 import (
+	"maps"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,13 +35,31 @@ func TestPromptAgentInlineRoundTripPreservesMemory(t *testing.T) {
 		Model:        "gpt-4.1-mini",
 		Instructions: "You are a helpful AI assistant.",
 		Memory: &agent_yaml.PromptMemory{
-			Store: "conversation-store",
+			Store:          "conversation-store",
+			ChatModel:      "gpt-4.1-mini",
+			EmbeddingModel: "text-embedding-3-small",
+			UpdateDelay:    new(300),
+			MaxMemories:    new(5),
+			Options: &agent_yaml.PromptMemoryOptions{
+				UserProfileEnabled: new(true),
+			},
 		},
 	}
 
 	props, err := PromptAgentDefinitionToServiceProperties(original)
 	require.NoError(t, err)
 	require.Contains(t, props.AsMap(), "memory", "memory block must survive into azure.yaml")
+	memory, ok := props.AsMap()["memory"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "gpt-4.1-mini", memory["chatModel"])
+	require.Equal(t, "text-embedding-3-small", memory["embeddingModel"])
+	require.Equal(t, float64(300), memory["updateDelay"])
+	require.Equal(t, float64(5), memory["maxMemories"])
+	require.NotContains(t, memory, "chat_model")
+	options, ok := memory["options"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, options["userProfileEnabled"])
+	require.NotContains(t, options, "user_profile_enabled")
 
 	svc := &azdext.ServiceConfig{Name: "memory-agent", AdditionalProperties: props}
 	got, found, err := PromptAgentFromResolvedService(svc, t.TempDir())
@@ -62,7 +85,7 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 		Model:        "gpt-4.1-mini",
 		Instructions: "Be concise.",
 		Harness: &agent_yaml.PromptHarness{
-			Type: "github_copilot_preview",
+			Type: "microsoft_copilot_preview",
 		},
 		Tools:       []any{map[string]any{"type": "code_interpreter"}},
 		ToolChoice:  "auto",
@@ -74,14 +97,17 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 			"context": map[string]any{"required": false},
 		},
 		Connections: []string{"search"},
+		Toolboxes:   []agent_yaml.ToolboxReference{{Name: "research-tools"}},
 	}
 
 	props, err := PromptAgentDefinitionToServiceProperties(original)
 	require.NoError(t, err)
-	for _, key := range []string{"toolChoice", "temperature", "topP", "text", "reasoning", "structuredInputs"} {
+	for _, key := range []string{
+		"toolChoice", "temperature", "topP", "text", "reasoning", "structuredInputs", "toolboxes",
+	} {
 		require.Contains(t, props.AsMap(), key)
 	}
-	for _, key := range []string{"tool_choice", "top_p", "structured_inputs"} {
+	for _, key := range []string{"tool_choice", "top_p", "structured_inputs", "toolbox"} {
 		require.NotContains(t, props.AsMap(), key)
 	}
 
@@ -95,7 +121,7 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 	require.Equal(t, "gpt-4.1-mini", got.Model)
 	require.Equal(t, "Be concise.", got.Instructions)
 	require.NotNil(t, got.Harness)
-	require.Equal(t, "github_copilot_preview", got.Harness.Type)
+	require.Equal(t, "microsoft_copilot_preview", got.Harness.Type)
 	require.Len(t, got.Tools, 1)
 	require.Equal(t, original.ToolChoice, got.ToolChoice)
 	require.Equal(t, original.Temperature, got.Temperature)
@@ -105,8 +131,159 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 	require.Equal(t, original.StructuredInputs, got.StructuredInputs)
 	require.Len(t, got.Connections, 1)
 	require.Equal(t, "search", got.Connections[0])
+	require.Equal(t, []agent_yaml.ToolboxReference{{Name: "research-tools"}}, got.Toolboxes)
 
 	// Never authored: the deploy graph resolves it from the skills/ folder.
+}
+
+func TestPromptAgentLegacyHarnessPreservedThroughServiceAdoption(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	original := agent_yaml.PromptAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindPrompt, Name: "legacy-agent"},
+		Model:           "gpt-4.1-mini",
+		Instructions:    "Be helpful.",
+		Harness:         agent_yaml.NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
+		Tools:           []any{map[string]any{"type": "github_copilot_toolset_preview"}},
+	}
+	props, err := PromptAgentDefinitionToServiceProperties(original)
+	require.NoError(t, err)
+	for _, source := range []string{"inline", "root-ref"} {
+		t.Run(source, func(t *testing.T) {
+			svc := validationTestService(t, root, source, props.AsMap())
+			provider := &AgentServiceTargetProvider{
+				projectPath: root,
+				serviceConfig: promptService(t, map[string]any{
+					"kind": "prompt", "harness": map[string]any{"type": "microsoft_copilot_preview"},
+				}),
+			}
+			require.NoError(t, provider.adoptAndResolveServiceConfig(t.Context(), svc))
+			require.Same(t, svc, provider.serviceConfig)
+			got, err := provider.loadPromptAgentDefinition()
+			require.NoError(t, err)
+			require.Equal(t, "github_copilot_preview", got.Harness.Type)
+			require.Equal(t, original.Tools, got.Tools)
+			request, err := agent_yaml.CreatePromptAgentAPIRequest(got, nil)
+			require.NoError(t, err)
+			definition, ok := request.Definition.(agent_api.ManagedAgentDefinition)
+			require.True(t, ok)
+			require.Equal(t, "github_copilot_preview", definition.Harness.Type)
+			require.Equal(t, original.Tools, definition.Tools)
+		})
+	}
+}
+
+func TestPromptAgentFromResolvedServiceInlineAndRootRefParity(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	definition := `kind: prompt
+name: parity-agent
+model: gpt-4.1-mini
+instructions: Be concise.
+harness:
+  type: microsoft_copilot_preview
+memory:
+  store: conversation-store
+  chatModel: gpt-4.1-mini
+  embeddingModel: text-embedding-3-small
+  updateDelay: 300
+  maxMemories: 5
+  options:
+    chatSummaryEnabled: true
+    userProfileEnabled: true
+tools:
+  - type: microsoft_copilot_toolset_preview
+    defaultConfig:
+      enabled: false
+    configs:
+      - name: web
+        enabled: true
+policies:
+  - type: rai_policy
+    raiPolicyName: ${RAI_POLICY_ID}
+    invocationsModeration:
+      responseMode: streaming
+      inputPaths:
+        - $.input
+      streamSelectors:
+        - eventType: response.output_text.delta
+          textField: $.delta
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "prompt.yaml"), []byte(definition), 0o600))
+
+	inline := promptService(t, map[string]any{
+		"kind":         "prompt",
+		"name":         "parity-agent",
+		"model":        "gpt-4.1-mini",
+		"instructions": "Be concise.",
+		"harness":      map[string]any{"type": "microsoft_copilot_preview"},
+		"memory": map[string]any{
+			"store":          "conversation-store",
+			"chatModel":      "gpt-4.1-mini",
+			"embeddingModel": "text-embedding-3-small",
+			"updateDelay":    300,
+			"maxMemories":    5,
+			"options": map[string]any{
+				"chatSummaryEnabled": true,
+				"userProfileEnabled": true,
+			},
+		},
+		"tools": []any{
+			map[string]any{
+				"type":          "microsoft_copilot_toolset_preview",
+				"defaultConfig": map[string]any{"enabled": false},
+				"configs":       []any{map[string]any{"name": "web", "enabled": true}},
+			},
+		},
+		"policies": []any{
+			map[string]any{
+				"type":          "rai_policy",
+				"raiPolicyName": "${RAI_POLICY_ID}",
+				"invocationsModeration": map[string]any{
+					"responseMode": "streaming",
+					"inputPaths":   []any{"$.input"},
+					"streamSelectors": []any{
+						map[string]any{
+							"eventType": "response.output_text.delta",
+							"textField": "$.delta",
+						},
+					},
+				},
+			},
+		},
+	})
+	referenced := promptService(t, map[string]any{"$ref": "./prompt.yaml"})
+
+	inlineAgent, inlineFound, err := PromptAgentFromResolvedService(inline, root)
+	require.NoError(t, err)
+	require.True(t, inlineFound)
+	refAgent, refFound, err := PromptAgentFromResolvedService(referenced, root)
+	require.NoError(t, err)
+	require.True(t, refFound)
+	require.Equal(t, inlineAgent, refAgent)
+	require.Equal(t, "${RAI_POLICY_ID}", refAgent.Policies[0].RaiPolicyName)
+	require.Equal(t, "streaming", refAgent.Policies[0].InvocationsModeration.ResponseMode)
+	require.Equal(
+		t,
+		"response.output_text.delta",
+		refAgent.Policies[0].InvocationsModeration.StreamSelectors[0].EventType,
+	)
+	request, err := agent_yaml.CreatePromptAgentAPIRequest(refAgent, nil)
+	require.NoError(t, err)
+	apiDefinition, ok := request.Definition.(agent_api.ManagedAgentDefinition)
+	require.True(t, ok)
+	require.Len(t, apiDefinition.Tools, 1)
+	apiTool, ok := apiDefinition.Tools[0].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, apiTool, "defaultConfig")
+	require.Equal(t, map[string]any{"enabled": false}, apiTool["default_config"])
+	require.Equal(
+		t,
+		"response.output_text.delta",
+		apiDefinition.RaiConfig.InvocationsModeration.StreamSelectors[0].EventType,
+	)
 }
 
 // TestPromptAgentFromResolvedServiceIgnoresOtherKinds confirms a hosted or voice
@@ -132,6 +309,134 @@ func TestPromptAgentFromResolvedServiceIgnoresOtherKinds(t *testing.T) {
 	}
 }
 
+func TestPromptAgentFromResolvedServiceSkillReferences(t *testing.T) {
+	svc := &azdext.ServiceConfig{
+		Name: "skill-agent",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind":         "prompt",
+			"model":        "gpt-4.1-mini",
+			"instructions": "Be helpful.",
+			"skills": []any{
+				"local-skill",
+				map[string]any{"name": "microsoft-foundry", "version": "1"},
+			},
+		}),
+	}
+	got, found, err := PromptAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []agent_yaml.HarnessSkillRef{
+		{Name: "local-skill"},
+		{Name: "microsoft-foundry", Version: "1"},
+	}, got.Skills)
+}
+
+func TestPromptAgentFromResolvedServiceToolboxReferences(t *testing.T) {
+	svc := &azdext.ServiceConfig{
+		Name: "toolbox-agent",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind":         "prompt",
+			"model":        "gpt-4.1-mini",
+			"instructions": "Be helpful.",
+			"harness":      map[string]any{"type": "microsoft_copilot_preview"},
+			"toolboxes": []any{
+				"research-tools",
+				map[string]any{"name": "support-tools"},
+			},
+		}),
+	}
+	got, found, err := PromptAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []agent_yaml.ToolboxReference{
+		{Name: "research-tools"},
+		{Name: "support-tools"},
+	}, got.Toolboxes)
+}
+
+func TestPromptAgentFromResolvedServiceRejectsSingularAndMalformedToolboxes(t *testing.T) {
+	tests := []struct {
+		name  string
+		props map[string]any
+		want  string
+	}{
+		{
+			name:  "singular toolbox",
+			props: map[string]any{"toolbox": map[string]any{"name": "research-tools"}},
+			want:  `field "toolbox" is no longer supported; use "toolboxes"`,
+		},
+		{
+			name: "mixed toolbox and toolboxes",
+			props: map[string]any{
+				"toolbox":   map[string]any{"name": "research-tools"},
+				"toolboxes": []any{"research-tools"},
+			},
+			want: `cannot specify both "toolbox" and "toolboxes"`,
+		},
+		{
+			name:  "unknown field on toolbox reference",
+			props: map[string]any{"toolboxes": []any{map[string]any{"name": "foo", "version": "1"}}},
+			want:  `unknown field "version"`,
+		},
+		{
+			name:  "empty toolbox name",
+			props: map[string]any{"toolboxes": []any{""}},
+			want:  "toolbox reference requires a non-empty name",
+		},
+		{
+			name:  "blank toolbox name",
+			props: map[string]any{"toolboxes": []any{map[string]any{"name": "   "}}},
+			want:  "toolbox reference requires a non-empty name",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			props := map[string]any{
+				"kind":         "prompt",
+				"model":        "test-model",
+				"instructions": "Be helpful.",
+				"harness":      map[string]any{"type": "microsoft_copilot_preview"},
+			}
+			maps.Copy(props, tt.props)
+			svc := &azdext.ServiceConfig{
+				Name:                 "toolbox-agent",
+				AdditionalProperties: mustStruct(t, props),
+			}
+			_, _, err := PromptAgentFromResolvedService(svc, t.TempDir())
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
+func TestPromptAgentFromResolvedServiceRejectsMalformedSkills(t *testing.T) {
+	tests := []struct {
+		name  string
+		skill map[string]any
+		want  string
+	}{
+		{"misspelled name", map[string]any{"nam": "foo", "version": "1"}, `unknown field "nam"`},
+		{"unknown field", map[string]any{"name": "foo", "extra": true}, `unknown field "extra"`},
+		{"missing name", map[string]any{"version": "1"}, "requires a non-empty name"},
+		{"empty name", map[string]any{"name": "", "version": "1"}, "requires a non-empty name"},
+		{"blank name", map[string]any{"name": "   ", "version": "1"}, "requires a non-empty name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &azdext.ServiceConfig{
+				Name: "skill-agent",
+				AdditionalProperties: mustStruct(t, map[string]any{
+					"kind":         "prompt",
+					"model":        "test-model",
+					"instructions": "Be helpful.",
+					"skills":       []any{tt.skill},
+				}),
+			}
+			_, _, err := PromptAgentFromResolvedService(svc, t.TempDir())
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
 // TestPromptAgentFromResolvedServiceNoDefinition confirms an entry carrying no
 // definition at all falls through quietly, which is what lets projects that
 // still keep their definition in a file reach the file-based path.
@@ -146,15 +451,14 @@ func TestPromptAgentFromResolvedServiceNoDefinition(t *testing.T) {
 	require.False(t, found)
 }
 
-// TestPromptAgentInlineStrictValidation is the regression test for the
-// validation gap the inline shape opens.
+// TestPromptAgentEffectiveStrictValidation is the regression test for the
+// validation gap created when service properties bypass typed YAML decoding.
 //
 // The strict checks on harness: and memory: live in UnmarshalYAML, which never
-// runs for an inline definition: core azd parses azure.yaml and hands the
-// extension protobuf, which is decoded as JSON. Without the explicit validation
-// pass these manifests would deploy an agent whose capabilities differ from what
-// was authored.
-func TestPromptAgentInlineStrictValidation(t *testing.T) {
+// runs for the effective inline/root-ref property map. Without the explicit
+// validation pass these definitions would deploy an agent whose capabilities
+// differ from what was authored.
+func TestPromptAgentEffectiveStrictValidation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -167,7 +471,7 @@ func TestPromptAgentInlineStrictValidation(t *testing.T) {
 			props: map[string]any{
 				"kind":    "prompt",
 				"name":    "a",
-				"harness": "github_copilot_preview",
+				"harness": "microsoft_copilot_preview",
 			},
 			wantErr: "harness must be a block",
 		},
@@ -177,7 +481,7 @@ func TestPromptAgentInlineStrictValidation(t *testing.T) {
 				"kind": "prompt",
 				"name": "a",
 				"harness": map[string]any{
-					"type":          "github_copilot_preview",
+					"type":          "microsoft_copilot_preview",
 					"builtin_tools": map[string]any{"excluded": []any{"shell"}},
 				},
 			},
@@ -192,15 +496,51 @@ func TestPromptAgentInlineStrictValidation(t *testing.T) {
 			},
 			wantErr: "stores",
 		},
+		{
+			name: "snake case memory property is rejected",
+			props: map[string]any{
+				"kind":   "prompt",
+				"name":   "a",
+				"memory": map[string]any{"store": "s", "chat_model": "gpt-4.1-mini"},
+			},
+			wantErr: "chat_model",
+		},
+		{
+			name: "snake case memory option is rejected",
+			props: map[string]any{
+				"kind": "prompt",
+				"name": "a",
+				"memory": map[string]any{
+					"store":   "s",
+					"options": map[string]any{"default_ttl_seconds": 3600},
+				},
+			},
+			wantErr: "default_ttl_seconds",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			svc := &azdext.ServiceConfig{Name: "a", AdditionalProperties: mustStruct(t, tt.props)}
-			_, _, err := PromptAgentFromResolvedService(svc, t.TempDir())
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tt.wantErr)
+
+			for _, source := range []string{"inline", "root-ref"} {
+				t.Run(source, func(t *testing.T) {
+					var svc *azdext.ServiceConfig
+					root := t.TempDir()
+					if source == "inline" {
+						svc = promptService(t, tt.props)
+					} else {
+						data, err := yaml.Marshal(tt.props)
+						require.NoError(t, err)
+						require.NoError(t, os.WriteFile(filepath.Join(root, "prompt.yaml"), data, 0o600))
+						svc = promptService(t, map[string]any{"$ref": "./prompt.yaml"})
+					}
+
+					_, _, err := PromptAgentFromResolvedService(svc, root)
+					require.Error(t, err)
+					require.Contains(t, err.Error(), tt.wantErr)
+				})
+			}
 		})
 	}
 }

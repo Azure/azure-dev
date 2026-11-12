@@ -1073,18 +1073,23 @@ func TestProjectCommandSupportsExtensionAutoInstall(t *testing.T) {
 	extension := &cobra.Command{Use: "agent", Annotations: map[string]string{"extension.id": "azure.ai.agents"}}
 	env := &cobra.Command{Use: "env"}
 	refresh := &cobra.Command{Use: "refresh"}
+	pipeline := &cobra.Command{Use: "pipeline"}
+	pipelineConfig := &cobra.Command{Use: "config"}
 	infra := &cobra.Command{Use: "infra"}
 	generate := &cobra.Command{Use: "generate", Aliases: []string{"gen", "synth"}}
 	env.AddCommand(refresh)
+	pipeline.AddCommand(pipelineConfig)
 	infra.AddCommand(generate)
-	root.AddCommand(up, show, extension, env, infra)
+	root.AddCommand(up, show, extension, env, pipeline, infra)
 
 	assert.True(t, projectCommandSupportsExtensionAutoInstall(up))
 	assert.True(t, projectCommandSupportsExtensionAutoInstall(refresh))
+	assert.True(t, projectCommandSupportsExtensionAutoInstall(pipelineConfig))
 	assert.False(t, projectCommandSupportsExtensionAutoInstall(show))
 	assert.False(t, projectCommandSupportsExtensionAutoInstall(generate))
 	assert.False(t, projectCommandSupportsExtensionAutoInstall(extension))
 	assert.False(t, projectCommandSupportsExtensionAutoInstall(env))
+	assert.False(t, projectCommandSupportsExtensionAutoInstall(pipeline))
 }
 
 func TestFindFirstNonFlagArg(t *testing.T) {
@@ -1985,13 +1990,14 @@ func TestParseGlobalFlags_OutputAttachedShortForm(t *testing.T) {
 	cases := []struct {
 		name string
 		args []string
+		want string
 	}{
-		{"attached", []string{"-otable"}},
-		{"attached-json", []string{"-ojson"}},
-		{"space-separated", []string{"-o", "table"}},
-		{"equals", []string{"-o=table"}},
-		{"long-space", []string{"--output", "table"}},
-		{"long-equals", []string{"--output=table"}},
+		{"attached", []string{"-otable"}, "table"},
+		{"attached-json", []string{"-ojson"}, "json"},
+		{"space-separated", []string{"-o", "table"}, "table"},
+		{"equals", []string{"-o=table"}, "table"},
+		{"long-space", []string{"--output", "table"}, "table"},
+		{"long-equals", []string{"--output=table"}, "table"},
 	}
 
 	for _, tc := range cases {
@@ -1999,11 +2005,57 @@ func TestParseGlobalFlags_OutputAttachedShortForm(t *testing.T) {
 			t.Parallel()
 			opts := &internal.GlobalCommandOptions{}
 			err := ParseGlobalFlags(tc.args, opts)
-			// We only assert no error here. The -o/--output flag is registered on the
-			// pre-parse FlagSet solely to prevent pflag from walking attached short
-			// values char-by-char and failing on "-e"; the parsed value is intentionally
-			// not captured into GlobalCommandOptions (Cobra handles --output per command).
 			require.NoError(t, err, "ParseGlobalFlags must not error for args: %v", tc.args)
+			assert.Equal(t, tc.want, opts.PreParsedOutput)
+		})
+	}
+}
+
+func TestParseGlobalFlags_Output(t *testing.T) {
+	t.Parallel()
+
+	for _, flags := range [][]string{
+		{"--output", "json"},
+		{"-o", "json"},
+		{"--output=json"},
+		{"-o=json"},
+		{"-ojson"},
+	} {
+		for _, beforeCommand := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%v/before=%t", flags, beforeCommand), func(t *testing.T) {
+				t.Parallel()
+				args := slices.Concat([]string{"demo", "run"}, flags)
+				if beforeCommand {
+					args = slices.Concat(flags, []string{"demo", "run"})
+				}
+				opts := &internal.GlobalCommandOptions{}
+				require.NoError(t, ParseGlobalFlags(args, opts))
+				assert.Equal(t, "json", opts.PreParsedOutput)
+			})
+		}
+	}
+
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"default", []string{"demo", "run"}, ""},
+		{"last-json", []string{"-otable", "demo", "--output=json"}, "json"},
+		{"last-none", []string{"--output=json", "demo", "-o", "none"}, "none"},
+		{"last-empty", []string{"demo", "-ojson", "--output="}, ""},
+		{"terminator", []string{"demo", "--", "--output", "json", "-ojson"}, ""},
+		{"json-before-terminator", []string{"demo", "-ojson", "--", "--output=none"}, "json"},
+		{"none-before-terminator", []string{"demo", "-onone", "--", "-ojson"}, "none"},
+		{"normalized", []string{"demo", "--output", " JSON "}, "json"},
+		{"unknown-flags", []string{"demo", "--all", "--custom=value", "-ojson"}, "json"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			opts := &internal.GlobalCommandOptions{}
+			require.NoError(t, ParseGlobalFlags(tc.args, opts))
+			assert.Equal(t, tc.want, opts.PreParsedOutput)
 		})
 	}
 }
@@ -2098,6 +2150,57 @@ func Test_TryAutoInstall_HasSubcommand(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, result.installed)
 	assert.False(t, result.declined)
+}
+
+func Test_TryAutoInstall_LeafArguments(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		args        []string
+		namespace   bool
+		hasChildren bool
+		extension   bool
+		wantResolve bool
+	}{
+		{name: "StoredKey", args: []string{"KEY"}},
+		{name: "MissingKey", args: []string{"MISSING", "MISSING"}},
+		{name: "ProtectedKey", args: []string{"AZURE_ENV_NAME"}},
+		{name: "EnvironmentFlag", args: []string{"KEY", "-e", "dev"}},
+		{name: "UnknownFlag", args: []string{"KEY", "--unknown"}},
+		{name: "PartialNamespace", args: []string{"other"}, namespace: true, hasChildren: true, wantResolve: true},
+		{name: "EmptyNamespace", args: []string{"other"}, namespace: true, wantResolve: true},
+		{name: "ExistingSubcommand", args: []string{"known"}, namespace: true, hasChildren: true},
+		{name: "ExtensionNamespace", args: []string{"other"}, namespace: true, hasChildren: true, extension: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := newEnvUnsetCmd()
+			cmd.RunE = func(*cobra.Command, []string) error { return nil }
+			if tt.namespace {
+				cmd = &cobra.Command{Use: "ai"}
+			}
+			if tt.hasChildren {
+				cmd.AddCommand(&cobra.Command{Use: "known"})
+			}
+			if tt.extension {
+				cmd.Annotations = map[string]string{"extension.id": "test.extension"}
+			}
+			resolved := false
+			container := ioc.NewNestedContainer(nil)
+			container.MustRegisterSingleton(func() (*extensions.Manager, error) {
+				resolved = true
+				return nil, errors.New("registry fixture is unavailable")
+			})
+
+			result, err := tryAutoInstallForPartialNamespace(t.Context(), container, cmd, tt.args)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantResolve, resolved)
+			require.False(t, result.installed)
+			require.False(t, result.declined)
+		})
+	}
 }
 
 func TestHelpRequested(t *testing.T) {

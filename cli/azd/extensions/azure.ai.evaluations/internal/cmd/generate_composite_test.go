@@ -4,7 +4,9 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -159,4 +161,58 @@ func TestGeneratedName_AllowsOrdinaryNames(t *testing.T) {
 			assert.Equal(t, name, got)
 		})
 	}
+
+}
+
+func TestGeneratedDatasetDefaultFitsLimitWithStableLevelPrefix(t *testing.T) {
+	const target = "agent-framework-agent-observability-responses"
+	require.Len(t, target, 45)
+	var prefixes []string
+	for _, level := range []string{"turn", "conversation"} {
+		plans, err := buildGeneratePlans(generateRequest{
+			flags:  &generateFlags{path: t.TempDir(), target: target},
+			target: target, dataset: true, evaluator: true, evaluationLevel: level,
+		})
+		require.NoError(t, err)
+		require.Len(t, plans, 2)
+		name := plans[0].Name
+		assert.LessOrEqual(t, utf8.RuneCountInString(name), 50)
+		suffix := "-" + datasetNameSuffix(level)
+		require.True(t, strings.HasSuffix(name, suffix))
+		prefixes = append(prefixes, strings.TrimSuffix(name, suffix))
+		assert.Equal(t, target+"-evaluator", plans[1].Name)
+		assert.Len(t, plans[1].Name, 55, "the dataset limit must not be invented for evaluators")
+		other, err := generatedName("", target+"-other", "dataset", datasetNameSuffix(level))
+		require.NoError(t, err)
+		assert.NotEqual(t, name, other, "shortening must retain distinct target identities")
+	}
+	assert.Equal(t, prefixes[0], prefixes[1], "one canonical shortened stem independent of evaluation level")
+}
+
+func TestGeneratedDatasetExplicitNameIsNeverTruncated(t *testing.T) {
+	for _, size := range []int{49, 50, 51} {
+		input := strings.Repeat("a", size)
+		got, err := generatedName(input, "agent", "dataset", "turn-tests")
+		if size > 50 {
+			require.ErrorContains(t, err, "--dataset-name")
+			assert.ErrorContains(t, err, "50")
+			assert.Empty(t, got)
+		} else {
+			require.NoError(t, err)
+			assert.Equal(t, input, got)
+		}
+	}
+	name := strings.Repeat("e", 55)
+	got, err := generatedName(name, "agent", "evaluator", "evaluator")
+	require.NoError(t, err)
+	assert.Equal(t, name, got)
+}
+
+func TestGenerateOverlongDatasetNameFailsBeforeWrites(t *testing.T) {
+	h := newInitHarness(t, nil)
+	before := initFileSnapshot(t, h.dir)
+	err := runGenerate(t, "--dataset", "--dataset-name", strings.Repeat("x", 51), "--no-prompt")
+	require.ErrorContains(t, err, "--dataset-name")
+	assert.ErrorContains(t, err, "50")
+	assert.Equal(t, before, initFileSnapshot(t, h.dir))
 }

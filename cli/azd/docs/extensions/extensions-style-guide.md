@@ -123,10 +123,10 @@ The `azdext` package provides structured error types for service, local, and
 external-tool failures:
 
 - **`azdext.ServiceError`** — for HTTP/gRPC service failures (e.g., Azure API returned 429).
-  Fields: `Message`, `ErrorCode`, `StatusCode`, `ServiceName`, `Suggestion`.
+  Fields: `Message`, `ErrorCode`, `StatusCode`, `ServiceName`, `Suggestion`, `Links`.
 
 - **`azdext.LocalError`** — for local errors such as validation, auth, config, or internal failures.
-  Fields: `Message`, `Code`, `Category`, `CauseTypes`, `Suggestion`.
+  Fields: `Message`, `Code`, `Category`, `CauseTypes`, `Suggestion`, `Links`.
 
 - **`azdext.ToolError`** — for failures from external tools or subprocesses.
   Fields: `Message`, `Err`, `ToolName`, `Kind`, `ExitCode`, `Suggestion`,
@@ -134,8 +134,13 @@ external-tool failures:
   Use `ToolErrorKindMissing` when the tool was not found and
   `ToolErrorKindFailed` when it ran and failed.
 
-These types implement `Error()`. They are detected via `errors.As` during
-serialization. `CauseTypes` is bounded, extension-provided diagnostic input
+These types implement `Error()`. `ToolError` unwraps its `Err` value.
+`LocalError` derives a canonical cause from its category and code:
+category `user` with code `canceled` or `cancelled` unwraps
+`context.Canceled`, while category `internal` with code
+`deadline_exceeded` unwraps `context.DeadlineExceeded`. Other local errors
+do not unwrap a cause. They are detected via `errors.As` during serialization.
+`CauseTypes` is bounded, extension-provided diagnostic input
 for unexpected local fallbacks; it does not change the selected
 classification. The host records it only as hashes in
 `error.extension.cause_types`, never as plain text in system metadata.
@@ -154,12 +159,29 @@ The host classifies extension errors into telemetry codes using the pattern:
 | `ServiceError` with `ErrorCode` | `ext.service.<errorCode>` |
 | `ServiceError` with `StatusCode` | `ext.service.<serviceName>.<statusCode>` |
 | `LocalError` | `ext.<category>.<code>` |
+| `LocalError` with category `user` and code `canceled` or `cancelled` | `user.canceled` |
 | `ToolError` | `tool.<toolName>.missing` or `tool.<toolName>.failed` |
-| Unclassified | `ext.run.failed` |
+| Host interruption or reported gRPC cancellation | `user.canceled` |
+| Host or gRPC deadline | `internal.timeout` |
+| Unclassified non-cancellation process failure | `ext.run.failed` |
 
 Failed extension commands use an `ext.run` span with the extension ID and
 version, but no `extension.event`. Failed lifecycle hooks use the enclosing
 `cmd.*` span and include the extension ID, version, and lifecycle event.
+One Ctrl+C cancels the azd operation and is classified as `user.canceled`.
+Interactive POSIX extensions receive the interrupt directly and get a bounded
+window to return and report a structured cancellation before azd automatically
+terminates an unresponsive process. Windows extensions are canceled by the host
+immediately because they run in a separate process group. A second Ctrl+C only
+skips the remaining POSIX grace period.
+
+For extension providers and lifecycle handlers invoked by built-in azd
+commands, azd sends a request-specific cancellation message while keeping the
+gRPC session alive long enough for the handler to return its cancellation
+response. The SDK treats a canceled handler as canceled even if it returns
+`nil`. If the handler does not acknowledge cancellation, azd stops waiting
+after a bounded broker grace period and later closes the listener during
+bounded middleware cleanup.
 
 For `ToolError`, the host derives the telemetry name from either POSIX or
 Windows paths, removes the executable extension, and lowercases the basename.
@@ -176,15 +198,17 @@ Treat this as guidance, not a strict package boundary. The important part is tha
 
 ### Error Chain Precedence
 
-When `WrapError` serializes an error for gRPC, it checks the chain via `errors.As` and picks
-the **first** match in this order:
+When `WrapError` serializes an error for gRPC, it first checks cancellation
+with `errors.Is`, then uses `errors.As` for structured types in this order:
 
-1. `ServiceError`, `LocalError`, or `ToolError` (highest priority)
-2. `azcore.ResponseError` (auto-detected Azure SDK errors)
-3. gRPC status (host-originated metadata and auth classification)
-4. Fallback (unclassified)
+1. Native context cancellation or deadline (authoritative when joined with another failure)
+2. `ServiceError`, `LocalError`, or `ToolError`
+3. `azcore.ResponseError` (auto-detected Azure SDK errors)
+4. gRPC status, including transported cancellation and deadline
+5. Fallback (unclassified)
 
-Because Go's `errors.As` walks from outermost to innermost, classifying near the outer orchestration layer naturally produces the intended classification.
+Because Go's `errors.As` walks from outermost to innermost, classifying near
+the outer orchestration layer naturally produces the intended classification.
 
 ### Error Code Conventions
 

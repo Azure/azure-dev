@@ -1,19 +1,25 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package copilot
+package copilot_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	copilot "github.com/github/copilot-sdk/go"
 	"github.com/stretchr/testify/require"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 )
 
@@ -39,8 +45,8 @@ func TestCopilotSDK_E2E(t *testing.T) {
 	t.Setenv("AZD_COPILOT_CLI_PATH", "")
 
 	// 1. Download the pinned CLI and start it through azd's client manager.
-	cli := NewCopilotCLI(mockinput.NewMockConsole(), nil, http.DefaultClient)
-	clientManager := NewCopilotClientManager(&CopilotClientOptions{
+	cli := agentcopilot.NewCopilotCLI(mockinput.NewMockConsole(), nil, http.DefaultClient)
+	clientManager := agentcopilot.NewCopilotClientManager(&agentcopilot.CopilotClientOptions{
 		LogLevel: "error",
 	}, cli)
 
@@ -58,7 +64,7 @@ func TestCopilotSDK_E2E(t *testing.T) {
 	// 2. Check auth
 	auth, err := clientManager.GetAuthStatus(ctx)
 	require.NoError(t, err)
-	t.Logf("Auth: authenticated=%v, login=%v", auth.IsAuthenticated, auth.Login)
+	t.Logf("Auth: authenticated=%v", auth.IsAuthenticated)
 	require.True(t, auth.IsAuthenticated, "not authenticated with GitHub Copilot")
 
 	// 3. List models
@@ -81,7 +87,7 @@ func TestCopilotSDK_E2E(t *testing.T) {
 		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
 	})
 	require.NoError(t, err, "CreateSession failed")
-	t.Logf("Session created: %s", session.WorkspacePath())
+	t.Log("Session created")
 	defer func() {
 		if disconnectErr := session.Disconnect(); disconnectErr != nil {
 			t.Logf("session.Destroy error: %v", disconnectErr)
@@ -89,50 +95,174 @@ func TestCopilotSDK_E2E(t *testing.T) {
 	}()
 
 	// 5. Collect events
-	var events []copilot.SessionEvent
+	collector := agent.NewHeadlessCollector()
+	captured := &capturedEvents{}
 	unsubscribe := session.On(func(event copilot.SessionEvent) {
-		events = append(events, event)
 		t.Logf("Event: type=%s", event.Type())
+		aiuFields, err := formatAIUFields(event)
+		captured.Add(event, err)
+		if aiuFields != "" {
+			t.Logf("AIU event: type=%s %s", event.Type(), aiuFields)
+		}
+		collector.HandleEvent(event)
 	})
 	defer unsubscribe()
 
-	// 6. Send message and wait for response
-	t.Log("Sending prompt...")
-	response, err := session.SendAndWait(ctx, copilot.MessageOptions{
+	// 6. Send two messages in the same session and wait for each turn to become idle.
+	t.Log("Sending first prompt...")
+	firstEvent := captured.Len()
+	firstResponse, err := session.SendAndWait(ctx, copilot.MessageOptions{
 		Prompt: "What is 2+2? Reply with just the number.",
 	})
-	require.NoError(t, err, "SendAndWait failed")
+	require.NoError(t, err, "first SendAndWait failed")
+	require.NoError(t, collector.WaitForIdle(ctx), "collector did not observe first session idle")
+	require.NoError(t, captured.Err())
+	requireResponseContains(t, firstResponse, captured.Since(firstEvent), "4")
+
+	firstUsage := collector.GetUsageMetrics()
+	require.Positive(t, firstUsage.AICredits, "expected positive AI credit usage after first turn")
+
+	t.Log("Sending follow-up prompt...")
+	secondEvent := captured.Len()
+	secondResponse, err := session.SendAndWait(ctx, copilot.MessageOptions{
+		Prompt: "Add 3 to the number you answered in the previous turn. Reply with just the result.",
+	})
+	require.NoError(t, err, "second SendAndWait failed")
+	require.NoError(t, collector.WaitForIdle(ctx), "collector did not observe second session idle")
+	require.NoError(t, captured.Err())
+	requireResponseContains(t, secondResponse, captured.Since(secondEvent), "7")
+
+	usage := collector.GetUsageMetrics()
+	require.Greater(t, usage.InputTokens, firstUsage.InputTokens)
+	require.Greater(t, usage.OutputTokens, firstUsage.OutputTokens)
+	require.Greater(t, usage.AICredits, firstUsage.AICredits)
+	t.Logf("Usage: input=%v output=%v AI credits=%v", usage.InputTokens, usage.OutputTokens, usage.AICredits)
 
 	// 7. Validate response
-	t.Logf("Received %d events total", len(events))
+	t.Logf("Received %d events total", captured.Len())
+}
+
+type capturedEvents struct {
+	mu     sync.Mutex
+	events []copilot.SessionEvent
+	err    error
+}
+
+func (c *capturedEvents) Add(event copilot.SessionEvent, err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.events = append(c.events, event)
+	if c.err == nil {
+		c.err = err
+	}
+}
+
+func (c *capturedEvents) Len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return len(c.events)
+}
+
+func (c *capturedEvents) Since(index int) []copilot.SessionEvent {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return slices.Clone(c.events[index:])
+}
+
+func (c *capturedEvents) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.err
+}
+
+func requireResponseContains(
+	t *testing.T,
+	response *copilot.SessionEvent,
+	events []copilot.SessionEvent,
+	expected string,
+) {
+	t.Helper()
+
 	if response != nil {
 		data, ok := response.Data.(*copilot.AssistantMessageData)
 		require.True(t, ok, "expected response.Data to be *copilot.AssistantMessageData, got %T", response.Data)
 		t.Logf("Response content: %s", data.Content)
-		require.Contains(t, data.Content, "4",
-			"expected response to contain '4'")
+		require.Contains(t, data.Content, expected)
 	} else {
-		// If SendAndWait returned nil, check events for assistant message
 		var found bool
-		for _, e := range events {
-			if e.Type() == copilot.SessionEventTypeAssistantMessage {
-				if data, ok := e.Data.(*copilot.AssistantMessageData); ok {
+		for _, event := range events {
+			if event.Type() == copilot.SessionEventTypeAssistantMessage {
+				if data, ok := event.Data.(*copilot.AssistantMessageData); ok {
 					t.Logf("Found assistant message in events: %s", data.Content)
-					found = true
-					break
+					if strings.Contains(data.Content, expected) {
+						found = true
+						break
+					}
 				}
 			}
 		}
 		if !found {
-			// Log all event types for debugging
-			for _, e := range events {
+			for _, event := range events {
 				detail := ""
-				if data, ok := e.Data.(*copilot.AssistantMessageData); ok {
+				if data, ok := event.Data.(*copilot.AssistantMessageData); ok {
 					detail = fmt.Sprintf(" content=%s", truncateForLog(data.Content, 100))
 				}
-				t.Logf("  event: type=%s%s", e.Type(), detail)
+				t.Logf("  event: type=%s%s", event.Type(), detail)
 			}
-			t.Fatal("no assistant message received")
+			t.Fatalf("no assistant message containing %q received", expected)
+		}
+	}
+}
+
+func formatAIUFields(event copilot.SessionEvent) (string, error) {
+	encoded, err := json.Marshal(event.Data)
+	if err != nil {
+		return "", fmt.Errorf("marshaling %s event data: %w", event.Type(), err)
+	}
+
+	var data any
+	if err := json.Unmarshal(encoded, &data); err != nil {
+		return "", fmt.Errorf("unmarshaling %s event data: %w", event.Type(), err)
+	}
+
+	var fields []string
+	collectAIUFields(data, "data", &fields)
+	if len(fields) == 0 {
+		return "", nil
+	}
+	if usage, ok := event.Data.(*copilot.AssistantUsageData); ok {
+		if usage.InputTokens != nil {
+			fields = append(fields, fmt.Sprintf("data.inputTokens=%d", *usage.InputTokens))
+		}
+		if usage.OutputTokens != nil {
+			fields = append(fields, fmt.Sprintf("data.outputTokens=%d", *usage.OutputTokens))
+		}
+	}
+
+	slices.Sort(fields)
+	return strings.Join(fields, ", "), nil
+}
+
+func collectAIUFields(value any, path string, fields *[]string) {
+	switch value := value.(type) {
+	case map[string]any:
+		for name, child := range value {
+			childPath := path + "." + name
+			if name == "totalNanoAiu" {
+				if number, ok := child.(float64); ok {
+					*fields = append(*fields, fmt.Sprintf("%s=%g", childPath, number))
+				}
+				continue
+			}
+			collectAIUFields(child, childPath, fields)
+		}
+	case []any:
+		for _, child := range value {
+			collectAIUFields(child, path+"[]", fields)
 		}
 	}
 }

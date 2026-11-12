@@ -41,9 +41,9 @@ func (p PromptAgent) ValidateHarnessBlock() error {
 	}
 	if p.HarnessType() == "" {
 		return fmt.Errorf(
-			"agent.yaml declares a harness with no type; set harness.type (for example %q), "+
+			"the agent definition declares a harness with no type; set harness.type (for example %q), "+
 				"or remove the harness block to run as a plain prompt agent",
-			agent_api.ManagedAgentHarnessGitHubCopilot,
+			agent_api.ManagedAgentHarnessMicrosoftCopilot,
 		)
 	}
 	return nil

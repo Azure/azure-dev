@@ -218,7 +218,7 @@ func TestCopilotService_GetUsageMetrics_ValidSession(t *testing.T) {
 	}, nil)
 	mockAgent.On("GetMetrics").Return(agent.AgentMetrics{
 		Usage: agent.UsageMetrics{
-			Model: "gpt-4o", InputTokens: 500, OutputTokens: 250, DurationMS: 3000,
+			Model: "gpt-4o", InputTokens: 500, OutputTokens: 250, AICredits: 1.25, DurationMS: 3000,
 		},
 	})
 
@@ -238,6 +238,7 @@ func TestCopilotService_GetUsageMetrics_ValidSession(t *testing.T) {
 	require.Equal(t, "gpt-4o", resp.Usage.Model)
 	require.Equal(t, float64(500), resp.Usage.InputTokens)
 	require.Equal(t, float64(250), resp.Usage.OutputTokens)
+	require.Equal(t, 1.25, resp.Usage.AiCredits)
 	require.Equal(t, float64(3000), resp.Usage.DurationMs)
 }
 

@@ -10,9 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -177,6 +179,76 @@ func TestLoadOnDiskTemplateAt_CustomPathAndModule(t *testing.T) {
 	require.Len(t, stub.buildCalls, 1)
 	assert.Equal(t, bicepPath, stub.buildCalls[0])
 	require.Contains(t, got.parameters, "location")
+}
+
+func TestResolveTemplate_EjectedExistingRegistry(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+	const key = "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"
+	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/sharedregistry"
+	result, err := synthesis.Synthesize(synthesis.Input{
+		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n" +
+			"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"),
+		ServiceName:     "project",
+		Env:             map[string]string{key: id, "AZD_FOUNDRY_ACR_MODE": "reuse-connect", "AZURE_SUBSCRIPTION_ID": "sub"},
+		PreserveVarRefs: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "${"+key+"}", result.Parameters["existingAcrResourceId"])
+	armTemplate, err := synthesis.ARMTemplate()
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		name      string
+		env       map[string]string
+		want      string
+		wantError string
+	}{
+		{name: "reuse", env: map[string]string{key: id}, want: id},
+		{
+			name: "another environment",
+			env:  map[string]string{key: id + "other"},
+			want: id + "other",
+		},
+		{name: "empty disables reuse", env: map[string]string{key: ""}},
+		{name: "unset disables reuse"},
+		{name: "cross-subscription parameter", env: map[string]string{
+			key: strings.Replace(id, "/sub/", "/other-sub/", 1),
+		}, wantError: "same subscription"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			infraDir := filepath.Join(dir, onDiskInfraDir)
+			require.NoError(t, os.MkdirAll(infraDir, 0o750))
+			require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte("// bicep\n"), 0o600))
+			params := minimalARMParametersFile(t, result.Parameters)
+			require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskParamsFile), []byte(params), 0o600))
+			provider := &FoundryProvisioningProvider{
+				projectPath:      dir,
+				subID:            "sub",
+				virtualEnv:       tt.env,
+				bicepCliInstance: &stubCompiler{buildResult: bicep.BuildResult{Compiled: string(armTemplate)}},
+			}
+			got, err := provider.resolveTemplate(t.Context(), func(string) {})
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			assert.Equal(t, templateModeBicep, got.mode)
+			if tt.env == nil {
+				assert.NotContains(t, got.parameters, "existingAcrResourceId")
+				declared, ok := got.armTemplate["parameters"].(map[string]any)
+				require.True(t, ok)
+				registry, ok := declared["existingAcrResourceId"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, "", registry["defaultValue"])
+			} else {
+				assert.Equal(t, map[string]any{"value": tt.want}, got.parameters["existingAcrResourceId"])
+			}
+			assert.Equal(t, map[string]any{"value": true}, got.parameters["includeAcr"])
+		})
+	}
 }
 
 func TestLoadOnDiskTemplate_BicepparamPrecedence(t *testing.T) {
@@ -355,26 +427,39 @@ func TestLoadParametersFile_MalformedJSON(t *testing.T) {
 
 func TestMergeParameters_UserWins(t *testing.T) {
 	t.Parallel()
-	host := map[string]any{
-		"location":    map[string]any{"value": "host-location"},
-		"principalId": map[string]any{"value": "host-pid"},
-	}
-	user := map[string]any{
-		"location":   map[string]any{"value": "user-location"},
-		"includeAcr": map[string]any{"value": true},
-	}
-	got := mergeParameters(user, host)
+	for _, name := range []string{"location", "LOCATION"} {
+		t.Run(name, func(t *testing.T) {
+			host := map[string]any{
+				"location":    map[string]any{"value": "host-location"},
+				"principalId": map[string]any{"value": "host-pid"},
+			}
+			user := map[string]any{
+				name:         map[string]any{"value": "user-location"},
+				"includeAcr": map[string]any{"value": true},
+			}
+			got := mergeParameters(user, host)
 
-	// Same key in both: user wins.
-	loc := got["location"].(map[string]any)
-	assert.Equal(t, "user-location", loc["value"])
-	// Key only in user: present in result.
-	require.Contains(t, got, "includeAcr")
-	// Key only in host: present in result (user's file may not declare
-	// every parameter the embedded host map covers).
-	require.Contains(t, got, "principalId")
-	pid := got["principalId"].(map[string]any)
-	assert.Equal(t, "host-pid", pid["value"])
+			// Same key in both: user wins.
+			loc, ok := got[name].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, "user-location", loc["value"])
+			if name != "location" {
+				assert.NotContains(t, got, "location")
+			}
+			// Key only in user: present in result.
+			require.Contains(t, got, "includeAcr")
+			// Key only in host: present in result (user's file may not declare
+			// every parameter the embedded host map covers).
+			require.Contains(t, got, "principalId")
+			pid, ok := got["principalId"].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, "host-pid", pid["value"])
+			user["Location"] = map[string]any{"value": nil}
+			got = mergeParameters(user, host)
+			assert.Equal(t, user["Location"], got["Location"], "explicit duplicate user parameters are left to ARM")
+			assert.Equal(t, user[name], got[name])
+		})
+	}
 }
 
 func TestMergeParameters_NilInputsAreSafe(t *testing.T) {
@@ -394,7 +479,7 @@ func TestParametersDeclaredByTemplate_FiltersOnlyHostValues(t *testing.T) {
 		"location":          map[string]any{"value": "eastus"},
 	}
 	template := map[string]any{"parameters": map[string]any{
-		"projectResourceId":   map[string]any{"type": "string"},
+		"PROJECTRESOURCEID":   map[string]any{"type": "string"},
 		"existingAcrEndpoint": map[string]any{"type": "string"},
 	}}
 

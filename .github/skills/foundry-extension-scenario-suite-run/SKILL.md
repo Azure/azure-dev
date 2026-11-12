@@ -2,34 +2,31 @@
 name: foundry-extension-scenario-suite-run
 license: MIT
 metadata:
-  version: "1.1"
+  version: "1.2"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or selection rules.
   # 1.0: initial split from the scenarios README's fleet prompt; full / tag / tier sweep that is
   # NOT tied to a PR diff. Per-scenario driving is delegated to the foundry-extension-scenario-worker agent and
   # specified once in the scenarios' driving-mechanics.md.
   # 1.1: close filtered Tier 2 selections over setup/teardown and assign run-unique
   # per-scenario instances.
+  # 1.2: shorten description to Copilot's 1,024-character limit; the INVOKES
+  # tool list moved to the body below.
 description: >-
   **WORKFLOW SKILL** — Runs the azure.ai.agents extension's cli-interactive-tester scenarios as
-  a **full or tag/tier-filtered sweep** that is *not* tied to a PR diff. Discovers scenarios via
-  list_scenarios, gates Azure cost, and schedules them through adaptive rolling concurrency,
-  then writes an aggregate report. Typically dispatched by the foundry-extension-scenario-orchestrator agent, but
-  can trigger directly.
+  a full or tag/tier-filtered sweep NOT tied to a PR diff (Tier 0 free; Tier 1b/2 cost-gated).
+  Discovers scenarios via list_scenarios, drives them concurrently via
+  foundry-extension-scenario-worker agents, then writes an aggregate report. Dispatched by
+  foundry-extension-scenario-orchestrator, or triggered directly.
 
-  INVOKES: cli-interactive-tester MCP tools (list_scenarios, load_scenario, run_pre_hooks,
-  start_session, send_action, finish_session, run_post_hooks), the foundry-extension-scenario-worker agent,
-  ask_user.
+  USE FOR: run the whole suite, run all scenarios, smoke-test the extension, a tag-filtered
+  sweep (e.g. "run every `init` scenario"), a tier sweep (e.g. "run all of Tier 0"), a
+  scheduled/periodic full regression not scoped to a diff.
 
-  USE FOR: run the whole scenario suite, run all scenarios, smoke-test the azure.ai.agents
-  extension end to end, a tag-filtered sweep (e.g. "run every `init` scenario", "run everything
-  tagged `parallel-safe`"), a tier sweep (e.g. "run all of Tier 0", "run Tier 2"), a scheduled /
-  periodic full regression not scoped to a diff.
-
-  DO NOT USE FOR: PR- or diff-scoped selection (use foundry-extension-scenario-pr-regression — it maps changed
-  files to impacted tags and comments on the PR), authoring or editing scenarios (use
-  foundry-extension-scenario-authoring), azd core preflight (use azd-preflight), changelog (use
-  changelog-generation), creating PRs (use pull-request), scenarios for any extension other than
-  azure.ai.agents.
+  DO NOT USE FOR: PR- or diff-scoped selection (foundry-extension-scenario-pr-regression maps
+  changed files to tags and comments on the PR), authoring/editing scenarios without running
+  them — no Azure cost (foundry-extension-scenario-authoring), azd core preflight
+  (azd-preflight), changelog (changelog-generation), creating PRs (pull-request), scenarios for
+  other extensions.
 ---
 
 # foundry-extension-scenario-suite-run
@@ -37,6 +34,10 @@ description: >-
 Runs the `azure.ai.agents` extension's interactive CLI scenarios as a **full or filtered
 sweep** and writes an aggregate report. Selection here is by **tag / tier**, not by a PR diff —
 that is the one thing that distinguishes this skill from `foundry-extension-scenario-pr-regression`.
+
+**Tools invoked**: cli-interactive-tester MCP tools (`list_scenarios`, `load_scenario`,
+`run_pre_hooks`, `start_session`, `send_action`, `finish_session`, `run_post_hooks`), the
+`foundry-extension-scenario-worker` agent, and `ask_user`.
 
 ## Overview
 
@@ -77,8 +78,9 @@ PR-regression flow and are single-sourced there. Follow
 [`../foundry-extension-scenario-pr-regression/references/prerequisites.md`](../foundry-extension-scenario-pr-regression/references/prerequisites.md)
 (repo path `.github/skills/foundry-extension-scenario-pr-regression/references/prerequisites.md`) before doing
 anything else. In particular: verify the tester MCP server and `profile.local.yaml`, and derive
-the base `session_vars` (profile merge + `run_id` + `shared_agent_name` + `fixtures_dir`) and
-per-scenario `instance` values that must be threaded consistently through every scenario.
+the base `session_vars` (profile merge, including `model_version` and `model_sku`, plus `run_id` +
+`shared_agent_name` + `fixtures_dir`) and per-scenario `instance` and applicable bounded
+`foundry_project_name` values that must be threaded consistently through every scenario.
 
 The mandatory **`azd` binary build/verify gate** and **recipe validation** are shared gates the
 **foundry-extension-scenario-orchestrator** owns (see the `foundry-extension-scenario-orchestrator` agent and
@@ -114,16 +116,22 @@ list_scenarios(root="<scenarios-dir>", tags=[<filter>, ...])   # omit tags for t
 
 Build the concrete set before grouping or confirmation:
 
+Apply **Manual-seed selection and readiness** in the scenarios' `driving-mechanics.md`
+first. Whole-suite, command, and tier sweeps exclude `manual-seed` by default;
+explicit scenario/tag opt-in requires verified seed and cleanup ownership.
+Report exclusions as coverage gaps. Dependency closure must not bypass this gate.
+
 1. Inspect every selected scenario's `requires:` field. Recursively add each referenced
    prerequisite scenario, deduplicating paths, until the dependency graph is closed. A
    `verify-deploy` filter therefore adds the matching Tier 1 producers that create its
    scaffolds. If a referenced scenario does not exist, stop with a plan-construction error
    rather than scheduling a dependent that can only be skipped.
-2. If the expanded set contains **any Tier 2 scenario**, add
+2. If the expanded set contains **shared-agent Tier 2 scenarios**, add
    `tier2/2.00-setup-deploy-shared-agent.yaml` and
    `tier2/2.99-teardown-down.yaml` to the concrete set, deduplicating them if already present.
    This lifecycle closure is mandatory even when a tag filter such as `cmd:invoke` did not
    match the setup/teardown files directly.
+   Independent `2.19` uses its external seed lifecycle, not shared setup/teardown.
 3. Read and retain each selected scenario's optional top-level `produces` value so it can be
    passed directly to that scenario's worker. The tester's `load_scenario` summary does not
    expose orchestrator-only fields.
@@ -171,9 +179,12 @@ scheduler:
    rolling pool is active. Never run more than one Tier 2 scenario:
    `2.00-setup-deploy-shared-agent` **first**, then `2.01-`…`2.18-` **serially**,
    `2.18-delete` before teardown, and `2.99-teardown-down` **last**. Setup must PASS before
-   functional scenarios run; otherwise skip them and proceed to cleanup/recovery. Each
+   shared functional scenarios run; otherwise skip them and proceed to cleanup/recovery. Each
    functional completion unlocks only the next selected Tier 2 scenario, and teardown follows
    the final attempted functional scenario regardless of verdict.
+   Run opted-in, seed-ready independent `2.19` afterward, without another Tier 2
+   worker active, even if shared setup failed. An independent-only selection omits
+   shared setup/teardown and verifies external cleanup per the manual-seed rules.
 5. **Two-phase Tier 1b cleanup.** Tier 1b product workers finish their tester sessions but defer
    post hooks. Register cleanup before launching each Tier 1b worker and persist its status in
    `.reports/<run-id>/CLEANUP-STATUS.md`. After all product workers and the complete Tier 2 lane

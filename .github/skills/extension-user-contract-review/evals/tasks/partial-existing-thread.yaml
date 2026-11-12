@@ -1,0 +1,25 @@
+id: partial-existing-thread
+name: Match an unmarked grouped spec request without hiding a newly added flag
+tags: [positive, deduplication, command, spec-tracking]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Download verification".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/download.go.
+    Base has no download command. Head adds "azd data download <id>" with --file and --checksum.
+    Current RIGHT anchors: command Use "download <id>" at line 30; --file at 50; --checksum at 51.
+    Complete history: an earlier resolved thread by a human at original line 26 says:
+    "This introduces azd data download <id> with --file. Please link the approved experiences spec PR for this
+    command and its inputs here." This comment has no skill marker and no spec reply.
+    Revision evidence: the earlier reviewed version had the same command, <id>, and --file, but not --checksum.
+    The latest commit moves the constructor and adds only --checksum as a new structural input.
+    All input validation, handlers, help, and tests are correct. No other contracts or threads exist.
+graders:
+  - type: program
+    name: request-only-uncovered-flag
+    config:
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 1"
+        - "review.comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/download.go' && c.line === 51 && c.side === 'RIGHT' && c.body.includes('--checksum') && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"
+        - "/complete.*1 files? inspected; 1 new contract comments?; 1 existing threads?/.test(review.body)"

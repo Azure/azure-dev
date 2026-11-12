@@ -2,6 +2,25 @@
 
 <!-- cspell:ignore herohua -->
 
+## 1.0.0 (2026-11-05)
+
+### Other Changes
+
+- [[#10836]](https://github.com/Azure/azure-dev/pull/10836) Remove Preview labels from command help and extension descriptions.
+
+## 1.0.0-beta.9 (2026-10-23)
+
+### Other Changes
+
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+
+## 1.0.0-beta.8 (2026-09-24)
+
+### Other Changes
+
+- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2 to address the GHSA-2v4p-qf9q-27wj security advisory.
+- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0 to address the GHSA-8wmf-6v46-5gfg security advisory.
+
 ## 1.0.0-beta.7 (2026-09-10)
 
 ### Features Added

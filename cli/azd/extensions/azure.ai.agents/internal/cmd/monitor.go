@@ -119,7 +119,6 @@ when streaming session logs.`,
 					ctx,
 					azdClient,
 					monitorAgentKey(info, agentContext.ProjectEndpoint),
-					legacyKeysForRemote(info.AgentName)...,
 				)
 				if sessionID == "" {
 					return exterrors.Validation(
@@ -266,25 +265,18 @@ func validateMonitorFlags(flags *monitorFlags) error {
 	return nil
 }
 
-// resolveMonitorSession resolves the session ID from the config store.
+// resolveMonitorSession resolves the session ID from extension-owned state.
 // Returns the session ID if available, or empty string if not found.
 func resolveMonitorSession(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	agentKey string,
-	legacyKeys ...string,
 ) string {
 	if azdClient == nil {
 		return ""
 	}
 
-	// Try to trigger migration from legacy file if it exists.
-	migrateFromLegacyFile(ctx, azdClient)
-
-	// Look up session using the agent key (with legacy fallback).
-	val, err := getContextValueWithFallback(
-		ctx, azdClient, "sessions", agentKey, legacyKeys,
-	)
+	val, err := getAgentSpecificContextValue(ctx, azdClient, "sessions", agentKey)
 	if err != nil || val == "" {
 		return ""
 	}

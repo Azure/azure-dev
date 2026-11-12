@@ -4,10 +4,39 @@
 package cmd
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestEqualJSONPreservesNumericPrecision(t *testing.T) {
+	for _, tc := range []struct {
+		name, left, right string
+		equal             bool
+	}{
+		{"adjacent integers", `9007199254740992`, `9007199254740993`, false},
+		{"precise decimals", `0.60000000000000001`, `0.60000000000000002`, false},
+		{"decimal integer", `1`, `1.0`, true},
+		{"exponent integer", `1.0`, `1e0`, true},
+		{"large exponent", `9007199254740993`, `9.007199254740993e15`, true},
+		{"decimal exponent", `0.60000000000000001`, `6.0000000000000001e-1`, true},
+		{"signed zero", `-0.0`, `0e2`, true},
+		{"nested numbers", `{"scale":[1,{"maximum":9007199254740992}]}`,
+			`{"scale":[1.0,{"maximum":9007199254740993}]}`, false},
+		{"structural", `{"a":[1,true,null],"b":"text"}`, ` { "b": "text", "a": [1e0,true,null] } `, true},
+		{"array order", `[1,2]`, `[2,1]`, false},
+		{"missing null key", `{"a":null}`, `{"b":null}`, false},
+		{"number string", `1`, `"1"`, false},
+		{"invalid", `not JSON`, `null`, false},
+		{"trailing value", `1 2`, `1`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.equal, equalJSON(json.RawMessage(tc.left), json.RawMessage(tc.right)))
+			require.Equal(t, tc.equal, equalJSON(json.RawMessage(tc.right), json.RawMessage(tc.left)))
+		})
+	}
+}
 
 // The service enriches a definition when it stores it: a rubric of nothing but
 // type and dimensions comes back carrying data_schema, init_parameters and
@@ -78,4 +107,46 @@ func TestSameDefinitionCannotSeeARemovedField(t *testing.T) {
 
 	require.True(t, sameDefinition(onService, authored),
 		"this is the blind spot the digest exists to cover, not a property to rely on")
+}
+
+func TestSameDefinitionComparesAuthoredDimensionFields(t *testing.T) {
+	existing := []byte(`{"definition":{"type":"rubric","dimensions":[` +
+		`{"id":"a","description":"Correct.","weight":5,"always_applicable":false,"metadata":{"service":"only"}},` +
+		`{"id":"b","weight":3}]}}`)
+	for _, tc := range []struct {
+		name       string
+		dimensions string
+		equal      bool
+	}{
+		{
+			"projected",
+			`[{"id":"a","description":"Correct.","weight":5,"always_applicable":false},{"id":"b","weight":3}]`, true,
+		},
+		{
+			"renamed",
+			`[{"id":"new","description":"Correct.","weight":5,"always_applicable":false},{"id":"b","weight":3}]`, false,
+		},
+		{
+			"description",
+			`[{"id":"a","description":"Edited.","weight":5,"always_applicable":false},{"id":"b","weight":3}]`, false,
+		},
+		{"weight", `[{"id":"a","weight":6},{"id":"b","weight":3}]`, false},
+		{"applicability", `[{"id":"a","always_applicable":true},{"id":"b","weight":3}]`, false},
+		{"order", `[{"id":"b","weight":3},{"id":"a","weight":5}]`, false},
+		{"removed", `[{"id":"a","weight":5}]`, false},
+		{"empty", `[]`, false},
+		{"null", `null`, false},
+		{"null dimension", `[null,{"id":"b"}]`, false},
+		{"wrong shape", `{}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			authored := []byte(`{"definition":{"type":"rubric","dimensions":` + tc.dimensions + `}}`)
+			require.Equal(t, tc.equal, sameDefinition(existing, authored))
+		})
+	}
+	authored := []byte(`{"definition":{"type":"rubric","dimensions":[{"id":"a"},{"id":"b"}]}}`)
+	require.True(t, sameDefinition(existing, authored))
+	require.False(t, canReuseEvaluator("previous-digest", "edited-digest", existing, authored),
+		"the persisted digest must still detect removal of an authored dimension field")
+	require.False(t, sameAuthoredDimensions([]byte(`[]`), []byte(`null`)))
 }

@@ -118,11 +118,17 @@ func (s *testEnvServer) stored(t *testing.T, key string) string {
 //
 // Takes the service interface so a test can stand up a server that answers the
 // same calls differently -- one that keeps a section per environment, say.
-func newTestAzdClient(t *testing.T, env azdext.EnvironmentServiceServer) *azdext.AzdClient {
+func newTestAzdClient(
+	t *testing.T, env azdext.EnvironmentServiceServer, projects ...azdext.ProjectServiceServer,
+) *azdext.AzdClient {
 	t.Helper()
 
 	server := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(server, env)
+	require.LessOrEqual(t, len(projects), 1)
+	if len(projects) == 1 {
+		azdext.RegisterProjectServiceServer(server, projects[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -220,10 +226,8 @@ func TestEnsureDatasetReusesAPinnedVersionThatStillExists(t *testing.T) {
 	assert.False(t, changed, "an unchanged file at a pinned version publishes nothing")
 }
 
-// A read that failed is not a read that came back empty. Failing the deploy on
-// a 403 or a timeout would turn a transient service problem into a broken
-// pipeline for a pin that is very probably fine.
-func TestEnsureDatasetKeepsAPinnedVersionWhenTheReadFails(t *testing.T) {
+// A read failure cannot establish that the pinned version is usable.
+func TestEnsureDatasetRefusesAPinnedVersionWhenTheReadFails(t *testing.T) {
 	r, localPath := pinnedDatasetReconciler(t, "golden", "1.0", http.StatusForbidden)
 
 	version, changed, err := r.EnsureDataset(
@@ -232,7 +236,7 @@ func TestEnsureDatasetKeepsAPinnedVersionWhenTheReadFails(t *testing.T) {
 		localPath,
 	)
 
-	require.NoError(t, err)
-	assert.Equal(t, "1.0", version)
+	require.Error(t, err)
+	assert.Empty(t, version)
 	assert.False(t, changed)
 }

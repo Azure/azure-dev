@@ -6,19 +6,32 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	cmdmiddleware "github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec/scripting"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const execInterruptedHelperEnv = "AZD_EXEC_INTERRUPTED_HELPER"
+
+func TestExecActionInterruptedHelperProcess(t *testing.T) {
+	if os.Getenv(execInterruptedHelperEnv) == "" {
+		return
+	}
+	os.Exit(130)
+}
 
 // envSliceToMap converts an env slice ([]string{"KEY=VALUE", ...}) to a map.
 // When duplicate keys exist, the last value wins (matching exec.Cmd behavior).
@@ -285,8 +298,7 @@ func TestExecAction_ExitCodePropagation(t *testing.T) {
 	execErr := executor.ExecuteDirect(t.Context(), exitBin, []string{})
 	require.Error(t, execErr)
 
-	var scriptExecErr *scripting.ExecutionError
-	if errors.As(execErr, &scriptExecErr) {
+	if scriptExecErr, ok := errors.AsType[*scripting.ExecutionError](execErr); ok {
 		assert.Equal(t, 42, scriptExecErr.ExitCode)
 	} else {
 		t.Fatalf("expected ExecutionError with exit code 42, got %T: %v", execErr, execErr)
@@ -303,8 +315,14 @@ func TestLooksLikeFilePath(t *testing.T) {
 		{"npm", false},
 		{"./script.sh", true},
 		{"scripts/deploy.sh", true},
+		{"scripts/my script.sh", true},
+		{"my scripts/deploy.sh", true},
+		{"\\\\server\\share\\deploy.ps1", true},
 		{"C:\\scripts\\deploy.ps1", true},
+		{"C:\\Program Files\\deploy.ps1", true},
 		{"deploy.sh", true},
+		{"deploy.PS1", true},
+		{"  deploy.sh  ", true},
 		{"build.ps1", true},
 		{"run.cmd", true},
 		{"setup.bat", true},
@@ -315,6 +333,18 @@ func TestLooksLikeFilePath(t *testing.T) {
 		{"mycommand", false},
 		{"echo $HOME", false},
 		{"ls -la", false},
+		{"python script.py", false},
+		{"echo path/to/file", false},
+		{"cat ./config/settings.json", false},
+		{"cat<config/settings.json", false},
+		{"cat<scripts/deploy.sh", true},
+		{"Write-Output 'config\\settings.json'", false},
+		{"echo 'scripts/deploy.sh'", false},
+		{`echo "scripts/deploy.sh"`, false},
+		{"echo scripts/deploy.sh", true},
+		{"echo scripts/deploy.SH", true},
+		{"$HOME/scripts/deploy.sh", true},
+		{"tool --config config\\settings.json", false},
 	}
 
 	for _, tt := range tests {
@@ -324,20 +354,576 @@ func TestLooksLikeFilePath(t *testing.T) {
 	}
 }
 
+func TestShouldFailOnMissingScript(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		shell string
+		want  bool
+	}{
+		{"missing path", "my scripts/deploy.sh", "", true},
+		{"missing UNC path", "\\\\server\\share\\deploy.ps1", "", true},
+		{"explicit inline shell", "echo scripts/deploy.sh", "pwsh", false},
+		{"explicit shell path with spaces", "my scripts/deploy.sh", "bash", false},
+		{"explicit shell environment path", "$HOME/scripts/deploy.sh", "bash", false},
+		{"explicit shell quoted path", `echo "scripts/deploy.sh"`, "bash", false},
+		{
+			"explicit shell operator after path argument",
+			"Write-Output config\\settings.json | Out-String",
+			"pwsh",
+			false,
+		},
+		{"explicit shell glob", "if exist *.txt rem deploy.cmd", "cmd", false},
+		{
+			"explicit shell absolute path argument",
+			"if exist C:\\config\\settings.json rem deploy.cmd",
+			"cmd",
+			false,
+		},
+		{"explicit shell pipeline with leading path", "./deploy.sh | tee output.log", "bash", false},
+		{"explicit shell compact pipeline with leading path", "./deploy.sh|tee output.log", "bash", false},
+		{"explicit shell extensionless leading path", "./deploy | tee output.log", "bash", false},
+		{"explicit shell compact extensionless path", "./deploy|tee", "bash", false},
+		{"explicit shell leading path glob", "./scripts/*.sh", "bash", false},
+		{"explicit shell leading path single-character glob", "./scripts/?.sh", "bash", false},
+		{"explicit shell leading path bracket glob", "./scripts/[ab].sh", "bash", false},
+		{"explicit shell leading path brace expansion", "./scripts/{a,b}.sh", "bash", false},
+		{"explicit shell home expansion", "~/scripts/*.sh", "bash", false},
+		{"explicit cmd environment expansion", "%TEMP%\\deploy.cmd", "cmd", false},
+		{"explicit cmd delayed expansion", "!SCRIPT!", "cmd", false},
+		{"explicit cmd escape", "^deploy.cmd", "cmd", false},
+		{"explicit shell assignment", "PATH=./bin", "bash", false},
+		{"glob without explicit shell", "./scripts/*.sh", "", true},
+		{"home path without explicit shell", "~/scripts/deploy", "", true},
+		{"environment path without explicit shell", "%TEMP%\\deploy", "", true},
+		{"assignment path without explicit shell", "PATH=./bin", "", true},
+		{
+			"compact pipeline with extensionless leading path",
+			".\\deploy|.\\cleanup.ps1",
+			"pwsh",
+			false,
+		},
+		{
+			"explicit PowerShell pipeline with leading path",
+			".\\deploy.ps1 | Out-String",
+			"pwsh",
+			false,
+		},
+		{"explicit shell path", "./missing.ps1", "pwsh", true},
+		{"inline redirection", "cat<config/settings.json", "", false},
+		{"explicit shell redirection", "cat<scripts/deploy.sh", "bash", false},
+		{"explicit shell operator without separator", "cat<deploy.sh", "bash", false},
+		{"explicit shell path with later operator", "./deploy&test.sh", "bash", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, shouldFailOnMissingScript(tt.input, tt.shell))
+		})
+	}
+}
+
 func TestExecAction_FileNotFoundNoInlineFallback(t *testing.T) {
 	env := environment.NewWithValues("test", nil)
 	kvMock := &mockExecKeyVaultService{}
 
-	// A non-existent file with a script extension should NOT fall through
-	// to inline execution — it should return ScriptNotFoundError.
+	tests := [][]string{
+		{"nonexistent.sh"},
+		{"nonexistent.sh", "--verbose"},
+		{"my scripts/deploy.sh"},
+	}
+
+	for _, args := range tests {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			action := &execAction{
+				env:             env,
+				keyvaultService: kvMock,
+				flags:           &execFlags{global: &internal.GlobalCommandOptions{}},
+				args:            args,
+			}
+
+			_, err := action.Run(t.Context())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "not found")
+		})
+	}
+}
+
+func TestExecAction_ExplicitShellExpressionBypassesInvalidPathProbe(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows rejects shell operators as invalid filename characters")
+	}
+
+	tests := []string{
+		"echo success>nul&rem deploy.cmd",
+		"if exist *.txt rem deploy.cmd",
+		`if exist C:\config\settings.json rem deploy.cmd`,
+	}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			action := &execAction{
+				env:             environment.NewWithValues("test", nil),
+				keyvaultService: &mockExecKeyVaultService{},
+				flags: &execFlags{
+					global: &internal.GlobalCommandOptions{},
+					shell:  "cmd",
+				},
+				args: []string{input},
+			}
+
+			_, err := action.Run(t.Context())
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestExecAction_ExplicitShellExpressionWithPathArgumentBypassesInvalidPathProbe(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows rejects shell operators as invalid filename characters")
+	}
+
 	action := &execAction{
-		env:             env,
-		keyvaultService: kvMock,
-		flags:           &execFlags{global: &internal.GlobalCommandOptions{}},
-		args:            []string{"nonexistent.sh"},
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  "cmd",
+		},
+		args: []string{`echo config\settings.json|findstr settings>nul&rem deploy.cmd`},
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+}
+
+func TestExecAction_ExplicitShellPipelineWithLeadingPathBypassesInvalidPathProbe(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows rejects shell operators as invalid filename characters")
+	}
+
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.WriteFile("emit.cmd", []byte("@echo success\r\n"), 0o600))
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  "cmd",
+		},
+		args: []string{`.\emit.cmd|findstr success>nul&rem deploy.cmd`},
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+}
+
+func TestExecAction_ExplicitShellLeadingPathExpansionFallsBackInline(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is required for shell expansion coverage")
+	}
+
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.Mkdir("scripts", 0o750))
+	for _, name := range []string{"a.sh", "b.sh"} {
+		//nolint:gosec // G306: expanded shell fixtures must be directly executable.
+		require.NoError(t, os.WriteFile(
+			filepath.Join("scripts", name),
+			[]byte("#!/usr/bin/env bash\nexit 0\n"),
+			0o700,
+		))
+	}
+	//nolint:gosec // G306: pipeline fixtures must be directly executable.
+	require.NoError(t, os.WriteFile("emit", []byte("#!/usr/bin/env bash\necho success\n"), 0o700))
+	//nolint:gosec // G306: pipeline fixtures must be directly executable.
+	require.NoError(t, os.WriteFile("cleanup.sh", []byte("#!/usr/bin/env bash\ncat >/dev/null\n"), 0o700))
+
+	for _, input := range []string{
+		"./scripts/*.sh",
+		"./scripts/{a,b}.sh",
+		"./emit|./cleanup.sh",
+	} {
+		t.Run(input, func(t *testing.T) {
+			action := &execAction{
+				env:             environment.NewWithValues("test", nil),
+				keyvaultService: &mockExecKeyVaultService{},
+				flags: &execFlags{
+					global: &internal.GlobalCommandOptions{},
+					shell:  "bash",
+				},
+				args: []string{input},
+			}
+
+			_, err := action.Run(t.Context())
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestExecAction_ExplicitShellAssignmentWithPathFallsBackInline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bare assignment syntax is POSIX-shell specific")
+	}
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is required for assignment coverage")
+	}
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  "bash",
+		},
+		args: []string{"PATH=./bin"},
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+}
+
+func TestExecAction_ExplicitShellPreservesExistingFilePrecedence(t *testing.T) {
+	shell := "bash"
+	extension := ".sh"
+	content := []byte("exit 0\n")
+	if runtime.GOOS == "windows" {
+		shell = "cmd"
+		extension = ".cmd"
+		content = []byte("@exit /b 0\r\n")
+	}
+
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+
+	filenameCharacters := []string{
+		"&", "(", ")", ";", "$", "'", "`", "^", "!", "[", "]", "{", "}", "~",
+	}
+	if runtime.GOOS != "windows" {
+		// cmd file execution intentionally neutralizes %VAR% expansion, so a
+		// percent sign is not a supported Windows filename case.
+		filenameCharacters = append(filenameCharacters, "<", ">", "|", `"`, "%", "*", "?")
+	}
+
+	tests := []string{
+		"deploy test" + extension,
+		filepath.Join("scripts&tools", "deploy"+extension),
+		filepath.Join("scripts(test)", "deploy"+extension),
+		filepath.Join("scripts tools", "deploy"+extension),
+	}
+	for _, character := range filenameCharacters {
+		tests = append(tests, "deploy"+character+"test"+extension)
+	}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			scriptPath := filepath.Join(tempDir, input)
+			require.NoError(t, os.MkdirAll(filepath.Dir(scriptPath), 0o750))
+			require.NoError(t, os.WriteFile(scriptPath, content, 0o600))
+
+			action := &execAction{
+				env:             environment.NewWithValues("test", nil),
+				keyvaultService: &mockExecKeyVaultService{},
+				flags: &execFlags{
+					global: &internal.GlobalCommandOptions{},
+					shell:  shell,
+				},
+				args: []string{input},
+			}
+
+			_, err := action.Run(t.Context())
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestExecAction_ExplicitShellPreservesDirectoryError(t *testing.T) {
+	shell := "bash"
+	directoryName := "deploy&test.sh"
+	if runtime.GOOS == "windows" {
+		shell = "cmd"
+		directoryName = "deploy&test.cmd"
+	}
+
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.Mkdir(directoryName, 0o750))
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  shell,
+		},
+		args: []string{directoryName},
 	}
 
 	_, err := action.Run(t.Context())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
+	valErr, ok := errors.AsType[*scripting.ValidationError](err)
+	require.True(t, ok)
+	assert.Contains(t, valErr.Reason, "must be a file")
+}
+
+func TestExecAction_InvalidFilenameRequiresExplicitShell(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows rejects shell operators as invalid filename characters")
+	}
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags:           &execFlags{global: &internal.GlobalCommandOptions{}},
+		args:            []string{"cat<deploy.sh"},
+	}
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	_, ok := errors.AsType[*scripting.ValidationError](err)
+	require.True(t, ok)
+}
+
+func TestExecAction_ExplicitShellClearInvalidPathDoesNotFallback(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows rejects shell operators as invalid filename characters")
+	}
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  "cmd",
+		},
+		args: []string{`scripts\deploy.cmd`},
+	}
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	_, inline := errors.AsType[*internal.ExitCodeError](err)
+	assert.False(t, inline, "clear script paths must not fall back to inline execution")
+}
+
+func TestExecAction_ExplicitShellLongCommandBypassesPathProbe(t *testing.T) {
+	shell := "bash"
+	inlineCommand := ": " + strings.Repeat("x", 300)
+	missingScript := strings.Repeat("x", 300) + ".sh"
+	if runtime.GOOS == "windows" {
+		shell = "cmd"
+		inlineCommand = "rem " + strings.Repeat("x", 300)
+		missingScript = strings.Repeat("x", 300) + ".cmd"
+	}
+
+	t.Run("inline command", func(t *testing.T) {
+		action := &execAction{
+			env:             environment.NewWithValues("test", nil),
+			keyvaultService: &mockExecKeyVaultService{},
+			flags: &execFlags{
+				global: &internal.GlobalCommandOptions{},
+				shell:  shell,
+			},
+			args: []string{inlineCommand},
+		}
+
+		_, err := action.Run(t.Context())
+		require.NoError(t, err)
+	})
+
+	t.Run("clear missing script", func(t *testing.T) {
+		action := &execAction{
+			env:             environment.NewWithValues("test", nil),
+			keyvaultService: &mockExecKeyVaultService{},
+			flags: &execFlags{
+				global: &internal.GlobalCommandOptions{},
+				shell:  shell,
+			},
+			args: []string{missingScript},
+		}
+
+		_, err := action.Run(t.Context())
+		require.Error(t, err)
+		_, inline := errors.AsType[*internal.ExitCodeError](err)
+		assert.False(t, inline, "clear long script paths must not fall back to inline execution")
+	})
+}
+
+func TestExecAction_ExecutionErrorDoesNotFallbackInline(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows command-line length errors are platform-specific")
+	}
+
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	scriptName := "deploy & test.cmd"
+	require.NoError(t, os.WriteFile(scriptName, []byte("@exit /b 0\r\n"), 0o600))
+
+	action := &execAction{
+		env:             environment.NewWithValues("test", nil),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global: &internal.GlobalCommandOptions{},
+			shell:  "cmd",
+		},
+		args: []string{scriptName, strings.Repeat("x", 40_000)},
+	}
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to execute script")
+	assert.NotContains(t, err.Error(), "inline script")
+}
+
+func TestExecAction_CancellationIsNotConvertedToExitCodeError(t *testing.T) {
+	customCause := errors.New("custom cancellation cause")
+	for _, test := range []struct {
+		name        string
+		ctx         func() context.Context
+		err         error
+		wantMessage string
+	}{
+		{
+			name: "canceled",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(t.Context())
+				cancel()
+				return ctx
+			},
+			err:         context.Canceled,
+			wantMessage: "command execution was canceled by the user",
+		},
+		{
+			name: "deadline exceeded",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+				cancel()
+				return ctx
+			},
+			err: context.DeadlineExceeded,
+		},
+		{
+			name: "deadline cancellation cause",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancelCause(t.Context())
+				cancel(context.DeadlineExceeded)
+				return ctx
+			},
+			err: context.DeadlineExceeded,
+		},
+		{
+			name: "custom cause",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancelCause(t.Context())
+				cancel(customCause)
+				return ctx
+			},
+			err:         customCause,
+			wantMessage: "command execution was canceled by the user",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			action := &execAction{
+				env:             environment.NewWithValues("test", nil),
+				keyvaultService: &mockExecKeyVaultService{},
+				flags:           &execFlags{global: &internal.GlobalCommandOptions{}},
+				args:            []string{"go", "version"},
+			}
+
+			_, err := action.Run(test.ctx())
+
+			require.ErrorIs(t, err, test.err)
+			_, ok := errors.AsType[*internal.ExitCodeError](err)
+			require.False(t, ok)
+			_, userCancellation := errors.AsType[*execCancellationError](err)
+			require.Equal(t, test.wantMessage != "", userCancellation)
+			if test.wantMessage != "" {
+				require.Equal(t, test.wantMessage, err.Error())
+			}
+		})
+	}
+}
+
+func TestExecAction_InterruptedExitThroughCancellationMiddleware(t *testing.T) {
+	initialHandlers := len(input.SnapshotInterruptStack())
+	t.Cleanup(func() {
+		for len(input.SnapshotInterruptStack()) > initialHandlers {
+			handlers := input.SnapshotInterruptStack()
+			handlers[len(handlers)-1]()
+			if len(input.SnapshotInterruptStack()) >= len(handlers) {
+				return
+			}
+		}
+	})
+
+	executable, err := filepath.Abs(os.Args[0])
+	require.NoError(t, err)
+	t.Setenv(
+		"PATH",
+		filepath.Dir(executable)+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+	action := &execAction{
+		env: environment.NewWithValues("test", map[string]string{
+			execInterruptedHelperEnv: "1",
+		}),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global:      &internal.GlobalCommandOptions{},
+			interactive: true,
+		},
+		args: []string{
+			filepath.Base(executable),
+			"-test.run=^TestExecActionInterruptedHelperProcess$",
+		},
+	}
+
+	t.Run("interrupted child uses cancellation message", func(t *testing.T) {
+		_, err := cmdmiddleware.NewCancellationMiddleware().Run(
+			t.Context(),
+			action.Run,
+		)
+
+		handlers := input.SnapshotInterruptStack()
+		if len(handlers) > initialHandlers {
+			assert.True(t, handlers[len(handlers)-1]())
+		}
+		require.Len(t, handlers, initialHandlers+1)
+		require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
+
+		require.EqualError(t, err, "command execution was canceled by the user")
+		require.ErrorIs(t, err, context.Canceled)
+		_, hasExitCode := errors.AsType[*internal.ExitCodeError](err)
+		require.False(t, hasExitCode)
+		execErr, ok := errors.AsType[*scripting.ExecutionError](err)
+		require.True(t, ok)
+		require.True(t, execErr.Interrupted())
+	})
+
+	t.Run("deadline remains authoritative", func(t *testing.T) {
+		ctx, cancel := context.WithCancelCause(t.Context())
+		cancel(context.DeadlineExceeded)
+
+		_, err := cmdmiddleware.NewCancellationMiddleware().Run(ctx, action.Run)
+
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.NotErrorIs(t, err, context.Canceled)
+		_, userCancellation := errors.AsType[*execCancellationError](err)
+		require.False(t, userCancellation)
+		require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
+	})
+}
+
+func TestExecCancellationErrorPreservesExecutionDetails(t *testing.T) {
+	executionErr := &scripting.ExecutionError{
+		ExitCode: 1,
+		Shell:    "pwsh",
+		IsInline: true,
+	}
+	err := &execCancellationError{
+		err: errors.Join(executionErr, context.Canceled),
+	}
+
+	require.Equal(t, "command execution was canceled by the user", err.Error())
+	require.ErrorIs(t, err, context.Canceled)
+	typedErr, ok := errors.AsType[*scripting.ExecutionError](err)
+	require.True(t, ok)
+	require.Same(t, executionErr, typedErr)
 }

@@ -4,9 +4,13 @@
 package cmd
 
 import (
-	"os"
-	"path/filepath"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -67,6 +71,212 @@ func TestOptimizeCommand_HasDeploySubCommand(t *testing.T) {
 	}
 
 	assert.Contains(t, actual, "deploy", "optimize should have 'deploy' sub-command")
+}
+
+func TestOptimizeDeployAgentHeaders(t *testing.T) {
+	const projectEndpoint = "https://account.services.ai.azure.com/api/projects/test-project"
+	const modelEndpoint = "https://account.services.ai.azure.com"
+
+	tests := []struct {
+		name       string
+		definition map[string]any
+		expected   map[string]string
+	}{
+		{
+			name: "Microsoft Copilot managed harness",
+			definition: map[string]any{
+				"kind":    "prompt",
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessMicrosoftCopilot},
+			},
+			expected: map[string]string{
+				"Foundry-Features": agent_api.MicrosoftCopilotPreviewFeature,
+				"x-model-endpoint": modelEndpoint,
+			},
+		},
+		{
+			name: "legacy GitHub Copilot harness uses Microsoft feature",
+			definition: map[string]any{
+				"kind":    "prompt",
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
+			},
+			expected: map[string]string{
+				"Foundry-Features": agent_api.MicrosoftCopilotPreviewFeature,
+				"x-model-endpoint": modelEndpoint,
+			},
+		},
+		{
+			name:       "plain prompt agent",
+			definition: map[string]any{"kind": "prompt"},
+			expected: map[string]string{
+				"x-model-endpoint": modelEndpoint,
+			},
+		},
+		{
+			name: "plain prompt agent with skills",
+			definition: map[string]any{
+				"kind":   "prompt",
+				"skills": []any{map[string]any{"name": "skill", "version": "1"}},
+			},
+			expected: map[string]string{
+				"Foundry-Features": agent_api.SkillsPreviewFeature,
+				"x-model-endpoint": modelEndpoint,
+			},
+		},
+		{
+			name: "managed prompt agent with skills",
+			definition: map[string]any{
+				"kind":    "prompt",
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessMicrosoftCopilot},
+				"skills":  []any{map[string]any{"name": "skill", "version": "1"}},
+			},
+			expected: map[string]string{
+				"Foundry-Features": agent_api.MicrosoftCopilotPreviewFeature + "," + agent_api.SkillsPreviewFeature,
+				"x-model-endpoint": modelEndpoint,
+			},
+		},
+		{
+			name: "other harness",
+			definition: map[string]any{
+				"kind":    "prompt",
+				"harness": map[string]any{"type": "future_harness"},
+			},
+			expected: map[string]string{
+				"x-model-endpoint": modelEndpoint,
+			},
+		},
+		{
+			name: "non-prompt agent with managed harness field",
+			definition: map[string]any{
+				"kind":    "hosted",
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessMicrosoftCopilot},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, optimizeDeployAgentHeaders(tt.definition, projectEndpoint))
+		})
+	}
+}
+
+func TestOptimizationPromotionHeaders(t *testing.T) {
+	require.Nil(t, optimizationPromotionHeaders(false))
+	require.Equal(t, map[string]string{
+		optimize_api.PromotionReportOnlyHeader: "true",
+	}, optimizationPromotionHeaders(true))
+}
+
+func TestOptimizeDeploy_CompletesCandidateConfigFromJobBaseline(t *testing.T) {
+	t.Parallel()
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/agent_optimization_jobs/job-1":
+			_, _ = w.Write([]byte(`{"optimization_configuration":{"baseline_agent_configuration":{
+				"system_prompt":"Original instructions","current_model":"snapshot-model",
+				"tools":[{"type":"function","function":{"name":"calculate","description":"Snapshot description"}}],
+				"skills":[{"name":"calculation","description":"Snapshot skill","body":"Calculate precisely"}]
+			}}}`))
+		case "/agent_optimization_jobs/job-1/candidates/candidate-1":
+			_, _ = w.Write([]byte(`{"files":[{"type":"config","path":"config.json"}],
+				"output":{"type":"agent_optimization",
+					"mutations":[{"type":"instructions","value":"Optimized instructions"}]}}`))
+		case "/agent_optimization_jobs/job-1/files":
+			_, _ = w.Write([]byte(`{"instructions":"Artifact instructions"}`))
+		default:
+			t.Errorf("unexpected route %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer api.Close()
+	config, err := newTestOptimizeClient(api.URL).GetCandidateConfig(t.Context(), "job-1", "candidate-1")
+	require.NoError(t, err)
+
+	t.Run("hosted runtime payload", func(t *testing.T) {
+		payload, err := json.Marshal(config)
+		require.NoError(t, err)
+		require.JSONEq(t, `{
+			"instructions":"Optimized instructions","model":"snapshot-model",
+			"tools":[{"type":"function","function":{"name":"calculate","description":"Snapshot description"}}],
+			"skills":[{"name":"calculation","description":"Snapshot skill","body":"Calculate precisely"}]
+		}`, string(payload))
+	})
+
+	t.Run("prompt definition uses snapshot values", func(t *testing.T) {
+		current := map[string]any{
+			"kind": "prompt", "model": "newer-model", "instructions": "Newer instructions",
+			"tools": []any{
+				map[string]any{"type": "function", "name": "calculate", "description": "Newer description"},
+				map[string]any{"type": "code_interpreter"},
+			},
+		}
+		definition, err := buildPromptDeployDefinition(current, config)
+		require.NoError(t, err)
+		require.Equal(t, "snapshot-model", definition["model"])
+		require.Equal(t, "Optimized instructions", definition["instructions"])
+		tools, ok := definition["tools"].([]any)
+		require.True(t, ok)
+		require.Len(t, tools, 2)
+		function, ok := tools[0].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "Snapshot description", function["description"])
+		require.Equal(t, map[string]any{"type": "code_interpreter"}, tools[1])
+		require.Equal(t, "newer-model", current["model"])
+	})
+}
+
+func TestBuildPromptDeployDefinition(t *testing.T) {
+	current := map[string]any{
+		"kind":         "prompt",
+		"model":        "old-model",
+		"instructions": "old instructions",
+		"harness":      map[string]any{"type": agent_api.ManagedAgentHarnessMicrosoftCopilot},
+		"skills":       []any{map[string]any{"name": "existing-skill", "version": "1"}},
+		"tools": []any{
+			map[string]any{
+				"type":        "function",
+				"name":        "lookup",
+				"description": "old description",
+				"parameters": map[string]any{
+					"type": "object",
+				},
+			},
+			map[string]any{"type": "code_interpreter"},
+		},
+	}
+	candidate := json.RawMessage(`{
+		"model": "new-model",
+		"system_prompt": "new instructions",
+		"tools": [{
+			"type": "function",
+			"name": "lookup",
+			"description": "new description",
+			"parameters": {
+				"properties": {
+					"query": {"type": "string"}
+				}
+			}
+		}]
+	}`)
+
+	got, err := buildPromptDeployDefinition(current, candidate)
+	require.NoError(t, err)
+	require.Equal(t, "new-model", got["model"])
+	require.Equal(t, "new instructions", got["instructions"])
+	require.Equal(t, current["harness"], got["harness"])
+	require.Equal(t, current["skills"], got["skills"])
+
+	tools, ok := got["tools"].([]any)
+	require.True(t, ok)
+	functionTool, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "new description", functionTool["description"])
+	parameters, ok := functionTool["parameters"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "object", parameters["type"])
+	require.Contains(t, parameters, "properties")
+	require.Equal(t, map[string]any{"type": "code_interpreter"}, tools[1])
 }
 
 func TestExtractEnvVars_EmptyDef(t *testing.T) {
@@ -189,47 +399,4 @@ func TestNormalizeContainerImage_NoOpWhenNoImage(t *testing.T) {
 	def := map[string]any{"kind": "hosted"}
 	normalizeContainerImage(def) // should not panic
 	assert.Nil(t, def["container_configuration"])
-}
-
-// ---- upsertAgentYamlEnvVar ----
-
-func TestUpsertAgentYamlEnvVar_InsertsNew(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	yamlPath := filepath.Join(dir, "agent.yaml")
-	require.NoError(t, os.WriteFile(yamlPath, []byte("name: test-agent\n"), 0600))
-
-	err := upsertAgentYamlEnvVar(yamlPath, "MY_VAR", "my_value")
-	require.NoError(t, err)
-
-	data, err := os.ReadFile(yamlPath) //nolint:gosec // test file path
-	require.NoError(t, err)
-	assert.Contains(t, string(data), "MY_VAR")
-	assert.Contains(t, string(data), "my_value")
-}
-
-func TestUpsertAgentYamlEnvVar_UpdatesExisting(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	yamlPath := filepath.Join(dir, "agent.yaml")
-	content := `name: test-agent
-environment_variables:
-  - name: MY_VAR
-    value: old_value
-`
-	require.NoError(t, os.WriteFile(yamlPath, []byte(content), 0600))
-
-	err := upsertAgentYamlEnvVar(yamlPath, "MY_VAR", "new_value")
-	require.NoError(t, err)
-
-	data, err := os.ReadFile(yamlPath) //nolint:gosec // test file path
-	require.NoError(t, err)
-	assert.Contains(t, string(data), "new_value")
-	assert.NotContains(t, string(data), "old_value")
-}
-
-func TestUpsertAgentYamlEnvVar_FileMissing(t *testing.T) {
-	t.Parallel()
-	err := upsertAgentYamlEnvVar("/nonexistent/agent.yaml", "KEY", "VALUE")
-	assert.Error(t, err)
 }

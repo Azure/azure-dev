@@ -10,6 +10,9 @@ parameters:
     type: string
   - name: OS
     type: string
+  - name: JobTimeoutInMinutes
+    type: number
+    default: 20
   - name: Variables
     type: object
     default: {}
@@ -26,7 +29,7 @@ jobs:
       ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
       os: ${{ parameters.OS }}
 
-    timeoutInMinutes: 20
+    timeoutInMinutes: ${{ parameters.JobTimeoutInMinutes }}
 
     steps: 
       - checkout: self
@@ -98,6 +101,7 @@ jobs:
           CleanGoCache: true
           CleanDocker: true
           CleanSystemCaches: true
+          DockerTimeoutInMinutes: 20
           Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
 
       - template: /eng/pipelines/templates/steps/build-linux-packages.yml
@@ -108,6 +112,7 @@ jobs:
       - template: /eng/pipelines/templates/steps/cleanup-disk-space.yml
         parameters:
           CleanDocker: true
+          DockerTimeoutInMinutes: 5
           Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
     
     templateContext: 

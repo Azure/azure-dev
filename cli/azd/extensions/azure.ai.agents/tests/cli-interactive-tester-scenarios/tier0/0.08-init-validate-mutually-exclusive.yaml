@@ -1,10 +1,10 @@
-# Tier 0 (offline) — `init` rejects a positional argument combined with --manifest.
+# Tier 0 (offline) — `init` rejects a positional argument combined with --template.
 #
 # There is no `--from-code` flag. A real, offline-detectable conflict is passing
-# BOTH a positional manifest argument AND -m/--manifest, which the command
+# BOTH a positional template argument AND -t/--template, which the command
 # rejects up front (CodeConflictingArguments) before any wizard or network call.
 name: "init-validate-mutually-exclusive"
-command: "azd ai agent init azure.yaml -m https://example.com/azure.yaml"
+command: "azd ai agent init azure.yaml -t https://example.com/azure.yaml"
 cwd: "~/working/azd-agents-validate-{instance}"
 tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
 
@@ -19,7 +19,7 @@ pre:
 
 goals:
   - "Wait for the command to fail fast (it should not start the interactive wizard)."
-  - "Confirm the error message clearly states that you cannot pass both a positional argument and --manifest."
+  - "Confirm the error message clearly states that you cannot pass both a positional argument and --template."
   - "Confirm the process exits non-zero and does NOT create or modify any project files in the directory."
   - "Take a screenshot of the error output."
   - "Report a finding if the conflicting arguments are silently accepted, if the wizard starts anyway, or if the error message is unclear about the conflict."

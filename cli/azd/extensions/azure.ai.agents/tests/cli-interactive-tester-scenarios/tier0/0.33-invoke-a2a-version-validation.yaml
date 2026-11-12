@@ -1,0 +1,38 @@
+# Tier 0 (offline) — A2A request-version help and validation; no successful invocation.
+name: "invoke-a2a-version-validation"
+command: "azd ai agent invoke --help"
+cwd: "~/working/azd-agents-a2a-version-{instance}"
+tags: ["tier:0", "cmd:invoke", "negative-path", "parallel-safe"]
+env:
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_CHECK_VERSION: "false"
+  AZD_ALPHA_ENABLE_AGENTS_A2A: "true"
+pre:
+  - run: |
+      set -eu
+      work="$HOME/working/azd-agents-a2a-version-{instance}"
+      rm -rf "$work"
+      mkdir -p "$work"
+      printf '%s\n' '{"jsonrpc":"2.0","id":"hello-1","method":"message/send","params":{"message":{"kind":"message","messageId":"hello-message-1","role":"user","parts":[{"kind":"text","text":"Hello!"}]}}}' > "$work/a2a-request.json"
+    cwd: "~/working"
+    name: "seed a complete public A2A 0.3 JSON-RPC request in an isolated directory"
+
+goals:
+  - "Confirm invoke help exits with code 0 and advertises --a2a-version with supported values 0.3 and 1.0. Confirm it explains that azd composes the body and A2A-Version header for plain messages, making 1.0 a convenience default, and that A2A file input always requires an explicit --a2a-version, even with native A2A agent YAML."
+  - "Confirm help distinguishes public A2A versions from Foundry API and deployed agent versions (--version). Confirm explicit -p a2a + --a2a-version examples precede the plain-message example, and the A2A file-input example includes an explicit version. Confirm file bytes are unchanged and the caller must match the body and header without version inference. Confirm help describes --local -p a2a as supported, posting to the fixed /a2a route on the configurable --port, and explains that local A2A sends no Foundry authentication/session/conversation/identity/call-ID headers."
+  - "Confirm help documents the preview-off 0.3 default, and directs streaming requests to --output raw. Do not execute streaming requests in this offline scenario."
+  - "Confirm help advertises --context-id for continuing an A2A conversation and distinguishes Context ID from Foundry session routing. The flag accepts plain A2A messages; raw files retain their own params.message.contextId. Hosted files keep cached routing unless --new-session without --version omits it, or --session-id selects a matching session. Do not execute hosted requests here."
+  - "Confirm default-output guidance includes Task ID and state, explains that failed/canceled/rejected send Tasks return an error with IDs and text or structured status diagnostics retained, but successful cancellations and task-status lookups remain successful. Preserve input-required/auth-required states for follow-up. No --new-context or new context persistence should be advertised."
+  - 'Run azd ai agent invoke -p a2a --context-id= "Hello!". Confirm non-zero exit naming the empty --context-id value.'
+  - 'Run azd ai agent invoke -p responses --context-id context-1 "Hello!", then repeat with -p invocations. Confirm both reject --context-id as A2A-only before authentication.'
+  - 'Run azd ai agent invoke -p a2a --context-id context-1 --input-file a2a-request.json. Confirm the conflict names both --context-id and --input-file and explains hosted-file routing with --new-session or --session-id; the file must not be rewritten.'
+  - 'Run azd ai agent invoke --protocol a2a --input-file a2a-request.json. Confirm it exits non-zero with a validation error explaining that --input-file with A2A requires an explicit --a2a-version; the 1.0 plain-message default must not silently apply to file input.'
+  - 'Run azd ai agent invoke --protocol a2a --version 3 --input-file a2a-request.json. Confirm it exits non-zero with the same explicit --a2a-version requirement; --version must not satisfy it.'
+  - 'Run azd ai agent invoke --protocol a2a --a2a-version 2.0 "Hello!". Confirm it exits non-zero with an unsupported-version validation error naming --a2a-version and listing 0.3 and 1.0 as supported values.'
+  - 'Run azd ai agent invoke --protocol a2a --a2a-version= "Hello!". Confirm it exits non-zero with a validation error for the empty --a2a-version value, rather than silently selecting the default.'
+  - 'Run azd ai agent invoke --protocol responses --a2a-version 1.0 "Hello!". Confirm it exits non-zero with a validation error explaining that --a2a-version is supported only with the a2a protocol.'
+  - 'Run azd ai agent invoke --protocol invocations --a2a-version 0.3 "Hello!". Confirm it exits non-zero with the same A2A-only validation error.'
+  - "Confirm every invalid command is rejected before authentication, an agent picker, network activity, or agent execution. No product prompts are allowed. Do not run a valid invocation, init, provision, or deploy in this offline scenario."
+  - 'With AZD_ALPHA_ENABLE_AGENTS_A2A=false, confirm invoke help hides --a2a-version and version-specific examples but still shows A2A message and file invocation. Run invoke -p a2a --a2a-version 0.3 "Hello!" and confirm feature_not_enabled names agents.a2a and its canonical switch. Invalid or empty versions and ordinary argument conflicts must still report local validation errors first. Do not run a valid preview-off invocation in this offline scenario.'
+  - "Take a screenshot of the help and validation output on a best-effort basis."
+  - "Report a finding if help contradicts the version contract, an invalid combination is accepted, validation reports a different error, or any command prompts or begins agent execution."

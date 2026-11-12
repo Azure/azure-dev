@@ -11,9 +11,12 @@ import (
 )
 
 func newVersionCommand(outputFormat *string) *cobra.Command {
-	return azdext.NewVersionCommand(
+	cmd := azdext.NewVersionCommand(
 		"azure.ai.projects",
 		version.Version,
 		outputFormat,
 	)
+	cmd.Example = `  # Display the installed project extension version
+  azd ai project version`
+	return cmd
 }

@@ -34,6 +34,7 @@ const (
 	pathDatasets                = "/datasets"
 	pathOpenAIEvals             = "/openai/v1/evals"
 	pathAgents                  = "/agents"
+	pathConnections             = "/connections"
 )
 
 // EvalClient provides methods for interacting with the Azure AI eval APIs.
@@ -78,6 +79,25 @@ func NewEvalClientFromPipeline(endpoint string, pipeline runtime.Pipeline) *Eval
 		endpoint: endpoint,
 		pipeline: pipeline,
 	}
+}
+
+// ListConnections returns the project's complete connection catalog.
+func (c *EvalClient) ListConnections(ctx context.Context, apiVersion string) (*ConnectionList, error) {
+	first, err := doRequestTyped[ConnectionList](
+		c, ctx, http.MethodGet, pathConnections, nil, nil, apiVersion)
+	if err != nil {
+		return nil, err
+	}
+	return walkNextLinks(
+		ctx,
+		c,
+		first,
+		func(page *ConnectionList) string { return page.NextLink },
+		func(into, page *ConnectionList) {
+			into.Value = append(into.Value, page.Value...)
+			into.NextLink = page.NextLink
+		},
+	)
 }
 
 // CreateDataGenerationJob starts a dataset generation job for eval onboarding.
@@ -410,7 +430,7 @@ func (c *EvalClient) publishEvaluatorVersion(
 //
 // The service has no route for an unversioned evaluator: GET
 // /evaluators/{name} returns 404 with no body, so the version cannot simply be
-// left off the path.
+// left off the path. A version point-read 404 does not establish evaluator absence.
 func (c *EvalClient) GetEvaluatorRaw(
 	ctx context.Context,
 	name string,
@@ -426,7 +446,11 @@ func (c *EvalClient) GetEvaluatorRaw(
 	}
 	path := pathEvaluators + "/" + url.PathEscape(name) +
 		"/versions/" + url.PathEscape(version)
-	return c.doRequest(ctx, http.MethodGet, path, nil, nil, apiVersion)
+	raw, err := c.doRequest(ctx, http.MethodGet, path, nil, nil, apiVersion)
+	if IsNotFound(err) {
+		return nil, evaluatorVersionReadError{cause: err}
+	}
+	return raw, err
 }
 
 // LatestEvaluatorVersion returns the newest registered version of an evaluator.
@@ -439,8 +463,11 @@ func (c *EvalClient) LatestEvaluatorVersion(
 	if err != nil {
 		return "", err
 	}
-	if list == nil || len(list.Value) == 0 {
-		return "", messages.EvaluatorHasNoVersions(name)
+	if list == nil {
+		return "", messages.EvaluatorHasNoUsableVersion(name)
+	}
+	if len(list.Value) == 0 {
+		return "", &noEvaluatorVersionsError{name: name}
 	}
 	latest := pickLatestVersion(list.Value)
 	if latest == "" {

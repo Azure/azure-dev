@@ -1,0 +1,4 @@
+kind: prompt
+name: previous-support-agent
+model: gpt-4.1-mini
+instructions: Help the user.

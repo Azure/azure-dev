@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -336,9 +337,9 @@ func TestConfirmSourceChange(t *testing.T) {
 // lastConfirmQuestion returns the latest prompt from the mock console.
 func lastConfirmQuestion(console *mockinput.MockConsole) string {
 	out := console.Output()
-	for i := len(out) - 1; i >= 0; i-- {
-		if strings.HasSuffix(strings.TrimSpace(out[i]), "?") {
-			return out[i]
+	for _, o := range slices.Backward(out) {
+		if strings.HasSuffix(strings.TrimSpace(o), "?") {
+			return o
 		}
 	}
 	return ""

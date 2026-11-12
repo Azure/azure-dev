@@ -40,6 +40,12 @@ const (
 	// read-rate limit (1200 reads/5min/subscription) during large parallel deployments.
 	containerAppPollFrequency = 5 * time.Second
 
+	expressEnvironmentFeatureNotSupported = "ExpressEnvironmentFeatureNotSupported"
+	expressEnvironmentApiVersion          = "2026-07-01"
+
+	pathEnvironmentID                      = "properties.environmentId"
+	pathManagedEnvironmentID               = "properties.managedEnvironmentId"
+	pathEnvironmentMode                    = "properties.environmentMode"
 	pathLatestRevisionName                 = "properties.latestRevisionName"
 	pathTemplate                           = "properties.template"
 	pathTemplateRevisionSuffix             = "properties.template.revisionSuffix"
@@ -118,12 +124,13 @@ func NewContainerAppService(
 }
 
 type containerAppService struct {
-	credentialProvider  account.SubscriptionCredentialProvider
-	clock               clock.Clock
-	armClientOptions    *arm.ClientOptions
-	alphaFeatureManager *alpha.FeatureManager
-	appsClientCache     syncmap.Map[string, *armappcontainers.ContainerAppsClient]
-	jobsClientCache     syncmap.Map[string, *armappcontainers.JobsClient]
+	credentialProvider   account.SubscriptionCredentialProvider
+	clock                clock.Clock
+	armClientOptions     *arm.ClientOptions
+	alphaFeatureManager  *alpha.FeatureManager
+	appsClientCache      syncmap.Map[string, *armappcontainers.ContainerAppsClient]
+	jobsClientCache      syncmap.Map[string, *armappcontainers.JobsClient]
+	environmentModeCache syncmap.Map[string, string]
 }
 
 type ContainerAppOptions struct {
@@ -343,9 +350,21 @@ func (cas *containerAppService) AddRevision(
 		return fmt.Errorf("getting container app: %w", err)
 	}
 
+	environmentMode, hasEnvironmentMode, err := cas.getEnvironmentMode(ctx, containerApp)
+	if err != nil {
+		log.Printf("failed detecting container app environment mode: %v", err)
+	}
+	isExpressEnvironment := hasEnvironmentMode && strings.EqualFold(environmentMode, "Express")
+
 	// Update the template with the new image name and suffix
-	if err := containerApp.Set(pathTemplateRevisionSuffix, fmt.Sprintf("azd-%d", cas.clock.Now().Unix())); err != nil {
-		return fmt.Errorf("setting revision suffix: %w", err)
+	if isExpressEnvironment {
+		if err := removeExpressRevisionSettings(containerApp); err != nil {
+			return err
+		}
+	} else {
+		if err := containerApp.Set(pathTemplateRevisionSuffix, fmt.Sprintf("azd-%d", cas.clock.Now().Unix())); err != nil {
+			return fmt.Errorf("setting revision suffix: %w", err)
+		}
 	}
 
 	var containers []map[string]any
@@ -402,7 +421,7 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	// If the container app is in multiple revision mode, update the traffic to point to the new revision.
-	if revisionMode == string(armappcontainers.ActiveRevisionsModeMultiple) {
+	if revisionMode == string(armappcontainers.ActiveRevisionsModeMultiple) && !isExpressEnvironment {
 		revisionSuffix, _ := containerApp.GetString(pathTemplateRevisionSuffix)
 		newRevisionName := fmt.Sprintf("%s--%s", appName, revisionSuffix)
 
@@ -423,11 +442,93 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	err = cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp, options)
+	if isExpressRevisionSuffixError(err) {
+		if err := removeExpressRevisionSettings(containerApp); err != nil {
+			return err
+		}
+
+		err = cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp, options)
+	}
 	if err != nil {
 		return fmt.Errorf("updating container app revision: %w", err)
 	}
 
 	return nil
+}
+
+func removeExpressRevisionSettings(containerApp config.Config) error {
+	if err := containerApp.Unset(pathTemplateRevisionSuffix); err != nil {
+		return fmt.Errorf("removing revision suffix for express environment: %w", err)
+	}
+	if err := containerApp.Unset(pathConfigurationIngressTraffic); err != nil {
+		return fmt.Errorf("removing revision traffic for express environment: %w", err)
+	}
+
+	return nil
+}
+
+func (cas *containerAppService) getEnvironmentMode(
+	ctx context.Context,
+	containerApp config.Config,
+) (string, bool, error) {
+	environmentID, ok := containerApp.GetString(pathEnvironmentID)
+	if !ok {
+		environmentID, ok = containerApp.GetString(pathManagedEnvironmentID)
+	}
+	if !ok || environmentID == "" {
+		return "", false, nil
+	}
+
+	if mode, ok := cas.environmentModeCache.Load(environmentID); ok {
+		return mode, true, nil
+	}
+
+	resourceID, err := arm.ParseResourceID(environmentID)
+	if err != nil {
+		return "", false, fmt.Errorf("parsing container app environment resource ID: %w", err)
+	}
+
+	apiVersionPolicy := &containerAppCustomApiVersionAndBodyPolicy{
+		apiVersion: expressEnvironmentApiVersion,
+	}
+	environmentClient, err := cas.createManagedEnvironmentsClient(
+		ctx,
+		resourceID.SubscriptionID,
+		apiVersionPolicy,
+	)
+	if err != nil {
+		return "", false, err
+	}
+
+	var res *http.Response
+	ctx = policy.WithCaptureResponse(ctx, &res)
+	if _, err := environmentClient.Get(ctx, resourceID.ResourceGroupName, resourceID.Name, nil); err != nil {
+		return "", false, fmt.Errorf("getting container app environment: %w", err)
+	}
+
+	var environment map[string]any
+	if err := convert.FromHttpResponse(res, &environment); err != nil {
+		return "", false, fmt.Errorf("reading container app environment: %w", err)
+	}
+
+	mode, ok := config.NewConfig(environment).GetString(pathEnvironmentMode)
+	if !ok {
+		return "", false, nil
+	}
+
+	cas.environmentModeCache.Store(environmentID, mode)
+	return mode, true, nil
+}
+
+func isExpressRevisionSuffixError(err error) bool {
+	responseError, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok || responseError.ErrorCode != expressEnvironmentFeatureNotSupported {
+		return false
+	}
+
+	message := strings.ToLower(responseError.Error())
+	return strings.Contains(message, "revision suffix") ||
+		strings.Contains(message, strings.ToLower(pathTemplateRevisionSuffix))
 }
 
 func (cas *containerAppService) syncSecrets(
@@ -540,7 +641,7 @@ func (cas *containerAppService) updateContainerApp(
 
 	poller, err := appClient.BeginUpdate(ctx, resourceGroupName, appName, containerAppResource, nil)
 	if err != nil {
-		return fmt.Errorf("begin updating ingress traffic: %w", err)
+		return fmt.Errorf("begin updating container app: %w", err)
 	}
 
 	_, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
@@ -585,6 +686,27 @@ func (cas *containerAppService) createContainerAppsClient(
 		if cachedClient, loaded := cas.appsClientCache.LoadOrStore(subscriptionId, client); loaded {
 			return cachedClient, nil
 		}
+	}
+
+	return client, nil
+}
+
+func (cas *containerAppService) createManagedEnvironmentsClient(
+	ctx context.Context,
+	subscriptionId string,
+	customPolicy *containerAppCustomApiVersionAndBodyPolicy,
+) (*armappcontainers.ManagedEnvironmentsClient, error) {
+	credential, err := cas.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := *cas.armClientOptions
+	options.PerCallPolicies = append(slices.Clone(options.PerCallPolicies), customPolicy)
+
+	client, err := armappcontainers.NewManagedEnvironmentsClient(subscriptionId, credential, &options)
+	if err != nil {
+		return nil, fmt.Errorf("creating managed environments client: %w", err)
 	}
 
 	return client, nil

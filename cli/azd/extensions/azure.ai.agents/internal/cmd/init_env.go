@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -109,6 +110,8 @@ func configureAzureYamlEnvironmentVariables(
 	projectDir string,
 	noPrompt bool,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.EnvironmentConfiguration)()
+
 	manifestPath := filepath.Join(projectDir, "azure.yaml")
 	//nolint:gosec // projectDir is the user-selected project root created by init
 	content, err := os.ReadFile(manifestPath)
@@ -160,16 +163,19 @@ func configureAzureYamlEnvironmentVariables(
 	}
 
 	fmt.Println()
-	fmt.Println("azure.yaml references environment variables that need to be configured:")
+	fmt.Println("azure.yaml references environment variables that need to be configured.")
+	fmt.Println("Values are stored in the current azd environment.")
 	fmt.Println()
 
 	for _, reference := range missing {
 		promptResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
-				Message:           fmt.Sprintf("Enter a value for %s", reference.Name),
-				HelpMessage:       "The value will be stored in the current azd environment.",
-				Required:          true,
-				RequiredMessage:   fmt.Sprintf("A value is required for %s.", reference.Name),
+				Message:         fmt.Sprintf("Enter a value for %s", reference.Name),
+				Required:        true,
+				RequiredMessage: fmt.Sprintf("A value is required for %s.", reference.Name),
+				// Values such as endpoint URLs and secrets can contain '?', so it must be
+				// captured as input. No HelpMessage is set because the '?' help shortcut
+				// is unreachable; the guidance is printed above instead.
 				IgnoreHintKeys:    true,
 				Secret:            reference.Secret,
 				ClearOnCompletion: reference.Secret,

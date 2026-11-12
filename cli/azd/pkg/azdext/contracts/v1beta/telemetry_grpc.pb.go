@@ -36,8 +36,14 @@ const (
 //
 // Values are not reviewed at runtime, so the host only records events from
 // extensions installed from the official azd registry.
+//
+// Deprecated: use azd.extensions.v1.TelemetryService in azd 1.36.0 or later.
+//
+// Deprecated: Do not use.
 type TelemetryServiceClient interface {
+	// Deprecated: Do not use.
 	// ReportUsage records one usage event for the calling extension.
+	// Deprecated: use azd.extensions.v1.TelemetryService.ReportUsage in azd 1.36.0 or later.
 	ReportUsage(ctx context.Context, in *ReportUsageRequest, opts ...grpc.CallOption) (*ReportUsageResponse, error)
 }
 
@@ -45,10 +51,12 @@ type telemetryServiceClient struct {
 	cc grpc.ClientConnInterface
 }
 
+// Deprecated: Do not use.
 func NewTelemetryServiceClient(cc grpc.ClientConnInterface) TelemetryServiceClient {
 	return &telemetryServiceClient{cc}
 }
 
+// Deprecated: Do not use.
 func (c *telemetryServiceClient) ReportUsage(ctx context.Context, in *ReportUsageRequest, opts ...grpc.CallOption) (*ReportUsageResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReportUsageResponse)
@@ -70,8 +78,14 @@ func (c *telemetryServiceClient) ReportUsage(ctx context.Context, in *ReportUsag
 //
 // Values are not reviewed at runtime, so the host only records events from
 // extensions installed from the official azd registry.
+//
+// Deprecated: use azd.extensions.v1.TelemetryService in azd 1.36.0 or later.
+//
+// Deprecated: Do not use.
 type TelemetryServiceServer interface {
+	// Deprecated: Do not use.
 	// ReportUsage records one usage event for the calling extension.
+	// Deprecated: use azd.extensions.v1.TelemetryService.ReportUsage in azd 1.36.0 or later.
 	ReportUsage(context.Context, *ReportUsageRequest) (*ReportUsageResponse, error)
 	mustEmbedUnimplementedTelemetryServiceServer()
 }
@@ -96,6 +110,7 @@ type UnsafeTelemetryServiceServer interface {
 	mustEmbedUnimplementedTelemetryServiceServer()
 }
 
+// Deprecated: Do not use.
 func RegisterTelemetryServiceServer(s grpc.ServiceRegistrar, srv TelemetryServiceServer) {
 	// If the following call pancis, it indicates UnimplementedTelemetryServiceServer was
 	// embedded by pointer and is nil.  This will cause panics if an

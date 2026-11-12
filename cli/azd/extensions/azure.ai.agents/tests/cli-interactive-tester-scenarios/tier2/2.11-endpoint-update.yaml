@@ -1,4 +1,4 @@
-# Tier 2 (cloud E2E) — `endpoint update` patches endpoint/card without a new version.
+# Tier 2 (cloud E2E) — hosted-only `endpoint update` patches endpoint/card without a new version.
 #
 # Precondition: 2.00-setup-deploy-shared-agent.yaml has been run successfully.
 name: "endpoint-update"
@@ -43,7 +43,8 @@ pre:
 
 goals:
   - "BEFORE running endpoint update, run 'azd ai agent show' first and note the current agent version number — you will need it to verify the update did not create a new version."
-  - "Run endpoint update for the default (auto-detected) agent service. NOTE: a minimal agentCard was injected into azure.yaml service properties during setup so the patch has content."
+  - "Confirm the default (auto-detected) service declares 'kind: hosted'; endpoint update intentionally supports hosted agents only."
+  - "Run endpoint update for the hosted agent service. NOTE: a minimal agentCard was injected into azure.yaml service properties during setup so the patch has content."
   - "Confirm it patches the existing deployed agent's endpoint/card configuration and explicitly does NOT create a new agent version."
   - "After it completes, run 'azd ai agent show' and confirm the agent version is unchanged from before the update."
   - "Take a screenshot of the update result and the post-update 'show' output."

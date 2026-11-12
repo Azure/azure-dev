@@ -67,50 +67,69 @@ func parseGate(spec string) (gate, error) {
 	return gate{set: true, passRate: value}, nil
 }
 
-// scoredPassRate is the one definition of a run's pass rate: the share of the
-// rows an evaluator actually scored.
+// runPassRateValue is the one definition of a run's pass rate: the share of
+// all test cases that passed.
 //
-// Errored and skipped rows are outside the denominator because nothing graded
-// them, and an infrastructure failure is not a quality signal. This is what the
-// portal reports and what `--fail-on pass-rate` compares against, so the two
-// figures a reader sees two lines apart cannot disagree.
+// Total is the denominator so every non-passing terminal row counts against
+// the run, including failed, errored, skipped, and future outcomes represented
+// by the service total. Display and gating use this same calculation.
 //
-// ok is false when nothing was scored at all: a rate over no rows is not zero,
-// it is absent, and the caller has to say so rather than print it.
-//
-// The consequence is worth stating. A run where almost everything errored can
-// now report a high rate off the few rows that survived, so the count that did
-// not score is printed beside it.
-func scoredPassRate(counts *eval_api.EvalRunResultCounts) (rate float64, scored int, ok bool) {
-	if counts == nil {
+// ok is false for inconsistent counts or no test cases: callers must not
+// display a rate from invalid operands or divide by zero.
+func runPassRateValue(counts *eval_api.EvalRunResultCounts) (rate float64, total int, ok bool) {
+	if !validRunPassRateCounts(counts) || counts.Total == 0 {
 		return 0, 0, false
 	}
-	scored = counts.Passed + counts.Failed
-	if scored <= 0 {
-		return 0, 0, false
-	}
-	return float64(counts.Passed) / float64(scored), scored, true
+	return float64(counts.Passed) / float64(counts.Total), counts.Total, true
 }
 
-// unscoredSplit says what the pass rate left out, split by what it was.
-//
-// A skip is the service declining to grade a row and an error is it failing to,
-// so the two are reported apart. Anything the totals do not account for is
-// counted as errored: the run says it had more rows than it graded and cannot
-// say what became of them, which is a failure to grade, not a decision.
-func unscoredSplit(counts *eval_api.EvalRunResultCounts, scored int) (errored, skipped int) {
-	skipped = counts.Skipped
-	errored = counts.Total - scored - skipped
-	if errored < 0 {
-		return counts.Errored, skipped
+func validRunPassRateCounts(counts *eval_api.EvalRunResultCounts) bool {
+	if counts == nil || counts.Total < 0 {
+		return false
 	}
-	return errored, skipped
+	remaining := counts.Total
+	for _, count := range []int{counts.Passed, counts.Failed, counts.Errored, counts.Skipped} {
+		if count < 0 || count > remaining {
+			return false
+		}
+		remaining -= count
+	}
+	return true
 }
 
-// breach reports why the run missed the threshold, or empty when it met it.
+// evaluate checks count presence before deciding whether the quality gate was
+// breached. Missing operands are an operational error, not a quality verdict.
+func (g gate) evaluate(run *eval_api.OpenAIEvalRun) (string, error) {
+	if !g.set {
+		return "", nil
+	}
+	var counts map[string]int
+	if run != nil {
+		counts = run.ReportedResultCounts()
+	}
+	if _, totalKnown := counts["total"]; totalKnown && !validRunPassRateCounts(run.ResultCounts) {
+		return "", messages.GateCountsInvalid()
+	}
+	if total, reported := counts["total"]; reported && total == 0 {
+		return messages.GateNoTestCases(), nil
+	}
+	required := []string{"total", "passed"}
+	var missing []string
+	for _, name := range required {
+		if _, reported := counts[name]; !reported {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return "", messages.GateCountsUnavailable(missing)
+	}
+	return g.breach(run.ResultCounts), nil
+}
+
+// breach compares counts whose required operands evaluate has checked.
 //
-// A run that scored nothing at all breaches every threshold rather than
-// dividing by zero — "no rows passed" is the honest reading of an empty result.
+// A run with no test cases breaches every threshold rather than dividing by
+// zero — "no rows passed" is the honest reading of an empty result.
 func (g gate) breach(counts *eval_api.EvalRunResultCounts) string {
 	if !g.set {
 		return ""
@@ -118,25 +137,21 @@ func (g gate) breach(counts *eval_api.EvalRunResultCounts) string {
 	if counts == nil {
 		return messages.GateNoResultCounts()
 	}
-	// Checked before any-failure as well as before the rate: a run that graded
-	// nothing has not passed, and reading zero unpassed rows as success let an
-	// empty run clear the gate that exists to catch exactly that.
-	if counts.Total == 0 {
-		return messages.GateNoRowsScored()
-	}
 	if g.anyFailure {
-		// Deliberately stricter than the rate: this counts a row nothing could
-		// grade against the run, because "everything passed" is not true of a
-		// run that failed to grade half of what it was given.
+		if counts.Total == 0 {
+			return messages.GateNoTestCases()
+		}
+		// This is the pass-rate rule asked as a yes/no question: every row that
+		// did not pass counts against the run, whatever its terminal outcome.
 		unpassed := counts.Total - counts.Passed
 		if unpassed > 0 {
 			return messages.GateSamplesDidNotPass(unpassed, counts.Total)
 		}
 		return ""
 	}
-	actual, _, ok := scoredPassRate(counts)
+	actual, _, ok := runPassRateValue(counts)
 	if !ok {
-		return messages.GateNoRowsScored()
+		return messages.GateNoTestCases()
 	}
 	if actual < g.passRate {
 		return messages.GatePassRateBelow(actual, g.passRate)
@@ -152,34 +167,43 @@ func gateBreachMessage(reason string) string {
 }
 
 // applyGate ends the process with exit code 2 when the run missed its
-// threshold.
+// threshold, or returns an operational error when its counts are insufficient.
 //
 // It exits here rather than returning an error because the extension SDK's
 // Run collapses every error to exit 1, and the whole point of the flag is a
 // code a pipeline can tell apart from an operational failure.
-func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) {
-	if run == nil {
-		return
+func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) error {
+	reason, err := g.evaluate(run)
+	if err != nil {
+		return err
 	}
-	// Rows nothing could grade are outside the rate, so a run that errored on
-	// most of what it was given can clear a threshold on the few that survived.
-	// That is the cost of measuring quality over scored rows only, and the gate
-	// is where it has to be said: this is the line a pipeline log keeps.
-	if g.set && !g.anyFailure {
-		if c := run.ResultCounts; c != nil {
-			if _, scored, ok := scoredPassRate(c); ok && c.Total > scored {
-				errored, skipped := unscoredSplit(c, scored)
+	if !g.set {
+		return nil
+	}
+	// The service total is the denominator even when its outcome breakdown does
+	// not account for every row. Warn about that mismatch without suggesting
+	// those rows were excluded from the gate.
+	if !g.anyFailure {
+		if run != nil && run.ResultCounts != nil {
+			counts := run.ReportedResultCounts()
+			total, totalKnown := counts["total"]
+			passed, passedKnown := counts["passed"]
+			failed, failedKnown := counts["failed"]
+			errored, erroredKnown := counts["errored"]
+			skipped, skippedKnown := counts["skipped"]
+			accounted := passed + failed + errored + skipped
+			if totalKnown && passedKnown && failedKnown && erroredKnown && skippedKnown && total > accounted {
 				fmt.Fprint(cmd.ErrOrStderr(),
-					messages.Warning(messages.GateSawUnscoredRows(errored, skipped, c.Total)))
+					messages.Warning(messages.GateUnaccountedRows(total-accounted, total)))
 			}
 		}
 	}
-	reason := g.breach(run.ResultCounts)
 	if reason == "" {
-		return
+		return nil
 	}
 	fmt.Fprint(cmd.ErrOrStderr(), gateBreachMessage(reason))
 	os.Exit(exitCodeGateBreached)
+	return nil
 }
 
 func addFailOnFlag(cmd *cobra.Command, target *string) {
@@ -188,7 +212,7 @@ func addFailOnFlag(cmd *cobra.Command, target *string) {
 	// writes a condition that never fires.
 	cmd.Flags().StringVar(target, "fail-on", "",
 		"Fail when the run misses this threshold: any-failure, or pass-rate=<0..1>. "+
-			"pass-rate is measured over the rows that were scored, so rows nothing "+
-			"could grade are outside it; any-failure counts them against the run. "+
+			"pass-rate is passed test cases divided by total test cases, so failed, "+
+			"errored, skipped, and otherwise unpassed rows count against the run. "+
 			"Exits 1.")
 }

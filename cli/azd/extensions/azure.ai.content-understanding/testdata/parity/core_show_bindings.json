@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "microsoft-foundry/content-understanding-cli",
+    "commit": "25d39b30116a840491b7b6f393d6db792b38d4a4",
+    "license": "MIT",
+    "files": {
+      "packages/core/tests/test_command_spec.py": "d62624647ab1acfca46cf4a484f0df933c66b9642eaddcee39de606e78c4d0a0",
+      "packages/core/src/cu_cli_core/command_spec.py": "073fb0d107b050ac6a2ba97813620f01d690f5993af6b68ab6b5daf51b6d4286",
+      "packages/core/src/cu_cli_core/contracts.py": "1facc2b6b4cd36ede842c98431a35c798f5e6dcd66af8029b5f73ed8803a6fea",
+      "packages/core/src/cu_cli_core/serialization.py": "ec6645b824189daa5434adc2cede102ed6d10176672f5d6846c75fcaa026fd31"
+    }
+  },
+  "data": {
+    "response": {
+      "analyzerId": "invoice-v1",
+      "status": "ready",
+      "description": "Synthetic core-binding transport response."
+    }
+  }
+}

@@ -99,9 +99,10 @@ func TestFromRoot(t *testing.T) {
 		t.Parallel()
 
 		envManager, azdCtx := createEnvManager(mockContext, t.TempDir())
-		envRoot := azdCtx.EnvironmentRoot("testEnv")
+		envRoot, err := azdCtx.EnvironmentRoot("testEnv")
+		require.NoError(t, err)
 
-		err := os.MkdirAll(envRoot, osutil.PermissionDirectory)
+		err = os.MkdirAll(envRoot, osutil.PermissionDirectory)
 		require.NoError(t, err)
 
 		err = os.WriteFile(filepath.Join(envRoot, ".env"), []byte("TEST=yes\n"), osutil.PermissionFile)
@@ -132,7 +133,8 @@ func Test_SaveAndReload(t *testing.T) {
 	require.NoError(t, err)
 
 	// Simulate another process writing to .env file
-	envRoot := azdCtx.EnvironmentRoot("test")
+	envRoot, err := azdCtx.EnvironmentRoot("test")
+	require.NoError(t, err)
 	envPath := filepath.Join(envRoot, azdcontext.DotEnvFileName)
 	envMap, err := godotenv.Read(envPath)
 	require.NotNil(t, envMap)
@@ -184,6 +186,48 @@ func Test_SaveAndReload(t *testing.T) {
 func TestCleanName(t *testing.T) {
 	require.Equal(t, "already-clean-name", CleanName("already-clean-name"))
 	require.Equal(t, "was-CLEANED-with--bad--things-(123)", CleanName("was CLEANED with *bad* things (123)"))
+}
+
+func TestLookupDotenv(t *testing.T) {
+	t.Setenv("PROCESS_ONLY", "process-value")
+	t.Setenv("KEY", "process-key-value")
+	env := NewWithValues("test-env", map[string]string{
+		"KEY":           "stored-value",
+		"key":           "lower-case-value",
+		"EMPTY":         "",
+		"LD_TEST_UNSET": "filtered-value",
+	})
+	tests := []struct {
+		key    string
+		value  string
+		exists bool
+	}{
+		{key: "KEY", value: "stored-value", exists: true},
+		{key: "key", value: "lower-case-value", exists: true},
+		{key: "Key"},
+		{key: "EMPTY", exists: true},
+		{key: "LD_TEST_UNSET", value: "filtered-value", exists: true},
+		{key: "PROCESS_ONLY"},
+		{key: "MISSING"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			value, exists := env.LookupDotenv(tt.key)
+			require.Equal(t, tt.exists, exists)
+			require.Equal(t, tt.value, value)
+		})
+	}
+	require.NotContains(t, env.Dotenv(), "LD_TEST_UNSET")
+	require.NotContains(t, env.Environ(), "LD_TEST_UNSET=filtered-value")
+	require.Equal(t, "process-value", env.Getenv("PROCESS_ONLY"))
+	value, exists := env.LookupEnv("PROCESS_ONLY")
+	require.True(t, exists)
+	require.Equal(t, "process-value", value)
+	env.DotenvDelete("KEY")
+	value, exists = env.LookupDotenv("KEY")
+	require.False(t, exists)
+	require.Empty(t, value)
+	require.Equal(t, "process-key-value", env.Getenv("KEY"))
 }
 
 func TestRoundTripNumberWithLeadingZeros(t *testing.T) {
@@ -335,6 +379,7 @@ func TestEnvironment_ConcurrentDotenvSet(t *testing.T) {
 				_ = env.GetServiceProperty(fmt.Sprintf("svc%d", i), "KEY")
 				_ = env.Dotenv()
 				_ = env.Environ()
+				_, _ = env.LookupDotenv(fmt.Sprintf("SERVICE_SVC%d_KEY", i))
 			}
 		})
 	}

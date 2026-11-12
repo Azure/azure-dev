@@ -1,4 +1,0 @@
-template:
-  name: no-kind-agent
-  model:
-    id: gpt-4o

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -89,9 +90,40 @@ func resolveJudgeModel(cmd *cobra.Command, proj *azdext.ProjectConfig) (string, 
 		if model := modelDeploymentFromAzdEnv(commandContext(cmd)); model != "" {
 			return model, nil
 		}
-		return "", messages.JudgeModelRequired()
+		if noPrompt(cmd) {
+			return "", messages.JudgeModelRequired()
+		}
+		return promptInitModel(cmd, messages.JudgeModelPrompt(), messages.JudgeModelHelp(), messages.JudgeModelRequired())
 	}
 	return chooseJudgeModel(cmd, deployments)
+}
+
+func promptInitModel(
+	cmd *cobra.Command, message, help string, required error, validators ...func(string) error,
+) (string, error) {
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		return "", messages.ConnectingToAzd(err)
+	}
+	defer client.Close()
+
+	resp, err := client.Prompt().Prompt(commandContext(cmd), &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message: message, HelpMessage: help, Required: true,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("asking for %s: %w", message, err)
+	}
+	if resp == nil || strings.TrimSpace(resp.GetValue()) == "" {
+		return "", required
+	}
+	for _, validate := range validators {
+		if err := validate(resp.GetValue()); err != nil {
+			return "", err
+		}
+	}
+	return strings.TrimSpace(resp.GetValue()), nil
 }
 
 // chooseJudgeModel settles a list of candidates: one is the answer, more than
@@ -110,7 +142,7 @@ func chooseJudgeModel(cmd *cobra.Command, candidates []string) (string, error) {
 // tracesConnected reports whether the azd environment records an Application
 // Insights connection, which is what `generate --from` already defaults on.
 //
-// A local read, so `init` keeps its promise to make no service calls. Absence
+// A local read, so choosing a source stays offline. Absence
 // is ordinary: init runs outside an azd project too.
 func tracesConnected(ctx context.Context) bool {
 	return azdEnvValue(ctx, appInsightsEnvKey) != ""
@@ -148,9 +180,10 @@ func azdEnvValue(ctx context.Context, key string) string {
 
 // validateEvaluatorRefs rejects references that cannot name an evaluator.
 //
-// This needs no service call, so it keeps `init`'s promise to make none. The
-// alternative is a config that scaffolds cleanly and fails at `create`, naming
-// a value the user passed to a different command.
+// Shape only, and offline: whether a builtin. name exists is a question only
+// the project's catalogue answers, and refuseUnknownBuiltins asks it when one
+// can be reached. The alternative is a config that scaffolds cleanly and fails
+// at `create`, naming a value the user passed to a different command.
 //
 // A reference becomes `./evaluators/<ref>.json`, so anything that can climb out
 // of that directory is refused here: `--evaluator ../../id_rsa` would otherwise

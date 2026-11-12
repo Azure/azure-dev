@@ -1,0 +1,437 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"maps"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"azureaieval/internal/pkg/dataset_api"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+type downloadRecording struct {
+	mu       sync.Mutex
+	requests []string
+}
+
+func (r *downloadRecording) snapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.requests)
+}
+
+func downloadClient(
+	t *testing.T,
+	singleFile *bool,
+	files map[string]string,
+) (*dataset_api.DatasetClient, *downloadRecording) {
+	t.Helper()
+	recording := &downloadRecording{}
+	var base string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dataURI := base + "/container"
+		if singleFile != nil && *singleFile {
+			dataURI += "/data.jsonl"
+		}
+		request := r.Method + " " + r.URL.Path
+		if r.URL.Query().Get("comp") == "list" {
+			request += "?comp=list"
+		}
+		recording.mu.Lock()
+		recording.requests = append(recording.requests, request)
+		recording.mu.Unlock()
+
+		if strings.HasPrefix(r.URL.Path, "/datasets/") {
+			assert.Equal(t, ProjectEndpointAPIVersion, r.URL.Query().Get("api-version"))
+			w.Header().Set("Content-Type", "application/json")
+		} else {
+			assert.Equal(t, "test-signature", r.URL.Query().Get("sig"))
+			assert.Equal(t, "c", r.URL.Query().Get("sr"))
+			assert.Empty(t, r.Header.Get("Authorization"))
+		}
+		switch {
+		case r.URL.Path == "/datasets/sample/versions/1.0/credentials":
+			assert.Equal(t, http.MethodPost, r.Method)
+			reference := map[string]any{
+				"blobUri":             dataURI,
+				"storageAccountArmId": "test-storage-account-id",
+				"credential": map[string]string{
+					"type": "SAS", "credentialType": "SAS", "sasUri": base + "/container?sr=c&sig=test-signature",
+				},
+				"blobManifestDigest": nil,
+			}
+			assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"blobReference": reference, "blobReferenceForConsumption": reference,
+			}))
+		case r.URL.Path == "/datasets/sample/versions/1.0":
+			assert.Equal(t, http.MethodGet, r.Method)
+			metadata := map[string]any{"name": "sample", "version": "1.0", "dataUri": dataURI}
+			if singleFile != nil {
+				metadata["isSingleFile"] = *singleFile
+				metadata["type"] = "uri_folder"
+				if *singleFile {
+					metadata["type"] = "uri_file"
+				}
+			}
+			assert.NoError(t, json.NewEncoder(w).Encode(metadata))
+		case r.URL.Path == "/datasets/sample/versions":
+			fmt.Fprint(w, `{"value":[{"name":"sample","version":"1.0"}]}`)
+		case r.URL.Path == "/container" && r.URL.Query().Get("comp") == "list":
+			assert.Equal(t, "container", r.URL.Query().Get("restype"))
+			w.Header().Set("Content-Type", "application/xml")
+			fmt.Fprint(w, `<EnumerationResults><Blobs>`)
+			for _, file := range slices.Sorted(maps.Keys(files)) {
+				fmt.Fprintf(w, `<Blob><Name>%s</Name></Blob>`, file)
+			}
+			fmt.Fprint(w, `</Blobs></EnumerationResults>`)
+		default:
+			body, ok := files[strings.TrimPrefix(r.URL.Path, "/container/")]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			fmt.Fprint(w, body)
+		}
+	}))
+	t.Cleanup(server.Close)
+	base = server.URL
+	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
+		&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}})
+	return dataset_api.NewDatasetClientFromPipeline(base, pipeline), recording
+}
+
+func downloadAction(t *testing.T, dir, outFile string) (*datasetDownloadAction, *bytes.Buffer, *bytes.Buffer) {
+	t.Helper()
+	command := &cobra.Command{Use: "download"}
+	command.Flags().StringP("output", "o", outputJSON, "")
+	command.Flags().Bool("no-prompt", true, "")
+	var stdout, stderr bytes.Buffer
+	command.SetOut(&stdout)
+	command.SetErr(&stderr)
+	return &datasetDownloadAction{
+		cmd: command, name: "sample", version: "1.0", outputDir: dir, outFile: outFile,
+	}, &stdout, &stderr
+}
+
+func TestDownloadContainerBackedSingleFileWritesExactDestination(t *testing.T) {
+	const rows = "{\"query\":\"first row\"}\n{\"query\":\"second row\"}\n"
+	client, recording := downloadClient(t, new(true), map[string]string{"data.jsonl": rows})
+	dest := filepath.Join(t.TempDir(), "new parent", "chosen.jsonl")
+	action, stdout, stderr := downloadAction(t, "", dest)
+
+	require.NoError(t, action.downloadWith(t.Context(), &evalContext{datasetClient: client}))
+	got, err := os.ReadFile(dest)
+	require.NoError(t, err)
+	assert.Equal(t, rows, string(got))
+	var document map[string]any
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &document))
+	assert.Equal(t, map[string]any{
+		"dataset": "sample", "version": "1.0", "path": dest, "files": float64(1), "singleFile": true,
+	}, document)
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, []string{
+		"POST /datasets/sample/versions/1.0/credentials",
+		"GET /container?comp=list",
+		"GET /datasets/sample/versions/1.0",
+		"GET /container/data.jsonl",
+	}, recording.snapshot())
+}
+
+func TestDownloadContainerBackedFileDestinationsAndOverwrite(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		outFile  bool
+		existing bool
+		force    bool
+	}{
+		{name: "default file name"},
+		{name: "exact file name", outFile: true},
+		{name: "refuse existing file", outFile: true, existing: true},
+		{name: "force existing file", outFile: true, existing: true, force: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, _ := downloadClient(t, new(true), map[string]string{"data.jsonl": "new rows\n"})
+			dir := t.TempDir()
+			dest := filepath.Join(dir, "sample-1.0.jsonl")
+			action, stdout, _ := downloadAction(t, dir, "")
+			if tc.outFile {
+				dest = filepath.Join(dir, "chosen.txt")
+				action.outputDir, action.outFile = "", dest
+			}
+			if tc.existing {
+				require.NoError(t, os.WriteFile(dest, []byte("original\n"), 0o600))
+			}
+			action.force = tc.force
+			action.version = "" // The resolved version must be used for both metadata and credentials.
+			err := action.downloadWith(t.Context(), &evalContext{datasetClient: client})
+			if tc.existing && !tc.force {
+				require.ErrorContains(t, err, "--force")
+				assert.Empty(t, stdout.String())
+			} else {
+				require.NoError(t, err)
+				assert.Contains(t, stdout.String(), `"version": "1.0"`)
+			}
+			got, err := os.ReadFile(dest)
+			require.NoError(t, err)
+			want := "new rows\n"
+			if tc.existing && !tc.force {
+				want = "original\n"
+			}
+			assert.Equal(t, want, string(got))
+		})
+	}
+}
+
+func TestDownloadContainerBackedFileDefaultsToCurrentDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	client, _ := downloadClient(t, new(true), map[string]string{"data.jsonl": "rows\n"})
+	action, stdout, stderr := downloadAction(t, "", "")
+	require.NoError(t, action.downloadWith(t.Context(), &evalContext{datasetClient: client}))
+	got, err := os.ReadFile("sample-1.0.jsonl")
+	require.NoError(t, err)
+	assert.Equal(t, "rows\n", string(got))
+	assert.Contains(t, stdout.String(), `"path": "sample-1.0.jsonl"`)
+	assert.Empty(t, stderr.String())
+}
+
+func TestDownloadDirectBlobDestinationsPreserveSuffixAndBytes(t *testing.T) {
+	const query = "sr=b&sig=test%2Bsignature%2Fwith%3Dpadding"
+	const rows = "\xef\xbb\xbf{\"query\":\"caf\u00e9\"}\r\n{\"query\":\"second row\"}\n"
+	for _, extension := range []string{".jsonl", ""} {
+		blobPath := "/container/nested/one%20file%2Bdata" + extension
+		for _, destination := range []string{"default", "output-dir", "output-file"} {
+			t.Run(extension+"/"+destination, func(t *testing.T) {
+				t.Chdir(t.TempDir())
+				recording := &downloadRecording{}
+				var base string
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					recording.mu.Lock()
+					recording.requests = append(recording.requests, r.Method+" "+r.RequestURI)
+					recording.mu.Unlock()
+					if r.URL.Path == "/datasets/sample/versions/1.0/credentials" {
+						assert.Equal(t, http.MethodPost, r.Method)
+						w.Header().Set("Content-Type", "application/json")
+						fmt.Fprintf(w, `{"blobReferenceForConsumption":{"credential":{"sasUri":%q}}}`,
+							base+blobPath+"?"+query)
+						return
+					}
+					assert.Equal(t, http.MethodGet, r.Method)
+					assert.Empty(t, r.Header.Get("Authorization"))
+					if r.URL.Query().Get("comp") == "list" {
+						assert.Empty(t, extension)
+						w.WriteHeader(http.StatusConflict)
+						return
+					}
+					assert.Equal(t, blobPath+"?"+query, r.RequestURI)
+					fmt.Fprint(w, rows)
+				}))
+				t.Cleanup(server.Close)
+				base = server.URL
+				client := dataset_api.NewDatasetClientFromPipeline(
+					base, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
+				action, stdout, stderr := downloadAction(t, "", "")
+				dest := "sample-1.0" + extension
+				switch destination {
+				case "output-dir":
+					action.outputDir = filepath.Join(t.TempDir(), "new parent")
+					dest = filepath.Join(action.outputDir, dest)
+				case "output-file":
+					dest = filepath.Join(t.TempDir(), "chosen.bin")
+					action.outFile = dest
+				}
+				require.NoError(t, action.downloadWith(t.Context(), &evalContext{datasetClient: client}))
+				got, err := os.ReadFile(dest)
+				require.NoError(t, err)
+				assert.Equal(t, []byte(rows), got)
+				var document map[string]any
+				require.NoError(t, json.Unmarshal(stdout.Bytes(), &document))
+				assert.Equal(t, map[string]any{
+					"dataset": "sample", "version": "1.0", "path": dest, "files": float64(1), "singleFile": true,
+				}, document)
+				assert.Empty(t, stderr.String())
+				wantRequests := []string{
+					"POST /datasets/sample/versions/1.0/credentials?api-version=" + ProjectEndpointAPIVersion,
+				}
+				if extension == "" {
+					wantRequests = append(wantRequests,
+						"GET "+blobPath+"?comp=list&restype=container&sig=test%2Bsignature%2Fwith%3Dpadding&sr=b")
+				}
+				wantRequests = append(wantRequests,
+					"GET "+blobPath+"?"+query,
+					"GET "+blobPath+"?"+query,
+				)
+				assert.Equal(t, wantRequests, recording.snapshot())
+			})
+		}
+	}
+}
+
+func TestDownloadFolderPreservesEveryFile(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		singleFile *bool
+		files      map[string]string
+	}{
+		{name: "one file folder", singleFile: new(false), files: map[string]string{"nested/data.jsonl": "rows\n"}},
+		{name: "metadata omits single file flag", files: map[string]string{"nested/data.jsonl": "rows\n"}},
+		{name: "multiple files despite metadata", singleFile: new(true), files: map[string]string{
+			"_meta.json": "{}\n", "nested/data.jsonl": "rows\n",
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, recording := downloadClient(t, tc.singleFile, tc.files)
+			dir := t.TempDir()
+			action, stdout, _ := downloadAction(t, "", filepath.Join(dir, "must-not-exist.jsonl"))
+			ec := &evalContext{datasetClient: client}
+			err := action.downloadWith(t.Context(), ec)
+			if len(tc.files) == 1 {
+				require.EqualError(t, err,
+					"dataset sample version 1.0 contains one file, but its metadata does not identify it "+
+						"as a single-file dataset; use --output-dir")
+			} else {
+				require.EqualError(t, err,
+					"dataset sample version 1.0 holds 2 files, so it has no single path to write; use --output-dir")
+			}
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			assert.Empty(t, entries)
+			assert.Empty(t, stdout.String())
+			for _, request := range recording.snapshot() {
+				assert.NotContains(t, request, "GET /container/")
+			}
+
+			action.outFile, action.outputDir = "", dir
+			require.NoError(t, action.cmd.Flags().Set("output", "table"))
+			require.NoError(t, action.downloadWith(t.Context(), ec))
+			for name, want := range tc.files {
+				got, err := os.ReadFile(filepath.Join(dir, "sample-1.0", filepath.FromSlash(name)))
+				require.NoError(t, err)
+				assert.Equal(t, want, string(got))
+			}
+			assert.Contains(t, stdout.String(), "Downloaded dataset")
+		})
+	}
+}
+
+func TestDownloadWriteHonorsForceWhenDestinationAppears(t *testing.T) {
+	for _, singleFile := range []bool{false, true} {
+		for _, force := range []bool{false, true} {
+			t.Run(fmt.Sprintf("single=%t/force=%t", singleFile, force), func(t *testing.T) {
+				dir := t.TempDir()
+				dest := filepath.Join(dir, "sample-1.0")
+				original := filepath.Join(dest, "original.txt")
+				if singleFile {
+					dest += ".jsonl"
+					original = dest
+				}
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					assert.NoError(t, os.MkdirAll(filepath.Dir(original), 0o750))
+					assert.NoError(t, os.WriteFile(original, []byte("original\n"), 0o600))
+					fmt.Fprint(w, "downloaded\n")
+				}))
+				t.Cleanup(server.Close)
+				client := dataset_api.NewDatasetClientFromPipeline(
+					server.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
+				action, _, _ := downloadAction(t, dir, "")
+				action.force = force
+				content := &dataset_api.DatasetContent{
+					Container: server.URL, Files: []string{"data.jsonl"}, SingleFile: singleFile,
+				}
+				count, path, err := action.write(t.Context(), &evalContext{datasetClient: client}, content, "1.0")
+				if force {
+					require.NoError(t, err)
+					assert.Equal(t, 1, count)
+					assert.Equal(t, dest, path)
+					if !singleFile {
+						assert.NoFileExists(t, original)
+						dest = filepath.Join(dest, "data.jsonl")
+					}
+				} else {
+					require.ErrorContains(t, err, "--force")
+					assert.Zero(t, count)
+					assert.Empty(t, path)
+					dest = original
+				}
+				got, readErr := os.ReadFile(dest)
+				require.NoError(t, readErr)
+				want := "original\n"
+				if force {
+					want = "downloaded\n"
+				}
+				assert.Equal(t, want, string(got))
+				entries, readErr := os.ReadDir(dir)
+				require.NoError(t, readErr)
+				require.Len(t, entries, 1, "staging and holding paths must be removed")
+			})
+		}
+	}
+}
+
+func TestDownloadWriteCancellationPreservesDestination(t *testing.T) {
+	for _, singleFile := range []bool{false, true} {
+		for _, force := range []bool{false, true} {
+			t.Run(fmt.Sprintf("single=%t/force=%t", singleFile, force), func(t *testing.T) {
+				dir := t.TempDir()
+				dest := filepath.Join(dir, "sample-1.0")
+				original := filepath.Join(dest, "original.txt")
+				if singleFile {
+					dest += ".jsonl"
+					original = dest
+				}
+				if force {
+					require.NoError(t, os.MkdirAll(filepath.Dir(original), 0o750))
+					require.NoError(t, os.WriteFile(original, []byte("original\n"), 0o600))
+				}
+				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+				defer cancel()
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					fmt.Fprint(w, "partial")
+					assert.NoError(t, http.NewResponseController(w).Flush())
+					cancel()
+					<-r.Context().Done()
+				}))
+				t.Cleanup(server.Close)
+				client := dataset_api.NewDatasetClientFromPipeline(
+					server.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))
+				action, _, _ := downloadAction(t, dir, "")
+				action.force = force
+				content := &dataset_api.DatasetContent{
+					Container: server.URL, Files: []string{"data.jsonl"}, SingleFile: singleFile,
+				}
+				count, path, err := action.write(ctx, &evalContext{datasetClient: client}, content, "1.0")
+				require.ErrorIs(t, err, context.Canceled)
+				assert.Zero(t, count)
+				assert.Empty(t, path)
+				entries, readErr := os.ReadDir(dir)
+				require.NoError(t, readErr)
+				if force {
+					got, readErr := os.ReadFile(original)
+					require.NoError(t, readErr)
+					assert.Equal(t, "original\n", string(got))
+					assert.Len(t, entries, 1)
+				} else {
+					assert.Empty(t, entries)
+				}
+			})
+		}
+	}
+}

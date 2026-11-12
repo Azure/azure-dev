@@ -1,0 +1,10 @@
+name: agent-add-ambiguous-connection
+services:
+  ai-project:
+    host: azure.ai.project
+  alpha-search:
+    host: azure.ai.connection
+    name: shared-search
+  beta-search:
+    host: azure.ai.connection
+    name: shared-search

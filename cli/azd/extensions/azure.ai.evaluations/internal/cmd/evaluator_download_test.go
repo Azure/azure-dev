@@ -141,3 +141,152 @@ func TestEvaluatorDownloadRefusesAVersionThatIsNotAPathComponent(t *testing.T) {
 	}
 	require.Error(t, a.download(t.Context(), ec))
 }
+
+// #nosec G101 -- synthetic credential-bearing service metadata verifies non-disclosure; never requested.
+const downloadedEvaluator = `{
+	"name":"quality",
+	"version":"3",
+	"display_name":"Support quality",
+	"description":"Grades support conversations",
+	"categories":["quality","agents"],
+	"supported_evaluation_levels":["turn","conversation"],
+	"created_at":"2026-09-17T00:00:00Z",
+	"agent_metadata":{"wiring":"service-only-agent-wiring"},
+	"definition":{
+		"type":"rubric",
+		"dimensions":[{
+			"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false,
+			"metadata":{"internal_count":9007199254740991,"url":"https://dimension-user:dimension-password@example.test"}
+		}],
+		"pass_threshold":0.6,
+		"future_option":{"count":9007199254740993},
+		"id":"service-definition-id",
+		"created_at":"2026-09-17T00:00:00Z",
+		"creator":{"name":"service-creator"},
+		"metadata":{"owner":"service-only-definition-metadata","url":"https://service-user:service-password@example.test"},
+		"generation":{"job_id":"service-generation-job","url":"https://example.test?sig=service-secret#private-fragment"},
+		"warnings":[{"message":"service-warning"}],
+		"init_parameters":{"model":"judge"},
+		"metrics":[{"name":"score"}],
+		"data_schema":{"query":"string"},
+		"prompt_text":"Generated prompt",
+		"initParameters":{"model":"judge"},
+		"dataSchema":{"query":"string"},
+		"promptText":"Generated prompt"
+	}
+}`
+
+const editableDownloadedRubric = `{
+	"type":"rubric",
+	"dimensions":[{"id":"accuracy","description":"Is it correct?","weight":5,"always_applicable":false}],
+	"pass_threshold":0.6,
+	"future_option":{"count":9007199254740993}
+}`
+
+func TestEvaluatorDownloadWritesEditableRubric(t *testing.T) {
+	dir := t.TempDir()
+	cmd := evaluatorDownloadCmd(t)
+	cmd.Flags().String("output", "json", "")
+	var output strings.Builder
+	cmd.SetOut(&output)
+	ec := evaluatorServing(t, []string{"3"}, downloadedEvaluator)
+	path := filepath.Join(dir, "rubric-v3.json")
+	a := &evaluatorDownloadAction{cmd: cmd, name: "quality", version: "3", outFile: path}
+	require.NoError(t, a.download(t.Context(), ec))
+
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.JSONEq(t, editableDownloadedRubric, string(raw), "unknown authored fields remain editable")
+	require.NotContains(t, string(raw), "9007199254740991", "known dimension-level service metadata is not editable")
+	require.Contains(t, string(raw), "9007199254740993", "unknown authored numeric values retain their precision")
+	require.NotContains(t, string(raw), "service-only-agent-wiring")
+	require.NotContains(t, output.String(), "service-only-agent-wiring")
+	for _, secret := range []string{
+		"dimension-user", "dimension-password", "service-user", "service-password", "service-secret", "private-fragment",
+	} {
+		require.NotContains(t, string(raw)+output.String(), secret)
+	}
+	encodedPath, err := json.Marshal(path)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"evaluator":"quality","version":"3","path":`+string(encodedPath)+`}`, output.String())
+}
+
+func TestEvaluatorDownloadPreservesOtherDocuments(t *testing.T) {
+	for _, raw := range []string{
+		`{"definition":{"type":"prompt","prompt_text":"Authored prompt","dimensions":[{"id":"not_a_rubric"}]}}`,
+		`{"future_shape":{"value":9007199254740993}}`,
+	} {
+		t.Run(raw, func(t *testing.T) {
+			downloaded, err := evaluatorDocument(json.RawMessage(raw))
+			require.NoError(t, err)
+			require.JSONEq(t, raw, string(downloaded))
+			if strings.Contains(raw, "9007199254740993") {
+				require.Contains(t, string(downloaded), "9007199254740993")
+			}
+		})
+	}
+}
+
+func TestEvaluatorDownloadProjectsEmptyRubricWithoutLosingUnknownFields(t *testing.T) {
+	downloaded, err := evaluatorDocument(json.RawMessage(
+		`{"definition":{"type":"rubric","dimensions":[],"future_option":9007199254740993}}`))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"type":"rubric","dimensions":[],"future_option":9007199254740993}`, string(downloaded))
+	require.Contains(t, string(downloaded), "9007199254740993")
+}
+
+func TestEditableRubricPreservesUnknownFieldsAndNumericPrecision(t *testing.T) {
+	const threshold = "0.60000000000000001"
+	for _, dimensions := range []string{`[]`, `[{"id":"renamed-dimension","weight":5,"always_applicable":true}]`} {
+		t.Run(dimensions, func(t *testing.T) {
+			raw := `{"name":"renamed-evaluator","definition":{"type":"rubric","dimensions":` + dimensions +
+				`,"pass_threshold":` + threshold + `,"future_option":{"count":9007199254740993},` +
+				`"metrics":{"old-evaluator-name":{"max_value":1}}}}`
+			downloaded, err := evaluatorDocument(json.RawMessage(raw))
+			require.NoError(t, err)
+			require.JSONEq(t, `{"type":"rubric","dimensions":`+dimensions+`,"pass_threshold":`+threshold+
+				`,"future_option":{"count":9007199254740993}}`,
+				string(downloaded))
+			require.Contains(t, string(downloaded), threshold, "allowed numeric values must not round through float64")
+			require.Contains(t, string(downloaded), "9007199254740993")
+			require.NotContains(t, string(downloaded), "old-evaluator-name")
+		})
+	}
+}
+
+func TestEditableRubricPreservesFutureDimensionFieldsAndRemovesKnownServiceCredentials(t *testing.T) {
+	const definition = `{"type":"rubric","dimensions":[{
+			"id":"accuracy","weight":5,"future_dimension":{"limit":9007199254740993},
+			"metadata":{"url":"https://dim-user:dim-secret@example.test?sig=dim-token#dim-fragment"},
+			"promptText":"service prompt"
+		}],"future_option":{"threshold":0.60000000000000001},
+		"generation":{"url":"https://job-user:job-secret@example.test?sig=job-token#job-fragment"},
+		"initParameters":{"key":"service-key"}}`
+	const expected = `{"type":"rubric","dimensions":[{
+			"id":"accuracy","weight":5,"future_dimension":{"limit":9007199254740993}
+		}],"future_option":{"threshold":0.60000000000000001}}`
+	for _, caller := range []string{"download", "generation"} {
+		t.Run(caller, func(t *testing.T) {
+			result := json.RawMessage(`{"definition":` + definition + `}`)
+			var artifact []byte
+			var err error
+			if caller == "download" {
+				artifact, err = evaluatorDocument(result)
+			} else {
+				path := filepath.Join(t.TempDir(), "rubric.json")
+				require.NoError(t, writeRubric(path, result))
+				artifact, err = os.ReadFile(path)
+			}
+			require.NoError(t, err)
+			require.JSONEq(t, expected, string(artifact))
+			require.Contains(t, string(artifact), "9007199254740993")
+			require.Contains(t, string(artifact), "0.60000000000000001")
+			for _, secret := range []string{
+				"dim-user", "dim-secret", "dim-token", "dim-fragment",
+				"job-user", "job-secret", "job-token", "job-fragment", "service-key",
+			} {
+				require.NotContains(t, string(artifact), secret)
+			}
+		})
+	}
+}

@@ -48,16 +48,6 @@ import (
 // Place this marker on its own line immediately before the opening fence.
 const docExamplePartialMarker = "<!-- azd:doc-example partial -->"
 
-// coreServiceKeys are the `services.<name>` properties that azd core parses into
-// typed fields on its own ServiceConfig. Everything else in a service block is
-// captured by core's `yaml:",inline"` AdditionalProperties map and handed to the
-// extension. Mirrors ServiceConfig in cli/azd/pkg/project/service_config.go.
-var coreServiceKeys = []string{
-	"apiVersion", "condition", "config", "dist", "docker", "env", "hooks", "host",
-	"image", "infra", "k8s", "language", "module", "project", "remoteBuild",
-	"resourceGroup", "resourceName", "uses",
-}
-
 // docSchema is the extension's published JSON Schema for the `azure.ai.agent`
 // service block, used to check that every property a doc advertises is one the
 // extension actually declares — including properties nested inside documented
@@ -800,9 +790,21 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 			},
 		},
 		{
-			name: "session idle timeout max valid",
+			name: "session idle timeout previous max valid",
 			mutate: func(value *fixture) {
 				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 3600}
+			},
+		},
+		{
+			name: "session idle timeout above previous max valid",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 3601}
+			},
+		},
+		{
+			name: "session idle timeout max valid",
+			mutate: func(value *fixture) {
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 14400}
 			},
 		},
 		{
@@ -815,7 +817,7 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 		{
 			name: "session idle timeout above max",
 			mutate: func(value *fixture) {
-				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 3601}
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 14401}
 			},
 			wantErr: true,
 		},
@@ -842,6 +844,109 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestHostedAgentSchemaSessionIdleTimeoutBoundaries(t *testing.T) {
+	t.Parallel()
+
+	compiler := jsonschema.NewCompiler()
+	const schemaBaseURI = "https://raw.githubusercontent.com/Azure/azure-dev/main/" +
+		"cli/azd/extensions/azure.ai.agents/schemas/"
+	for _, name := range []string{"Agent.json", "FileRef.json"} {
+		raw, err := os.ReadFile(filepath.Join(extensionRoot(t), "schemas", name))
+		require.NoError(t, err)
+		var schema map[string]any
+		require.NoError(t, json.Unmarshal(raw, &schema))
+		require.NoError(t, compiler.AddResource(schemaBaseURI+name, schema))
+	}
+	compiled, err := compiler.Compile(schemaBaseURI + "Agent.json")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		seconds int
+		wantErr bool
+	}{
+		{name: "below min", seconds: 119, wantErr: true},
+		{name: "min", seconds: 120},
+		{name: "default", seconds: 900},
+		{name: "previous max", seconds: 3600},
+		{name: "above previous max", seconds: 3601},
+		{name: "max", seconds: 14400},
+		{name: "above max", seconds: 14401, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := compiled.Validate(map[string]any{
+				"name":                 "test-agent",
+				"kind":                 "hosted",
+				"sessionConfiguration": map[string]any{"idleTimeoutSeconds": test.seconds},
+			})
+			if test.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestHostedAgentSchemaMemorySnapshot(t *testing.T) {
+	t.Parallel()
+	compiler := jsonschema.NewCompiler()
+	const schemaBaseURI = "https://raw.githubusercontent.com/Azure/azure-dev/main/" +
+		"cli/azd/extensions/azure.ai.agents/schemas/"
+	for _, name := range []string{"Agent.json", "FileRef.json", "azure.ai.agent.json"} {
+		raw, err := os.ReadFile(filepath.Join(extensionRoot(t), "schemas", name))
+		require.NoError(t, err)
+		var schema map[string]any
+		require.NoError(t, json.Unmarshal(raw, &schema))
+		require.NoError(t, compiler.AddResource(schemaBaseURI+name, schema))
+	}
+	for _, schemaName := range []string{"Agent.json", "azure.ai.agent.json"} {
+		t.Run(schemaName, func(t *testing.T) {
+			compiled, err := compiler.Compile(schemaBaseURI + schemaName)
+			require.NoError(t, err)
+			for _, test := range []struct {
+				name    string
+				kind    string
+				value   any
+				present bool
+				wantErr bool
+			}{
+				{name: "absent", kind: "hosted"},
+				{name: "enabled", kind: "hosted", value: true, present: true},
+				{name: "disabled", kind: "hosted", value: false, present: true},
+				{name: "string", kind: "hosted", value: "true", present: true, wantErr: true},
+				{name: "number", kind: "hosted", value: 1, present: true, wantErr: true},
+				{name: "null", kind: "hosted", present: true, wantErr: true},
+				{name: "prompt", kind: "prompt", value: true, present: true, wantErr: true},
+				{name: "prompt disabled", kind: "prompt", value: false, present: true, wantErr: true},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					definition := map[string]any{"kind": test.kind, "name": "snapshot-agent"}
+					if test.kind == "prompt" {
+						if schemaName == "azure.ai.agent.json" {
+							definition["model"] = "gpt-4.1-mini"
+						}
+						definition["instructions"] = "Answer briefly."
+					}
+					require.NoError(t, compiled.Validate(definition))
+					if test.present {
+						definition["enableMemorySnapshot"] = test.value
+					}
+					err := compiled.Validate(definition)
+					if test.wantErr {
+						require.Error(t, err)
+					} else {
+						require.NoError(t, err)
+					}
+				})
 			}
 		})
 	}
@@ -911,6 +1016,37 @@ func TestDocSchemaPromptVoiceRejectsToolbox(t *testing.T) {
 	}))
 }
 
+func TestDocSchemaVoiceTelephonyAuthoring(t *testing.T) {
+	t.Parallel()
+	schema := loadDocSchema(t, extensionRoot(t))
+	agent := func(identifier string, target map[string]any) map[string]any {
+		binding := map[string]any{"provider": "acs", "identifier": identifier, "connection": "connection"}
+		if target != nil {
+			binding["transferTargets"] = []any{target}
+		}
+		return map[string]any{
+			"kind": "voice", "model": map[string]any{"id": "gpt-realtime"},
+			"telephony": map[string]any{"bindings": []any{binding}},
+		}
+	}
+	validTarget := map[string]any{
+		"name": "teams", "description": "Teams",
+		"destination": map[string]any{"kind": "teams", "value": "28:orgid:00000000-0000-0000-0000-000000000001"},
+	}
+	require.NoError(t, schema.validate(agent("28:orgid:00000000-0000-0000-0000-000000000001", validTarget)))
+	require.Error(t, schema.validate(agent("4:+14255550123", nil)))
+	invalidTeams := map[string]any{
+		"name": "teams", "description": "Teams",
+		"destination": map[string]any{"kind": "teams", "value": "not-a-guid"},
+	}
+	require.Error(t, schema.validate(agent("28:orgid:00000000-0000-0000-0000-000000000001", invalidTeams)))
+	openTarget := map[string]any{
+		"name": "teams", "description": "Teams", "future": true,
+		"destination": map[string]any{"kind": "teams", "value": "00000000-0000-0000-0000-000000000001"},
+	}
+	require.Error(t, schema.validate(agent("28:orgid:00000000-0000-0000-0000-000000000001", openTarget)))
+}
+
 func TestDocSchemaDigitalWorkerPublishFields(t *testing.T) {
 	t.Parallel()
 
@@ -955,6 +1091,59 @@ func TestDocSchemaDigitalWorkerPublishFields(t *testing.T) {
 			},
 		},
 	}))
+}
+
+// TestDocSchemaInvocationsModerationSelectors pins the schema-side guard on stream selectors.
+// agent_yaml's validator rejects invalid textField values too, but the JSON Schema is a separate
+// protection — editors apply it before azd ever runs — so it needs its own coverage. Without this,
+// the pattern could be dropped from the schema and only the Go check would fail.
+func TestDocSchemaInvocationsModerationSelectors(t *testing.T) {
+	t.Parallel()
+
+	schema := loadDocSchema(t, extensionRoot(t))
+	agent := func(selector map[string]any) map[string]any {
+		return map[string]any{
+			"kind": "hosted",
+			"policies": []any{
+				map[string]any{
+					"type":          "rai_policy",
+					"raiPolicyName": "/subscriptions/s/raiPolicies/p",
+					"invocationsModeration": map[string]any{
+						"responseMode":    "streaming",
+						"inputPaths":      []any{"$.input"},
+						"streamSelectors": []any{selector},
+					},
+				},
+			},
+		}
+	}
+
+	require.NoError(t, schema.validate(agent(map[string]any{
+		"eventType": "response.output_text.delta",
+		"textField": "delta",
+	})))
+	// textField is optional; the service defaults it to "delta".
+	require.NoError(t, schema.validate(agent(map[string]any{
+		"eventType": "response.output_text.delta",
+	})))
+
+	// These values name no field on the payload, so the frame contributes no text and output
+	// screening is silently skipped.
+	for _, textField := range []string{"", "$.delta", "$", " delta", "delta ", "   "} {
+		require.Error(t, schema.validate(agent(map[string]any{
+			"eventType": "response.output_text.delta",
+			"textField": textField,
+		})), "textField=%q", textField)
+	}
+
+	// eventType must be present, non-blank, and have no surrounding whitespace.
+	require.Error(t, schema.validate(agent(map[string]any{"textField": "delta"})))
+	for _, eventType := range []string{"   ", " response.output_text.delta", "response.output_text.delta "} {
+		require.Error(t, schema.validate(agent(map[string]any{
+			"eventType": eventType,
+			"textField": "delta",
+		})), "eventType=%q", eventType)
+	}
 }
 
 func TestActiveDocAgentConfig(t *testing.T) {
@@ -1090,6 +1279,39 @@ func TestDocExamplesAreValid(t *testing.T) {
 	require.NotZero(t, checked, "no azure.ai.agent doc examples were found — is the extractor still working?")
 }
 
+func TestGPTLiveSchemaExampleIsValid(t *testing.T) {
+	t.Parallel()
+	root := extensionRoot(t)
+	path := filepath.Join(root, "schemas", "examples", "gpt-live.azure.yaml")
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	example := docExample{file: "schemas/examples/gpt-live.azure.yaml", line: 1, content: string(raw)}
+	services := agentServicesInExample(t, example)
+	require.Len(t, services, 1)
+	schema := loadDocSchema(t, root)
+	for name, service := range services {
+		cfg := serviceConfigFromDoc(t, example, name, service)
+		_, _, found, _, err := AgentDefinitionFromService(cfg)
+		require.NoError(t, err)
+		require.True(t, found)
+		checkVocabulary(t, example, name, service, schema)
+	}
+
+	readme, err := os.ReadFile(filepath.Join(root, "README.md"))
+	require.NoError(t, err)
+	var readmeLive map[string]any
+	for _, candidate := range extractYAMLExamples("README.md", string(readme)) {
+		services := agentServicesInExample(t, candidate)
+		if service, ok := services["gpt-live-agent"]; ok {
+			readmeLive = service
+			break
+		}
+	}
+	require.NotNil(t, readmeLive, "README GPT Live example not found")
+	require.Equal(t, services["gpt-live-agent"], readmeLive,
+		"README and canonical GPT Live manifest must not drift")
+}
+
 // checkVocabulary asserts that every property the snippet declares is one azd
 // understands: a key azd core parses itself, or a property the extension's
 // schema declares — recursively, so neither an unsupported sibling of `config`
@@ -1140,10 +1362,10 @@ func checkVocabulary(t *testing.T, e docExample, name string, svc map[string]any
 			"Fix the example so it can be copied into azure.yaml as-is.", e, name, location)
 }
 
-// activeDocAgentConfig mirrors ServiceConfigProps: inline extension properties
-// win unless they omit kind and the deprecated config block declares it. Since
-// the locations are never merged, documenting both would make one silently
-// ineffective and is therefore rejected.
+// activeDocAgentConfig validates both current inline examples and deprecated
+// config examples that remain in documentation during the staged migration.
+// Since the locations are never merged, documenting both would make one
+// silently ineffective and is therefore rejected.
 func activeDocAgentConfig(inline, config map[string]any) (map[string]any, string, error) {
 	if len(inline) == 0 && len(config) == 0 {
 		return map[string]any{}, "inline", nil

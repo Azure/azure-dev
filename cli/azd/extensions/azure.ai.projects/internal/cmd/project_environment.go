@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/phasetelemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -25,6 +26,8 @@ type environmentPlan struct {
 // Reusing them after a replacement must go through an explicit, validated
 // registry-selection path rather than inheriting the old environment.
 var projectReplacementEnvironmentKeys = []string{
+	"AI_PROJECT_DEPLOYMENT_BINDINGS",
+	projectDeploymentsEnvKey,
 	"AZURE_AI_MODEL_DEPLOYMENT_NAME",
 	"AZURE_CONTAINER_REGISTRY_ENDPOINT",
 	"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
@@ -42,6 +45,9 @@ func projectIdentityChanged(
 	project *resolvedProject,
 ) bool {
 	if project == nil {
+		return false
+	}
+	if project.PreserveDeployed {
 		return false
 	}
 
@@ -67,12 +73,12 @@ func projectIdentityChanged(
 
 	targetEndpoint := strings.TrimSpace(project.Endpoint)
 	targetID := strings.TrimSpace(project.ResourceId)
-	if oldEndpoint != "" && targetEndpoint != "" &&
-		!equalProjectEndpoint(oldEndpoint, targetEndpoint) {
-		return true
+	if oldID != "" && targetID != "" {
+		return !strings.EqualFold(oldID, targetID) ||
+			oldEndpoint != "" && !projectEndpointMatchesTarget(oldEndpoint, project)
 	}
-	if oldID != "" && targetID != "" &&
-		!strings.EqualFold(oldID, targetID) {
+	if oldEndpoint != "" && targetEndpoint != "" &&
+		!projectEndpointMatchesTarget(oldEndpoint, project) {
 		return true
 	}
 	if oldEndpoint == "" && oldID != "" && targetEndpoint != "" {
@@ -82,13 +88,9 @@ func projectIdentityChanged(
 			return true
 		}
 	}
-	if oldID == "" && oldEndpoint != "" && targetID != "" {
-		if targetProject, err := projectFromResourceID(targetID); err == nil &&
-			!equalProjectEndpoint(oldEndpoint, targetProject.Endpoint) {
-			return true
-		}
-	}
-	if strings.TrimSpace(oldValues["AZURE_AI_ACCOUNT_NAME"]) != "" &&
+	// Endpoint-only mode sets AccountName from the URL host.
+	if (project.Mode != projectModeExistingEndpoint || oldEndpoint == "") &&
+		strings.TrimSpace(oldValues["AZURE_AI_ACCOUNT_NAME"]) != "" &&
 		project.AccountName != "" &&
 		!strings.EqualFold(
 			strings.TrimSpace(oldValues["AZURE_AI_ACCOUNT_NAME"]),
@@ -105,6 +107,18 @@ func projectIdentityChanged(
 		return true
 	}
 	return false
+}
+
+func projectEndpointMatchesTarget(endpoint string, project *resolvedProject) bool {
+	// Both supported project paths identify the same project.
+	endpoint = strings.Replace(endpoint, "/api/projects/", "/projects/", 1)
+	targetEndpoint := strings.Replace(project.Endpoint, "/api/projects/", "/projects/", 1)
+	if equalProjectEndpoint(endpoint, targetEndpoint) {
+		return true
+	}
+	legacy, err := projectFromResourceID(project.ResourceId)
+	return err == nil &&
+		equalProjectEndpoint(endpoint, strings.Replace(legacy.Endpoint, "/api/projects/", "/projects/", 1))
 }
 
 // planProjectEnvironment calculates environment mutations.
@@ -160,6 +174,10 @@ func planProjectEnvironment(
 		}
 	case projectModeNew:
 		sets["USE_EXISTING_AI_PROJECT"] = "false"
+		if project.ACRResourceID != "" {
+			sets["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = project.ACRResourceID
+			sets["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
+		}
 		if project.Location != "" {
 			sets["AZURE_LOCATION"] = project.Location
 			sets["AZURE_AI_DEPLOYMENTS_LOCATION"] = project.Location
@@ -169,13 +187,15 @@ func planProjectEnvironment(
 	deleteKeys := map[string]struct{}{}
 	switch mode {
 	case projectModeNew:
-		for _, key := range []string{
-			"AZURE_AI_PROJECT_ID", "AZURE_RESOURCE_GROUP", "AZURE_AI_ACCOUNT_NAME",
-			"AZURE_AI_PROJECT_NAME", "FOUNDRY_PROJECT_ENDPOINT",
-			"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT", "AZURE_OPENAI_ENDPOINT",
-			"AZURE_AI_DEPLOYMENTS_LOCATION",
-		} {
-			deleteKeys[key] = struct{}{}
+		if !project.PreserveDeployed {
+			for _, key := range []string{
+				"AZURE_AI_PROJECT_ID", "AZURE_RESOURCE_GROUP", "AZURE_AI_ACCOUNT_NAME",
+				"AZURE_AI_PROJECT_NAME", "FOUNDRY_PROJECT_ENDPOINT",
+				"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT", "AZURE_OPENAI_ENDPOINT",
+				"AZURE_AI_DEPLOYMENTS_LOCATION",
+			} {
+				deleteKeys[key] = struct{}{}
+			}
 		}
 	case projectModeExistingEndpoint:
 		for _, key := range []string{
@@ -224,6 +244,8 @@ func reconcileProjectEnvironmentWithRollback(
 	project *resolvedProject,
 	projectReplaced bool,
 ) (func() error, map[string]string, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ConfigurationSave)()
+
 	response, err := client.Environment().GetValues(ctx,
 		&azdext.GetEnvironmentRequest{Name: envName})
 	if err != nil {

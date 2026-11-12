@@ -61,7 +61,7 @@ func TestGenerateCodeAllowsAdditiveBetaMethod(t *testing.T) {
 
 	code := string(generated)
 	require.Contains(t, code, "type BetaExampleServicePreviewOverride interface")
-	require.Contains(t, code, "if override, ok := a.override.(BetaExampleServicePreviewOverride)")
+	require.Contains(t, code, "if override, ok := findBetaOverride[BetaExampleServicePreviewOverride](a.override)")
 	require.Contains(t, code, "return a.UnimplementedExampleServiceServer.Preview(ctx, req)")
 	require.Contains(t, code, "return adaptBetaUnary(")
 	require.Contains(t, code, "a.stable.Shared")

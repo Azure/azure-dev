@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
@@ -224,6 +225,261 @@ func Test_ContainerApp_AddRevision_MultipleRevisionMode(t *testing.T) {
 	require.Equal(t, expectedRevName,
 		*updatedContainerApp.Properties.Configuration.Ingress.Traffic[0].RevisionName)
 	require.Equal(t, int32(100), *updatedContainerApp.Properties.Configuration.Ingress.Traffic[0].Weight)
+}
+
+func Test_ContainerApp_AddRevision_DetectsExpressEnvironment(t *testing.T) {
+	subscriptionId := "SUBSCRIPTION_ID"
+	resourceGroup := "RESOURCE_GROUP"
+	environmentName := "ENVIRONMENT_NAME"
+	appName := "APP_NAME"
+	originalImageName := "ORIGINAL_IMAGE_NAME"
+	updatedImageName := "UPDATED_IMAGE_NAME"
+	environmentID := fmt.Sprintf(
+		"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/managedEnvironments/%s",
+		subscriptionId,
+		resourceGroup,
+		environmentName,
+	)
+
+	containerApp := &armappcontainers.ContainerApp{
+		Location: new("eastus2"),
+		Name:     &appName,
+		Properties: &armappcontainers.ContainerAppProperties{
+			EnvironmentID: &environmentID,
+			Configuration: &armappcontainers.Configuration{
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
+				Ingress: &armappcontainers.Ingress{
+					Traffic: []*armappcontainers.TrafficWeight{
+						{
+							LatestRevision: new(true),
+							Weight:         new(int32(100)),
+						},
+					},
+				},
+			},
+			Template: &armappcontainers.Template{
+				RevisionSuffix: new("existing"),
+				Containers: []*armappcontainers.Container{
+					{
+						Image: &originalImageName,
+					},
+				},
+			},
+		},
+	}
+
+	mockContext := mocks.NewMockContext(t.Context())
+	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.Path, fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/managedEnvironments/%s",
+				subscriptionId,
+				resourceGroup,
+				environmentName,
+			))
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		require.Equal(t, expressEnvironmentApiVersion, request.URL.Query().Get("api-version"))
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, map[string]any{
+			"properties": map[string]any{
+				"environmentMode": "Express",
+			},
+		})
+	})
+
+	updateRequest := mockazsdk.MockContainerAppUpdate(
+		mockContext,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		containerApp,
+	)
+
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
+	)
+	err := cas.AddRevision(
+		*mockContext.Context,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		updatedImageName,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+
+	var updatedContainerApp map[string]any
+	require.NoError(t, json.NewDecoder(updateRequest.Body).Decode(&updatedContainerApp))
+	updateConfig := config.NewConfig(updatedContainerApp)
+	_, ok := updateConfig.Get(pathTemplateRevisionSuffix)
+	require.False(t, ok)
+	_, ok = updateConfig.Get(pathConfigurationIngressTraffic)
+	require.False(t, ok)
+
+	var containers []map[string]any
+	ok, err = updateConfig.GetSection(pathTemplateContainers, &containers)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, updatedImageName, containers[0]["image"])
+}
+
+func Test_ContainerApp_AddRevision_RetriesExpressEnvironmentError(t *testing.T) {
+	subscriptionId := "SUBSCRIPTION_ID"
+	resourceGroup := "RESOURCE_GROUP"
+	appName := "APP_NAME"
+	originalImageName := "ORIGINAL_IMAGE_NAME"
+	updatedImageName := "UPDATED_IMAGE_NAME"
+
+	containerApp := &armappcontainers.ContainerApp{
+		Location: new("eastus2"),
+		Name:     &appName,
+		Properties: &armappcontainers.ContainerAppProperties{
+			Configuration: &armappcontainers.Configuration{
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
+			},
+			Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{
+					{
+						Image: &originalImageName,
+					},
+				},
+			},
+		},
+	}
+
+	mockContext := mocks.NewMockContext(t.Context())
+	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
+
+	var updateRequests []map[string]any
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPatch &&
+			strings.Contains(request.URL.Path, fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s",
+				subscriptionId,
+				resourceGroup,
+				appName,
+			))
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(request.Body).Decode(&body))
+		updateRequests = append(updateRequests, body)
+
+		if len(updateRequests) == 1 {
+			return mocks.CreateHttpResponseWithBody(request, http.StatusBadRequest, map[string]any{
+				"error": map[string]any{
+					"code": expressEnvironmentFeatureNotSupported,
+					"message": "'Revision Suffix' is not supported for container app 'APP_NAME' " +
+						"on express environments. Please remove 'properties.template.revisionSuffix' from the request.",
+				},
+			})
+		}
+
+		return mocks.CreateHttpResponseWithBody(
+			request,
+			http.StatusAccepted,
+			armappcontainers.ContainerAppsClientUpdateResponse{},
+		)
+	})
+
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
+	)
+	err := cas.AddRevision(
+		*mockContext.Context,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		updatedImageName,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	require.Len(t, updateRequests, 2)
+
+	firstRequest := config.NewConfig(updateRequests[0])
+	revisionSuffix, ok := firstRequest.GetString(pathTemplateRevisionSuffix)
+	require.True(t, ok)
+	require.Equal(t, "azd-0", revisionSuffix)
+
+	retryRequest := config.NewConfig(updateRequests[1])
+	_, ok = retryRequest.Get(pathTemplateRevisionSuffix)
+	require.False(t, ok)
+	var containers []map[string]any
+	ok, err = retryRequest.GetSection(pathTemplateContainers, &containers)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, updatedImageName, containers[0]["image"])
+}
+
+func Test_ContainerApp_AddRevision_DoesNotRetryOtherErrors(t *testing.T) {
+	subscriptionId := "SUBSCRIPTION_ID"
+	resourceGroup := "RESOURCE_GROUP"
+	appName := "APP_NAME"
+	originalImageName := "ORIGINAL_IMAGE_NAME"
+
+	containerApp := &armappcontainers.ContainerApp{
+		Location: new("eastus2"),
+		Name:     &appName,
+		Properties: &armappcontainers.ContainerAppProperties{
+			Configuration: &armappcontainers.Configuration{
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
+			},
+			Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{
+					{
+						Image: &originalImageName,
+					},
+				},
+			},
+		},
+	}
+
+	mockContext := mocks.NewMockContext(t.Context())
+	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
+
+	updateCalls := 0
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPatch &&
+			strings.Contains(request.URL.Path, fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s",
+				subscriptionId,
+				resourceGroup,
+				appName,
+			))
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		updateCalls++
+		return mocks.CreateHttpResponseWithBody(request, http.StatusBadRequest, map[string]any{
+			"error": map[string]any{
+				"code":    "InvalidRequest",
+				"message": "The update is invalid.",
+			},
+		})
+	})
+
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
+	)
+	err := cas.AddRevision(
+		*mockContext.Context,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		"UPDATED_IMAGE_NAME",
+		nil,
+		nil,
+	)
+	require.Error(t, err)
+	require.Equal(t, 1, updateCalls)
 }
 
 func Test_ContainerApp_AddRevision_WithEnvVars(t *testing.T) {

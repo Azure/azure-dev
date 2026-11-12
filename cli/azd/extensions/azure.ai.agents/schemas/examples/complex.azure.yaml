@@ -114,7 +114,9 @@ services:
       MODEL_ENDPOINT: $${{project.endpoint}}
     protocols:
       - protocol: a2a
-        version: "0.2"
+        version: "1.0.0"
+    agentEndpoint:
+      protocols: [a2a]
     container:
       resources:
         cpu: "1.0"
@@ -152,10 +154,10 @@ services:
     triggers:
       default:
         type: schedule
-        cron_expression: "0 2 * * *"
+        cronExpression: "0 2 * * *"
     action:
       type: invoke_agent_responses_api
-      agent_name: researcher
+      agentName: researcher
       input:
         topic: ${DIGEST_TOPIC}
 
@@ -172,4 +174,4 @@ services:
           eventType: Microsoft.Storage.BlobCreated
     action:
       type: invoke_agent_responses_api
-      agent_name: writer
+      agentName: writer

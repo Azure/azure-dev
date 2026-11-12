@@ -4,14 +4,114 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
+
+type projectSetupAccountServer struct {
+	azdext.UnimplementedAccountServiceServer
+}
+
+func (s *projectSetupAccountServer) LookupTenant(
+	context.Context, *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	return &azdext.LookupTenantResponse{TenantId: "tenant"}, nil
+}
+
+func TestValidateNewProjectLocation(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, project, model string
+		wantError            bool
+	}{
+		{"matching", "westus2", "westus2", false},
+		{"normalized", " WestUS2 ", "westus2", false},
+		{"unset project", "", "westus2", false},
+		{"unset model", "japaneast", "", false},
+		{"recovery changed location", "japaneast", "westus2", true},
+		{"internal mismatch", "eastus2euap", "westus2", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNewProjectLocation(tt.project, tt.model)
+			if !tt.wantError {
+				require.NoError(t, err)
+				return
+			}
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeLocationMismatch, localErr.Code)
+			require.Contains(t, localErr.Suggestion, "same supported region")
+			require.NotContains(t, localErr.Message+localErr.Suggestion, "eastus2euap")
+		})
+	}
+}
+
+func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
+	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2euap", "westus2"})
+	allowed, err := parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
+	require.NoError(t, err)
+	resetAgentRegionsCache(t, &harnessRegionsCache, allowed)
+	for _, flow := range []string{"generated", "adopted"} {
+		for _, tt := range []struct {
+			name, location, deploymentLocation, wantLocation, wantDeploymentLocation, wantError string
+		}{
+			{"unsupported project", "eastus2", "westus", "eastus2", "westus", "configured AZURE_LOCATION"},
+			{"public split", "japaneast", "westus", "japaneast", "westus", "must match"},
+			{"public both", "westus", "westus", "westus", "westus", ""},
+			{"missing project location", "", "westus", "westus", "westus", ""},
+			{"internal split", "eastus2euap", "westus", "eastus2euap", "westus", "must match"},
+			{"internal both", "eastus2euap", "eastus2euap", "eastus2euap", "eastus2euap", ""},
+			{"internal westus2 both", "westus2", "westus2", "westus2", "westus2", ""},
+			{"internal fallback", "eastus2euap", "", "eastus2euap", "eastus2euap", ""},
+			{"unsupported fallback", "eastus2", "", "eastus2", "", "configured AZURE_LOCATION"},
+			{"unsupported deployment", "japaneast", "eastus2", "japaneast", "eastus2", "location \"eastus2\""},
+		} {
+			t.Run(flow+"/"+tt.name, func(t *testing.T) {
+				values := map[string]string{
+					"AZURE_SUBSCRIPTION_ID":         "sub",
+					"AZURE_LOCATION":                tt.location,
+					"AZURE_AI_DEPLOYMENTS_LOCATION": tt.deploymentLocation,
+				}
+				envServer := &testEnvironmentServiceServer{values: map[string]map[string]string{"test": values}}
+				address := newInvokeRemoteContextTestAzdServer(
+					t, &helpersProjectServer{}, envServer, &projectSetupAccountServer{},
+				)
+				client, err := azdext.NewAzdClient(azdext.WithAddress(address))
+				require.NoError(t, err)
+				t.Cleanup(func() { client.Close() })
+				azureContext, err := loadAzureContext(t.Context(), client, "test")
+				require.NoError(t, err)
+				if flow == "generated" {
+					_, _, _, _, err = resolvePromptHarnessTarget(t.Context(), client,
+						&initFlags{noPrompt: true, model: "gpt-4.1-mini"}, &azdext.Environment{Name: "test"},
+						&project.PromptAgentSettings{}, "microsoft_copilot_preview")
+				} else {
+					_, err = configureFoundryProject(withHarnessRegionPolicy(t.Context(), "microsoft_copilot_preview"),
+						client, azureContext, "test", "", "", true, true, false, false, allowed, "")
+				}
+				if tt.wantError != "" {
+					require.ErrorContains(t, err, tt.wantError)
+					require.NotContains(t, err.Error(), "PromptLocation", "headless validation must not attempt a location prompt")
+				} else if flow == "generated" {
+					// No model service is registered: reaching it proves location setup
+					// succeeded without prompting or rewriting configured locations.
+					require.ErrorContains(t, err, "AiModelService")
+				} else {
+					require.NoError(t, err)
+				}
+				require.Equal(t, tt.wantLocation, values["AZURE_LOCATION"])
+				require.Equal(t, tt.wantDeploymentLocation, values["AZURE_AI_DEPLOYMENTS_LOCATION"])
+			})
+		}
+	}
+}
 
 func TestValidateAcrConnectionInput(t *testing.T) {
 	t.Parallel()
@@ -92,6 +192,8 @@ func TestConfigureFoundryProjectRejectsAcrConnectionForHeadlessNewProject(t *tes
 				false,
 				false,
 				false,
+				nil,
+				"",
 			)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "requires an existing Foundry project")
@@ -114,6 +216,8 @@ func TestConfigureFoundryProjectRejectsAcrConnectionForInteractiveNewProject(t *
 		false,
 		false,
 		false,
+		nil,
+		"",
 	)
 
 	require.ErrorContains(t, err, "requires an existing Foundry project")
@@ -144,6 +248,8 @@ func TestConfigureFoundryProjectDefersAuthoringWhenAzureContextIsMissing(t *test
 		false,
 		false,
 		false,
+		nil,
+		"",
 	)
 
 	require.NoError(t, err)
@@ -182,6 +288,8 @@ func TestConfigureFoundryProjectPreservesExistingServiceWhenDeferred(t *testing.
 		false,
 		false,
 		true,
+		nil,
+		"",
 	)
 
 	require.NoError(t, err)
@@ -223,9 +331,42 @@ func TestConfigureFoundryProjectPreservesExistingServiceWithAzureContext(
 		false,
 		false,
 		true,
+		nil,
+		"",
 	)
 
 	require.NoError(t, err)
 	require.Nil(t, result.FoundryProject)
 	require.Equal(t, projectAuthoringCurrent, result.AuthoringMode)
+}
+
+func TestConfigureFoundryProjectValidatesACRBeforeSubscriptionWrites(t *testing.T) {
+	t.Parallel()
+	for _, subscription := range []string{"sub", "other"} {
+		t.Run(subscription, func(t *testing.T) {
+			t.Parallel()
+			environments := &testEnvironmentServiceServer{}
+			prompts := &initACRPromptServer{subscription: &azdext.Subscription{
+				Id: subscription, TenantId: "resource-tenant", UserTenantId: "user-tenant",
+			}}
+			client := newTestAzdClient(t, environments, &testWorkflowServiceServer{}, prompts)
+			azureContext := &azdext.AzureContext{Scope: &azdext.AzureScope{Location: "eastus2"}}
+
+			result, err := configureFoundryProject(
+				t.Context(), client, azureContext, "test", "", "", false,
+				false, false, false, []string{"eastus2"}, testInitACRID,
+			)
+			require.Equal(t, 1, prompts.calls)
+			if subscription == "other" {
+				require.ErrorContains(t, err, "same subscription")
+				require.Nil(t, result)
+				require.Empty(t, environments.setKeys)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, projectAuthoringNew, result.AuthoringMode)
+			require.Equal(t, "sub", environments.values["test"]["AZURE_SUBSCRIPTION_ID"])
+			require.Equal(t, "user-tenant", environments.values["test"]["AZURE_TENANT_ID"])
+		})
+	}
 }

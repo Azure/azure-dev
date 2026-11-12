@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,11 +22,13 @@ import (
 
 	"azure.ai.projects/internal/azure"
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/phasetelemetry"
 	"azure.ai.projects/internal/provisioning"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -34,17 +37,25 @@ import (
 )
 
 type projectAddFlags struct {
-	projectID       string
-	projectEndpoint string
-	newProject      bool
-	infra           string
-	force           bool
-	forceSet        bool
-	noPrompt        bool
-	output          string
+	deployedBinding    *synthesis.ACRBinding
+	preserveProjectID  string
+	acrResourceID      string
+	acrResourceIDSet   bool
+	projectIDSet       bool
+	projectEndpointSet bool
+	projectID          string
+	projectEndpoint    string
+	newProject         bool
+	infra              string
+	force              bool
+	forceSet           bool
+	noPrompt           bool
+	output             string
 }
 
 type resolvedProject struct {
+	ACRResourceID       string
+	PreserveDeployed    bool
 	Mode                projectMode
 	ResourceId          string
 	SubscriptionId      string
@@ -73,9 +84,12 @@ const (
 
 // ProjectAddAction implements project add.
 type ProjectAddAction struct {
-	client *azdext.AzdClient
-	flags  *projectAddFlags
-	extCtx *azdext.ExtensionContext
+	client          *azdext.AzdClient
+	flags           *projectAddFlags
+	extCtx          *azdext.ExtensionContext
+	stdout          io.Writer
+	stderr          io.Writer
+	acrSubscription *azdext.AzureScope
 }
 
 func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -84,18 +98,42 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Add or update a Microsoft Foundry project.",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Long: "Add or update a Microsoft Foundry project.\n\n" +
+			projectACRHelp,
+		Example: `  # Configure a Foundry project interactively
+  azd ai project add
+
+  # Connect an existing project by its ARM resource ID
+  azd ai project add --project-id "<project-resource-id>"
+
+` + projectACRExample + `  # Eject the configured infrastructure as Bicep
+  azd ai project add --infra=bicep`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) (runErr error) {
+			reporter, closeReporter := phasetelemetry.HostReporter()
+			defer closeReporter()
+			ctx, timing := phasetelemetry.Begin(cmd.Context(), phasetelemetry.ProjectAuthoring, phasetelemetry.Command, reporter)
+			defer func() { timing.End(ctx, runErr) }()
 			flags.output = extCtx.OutputFormat
 			flags.noPrompt = extCtx.NoPrompt
 			flags.forceSet = cmd.Flags().Changed("force")
-			action := &ProjectAddAction{flags: flags, extCtx: extCtx}
-			return action.Run(cmd.Context())
+			flags.acrResourceIDSet = cmd.Flags().Changed("acr-resource-id")
+			flags.projectIDSet = cmd.Flags().Changed("project-id")
+			flags.projectEndpointSet = cmd.Flags().Changed("project-endpoint")
+			action := &ProjectAddAction{
+				flags: flags, extCtx: extCtx,
+				stdout: cmd.OutOrStdout(), stderr: cmd.ErrOrStderr(),
+			}
+			return action.Run(ctx)
 		},
 	}
 	cmd.Flags().StringVar(&flags.projectID, "project-id", "", "Existing Foundry project ARM resource ID")
 	cmd.Flags().StringVar(&flags.projectEndpoint, "project-endpoint", "", "Existing Foundry project endpoint")
 	cmd.Flags().BoolVar(&flags.newProject, "new-project", false, "Create a new Foundry project")
+	cmd.Flags().StringVar(
+		&flags.acrResourceID, "acr-resource-id", "",
+		"External registry ARM resource ID for --new-project source builds (same subscription; Bicep only; no migration)",
+	)
 	cmd.Flags().StringVar(
 		&flags.infra, "infra", "", "Eject Bicep or Terraform infrastructure (optional value)",
 	)
@@ -112,6 +150,15 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 }
 
 func (a *ProjectAddAction) Run(ctx context.Context) error {
+	endValidation := phasetelemetry.Start(ctx, phasetelemetry.Validation)
+	defer endValidation()
+
+	if a.stdout == nil {
+		a.stdout = os.Stdout
+	}
+	if a.stderr == nil {
+		a.stderr = os.Stderr
+	}
 	if a.flags == nil {
 		a.flags = &projectAddFlags{}
 	}
@@ -144,6 +191,24 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := validateProjectACRFlags(a.flags); err != nil {
+		return err
+	}
+	projectRoot := projectRootPath()
+	if a.flags.acrResourceIDSet {
+		raw, err := readProjectACRManifest(projectRoot)
+		if err != nil {
+			return err
+		}
+		if len(raw) > 0 {
+			if err := validateProjectACRInfrastructure(raw, projectRoot); err != nil {
+				return err
+			}
+		}
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
+		}
+	}
 
 	client := a.client
 	if client == nil {
@@ -158,8 +223,11 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		defer client.Close()
 	}
 	a.client = client
+	endValidation()
 
-	projectRoot := projectRootPath()
+	if err := a.preflightProjectACR(ctx, projectRoot); err != nil {
+		return err
+	}
 	project, _, err := ensureProjectWithEnvironment(
 		ctx,
 		client,
@@ -202,15 +270,52 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if a.flags.acrResourceIDSet {
+		target.ACRResourceID = a.flags.acrResourceID
+	}
+	if a.flags.preserveProjectID != "" && target.Mode == projectModeNew {
+		preserved, err := projectFromResourceID(a.flags.preserveProjectID)
+		if err != nil {
+			return err
+		}
+		if saved := strings.TrimSpace(oldValues["AZURE_SUBSCRIPTION_ID"]); saved != "" &&
+			!strings.EqualFold(saved, preserved.SubscriptionId) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"AZURE_SUBSCRIPTION_ID conflicts with the deployed project binding",
+				fmt.Sprintf("restore AZURE_SUBSCRIPTION_ID to %q to match the deployed project, "+
+					"or use a new azd environment", preserved.SubscriptionId),
+			)
+		}
+		target.PreserveDeployed = true
+		target.ResourceId = a.flags.preserveProjectID
+		target.SubscriptionId = preserved.SubscriptionId
+	}
 	if err := confirmExplicitProjectReplacement(
 		ctx, client, target, service, oldValues, a.flags,
 	); err != nil {
 		return err
 	}
+	if target.Mode == projectModeNew && a.acrSubscription != nil {
+		target.SubscriptionId = a.acrSubscription.SubscriptionId
+		target.UserTenantId = a.acrSubscription.TenantId
+	}
 	if err := resolveAzureContext(
 		ctx, client, target, oldValues, a.flags.noPrompt,
 	); err != nil {
 		return err
+	}
+	if target.Mode == projectModeNew {
+		raw, err := readProjectACRManifest(projectRoot)
+		if err != nil {
+			return err
+		}
+		target.ACRResourceID, err = projectACRSelection(
+			raw, projectRoot, envName, oldValues, target, a.flags.deployedBinding,
+		)
+		if err != nil {
+			return err
+		}
 	}
 	if target.Mode == projectModeExistingEndpoint {
 		if err := validateExistingEndpointMode(
@@ -302,8 +407,15 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return rollbackProjectAdd(err, restoreService, restoreProvider)
 	}
-	reconciledDefault, reconciledChanged, restoreReconciled, err := reconcileAdoptedDeployments(
-		ctx, client, projectRoot, envName, target, serviceName, a.flags.noPrompt,
+	reconciledDefault, reconciledChanged, restoreReconciled, err := reconcileAdoptedDeploymentsWithWriter(
+		ctx,
+		client,
+		projectRoot,
+		envName,
+		target,
+		serviceName,
+		a.flags.noPrompt,
+		policyWarningWriterForOutput(a.stderr, a.flags),
 	)
 	if err != nil {
 		return rollbackProjectAdd(err, restoreEnvironment, restoreService, restoreProvider)
@@ -311,8 +423,18 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if reconciledDefault != "" {
 		effectiveValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = reconciledDefault
 	}
+	if reconciledChanged {
+		refreshedValues, readErr := currentProjectEnvironment(ctx, client, envName)
+		if readErr != nil {
+			return rollbackProjectAdd(
+				readErr, restoreReconciled, restoreEnvironment, restoreService, restoreProvider,
+			)
+		}
+		effectiveValues = refreshedValues
+	}
 	restoreDeploymentDefault := func() error { return nil }
-	if reconciledService, _, discoverErr := reconciler.discoverProjectService(ctx); discoverErr != nil {
+	reconciledService, _, discoverErr := reconciler.discoverProjectService(ctx)
+	if discoverErr != nil {
 		return rollbackProjectAdd(
 			discoverErr,
 			restoreReconciled,
@@ -320,50 +442,66 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			restoreService,
 			restoreProvider,
 		)
-	} else if reconciledService != nil &&
-		firstProjectDeploymentName(reconciledService.Resolved) != "" &&
+	}
+	if reconciledService != nil &&
 		strings.TrimSpace(effectiveValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"]) == "" {
-		defaultName := firstProjectDeploymentName(reconciledService.Resolved)
-		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: envName,
-			Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-			Value:   defaultName,
-		}); err != nil {
+		defaultName, nameErr := defaultModelDeploymentName(
+			effectiveValues[projectDeploymentsEnvKey],
+			reconciledService.Resolved,
+		)
+		if nameErr != nil {
 			return rollbackProjectAdd(
-				fmt.Errorf(
-					"set default project deployment: %w",
-					err,
-				),
+				nameErr,
 				restoreReconciled,
 				restoreEnvironment,
 				restoreService,
 				restoreProvider,
 			)
 		}
-		restoreDeploymentDefault = func() error {
-			return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
-				_, err := client.Environment().SetValue(
-					rollbackCtx,
-					&azdext.SetEnvRequest{
-						EnvName: envName,
-						Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-						Value:   "",
-					},
+		if defaultName != "" {
+			if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: envName,
+				Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+				Value:   defaultName,
+			}); err != nil {
+				return rollbackProjectAdd(
+					fmt.Errorf(
+						"set default project deployment: %w",
+						err,
+					),
+					restoreReconciled,
+					restoreEnvironment,
+					restoreService,
+					restoreProvider,
 				)
-				return err
-			})
+			}
+			effectiveValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = defaultName
+			restoreDeploymentDefault = func() error {
+				return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+					_, err := client.Environment().SetValue(
+						rollbackCtx,
+						&azdext.SetEnvRequest{
+							EnvName: envName,
+							Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+							Value:   "",
+						},
+					)
+					return err
+				})
+			}
 		}
 	}
 	if infra := a.flags.infra; infra != "" {
+		ejectValues := maps.Clone(effectiveValues)
+		ejectValues["AZURE_ENV_NAME"] = envName
 		if err := ejectProjectInfraWithTarget(
 			ctx,
 			client,
 			projectRoot,
 			serviceName,
 			infra,
-			target.Endpoint,
-			target.ResourceId,
-			effectiveValues,
+			target,
+			ejectValues,
 		); err != nil {
 			return rollbackProjectAdd(
 				err,
@@ -385,30 +523,35 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		Endpoint:        target.Endpoint,
 		ResourceID:      target.ResourceId,
 	}
-	result.Mutation = projectAddMutation(mutation, reconciledChanged)
+	registryID := effectiveValues["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+	mode := effectiveValues["AZD_FOUNDRY_ACR_MODE"]
+	if a.flags.deployedBinding != nil {
+		if registryID == "" {
+			registryID = a.flags.deployedBinding.RegistryResourceID
+		}
+		if mode == "" {
+			mode = a.flags.deployedBinding.Mode
+		}
+	}
+	if registryID != "" {
+		result.ContainerRegistry = &projectRegistryOutput{
+			ResourceID: registryID,
+			ExternallyOwned: mode == "reuse-connect" || mode == "already-connected" ||
+				mode == "" && target.Mode != projectModeNew,
+		}
+	}
+	registryChanged := target.ACRResourceID != "" &&
+		(!strings.EqualFold(oldValues["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"], target.ACRResourceID) ||
+			oldValues["AZD_FOUNDRY_ACR_MODE"] != "reuse-connect")
+	result.Mutation = projectAddMutation(mutation, reconciledChanged || registryChanged)
 	writeProjectEndpointWarning(
-		os.Stderr,
+		a.stderr,
 		target.EndpointPathWarning,
 		a.flags.output,
 		a.flags.noPrompt,
 	)
 
-	if a.flags.output == "none" {
-		return nil
-	}
-	if a.flags.output == "json" {
-		return json.NewEncoder(os.Stdout).Encode(result)
-	}
-	if result.Mutation == "unchanged" {
-		fmt.Printf("Foundry project configuration unchanged (%s).\n", serviceName)
-	} else {
-		fmt.Printf(
-			"Foundry project configuration %s in services.%s.\n",
-			result.Mutation,
-			serviceName,
-		)
-	}
-	return nil
+	return writeProjectAddOutput(a.stdout, a.flags.output, result)
 }
 
 func projectAddMutation(mutation string, reconciledChanged bool) string {
@@ -451,6 +594,13 @@ func withProjectRollbackContext(
 	return rollback(rollbackCtx)
 }
 
+func policyWarningWriterForOutput(stderr io.Writer, flags *projectAddFlags) io.Writer {
+	if flags != nil && (flags.output == "json" || flags.output == "none") {
+		return nil
+	}
+	return stderr
+}
+
 func writeProjectEndpointWarning(
 	writer io.Writer,
 	pathWarning bool,
@@ -482,8 +632,10 @@ func resolveProjectTarget(
 	values map[string]string,
 	flags *projectAddFlags,
 ) (*resolvedProject, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ProjectResolution)()
+
 	projectID, endpoint := flags.projectID, flags.projectEndpoint
-	if flags.newProject {
+	if flags.newProject || flags.preserveProjectID != "" && !explicitProjectTarget(flags) {
 		return &resolvedProject{Mode: projectModeNew}, nil
 	}
 	if projectID != "" {
@@ -498,11 +650,11 @@ func resolveProjectTarget(
 	}
 	envProjectID := values["AZURE_AI_PROJECT_ID"]
 	if serviceEndpointValue != "" && envProjectID != "" {
-		inferred, err := projectFromResourceID(envProjectID)
+		inferred, err := lookupResolvedProject(ctx, client, envProjectID)
 		if err != nil {
 			return nil, err
 		}
-		if !equalProjectEndpoint(serviceEndpointValue, inferred.Endpoint) {
+		if !projectEndpointMatchesTarget(serviceEndpointValue, inferred) {
 			if flags.noPrompt {
 				return nil, exterrors.Validation(
 					"project_target_mismatch",
@@ -525,9 +677,8 @@ func resolveProjectTarget(
 			if choice.GetValue() == 1 {
 				return resolvedProjectFromEndpoint(serviceEndpointValue)
 			}
-		} else {
-			return lookupResolvedProject(ctx, client, envProjectID)
 		}
+		return inferred, nil
 	}
 	if envProjectID != "" {
 		return lookupResolvedProject(ctx, client, envProjectID)
@@ -625,7 +776,7 @@ func promptProjectTarget(
 			"retry `azd ai project add`",
 		)
 	}
-	return &projects[index], nil
+	return lookupResolvedProject(ctx, client, projects[index].ResourceId)
 }
 
 func resolveInteractiveSubscription(
@@ -633,6 +784,8 @@ func resolveInteractiveSubscription(
 	client *azdext.AzdClient,
 	values map[string]string,
 ) (string, string, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.SubscriptionSelection)()
+
 	subscriptionID := strings.TrimSpace(values["AZURE_SUBSCRIPTION_ID"])
 	userTenantID := strings.TrimSpace(values["AZURE_TENANT_ID"])
 	if subscriptionID == "" {
@@ -678,6 +831,8 @@ func listFoundryProjects(
 	ctx context.Context,
 	subscriptionID, userTenantID string,
 ) ([]resolvedProject, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AzureQuery)()
+
 	credential, err := azidentity.NewAzureDeveloperCLICredential(
 		&azidentity.AzureDeveloperCLICredentialOptions{
 			TenantID:                   userTenantID,
@@ -752,7 +907,7 @@ func confirmExplicitProjectReplacement(
 	}
 	oldID := strings.TrimSpace(values["AZURE_AI_PROJECT_ID"])
 	if (oldEndpoint == "" && oldID == "") ||
-		(oldEndpoint == "" || equalProjectEndpoint(oldEndpoint, target.Endpoint)) &&
+		(oldEndpoint == "" || projectEndpointMatchesTarget(oldEndpoint, target)) &&
 			(oldID == "" || strings.EqualFold(oldID, target.ResourceId)) {
 		return nil
 	}
@@ -831,6 +986,8 @@ func resolveAzureContext(
 		target.UserTenantId = userTenantID
 	}
 	if needLocation {
+		defer phasetelemetry.Start(ctx, phasetelemetry.LocationSelection)()
+
 		azureContext := &azdext.AzureContext{
 			Scope: &azdext.AzureScope{
 				SubscriptionId: target.SubscriptionId,
@@ -916,6 +1073,8 @@ func lookupResolvedProject(
 	if err != nil {
 		return nil, err
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.AzureQuery)()
+
 	tenantResponse, err := client.Account().LookupTenant(ctx,
 		&azdext.LookupTenantRequest{SubscriptionId: project.SubscriptionId})
 	if err != nil {
@@ -939,19 +1098,34 @@ func lookupResolvedProject(
 			"run `azd auth login` and retry",
 		)
 	}
-	projectsClient, err := armcognitiveservices.NewProjectsClient(
-		project.SubscriptionId, credential, azure.NewArmClientOptions(),
-	)
+	return hydrateResolvedProject(ctx, project, credential, azure.NewArmClientOptions())
+}
+
+func hydrateResolvedProject(
+	ctx context.Context,
+	project *resolvedProject,
+	credential azcore.TokenCredential,
+	options *arm.ClientOptions,
+) (*resolvedProject, error) {
+	id, err := arm.ParseResourceID(project.ResourceId)
 	if err != nil {
-		return nil, fmt.Errorf("create Foundry projects client: %w", err)
+		return nil, fmt.Errorf("parse Foundry project resource ID: %w", err)
 	}
-	response, err := projectsClient.Get(ctx,
-		project.ResourceGroupName, project.AccountName, project.ProjectName, nil)
+	metadata, err := synthesis.LookupFoundryProject(ctx, id, credential, options)
 	if err != nil {
+		if synthesis.IsFoundryProjectMetadataValidationError(err) {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				err.Error(),
+				"verify the selected Foundry project metadata and retry",
+			)
+		}
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountList)
 	}
-	if response.Project.Location != nil {
-		project.Location = *response.Project.Location
+	project.Endpoint = metadata.Endpoint
+	project.OpenAIEndpoint = metadata.OpenAIEndpoint
+	if metadata.Project.Location != nil {
+		project.Location = *metadata.Project.Location
 	}
 	return project, nil
 }
@@ -980,6 +1154,8 @@ func ensureProjectWithEnvironment(
 	projectRoot string,
 	environment string,
 ) (*azdext.ProjectConfig, bool, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ProjectResolution)()
+
 	exists, err := projectFileExists(projectRoot)
 	if err != nil {
 		return nil, false, err
@@ -1416,12 +1592,19 @@ func validateExistingEndpointMode(
 				"before retaining project resources",
 		)
 	}
-	if service == nil {
-		return nil
+	deployments, present, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey])
+	if err != nil {
+		return err
 	}
-	sameEndpoint := equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint)
-	hasDeployments := hasManagedDeployments(service.Resolved) ||
-		hasManagedDeployments(service.Raw)
+	sameEndpoint := false
+	hasDeployments := len(deployments) > 0
+	if service != nil {
+		sameEndpoint = equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint)
+		if !present {
+			hasDeployments = hasManagedDeployments(service.Resolved) ||
+				hasManagedDeployments(service.Raw)
+		}
+	}
 	if hasDeployments &&
 		(!sameEndpoint || strings.TrimSpace(values["AZURE_AI_PROJECT_ID"]) != "") {
 		return exterrors.Dependency(
@@ -1432,7 +1615,7 @@ func validateExistingEndpointMode(
 				"before managing deployments",
 		)
 	}
-	if !sameEndpoint &&
+	if service != nil && !sameEndpoint &&
 		hasManagedProjectFields(service.Raw) {
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",
@@ -1755,20 +1938,55 @@ func ejectProjectInfra(
 	if len(environments) > 0 {
 		environment = environments[0]
 	}
-	result, err := synthesis.Synthesize(synthesis.Input{
-		RawAzureYAML:    raw,
-		ServiceName:     serviceName,
-		AcceptedHosts:   provisioning.FoundryProvisioningServiceHosts,
-		Env:             environment,
-		ProjectRoot:     projectRoot,
-		PreserveVarRefs: true,
-	})
+	environment = maps.Clone(environment)
+	if environment == nil {
+		environment = map[string]string{}
+	}
+	groupKey := "AZURE_RESOURCE_GROUP"
+	if target.layer {
+		groupKey = "AZURE_FOUNDRY_RESOURCE_GROUP"
+	}
+	group := environment[groupKey]
+	if group == "" && environment["AZURE_ENV_NAME"] != "" {
+		group = "rg-" + environment["AZURE_ENV_NAME"]
+		if target.layer {
+			group += "-foundry"
+		}
+	}
+	binding, err := readProjectACRBinding(ctx, client, environment["AZURE_ENV_NAME"])
+	if err != nil {
+		return err
+	}
+	input := synthesis.Input{
+		RawAzureYAML:      raw,
+		ServiceName:       serviceName,
+		AcceptedHosts:     provisioning.FoundryProvisioningServiceHosts,
+		Env:               environment,
+		ResourceGroupName: group,
+		ProjectRoot:       projectRoot,
+		PreserveVarRefs:   true,
+		ACRBinding:        binding,
+	}
+	mode, err := synthesis.GreenfieldACRMode(input)
+	if err != nil {
+		return projectACRValidation(err.Error())
+	}
+	environment["AZD_FOUNDRY_ACR_MODE"] = mode
+	if provider == provisioning.TerraformProviderName && mode == "reuse-connect" {
+		return projectACRValidation(
+			"external registry reuse mode with AZURE_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
+		)
+	}
+	result, err := synthesis.Synthesize(input)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
 			fmt.Sprintf("cannot synthesize Foundry infrastructure: %s", err),
 			"fix the project service configuration and retry",
 		)
+	}
+	if err := applyProjectEjectDeployments(result, environment); err != nil {
+		return err
 	}
 	// #nosec G301
 	if err := os.MkdirAll(infraDir, 0755); err != nil {
@@ -1888,6 +2106,23 @@ func ejectProjectInfra(
 			}
 		}
 	}
+	if envName := environment["AZURE_ENV_NAME"]; client != nil && envName != "" {
+		mode := result.ACRMode
+		if mode == "none" {
+			if binding != nil {
+				mode = binding.Mode
+			} else if environment["AZD_FOUNDRY_ACR_MODE"] == "reuse-connect" {
+				mode = "reuse-connect"
+			}
+		}
+		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envName,
+			Key:     "AZD_FOUNDRY_ACR_MODE",
+			Value:   mode,
+		}); err != nil {
+			return rollback(fmt.Errorf("persist ACR mode after infrastructure ejection: %w", err))
+		}
+	}
 	return nil
 }
 
@@ -1967,8 +2202,16 @@ func writeTerraformEjectedInfraAt(
 	if err != nil {
 		return err
 	}
+	monitoring, err := synthesis.RenderTerraformMonitoring(parameters, false)
+	if err != nil {
+		return err
+	}
+	maps.Copy(variables, monitoring.Variables)
 	if err := copyEmbeddedTerraform(infraDir, includeAcr); err != nil {
 		return fmt.Errorf("copy Terraform templates: %w", err)
+	}
+	if err := writeTerraformMonitoring(infraDir, monitoring); err != nil {
+		return err
 	}
 	if err := renderTerraformOutputs(infraDir, includeAcr, layer); err != nil {
 		return fmt.Errorf("render Terraform outputs: %w", err)
@@ -2016,19 +2259,30 @@ func terraformEjectionVariables(
 		"resource_group_name":  resourceGroupName,
 		"environment_name":     "${AZURE_ENV_NAME}",
 		"foundry_project_name": "${AZURE_AI_PROJECT_NAME}",
-		"principal_id":         "${AZURE_PRINCIPAL_ID}",
 		"resource_token_salt":  "${AZD_RESOURCE_TOKEN_SALT}",
 		"deployments":          deployments,
 	}, includeAcr, nil
 }
 
 func copyEmbeddedTerraform(destination string, includeAcr bool) error {
-	skip := map[string]struct{}{"outputs.tf.tmpl": {}}
+	skip := map[string]struct{}{
+		"outputs.tf.tmpl": {}, "monitoring.tf.tmpl": {}, "provider-monitoring.tf.tmpl": {},
+	}
 	if !includeAcr {
 		skip["container-registry.tf"] = struct{}{}
 	}
 	return copyEmbeddedTree(synthesis.TerraformTemplatesFS(), "templates/terraform", destination,
 		skip)
+}
+
+func writeTerraformMonitoring(destination string, monitoring synthesis.TerraformMonitoring) error {
+	for name, data := range monitoring.Files {
+		// #nosec G306 -- generated infrastructure is intended to be human-readable.
+		if err := os.WriteFile(filepath.Join(destination, name), data, 0644); err != nil {
+			return fmt.Errorf("write monitoring infrastructure %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func renderTerraformOutputs(destination string, includeAcr, layer bool) error {

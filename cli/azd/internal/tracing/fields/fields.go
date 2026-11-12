@@ -42,14 +42,12 @@ const (
 // attribute so it can never overwrite a host-owned field on the span.
 const ExtensionAttributePrefix = "ext."
 
-// ExtensionUsageAttribute namespaces an extension-supplied usage attribute
-// key. Callers must bound the key and value before use; the extension owns
-// what the value means, so it is never customer content by contract.
+// ExtensionUsageAttribute namespaces an extension-supplied usage attribute key.
+// Concrete extension field metadata is declared in extensions/telemetry; this
+// runtime helper does not assign one classification to every dynamic key.
 func ExtensionUsageAttribute(key string) AttributeKey {
 	return AttributeKey{
-		Key:            attribute.Key(ExtensionAttributePrefix + key),
-		Classification: SystemMetadata,
-		Purpose:        FeatureInsight,
+		Key: attribute.Key(ExtensionAttributePrefix + key),
 	}
 }
 
@@ -161,8 +159,9 @@ var (
 	// Tenant ID of the principal.
 	TenantIdKey = AttributeKey{
 		Key:            attribute.Key("ad.tenant.id"),
-		Classification: SystemMetadata,
+		Classification: OrganizationalIdentifiableInformation,
 		Purpose:        BusinessInsight,
+		Endpoint:       "N/A",
 	}
 	// The type of account. See AccountTypeUser for all possible options.
 	AccountTypeKey = AttributeKey{
@@ -196,8 +195,9 @@ var (
 	// Hashed project name. Could be used as an indicator for number of different azd projects.
 	ProjectNameKey = AttributeKey{
 		Key:            attribute.Key("project.name"),
-		Classification: SystemMetadata,
+		Classification: OrganizationalIdentifiableInformation,
 		Purpose:        FeatureInsight,
+		Endpoint:       "N/A",
 	}
 	// The collection of hashed service hosts in the project.
 	ProjectServiceHostsKey = AttributeKey{
@@ -249,8 +249,9 @@ var (
 	// Hashed environment name
 	EnvNameKey = AttributeKey{
 		Key:            attribute.Key("env.name"),
-		Classification: SystemMetadata,
+		Classification: OrganizationalIdentifiableInformation,
 		Purpose:        FeatureInsight,
+		Endpoint:       "N/A",
 	}
 )
 
@@ -393,6 +394,26 @@ var (
 	// The number of environments that exist for the current project.
 	EnvCountKey = AttributeKey{
 		Key:            attribute.Key("env.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+	// EnvUnsetOutcomeKey records success, no_change, user_declined, or failed.
+	EnvUnsetOutcomeKey = AttributeKey{
+		Key:            attribute.Key("env.unset.outcome"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// EnvUnsetRemovedCountKey counts distinct keys removed by a fully successful save.
+	EnvUnsetRemovedCountKey = AttributeKey{
+		Key:            attribute.Key("env.unset.removed_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+	// EnvUnsetMissingCountKey counts distinct requested keys observed missing, including after confirmation.
+	EnvUnsetMissingCountKey = AttributeKey{
+		Key:            attribute.Key("env.unset.missing_count"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
@@ -700,7 +721,7 @@ var (
 	// ProvisionValidationOutcomeKey records the outcome of provision validation.
 	//
 	// Example: "passed", "warnings_accepted", "canceled_by_errors",
-	//          "canceled_by_user", "skipped", "error"
+	//          "canceled_by_user", "canceled_by_no_prompt", "skipped", "error"
 	ProvisionValidationOutcomeKey = AttributeKey{
 		Key:            attribute.Key("validation.provision.outcome"),
 		Classification: SystemMetadata,
@@ -710,7 +731,7 @@ var (
 	// ProvisionValidationDiagnosticsKey records the list of diagnostic IDs emitted by provision
 	// validation checks.
 	//
-	// Example: ["role_assignment_missing", "role_assignment_conditional"]
+	// Example: ["role_assignment_missing", "role_assignment_scope_unverified", "role_assignment_conditional"]
 	ProvisionValidationDiagnosticsKey = AttributeKey{
 		Key:            attribute.Key("validation.provision.diagnostics"),
 		Classification: SystemMetadata,
@@ -845,11 +866,12 @@ var (
 	// ExeGraphStepNameKey records the step name within an exegraph.step span.
 	// Hashed: step names embed user-chosen service or layer names from
 	// azure.yaml (e.g., "deploy-<svc.Name>", "<layer.Name>"); emit via
-	// fields.StringHashed.
+	// fields.StringHashed. These are structured object identifiers, not content.
 	ExeGraphStepNameKey = AttributeKey{
 		Key:            attribute.Key("exegraph.step.name"),
-		Classification: SystemMetadata,
+		Classification: OrganizationalIdentifiableInformation,
 		Purpose:        PerformanceAndHealth,
+		Endpoint:       "N/A",
 	}
 
 	// ExeGraphStepDepsKey records the dependency list for a step.
@@ -857,8 +879,9 @@ var (
 	// identifiers; emit via fields.StringSliceHashed.
 	ExeGraphStepDepsKey = AttributeKey{
 		Key:            attribute.Key("exegraph.step.deps"),
-		Classification: SystemMetadata,
+		Classification: OrganizationalIdentifiableInformation,
 		Purpose:        PerformanceAndHealth,
+		Endpoint:       "N/A",
 	}
 
 	// ExeGraphStepTagsKey records the tags for a step. Tags are a fixed
@@ -971,7 +994,7 @@ var (
 	// types as hashes because the extension controls their contents.
 	ErrExtensionCauseTypes = AttributeKey{
 		Key:            attribute.Key("error.extension.cause_types"),
-		Classification: EndUserPseudonymizedInformation,
+		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}
 
@@ -1088,23 +1111,6 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 		IsMeasurement:  true,
-	}
-)
-
-// Pack related fields
-var (
-	// The builder image used. Hashed when a user-defined image is used.
-	PackBuilderImage = AttributeKey{
-		Key:            attribute.Key("pack.builder.image"),
-		Classification: SystemMetadata,
-		Purpose:        FeatureInsight,
-	}
-
-	// The tag of the builder image used. Hashed when a user-defined image is used.
-	PackBuilderTag = AttributeKey{
-		Key:            attribute.Key("pack.builder.tag"),
-		Classification: SystemMetadata,
-		Purpose:        FeatureInsight,
 	}
 )
 
@@ -1280,12 +1286,27 @@ var (
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
 	}
-	// ExtensionEvent identifies a usage report or failed invocation event.
-	// Extensions own this value, which lets queries filter their events.
+	// ExtensionEvent identifies usage and failed-invocation events.
+	// Extensions own usage values; the host owns failure labels.
 	ExtensionEvent = AttributeKey{
 		Key:            attribute.Key("extension.event"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
+	}
+	// ExtensionUsageDropped records each extension and fixed reason for which
+	// at least one usage report was dropped during the invocation.
+	ExtensionUsageDropped = AttributeKey{
+		Key:            attribute.Key("extension.usage.dropped"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+	// ExtensionUsageDroppedCount is the total number of extension usage reports
+	// dropped during the invocation.
+	ExtensionUsageDroppedCount = AttributeKey{
+		Key:            attribute.Key("extension.usage.dropped.count"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
 	}
 	// The list of installed extensions, each formatted as "id@version".
 	ExtensionsInstalled = AttributeKey{
@@ -1483,16 +1504,9 @@ var (
 		Purpose:        PerformanceAndHealth,
 		IsMeasurement:  true,
 	}
-	// CopilotMessageBillingRate is the billing rate multiplier per message.
-	CopilotMessageBillingRate = AttributeKey{
-		Key:            attribute.Key("copilot.message.billingRate"),
-		Classification: SystemMetadata,
-		Purpose:        BusinessInsight,
-		IsMeasurement:  true,
-	}
-	// CopilotMessagePremiumRequests is the number of premium requests used per message.
-	CopilotMessagePremiumRequests = AttributeKey{
-		Key:            attribute.Key("copilot.message.premiumRequests"),
+	// CopilotMessageAICredits is the number of AI credits consumed per session.
+	CopilotMessageAICredits = AttributeKey{
+		Key:            attribute.Key("copilot.message.aiCredits"),
 		Classification: SystemMetadata,
 		Purpose:        BusinessInsight,
 		IsMeasurement:  true,

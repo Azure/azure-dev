@@ -22,7 +22,8 @@
 #   live  - the same, plus AZURE_AI_EVAL_E2E_LIVE.
 #   hero  - azd on PATH with this extension packed and installed
 #           (`azd x pack --rebuild` then `azd extension install ... --source
-#           local`). `init` itself makes no service calls, so this suite is the
+#           local`). `init` works offline -- its one lookup is best effort and
+#           cannot fail it -- so this suite is the
 #           one candidate for credential-free CI once the install step is
 #           scripted. It also runs against the caller's AZD_CONFIG_DIR today,
 #           which has to be isolated first or CI shares state with whatever

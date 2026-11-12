@@ -62,6 +62,12 @@
                     "title": "Name of the default module within the Azure provisioning templates",
                     "description": "Optional. The name of the Azure provisioning module used when provisioning resources. (Default: main)"
                 },
+                "config": {
+                    "type": "object",
+                    "title": "Provider-specific configuration",
+                    "description": "Optional. Configuration interpreted by the infrastructure provisioning provider.",
+                    "additionalProperties": true
+                },
                 "layers": {
                     "type": "array",
                     "title": "Provisioning layers.",
@@ -72,8 +78,7 @@
                         "title": "A provisioning layer.",
                         "additionalProperties": false,
                         "required": [
-                            "name",
-                            "path"
+                            "name"
                         ],
                         "properties": {
                             "name": {
@@ -135,7 +140,26 @@
                                     }
                                 }
                             }
-                        }
+                        },
+                        "allOf": [
+                            {
+                                "if": {
+                                    "properties": {
+                                        "provider": {
+                                            "enum": [
+                                                "bicep",
+                                                "terraform"
+                                            ]
+                                        }
+                                    }
+                                },
+                                "then": {
+                                    "required": [
+                                        "path"
+                                    ]
+                                }
+                            }
+                        ]
                     }
                 }
             },
@@ -518,7 +542,7 @@
                         }
                     },
                     {
-                        "comment": "Azure AI Foundry skill host - code-less resource service; the service key is the skill name",
+                        "comment": "Azure AI Foundry skill host - resource service; project optionally scopes file and archive paths",
                         "if": {
                             "properties": {
                                 "host": {
@@ -533,7 +557,6 @@
                                 }
                             ],
                             "properties": {
-                                "project": false,
                                 "runtime": false,
                                 "docker": false,
                                 "image": false,

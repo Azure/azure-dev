@@ -32,14 +32,14 @@ model: gpt-4.1-mini
 instructions: Be helpful.
 memory:
   store: support-memory
-  chat_model: gpt-4.1-mini
-  embedding_model: text-embedding-3-small
+  chatModel: gpt-4.1-mini
+  embeddingModel: text-embedding-3-small
   scope: user_123
-  update_delay: 300
-  max_memories: 5
+  updateDelay: 300
+  maxMemories: 5
   options:
-    user_profile_enabled: true
-    chat_summary_enabled: false
+    userProfileEnabled: true
+    chatSummaryEnabled: false
 `)
 
 	var agent PromptAgent
@@ -72,7 +72,8 @@ func TestPromptAgent_ValidateHarness(t *testing.T) {
 	}{
 		{name: "absent harness is a plain prompt agent", harness: ""},
 		{name: "whitespace is treated as absent", harness: "   "},
-		{name: "current spelling is accepted", harness: "github_copilot_preview"},
+		{name: "current spelling is accepted", harness: "microsoft_copilot_preview"},
+		{name: "legacy spelling is accepted", harness: "github_copilot_preview"},
 		{
 			name:    "unknown harness is left to the service",
 			harness: "some-future-harness",

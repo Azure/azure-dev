@@ -756,11 +756,16 @@ func OutputFileAndDirBothGiven() error {
 		"--output-file and --output-dir both name where to write; pass one")
 }
 
-// OutputFileNeedsSingleFileDataset refuses a folder dataset written to one path.
+// OutputFileNeedsSingleFileDataset refuses content not confirmed as a single-file dataset.
 //
 // Picking one of its files to satisfy the flag hands back part of the dataset
 // under a name that claims to be all of it.
 func OutputFileNeedsSingleFileDataset(name, version string, files int) error {
+	if files == 1 {
+		return fmt.Errorf(
+			"dataset %s version %s contains one file, but its metadata does not identify it "+
+				"as a single-file dataset; use --output-dir", name, version)
+	}
 	return fmt.Errorf(
 		"dataset %s version %s holds %d files, so it has no single path to write; "+
 			"use --output-dir", name, version, files)

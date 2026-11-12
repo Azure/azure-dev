@@ -6,47 +6,26 @@ package project
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/envkey"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// siblingOwnsConnection reports whether an azure.ai.connection sibling
-// deployed into the same Foundry project targeted by this agent. The marker is
-// keyed by the service reference, not its possibly overridden resource name.
-func siblingOwnsConnection(serviceRef, projectEndpoint string, env map[string]string) bool {
+// siblingOwnsConnection checks for a Connection service in the same
+// Foundry project. The marker key is the service key,
+// not its resource name.
+func siblingOwnsConnection(serviceKey, projectEndpoint string, env map[string]string) bool {
 	if strings.TrimSpace(projectEndpoint) == "" {
 		return false
 	}
-	marker := envkey.ConnectionServiceProjectEndpoint(strings.TrimSpace(serviceRef))
+	marker := envkey.ConnectionServiceProjectEndpoint(strings.TrimSpace(serviceKey))
 	declared := strings.TrimSpace(env[marker])
 	return declared != "" && sameProjectEndpoint(declared, projectEndpoint)
 }
 
-// promptConnectionName resolves an authored sibling service reference to the
-// configured Foundry connection name, falling back to the service key.
-func promptConnectionName(
-	serviceRef string,
-	services map[string]*azdext.ServiceConfig,
-) string {
-	serviceRef = strings.TrimSpace(serviceRef)
-	service := services[serviceRef]
-	if service == nil {
-		return serviceRef
-	}
-	props := ServiceConfigProps(service)
-	if props != nil {
-		if name := strings.TrimSpace(props.GetFields()["name"].GetStringValue()); name != "" {
-			return name
-		}
-	}
-	return serviceRef
-}
-
-// connectionsNode verifies that every referenced connection sibling completed
+// connectionsNode checks that Connection dependencies are ready
 // before the agent is published.
 func connectionsNode(g *promptGraph) *promptNode {
 	connections := g.managed.Connections
@@ -54,29 +33,90 @@ func connectionsNode(g *promptGraph) *promptNode {
 		return nil
 	}
 
+	var resolvedConnections []FoundryConnectionServiceIdentity
 	return &promptNode{
 		Kind: nodeConnection,
 		ID:   "connections",
 		Validate: func() error {
+			resolvedConnections = make([]FoundryConnectionServiceIdentity, 0, len(connections))
+			seenServiceKeys := make(map[string]struct{}, len(connections))
 			for _, serviceRef := range connections {
 				if strings.TrimSpace(serviceRef) == "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidAgentManifest,
 						"connections contains an empty sibling reference",
-						"set each connections entry to an azure.ai.connection service name",
+						"set each connections entry to a local azure.ai.connection service key or resource name",
 					)
 				}
+
+				// Shared validation has no project context for sibling lookup.
+				if g.projectServices == nil {
+					continue
+				}
+
+				identity, err := ResolveFoundryConnectionServiceIdentity(
+					g.projectServices,
+					serviceRef,
+					g.projectRoot,
+				)
+				if err != nil {
+					return err
+				}
+				if _, seen := seenServiceKeys[identity.ServiceKey]; seen {
+					continue
+				}
+				seenServiceKeys[identity.ServiceKey] = struct{}{}
+				resolvedConnections = append(resolvedConnections, identity)
 			}
 			return nil
 		},
-		Resolve: func(context.Context) error {
-			for _, serviceRef := range connections {
-				connectionName := promptConnectionName(serviceRef, g.projectServices)
-				if !siblingOwnsConnection(serviceRef, g.projectEndpoint(), g.env) {
+		Resolve: func(ctx context.Context) error {
+			for _, identity := range resolvedConnections {
+				if g.agentService != nil && g.projectServices != nil {
+					serviceKey := identity.ServiceKey
+					if !slices.Contains(g.agentService.GetUses(), serviceKey) {
+						return exterrors.Dependency(
+							exterrors.CodeFoundryDependencyNotReady,
+							fmt.Sprintf(
+								"connection service %q is not declared in agent service %q uses",
+								serviceKey,
+								g.agentService.GetName(),
+							),
+							fmt.Sprintf(
+								"add %q to the agent service's uses list and run 'azd deploy --all'",
+								serviceKey,
+							),
+						)
+					}
+					if g.dependencyEnabled != nil {
+						enabled, err := g.dependencyEnabled(ctx, serviceKey)
+						if err != nil {
+							return err
+						}
+						if !enabled {
+							return exterrors.Dependency(
+								exterrors.CodeFoundryDependencyNotReady,
+								fmt.Sprintf(
+									"connection service %q is disabled by its deployment condition",
+									serviceKey,
+								),
+								"enable the Connection dependency and run 'azd deploy --all'",
+							)
+						}
+					}
+				}
+				if !siblingOwnsConnection(identity.ServiceKey, g.projectEndpoint(), g.env) {
 					return exterrors.Dependency(
 						exterrors.CodeFoundryDependencyNotReady,
-						fmt.Sprintf("connection %q has not been deployed by an azure.ai.connection service", connectionName),
-						fmt.Sprintf("add %q to the agent service's uses list and run 'azd deploy --all'", serviceRef),
+						fmt.Sprintf(
+							"connection %q has not been deployed by an azure.ai.connection service",
+							identity.ResourceName,
+						),
+						fmt.Sprintf(
+							"deploy or redeploy connection service %q in the agent's Foundry project "+
+								"with 'azd deploy --all'",
+							identity.ServiceKey,
+						),
 					)
 				}
 			}

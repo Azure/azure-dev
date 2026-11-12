@@ -12,8 +12,8 @@ import (
 
 // `init` printed "Using data source: traces (Application Insights)" whether or
 // not the project had one, so a scaffold that could not produce a sample was
-// reported with a green check. init makes no service calls, so it cannot
-// verify a connection it never saw.
+// reported with a green check. init never asks the service about a connection,
+// so it cannot verify one it never saw.
 func TestTraceSourceOnlyClaimsAConnectionItFound(t *testing.T) {
 	connected := UsingTraceSource(true)
 	assert.Contains(t, connected, "Application Insights")

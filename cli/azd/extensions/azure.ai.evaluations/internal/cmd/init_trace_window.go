@@ -17,11 +17,11 @@ import (
 //
 // A custom range is deliberately absent: the three that matter are a day, a
 // week and a month, and a free-text duration is a fourth thing to get wrong at
-// the one prompt where being wrong is invisible. `lookback_hours` in the file
+// the one prompt where being wrong is invisible. `lookbackHours` in the file
 // remains the way to say anything else.
 var traceWindowDays = []int{1, 7, 30}
 
-// defaultTraceWindowDays is the week the spec writes as lookback_hours: 168.
+// defaultTraceWindowDays is the week the spec writes as lookbackHours: 168.
 const defaultTraceWindowDays = 7
 
 // resolveTraceWindow settles how far back a trace-backed eval reads, in hours.

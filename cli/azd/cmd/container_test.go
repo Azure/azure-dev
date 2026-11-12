@@ -5,7 +5,9 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -14,12 +16,51 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
+
+func TestGetCommandFormatter_CoreIgnoresPreParsedOutput(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		preParsed string
+		parsed    string
+		want      output.Format
+	}{
+		{"text", "json", "none", output.NoneFormat},
+		{"json", "none", "json", output.JsonFormat},
+		{"unsupported", "json", "yaml", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := &cobra.Command{Use: "core"}
+			output.AddOutputParam(cmd, []output.Format{output.NoneFormat, output.JsonFormat}, output.NoneFormat)
+			require.NoError(t, cmd.Flags().Set("output", tc.parsed))
+			formatter, err := getCommandFormatter(&internal.GlobalCommandOptions{
+				PreParsedOutput: tc.preParsed,
+			}, cmd)
+			if tc.want == "" {
+				require.ErrorContains(t, err, "unsupported format 'yaml' for --output")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, formatter.Kind())
+		})
+	}
+
+	cmd := &cobra.Command{Use: "core"}
+	formatter, err := getCommandFormatter(&internal.GlobalCommandOptions{PreParsedOutput: "json"}, cmd)
+	require.NoError(t, err)
+	require.Equal(t, output.NoneFormat, formatter.Kind())
+}
 
 func Test_Lazy_Project_Config_Resolution(t *testing.T) {
 	t.Parallel()
@@ -159,6 +200,143 @@ func Test_Lazy_AzdContext_Resolution(t *testing.T) {
 	require.Same(t, directValue, staticComponent.concrete)
 }
 
+func Test_LocalDataStore_ResolutionAfterInit(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		name := "Root"
+		if nested {
+			name = "NestedWorkflow"
+		}
+		t.Run(name, func(t *testing.T) {
+			container := ioc.NewNestedContainer(nil)
+			ioc.RegisterInstance(container, t.Context())
+			registerCommonDependencies(container)
+			container.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
+				return lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+					return nil, azdcontext.ErrNoProject
+				})
+			})
+			if nested {
+				var err error
+				container, err = container.NewScope()
+				require.NoError(t, err)
+			}
+
+			var dataStore environment.LocalDataStore
+			for range 2 {
+				require.ErrorIs(t, container.Resolve(&dataStore), azdcontext.ErrNoProject)
+			}
+
+			var lazyContext *lazy.Lazy[*azdcontext.AzdContext]
+			require.NoError(t, container.Resolve(&lazyContext))
+			azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			lazyContext.SetValue(azdContext)
+
+			require.NoError(t, container.Resolve(&dataStore))
+			envRoot, err := azdContext.EnvironmentRoot("test")
+			require.NoError(t, err)
+			envPath, err := dataStore.EnvPath(environment.New("test"))
+			require.NoError(t, err)
+			require.Equal(t, filepath.Join(envRoot, environment.DotEnvFileName), envPath)
+			_, err = dataStore.Get(t.Context(), "test")
+			require.ErrorIs(t, err, environment.ErrNotFound)
+		})
+	}
+}
+
+func Test_EnvironmentRegistrations_InitLifecycle(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		for _, firstLookup := range []string{"Context", "Manager", "DataStore"} {
+			scopeName := "Root"
+			if nested {
+				scopeName = "NestedWorkflow"
+			}
+			t.Run(scopeName+"/"+firstLookup, func(t *testing.T) {
+				t.Chdir(t.TempDir())
+				root := ioc.NewNestedContainer(nil)
+				ioc.RegisterInstance(root, t.Context())
+				registerCommonDependencies(root)
+				ioc.RegisterInstance(root, newTestUserConfigManager(t))
+				console := mocks.NewMockContext(t.Context()).Console
+				root.MustRegisterScoped(func() input.Console { return console })
+
+				container := root
+				var sibling *ioc.NestedContainer
+				if nested {
+					var err error
+					container, err = root.NewScope()
+					require.NoError(t, err)
+					sibling, err = root.NewScope()
+					require.NoError(t, err)
+				}
+
+				var lazyManager *lazy.Lazy[environment.Manager]
+				require.NoError(t, container.Resolve(&lazyManager))
+				_, err := lazyManager.GetValue()
+				require.ErrorIs(t, err, azdcontext.ErrNoProject)
+				for range 2 {
+					switch firstLookup {
+					case "Context":
+						var azdContext *azdcontext.AzdContext
+						require.ErrorIs(t, container.Resolve(&azdContext), azdcontext.ErrNoProject)
+					case "Manager":
+						var manager environment.Manager
+						require.ErrorIs(t, container.Resolve(&manager), azdcontext.ErrNoProject)
+					case "DataStore":
+						var dataStore environment.LocalDataStore
+						require.ErrorIs(t, container.Resolve(&dataStore), azdcontext.ErrNoProject)
+					}
+				}
+
+				var lazyContext *lazy.Lazy[*azdcontext.AzdContext]
+				require.NoError(t, container.Resolve(&lazyContext))
+				azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+				lazyContext.SetValue(azdContext)
+				require.NoError(t, project.Save(t.Context(), &project.ProjectConfig{Name: "test"}, azdContext.ProjectPath()))
+
+				manager, err := lazyManager.GetValue()
+				require.NoError(t, err)
+				env, err := manager.Create(t.Context(), environment.Spec{Name: "dev"})
+				require.NoError(t, err)
+				env.DotenvSet("LIFECYCLE_TEST", "saved")
+				require.NoError(t, manager.Save(t.Context(), env))
+				env.DotenvSet("LIFECYCLE_TEST", "unsaved")
+				require.NoError(t, manager.Reload(t.Context(), env))
+				require.Equal(t, "saved", env.Getenv("LIFECYCLE_TEST"))
+				envRoot, err := azdContext.EnvironmentRoot("dev")
+				require.NoError(t, err)
+				envPath, err := manager.EnvPath(env)
+				require.NoError(t, err)
+				require.Equal(t, filepath.Join(envRoot, environment.DotEnvFileName), envPath)
+
+				var resolvedManager environment.Manager
+				require.NoError(t, container.Resolve(&resolvedManager))
+				require.Same(t, manager, resolvedManager)
+				loaded, err := resolvedManager.Get(t.Context(), "dev")
+				require.NoError(t, err)
+				require.Equal(t, "saved", loaded.Getenv("LIFECYCLE_TEST"))
+				cached, err := resolvedManager.Get(t.Context(), "dev")
+				require.NoError(t, err)
+				require.Same(t, loaded, cached)
+				nextScope, err := root.NewScope()
+				require.NoError(t, err)
+				var nextManager environment.Manager
+				require.NoError(t, nextScope.Resolve(&nextManager))
+				require.Same(t, manager, nextManager)
+				nextEnv, err := nextManager.Get(t.Context(), "dev")
+				require.NoError(t, err)
+				require.Same(t, loaded, nextEnv)
+
+				if nested {
+					for _, untouched := range []*ioc.NestedContainer{root, sibling} {
+						var untouchedContext *azdcontext.AzdContext
+						require.ErrorIs(t, untouched.Resolve(&untouchedContext), azdcontext.ErrNoProject)
+					}
+				}
+			})
+		}
+	}
+}
+
 type testLazyComponent[T comparable] struct {
 	lazy *lazy.Lazy[T]
 }
@@ -199,7 +377,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		}
 
 		// Create the adapter with a factory
-		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		adapter := &workflowCmdAdapter{
+			newCommand:    newCommand,
+			globalOptions: &internal.GlobalCommandOptions{},
+		}
 
 		// In production, main.go wraps with context.WithoutCancel.
 		// Simulate this by using a non-cancellable context.
@@ -257,7 +438,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			return rootCmd
 		}
 
-		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		adapter := &workflowCmdAdapter{
+			newCommand:    newCommand,
+			globalOptions: &internal.GlobalCommandOptions{},
+		}
 
 		// In production, main.go wraps with context.WithoutCancel.
 		ctx := context.WithoutCancel(t.Context())
@@ -302,7 +486,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			return rootCmd
 		}
 
-		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		adapter := &workflowCmdAdapter{
+			newCommand:    newCommand,
+			globalOptions: &internal.GlobalCommandOptions{},
+		}
 		ctx := context.WithoutCancel(t.Context())
 
 		err := adapter.ExecuteContext(ctx, []string{"test"})
@@ -315,6 +502,18 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		require.Len(t, commandTreeInstances, 2, "Factory should have been called twice")
 		require.NotSame(t, commandTreeInstances[0], commandTreeInstances[1],
 			"Each execution should use a distinct command tree instance")
+	})
+
+	t.Run("ExtractGlobalArgsOmitsCwd", func(t *testing.T) {
+		originalArgs := os.Args
+		os.Args = []string{"azd", "--cwd", "/tmp/parent", "--debug", "ai", "agent", "init"}
+		t.Cleanup(func() {
+			os.Args = originalArgs
+		})
+
+		globalArgs := extractGlobalArgs()
+		require.Equal(t, []string{"--debug=true"}, globalArgs,
+			"parent --cwd must not be re-appended onto workflow steps")
 	})
 
 	t.Run("GlobalBoolFlagsRemainSingleTokenWhenMerged", func(t *testing.T) {
@@ -356,8 +555,9 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		}
 
 		adapter := &workflowCmdAdapter{
-			newCommand: newCommand,
-			globalArgs: globalArgs,
+			newCommand:    newCommand,
+			globalArgs:    globalArgs,
+			globalOptions: &internal.GlobalCommandOptions{},
 		}
 
 		err := adapter.ExecuteContext(context.WithoutCancel(t.Context()), []string{"package", "--all"})
@@ -439,7 +639,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			return rootCmd
 		}
 
-		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		adapter := &workflowCmdAdapter{
+			newCommand:    newCommand,
+			globalOptions: &internal.GlobalCommandOptions{},
+		}
 		ctx := context.WithoutCancel(t.Context())
 
 		// Execute "provision" through the adapter (simulates workflow step)
@@ -454,6 +657,7 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		// Simulate the full workflow execution path: package → provision → deploy
 		// Verify each step's command runs with the child action context and fresh tree
 		var executedCommands []string
+		var commandOrders []uint64
 
 		newCommand := func() *cobra.Command {
 			rootCmd := &cobra.Command{Use: "root"}
@@ -467,6 +671,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 						require.True(t, middleware.IsChildAction(ctx),
 							"Step %q should have child action context", name)
 						executedCommands = append(executedCommands, name)
+						commandOrders = append(
+							commandOrders,
+							commandresult.FollowUpCommandOrderFromContext(ctx),
+						)
 						return nil
 					},
 				}
@@ -478,8 +686,14 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			return rootCmd
 		}
 
-		adapter := &workflowCmdAdapter{newCommand: newCommand}
-		ctx := context.WithoutCancel(t.Context())
+		adapter := &workflowCmdAdapter{
+			newCommand:    newCommand,
+			globalOptions: &internal.GlobalCommandOptions{},
+		}
+		ctx := commandresult.WithFollowUpCollector(
+			context.WithoutCancel(t.Context()),
+			commandresult.NewFollowUpCollector(),
+		)
 
 		// Simulate the default "up" workflow steps
 		steps := [][]string{
@@ -495,7 +709,219 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 
 		require.Equal(t, []string{"package", "provision", "deploy"}, executedCommands,
 			"All workflow steps should execute in order")
+		require.Equal(t, []uint64{1, 2, 3}, commandOrders,
+			"Workflow steps should receive increasing command orders")
 	})
+
+	t.Run("NestedCommandsInheritWorkflowStepOrder", func(t *testing.T) {
+		var adapter *workflowCmdAdapter
+		var commandOrders []uint64
+
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{Use: "root"}
+			rootCmd.AddCommand(
+				&cobra.Command{
+					Use: "build",
+					RunE: func(cmd *cobra.Command, args []string) error {
+						ctx := commandresult.EnsureFollowUpCommandOrder(cmd.Context())
+						order := commandresult.FollowUpCommandOrderFromContext(ctx)
+						commandOrders = append(
+							commandOrders,
+							order,
+						)
+						collector := commandresult.FollowUpCollectorFromContext(ctx)
+						collector.Add(commandresult.FollowUp{
+							ExtensionID:  "test.extension",
+							CommandOrder: order,
+							EventName:    "postrestore",
+							Text:         "restore",
+						})
+						collector.Add(commandresult.FollowUp{
+							ExtensionID:  "test.extension",
+							CommandOrder: order,
+							EventName:    "postbuild",
+							Text:         "build",
+						})
+						return adapter.ExecuteContext(ctx, []string{"restore"})
+					},
+				},
+				&cobra.Command{
+					Use: "restore",
+					RunE: func(cmd *cobra.Command, args []string) error {
+						commandOrders = append(
+							commandOrders,
+							commandresult.FollowUpCommandOrderFromContext(cmd.Context()),
+						)
+						return nil
+					},
+				},
+				&cobra.Command{
+					Use: "deploy",
+					RunE: func(cmd *cobra.Command, args []string) error {
+						order := commandresult.FollowUpCommandOrderFromContext(cmd.Context())
+						commandOrders = append(commandOrders, order)
+						commandresult.FollowUpCollectorFromContext(cmd.Context()).Add(
+							commandresult.FollowUp{
+								ExtensionID:  "test.extension",
+								CommandOrder: order,
+								EventName:    "postdeploy",
+								Text:         "deploy",
+							},
+						)
+						return nil
+					},
+				},
+			)
+			return rootCmd
+		}
+
+		adapter = &workflowCmdAdapter{
+			newCommand:    newCommand,
+			globalOptions: &internal.GlobalCommandOptions{},
+		}
+		collector := commandresult.NewFollowUpCollector()
+		ctx := commandresult.WithFollowUpCollector(
+			context.WithoutCancel(t.Context()),
+			collector,
+		)
+
+		require.NoError(t, adapter.ExecuteContext(ctx, []string{"build"}))
+		require.Equal(t, "build", collector.Text())
+
+		require.NoError(t, adapter.ExecuteContext(ctx, []string{"deploy"}))
+		require.Equal(t, []uint64{1, 1, 2}, commandOrders)
+		require.Equal(t, "deploy", collector.Text())
+	})
+}
+
+func Test_workflowCmdAdapter_CwdRestoredOnError(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		invalidCwd         bool
+		preRunError        bool
+		disableFlagParsing bool
+	}{
+		{name: "PersistentPreRunError", invalidCwd: true},
+		{name: "PreRunError", preRunError: true},
+		{name: "RunError"},
+		{name: "UnparsedRunError", disableFlagParsing: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			parentDir := filepath.Join(tmpDir, "parent")
+			stepDir := filepath.Join(parentDir, "nested")
+			require.NoError(t, os.MkdirAll(stepDir, 0o755))
+			t.Chdir(parentDir)
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+			t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+
+			targetDir := stepDir
+			if tt.invalidCwd {
+				targetDir = filepath.Join(parentDir, "not-a-directory")
+				require.NoError(t, os.WriteFile(targetDir, nil, 0o600))
+			}
+
+			opts := &internal.GlobalCommandOptions{Cwd: parentDir, NoPrompt: true}
+			container := ioc.NewNestedContainer(nil)
+			ioc.RegisterInstance(container, opts)
+			NewRootCmd(false, nil, container)
+
+			stepErr := errors.New("step failed")
+			shouldFail := true
+			var processCwd, optionCwd string
+			adapter := &workflowCmdAdapter{
+				globalOptions: opts,
+				newCommand: func() *cobra.Command {
+					root := newRootCmdWithoutRegistration(container)
+					root.AddCommand(&cobra.Command{
+						Use:                "probe",
+						DisableFlagParsing: tt.disableFlagParsing,
+						PreRunE: func(cmd *cobra.Command, args []string) error {
+							if shouldFail && tt.preRunError {
+								return stepErr
+							}
+							return nil
+						},
+						RunE: func(cmd *cobra.Command, args []string) error {
+							var err error
+							processCwd, err = os.Getwd()
+							if err != nil {
+								return err
+							}
+							optionCwd = opts.Cwd
+							if shouldFail {
+								return stepErr
+							}
+							return nil
+						},
+					})
+					return root
+				},
+			}
+
+			err = adapter.ExecuteContext(t.Context(), []string{"probe", "--cwd", targetDir})
+			if tt.invalidCwd {
+				require.ErrorContains(t, err, "failed to change directory")
+			} else {
+				require.ErrorIs(t, err, stepErr)
+			}
+			if !tt.invalidCwd && !tt.preRunError {
+				require.Equal(t, stepDir, processCwd)
+				require.Equal(t, stepDir, optionCwd)
+			}
+			assert.Equal(t, parentDir, opts.Cwd)
+			cwd, err := os.Getwd()
+			require.NoError(t, err)
+			assert.Equal(t, parentDir, cwd)
+
+			shouldFail = false
+			require.NoError(t, adapter.ExecuteContext(t.Context(), []string{"probe"}))
+			require.Equal(t, parentDir, processCwd)
+			require.Equal(t, parentDir, optionCwd)
+			require.Equal(t, parentDir, opts.Cwd)
+		})
+	}
+}
+
+func Test_workflowCmdAdapter_CwdRestoreErrorPreservesStepError(t *testing.T) {
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	parentDir := filepath.Join(tmpDir, "parent")
+	stepDir := filepath.Join(tmpDir, "step")
+	require.NoError(t, os.Mkdir(parentDir, 0o755))
+	require.NoError(t, os.Mkdir(stepDir, 0o755))
+	t.Chdir(parentDir)
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+
+	opts := &internal.GlobalCommandOptions{Cwd: parentDir, NoPrompt: true}
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(container, opts)
+	NewRootCmd(false, nil, container)
+
+	stepErr := errors.New("step failed")
+	adapter := &workflowCmdAdapter{
+		globalOptions: opts,
+		newCommand: func() *cobra.Command {
+			root := newRootCmdWithoutRegistration(container)
+			root.AddCommand(&cobra.Command{
+				Use: "probe",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					if err := os.Remove(parentDir); err != nil {
+						return err
+					}
+					return stepErr
+				},
+			})
+			return root
+		},
+	}
+
+	err = adapter.ExecuteContext(t.Context(), []string{"probe", "--cwd", stepDir})
+	require.ErrorIs(t, err, stepErr)
+	require.ErrorContains(t, err, "restoring workflow working directory")
+	require.Equal(t, parentDir, opts.Cwd)
 }
 
 func Test_NewRootCmd_ReregistrationReplacesProjectConfig(t *testing.T) {

@@ -20,6 +20,7 @@ type HeadlessCollector struct {
 	// Usage metrics — accumulated from assistant.usage events
 	totalInputTokens  float64
 	totalOutputTokens float64
+	totalNanoAiu      float64
 	billingRate       float64
 	totalDurationMS   float64
 	premiumRequests   float64
@@ -67,6 +68,9 @@ func (h *HeadlessCollector) HandleEvent(event copilot.SessionEvent) {
 			}
 			if data.OutputTokens != nil {
 				h.totalOutputTokens += float64(*data.OutputTokens)
+			}
+			if data.CopilotUsage != nil {
+				h.totalNanoAiu += data.CopilotUsage.TotalNanoAiu
 			}
 			if data.Cost != nil {
 				h.billingRate = *data.Cost
@@ -128,6 +132,7 @@ func (h *HeadlessCollector) GetUsageMetrics() UsageMetrics {
 		Model:           h.lastModel,
 		InputTokens:     h.totalInputTokens,
 		OutputTokens:    h.totalOutputTokens,
+		AICredits:       nanoAiuToCredits(h.totalNanoAiu),
 		BillingRate:     h.billingRate,
 		PremiumRequests: h.premiumRequests,
 		DurationMS:      h.totalDurationMS,

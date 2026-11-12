@@ -4,13 +4,74 @@
 package cmd
 
 import (
+	"errors"
 	"testing"
 
+	"azure.ai.routines/internal/exterrors"
 	"azure.ai.routines/internal/pkg/routines"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRoutineCreateDispatchIdentityFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		set          bool
+		value        string
+		wantIdentity string
+		wantError    bool
+	}{
+		{name: "default is omitted", value: routines.RoutineDispatchIdentityAgent},
+		{
+			name:         "agent can be explicit",
+			set:          true,
+			value:        routines.RoutineDispatchIdentityAgent,
+			wantIdentity: routines.RoutineDispatchIdentityAgent,
+		},
+		{
+			name:         "creator can be selected",
+			set:          true,
+			value:        routines.RoutineDispatchIdentityCreator,
+			wantIdentity: routines.RoutineDispatchIdentityCreator,
+		},
+		{name: "unsupported identity is rejected", set: true, value: "service", wantError: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := newRoutineCreateCommand(&azdext.ExtensionContext{})
+			if test.set {
+				require.NoError(t, cmd.Flags().Set("dispatch-identity", test.value))
+			}
+			identity, err := cmd.Flags().GetString("dispatch-identity")
+			require.NoError(t, err)
+			assert.Equal(t, routines.RoutineDispatchIdentityAgent, cmd.Flag("dispatch-identity").DefValue)
+
+			got, err := routineAuthorizationOverride(cmd, identity)
+			if test.wantError {
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+				assert.Contains(t, localErr.Message, "--dispatch-identity")
+				return
+			}
+
+			require.NoError(t, err)
+			if test.wantIdentity == "" {
+				assert.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			assert.Equal(t, test.wantIdentity, got.Identity)
+		})
+	}
+}
 
 // ─── buildTrigger ─────────────────────────────────────────────────────────────
 

@@ -41,6 +41,8 @@ func newProjectUnsetCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Clear the persisted Foundry project endpoint from the azd global config
 (~/.azd/config.json). This is idempotent — running it when no endpoint is set
 is not an error.`,
+		Example: `  # Clear the global default without changing environment values
+  azd ai project unset`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.outputFmt = extCtx.OutputFormat

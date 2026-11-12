@@ -6,9 +6,12 @@ package doctor
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
+
+	"azure.ai.projects/synthesis"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/azure"
@@ -23,8 +26,8 @@ import (
 const foundryConnectionsProbeTimeout = 10 * time.Second
 
 // foundryConnectionsProbeFn is the seam-friendly signature for the
-// project connections list probe. The closure receives the account
-// + project identifiers needed by `FoundryProjectsClient` and
+// project connections list probe. The closure receives the validated
+// project endpoint needed by `FoundryProjectsClient` and
 // returns the connection names that exist on the project. Errors
 // short-circuit the check to Skip — a 401/403/network failure has
 // the same surface as "Foundry unreachable" which the upstream
@@ -32,7 +35,7 @@ const foundryConnectionsProbeTimeout = 10 * time.Second
 // keeps the report from emitting two near-identical Fail lines.
 type foundryConnectionsProbeFn func(
 	ctx context.Context,
-	accountName, projectName string,
+	projectEndpoint string,
 ) ([]string, error)
 
 // newCheckConnections produces Check `remote.connections`. For each
@@ -57,11 +60,10 @@ type foundryConnectionsProbeFn func(
 //     remediation.
 //   - state.ConnectionLoadErrors set → configuration could not be
 //     read. Fail without probing so a bad $ref is not Skip.
-//   - state.HasConnections == false → no enabled connection
-//     services or legacy resources; Skip rather than a vacuous Pass.
-//   - `AZURE_AI_PROJECT_ID` not set / cannot be parsed → can not
-//     derive the account + project to probe. Skip cleanly; the
-//     rbac check already emits the canonical `azd env set` fix.
+//   - state.HasConnections == false → no enabled connection services;
+//     Skip rather than a vacuous Pass.
+//   - Prior checks did not surface FOUNDRY_PROJECT_ENDPOINT →
+//     Skip without guessing a URL from AZURE_AI_PROJECT_ID.
 //
 // # Classification
 //
@@ -133,8 +135,7 @@ func newCheckConnections(deps Dependencies) Check {
 						"failed to load configured connections: %s",
 						strings.Join(state.ConnectionLoadErrors, "; "),
 					),
-					Suggestion: "Fix azure.yaml, its $ref files, or the " +
-						"legacy agent.manifest.yaml, then retry " +
+					Suggestion: "Fix azure.yaml or its $ref files, then retry " +
 						"`azd ai agent doctor`.",
 					Details: map[string]any{
 						"loadErrors": state.ConnectionLoadErrors,
@@ -143,46 +144,30 @@ func newCheckConnections(deps Dependencies) Check {
 			}
 			if !state.HasConnections {
 				return Result{
-					Status: StatusSkip,
-					Message: "skipped: no enabled connection services " +
-						"or legacy connection resources found.",
+					Status:  StatusSkip,
+					Message: "skipped: no enabled connection services found.",
 				}
 			}
 
-			projectIDReader := deps.readProjectResourceIDFn
-			if projectIDReader == nil {
-				projectIDReader = readProjectResourceID
+			endpoint := readProjectEndpoint(prior)
+			if endpoint == "" {
+				return Result{
+					Status: StatusSkip,
+					Message: "skipped: upstream checks did not surface " +
+						"FOUNDRY_PROJECT_ENDPOINT in their Details.",
+				}
 			}
-			projectID, err := projectIDReader(ctx, deps.AzdClient)
+			endpoint, err := synthesis.ValidateFoundryProjectEndpoint(endpoint)
 			if err != nil {
 				return Result{
-					Status: StatusSkip,
-					Message: fmt.Sprintf(
-						"skipped: could not read %s from the current azd "+
-							"environment (%s).",
-						projectIDVar, err),
-					Suggestion: "Retry `azd ai agent doctor`. If the error " +
-						"persists, verify the selected azd environment.",
+					Status:     StatusFail,
+					Message:    fmt.Sprintf("invalid FOUNDRY_PROJECT_ENDPOINT: %s", err),
+					Suggestion: "Set FOUNDRY_PROJECT_ENDPOINT to a valid Azure Foundry project endpoint.",
 				}
 			}
-			if projectID == "" {
-				return Result{
-					Status: StatusSkip,
-					Message: fmt.Sprintf(
-						"skipped: %s is not set in the current azd environment "+
-							"(see check `remote.rbac`).", projectIDVar),
-				}
-			}
-
-			account, project, err := parseAccountProjectFromProjectID(projectID)
-			if err != nil {
-				return Result{
-					Status: StatusSkip,
-					Message: fmt.Sprintf(
-						"skipped: could not parse account / project from %s (%s).",
-						projectIDVar, err),
-				}
-			}
+			parsed, _ := url.Parse(endpoint)
+			account := strings.TrimSuffix(parsed.Hostname(), ".services.ai.azure.com")
+			project := strings.TrimPrefix(strings.TrimPrefix(parsed.Path, "/api"), "/projects/")
 
 			probe := deps.probeFoundryConnections
 			if probe == nil {
@@ -192,7 +177,7 @@ func newCheckConnections(deps Dependencies) Check {
 			probeCtx, cancel := context.WithTimeout(ctx, foundryConnectionsProbeTimeout)
 			defer cancel()
 
-			connections, err := probe(probeCtx, account, project)
+			connections, err := probe(probeCtx, endpoint)
 			if err != nil {
 				return Result{
 					Status: StatusSkip,
@@ -210,64 +195,12 @@ func newCheckConnections(deps Dependencies) Check {
 	}
 }
 
-// parseAccountProjectFromProjectID extracts (accountName, projectName)
-// from a Foundry project ARM resource ID of the form
-//
-//	/subscriptions/<sub>/resourceGroups/<rg>/providers/
-//	  Microsoft.CognitiveServices/accounts/<account>/projects/<project>
-//
-// Case-insensitive on segment markers because ARM occasionally
-// normalizes casing on round-trip.
-func parseAccountProjectFromProjectID(projectID string) (account, project string, err error) {
-	parts := strings.Split(projectID, "/")
-	if len(parts) != 11 || parts[0] != "" {
-		return "", "", fmt.Errorf(
-			"invalid Foundry project resource ID %q",
-			projectID,
-		)
-	}
-
-	markers := map[int]string{
-		1: "subscriptions",
-		3: "resourceGroups",
-		5: "providers",
-		7: "accounts",
-		9: "projects",
-	}
-	for index, marker := range markers {
-		if !strings.EqualFold(parts[index], marker) {
-			return "", "", fmt.Errorf(
-				"invalid Foundry project resource ID %q",
-				projectID,
-			)
-		}
-	}
-	if !strings.EqualFold(parts[6], "Microsoft.CognitiveServices") {
-		return "", "", fmt.Errorf(
-			"invalid Foundry project resource ID %q",
-			projectID,
-		)
-	}
-	for _, index := range []int{2, 4, 6, 8, 10} {
-		if strings.TrimSpace(parts[index]) == "" {
-			return "", "", fmt.Errorf(
-				"invalid Foundry project resource ID %q",
-				projectID,
-			)
-		}
-	}
-	return parts[8], parts[10], nil
-}
-
-// classifyConnections produces the Pass/Fail Result by joining the
-// manifest's `state.Connections` to the connection names returned by
+// classifyConnections produces the Pass/Fail Result by joining the supported
+// azure.yaml `state.Connections` to the connection names returned by
 // the Foundry project. Match is on connection name only — credential
 // type / target compatibility surfaces at runtime.
 //
-// `account` / `project` are forwarded only for human-readable strings
-// in the Message; redaction is not applied because both values are
-// the same identifiers the user typed into
-// `azd env set AZURE_AI_PROJECT_ID` and are not considered sensitive.
+// `account` / `project` are endpoint identities used for diagnostics.
 func classifyConnections(
 	refs []nextstep.ResourceRef,
 	foundryConnections []string,
@@ -337,9 +270,7 @@ func classifyConnections(
 			"%d configured connection(s) are missing on project %s: %s",
 			len(missing), project, sb.String()),
 		Suggestion: "Run `azd deploy --all` to create or reconcile the " +
-			"missing azure.ai.connection services. Migrate bundled or legacy " +
-			"connection resources to azure.ai.connection services and add them " +
-			"to agent uses before deploying.",
+			"missing azure.ai.connection services and add them to agent uses before deploying.",
 		Details: map[string]any{
 			"missingConnections": missing,
 			"matchedCount":       matched,
@@ -362,7 +293,7 @@ func classifyConnections(
 // error; the check classifies any non-nil error as Skip.
 func realProbeFoundryConnections(
 	ctx context.Context,
-	accountName, projectName string,
+	projectEndpoint string,
 ) ([]string, error) {
 	cred, err := azidentity.NewAzureDeveloperCLICredential(
 		&azidentity.AzureDeveloperCLICredentialOptions{},
@@ -370,7 +301,7 @@ func realProbeFoundryConnections(
 	if err != nil {
 		return nil, fmt.Errorf("create credential: %w", err)
 	}
-	return listFoundryConnectionNames(ctx, cred, accountName, projectName)
+	return listFoundryConnectionNames(ctx, cred, projectEndpoint)
 }
 
 // listFoundryConnectionNames is the credential-injecting variant of
@@ -382,9 +313,9 @@ func realProbeFoundryConnections(
 func listFoundryConnectionNames(
 	ctx context.Context,
 	credential azcore.TokenCredential,
-	accountName, projectName string,
+	projectEndpoint string,
 ) ([]string, error) {
-	client, err := azure.NewFoundryProjectsClient(accountName, projectName, credential)
+	client, err := azure.NewFoundryProjectsClient(projectEndpoint, credential)
 	if err != nil {
 		return nil, fmt.Errorf("create Foundry projects client: %w", err)
 	}

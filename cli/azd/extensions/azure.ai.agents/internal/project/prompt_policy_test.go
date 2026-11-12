@@ -26,6 +26,16 @@ func TestExpandPromptAgentPolicies(t *testing.T) {
 	require.NoError(t, managed.ValidatePolicies())
 }
 
+func TestExpandPromptAgentPoliciesSupportsGPTLivePolicyCopy(t *testing.T) {
+	voicePolicies := []agent_yaml.Policy{{
+		Type: agent_yaml.PolicyTypeRai, RaiPolicyName: "${RAI_POLICY_ID}",
+	}}
+	managed := agent_yaml.PromptAgent{Policies: append([]agent_yaml.Policy(nil), voicePolicies...)}
+	require.NoError(t, expandPromptAgentPolicies(&managed, map[string]string{"RAI_POLICY_ID": raiPolicyID}))
+	require.Equal(t, raiPolicyID, managed.Policies[0].RaiPolicyName)
+	require.Equal(t, "${RAI_POLICY_ID}", voicePolicies[0].RaiPolicyName)
+}
+
 func TestExpandPromptAgentPoliciesUnresolved(t *testing.T) {
 	t.Parallel()
 	managed := agent_yaml.PromptAgent{Policies: []agent_yaml.Policy{{
@@ -51,7 +61,7 @@ func TestPromptAgentPoliciesReachRaiConfig(t *testing.T) {
 	t.Parallel()
 	for _, harness := range []*agent_yaml.PromptHarness{
 		nil,
-		{Type: agent_api.ManagedAgentHarnessGitHubCopilot},
+		{Type: agent_api.ManagedAgentHarnessMicrosoftCopilot},
 	} {
 		managed := agent_yaml.PromptAgent{
 			AgentDefinition: agent_yaml.AgentDefinition{Name: "rai-agent", Kind: agent_yaml.AgentKindPrompt},
@@ -68,7 +78,7 @@ func TestPromptAgentPoliciesReachRaiConfig(t *testing.T) {
 func TestPromptCreateErrorAddsPolicySuggestion(t *testing.T) {
 	t.Parallel()
 	managed := agent_yaml.PromptAgent{
-		Harness:  &agent_yaml.PromptHarness{Type: agent_api.ManagedAgentHarnessGitHubCopilot},
+		Harness:  &agent_yaml.PromptHarness{Type: agent_api.ManagedAgentHarnessMicrosoftCopilot},
 		Policies: []agent_yaml.Policy{{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: raiPolicyID}},
 	}
 	err := promptCreateError(errors.New("BadRequest"), &managed)
@@ -80,7 +90,7 @@ func TestPromptCreateErrorAddsPolicySuggestion(t *testing.T) {
 func TestPromptCreateErrorAddsPolicySuggestionToServiceError(t *testing.T) {
 	t.Parallel()
 	managed := agent_yaml.PromptAgent{
-		Harness:  &agent_yaml.PromptHarness{Type: agent_api.ManagedAgentHarnessGitHubCopilot},
+		Harness:  &agent_yaml.PromptHarness{Type: agent_api.ManagedAgentHarnessMicrosoftCopilot},
 		Policies: []agent_yaml.Policy{{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: raiPolicyID}},
 	}
 	err := promptCreateError(&azcore.ResponseError{

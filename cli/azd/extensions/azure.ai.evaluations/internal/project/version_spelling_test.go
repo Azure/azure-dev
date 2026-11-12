@@ -29,9 +29,9 @@ func TestNumericVersionLosesItsSpellingOnTheServiceRoute(t *testing.T) {
 		t.Helper()
 		props, err := structpb.NewStruct(map[string]any{
 			"evals": []any{map[string]any{
-				"name":             "support-quality",
-				"dataset":          "golden",
-				"evaluation_level": "turn",
+				"name":            "support-quality",
+				"dataset":         "golden",
+				"evaluationLevel": "turn",
 				"evaluators": []any{map[string]any{
 					"evaluator": "builtin.relevance",
 					"version":   version,
@@ -63,7 +63,7 @@ func TestQuotedAndUnquotedVersionsOffDisk(t *testing.T) {
 evals:
   - name: support-quality
     dataset: golden
-    evaluation_level: turn
+    evaluationLevel: turn
     evaluators:
       - evaluator: builtin.relevance
         version: 1.0

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -100,6 +101,8 @@ func TestDeployActionResolveDeployTimeout(t *testing.T) {
 			timeout, err := action.resolveDeployTimeout()
 			if tt.wantErr {
 				require.Error(t, err)
+				code, _ := classify(err)
+				require.Equal(t, "internal.invalid_args", code)
 				return
 			}
 			require.NoError(t, err)
@@ -152,6 +155,8 @@ func TestDeployActionResolveDeployTimeoutEnvVar(t *testing.T) {
 			timeout, err := action.resolveDeployTimeout()
 			if tt.wantErr {
 				require.Error(t, err)
+				code, _ := classify(err)
+				require.Equal(t, "internal.invalid_args", code)
 				return
 			}
 			require.NoError(t, err)
@@ -200,6 +205,9 @@ func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
 	action, serviceManager := newDeployActionForTimeoutTest(t, new(1), nil, true)
 
 	_, err := action.Run(t.Context())
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	code, _ := classify(err)
+	require.Equal(t, "internal.timeout", code)
 	require.EqualError(
 		t,
 		err,
@@ -501,6 +509,13 @@ func TestDeploymentResultJSON(t *testing.T) {
 			},
 			"web": {},
 		},
+		Messages: []commandresult.ServiceEventMessage{{
+			ExtensionID: "test.extension",
+			ServiceName: "api",
+			EventName:   "postdeploy",
+			Kind:        "warning",
+			Message:     "Review the access policy.",
+		}},
 	}
 
 	data, err := json.Marshal(result)
@@ -521,4 +536,15 @@ func TestDeploymentResultJSON(t *testing.T) {
 	web, ok := services["web"].(map[string]any)
 	require.True(t, ok)
 	require.NotContains(t, web, "warnings")
+
+	messages, ok := parsed["messages"].([]any)
+	require.True(t, ok, "messages should be an array")
+	require.Len(t, messages, 1)
+	message, ok := messages[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "test.extension", message["extensionId"])
+	require.Equal(t, "api", message["service"])
+	require.Equal(t, "postdeploy", message["event"])
+	require.Equal(t, "warning", message["kind"])
+	require.Equal(t, "Review the access policy.", message["message"])
 }

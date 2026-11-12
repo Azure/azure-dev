@@ -6,7 +6,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - "cli/azd/test/evals/**"
+      - "cli/azd/test/evals/eval-foundry*.yaml"
+      - "cli/azd/test/evals/fixtures/foundry-*/**"
+      - "cli/azd/test/evals/scripts/fetch-foundry-skill.mjs"
+      - "cli/azd/test/evals/package.json"
+      - "cli/azd/test/evals/package-lock.json"
       - ".github/actions/vally-eval/**"
       - ".github/workflows/vally-foundry-ci.yml"
 

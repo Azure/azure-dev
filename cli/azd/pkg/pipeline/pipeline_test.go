@@ -660,16 +660,15 @@ func Test_PipelineManager_ProviderNames(t *testing.T) {
 func Test_PipelineManager_SetParameters_cov3(t *testing.T) {
 	t.Parallel()
 
-	t.Run("sets parameters on nil configOptions", func(t *testing.T) {
+	t.Run("sets parameters", func(t *testing.T) {
 		t.Parallel()
 
-		pm := &PipelineManager{}
+		pm := &PipelineManager{configOptions: &configurePipelineOptions{}}
 		params := []provisioning.Parameter{
 			{Name: "param1", Value: "val1"},
 		}
 		pm.SetParameters(params)
 
-		require.NotNil(t, pm.configOptions)
 		assert.Equal(t, params, pm.configOptions.providerParameters)
 	})
 
@@ -917,11 +916,10 @@ func Test_PipelineManager_checkAndPromptForProviderFiles(t *testing.T) {
 		}
 
 		err := pm.checkAndPromptForProviderFiles(t.Context(), projectProperties{
-			CiProvider:    ciProviderAzureDevOps,
-			InfraProvider: infraProviderBicep,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
-			RepoRoot:      tmpDir,
+			CiProvider: ciProviderAzureDevOps,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
+			RepoRoot:   tmpDir,
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Azure DevOps")
@@ -943,11 +941,10 @@ func Test_PipelineManager_checkAndPromptForProviderFiles(t *testing.T) {
 		}
 
 		err := pm.checkAndPromptForProviderFiles(t.Context(), projectProperties{
-			CiProvider:    ciProviderGitHubActions,
-			InfraProvider: infraProviderBicep,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
-			RepoRoot:      tmpDir,
+			CiProvider: ciProviderGitHubActions,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
+			RepoRoot:   tmpDir,
 		})
 		require.NoError(t, err)
 
@@ -971,11 +968,10 @@ func Test_PipelineManager_checkAndPromptForProviderFiles(t *testing.T) {
 
 		// Should not error for GitHub (unlike AzDo) even with empty dirs
 		err := pm.checkAndPromptForProviderFiles(t.Context(), projectProperties{
-			CiProvider:    ciProviderGitHubActions,
-			InfraProvider: infraProviderBicep,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
-			RepoRoot:      tmpDir,
+			CiProvider: ciProviderGitHubActions,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
+			RepoRoot:   tmpDir,
 		})
 		// For GitHub, when no files exist AND user declines, it just shows a message, no error
 		require.NoError(t, err)
@@ -1608,10 +1604,9 @@ func Test_generatePipelineDefinition_providerParams(t *testing.T) {
 		outPath := filepath.Join(tmpDir, "azure-dev.yml")
 
 		err := generatePipelineDefinition(outPath, projectProperties{
-			CiProvider:    ciProviderGitHubActions,
-			InfraProvider: infraProviderBicep,
-			BranchName:    "main",
-			AuthType:      AuthTypeFederated,
+			CiProvider: ciProviderGitHubActions,
+			BranchName: "main",
+			AuthType:   AuthTypeFederated,
 			providerParameters: []provisioning.Parameter{
 				{
 					Name:          "mySecret",
@@ -1647,7 +1642,6 @@ func Test_generatePipelineDefinition_alphaFeatures(t *testing.T) {
 
 	err := generatePipelineDefinition(outPath, projectProperties{
 		CiProvider:            ciProviderGitHubActions,
-		InfraProvider:         infraProviderBicep,
 		BranchName:            "main",
 		AuthType:              AuthTypeFederated,
 		RequiredAlphaFeatures: []string{"compose", "experimental"},
@@ -1676,11 +1670,11 @@ func Test_generatePipelineDefinition_azdoTemplates(t *testing.T) {
 		{
 			name: "azdo with app host and terraform client creds",
 			props: projectProperties{
-				CiProvider:    ciProviderAzureDevOps,
-				InfraProvider: infraProviderTerraform,
-				BranchName:    "release",
-				AuthType:      AuthTypeClientCredentials,
-				HasAppHost:    true,
+				CiProvider:  ciProviderAzureDevOps,
+				IsTerraform: true,
+				BranchName:  "release",
+				AuthType:    AuthTypeClientCredentials,
+				HasAppHost:  true,
 			},
 			wantSubstr: []string{
 				"release",
@@ -1692,12 +1686,11 @@ func Test_generatePipelineDefinition_azdoTemplates(t *testing.T) {
 		{
 			name: "azdo with variables and secrets",
 			props: projectProperties{
-				CiProvider:    ciProviderAzureDevOps,
-				InfraProvider: infraProviderBicep,
-				BranchName:    "main",
-				AuthType:      AuthTypeFederated,
-				Variables:     []string{"CUSTOM_VAR1"},
-				Secrets:       []string{"CUSTOM_SECRET1"},
+				CiProvider: ciProviderAzureDevOps,
+				BranchName: "main",
+				AuthType:   AuthTypeFederated,
+				Variables:  []string{"CUSTOM_VAR1"},
+				Secrets:    []string{"CUSTOM_SECRET1"},
 			},
 			wantSubstr: []string{
 				"CUSTOM_VAR1",
@@ -1820,7 +1813,6 @@ func Test_projectProperties_fields_cov3(t *testing.T) {
 
 	props := projectProperties{
 		CiProvider:            ciProviderGitHubActions,
-		InfraProvider:         infraProviderBicep,
 		RepoRoot:              "/some/path",
 		HasAppHost:            true,
 		BranchName:            "dev",
@@ -1831,7 +1823,6 @@ func Test_projectProperties_fields_cov3(t *testing.T) {
 	}
 
 	assert.Equal(t, ciProviderGitHubActions, props.CiProvider)
-	assert.Equal(t, infraProviderBicep, props.InfraProvider)
 	assert.True(t, props.HasAppHost)
 	assert.Equal(t, "dev", props.BranchName)
 }
@@ -2875,6 +2866,45 @@ func Test_setPipelineVariables_cov3(t *testing.T) {
 			"tenant-id", "client-id",
 		)
 		require.NoError(t, err)
+	})
+
+	t.Run("terraform layer variables", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		var commands []string
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "variable") && strings.Contains(command, "set")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			commands = append(commands, args.Args...)
+			return exec.NewRunResult(0, "", ""), nil
+		})
+
+		env := environment.NewWithValues("test-env", map[string]string{
+			environment.EnvNameEnvVarName:        "prod",
+			environment.LocationEnvVarName:       "centralus",
+			environment.SubscriptionIdEnvVarName: "sub-789",
+			"RS_RESOURCE_GROUP":                  "tf-state-rg",
+			"RS_STORAGE_ACCOUNT":                 "tfstateacct",
+			"RS_CONTAINER_NAME":                  "tfstate",
+		})
+
+		provider := &GitHubCiProvider{
+			env:     env,
+			ghCli:   github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner),
+			console: mockContext.Console,
+		}
+
+		err := provider.setPipelineVariables(
+			*mockContext.Context, "owner/repo",
+			provisioning.Options{Layers: []provisioning.Options{
+				{Provider: provisioning.ProviderKind("microsoft.foundry")},
+				{Provider: provisioning.Terraform},
+			}},
+			"tenant-id", "client-id",
+		)
+		require.NoError(t, err)
+		assert.Contains(t, commands, "RS_RESOURCE_GROUP")
+		assert.Contains(t, commands, "RS_STORAGE_ACCOUNT")
+		assert.Contains(t, commands, "RS_CONTAINER_NAME")
 	})
 
 	t.Run("terraform missing RS variable", func(t *testing.T) {
@@ -4405,7 +4435,7 @@ func Test_generatePipelineDefinition_azdo_template_cov3(t *testing.T) {
 }
 
 // =====================================================================
-// Additional coverage: toCiProviderType and toInfraProviderType edge cases
+// Additional coverage: toCiProviderType edge cases
 // =====================================================================
 func Test_toCiProviderType_values_cov3(t *testing.T) {
 	t.Parallel()
@@ -4419,21 +4449,6 @@ func Test_toCiProviderType_values_cov3(t *testing.T) {
 	assert.Equal(t, ciProviderAzureDevOps, azdoProvider)
 
 	_, err = toCiProviderType("unknown")
-	require.Error(t, err)
-}
-
-func Test_toInfraProviderType_values_cov3(t *testing.T) {
-	t.Parallel()
-
-	bicepProvider, err := toInfraProviderType("bicep")
-	require.NoError(t, err)
-	assert.Equal(t, infraProviderBicep, bicepProvider)
-
-	tfProvider, err := toInfraProviderType("terraform")
-	require.NoError(t, err)
-	assert.Equal(t, infraProviderTerraform, tfProvider)
-
-	_, err = toInfraProviderType("other")
 	require.Error(t, err)
 }
 
@@ -5714,10 +5729,9 @@ func Test_generatePipelineDefinition(t *testing.T) {
 		{
 			name: "github bicep federated",
 			props: projectProperties{
-				CiProvider:    ciProviderGitHubActions,
-				InfraProvider: infraProviderBicep,
-				BranchName:    "main",
-				AuthType:      AuthTypeFederated,
+				CiProvider: ciProviderGitHubActions,
+				BranchName: "main",
+				AuthType:   AuthTypeFederated,
 			},
 			wantSubstr: []string{
 				"main",
@@ -5726,10 +5740,10 @@ func Test_generatePipelineDefinition(t *testing.T) {
 		{
 			name: "github terraform federated adds AZURE_LOCATION and AZURE_ENV_NAME",
 			props: projectProperties{
-				CiProvider:    ciProviderGitHubActions,
-				InfraProvider: infraProviderTerraform,
-				BranchName:    "main",
-				AuthType:      AuthTypeFederated,
+				CiProvider:  ciProviderGitHubActions,
+				IsTerraform: true,
+				BranchName:  "main",
+				AuthType:    AuthTypeFederated,
 			},
 			wantSubstr: []string{
 				"AZURE_LOCATION",
@@ -5739,10 +5753,10 @@ func Test_generatePipelineDefinition(t *testing.T) {
 		{
 			name: "github terraform client-credentials adds AZURE_CLIENT_SECRET",
 			props: projectProperties{
-				CiProvider:    ciProviderGitHubActions,
-				InfraProvider: infraProviderTerraform,
-				BranchName:    "main",
-				AuthType:      AuthTypeClientCredentials,
+				CiProvider:  ciProviderGitHubActions,
+				IsTerraform: true,
+				BranchName:  "main",
+				AuthType:    AuthTypeClientCredentials,
 			},
 			wantSubstr: []string{
 				"AZURE_CLIENT_SECRET",
@@ -5753,12 +5767,11 @@ func Test_generatePipelineDefinition(t *testing.T) {
 		{
 			name: "github with variables and secrets",
 			props: projectProperties{
-				CiProvider:    ciProviderGitHubActions,
-				InfraProvider: infraProviderBicep,
-				BranchName:    "main",
-				AuthType:      AuthTypeFederated,
-				Variables:     []string{"MY_VAR"},
-				Secrets:       []string{"MY_SECRET"},
+				CiProvider: ciProviderGitHubActions,
+				BranchName: "main",
+				AuthType:   AuthTypeFederated,
+				Variables:  []string{"MY_VAR"},
+				Secrets:    []string{"MY_SECRET"},
 			},
 			wantSubstr: []string{
 				"MY_VAR",
@@ -5768,11 +5781,10 @@ func Test_generatePipelineDefinition(t *testing.T) {
 		{
 			name: "github with app host sets dotnet install",
 			props: projectProperties{
-				CiProvider:    ciProviderGitHubActions,
-				InfraProvider: infraProviderBicep,
-				BranchName:    "main",
-				AuthType:      AuthTypeFederated,
-				HasAppHost:    true,
+				CiProvider: ciProviderGitHubActions,
+				BranchName: "main",
+				AuthType:   AuthTypeFederated,
+				HasAppHost: true,
 			},
 			wantSubstr: []string{
 				"dotnet",
@@ -5782,7 +5794,6 @@ func Test_generatePipelineDefinition(t *testing.T) {
 			name: "github with alpha features",
 			props: projectProperties{
 				CiProvider:            ciProviderGitHubActions,
-				InfraProvider:         infraProviderBicep,
 				BranchName:            "main",
 				AuthType:              AuthTypeFederated,
 				RequiredAlphaFeatures: []string{"feature1"},
@@ -5794,10 +5805,9 @@ func Test_generatePipelineDefinition(t *testing.T) {
 		{
 			name: "github with provider parameters adds env vars",
 			props: projectProperties{
-				CiProvider:    ciProviderGitHubActions,
-				InfraProvider: infraProviderBicep,
-				BranchName:    "main",
-				AuthType:      AuthTypeFederated,
+				CiProvider: ciProviderGitHubActions,
+				BranchName: "main",
+				AuthType:   AuthTypeFederated,
 				providerParameters: []provisioning.Parameter{
 					{
 						Name:          "dbPass",
@@ -5819,10 +5829,9 @@ func Test_generatePipelineDefinition(t *testing.T) {
 		{
 			name: "azdo bicep federated",
 			props: projectProperties{
-				CiProvider:    ciProviderAzureDevOps,
-				InfraProvider: infraProviderBicep,
-				BranchName:    "main",
-				AuthType:      AuthTypeFederated,
+				CiProvider: ciProviderAzureDevOps,
+				BranchName: "main",
+				AuthType:   AuthTypeFederated,
 			},
 			wantSubstr: []string{
 				"main",
@@ -5831,10 +5840,10 @@ func Test_generatePipelineDefinition(t *testing.T) {
 		{
 			name: "azdo terraform federated",
 			props: projectProperties{
-				CiProvider:    ciProviderAzureDevOps,
-				InfraProvider: infraProviderTerraform,
-				BranchName:    "develop",
-				AuthType:      AuthTypeFederated,
+				CiProvider:  ciProviderAzureDevOps,
+				IsTerraform: true,
+				BranchName:  "develop",
+				AuthType:    AuthTypeFederated,
 			},
 			wantSubstr: []string{
 				"develop",
@@ -5891,10 +5900,9 @@ func Test_generatePipelineDefinition_invalidPath(t *testing.T) {
 	badPath := filepath.Join(t.TempDir(), "nonexistent", "deep", "azure-dev.yml")
 
 	err := generatePipelineDefinition(badPath, projectProperties{
-		CiProvider:    ciProviderGitHubActions,
-		InfraProvider: infraProviderBicep,
-		BranchName:    "main",
-		AuthType:      AuthTypeFederated,
+		CiProvider: ciProviderGitHubActions,
+		BranchName: "main",
+		AuthType:   AuthTypeFederated,
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "creating file")
@@ -6192,7 +6200,7 @@ func Test_mergeProjectVariablesAndSecrets_usingEnvVarMapping(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// toCiProviderType / toInfraProviderType — additional edge cases
+// toCiProviderType — additional edge cases
 // ---------------------------------------------------------------------------
 
 func Test_toCiProviderType_additionalCases(t *testing.T) {
@@ -6215,36 +6223,6 @@ func Test_toCiProviderType_additionalCases(t *testing.T) {
 		t.Run(tt.input, func(t *testing.T) {
 			t.Parallel()
 			got, err := toCiProviderType(tt.input)
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tt.want, got)
-			}
-		})
-	}
-}
-
-func Test_toInfraProviderType_additionalCases(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		input   string
-		want    infraProviderType
-		wantErr bool
-	}{
-		{"bicep", infraProviderBicep, false},
-		{"terraform", infraProviderTerraform, false},
-		{"", infraProviderUndefined, false},
-		{"Bicep", "", true},
-		{"TERRAFORM", "", true},
-		{"pulumi", "", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			t.Parallel()
-			got, err := toInfraProviderType(tt.input)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -6778,17 +6756,12 @@ func Test_PipelineManager_SetParameters_multipleParams(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// PipelineManager.SetParameters — nil configOptions gets initialized
+// PipelineManager configOptions — initialized by constructor
 // ---------------------------------------------------------------------------
 
-func Test_PipelineManager_SetParameters_nilConfigOptions(t *testing.T) {
+func Test_PipelineManager_ConfigOptionsInitialized(t *testing.T) {
 	t.Parallel()
 	manager, _ := helperSetupManager(t, ciProviderGitHubActions)
 
-	// Force nil configOptions (it may be set by the constructor)
-	manager.configOptions = nil
-	manager.SetParameters([]provisioning.Parameter{{Name: "p1", Value: "v1"}})
-
 	require.NotNil(t, manager.configOptions)
-	assert.Len(t, manager.configOptions.providerParameters, 1)
 }

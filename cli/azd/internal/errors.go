@@ -159,8 +159,8 @@ var (
 
 // ExitCodeError wraps an error with a specific process exit code.
 // When returned from an action, main.go uses the exit code instead of the
-// default exit code 1. This is used by `azd exec` to propagate the child
-// process exit code without calling os.Exit inside the middleware chain.
+// default exit code 1. This is used by `azd exec` and extension commands to propagate
+// the child process exit code without calling os.Exit inside the middleware chain.
 type ExitCodeError struct {
 	ExitCode int
 	Err      error

@@ -1,0 +1,26 @@
+Delete a skill from the resolved Foundry project.
+
+By default the CLI prompts for confirmation. Pass --force to skip the prompt.
+In --no-prompt mode (set globally), --force is required.
+
+Usage
+  azd ai skill delete <name> [flags]
+
+Flags
+      --force : Skip the confirmation prompt
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for delete
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "table")
+  -p, --project-endpoint string : Foundry project endpoint URL for skill operations only (not context or version)
+
+Examples
+  Delete a skill after confirmation
+    azd ai skill delete greet-user
+
+  Delete a skill in automation without prompting
+    azd ai skill delete greet-user --force --no-prompt

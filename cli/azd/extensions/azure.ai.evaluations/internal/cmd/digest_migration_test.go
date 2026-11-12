@@ -62,7 +62,7 @@ func evalServiceReconciler(t *testing.T, env *testEnvServer, existingID string) 
 
 // Environments written before the digest was split hold the full digest under
 // the recreate key. Reading only the definition made the first deploy after an
-// upgrade recreate every eval carrying max_samples or source:, for a file
+// upgrade recreate every eval carrying maxSamples or source:, for a file
 // nobody had touched, and left the runs taken under it unreachable.
 func TestAnEnvironmentFromBeforeTheSplitIsNotReadAsAChange(t *testing.T) {
 	group := windowedEval("nightly", 24)

@@ -65,15 +65,29 @@ func (ft FlexibleTimestamp) String() string {
 	return string(ft)
 }
 
-// Routine represents a Foundry routine resource.
+// RoutineDispatchIdentityAgent is the default identity.
+const RoutineDispatchIdentityAgent = "agent"
+
+// RoutineDispatchIdentityCreator dispatches a routine as its creator.
+const RoutineDispatchIdentityCreator = "creator"
+
+// RoutineAuthorization holds a routine's dispatch identity.
+type RoutineAuthorization struct {
+	Identity string `json:"identity,omitempty" yaml:"identity,omitempty"`
+}
+
+// Routine represents the canonical routine authoring and domain model.
+// Extension-owned authoring properties use camelCase. The client translates
+// them to the Foundry API's snake_case wire fields.
 type Routine struct {
-	Name        string                    `json:"name,omitempty"        yaml:"name,omitempty"`
-	Description string                    `json:"description,omitempty" yaml:"description,omitempty"`
-	Enabled     *bool                     `json:"enabled,omitempty"     yaml:"enabled,omitempty"`
-	Triggers    map[string]RoutineTrigger `json:"triggers,omitempty"    yaml:"triggers,omitempty"`
-	Action      *RoutineAction            `json:"action,omitempty"      yaml:"action,omitempty"`
-	CreatedAt   FlexibleTimestamp         `json:"created_at,omitempty"  yaml:"created_at,omitempty"`
-	UpdatedAt   FlexibleTimestamp         `json:"updated_at,omitempty"  yaml:"updated_at,omitempty"`
+	Name          string                    `json:"name,omitempty"          yaml:"name,omitempty"`
+	Description   string                    `json:"description,omitempty"   yaml:"description,omitempty"`
+	Enabled       *bool                     `json:"enabled,omitempty"       yaml:"enabled,omitempty"`
+	Authorization *RoutineAuthorization     `json:"authorization,omitempty" yaml:"authorization,omitempty"`
+	Triggers      map[string]RoutineTrigger `json:"triggers,omitempty"      yaml:"triggers,omitempty"`
+	Action        *RoutineAction            `json:"action,omitempty"        yaml:"action,omitempty"`
+	CreatedAt     FlexibleTimestamp         `json:"created_at,omitempty"    yaml:"created_at,omitempty"`
+	UpdatedAt     FlexibleTimestamp         `json:"updated_at,omitempty"    yaml:"updated_at,omitempty"`
 }
 
 // RoutineTrigger is the discriminated union for routine triggers.
@@ -83,24 +97,24 @@ type RoutineTrigger struct {
 	Type string `json:"type"                          yaml:"type"`
 
 	// schedule fields
-	CronExpression string `json:"cron_expression,omitempty"     yaml:"cron_expression,omitempty"`
+	CronExpression string `json:"cronExpression,omitempty" yaml:"cronExpression,omitempty"`
 
-	// schedule-only: timer no longer carries time_zone in the v1 spec.
-	TimeZone string `json:"time_zone,omitempty"           yaml:"time_zone,omitempty"`
+	// schedule-only: timer no longer carries time_zone on the API wire.
+	TimeZone string `json:"timeZone,omitempty" yaml:"timeZone,omitempty"`
 
 	// timer-only fields
 	At FlexibleTimestamp `json:"at,omitempty"                  yaml:"at,omitempty"`
 
 	// github_issue fields
-	ConnectionID string `json:"connection_id,omitempty"       yaml:"connection_id,omitempty"`
-	Owner        string `json:"owner,omitempty"               yaml:"owner,omitempty"`
-	Repository   string `json:"repository,omitempty"          yaml:"repository,omitempty"`
-	IssueEvent   string `json:"issue_event,omitempty"         yaml:"issue_event,omitempty"`
+	ConnectionID string `json:"connectionId,omitempty" yaml:"connectionId,omitempty"`
+	Owner        string `json:"owner,omitempty"        yaml:"owner,omitempty"`
+	Repository   string `json:"repository,omitempty"   yaml:"repository,omitempty"`
+	IssueEvent   string `json:"issueEvent,omitempty"   yaml:"issueEvent,omitempty"`
 
 	// custom fields
-	Provider   string          `json:"provider,omitempty"            yaml:"provider,omitempty"`
-	EventName  string          `json:"event_name,omitempty"          yaml:"event_name,omitempty"`
-	Parameters *map[string]any `json:"parameters,omitempty"          yaml:"parameters,omitempty"`
+	Provider   string          `json:"provider,omitempty"   yaml:"provider,omitempty"`
+	EventName  string          `json:"eventName,omitempty"  yaml:"eventName,omitempty"`
+	Parameters *map[string]any `json:"parameters,omitempty" yaml:"parameters,omitempty"`
 }
 
 // RoutineAction is the discriminated union for routine actions.
@@ -108,26 +122,21 @@ type RoutineTrigger struct {
 //   - "invoke_agent_responses_api" (CLI alias: "agent-response")
 //   - "invoke_agent_invocations_api" (CLI alias: "agent-invoke")
 //
-// Both variants share agent_name / agent_endpoint_id / input. Conversation is
-// only meaningful for the responses variant; session_id only for invocations.
+// Both variants share agentName / agentEndpointId / input in authoring.
+// Conversation is only meaningful for the responses variant; sessionId only
+// for invocations.
 type RoutineAction struct {
-	Type            string `json:"type"                          yaml:"type"`
-	AgentName       string `json:"agent_name,omitempty"          yaml:"agent_name,omitempty"`
-	AgentEndpointID string `json:"agent_endpoint_id,omitempty"   yaml:"agent_endpoint_id,omitempty"`
+	Type            string `json:"type"                      yaml:"type"`
+	AgentName       string `json:"agentName,omitempty"       yaml:"agentName,omitempty"`
+	AgentEndpointID string `json:"agentEndpointId,omitempty" yaml:"agentEndpointId,omitempty"`
 	// Input is a static JSON value sent as the complete downstream input when
 	// the routine fires. It can be any JSON value (object/array/scalar/null).
-	Input any `json:"input,omitempty"                   yaml:"input,omitempty"`
+	Input any `json:"input,omitempty" yaml:"input,omitempty"`
 	// Conversation continues an existing responses-API conversation.
 	// Wire field renamed from conversation_id to conversation in spec PR #43498.
-	Conversation string `json:"conversation,omitempty"            yaml:"conversation,omitempty"`
+	Conversation string `json:"conversation,omitempty" yaml:"conversation,omitempty"`
 	// SessionID continues an existing hosted-agent invocations-API session.
-	SessionID string `json:"session_id,omitempty"              yaml:"session_id,omitempty"`
-}
-
-// PagedRoutine represents a page of routine resources.
-type PagedRoutine struct {
-	Value             []Routine `json:"value"`
-	ContinuationToken string    `json:"continuationToken,omitempty"`
+	SessionID string `json:"sessionId,omitempty" yaml:"sessionId,omitempty"`
 }
 
 // RoutineRun represents a single routine execution record.

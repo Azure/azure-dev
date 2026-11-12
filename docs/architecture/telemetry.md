@@ -213,13 +213,16 @@ flowchart LR
   - Dependency: `ext.dependency.*`
 - Extension lifecycle events: `ext.install`, `ext.update`, `ext.uninstall`, `ext.promote`
 - Extensions published to the official registry can report **usage events** via
-  `TelemetryService.ReportUsage` after going through a privacy review. Each
+  `TelemetryService.ReportUsage` within their approved collection and handling scope. Use the
+  [privacy checklist](../specs/metrics-audit/privacy-review-checklist.md) to assess changes. Each
   event becomes an `ext.usage` span sharing the command's trace, carrying
   the extension's identity plus the caller's event name and attributes. Core
   namespaces every caller attribute under `ext.` and bounds its size, but does
-  not enumerate the values. Only extensions whose configured source matches the
-  verified official `azd` registry name, type, and normalized URL are recorded
-  — see
+  not enumerate the values at runtime. First-party extension fields are
+  declared with classification metadata in
+  `cli/azd/extensions/telemetry/fields.go`; repository validation blocks
+  undeclared or dynamically keyed attributes before release. Only eligible
+  official-registry installations are recorded — see
   [ADR-001](./adr-001-extension-telemetry-events.md).
 
 ## Consent & Privacy
@@ -242,7 +245,7 @@ flowchart LR
   - `CustomerContent`
   - `EndUserPseudonymizedInformation`
   - `OrganizationalIdentifiableInformation`
-- **Privacy review required** for: new telemetry fields, classification changes, any unhashed PII
+- **Approval coverage:** Have an azd maintainer assess telemetry changes against the approved collection and handling scope using the [privacy review checklist](../specs/metrics-audit/privacy-review-checklist.md). A new field or classification correction does not automatically require a separate formal review. Collection outside the approved scope waits for the required approval.
 
 ## Key Files
 

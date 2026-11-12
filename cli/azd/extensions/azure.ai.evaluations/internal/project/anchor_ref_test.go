@@ -36,10 +36,10 @@ evals:
     dataset: golden
     evaluators:
       - evaluator: builtin.relevance
-        initialization_parameters: &judge
+        initializationParameters: &judge
           model: gpt-5.6-luna
       - evaluator: builtin.coherence
-        initialization_parameters: *judge
+        initializationParameters: *judge
 `), 0o600))
 
 	cfg, err := LoadEvalConfig(path)

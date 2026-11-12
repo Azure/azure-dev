@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,8 +14,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/opt_eval"
+	"azureaiagent/internal/pkg/agents/optconfig"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	projectpkg "azureaiagent/internal/project"
 
@@ -53,7 +55,7 @@ func TestNewOptimizeApplyCommand_CandidateIsRequired(t *testing.T) {
 	assert.Contains(t, err.Error(), "candidate")
 }
 
-func TestPersistInlineAgentEnvironmentMigratesLegacyTemplates(t *testing.T) {
+func TestPersistInlineAgentEnvironmentRejectsNestedConfig(t *testing.T) {
 	props, err := projectpkg.AgentDefinitionToServiceProperties(
 		agent_yaml.ContainerAgent{
 			AgentDefinition: agent_yaml.AgentDefinition{
@@ -83,25 +85,21 @@ func TestPersistInlineAgentEnvironmentMigratesLegacyTemplates(t *testing.T) {
 
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
-	require.NoError(t, persistInlineAgentEnvironment(
+	err = persistInlineAgentEnvironment(
 		t.Context(),
 		client,
 		svc,
 		map[string]string{"OPTIMIZATION_CANDIDATE_ID": "candidate-1"},
-	))
+	)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeDeprecatedAgentServiceConfig, localErr.Code)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	require.Empty(t, server.added)
-	require.Equal(
-		t,
-		[]string{"config.environmentVariables"},
-		server.unsetPaths,
-	)
-	require.Equal(t, map[string]any{
-		"LEGACY_KEY":                "${LEGACY_KEY}",
-		"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
-	}, server.env["basic-agent"])
+	require.Empty(t, server.unsetPaths)
+	require.Empty(t, server.env)
 }
 
 // TestPersistInlineAgentEnvironmentPreservesTopLevelEnv verifies a
@@ -320,7 +318,7 @@ func TestPersistInlineAgentEnvironmentKeepsLegacyOnEnvFailure(
 func TestPersistPromptAgentCandidateConfig(t *testing.T) {
 	t.Parallel()
 
-	for _, legacy := range []bool{false, true} {
+	for _, legacy := range []bool{false} {
 		for _, instructionKey := range []string{"system_prompt", "systemPrompt", "instructions"} {
 			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, instructionKey), func(t *testing.T) {
 				t.Parallel()
@@ -360,7 +358,7 @@ func TestPersistPromptAgentCandidateConfig(t *testing.T) {
 func TestPersistPromptAgentCandidateConfigOptionalTools(t *testing.T) {
 	t.Parallel()
 
-	for _, legacy := range []bool{false, true} {
+	for _, legacy := range []bool{false} {
 		for _, toolsCase := range []string{"missing", "null", "empty"} {
 			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, toolsCase), func(t *testing.T) {
 				t.Parallel()
@@ -497,7 +495,7 @@ func newPromptCandidateTestServer(
 		values["host"] = AiAgentHost
 		values["project"] = "."
 		values["uses"] = []any{"foundry", "existing-skill"}
-		values["harness"] = map[string]any{"type": "github_copilot_preview"}
+		values["harness"] = map[string]any{"type": "microsoft_copilot_preview"}
 		values["env"] = map[string]any{"CUSTOM_SETTING": "${CUSTOM_SETTING}"}
 		values["hooks"] = map[string]any{"predeploy": map[string]any{"shell": "sh", "run": "echo ready"}}
 	}
@@ -568,24 +566,20 @@ func TestPersistPromptAgentCandidateConfigSkipsVoiceAgent(t *testing.T) {
 
 func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 	tests := []struct {
-		name     string
-		kind     string
-		legacy   bool
-		disk     bool
-		override bool
+		name         string
+		kind         string
+		inheritTools bool
 	}{
 		{name: "prompt", kind: "prompt"},
-		{name: "legacy prompt", kind: "prompt", legacy: true},
 		{name: "hosted", kind: "hosted"},
-		{name: "hosted with override", kind: "hosted", override: true},
 		{name: "voice", kind: "prompt-voice"},
-		{name: "file-backed hosted", kind: "hosted", disk: true},
+		{name: "hosted with baseline tools", kind: "hosted", inheritTools: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("NO_COLOR", "1")
 			t.Setenv("AGENT_DEFINITION_PATH", "")
-			svc := newPromptCandidateTestService(t, tt.legacy)
+			svc := newPromptCandidateTestService(t, false)
 			svc.RelativePath = "."
 			if tt.kind != "prompt" {
 				values := map[string]any{"kind": tt.kind, "name": svc.Name}
@@ -598,18 +592,7 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 			}
 			svc.Environment = map[string]string{"CUSTOM_SETTING": "keep"}
 			root := t.TempDir()
-			if tt.disk {
-				svc.AdditionalProperties = nil
-				require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
-					[]byte("kind: hosted\nname: prompt-agent\n"), 0600))
-			}
-			var overridePath string
-			if tt.override {
-				overridePath = filepath.Join(root, "override.yaml")
-				require.NoError(t, os.WriteFile(overridePath, []byte("kind: hosted\nname: override-agent\n"), 0600))
-				t.Setenv("AGENT_DEFINITION_PATH", overridePath)
-			}
-			projectServer, path := newPromptCandidateTestServer(t, svc, tt.legacy)
+			projectServer, path := newPromptCandidateTestServer(t, svc, false)
 			projectServer.rawEnv = map[string]map[string]any{svc.Name: {"CUSTOM_SETTING": "${CUSTOM_SETTING}"}}
 			expected := projectServer.rawSections[svc.Name][path].AsMap()
 			if tt.kind == "prompt" {
@@ -627,8 +610,8 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { client.Close() })
 
-			requests := make(chan string, 4)
-			candidate := mustMarshal(t, map[string]any{
+			requests := make(chan string, 8)
+			candidateFields := map[string]any{
 				"model": "gpt-5", "system_prompt": "Optimized instructions.",
 				"tools": []any{map[string]any{
 					"type": "function",
@@ -636,16 +619,30 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 						"name": "lookup_travel_policy", "description": "Optimized tool description.",
 					},
 				}},
+			}
+			baseline := map[string]any{}
+			if tt.inheritTools {
+				baseline["tools"] = candidateFields["tools"]
+				delete(candidateFields, "tools")
+			}
+			candidate := mustMarshal(t, candidateFields)
+			job := mustMarshal(t, map[string]any{
+				"optimization_configuration": map[string]any{"baseline_agent_configuration": baseline},
 			})
 			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests <- r.URL.Path
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
-				case "/agent_optimization_jobs/opt-1/candidates/candidate-1/config":
+				case "/agent_optimization_jobs/opt-1":
+					_, err := w.Write(job)
+					assert.NoError(t, err)
+				case "/agent_optimization_jobs/opt-1/files":
+					assert.Equal(t, "candidate-1", r.URL.Query().Get("candidate_id"))
+					assert.Equal(t, "config.json", r.URL.Query().Get("path"))
 					_, err := w.Write(candidate)
 					assert.NoError(t, err)
 				case "/agent_optimization_jobs/opt-1/candidates/candidate-1":
-					_, err := w.Write([]byte(`{"files":[]}`))
+					_, err := w.Write([]byte(`{"files":[{"type":"config","path":"config.json"}]}`))
 					assert.NoError(t, err)
 				default:
 					t.Errorf("unexpected API request: %s", r.URL.Path)
@@ -663,17 +660,21 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 			var out bytes.Buffer
 			require.NoError(t, action.apply(t.Context(), client, svc,
 				&azdext.ProjectConfig{Path: root}, &out, color.New(color.Bold)))
-			require.Len(t, requests, 2, "apply must not fetch job status or mutation metadata")
-			require.FileExists(t, filepath.Join(root, agentConfigsDir, "candidate-1", opt_eval.MetadataFile))
+			require.Len(t, requests, 4, "apply loads the candidate, job baseline, and skill manifest")
+			require.FileExists(t, filepath.Join(root, agentConfigsDir, "candidate-1", optconfig.MetadataFile))
+			toolsPath := filepath.Join(root, agentConfigsDir, "candidate-1", optconfig.ToolsFile)
+			toolsData, err := os.ReadFile(toolsPath)
+			require.NoError(t, err)
+			expectedTools := mustMarshal(t, []any{map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name": "lookup_travel_policy", "description": "Optimized tool description.",
+				},
+			}})
+			require.JSONEq(t, string(expectedTools), string(toolsData))
 			require.Equal(t, "candidate-1", envServer.values["dev"]["AGENT_PROMPT_AGENT_OPTIMIZATION_CANDIDATE_ID"])
 			require.Contains(t, out.String(), "applied to")
 			require.Equal(t, map[string]string{"CUSTOM_SETTING": "keep"}, svc.Environment)
-			if tt.override {
-				content, err := os.ReadFile(overridePath)
-				require.NoError(t, err)
-				require.Equal(t, "kind: hosted\nname: override-agent\n", string(content))
-			}
-
 			projectServer.mu.Lock()
 			defer projectServer.mu.Unlock()
 			require.Empty(t, projectServer.configValues)
@@ -693,12 +694,6 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 				require.Equal(t, expected, projectServer.configSections[0].Section.AsMap())
 				require.Empty(t, projectServer.env)
 				require.Empty(t, projectServer.unsetPaths)
-			} else if tt.disk {
-				content, err := os.ReadFile(filepath.Join(root, "agent.yaml"))
-				require.NoError(t, err)
-				require.Contains(t, string(content), "OPTIMIZATION_LOCAL_DIR")
-				require.Contains(t, string(content), "candidate-1")
-				require.Empty(t, projectServer.configSections)
 			} else {
 				require.Empty(t, projectServer.configSections)
 				require.Equal(t, map[string]any{
@@ -706,6 +701,77 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 					"OPTIMIZATION_LOCAL_DIR":    agentConfigsDir,
 					"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
 				}, projectServer.env[svc.Name])
+			}
+		})
+	}
+}
+
+func TestOptimizeApplyRejectsUnsupportedSourcesBeforeMutation(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(*testing.T, string) *azdext.ServiceConfig
+		wantCode   string
+		legacyFile string
+	}{
+		{
+			name: "nested config",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				return newPromptCandidateTestService(t, true)
+			},
+			wantCode: exterrors.CodeDeprecatedAgentServiceConfig,
+		},
+		{
+			name: "definition path",
+			setup: func(t *testing.T, root string) *azdext.ServiceConfig {
+				path := filepath.Join(root, "override.yaml")
+				require.NoError(t, os.WriteFile(path, []byte("kind: hosted\n"), 0o600))
+				t.Setenv("AGENT_DEFINITION_PATH", path)
+				return newPromptCandidateTestService(t, false)
+			},
+			wantCode: exterrors.CodeUnsupportedAgentDefinitionPath,
+		},
+		{
+			name: "implicit agent yaml",
+			setup: func(t *testing.T, root string) *azdext.ServiceConfig {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "agent.yaml"),
+					[]byte("kind: hosted\nname: legacy\n"),
+					0o600,
+				))
+				return &azdext.ServiceConfig{
+					Name:         "legacy",
+					Host:         AiAgentHost,
+					RelativePath: ".",
+				}
+			},
+			wantCode:   exterrors.CodeAgentDefinitionNotFound,
+			legacyFile: "agent.yaml",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AGENT_DEFINITION_PATH", "")
+			root := t.TempDir()
+			svc := tt.setup(t, root)
+			action := &OptimizeApplyAction{
+				flags: &optimizeApplyFlags{candidate: "candidate-1"},
+			}
+			err := action.apply(
+				t.Context(),
+				nil,
+				svc,
+				&azdext.ProjectConfig{Path: root},
+				&bytes.Buffer{},
+				color.New(color.Bold),
+			)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, tt.wantCode, localErr.Code)
+			require.NoDirExists(t, filepath.Join(root, agentConfigsDir))
+			if tt.legacyFile != "" {
+				content, readErr := os.ReadFile(filepath.Join(root, tt.legacyFile))
+				require.NoError(t, readErr)
+				require.Equal(t, "kind: hosted\nname: legacy\n", string(content))
 			}
 		})
 	}
@@ -740,10 +806,23 @@ func TestOptimizeApply_InvalidPromptCandidateDoesNotWrite(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { client.Close() })
 			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				assert.Equal(t, "/agent_optimization_jobs/opt-1/candidates/candidate-1/config", r.URL.Path)
 				w.Header().Set("Content-Type", "application/json")
-				_, err := w.Write([]byte(tt.config))
-				assert.NoError(t, err)
+				switch r.URL.Path {
+				case "/agent_optimization_jobs/opt-1":
+					_, err := w.Write([]byte(`{"optimization_configuration":{}}`))
+					assert.NoError(t, err)
+				case "/agent_optimization_jobs/opt-1/candidates/candidate-1":
+					_, err := w.Write([]byte(`{"files":[{"type":"config","path":"config.json"}]}`))
+					assert.NoError(t, err)
+				case "/agent_optimization_jobs/opt-1/files":
+					assert.Equal(t, "candidate-1", r.URL.Query().Get("candidate_id"))
+					assert.Equal(t, "config.json", r.URL.Query().Get("path"))
+					_, err := w.Write([]byte(tt.config))
+					assert.NoError(t, err)
+				default:
+					t.Errorf("unexpected GA route: %s", r.URL.Path)
+					http.NotFound(w, r)
+				}
 			}))
 			t.Cleanup(api.Close)
 			action := &OptimizeApplyAction{
@@ -772,7 +851,7 @@ func TestOptimizeApply_InvalidPromptCandidateDoesNotWrite(t *testing.T) {
 }
 
 func TestOptimizeApply_PromptPersistenceFailureDoesNotTrack(t *testing.T) {
-	for _, legacy := range []bool{false, true} {
+	for _, legacy := range []bool{false} {
 		for _, failure := range []string{"read", "missing file", "invalid YAML", "missing section", "nil section", "write"} {
 			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, failure), func(t *testing.T) {
 				t.Setenv("AGENT_DEFINITION_PATH", "")
@@ -823,11 +902,16 @@ func TestOptimizeApply_PromptPersistenceFailureDoesNotTrack(t *testing.T) {
 				api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					switch r.URL.Path {
-					case "/agent_optimization_jobs/opt-1/candidates/candidate-1/config":
+					case "/agent_optimization_jobs/opt-1":
+						_, err := w.Write([]byte(`{"optimization_configuration":{}}`))
+						assert.NoError(t, err)
+					case "/agent_optimization_jobs/opt-1/files":
+						assert.Equal(t, "candidate-1", r.URL.Query().Get("candidate_id"))
+						assert.Equal(t, "config.json", r.URL.Query().Get("path"))
 						_, err := w.Write([]byte(`{"model":"gpt-5","instructions":"Optimized instructions."}`))
 						assert.NoError(t, err)
 					case "/agent_optimization_jobs/opt-1/candidates/candidate-1":
-						_, err := w.Write([]byte(`{"files":[]}`))
+						_, err := w.Write([]byte(`{"files":[{"type":"config","path":"config.json"}]}`))
 						assert.NoError(t, err)
 					default:
 						t.Errorf("unexpected API request: %s", r.URL.Path)
@@ -845,7 +929,7 @@ func TestOptimizeApply_PromptPersistenceFailureDoesNotTrack(t *testing.T) {
 				var out bytes.Buffer
 				err = action.apply(t.Context(), client, svc, &azdext.ProjectConfig{Path: root}, &out, color.New(color.Bold))
 				require.ErrorContains(t, err, wantErr)
-				require.FileExists(t, filepath.Join(root, agentConfigsDir, "candidate-1", opt_eval.MetadataFile))
+				require.FileExists(t, filepath.Join(root, agentConfigsDir, "candidate-1", optconfig.MetadataFile))
 				require.Empty(t, envServer.setKeys)
 				require.Equal(t, "previous", envServer.values["dev"][candidateKey])
 				require.NotContains(t, out.String(), "applied to")
@@ -868,7 +952,7 @@ func TestOptimizeApply_PromptPersistenceFailureDoesNotTrack(t *testing.T) {
 }
 
 func TestOptimizeApply_RejectsUnsupportedPromptDefinition(t *testing.T) {
-	for _, legacy := range []bool{false, true} {
+	for _, legacy := range []bool{false} {
 		for _, override := range []string{"prompt", "hosted", "missing file", "whitespace", "dotted service"} {
 			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, override), func(t *testing.T) {
 				root := t.TempDir()
@@ -917,10 +1001,10 @@ func TestOptimizeApply_RejectsUnsupportedPromptDefinition(t *testing.T) {
 				if override == "dotted service" {
 					require.ErrorContains(t, err, "dots in service names")
 				} else {
-					require.ErrorContains(t, err, "uses AGENT_DEFINITION_PATH")
-					require.ErrorContains(t, err, "unset AGENT_DEFINITION_PATH")
-					require.ErrorContains(t, err, "manually update model, instructions, and tools")
-					require.NotContains(t, err.Error(), "OPTIMIZATION_")
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					require.Equal(t, exterrors.CodeUnsupportedAgentDefinitionPath, localErr.Code)
+					require.Contains(t, localErr.Suggestion, "azure.yaml")
 				}
 				if override == "prompt" || override == "hosted" {
 					content, err := os.ReadFile(definitionPath)
@@ -950,7 +1034,13 @@ func TestOptimizeApply_ReferencedDefinitionGuidance(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
-			definition := fmt.Sprintf("kind: %s\nname: assistant\nmodel: gpt-5\ninstructions: Be helpful.\n", kind)
+			model := "gpt-5"
+			if kind == "hosted" {
+				model = "\n  id: gpt-5"
+			}
+			definition := fmt.Sprintf(
+				"kind: %s\nname: assistant\nmodel: %s\ninstructions: Be helpful.\n",
+				kind, model)
 			definitionPath := filepath.Join(root, "assistant.yaml")
 			require.NoError(t, os.WriteFile(definitionPath, []byte(definition), 0600))
 			props, err := structpb.NewStruct(map[string]any{"$ref": "assistant.yaml"})
@@ -1063,15 +1153,15 @@ func TestPrintPromptDiff(t *testing.T) {
 		dir := t.TempDir()
 
 		// Set up baseline with metadata that points to an instruction file.
-		baselineDir := filepath.Join(dir, agentConfigsDir, opt_eval.BaselineDir)
+		baselineDir := filepath.Join(dir, agentConfigsDir, optconfig.BaselineDir)
 		require.NoError(t, os.MkdirAll(baselineDir, 0750))
 		require.NoError(t, os.WriteFile(
-			filepath.Join(baselineDir, opt_eval.InstructionFile),
+			filepath.Join(baselineDir, optconfig.InstructionFile),
 			[]byte("You are a baseline assistant.\nLine two."),
 			0600,
 		))
 		require.NoError(t, os.WriteFile(
-			filepath.Join(baselineDir, opt_eval.MetadataFile),
+			filepath.Join(baselineDir, optconfig.MetadataFile),
 			[]byte("instruction_file: instructions.md\nmodel: gpt-4o\n"),
 			0600,
 		))
@@ -1116,10 +1206,10 @@ func TestPrintPromptDiff(t *testing.T) {
 		dir := t.TempDir()
 
 		// Write metadata without instruction_file.
-		baselineDir := filepath.Join(dir, agentConfigsDir, opt_eval.BaselineDir)
+		baselineDir := filepath.Join(dir, agentConfigsDir, optconfig.BaselineDir)
 		require.NoError(t, os.MkdirAll(baselineDir, 0750))
 		require.NoError(t, os.WriteFile(
-			filepath.Join(baselineDir, opt_eval.MetadataFile),
+			filepath.Join(baselineDir, optconfig.MetadataFile),
 			[]byte("model: gpt-4o\n"),
 			0600,
 		))
@@ -1242,6 +1332,22 @@ func TestAgentConfigMetadata_ResolveSkillDir(t *testing.T) {
 	})
 }
 
+func TestLoadBaselineConfig_RuntimeToolsFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, optconfig.AgentConfigsDir, optconfig.BaselineDir)
+	require.NoError(t, os.MkdirAll(configDir, 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(configDir, optconfig.MetadataFile), []byte("tool_file: tools.json\n"), 0600))
+	toolsPath := filepath.Join(configDir, "tools.json")
+	require.NoError(t, os.WriteFile(toolsPath, []byte("[]"), 0600))
+
+	meta, err := loadBaselineConfig(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "tools.json", meta.ToolsFile)
+	assert.Equal(t, toolsPath, meta.resolveToolsFile(configDir))
+}
+
 func TestAgentConfigMetadata_ResolveToolsFile(t *testing.T) {
 	t.Parallel()
 	t.Run("returns empty when not set", func(t *testing.T) {
@@ -1281,10 +1387,10 @@ func TestWriteAgentConfigFromCandidate(t *testing.T) {
 		err := writeAgentConfigFromCandidate(dir, config)
 		require.NoError(t, err)
 
-		assert.FileExists(t, filepath.Join(dir, opt_eval.MetadataFile))
-		assert.FileExists(t, filepath.Join(dir, opt_eval.InstructionFile))
+		assert.FileExists(t, filepath.Join(dir, optconfig.MetadataFile))
+		assert.FileExists(t, filepath.Join(dir, optconfig.InstructionFile))
 
-		content, err := os.ReadFile(filepath.Join(dir, opt_eval.InstructionFile)) //nolint:gosec // test file path
+		content, err := os.ReadFile(filepath.Join(dir, optconfig.InstructionFile)) //nolint:gosec // test file path
 		require.NoError(t, err)
 		assert.Equal(t, "Test prompt.", string(content))
 	})
@@ -1306,7 +1412,7 @@ func TestWriteAgentConfigFromCandidate(t *testing.T) {
 		err := writeAgentConfigFromCandidate(dir, config)
 		require.NoError(t, err)
 
-		skillFile := filepath.Join(dir, opt_eval.SkillsDir, "search", "SKILL.md")
+		skillFile := filepath.Join(dir, optconfig.SkillsDir, "search", "SKILL.md")
 		assert.FileExists(t, skillFile)
 	})
 
@@ -1315,7 +1421,7 @@ func TestWriteAgentConfigFromCandidate(t *testing.T) {
 		dir := t.TempDir()
 		err := writeAgentConfigFromCandidate(dir, json.RawMessage(`{}`))
 		require.NoError(t, err)
-		assert.FileExists(t, filepath.Join(dir, opt_eval.MetadataFile))
+		assert.FileExists(t, filepath.Join(dir, optconfig.MetadataFile))
 	})
 }
 
@@ -1370,7 +1476,7 @@ func TestWriteToolsFile_NoTools(t *testing.T) {
 	dir := t.TempDir()
 	err := writeToolsFile(dir, map[string]any{"name": "agent"})
 	require.NoError(t, err)
-	assert.NoFileExists(t, filepath.Join(dir, opt_eval.ToolsFile))
+	assert.NoFileExists(t, filepath.Join(dir, optconfig.ToolsFile))
 }
 
 func TestWriteToolsFile_WithTools(t *testing.T) {
@@ -1382,7 +1488,7 @@ func TestWriteToolsFile_WithTools(t *testing.T) {
 	err := writeToolsFile(dir, map[string]any{"tools": tools})
 	require.NoError(t, err)
 
-	data, err := os.ReadFile(filepath.Join(dir, opt_eval.ToolsFile)) //nolint:gosec // test file path
+	data, err := os.ReadFile(filepath.Join(dir, optconfig.ToolsFile)) //nolint:gosec // test file path
 	require.NoError(t, err)
 
 	var parsed []any
@@ -1403,12 +1509,18 @@ func TestWriteAgentConfigFromCandidate_WithTools(t *testing.T) {
 	err := writeAgentConfigFromCandidate(dir, config)
 	require.NoError(t, err)
 
-	assert.FileExists(t, filepath.Join(dir, opt_eval.ToolsFile))
+	assert.FileExists(t, filepath.Join(dir, optconfig.ToolsFile))
 
-	// Verify metadata references tools_file.
-	metaData, err := os.ReadFile(filepath.Join(dir, opt_eval.MetadataFile)) //nolint:gosec // test file path
+	metaData, err := os.ReadFile(filepath.Join(dir, optconfig.MetadataFile)) //nolint:gosec // test file path
 	require.NoError(t, err)
-	assert.Contains(t, string(metaData), "tools_file")
+	var metadata map[string]any
+	require.NoError(t, yaml.Unmarshal(metaData, &metadata))
+	assert.Equal(t, "tools.json", metadata["tool_file"])
+	assert.NotContains(t, metadata, "tools_file")
+	ref := optconfig.AgentRef{ConfigFile: optconfig.MetadataFile}
+	resolved := ref.ResolveConfig(dir)
+	require.NotNil(t, resolved)
+	assert.Equal(t, filepath.Join(dir, "tools.json"), resolved.ToolsFile)
 }
 
 // ---- writeToolsFile: ignores legacy keys ----
@@ -1423,7 +1535,7 @@ func TestWriteToolsFile_IgnoresToolDefinitions(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	assert.NoFileExists(t, filepath.Join(dir, opt_eval.ToolsFile))
+	assert.NoFileExists(t, filepath.Join(dir, optconfig.ToolsFile))
 }
 
 func TestWriteToolsFile_IgnoresToolDescriptions(t *testing.T) {
@@ -1436,7 +1548,7 @@ func TestWriteToolsFile_IgnoresToolDescriptions(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	assert.NoFileExists(t, filepath.Join(dir, opt_eval.ToolsFile))
+	assert.NoFileExists(t, filepath.Join(dir, optconfig.ToolsFile))
 }
 
 // ---- writeAgentConfigFromCandidate: model in metadata ----
@@ -1453,7 +1565,7 @@ func TestWriteAgentConfigFromCandidate_ModelInMetadata(t *testing.T) {
 	err := writeAgentConfigFromCandidate(dir, config)
 	require.NoError(t, err)
 
-	metaData, err := os.ReadFile(filepath.Join(dir, opt_eval.MetadataFile)) //nolint:gosec // test file path
+	metaData, err := os.ReadFile(filepath.Join(dir, optconfig.MetadataFile)) //nolint:gosec // test file path
 	require.NoError(t, err)
 	assert.Contains(t, string(metaData), "model: gpt-4o")
 }
@@ -1469,7 +1581,7 @@ func TestWriteAgentConfigFromCandidate_NoModel(t *testing.T) {
 	err := writeAgentConfigFromCandidate(dir, config)
 	require.NoError(t, err)
 
-	metaData, err := os.ReadFile(filepath.Join(dir, opt_eval.MetadataFile)) //nolint:gosec // test file path
+	metaData, err := os.ReadFile(filepath.Join(dir, optconfig.MetadataFile)) //nolint:gosec // test file path
 	require.NoError(t, err)
 	// model is omitempty, so it should not appear when not set.
 	assert.NotContains(t, string(metaData), "model:")
@@ -1506,27 +1618,27 @@ func TestWriteAgentConfigFromCandidate_FullConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify all files are created.
-	assert.FileExists(t, filepath.Join(dir, opt_eval.MetadataFile))
-	assert.FileExists(t, filepath.Join(dir, opt_eval.InstructionFile))
-	assert.FileExists(t, filepath.Join(dir, opt_eval.ToolsFile))
-	assert.FileExists(t, filepath.Join(dir, opt_eval.SkillsDir, "policy-reviewer", "SKILL.md"))
+	assert.FileExists(t, filepath.Join(dir, optconfig.MetadataFile))
+	assert.FileExists(t, filepath.Join(dir, optconfig.InstructionFile))
+	assert.FileExists(t, filepath.Join(dir, optconfig.ToolsFile))
+	assert.FileExists(t, filepath.Join(dir, optconfig.SkillsDir, "policy-reviewer", "SKILL.md"))
 
 	// Verify metadata has all fields.
-	metaData, err := os.ReadFile(filepath.Join(dir, opt_eval.MetadataFile)) //nolint:gosec // test file path
+	metaData, err := os.ReadFile(filepath.Join(dir, optconfig.MetadataFile)) //nolint:gosec // test file path
 	require.NoError(t, err)
 	metaStr := string(metaData)
 	assert.Contains(t, metaStr, "model: gpt-4o")
 	assert.Contains(t, metaStr, "instruction_file")
 	assert.Contains(t, metaStr, "skill_dir")
-	assert.Contains(t, metaStr, "tools_file")
+	assert.Contains(t, metaStr, "tool_file: tools.json")
 
 	// Verify instructions content.
-	instrData, err := os.ReadFile(filepath.Join(dir, opt_eval.InstructionFile)) //nolint:gosec // test file path
+	instrData, err := os.ReadFile(filepath.Join(dir, optconfig.InstructionFile)) //nolint:gosec // test file path
 	require.NoError(t, err)
 	assert.Equal(t, "Review and approve travel requests.", string(instrData))
 
 	// Verify tools.json is a list.
-	toolsData, err := os.ReadFile(filepath.Join(dir, opt_eval.ToolsFile)) //nolint:gosec // test file path
+	toolsData, err := os.ReadFile(filepath.Join(dir, optconfig.ToolsFile)) //nolint:gosec // test file path
 	require.NoError(t, err)
 	var toolsParsed []any
 	require.NoError(t, json.Unmarshal(toolsData, &toolsParsed))

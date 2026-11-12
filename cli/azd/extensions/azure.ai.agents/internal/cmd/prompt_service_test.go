@@ -5,9 +5,12 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"azureaiagent/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -18,6 +21,45 @@ import (
 
 type failingPromptEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
+}
+
+func TestPromptEnvValuesEnvironmentPrecedence(t *testing.T) {
+	for _, tt := range []struct {
+		name, selected, explicit, want string
+	}{
+		{name: "saved default", want: "prod"},
+		{name: "command selection", selected: "dev", want: "dev"},
+		{name: "explicit name", selected: "prod", explicit: "dev", want: "dev"},
+		{name: "missing selection", selected: "missing"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_ENVIRONMENT", tt.selected)
+			env := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "prod"},
+				environments: map[string]*azdext.Environment{
+					"dev": {Name: "dev"}, "prod": {Name: "prod"},
+				},
+				values: map[string]map[string]string{
+					"dev": {"target": "dev"}, "prod": {"target": "prod"},
+				},
+			}
+			client := newTestAzdClient(t, env, nil)
+			values, err := promptEnvValues(t.Context(), client, tt.explicit)
+			if tt.want == "" {
+				require.Equal(t, codes.NotFound, status.Code(err))
+				require.Nil(t, values)
+				require.Zero(t, env.getValuesCalls)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.want, values["target"])
+			}
+			if tt.selected != "" || tt.explicit != "" {
+				require.Zero(t, env.getCurrentCalls)
+			} else {
+				require.Equal(t, 1, env.getCurrentCalls)
+			}
+		})
+	}
 }
 
 type promptEnvironmentServer struct {
@@ -61,7 +103,7 @@ func TestPromptDefinitionForServiceInline(t *testing.T) {
 			"model":        "gpt-5.6-terra",
 			"instructions": "You are a helpful AI assistant.",
 			"harness": map[string]any{
-				"type": "github_copilot_preview",
+				"type": "microsoft_copilot_preview",
 			},
 		}),
 	}
@@ -72,7 +114,7 @@ func TestPromptDefinitionForServiceInline(t *testing.T) {
 	assert.Equal(t, "renamed-agent", def.Name)
 	assert.Equal(t, "gpt-5.6-terra", def.Model)
 	require.NotNil(t, def.Harness)
-	assert.Equal(t, "github_copilot_preview", def.Harness.Type)
+	assert.Equal(t, "microsoft_copilot_preview", def.Harness.Type)
 }
 
 // TestPromptDefinitionForServiceHosted guards the dispatch: a hosted agent must
@@ -96,7 +138,7 @@ func TestPromptDefinitionForServiceHosted(t *testing.T) {
 // definition does not implicitly classify a service.
 func TestPromptDefinitionForServiceRequiresExplicitKind(t *testing.T) {
 	serviceDir := t.TempDir()
-	agentYaml := "kind: prompt\nname: legacy-agent\nmodel: gpt-4o\nharness:\n  type: github_copilot_preview\n"
+	agentYaml := "kind: prompt\nname: legacy-agent\nmodel: gpt-4o\nharness:\n  type: microsoft_copilot_preview\n"
 	require.NoError(t, os.WriteFile(filepath.Join(serviceDir, "agent.yaml"), []byte(agentYaml), 0600))
 
 	svc := &azdext.ServiceConfig{
@@ -106,8 +148,10 @@ func TestPromptDefinitionForServiceRequiresExplicitKind(t *testing.T) {
 	}
 
 	_, isPrompt, err := promptDefinitionForService(svc, filepath.Dir(serviceDir), serviceDir)
-	require.NoError(t, err)
 	require.False(t, isPrompt)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeDeprecatedAgentServiceConfig, localErr.Code)
 }
 
 // TestPromptAgentNameForServicePrefersDefinition asserts the down handlers
@@ -134,7 +178,7 @@ func TestPromptDefinitionForServiceReturnsInvalidDefinitionError(t *testing.T) {
 		Host: AiAgentHost,
 		AdditionalProperties: mustStruct(t, map[string]any{
 			"kind":    "prompt",
-			"harness": "github_copilot_preview",
+			"harness": "microsoft_copilot_preview",
 		}),
 	}
 
@@ -198,4 +242,62 @@ func TestResolvePromptAgentServicePrefersDeployedName(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, isPrompt)
 	require.Equal(t, "deployed-name", pctx.AgentName())
+}
+
+func TestResolvePromptAgentServiceModelErrorsOnlyBlockInvocation(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		declared []string
+		value    string
+		fallback string
+		want     string
+	}{
+		{"skipped", []string{"template-chat"}, "[]", "", "was skipped"},
+		{"ambiguous", []string{"template-chat", "embedding"}, "[]", "existing", "cannot be inferred"},
+		{"invalid list", []string{"template-chat"}, "{", "", "decoding AI_PROJECT_DEPLOYMENTS"},
+		{"reused", []string{"template-chat"}, "[]", "existing", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			deployments := []any{}
+			for _, name := range test.declared {
+				deployments = append(deployments, map[string]any{"name": name})
+			}
+			server := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"assistant": {
+						Name: "assistant", Host: AiAgentHost, Uses: []string{"project"},
+						AdditionalProperties: mustStruct(t, map[string]any{
+							"kind": "prompt", "model": "template-chat", "instructions": "Be helpful.",
+						}),
+					},
+					"project": {
+						Name: "project", Host: "azure.ai.project",
+						AdditionalProperties: mustStruct(t, map[string]any{"deployments": deployments}),
+					},
+				},
+			}}
+			env := &promptEnvironmentServer{values: map[string]string{
+				"AZURE_SUBSCRIPTION_ID":          "subscription",
+				"AZURE_RESOURCE_GROUP":           "rg",
+				"FOUNDRY_PROJECT_ENDPOINT":       "https://acct.services.ai.azure.com/api/projects/project",
+				"AI_PROJECT_DEPLOYMENTS":         test.value,
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": test.fallback,
+			}}
+			client := newHelpersTestAzdClient(t, server, &helpersPromptServer{}, env)
+			pctx, isPrompt, err := resolvePromptAgentService(t.Context(), client, "assistant", true)
+			require.NoError(t, err)
+			require.True(t, isPrompt)
+			require.Equal(t, "assistant", pctx.AgentName())
+			pctx, _, err = resolvePromptAgentService(
+				t.Context(), client, "assistant", true, withPromptModelResolution(),
+			)
+			if test.want != "" {
+				require.ErrorContains(t, err, test.want)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "existing", pctx.Agent.Model)
+		})
+	}
 }

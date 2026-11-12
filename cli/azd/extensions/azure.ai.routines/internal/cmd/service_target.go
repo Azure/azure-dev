@@ -5,7 +5,7 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -118,6 +118,26 @@ func (p *routineServiceTarget) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
+	return p.deployWithClientFactory(
+		ctx,
+		serviceConfig,
+		serviceContext,
+		targetResource,
+		progress,
+		func(ctx context.Context) (routineUpsertClient, error) {
+			return p.newRoutineServiceClient(ctx)
+		},
+	)
+}
+
+func (p *routineServiceTarget) deployWithClientFactory(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	serviceContext *azdext.ServiceContext,
+	targetResource *azdext.TargetResource,
+	progress azdext.ProgressReporter,
+	clientFactory routineUpsertClientFactory,
+) (*azdext.ServiceDeployResult, error) {
 	ctx = azdext.WithAccessToken(ctx)
 
 	projectRoot, err := routineProjectRoot(ctx, p.projectClient, serviceConfig)
@@ -147,9 +167,24 @@ func (p *routineServiceTarget) Deploy(
 		progress(fmt.Sprintf("Upserting routine %q", serviceConfig.GetName()))
 	}
 
-	client, err := p.newRoutineServiceClient(ctx)
+	client, err := clientFactory(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	existing, err := client.GetRoutine(ctx, body.Name)
+	if err != nil && !exterrors.IsNotFound(err) {
+		return nil, fmt.Errorf("checking routine %q before upsert: %w", body.Name, err)
+	}
+	if existing != nil {
+		body.Authorization, err = routineAuthorizationForUpsert(
+			body.Name,
+			existing,
+			body.Authorization,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if _, err := client.PutRoutine(ctx, body.Name, body); err != nil {
@@ -164,9 +199,8 @@ func (p *routineServiceTarget) Deploy(
 // files written before the per-resource service split.
 func parseRoutineServiceConfig(svc *azdext.ServiceConfig, projectRoot string) (*routines.Routine, error) {
 	props := routineConfigProperties(svc)
-	body := &routines.Routine{}
 	if props == nil {
-		return body, nil
+		return &routines.Routine{}, nil
 	}
 	values := props.AsMap()
 	if _, hasRef := values["$ref"]; hasRef {
@@ -176,12 +210,19 @@ func parseRoutineServiceConfig(svc *azdext.ServiceConfig, projectRoot string) (*
 		}
 		values = resolved
 	}
-	b, err := json.Marshal(values)
+	body, err := routines.ParseAuthoringMap(values)
 	if err != nil {
-		return nil, fmt.Errorf("encoding routine service %q config: %w", svc.GetName(), err)
-	}
-	if err := json.Unmarshal(b, body); err != nil {
+		if keyErr, ok := errors.AsType[*routines.AuthoringKeyError](err); ok {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidRoutineManifest,
+				fmt.Sprintf("routine service %q config is invalid: %s", svc.GetName(), keyErr),
+				fmt.Sprintf("replace %q with %q", keyErr.Path, keyErr.Replacement),
+			)
+		}
 		return nil, fmt.Errorf("parsing routine service %q config: %w", svc.GetName(), err)
+	}
+	if err := validateRoutineAuthorization(body.Authorization); err != nil {
+		return nil, err
 	}
 	return body, nil
 }
@@ -253,13 +294,9 @@ func resolveRoutineServiceRef(values map[string]any, projectRoot string) (map[st
 	if err != nil {
 		return nil, err
 	}
-	data, err := json.Marshal(referenced)
+	resolved, err := routines.AuthoringMap(referenced)
 	if err != nil {
 		return nil, fmt.Errorf("encoding referenced routine service: %w", err)
-	}
-	resolved := map[string]any{}
-	if err := json.Unmarshal(data, &resolved); err != nil {
-		return nil, fmt.Errorf("decoding referenced routine service: %w", err)
 	}
 
 	overlay := maps.Clone(values)

@@ -78,7 +78,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["github_copilot_preview"]
+          "enum": ["microsoft_copilot_preview", "github_copilot_preview"]
         }
       },
       "required": ["type"],
@@ -86,8 +86,21 @@
     },
     "skills": {
       "type": "array",
-      "description": "Foundry skill names available to the prompt agent.",
-      "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
+      "description": "Foundry skills available to the prompt agent. A string selects a locally resolved skill; an object may pin an existing skill version.",
+      "items": {
+        "oneOf": [
+          { "type": "string", "minLength": 1, "pattern": "\\S" },
+          {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
+              "version": { "type": "string", "minLength": 1, "pattern": "\\S" }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          }
+        ]
+      }
     },
     "language": {
       "type": "string",
@@ -95,24 +108,29 @@
       "enum": ["python", "csharp", "docker"]
     },
     "toolbox": {
-      "type": "object",
-      "description": "Named Foundry toolbox consumed by the agent.",
-      "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "minLength": 1 },
-        "projectConnectionId": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Optional Foundry project connection name or ID passed as the toolbox MCP tool's project_connection_id. Omit for toolbox endpoints that do not require project-connection authentication."
-        }
-      },
-      "required": ["name"],
-      "additionalProperties": false
+      "deprecated": true,
+      "description": "Unsupported legacy toolbox authoring field. Use toolboxes instead.",
+      "not": {}
     },
     "modelType": {
       "type": "string",
       "description": "Voice agent model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' references a Foundry model deployment. For Hosted Voice wrappers, use conversationEngine instead.",
       "enum": ["managed", "self_deployed"]
+    },
+    "definitionOverlay": {
+      "type": "object",
+      "description": "Experimental add-only GA wire fields merged into a Voice Agent definition.",
+      "additionalProperties": true
+    },
+    "definition_overlay": {
+      "type": "object",
+      "description": "Experimental YAML alias for definitionOverlay.",
+      "additionalProperties": true
+    },
+    "subProtocol": {
+      "type": "string",
+      "enum": ["realtime", "live"],
+      "description": "Native voice sub-protocol. Set to 'live' for GPT Live; omit for the existing Voice Live realtime path."
     },
     "targetAgent": {
       "$ref": "#/definitions/VoiceTargetAgent",
@@ -165,7 +183,14 @@
       "description": "Prompt-agent reasoning configuration, such as reasoning effort."
     },
     "audio": {
-      "$ref": "#/definitions/VoiceAudio"
+      "description": "Protocol-specific voice audio configuration. GPT Live uses native format/output voice; realtime voice uses input/output.",
+      "anyOf": [
+        { "$ref": "#/definitions/VoiceAudio" },
+        { "$ref": "#/definitions/LiveVoiceAudio" }
+      ]
+    },
+    "delegation": {
+      "$ref": "#/definitions/LiveVoiceDelegation"
     },
     "outputModalities": {
       "type": "array",
@@ -178,14 +203,14 @@
       "description": "Tools available to prompt and prompt-voice agents. Unknown tool types are passed through for forward compatibility.",
       "items": {
         "oneOf": [
-          { "$ref": "#/definitions/GitHubCopilotToolsetPreview" },
+          { "$ref": "#/definitions/MicrosoftCopilotToolsetPreview" },
           {
             "type": "object",
             "required": ["type"],
             "properties": {
               "type": {
                 "type": "string",
-                "not": { "const": "github_copilot_toolset_preview" }
+                "not": { "enum": ["microsoft_copilot_toolset_preview", "github_copilot_toolset_preview"] }
               }
             },
             "additionalProperties": true
@@ -205,7 +230,9 @@
     },
     "handoff": {
       "type": "object",
-      "description": "Voice agent (kind: prompt-voice) handoff configuration.",
+    "deprecated": true,
+    "description": "Unsupported legacy voice handoff configuration. Remove it for the GA API and use telephony transferTargets where applicable.",
+    "maxProperties": 0,
       "additionalProperties": true
     },
     "toolChoice": {
@@ -213,7 +240,7 @@
     },
     "parallelToolCalls": {
       "type": "boolean",
-      "description": "Voice agent (kind: prompt-voice) parallel tool call toggle. Currently rejected by azd for prompt voice runtime."
+    "description": "Voice agent (kind: prompt-voice) parallel tool call toggle."
     },
     "maxOutputTokens": {
       "oneOf": [
@@ -245,11 +272,18 @@
     "metadata": {
       "type": "object",
       "description": "Optional metadata key-value pairs for the agent.",
+      "properties": {
+        "tags": {
+          "type": ["string", "array"],
+          "items": { "type": "string" },
+          "description": "Agent tags. Lists are stored as a JSON array string in Foundry metadata.tags; string values are preserved."
+        }
+      },
       "additionalProperties": true
     },
     "protocols": {
       "type": "array",
-      "description": "Invocation protocols the agent implements (e.g., responses, invocations, invocations_ws, a2a).",
+      "description": "Invocation protocols the agent implements (e.g., responses, invocations, invocations_ws, voice_conversation_engine, a2a).",
       "items": { "$ref": "#/definitions/ProtocolVersionRecord" }
     },
     "registryConnectionId": {
@@ -274,6 +308,10 @@
     "sessionConfiguration": {
       "$ref": "#/definitions/SessionConfiguration"
     },
+    "enableMemorySnapshot": {
+      "type": "boolean",
+      "description": "Opt in to version-level memory snapshot capture and session startup from that snapshot. Requires compatible snapshot hooks and an enabled Foundry subscription and region. Defaults to disabled when omitted; snapshot sessions may have different state persistence behavior."
+    },
     "policies": {
       "type": "array",
       "description": "Governance policies attached to the agent (e.g., Responsible AI).",
@@ -293,6 +331,27 @@
   "additionalProperties": true,
   "allOf": [
     {
+      "if": { "required": ["enableMemorySnapshot"] },
+      "then": { "properties": { "kind": { "const": "hosted" } } }
+    },
+    {
+      "$comment": "Definition overlays are supported only for voice agents.",
+      "if": {
+        "anyOf": [
+          { "required": ["definitionOverlay"] },
+          { "required": ["definition_overlay"] }
+        ]
+      },
+      "then": {
+        "properties": { "kind": { "enum": ["prompt-voice", "voice"] } },
+        "anyOf": [
+          { "required": ["kind"] },
+          { "required": ["$ref"] }
+        ],
+        "not": { "required": ["definitionOverlay", "definition_overlay"] }
+      }
+    },
+    {
       "$comment": "The modelType hosted_agent authoring shape is not supported.",
       "if": {
         "properties": { "modelType": { "const": "hosted_agent" } },
@@ -304,6 +363,88 @@
       "$comment": "The targetAgent authoring shape is not supported.",
       "if": { "required": ["targetAgent"] },
       "then": { "not": {} }
+    },
+    {
+      "$comment": "The singular toolbox authoring shape is not supported. Use toolboxes instead.",
+      "if": { "required": ["toolbox"] },
+      "then": { "not": {} }
+    },
+    {
+      "$comment": "GPT Live is a mutually exclusive native Live protocol branch.",
+      "if": {
+        "properties": { "subProtocol": { "const": "live" } },
+        "required": ["subProtocol"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "const": "voice" },
+          "modelType": { "const": "self_deployed" },
+          "model": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "minLength": 1, "pattern": "\\S" }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+          },
+          "audio": { "$ref": "#/definitions/LiveVoiceAudio" },
+          "greeting": { "$ref": "#/definitions/LiveTemplateGreeting" },
+          "structuredInputs": { "$ref": "#/definitions/LiveStructuredInputs" },
+          "delegation": { "$ref": "#/definitions/LiveVoiceDelegation" },
+          "policies": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "rai_policy" },
+                "raiPolicyName": { "type": "string", "minLength": 1, "pattern": "\\S" }
+              },
+              "required": ["type", "raiPolicyName"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": { "not": { "required": ["$ref"] } },
+            "then": { "required": ["kind", "modelType", "model"] }
+          }
+        ],
+        "not": {
+          "anyOf": [
+            { "required": ["conversationEngine"] }, { "required": ["targetAgent"] },
+            { "required": ["voice"] }, { "required": ["inputSchema"] },
+            { "required": ["outputSchema"] }, { "required": ["outputModalities"] },
+            { "required": ["tools"] }, { "required": ["avatar"] },
+            { "required": ["handoff"] }, { "required": ["toolChoice"] },
+            { "required": ["parallelToolCalls"] }, { "required": ["maxOutputTokens"] },
+            { "required": ["include"] }, { "required": ["telephony"] },
+            { "required": ["toolbox"] }, { "required": ["toolboxes"] },
+            { "required": ["reasoning"] }, { "required": ["reasoningEffort"] },
+            { "required": ["reasoning_effort"] },
+            { "required": ["client"] }, { "required": ["input"] },
+            { "required": ["live_config"] },
+            { "required": ["soundscape"] }, { "required": ["subagentConfig"] },
+            { "required": ["subagent_config"] }, { "required": ["interimResponse"] },
+            { "required": ["interim_response"] },
+            { "required": ["protocols"] }, { "required": ["environmentVariables"] },
+            { "required": ["codeConfiguration"] }, { "required": ["sessionConfiguration"] }
+          ]
+        }
+      },
+      "else": {
+        "if": {
+          "properties": { "subProtocol": { "const": "realtime" } },
+          "required": ["subProtocol"]
+        },
+        "then": { "not": { "required": ["delegation"] } },
+        "else": {
+          "if": { "required": ["$ref"] },
+          "else": { "not": { "required": ["delegation"] } }
+        }
+      }
     },
     {
       "$comment": "A conversationEngine hosted_agent voice wrapper references a deployed hosted service.",
@@ -318,13 +459,16 @@
       },
       "then": {
         "properties": {
-          "kind": { "enum": ["prompt-voice", "voice"] }
+          "kind": { "enum": ["prompt-voice", "voice"] },
+          "audio": { "$ref": "#/definitions/VoiceAudio" },
+          "subProtocol": { "const": "realtime" }
         },
         "required": ["kind"],
         "not": {
           "anyOf": [
             { "required": ["model"] },
             { "required": ["modelType"] },
+            { "required": ["delegation"] },
             { "required": ["targetAgent"] },
             { "required": ["inputSchema"] },
             { "required": ["outputSchema"] },
@@ -334,14 +478,14 @@
             { "required": ["policies"] },
             { "required": ["protocols"] },
             { "required": ["instructions"] },
-            { "required": ["structuredInputs"] },
             { "required": ["tools"] },
             { "required": ["toolChoice"] },
-            { "required": ["parallelToolCalls"] },
-            { "required": ["maxOutputTokens"] },
-            { "required": ["include"] },
-            { "required": ["handoff"] },
-            { "required": ["toolbox"] }
+            { "required": ["subagent_config"] },
+            { "required": ["subagentConfig"] },
+            { "required": ["interim_response"] },
+            { "required": ["interimResponse"] },
+            { "required": ["toolbox"] },
+            { "required": ["toolboxes"] }
           ]
         }
       }
@@ -371,19 +515,42 @@
       "if": {
         "properties": { "kind": { "enum": ["prompt-voice", "voice"] } },
         "required": ["kind"],
-        "not": { "required": ["conversationEngine"] }
+        "not": { "required": ["conversationEngine"] },
+        "anyOf": [
+          {
+            "allOf": [
+              { "not": { "required": ["subProtocol"] } },
+              { "not": { "required": ["$ref"] } }
+            ]
+          },
+          {
+            "properties": { "subProtocol": { "const": "realtime" } },
+            "required": ["subProtocol"]
+          }
+        ]
       },
       "then": {
+        "properties": {
+          "audio": { "$ref": "#/definitions/VoiceAudio" },
+          "subProtocol": { "enum": ["realtime"] }
+        },
         "required": ["model"],
         "not": {
           "anyOf": [
             { "required": ["targetAgent"] },
+      { "required": ["inputSchema"] },
+      { "required": ["outputSchema"] },
             { "required": ["toolbox"] },
+            { "required": ["toolboxes"] },
             { "required": ["policies"] },
             { "required": ["protocols"] },
             { "required": ["environmentVariables"] },
             { "required": ["codeConfiguration"] },
-            { "required": ["sessionConfiguration"] }
+            { "required": ["sessionConfiguration"] },
+            { "required": ["subagent_config"] },
+            { "required": ["subagentConfig"] },
+            { "required": ["interim_response"] },
+            { "required": ["interimResponse"] }
           ]
         }
       }
@@ -490,11 +657,11 @@
       "properties": {
         "store": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "description": { "type": "string" },
-        "chat_model": { "type": "string", "minLength": 1 },
-        "embedding_model": { "type": "string", "minLength": 1 },
+        "chatModel": { "type": "string", "minLength": 1 },
+        "embeddingModel": { "type": "string", "minLength": 1 },
         "scope": { "type": "string", "minLength": 1 },
-        "update_delay": { "type": "integer", "minimum": 0 },
-        "max_memories": { "type": "integer", "minimum": 1 },
+        "updateDelay": { "type": "integer", "minimum": 0 },
+        "maxMemories": { "type": "integer", "minimum": 1 },
         "options": { "$ref": "#/definitions/PromptMemoryOptions" }
       },
       "required": ["store"],
@@ -503,20 +670,20 @@
     "PromptMemoryOptions": {
       "type": "object",
       "properties": {
-        "chat_summary_enabled": { "type": "boolean" },
-        "user_profile_enabled": { "type": "boolean" },
-        "procedural_memory_enabled": { "type": "boolean" },
-        "default_ttl_seconds": { "type": "integer", "minimum": 0 },
-        "user_profile_details": { "type": "string" }
+        "chatSummaryEnabled": { "type": "boolean" },
+        "userProfileEnabled": { "type": "boolean" },
+        "proceduralMemoryEnabled": { "type": "boolean" },
+        "defaultTtlSeconds": { "type": "integer", "minimum": 0 },
+        "userProfileDetails": { "type": "string" }
       },
       "additionalProperties": false
     },
-    "GitHubCopilotToolsetPreview": {
+    "MicrosoftCopilotToolsetPreview": {
       "type": "object",
-      "description": "Enablement configuration for GitHub Copilot built-in tools.",
+      "description": "Enablement configuration for Microsoft Copilot built-in tools.",
       "properties": {
-        "type": { "const": "github_copilot_toolset_preview" },
-        "default_config": {
+        "type": { "enum": ["microsoft_copilot_toolset_preview", "github_copilot_toolset_preview"] },
+        "defaultConfig": {
           "type": "object",
           "properties": {
             "enabled": { "type": "boolean", "default": true }
@@ -621,7 +788,7 @@
       "type": "object",
       "description": "A protocol the agent implements, with its version.",
       "properties": {
-        "protocol": { "type": "string", "description": "Protocol name (e.g., 'responses', 'invocations', 'invocations_ws', 'a2a')." },
+        "protocol": { "type": "string", "description": "Protocol name (e.g., 'responses', 'invocations', 'invocations_ws', 'voice_conversation_engine', 'a2a')." },
         "version": { "type": "string", "description": "Protocol version." }
       },
       "required": ["protocol"],
@@ -656,9 +823,13 @@
       "description": "Foundry-side binding from a phone provider identifier to this prompt voice agent.",
       "properties": {
         "provider": { "type": "string", "enum": ["acs", "twilio"] },
-        "identifier": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "ACS/TPE raw ID (28:orgid:<guid>), ACS purchased number (4:+<E.164>), or Twilio E.164 number (+<E.164>)." },
+        "identifier": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "ACS/TPE raw ID (28:orgid:<guid>) or Twilio E.164 number (+<E.164>)." },
         "connection": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Foundry project connection name used by the telephony runtime." },
-        "transferTargets": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        "transferTargets": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/VoiceTelephonyTransferTarget" },
+          "uniqueItems": true
+        }
       },
       "required": ["provider", "identifier", "connection"],
       "allOf": [
@@ -668,10 +839,51 @@
         },
         {
           "if": { "properties": { "provider": { "const": "acs" } }, "required": ["provider"] },
-          "then": { "properties": { "identifier": { "pattern": "^(28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|4:\\+[1-9][0-9]{6,14})$" } } }
+          "then": { "properties": { "identifier": { "pattern": "^28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" } } }
         }
       ],
       "additionalProperties": false
+    },
+    "VoiceTelephonyTransferTarget": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+        "description": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Maximum 1024 UTF-16 code units; enforced by azd validation." },
+        "destination": { "$ref": "#/definitions/VoiceTelephonyTransferDestination" }
+      },
+      "required": ["name", "description", "destination"],
+      "additionalProperties": false
+    },
+    "VoiceTelephonyTransferDestination": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "pstn" },
+            "value": { "type": "string", "pattern": "^\\+[1-9][0-9]{6,14}$" }
+          },
+          "required": ["kind", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "teams" },
+            "value": { "type": "string", "pattern": "^(28:[oO][rR][gG][iI][dD]:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" }
+          },
+          "required": ["kind", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "sip" },
+            "value": { "type": "string", "pattern": "^[sS][iI][pP][sS]?:([^\\s%;?@]|%[0-9a-fA-F]{2})+@([^\\s%;?@/#]|%[0-9a-fA-F]{2})+(?::[0-9]+)?(?:[;?]([^\\s%#]|%[0-9a-fA-F]{2})*)?$", "description": "Maximum 2048 UTF-16 code units; enforced by azd validation." }
+          },
+          "required": ["kind", "value"],
+          "additionalProperties": false
+        }
+      ]
     },
     "VoiceAudio": {
       "type": "object",
@@ -680,6 +892,169 @@
         "input": { "$ref": "#/definitions/VoiceAudioInput" },
         "output": { "$ref": "#/definitions/VoiceAudioOutput" }
       },
+      "additionalProperties": false
+    },
+    "LiveVoiceAudio": {
+      "type": "object",
+      "description": "Native GPT Live bidirectional audio configuration.",
+      "properties": {
+        "format": { "$ref": "#/definitions/LiveAudioFormat" },
+        "output": {
+          "type": "object",
+          "properties": {
+            "voice": {
+              "oneOf": [
+                { "type": "string", "minLength": 1, "pattern": "\\S" },
+                {
+                  "type": "object",
+                  "properties": { "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S" } },
+                  "required": ["id"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "LiveAudioFormat": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": { "type": { "const": "audio/pcm" }, "rate": { "enum": [16000, 24000] } },
+          "required": ["type", "rate"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": { "type": { "enum": ["audio/pcmu", "audio/pcma"] }, "rate": { "const": 8000 } },
+          "required": ["type", "rate"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LiveTemplateGreeting": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "template" },
+        "text": { "type": "string", "minLength": 1, "pattern": "\\S" }
+      },
+      "required": ["type", "text"],
+      "additionalProperties": false
+    },
+    "LiveStructuredInputs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "defaultValue": {},
+          "schema": { "type": "object" },
+          "required": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "LiveVoiceDelegation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": { "type": { "const": "client" } },
+          "required": ["type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "responses" },
+            "responses": { "$ref": "#/definitions/LiveResponsesDelegation" }
+          },
+          "required": ["type", "responses"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "foundry_managed_agent" },
+            "agentName": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$" },
+            "agentVersion": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" }
+          },
+          "required": ["type", "agentName"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LiveResponsesDelegation": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "instructions": { "type": "string" },
+        "maxOutputTokens": { "type": "integer", "minimum": 1 },
+        "parallelToolCalls": { "type": "boolean" },
+        "serviceTier": { "enum": ["auto", "default", "fast_tier_temp_pilot", "flex", "priority", "ultrafast"] },
+        "reasoning": {
+          "type": "object",
+          "properties": {
+            "effort": { "enum": ["none", "minimal", "low", "medium", "high", "xhigh"] },
+            "summary": { "enum": ["concise", "detailed", "auto"] }
+          },
+          "additionalProperties": false
+        },
+        "text": {
+          "type": "object",
+          "properties": { "verbosity": { "enum": ["low", "medium", "high"] } },
+          "additionalProperties": false
+        },
+        "toolChoice": {
+          "oneOf": [
+            { "enum": ["auto", "none", "required"] },
+            {
+              "type": "object",
+              "properties": { "type": { "const": "function" }, "name": { "type": "string", "minLength": 1, "pattern": "\\S" } },
+              "required": ["type", "name"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "const": "mcp" },
+                "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                "serverLabel": { "type": "string", "minLength": 1, "pattern": "\\S" }
+              },
+              "required": ["type", "name", "serverLabel"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": { "const": "function" },
+                  "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                  "description": { "type": "string" },
+                  "parameters": { "type": ["object", "null"] },
+                  "strict": { "type": ["boolean", "null"] }
+                },
+                "required": ["type", "name"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": { "type": { "const": "web_search" } },
+                "required": ["type"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "required": ["model"],
       "additionalProperties": false
     },
     "VoiceAudioInput": {
@@ -706,9 +1081,19 @@
       "type": "object",
       "properties": {
         "type": { "type": "string", "enum": ["audio/pcm", "audio/pcmu", "audio/pcma"] },
-        "rate": { "type": "integer", "minimum": 1 }
+    "rate": { "type": "integer", "description": "PCM sample rate. Omit it for G.711 audio/pcmu and audio/pcma; audio/pcm supports only 24000." }
       },
       "required": ["type"],
+    "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "audio/pcm" } }, "required": ["type"] },
+      "then": { "properties": { "rate": { "const": 24000 } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["audio/pcmu", "audio/pcma"] } }, "required": ["type"] },
+      "then": { "not": { "required": ["rate"] } }
+    }
+    ],
       "additionalProperties": false
     },
     "VoiceNoiseReduction": {
@@ -753,7 +1138,12 @@
         "name": { "type": "string" },
         "style": { "type": "string" },
         "pitch": { "type": "string" },
-        "rate": { "type": "string" },
+    "rate": {
+      "type": "string",
+      "enum": [""],
+      "deprecated": true,
+      "description": "Unsupported legacy voice rate. Leave blank or remove it and use audio.output.speed for the GA API."
+    },
         "locale": { "type": "string" },
         "volume": { "type": "string" }
       },
@@ -766,9 +1156,9 @@
       "properties": {
         "idleTimeoutSeconds": {
           "type": "integer",
-          "description": "Idle duration in seconds before a session's sandbox is suspended. Range 120–3600 (inclusive). Defaults to 900 when omitted.",
+          "description": "Idle duration in seconds before a session's sandbox is suspended. Range 120–14400 (inclusive). Defaults to 900 when omitted.",
           "minimum": 120,
-          "maximum": 3600
+          "maximum": 14400
         }
       },
       "additionalProperties": false
@@ -805,13 +1195,13 @@
         },
         "inputPaths": {
           "type": "array",
-          "description": "JSONPath expressions selecting request text. Required when inputContentType is 'json' or omitted.",
+          "description": "Selector expressions locating the request text: $ root, dotted members, array indexes, and [*] wildcards. Required when inputContentType is 'json' or omitted.",
           "minItems": 1,
           "items": { "type": "string" }
         },
         "outputPaths": {
           "type": "array",
-          "description": "JSONPath expressions selecting buffered response text. Required when responseMode includes non-streaming and outputContentType is 'json' or omitted.",
+          "description": "Selector expressions locating the buffered response text: $ root, dotted members, array indexes, and [*] wildcards. Required when responseMode includes non-streaming and outputContentType is 'json' or omitted.",
           "minItems": 1,
           "items": { "type": "string" }
         },
@@ -867,8 +1257,8 @@
       "type": "object",
       "description": "Locates the text to moderate inside a single server-sent event frame.",
       "properties": {
-        "eventType": { "type": "string", "pattern": "\\S", "description": "SSE event name this selector applies to." },
-        "textField": { "type": "string", "description": "JSONPath expression, relative to the frame payload, holding the text." }
+        "eventType": { "type": "string", "pattern": "^\\S(?:.*\\S)?$", "description": "Exact value of the \"type\" field inside the event payload that this selector applies to, with no surrounding whitespace." },
+        "textField": { "type": "string", "pattern": "^[^\\s$](?:.*\\S)?$", "description": "Exact name of the field on the frame payload holding the text, for example \"delta\". Do not add surrounding whitespace or prefix it with \"$.\". Defaults to \"delta\" when omitted." }
       },
       "required": ["eventType"],
       "additionalProperties": false

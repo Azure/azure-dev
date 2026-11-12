@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"io"
 	"strings"
 	"testing"
 )
@@ -71,7 +70,7 @@ func TestStreamManagedSSE_TerminalEvents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var sb strings.Builder
-			_, err := streamManagedSSE(strings.NewReader(tt.stream), &sb)
+			err := streamManagedSSE(strings.NewReader(tt.stream), &sb)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected an error")
@@ -85,18 +84,5 @@ func TestStreamManagedSSE_TerminalEvents(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
-	}
-}
-
-// TestStreamManagedSSE_ReturnsResponseID confirms the response id is captured
-// so the next invoke can chain via previous_response_id.
-func TestStreamManagedSSE_ReturnsResponseID(t *testing.T) {
-	stream := "event: response.completed\n" + `data: {"response":{"id":"resp_abc"}}` + "\n\n"
-	id, err := streamManagedSSE(strings.NewReader(stream), io.Discard)
-	if err != nil {
-		t.Fatalf("streamManagedSSE: %v", err)
-	}
-	if id != "resp_abc" {
-		t.Errorf("response id: got %q, want resp_abc", id)
 	}
 }

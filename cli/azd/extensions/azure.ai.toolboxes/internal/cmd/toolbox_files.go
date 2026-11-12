@@ -89,6 +89,9 @@ func parseToolboxFile(path string, out any) error {
 // file).
 func suggestionForParseError(out any, err error) string {
 	msg := err.Error()
+	if suggestion := legacyToolboxKeySuggestion(msg); suggestion != "" {
+		return suggestion
+	}
 	if _, ok := out.(*toolboxToolsFile); ok {
 		switch {
 		case strings.Contains(msg, "description"):
@@ -109,4 +112,17 @@ func suggestionForParseError(out any, err error) string {
 		}
 	}
 	return "fix the file and retry; see the verb's --help for the supported file shape"
+}
+
+func legacyToolboxKeySuggestion(message string) string {
+	switch {
+	case strings.Contains(message, "rai_policy_name"):
+		return "replace 'policies.raiConfig.rai_policy_name' with 'policies.raiConfig.raiPolicyName'"
+	case strings.Contains(message, "rai_config"):
+		return "replace 'policies.rai_config' with 'policies.raiConfig'"
+	case strings.Contains(message, "instance_name"):
+		return "replace 'connections[].instance_name' with 'connections[].instanceName'"
+	default:
+		return ""
+	}
 }

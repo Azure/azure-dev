@@ -4,7 +4,12 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -12,9 +17,92 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
+
+func TestExtensionCommand_ErrorOutput(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, tc := range []struct {
+		name string
+		args []string
+		json bool
+	}{
+		{"long", []string{"demo", "--output", "json"}, true},
+		{"short", []string{"demo", "-o", "json"}, true},
+		{"long-equals", []string{"demo", "--output=json"}, true},
+		{"short-equals", []string{"demo", "-o=json"}, true},
+		{"short-attached", []string{"demo", "-ojson"}, true},
+		{"last-json", []string{"demo", "-onone", "--output=json"}, true},
+		{"last-none", []string{"demo", "-ojson", "--output=none"}, false},
+		{"terminator", []string{"demo", "--", "-ojson"}, false},
+		{"json-before-terminator", []string{"demo", "-ojson", "--", "-onone"}, true},
+		{"default", []string{"demo"}, false},
+		{"text", []string{"demo", "-onone"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, commandErr := range []error{
+				errors.New("extension failed"),
+				&extensions.ExtensionRunError{
+					ExtensionId: "test.extension",
+					Err:         &azdext.LocalError{Message: "extension failed"},
+				},
+			} {
+				opts := &internal.GlobalCommandOptions{}
+				require.NoError(t, ParseGlobalFlags(tc.args, opts))
+				container := ioc.NewNestedContainer(nil)
+				ioc.RegisterInstance(container, opts)
+				registerCommonDependencies(container)
+				root := newTestRoot().UseMiddleware("ux",
+					func(console input.Console, formatter output.Formatter) middleware.Middleware {
+						return middleware.NewUxMiddleware(&middleware.Options{}, console, nil, formatter)
+					})
+				require.NoError(t, bindExtension(root, &extensions.Extension{
+					Id: "test.extension", Namespace: "demo",
+				}))
+				root.Children()[0].Options.ActionResolver = func() actions.Action {
+					return actions.ActionFunc(func(context.Context) (*actions.ActionResult, error) {
+						return nil, commandErr
+					})
+				}
+
+				cmd, err := NewCobraBuilder(container).BuildCommand(root)
+				require.NoError(t, err)
+				cmd.SilenceUsage = true
+				var stdout, stderr bytes.Buffer
+				cmd.SetOut(&stdout)
+				cmd.SetErr(&stderr)
+				cmd.SetArgs(tc.args)
+				require.ErrorIs(t, cmd.ExecuteContext(t.Context()), commandErr)
+
+				const message = "\nERROR: extension failed\n"
+				if !tc.json {
+					require.Equal(t, message, stdout.String())
+					require.Empty(t, stderr.String())
+					continue
+				}
+				require.Empty(t, stdout.String())
+				require.Equal(t, 1, bytes.Count(stderr.Bytes(), []byte("\n")))
+				require.True(t, bytes.HasSuffix(stderr.Bytes(), []byte("\n")))
+				var event struct {
+					Type string `json:"type"`
+					Data struct {
+						Message string `json:"message"`
+					} `json:"data"`
+				}
+				require.NoError(t, json.Unmarshal(stderr.Bytes(), &event))
+				require.Equal(t, "consoleMessage", event.Type)
+				require.Equal(t, message, event.Data.Message)
+			}
+		})
+	}
+}
 
 // findChildByName returns the child action descriptor with the given name, or nil if not found.
 func findChildByName(parent *actions.ActionDescriptor, name string) *actions.ActionDescriptor {
@@ -182,6 +270,128 @@ func TestBindExtension_DeeplyNestedNamespace(t *testing.T) {
 	require.NotNil(t, evalCmd)
 	require.Equal(t, "Extension for fine tuning AI models.", finetuneCmd.Options.Command.Short)
 	require.Equal(t, "Extension for evaluating AI models.", evalCmd.Options.Command.Short)
+}
+
+func TestExtensionNamespaceDocs(t *testing.T) {
+	t.Parallel()
+	const overviewURL = "https://learn.microsoft.com/azure/developer/azure-developer-cli/extensions/overview"
+	tests := []struct {
+		name       string
+		namespaces []string
+		args       []string
+		coreParent bool
+		wantURL    string
+	}{
+		{
+			name:       "shared namespace",
+			namespaces: []string{"ai.eval", "ai.dataset"},
+			args:       []string{"ai", "--docs"},
+			wantURL:    overviewURL,
+		},
+		{
+			name:       "shared namespace reversed",
+			namespaces: []string{"ai.dataset", "ai.eval"},
+			args:       []string{"ai", "--docs"},
+			wantURL:    overviewURL,
+		},
+		{
+			name:       "deep intermediate namespace",
+			namespaces: []string{"ai.models.eval"},
+			args:       []string{"ai", "models", "--docs"},
+			wantURL:    overviewURL,
+		},
+		{
+			name:       "explicit help takes precedence",
+			namespaces: []string{"ai.eval"},
+			args:       []string{"ai", "--docs", "--help"},
+		},
+		{
+			name:       "disabled docs does not open a browser",
+			namespaces: []string{"ai.eval"},
+			args:       []string{"ai", "--docs=false"},
+		},
+		{
+			name:       "existing core namespace retains reference anchor",
+			namespaces: []string{"env.demo"},
+			args:       []string{"env", "--docs"},
+			coreParent: true,
+			wantURL:    referenceDocumentationUrl + "azd-env",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := newTestRoot()
+			if tt.coreParent {
+				root.Add("env", &actions.ActionDescriptorOptions{})
+			}
+			for _, namespace := range tt.namespaces {
+				require.NoError(t, bindExtension(root, &extensions.Extension{
+					Id:        namespace,
+					Namespace: namespace,
+				}))
+			}
+
+			container := ioc.NewNestedContainer(nil)
+			testCtx := mocks.NewMockContext(t.Context())
+			container.MustRegisterSingleton(func() input.Console {
+				return testCtx.Console
+			})
+			cmd, err := NewCobraBuilder(container).BuildCommand(root)
+			require.NoError(t, err)
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			cmd.SetErr(&output)
+
+			var calledURL string
+			ctx := WithBrowserOverride(t.Context(), func(_ context.Context, _ input.Console, url string) {
+				calledURL = url
+			})
+			cmd.SetArgs(tt.args)
+			require.NoError(t, cmd.ExecuteContext(ctx))
+			require.Equal(t, tt.wantURL, calledURL)
+			if tt.wantURL == "" {
+				require.Contains(t, output.String(), "Commands for the ai extension namespace.")
+			}
+		})
+	}
+}
+
+func TestExtensionDocsDelegation(t *testing.T) {
+	t.Parallel()
+	tests := [][]string{
+		{"ai", "eval", "--docs"},
+		{"ai", "eval", "run", "--docs"},
+		{"ai", "eval", "run", "start", "--docs"},
+		{"ai", "dataset", "--docs"},
+		{"ai", "dataset", "create", "--docs"},
+	}
+	for _, args := range tests {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			root := newTestRoot()
+			require.NoError(t, bindExtension(root, &extensions.Extension{
+				Id:        "azure.ai." + args[1],
+				Namespace: "ai." + args[1],
+			}))
+			leaf := findChildByName(findChildByName(root, "ai"), args[1])
+			require.NotNil(t, leaf)
+			leaf.Options.ActionResolver = nil
+			var delegatedArgs []string
+			leaf.Options.Command.RunE = func(cmd *cobra.Command, args []string) error {
+				delegatedArgs = slices.Clone(args)
+				return nil
+			}
+			cmd, err := NewCobraBuilder(ioc.NewNestedContainer(nil)).BuildCommand(root)
+			require.NoError(t, err)
+			ctx := WithBrowserOverride(t.Context(), func(_ context.Context, _ input.Console, _ string) {
+				t.Error("the host must not handle an extension's --docs flag")
+			})
+			cmd.SetArgs(args)
+			require.NoError(t, cmd.ExecuteContext(ctx))
+			require.Equal(t, args[2:], delegatedArgs)
+		})
+	}
 }
 
 func TestStripCwdFlag(t *testing.T) {

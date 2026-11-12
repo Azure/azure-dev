@@ -32,7 +32,7 @@ type Definition struct {
 type ConnectionReference struct {
 	Name         string `json:"name" yaml:"name"`
 	Index        string `json:"index,omitempty" yaml:"index,omitempty"`
-	InstanceName string `json:"instance_name,omitempty" yaml:"instance_name,omitempty"`
+	InstanceName string `json:"instanceName,omitempty" yaml:"instanceName,omitempty"`
 }
 
 // SkillReference identifies a project skill and optionally pins its version.
@@ -43,12 +43,12 @@ type SkillReference struct {
 
 // Policies contains per-version toolbox governance settings.
 type Policies struct {
-	RaiConfig *RaiConfig `json:"rai_config,omitempty" yaml:"rai_config,omitempty"`
+	RaiConfig *RaiConfig `json:"raiConfig,omitempty" yaml:"raiConfig,omitempty"`
 }
 
 // RaiConfig identifies the Responsible AI policy applied to a toolbox version.
 type RaiConfig struct {
-	RaiPolicyName string `json:"rai_policy_name,omitempty" yaml:"rai_policy_name,omitempty"`
+	RaiPolicyName string `json:"raiPolicyName,omitempty" yaml:"raiPolicyName,omitempty"`
 	Name          string `json:"name,omitempty" yaml:"name,omitempty"`
 }
 

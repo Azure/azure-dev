@@ -65,7 +65,7 @@ func provisionActivityBotNames(
 			continue
 		}
 
-		agent, hosted, _, err := project.LoadAgentDefinition(service, args.Project.Path)
+		agent, hosted, _, err := project.LoadHostedAgentDefinition(service, args.Project.Path)
 		if err != nil || !hosted {
 			continue
 		}

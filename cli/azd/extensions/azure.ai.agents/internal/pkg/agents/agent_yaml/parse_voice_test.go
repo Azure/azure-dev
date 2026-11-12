@@ -7,53 +7,13 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-// TestExtractAgentDefinition_PromptVoice verifies a prompt-voice manifest parses
-// into a VoiceAgent with its author-facing fields populated.
-func TestExtractAgentDefinition_PromptVoice(t *testing.T) {
-	yamlContent := []byte(`
-name: voice-agent
-template:
-  kind: prompt-voice
-  name: voice-agent
-  model:
-    id: gpt-realtime
-  instructions: You are a friendly voice assistant.
-  voice: en-US-Ava:DragonHDLatestNeural
-  store: true
-`)
-
-	agent, err := ExtractAgentDefinition(yamlContent)
-	if err != nil {
-		t.Fatalf("ExtractAgentDefinition failed: %v", err)
-	}
-
-	voiceAgent, ok := agent.(VoiceAgent)
-	if !ok {
-		t.Fatalf("Expected VoiceAgent, got %T", agent)
-	}
-	if voiceAgent.Kind != AgentKindPromptVoice {
-		t.Errorf("Kind = %q, want prompt-voice", voiceAgent.Kind)
-	}
-	if voiceAgent.Model == nil || voiceAgent.Model.Id != "gpt-realtime" {
-		t.Errorf("Model = %+v", voiceAgent.Model)
-	}
-	if voiceAgent.Instructions == nil || *voiceAgent.Instructions != "You are a friendly voice assistant." {
-		t.Errorf("Instructions = %v", voiceAgent.Instructions)
-	}
-	if voiceAgent.Voice == nil || *voiceAgent.Voice != "en-US-Ava:DragonHDLatestNeural" {
-		t.Errorf("Voice = %v", voiceAgent.Voice)
-	}
-	if voiceAgent.Store == nil || !*voiceAgent.Store {
-		t.Errorf("Store = %v, want true", voiceAgent.Store)
-	}
-}
-
 // TestValidateAgentDefinition_PromptVoice_OK validates a minimal well-formed
-// prompt-voice manifest.
+// prompt-voice definition.
 func TestValidateAgentDefinition_PromptVoice_OK(t *testing.T) {
-	// ValidateAgentDefinition operates on the template body directly.
 	yamlContent := []byte(`
 kind: prompt-voice
 name: voice-agent
@@ -65,7 +25,7 @@ model:
 	}
 }
 
-// TestValidateAgentDefinition_PromptVoice_MissingModel rejects a manifest with
+// TestValidateAgentDefinition_PromptVoice_MissingModel rejects a definition with
 // no model.id.
 func TestValidateAgentDefinition_PromptVoice_MissingModel(t *testing.T) {
 	yamlContent := []byte(`
@@ -130,12 +90,12 @@ model:
 model_type: unsupported
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "model_type 'unsupported' is not supported") {
-		t.Fatalf("expected invalid model_type error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "modelType 'unsupported' is not supported") {
+		t.Fatalf("expected invalid modelType error, got: %v", err)
 	}
 }
 
-func TestValidateAgentDefinition_PromptVoice_RejectsParallelToolCalls(t *testing.T) {
+func TestValidateAgentDefinition_PromptVoice_AcceptsParallelToolCalls(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice
 name: voice-agent
@@ -143,9 +103,8 @@ model:
   id: gpt-realtime
 parallel_tool_calls: true
 `)
-	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "parallel_tool_calls is not currently supported") {
-		t.Fatalf("expected parallel_tool_calls validation error, got: %v", err)
+	if err := ValidateAgentDefinition(yamlContent); err != nil {
+		t.Fatalf("expected parallelToolCalls to be valid, got: %v", err)
 	}
 }
 
@@ -204,13 +163,22 @@ func TestValidateAgentDefinition_PromptVoice_AdvancedValidationBoundaries(t *tes
 			want: "audio/pcm",
 		},
 		{
-			name: "invalid rate",
+			name: "invalid pcm rate",
 			yaml: `audio:
   input:
     format:
       type: audio/pcm
-      rate: 0`,
-			want: "rate must be greater than 0",
+      rate: 16000`,
+			want: "rate must be 24000",
+		},
+		{
+			name: "g711 rate",
+			yaml: `audio:
+  output:
+    format:
+      type: audio/pcmu
+      rate: 8000`,
+			want: "rate must be omitted for G.711",
 		},
 		{
 			name: "negative duration",
@@ -219,7 +187,7 @@ func TestValidateAgentDefinition_PromptVoice_AdvancedValidationBoundaries(t *tes
     turn_detection:
       type: azure_semantic_vad
       speech_duration_ms: -1`,
-			want: "speech_duration_ms must be >= 0",
+			want: "speechDurationMs must be >= 0",
 		},
 		{
 			name: "nan threshold",
@@ -265,6 +233,46 @@ func TestValidateAgentDefinition_PromptVoice_AdvancedValidationBoundaries(t *tes
 	}
 }
 
+func TestValidateAgentDefinition_PromptVoiceRejectsUnsupportedLegacyFields(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "handoff", body: "handoff:\n  target: another-agent", want: "handoff is not supported by the GA voice agent API"},
+		{name: "voice rate", body: "audio:\n  output:\n    voice:\n      type: openai\n      name: alloy\n      rate: '+10%'", want: "use audio.output.speed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateAgentDefinition([]byte("kind: voice\nname: voice\nmodel:\n  id: gpt-realtime\n" + tt.body))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestValidateAgentDefinition_PromptVoiceAllowsEmptyLegacyFields(t *testing.T) {
+	t.Parallel()
+	yamlContent := []byte(`
+kind: voice
+name: voice
+model:
+  id: gpt-realtime
+handoff: {}
+audio:
+  output:
+    voice:
+      type: openai
+      name: alloy
+      rate: ""
+`)
+	if err := ValidateAgentDefinition(yamlContent); err != nil {
+		t.Fatalf("expected empty legacy fields to remain parseable, got %v", err)
+	}
+}
+
 func TestValidateAgentDefinition_PromptVoice_MaxOutputTokensValidation(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -300,8 +308,8 @@ max_output_tokens: %s
 `, tt.valueYaml)
 			err := ValidateAgentDefinition(yamlContent)
 			if tt.wantErr {
-				if err == nil || !strings.Contains(err.Error(), "max_output_tokens") {
-					t.Fatalf("expected max_output_tokens validation error, got: %v", err)
+				if err == nil || !strings.Contains(err.Error(), "maxOutputTokens") {
+					t.Fatalf("expected maxOutputTokens validation error, got: %v", err)
 				}
 				return
 			}
@@ -341,9 +349,6 @@ telephony:
     - provider: acs
       identifier: 28:orgid:00000000-0000-0000-0000-000000000001
       connection: telephony-acs
-    - provider: acs
-      identifier: 4:+14255550123
-      connection: telephony-acs
     - provider: twilio
       identifier: +14255550124
       connection: telephony-twilio
@@ -381,6 +386,15 @@ func TestValidateAgentDefinition_PromptVoice_InvalidTelephonyBindings(t *testing
       identifier: not-a-number
       connection: c`,
 			want: "identifier must be +<E.164>",
+		},
+		{
+			name: "legacy ACS purchased number",
+			yaml: `telephony:
+  bindings:
+    - provider: acs
+      identifier: 4:+14255550123
+      connection: c`,
+			want: "identifier must be 28:orgid:<guid>",
 		},
 		{
 			name: "missing connection",
@@ -452,6 +466,9 @@ conversation_engine:
   type: hosted_agent
   name: voice-target
   version: deployed
+greeting:
+  type: template
+  text: Hello
 `)
 	if err := ValidateAgentDefinition(yamlContent); err != nil {
 		t.Fatalf("expected conversation_engine hosted voice definition to be valid, got: %v", err)
@@ -486,7 +503,7 @@ conversation_engine:
   type: hosted_agent
   name: target
 `,
-			want: "cannot be combined with model_type",
+			want: "cannot be combined with modelType",
 		},
 		{
 			name: "target agent conflict",
@@ -509,7 +526,7 @@ name: voice-wrapper
 conversation_engine:
   type: hosted_agent
 `,
-			want: "conversation_engine.name is required",
+			want: "conversationEngine.name is required",
 		},
 		{
 			name: "invalid version",
@@ -521,7 +538,7 @@ conversation_engine:
   name: target
   version: typo
 `,
-			want: "conversation_engine.version must be 'deployed'",
+			want: "conversationEngine.version must be 'deployed'",
 		},
 	}
 	for _, test := range tests {
@@ -530,6 +547,95 @@ conversation_engine:
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("expected %q, got %v", test.want, err)
 			}
+		})
+	}
+}
+
+func TestValidateAgentDefinition_TransferTargetsMatchViennaWriteConstraints(t *testing.T) {
+	tests := []struct {
+		name, targets, want string
+	}{
+		{
+			name: "case-insensitive duplicate names",
+			targets: `
+        - {name: support, description: First, destination: {kind: pstn, value: '+14255550123'}}
+        - {name: Support, description: Second, destination: {kind: pstn, value: '+14255550124'}}`,
+			want: "duplicates transfer target",
+		},
+		{
+			name: "SIP requires user and host",
+			targets: `
+        - {name: sip, description: SIP, destination: {kind: sip, value: 'sip:contoso.com'}}`,
+			want: "user@host",
+		},
+		{
+			name: "SIP rejects malformed percent escape",
+			targets: `
+        - {name: sip, description: SIP, destination: {kind: sip, value: 'sip:user%ZZ@example.com'}}`,
+			want: "user@host",
+		},
+		{
+			name: "description cannot be whitespace",
+			targets: `
+        - {name: support, description: '   ', destination: {kind: pstn, value: '+14255550123'}}`,
+			want: "description is required",
+		},
+	}
+
+	validBoundary := fmt.Appendf(nil, `kind: voice
+name: voice-agent
+model: {id: gpt-realtime}
+telephony:
+  bindings:
+    - provider: twilio
+      identifier: +14255550123
+      connection: c
+      transfer_targets:
+        - name: sip
+          description: %q
+          destination: {kind: sip, value: 'sip:user@example.com'}
+`, strings.Repeat("😀", 512))
+	require.NoError(t, ValidateAgentDefinition(validBoundary))
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			yamlContent := `kind: voice
+name: voice-agent
+model: {id: gpt-realtime}
+telephony:
+  bindings:
+    - provider: twilio
+      identifier: +14255550123
+      connection: c
+      transfer_targets:` + test.targets + "\n"
+			require.ErrorContains(t, ValidateAgentDefinition([]byte(yamlContent)), test.want)
+		})
+	}
+
+	for _, test := range []struct {
+		name, description, value, want string
+	}{
+		{name: "description UTF-16 limit", description: strings.Repeat("😀", 513), value: "+14255550123", want: "description is too long"},
+		{name: "destination UTF-16 limit", description: "Support", value: "sip:" + strings.Repeat("a", 2040) + "@example.com", want: "destination.value is too long"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			kind := "pstn"
+			if strings.HasPrefix(test.value, "sip:") {
+				kind = "sip"
+			}
+			yamlContent := fmt.Sprintf(`kind: voice
+name: voice-agent
+model: {id: gpt-realtime}
+telephony:
+  bindings:
+    - provider: twilio
+      identifier: +14255550123
+      connection: c
+      transfer_targets:
+        - name: support
+          description: %q
+          destination: {kind: %s, value: %q}
+`, test.description, kind, test.value)
+			require.ErrorContains(t, ValidateAgentDefinition([]byte(yamlContent)), test.want)
 		})
 	}
 }
@@ -543,8 +649,8 @@ target_agent:
   service: target
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "model_type hosted_agent is not supported") ||
-		!strings.Contains(err.Error(), "target_agent is not supported") {
+	if err == nil || !strings.Contains(err.Error(), "modelType hosted_agent is not supported") ||
+		!strings.Contains(err.Error(), "targetAgent is not supported") {
 		t.Fatalf("expected hosted voice fields on hosted kind to fail, got: %v", err)
 	}
 }
@@ -578,8 +684,8 @@ func TestValidateAgentDefinition_LegacyTargetMigrationGuidance(t *testing.T) {
 			t.Run(kind+"/"+fields, func(t *testing.T) {
 				t.Parallel()
 				err := ValidateAgentDefinition([]byte("kind: " + kind + "\nname: wrapper\n" + fields))
-				if err == nil || !strings.Contains(err.Error(), "target_agent are not supported; use conversation_engine") {
-					t.Fatalf("expected conversation_engine migration guidance, got: %v", err)
+				if err == nil || !strings.Contains(err.Error(), "targetAgent are not supported; use conversationEngine") {
+					t.Fatalf("expected conversationEngine migration guidance, got: %v", err)
 				}
 				if strings.Contains(err.Error(), "only valid when model_type is 'hosted_agent'") {
 					t.Fatalf("error recommends rejected authoring: %v", err)
@@ -607,21 +713,18 @@ instructions: not allowed
 	}
 }
 
-func TestValidateAgentDefinition_HostedVoiceRejectsSchemas(t *testing.T) {
-	yamlContent := []byte(`
-kind: prompt-voice
-name: voice-wrapper
-model_type: hosted_agent
-target_agent:
-  service: voice-target
-inputSchema:
-  properties: []
-outputSchema:
-  properties: []
-`)
-	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "input_schema, output_schema") {
-		t.Fatalf("expected target-owned schema validation error, got: %v", err)
+func TestValidateAgentDefinition_VoiceRejectsSchemas(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{
+		"model_type: managed\nmodel:\n  id: gpt-realtime\n",
+		"model_type: self_deployed\nmodel:\n  id: deployment\n",
+		"conversation_engine:\n  type: hosted_agent\n  name: target\ngreeting:\n  text: Hello\n",
+	} {
+		err := ValidateAgentDefinition([]byte("kind: voice\nname: voice\n" + body +
+			"inputSchema: {}\noutputSchema: {}\n"))
+		if err == nil || !strings.Contains(err.Error(), "not properties of the GA voice agent definition") {
+			t.Fatalf("expected schema exclusion error, got: %v", err)
+		}
 	}
 }
 
@@ -640,9 +743,9 @@ session_configuration:
   idleTimeoutMinutes: 10
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "environment_variables is not supported") ||
-		!strings.Contains(err.Error(), "code_configuration is not supported") ||
-		!strings.Contains(err.Error(), "session_configuration is not supported") {
+	if err == nil || !strings.Contains(err.Error(), "environmentVariables is not supported") ||
+		!strings.Contains(err.Error(), "codeConfiguration is not supported") ||
+		!strings.Contains(err.Error(), "sessionConfiguration is not supported") {
 		t.Fatalf("expected prompt voice code/session config validation errors, got: %v", err)
 	}
 }
@@ -663,6 +766,11 @@ protocols:
 	}
 }
 
+func TestValidateAgentDefinition_PromptVoiceRejectsEmptyProtocols(t *testing.T) {
+	yamlContent := []byte("kind: voice\nname: voice\nmodel: {id: gpt-realtime}\nprotocols: []\n")
+	require.ErrorContains(t, ValidateAgentDefinition(yamlContent), "protocols is not supported")
+}
+
 func TestValidateAgentDefinition_PromptVoiceRejectsPolicies(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice
@@ -679,6 +787,11 @@ policies:
 	}
 }
 
+func TestValidateAgentDefinition_PromptVoiceRejectsEmptyPolicies(t *testing.T) {
+	yamlContent := []byte("kind: voice\nname: voice\nmodel: {id: gpt-realtime}\npolicies: []\n")
+	require.ErrorContains(t, ValidateAgentDefinition(yamlContent), "policies is not supported")
+}
+
 func TestValidateAgentDefinition_PromptVoiceRejectsMalformedPolicies(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice
@@ -688,7 +801,7 @@ model:
 policies: invalid
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "template.policies is not valid") {
+	if err == nil || !strings.Contains(err.Error(), "policies is not supported") {
 		t.Fatalf("expected malformed policy validation error, got: %v", err)
 	}
 }

@@ -1,5 +1,46 @@
 # Release History
 
+## 1.0.0 (2026-11-05)
+
+### Other Changes
+
+- [[#10836]](https://github.com/Azure/azure-dev/pull/10836) Remove Preview labels from command help and extension descriptions.
+
+## 1.0.0-beta.11 (2026-10-23)
+
+### Features Added
+
+- [[#10483]](https://github.com/Azure/azure-dev/pull/10483) Add `azd ai connection add <name> --file <path>` to add or update local Connection services without creating remote resources, with explicit project selection and JSON output.
+- [[#10480]](https://github.com/Azure/azure-dev/pull/10480) Add local Connection definition validation for nested file references, project boundaries, authentication fields, and environment references without resolving secret values.
+
+### Other Changes
+
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+- [[#10482]](https://github.com/Azure/azure-dev/pull/10482) Preserve unrelated project settings and literal environment bindings during Connection authoring, validate the complete candidate before writing, and avoid writes for unchanged declarations.
+
+## 1.0.0-beta.10 (2026-10-15)
+
+### Bugs Fixed
+
+- [[#10393]](https://github.com/Azure/azure-dev/pull/10393) Fix Linux amd64 binaries requiring the build agent's GLIBC version so the extension can start on Debian Bullseye.
+
+## 1.0.0-beta.9 (2026-09-30)
+
+### Bugs Fixed
+
+- [[#10104]](https://github.com/Azure/azure-dev/pull/10104) Reject explicitly supplied `--project-endpoint` flags on commands that do not use a project endpoint instead of silently ignoring them. Thanks @Siglud for the contribution!
+
+### Other Changes
+
+- [[#10104]](https://github.com/Azure/azure-dev/pull/10104) Improve `azd ai connection` help formatting, examples, and configuration and environment guidance. Thanks @Siglud for the contribution!
+
+## 1.0.0-beta.8 (2026-09-24)
+
+### Other Changes
+
+- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2 to address the GHSA-2v4p-qf9q-27wj security advisory.
+- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0 to address the GHSA-8wmf-6v46-5gfg security advisory.
+
 ## 1.0.0-beta.7 (2026-09-17)
 
 ### Breaking Changes

@@ -58,22 +58,12 @@ func (p *principalIDProvider) CurrentPrincipalId(ctx context.Context) (string, e
 }
 
 const (
-	UserType             PrincipalType = "User"
-	ServicePrincipalType PrincipalType = "ServicePrincipal"
+	UserType             PrincipalType = auth.UserPrincipalType
+	ServicePrincipalType PrincipalType = auth.ServicePrincipalType
 )
 
-type PrincipalType string
+type PrincipalType = auth.PrincipalType
 
 func (p *principalIDProvider) CurrentPrincipalType(ctx context.Context) (PrincipalType, error) {
-	loginDetails, err := p.authManager.LogInDetails(ctx)
-	if err != nil {
-		return "", fmt.Errorf("fetching login details: %w", err)
-	}
-
-	principalType := UserType
-	if loginDetails.LoginType == auth.ClientIdLoginType {
-		principalType = ServicePrincipalType
-	}
-
-	return principalType, nil
+	return p.authManager.CurrentPrincipalType(ctx)
 }

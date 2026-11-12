@@ -4,114 +4,12 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
-
-const (
-	// copyConfirmThreshold is the max file/folder count before prompting for confirmation.
-	copyConfirmThreshold = 10
-	// previewLimit is the max items shown in the directory preview.
-	previewLimit = 5
-)
-
-// validateLocalContainerAgentCopy checks if copying the manifest directory to targetDir is safe,
-// prompting for confirmation if the directory contains many files.
-func (a *InitAction) validateLocalContainerAgentCopy(ctx context.Context, manifestPointer string, targetDir string) error {
-	manifestDir := filepath.Dir(manifestPointer)
-	srcAbs, err := filepath.Abs(manifestDir)
-	if err != nil {
-		return fmt.Errorf("resolving manifest directory %s: %w", manifestDir, err)
-	}
-	dstAbs, err := filepath.Abs(targetDir)
-	if err != nil {
-		return fmt.Errorf("resolving target directory %s: %w", targetDir, err)
-	}
-
-	// Re-init case: manifest already lives in the destination directory.
-	// We still overwrite agent.yaml, but we should not attempt to copy the directory into itself.
-	if isSamePath(dstAbs, srcAbs) {
-		return nil
-	}
-
-	if isSubpath(dstAbs, srcAbs) {
-		return fmt.Errorf(
-			"cannot copy agent files: target '%s' is inside the manifest directory '%s'.\n"+
-				"Move the manifest to a separate directory containing only the agent files.",
-			dstAbs,
-			srcAbs,
-		)
-	}
-
-	entries, err := os.ReadDir(srcAbs)
-	if err != nil {
-		return fmt.Errorf("reading manifest directory %s: %w", srcAbs, err)
-	}
-	entryCount := len(entries)
-	if entryCount <= copyConfirmThreshold {
-		return nil
-	}
-
-	if a.flags.noPrompt {
-		return nil
-	}
-
-	preview, err := formatDirectoryPreview(entries, previewLimit)
-	if err != nil {
-		return fmt.Errorf("formatting directory preview for %s: %w", srcAbs, err)
-	}
-
-	fmt.Printf("%s", output.WithWarningFormat(
-		"\nThe manifest directory '%s' contains %d items that will be copied into '%s': %s\n\n",
-		srcAbs,
-		entryCount,
-		dstAbs,
-		preview))
-
-	confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-		Options: &azdext.ConfirmOptions{
-			Message:      "Continue?",
-			DefaultValue: new(false),
-			HelpMessage:  "To avoid copying too much, move the manifest to a separate directory with only the agent files you want to include.",
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("prompting for confirmation: %w", err)
-	}
-	if confirmResponse == nil || confirmResponse.Value == nil || !*confirmResponse.Value {
-		return fmt.Errorf("operation cancelled by user")
-	}
-
-	return nil
-}
-
-// formatDirectoryPreview returns a comma-separated preview of directory entries,
-// truncating with "(+N more)" if exceeding maxEntries.
-func formatDirectoryPreview(entries []os.DirEntry, maxEntries int) (string, error) {
-	labels := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() {
-			name += "/"
-		}
-		labels = append(labels, name)
-	}
-
-	slices.Sort(labels)
-	if maxEntries <= 0 || len(labels) <= maxEntries {
-		return strings.Join(labels, ", "), nil
-	}
-
-	return fmt.Sprintf("%s, ... (+%d more)", strings.Join(labels[:maxEntries], ", "), len(labels)-maxEntries), nil
-}
 
 // isSubpath returns true if child is inside or equal to parent.
 func isSubpath(child, parent string) bool {

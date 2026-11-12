@@ -225,6 +225,11 @@ func newDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 By default the CLI prompts for confirmation. Pass --force to skip the prompt.
 In --no-prompt mode (set globally), --force is required.`,
+		Example: `  # Delete a skill after confirmation
+  azd ai skill delete greet-user
+
+  # Delete a skill in automation without prompting
+  azd ai skill delete greet-user --force --no-prompt`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]

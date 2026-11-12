@@ -62,8 +62,8 @@ func TestEitherJudgeSpellingSatisfiesTheRequirement(t *testing.T) {
 	}
 }
 
-// evaluation_level is supplied from the eval's own declaration rather than
-// written under initialization_parameters, so requiring it must not refuse a
+// evaluationLevel is supplied from the eval's own declaration rather than
+// written under initializationParameters, so requiring it must not refuse a
 // configuration that sets the level.
 func TestRequiredEvaluationLevelComesFromTheDeclaration(t *testing.T) {
 	err := checkEvaluatorRequirements(

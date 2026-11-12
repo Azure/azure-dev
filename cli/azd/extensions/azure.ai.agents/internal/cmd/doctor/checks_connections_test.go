@@ -20,9 +20,9 @@ import (
 func fixedConnectionsProbe(
 	names []string, err error, captured *[]string,
 ) foundryConnectionsProbeFn {
-	return func(_ context.Context, account, project string) ([]string, error) {
+	return func(_ context.Context, endpoint string) ([]string, error) {
 		if captured != nil {
-			*captured = []string{account, project}
+			*captured = []string{endpoint}
 		}
 		return names, err
 	}
@@ -48,6 +48,9 @@ func healthyConnectionsPrior() []Result {
 		{ID: "local.azure-yaml", Status: StatusPass},
 		{ID: "local.environment-selected", Status: StatusPass},
 		{ID: "local.agent-service-detected", Status: StatusPass},
+		{ID: "local.project-endpoint-set", Status: StatusPass, Details: map[string]any{
+			"projectEndpoint": "https://acct-1.services.ai.azure.com/api/projects/proj-1",
+		}},
 		{ID: "remote.auth", Status: StatusPass},
 		{ID: "remote.foundry-endpoint", Status: StatusPass},
 	}
@@ -89,13 +92,13 @@ func TestCheckConnections_SkipsCascadeFromUpstream(t *testing.T) {
 
 // ---- State emptiness ----
 
-func TestCheckConnections_SkipsWhenNoManifestConnections(t *testing.T) {
+func TestCheckConnections_SkipsWhenNoConnectionServices(t *testing.T) {
 	t.Parallel()
 	var probeCalls int
 	deps := Dependencies{
 		assembleState: fixedAssembler(&nextstep.State{HasConnections: false}),
 		probeFoundryConnections: func(
-			_ context.Context, _, _ string,
+			_ context.Context, _ string,
 		) ([]string, error) {
 			probeCalls++
 			return nil, nil
@@ -104,7 +107,6 @@ func TestCheckConnections_SkipsWhenNoManifestConnections(t *testing.T) {
 	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
 	require.Equal(t, StatusSkip, res.Status)
 	require.Contains(t, res.Message, "no enabled connection services")
-	require.Contains(t, res.Message, "legacy connection resources found")
 	require.Equal(t, 0, probeCalls)
 }
 
@@ -120,7 +122,7 @@ func TestCheckConnections_FailsOnLoadErrorsBeforeSkip(t *testing.T) {
 			},
 		}),
 		probeFoundryConnections: func(
-			_ context.Context, _, _ string,
+			_ context.Context, _ string,
 		) ([]string, error) {
 			probeCalls++
 			return nil, nil
@@ -156,7 +158,7 @@ func TestCheckConnections_FailsWhenAssemblerReturnsNilState(t *testing.T) {
 		"assembler errs[0] should surface in the Fail message")
 }
 
-func TestCheckConnections_SkipsWhenProjectIDUnset(t *testing.T) {
+func TestCheckConnections_SkipsWithoutPriorEndpoint(t *testing.T) {
 	t.Parallel()
 	state := &nextstep.State{
 		HasConnections: true,
@@ -165,15 +167,20 @@ func TestCheckConnections_SkipsWhenProjectIDUnset(t *testing.T) {
 		},
 	}
 	deps := Dependencies{
-		assembleState:           fixedAssembler(state),
-		readProjectResourceIDFn: fixedProjectIDReader("", nil),
+		assembleState: fixedAssembler(state),
+		readProjectResourceIDFn: func(context.Context, *azdext.AzdClient) (string, error) {
+			t.Fatal("must not fall back to the project ARM ID")
+			return "", nil
+		},
 	}
-	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
+	prior := healthyConnectionsPrior()
+	prior[3].Details = nil
+	res := runConnectionsCheck(t, deps, prior)
 	require.Equal(t, StatusSkip, res.Status)
-	require.Contains(t, res.Message, "AZURE_AI_PROJECT_ID")
+	require.Contains(t, res.Message, "FOUNDRY_PROJECT_ENDPOINT")
 }
 
-func TestCheckConnections_SkipsWhenProjectIDReadFails(t *testing.T) {
+func TestCheckConnections_FailsInvalidEndpointWithoutProbing(t *testing.T) {
 	t.Parallel()
 	state := &nextstep.State{
 		HasConnections: true,
@@ -184,50 +191,21 @@ func TestCheckConnections_SkipsWhenProjectIDReadFails(t *testing.T) {
 	var probeCalls int
 	deps := Dependencies{
 		assembleState: fixedAssembler(state),
-		readProjectResourceIDFn: fixedProjectIDReader(
-			"", errors.New("environment service unavailable"),
-		),
 		probeFoundryConnections: func(
-			_ context.Context, _, _ string,
+			_ context.Context, _ string,
 		) ([]string, error) {
 			probeCalls++
 			return nil, nil
 		},
 	}
-	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
-	require.Equal(t, StatusSkip, res.Status)
-	require.Contains(t, res.Message, "could not read AZURE_AI_PROJECT_ID")
-	require.Contains(t, res.Message, "environment service unavailable")
-	require.NotContains(t, res.Message, "is not set")
-	require.Equal(t, 0, probeCalls)
-}
-
-func TestCheckConnections_SkipsWhenProjectIDUnparsable(t *testing.T) {
-	t.Parallel()
-	state := &nextstep.State{
-		HasConnections: true,
-		Connections: []nextstep.ResourceRef{
-			{Name: "blob-storage", ServiceName: "chat"},
-		},
-	}
-	var probeCalls int
-	deps := Dependencies{
-		assembleState: fixedAssembler(state),
-		readProjectResourceIDFn: fixedProjectIDReader(
-			"/subscriptions/sub/resourceGroups/rg/providers/Other.Provider/"+
-				"accounts/acct/projects/proj",
-			nil,
-		),
-		probeFoundryConnections: func(
-			_ context.Context, _, _ string,
-		) ([]string, error) {
-			probeCalls++
-			return nil, nil
-		},
-	}
-	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
-	require.Equal(t, StatusSkip, res.Status)
-	require.Contains(t, res.Message, "could not parse account / project")
+	prior := healthyConnectionsPrior()
+	prior[3].Details["projectEndpoint"] =
+		"https://user:password@example.com/api/projects/proj?sig=secret"
+	res := runConnectionsCheck(t, deps, prior)
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Message, "invalid FOUNDRY_PROJECT_ENDPOINT")
+	require.NotContains(t, res.Message, "password")
+	require.NotContains(t, res.Message, "secret")
 	require.Equal(t, 0, probeCalls)
 }
 
@@ -251,9 +229,9 @@ func TestCheckConnections_SkipsWhenProbeErrors(t *testing.T) {
 	require.Contains(t, res.Message, "Foundry transient")
 	require.NotEmpty(t, res.Suggestion, "transport-error skip must surface retry guidance")
 	require.Equal(t,
-		[]string{"acct-1", "proj-1"},
+		[]string{"https://acct-1.services.ai.azure.com/api/projects/proj-1"},
 		captured,
-		"probe must receive accountName / projectName parsed from project ID")
+		"probe must receive the validated endpoint from prior checks")
 }
 
 // ---- Classification ----
@@ -309,7 +287,7 @@ func TestCheckConnections_FailsWithMissing(t *testing.T) {
 	require.Contains(t, res.Suggestion, "azd deploy --all")
 	require.Contains(t, res.Suggestion, "azure.ai.connection services")
 	require.NotContains(t, res.Suggestion, "azd provision")
-	require.Contains(t, res.Suggestion, "Migrate bundled or legacy")
+	require.NotContains(t, res.Suggestion, "legacy")
 	require.Contains(t, res.Suggestion, "agent uses before deploying")
 	require.EqualValues(t, 1, res.Details["matchedCount"])
 }
@@ -354,69 +332,27 @@ func TestCheckConnections_MissingEntryOmitsEmptyDetail(t *testing.T) {
 	require.NotContains(t, res.Message, "[]")
 }
 
-// ---- Parser ----
-
-func TestParseAccountProjectFromProjectID(t *testing.T) {
+func TestCheckConnections_CustomSubdomainDoesNotUseARMAccountName(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name        string
-		input       string
-		wantAccount string
-		wantProject string
-		wantError   bool
-	}{
-		{
-			name:        "canonical case",
-			input:       validProjectResourceID,
-			wantAccount: "acct-1",
-			wantProject: "proj-1",
+	const endpoint = "https://custom-dns.services.ai.azure.com/api/projects/proj-1"
+	var captured []string
+	deps := Dependencies{
+		assembleState: fixedAssembler(&nextstep.State{
+			HasConnections: true,
+			Connections:    []nextstep.ResourceRef{{Name: "registry", ServiceName: "agent"}},
+		}),
+		readProjectResourceIDFn: func(context.Context, *azdext.AzdClient) (string, error) {
+			t.Fatal("connection discovery must not read the ARM ID")
+			return "", nil
 		},
-		{
-			name: "mixed-case segment markers",
-			input: "/SUBSCRIPTIONS/sub-1/RESOURCEGROUPS/rg-1" +
-				"/PROVIDERS/MICROSOFT.COGNITIVESERVICES/ACCOUNTS/acct-2/PROJECTS/p-2",
-			wantAccount: "acct-2",
-			wantProject: "p-2",
-		},
-		{
-			name:      "missing project segment",
-			input:     "/subscriptions/s/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/a",
-			wantError: true,
-		},
-		{
-			name:      "missing account segment",
-			input:     "/subscriptions/s/resourceGroups/rg/providers/Microsoft.CognitiveServices/projects/p",
-			wantError: true,
-		},
-		{
-			name:      "garbage input",
-			input:     "not-a-resource-id",
-			wantError: true,
-		},
-		{
-			name:      "account and project without ARM path",
-			input:     "accounts/acct/projects/proj",
-			wantError: true,
-		},
-		{
-			name:      "extra resource segment",
-			input:     validProjectResourceID + "/child",
-			wantError: true,
-		},
+		probeFoundryConnections: fixedConnectionsProbe([]string{"registry"}, nil, &captured),
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			account, project, err := parseAccountProjectFromProjectID(tc.input)
-			if tc.wantError {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tc.wantAccount, account)
-			require.Equal(t, tc.wantProject, project)
-		})
-	}
+	prior := healthyConnectionsPrior()
+	prior[3].Details["projectEndpoint"] = endpoint
+	result := runConnectionsCheck(t, deps, prior)
+	require.Equal(t, StatusPass, result.Status)
+	require.Equal(t, []string{endpoint}, captured)
+	require.Equal(t, "custom-dns", result.Details["account"])
 }
 
 // ---- Factory wiring ----

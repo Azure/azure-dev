@@ -65,6 +65,8 @@ func TestAnExtensionlessBlobIsStillRecognised(t *testing.T) {
 	require.NoError(t, err, "storage answered; the name should not have decided this")
 	require.NotNil(t, content)
 	assert.True(t, content.SingleFile, "one blob, not a container")
+	assert.Equal(t, []string{"rows"}, content.Files)
+	assert.True(t, content.blobURI)
 	assert.Positive(t, *listed, "the listing was tried first, which is what made the fallback necessary")
 }
 

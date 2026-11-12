@@ -1,0 +1,28 @@
+Author a local azure.ai.connection service in azure.yaml. The definition remains in the supplied file. This command only edits the existing project; it does not read or modify an azd environment, resolve values, or create or deploy remote resources.
+
+For a new service, the sole Foundry Project is selected automatically. With multiple Projects, use --project or select one interactively. Updates preserve a unique existing owner; use --project to repair a missing or ambiguous owner. Dangling or malformed uses entries must be repaired manually.
+
+The complete project mutation is validated before writing. Updates use separate Project API requests, not a transaction. If a request fails, inspect the manifest and rerun to reconcile a possible partial update.
+
+Usage
+  azd ai connection add <name> --file <path> [--project <service-key>] [flags]
+
+Flags
+      --file string    : Path to a Connection YAML or JSON definition
+      --project string : Existing azure.ai.project service key to own this Connection
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for add
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "table")
+  -p, --project-endpoint string : Foundry project endpoint URL for remote list, show, create, update, and delete only
+
+Examples
+  Add a Connection definition to an existing Project service
+    azd ai connection add search --file connections/search.yaml
+
+  Select the Project service explicitly
+    azd ai connection add search --file connections/search.yaml --project foundry

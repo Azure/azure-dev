@@ -901,7 +901,7 @@ func (p *GitHubCiProvider) setPipelineVariables(
 		})
 	}
 
-	if infraOptions.Provider == provisioning.Terraform {
+	if usesTerraform(infraOptions) {
 		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
 		for _, key := range remoteStateKeys {
 			value, ok := p.env.LookupEnv(key)
@@ -978,7 +978,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		Kind: ux.GitHubSecret,
 	})
 
-	if infraOptions.Provider == provisioning.Terraform {
+	if usesTerraform(infraOptions) {
 		for key, info := range map[string]struct {
 			value  string
 			secret bool

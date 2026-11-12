@@ -16,6 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
@@ -38,6 +39,7 @@ type DeployFlags struct {
 	All         bool
 	Timeout     int
 	fromPackage string
+	preview     bool
 	flagSet     *pflag.FlagSet
 	global      *internal.GlobalCommandOptions
 	*internal.EnvFlag
@@ -93,6 +95,7 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 			defaultDeployTimeoutSeconds,
 		),
 	)
+	local.BoolVar(&d.preview, "preview", false, "Preview changes to services without deploying them.")
 }
 
 func (d *DeployFlags) SetCommon(envFlag *internal.EnvFlag) {
@@ -200,6 +203,7 @@ func NewDeployAction(
 type DeploymentResult struct {
 	Timestamp time.Time                               `json:"timestamp"`
 	Services  map[string]*project.ServiceDeployResult `json:"services"`
+	Messages  []commandresult.ServiceEventMessage     `json:"messages,omitempty"`
 }
 
 func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -242,10 +246,25 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 	}
 
+	if da.flags.preview && (da.flags.fromPackage != "" || da.flags.timeoutChanged()) {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"'--preview' cannot be combined with '--from-package' or '--timeout': %w",
+				internal.ErrInvalidFlagCombination,
+			),
+			Suggestion: "Run 'azd deploy --preview' without '--from-package' and '--timeout'.",
+		}
+	}
+
 	stableServices, err := da.importManager.ServiceStableFiltered(
 		ctx, da.projectConfig, targetServiceName, da.env.Getenv)
 	if err != nil {
 		return nil, err
+	}
+
+	// Preview skips service initialization, tool checks, and the package, publish, and deploy steps.
+	if da.flags.preview {
+		return da.deployPreview(ctx, stableServices)
 	}
 
 	if err := da.projectManager.InitializeServices(ctx, stableServices); err != nil {
@@ -267,6 +286,100 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	// any service count (including N=1) with a uniform progress tracker
 	// and the same package → publish → deploy step topology.
 	return da.deployServicesGraph(ctx, stableServices, startTime)
+}
+
+// DeploymentPreviewResult is the JSON output of `azd deploy --preview`.
+type DeploymentPreviewResult struct {
+	Timestamp time.Time                                      `json:"timestamp"`
+	Services  map[string]*project.ServiceDeployPreviewResult `json:"services"`
+}
+
+// deployPreview asks each service target to preview its deployment without packaging, publishing, or deploying.
+func (da *DeployAction) deployPreview(
+	ctx context.Context,
+	services []*project.ServiceConfig,
+) (*actions.ActionResult, error) {
+	da.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     "Previewing service deployment changes (azd deploy --preview)",
+		TitleNote: "This is a preview. No changes will be applied to your services.",
+	})
+
+	startTime := time.Now()
+	results := map[string]*project.ServiceDeployPreviewResult{}
+	for _, svc := range services {
+		stepMessage := fmt.Sprintf("Previewing service %s", svc.Name)
+		da.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		result, err := da.previewService(ctx, svc)
+		if errors.Is(err, project.ErrDeployPreviewNotSupported) {
+			da.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			da.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: fmt.Sprintf(
+					"Service '%s' (host: %s) does not support deployment preview.", svc.Name, svc.Host),
+			})
+			continue
+		}
+
+		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
+		if err != nil {
+			return nil, fmt.Errorf("previewing service '%s': %w", svc.Name, err)
+		}
+
+		results[svc.Name] = result
+		if da.formatter.Kind() != output.JsonFormat && result.Message != "" {
+			da.console.Message(ctx, result.Message)
+		}
+	}
+
+	if da.formatter.Kind() == output.JsonFormat {
+		previewResult := DeploymentPreviewResult{
+			Timestamp: time.Now(),
+			Services:  results,
+		}
+
+		if err := da.formatter.Format(previewResult, da.writer, nil); err != nil {
+			return nil, fmt.Errorf("deploy preview result could not be displayed: %w", err)
+		}
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: fmt.Sprintf("Generated deployment preview in %s.", ux.DurationAsText(since(startTime))),
+		},
+	}, nil
+}
+
+func (da *DeployAction) previewService(
+	ctx context.Context,
+	svc *project.ServiceConfig,
+) (*project.ServiceDeployPreviewResult, error) {
+	serviceTarget, err := da.serviceManager.GetServiceTarget(ctx, svc)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		result     *project.ServiceDeployPreviewResult
+		previewErr error
+	)
+	if previewer, ok := serviceTarget.(project.ServiceTargetResourcePreviewer); ok {
+		targetResource, err := da.serviceManager.GetTargetResource(ctx, svc, serviceTarget)
+		if err != nil {
+			return nil, fmt.Errorf("resolving target resource: %w", err)
+		}
+
+		result, previewErr = previewer.PreviewWithTarget(ctx, svc, targetResource)
+	} else if previewer, ok := serviceTarget.(project.ServiceTargetPreviewer); ok {
+		result, previewErr = previewer.Preview(ctx, svc)
+	} else {
+		return nil, project.ErrDeployPreviewNotSupported
+	}
+
+	if previewErr == nil && result == nil {
+		return nil, errors.New("service target returned no deployment preview")
+	}
+
+	return result, previewErr
 }
 
 // dotNetPackagePublishBuildGateKey groups standard .NET services whose
@@ -292,6 +405,9 @@ func (da *DeployAction) deployServicesGraph(
 	if err != nil {
 		return nil, err
 	}
+	serviceOrder := deploymentServiceOrder(stableServices)
+	messageCollector := commandresult.NewServiceEventMessageCollector()
+	ctx = commandresult.WithServiceEventMessageCollector(ctx, messageCollector)
 	concurrency := resolveDeployGraphConcurrency(da.env.LookupEnv)
 
 	// Wrap console for thread-safe output during parallel deployment.
@@ -305,15 +421,12 @@ func (da *DeployAction) deployServicesGraph(
 	// machine-readable output modes (e.g. --output json) so raw progress
 	// lines don't pollute stdout alongside the JSON result, and when no
 	// writer is available (e.g. test mocks).
+	var resumePreviewer func()
 	if w := origConsole.GetWriter(); da.formatter.Kind() != output.JsonFormat && w != nil {
-		serviceNames := make([]string, len(stableServices))
-		for i, svc := range stableServices {
-			serviceNames[i] = svc.Name
-		}
 		da.progressTracker = newDeployProgressTracker(
 			w,
 			origConsole.IsSpinnerInteractive(),
-			serviceNames,
+			serviceOrder,
 		)
 		da.console = &silentSpinnerConsole{syncConsole: sc}
 		// Suppress previewer output at the shared console level so that
@@ -321,7 +434,15 @@ func (da *DeployAction) deployServicesGraph(
 		// don't corrupt the progress table display.
 		if ps, ok := origConsole.(input.PreviewerPauser); ok {
 			ps.PausePreviewer()
-			defer ps.ResumePreviewer()
+			resumed := false
+			resumePreviewer = func() {
+				if resumed {
+					return
+				}
+				resumed = true
+				ps.ResumePreviewer()
+			}
+			defer resumePreviewer()
 		}
 	} else {
 		// Still wrap the console for thread-safety without suppressing spinners.
@@ -379,21 +500,7 @@ func (da *DeployAction) deployServicesGraph(
 		},
 		OnStepDone: func(stepName string, err error) {
 			if err != nil {
-				// Classify terminal state: skipped (dependency failure or
-				// FailFast cascade) and parent-cancellation both surface via
-				// OnStepDone with a non-nil error, but they are not service
-				// failures and should not render as "Failed" in the progress
-				// UI.
-				phase := phaseFailed
-				detail := err.Error()
-				switch {
-				case exegraph.IsStepSkipped(err):
-					phase = phaseSkipped
-					detail = ""
-				case errors.Is(err, context.Canceled):
-					phase = phaseSkipped
-					detail = "canceled"
-				}
+				phase, detail := serviceStepCompletionProgress(err)
 				for _, prefix := range []string{"deploy-", "publish-", "package-"} {
 					if svc, ok := strings.CutPrefix(stepName, prefix); ok {
 						da.updateProgress(svc, phase, detail)
@@ -432,12 +539,19 @@ func (da *DeployAction) deployServicesGraph(
 		return unwrapStepErrors(result)
 	})
 
-	// Stop ticker and render final progress state.
+	// Stop the ticker, clean up previews, then render the final table.
 	if stopTicker != nil {
 		stopTicker()
 	}
+	if resumePreviewer != nil {
+		resumePreviewer()
+	}
 	if da.progressTracker != nil {
 		da.progressTracker.RenderFinal()
+	}
+	messages := messageCollector.Snapshot(serviceOrder)
+	if da.formatter.Kind() != output.JsonFormat {
+		displayServiceEventMessages(ctx, origConsole, messages)
 	}
 
 	// Clean up temporary package artifacts created during graph execution.
@@ -446,6 +560,19 @@ func (da *DeployAction) deployServicesGraph(
 	}
 
 	if err != nil {
+		if da.formatter.Kind() == output.JsonFormat && len(messages) > 0 {
+			if formatErr := formatDeploymentResult(
+				da.formatter,
+				da.writer,
+				state,
+				messages,
+			); formatErr != nil {
+				err = errors.Join(
+					err,
+					fmt.Errorf("deploy result could not be displayed: %w", formatErr),
+				)
+			}
+		}
 		return nil, err
 	}
 
@@ -468,12 +595,7 @@ func (da *DeployAction) deployServicesGraph(
 	}
 
 	if da.formatter.Kind() == output.JsonFormat {
-		deployResult := DeploymentResult{
-			Timestamp: time.Now(),
-			Services:  state.ResultsSnapshot(),
-		}
-
-		if fmtErr := da.formatter.Format(deployResult, da.writer, nil); fmtErr != nil {
+		if fmtErr := formatDeploymentResult(da.formatter, da.writer, state, messages); fmtErr != nil {
 			return nil, fmt.Errorf("deploy result could not be displayed: %w", fmtErr)
 		}
 	}
@@ -517,7 +639,9 @@ func (da *DeployAction) resolveDeployTimeout() (time.Duration, error) {
 func resolveDeployTimeout(flags *DeployFlags) (time.Duration, error) {
 	if flags != nil && flags.timeoutChanged() {
 		if flags.Timeout <= 0 {
-			return 0, errors.New("invalid value for --timeout: must be greater than 0 seconds")
+			return 0, &deployTimeoutValueError{
+				message: "invalid value for --timeout: must be greater than 0 seconds",
+			}
 		}
 
 		return time.Duration(flags.Timeout) * time.Second, nil
@@ -526,15 +650,33 @@ func resolveDeployTimeout(flags *DeployFlags) (time.Duration, error) {
 	if envVal, ok := os.LookupEnv("AZD_DEPLOY_TIMEOUT"); ok {
 		seconds, err := strconv.Atoi(envVal)
 		if err != nil {
-			return 0, fmt.Errorf("invalid AZD_DEPLOY_TIMEOUT value '%s': must be an integer number of seconds", envVal)
+			return 0, &deployTimeoutValueError{message: fmt.Sprintf(
+				"invalid AZD_DEPLOY_TIMEOUT value '%s': must be an integer number of seconds",
+				envVal,
+			)}
 		}
 		if seconds <= 0 {
-			return 0, fmt.Errorf("invalid AZD_DEPLOY_TIMEOUT value '%d': must be greater than 0 seconds", seconds)
+			return 0, &deployTimeoutValueError{message: fmt.Sprintf(
+				"invalid AZD_DEPLOY_TIMEOUT value '%d': must be greater than 0 seconds",
+				seconds,
+			)}
 		}
 		return time.Duration(seconds) * time.Second, nil
 	}
 
 	return time.Duration(defaultDeployTimeoutSeconds) * time.Second, nil
+}
+
+type deployTimeoutValueError struct {
+	message string
+}
+
+func (e *deployTimeoutValueError) Error() string {
+	return e.message
+}
+
+func (e *deployTimeoutValueError) Unwrap() error {
+	return internal.ErrInvalidArgValue
 }
 
 func GetCmdDeployHelpDescription(*cobra.Command) string {
@@ -546,6 +688,9 @@ func GetCmdDeployHelpDescription(*cobra.Command) string {
 			fmt.Sprintf("When %s is set, only the specific service is deployed.", output.WithHighLightFormat("<service>"))),
 		formatHelpNote("After the deployment is complete, the endpoint is printed. To start the service, select" +
 			" the endpoint or paste it in a browser."),
+		formatHelpNote(fmt.Sprintf("When %s is set, services whose host supports deployment preview report"+
+			" the changes a deployment would make. Nothing is packaged, published, or deployed, and hooks do not run.",
+			output.WithHighLightFormat("--preview"))),
 	})
 }
 

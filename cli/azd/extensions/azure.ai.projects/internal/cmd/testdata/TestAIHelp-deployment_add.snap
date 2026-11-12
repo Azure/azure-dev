@@ -1,0 +1,28 @@
+Add an azd-managed model deployment before ejection.
+
+Usage
+  azd ai project deployment add [flags]
+
+Flags
+      --capacity int32  : Deployment capacity
+      --force           : Replace a conflicting inline declaration
+      --location string : Deployment location
+      --model string    : Model name or publisher/model
+      --name string     : Deployment name
+      --sku string      : Deployment SKU name
+      --version string  : Model version
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for add
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: default, json, none) (default "default")
+
+Examples
+  Declare a managed model deployment
+    azd ai project deployment add --model OpenAI/gpt-4.1 --name chat
+
+  Apply the project's managed infrastructure
+    azd provision

@@ -29,6 +29,9 @@ The service runs the routine asynchronously. By default, the command prints
 the dispatch ID and action correlation ID. Use --async to suppress extra
 output for scripting; use 'routine run list <name>' to inspect execution
 results.`,
+		Example: `  # Dispatch a routine and then inspect its execution history
+  azd ai routine dispatch nightly-summary
+  azd ai routine run list nightly-summary`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			output = extCtx.OutputFormat

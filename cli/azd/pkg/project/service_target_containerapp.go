@@ -255,6 +255,7 @@ func (at *containerAppTarget) Deploy(
 
 		progress.SetProgress(NewServiceProgress("Deploying revision"))
 		stopProgress := startPollingProgress(progress, "Waiting for revision deployment", 15*time.Second)
+		defer stopProgress()
 		deploymentResult, err := at.armDeployments.DeployToResourceGroup(
 			ctx,
 			targetResource.SubscriptionId(),
@@ -315,6 +316,7 @@ func (at *containerAppTarget) Deploy(
 
 			progress.SetProgress(NewServiceProgress("Updating container app job image"))
 			stopProgress := startPollingProgress(progress, "Waiting for container app job update", 15*time.Second)
+			defer stopProgress()
 			err = at.containerAppService.UpdateContainerAppJobImage(
 				ctx,
 				targetResource.SubscriptionId(),
@@ -337,6 +339,7 @@ func (at *containerAppTarget) Deploy(
 
 			progress.SetProgress(NewServiceProgress("Updating container app revision"))
 			stopProgress := startPollingProgress(progress, "Waiting for container revision", 15*time.Second)
+			defer stopProgress()
 			err = at.containerAppService.AddRevision(
 				ctx,
 				targetResource.SubscriptionId(),

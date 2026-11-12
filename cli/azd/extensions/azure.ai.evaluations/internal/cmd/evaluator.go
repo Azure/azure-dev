@@ -74,7 +74,9 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 		Use:   verb + " <name>",
 		Short: short,
 		Long: short + "\n\n" +
-			"An evaluator is a rubric: a JSON file of weighted scoring dimensions.",
+			"An evaluator is a rubric: a JSON file of weighted scoring dimensions.\n" +
+			"Updating retains existing display name, description, categories, and supported evaluation levels\n" +
+			"unless the input document explicitly supplies those fields.",
 		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&evaluatorWriteAction{
@@ -113,12 +115,16 @@ func (a *evaluatorWriteAction) Run() error {
 	}
 	defer ec.Close()
 
+	return a.write(ctx, ec, body)
+}
+
+func (a *evaluatorWriteAction) write(ctx context.Context, ec *evalContext, body json.RawMessage) error {
 	// This is not a point read, whatever the route looks like: with no version
 	// the client resolves the latest through the version listing, and that
 	// listing lags a publish. A 404 moments after a create therefore means "not
 	// caught up", not "no such evaluator".
 	existing, readErr := ec.evalClient.GetEvaluatorRaw(ctx, a.name, "", ProjectEndpointAPIVersion)
-	if readErr != nil && !eval_api.IsNotFound(readErr) {
+	if readErr != nil && !eval_api.IsEvaluatorAbsent(readErr) {
 		return messages.CheckingEvaluatorExists(a.name, readErr)
 	}
 	// Only update acts on absence, so only update pays to establish it. Making
@@ -126,12 +132,12 @@ func (a *evaluatorWriteAction) Run() error {
 	// absent evaluator is the expected answer and not a suspicious one.
 	if readErr != nil && a.verb == "update" {
 		existing, readErr = settledEvaluatorRead(ctx, ec, a.name)
-		if readErr != nil && !eval_api.IsNotFound(readErr) {
+		if readErr != nil && !eval_api.IsEvaluatorAbsent(readErr) {
 			return messages.CheckingEvaluatorExists(a.name, readErr)
 		}
 	}
-	// A non-404 already returned above, so reaching here means the read either
-	// found the evaluator or the service said it is unknown.
+	// Other read failures returned above; only a 404 or a valid empty listing
+	// counts as absence here.
 	if err := checkAssetExistence(a.verb, "evaluator", a.name, readErr == nil, true); err != nil {
 		return err
 	}
@@ -140,6 +146,14 @@ func (a *evaluatorWriteAction) Run() error {
 	// same version and replacing it.
 	if readErr != nil {
 		existing = nil
+	}
+
+	if a.verb == "update" {
+		var err error
+		body, err = withRemoteCatalogMetadata(body, existing)
+		if err != nil {
+			return messages.EvaluatorProblem(a.name, err)
+		}
 	}
 
 	created, err := ec.evalClient.CreateEvaluatorVersion(
@@ -193,7 +207,7 @@ func settledEvaluatorRead(
 			}
 		}
 		raw, err = ec.evalClient.GetEvaluatorRaw(ctx, name, "", ProjectEndpointAPIVersion)
-		if err == nil || !eval_api.IsNotFound(err) {
+		if err == nil || !eval_api.IsEvaluatorAbsent(err) {
 			return raw, err
 		}
 	}
@@ -239,11 +253,117 @@ func ensureDefinitionType(definition json.RawMessage) (json.RawMessage, error) {
 	if doc == nil {
 		return nil, messages.DefinitionIsNull()
 	}
-	if _, ok := doc["type"]; ok {
-		return definition, nil
+	if _, ok := doc["type"]; !ok {
+		doc["type"] = json.RawMessage(fmt.Sprintf("%q", rubricDefinitionType))
+		definition, err := json.Marshal(doc)
+		if err != nil {
+			return nil, err
+		}
+		return validateRubricDefinition(definition)
 	}
-	doc["type"] = json.RawMessage(fmt.Sprintf("%q", rubricDefinitionType))
+	return validateRubricDefinition(definition)
+}
+
+// withCatalogMetadata adds the declaration's catalog fields to a publish body.
+//
+// The rubric file holds what a human edits -- type, dimensions, pass_threshold
+// -- so a version published from it alone arrived with a blank catalog name and
+// whatever compatibility the service inferred from the rubric, which is
+// narrower than the version before it. Losing supported_evaluation_levels is
+// the part that bites: an evaluator valid for conversation evals looks
+// incompatible after an ordinary rubric edit.
+//
+// Only keys the body does not already carry are filled, and only from values
+// the declaration actually has. A document that states its own catalog fields
+// keeps them, and a declaration that records none blanks nothing.
+func withCatalogMetadata(body json.RawMessage, decl project.EvaluatorDecl) (json.RawMessage, error) {
+	metadata := map[string]any{}
+	if decl.DisplayName != "" {
+		metadata["display_name"] = decl.DisplayName
+	}
+	if decl.Categories != nil {
+		metadata["categories"] = decl.Categories
+	}
+	if decl.SupportedEvaluationLevels != nil {
+		metadata["supported_evaluation_levels"] = decl.SupportedEvaluationLevels
+	}
+	return withEvaluatorMetadata(body, metadata)
+}
+
+// evaluatorPublishBody fills missing catalog fields without changing the authored
+// definition: explicit document fields win over the catalog, then the service.
+// Callers must make digest and reuse decisions using the original body.
+func evaluatorPublishBody(
+	body json.RawMessage, decl project.EvaluatorDecl, existing json.RawMessage,
+) (json.RawMessage, error) {
+	body, err := withCatalogMetadata(body, decl)
+	if err != nil || len(existing) == 0 {
+		return body, err
+	}
+	return withRemoteCatalogMetadata(body, existing)
+}
+
+// withRemoteCatalogMetadata keeps catalog fields out of the editable rubric
+// without losing them when that rubric is published through standalone update.
+func withRemoteCatalogMetadata(body, existing json.RawMessage) (json.RawMessage, error) {
+	if _, err := evaluatorContract(existing); err != nil {
+		return nil, err
+	}
+	var remote map[string]json.RawMessage
+	if err := json.Unmarshal(existing, &remote); err != nil {
+		return nil, notAnObject(existing, err)
+	}
+	if remote == nil {
+		return nil, messages.DefinitionIsNull()
+	}
+	metadata := map[string]any{}
+	for _, key := range []string{"display_name", "description", "categories", "supported_evaluation_levels"} {
+		if value, present := remote[key]; present {
+			metadata[key] = value
+		}
+	}
+	return withEvaluatorMetadata(body, metadata)
+}
+
+func withEvaluatorMetadata(body json.RawMessage, metadata map[string]any) (json.RawMessage, error) {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, notAnObject(body, err)
+	}
+	if doc == nil {
+		return nil, messages.DefinitionIsNull()
+	}
+
+	added := false
+	for key, value := range metadata {
+		if _, present := doc[key]; present {
+			continue
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		doc[key] = encoded
+		added = true
+	}
+
+	// Re-marshalling reorders keys, so a body that gained nothing is returned
+	// as it arrived rather than rewritten into an equivalent one.
+	if !added {
+		return body, nil
+	}
 	return json.Marshal(doc)
+}
+
+// notAnObject reports a body that will not decode into an object.
+//
+// `[]`, `"str"` and `7` parse; only the shape is wrong. Reporting them as
+// unparseable sent the author looking for a syntax error that is not there.
+func notAnObject(raw []byte, err error) error {
+	if json.Valid(raw) {
+		return messages.DefinitionNotJSONObject(err)
+	}
+	return messages.NotValidJSON(err)
 }
 
 // normalizeRubricBody accepts either a bare definition ({type, dimensions}) or
@@ -251,7 +371,7 @@ func ensureDefinitionType(definition json.RawMessage) (json.RawMessage, error) {
 func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 	var probe map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &probe); err != nil {
-		return nil, messages.NotValidJSON(err)
+		return nil, notAnObject(raw, err)
 	}
 	// A whole document of null decodes the same way, and reporting it as a
 	// rubric missing its dimensions sends the author looking for the wrong thing.

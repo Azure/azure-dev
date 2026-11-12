@@ -22,6 +22,8 @@ func newRoutineEnableCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Enable a Foundry routine.
 
 This operation is idempotent: enabling an already-enabled routine is a no-op success.`,
+		Example: `  # Resume a disabled routine
+  azd ai routine enable nightly-summary`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			output = extCtx.OutputFormat

@@ -103,8 +103,14 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	m.setInstalledExtensionsAttributes(span)
 
 	defer func() {
-		// Include any usage attributes set
-		span.SetAttributes(tracing.GetUsageAttributes()...)
+		// Workflow steps run as child actions inside the root command. Keep
+		// invocation-wide drop aggregates on the root span only so they are
+		// not counted again on every step.
+		if IsChildAction(ctx) {
+			span.SetAttributes(tracing.GetSecondaryUsageAttributes()...)
+		} else {
+			span.SetAttributes(tracing.GetUsageAttributes()...)
+		}
 		span.SetAttributes(fields.PerfInteractTime.Int64(tracing.InteractTimeMs.Load()))
 		span.End()
 	}()
@@ -152,8 +158,9 @@ func (m *TelemetryMiddleware) extensionCmdInfo(extensionId string) (string, []st
 		return "", nil
 	}
 
-	commandPath := extensions.ResolveCommandPath(metadata, m.options.Args)
-	commandFlags := extensions.ResolveCommandFlags(metadata, m.options.Args)
+	args := m.options.Args
+	commandPath := extensions.ResolveCommandPath(metadata, args)
+	commandFlags := extensions.ResolveCommandFlags(metadata, args)
 	if len(commandPath) == 0 {
 		return "", commandFlags
 	}

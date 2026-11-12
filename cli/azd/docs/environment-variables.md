@@ -124,18 +124,29 @@ resolved transparently before injection.
 | --- | --- | --- |
 | **Script file** | First argument is an existing file | `azd exec ./setup.sh` |
 | **Direct exec** | Multiple arguments, no `--shell` flag | `azd exec python script.py` |
-| **Shell inline** | Single argument, or `--shell` specified | `azd exec 'echo $AZURE_ENV_NAME'` |
+| **Shell inline** | Single argument that is not a missing script path; use `--shell` to disambiguate script-like input | `azd exec --shell bash "cat<deploy.sh"` |
 
 **Direct exec** passes the exact argument vector to the child process without shell wrapping, which
 avoids quoting and escaping issues. **Shell inline** wraps the argument with the detected (or
 specified) shell's `-c` flag. **Script file** detects the shell from the file extension (`.sh` →
 bash, `.ps1` → pwsh, `.cmd`/`.bat` → cmd).
 
+A missing path-like input remains an error instead of falling through to shell execution. Use
+`--shell` when a single inline command contains shell operators or script-like path arguments.
+
+### Cancellation and Background Processes
+
+Pressing Ctrl+C cancels execution. `azd` stops the command and its child processes,
+waits for shutdown, and reports `ERROR: command execution was canceled by the user`.
+
+After a command or script completes successfully, `azd exec` preserves intentional background child
+processes.
+
 ### Flags
 
 | Flag | Description |
 | --- | --- |
-| `--shell`, `-s` | Shell to use (`bash`, `sh`, `zsh`, `pwsh`, `powershell`, `cmd`). Auto-detected if not specified. |
+| `--shell`, `-s` | Shell to use (`bash`, `sh`, `zsh`, `pwsh`, `powershell`, `cmd`). Auto-detected if not specified. Also disambiguates inline commands that contain script-like path arguments. |
 | `--interactive`, `-i` | Run in interactive mode (connects stdin to the child process). |
 | `--environment`, `-e` | The azd environment to load. |
 
@@ -220,12 +231,27 @@ Metadata requests are unauthenticated when no matching token is set.
 | `AZURE_AI_MODEL_DEPLOYMENT_NAME` | The default model deployment name used for generated agent code and templates. |
 | `AZURE_AI_PROJECT_ACR_CONNECTION_NAME` | The Azure Container Registry connection name used by the extension for hosted agents. |
 | `AI_PROJECT_DEPLOYMENTS` | JSON-encoded deployment metadata populated by the extension for agent workflows. |
+| `AI_PROJECT_DEPLOYMENT_BINDINGS` | JSON object that maps each template deployment declaration to the existing deployment adopted for it in the current environment, for example `{"template-chat":"existing-chat"}`. An empty target records Skip. Prompt agent deploy and invoke honor these bindings. Set it to `'{}'` to clear explicit bindings. |
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |
 | `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd ai agent init` for code-deploy, pre-built image, and managed voice scenarios. |
-| `AZD_AI_AGENT_MANIFEST_PARAMETER_<NAME>` | Supplies a value for the `<NAME>` agent manifest parameter. When unset, init uses the declared default, the first enum value, or an empty value for optional parameters; unresolved required parameters fail. |
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
-| `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |
+| `AGENT_DEFINITION_PATH` | Unsupported for AI agent runtime workflows. Non-empty values are rejected; put the definition on the `azure.ai.agent` service in `azure.yaml` or use its explicit root `$ref`. |
+
+### azure.ai.content-understanding
+
+| Variable | Description |
+| --- | --- |
+| `CU_ENDPOINT` | Process/config input for the CU resource HTTPS endpoint under `services.ai.azure.com` or `cognitiveservices.azure.com`, on port 443. `--endpoint` takes precedence; `FOUNDRY_ENDPOINT` and project endpoints are not substitutes. See [CU configuration precedence](../extensions/azure.ai.content-understanding/docs/usage.md#configuration-and-api-versions). |
+| `CU_API_VERSION` | Process/config input for the CU API version: `2025-11-01` (default) or `YYYY-MM-DD-preview`. `--api-version` takes precedence. Offline schema commands read only the flag and process variable. |
+| `CU_DEFAULT_ANALYZER` | Process/config input for the default analysis analyzer; defaults to `prebuilt-layout`. `--analyzer` takes precedence. |
+| `CU_API_KEY` | Optional process-only resource key for CU data-plane commands. Must be nonempty and contain no whitespace or controls. Not accepted in saved azd configuration or environments, and never used for provisioning or cross-resource copy. Unset it to use Entra ID. |
+| `CU_ON_EXISTS` | Process-only policy for existing analysis result files: `error` (default), `skip`, or `reanalyze`. `--on-existing` takes precedence. |
+
+Generated deployment outputs are not user-supplied settings. See the provisioning
+guide for [deployment outputs](../extensions/azure.ai.content-understanding/docs/provisioning.md#deployment-outputs),
+the [postprovision-only override](../extensions/azure.ai.content-understanding/docs/provisioning.md#postprovision-only-override),
+and [compatibility with existing generated projects](../extensions/azure.ai.content-understanding/docs/provisioning.md#compatibility-with-existing-generated-projects).
 
 ### azure.ai.routines
 
@@ -245,7 +271,7 @@ Metadata requests are unauthenticated when no matching token is set.
 
 | Variable | Description |
 | --- | --- |
-| `AZURE_DEV_COLLECT_TELEMETRY` | If false, disables telemetry collection. Telemetry is enabled by default. |
+| `AZURE_DEV_COLLECT_TELEMETRY` | Set to the exact lowercase value `no` to disable telemetry collection. Other values, including `false`, do not disable collection. Telemetry is enabled by default. |
 | `AZURE_DEV_USER_AGENT` | Appends a custom string to the `User-Agent` header sent with Azure requests. It is also inspected for [AI agent detection](#ai-agent-detection) using case-insensitive substring matching. |
 | `AGENCY_SESSION_ID` | Set by Agency when launching subprocesses. Any non-empty value appends the fixed `agency` modifier to telemetry's `execution.environment`, preserving the primary environment (for example, `GitHub Copilot CLI;agency`). Unset or empty values have no effect. The session ID itself is not emitted. This does not affect agent detection or prompting and is independent of `AZD_DISABLE_AGENT_DETECT`. |
 | `OTEL_RESOURCE_ATTRIBUTES` | Read by the embedded OpenTelemetry SDK, but not supported for customizing azd telemetry. Its attributes are not included in resources exported by azd. |

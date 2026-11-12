@@ -380,10 +380,10 @@ policy := azdext.NewMCPSecurityPolicy().
     ValidatePathsWithinBase(projectDir)
 
 if err := policy.CheckURL(userURL); err != nil {
-    return azdext.MCPErrorResult("blocked: %v", err), nil
+    return azdext.MCPErrorResult("URL blocked by security policy"), nil
 }
 if err := policy.CheckPath(userPath); err != nil {
-    return azdext.MCPErrorResult("blocked: %v", err), nil
+    return azdext.MCPErrorResult("path blocked by security policy"), nil
 }
 ```
 

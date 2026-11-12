@@ -422,7 +422,7 @@ func teardownActivityBots(
 		if svc.Host != AiAgentHost {
 			continue
 		}
-		ca, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
+		ca, isHosted, _, err := project.LoadHostedAgentDefinition(svc, proj.Path)
 		if err != nil || !isHosted {
 			continue
 		}

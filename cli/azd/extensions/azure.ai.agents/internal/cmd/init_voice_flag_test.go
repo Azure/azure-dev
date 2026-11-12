@@ -5,11 +5,14 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -55,21 +58,36 @@ func TestInitVoiceInputAllowsOnlySupportedNewVoiceFlows(t *testing.T) {
 		require.NoError(t, validateInitVoiceInput(flags, true))
 	}
 	// No --voice flag means existing inputs are unaffected, even if otherwise invalid.
-	require.NoError(t, validateInitVoiceInput(&initFlags{kind: "hosted", manifestPointer: "azure.yaml"}, false))
-	path, cleanup, err := synthesizeVoiceManifestFile("voice-test", "gpt-realtime", "en-US-AvaNeural")
-	require.NoError(t, err)
-	t.Cleanup(cleanup)
-	content, err := os.ReadFile(path)
-	require.NoError(t, err)
-	definition, err := agent_yaml.ExtractAgentDefinition(content)
-	require.NoError(t, err)
-	voice, ok := definition.(agent_yaml.VoiceAgent)
-	require.True(t, ok)
-	require.NotNil(t, voice.Voice)
-	require.Equal(t, "en-US-AvaNeural", *voice.Voice)
+	require.NoError(t, validateInitVoiceInput(&initFlags{kind: "hosted", templatePointer: "azure.yaml"}, false))
+}
+
+func TestVoiceDefinitionForInit(t *testing.T) {
+	t.Parallel()
+
+	defaulted := voiceDefinitionForInit(&initFlags{}, "voice-agent")
+	require.Equal(t, agent_yaml.AgentKindPromptVoice, defaulted.Kind)
+	require.Equal(t, agent_yaml.VoiceModelTypeManaged, defaulted.ModelType)
+	require.Equal(t, defaultVoiceModel, defaulted.Model.Id)
+	require.Nil(t, defaulted.Voice)
+
+	configured := voiceDefinitionForInit(
+		&initFlags{model: "gpt-realtime-preview", voice: "en-US-AvaNeural"},
+		"configured-voice",
+	)
+	require.Equal(t, "configured-voice", configured.Name)
+	require.Equal(t, "gpt-realtime-preview", configured.Model.Id)
+	require.Equal(t, "en-US-AvaNeural", *configured.Voice)
+}
+
+func TestVoiceAgentAddedMessageUsesServiceKey(t *testing.T) {
+	t.Parallel()
+	message := voiceAgentAddedMessage("voice-agent-2")
+	require.Contains(t, message, "'voice-agent-2'")
+	require.NotContains(t, message, "'foundry-agent'")
 }
 
 func TestInitVoiceFlagInteractiveSelection(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "true")
 	for _, nonempty := range []bool{false, true} {
 		for _, specified := range []bool{false, true} {
 			count := int32(2)
@@ -83,7 +101,7 @@ func TestInitVoiceFlagInteractiveSelection(t *testing.T) {
 						require.NoError(t, os.WriteFile("main.py", []byte("# sample"), 0600))
 					}
 					prompts := &helpersPromptServer{selectIndex: index}
-					client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+					client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{}}, prompts)
 					mode, err := promptInitModeForVoice(t.Context(), client, false, specified, nil)
 					if specified && index != count-1 {
 						require.ErrorContains(t, err, "--voice is only supported")
@@ -108,7 +126,7 @@ func TestNewVoiceRejectsExplicitCodeInputsBeforeHostAccess(t *testing.T) {
 		{"--runtime", "python_3_13"}, {"--entry-point", "app.py"}, {"--dep-resolution", "remote_build"},
 		{"--model-deployment", "my-deployment"}, {"--description", "description"},
 		{"--rai-policy", "none"}, {"--acr-connection", "registry"}, {"--registry-connection", "registry"},
-		{"--harness", "github_copilot_preview"}, {"--instructions", "Be helpful"},
+		{"--harness", "microsoft_copilot_preview"}, {"--instructions", "Be helpful"},
 	} {
 		for _, selector := range [][]string{
 			{"--kind", "prompt-voice", "--agent-name", "voice-test"},
@@ -151,6 +169,7 @@ func TestNewVoiceRejectsExplicitCodeInputsBeforeHostAccess(t *testing.T) {
 }
 
 func TestInteractiveVoiceRejectsCodeInputsOnlyOnVoiceSelection(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "true")
 	t.Chdir(t.TempDir())
 	require.NoError(t, os.WriteFile("app.py", []byte("# existing code"), 0600))
 	command := newInitCommand(nil)
@@ -164,7 +183,7 @@ func TestInteractiveVoiceRejectsCodeInputsOnlyOnVoiceSelection(t *testing.T) {
 		{0, initModeFromCode}, {1, initModeTemplate}, {2, initModeVoice},
 	} {
 		prompts := &helpersPromptServer{selectIndex: choice.index}
-		client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+		client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{}}, prompts)
 		mode, err := promptInitModeForVoice(t.Context(), client, false, false, inputErr)
 		if choice.want == initModeVoice {
 			require.ErrorIs(t, err, inputErr)
@@ -186,4 +205,142 @@ func TestNewVoiceAllowsEffectiveOptions(t *testing.T) {
 	require.NoError(t, validateVoiceInitOptions(command, false))
 	// Defaults alone must never trigger the new check.
 	require.NoError(t, validateVoiceInitOptions(newInitCommand(nil), false))
+}
+
+func TestFastPathNamesFailBeforeHostAccess(t *testing.T) {
+	t.Setenv("AZD_SERVER", "")
+	for _, args := range [][]string{
+		{"--image", "example.azurecr.io/agent:v1", "--agent-name", "../escape"},
+		{"--kind", "prompt-voice", "--agent-name", `..\escape`},
+	} {
+		t.Run(fmt.Sprint(args), func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			command := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
+			command.SetArgs(args)
+			require.ErrorContains(t, command.Execute(), "invalid agent name")
+			entries, err := os.ReadDir(root)
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		})
+	}
+}
+
+func TestValidateFastPathAgentNamePinsNormalizedValue(t *testing.T) {
+	t.Parallel()
+	flags := &initFlags{image: "example.azurecr.io/agent:v1", agentName: "  image-agent  "}
+	require.NoError(t, validateFastPathAgentName(flags, false))
+	require.Equal(t, "image-agent", flags.agentName)
+	require.NoError(t, validateFastPathAgentName(flags, false))
+	require.Equal(t, "image-agent", flags.agentName)
+}
+
+func TestValidateFastPathAgentNameAppliesOnlyWithoutManifest(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, validateFastPathAgentName(&initFlags{
+		templatePointer: "azure.yaml",
+		image:           "example.azurecr.io/agent:v1",
+	}, false))
+
+	err := validateFastPathAgentName(&initFlags{
+		image: "example.azurecr.io/agent:v1",
+	}, false)
+	require.ErrorContains(t, err, "--image requires --agent-name")
+}
+
+func TestImageProtocolsFailBeforeHostOrFilesystemAccess(t *testing.T) {
+	t.Setenv("AZD_SERVER", "")
+	root := t.TempDir()
+	t.Chdir(root)
+
+	command := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetArgs([]string{
+		"--image", "example.azurecr.io/agent:v1",
+		"--agent-name", "agent",
+		"--protocol", "unsupported",
+	})
+	require.ErrorContains(t, command.Execute(), `unknown protocol "unsupported"`)
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
+func TestVoiceServiceLayoutAnchorsUnderProjectRoot(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	cwd := filepath.Join(projectRoot, "nested", "work")
+	require.NoError(t, os.MkdirAll(cwd, 0o700))
+
+	sourceDir, relativePath, err := voiceServiceLayout(projectRoot, cwd, "voice-agent")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(cwd, "src", "voice-agent"), sourceDir)
+	require.Equal(t, "nested/work/src/voice-agent", relativePath)
+
+	_, _, err = voiceServiceLayout(projectRoot, t.TempDir(), "voice-agent")
+	require.ErrorContains(t, err, "outside the resolved azd project")
+}
+
+func TestNormalizeVoiceServiceDirectory(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	absolute, relative, err := normalizeVoiceServiceDirectory(root, filepath.Join("src", "renamed"))
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, "src", "renamed"), absolute)
+	require.Equal(t, "src/renamed", relative)
+
+	absolute, relative, err = normalizeVoiceServiceDirectory(
+		root,
+		filepath.Join(root, "nested", "src", "renamed-2"),
+	)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, "nested", "src", "renamed-2"), absolute)
+	require.Equal(t, "nested/src/renamed-2", relative)
+
+	_, _, err = normalizeVoiceServiceDirectory(root, filepath.Join(root, "..", "outside"))
+	require.ErrorContains(t, err, "outside the resolved project")
+	require.NoDirExists(t, filepath.Join(root, "..", "outside"))
+}
+
+func TestResolveVoiceProjectResourceID(t *testing.T) {
+	t.Parallel()
+	const configured = "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project"
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{"dev": {"AZURE_AI_PROJECT_ID": configured}},
+	}
+	client := newHelpersTestAzdClient(
+		t, &helpersProjectServer{}, &helpersPromptServer{}, envServer,
+	)
+
+	got, err := resolveVoiceProjectResourceID(t.Context(), client, "dev", "/explicit/project")
+	require.NoError(t, err)
+	require.Equal(t, "/explicit/project", got)
+
+	got, err = resolveVoiceProjectResourceID(t.Context(), client, "dev", "")
+	require.NoError(t, err)
+	require.Equal(t, configured, got)
+
+	got, err = resolveVoiceProjectResourceID(t.Context(), client, "missing", "")
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
+func TestResolveVoiceProjectResourceIDRejectsInvalidEnvironmentValue(t *testing.T) {
+	t.Parallel()
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{"dev": {"AZURE_AI_PROJECT_ID": "not-an-arm-id"}},
+	}
+	client := newHelpersTestAzdClient(
+		t, &helpersProjectServer{}, &helpersPromptServer{}, envServer,
+	)
+	_, err := resolveVoiceProjectResourceID(t.Context(), client, "dev", "")
+	require.ErrorContains(t, err, "invalid AZURE_AI_PROJECT_ID")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeInvalidProjectResourceId, localErr.Code)
 }

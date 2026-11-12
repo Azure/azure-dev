@@ -120,3 +120,27 @@ func TestFingerprintKey_TheKindBoundaryIsNotAmbiguous(t *testing.T) {
 		FingerprintKey("dataset_a", "b"),
 		FingerprintKey("dataset", "a_b"))
 }
+
+func TestFingerprintDefinitionIncludesSourceModeOnly(t *testing.T) {
+	trace := Eval{Source: &SourceDecl{
+		Type: SourceTypeTraces, AgentName: "first", AgentVersion: "1",
+		StartTime: "2026-08-01T00:00:00Z", EndTime: "2026-08-02T00:00:00Z", MaxTraces: 5,
+	}}
+	originalSource := *trace.Source
+	first, err := FingerprintDefinition(trace)
+	require.NoError(t, err)
+	require.Equal(t, originalSource, *trace.Source, "normalization must not mutate the authored source")
+	trace.Source = &SourceDecl{Type: SourceTypeTraces, AgentName: "second", LookbackHours: 48, MaxTraces: 10}
+	second, err := FingerprintDefinition(trace)
+	require.NoError(t, err)
+	require.Equal(t, first, second, "filters and windows affect runs, not stored mappings")
+	response := Eval{Source: &SourceDecl{Type: SourceTypeResponses, ResponseIDs: []string{"resp_first"}, MaxTurns: 1}}
+	responses, err := FingerprintDefinition(response)
+	require.NoError(t, err)
+	require.NotEqual(t, first, responses)
+	response.Source.ResponseIDs = []string{"resp_second"}
+	response.Source.MaxTurns = 3
+	otherResponses, err := FingerprintDefinition(response)
+	require.NoError(t, err)
+	require.Equal(t, responses, otherResponses)
+}

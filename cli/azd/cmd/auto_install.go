@@ -355,6 +355,11 @@ func tryAutoInstallForPartialNamespace(
 	foundCmd *cobra.Command,
 	remainingArgs []string,
 ) (autoInstallResult, error) {
+	// A runnable leaf command's remaining arguments are values, not an incomplete extension namespace.
+	if foundCmd.Runnable() && !foundCmd.HasSubCommands() {
+		return autoInstallResult{}, nil
+	}
+
 	if _, isExtensionCmd := foundCmd.Annotations["extension.id"]; isExtensionCmd {
 		// Extension commands handle their own args via DisableFlagParsing
 		return autoInstallResult{}, nil
@@ -650,6 +655,16 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		return result
 	}
 
+	return executeWithAutoInstallCommand(ctx, rootContainer, rootCmd, globalOpts, result)
+}
+
+func executeWithAutoInstallCommand(
+	ctx context.Context,
+	rootContainer *ioc.NestedContainer,
+	rootCmd *cobra.Command,
+	globalOpts *internal.GlobalCommandOptions,
+	result *ExecuteResult,
+) *ExecuteResult {
 	var extensionManager *extensions.Manager
 	var console input.Console
 
@@ -734,21 +749,22 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			result.Err = commandErr
 			return result
 		}
+
+		if childConsole, err := newChildCommandConsole(globalOpts, foundCmd); err != nil {
+			result.Err = errors.Join(commandErr, err)
+			return result
+		} else {
+			console = childConsole
+		}
+
 		if projectExtensions.handled {
-			if resolveErr := rootContainer.Resolve(&console); resolveErr != nil {
-				fmt.Fprintln(os.Stderr, unsupportedErr.ErrorMessage)
-			} else {
-				console.Message(ctx, unsupportedErr.ErrorMessage)
-			}
+			console.Message(ctx, unsupportedErr.ErrorMessage)
 			result.Err = commandErr
 			return result
 		}
 
 		if err := rootContainer.Resolve(&extensionManager); err != nil {
 			log.Panic("failed to resolve extension manager for auto-install:", err)
-		}
-		if err := rootContainer.Resolve(&console); err != nil {
-			log.Panic("failed to resolve console for unknown flags error:", err)
 		}
 
 		requiredHost := unsupportedErr.Host
@@ -944,6 +960,18 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	return result
 }
 
+// newChildCommandConsole creates a console using the child's std streams, so we can stay consistent with any console
+// output format changes. Without this, our default root input.Console would write out inconsistent output (ie, plain text
+// when the user requested JSON, for instance).
+func newChildCommandConsole(globalOpts *internal.GlobalCommandOptions, foundCmd *cobra.Command) (input.Console, error) {
+	formatter, err := getCommandFormatter(globalOpts, foundCmd)
+	if err != nil {
+		return nil, fmt.Errorf("resolving output format for %s: %w", foundCmd.CommandPath(), err)
+	}
+
+	return newCommandConsole(globalOpts, formatter, foundCmd), nil
+}
+
 // CreateGlobalFlagSet creates a new flag set with all global flags defined.
 // This is the single source of truth for global flag definitions.
 //
@@ -951,34 +979,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 // in internal/reserved_flags.go. The SDK package (pkg/azdext) derives its
 // reserved flag indexes from that registry automatically.
 func CreateGlobalFlagSet() *pflag.FlagSet {
-	globalFlags := pflag.NewFlagSet("global", pflag.ContinueOnError)
-
-	globalFlags.StringP("cwd", "C", "", "Sets the current working directory.")
-	globalFlags.Bool("debug", false, "Enables debugging and diagnostics logging.")
-	globalFlags.Bool(
-		"no-prompt",
-		false,
-		"Runs without prompts. Uses existing values; "+
-			"fails if any required value or decision cannot be resolved automatically. "+
-			"Automatically enabled when azd detects a CI/CD or AI-agent environment; "+
-			"set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.")
-	globalFlags.Bool(
-		"non-interactive",
-		false,
-		"Alias for --no-prompt.")
-	_ = globalFlags.MarkHidden("non-interactive")
-	globalFlags.StringP(internal.EnvironmentNameFlagName, "e", "", "The name of the environment to use.")
-
-	// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
-	// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
-	// don't error due to an "unknown flag".
-	globalFlags.String("trace-log-file", "", "Write a diagnostics trace to a file.")
-	_ = globalFlags.MarkHidden("trace-log-file")
-
-	globalFlags.String("trace-log-url", "", "Send traces to an Open Telemetry compatible endpoint.")
-	_ = globalFlags.MarkHidden("trace-log-url")
-
-	return globalFlags
+	return internal.NewGlobalFlagSet()
 }
 
 // ParseGlobalFlags parses global flags from the provided arguments and populates the GlobalCommandOptions.
@@ -995,40 +996,43 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 	return parseGlobalFlags(args, opts, terminal.IsAttached)
 }
 
+func parseGlobalFlagSet(args []string) (*pflag.FlagSet, error) {
+	globalFlagSet := CreateGlobalFlagSet()
+	globalFlagSet.SetOutput(io.Discard)
+
+	// Extension-specific flags are parsed by the extension.
+	globalFlagSet.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
+
+	// Keep output here to avoid shadowing command formatters.
+	// Recognizing -o prevents attached output values from being
+	// interpreted as unrelated global flags.
+	globalFlagSet.StringP("output", "o", "", "The output format (json, table, none).")
+
+	err := globalFlagSet.Parse(args)
+	if err != nil && !errors.Is(err, pflag.ErrHelp) {
+		return nil, fmt.Errorf("failed to parse global flags: %w", err)
+	}
+
+	return globalFlagSet, nil
+}
+
 func parseGlobalFlags(
 	args []string,
 	opts *internal.GlobalCommandOptions,
 	isTerminal func(stdoutFd uintptr, stdinFd uintptr) bool,
 ) error {
-	globalFlagSet := CreateGlobalFlagSet()
-
-	// Set output to io.Discard to suppress any error messages from pflag
-	// Cobra will handle all user-facing output
-	globalFlagSet.SetOutput(io.Discard)
-
-	// Configure the flag set to ignore unknown flags. This is critical for extension commands
-	// where extension-specific flags are not yet known and will be handled by the extension's
-	// command parser after the extension is loaded.
-	globalFlagSet.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
-
-	// Register --output/-o on the pre-parse set only (not in CreateGlobalFlagSet, which
-	// would shadow per-command output.AddOutputParam and cause GetCommandFormatter to reject
-	// the empty default). Without this, pflag's UnknownFlags allowlist walks attached short
-	// values like "-o<value>" char-by-char and trips on "-e" (a known string flag), failing
-	// with `flag needs an argument: 'e' in -e`.
-	globalFlagSet.StringP("output", "o", "", "The output format (json, table, none).")
-
-	// Parse the arguments - unknown flags will be silently ignored
-	err := globalFlagSet.Parse(args)
-
-	// Ignore help errors - let Cobra handle help requests
-	if err != nil && !errors.Is(err, pflag.ErrHelp) {
-		return fmt.Errorf("failed to parse global flags: %w", err)
+	globalFlagSet, err := parseGlobalFlagSet(args)
+	if err != nil {
+		return err
 	}
 
 	// Bind parsed values to the options struct
 	if strVal, err := globalFlagSet.GetString("cwd"); err == nil {
 		opts.Cwd = strVal
+	}
+
+	if strVal, err := globalFlagSet.GetString("output"); err == nil {
+		opts.PreParsedOutput = strings.ToLower(strings.TrimSpace(strVal))
 	}
 
 	if boolVal, err := globalFlagSet.GetBool("debug"); err == nil {

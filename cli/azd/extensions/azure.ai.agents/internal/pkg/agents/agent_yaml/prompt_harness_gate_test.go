@@ -13,7 +13,7 @@ import (
 
 // testHarness is the harness block the gate cases below attach. Only the type
 // matters to these gates, so every case shares one value.
-var testHarness = NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot)
+var testHarness = NewPromptHarness(agent_api.ManagedAgentHarnessMicrosoftCopilot)
 
 // TestValidateHarnessBlock covers the final type-only harness contract.
 func TestValidateHarnessBlock(t *testing.T) {

@@ -1,10 +1,11 @@
 # Azure AI Agents Extension - Agent Instructions
 
-Use this file together with `cli/azd/AGENTS.md`. This guide supplements the root azd instructions with the conventions that are specific to this extension.
+Use this file together with the [shared extension guide](../AGENTS.md) and
+`cli/azd/AGENTS.md`. This guide adds conventions specific to this extension.
 
 ## Overview
 
-`azure.ai.agents` is a first-party azd extension under `cli/azd/extensions/azure.ai.agents/`. It runs as a separate Go binary and talks to the azd host over gRPC.
+`azure.ai.agents` is a Microsoft-authored azd extension under `cli/azd/extensions/azure.ai.agents/`. It runs as a separate Go binary and talks to the azd host over gRPC.
 
 Useful places to start:
 
@@ -25,18 +26,7 @@ azd x build
 go build
 ```
 
-If extension work depends on a new azd core change, plan for two PRs:
-
-1. Land the core change in `cli/azd` first.
-2. Land the extension change after that, updating this module to the newer azd dependency with `go get github.com/azure/azure-dev/cli/azd && go mod tidy`.
-
-For local development, draft work, or validating both sides together before the core PR is merged, you may temporarily add:
-
-```go
-replace github.com/azure/azure-dev/cli/azd => ../../
-```
-
-That `replace` points this extension at your local `cli/azd` checkout instead of the version in `go.mod`. Do not merge the extension with that `replace` still present.
+For changes that depend on core, follow the [core dependency guidance](../AGENTS.md#core-dependency-changes).
 
 ## Interactive CLI test scenarios
 
@@ -101,10 +91,8 @@ YAML block declaring an `azure.ai.agent` service must:
 azd ignores unknown service properties at runtime, so an undocumented key
 deploys cleanly while doing nothing — the test blocks that in our docs.
 
-Snippets that are deliberately incomplete (for example, the network examples in
-`docs/private-networking.md`, which omit `kind` because azd falls back to the
-on-disk `agent.yaml`) opt out of the "must fully resolve" check with a marker on
-the line before the fence:
+Snippets that are deliberately incomplete opt out of the "must fully resolve"
+check with a marker on the line before the fence:
 
 ````markdown
 <!-- azd:doc-example partial -->
@@ -244,8 +232,3 @@ fmt.Printf("Parsed resource ID: sub=%s, rg=%s\n", subId, rg)    // use log.Print
 // ❌ log used for user-facing info — user never sees it without --debug
 log.Printf("No Foundry projects found in subscription")          // use fmt + output helper
 ```
-
-## Other extension conventions
-
-- Use modern Go 1.26 patterns where they help readability
-- When using `PromptSubscription()`, create credentials with `Subscription.UserTenantId`, not `Subscription.TenantId`

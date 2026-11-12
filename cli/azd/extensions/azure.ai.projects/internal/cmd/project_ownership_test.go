@@ -17,7 +17,8 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/internal/provisioning"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 
@@ -98,7 +99,7 @@ func TestEjectProjectInfraIgnoresSplitConnectionSecrets(t *testing.T) {
 					client := newTransactionProjectClient(t, projectServer)
 					require.NoError(t, ejectProjectInfraWithTarget(
 						t.Context(), client, root, "project", target.provider,
-						selectedEndpoint, selectedID,
+						&resolvedProject{Endpoint: selectedEndpoint, ResourceId: selectedID},
 						// #nosec G101 -- synthetic secret used only to assert it is never emitted.
 						map[string]string{"SPLIT_CONNECTION_SECRET": "split-environment-secret"},
 					))
@@ -375,7 +376,7 @@ func TestWriteTerraformEjectedInfra(t *testing.T) {
 			assert.Equal(t, "${AZURE_RESOURCE_GROUP}", tfvars["resource_group_name"])
 			assert.Equal(t, "${AZURE_ENV_NAME}", tfvars["environment_name"])
 			assert.Equal(t, "${AZURE_AI_PROJECT_NAME}", tfvars["foundry_project_name"])
-			assert.Equal(t, "${AZURE_PRINCIPAL_ID}", tfvars["principal_id"])
+			assert.NotContains(t, tfvars, "principal_id")
 			assert.Equal(t, "${AZD_RESOURCE_TOKEN_SALT}", tfvars["resource_token_salt"])
 			assert.NotContains(t, tfvars, "connections")
 			assert.NotContains(t, tfvars, "connectionCredentials")
@@ -510,32 +511,49 @@ func TestValidateConfiguredProjectIdentity(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
 	const projectID = "/subscriptions/sub/resourceGroups/rg/providers/" +
 		"Microsoft.CognitiveServices/accounts/account/projects/project"
-	service := &projectServiceInfo{
-		Resolved: map[string]any{"endpoint": endpoint},
+	for _, tt := range []struct {
+		name, projectID, endpoint, wantErr string
+		wantLookup                         bool
+	}{
+		{name: "matching project", projectID: projectID, endpoint: endpoint, wantLookup: true},
+		{name: "legacy project path", projectID: projectID,
+			endpoint: strings.Replace(endpoint, "/api/projects/", "/projects/", 1), wantLookup: true},
+		{name: "escaped project name", projectID: projectID,
+			endpoint: "https://account.services.ai.azure.com/api/projects/%70%72%6f%6a%65%63%74", wantLookup: true},
+		{name: "different project", projectID: strings.Replace(projectID, "/projects/project", "/projects/other", 1),
+			endpoint: endpoint, wantErr: "identify different projects"},
+		{name: "invalid resource ID", projectID: "project-id",
+			endpoint: endpoint, wantErr: "must be a Microsoft.CognitiveServices project"},
+		{name: "non-Azure endpoint", projectID: projectID,
+			endpoint: "https://example.com/api/projects/project", wantErr: "endpoint is invalid"},
+		{name: "credential-bearing endpoint", projectID: projectID,
+			endpoint: strings.Replace(endpoint, "https://", "https://endpoint-user:endpoint-password@", 1),
+			wantErr:  "endpoint is invalid"},
+		{name: "query-bearing endpoint", projectID: projectID,
+			endpoint: endpoint + "?sig=endpoint-token", wantErr: "endpoint is invalid"},
+		{name: "missing resource ID", endpoint: endpoint},
+		{name: "greenfield project", projectID: projectID},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			lookedUp := false
+			lookup := func(_ context.Context, _ *azdext.AzdClient, id string) (*resolvedProject, error) {
+				lookedUp = true
+				require.Equal(t, projectID, id)
+				return projectFromResourceID(id)
+			}
+			service := &projectServiceInfo{Resolved: map[string]any{"endpoint": tt.endpoint}}
+			err := validateConfiguredProjectIdentity(t.Context(), nil,
+				map[string]string{"AZURE_AI_PROJECT_ID": tt.projectID}, service, lookup)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.NotContains(t, err.Error(), "endpoint-password")
+				assert.NotContains(t, err.Error(), "endpoint-token")
+			}
+			assert.Equal(t, tt.wantLookup, lookedUp)
+		})
 	}
-
-	require.NoError(t, validateConfiguredProjectIdentity(
-		map[string]string{"AZURE_AI_PROJECT_ID": projectID},
-		service,
-	))
-
-	err := validateConfiguredProjectIdentity(
-		map[string]string{
-			"AZURE_AI_PROJECT_ID": strings.Replace(
-				projectID, "/projects/project", "/projects/other", 1,
-			),
-		},
-		service,
-	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "identify different projects")
-
-	err = validateConfiguredProjectIdentity(
-		map[string]string{"AZURE_AI_PROJECT_ID": "project-id"},
-		service,
-	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "must be a Microsoft.CognitiveServices project")
 }
 
 func TestValidateDeploymentSelectionRejectsNegativeCapacity(t *testing.T) {
@@ -842,6 +860,8 @@ func TestProjectEnvironmentTransitions(t *testing.T) {
 		"AZURE_RESOURCE_GROUP":              "old-rg",
 		"AZURE_AI_DEPLOYMENTS_LOCATION":     "eastus",
 		"AZURE_AI_MODEL_DEPLOYMENT_NAME":    "chat",
+		"AI_PROJECT_DEPLOYMENT_BINDINGS":    `{"template-chat":"chat"}`,
+		projectDeploymentsEnvKey:            `[{"name":"chat"}]`,
 		"AZURE_CONTAINER_REGISTRY_ENDPOINT": "https://old.azurecr.io",
 		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/acr-rg/providers/" +
 			"Microsoft.ContainerRegistry/registries/old",
@@ -954,6 +974,39 @@ func TestProjectEnvironmentTransitions(t *testing.T) {
 	}
 }
 
+func TestPlanProjectEnvironmentReplacementSkipsEmptyDeploymentsValue(t *testing.T) {
+	plan := planProjectEnvironment(
+		map[string]string{projectDeploymentsEnvKey: ""},
+		projectModeExistingID,
+		&resolvedProject{},
+		true,
+	)
+
+	assert.NotContains(t, plan.Unsets, projectDeploymentsEnvKey)
+}
+
+func TestPlanProjectEnvironmentReplacementClearsMalformedDeploymentsValue(t *testing.T) {
+	plan := planProjectEnvironment(
+		map[string]string{projectDeploymentsEnvKey: "{"},
+		projectModeExistingID,
+		&resolvedProject{},
+		true,
+	)
+
+	assert.Contains(t, plan.Unsets, projectDeploymentsEnvKey)
+}
+
+func TestPlanProjectEnvironmentReplacementDoesNotUnsetAbsentDeploymentsValue(t *testing.T) {
+	plan := planProjectEnvironment(
+		map[string]string{},
+		projectModeExistingID,
+		&resolvedProject{},
+		true,
+	)
+
+	assert.NotContains(t, plan.Unsets, projectDeploymentsEnvKey)
+}
+
 func TestProjectEnvironmentClearsOnlyNonEmptyValues(t *testing.T) {
 	old := map[string]string{
 		"AZURE_AI_PROJECT_ID":   "old-id",
@@ -1033,6 +1086,59 @@ func TestExistingEndpointModeRejectsManagedDeploymentsWhenEndpointChanges(t *tes
 	assert.Contains(t, err.Error(), "cannot retain managed model deployments")
 }
 
+func TestExistingEndpointModeEnvironmentDeployments(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	const deployments = `[{"name":"chat","model":{"format":"OpenAI","name":"gpt-4.1","version":"1"},` +
+		`"sku":{"name":"Standard","capacity":1}}]`
+	for _, test := range []struct {
+		name, value, oldEndpoint, projectID string
+		wantError                           bool
+		yamlDeployments                     bool
+	}{
+		{name: "no service", value: deployments, wantError: true},
+		{name: "changed endpoint", value: deployments, oldEndpoint: "https://other.services.ai.azure.com/api/projects/p",
+			wantError: true},
+		{name: "clearing identity", value: deployments, oldEndpoint: endpoint, projectID: "project-id", wantError: true},
+		{name: "unchanged endpoint", value: deployments, oldEndpoint: endpoint},
+		{name: "intentional empty", value: "[]", projectID: "project-id"},
+		{name: "empty overrides YAML while clearing identity", value: "[]", oldEndpoint: endpoint,
+			projectID: "project-id", yamlDeployments: true},
+		{name: "blank falls back to YAML", value: " ", oldEndpoint: endpoint,
+			projectID: "project-id", yamlDeployments: true, wantError: true},
+		{name: "missing falls back to YAML", oldEndpoint: endpoint,
+			projectID: "project-id", yamlDeployments: true, wantError: true},
+		{name: "blank", value: " ", projectID: "project-id"},
+		{name: "missing", projectID: "project-id"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var service *projectServiceInfo
+			if test.oldEndpoint != "" {
+				service = &projectServiceInfo{
+					Raw:      map[string]any{"endpoint": test.oldEndpoint},
+					Resolved: map[string]any{"endpoint": test.oldEndpoint},
+				}
+				if test.yamlDeployments {
+					service.Raw["deployments"] = []any{map[string]any{"name": "yaml-chat"}}
+					service.Resolved["deployments"] = []any{map[string]any{"name": "yaml-chat"}}
+				}
+			}
+			err := validateExistingEndpointMode(service, endpoint, "", map[string]string{
+				projectDeploymentsEnvKey: test.value,
+				"AZURE_AI_PROJECT_ID":    test.projectID,
+			})
+			if test.wantError {
+				require.ErrorContains(t, err, "cannot retain managed model deployments")
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, "project_reconciliation_requires_project_id", localErr.Code)
+				assert.Contains(t, localErr.Suggestion, "--project-id")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestExistingEndpointModeRejectsInfrastructureWithoutProjectID(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
 
@@ -1071,7 +1177,10 @@ func TestProjectEjectIdentityRejectsEndpointMismatch(t *testing.T) {
 	err := func() error {
 		_, err := projectEjectIdentity(
 			"https://other.services.ai.azure.com/api/projects/project",
-			resourceID,
+			&resolvedProject{
+				ResourceId: resourceID,
+				Endpoint:   "https://account.services.ai.azure.com/api/projects/project",
+			},
 			nil,
 		)
 		return err
@@ -1202,8 +1311,14 @@ func TestProjectAddEndpointOnlyPreflightsHostedAgents(t *testing.T) {
 			reject:  true,
 		},
 		{
-			name:   "inline image agent",
+			name:   "inline image defaults to source",
 			agents: "    agents:\n      - name: image\n        kind: hosted\n        image: registry.example.com/agent:latest\n",
+			reject: true,
+		},
+		{
+			name: "inline prebuilt image agent",
+			agents: "    agents:\n      - name: image\n        kind: hosted\n" +
+				"        image: registry.example.com/agent:latest\n        docker: {imagePassthrough: true}\n",
 		},
 		{
 			name:   "inline code agent",
@@ -1560,12 +1675,36 @@ services:
 	assert.NotContains(t, projectServer.unsetPaths, "infra.path")
 }
 
+type ejectEnvironmentServer struct {
+	transactionEnvironmentServer
+}
+
+func (s *ejectEnvironmentServer) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{
+		Environment: &azdext.Environment{Name: s.values["AZURE_ENV_NAME"]},
+	}, nil
+}
+
+func (s *ejectEnvironmentServer) GetValue(
+	_ context.Context, req *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	return &azdext.KeyValueResponse{Value: s.values[req.Key]}, nil
+}
+
 func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	t.Setenv("ENABLE_AGENT", "false")
+	const existingRegistryID = "/subscriptions/sub/resourceGroups/shared/" +
+		"providers/Microsoft.ContainerRegistry/registries/sharedregistry"
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "azure.yaml"),
 		[]byte("name: test\nservices:\n  project:\n    host: azure.ai.project\n"+
+			"    network:\n      peSubnet:\n"+
+			"        vnet: /subscriptions/sub/resourceGroups/network/providers/Microsoft.Network/virtualNetworks/vnet\n"+
+			"        name: pe-subnet\n"+
 			"  active-agent:\n    host: azure.ai.agent\n    condition: ${ENABLE_AGENT}\n"),
 		0600,
 	))
@@ -1578,6 +1717,10 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	}
 	server := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(server, projectServer)
+	envServer := &ejectEnvironmentServer{transactionEnvironmentServer: transactionEnvironmentServer{
+		values: map[string]string{},
+	}}
+	azdext.RegisterEnvironmentServiceServer(server, envServer)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() {
@@ -1594,15 +1737,39 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 
+	environment := map[string]string{
+		"ENABLE_AGENT":                         "true",
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": existingRegistryID,
+		"AZURE_SUBSCRIPTION_ID":                "sub",
+		"AZURE_RESOURCE_GROUP":                 "foundry",
+		"AZURE_ENV_NAME":                       "test",
+		"AZURE_LOCATION":                       "eastus",
+	}
+	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
+		"project", "terraform", &resolvedProject{}, environment), "not supported with Terraform")
+	assert.NoDirExists(t, filepath.Join(root, "infra"))
+	environment["AZURE_RESOURCE_GROUP"] = "shared"
+	environment["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
+	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
+		"project", "bicep", &resolvedProject{}, environment), "azd down deletes")
+	delete(environment, "AZD_FOUNDRY_ACR_MODE")
+	assert.NoDirExists(t, filepath.Join(root, "infra"))
+	assert.Empty(t, envServer.values, "invalid eject must not persist the inferred mode")
+	environment["AZURE_RESOURCE_GROUP"] = "foundry"
+	envServer.failAt = 1
+	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
+		"project", "bicep", &resolvedProject{}, environment), "persist ACR mode")
+	assert.NoDirExists(t, filepath.Join(root, "infra"), "failed persistence must roll back the ejected files")
+	assert.Empty(t, envServer.values)
+	envServer.failAt = 0
 	require.NoError(t, ejectProjectInfraWithTarget(
 		t.Context(),
 		client,
 		root,
 		"project",
 		"bicep",
-		"",
-		"",
-		map[string]string{"ENABLE_AGENT": "true"},
+		&resolvedProject{},
+		environment,
 	))
 
 	// #nosec G304 -- path is inside the test project directory.
@@ -1615,7 +1782,160 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(raw, &parameters))
 	assert.Equal(t, true, parameters.Parameters["includeAcr"].Value)
+	assert.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}",
+		parameters.Parameters["existingAcrResourceId"].Value)
+	assert.NotContains(t, string(raw), existingRegistryID)
+	for _, module := range []string{"container-registry.bicep", "foundry-project.bicep"} {
+		assert.FileExists(t, filepath.Join(root, "infra", "modules", module))
+	}
 	assertProjectEjectionOmitsConnections(t, filepath.Join(root, "infra"))
+	assert.Equal(t, "reuse-connect", envServer.values["AZD_FOUNDRY_ACR_MODE"])
+	assert.NotContains(t, environment, "AZD_FOUNDRY_ACR_MODE", "eject must not mutate its snapshot")
+
+	for _, recordedMode := range []bool{true, false} {
+		t.Run(fmt.Sprintf("initialize/recorded=%t", recordedMode), func(t *testing.T) {
+			envServer.values = maps.Clone(environment)
+			if recordedMode {
+				envServer.values["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
+			}
+			before := maps.Clone(envServer.values)
+			provider := provisioning.NewFoundryProvisioningProvider(client, nil)
+			require.NoError(t, provider.Initialize(t.Context(), root, &azdext.ProvisioningOptions{
+				Provider: provisioning.FoundryProviderName,
+			}))
+			assert.Equal(t, before, envServer.values)
+		})
+	}
+}
+
+func TestEjectProjectInfraRecordedRegistryMode(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+	for _, provider := range []string{"bicep", "terraform"} {
+		for _, mode := range []string{"create", "reuse-connect", "already-connected"} {
+			t.Run(provider+"/"+mode, func(t *testing.T) {
+				root := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"),
+					[]byte("name: test\nservices:\n  project:\n    host: azure.ai.project\n"+
+						"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"), 0600))
+				projectServer := &recordingProjectConfigServer{
+					project: &azdext.ProjectConfig{
+						Path: root, Infra: &azdext.InfraOptions{Provider: provisioningFoundryProvider},
+					},
+				}
+				server := grpc.NewServer()
+				azdext.RegisterProjectServiceServer(server, projectServer)
+				listener, err := net.Listen("tcp", "127.0.0.1:0")
+				require.NoError(t, err)
+				go func() { _ = server.Serve(listener) }()
+				t.Cleanup(func() {
+					server.Stop()
+					_ = listener.Close()
+				})
+				client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+				require.NoError(t, err)
+				t.Cleanup(client.Close)
+				env := map[string]string{
+					"AZD_FOUNDRY_ACR_MODE": mode, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": id,
+				}
+				if mode == "create" {
+					env["AZURE_SUBSCRIPTION_ID"] = "sub"
+					env["AZURE_RESOURCE_GROUP"] = "shared"
+					env["AZURE_AI_PROJECT_ID"] = "/subscriptions/sub/resourceGroups/shared/" +
+						"providers/Microsoft.CognitiveServices/accounts/account/projects/project"
+					env["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = "registry.azurecr.io"
+				}
+				err = ejectProjectInfraWithTarget(t.Context(), client, root,
+					"project", provider, &resolvedProject{}, env)
+				switch {
+				case mode == "already-connected":
+					require.ErrorContains(t, err, "AZD_FOUNDRY_ACR_MODE")
+					assert.NoDirExists(t, filepath.Join(root, "infra"))
+				case provider == "terraform" && mode == "reuse-connect":
+					require.ErrorContains(t, err, "reuse mode")
+					require.ErrorContains(t, err, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+					assert.NoDirExists(t, filepath.Join(root, "infra"))
+				case provider == "terraform":
+					require.NoError(t, err)
+					assert.FileExists(t, filepath.Join(root, "infra", "main.tf"))
+				default:
+					require.NoError(t, err)
+					// #nosec G304 -- path is inside the test project directory.
+					raw, err := os.ReadFile(filepath.Join(root, "infra", "main.parameters.json"))
+					require.NoError(t, err)
+					var params struct {
+						Parameters map[string]struct {
+							Value any `json:"value"`
+						} `json:"parameters"`
+					}
+					require.NoError(t, json.Unmarshal(raw, &params))
+					if mode == "reuse-connect" {
+						assert.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}",
+							params.Parameters["existingAcrResourceId"].Value)
+					} else {
+						assert.NotContains(t, params.Parameters, "existingAcrResourceId")
+					}
+				}
+				assert.Equal(t, mode, env["AZD_FOUNDRY_ACR_MODE"], "eject must not mutate its snapshot")
+			})
+		}
+	}
+}
+
+func TestEjectProjectOnlyRegistrySelectionPreservesDemand(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
+	const registryID = "/subscriptions/sub/resourceGroups/shared/" +
+		"providers/Microsoft.ContainerRegistry/registries/registry"
+	for _, layer := range []bool{false, true} {
+		t.Run(fmt.Sprint(layer), func(t *testing.T) {
+			root := t.TempDir()
+			infra := "infra:\n  provider: microsoft.foundry\n"
+			path, module := "infra", "main"
+			if layer {
+				infra = "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
+					"      path: infra/foundry\n      module: project\n"
+				path, module = filepath.Join("infra", "foundry"), "project"
+			}
+			raw := "name: project-only\n" + infra + "services:\n  project:\n    host: azure.ai.project\n"
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
+			projectServer := &recordingProjectConfigServer{project: &azdext.ProjectConfig{
+				Path: root, Infra: &azdext.InfraOptions{Provider: provisioningFoundryProvider},
+			}}
+			server := grpc.NewServer()
+			azdext.RegisterProjectServiceServer(server, projectServer)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(func() {
+				server.Stop()
+				_ = listener.Close()
+			})
+			client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+			values := map[string]string{
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID, "AZURE_SUBSCRIPTION_ID": "sub",
+			}
+			before := maps.Clone(values)
+			require.NoError(t, ejectProjectInfra(t.Context(), client, root, "project", "bicep", values))
+			//nolint:gosec // Test-owned path.
+			data, err := os.ReadFile(filepath.Join(root, path, module+".parameters.json"))
+			require.NoError(t, err)
+			var doc struct {
+				Parameters map[string]struct {
+					Value any `json:"value"`
+				} `json:"parameters"`
+			}
+			require.NoError(t, json.Unmarshal(data, &doc))
+			assert.NotContains(t, doc.Parameters, "includeAcr")
+			assert.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}", doc.Parameters["existingAcrResourceId"].Value)
+			assert.Equal(t, before, values)
+			//nolint:gosec // Test-owned path.
+			after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+			require.NoError(t, err)
+			assert.Equal(t, raw, string(after))
+		})
+	}
 }
 
 func TestEjectTerraformUsesFoundryLayerPathAndProvider(t *testing.T) {
@@ -1920,6 +2240,12 @@ type projectAddEnvironmentServer struct {
 	setCalls int
 	setErr   error
 	values   map[string]string
+}
+
+func (s *projectAddEnvironmentServer) GetConfig(
+	context.Context, *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	return &azdext.GetConfigResponse{}, nil
 }
 
 func (s *projectAddEnvironmentServer) Select(

@@ -19,6 +19,8 @@ func newRoutineRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run <command> [options]",
 		Short: "Manage routine run history.",
+		Example: `  # Inspect recent execution history
+  azd ai routine run list nightly-summary --top 10`,
 	}
 
 	cmd.AddCommand(newRoutineRunListCommand(extCtx))
@@ -37,6 +39,8 @@ func newRoutineRunListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `List execution history for a Foundry routine.
 
 Auto-paginates via page tokens. Use --top to cap the total number of results.`,
+		Example: `  # List up to ten runs for a routine
+  azd ai routine run list nightly-summary --top 10`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			output = extCtx.OutputFormat

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 )

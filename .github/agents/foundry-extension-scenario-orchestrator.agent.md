@@ -49,8 +49,9 @@ Run these in order regardless of which skill selected the scenarios. Each refere
 source — read it, don't restate it.
 
 1. **Prerequisites.** Verify MCP server availability and `profile.local.yaml`; generate the
-   single sweep `run_id`; and derive the base `session_vars` (profile merge +
-   `shared_agent_name` + `fixtures_dir` + `run_id`) per
+   single sweep `run_id`; and derive the base `session_vars` (profile merge, including
+   `model_version` and `model_sku`, plus `shared_agent_name` + `fixtures_dir` + `run_id`) and each applicable
+   bounded `foundry_project_name` per
    `.github/skills/foundry-extension-scenario-pr-regression/references/prerequisites.md`. Thread `session_vars`
    through every worker after adding that scenario's assigned `instance` where applicable.
 2. **`azd` binary gate (mandatory).** Ensure a verified native-Linux `azd` dev build is
@@ -65,8 +66,11 @@ source — read it, don't restate it.
 3. **Cost / consent gate.** List the plan grouped by tier. Tier 0 is free; Tier 1 needs
    `az login`; **Tier 1b and Tier 2 provision real Azure resources** and require an *explicit*
    cost acknowledgement before running. Before showing this plan, recursively add every
-   selected scenario's `requires:` prerequisites, then close any Tier 2 selection over
-   `2.00-setup` and `2.99-teardown`. If the user declines, drop the cost-incurring tiers and
+   selected scenario's `requires:` prerequisites, then close shared-agent Tier 2 selections over
+   `2.00-setup` and `2.99-teardown`. Apply the executor's **Manual-seed selection and readiness**
+   gate first: default exclusion, explicit scenario/tag opt-in, seed verification, and
+   external cleanup ownership. Independent `2.19` does not use the shared lifecycle.
+   If the user declines, drop the cost-incurring tiers and
    prerequisites added solely for those dropped dependents.
 4. **Recipe validation (mandatory).** Before fanning out, drive one fast Tier 0 scenario
    (e.g. `0.01-version`) end-to-end — spawn a single `foundry-extension-scenario-worker` and wait. If it fails
@@ -104,12 +108,17 @@ the `agent` tool and honor the phase, readiness, and parallelism rules in that s
 - **Tier 2** (`serial-only`, ⚠️ cost): after the shared gates pass, start its serial lane even
   while Tier 0 / Tier 1 / Tier 1b workers are active. Never run more than one Tier 2 worker:
   `2.00-setup` first, then `2.01…2.18` serially, `2.18-delete` before teardown, and
-  `2.99-teardown-down` last. Setup must PASS before any functional Tier 2 scenario runs;
-  otherwise skip those scenarios and proceed to cleanup/recovery. Each functional completion
+  `2.99-teardown-down` last in the shared lane. Setup must PASS before shared
+  functional Tier 2 scenarios run; otherwise skip those scenarios and proceed
+  to cleanup/recovery. Each functional completion
   unlocks only its next selected Tier 2 scenario, and teardown follows the final attempted
   functional scenario regardless of its verdict. Consider the active Tier 2 worker when
   choosing safe overall parallelism, and launch cost-incurring workers conservatively because
   an in-flight provision cannot be recalled.
+  After shared cleanup, run explicitly opted-in, seed-ready independent `2.19`
+  serially, even if shared setup failed. If only `2.19` is selected, omit shared
+  setup/teardown. Verify its external owned cleanup per the executor's manual-seed
+  rules; the product barrier includes that work and cleanup.
 
 Give each worker its inputs (scenario path in the correct style, per-scenario `session_vars`,
 `run_name`, `output_dir` under the single `<run-id>`, `session_id`, assigned `instance_id` when

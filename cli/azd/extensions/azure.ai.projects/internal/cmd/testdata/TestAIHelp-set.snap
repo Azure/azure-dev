@@ -1,0 +1,18 @@
+Persist a default Foundry project endpoint in the azd global config
+(~/.azd/config.json). Other commands will resolve this endpoint when no
+azd environment or explicit flag is available.
+
+Usage
+  azd ai project set <endpoint> [flags]
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for set
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "table")
+
+Examples
+  Set the default project endpoint
+    azd ai project set https://my-project.services.ai.azure.com/api/projects/my-project

@@ -16,8 +16,10 @@ import (
 	"azureaiskills/internal/exterrors"
 	"azureaiskills/internal/foundry/envkey"
 	"azureaiskills/internal/pkg/skill_api"
+	"azureaiskills/internal/version"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc"
 )
 
 // aiSkillHost is the azure.yaml service host kind owned by this extension. A
@@ -32,7 +34,7 @@ var _ azdext.ServiceTargetProvider = (*skillServiceTarget)(nil)
 // service key, not a body field.
 type skillServiceConfig struct {
 	Description   string            `json:"description,omitempty"`
-	Instructions  string            `json:"instructions,omitempty"`
+	Instructions  skillInstructions `json:"instructions,omitzero"`
 	License       string            `json:"license,omitempty"`
 	Compatibility string            `json:"compatibility,omitempty"`
 	Metadata      map[string]string `json:"metadata,omitempty"`
@@ -40,21 +42,46 @@ type skillServiceConfig struct {
 	Archive       string            `json:"archive,omitempty"`
 }
 
+type skillServiceClient interface {
+	skillProbeReader
+	CreateVersionInline(ctx context.Context, name string, req skill_api.CreateVersionRequest) (*skill_api.SkillVersion, error)
+	CreateVersionFromZip(ctx context.Context, name, fileName string, archive io.Reader, makeDefault bool) (*skill_api.SkillVersion, error)
+}
+
 // skillServiceTarget upserts a Foundry skill declared as an azure.ai.skill
 // service. Deploy creates a new default skill version from either inline
 // content or an archive reference; the resource name is the service key.
 // Package and Publish are no-ops because a skill has no build artifact.
 type skillServiceTarget struct {
-	azdClient     *azdext.AzdClient
-	serviceConfig *azdext.ServiceConfig
-	setEnvValue   func(context.Context, string, string, string) error
-	currentEnv    func(context.Context) (string, error)
+	azdClient         *azdext.AzdClient
+	environmentClient environmentReader
+	accountClient     accountTenantLookup
+	serviceConfig     *azdext.ServiceConfig
+	setEnvValue       func(context.Context, string, string, string) error
+	currentEnv        func(context.Context) (string, error)
+	access            *skillAccess
+	newClient         func(endpoint, tenantID string) (skillServiceClient, error)
+}
+
+type environmentReader interface {
+	GetCurrent(ctx context.Context, in *azdext.EmptyRequest, opts ...grpc.CallOption) (*azdext.EnvironmentResponse, error)
+	GetValue(ctx context.Context, in *azdext.GetEnvRequest, opts ...grpc.CallOption) (*azdext.KeyValueResponse, error)
 }
 
 // newSkillServiceTarget creates the azure.ai.skill service-target provider.
 func newSkillServiceTarget(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
 	return &skillServiceTarget{
-		azdClient: azdClient,
+		azdClient:         azdClient,
+		environmentClient: azdClient.Environment(),
+		accountClient:     azdClient.Account(),
+		access:            newSkillAccess(azdClient),
+		newClient: func(endpoint, tenantID string) (skillServiceClient, error) {
+			cred, err := newCredentialForTenant(tenantID)
+			if err != nil {
+				return nil, err
+			}
+			return skill_api.NewClient(endpoint, cred, version.Version), nil
+		},
 		currentEnv: func(ctx context.Context) (string, error) {
 			env, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 			if err != nil {
@@ -138,11 +165,15 @@ func (p *skillServiceTarget) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
+	name := serviceConfig.GetName()
+	if err := validateSkillName(name); err != nil {
+		return nil, err
+	}
 	cfg, err := parseSkillServiceConfig(serviceConfig)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateSkillServiceConfig(serviceConfig.GetName(), cfg); err != nil {
+	if err := validateSkillServiceConfig(name, cfg); err != nil {
 		return nil, err
 	}
 
@@ -166,7 +197,7 @@ func (p *skillServiceTarget) Deploy(
 		defer archive.Reader.Close()
 	} else {
 		projectPath := ""
-		if isInstructionFilePath(cfg.Instructions) {
+		if cfg.Instructions.IsFile {
 			projectPath, err = p.resolveProjectPath(ctx)
 			if err != nil {
 				return nil, err
@@ -179,28 +210,66 @@ func (p *skillServiceTarget) Deploy(
 		inlineContent = skillInlineContent(cfg, instructions)
 	}
 
-	skillCtx, err := resolveSkillContext(ctx, "")
+	endpoint, src, err := resolveSkillWriteEndpoint(ctx, "")
 	if err != nil {
+		return nil, err
+	}
+	scope, err := p.access.resolve(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	tenantID := ""
+	if scope != nil {
+		tenantID = scope.tenantID
+	}
+	if scope == nil && src == sourceAzdEnv && p.environmentClient != nil && p.accountClient != nil {
+		tenantID, err = p.credentialTenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	newClient := p.newClient
+	if newClient == nil {
+		newClient = func(endpoint, tenantID string) (skillServiceClient, error) {
+			cred, err := newCredentialForTenant(tenantID)
+			if err != nil {
+				return nil, err
+			}
+			return skill_api.NewClient(endpoint, cred, version.Version), nil
+		}
+	}
+	client, err := newClient(endpoint, tenantID)
+	if cancelErr := skillAccessCancellation(ctx, err); cancelErr != nil {
+		return nil, cancelErr
+	}
+	if err != nil {
+		return nil, exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			"could not create the Foundry credential",
+			"run 'azd auth login' to authenticate",
+		)
+	}
+	if _, err := p.access.ensure(ctx, scope, client, name, skillReadOptionalForDeploy, progress); err != nil {
 		return nil, err
 	}
 
 	if progress != nil {
-		progress(fmt.Sprintf("Upserting skill %q", serviceConfig.GetName()))
+		progress(fmt.Sprintf("Upserting skill %q", name))
 	}
 
 	var version *skill_api.SkillVersion
 	if archive != nil {
-		version, err = skillCtx.client.CreateVersionFromZip(
+		version, err = client.CreateVersionFromZip(
 			ctx,
-			serviceConfig.GetName(),
+			name,
 			archive.Name,
 			archive.Reader,
 			true,
 		)
 	} else {
-		version, err = skillCtx.client.CreateVersionInline(
+		version, err = client.CreateVersionInline(
 			ctx,
-			serviceConfig.GetName(),
+			name,
 			skill_api.CreateVersionRequest{
 				InlineContent: inlineContent,
 				Default:       true,
@@ -208,10 +277,13 @@ func (p *skillServiceTarget) Deploy(
 		)
 	}
 	if err != nil {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpReconcileSkill)
+		return nil, skillWriteError(ctx, err, exterrors.OpReconcileSkill, scope, "", "")
+	}
+	if cancelErr := skillAccessCancellation(ctx, nil); cancelErr != nil {
+		return nil, cancelErr
 	}
 	if version == nil {
-		return nil, fmt.Errorf("upserting skill %q returned no version", serviceConfig.GetName())
+		return nil, fmt.Errorf("upserting skill %q returned no version", name)
 	}
 	envName, err := p.currentEnv(ctx)
 	if err != nil {
@@ -219,9 +291,9 @@ func (p *skillServiceTarget) Deploy(
 	}
 	if err := publishSkillMarkers(
 		ctx,
-		serviceConfig.GetName(),
+		name,
 		version.Version,
-		skillCtx.endpoint,
+		endpoint,
 		envName,
 		p.setEnvValue,
 	); err != nil {
@@ -229,6 +301,54 @@ func (p *skillServiceTarget) Deploy(
 	}
 
 	return &azdext.ServiceDeployResult{}, nil
+}
+
+func (p *skillServiceTarget) credentialTenantID(ctx context.Context) (string, error) {
+	current, err := p.environmentClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+	if cancelErr := skillAccessCancellation(ctx, err); cancelErr != nil {
+		return "", cancelErr
+	}
+	if err != nil {
+		return "", exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("failed to resolve the active azd environment: %s", err),
+		)
+	}
+	envName := strings.TrimSpace(current.GetEnvironment().GetName())
+	if envName == "" {
+		return "", nil
+	}
+	subscriptionResponse, err := p.environmentClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_SUBSCRIPTION_ID",
+	})
+	if cancelErr := skillAccessCancellation(ctx, err); cancelErr != nil {
+		return "", cancelErr
+	}
+	if err != nil {
+		return "", exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("failed to read AZURE_SUBSCRIPTION_ID from azd environment %q: %s", envName, err),
+		)
+	}
+	subscriptionID := strings.TrimSpace(subscriptionResponse.GetValue())
+	if subscriptionID == "" {
+		return "", nil
+	}
+	tenantResponse, err := p.accountClient.LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: subscriptionID,
+	})
+	if cancelErr := skillAccessCancellation(ctx, err); cancelErr != nil {
+		return "", cancelErr
+	}
+	if err != nil {
+		return "", exterrors.Auth(
+			exterrors.CodeAuthFailed,
+			fmt.Sprintf("failed to get tenant ID for subscription %s: %s", subscriptionID, err),
+			"verify your Azure login with 'azd auth login' and that you have access to this subscription",
+		)
+	}
+	return strings.TrimSpace(tenantResponse.GetTenantId()), nil
 }
 
 func (p *skillServiceTarget) resolveProjectPath(ctx context.Context) (string, error) {
@@ -249,7 +369,7 @@ func (p *skillServiceTarget) resolveProjectPath(ctx context.Context) (string, er
 func validateSkillServiceConfig(name string, cfg *skillServiceConfig) error {
 	hasArchive := strings.TrimSpace(cfg.Archive) != ""
 	hasInline := strings.TrimSpace(cfg.Description) != "" ||
-		strings.TrimSpace(cfg.Instructions) != "" ||
+		strings.TrimSpace(cfg.Instructions.Value) != "" ||
 		strings.TrimSpace(cfg.License) != "" ||
 		strings.TrimSpace(cfg.Compatibility) != "" ||
 		len(cfg.Metadata) > 0 ||
@@ -265,11 +385,11 @@ func validateSkillServiceConfig(name string, cfg *skillServiceConfig) error {
 			"configure either archive, or inline description/instructions/license/compatibility/metadata/tools",
 		)
 	}
-	if !hasArchive && strings.TrimSpace(cfg.Instructions) == "" {
+	if !hasArchive && strings.TrimSpace(cfg.Instructions.Value) == "" {
 		return exterrors.Validation(
 			exterrors.CodeMissingRequiredField,
 			fmt.Sprintf("skill service %q requires instructions or archive", name),
-			"set instructions to inline text/a .md or .txt path, or set archive to a .zip/directory path",
+			"set instructions to inline text or {file: path}, or set archive to a .zip/directory path",
 		)
 	}
 	return nil
@@ -335,20 +455,20 @@ func parseSkillServiceConfig(svc *azdext.ServiceConfig) (*skillServiceConfig, er
 func resolveSkillInstructions(
 	projectPath string,
 	svc *azdext.ServiceConfig,
-	instructions string,
+	instructions skillInstructions,
 ) (string, error) {
-	if !isInstructionFilePath(instructions) {
-		return instructions, nil
+	if !instructions.IsFile {
+		return instructions.Value, nil
 	}
 
-	path := strings.TrimSpace(instructions)
+	path := strings.TrimSpace(instructions.Value)
 	if !filepath.IsAbs(path) {
 		// Reject path traversal: a relative instructions path is read from disk
 		// under the service directory, so a value like "../../secret.md" must not
 		// be allowed to escape it via filepath.Join.
 		if hasParentTraversal(path) {
 			return "", fmt.Errorf(
-				"skill instructions path %q must not contain '..' or escape the service directory", instructions)
+				"skill instructions path %q must not contain '..' or escape the service directory", instructions.Value)
 		}
 		path = filepath.Join(skillServiceRoot(projectPath, svc), path)
 	}
@@ -438,6 +558,9 @@ func prepareSkillArchive(path string) (*preparedSkillArchive, error) {
 		if err != nil {
 			return nil, classifyArchiveDirectoryError(err, path)
 		}
+		if err := validateSkillArchiveUploadSize(path, int64(len(data))); err != nil {
+			return nil, err
+		}
 		return &preparedSkillArchive{
 			Name:   filepath.Base(filepath.Clean(path)) + ".zip",
 			Reader: io.NopCloser(bytes.NewReader(data)),
@@ -459,12 +582,8 @@ func prepareSkillArchive(path string) (*preparedSkillArchive, error) {
 			"set archive to a .zip file or a directory containing SKILL.md",
 		)
 	}
-	if info.Size() > skill_api.MaxUploadBytes {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("skill archive %s exceeds the 25 MB upload size limit", path),
-			"reduce the archive size to 25 MB or less",
-		)
+	if err := validateSkillArchiveUploadSize(path, info.Size()); err != nil {
+		return nil, err
 	}
 	file, err := os.Open(path) //nolint:gosec // user-authored azure.yaml path opened on user's behalf
 	if err != nil {
@@ -480,6 +599,17 @@ func prepareSkillArchive(path string) (*preparedSkillArchive, error) {
 	}, nil
 }
 
+func validateSkillArchiveUploadSize(path string, size int64) error {
+	if size <= skill_api.MaxUploadBytes {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidSkillFile,
+		fmt.Sprintf("skill archive %s exceeds the 25 MB upload size limit", path),
+		"reduce the archive size to 25 MB or less",
+	)
+}
+
 // hasParentTraversal reports whether a relative path contains a ".." segment
 // that could escape its base directory, treating both '/' and '\' as separators.
 func hasParentTraversal(p string) bool {
@@ -489,17 +619,4 @@ func hasParentTraversal(p string) bool {
 		}
 	}
 	return false
-}
-
-func isInstructionFilePath(instructions string) bool {
-	value := strings.TrimSpace(instructions)
-	if strings.ContainsAny(value, "\r\n") {
-		return false
-	}
-	switch strings.ToLower(filepath.Ext(value)) {
-	case ".md", ".txt":
-		return true
-	default:
-		return false
-	}
 }

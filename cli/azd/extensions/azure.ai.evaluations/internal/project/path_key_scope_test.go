@@ -17,7 +17,7 @@ import (
 // path.
 //
 // On an evaluator it names a rubric file. On an eval it is a mapping that says
-// where rows come from -- `{type: traces, agent_name: ...}`. WithPathKeys
+// where rows come from -- `{type: traces, agentName: ...}`. WithPathKeys
 // declares `source` a path key, so this pins that the mapping is left alone:
 // rebasing only applies to a relative string, and an eval's source carries no
 // string to rebase.
@@ -30,8 +30,8 @@ func TestAnEvalSourceMappingSurvivesPathKeyRebasing(t *testing.T) {
 		[]byte(`name: from-traces
 source:
   type: traces
-  agent_name: support-agent
-  lookback_hours: 24
+  agentName: support-agent
+  lookbackHours: 24
 evaluators:
   - evaluator: builtin.task_adherence
 `), 0o600))

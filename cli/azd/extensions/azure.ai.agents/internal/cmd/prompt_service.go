@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
@@ -101,7 +102,7 @@ func resolvePromptAgentService(
 	// resource group, workspace, and project endpoint come from the azd
 	// environment. Lifecycle commands require that environment because it is the
 	// only source of the provisioned Foundry target.
-	envValues, envErr := promptEnvValues(ctx, azdClient)
+	envValues, envErr := promptEnvValues(ctx, azdClient, "")
 	if envErr != nil {
 		return nil, false, fmt.Errorf("reading the azd environment: %w", envErr)
 	}
@@ -119,6 +120,17 @@ func resolvePromptAgentService(
 		return nil, false, mapErr
 	}
 
+	// Only invocation needs a model; status and cleanup do not.
+	if proj != nil && resolutionOptions.resolvePromptModel {
+		model, modelErr := project.ResolvePromptAgentModel(
+			agentDef.Model, svc, proj.GetServices(), projectPath, envValues,
+		)
+		if modelErr != nil {
+			return nil, false, modelErr
+		}
+		agentDef.Model = model
+	}
+
 	pctx := &promptServiceContext{
 		AzdClient:   azdClient,
 		ServiceName: svc.Name,
@@ -134,6 +146,12 @@ func resolvePromptAgentService(
 	}
 
 	return pctx, true, nil
+}
+
+func withPromptModelResolution() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.resolvePromptModel = true
+	}
 }
 
 // promptAgentNameForService returns the harness agent identity for a prompt
@@ -168,7 +186,7 @@ func (p *promptServiceContext) AgentName() string {
 }
 
 // agentKey returns the config-store key used to persist per-agent multi-turn
-// state (the last response id) for this prompt service. It mirrors the hosted
+// conversation state for this prompt service. It mirrors the hosted
 // key scheme (buildAgentKey) so lookups and cleanup share one code path.
 func (p *promptServiceContext) agentKey(agentName string) string {
 	return buildAgentKey(strings.TrimSpace(p.Settings.ProjectEndpoint), agentName, "", false)
@@ -183,22 +201,31 @@ func (p *promptServiceContext) newClient(ctx context.Context) (*agent_api.AgentC
 	return project.NewPromptAgentClient(p.Settings, credential)
 }
 
-// promptEnvValues returns the current azd environment as a key/value map. It is
-// used to apply the same Foundry project -> managed workspace resolution that
-// deploy performs, so lifecycle commands target the route the agent lives on.
-func promptEnvValues(ctx context.Context, azdClient *azdext.AzdClient) (map[string]string, error) {
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return nil, err
+// promptEnvValues returns the selected azd environment as a key/value map.
+// Explicit names win over the command selection and saved default.
+func promptEnvValues(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environmentName string,
+) (map[string]string, error) {
+	if environmentName == "" {
+		envResp, err := synthesis.CurrentEnvironment(ctx, azdClient)
+		if err != nil {
+			return nil, err
+		}
+		environmentName = envResp.Environment.Name
 	}
 	values, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: envResp.Environment.Name,
+		Name: environmentName,
 	})
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]string, len(values.KeyValues))
 	for _, kv := range values.KeyValues {
+		if kv == nil {
+			continue
+		}
 		out[kv.Key] = kv.Value
 	}
 	return out, nil

@@ -15,6 +15,8 @@ func newVersionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print the extension version.",
+		Example: `  # Display the installed skill extension version
+  azd ai skill version`,
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Printf("Version: %s\nCommit: %s\nBuild Date: %s\n", version.Version, version.Commit, version.BuildDate)
 		},

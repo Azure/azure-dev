@@ -1,0 +1,138 @@
+<!doctype html>
+<!-- Copyright (c) Microsoft Corporation. All rights reserved.
+     Licensed under the MIT License. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>azd release</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">AZURE DEVELOPER CLI / CORE RELEASE</div>
+    <div class="heading"><h1>Release control room</h1><button id="refresh">Refresh</button><button id="refresh-live" hidden>Refresh live data</button></div>
+    <p class="muted">Shared observations load from GitHub. Live reads and release actions are explicit.</p>
+  </header>
+  <div id="loading" class="loading" role="status" aria-live="polite">
+    <span class="spinner" aria-hidden="true"></span>
+    <p>Checking team access and refreshing release...</p>
+  </div>
+  <main id="content" hidden aria-busy="true">
+    <div id="notice" role="status" aria-live="polite"></div>
+    <section id="access-required" class="card" role="status" hidden>
+      <h2>Team access required</h2>
+      <p id="access-message"></p>
+      <p id="access-detail" class="muted"></p>
+    </section>
+    <div id="workspace" hidden>
+    <section aria-label="Access"><div id="access" class="access"></div></section>
+    <p id="setup" class="muted"></p>
+    <div id="release-errors" role="status" aria-live="polite"></div>
+    <section class="toolbar">
+      <label>Tracking issue <select id="releases"><option>Loading...</option></select></label>
+      <button id="new">New release</button>
+      <a id="runbook" target="_blank" rel="noreferrer">Release runbook</a>
+    </section>
+    <form id="create" class="card" hidden>
+      <h2>New release</h2>
+      <p>This creates a private <code>Azure/azure-dev-pr</code> issue and, if needed, the <code>azd-release</code> label. Your GitHub account becomes the driver.</p>
+      <label>CLI version <input name="releaseVersion" placeholder="1.37.0" required maxlength="80"></label>
+      <button type="submit">Create release</button>
+    </form>
+    <div id="empty" class="card" hidden>No tracked release was found. Select New release to create tracking, then prepare or link its changelog.</div>
+    <div id="release" hidden>
+      <section class="card">
+        <div class="heading"><h2 id="title"></h2><span id="role" class="badge"></span></div>
+        <p id="driver"></p>
+        <div class="links" id="links"></div>
+        <div id="changelog-setup" hidden>
+          <h3>Changelog</h3>
+          <p>No changelog PR is linked yet. Prepare one with the agent or link an existing PR for this release version. Only the release driver can do this.</p>
+          <div id="changelog-requests" aria-live="polite"></div>
+          <div id="changelog-actions" hidden>
+            <label id="changelog-mode-label">Prepare changelog in
+              <select id="changelog-mode"><option value="new">New isolated session</option><option value="current">This session</option></select>
+            </label>
+            <button id="prepare-changelog" type="button">Prepare changelog with agent</button>
+            <p class="muted">Uses the changelog-generation skill with its review and approval steps. The agent provides the new session link. No pipeline is queued.</p>
+            <form id="link-changelog">
+              <label>Existing changelog PR number
+                <input name="changelogPr" type="number" min="1" required placeholder="Changelog PR number">
+              </label>
+              <button type="submit">Verify and link changelog PR</button>
+            </form>
+          </div>
+        </div>
+        <div class="stats">
+          <div><span class="eyebrow">TRACKING STATUS</span><p id="tracking-status"></p></div>
+          <div><span class="eyebrow">PIPELINE HEALTH</span><p id="health"></p></div>
+        </div>
+        <p id="next" class="callout"></p>
+        <button id="check-changelog" type="button">Check changelog PR</button>
+        <div id="queue-action" hidden>
+          <label>Test recording mode
+            <select id="record-mode">
+              <option value="live">Live (default) - tests against real Azure resources</option>
+              <option value="playback">Playback - tests using recorded responses</option>
+            </select>
+          </label>
+          <p class="muted">Playback changes test execution, not publishing. Either mode queues a real release. The preview verifies the source and requires a separate confirmation.</p>
+          <button id="queue">Preview publishing pipeline</button>
+        </div>
+        <button id="link-run" type="button" hidden>Link an existing publishing run</button>
+        <button id="analyze" type="button" hidden disabled>Analyze failure</button>
+        <p id="analysis-note" class="muted" hidden>Analysis starts a read-only agent turn in this conversation. No automatic retries, credential changes, or recovery writes.</p>
+        <p id="updated" class="muted"></p>
+        <details id="observation-details">
+          <summary>Saved observations and freshness</summary>
+          <p id="observation-note" class="muted"></p>
+          <ul id="observations"></ul>
+        </details>
+      </section>
+      <section>
+        <div class="heading"><h2 id="roadmap-title">Release roadmap</h2><span class="muted">Gray: pending | Green: reached | Red: needs attention</span></div>
+        <div class="roadmap-scroll"><ol id="roadmap" aria-labelledby="roadmap-title"></ol></div>
+        <p class="muted">Last observed evidence, with per-section timestamps above. Saved observations are not live authorization. Approvals are reviewed in Azure DevOps; no approval is granted here. The final stop is the version-increment PR, not a publication attestation.</p>
+      </section>
+      <section id="package-readiness" class="card" aria-labelledby="package-title">
+        <h2 id="package-title">Package readiness before version.txt</h2>
+        <p id="package-summary" class="callout" role="status" aria-live="polite"></p>
+        <div id="package-gates" class="package-gates"></div>
+        <button id="check-packages" type="button" disabled>Check package readiness</button>
+        <p id="package-checked" class="muted"></p>
+        <p class="muted">Checks WinGet locally, Chocolatey approval and verification, the public Homebrew tap, and versioned downloads. The driver shares sanitized observations in the private issue; observers' checks stay local. No packages, markers, or milestone attestations are changed. Disabled submissions do not waive readiness checks. This is evidence, not permission to approve or recover a release.</p>
+      </section>
+      <section class="card" aria-labelledby="known-issues-title">
+        <h2 id="known-issues-title">Known previous issues</h2>
+        <p class="muted">Recorded release incidents and the workarounds used. These are historical references, not a diagnosis of this release. Read the linked issue before taking action; recovery still requires explicit approval.</p>
+        <div id="known-issues"></div>
+      </section>
+    </div>
+    </div>
+  </main>
+  <dialog id="adopt-dialog" aria-labelledby="adopt-title">
+    <h2 id="adopt-title">Link an existing publishing run</h2>
+    <form id="adopt">
+      <label>Existing publishing build ID <input name="runId" type="number" min="1" required></label>
+      <p id="adopt-error" class="error" role="alert" hidden></p>
+      <button type="submit">Verify and link existing run</button>
+      <button id="adopt-cancel" type="button">Cancel</button>
+    </form>
+  </dialog>
+  <dialog id="queue-dialog">
+    <h2>Confirm production publishing</h2>
+    <p>This queues a real publishing run. Normal Azure DevOps approvals still apply.</p>
+    <p id="queue-mode-info" class="callout"></p>
+    <pre id="queue-preview"></pre>
+    <form id="queue-confirm">
+      <label>Type <strong id="queue-phrase"></strong> to confirm
+        <input name="confirmation" required autocomplete="off">
+      </label>
+      <button type="submit">Queue publishing run</button>
+      <button id="queue-cancel" type="button">Cancel</button>
+    </form>
+  </dialog>
+</body>
+</html>

@@ -1,5 +1,7 @@
 # Customize Foundry infrastructure with `--infra`
 
+<!-- cspell:ignore kubelet -->
+
 `azd ai agent init --infra` generates editable infrastructure-as-code for the
 `host: azure.ai.project` service in `azure.yaml`.
 
@@ -44,6 +46,8 @@ For a service that sets `endpoint:`, Bicep eject keeps the
 `microsoft.foundry` provider. The provider compiles the generated `main.bicep`,
 so ejected and embedded provisioning use the same resource graph. Terraform
 eject uses the built-in `terraform` provider.
+
+With `agentHosting.clusterResourceId`, Bicep eject also retains `microsoft.foundry`. The standard generated graph creates the default AKS supporting resources and grants, with a registry only when an Agent requires building a container image. Before deployment, the provider resolves the built-in federation role and always reads and validates the cluster's kubelet principal object ID, regardless of registry creation. Terraform eject is rejected without modifying files. `azd down` uses the standard Foundry teardown path and deletes the target resource group and all resources inside it, including pre-existing resources. See [Existing AKS hosting](../../azure.ai.projects/README.md#existing-aks-hosting).
 
 ## Existing files
 
@@ -98,6 +102,11 @@ Eject preserves the registry choice made during init:
 - Existing project connection selected: reference its registry and connection
   without managing either one.
 
+New-project Bicep exports include `modules/container-registry.bicep` and
+`modules/foundry-project.bicep` even when no existing registry is selected.
+Bicep requires all referenced modules to compile; deployment parameters
+determine whether those modules deploy any resources.
+
 The generated files never import or take ownership of an existing registry.
 When registry work is required, the generated file is consistently named
 `modules/container-registry.bicep` or `container-registry.tf`, whether the
@@ -133,8 +142,8 @@ value.
 
 ## Limitations
 
-- Terraform eject does not support a service with a private `network:` block;
-  use Bicep for private networking.
+- Terraform eject does not support a service with a private `network:` block or `agentHosting:`;
+  use standard Bicep and `microsoft.foundry` for existing AKS hosting.
 - During migration from a legacy Foundry service, `network.mode`, `network.byo`,
   and `network.managed` are retired. Move the configuration to the current
   project `network.peSubnet` schema before running eject.

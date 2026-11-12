@@ -1,5 +1,97 @@
 # Release History
 
+<!-- cspell:ignore kseager -->
+
+## 1.1.0 (2026-11-12)
+
+### Features Added
+
+- [[#10743]](https://github.com/Azure/azure-dev/pull/10743) Provision workspace-backed Application Insights and a project `AppInsights` connection by default for new Foundry projects, and support connecting an existing Application Insights component via `monitoring.applicationInsightsResourceId`. Thanks @kseager for the contribution!
+- [[#10819]](https://github.com/Azure/azure-dev/pull/10819) Add private Application Insights monitoring through Azure Monitor Private Link Scopes for customer-VNet and managed-VNet Foundry projects. Thanks @kseager for the contribution!
+- [[#10902]](https://github.com/Azure/azure-dev/pull/10902) Add Azure Policy preflight checks and Foundry Govern remediation links for model deployments during `azd ai project deployment add`, `azd ai project add`, and `azd provision`.
+
+### Bugs Fixed
+
+- [[#10887]](https://github.com/Azure/azure-dev/pull/10887) Fix Foundry project and Azure OpenAI endpoint resolution for accounts with custom subdomains across project adoption, model deployment authoring, provisioning, and teardown.
+
+## 1.0.0 (2026-11-05)
+
+### Breaking Changes
+
+- [[#10792]](https://github.com/Azure/azure-dev/pull/10792) Align registry provisioning with source-build behavior: a bare `image` no longer suppresses registry creation, so use `docker.imagePassthrough: true` or the supported `AZD_AGENT_SKIP_ACR=true` setting with a nonempty image for prebuilt deployment.
+
+### Bugs Fixed
+
+- [[#10844]](https://github.com/Azure/azure-dev/pull/10844) Fix `azd down` rejecting azd-created container registries when deployment history also contains read operations.
+
+### Other Changes
+
+- [[#10836]](https://github.com/Azure/azure-dev/pull/10836) Remove Preview labels from command help and extension descriptions.
+
+## 1.0.0-beta.16 (2026-10-29)
+
+### Bugs Fixed
+
+- [[#10713]](https://github.com/Azure/azure-dev/pull/10713) Fix Foundry project replacement reusing model deployment settings from the previous project.
+
+## 1.0.0-beta.15 (2026-10-23)
+
+### Bugs Fixed
+
+- [[#10563]](https://github.com/Azure/azure-dev/pull/10563) Fix template adoption to offer existing deployments and catalog models for every declared deployment while preserving per-environment selections without rewriting `azure.yaml`.
+- [[#10502]](https://github.com/Azure/azure-dev/pull/10502) Fix Foundry provisioning to honor per-environment `AI_PROJECT_DEPLOYMENTS` settings, prompt for model deployments in a new environment, and preserve YAML defaults in no-prompt mode.
+- [[#10502]](https://github.com/Azure/azure-dev/pull/10502) Fix `azd ai project deployment add` to persist the complete deployment list in the active environment and preserve other deployments when replacing an entry.
+
+### Other Changes
+
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+
+## 1.0.0-beta.14 (2026-10-15)
+
+### Breaking Changes
+
+- [[#9878]](https://github.com/Azure/azure-dev/pull/9878) Require azd `>=1.36.0` for Foundry pipeline configuration support.
+- [[#10395]](https://github.com/Azure/azure-dev/pull/10395) Remove generated developer-role assignments and `principalId`/`principalType` parameters from Foundry provisioning; custom templates requiring those parameters must supply their own values.
+
+### Features Added
+
+- [[#9878]](https://github.com/Azure/azure-dev/pull/9878) Add Foundry provisioning inputs for `azd pipeline config` so generated pipelines retain project, subscription, resource group, and location context.
+- [[#10366]](https://github.com/Azure/azure-dev/pull/10366) Add an explicit deployment no-op result for Project services in `azd deploy --preview` without an unsupported-provider warning. Thanks @Siglud for the contribution!
+
+### Bugs Fixed
+
+- [[#10395]](https://github.com/Azure/azure-dev/pull/10395) Fix Foundry provisioning failing for contributors without permission to assign developer roles while preserving project-identity container registry access.
+- [[#10393]](https://github.com/Azure/azure-dev/pull/10393) Fix Linux amd64 binaries requiring the build agent's GLIBC version so the extension can start on Debian Bullseye.
+
+## 1.0.0-beta.13 (2026-09-30)
+
+### Breaking Changes
+
+- [[#10218]](https://github.com/Azure/azure-dev/pull/10218) Require azd `>=1.34.2` for host-based Foundry principal resolution.
+
+### Bugs Fixed
+
+- [[#10218]](https://github.com/Azure/azure-dev/pull/10218) Fix Foundry provisioning principal resolution for guest users and service principals by using the azd host account API.
+
+### Other Changes
+
+- [[#10104]](https://github.com/Azure/azure-dev/pull/10104) Improve `azd ai project` help formatting, examples, and configuration and environment guidance. Thanks @Siglud for the contribution!
+
+## 1.0.0-beta.12 (2026-09-24)
+
+### Features Added
+
+- [[#10030]](https://github.com/Azure/azure-dev/pull/10030) Add project and model deployment reconciliation so the Agents extension can delegate ownership of `azure.ai.project` authoring.
+
+### Bugs Fixed
+
+- [[#10008]](https://github.com/Azure/azure-dev/pull/10008) Fix cross-tenant Foundry provisioning to grant the deploying identity access to the target project.
+
+### Other Changes
+
+- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2 to address the GHSA-2v4p-qf9q-27wj security advisory.
+- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0 to address the GHSA-8wmf-6v46-5gfg security advisory.
+
 ## 1.0.0-beta.11 (2026-09-17)
 
 ### Breaking Changes

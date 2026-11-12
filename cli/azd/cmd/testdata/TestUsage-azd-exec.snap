@@ -7,7 +7,7 @@ Usage
 Flags
     -e, --environment string 	: The name of the environment to use.
     -i, --interactive        	: Run in interactive mode (connect stdin)
-    -s, --shell string       	: Shell to use (bash, sh, zsh, pwsh, powershell, cmd). Auto-detected if not specified.
+    -s, --shell string       	: Shell to use (bash, sh, zsh, pwsh, powershell, cmd). Auto-detected if not specified. Also disambiguates inline commands that contain script-like path arguments.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

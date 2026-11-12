@@ -69,26 +69,21 @@ func TestAgentResourceOwnershipConfigAndSchema(t *testing.T) {
 			t.Parallel()
 			props, err := structpb.NewStruct(tt.props)
 			require.NoError(t, err)
-			for _, nested := range []bool{false, true} {
-				svc := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, AdditionalProperties: props}
-				if nested {
-					svc.Config, svc.AdditionalProperties = props, nil
-				}
-				cfg, err := LoadServiceTargetAgentConfig(svc)
-				if tt.wantErr != "" {
-					require.ErrorContains(t, err, tt.wantErr)
-					require.ErrorContains(t, err, "azd deploy --all")
-					require.Error(t, schema.validate(tt.props))
-					continue
-				}
-				require.NoError(t, err)
-				require.NoError(t, schema.validate(tt.props))
-				if len(cfg.Toolboxes) > 0 {
-					require.Equal(t, []Toolbox{{Name: "tools"}, {Name: "more-tools"}}, cfg.Toolboxes)
-				}
-				if len(cfg.ToolConnections) > 0 {
-					require.Equal(t, "${RUNTIME_ENDPOINT}", cfg.ToolConnections[0].Target)
-				}
+			svc := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, AdditionalProperties: props}
+			cfg, err := LoadServiceTargetAgentConfig(svc)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.ErrorContains(t, err, "azd deploy --all")
+				require.Error(t, schema.validate(tt.props))
+				return
+			}
+			require.NoError(t, err)
+			require.NoError(t, schema.validate(tt.props))
+			if len(cfg.Toolboxes) > 0 {
+				require.Equal(t, []Toolbox{{Name: "tools"}, {Name: "more-tools"}}, cfg.Toolboxes)
+			}
+			if len(cfg.ToolConnections) > 0 {
+				require.Equal(t, "${RUNTIME_ENDPOINT}", cfg.ToolConnections[0].Target)
 			}
 		})
 	}
@@ -106,23 +101,10 @@ func TestAgentResourceOwnershipAfterFileRefsAndConfigSelection(t *testing.T) {
 				[]byte("kind: hosted\n"+field+":\n  - $ref: ./resource.yaml\n"), 0o600))
 			ref, err := structpb.NewStruct(map[string]any{"$ref": "./agent.yaml"})
 			require.NoError(t, err)
-			clean, err := structpb.NewStruct(map[string]any{"kind": "hosted"})
-			require.NoError(t, err)
 			svc := &azdext.ServiceConfig{
-				Name: "agent", Host: foundryAgentHost, AdditionalProperties: ref, Config: clean,
+				Name: "agent", Host: foundryAgentHost, AdditionalProperties: ref,
 			}
 			require.NoError(t, ResolveServiceConfigInPlace(svc, root))
-			_, err = LoadServiceTargetAgentConfig(svc)
-			require.ErrorContains(t, err, "bundled")
-
-			// Validation follows the effective config, not an ignored older shape.
-			svc.Config, svc.AdditionalProperties = svc.AdditionalProperties, clean
-			_, err = LoadServiceTargetAgentConfig(svc)
-			require.NoError(t, err)
-
-			// Inline metadata without a kind defers to the config-nested definition.
-			svc.AdditionalProperties, err = structpb.NewStruct(map[string]any{"startupCommand": "python main.py"})
-			require.NoError(t, err)
 			_, err = LoadServiceTargetAgentConfig(svc)
 			require.ErrorContains(t, err, "bundled")
 		})

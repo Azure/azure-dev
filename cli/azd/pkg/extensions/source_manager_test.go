@@ -4,6 +4,7 @@
 package extensions
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -56,6 +57,82 @@ func TestSourceManager_Add(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrSourceReserved)
 	})
+}
+
+func TestSourceManager_AddFileLocationPersistsAcrossDirectories(t *testing.T) {
+	for _, origin := range []string{"working directory", "config directory", "working directory takes precedence"} {
+		t.Run(origin, func(t *testing.T) {
+			workingDir, configDir, laterDir := t.TempDir(), t.TempDir(), t.TempDir()
+			t.Chdir(workingDir)
+			t.Setenv("AZD_CONFIG_DIR", configDir)
+			const filename = "registry with spaces.json"
+			registry := []byte(`{"schemaVersion":"1.0","extensions":[]}`)
+			expected := filepath.Join(workingDir, filename)
+			if origin != "config directory" {
+				require.NoError(t, os.WriteFile(expected, registry, 0o600))
+			}
+			if origin != "working directory" {
+				require.NoError(t, os.WriteFile(filepath.Join(configDir, filename), registry, 0o600))
+				if origin == "config directory" {
+					expected = filepath.Join(configDir, filename)
+				}
+			}
+
+			mockContext := mocks.NewMockContext(t.Context())
+			configManager := config.NewUserConfigManager(mockContext.ConfigManager)
+			manager := NewSourceManager(mockContext.Container, configManager, mockContext.HttpClient)
+			source := &SourceConfig{
+				Name: "local", Type: SourceKindFile, Location: "." + string(filepath.Separator) + filename,
+			}
+			require.NoError(t, manager.Add(t.Context(), source.Name, source))
+
+			t.Chdir(laterDir)
+			manager = NewSourceManager(mockContext.Container, configManager, mockContext.HttpClient)
+			stored, err := manager.Get(t.Context(), source.Name)
+			require.NoError(t, err)
+			require.Equal(t, expected, stored.Location)
+			_, err = manager.CreateSource(t.Context(), stored)
+			require.NoError(t, err)
+			content, err := os.ReadFile(expected)
+			require.NoError(t, err)
+			require.Equal(t, registry, content)
+		})
+	}
+}
+
+func TestSourceManager_AddPreservesOtherLocations(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	tests := []SourceConfig{
+		{Name: "absolute", Type: SourceKindFile, Location: filepath.Join(t.TempDir(), "registry.json")},
+		{Name: "remote", Type: SourceKindUrl, Location: "https://example.com/registry.json"},
+		{Name: "transient", Type: SourceKindBundle, Location: "relative-bundle"},
+	}
+	for _, source := range tests {
+		t.Run(source.Name, func(t *testing.T) {
+			expected := source.Location
+			mockContext := mocks.NewMockContext(t.Context())
+			manager := NewSourceManager(
+				mockContext.Container, config.NewUserConfigManager(mockContext.ConfigManager), mockContext.HttpClient)
+			require.NoError(t, manager.Add(t.Context(), source.Name, &source))
+			stored, err := manager.Get(t.Context(), source.Name)
+			require.NoError(t, err)
+			require.Equal(t, expected, stored.Location)
+		})
+	}
+}
+
+func TestSourceManager_AddMissingRelativeFileDoesNotPersist(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	mockContext := mocks.NewMockContext(t.Context())
+	configManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	manager := NewSourceManager(mockContext.Container, configManager, mockContext.HttpClient)
+	source := &SourceConfig{Name: "missing", Type: SourceKindFile, Location: "missing.json"}
+	err := manager.Add(t.Context(), source.Name, source)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = manager.Get(t.Context(), source.Name)
+	require.ErrorIs(t, err, ErrSourceNotFound)
+	require.Equal(t, "missing.json", source.Location)
 }
 
 func TestSourceManager_ProtectsMainRegistry(t *testing.T) {

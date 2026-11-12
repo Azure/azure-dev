@@ -35,11 +35,11 @@ func newToolboxConnectionRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.C
 Pass one or more connection short names as positionals. All removals are
 applied atomically: each invocation creates exactly one new toolbox version.
 
-Refuses to leave the toolbox with zero tools (use 'toolbox delete' instead).
-
-Examples:
-
+Refuses to leave the toolbox with zero tools (use 'azd ai toolbox delete' instead).`,
+		Example: `  # Remove a connection in a new toolbox version
   azd ai toolbox connection remove research my-mcp
+
+  # Remove several connections without confirmation
   azd ai toolbox connection remove research a b c --force
 `,
 		Args: cobra.MinimumNArgs(2),
@@ -206,7 +206,7 @@ func runConnectionRemoveWith(
 	}
 	created, err := client.CreateToolboxVersion(ctx, toolboxName, req)
 	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
+		return toolboxVersionWriteError(err, toolboxName, exterrors.OpCreateToolboxVersion)
 	}
 
 	if err := emitConnectionRemoveResult(toolboxName, created.Version, removedConns, parent.output); err != nil {

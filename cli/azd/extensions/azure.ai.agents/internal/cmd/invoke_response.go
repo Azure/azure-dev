@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/useragent"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -84,14 +86,11 @@ func buildResponsesRequestBody(message, sessionID, conversationID string, backgr
 	return body
 }
 
-// responseLifecycleCommand formats guidance for current or explicitly targeted work.
+// responseLifecycleCommand formats guidance targeting the accepted Response.
 func (a *InvokeAction) responseLifecycleCommand(
-	rc *remoteContext, id string, operation invocationOperation, useCurrent bool,
+	rc *remoteContext, id string, operation invocationOperation,
 ) string {
-	command := "azd ai agent invocations " + string(operation)
-	if !useCurrent || a.endpoint != nil {
-		command += fmt.Sprintf(" --id %q", id)
-	}
+	command := fmt.Sprintf("azd ai agent invocations %s --id %q", operation, id)
 	if a.endpoint != nil {
 		endpoint := buildResponsesURL(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, a.endpoint.APIVersion)
 		return command + fmt.Sprintf(" --agent-endpoint %q", endpoint)
@@ -122,7 +121,7 @@ func (a *InvokeAction) runResponseOperation(
 	case invocationFollow:
 		return classifyResponseLifecycleError(
 			a.followResponse(ctx, rc, id, writer), exterrors.OpFollowResponse, "following Response",
-			a.responseLifecycleCommand(rc, id, invocationShow, false),
+			a.responseLifecycleCommand(rc, id, invocationShow),
 		)
 	case invocationCancel:
 		return classifyResponseLifecycleError(
@@ -135,16 +134,13 @@ func (a *InvokeAction) runResponseOperation(
 
 // classifyResponseStateReadError adds guidance to saved-state failures.
 func classifyResponseStateReadError(cause error) error {
-	if _, ok := errors.AsType[*azdext.ConfigError](cause); !ok {
-		return exterrors.FromHost(cause, exterrors.OpReadResponseState, "reading current Response state failed")
+	if exterrors.IsCancellation(cause) {
+		return exterrors.Cancelled("reading current Response state cancelled")
 	}
 	return exterrors.Validation(
 		exterrors.CodeInvalidResponseState,
-		fmt.Sprintf("saved Response state at %q could not be read: %v", responsesConfigPath, cause),
-		fmt.Sprintf(
-			"clear the invalid state with `azd config unset %s`, or repair that config value",
-			responsesConfigPath,
-		),
+		fmt.Sprintf("saved Response state could not be read: %v", cause),
+		"check access to AZD_CONFIG_DIR and retry",
 	)
 }
 
@@ -221,6 +217,7 @@ func (a *InvokeAction) cancelResponse(
 		return fmt.Errorf("create Response cancel request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", useragent.Default())
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
 	//nolint:gosec // URL is built from a validated Foundry endpoint.
@@ -277,6 +274,7 @@ func (a *InvokeAction) getResponseSnapshot(
 		return responseSnapshotResult{}, fmt.Errorf("create Response show request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", useragent.Default())
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
 	//nolint:gosec // URL is built from a validated Foundry endpoint.
@@ -384,6 +382,7 @@ func (a *InvokeAction) followResponse(
 		return fmt.Errorf("create Response follow request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", useragent.Default())
 	req.Header.Set("Accept", "text/event-stream")
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
@@ -418,7 +417,7 @@ func (a *InvokeAction) followResponse(
 			return fmt.Errorf(
 				"%w; rerun `%s` to replay and follow again",
 				err,
-				a.responseLifecycleCommand(rc, responseID, invocationFollow, false),
+				a.responseLifecycleCommand(rc, responseID, invocationFollow),
 			)
 		}
 		return err
@@ -770,8 +769,6 @@ func isKnownResponsesEvent(event string) bool {
 	}
 }
 
-const responsesConfigPath = configPathPrefix + ".responses"
-
 type savedResponse struct {
 	ResponseID string `json:"responseId"`
 }
@@ -782,74 +779,47 @@ type responseStateStore interface {
 	Delete(ctx context.Context, agentKey string) error
 }
 
-type userConfigResponseStateStore struct {
+type agentResponseStateStore struct {
 	client *azdext.AzdClient
 }
 
-func newUserConfigResponseStateStore(client *azdext.AzdClient) responseStateStore {
-	return &userConfigResponseStateStore{client: client}
+func newResponseStateStore(client *azdext.AzdClient) responseStateStore {
+	return &agentResponseStateStore{client: client}
 }
 
-func (s *userConfigResponseStateStore) Get(ctx context.Context, agentKey string) (*savedResponse, error) {
-	config, err := azdext.NewConfigHelper(s.client)
+func (s *agentResponseStateStore) Get(ctx context.Context, agentKey string) (*savedResponse, error) {
+	store, err := newAgentStateStoreForClient(s.client)
 	if err != nil {
-		return nil, fmt.Errorf("create response config helper: %w", err)
+		return nil, fmt.Errorf("open response state store: %w", err)
 	}
-
-	var records map[string]savedResponse
-	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
+	record, err := store.get(ctx, agentKey)
 	if err != nil {
 		return nil, fmt.Errorf("read responses: %w", err)
 	}
-	if !found || records == nil {
+	if record == nil || record.Response == nil {
 		return nil, nil
 	}
-	record, ok := records[agentKey]
-	if !ok {
-		return nil, nil
-	}
-	return &record, nil
+	response := *record.Response
+	return &response, nil
 }
 
-func (s *userConfigResponseStateStore) Save(ctx context.Context, agentKey string, record savedResponse) error {
-	config, err := azdext.NewConfigHelper(s.client)
+func (s *agentResponseStateStore) Save(ctx context.Context, agentKey string, response savedResponse) error {
+	store, err := newAgentStateStoreForClient(s.client)
 	if err != nil {
-		return fmt.Errorf("create response config helper: %w", err)
+		return fmt.Errorf("open response state store: %w", err)
 	}
-
-	var records map[string]savedResponse
-	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
-	if err != nil {
-		return fmt.Errorf("read responses: %w", err)
-	}
-	if !found || records == nil {
-		records = make(map[string]savedResponse)
-	}
-	records[agentKey] = record
-
-	if err := config.SetUserJSON(ctx, responsesConfigPath, records); err != nil {
-		return fmt.Errorf("write responses: %w", err)
-	}
-	return nil
+	return store.mutate(ctx, agentKey, func(record *agentStateRecord) {
+		record.Response = &response
+		record.CurrentInvocationProtocol = agent_api.AgentProtocolResponses
+	})
 }
 
-func (s *userConfigResponseStateStore) Delete(ctx context.Context, agentKey string) error {
-	config, err := azdext.NewConfigHelper(s.client)
+func (s *agentResponseStateStore) Delete(ctx context.Context, agentKey string) error {
+	store, err := newAgentStateStoreForClient(s.client)
 	if err != nil {
-		return fmt.Errorf("create response config helper: %w", err)
+		return fmt.Errorf("open response state store: %w", err)
 	}
-
-	var records map[string]savedResponse
-	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
-	if err != nil {
-		return fmt.Errorf("read responses: %w", err)
-	}
-	if !found || records == nil {
-		return nil
-	}
-	delete(records, agentKey)
-	if err := config.SetUserJSON(ctx, responsesConfigPath, records); err != nil {
-		return fmt.Errorf("write responses: %w", err)
-	}
-	return nil
+	return store.mutate(ctx, agentKey, func(record *agentStateRecord) {
+		record.Response = nil
+	})
 }

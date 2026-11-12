@@ -5,6 +5,8 @@ package exterrors
 
 const CodeCancelled = "cancelled"
 
+const CodeFeatureNotEnabled = "feature_not_enabled"
+
 // Error codes commonly used for validation errors.
 //
 // These are paired with [Validation] when user input or configuration values
@@ -23,6 +25,7 @@ const (
 	CodeArmWhatIfFailed          = "arm_what_if_failed"
 	CodeInfraEjectWriteFailed    = "infra_eject_write_failed"
 	CodeProjectDeploymentEjected = "project_deployment_ejected_infra"
+	CodeModelBlockedByPolicy     = "model_blocked_by_policy"
 )
 
 // Error codes commonly used for dependency errors.

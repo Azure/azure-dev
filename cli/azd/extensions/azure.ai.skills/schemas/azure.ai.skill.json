@@ -11,8 +11,36 @@
       "description": "Description of the skill."
     },
     "instructions": {
-      "type": "string",
-      "description": "Inline instruction text, or a file path (.md, .txt) the extension reads at deploy time. A relative path resolves from the service path when set, otherwise from the directory containing azure.yaml."
+      "description": "Inline text or an instruction file read at deploy time. Use {inline: text} or {file: path} to avoid ambiguity. A single-line string ending in .md or .txt is a file path if it contains a directory separator or has no spaces or tabs; other strings are inline text. Relative paths resolve from the service path when set, otherwise from the directory containing azure.yaml.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "inline": {
+              "type": "string",
+              "pattern": "\\S",
+              "description": "Literal instruction text, never interpreted as a file path."
+            }
+          },
+          "required": ["inline"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "file": {
+              "type": "string",
+              "pattern": "\\S",
+              "description": "Instruction file path, including filenames containing spaces."
+            }
+          },
+          "required": ["file"]
+        }
+      ]
     },
     "license": {
       "type": "string",

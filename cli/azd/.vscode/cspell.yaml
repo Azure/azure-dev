@@ -178,6 +178,15 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: pkg/output/colors.go
+    words:
+      - termenv
+  - filename: "{docs/extensions/contract-versioning.md,grpc/README.md}"
+    words:
+      - generateprojectclient
+  - filename: "**/internal/agent/types.go"
+    words:
+      - billionized
   - filename: internal/appdetect/aspire_polyglot.go
     words:
       - pylock
@@ -188,6 +197,21 @@ overrides:
   - filename: cmd/mcp.go
     words:
       - internalcmd
+  - filename: cmd/{build,container}{,_test}.go
+    words:
+      - commandresult
+  - filename: cmd/middleware/ux{,_test}.go
+    words:
+      - commandresult
+  - filename: internal/commandresult/*.go
+    words:
+      - commandresult
+  - filename: internal/grpcserver/{beta_event_service,beta_event_service_test,event_service_test}.go
+    words:
+      - commandresult
+  - filename: internal/cmd/{deploy,service_event_messages,up_graph}.go
+    words:
+      - commandresult
   - filename: cmd/extension.go
     words:
       - compatResult
@@ -215,6 +239,8 @@ overrides:
     words:
       - alexwolf
       - alexwolfmsft
+      - kristenwomack
+      - kwomackmsft
       - pname
       - puichan
       - devx
@@ -246,11 +272,20 @@ overrides:
     words:
       - ents
       - unmarshalled
+  - filename: test/ostest/links.go
+    words:
+      - mklink
   - filename: pkg/exec/util_test.go
     words:
       - keychain
       - crusername
       - azurecr
+  - filename: pkg/exec/internal/process/discovery_darwin.go
+    words:
+      - Eproc
+      - Kinfo
+      - procargs
+      - Ucred
   - filename: pkg/tools/dotnet/dotnet.go
     words:
       - PWORD
@@ -288,6 +323,7 @@ overrides:
       - Chdir
       - creds
       - Moby
+      - postflight
       - upsert
   - filename: docs/proxy-configuration.md
     words:
@@ -298,6 +334,12 @@ overrides:
   - filename: test/recording/proxy.go
     words:
       - WSAECONNRESET
+  - filename: test/azurecleanup/**
+    words:
+      - azurecleanup
+  - filename: test/cmd/cleanup-subscription-deployments/**
+    words:
+      - azurecleanup
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore
@@ -422,6 +464,9 @@ overrides:
   - filename: "{pkg/azapi/permissions.go,pkg/infra/provisioning/bicep/bicep_provider.go}"
     words:
       - ABAC
+  - filename: docs/design/provision-validation.md
+    words:
+      - ABAC
   - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
     words:
       - Qwen
@@ -444,6 +489,9 @@ overrides:
   - filename: extensions/azure.ai.agents/internal/cmd/init_locations.go
     words:
       - swedencentral
+  - filename: "extensions/azure.ai.agents/internal/{cmd/optimize*.go,pkg/agents/optconfig/*.go}"
+    words:
+      - optconfig
   - filename: docs/code-coverage-guide.md
     words:
       - covdata
@@ -523,6 +571,26 @@ overrides:
   - filename: grpc/generateadapters/main.go
     words:
       - generateadapters
+      - tctx
+  - filename: grpc/generateprojectclient/*.go
+    words:
+      - generateprojectclient
+      - descriptorpb
+      - protodesc
+      - hostproject
+  - filename: extensions/azure.ai.evaluations/internal/hostproject/*.go
+    words:
+      - hostproject
+      - descriptorpb
+      - dynamicpb
+      - protodesc
+      - protoregistry
+  - filename: extensions/azure.ai.evaluations/internal/hostproject/descriptors_generated.go
+    words:
+      - generateprojectclient
+  - filename: extensions/azure.ai.evaluations/internal/cmd/init.go
+    words:
+      - hostproject
   - filename: grpc/generatefacade/main.go
     words:
       - generatefacade
@@ -533,12 +601,72 @@ overrides:
   - filename: internal/grpcserver/versioned_services_generated.go
     words:
       - generateadapters
-  - filename: "{internal/grpcserver/legacy_services.go,internal/grpcserver/legacybridge/bridge.go,internal/grpcserver/server.go}"
+  - filename: "{internal/grpcserver/legacy_services.go,internal/grpcserver/legacybridge/bridge.go,internal/grpcserver/server.go,internal/grpcserver/service_target_service.go}"
     words:
       - legacybridge
   - filename: pkg/azdext/contracts_v1_aliases.go
     words:
       - generatefacade
+  - filename: extensions/telemetry/*.go
+    words:
+      - elts
+      - fset
+      - unkeyed
+  - filename: extensions/azure.ai.content-understanding/internal/infra/{models,templates}.go
+    words:
+      - cuclient
+      - localio
+      - contentunderstanding
+      - noninteractive
+      - australiaeast
+      - japaneast
+      - northeurope
+      - southcentralus
+      - southeastasia
+      - uksouth
+      - westeurope
+  - filename: extensions/azure.ai.content-understanding/cu-rest-client/*.go
+    words:
+      - curestclient
+  - filename: extensions/azure.ai.content-understanding/internal/cuclient/rest.go
+    words:
+      - restclient
+  - filename: extensions/azure.ai.content-understanding/internal/testutil/tempdir.go
+    words:
+      - testutil
+  - filename: pkg/update/msi_windows.go
+    words:
+      - norestart
+      - MSIRESTARTMANAGERCONTROL
+      - INSTALLEDBY
+  - filename: docs/design/azd-update.md
+    words:
+      - HKLM
+      - norestart
+  - filename: docs/extensions/extension-telemetry.md
+    words:
+      - dcount
+      - isnotempty
+  - filename: extensions/azure.resources/internal/resources/config.go
+    words:
+      - abbrs
+  - filename: extensions/azure.resources/internal/resources/generator.go
+    words:
+      - GUNICORN
+      - MULTIWORKERS
+  - filename: extensions/azure.resources/internal/resources/scaffold/scaffold.go
+    words:
+      - environmentname
+      - aideploymentslocation
+      - principalid
+      - principaltype
+      - aifoundryprojectendpoint
+  - filename: extensions/azure.resources/{README.md,internal/cmd/add_project.go}
+    words:
+      - azureresources
+  - filename: extensions/azure.resources/internal/bicep/parameters.go
+    words:
+      - jsont
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

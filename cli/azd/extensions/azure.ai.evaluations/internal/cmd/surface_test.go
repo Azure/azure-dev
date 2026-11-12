@@ -125,7 +125,6 @@ func TestFlagVocabularyIsShared(t *testing.T) {
 		"--data-schema":  "deferred to M2",
 		"--metrics":      "deferred to M2",
 		"--trace-window": "deferred to M2",
-		"--max-turns":    "deferred to M2",
 	}
 
 	walk(t, NewRootCommand(), nil, func(path string, cmd *cobra.Command) {
@@ -180,15 +179,17 @@ func TestInitFlagsMatchTheSpec(t *testing.T) {
 	assert.ElementsMatch(t, []string{
 		"--name", "--target", "--source", "--dataset", "--max-traces",
 		"--trace-days", "--evaluation-level",
+		"--conversation-mode", "--simulation-model", "--num-conversations", "--max-turns",
 		"--evaluator", "--judge-model", "--path",
 	}, got, "init's flags are a table in the spec; change both together")
 }
 
-// `init` makes no service calls, so it must not offer the flag that says where
-// to make them.
+// `init` resolves a project from the environment when it needs one, and its
+// only lookup is best effort, so it must not offer the flag that says where to
+// make service calls.
 func TestInitTakesNoProjectEndpoint(t *testing.T) {
 	assert.Nil(t, find(t, "init").Flags().Lookup("project-endpoint"),
-		"init is offline; a project endpoint would imply otherwise")
+		"init works without a project; an endpoint flag would imply it needs one")
 }
 
 // Every command that does reach the service accepts it, because the shared

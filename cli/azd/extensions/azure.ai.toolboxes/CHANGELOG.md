@@ -1,5 +1,62 @@
 # Release History
 
+## 1.1.0 (2026-11-12)
+
+### Features Added
+
+- [[#10888]](https://github.com/Azure/azure-dev/pull/10888) Add Azure Policy preflight checks and Foundry Govern guidance for policy-blocked tools during toolbox creation, deployment, and runtime updates.
+
+## 1.0.0 (2026-11-05)
+
+### Other Changes
+
+- [[#10836]](https://github.com/Azure/azure-dev/pull/10836) Remove Preview labels from command help and extension descriptions.
+
+## 1.0.0-beta.13 (2026-10-29)
+
+### Bugs Fixed
+
+- [[#10753]](https://github.com/Azure/azure-dev/pull/10753) Fix HTTP 403 failures during toolbox creation and deployment by preparing developer data-plane access to newly provisioned Foundry projects.
+
+## 1.0.0-beta.12 (2026-10-23)
+
+### Other Changes
+
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+
+## 1.0.0-beta.11 (2026-10-15)
+
+### Bugs Fixed
+
+- [[#10393]](https://github.com/Azure/azure-dev/pull/10393) Fix Linux amd64 binaries requiring the build agent's GLIBC version so the extension can start on Debian Bullseye.
+
+## 1.0.0-beta.10 (2026-10-08)
+
+### Breaking Changes
+
+- [[#10349]](https://github.com/Azure/azure-dev/pull/10349) Standardize Toolbox-owned authoring properties on camelCase to maintain consistency across properties and extensions, and reject the former snake_case spellings with replacement guidance.
+
+## 1.0.0-beta.9 (2026-09-30)
+
+### Bugs Fixed
+
+- [[#10104]](https://github.com/Azure/azure-dev/pull/10104) Reject explicitly supplied `--project-endpoint` flags on commands that do not use a project endpoint instead of silently ignoring them. Thanks @Siglud for the contribution!
+
+### Other Changes
+
+- [[#10104]](https://github.com/Azure/azure-dev/pull/10104) Improve `azd ai toolbox` help formatting, examples, and configuration and environment guidance. Thanks @Siglud for the contribution!
+
+## 1.0.0-beta.8 (2026-09-24)
+
+### Bugs Fixed
+
+- [[#10008]](https://github.com/Azure/azure-dev/pull/10008) Fix cross-tenant toolbox deployment to authenticate through the selected subscription's user-access tenant.
+
+### Other Changes
+
+- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2 to address the GHSA-2v4p-qf9q-27wj security advisory.
+- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0 to address the GHSA-8wmf-6v46-5gfg security advisory.
+
 ## 1.0.0-beta.7 (2026-09-17)
 
 ### Breaking Changes

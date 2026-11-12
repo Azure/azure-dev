@@ -1,0 +1,37 @@
+name: "connection-add-offline"
+command: "azd ai connection --no-prompt -o json add search --file connections/search.yaml"
+cwd: "~/working/azd-connections-t0-add-{instance}"
+tags: ["tier:0", "cmd:connection", "parallel-safe"]
+env:
+  AZURE_ENV_NAME: ""
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+pre:
+  - run: 'mkdir -p -- "$HOME/working/azd-connections-t0-add-{instance}" && cp -R -- "{fixtures_dir}/." "$HOME/working/azd-connections-t0-add-{instance}/"'
+    cwd: "~/working"
+    name: "seed an existing local project and nested Connection definition"
+goals:
+  - >-
+    OFFLINE CONTRACT: Do not answer login, environment, subscription, extension-install,
+    or other prompts. Do not make Azure calls or run provision, deploy, up, or init.
+    Only run the specified add commands and inspect local files.
+  - >-
+    Wait for the initial command to exit successfully. Its stdout must contain exactly
+    one JSON object with name 'search', host 'azure.ai.connection', mutation 'added',
+    ref './connections/search.yaml', project 'foundry', and environmentVariables
+    ['SEARCH_ENDPOINT', 'SEARCH_KEY']; no human output may contaminate stdout.
+  - >-
+    Inspect azure.yaml as parsed YAML. The existing foundry and worker services
+    must be unchanged. The new search service must have host 'azure.ai.connection',
+    uses ['foundry'], $ref './connections/search.yaml', and env bindings
+    SEARCH_ENDPOINT: ${SEARCH_ENDPOINT} and SEARCH_KEY: ${SEARCH_KEY}.
+    Neither the definition nor its nested credentials file may be changed.
+    No .azure environment, credential values, or remote resources may be created.
+  - >-
+    Run exactly 'azd ai connection add search --file connections/search.yaml --no-prompt --output json'
+    in the same cwd. Verify mutation 'unchanged', the same reference and required
+    variable names, and byte-for-byte identical azure.yaml after the repeat.
+  - >-
+    Report a failure if either command prompts, contacts Azure, changes an unrelated
+    service, expands a template, emits credential values, or differs from the JSON contract.

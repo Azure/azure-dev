@@ -4,6 +4,8 @@
 package agent
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 
 	copilot "github.com/github/copilot-sdk/go"
@@ -100,14 +102,39 @@ func TestHeadlessCollector_WaitForIdle_DeferredIdle(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestHeadlessCollector_PremiumRequests(t *testing.T) {
+func TestHeadlessCollector_ReplaysCapturedAIUEvents(t *testing.T) {
 	t.Parallel()
+
+	contents, err := os.ReadFile("testdata/copilot_usage_events.json")
+	require.NoError(t, err)
+
+	var events []copilot.SessionEvent
+	require.NoError(t, json.Unmarshal(contents, &events))
+
 	collector := NewHeadlessCollector()
+	var usageByTurn []UsageMetrics
+	var checkpointNanoAiu []float64
+	for _, event := range events {
+		collector.HandleEvent(event)
+		if checkpoint, ok := event.Data.(*copilot.SessionUsageCheckpointData); ok {
+			checkpointNanoAiu = append(checkpointNanoAiu, checkpoint.TotalNanoAiu)
+		}
+		if event.Type() == copilot.SessionEventTypeSessionIdle {
+			require.NoError(t, collector.WaitForIdle(t.Context()))
+			usageByTurn = append(usageByTurn, collector.GetUsageMetrics())
+		}
+	}
 
-	collector.HandleEvent(copilot.SessionEvent{
-		Data: &copilot.SessionShutdownData{TotalPremiumRequests: new(5.0)},
-	})
+	require.Len(t, usageByTurn, 2)
+	require.Equal(t, 9969.0, usageByTurn[0].InputTokens)
+	require.Equal(t, 3.0, usageByTurn[0].OutputTokens)
+	require.Equal(t, 2.49515, usageByTurn[0].AICredits)
+	require.Equal(t, 20053.0, usageByTurn[1].InputTokens)
+	require.Equal(t, 6.0, usageByTurn[1].OutputTokens)
+	require.Equal(t, 2.72664, usageByTurn[1].AICredits)
+	require.NotContains(t, usageByTurn[1].String(), "Premium requests")
 
-	usage := collector.GetUsageMetrics()
-	require.Equal(t, float64(5), usage.PremiumRequests)
+	require.Len(t, checkpointNanoAiu, 2)
+	require.Equal(t, usageByTurn[0].AICredits, nanoAiuToCredits(checkpointNanoAiu[0]))
+	require.Equal(t, usageByTurn[1].AICredits, nanoAiuToCredits(checkpointNanoAiu[1]))
 }

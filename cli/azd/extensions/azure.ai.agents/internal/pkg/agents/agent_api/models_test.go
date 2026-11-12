@@ -9,6 +9,30 @@ import (
 	"testing"
 )
 
+func TestIsCopilotHarness(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		harness string
+		want    bool
+	}{
+		{ManagedAgentHarnessMicrosoftCopilot, true},
+		{ManagedAgentHarnessGitHubCopilot, true},
+		{"", false},
+		{"some_future_harness", false},
+		{"MICROSOFT_COPILOT_PREVIEW", false},
+		{"GITHUB_COPILOT_PREVIEW", false},
+		{" microsoft_copilot_preview", false},
+		{"github_copilot_preview ", false},
+	} {
+		t.Run(test.harness, func(t *testing.T) {
+			t.Parallel()
+			if got := IsCopilotHarness(test.harness); got != test.want {
+				t.Errorf("IsCopilotHarness(%q) = %v, want %v", test.harness, got, test.want)
+			}
+		})
+	}
+}
+
 func TestCreateAgentRequest_RoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -1284,30 +1308,6 @@ func TestIsInvocable(t *testing.T) {
 			t.Parallel()
 			if got := tt.protocol.IsInvocable(); got != tt.want {
 				t.Errorf("IsInvocable() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestIsLocalInvocable(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		protocol AgentProtocol
-		want     bool
-	}{
-		{AgentProtocolResponses, true},
-		{AgentProtocolInvocations, true},
-		{AgentProtocolA2A, false}, // remote-only
-		{AgentProtocolActivityProtocol, false},
-		{AgentProtocol("unknown"), false},
-	}
-
-	for _, tt := range tests {
-		t.Run(string(tt.protocol), func(t *testing.T) {
-			t.Parallel()
-			if got := tt.protocol.IsLocalInvocable(); got != tt.want {
-				t.Errorf("IsLocalInvocable() = %v, want %v", got, tt.want)
 			}
 		})
 	}

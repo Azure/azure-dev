@@ -71,6 +71,28 @@ func (p PromptAgent) ValidatePolicies() error {
 	return nil
 }
 
+// ValidateAuthoredSkills rejects conflicting explicit versions for the same
+// authored skill. Versionless references may be resolved from local skill
+// dependencies later in the deploy graph.
+func (p PromptAgent) ValidateAuthoredSkills() error {
+	authoredVersions := map[string]string{}
+	for _, skill := range p.Skills {
+		name := strings.ToLower(strings.TrimSpace(skill.Name))
+		version := strings.TrimSpace(skill.Version)
+		if version == "" {
+			continue
+		}
+		if previous, ok := authoredVersions[name]; ok && previous != version {
+			return fmt.Errorf(
+				"prompt skill %q has conflicting authored versions %q and %q; specify only one version per skill",
+				name, previous, version,
+			)
+		}
+		authoredVersions[name] = version
+	}
+	return nil
+}
+
 // ValidateHarness accepts open-ended harness names so newer service harnesses
 // do not require an azd release.
 func (p PromptAgent) ValidateHarness() error {

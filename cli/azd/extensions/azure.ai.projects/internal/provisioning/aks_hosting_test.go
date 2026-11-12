@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -44,6 +44,7 @@ const offlineBYOAzureYAML = `
 services:
   project:
     host: azure.ai.project
+    monitoring: {enabled: false}
     agentHosting: {clusterResourceId: ` + offlineClusterID + `}
 `
 
@@ -530,6 +531,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 		mode: templateModeBicep, armTemplate: p.armTemplate,
 		parameters: map[string]any{
 			"includeAcr":        map[string]any{"value": true},
+			"monitoringMode":    map[string]any{"value": "none"},
 			"resourceTokenSalt": map[string]any{"value": "custom"},
 			"tags":              map[string]any{"value": map[string]string{"team": "test"}},
 		},
@@ -570,7 +572,10 @@ func TestBYONonBooleanIncludeAcrReachesARM(t *testing.T) {
 				p, fake := offlineBYOProvider(t)
 				p.onDiskSource = &templateSource{
 					mode: templateModeBicep, armTemplate: p.armTemplate,
-					parameters: map[string]any{"includeAcr": map[string]any{"value": test.value}},
+					parameters: map[string]any{
+						"includeAcr":     map[string]any{"value": test.value},
+						"monitoringMode": map[string]any{"value": "none"},
+					},
 				}
 				method, suffix := http.MethodPut, ""
 				var err error
@@ -607,7 +612,7 @@ func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSReads(t *testing.T) {
 	p, fake := offlineBYOProvider(t)
 	t.Setenv(synthesis.BYOAKSEnvVar, "false")
 	result, err := synthesis.Synthesize(synthesis.Input{ServiceName: "project",
-		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n")})
+		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n")})
 	require.NoError(t, err)
 	p.synthResult = result
 	deployed, err := p.Deploy(t.Context(), func(string) {})

@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"

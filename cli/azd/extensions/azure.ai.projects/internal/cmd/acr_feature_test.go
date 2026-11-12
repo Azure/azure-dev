@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"azure.ai.projects/internal/synthesis"
 	"azure.ai.projects/internal/testutil"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"

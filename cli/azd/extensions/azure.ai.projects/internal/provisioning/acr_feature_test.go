@@ -17,8 +17,8 @@ import (
 	"strings"
 	"testing"
 
-	"azure.ai.projects/internal/synthesis"
 	"azure.ai.projects/internal/testutil"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -116,7 +116,7 @@ func TestACRRemoteBuildLocalInputBeforeGate(t *testing.T) {
 	t.Setenv(synthesis.ACRReuseEnvVar, "")
 	root := t.TempDir()
 	testutil.ACRParameters(t, root, false, "json", testACRID)
-	raw := "infra:\n  provider: microsoft.foundry\nservices:\n  project:\n    host: azure.ai.project\n" +
+	raw := "infra:\n  provider: microsoft.foundry\nservices:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n" +
 		"  agent:\n    host: azure.ai.agent\n    docker: {remoteBuild: invalid}\n"
 	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
 	project := &azdext.ProjectConfig{Path: root}
@@ -292,7 +292,7 @@ func TestACRReuseDisabledBeforeLifecycleWrites(t *testing.T) {
 				p, env := acrTestProvider(t)
 				t.Setenv(synthesis.ACRReuseEnvVar, "")
 				root := t.TempDir()
-				raw := "services:\n  project:\n    host: azure.ai.project\n" +
+				raw := "services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n" +
 					"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
 				options := &azdext.ProvisioningOptions{Provider: FoundryProviderName}
 				if layer {
@@ -592,7 +592,7 @@ func acrRolloutProvider(
 		"AZURE_AI_PROJECT_NAME": "project",
 	}, config: map[string][]byte{"sentinel": []byte(`{"keep":true}`)}}
 	p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
-	raw := "name: test\nservices:\n  project:\n    host: azure.ai.project\n"
+	raw := "name: test\nservices:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n"
 	if agent != "" {
 		raw += "  agent:\n    host: azure.ai.agent\n" + agent
 	}
@@ -1001,7 +1001,7 @@ func TestACRLegacyExistingProjectInitialize(t *testing.T) {
 			p, env := acrTestProvider(t)
 			t.Setenv(synthesis.ACRReuseEnvVar, "false")
 			root := t.TempDir()
-			raw := "services:\n  project:\n    host: azure.ai.project\n" +
+			raw := "services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n" +
 				"    endpoint: https://account.services.ai.azure.com/api/projects/project\n"
 			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
 			env.get = map[string]string{

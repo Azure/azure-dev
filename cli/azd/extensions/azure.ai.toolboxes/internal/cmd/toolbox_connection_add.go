@@ -247,7 +247,7 @@ func runConnectionAddWith(
 	}
 	created, err := client.CreateToolboxVersion(ctx, toolboxName, req)
 	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
+		return toolboxVersionWriteError(err, toolboxName, exterrors.OpCreateToolboxVersion)
 	}
 
 	if err := emitConnectionAddResult(

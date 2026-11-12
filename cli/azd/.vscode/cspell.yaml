@@ -239,6 +239,8 @@ overrides:
     words:
       - alexwolf
       - alexwolfmsft
+      - kristenwomack
+      - kwomackmsft
       - pname
       - puichan
       - devx
@@ -645,6 +647,26 @@ overrides:
     words:
       - dcount
       - isnotempty
+  - filename: extensions/azure.resources/internal/resources/config.go
+    words:
+      - abbrs
+  - filename: extensions/azure.resources/internal/resources/generator.go
+    words:
+      - GUNICORN
+      - MULTIWORKERS
+  - filename: extensions/azure.resources/internal/resources/scaffold/scaffold.go
+    words:
+      - environmentname
+      - aideploymentslocation
+      - principalid
+      - principaltype
+      - aifoundryprojectendpoint
+  - filename: extensions/azure.resources/{README.md,internal/cmd/add_project.go}
+    words:
+      - azureresources
+  - filename: extensions/azure.resources/internal/bicep/parameters.go
+    words:
+      - jsont
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

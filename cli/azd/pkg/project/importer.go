@@ -336,6 +336,12 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}, nil
 	}
 
+	// Extension providers own their configuration; do not replace them with inferred infrastructure.
+	if infraOptions.Provider != provisioning.NotSpecified &&
+		!slices.Contains(provisioning.BuiltInProviderKinds(), infraOptions.Provider) {
+		return &Infra{Options: infraOptions}, nil
+	}
+
 	// short-circuit: If infra files exist, we know it's an explicit infrastructure
 	if moduleExists, err := pathHasModule(infraRoot, infraOptions.Module); err == nil && moduleExists {
 		log.Printf("using infrastructure from %s directory", infraRoot)
@@ -442,6 +448,13 @@ func pathHasModule(path, module string) (bool, error) {
 // GenerateAllInfrastructure returns a file system containing all infrastructure for the project,
 // rooted at the project directory.
 func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
+	for _, entry := range projectConfig.InfrastructureConfigs() {
+		if entry.Provider != provisioning.NotSpecified &&
+			!slices.Contains(provisioning.BuiltInProviderKinds(), entry.Provider) {
+			return nil, fmt.Errorf("infrastructure generation is not supported for extension provider %q", entry.Provider)
+		}
+	}
+
 	configuredServices := projectConfig.ServiceConfigs()
 	for _, svcConfig := range configuredServices {
 		if svcConfig.Language == ServiceLanguageDotNet {

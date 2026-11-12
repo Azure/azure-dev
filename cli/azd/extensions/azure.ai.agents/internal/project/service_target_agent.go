@@ -29,6 +29,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/phasetelemetry"
@@ -40,7 +41,6 @@ import (
 	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -1947,7 +1947,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 		}
 	}
 
-	return p.finalizeDeploy(
+	monitoringWarning := ""
+	if identity := result.agentVersion.InstanceIdentity; identity != nil && privateMonitoringComponentID(azdEnv) != "" {
+		progress("Granting agent identity access to Application Insights")
+		monitoringWarning = p.ensureHostedAgentMonitoringPublisher(ctx, azdEnv, identity.PrincipalID)
+	}
+
+	deployResult, err := p.finalizeDeploy(
 		ctx,
 		progress,
 		serviceConfig,
@@ -1960,6 +1966,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		activityProfile,
 		serviceTargetConfig.Activity,
 	)
+	if err != nil {
+		return nil, err
+	}
+	appendDeployWarning(deployResult, privateMonitoringComponentID(azdEnv), monitoringWarning)
+	return deployResult, nil
 }
 
 func activityBotOwnership(
@@ -2590,6 +2601,17 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		}
 	}
 
+	if err := CheckHostedContainerImagePolicy(
+		ctx,
+		azdEnv["AZURE_AI_PROJECT_ID"],
+		p.credential,
+		serviceConfig.GetName(),
+		fullImageURL,
+		azdEnv,
+	); err != nil {
+		return nil, err
+	}
+
 	progress("Preparing hosted agent configuration")
 	prep, err := p.prepareDeploy(serviceConfig, agentDef, azdEnv, []agent_yaml.AgentBuildOption{
 		agent_yaml.WithImageURL(fullImageURL),
@@ -2736,6 +2758,9 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 		ctx, agentClient, request, azdEnv, progress, shouldUpdate,
 	)
 	if err != nil {
+		if policyErr, ok := TryClassifyRuntimePolicyError(err, serviceConfig.GetName(), azdEnv["AZURE_AI_PROJECT_ID"]); ok {
+			return nil, policyErr
+		}
 		return nil, exterrors.ServiceFromAzure(err, deployOp)
 	}
 	if err := validateVoiceAgentDeployResponse(agentObject); err != nil {
@@ -4302,7 +4327,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		)
 		endUpload()
 		if err != nil {
-			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
+			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request, azdEnv["AZURE_AI_PROJECT_ID"])
 		}
 	} else {
 		if localProfile.IsActivity {
@@ -4327,7 +4352,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		)
 		endUpload()
 		if err != nil {
-			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
+			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request, azdEnv["AZURE_AI_PROJECT_ID"])
 		}
 	}
 
@@ -4803,7 +4828,20 @@ func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, servi
 
 var hostedAgentRetryServiceNamePattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_. -]*$`)
 
-func hostedAgentCreateError(err error, serviceName string, request *agent_api.CreateAgentRequest) error {
+func hostedAgentCreateError(
+	err error,
+	serviceName string,
+	request *agent_api.CreateAgentRequest,
+	projectResourceID ...string,
+) error {
+	var projID string
+	if len(projectResourceID) > 0 {
+		projID = projectResourceID[0]
+	}
+	if policyErr, ok := TryClassifyRuntimePolicyError(err, serviceName, projID); ok {
+		return policyErr
+	}
+
 	converted := exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	responseErr, ok := errors.AsType[*azcore.ResponseError](err)
 	if !ok || responseErr.StatusCode != http.StatusBadRequest || responseErr.RawResponse == nil || request == nil {
@@ -4941,7 +4979,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 		ctx, request.Name, versionRequest, agent_api.AgentEndpointAPIVersion,
 	)
 	if err != nil {
-		return nil, hostedAgentCreateError(err, serviceName, request)
+		return nil, hostedAgentCreateError(err, serviceName, request, azdEnv["AZURE_AI_PROJECT_ID"])
 	}
 
 	_, _ = fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)

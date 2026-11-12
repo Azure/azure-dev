@@ -17,13 +17,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/azure/azure-dev/cli/shared/foundry/access"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -503,29 +503,14 @@ func hasAcrPullAssignment(
 	resourceID string,
 	principalID string,
 ) (bool, error) {
-	subscriptionID := extractSubscriptionId(resourceID)
-	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, credential, azure.NewArmClientOptions())
-	if err != nil {
-		return false, fmt.Errorf("create role assignments client: %w", err)
-	}
-	filter := fmt.Sprintf("assignedTo('%s')", principalID)
-	pager := client.NewListForScopePager(resourceID, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: &filter,
-	})
-	roleSuffix := "/roleDefinitions/" + acrPullRoleDefinitionID
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return false, fmt.Errorf("list ACR role assignments: %w", err)
-		}
-		for _, assignment := range page.Value {
-			if assignment.Properties != nil && assignment.Properties.RoleDefinitionID != nil &&
-				strings.HasSuffix(*assignment.Properties.RoleDefinitionID, roleSuffix) {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
+	return access.HasAnyRoleAssignment(
+		ctx,
+		credential,
+		principalID,
+		[]string{acrPullRoleDefinitionID},
+		resourceID,
+		azure.NewArmClientOptions(),
+	)
 }
 
 // configureFoundryProjectEnv sets all Foundry project environment variables and discovers

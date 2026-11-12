@@ -74,6 +74,8 @@ words:
   - abbrs
   - acrpush
   - alnum
+  - ampls
+  - azuremonitor
   - foundryproject
   - agentignore
   - ADLS
@@ -180,3 +182,19 @@ words:
   - ufeff
   - Versionless
   - warnf
+  # Azure Policy / Resource Graph preflight terms
+  - donotenforce
+  - foundrypolicy
+  - isempty
+  - policyassignments
+  - policydefinitions
+  - policyeffect
+  - policyexemptions
+  - policyresources
+  - policysetdefinitions
+  - resourcecontainers
+  - strcat
+  - todatetime
+  - tolower
+  - toscalar
+  - tostring

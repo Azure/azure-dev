@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/featureflags"
-	"azureaiagent/internal/synthesis"
 	"azureaiagent/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"

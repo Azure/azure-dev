@@ -196,6 +196,15 @@ const (
 	CodeACRResolutionFailed                 = "acr_resolution_failed"
 )
 
+// Error codes for Azure Policy pre-flight checks.
+const (
+	CodeAgentPolicyBlocked            = "agent_policy_blocked"
+	CodeAgentKindBlockedByPolicy      = "agent_kind_blocked_by_policy"
+	CodeContainerImageBlockedByPolicy = "container_image_blocked_by_policy"
+	CodeModelBlockedByPolicy          = "model_blocked_by_policy"
+	CodeToolBlockedByPolicy           = "tool_blocked_by_policy"
+)
+
 // Error codes commonly used for internal errors.
 //
 // These are usually paired with [Internal] for unexpected failures

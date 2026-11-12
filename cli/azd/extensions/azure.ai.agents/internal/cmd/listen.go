@@ -16,13 +16,13 @@ import (
 	"strings"
 	"sync"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -75,6 +75,12 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
 		}).
+		WithServiceEventHandler("prebuild", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+			return prepackageHandler(ctx, azdClient, args)
+		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
+		WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+			return prepackageHandler(ctx, azdClient, args)
+		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return postdeployHandler(ctx, azdClient, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
@@ -369,6 +375,15 @@ func updateLegacyProjectDeployments(
 // for each colliding service.
 var duplicateAgentNameWarnOnce sync.Once
 
+func prepackageHandler(
+	ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs,
+) error {
+	if args == nil || args.Service == nil {
+		return nil
+	}
+	return project.CheckServicePolicyForPredeploy(ctx, azdClient, args.Service, args.Project.GetPath())
+}
+
 func predeployHandler(
 	ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs,
 ) (*azdext.BetaServiceEventResponse, error) {
@@ -428,6 +443,10 @@ func predeployHandler(
 		svc,
 	); err != nil {
 		return fail(fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err))
+	}
+
+	if err := project.CheckServicePolicyForPredeploy(ctx, azdClient, svc, args.Project.GetPath()); err != nil {
+		return fail(err)
 	}
 
 	hosted := isHostedAgentService(svc, args.Project)

@@ -18,11 +18,11 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"

@@ -134,6 +134,160 @@ declaration's binding to its managed name. For hand-edited agent bindings,
 update the JSON object with `azd env set AI_PROJECT_DEPLOYMENT_BINDINGS '<json>'`,
 or set it to `'{}'` to clear explicit bindings.
 
+### Application Insights
+
+New Foundry projects automatically receive a workspace-backed Application
+Insights component and a project-scoped `AppInsights` connection during normal
+provisioning. This includes projects created directly with `azd ai project add`
+and projects created for agents. No additional command, flag, or connection
+service is required. Existing projects are unchanged unless monitoring is
+explicitly configured; upgrading an environment does not opt an existing project
+into monitoring.
+
+To bring your own component, add the optional project setting:
+
+```yaml
+infra:
+  provider: microsoft.foundry
+services:
+  my-project:
+    host: azure.ai.project
+    monitoring:
+      applicationInsightsResourceId: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Insights/components/<component>
+```
+
+The component must already reference an accessible Log Analytics workspace.
+It can belong to another resource group or subscription that the deploying
+identity can read. Provisioning references it without changing its tags,
+authentication, network settings, retention, or workspace, and creates only a
+missing project connection. Credentials are resolved during deployment, not
+stored in generated parameter files or azd environment outputs. A compatible
+existing project or shared account connection is preserved, including
+Managed Identity or Microsoft Entra authentication.
+
+Creating a new Application Insights component for an existing project is not
+supported; an existing project must set `applicationInsightsResourceId` to
+enable monitoring.
+To skip new monitoring setup, use:
+
+```yaml
+services:
+  my-project:
+    host: azure.ai.project
+    monitoring:
+      enabled: false
+```
+
+For embedded infrastructure, this opt-out does not delete or disable an existing
+component, workspace, or connection. It also does not relinquish an existing
+azd-owned supporting resource group's cleanup binding.
+
+New connections use ApiKey authentication, are scoped to one project, and are
+named `azd-appinsights-<project-name-hash>` to stay within resource name limits.
+No monitoring RBAC roles are added. Each user who queries traces needs the
+Log Analytics Reader role on the Application Insights resource; azd does not
+grant it.
+Discovery rejects conflicting destinations, protected names, ambiguous sharing,
+unreadable resources, and authentication or ingestion policies that would need
+to be weakened. ApiKey setup does not enable local authentication. A new
+project with a `network:` block that uses your own agent subnet gets a private
+monitoring path that matches the Foundry samples: the component disables public
+ingestion and keeps public query enabled, and azd adds an Azure Monitor Private
+Link Scope (ingestion Private Only, query Open), an `azuremonitor` private
+endpoint, and the four Azure Monitor private DNS zones. Ingestion is private
+only; trace reads are not restricted to the private network. Right after a
+fresh deployment, private ingestion can return 403 for a while (observed up to
+about 20 minutes) before traces start to arrive. Live testing confirmed that
+Foundry service-side traces from a deployed prompt agent were read from inside
+the network without any post-deployment change.
+With your own agent subnet you can also connect an existing component
+(`reuse-connect`): azd builds its own Private Link Scope, private endpoint and
+DNS zones and links the component and its workspace to the scope, without
+modifying the component. The component must keep local authentication enabled.
+azd does not re-update a component it does not own; if ingestion returns 403
+after provisioning, touching the component (for example, updating a tag) can
+clear it.
+Unsupported private-network cases never block provisioning: shared private DNS zones (`network.dns`), a virtual network that already has an
+Azure Monitor private endpoint (azd does not adopt an existing scope or
+endpoint), or a network azd cannot inspect skip automatic monitoring and azd
+prints a warning (also on stderr). With managed egress (no `agentSubnet`), azd
+also adds two outbound rules to the managed network and grants the account
+identity the Azure AI Enterprise Network Connection Approver role on the
+resource group so the managed private endpoints are approved:
+`ampls-monitor-rule` (target `azuremonitor`) lets the agent runtime reach the
+Private Link Scope, and `foundry-account-pe` (target `account`, to the account
+itself) is required for hosted agents, which otherwise fail with
+`Public access is disabled`. The hosted agent's own identity also needs
+`Monitoring Metrics Publisher` on the Application Insights component to export
+telemetry. That identity exists only after the agent is deployed, so
+`azd deploy` in the agents extension grants it, then updates a tag on the
+component so Application Insights refreshes its cached ingestion authorization
+(best effort, only for azd-created components on the private path; set
+`AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true` to skip it; on skip or failure the
+deploy note carries a warning with the `az role assignment create` command). If you set no
+`isolationMode`, azd uses `AllowInternetOutbound` so the managed network exists.
+Ejected or hand-authored Bicep that bypasses
+azd's checks never creates the private path unless
+`monitoringPrivateLinkApproved` is set. Set `monitoring.enabled: false` to opt
+out silently.
+
+**Impact on a shared virtual network.** The Azure Monitor private DNS zones and
+Private Link Scope change Azure Monitor routing for the whole virtual network,
+not only this project. With ingestion Private Only, any workload in the network
+(or in a network sharing its DNS zones) can send telemetry only to Application
+Insights or Log Analytics resources that are in the scope; telemetry to
+resources outside it stops arriving. A virtual network can use only one Private
+Link Scope, so to keep other workloads' telemetry, add their Application
+Insights components or Log Analytics workspaces as scoped resources of the
+Private Link Scope that azd created. To avoid any change to Azure Monitor
+routing, set `monitoring.enabled: false`. Check for existing workloads before
+you provision. Other monitoring failures can fail normal provisioning; there is
+no second best-effort deployment or agent deployment repair hook.
+
+Monitoring creates billable Azure resources and can store agent telemetry,
+including application-supplied content. Review your application's telemetry,
+data handling, and retention requirements before deployment. Newly created
+workspaces start with 30-day retention; existing workspaces are not changed.
+The normal `AZURE_APPLICATION_INSIGHTS_RESOURCE_ID`,
+`AZURE_APPLICATION_INSIGHTS_APP_ID`,
+`AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID`,
+`AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME`, and
+`AZD_FOUNDRY_MONITORING_MODE` outputs describe provisioning configuration, not
+proof that an agent has emitted or ingested traces.
+
+#### Ejected infrastructure
+
+Monitoring is part of the main infrastructure graph, not an orphan template or
+a separate deployment. Before ejection, `azure.yaml` controls monitoring.
+After ejection, the Bicep files and their parameters, or Terraform files and
+their variables, are authoritative. Changing stale YAML monitoring values does
+not override those files. General configuration loading still requires valid
+YAML and resolvable local references, even for values no longer used by IaC.
+
+Generated Bicep calls `modules/monitoring.bicep`; Terraform declares monitoring
+in `monitoring.tf`. Monitoring modes are `none`, `create`, `reuse-connect`, and
+`already-connected`. The last mode references compatible external monitoring
+without managing its connection. Creating monitoring for a new project shares
+the normal supporting resource group used by ACR rather than creating a separate
+monitoring resource group. Native/Bicep preview uses normal ARM What-If.
+
+Monitoring-enabled Terraform exports require Terraform 1.11 or later and AzAPI
+2.7 or later (existing-project exports retain their higher provider baseline).
+They use an ephemeral credential read and a write-only connection field.
+Previously native-created resources are not implicitly imported into Terraform;
+reference the component explicitly for reuse or perform a deliberate state
+handoff. Terraform resources have normal removal and destroy semantics:
+changing managed monitoring to `none` or deleting its declarations can schedule
+resource deletion, unlike the embedded-provider YAML opt-out. Review the plan
+before applying changes. A reuse-only existing-project export cannot switch to
+creation until its owned supporting resource-group graph is declared.
+
+Export-time discovery selects a stable graph, and Terraform rechecks effective
+connections and policy during planning/apply. Managed resource counts do not
+depend on whether a connection happens to exist. Neither ARM nor Terraform
+provides a transaction across discovery and concurrent connection changes:
+avoid creating different monitoring connections concurrently with provisioning.
+
 ### Deployment preview
 
 `azd deploy --preview` performs no work for an `azure.ai.project` service, just
@@ -606,7 +760,8 @@ Split `host: azure.ai.connection` services are reconciled during deploy by the
 `azure.ai.connections` extension, never by Project provisioning. This applies
 to embedded templates and newly ejected Bicep/Terraform alike. Project synthesis
 does not read Connection or Toolbox payloads, environments, or credentials.
-The system ACR connection used by the Project's registry remains Project-owned.
+The system ACR connection and generated system AppInsights connection remain
+Project-owned.
 
 ### Breaking migration
 
@@ -619,8 +774,8 @@ or `connectionCredentials` are allowed and retain normal parameter substitution;
 parameter names alone do not identify the removed Foundry contract. Linked
 templates are not fetched or inspected by this validation.
 
-Only the generated system ACR connection's name, target, project identity and
-registry resource ID wiring are exempt. Other `ContainerRegistry` connections,
+Only generated system ACR and AppInsights connections with their expected name,
+target, project identity, and resource ID wiring are exempt. Other `ContainerRegistry` connections,
 including those using `ManagedIdentity`, belong in `azure.ai.connection` services.
 Preserve that generated wiring when customizing ejected Bicep, or regenerate it.
 
@@ -644,8 +799,8 @@ azd ai project add --project-id "<project-resource-id>" --infra=terraform
 
 The default format is Bicep. The generated infrastructure references the
 existing account and project without taking ownership of them. It manages only
-declared model deployments, the system ACR connection, and any required container
-registry resources. Endpoint-only setup cannot eject infrastructure; rerun
+declared model deployments, system ACR and explicitly enabled monitoring
+connections, and any required registry or monitoring resources. Endpoint-only setup cannot eject infrastructure; rerun
 `project add` with the full project resource ID.
 
 When an agent needs a registry, ejection preserves the registry state selected
@@ -677,3 +832,17 @@ existing Foundry project should be reused instead, configure its endpoint and se
 full project resource ID before retrying.
 
 The `azd ai project set`, `show`, and `unset` commands manage the default Foundry project endpoint context. Use `azd ai project add` to author the project service in `azure.yaml`.
+
+## Azure Policy model deployment checks
+
+When targeting an existing Foundry project (`AZURE_AI_PROJECT_ID`), `azd provision` / `azd up` and `azd ai project deployment add` evaluate effective model deployments against the Cognitive Services account's ARM `evaluateDeploymentPolicies` endpoint before submitting deployment changes.
+
+- **Blocking pre-checks (`provision`, `up`, `project deployment add`)**: Assignments with a `Deny` effect fail fast with a validation error (`model_blocked_by_policy`) and a Foundry Portal Govern deep link for the blocking assignment. Assignments with an `Audit` effect are treated as non-blocking. Transport, authentication, or service errors during preflight evaluation fail open so ARM remains the final authority.
+- **Brownfield reconciliation warnings (`project add`)**: Adopting an existing project via `azd ai project add` evaluates reconciled and retained deployments and prints a non-blocking warning to `stderr` (suppressed when `--output` is `json` or `none`) if any deployment is denied by Azure Policy.
+- **Opting out of client-side pre-checks**: Set `AZD_AI_AGENT_SKIP_POLICY_CHECKS=true` (or the legacy alias `AZD_AGENT_SKIP_POLICY_CHECKS=true`) in the active `azd` environment or OS environment:
+
+  ```sh
+  azd env set AZD_AI_AGENT_SKIP_POLICY_CHECKS true
+  ```
+
+  Values are parsed with `strconv.ParseBool`, and values set in the active `azd` environment take precedence over OS environment variables. Skipping client-side pre-checks only bypasses local preflight calls; server-side Azure Policy enforcement in ARM still applies during deployment.

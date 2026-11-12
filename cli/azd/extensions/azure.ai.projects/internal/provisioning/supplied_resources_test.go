@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -81,7 +81,7 @@ func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
 
 func suppliedYAML(mask int) string {
 	var raw strings.Builder
-	raw.WriteString("services:\n  project:\n    host: azure.ai.project\n    agentHosting:\n" +
+	raw.WriteString("services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n    agentHosting:\n" +
 		"      clusterResourceId: " + offlineClusterID + "\n")
 	for i, selection := range []struct{ name, id string }{
 		{"storageAccountResourceId", suppliedStorageID},
@@ -238,7 +238,10 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 					p.bicepCliInstance = compiler
 					p.onDiskSource = &templateSource{
 						mode: templateModeBicep, armTemplate: p.armTemplate,
-						parameters: map[string]any{"includeAcr": map[string]any{"value": registry}},
+						parameters: map[string]any{
+							"includeAcr":     map[string]any{"value": registry},
+							"monitoringMode": map[string]any{"value": "none"},
+						},
 					}
 					if preview {
 						result, err := p.Preview(t.Context(), func(string) {})
@@ -419,6 +422,7 @@ func TestBYOSuppliedUsesEffectiveDeploymentInputs(t *testing.T) {
 					parameters[binding] = map[string]any{"value": "explicit-" + binding}
 				}
 			}
+			parameters["monitoringMode"] = map[string]any{"value": "none"}
 			p.onDiskSource = &templateSource{
 				mode: templateModeBicep, armTemplate: p.armTemplate, parameters: parameters,
 			}

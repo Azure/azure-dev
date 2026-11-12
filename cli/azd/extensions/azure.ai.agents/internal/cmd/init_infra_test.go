@@ -18,10 +18,10 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 	"azureaiagent/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -555,6 +555,41 @@ services:
 	assert.FileExists(t, filepath.Join(dir, "custom", "foundry", "project.bicep"))
 	assert.FileExists(t, filepath.Join(dir, "custom", "foundry", "project.parameters.json"))
 	assert.NoFileExists(t, filepath.Join(dir, "custom", "foundry", "main.bicep"))
+}
+
+func TestEjectInfra_ModuleNamedMonitoringDoesNotCollideWithMonitoringTemplate(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: foundry
+      path: infra/foundry
+      module: monitoring
+      provider: microsoft.foundry
+      dependsOn: [app]
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	entrypoint, err := os.ReadFile(filepath.Join(dir, "infra", "foundry", "monitoring.bicep"))
+	require.NoError(t, err)
+	moduleTemplate, err := os.ReadFile(filepath.Join(dir, "infra", "foundry", "modules", "monitoring.bicep"))
+	require.NoError(t, err)
+	embedded, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/modules/monitoring.bicep")
+	require.NoError(t, err)
+	mainTemplate, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/main.bicep")
+	require.NoError(t, err)
+
+	assert.Equal(t, string(mainTemplate), string(entrypoint), "entrypoint must stay the renamed main.bicep")
+	assert.Equal(t, string(embedded), string(moduleTemplate), "monitoring module must be the embedded template")
+	assert.Contains(t, string(entrypoint), "modules/monitoring.bicep")
+	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "monitoring.parameters.json"))
 }
 
 func TestEjectInfra_RefusesNonEmptyDeclaredFoundryTarget(t *testing.T) {
@@ -1473,6 +1508,40 @@ services:
 	assert.Contains(t, string(tfvars), `"tenant_id": "${AZURE_TENANT_ID}"`)
 }
 
+func TestWriteExistingProjectTerraformTemplatesSeparatesAdjunctResourceGroup(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []infraEjectAcrMode{
+		infraEjectAcrNone, infraEjectAcrCreate, infraEjectAcrReuseConnect, infraEjectAcrAlreadyConnected,
+	} {
+		t.Run(string(mode), func(t *testing.T) {
+			t.Parallel()
+			dir := filepath.Join(t.TempDir(), "infra")
+			artifacts, err := writeExistingProjectTerraformTemplates(dir, "infra", mode, false)
+			require.NoError(t, err)
+			adjunctPath := filepath.Join(dir, "adjunct-resource-group.tf")
+			if mode == infraEjectAcrCreate {
+				adjunct, err := os.ReadFile(adjunctPath) //nolint:gosec // test-owned path
+				require.NoError(t, err)
+				assert.Contains(t, string(adjunct), `resource "azurerm_resource_group" "adjunct"`)
+				registry, err := os.ReadFile(filepath.Join(dir, "container-registry.tf")) //nolint:gosec
+				require.NoError(t, err)
+				assert.NotContains(t, string(registry), `resource "azurerm_resource_group"`)
+				assert.Contains(t, string(registry), "azurerm_resource_group.adjunct.name")
+				assert.Contains(t, artifacts, ejectArtifact{
+					relPath: "infra/adjunct-resource-group.tf",
+					bytes:   len(adjunct),
+				})
+			} else {
+				assert.NoFileExists(t, adjunctPath)
+				for _, artifact := range artifacts {
+					assert.NotEqual(t, "infra/adjunct-resource-group.tf", artifact.relPath)
+				}
+			}
+		})
+	}
+}
+
 func TestEjectInfra_ExistingProjectTerraformPrebuiltOmitsAcr(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -2324,6 +2393,8 @@ services:
       dns:
         resourceGroup: rg-dns
         subscription: "${AZURE_DNS_SUBSCRIPTION_ID}"
+    monitoring:
+      enabled: false
     deployments: []
     agents:
       - name: my-agent
@@ -2385,6 +2456,8 @@ services:
         vnet: "${AZURE_VNET_ID}"
         name: pe-subnet
         prefix: 192.168.11.0/24
+    monitoring:
+      enabled: false
     deployments: []
     agents:
       - name: my-agent
@@ -2463,6 +2536,8 @@ services:
     network:
       agentSubnet: {vnet: "${VNET_ID}", name: agents}
       peSubnet: {vnet: "${VNET_ID}", name: endpoints}
+    monitoring:
+      enabled: false
 `
 	t.Run("Bicep preserves the provider and unresolved inputs", func(t *testing.T) {
 		dir := t.TempDir()
@@ -4031,6 +4106,8 @@ services:
     host: azure.ai.project
     network:
       peSubnet: {vnet: "${AZURE_VNET_ID}", name: pe-subnet}
+    monitoring:
+      enabled: false
     deployments: []
     agents:
       - name: my-agent

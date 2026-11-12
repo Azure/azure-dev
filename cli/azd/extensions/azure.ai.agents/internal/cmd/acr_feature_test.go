@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"azureaiagent/internal/synthesis"
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"

@@ -25,6 +25,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/recordproxy"
+	"azureaiagent/internal/pkg/useragent"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -2891,6 +2892,7 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 				sessionID     string
 				apiVersion    string
 				authorization string
+				userAgent     string
 				userIdentity  string
 				clientID      string
 			}
@@ -2909,6 +2911,7 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 					sessionID:     sessionID,
 					apiVersion:    r.URL.Query().Get("api-version"),
 					authorization: r.Header.Get("Authorization"),
+					userAgent:     r.Header.Get("User-Agent"),
 					userIdentity:  r.Header.Get("x-ms-user-identity"),
 					clientID:      r.Header.Get("x-client-request-id"),
 				})
@@ -3007,6 +3010,7 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 				}
 				if post.apiVersion != "v1" ||
 					post.authorization != "Bearer test-token" ||
+					post.userAgent != useragent.Default() ||
 					post.userIdentity != "user-1" ||
 					post.clientID != "request-1" {
 					t.Errorf("POST request %d headers/query = %+v", i+1, post)
@@ -3027,6 +3031,7 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 				}
 				if probe.apiVersion != "v1" ||
 					probe.authorization != "Bearer test-token" ||
+					probe.userAgent != useragent.Default() ||
 					probe.userIdentity != "user-1" ||
 					probe.clientID != "request-1" {
 					t.Errorf("OpenAPI request %d headers/query = %+v", i+1, probe)
@@ -3579,6 +3584,7 @@ func TestHandleInvocationLRO(t *testing.T) {
 func TestHandleInvocationLRO_PropagatesUserIdentityHeader(t *testing.T) {
 	pollRequests := captureInvocationLROPollRequests(
 		t,
+		"token",
 		&agent_api.SessionRequestOptions{
 			UserIdentity: "user-1",
 		},
@@ -3594,6 +3600,7 @@ func TestHandleInvocationLRO_PropagatesUserIdentityHeader(t *testing.T) {
 func TestHandleInvocationLRO_PropagatesPartialUserIdentityHeader(t *testing.T) {
 	pollRequests := captureInvocationLROPollRequests(
 		t,
+		"token",
 		&agent_api.SessionRequestOptions{
 			UserIdentity: "user-1",
 		},
@@ -3601,8 +3608,22 @@ func TestHandleInvocationLRO_PropagatesPartialUserIdentityHeader(t *testing.T) {
 	assertPollRequestsHaveHeaders(t, pollRequests, "user-1")
 }
 
+func TestHandleInvocationLRO_LocalPollingOmitsExtensionUserAgent(t *testing.T) {
+	pollRequests := captureInvocationLROPollRequests(t, "", nil)
+	for i, r := range pollRequests {
+		pollNumber := i + 1
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("poll %d: Authorization = %q, want no authentication header", pollNumber, got)
+		}
+		if got := r.UserAgent(); strings.Contains(got, useragent.Default()) {
+			t.Errorf("poll %d: User-Agent = %q, want no extension User-Agent", pollNumber, got)
+		}
+	}
+}
+
 func captureInvocationLROPollRequests(
 	t *testing.T,
+	bearerToken string,
 	options *agent_api.SessionRequestOptions,
 	pollBodies ...string,
 ) []*http.Request {
@@ -3613,7 +3634,7 @@ func captureInvocationLROPollRequests(
 	t.Cleanup(func() { defaultLROPollInterval = origInterval })
 
 	// Use two-poll scenario: first poll returns "running", second returns "completed".
-	// Verify that the user-identity header is sent on every poll, not just the first.
+	// Verify the headers on every poll, not just the first.
 	if len(pollBodies) == 0 {
 		pollBodies = []string{
 			`{"status":"running"}`,
@@ -3650,7 +3671,7 @@ func captureInvocationLROPollRequests(
 		t.Context(),
 		resp,
 		"",
-		"token",
+		bearerToken,
 		"test-agent",
 		time.Second,
 		"",
@@ -3684,6 +3705,9 @@ func assertPollRequestsHaveHeaders(
 
 	for i, r := range pollRequests {
 		pollNumber := i + 1
+		if got, want := r.UserAgent(), useragent.Default(); got != want {
+			t.Errorf("poll %d: User-Agent = %q, want %q", pollNumber, got, want)
+		}
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
 			t.Errorf("poll %d: Authorization = %q, want Bearer token", pollNumber, got)
 		}
@@ -3791,6 +3815,10 @@ func TestCreateConversation(t *testing.T) {
 				// Verify content type
 				if got := r.Header.Get("Content-Type"); got != "application/json" {
 					t.Errorf("Content-Type = %q, want %q", got, "application/json")
+				}
+
+				if got := r.Header.Get("User-Agent"); got != useragent.Default() {
+					t.Errorf("User-Agent = %q, want %q", got, useragent.Default())
 				}
 
 				w.WriteHeader(tt.statusCode)

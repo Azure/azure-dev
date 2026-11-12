@@ -217,12 +217,18 @@ func (p *toolboxServiceTarget) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	if err := checkToolboxToolsPolicy(ctx, p.access, scope, name, request.Tools); err != nil {
+		return nil, err
+	}
 	if progress != nil {
 		progress(fmt.Sprintf("Upserting toolbox %q", name))
 	}
 
 	created, err := client.CreateToolboxVersion(ctx, name, request)
 	if err != nil {
+		if policyErr, ok := tryClassifyToolboxPolicyError(err, name, scope); ok {
+			return nil, policyErr
+		}
 		return nil, toolboxWriteError(ctx, err, exterrors.OpCreateToolboxVersion, scope, "", "")
 	}
 	if cancelErr := toolboxAccessCancellation(ctx, nil); cancelErr != nil {

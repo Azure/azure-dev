@@ -1,0 +1,157 @@
+{{define "main.bicep" -}}
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+targetScope = 'subscription'
+
+@minLength(1)
+@maxLength(64)
+@description('Name of the environment that can be used as part of naming resource convention')
+param environmentName string
+
+@minLength(1)
+@description('Primary location for all resources')
+param location string
+
+{{ if .AiFoundryProject -}}
+param aiDeploymentsLocation string
+{{- end }}
+{{- range .Parameters}}
+{{- if .Secret}}
+@secure()
+{{- end }}
+param {{.Name}} {{.Type}}
+{{- end }}
+
+@description('Id of the user or app to assign application roles')
+param principalId string
+
+@description('Principal type of user or app')
+param principalType string
+
+// Tags that should be applied to all resources.
+//
+// Note that 'azd-service-name' tags should be applied separately to service host resources.
+// Example usage:
+//   tags: union(tags, { 'azd-service-name': <service name in azure.yaml> })
+var tags = {
+  'azd-env-name': environmentName
+}
+
+// Organize resources in a resource group
+resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
+  name: 'rg-${environmentName}-${uniqueString(subscription().id, environmentName{{if .LayerName}}, layerName{{end}})}'
+  location: location
+  tags: tags
+}
+
+module resources 'resources.bicep' = {
+  scope: rg
+  name: 'resources'
+  params: {
+    location: location
+    tags: tags
+    principalId: principalId
+    principalType: principalType
+{{- range .Parameters}}
+    {{.Name}}: {{.Name}}
+{{- end }}
+{{- if .AiFoundryProject }}
+    aiFoundryProjectEndpoint: aiModelsDeploy.outputs.ENDPOINT
+{{- end}}
+  }
+}
+
+{{- if .AiFoundryProject }}
+
+module aiModelsDeploy 'ai-project.bicep' = {
+  scope: rg
+  name: '{{.AiFoundryProject.Name}}'
+  params: {
+    tags: tags
+    location: aiDeploymentsLocation
+    envName: environmentName
+{{- if .LayerName }}
+    layerName: layerName
+{{- end }}
+    principalId: principalId
+    principalType: principalType
+    deployments: [
+      {{- range .AiFoundryProject.Models }}
+      {
+        name: '{{bicepName .Name }}Deployment'
+        model: {
+          name: '{{bicepString .Name}}'
+          format: '{{bicepString .Format}}'
+          version: '{{bicepString .Version}}'
+        }
+        sku: {
+          name: '{{bicepString .Sku.Name}}'
+          capacity: {{ .Sku.Capacity }}
+        }
+      }
+      {{- end }}
+    ]
+  }
+}
+
+{{- if .AISearch }}
+module aiSearchConnection 'modules/ai-search-conn.bicep' = {
+  scope: rg
+  name: 'ai-search-connection'
+  params: {
+    aiServicesName: aiModelsDeploy.outputs.aiServicesAccountName
+    aiServicesProjectName: aiModelsDeploy.outputs.aiServicesProjectName
+    aiSearchName: resources.outputs.aiSearchName
+  }
+}
+{{- end}}
+{{- end}}
+
+{{- if .Services}}
+{{- range .Services}}
+output SERVICE_{{alphaSnakeUpper .Name}}_RESOURCE_GROUP string = rg.name
+output SERVICE_{{alphaSnakeUpper .Name}}_NAME string = resources.outputs.SERVICE_{{alphaSnakeUpper .Name}}_NAME
+{{- if isACA .Host}}
+output SERVICE_{{alphaSnakeUpper .Name}}_REGISTRY_ENDPOINT string = resources.outputs.SERVICE_{{alphaSnakeUpper .Name}}_REGISTRY_ENDPOINT
+{{- end}}
+output {{entryEnvKey $.LayerName (printf "AZURE_RESOURCE_%s_ID" (alphaSnakeUpper .Name))}} string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID
+{{- end}}
+{{- end}}
+{{- if .KeyVault}}
+output {{entryEnvKey .LayerName "AZURE_KEY_VAULT_ENDPOINT"}} string = resources.outputs.AZURE_KEY_VAULT_ENDPOINT
+output {{entryEnvKey .LayerName "AZURE_KEY_VAULT_NAME"}} string = resources.outputs.AZURE_KEY_VAULT_NAME
+output {{entryEnvKey .LayerName "AZURE_RESOURCE_VAULT_ID"}} string = resources.outputs.AZURE_RESOURCE_VAULT_ID
+{{- end}}
+{{- if  .AIModels}}
+{{- range .AIModels}}
+output {{entryEnvKey $.LayerName (printf "AZURE_RESOURCE_%s_ID" (alphaSnakeUpper .Name))}} string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID
+{{- end}}
+{{- end}}
+{{- if .DbRedis}}
+output {{entryEnvKey .LayerName "AZURE_RESOURCE_REDIS_ID"}} string = resources.outputs.AZURE_RESOURCE_REDIS_ID
+{{- end}}
+{{- if .DbCosmosMongo }}
+output {{entryEnvKey .LayerName (printf "AZURE_RESOURCE_%s_ID" (alphaSnakeUpper .DbCosmosMongo.DatabaseName))}} string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmosMongo.DatabaseName}}_ID
+{{- end}}
+{{- if .DbCosmos }}
+output {{entryEnvKey .LayerName (printf "AZURE_RESOURCE_%s_ID" (alphaSnakeUpper .DbCosmos.DatabaseName))}} string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID
+{{- end}}
+{{- if .StorageAccount }}
+output {{entryEnvKey .LayerName "AZURE_RESOURCE_STORAGE_ID"}} string = resources.outputs.AZURE_RESOURCE_STORAGE_ID
+{{- end}}
+{{- if .EventHubs}}
+output {{entryEnvKey .LayerName "AZURE_RESOURCE_EVENT_HUBS_ID"}} string = resources.outputs.AZURE_RESOURCE_EVENT_HUBS_ID
+{{- end}}
+{{- if .ServiceBus}}
+output {{entryEnvKey .LayerName "AZURE_RESOURCE_SERVICE_BUS_ID"}} string = resources.outputs.AZURE_RESOURCE_SERVICE_BUS_ID
+{{- end}}
+{{- if .AiFoundryProject }}
+output {{entryEnvKey .LayerName "AZURE_AI_PROJECT_ENDPOINT"}} string = aiModelsDeploy.outputs.ENDPOINT
+output {{entryEnvKey .LayerName "AZURE_RESOURCE_AI_PROJECT_ID"}} string = aiModelsDeploy.outputs.projectId
+{{- end}}
+{{- if .AISearch }}
+output {{entryEnvKey .LayerName "AZURE_AI_SEARCH_ENDPOINT"}} string = resources.outputs.AZURE_AI_SEARCH_ENDPOINT
+output {{entryEnvKey .LayerName "AZURE_RESOURCE_SEARCH_ID"}} string = resources.outputs.AZURE_RESOURCE_SEARCH_ID
+{{- end}}
+{{ end}}

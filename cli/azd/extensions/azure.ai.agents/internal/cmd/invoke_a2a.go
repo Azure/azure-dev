@@ -18,6 +18,7 @@ import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/useragent"
 
 	"github.com/google/uuid"
 )
@@ -213,13 +214,14 @@ func buildA2A10TextRequest(text, requestID, messageID string) a2aJSONRPCRequest 
 	}
 }
 
-// applyA2ARequestHeaders sets the A2A-specific request headers: the explicit
+// applyA2ARequestHeaders sets the remote A2A request headers: the explicit
 // A2A-Version header (so the server negotiates deterministically instead of
-// applying an implicit default), the Foundry bearer token, and the remote user
-// identity header. The caller sets Content-Type and any raw-mode headers.
+// applying an implicit default), the Foundry bearer token, the extension User-Agent,
+// and the remote user identity header. The caller sets Content-Type and any raw-mode headers.
 func applyA2ARequestHeaders(req *http.Request, bearerToken string, identity *userIdentityFlags, version string) {
 	req.Header.Set(a2aVersionHeader, version)
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	req.Header.Set("User-Agent", useragent.Default())
 	applyRemoteUserIdentityHeader(req, identity)
 }
 

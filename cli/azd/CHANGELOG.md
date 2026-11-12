@@ -1,5 +1,15 @@
 # Release History
 
+## 1.38.0 (2026-11-11)
+
+### Features Added
+
+- [[#10823]](https://github.com/Azure/azure-dev/pull/10823) Add extension metadata and project support for extension-provided infrastructure layers, enabling extensions to own resource generation and provisioning.
+
+### Bugs Fixed
+
+- [[#10861]](https://github.com/Azure/azure-dev/pull/10861) Fix extension command errors in JSON output mode being written as plain text to stdout instead of structured JSON to stderr.
+
 ## 1.37.3 (2026-11-04)
 
 ### Features Added

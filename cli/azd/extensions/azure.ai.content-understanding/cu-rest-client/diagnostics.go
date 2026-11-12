@@ -37,6 +37,14 @@ func RedactDiagnostic(message string) string {
 		return "Diagnostic omitted because it exceeds the safe text limit."
 	}
 
+	// Match the text that will be displayed, not control-obscured labels or values.
+	message = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' || unicode.Is(unicode.Bidi_Control, r) {
+			return -1
+		}
+		return r
+	}, message)
+
 	const example = "https://<your-resource>.services.ai.azure.com"
 	const placeholder = "CU_ENDPOINT_EXAMPLE_PLACEHOLDER"
 	// Protect only the literal help example, not real URLs or URL suffixes.
@@ -58,12 +66,6 @@ func RedactDiagnostic(message string) string {
 		return value[:strings.IndexByte(value, '\'')] + "[redacted value]"
 	})
 	message = diagnosticFieldPath.ReplaceAllString(message, "${1}.[redacted]")
-	message = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) && r != '\n' && r != '\t' || unicode.Is(unicode.Bidi_Control, r) {
-			return -1
-		}
-		return r
-	}, message)
 	message = strings.TrimSpace(strings.ReplaceAll(message, placeholder, example))
 	if len(message) > MaxDiagnosticBytes {
 		return "Diagnostic omitted because it exceeds the safe text limit."

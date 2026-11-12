@@ -208,11 +208,6 @@ azd ai cu analyze invoice.pdf --output json
 azd ai cu analyze invoice.pdf --output json --output-file invoice.result.json
 ```
 
-The preview options `--llm-input` and analyze's `--output none` have been removed.
-Use `--output markdown` instead of `--llm-input=true`, or `--output json` instead
-of `--llm-input=false`. There is no equivalent CLI mode for `none`. In Markdown
-mode, `--usage` adds usage to YAML front matter in stdout and saved results.
-
 Content Understanding also provides
 [prebuilt analyzers](https://learn.microsoft.com/azure/ai-services/content-understanding/concepts/prebuilt-analyzers)
 for domain-specific extraction. For example, `prebuilt-invoice` extracts

@@ -5,6 +5,7 @@ command: "azd ai agent init --src ./src --no-prompt"
 cwd: "~/working/azd-agents-acr-agent-hosting-{instance}"
 tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
 env:
+  AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE: "true"
   AZD_DISABLE_AGENT_DETECT: "1"
   AZURE_ENV_NAME: "acr-env"
   AZURE_DEV_COLLECT_TELEMETRY: "no"

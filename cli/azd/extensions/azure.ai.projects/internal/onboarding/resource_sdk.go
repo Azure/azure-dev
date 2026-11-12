@@ -62,6 +62,9 @@ func readFailure(id, scope, action string, err error) Check {
 	if response, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		if response.StatusCode == http.StatusNotFound {
 			c.Status, c.Observed = Fail, "referenced resource does not exist (HTTP 404)"
+			c.Missing = "existing resource at " + scope
+			c.Remediation = "verify the resource ID and existence with its administrator; " +
+				"correct the reference or ensure the selected resource exists before retrying"
 		} else {
 			c.Observed = fmt.Sprintf("resource read failed (HTTP %d; code %s)", response.StatusCode, response.ErrorCode)
 		}

@@ -71,9 +71,10 @@ func validateProjectEndpoint(raw string) (normalized string, pathWarning bool, e
 
 	u, parseErr := url.Parse(raw)
 	if parseErr != nil {
+		// Parse errors can contain credentials from the full input URL.
 		return "", false, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("invalid project endpoint URL: %v", parseErr),
+			"invalid project endpoint URL",
 			"provide a valid https:// Foundry project endpoint URL",
 		)
 	}

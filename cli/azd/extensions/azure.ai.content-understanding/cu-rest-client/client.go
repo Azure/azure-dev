@@ -207,6 +207,9 @@ func (c *Client) send(req *policy.Request, codes ...int) (*http.Response, error)
 	if err != nil {
 		return nil, err
 	}
+	if resp.Request == nil {
+		resp.Request = req.Raw()
+	}
 	if !runtime.HasStatusCode(resp, codes...) {
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return nil, ErrInvalidResponse
@@ -218,20 +221,33 @@ func (c *Client) send(req *policy.Request, codes ...int) (*http.Response, error)
 
 func safeResponseError(resp *http.Response, explicitCode string) error {
 	code := explicitCode
+	var diagnostic *OperationDiagnostic
 	if code == "" {
 		code = resp.Header.Get("x-ms-error-code")
 	}
-	if code == "" && resp.Body != nil {
+	if explicitCode == "" && resp.Body != nil {
 		payload, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes+1))
 		closeErr := resp.Body.Close()
 		if readErr != nil || closeErr != nil {
 			return errors.Join(readErr, closeErr)
 		}
 		if len(payload) <= maxErrorBodyBytes {
-			code = deepestErrorCode(payload)
+			if bodyCode, nested := deepestErrorCode(payload); bodyCode != "" && (code == "" || nested) {
+				code = bodyCode
+			}
+			var envelope struct {
+				Error *OperationDiagnostic `json:"error"`
+			}
+			if json.Unmarshal(payload, &envelope) == nil && envelope.Error != nil {
+				diagnostic = &safeOperationDiagnostics([]OperationDiagnostic{*envelope.Error}, resp)[0]
+			}
+		} else {
+			diagnostic = &OperationDiagnostic{
+				Message: "Service diagnostic omitted because the response exceeds the safe size limit.",
+			}
 		}
 	}
-	if !serviceErrorCodePattern.MatchString(code) {
+	if !serviceErrorCodePattern.MatchString(code) || redactResponseDiagnostic(code, resp) != code {
 		code = fmt.Sprintf("http_%d", resp.StatusCode)
 	}
 	safe := &http.Response{
@@ -239,19 +255,25 @@ func safeResponseError(resp *http.Response, explicitCode string) error {
 		ProtoMajor: resp.ProtoMajor, ProtoMinor: resp.ProtoMinor,
 		Header: resp.Header.Clone(), Body: http.NoBody, ContentLength: 0,
 	}
-	return &azcore.ResponseError{ErrorCode: code, StatusCode: resp.StatusCode, RawResponse: safe}
+	responseError := &azcore.ResponseError{ErrorCode: code, StatusCode: resp.StatusCode, RawResponse: safe}
+	if diagnostic != nil {
+		return &ServiceError{Diagnostic: *diagnostic, ResponseError: responseError}
+	}
+	return responseError
 }
 
-func deepestErrorCode(payload []byte) string {
+func deepestErrorCode(payload []byte) (string, bool) {
 	var envelope struct {
 		Error json.RawMessage `json:"error"`
 	}
 	if json.Unmarshal(payload, &envelope) != nil || len(envelope.Error) == 0 {
-		return ""
+		return "", false
 	}
 	current := envelope.Error
 	code := ""
-	for len(current) != 0 {
+	nested := false
+	depth := 0
+	for len(current) != 0 && depth < 8 {
 		var item struct {
 			Code       string          `json:"code"`
 			InnerError json.RawMessage `json:"innererror"`
@@ -261,10 +283,12 @@ func deepestErrorCode(payload []byte) string {
 		}
 		if serviceErrorCodePattern.MatchString(item.Code) {
 			code = item.Code
+			nested = depth > 0
 		}
 		current = item.InnerError
+		depth++
 	}
-	return code
+	return code, nested
 }
 
 func decodeResponse[T any](resp *http.Response) (T, error) {

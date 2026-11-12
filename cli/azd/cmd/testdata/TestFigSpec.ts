@@ -229,7 +229,7 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['agent'],
-					description: 'Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. (Beta)',
+					description: 'Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal.',
 					subcommands: [
 						{
 							name: ['add'],
@@ -276,11 +276,11 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['code'],
-							description: 'Manage agent source code. (Preview)',
+							description: 'Manage agent source code.',
 							subcommands: [
 								{
 									name: ['download'],
-									description: 'Download agent source code from Foundry. (Preview)',
+									description: 'Download agent source code from Foundry.',
 									options: [
 										{
 											name: ['--dest', '-d'],
@@ -730,7 +730,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['init'],
-							description: 'Initialize a new prompt, hosted, or voice agent project. (Preview)',
+							description: 'Initialize a new prompt, hosted, or voice agent project.',
 							options: [
 								{
 									name: ['--acr-connection'],
@@ -738,6 +738,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'acr-connection',
+										},
+									],
+								},
+								{
+									name: ['--acr-resource-id'],
+									description: 'Existing ACR ARM resource ID for source builds in a new Foundry project (same subscription only)',
+									args: [
+										{
+											name: 'acr-resource-id',
 										},
 									],
 								},
@@ -977,7 +986,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--protocol', '-p'],
-											description: 'Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)',
+											description: 'Protocol to use: responses, invocations, or a2a (inferred from current invocation or saved deployment; operation support varies)',
 											args: [
 												{
 													name: 'protocol',
@@ -1038,7 +1047,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--protocol', '-p'],
-											description: 'Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)',
+											description: 'Protocol to use: responses, invocations, or a2a (inferred from current invocation or saved deployment; operation support varies)',
 											args: [
 												{
 													name: 'protocol',
@@ -1099,7 +1108,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--protocol', '-p'],
-											description: 'Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)',
+											description: 'Protocol to use: responses, invocations, or a2a (inferred from current invocation or saved deployment; operation support varies)',
 											args: [
 												{
 													name: 'protocol',
@@ -1143,7 +1152,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--call-id'],
-									description: 'Call ID header value (sent as x-agent-foundry-call-id for local invocations only; ignored for remote requests)',
+									description: 'Call ID header value (sent as x-agent-foundry-call-id for local responses/invocations only; ignored for remote requests)',
 									args: [
 										{
 											name: 'call-id',
@@ -1157,6 +1166,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'client-header',
+										},
+									],
+								},
+								{
+									name: ['--context-id'],
+									description: 'A2A context ID returned by a previous invocation (plain messages only)',
+									args: [
+										{
+											name: 'context-id',
 										},
 									],
 								},
@@ -1250,7 +1268,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--user-identity'],
-									description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
+									description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests); not supported with local a2a',
 									args: [
 										{
 											name: 'user-identity',
@@ -1324,7 +1342,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['optimize'],
-							description: 'Evaluate and optimize AI agents.',
+							description: 'Optimize AI agents, prompts, and skills.',
 							subcommands: [
 								{
 									name: ['apply'],
@@ -1445,6 +1463,67 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['download'],
+									description: 'Download a published optimization candidate file.',
+									options: [
+										{
+											name: ['--candidate'],
+											description: 'Candidate ID (required)',
+											args: [
+												{
+													name: 'candidate',
+												},
+											],
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Optimization service endpoint (for local dev)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--file', '-f'],
+											description: 'Declared candidate file path (required)',
+											args: [
+												{
+													name: 'file',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--target-path', '-t'],
+											description: 'Local destination path (defaults to remote filename)',
+											args: [
+												{
+													name: 'target-path',
+												},
+											],
+										},
+									],
+								},
+								{
 									name: ['list'],
 									description: 'List recent optimization runs.',
 									options: [
@@ -1500,6 +1579,15 @@ const completionSpec: Fig.Spec = {
 									name: ['status'],
 									description: 'Check the status of an optimization job.',
 									options: [
+										{
+											name: ['--candidate'],
+											description: 'Inspect this candidate\'s full details instead of the job',
+											args: [
+												{
+													name: 'candidate',
+												},
+											],
+										},
 										{
 											name: ['--endpoint'],
 											description: 'Optimization service endpoint (for local dev)',
@@ -1601,7 +1689,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--eval-model', '-m'],
-									description: 'Model for evaluation (required)',
+									description: 'Model for evaluation-driven agent optimization',
 									args: [
 										{
 											name: 'eval-model',
@@ -2506,7 +2594,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['connection'],
-					description: 'Manage Microsoft Foundry Connections from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry Connections from your terminal.',
 					subcommands: [
 						{
 							name: ['add'],
@@ -3765,7 +3853,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['doctor'],
-							description: 'Check azd context, Entra authentication, CU access, and generative readiness',
+							description: 'Check CU configuration, authentication, access, and generative readiness',
 							options: [
 								{
 									name: ['--api-version'],
@@ -3803,7 +3891,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['env-var'],
-							description: 'Inspect supported compatibility process variables safely',
+							description: 'Discover supported environment variables and inspect set values',
 							subcommands: [
 								{
 									name: ['list'],
@@ -3891,7 +3979,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--output', '-o'],
-											description: 'Output format: default (complete JSON), json, or none',
+											description: 'Output format: default (human-readable), json, or none',
 											args: [
 												{
 													name: 'output',
@@ -3905,6 +3993,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'output-dir',
+												},
+											],
+										},
+										{
+											name: ['--subscription'],
+											description: 'Azure subscription name or ID (overrides azd defaults)',
+											args: [
+												{
+													name: 'subscription',
 												},
 											],
 										},
@@ -6243,7 +6340,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['inspector'],
-					description: 'Browser-based inspector UI for locally running Foundry agents. (Beta)',
+					description: 'Browser-based inspector UI for locally running Foundry agents.',
 					subcommands: [
 						{
 							name: ['launch'],
@@ -7106,12 +7203,21 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['project'],
-					description: 'Manage Microsoft Foundry Project resources from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry Project resources from your terminal.',
 					subcommands: [
 						{
 							name: ['add'],
 							description: 'Add or update a Microsoft Foundry project.',
 							options: [
+								{
+									name: ['--acr-resource-id'],
+									description: 'External registry ARM resource ID for --new-project source builds (same subscription; Bicep only; no migration)',
+									args: [
+										{
+											name: 'acr-resource-id',
+										},
+									],
+								},
 								{
 									name: ['--force'],
 									description: 'Replace a different configured project',
@@ -7314,7 +7420,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['routine'],
-					description: 'Manage Microsoft Foundry Routines from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry Routines from your terminal.',
 					subcommands: [
 						{
 							name: ['add'],
@@ -8230,7 +8336,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['skill'],
-					description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry skills (reusable agent behavioral guidelines) from your terminal.',
 					subcommands: [
 						{
 							name: ['add'],
@@ -8568,7 +8674,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['toolbox'],
-					description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Beta)',
+					description: 'Manage Microsoft Foundry Toolboxes from your terminal.',
 					subcommands: [
 						{
 							name: ['add'],

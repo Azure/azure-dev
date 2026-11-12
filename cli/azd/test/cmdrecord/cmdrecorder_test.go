@@ -12,7 +12,7 @@ import (
 
 	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/dnaeon/go-vcr.v3/recorder"
+	"gopkg.in/dnaeon/go-vcr.v4/pkg/recorder"
 )
 
 func TestMain(m *testing.M) {

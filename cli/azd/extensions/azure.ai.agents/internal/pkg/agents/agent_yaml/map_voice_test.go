@@ -334,7 +334,7 @@ func TestCreateVoiceAgentAPIRequest_DefinitionOverlayRejectsInvalidValues(t *tes
 func TestCreateVoiceAgentAPIRequest_DefinitionOverlayCaseSafety(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"kind", "KIND", "model_type", "MODEL_TYPE", "model", "MODEL",
-		"conversation_engine", "CONVERSATION_ENGINE"} {
+		"conversation_engine", "CONVERSATION_ENGINE", "sub_protocol", "SUB_PROTOCOL", "subProtocol", "SUBPROTOCOL"} {
 		t.Run(key, func(t *testing.T) {
 			_, err := CreateVoiceAgentAPIRequest(VoiceAgent{
 				AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
@@ -350,6 +350,28 @@ func TestCreateVoiceAgentAPIRequest_DefinitionOverlayCaseSafety(t *testing.T) {
 	require.ErrorContains(t, err, "$.audio.INPUT")
 }
 
+func TestCreateVoiceAgentAPIRequest_DefinitionOverlayCannotSelectLiveRuntime(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"sub_protocol", "subProtocol"} {
+		t.Run(key, func(t *testing.T) {
+			req, err := CreateVoiceAgentAPIRequest(VoiceAgent{
+				AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+				Model:           &Model{Id: "gpt-realtime"},
+			})
+			require.NoError(t, err)
+			definition := req.Definition.(agent_api.VoiceAgentDefinition)
+			require.Empty(t, definition.SubProtocol)
+
+			_, err = CreateVoiceAgentAPIRequest(VoiceAgent{
+				AgentDefinition:   AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+				Model:             &Model{Id: "gpt-realtime"},
+				DefinitionOverlay: map[string]any{key: "live"},
+			})
+			require.ErrorContains(t, err, "reserved root key")
+		})
+	}
+}
+
 func TestCreateVoiceAgentAPIRequest_DefinitionOverlayDeterministicError(t *testing.T) {
 	t.Parallel()
 	for range 20 {
@@ -359,6 +381,25 @@ func TestCreateVoiceAgentAPIRequest_DefinitionOverlayDeterministicError(t *testi
 		})
 		require.ErrorContains(t, err, "$.a")
 	}
+}
+
+func TestCreateVoiceAgentAPIRequest_GPTLiveDefinitionOverlay(t *testing.T) {
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "live"},
+		SubProtocol:     VoiceSubProtocolLive,
+		ModelType:       VoiceModelTypeSelfDeployed,
+		Model:           &Model{Id: "gpt-live-1"},
+		DefinitionOverlay: map[string]any{
+			"future_live_setting": map[string]any{"enabled": true},
+		},
+	}
+	require.NoError(t, ValidateVoiceDefinitionOverlay(agent))
+	request, err := CreateVoiceAgentAPIRequest(agent)
+	require.NoError(t, err)
+	definition, ok := request.Definition.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, map[string]any{"enabled": true}, definition["future_live_setting"])
+	require.Equal(t, "live", definition["sub_protocol"])
 }
 
 // TestCreateVoiceAgentAPIRequest_Overrides verifies author-facing overrides

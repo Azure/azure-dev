@@ -1,0 +1,16 @@
+import: ../../.vscode/cspell.yaml
+overrides:
+  - filename: internal/resources/config.go
+    words:
+      - abbrs
+  - filename: internal/resources/generator.go
+    words:
+      - GUNICORN
+      - MULTIWORKERS
+  - filename: internal/resources/scaffold/scaffold.go
+    words:
+      - environmentname
+      - aideploymentslocation
+      - principalid
+      - principaltype
+      - aifoundryprojectendpoint

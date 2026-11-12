@@ -1,0 +1,29 @@
+id: merged-finding-items
+name: A merged command finding names every covered input for future matching
+tags: [positive, command, deduplication, spec-tracking]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Add candidate report download".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/download.go.
+    Base has no download command. Head adds the public "azd ai agent optimize download <operation-id>" command.
+    All its inputs are introduced together as one report-download contract with a shared root cause:
+    required --candidate, required --file with shorthand -f, and optional --target-path with shorthand -t.
+    They are not independent changes to existing commands. There are no other inputs, aliases, or schema changes.
+    Complete RIGHT diff anchors in download.go:
+    35: cmd := &cobra.Command{Use: "download <operation-id>"}
+    96: cmd.Flags().StringVar(&candidate, "candidate", "", "Candidate ID")
+    97: cmd.Flags().StringVarP(&file, "file", "f", "", "Declared file")
+    98: cmd.Flags().StringVarP(&target, "target-path", "t", "", "Local destination")
+    Registration under optimize, handlers, validation, help, docs, and tests correctly implement the whole contract.
+    Complete conversation and review history is empty. No approved spec has been supplied.
+graders:
+  - type: program
+    name: merged-comment-retains-item-inventory
+    config:
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 1"
+        - "review.comments.some(c => c.path === 'cli/azd/extensions/example/internal/cmd/download.go' && c.side === 'RIGHT' && [35,96,97,98].includes(c.line) && (c.body.includes('azd ai agent optimize download') || /under `azd ai agent optimize`: command `download`/.test(c.body)) && ['<operation-id>','--candidate','--file','-f','--target-path','-t'].every(item => c.body.includes(item)))"
+        - "review.comments.every(c => c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.'))"
+        - "/complete.*1 files? inspected; 1 new contract comments?; 0 existing threads/.test(review.body)"

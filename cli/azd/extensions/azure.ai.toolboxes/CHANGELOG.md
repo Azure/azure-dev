@@ -1,5 +1,17 @@
 # Release History
 
+## 1.1.0 (2026-11-12)
+
+### Features Added
+
+- [[#10888]](https://github.com/Azure/azure-dev/pull/10888) Add Azure Policy preflight checks and Foundry Govern guidance for policy-blocked tools during toolbox creation, deployment, and runtime updates.
+
+## 1.0.0 (2026-11-05)
+
+### Other Changes
+
+- [[#10836]](https://github.com/Azure/azure-dev/pull/10836) Remove Preview labels from command help and extension descriptions.
+
 ## 1.0.0-beta.13 (2026-10-29)
 
 ### Bugs Fixed

@@ -1,5 +1,8 @@
 import: ../../.vscode/cspell.yaml
 overrides:
+  - filename: ["internal/phasetelemetry/*.go", "internal/project/*.go", "docs/phase-telemetry.md"]
+    words:
+      - phasetelemetry
   - filename: ["internal/inittelemetry/*.go", "internal/cmd/*.go", "docs/init-telemetry.md"]
     words:
       - inittelemetry
@@ -21,6 +24,8 @@ words:
   # Eval / optimize async job ID prefixes and terms
   - datagen
   - evaluatorgen
+  - lookback
+  - optconfig
   - signup
   # Terms
   - Reprompt
@@ -34,6 +39,9 @@ words:
   - PSTN
   - pstn
   - webrtc
+  - nonblank
+  - ultrafast
+  - xhigh
   # Azure region names
   - australiaeast
   - brazilsouth
@@ -66,6 +74,8 @@ words:
   - abbrs
   - acrpush
   - alnum
+  - ampls
+  - azuremonitor
   - foundryproject
   - agentignore
   - ADLS
@@ -138,6 +148,7 @@ words:
   - testdir
   # Test infrastructure
   - recordproxy
+  - testutil
   # Activity protocol local run (Playground)
   - agentsplayground
   - winget
@@ -171,3 +182,19 @@ words:
   - ufeff
   - Versionless
   - warnf
+  # Azure Policy / Resource Graph preflight terms
+  - donotenforce
+  - foundrypolicy
+  - isempty
+  - policyassignments
+  - policydefinitions
+  - policyeffect
+  - policyexemptions
+  - policyresources
+  - policysetdefinitions
+  - resourcecontainers
+  - strcat
+  - todatetime
+  - tolower
+  - toscalar
+  - tostring

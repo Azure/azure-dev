@@ -208,6 +208,7 @@ func runInitManaged(
 			return projectAuthoringCurrent
 		}(),
 		flags.noPrompt,
+		"",
 	); err != nil {
 		return err
 	}
@@ -234,6 +235,8 @@ func runInitManaged(
 			return err
 		}
 	}
+
+	warnInitPromptPolicyIfBlocked(ctx, credential, foundryProject, &promptAgent, deployment)
 
 	printManagedInitSummary(agentName, model, harness, serviceRelPath, projectTargetDir, existingProject, &settings)
 	return nil

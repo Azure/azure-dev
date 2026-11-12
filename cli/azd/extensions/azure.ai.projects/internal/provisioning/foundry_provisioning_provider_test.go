@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,8 +16,9 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -407,7 +410,7 @@ func TestSanitizeFoundryName(t *testing.T) {
 func TestFoundryProvider_ImplementsContract(t *testing.T) {
 	// Compile-time check is already in the package; runtime sanity check
 	// guards against future signature drift in azdext.
-	p := NewFoundryProvisioningProvider(nil)
+	p := NewFoundryProvisioningProvider(nil, nil)
 	assert.NotNil(t, p)
 }
 
@@ -457,6 +460,7 @@ func TestArmOutputsToProto(t *testing.T) {
 			assert.Len(t, got, tt.wantLen)
 			if tt.wantKey != "" {
 				assert.Equal(t, tt.wantVal, got[tt.wantKey].Value)
+				assert.Equal(t, "string", got[tt.wantKey].Type)
 			}
 		})
 	}
@@ -619,6 +623,15 @@ func TestCanonicalizeOutputName(t *testing.T) {
 		"unknown name must pass through verbatim, not silently dropped")
 }
 
+func TestOwnedPrivateLinkScopeOutputIsCanonicalAndCleaned(t *testing.T) {
+	t.Parallel()
+
+	name := synthesis.OwnedPrivateLinkScopeOutput
+	assert.Equal(t, name, canonicalizeOutputName("azD_MONITORING_PRIVATE_LINK_SCOPE_ID"))
+	assert.Contains(t, greenfieldOutputNames, name)
+	assert.Contains(t, monitoringOutputKeys(), name)
+}
+
 // mapKeys returns a sorted list of keys for stable assert messages.
 func mapKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
@@ -722,6 +735,59 @@ func TestVerifyLayerResourceGroupOwnership(t *testing.T) {
 			var local *azdext.LocalError
 			require.ErrorAs(t, err, &local)
 			assert.Contains(t, local.Message, "refusing to delete")
+		})
+	}
+}
+
+func TestIsNotFound(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "wrapped raw response error 404",
+			err:  fmt.Errorf("wrapped: %w", &azcore.ResponseError{StatusCode: http.StatusNotFound}),
+			want: true,
+		},
+		{
+			name: "wrapped classified service error 404",
+			err: fmt.Errorf("wrapped: %w", exterrors.ServiceFromAzure(
+				&azcore.ResponseError{StatusCode: http.StatusNotFound},
+				exterrors.OpResourceGroupGet,
+			)),
+			want: true,
+		},
+		{
+			name: "wrapped classified service error 403",
+			err: fmt.Errorf("wrapped: %w", exterrors.ServiceFromAzure(
+				&azcore.ResponseError{StatusCode: http.StatusForbidden},
+				exterrors.OpResourceGroupGet,
+			)),
+			want: false,
+		},
+		{
+			name: "wrapped classified service error 500",
+			err: fmt.Errorf("wrapped: %w", exterrors.ServiceFromAzure(
+				&azcore.ResponseError{StatusCode: http.StatusInternalServerError},
+				exterrors.OpResourceGroupGet,
+			)),
+			want: false,
+		},
+		{
+			name: "validation error is not not-found",
+			err: exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				"invalid value",
+				"fix value",
+			),
+			want: false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isNotFound(tt.err))
 		})
 	}
 }
@@ -1049,6 +1115,45 @@ func TestArmParameters_UseValueEnvelopeForDeployments(t *testing.T) {
 	)
 }
 
+func TestParameters_ExistingRegistry(t *testing.T) {
+	const id = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/shared/" +
+		"providers/Microsoft.ContainerRegistry/registries/sharedregistry"
+	p := &FoundryProvisioningProvider{
+		synthResult: &synthesis.Result{
+			Parameters: map[string]any{"includeAcr": true, "existingAcrResourceId": id},
+		},
+	}
+	assert.Equal(t, map[string]any{"value": id}, p.armParameters()["existingAcrResourceId"])
+	params, err := p.Parameters(t.Context())
+	require.NoError(t, err)
+	var registry *azdext.ProvisioningParameter
+	for _, param := range params {
+		if param.Name == "existingAcrResourceId" {
+			registry = param
+		}
+	}
+	require.NotNil(t, registry)
+	assert.Equal(t, id, registry.Value)
+	assert.Equal(t, []string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID"}, registry.EnvVarMapping)
+	assert.True(t, registry.UsingEnvVarMapping)
+}
+
+func TestGreenfieldDestroyRegistryKeys(t *testing.T) {
+	for _, mode := range []string{"create", "reuse-connect", "none", ""} {
+		t.Run(mode, func(t *testing.T) {
+			p := &FoundryProvisioningProvider{greenfieldAcrMode: mode}
+			keys := p.destroyResult().InvalidatedEnvKeys
+			assert.Contains(t, keys, "AZD_FOUNDRY_ACR_MODE")
+			assert.Contains(t, keys, "AZURE_CONTAINER_REGISTRY_ENDPOINT")
+			if mode == "reuse-connect" {
+				assert.NotContains(t, keys, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+			} else {
+				assert.Contains(t, keys, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+			}
+		})
+	}
+}
+
 func TestDestroy_RefusesWithoutForceWhenNonInteractive(t *testing.T) {
 	// Destroy must NEVER silently delete (or, worse, silently leak)
 	// resources. Without --force the provider prompts for confirmation, but
@@ -1177,6 +1282,42 @@ func TestResolveTemplate_FallsBackToEmbeddedWhenNoOnDisk(t *testing.T) {
 	// armParameters includes host-derived values too.
 	require.Contains(t, got.parameters, "location")
 	require.Contains(t, got.parameters, "includeAcr")
+}
+
+func TestResolveTemplateMonitoringAuthority(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []templateMode{templateModeBicep, templateModeBicepParam} {
+		for _, authored := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/authored=%t", mode, authored), func(t *testing.T) {
+				t.Parallel()
+				parameters := map[string]any{}
+				if authored {
+					parameters["monitoringMode"] = map[string]any{"value": "reuse-connect"}
+					parameters["applicationInsightsResourceId"] = map[string]any{"value": "authored-component"}
+				}
+				p := &FoundryProvisioningProvider{
+					projectPath: t.TempDir(),
+					synthResult: &synthesis.Result{Parameters: map[string]any{
+						"monitoringMode": "create", "applicationInsightsResourceId": "stale-component",
+						"monitoringCreateConnection": true, "monitoringConnectionName": "stale-name",
+					}},
+					onDiskSource: &templateSource{
+						mode: mode, parameters: parameters,
+						armTemplate: map[string]any{"parameters": map[string]any{
+							"monitoringMode":                map[string]any{"type": "string", "defaultValue": "none"},
+							"applicationInsightsResourceId": map[string]any{"type": "string", "defaultValue": ""},
+							"monitoringCreateConnection":    map[string]any{"type": "bool", "defaultValue": false},
+							"monitoringConnectionName":      map[string]any{"type": "string", "defaultValue": ""},
+						}},
+					},
+				}
+				result, err := p.resolveTemplate(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, parameters, result.parameters,
+					"neither synthesis nor host defaults may override authored monitoring parameters or template defaults")
+			})
+		}
+	}
 }
 
 func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
@@ -1474,6 +1615,10 @@ func TestSameExistingProjectEndpoint(t *testing.T) {
 		endpoint,
 		"https://account.services.ai.azure.com/projects/myproject",
 	))
+	assert.True(t, sameExistingProjectEndpoint(
+		endpoint,
+		"https://account.services.ai.azure.com/api/projects/%4DyProject%2f",
+	))
 	assert.False(t, sameExistingProjectEndpoint(
 		endpoint,
 		"https://account.services.ai.azure.com/api/projects/other",
@@ -1715,7 +1860,8 @@ func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 		},
 		// azdClient intentionally nil
 	}
-	got := p.envValues(t.Context())
+	got, err := p.envValues(t.Context())
+	require.NoError(t, err)
 	assert.Equal(t, "sub-id", got[envKeySubscriptionID])
 	assert.Equal(t, "westus2", got[envKeyLocation])
 	assert.Equal(t, "my-rg", got[envKeyResourceGroup])

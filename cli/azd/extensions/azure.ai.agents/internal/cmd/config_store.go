@@ -179,6 +179,16 @@ func buildRemoteAgentKeyFromEndpoint(agentEndpoint string) string {
 	return normalizeEndpoint(agentEndpoint) + "/remote"
 }
 
+// buildInvocationStateKey keeps current work independent of the selected agent version.
+func buildInvocationStateKey(agentKey string) string {
+	agentKey = normalizeEndpoint(agentKey)
+	if versionIndex := strings.LastIndex(agentKey, "/versions/"); versionIndex >= 0 &&
+		strings.HasSuffix(agentKey, "/remote") {
+		return agentKey[:versionIndex] + "/versions/latest/remote"
+	}
+	return agentKey
+}
+
 // buildLocalAgentKey constructs a key for local mode.
 // projectPath is used to disambiguate across different projects using the same port.
 func buildLocalAgentKey(port int, agentName, version, projectPath string) string {

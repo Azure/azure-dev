@@ -86,7 +86,10 @@ project type. Use --start-command to override both.
 
 By default, this also opens a local client after the agent starts listening:
 Agent Inspector for responses/invocations agents, or the Microsoft 365 Agents
-Playground for activity agents. Use --no-client to skip this.`,
+Playground for activity agents. A2A-only agents run without a browser client
+and reject --inspector-port. Test them from another terminal with
+'azd ai agent invoke --local -p a2a'.
+Use --no-client to skip launching a client for other agents.`,
 		Example: `  # Start the agent in the current directory
   azd ai agent run
 
@@ -156,15 +159,16 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// Resolve the activity profile before registering session cleanup. Port
 	// validation can fail without starting a process, and such a failure must
 	// not clear a session belonging to an already-running agent.
-	activityProfile := resolveActivityRunProfile(runCtx.Definition)
-	suppressClient := flags.noInspector || flags.noClient
+	activityProfile, protocolOnly := resolveRunClientProfile(runCtx.Definition)
+	resolvedProtocol := protocolOnlyRunTarget(runCtx.Definition)
+	suppressClient := flags.noInspector || flags.noClient || protocolOnly
 	reportLocalClientRouteSelected(
 		ctx,
 		foundryTelemetry.NewReporter(azdClient.Telemetry(), nil),
 		activityProfile,
 		suppressClient,
 	)
-	if err := validateInspectorPortForProfile(flags, activityProfile.IsActivity); err != nil {
+	if err := validateInspectorPortForProfile(flags, activityProfile.IsActivity, resolvedProtocol); err != nil {
 		return err
 	}
 
@@ -327,7 +331,8 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 
 	// Auto-launch the local client once the agent binds its port. Activity
 	// agents use the Microsoft 365 Agents Playground (the only local client that
-	// speaks the Activity protocol); everything else uses Agent Inspector. Both
+	// speaks the Activity protocol); A2A-only agents use invoke guidance without
+	// a graphical client; other agents use Agent Inspector. Both clients
 	// are suppressed by --no-inspector or its neutral alias --no-client.
 	if activityProfile.IsActivity {
 		handlePlaygroundAutoLaunch(
@@ -362,7 +367,7 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	nextDone := make(chan struct{})
 	go func() {
 		defer close(nextDone)
-		emitNextAfterBind(ctx, azdClient, runCtx.ServiceName, flags.port)
+		emitNextAfterBind(ctx, azdClient, runCtx.ServiceName, flags.port, resolvedProtocol)
 	}()
 
 	// Handle Ctrl+C / SIGTERM: forward signal to child, then wait for it to exit.
@@ -597,12 +602,19 @@ func validateInspectorPortFlags(flags *runFlags) error {
 	return nil
 }
 
-// validateInspectorPortForProfile rejects an inspector/agent port collision
-// only when the resolved agent actually launches the Agent Inspector. Activity
-// agents launch the Playground instead, so --inspector-port is advisory and the
-// equal values do not contend for the same listener.
-func validateInspectorPortForProfile(flags *runFlags, isActivity bool) error {
-	if !isActivity && flags.inspectorPortSet && flags.inspectorPort == flags.port {
+// validateInspectorPortForProfile rejects unsupported protocol-only options and Inspector port collisions.
+func validateInspectorPortForProfile(flags *runFlags, isActivity bool, protocolOnly string) error {
+	if protocolOnly != "" && flags.inspectorPortSet {
+		if protocolOnly == nextstep.ProtocolA2A {
+			protocolOnly = "A2A"
+		}
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			fmt.Sprintf("--inspector-port is not supported for %s-only agents, which do not open Agent Inspector", protocolOnly),
+			"omit --inspector-port to run the agent without a browser client",
+		)
+	}
+	if !isActivity && protocolOnly == "" && flags.inspectorPortSet && flags.inspectorPort == flags.port {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments,
 			fmt.Sprintf(
@@ -1452,6 +1464,7 @@ func emitNextAfterBind(
 	azdClient *azdext.AzdClient,
 	serviceName string,
 	port int,
+	resolvedProtocol string,
 ) {
 	// Honor the nextstep call-site TTY-gating contract: when stdout
 	// is redirected (e.g., `azd ai agent run > log`), the human-only
@@ -1467,17 +1480,28 @@ func emitNextAfterBind(
 		defer cancel()
 		return fetchLiveOpenAPI(probeCtx, port)
 	}
-	state, _ := nextstep.AssembleState(ctx, azdClient,
-		nextstep.WithOpenAPIProbe(serviceName, "local"),
-		nextstep.WithLiveOpenAPIProbe(liveFetch))
+	opts := []nextstep.Option{nextstep.WithLocalPort(port)}
+	// Use the already resolved run target, even if next-step state assembly
+	// cannot reload the project. Protocol-only servers have no invocations spec.
+	if resolvedProtocol == "" {
+		opts = append(opts,
+			nextstep.WithOpenAPIProbe(serviceName, "local"),
+			nextstep.WithLiveOpenAPIProbe(liveFetch))
+	}
+	state, _ := nextstep.AssembleState(ctx, azdClient, opts...)
+	state = withResolvedRunTarget(state, serviceName, resolvedProtocol)
 	// Re-check ctx after AssembleState: if Ctrl+C arrived mid-call,
 	// the user already saw "Stopping agent..."/"Agent stopped." and
 	// printing "Agent ready" now would be factually wrong.
 	if ctx.Err() != nil {
 		return
 	}
+	suggestions := nextstep.ResolveAfterRun(state, serviceName, readmeExistsForProject(ctx, azdClient))
+	if ctx.Err() != nil || len(suggestions) == 0 {
+		return
+	}
 	fmt.Println("\nAgent ready. In another terminal, try:")
-	_ = printNextIfTerminal(os.Stdout, nextstep.ResolveAfterRun(state, serviceName, readmeExistsForProject(ctx, azdClient)))
+	_ = printNextIfTerminal(os.Stdout, suggestions)
 }
 
 // portReadyBudget is the wall-clock ceiling for waitForPortReady, which

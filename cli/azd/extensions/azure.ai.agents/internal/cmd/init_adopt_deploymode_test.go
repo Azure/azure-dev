@@ -11,9 +11,11 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
+	"gopkg.in/yaml.v3"
 )
 
 // deployModeProjectServer is a minimal ProjectService stub that
@@ -58,6 +60,33 @@ func (s *deployModeProjectServer) SetServiceConfigValue(
 	return &azdext.EmptyResponse{}, nil
 }
 
+func (s *deployModeProjectServer) GetServiceConfigValue(
+	_ context.Context, req *azdext.GetServiceConfigValueRequest,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	path := filepath.Join(s.path, "azure.yaml")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return &azdext.GetServiceConfigValueResponse{}, nil
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var raw map[string]any
+	if err := yaml.Unmarshal(content, &raw); err != nil {
+		return nil, err
+	}
+	cfg := config.NewConfig(raw)
+	value, found := cfg.Get("services." + req.ServiceName + "." + req.Path)
+	if !found {
+		return &azdext.GetServiceConfigValueResponse{}, nil
+	}
+	protoValue, err := structpb.NewValue(value)
+	if err != nil {
+		return nil, err
+	}
+	return &azdext.GetServiceConfigValueResponse{Found: true, Value: protoValue}, nil
+}
+
 func (s *deployModeProjectServer) UnsetServiceConfig(
 	_ context.Context, req *azdext.UnsetServiceConfigRequest,
 ) (*azdext.EmptyResponse, error) {
@@ -85,6 +114,22 @@ func agentServiceConfig(t *testing.T, name string, props map[string]any) *azdext
 	return sc
 }
 
+func TestApplyDeployModeToAdoptedProjectSavedACRWithoutDocker(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "main.py"), []byte("print('hello')\n"), 0o600))
+	server := &deployModeProjectServer{
+		path: root, services: map[string]*azdext.ServiceConfig{"agent": agentServiceConfig(t, "agent", nil)},
+	}
+	client := newProjectRecorderClient(t, server)
+	needsACR, err := applyDeployModeToAdoptedProject(t.Context(),
+		&initFlags{effectiveACRResourceID: testInitACRID}, client)
+	require.NoError(t, err)
+	require.True(t, needsACR)
+	require.Equal(t, "docker", server.sets["agent"]["language"])
+	require.Contains(t, server.sets["agent"], "docker")
+	require.NotContains(t, server.sets["agent"], "codeConfiguration")
+}
+
 // TestApplyDeployModeToAdoptedProject verifies that the adopt flow reports
 // whether the resolved deploy mode requires an Azure Container Registry.
 func TestApplyDeployModeToAdoptedProject(t *testing.T) {
@@ -96,6 +141,11 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 	}
 	preBuiltService := agentServiceConfig(t, svcName, dockerProps)
 	preBuiltService.Image = "registry.example.com/team/agent:v1"
+	sourceImageService := agentServiceConfig(t, svcName, nil)
+	sourceImageService.Image = "registry.example.com/team/agent:v1"
+	preBuiltPassthroughService := agentServiceConfig(t, svcName, nil)
+	preBuiltPassthroughService.Image = "registry.example.com/team/agent:v1"
+	preBuiltPassthroughService.Docker = &azdext.DockerProjectOptions{ImagePassthrough: true}
 	mixedCodeService := agentServiceConfig(t, svcName, codeProps)
 	mixedCodeService.Image = "registry.example.com/team/agent:v1"
 	legacyImageProps := map[string]any{
@@ -121,6 +171,7 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 		wantCodeUnset bool
 		wantRegistry  string
 		wantImage     string
+		wantProject   string
 		wantErr       string
 	}{
 		{
@@ -166,6 +217,56 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			wantNeedsACR: false,
 			wantLanguage: "docker",
 			wantDocker:   map[string]any{"imagePassthrough": true},
+		},
+		{
+			name: "ACR selection keeps image source build",
+			flags: &initFlags{
+				acrResourceIDSet: true,
+			},
+			service:      sourceImageService,
+			wantNeedsACR: true,
+			wantLanguage: "docker",
+			wantDocker:   map[string]any{"remoteBuild": true},
+			wantProject:  ".",
+		},
+		{
+			name:         "saved ACR selection keeps image source build",
+			flags:        &initFlags{effectiveACRResourceID: testInitACRID},
+			service:      sourceImageService,
+			wantNeedsACR: true,
+			wantLanguage: "docker",
+			wantDocker:   map[string]any{"remoteBuild": true},
+			wantProject:  ".",
+		},
+		{
+			name:         "ACR selection preserves authored source docker config",
+			flags:        &initFlags{acrResourceIDSet: true},
+			service:      preBuiltService,
+			wantNeedsACR: true,
+			wantProject:  ".",
+		},
+		{
+			name: "ACR selection preserves explicit image passthrough",
+			flags: &initFlags{
+				acrResourceIDSet: true,
+			},
+			service:      preBuiltPassthroughService,
+			wantNeedsACR: false,
+		},
+		{
+			name:         "saved ACR selection preserves explicit image passthrough",
+			flags:        &initFlags{effectiveACRResourceID: testInitACRID},
+			service:      preBuiltPassthroughService,
+			wantNeedsACR: false,
+		},
+		{
+			name:  "ACR selection preserves image registry connection",
+			flags: &initFlags{acrResourceIDSet: true},
+			service: agentServiceConfig(t, svcName, map[string]any{
+				"kind": "hosted", "name": svcName, "image": "registry.example.com/agent:v1",
+				"registryConnectionId": "private-registry",
+			}),
+			wantNeedsACR: false,
 		},
 		{
 			name:         "resolved legacy image is promoted and uses passthrough",
@@ -271,12 +372,68 @@ func TestApplyDeployModeToAdoptedProject(t *testing.T) {
 			if tc.wantImage != "" {
 				assert.Equal(t, tc.wantImage, sets["image"])
 			}
+			if tc.wantProject != "" {
+				assert.Equal(t, tc.wantProject, sets["project"])
+			}
 			// A respected sample config must not be rewritten.
 			if tc.wantDocker == nil && !tc.wantCodeSet && tc.wantLanguage == nil &&
-				tc.wantRegistry == "" && tc.wantImage == "" {
+				tc.wantRegistry == "" && tc.wantImage == "" && tc.wantProject == "" {
 				assert.Empty(t, sets)
 			}
 		})
+	}
+}
+
+func TestApplyDeployModeToAdoptedProject_ACRSelectionPreservesMixedBuilds(t *testing.T) {
+	for _, referenced := range []bool{false, true} {
+		for _, saved := range []bool{false, true} {
+			name := "inline"
+			if referenced {
+				name = "referenced"
+			}
+			if saved {
+				name += "/saved"
+			} else {
+				name += "/flag"
+			}
+			t.Run(name, func(t *testing.T) {
+				root := t.TempDir()
+				source := agentServiceConfig(t, "source", nil)
+				if referenced {
+					require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
+						[]byte("kind: hosted\nname: source\n"), 0o600))
+					source = agentServiceConfig(t, "source", map[string]any{"$ref": "agent.yaml"})
+				}
+				source.Image = "registry.example.com/source:v1"
+				prebuilt := agentServiceConfig(t, "prebuilt", nil)
+				prebuilt.Image = "registry.example.com/prebuilt:v1"
+				prebuilt.Docker = &azdext.DockerProjectOptions{ImagePassthrough: true}
+				server := &deployModeProjectServer{
+					path: root,
+					services: map[string]*azdext.ServiceConfig{
+						"source": source, "prebuilt": prebuilt,
+					},
+				}
+				client := newProjectRecorderClient(t, server)
+				flags := &initFlags{acrResourceIDSet: true, acrResourceID: testInitACRID}
+				if saved {
+					flags.acrResourceIDSet = false
+					flags.acrResourceID = ""
+					flags.effectiveACRResourceID = testInitACRID
+				}
+
+				needsACR, sources, err := applyDeployModeToAdoptedProjectWithSources(t.Context(), flags, client)
+				require.NoError(t, err)
+				require.True(t, needsACR)
+				require.Equal(t, []string{"source"}, sources)
+				require.Equal(t, map[string]any{
+					"project": ".", "language": "docker", "docker": map[string]any{"remoteBuild": true},
+				}, server.sets["source"])
+				require.Empty(t, server.sets["prebuilt"])
+				require.Empty(t, server.unsets)
+				require.True(t, prebuilt.GetDocker().GetImagePassthrough())
+			})
+		}
 	}
 }
 

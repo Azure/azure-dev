@@ -13,6 +13,7 @@ import (
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/exterrors"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +27,7 @@ type serviceSession struct {
 	models            map[string]string
 	scope             config.ResourceScope
 	sources           map[string]string
+	authentication    string
 	resolveAccount    func(context.Context, string, string, string) (armclient.Account, error)
 	clientForEndpoint func(string) (cuclient.Client, error)
 	confirm           func(context.Context, string) (bool, error)
@@ -41,9 +43,7 @@ func openServiceSession(
 	if err != nil {
 		return nil, err
 	}
-	client, err := cuclient.NewRESTTransport(runtime.Config.Endpoint, runtime.Credential, &cuclient.TransportOptions{
-		APIVersion: runtime.Config.APIVersion, Version: Version,
-	})
+	client, err := runtime.serviceClient(runtime.Config.Endpoint)
 	if err != nil {
 		runtime.Close()
 		return nil, exterrors.FromError(err)
@@ -54,8 +54,13 @@ func openServiceSession(
 		endpoint: runtime.Config.Endpoint, environment: runtime.Config.Environment,
 		models:  runtime.Config.ModelDeployments,
 		scope:   runtime.Config.Scope,
-		sources: runtime.Config.Sources,
+		sources: runtime.Config.Sources, authentication: runtime.authentication(),
 		resolveAccount: func(ctx context.Context, resource, subscription, group string) (armclient.Account, error) {
+			if runtime.Config.APIKey != "" {
+				return armclient.Account{}, commandError("key_resource_discovery",
+					"Resource discovery for analyzer copy requires Microsoft Entra ID authentication.",
+					"Unset CU_API_KEY and sign in with azd auth login, or omit resource selectors for same-resource copy.")
+			}
 			resolver, err := armclient.NewResolver(runtime.Credential, nil)
 			if err != nil {
 				return armclient.Account{}, err
@@ -63,9 +68,7 @@ func openServiceSession(
 			return resolver.Resolve(ctx, resource, subscription, group, runtime.Config.Scope)
 		},
 		clientForEndpoint: func(endpoint string) (cuclient.Client, error) {
-			return cuclient.NewRESTTransport(endpoint, runtime.Credential, &cuclient.TransportOptions{
-				APIVersion: runtime.Config.APIVersion, Version: Version,
-			})
+			return runtime.serviceClient(endpoint)
 		},
 		confirm: func(ctx context.Context, message string) (bool, error) {
 			response, err := runtime.Client.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
@@ -83,6 +86,30 @@ func openServiceSession(
 			return response.GetValue(), nil
 		},
 	}, nil
+}
+
+func (r *runtimeContext) authentication() string {
+	if r.Config.APIKey != "" {
+		return "API key (process CU_API_KEY)"
+	}
+	return "Microsoft Entra ID"
+}
+
+func (r *runtimeContext) serviceClient(endpoint string) (*cuclient.RESTTransport, error) {
+	options := &cuclient.TransportOptions{APIVersion: r.Config.APIVersion, Version: Version}
+	if r.Config.APIKey == "" {
+		return cuclient.NewRESTTransport(endpoint, r.Credential, options)
+	}
+	normalized, err := cuclient.NormalizeEndpoint(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	if normalized != r.Config.Endpoint {
+		return nil, commandError("key_endpoint_mismatch",
+			"CU_API_KEY may only be used with the configured CU endpoint.",
+			"Use a separate invocation with the destination resource's endpoint and process API key.")
+	}
+	return cuclient.NewRESTTransportWithKeyCredential(normalized, azcore.NewKeyCredential(r.Config.APIKey), options)
 }
 
 func serviceCommand(cmd *cobra.Command, options *config.Options) *cobra.Command {

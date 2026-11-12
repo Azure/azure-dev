@@ -17,11 +17,12 @@ import (
 	"strings"
 	"time"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/phasetelemetry"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -213,7 +214,21 @@ const raiPolicyEnvVarName = "RAI_POLICY_ID"
 // neither rai_config nor the policy. Without this, the only visible difference
 // between "your policy is wrong" and "this harness does not take policies yet"
 // is a message that mentions neither.
-func promptCreateError(err error, managed *agent_yaml.PromptAgent) error {
+func promptCreateError(err error, managed *agent_yaml.PromptAgent, serviceAndProject ...string) error {
+	var svcName, projID string
+	if len(serviceAndProject) >= 1 {
+		svcName = strings.TrimSpace(serviceAndProject[0])
+	}
+	if len(serviceAndProject) >= 2 {
+		projID = strings.TrimSpace(serviceAndProject[1])
+	}
+	if svcName == "" && managed != nil {
+		svcName = managed.Name
+	}
+	if policyErr, ok := TryClassifyRuntimePolicyError(err, svcName, projID); ok {
+		return policyErr
+	}
+
 	converted := exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 
 	if !declaresRaiPolicy(managed) {
@@ -402,7 +417,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	headers := promptAgentRequestHeaders(&managed, settings)
 	agent, err := p.createOrUpdatePromptAgent(ctx, client, request, settings, headers)
 	if err != nil {
-		return nil, promptCreateError(err, &managed)
+		return nil, promptCreateError(err, &managed, serviceConfig.GetName(), env["AZURE_AI_PROJECT_ID"])
 	}
 
 	latest := agent.Versions.Latest
@@ -455,6 +470,7 @@ func (p *AgentServiceTargetProvider) ensurePromptCredential(
 	if p.credential != nil {
 		return nil
 	}
+	defer phasetelemetry.Start(ctx, phasetelemetry.CredentialAcquisition)()
 	credential, err := ResolvePromptCredential(ctx, p.azdClient, settings)
 	if err != nil {
 		return err
@@ -507,25 +523,26 @@ func ResolvePromptTargetFromEnv(settings *PromptAgentSettings, env map[string]st
 	if settings == nil || env == nil {
 		return false, nil
 	}
+
+	// Prefer a pre-populated project endpoint before reading env.
+	if strings.TrimSpace(settings.ProjectEndpoint) == "" {
+		settings.ProjectEndpoint = strings.TrimSpace(env[promptProjectEndpointEnvKey])
+	}
+	if strings.TrimSpace(settings.ModelEndpoint) == "" {
+		// x-model-endpoint targets the project endpoint origin.
+		if u, perr := url.Parse(strings.TrimSpace(settings.ProjectEndpoint)); perr == nil &&
+			u.Scheme != "" && u.Host != "" {
+			settings.ModelEndpoint = u.Scheme + "://" + u.Host
+		}
+	}
+
 	settings.OverlayAzdProjectEnv(env)
 	mapped, err := overlayPromptSettingsFromProjectResourceID(settings, env)
 	if err != nil {
 		return false, err
 	}
 
-	// Prefer the config-supplied project endpoint (interactive init); otherwise
-	// read it from the azd environment (--no-prompt / provisioned project).
-	if strings.TrimSpace(settings.ProjectEndpoint) == "" {
-		settings.ProjectEndpoint = strings.TrimSpace(env[promptProjectEndpointEnvKey])
-	}
-
-	if pe := strings.TrimSpace(settings.ProjectEndpoint); pe != "" {
-		// x-model-endpoint targets the account host backing the project.
-		if u, perr := url.Parse(pe); perr == nil && u.Host != "" {
-			if strings.TrimSpace(settings.ModelEndpoint) == "" {
-				settings.ModelEndpoint = u.Scheme + "://" + u.Host
-			}
-		}
+	if strings.TrimSpace(settings.ProjectEndpoint) != "" {
 		return true, nil
 	}
 
@@ -585,6 +602,8 @@ func (p *AgentServiceTargetProvider) waitForPromptAgentActive(
 	headers map[string]string,
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentVersionObject, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AgentActivationWait)()
+
 	const pollInterval = 5 * time.Second
 	const pollTimeout = 5 * time.Minute
 
@@ -635,6 +654,7 @@ func (p *AgentServiceTargetProvider) waitForPromptAgentActive(
 	if lastStatus == "" {
 		lastStatus = "unknown"
 	}
+	phasetelemetry.Timeout(ctx)
 	return nil, exterrors.Internal(
 		exterrors.CodeAgentCreateFailed,
 		fmt.Sprintf("prompt agent deployment timed out (last status: %s); check status with 'azd ai agent show'", lastStatus),
@@ -654,6 +674,8 @@ func (p *AgentServiceTargetProvider) registerPromptAgentEnvVars(
 	harnessed bool,
 	bindings map[string]any,
 ) error {
+	defer phasetelemetry.Start(ctx, phasetelemetry.EndpointUpdate)()
+
 	if agentName == "" {
 		return fmt.Errorf("agent name is empty; cannot register environment variables")
 	}
@@ -933,6 +955,8 @@ func deployedPromptAgentIsHarnessed(version *agent_api.AgentVersionObject) (bool
 // GetTargetResource return before ensureDeployContext runs, so p.env would
 // otherwise still be nil and dereferencing it would panic the handler.
 func (p *AgentServiceTargetProvider) azdEnvValues(ctx context.Context) (map[string]string, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ConfigurationLoading)()
+
 	if err := p.ensureEnv(ctx); err != nil {
 		return nil, err
 	}
@@ -984,6 +1008,8 @@ func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 	settings *PromptAgentSettings,
 	headers map[string]string,
 ) (*agent_api.AgentObject, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AgentCreateOrUpdate)()
+
 	apiVersion := ProjectEndpointAPIVersion
 
 	agent, err := client.CreateAgentWithHeaders(ctx, request, apiVersion, headers)

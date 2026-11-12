@@ -1,17 +1,34 @@
 # Azure Developer CLI (azd) Agents Extension
 
+<!-- cspell:ignore strconv kubelet -->
+## Project monitoring
+
+New Foundry projects created for agents automatically provision and connect
+Application Insights through the normal Project infrastructure graph.
+Existing projects are not opted in automatically. Optional BYO and opt-out
+settings belong to the `host: azure.ai.project` service, not the agent
+definition or a separate Connection service. Provisioning outputs are
+configuration, not a trace-ingestion readiness guarantee; deploying an agent
+does not repair monitoring.
+
+See [Project Application Insights configuration](../azure.ai.projects/README.md#application-insights)
+for costs and data handling, existing-connection preservation, policy
+requirements, and Bicep/Terraform ejection and cleanup semantics.
+
 ## Preview feature switches
 
-All six preview capabilities are off by default. Each switch is controlled independently.
+All eight preview capabilities are off by default. Each switch is controlled independently.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
 | `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
-| `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
+| `agents.voice` | Voice / prompt-voice agents, including hosted targets with `invocations_ws` or `voice_conversation_engine` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 | `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
-| `agents.byo_aks` | [Existing AKS project initialization and adoption](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
+| `agents.byo_aks` | [Existing AKS project initialization, adoption, provisioning, and provisioning preview](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
+| `foundry.acr_reuse` | External ACR reuse in new Foundry projects, including preview and cleanup | `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE` |
+| `agents.rbac_warnings` | Retained developer RBAC deployment warnings through the beta event API | `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS` |
 
 Override a switch in your shell or CI before running azd:
 
@@ -22,6 +39,8 @@ export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
 export AZD_ALPHA_ENABLE_AGENTS_A2A=true
 export AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
 export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
+export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true
+export AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true
 ```
 
 In PowerShell, for example:
@@ -33,14 +52,21 @@ $env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
 When a variable is absent, its feature is off.
 When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature.
 False, empty, and invalid values disable it, including BYO AKS.
-The evaluator reads the current
-process environment without querying azd config or loading environment files.
-Values already injected by the azd host count; the selected azd environment
-can override the same key from the shell or CI.
+The evaluator reads only the current process environment, without querying
+azd config or loading dotenv files. For lifecycle listeners, the host does
+not flatten the selected environment's `.azure/<env>/.env` into the extension
+for these switches, so persisted `azd env set` values do not enable or
+override the listener. Direct `azd ai agent ...` commands still receive
+selected-environment values after shell/CI values, so a persisted dotenv value
+can override a shell opt-in for those commands.
+The Projects provisioning listener likewise requires the BYO AKS switch in
+the current shell or CI process environment for `azd provision` and
+`azd provision --preview`; `azd env set` alone does not enable it.
 
 User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
 `AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary
-hosted and plain prompt agents without BYO AKS hosting need no opt-in.
+hosted and plain prompt agents without BYO AKS hosting or new ACR reuse intent
+need no opt-in.
 
 Root help always lists the canonical switches and their scopes. While a
 feature is off, its command-specific flags and help sections are hidden.
@@ -67,8 +93,18 @@ Explicit remote `--template` inputs are staged and checked before Azure
 authentication, including `$ref` definitions. Adoption reuses that directory.
 
 BYO AKS checks cover inline and referenced project configuration during init/adoption.
-Foundry provider initialization, provision, preview, lifecycle hooks, and Bicep
-eject do not check the BYO AKS switch. Ordinary Foundry provisioning is unchanged.
+The Projects provider also requires the BYO AKS switch for `azd provision` and
+`azd provision --preview` when effective `agentHosting.enabled=true`.
+Foundry provider initialization, lifecycle hooks, and Bicep eject do not check
+the BYO AKS switch. Ordinary Foundry provisioning without AKS hosting is unchanged.
+
+The RBAC warnings switch controls retention only, not whether checks run.
+With it off, `predeploy` uses the stable event API and prints warnings and
+suggestions in hook output. The host can discard that output while deployment
+progress suppresses the previewer; the stable path does not guarantee warning
+visibility or retention after deployment.
+With it on, `predeploy` uses the beta event API so the host can retain warnings
+in final output and JSON `messages`.
 
 ### Enforcement limits
 
@@ -76,11 +112,13 @@ eject do not check the BYO AKS switch. Ordinary Foundry provisioning is unchange
   not query its remote definition, so the managed harness check does not cover
   that route. The long-running check still applies. Text invoke does not
   accept voice WebSocket endpoints.
-- Agent read and cleanup commands stay available with features off. This includes
+- Agent read and cleanup commands stay available with agent-kind previews off. This includes
   show, endpoint show, invocations show, follow, and cancel, delete, and down.
-  BYO AKS infrastructure operations do not require its switch to be enabled.
+  BYO AKS infrastructure state queries, Bicep eject, and teardown do not require its switch to be enabled.
   BYO AKS infrastructure uses the standard Foundry `azd down`
   path, which deletes the target resource group and all resources inside it.
+  External ACR reuse is stricter: preview, down, recovery, and eject require
+  `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true`, including for a BYO AKS project.
 - These checks do not govern requests from the evaluations or routines
   extensions.
 
@@ -95,9 +133,11 @@ Overlay references have the same trust boundary and relative-path behavior as
 existing `$ref` references; only reference files you trust.
 The overlay can only add missing keys; objects recurse, while existing scalar or
 array keys conflict even when values match. New arrays are allowed. Null values
-and the reserved root keys `kind`, `model_type`, `model`, and
-`conversation_engine` are rejected. The overlay is not OpenAPI-validated and
-must use GA wire names. Prompt and hosted agents do not accept this property.
+and the reserved root keys `kind`, `model_type`, `model`,
+`conversation_engine`, and `sub_protocol` (`subProtocol`, case-insensitively)
+are rejected. Protocol selection must use the typed `subProtocol` field. The
+overlay is not OpenAPI-validated and must use GA wire names. Prompt and hosted
+agents do not accept this property.
 
 ## Hosted agent deployment preview
 
@@ -300,8 +340,10 @@ cost and is not run automatically.
 
 Requires azd 1.37.0 or later. Telemetry, deployment preview, and developer RBAC
 principal lookup use stable v1 APIs, including `Account().GetCurrentPrincipal`.
-The service `predeploy` listener uses the existing beta structured-message API
-to retain RBAC warnings; `postdeploy` and project listeners remain stable.
+The service `predeploy` listener uses the stable event API by default. Enabling
+`AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true` opts it into the beta
+structured-message API to retain RBAC warnings; `postdeploy` and project
+listeners remain stable.
 
 Extension code reports best-effort usage events through the shared
 `pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
@@ -330,6 +372,12 @@ loading and interaction together. The other events are documented under
 [Operation classification markers](#operation-classification-markers),
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
 [Local client route telemetry](#local-client-route-telemetry).
+
+Package, Publish, and Deploy provider methods also report
+[operation and step timings](docs/phase-telemetry.md). These cover the same
+extension methods called by `azd up` and standalone commands, not whole-command
+durations. The projects extension reports its internal authoring and Provision
+provider timings using the same schema.
 
 ### Agent context telemetry
 
@@ -422,6 +470,29 @@ blob data, or creates role assignments. A pass does not verify network access.
 Use `--debug` for per-connection findings and `--unredacted` to include identity
 and resource identifiers when sharing them is safe. `--local-only` skips this
 remote check along with the other remote diagnostics.
+
+## Foundry Azure Policy preflight and diagnostics
+
+When bound to a Microsoft Foundry project, the extension evaluates active Azure
+Policy assignments (`Deny` effect) for agent kinds, container images/registries,
+models, and tools:
+
+- `azd ai agent init` emits a non-blocking warning when a policy assignment on
+  the selected project would block the configured agent.
+- `azd package` / `azd deploy` / `azd up` run a preflight check before packaging
+  and deployment, and again on the resolved container image before creating a
+  hosted agent version. Transient query failures fail open so the Microsoft
+  Foundry service remains authoritative.
+- `azd ai agent doctor` runs the `remote.policy` check (`--unredacted` includes
+  full ARM scopes and Foundry Govern portal links).
+
+To skip client-side Azure Policy preflight checks during packaging and
+deployment, set `AZD_AI_AGENT_SKIP_POLICY_CHECKS` to a boolean value accepted by
+`strconv.ParseBool` (`1`, `t`, `T`, `true`, `TRUE`, `True`; defaults to
+`false`). Values in the active `azd` environment take precedence over the
+process environment (`AZD_AGENT_SKIP_POLICY_CHECKS` is also accepted as a
+backward-compatible alias). Skipping client-side preflight does not bypass
+server-side Azure Policy enforcement by Microsoft Foundry.
 
 ## Choosing a Foundry project name
 
@@ -519,10 +590,19 @@ Deploy Agents through the normal azd project lifecycle:
 
 ### Retained developer RBAC warnings
 
-With azd 1.37.0 or later, developer RBAC warnings from the service `predeploy`
-check remain in the final `azd deploy` / `azd up` output, including when a later
-deployment step fails. They are non-blocking: a warning does not change the
-deployment exit code, and deployment errors still fail the command.
+With azd 1.37.0 or later, enable `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true`
+in your shell or CI before deploying to retain developer RBAC warnings from
+the service `predeploy` check in the final `azd deploy` / `azd up` output,
+including when a later deployment step fails. In PowerShell, use
+`$env:AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS = 'true'`.
+This preview is off by default; absent, false, empty, or invalid values keep
+the stable event API and warnings in hook output only, without retained JSON
+`messages`. The host can discard stable hook output while deployment progress
+suppresses the previewer. Enable the switch to retain warnings in final output
+and JSON `messages`; this extension does not change host output handling.
+RBAC checks, automatic role assignment, and skip
+rules still run as before. Warnings are non-blocking: a warning does not
+change the deployment exit code, and deployment errors still fail the command.
 
 This covers Foundry User checks and failed automatic assignment, hosted-agent
 role-assignment-write checks, and Container Registry access checks (including
@@ -532,8 +612,8 @@ are also retained. Early exits for missing or invalid `AZURE_AI_PROJECT_ID`,
 Prompt and voice agents keep only the applicable Foundry
 checks; hosted-only checks and the existing skip behavior are unchanged.
 
-For automation, use `--no-prompt --output json` and consume the host's `messages`
-entries. Each retained warning has `kind: warning`, `extensionId:
+With the preview enabled, automation can use `--no-prompt --output json`
+and consume the host's `messages` entries. Each retained warning has `kind: warning`, `extensionId:
 azure.ai.agents`, the service key, `event: predeploy`, a `message`, and any
 `suggestion`. Messages are scoped to each service invocation, not deduplicated
 across services. No new prompt is introduced. Transport diagnostics include only
@@ -710,12 +790,41 @@ For plain messages, azd composes both the version-specific JSON-RPC body and
 the `A2A-Version` header. Because azd controls both, `1.0` is a convenience
 default when `--a2a-version` is omitted. A deployed hosted A2A implementation must
 support `1.0` (`1.0.0` in deployment YAML) and match the requested wire version,
-regardless of other protocols. Local working-tree definitions are not authoritative
-for the deployed target, even when `--version` selects the current deployment.
-Local inspection failures and compatibility findings are advisory diagnostics
-shown with `--debug`; Foundry enforces deployed target support. Request and
-file-argument validation remain blocking. Translation availability and restrictions
-can vary by service rollout.
+regardless of other protocols. For automatic remote protocol selection and A2A enablement
+checks, azd reads the current Foundry endpoint configuration when the caller can
+read agent metadata. Local working-tree definitions and saved deployment protocol
+lists are not authoritative for deployed capabilities. Saved endpoints can still
+provide routing hints, but only currently enabled protocols are selected when live
+configuration is available. Explicit Responses/Invocations requests and lifecycle
+commands skip this capability metadata read. Lifecycle commands use the protocol
+saved with the current invocation for the selected target, so protocol changes
+or an explicit `invoke --version` do not redirect them to older work. Current
+work is tracked independently of session versions, and printed follow commands
+include the accepted Response ID. Older state with one saved work type can be
+inferred; if it contains both Response and Invocation IDs without a current
+selection, pass `--protocol` explicitly. Saved endpoint routing is only a fallback
+when no saved invocation identifies a protocol.
+
+A prompt agent's public endpoint must enable both `a2a` and `responses`; declaring
+a hosted implementation protocol in local YAML does not publish that endpoint.
+Optional metadata inspection is limited to five seconds, or a shorter invocation
+timeout. If metadata cannot be read, such as for an endpoint-only consumer without
+`agents/read`, azd leaves validation to Foundry rather than treating the read
+failure as a disabled protocol. Use `--protocol` explicitly when routing is
+ambiguous. If `--version` matches the saved deployment, azd can retain its single
+saved protocol while it remains enabled, even when a newer agent version is latest.
+An explicit `--version` uses version-scoped session/conversation state and cannot
+reuse a session cached under a different saved deployment version. `sessions create`
+uses the same version mapping, so `invoke --version` reuses a session created for
+that version. `sessions delete` clears matching session IDs across the selected
+target's version caches without changing saved conversations or invocation IDs.
+Full-agent deletion clears that target's remote version caches and legacy imports,
+without clearing other agents or local state. Select competing unmarked legacy
+invocation records with explicit `--protocol` and `--id` rather than guessing which is newer.
+Version-specific compatibility remains enforced by Foundry for the
+selected version or session, not inferred from the latest working-tree source.
+Request and file-argument validation remain blocking. Translation availability
+and restrictions can vary by service rollout.
 
 ```bash
 azd ai agent invoke -p a2a "Hello!"
@@ -723,6 +832,55 @@ azd ai agent invoke -p a2a "Hello!"
 
 With the preview disabled, plain messages use A2A 0.3. To preserve that behavior after enabling it, use
 `azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"`.
+
+Formatted A2A output prints the returned **Context ID** instead of a session summary.
+Tasks also show their **Task ID** and **State**, retaining the protocol's native enum
+spellings. Failed, canceled, and rejected send Tasks return an error rather than
+displaying partial artifacts as completed answers; their IDs and text or structured
+status-message diagnostics remain available for inspection.
+Input-required and auth-required states show the agent's prompt for follow-up.
+Successful `tasks/cancel` (0.3) and `CancelTask` (1.0) requests instead return success
+with the canceled Task's IDs, state, and any status detail, not partial artifacts.
+Successful `tasks/get` (0.3) and `GetTask` (1.0) lookups also return success for
+failed, canceled, or rejected Tasks, showing IDs, state, and status detail instead
+of formatting partial artifacts as completed answers.
+
+Use `--context-id` to return to an earlier context after using another one. For an
+Echo agent, prepare two first-turn request files from the JSON-RPC examples below:
+give them distinct request/message IDs and omit `message.contextId`. Record their
+returned Context IDs as A and B, and confirm they differ before continuing:
+
+```bash
+azd ai agent invoke echo -p a2a --a2a-version 1.0 -f start-a.json --output raw
+azd ai agent invoke echo -p a2a --a2a-version 1.0 -f start-b.json --output raw
+azd ai agent invoke echo -p a2a --a2a-version 1.0 --context-id "<context-a>" "Return to A"
+azd ai agent invoke echo -p a2a --a2a-version 1.0 --context-id "<context-b>" "Return to B"
+```
+
+The follow-ups must return A and B respectively, with fresh Task IDs and the expected
+Echo replies. Context selection provides correlation/routing, not automatic model
+memory; an executor must manage its own conversation state. First-turn context
+creation and hosted-session affinity are service-owned contracts. Do not assume
+`--new-session` creates a new A2A context.
+
+`--context-id` works with A2A 0.3 and 1.0, including local invocation. It is an
+opaque A2A conversation identifier, not a Foundry session ID. When it is provided,
+azd omits cached session routing so Foundry can resolve the selected context.
+Explicit `--session-id` or `--version` still selects caller-specified hosted routing;
+omit those flags when the context should select its own session. Authorization,
+expiration, and agent-specific context support remain enforced by the service.
+If the response omits a context ID, azd does not invent one from another identifier.
+
+The flag is for plain A2A messages only. Do not combine it with `--input-file`,
+`--conversation-id`, `--new-session`, or `--new-conversation`. For complete
+JSON-RPC files, put `contextId` in `params.message`; the file is still sent unchanged.
+For hosted files, an embedded context ID alone does not bypass the cached session.
+Omit `--version` and pass `--new-session` to omit that cached route, or use
+`--session-id` to select the matching hosted session explicitly. These hosted
+routing flags remain unsupported with `--local`.
+Raw output keeps the original response, including its `contextId`, without adding
+ID/state summaries. Other protocols keep their existing session/conversation flags.
+This feature adds no context-reset flag or new local context-persistence mechanism.
 
 Generated 0.3 requests leave execution and output modes unspecified, preserving the
 non-blocking default. A Task may still be in progress; azd prints the initial response
@@ -792,13 +950,40 @@ azd ai agent invoke -p a2a --a2a-version 0.3 --input-file a2a-request-0.3.json
 
 `--a2a-version` is valid only for A2A; do not use it with Responses or
 Invocations. It is separate from `--version`, which continues to select a
-**deployed agent version**, not an A2A protocol version. This CLI does not
-support A2A invocation with `--local`; this is a CLI limitation, not a
-restriction of the A2A protocol.
+**deployed agent version**, not an A2A protocol version. `--version` is not
+supported for local A2A invocation.
+
+### Local A2A invocation
+
+Run your A2A server with `azd ai agent run`, then invoke it from another terminal:
+
+```bash
+azd ai agent run --port 9090
+# In another terminal, with AZD_ALPHA_ENABLE_AGENTS_A2A=true:
+azd ai agent invoke --local -p a2a --port 9090 --a2a-version 1.0 "Hello!"
+azd ai agent invoke --local -p a2a --port 9090 --a2a-version 1.0 -f a2a-request-1.0.json
+```
+
+Requests go directly to `http://localhost:<port>/a2a` (default port `8088`,
+configurable with `--port`). Your local server must expose `POST /a2a`.
+This fixed route is an azd local transport convention, not a path mandated by
+the A2A specification. Redirects and alternate routes are not followed.
+
+Existing A2A version rules apply locally, and request files are sent unchanged.
+Local A2A sends no Foundry authentication or routing headers and persists no
+session state. For continuity, use `--context-id` with a plain message, or provide
+A2A `contextId`/`taskId` in a request file.
+These flags are unsupported: `--session-id`, `--new-session`, `--conversation-id`,
+`--new-conversation`, `--version`, `--user-identity`, `--call-id`, and `--client-header`.
+Platform diagnostics are unavailable; omit `--debug-latency` or set it to `false`.
+
+Use `--output raw` for streaming replies. `--timeout` covers the request and response
+(default 1800 seconds; `0` disables it); startup connection retries have a separate
+60-second limit. Timeout or Ctrl+C stops the HTTP request, not the A2A task.
 
 For completed Tasks in **both A2A 0.3 and 1.0**, default output prefers answer
-artifacts over generic status messages such as “Done.” Other Tasks prefer status
-messages so prompts, progress, and failure details remain visible, falling back to
+artifacts over generic status messages such as “Done.” Tasks awaiting completion prefer status
+messages so prompts and progress remain visible, falling back to
 artifacts when no status text is present. History is the final text fallback.
 Use `--output raw` to inspect the complete HTTP response and JSON-RPC envelope.
 
@@ -846,15 +1031,20 @@ trailers or change SSE termination.
 
 ## Running Local Agents
 
-`azd ai agent run` starts the selected agent locally and, by default, opens the
-Agent Inspector after the local agent port is accepting connections. The
-inspector launch is best-effort: if `azure.ai.inspector` is not installed or
-fails to start, the agent process keeps running and azd prints install guidance.
+`azd ai agent run` starts the selected agent locally. A2A-only agents open no
+browser client; once ready, azd suggests a local invocation command with the
+selected port and preview-compatible wire version. `--inspector-port` is rejected
+because no Inspector is opened.
 
-Use `--no-inspector` to run only the local agent process:
+Other agents retain their existing client routing: Activity uses Microsoft 365
+Agents Playground; other profiles use Agent Inspector. Client launch is
+best-effort: if unavailable, the agent keeps running.
+
+Use `--no-client` to run only the local agent process for any profile
+(`--no-inspector` remains a deprecated alias):
 
 ```bash
-azd ai agent run --no-inspector
+azd ai agent run --no-client
 ```
 
 ## Publishing a Digital Worker
@@ -930,14 +1120,16 @@ azd ai agent run --port 9091 --inspector-port 9002
 `--inspector-port` is rejected when it cannot be honored:
 
 - with `--no-client` (or the deprecated `--no-inspector`), since no local client
-  is opened and the port would go unused; and
+  is opened and the port would go unused;
+- for A2A-only agents, which never open Agent Inspector; and
 - for agents that use Agent Inspector, when it matches `--port`, since the agent
   binds that address first and the inspector would then fail to bind it.
 
 azd also warns, without failing the run, when `--inspector-port` cannot take
-effect: activity-protocol agents open the Microsoft 365 Agents Playground rather
-than the Agent Inspector, and `--port 8087` on its own collides with the
-inspector's own default UI port.
+effect: activity-protocol agents open the Microsoft 365 Agents Playground
+rather than the Agent Inspector.
+For Inspector profiles, `--port 8087` on its own also warns about a collision
+with the inspector's default UI port.
 
 ### Local client route telemetry
 
@@ -945,15 +1137,44 @@ When installed from the official registry, the extension reports the
 `local_client.route.selected` usage event after `azd ai agent run` resolves the
 service and protocol profile. Its `ext.route` attribute is exactly one of:
 
-- `inspector` for a non-activity agent;
+- `inspector` for a non-activity agent that is not A2A-only;
 - `playground` for an activity-protocol agent; or
-- `suppressed` when `--no-client` or the deprecated `--no-inspector` is set.
+- `suppressed` for A2A-only agents, or when `--no-client` or the deprecated
+  `--no-inspector` is set.
 
 The event is emitted before checking client availability, starting the local
 agent, or launching a client. It records route selection, not successful client
 launch.
 
 ## Initializing a Project
+
+When selecting an existing Microsoft Foundry project, init reads its project
+endpoint and the account's custom subdomain from Azure Resource Manager. The
+custom subdomain can differ from the account resource name; the ARM project ID
+always keeps the real account name. These resolved endpoints are also used for
+connection discovery and saved environment values. Missing endpoint metadata
+uses the account's custom subdomain, then the account name as a compatibility
+fallback. Failed metadata lookups or invalid endpoints stop initialization
+instead of guessing, except one compatibility case: if account metadata is
+forbidden (HTTP 403), init accepts a valid ARM-advertised project endpoint that
+still matches the selected project. Missing or invalid advertised endpoints, and
+all other account lookup failures, remain errors. Only Azure
+`*.services.ai.azure.com` project endpoints are supported, not arbitrary
+domains or reverse proxies.
+
+Exporting an existing project with `--infra=bicep` or `--infra=terraform`
+also verifies the configured endpoint against its ARM project before writing
+infrastructure files, including when exporting an already initialized project.
+Export requires Azure read access to the project and uses the same HTTP 403
+account-read fallback as `init` when the project advertises a valid matching
+endpoint; provisioning the exported Bicep or Terraform templates requires read
+access to both the project and account.
+
+The exported Bicep validates the final project ID and endpoint parameters in a
+read-only deployment before its resource-changing modules and supporting resource
+group can run. Mismatches fail without changing those resources, although the
+validation deployment's history can remain. Keep both parameters consistent when
+editing the generated files or switching environments.
 
 When `azd ai agent init` scaffolds into a subdirectory, the `Next:` block starts
 with `cd <folder>` before the provisioning command, even if that folder already
@@ -1229,6 +1450,67 @@ implement voice conversations; recognized voice services receive portal guidance
 Programmatic clients use the voice WebSocket endpoint with a Voice Live client.
 Use the project-level `azd deploy` workflow above for voice services.
 
+### GPT Live voice agent (preview)
+
+GPT Live is an advanced native Live protocol under the same service `kind: voice`.
+It is initialized from a complete manifest, like Hosted Voice, so the existing
+prompt voice init flow and flags remain unchanged:
+
+```bash
+azd ai agent init -t ./schemas/examples/gpt-live.azure.yaml
+azd provision
+azd deploy
+```
+
+The manifest references an **existing compatible GPT Live model deployment**.
+The deployment and the subscription-scoped GPT Live service gate must already be
+available; azd does not infer Live from a model name or provision the model in
+this example.
+
+```yaml
+name: gpt-live-agent
+services:
+  ai-project:
+    host: azure.ai.project
+  gpt-live-agent:
+    host: azure.ai.agent
+    kind: voice
+    name: gpt-live-agent
+    uses:
+      - ai-project
+    subProtocol: live
+    modelType: self_deployed
+    model:
+      id: gpt-live-1
+    instructions: You are a concise spoken English teacher. Always delegate grammar correction requests before answering.
+    store: false
+    audio:
+      format:
+        type: audio/pcm
+        rate: 24000
+      output:
+        voice: marin
+    delegation:
+      type: responses
+      responses:
+        model: gpt-5.6-terra
+        instructions: Return concise grammar guidance for the spoken teacher.
+infra:
+  provider: microsoft.foundry
+```
+
+The persisted definition uses the service discriminator `sub_protocol: live`.
+GPT Live is self-deployed only and uses native audio, template greeting, structured
+inputs, and `client`, `responses`, or `foundry_managed_agent` delegation. It is
+mutually exclusive with Voice Live-only fields such as `conversationEngine`,
+avatar, telephony, STT/VAD settings, root tools, handoff, and output modalities.
+
+GPT Live clients connect to
+`/agents/{name}/endpoint/protocols/voice/live/sessions?api-version=v1` and use the
+native Live event protocol. `azd ai agent invoke` is not a native audio client;
+use a GPT Live-compatible client or Dashboard. Do not use the ordinary
+`/endpoint/protocols/voice` route for this definition.
+
 ## Prompt voice telephony bindings
 
 Prompt voice agents can declare Foundry-side telephony bindings in `azure.yaml`.
@@ -1392,6 +1674,200 @@ proxy — fails validation rather than silently deploying a policy that never ru
 Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
 the whole body is then moderated and no paths are needed for that direction.
 
+### Reuse a source-build registry
+
+Existing ACR reuse is a **default-off preview**, shared with the projects
+extension. Set `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true` in the process running
+azd. For PowerShell:
+
+```powershell
+$env:AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE = 'true'
+```
+
+For POSIX shells use `export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true`; set the
+same variable in CI jobs. Only `strconv.ParseBool` true forms enable it, not
+`on`, `yes`, or core `azd config` alpha settings. Host-injected process values
+are honored; the evaluator does not open dotenv files.
+
+When disabled, `--acr-resource-id` and its help examples are hidden but still
+parse and return explicit enablement guidance. Greenfield environment-only selections,
+saved reuse bindings without legacy aliases, and unfinished access operations
+also require the switch. Re-enable it for **preview, down, recovery, and
+eject**, as well as setup, provision, package, publish, and deploy using reuse.
+Disabled operations leave project files, environment values, saved context,
+and Azure resources unchanged; they never fall back to creating a registry.
+Automatic registry creation and code, prebuilt-image, and old connection
+workflows without new reuse intent remain available. Other preview switches
+cannot enable ACR reuse.
+
+A bare `image` still defaults to source build and requests automatic registry
+provisioning with the switch off; the provision/deploy consistency correction
+is always on. Fresh create preserves normal outputs without a binding-only
+project identity lookup, canonical binding creation, or new mode write off.
+Saved create bindings retain identity validation and maintenance. Recovered
+create ownership remains usable for safe operations, but is not newly
+serialized or unset as persisted state while off.
+
+Legacy existing-project `reuse-connect` environments without canonical reuse
+bindings or pending operations retain their existing behavior without opt-in.
+Canonical reuse and pending operations are checked before this exemption.
+Template initialization checks the destination environment's pending state
+without inheriting unrelated state from the caller's environment.
+
+For greenfield reuse, the pre-operation check includes `existingAcrResourceId` present only in
+generated/ejected `main.parameters.json` or `main.bicepparam` on a supported
+`microsoft.foundry` root or layer, including custom paths and module names.
+It runs before project hooks or independent package, publish, and deploy
+handlers mutate state. JSON `${VAR}` substitutions use the host environment;
+`.bicepparam` takes precedence and Bicep resolves its expressions. Parameter
+checks retain normal Bicep installation and module restoration. Dependency
+caches may be populated, but rejected reuse does not change project files,
+environment/config values, saved context, or Azure resources. Invalid
+parameters remain errors rather than being treated as non-reuse.
+
+Provider initialization and `azd down` remain compiler-free. Down uses
+recorded environment selectors, bindings, pending cleanup, and recovered
+deployment facts instead of current parameter files. Recorded reuse still
+requires the switch; a source-only selector that has not been deployed does
+not block teardown. Non-reuse provisioning retains automatic Bicep setup.
+
+The provision validation rule also honors this switch before registry
+lookups. Mandatory lifecycle hooks, including prepackage, and independent
+agent operations still enforce it when optional validation is skipped.
+
+For hosted-container source builds in a new Foundry project, select an existing
+registry during setup:
+
+```powershell
+azd ai agent init --src . --acr-resource-id "<registry-arm-id>"
+```
+
+Alternatively, save the registry in the active azd environment:
+
+```sh
+azd env set AZURE_CONTAINER_REGISTRY_RESOURCE_ID "<full-registry-arm-id>"
+```
+
+The projects extension saves the selection in the active azd environment.
+`azd ai project add --new-project --acr-resource-id "<registry-arm-id>"` provides
+the same project-level setup. Before provisioning, a setup flag overrides the environment's
+`AZURE_CONTAINER_REGISTRY_RESOURCE_ID`; without either input, provisioning creates
+a registry only when source builds need one. Setup displays the selected registry
+as externally owned without introducing a registry picker.
+
+Environment-only selections use the same validation, persisted reuse mode, and
+ownership output. When reusing agent configuration, explicit and retained
+selections require hosted-container source builds and supported Bicep
+infrastructure before setup changes any files or environment values.
+An unreadable environment stops selection rather than
+defaulting to a new registry. A same-group registry ID alone is not evidence
+that azd owns the registry. A deployed registry binding remains authoritative
+when legacy registry output variables are missing.
+
+Registry selection requires a Projects extension that accepts
+`project add --new-project --acr-resource-id`. Init checks these flags with
+captured command help before changing project files or environment values.
+The help probe runs the Projects executable registered with the invoking
+azd host, not another `azd` found on `PATH`.
+The check does not print help into quiet or JSON output. An unsupported
+extension or a failed capability check stops setup; flows without a selector
+continue to work with older Projects versions.
+
+Conflict messages identify the explicit flag, saved environment selector, or
+deployed binding. Saved selectors also prevent selecting voice initialization
+interactively. Use source builds or a separate environment for an incompatible
+configuration; do not remove a deployed binding to bypass validation.
+Source initialization checks the planned environment's local `.azure` state
+even when a previous partial init did not leave an `azure.yaml` file.
+
+The selector cannot be combined with `--image`, `--registry-connection`,
+`--acr-connection`, `--project-id`, or code/prompt/voice deployment. Existing
+connection-selection flows keep their meanings. Repeated provisioning retains
+the deployed registry; switching an already provisioned project's registry is
+not supported.
+
+When adopting a template, init rejects an existing Foundry project endpoint
+before scaffolding. Interactive source, template, and existing-configuration
+setup check the chosen subscription against the registry before creating
+project files or saving environment values. The new environment name, whether
+explicitly requested or derived from the target directory (the current directory
+for source init without a new folder), also determines the root or Foundry-layer
+teardown group during preflight.
+A successful preflight carries that subscription into setup without asking again.
+Headless setup with missing Azure context continues to defer configuration.
+Template adoption resolves the planned environment in the target directory,
+including any retained target state from a partial initialization; it does not
+inherit a different project's active environment or registry selection.
+Saved registry selections receive the same input validation and subscription
+preflight as an explicit flag. Template adoption rejects conflicting CLI inputs,
+including explicit empty values, before scaffolding. Saved selections retain
+container source-build mode when adopting a service without deployment
+configuration.
+
+Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
+be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside
+every resource group managed by azd, including the Foundry group and application
+groups, because `azd down` deletes them. `AZURE_RESOURCE_GROUP` cannot establish
+all groups managed by another provider's templates. Reuse therefore requires
+Foundry-only infrastructure; a non-Foundry root deployment or any non-Foundry
+infrastructure layer is rejected even if the registry is outside the groups
+named in environment values. Cross-subscription registry reuse is not supported.
+azd preserves the external registry, images, and
+administrator-managed grants, and cleans up only
+access grants and related resources it can establish it owns. Customers manage
+network reachability and image-publisher push permissions. See
+[non-interactive configuration](../ai-non-interactive.md#azureaiprojects).
+
+An external source-build registry selection supports `agentHosting`. The
+Projects provider checks and grants image-pull access to the AKS kubelet
+identity only; ordinary Foundry hosting uses the Project identity. Existing
+registry network settings are retained, and customers must ensure AKS can reach
+the registry. Re-eject older BYO AKS Bicep templates for the kubelet-only access
+contract. See [Projects registry reuse](../azure.ai.projects/README.md#reuse-an-external-container-registry).
+
+Both ordinary Foundry and BYO AKS reject automatic registry creation when account
+network isolation is enabled. Select an external registry for source builds in
+that case. Registry connections continue to use the Foundry Project identity,
+separately from the kubelet's pull grants.
+
+An `image` value alone still defaults to a source build, including with
+`--no-prompt`. Explicit prebuilt selection requires
+`docker.imagePassthrough: true` with a nonempty image. Add `registryConnectionId`
+when a private registry connection is needed; it also requires
+`docker.imagePassthrough: true`.
+When importing a template with an ACR selection, init preserves this source-build
+intent instead of converting an image-only service to prebuilt. Without an ACR
+selection, template init retains its existing image-to-prebuilt behavior.
+The legacy environment value `AZD_AGENT_SKIP_ACR=true` also selects prebuilt
+deployment when the expanded image is nonempty.
+
+A project-only Bicep eject retains a pending registry selection without freezing
+`includeAcr` to `false`; later source-built agents determine demand at provision
+time. Remove an older generated `parameters.includeAcr` object if it only records
+the absence of agents at eject time. Deliberate user-authored overrides are
+preserved.
+
+Keep the generated Foundry layer on `microsoft.foundry`, including after
+Bicep eject. Manually switching it to core `infra.provider: bicep` is
+unsupported and outside this flag's enforcement contract, as is running
+external IaC directly. Core Bicep preview does not run extension lifecycle
+hooks; it cannot provide this extension's mandatory gate.
+
+For an external ABAC registry, source builds require local Docker:
+set `docker.remoteBuild: false` on each source-built agent service and grant the
+image publisher Container Registry Repository Writer push permission.
+Template adoption preserves an authored Docker block, including a block
+containing only `remoteBuild: false`, and adds `project: .` when it is missing.
+Hosted source initialization normally sets `docker.remoteBuild: true` unless
+network injection requires local builds. That remote Quick Build path is not
+supported with ABAC registry reuse: its current request does not authenticate the
+source registry, and Repository Writer permission alone does not fix the request.
+Provisioning rejects this combination. Use local Docker, a prebuilt image, or a
+classic RBAC registry instead. Prebuilt images, code deployments, legacy project
+connections, and unused project-only selections do not trigger the ABAC
+remote-build restriction; selector scope and `agentHosting` validation still
+apply.
+
 ### Hosted voice wrapper (preview)
 
 A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
@@ -1427,11 +1903,8 @@ services:
     uses:
       - ai-project
     protocols:
-      - protocol: invocations_ws
+      - protocol: voice_conversation_engine
         version: 1.0.0
-    metadata:
-      voiceLiveCompatible: "true"
-      bridgeProtocolVersion: "1.0"
     container:
       resources:
         cpu: "1"
@@ -1462,9 +1935,17 @@ The `uses` edge deploys the target before the wrapper. `conversationEngine`
 points at the hosted target service, and `version: deployed` pins the wrapper
 to the target version produced by the current azd environment.
 
-The target must be active, declare `invocations_ws/1.0.0`, and include
-`voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,
-instructions, tools, and other conversation controls belong to the target;
+The target must be active. New targets declare `voice_conversation_engine/1.0.0`.
+For backward compatibility, azd also accepts the existing `invocations_ws/1.0.0`
+contract with both `voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0`
+metadata. This preserves existing Hosted Voice manifests without making the two
+protocol endpoints interchangeable.
+The target and wrapper currently require `AZD_ALPHA_ENABLE_AGENTS_VOICE=true`.
+Configure the conversation engine through the complete manifest shown above;
+this protocol is not offered by the Hosted Agent init protocol picker.
+`invocations_ws` remains an independent Hosted Agent protocol and does not
+substitute for the conversation-engine endpoint. Model, instructions, tools,
+and other conversation controls belong to the target;
 the wrapper owns audio, voice, store, avatar, and greeting configuration.
 
 ## Invocations metadata discovery
@@ -1724,7 +2205,144 @@ deployment.
 
 Foundry project services can be provisioned as network-secured, VNet-bound accounts by adding a `network:` block to the `host: azure.ai.project` service in `azure.yaml`. The `azure.ai.projects` extension owns that service and the `microsoft.foundry` provider; this extension still authors the block during agent init. See [Private networking for `host: azure.ai.project`](docs/private-networking.md) for the schema reference, BYO-image requirements, and VNet deployment cheatsheet.
 
-For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes the default Storage, separate managed identities, required permissions, and lifecycle limitations. A native registry is created only when an Agent requires building a container image, following the standard Foundry rules. Foundry networking is optional through `network:`, but cannot be combined with an automatically created registry. This mode does not accept supplied supporting resources through `agentHosting` or Terraform eject.
+For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes default or independently supplied Storage and hosting/workload identities, read-only preflight, required grants, and lifecycle limitations. A native registry is created only when an Agent requires building a container image and the Foundry account uses public networking. Foundry networking is optional through `network:`. Private account networking rejects automatic registry creation, including with AKS hosting; select an external registry for source builds, or use prebuilt images with `docker.imagePassthrough: true` or code/ZIP deployments without automatic registry creation. Customers must ensure build and AKS access to an external registry. Terraform eject is not supported for this mode.
+
+## Skill optimization from traces
+
+Use the existing optimization job API to learn reusable skills from recorded agent
+traces. This flow publishes skill versions; it does not automatically attach them
+to an agent, deploy an agent version, or update your local agent baseline.
+Skill runs update the global last-job shortcut for `optimize status`, but preserve
+the per-agent job/candidate state used by agent apply, deploy, and promotion.
+
+Copy [examples/skill-optimization.yaml](examples/skill-optimization.yaml), then
+set your deployed agent name/version, optimizer deployment, and trace window.
+The window is half-open (`start_time` inclusive, `end_time` exclusive). Use integer
+Unix timestamps in **seconds**, not milliseconds or quoted numbers, and set
+`max_traces` from 1 to 100. Omitting `max_traces` retains the service default.
+New fixed-window requests accept only integer Unix seconds; ISO strings,
+floating-point values, and quoted numeric strings are rejected before authentication.
+Job responses can contain ISO strings or Unix seconds; both formats are
+preserved when reading jobs and listing results. Unix input requires the backend
+Unix-timestamp compatibility update to be deployed; it does not require the later
+Unix-response format change.
+
+```powershell
+azd ai agent optimize --config skill-optimization.yaml `
+  --project-endpoint "https://<resource>.services.ai.azure.com/api/projects/<project>" `
+  --no-wait
+
+azd ai agent optimize status <job-id> --watch --project-endpoint <project-endpoint>
+```
+
+In an initialized azd project, the project endpoint can be resolved from the
+environment instead. Explicit identities and version pins in the request remain
+authoritative unless you supply an agent override.
+
+The service owns trace selection, conversation context, and attribution of existing
+human annotations and automated/rubric assessments. These recorded assessments do
+not require `--eval`, a new evaluation run, or a dataset supplied by azd.
+Skill requests reject the agent-search flags `--dataset`, `--eval-model`,
+`--evaluator`, and `--max-candidates`. To explicitly request fresh assessment,
+author `evaluation_configuration` with an `evaluation_model` and either existing
+`evaluators` or `evaluator_generation_configuration` (`type: agent_traces`,
+optional `prompt`). This requires a registered target agent; `training_set` is
+not accepted. The CLI never injects evaluation into skill requests.
+
+### Other trace and baseline inputs
+
+For explicit trace selection, replace the fixed window with:
+
+```yaml
+trace_window:
+  type: trace_ids
+  trace_ids: ["trace-operation-id-1", "trace-operation-id-2"]
+  lookback_hours: 168
+```
+
+The service resolves the selected conversations within the lookback horizon.
+The IDs must be unique, with 1 to 100 IDs; do not combine this variant with fixed
+timestamps or `max_traces`.
+
+Optional `skill_references` context supplies exact existing skill versions:
+
+```yaml
+type: skill_references
+skill_references:
+  - type: foundry_skill
+    name: existing-procedure
+    version: "2"
+```
+
+The top-level `optimization_configuration.additional_skills` array remains
+supported. References from both forms are combined; conflicting versions and
+more than 20 distinct explicit skill references are rejected.
+
+For traces without a registered Foundry target, omit `target_configuration`
+and supply this field alongside `trace_window` in the `agent_traces` context:
+
+```yaml
+trace_connection_configuration:
+  type: application_insights
+  resource_id: /subscriptions/<subscription>/resourceGroups/<group>/providers/Microsoft.Insights/components/<component>
+  agent_name: exact-emitted-telemetry-service-name
+```
+
+The component must be authorized and linked to the project. `agent_name` is the
+exact emitted telemetry service identity, not a KQL expression. Omit it when
+`target_configuration` is present. Agentless requests do not support new
+evaluation execution.
+
+### Inspect outcomes and download the report
+
+Candidate lists contain summaries. Inspect the full candidate to get individual
+skill outcomes, rationale, execution steps, resolved context, and declared files:
+
+```powershell
+azd ai agent optimize status <job-id> --candidate <candidate-id> `
+  --project-endpoint <project-endpoint> --output json
+
+azd ai agent optimize download <job-id> --candidate <candidate-id> `
+  --file <files-path> --target-path trace-analysis.json `
+  --project-endpoint <project-endpoint>
+```
+
+Pass `files[].path` from candidate details unchanged; do not prepend a storage
+directory. The default local filename is the basename of that path. Downloads
+never overwrite existing files, including files created after input validation.
+Use another `--target-path` if the destination already exists.
+
+Each `output.skill_results` entry reports `created`, `no_change`, `rejected`,
+`pending`, `failed`, or `publication_unknown`. Only `created` confirms a published
+output version; `no_change` retains the input baseline rather than inventing a new
+version. Inspect individual outcomes even when the overall job succeeds. An
+uncertain publication must be verified before retrying.
+
+`optimize apply` and `optimize deploy` do not treat skill results as agent
+configuration files. Attach the desired published skill versions explicitly.
+`status --candidate` is a one-time detail read and cannot be combined with `--watch`.
+Human-readable output escapes terminal control characters in service-provided text,
+preserving ordinary text, newlines, and tabs. JSON output retains the original values.
+
+### Local verification
+
+From the extension directory, the focused offline tests exercise request
+serialization, validation before authentication, a local HTTP job lifecycle,
+skill publication outcomes, and report download:
+
+```powershell
+go test .\internal\pkg\agents\optimize_api .\internal\cmd -run 'Skill|OptimizeDownload'
+```
+
+Build and register the extension using the local development workflow below.
+Use a dedicated `AZD_CONFIG_DIR` when testing installs or configuration changes.
+The existing `--endpoint` flag can target a local optimization API's complete
+route base instead of `--project-endpoint`; use trusted HTTPS and the normal
+authorized development credentials.
+
+Testing a local CLI against a cloud project exercises that project's deployed
+backend, not an unreleased local backend branch. The offline tests do not invoke
+agents, submit live optimization jobs, or publish skills to Azure.
 
 ## Local Development
 

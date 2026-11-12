@@ -2,120 +2,298 @@
 // Licensed under the MIT License.
 
 // cspell:ignore BYOAKS kubelet kubeletidentity
+// cspell:ignore federatedidentityroledefinitionid hostingprincipalid kubeletobjectid workloadprincipalid
 
 package provisioning
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/onboarding"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
 
-func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *templateSource) error {
-	configured := p.synthResult != nil && p.synthResult.Hosting != nil
-	value, err := byoHostingParameter(source)
+type byoHostingParameters struct {
+	Enabled                             bool            `json:"enabled"`
+	ClusterResourceID                   json.RawMessage `json:"clusterResourceId"`
+	HostingManagementIdentityResourceID json.RawMessage `json:"hostingManagementIdentityResourceId"`
+	WorkloadIdentityResourceID          json.RawMessage `json:"workloadIdentityResourceId"`
+}
+
+func (p *FoundryProvisioningProvider) prepareBYO(
+	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
+) (prepareErr error) {
+	p.preflightReport.Reset()
+	defer func() { prepareErr = p.preflightFailure(prepareErr) }()
+	hosting, err := byoHostingParameter(source)
 	if err != nil {
 		return err
 	}
-	var hosting struct {
-		Enabled           bool   `json:"enabled"`
-		HostingType       string `json:"hostingType"`
-		Name              string `json:"name"`
-		ClusterResourceID string `json:"clusterResourceId"`
+	if !hosting.Enabled {
+		return nil
 	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Errorf("encode agentHosting deployment parameters: %w", err)
+	if include, _ := parameterValue(source, "includeAcr").(bool); include &&
+		!templateDeclaresParameter(source, "acrPullPrincipalId") {
+		return errors.New("the ejected Bicep registry access contract is outdated; " +
+			"re-eject the Foundry Bicep templates for kubelet-only registry access")
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&hosting); err != nil {
+	var clusterID string
+	if err := json.Unmarshal(hosting.ClusterResourceID, &clusterID); err != nil {
 		return exterrors.Validation(exterrors.CodeInvalidParameter,
-			fmt.Sprintf("invalid agentHosting deployment parameters: %s", err),
-			"supply agentHosting as a literal object matching azure.yaml, not an ARM expression")
+			"agentHosting.clusterResourceId must be a resource ID string for AKS binding lookups",
+			"supply the complete resource ID of the effective AKS cluster")
 	}
-	if !configured {
-		if !hosting.Enabled {
-			return nil
+	if _, err := onboarding.ParseID(clusterID, "Microsoft.ContainerService/managedClusters"); err != nil {
+		return err
+	}
+	hostBindings := map[string]any{
+		"federatedIdentityRoleDefinitionId": nil,
+		"hostingPrincipalId":                nil,
+		"workloadPrincipalId":               nil,
+		"byoAksExistingRoleAssignmentKeys":  nil,
+	}
+	if includeAcr, _ := byoParameterValue(source, "includeAcr").(bool); includeAcr {
+		hostBindings["kubeletObjectId"] = nil
+	}
+	hostBindings = parametersDeclaredByTemplate(hostBindings, source.armTemplate)
+	for name := range hostBindings {
+		for supplied := range source.parameters {
+			if strings.EqualFold(name, supplied) {
+				delete(hostBindings, name)
+				break
+			}
 		}
-		return exterrors.Validation(exterrors.CodeConflictingArguments,
-			"effective agentHosting deployment parameters enable BYO AKS without agentHosting in azure.yaml",
-			"set agentHosting.clusterResourceId on the azure.ai.project service in azure.yaml, "+
-				"or disable agentHosting in the parameters file and template defaults")
 	}
-	includeAcr, _ := byoParameterValue(source, "includeAcr").(bool)
-	if !hosting.Enabled || hosting.HostingType != "ManagedCluster" || hosting.Name != "default" ||
-		!strings.EqualFold(hosting.ClusterResourceID, p.synthResult.Hosting.ClusterResourceID) {
-		return fmt.Errorf("agentHosting deployment parameters conflict with azure.yaml; " +
-			"only clusterResourceId is configurable and azd creates its prerequisites")
+	_, resolveFederationRole := hostBindings["federatedIdentityRoleDefinitionId"]
+	identities := []struct {
+		field, binding, id string
+		value              json.RawMessage
+		fact               onboarding.Identity
+	}{
+		{field: "hostingManagementIdentityResourceId", binding: "hostingPrincipalId",
+			value: hosting.HostingManagementIdentityResourceID},
+		{field: "workloadIdentityResourceId", binding: "workloadPrincipalId", value: hosting.WorkloadIdentityResourceID},
 	}
-	suppliedBindings := map[string]string{}
-	kubeletSupplied := false
-	for name, parameter := range source.parameters {
-		if !strings.EqualFold(name, "kubeletObjectId") && !strings.EqualFold(name, "federatedIdentityRoleDefinitionId") {
+	roleSubscription := p.subID
+	for i := range identities {
+		identity := &identities[i]
+		if _, needed := hostBindings[identity.binding]; !needed &&
+			!(resolveFederationRole && identity.binding == "workloadPrincipalId") {
 			continue
 		}
-		if strings.EqualFold(name, "kubeletObjectId") {
-			if kubeletSupplied {
+		if len(identity.value) > 0 {
+			if err := json.Unmarshal(identity.value, &identity.id); err != nil {
+				return exterrors.Validation(exterrors.CodeInvalidParameter,
+					fmt.Sprintf("agentHosting.%s must be a resource ID string to resolve deployment bindings",
+						identity.field),
+					"supply a complete managed identity resource ID or provide the required deployment bindings explicitly")
+			}
+		}
+		if identity.id == "" {
+			continue
+		}
+		id, err := onboarding.ParseID(identity.id, "Microsoft.ManagedIdentity/userAssignedIdentities")
+		if err != nil {
+			return err
+		}
+		if identity.binding == "workloadPrincipalId" {
+			roleSubscription = id.SubscriptionID
+		}
+	}
+	enabled, err := strconv.ParseBool(os.Getenv(synthesis.BYOAKSEnvVar))
+	if err != nil || !enabled {
+		return exterrors.Compatibility(
+			exterrors.CodeFeatureNotEnabled,
+			fmt.Sprintf("preview feature %q is disabled", synthesis.BYOAKSFeatureID),
+			fmt.Sprintf("enable by setting %s=true in your shell or CI before running azd", synthesis.BYOAKSEnvVar),
+		)
+	}
+	includeAcr, _ := byoParameterValue(source, "includeAcr").(bool)
+	explicitKubeletID := ""
+	if includeAcr {
+		for name, parameter := range source.parameters {
+			if !strings.EqualFold(name, "kubeletObjectId") {
+				continue
+			}
+			if explicitKubeletID != "" {
 				return exterrors.Validation(exterrors.CodeConflictingArguments,
 					"multiple kubeletObjectId deployment parameters differ only by case",
 					"supply kubeletObjectId only once using the template's parameter name")
 			}
-			kubeletSupplied = true
+			envelope, ok := parameter.(map[string]any)
+			principal, literal := envelope["value"].(string)
+			if !ok || len(envelope) != 1 || !literal || uuid.Validate(principal) != nil {
+				return exterrors.Validation(exterrors.CodeInvalidParameter,
+					"kubeletObjectId must use a value envelope containing a literal principal object ID GUID",
+					"omit kubeletObjectId to use the selected AKS cluster's actual kubelet identity")
+			}
+			explicitKubeletID = principal
 		}
-		envelope, _ := parameter.(map[string]any)
-		value, ok := envelope["value"].(string)
-		if !ok || strings.TrimSpace(value) == "" {
-			return exterrors.Validation(exterrors.CodeInvalidParameter,
-				fmt.Sprintf("%s must be a nonempty string matching the provider-resolved BYO AKS binding", name),
-				fmt.Sprintf("remove %s from the parameters file so microsoft.foundry can resolve it automatically", name))
-		}
-		suppliedBindings[name] = value
 	}
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
-	kubeletObjectID, federationRoleID, err := p.resolveBYOHostBindings(ctx, hosting.ClusterResourceID)
+	evidence := onboarding.NewAuthorizationEvidence(p.credential, p.armClientOptions)
+	plan, err := p.identifyBYOTemplatePlan(ctx, source, evidence)
 	if err != nil {
 		return err
 	}
-	for name, value := range suppliedBindings {
-		expected := kubeletObjectID
-		if strings.EqualFold(name, "federatedIdentityRoleDefinitionId") {
-			expected = federationRoleID
+	// Explicit selectors still need bindings when their effective identities are also ARM deployment targets.
+	for i, resource := range []*onboarding.Resource{&plan.Hosting, &plan.Workload} {
+		identity := &identities[i]
+		_, automatic := hostBindings[identity.binding]
+		resource.PrincipalRequired = automatic && (resource.Supplied || identity.id != "")
+		if !resource.PrincipalRequired {
+			delete(hostBindings, identity.binding)
 		}
-		if !strings.EqualFold(value, expected) {
-			return exterrors.Validation(exterrors.CodeConflictingArguments,
-				fmt.Sprintf("%s conflicts with the provider-resolved binding for agentHosting.clusterResourceId", name),
-				fmt.Sprintf("remove %s from the parameters file so microsoft.foundry can resolve it automatically", name))
+		identity.id = resource.ID
+	}
+	pipeline := onboarding.Pipeline{
+		Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions, evidence),
+		Access:    evidence,
+	}
+	facts, report, preflightErr := pipeline.Preflight(ctx, plan)
+	if err := p.writeBYOPreflight(report, preflightErr, progress); err != nil {
+		return err
+	}
+	_, needsKubelet := hostBindings["kubeletObjectId"]
+	if facts.KubeletObjectID == "" && (plan.Cluster.Missing == "" || needsKubelet || includeAcr) {
+		return fmt.Errorf("BYO AKS requires a kubelet principal object ID from preflight")
+	}
+	if facts.KubeletObjectID != "" {
+		if _, err := uuid.Parse(facts.KubeletObjectID); err != nil {
+			return fmt.Errorf("AKS kubelet principal object ID must be a GUID: %w", err)
 		}
 	}
-	hostBindings := map[string]any{
-		"federatedIdentityRoleDefinitionId": map[string]any{"value": federationRoleID},
+	if explicitKubeletID != "" && !strings.EqualFold(explicitKubeletID, facts.KubeletObjectID) {
+		return exterrors.Validation(exterrors.CodeConflictingArguments,
+			fmt.Sprintf("kubeletObjectId %q does not match the actual kubelet principal object ID %q for AKS %q",
+				explicitKubeletID, facts.KubeletObjectID, plan.Cluster.ID),
+			"remove kubeletObjectId to resolve it automatically, or set it to the selected AKS cluster's actual kubelet ID")
 	}
-	if includeAcr {
-		hostBindings["kubeletObjectId"] = map[string]any{"value": kubeletObjectID}
+	workloadScope := plan.Workload.ID
+	if workloadScope == "" {
+		workloadScope = plan.Workload.Parent
 	}
-	hostBindings = parametersDeclaredByTemplate(hostBindings, source.armTemplate)
-	for name := range suppliedBindings {
-		for binding := range hostBindings {
-			if strings.EqualFold(name, binding) {
-				delete(source.parameters, name)
+	if resolveFederationRole && workloadScope != "" {
+		if scope, err := arm.ParseResourceID(workloadScope); err == nil && scope.SubscriptionID != "" {
+			roleSubscription = scope.SubscriptionID
+		}
+	}
+	identities[0].fact, identities[1].fact = facts.HostingIdentity, facts.WorkloadIdentity
+	resolvedBindings := map[string]any{"kubeletObjectId": facts.KubeletObjectID}
+	for i := range identities {
+		identity := &identities[i]
+		if _, needed := hostBindings[identity.binding]; !needed {
+			continue
+		}
+		if !strings.EqualFold(identity.id, identity.fact.ID) || identity.fact.PrincipalID == "" {
+			return fmt.Errorf("%s deployment binding requires matching resource ID and principal ID from preflight",
+				identity.field)
+		}
+		if _, err := uuid.Parse(identity.fact.PrincipalID); err != nil {
+			return fmt.Errorf("supplied identity principal ID must be a GUID: %w", err)
+		}
+		resolvedBindings[identity.binding] = identity.fact.PrincipalID
+	}
+	federationRoleID, _ := byoParameterValue(source, "federatedIdentityRoleDefinitionId").(string)
+	if resolveFederationRole {
+		var err error
+		federationRoleID, err = resolveBYOFederationRoleID(ctx, roleSubscription, evidence)
+		if err != nil {
+			return err
+		}
+		resolvedBindings["federatedIdentityRoleDefinitionId"] = federationRoleID
+	}
+	if _, needed := hostBindings["byoAksExistingRoleAssignmentKeys"]; needed {
+		grantFacts := facts
+		for name, principal := range map[string]*string{
+			"hostingPrincipalId":  &grantFacts.HostingIdentity.PrincipalID,
+			"workloadPrincipalId": &grantFacts.WorkloadIdentity.PrincipalID,
+		} {
+			if _, automatic := hostBindings[name]; automatic {
+				continue
+			}
+			if value, supplied := byoParameterValue(source, name).(string); supplied {
+				*principal = value
 			}
 		}
+		keys, checks, err := evidence.ExistingRoleAssignmentKeys(ctx, plan, grantFacts, federationRoleID)
+		if err := p.writeBYOPreflight(checks, err, progress); err != nil {
+			return fmt.Errorf("resolve existing BYO AKS role assignments: %w", err)
+		}
+		resolvedBindings["byoAksExistingRoleAssignmentKeys"] = keys
+	}
+	for name := range hostBindings {
+		hostBindings[name] = map[string]any{"value": resolvedBindings[name]}
 	}
 	source.parameters = mergeParameters(source.parameters, hostBindings)
 	return nil
 }
+
+func (p *FoundryProvisioningProvider) writeBYOPreflight(
+	report onboarding.Report, preflightErr error, progress grpcbroker.ProgressFunc,
+) error {
+	var output strings.Builder
+	if err := report.Write(&output); err != nil {
+		return errors.Join(preflightErr, err)
+	}
+	if output.Len() > 0 {
+		p.preflightReport.WriteString(output.String())
+		if preflightErr != nil {
+			progress("BYO AKS preflight checks failed")
+		} else {
+			progress("BYO AKS preflight checks completed")
+		}
+	}
+	return preflightErr
+}
+
+func (p *FoundryProvisioningProvider) preflightFailure(err error) error {
+	if err == nil || p.preflightReport.Len() == 0 {
+		return err
+	}
+	message := onboarding.RedactDiagnostic(err.Error()) +
+		"\n\nBYO-AKS preflight report:\n" + p.preflightReport.String()
+	wire := azdext.WrapError(err)
+	var classified error
+	if wire.GetOrigin() != azdext.ErrorOrigin_ERROR_ORIGIN_UNSPECIFIED {
+		classified = azdext.UnwrapError(wire)
+	}
+	if value, ok := errors.AsType[*azdext.ServiceError](classified); ok {
+		value.Message = message
+	} else if value, ok := errors.AsType[*azdext.LocalError](classified); ok {
+		value.Message = message
+	} else if value, ok := errors.AsType[*azdext.ToolError](classified); ok {
+		if original, ok := errors.AsType[*azdext.ToolError](err); ok {
+			value = new(*original)
+			classified = value
+		}
+		value.Message = message
+	}
+	return &byoPreflightError{cause: err, classified: classified, message: message}
+}
+
+type byoPreflightError struct {
+	cause, classified error
+	message           string
+}
+
+func (e *byoPreflightError) Error() string { return e.message }
+
+func (e *byoPreflightError) Unwrap() []error { return []error{e.classified, e.cause} }
 
 func byoARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
 	var result arm.ClientOptions
@@ -126,90 +304,40 @@ func byoARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
 	return &result
 }
 
-func parseBYOResourceID(value, kind string) (*arm.ResourceID, error) {
-	if !strings.HasPrefix(strings.ToLower(value), "/subscriptions/") ||
-		strings.ContainsAny(value, "?#%\\@:\x00 \t\r\n") || strings.Contains(value, "//") {
-		return nil, fmt.Errorf("expected a complete %s resource ID without URL components", kind)
-	}
-	id, err := arm.ParseResourceID(value)
-	if err != nil {
-		return nil, fmt.Errorf("invalid %s resource ID: %w", kind, err)
-	}
-	if id.SubscriptionID == "" || id.ResourceGroupName == "" || id.Name == "" ||
-		!strings.EqualFold(id.ResourceType.String(), kind) {
-		return nil, fmt.Errorf("expected a complete %s resource ID", kind)
-	}
-	return id, nil
-}
-
-func (p *FoundryProvisioningProvider) resolveBYOHostBindings(
-	ctx context.Context, clusterID string,
-) (string, string, error) {
-	id, err := parseBYOResourceID(clusterID, "Microsoft.ContainerService/managedClusters")
-	if err != nil {
-		return "", "", err
-	}
-	options := byoARMOptions(p.armClientOptions)
-	clusters, err := armcontainerservice.NewManagedClustersClient(id.SubscriptionID, p.credential, options)
-	if err != nil {
-		return "", "", fmt.Errorf("create AKS client: %w", err)
-	}
-	cluster, err := clusters.Get(ctx, id.ResourceGroupName, id.Name, nil)
-	if err != nil {
-		return "", "", fmt.Errorf("read AKS kubelet identity: %w", err)
-	}
-	if cluster.Properties == nil || cluster.Properties.IdentityProfile["kubeletidentity"] == nil ||
-		cluster.Properties.IdentityProfile["kubeletidentity"].ObjectID == nil {
-		return "", "", fmt.Errorf("BYO AKS requires a kubelet principal object ID")
-	}
-	kubeletObjectID := *cluster.Properties.IdentityProfile["kubeletidentity"].ObjectID
-	if _, err := uuid.Parse(kubeletObjectID); err != nil {
-		return "", "", fmt.Errorf("AKS kubelet principal object ID must be a GUID: %w", err)
-	}
+func resolveBYOFederationRoleID(
+	ctx context.Context, roleSubscription string, evidence *onboarding.AuthorizationEvidence,
+) (string, error) {
 	const roleName = "Managed Identity Federated Identity Credential Contributor"
-	roles, err := armauthorization.NewRoleDefinitionsClient(p.credential, options)
+	id, err := evidence.ResolveRoleByName(ctx, roleSubscription, roleName)
 	if err != nil {
-		return "", "", fmt.Errorf("create role definitions client: %w", err)
+		return "", fmt.Errorf("resolve built-in federation role: %w", err)
 	}
-	pager := roles.NewListPager("/subscriptions/"+p.subID,
-		&armauthorization.RoleDefinitionsClientListOptions{Filter: new("roleName eq '" + roleName + "'")})
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return "", "", fmt.Errorf("resolve built-in federation role: %w", err)
-		}
-		for _, role := range page.Value {
-			if role == nil || role.Properties == nil || role.Properties.RoleName == nil ||
-				*role.Properties.RoleName != roleName || role.Properties.RoleType == nil ||
-				!strings.EqualFold(*role.Properties.RoleType, "BuiltInRole") {
-				continue
-			}
-			if role.ID == nil {
-				return "", "", fmt.Errorf("built-in federation role has an invalid ID")
-			}
-			roleID, err := arm.ParseResourceID(*role.ID)
-			if err != nil || !strings.EqualFold(roleID.ResourceType.String(), "Microsoft.Authorization/roleDefinitions") {
-				return "", "", fmt.Errorf("built-in federation role has an invalid ID")
-			}
-			if _, err := uuid.Parse(roleID.Name); err != nil {
-				return "", "", fmt.Errorf("BYO AKS federation role requires a role definition GUID: %w", err)
-			}
-			return kubeletObjectID,
-				"/subscriptions/" + p.subID + "/providers/Microsoft.Authorization/roleDefinitions/" + roleID.Name, nil
-		}
+	roleID, err := arm.ParseResourceID(id)
+	if err != nil || !strings.EqualFold(roleID.ResourceType.String(), "Microsoft.Authorization/roleDefinitions") {
+		return "", fmt.Errorf("built-in federation role has an invalid ID")
 	}
-	return "", "", fmt.Errorf("required built-in role %q is unavailable", roleName)
+	if _, err := uuid.Parse(roleID.Name); err != nil {
+		return "", fmt.Errorf("BYO AKS federation role requires a role definition GUID: %w", err)
+	}
+	return "/subscriptions/" + roleSubscription +
+		"/providers/Microsoft.Authorization/roleDefinitions/" + roleID.Name, nil
 }
 
-func byoHostingParameter(source *templateSource) (any, error) {
+func byoHostingParameter(source *templateSource) (byoHostingParameters, error) {
+	var hosting byoHostingParameters
 	var value any
+	declared := false
 	definitions, _ := source.armTemplate["parameters"].(map[string]any)
 	for name, definition := range definitions {
 		if strings.EqualFold(name, "agentHosting") {
+			declared = true
 			if definition, ok := definition.(map[string]any); ok {
 				value = definition["defaultValue"]
 			}
 		}
+	}
+	if !declared {
+		return hosting, nil
 	}
 	supplied := false
 	for name, parameter := range source.parameters {
@@ -217,7 +345,7 @@ func byoHostingParameter(source *templateSource) (any, error) {
 			continue
 		}
 		if supplied {
-			return nil, exterrors.Validation(exterrors.CodeConflictingArguments,
+			return hosting, exterrors.Validation(exterrors.CodeConflictingArguments,
 				"multiple agentHosting deployment parameters differ only by case",
 				"supply agentHosting only once using the template's parameter name")
 		}
@@ -225,23 +353,31 @@ func byoHostingParameter(source *templateSource) (any, error) {
 		envelope, ok := parameter.(map[string]any)
 		literal, present := envelope["value"]
 		if !ok || !present || len(envelope) != 1 {
-			return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
+			return hosting, exterrors.Validation(exterrors.CodeInvalidParameter,
 				"agentHosting deployment parameter must use a value envelope",
-				"supply agentHosting as a literal object matching azure.yaml")
+				"supply agentHosting as a literal object with the values needed for local AKS binding lookups")
 		}
 		value = literal
 	}
-	return value, nil
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return hosting, fmt.Errorf("encode agentHosting deployment parameters: %w", err)
+	}
+	if err := json.Unmarshal(raw, &hosting); err != nil {
+		return hosting, exterrors.Validation(exterrors.CodeInvalidParameter,
+			fmt.Sprintf("invalid agentHosting deployment parameters: %s", err),
+			"supply agentHosting as a literal object with the values needed for local AKS binding lookups")
+	}
+	return hosting, nil
 }
 
 func byoParameterValue(source *templateSource, key string) any {
-	if envelope, ok := source.parameters[key].(map[string]any); ok {
-		return envelope["value"]
-	}
-	if definitions, ok := source.armTemplate["parameters"].(map[string]any); ok {
-		if definition, ok := definitions[key].(map[string]any); ok {
-			return definition["defaultValue"]
+	// Malformed explicit envelopes must not enable template-default bindings before ARM validation.
+	for name, parameter := range source.parameters {
+		if strings.EqualFold(name, key) {
+			envelope, _ := parameter.(map[string]any)
+			return envelope["value"]
 		}
 	}
-	return nil
+	return parameterValue(source, key)
 }

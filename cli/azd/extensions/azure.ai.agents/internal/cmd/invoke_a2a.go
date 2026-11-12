@@ -18,6 +18,7 @@ import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/useragent"
 
 	"github.com/google/uuid"
 )
@@ -40,7 +41,7 @@ type a2aJSONRPCRequest struct {
 
 // a2aTextRequestBuilder constructs one dialect's complete plain-message request.
 // IDs are supplied by the caller so builders are pure and independently testable.
-type a2aTextRequestBuilder func(text, requestID, messageID string) a2aJSONRPCRequest
+type a2aTextRequestBuilder func(text, requestID, messageID, contextID string) a2aJSONRPCRequest
 
 // a2aRequestBuilderForVersion is the single supported-dialect selection point for
 // request construction and version validation. It never guesses from file input.
@@ -84,6 +85,43 @@ func validateInvokeA2AVersionFlags(flags *invokeFlags, protocol agent_api.AgentP
 	return nil
 }
 
+func validateInvokeContextIDFlags(flags *invokeFlags, protocol agent_api.AgentProtocol, explicit bool) error {
+	if !explicit && flags.contextID == "" {
+		return nil
+	}
+	if strings.TrimSpace(flags.contextID) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--context-id cannot be empty",
+			"provide a context ID returned by an A2A invocation or omit --context-id",
+		)
+	}
+	if protocol != "" && protocol != agent_api.AgentProtocolA2A {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--context-id is only supported with the a2a protocol",
+			"omit --context-id or select --protocol a2a",
+		)
+	}
+	if flags.inputFile != "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"cannot use --context-id with --input-file",
+			"set params.message.contextId in the JSON-RPC file; file contents are sent unchanged; "+
+				"for hosted agents, omit --version and use --new-session to skip cached routing, "+
+				"or --session-id for a matching session",
+		)
+	}
+	if flags.newSession || flags.newConversation || flags.conversation != "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"cannot use --context-id with --new-session, --new-conversation, or --conversation-id",
+			"omit reset and conversation flags to continue the selected A2A context",
+		)
+	}
+	return nil
+}
+
 func validateA2AVersion(version string) error {
 	_, err := a2aRequestBuilderForVersion(version)
 	return err
@@ -111,6 +149,9 @@ func resolveA2AVersion(explicit string, preview bool) string {
 // This method owns input handling and serialization; each public dialect's
 // complete body is constructed independently by its selected builder.
 func (a *InvokeAction) buildA2ARequestBody(version string) ([]byte, string, error) {
+	if err := validateInvokeContextIDFlags(a.flags, agent_api.AgentProtocolA2A, false); err != nil {
+		return nil, "", err
+	}
 	buildRequest, err := a2aRequestBuilderForVersion(version)
 	if err != nil {
 		return nil, "", err
@@ -124,7 +165,7 @@ func (a *InvokeAction) buildA2ARequestBody(version string) ([]byte, string, erro
 		return body, label, nil
 	}
 
-	request := buildRequest(string(body), uuid.NewString(), uuid.NewString())
+	request := buildRequest(string(body), uuid.NewString(), uuid.NewString(), a.flags.contextID)
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to marshal A2A request: %w", err)
@@ -141,6 +182,7 @@ type a2a03MessageSendParams struct {
 type a2a03Message struct {
 	Kind      string          `json:"kind"`
 	MessageID string          `json:"messageId"`
+	ContextID string          `json:"contextId,omitempty"`
 	Role      string          `json:"role"`
 	Parts     []a2a03TextPart `json:"parts"`
 }
@@ -153,7 +195,7 @@ type a2a03TextPart struct {
 // buildA2A03TextRequest constructs the complete 0.3 body with required message/part
 // discriminators, preserving unspecified execution and output modes. File input
 // never passes through this builder.
-func buildA2A03TextRequest(text, requestID, messageID string) a2aJSONRPCRequest {
+func buildA2A03TextRequest(text, requestID, messageID, contextID string) a2aJSONRPCRequest {
 	return a2aJSONRPCRequest{
 		JSONRPC: a2aJSONRPCVersion,
 		ID:      requestID,
@@ -162,6 +204,7 @@ func buildA2A03TextRequest(text, requestID, messageID string) a2aJSONRPCRequest 
 			Message: a2a03Message{
 				Kind:      "message",
 				MessageID: messageID,
+				ContextID: contextID,
 				Role:      "user",
 				Parts:     []a2a03TextPart{{Kind: "text", Text: text}},
 			},
@@ -178,6 +221,7 @@ type a2a10SendMessageRequest struct {
 
 type a2a10Message struct {
 	MessageID string          `json:"messageId"`
+	ContextID string          `json:"contextId,omitempty"`
 	Role      string          `json:"role"`
 	Parts     []a2a10TextPart `json:"parts"`
 }
@@ -194,7 +238,7 @@ type a2a10MessageSendConfiguration struct {
 
 // buildA2A10TextRequest constructs the complete 1.0 body independently of 0.3.
 // File input never passes through this builder.
-func buildA2A10TextRequest(text, requestID, messageID string) a2aJSONRPCRequest {
+func buildA2A10TextRequest(text, requestID, messageID, contextID string) a2aJSONRPCRequest {
 	return a2aJSONRPCRequest{
 		JSONRPC: a2aJSONRPCVersion,
 		ID:      requestID,
@@ -202,6 +246,7 @@ func buildA2A10TextRequest(text, requestID, messageID string) a2aJSONRPCRequest 
 		Params: a2a10SendMessageRequest{
 			Message: a2a10Message{
 				MessageID: messageID,
+				ContextID: contextID,
 				Role:      "ROLE_USER",
 				Parts:     []a2a10TextPart{{Text: text}},
 			},
@@ -213,31 +258,21 @@ func buildA2A10TextRequest(text, requestID, messageID string) a2aJSONRPCRequest 
 	}
 }
 
-// a2aLocal reports that this CLI does not yet support local A2A invocation.
-// A2A applications can run locally, but azd currently targets Foundry only.
-func (a *InvokeAction) a2aLocal(_ context.Context) error {
-	return exterrors.Validation(
-		exterrors.CodeInvalidParameter,
-		"the a2a protocol cannot be invoked against a local agent",
-		"omit --local to invoke the deployed agent over a2a, "+
-			"or use --protocol responses/invocations for local invocation",
-	)
-}
-
-// applyA2ARequestHeaders sets the A2A-specific request headers: the explicit
+// applyA2ARequestHeaders sets the remote A2A request headers: the explicit
 // A2A-Version header (so the server negotiates deterministically instead of
-// applying an implicit default), the Foundry bearer token, and the remote user
-// identity header. The caller sets Content-Type and any raw-mode headers.
+// applying an implicit default), the Foundry bearer token, the extension User-Agent,
+// and the remote user identity header. The caller sets Content-Type and any raw-mode headers.
 func applyA2ARequestHeaders(req *http.Request, bearerToken string, identity *userIdentityFlags, version string) {
 	req.Header.Set(a2aVersionHeader, version)
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	req.Header.Set("User-Agent", useragent.Default())
 	applyRemoteUserIdentityHeader(req, identity)
 }
 
 // a2aRemote sends the user's message to a deployed Foundry agent using the A2A
 // protocol (POST /agents/{name}/endpoint/protocols/a2a) with a JSON-RPC 2.0
-// request in the selected dialect. Memory is bound to the agent session, like the
-// invocations protocol.
+// request in the selected dialect. A context ID selects a conversation independently
+// of the last locally cached Foundry session.
 func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
 	body, bodyLabel, err := a.buildA2ARequestBody(version)
 	if err != nil {
@@ -251,7 +286,10 @@ func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
 	if rc.azdClient != nil {
 		defer rc.azdClient.Close()
 	}
-	if err := a.validateA2ATarget(ctx, rc, version); err != nil {
+	if err := a.loadRemoteAgent(ctx, rc); err != nil {
+		return err
+	}
+	if err := a.validateA2ATarget(ctx, rc); err != nil {
 		return err
 	}
 	a.reportInvokeUsageForRemote(ctx, agent_api.AgentProtocolA2A, rc)
@@ -275,10 +313,13 @@ func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
 		return err
 	}
 
-	// Session ID — routes to the same container instance.
-	sid, err := a.resolveRemoteSessionID(ctx, rc)
-	if err != nil {
-		return err
+	// An explicit context must not be overridden by the last cached hosted session.
+	sid := a.flags.session
+	if a.flags.contextID == "" || a.flags.session != "" || rc.version != "" {
+		sid, err = a.resolveRemoteSessionID(ctx, rc)
+		if err != nil {
+			return err
+		}
 	}
 
 	raw := a.flags.outputFmt == outputRaw
@@ -288,7 +329,6 @@ func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
 		if rc.version != "" {
 			fmt.Printf("Version:  %s\n", rc.version)
 		}
-		printSessionStatus("Session:  ", sid)
 		fmt.Println()
 	}
 
@@ -317,14 +357,10 @@ func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
 
 	// Always capture session state from response headers (needed even in raw mode
 	// so subsequent invokes can reuse the session). Reads headers, not the body.
-	sessionLabel := "Session:  "
-	if raw {
-		sessionLabel = ""
-	}
-	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel)
+	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "")
 
 	sessionCode := resp.Header.Get("x-adc-response-details")
-	if err := handleA2AResponse(resp, rc.name, raw, version); err != nil {
+	if err := handleA2AResponse(resp, rc.name, raw, version, body); err != nil {
 		if !raw && resp.StatusCode >= 400 {
 			a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), sessionCode)
 		}
@@ -344,9 +380,17 @@ func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
 // agent error, and the agent's reply text is extracted from the JSON-RPC
 // `result` (a Message or Task) and printed. Non-JSON-RPC bodies fall back to
 // pretty-printed JSON or the raw body.
-func handleA2AResponse(resp *http.Response, agentName string, raw bool, version string) error {
+func handleA2AResponse(
+	resp *http.Response, agentName string, raw bool, version string, requestBody []byte,
+) error {
+	return handleA2AResponseTo(os.Stdout, resp, agentName, raw, version, requestBody)
+}
+
+func handleA2AResponseTo(
+	w io.Writer, resp *http.Response, agentName string, raw bool, version string, requestBody []byte,
+) error {
 	if raw {
-		if err := writeRawResponse(os.Stdout, resp); err != nil {
+		if err := writeRawResponse(w, resp); err != nil {
 			return err
 		}
 		if resp.StatusCode >= 400 {
@@ -359,7 +403,7 @@ func handleA2AResponse(resp *http.Response, agentName string, raw bool, version 
 	}
 
 	if traceID := responseTraceID(resp); traceID != "" {
-		fmt.Printf("Trace ID:     %s\n", traceID)
+		fmt.Fprintf(w, "Trace ID:     %s\n", traceID)
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -379,8 +423,12 @@ func handleA2AResponse(resp *http.Response, agentName string, raw bool, version 
 		return agentErr
 	}
 
-	printA2AResult(respBody, agentName, version)
-	return nil
+	// Inspect only for response semantics; do not validate or rewrite request-file bytes.
+	var request struct {
+		Method string `json:"method"`
+	}
+	_ = json.Unmarshal(requestBody, &request)
+	return printA2AResultTo(w, respBody, agentName, version, request.Method)
 }
 
 // a2aRequestURL returns the request URL of a response for error messages,
@@ -413,58 +461,101 @@ func a2aErrorFromBody(respBody []byte) error {
 	return fmt.Errorf("agent error: %s", envelope.Error.Message)
 }
 
-// printA2AResult prints the agent's reply. It extracts the text of the JSON-RPC
-// result (a Message or Task); when no text can be found it pretty-prints the
-// JSON body, falling back to the raw body for non-JSON.
-func printA2AResult(respBody []byte, agentName string, version string) {
-	if text := extractA2AText(respBody, version); text != "" {
-		fmt.Printf("[%s] %s\n", agentName, text)
-		return
+// printA2AResultTo prints IDs/state and the agent's reply. Unsuccessful sends and
+// cancellations return errors; task lookups retain terminal status without failing.
+// When no text can be found, other results keep the JSON/raw fallback.
+func printA2AResultTo(w io.Writer, respBody []byte, agentName, version, requestMethod string) error {
+	result := parseA2AResult(respBody, version)
+	contextID, _ := result["contextId"].(string)
+	status, _ := result["status"].(map[string]any)
+	var taskID, state string
+	if status != nil {
+		taskID, _ = result["id"].(string)
+		state, _ = status["state"].(string)
+	}
+	for _, field := range []struct{ label, value string }{
+		{"Context ID:", contextID}, {"Task ID:", taskID}, {"State:", state},
+	} {
+		if field.value != "" {
+			if _, err := fmt.Fprintf(w, "%-14s%s\n", field.label, field.value); err != nil {
+				return err
+			}
+		}
+	}
+	message, _ := status["message"].(map[string]any)
+	detail := a2aTextFromParts(message["parts"])
+	if detail == "" && len(message) > 0 {
+		if encoded, err := json.Marshal(message); err == nil {
+			detail = string(encoded)
+		}
+	}
+	cancelRequested := (version == "0.3" && requestMethod == "tasks/cancel") ||
+		(version == "1.0" && requestMethod == "CancelTask")
+	lookupRequested := (version == "0.3" && requestMethod == "tasks/get") ||
+		(version == "1.0" && requestMethod == "GetTask")
+	switch state {
+	case "failed", "canceled", "rejected", "TASK_STATE_FAILED", "TASK_STATE_CANCELED", "TASK_STATE_REJECTED":
+		if lookupRequested || (cancelRequested && (state == "canceled" || state == "TASK_STATE_CANCELED")) {
+			if detail != "" {
+				_, err := fmt.Fprintf(w, "[%s] %s\n", agentName, detail)
+				return err
+			}
+			return nil
+		}
+		if detail != "" {
+			return fmt.Errorf("agent task ended with state %s: %s", state, detail)
+		}
+		return fmt.Errorf("agent task ended with state %s", state)
+	}
+	if text := extractA2AText(result); text != "" {
+		_, err := fmt.Fprintf(w, "[%s] %s\n", agentName, text)
+		return err
 	}
 
 	if json.Valid(respBody) {
 		var pretty bytes.Buffer
 		if err := json.Indent(&pretty, respBody, "", "  "); err == nil {
-			fmt.Printf("[%s] %s\n", agentName, pretty.String())
-			return
+			_, err := fmt.Fprintf(w, "[%s] %s\n", agentName, pretty.String())
+			return err
 		}
 	}
 
-	fmt.Printf("[%s] %s\n", agentName, strings.TrimSpace(string(respBody)))
+	_, err := fmt.Fprintf(w, "[%s] %s\n", agentName, strings.TrimSpace(string(respBody)))
+	return err
 }
 
-// extractA2AText pulls the user-visible reply text out of a JSON-RPC A2A
-// response. In 0.3, `result` is a Message or Task. In 1.0, SendMessage wraps
-// `message` or `task`, while GetTask and CancelTask return a Task directly.
-// Completed Tasks prefer answer artifacts over generic status messages such as "Done".
-// Other Tasks prefer status.message so prompts, progress, and failures remain visible.
-// Returns "" when no text can be found, signaling the caller to fall back to
-// printing the JSON body.
-func extractA2AText(respBody []byte, version string) string {
+// parseA2AResult unwraps Message/Task results using the selected dialect.
+// A2A 1.0 SendMessage wraps its result; task operations return a Task directly.
+func parseA2AResult(respBody []byte, version string) map[string]any {
 	var envelope struct {
 		Result json.RawMessage `json:"result"`
 	}
 	if err := json.Unmarshal(respBody, &envelope); err != nil || len(envelope.Result) == 0 {
-		return ""
+		return nil
 	}
 
 	var result map[string]any
 	if err := json.Unmarshal(envelope.Result, &result); err != nil {
-		return ""
+		return nil
 	}
 
 	if version == "1.0" {
 		if message, ok := result["message"].(map[string]any); ok {
-			return a2aTextFromParts(message["parts"])
+			return message
 		}
 		if task, ok := result["task"].(map[string]any); ok {
-			result = task
+			return task
 		} else if _, ok := result["status"].(map[string]any); !ok {
 			// Only task operations return an unwrapped result in 1.0.
-			return ""
+			return nil
 		}
 	}
+	return result
+}
 
+// extractA2AText prefers artifacts for completed Tasks and status messages for
+// other Tasks. History is the final text fallback; empty text keeps the JSON fallback.
+func extractA2AText(result map[string]any) string {
 	// Message result: parts directly on the object.
 	if text := a2aTextFromParts(result["parts"]); text != "" {
 		return text

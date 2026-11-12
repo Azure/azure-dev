@@ -6,6 +6,10 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"azure.ai.content-understanding/internal/config"
@@ -19,6 +23,87 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+type serviceHTTPTransport func(*http.Request) (*http.Response, error)
+
+func (f serviceHTTPTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func TestServiceKeyAuthenticationWithoutAzureLogin(t *testing.T) {
+	startHost(t, &deploymentServer{
+		get: func(context.Context) (*azdext.GetDeploymentContextResponse, error) {
+			t.Error("key mode must not read deployment context")
+			return nil, status.Error(codes.Unauthenticated, "not logged in")
+		},
+		lookup: func(context.Context, *azdext.LookupTenantRequest) (*azdext.LookupTenantResponse, error) {
+			t.Error("key mode must not resolve an Entra tenant")
+			return nil, status.Error(codes.Unauthenticated, "not logged in")
+		},
+	})
+	argsPath := installAuthenticationCLI(t, false)
+	t.Setenv("CU_API_KEY", "private-resource-key")
+	t.Setenv("CU_AUTH_MODE", "login")
+	t.Setenv("CU_ENDPOINT", "https://configured.services.ai.azure.com")
+	t.Setenv("AZURE_SUBSCRIPTION_ID", "unavailable-subscription")
+	calls := 0
+	responseStatus := http.StatusOK
+	original := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = original })
+	http.DefaultTransport = serviceHTTPTransport(func(request *http.Request) (*http.Response, error) {
+		calls++
+		assert.Equal(t, "configured.services.ai.azure.com", request.URL.Host)
+		assert.Equal(t, "private-resource-key", request.Header.Get("Ocp-Apim-Subscription-Key"))
+		assert.Empty(t, request.Header.Get("Authorization"))
+		body := `{"modelDeployments":{}}`
+		if responseStatus != http.StatusOK {
+			body = `{"error":{"code":"AuthenticationFailed","message":"private-resource-key"}}`
+		}
+		return &http.Response{
+			StatusCode: responseStatus, Header: http.Header{"Content-Type": {"application/json"}},
+			Body: io.NopCloser(strings.NewReader(body)), Request: request,
+		}, nil
+	})
+	for _, args := range [][]string{
+		{"doctor", "--output", "json", "--debug"},
+		{"doctor", "--environment", "subscription", "--debug"},
+	} {
+		stdout, stderr, err := executeRoot(t, args...)
+		require.NoError(t, err)
+		assert.NotContains(t, stdout+stderr, "private")
+		if args[1] == "--output" {
+			var result doctorResult
+			require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+			assert.Equal(t, "API key (process CU_API_KEY)", result.Authentication)
+		} else {
+			assert.Contains(t, stdout, "API key (process CU_API_KEY)")
+		}
+	}
+	assert.Equal(t, 2, calls)
+	assert.NoFileExists(t, argsPath, "key authentication must never invoke azd auth token")
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	session, err := openServiceSession(cmd, &azdext.ExtensionContext{}, config.Options{})
+	require.NoError(t, err)
+	defer session.close()
+	_, err = session.clientForEndpoint(session.endpoint)
+	require.NoError(t, err)
+	_, err = session.clientForEndpoint("https://other.services.ai.azure.com")
+	require.ErrorContains(t, err, "only be used with the configured CU endpoint")
+	_, err = session.resolveAccount(t.Context(), "other-resource", "", "")
+	require.ErrorContains(t, err, "requires Microsoft Entra ID")
+	assert.Equal(t, 2, calls, "resource selectors must not send the key to another endpoint")
+	assert.NoFileExists(t, argsPath)
+
+	responseStatus = http.StatusUnauthorized
+	stdout, stderr, err := executeRoot(t, "doctor", "--debug")
+	require.Error(t, err)
+	assert.Empty(t, stdout)
+	assert.NotContains(t, err.Error()+stderr, "private-resource-key")
+	assert.Equal(t, 3, calls)
+	assert.NoFileExists(t, argsPath, "a rejected key must not fall back to azd auth token")
+}
 
 type confirmServer struct {
 	azdext.UnimplementedPromptServiceServer

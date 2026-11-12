@@ -11,7 +11,8 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/internal/phasetelemetry"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -77,6 +78,8 @@ func selectModelDeployment(
 	selection deploymentSelectionOptions,
 	noPrompt bool,
 ) (*selectedDeployment, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.DeploymentReconciliation)()
+
 	if err := validateDeploymentSelection(selection); err != nil {
 		return nil, err
 	}
@@ -383,6 +386,8 @@ func resolveDeploymentCandidatesAtLocation(
 	options *azdext.AiModelDeploymentOptions,
 	checkQuota bool,
 ) ([]*azdext.AiModelDeployment, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AzureQuery)()
+
 	request := &azdext.ResolveModelDeploymentsRequest{
 		AzureContext: azureContext,
 		ModelName:    modelName,
@@ -475,6 +480,8 @@ func reconcileDeploymentWithRollback(
 	requested synthesis.Deployment,
 	force bool,
 ) (deploymentMutation, func() error, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ConfigurationSave)()
+
 	service, _, err := reconciler.discoverProjectService(ctx)
 	if err != nil {
 		return "", nil, err

@@ -54,7 +54,7 @@ func TestValidateNewProjectLocation(t *testing.T) {
 }
 
 func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
-	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2euap"})
+	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2euap", "westus2"})
 	allowed, err := parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
 	require.NoError(t, err)
 	resetAgentRegionsCache(t, &harnessRegionsCache, allowed)
@@ -62,15 +62,16 @@ func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 		for _, tt := range []struct {
 			name, location, deploymentLocation, wantLocation, wantDeploymentLocation, wantError string
 		}{
-			{"unsupported project", "eastus", "westus", "eastus", "westus", "configured AZURE_LOCATION"},
+			{"unsupported project", "eastus2", "westus", "eastus2", "westus", "configured AZURE_LOCATION"},
 			{"public split", "japaneast", "westus", "japaneast", "westus", "must match"},
 			{"public both", "westus", "westus", "westus", "westus", ""},
 			{"missing project location", "", "westus", "westus", "westus", ""},
 			{"internal split", "eastus2euap", "westus", "eastus2euap", "westus", "must match"},
 			{"internal both", "eastus2euap", "eastus2euap", "eastus2euap", "eastus2euap", ""},
+			{"internal westus2 both", "westus2", "westus2", "westus2", "westus2", ""},
 			{"internal fallback", "eastus2euap", "", "eastus2euap", "eastus2euap", ""},
-			{"unsupported fallback", "eastus", "", "eastus", "", "configured AZURE_LOCATION"},
-			{"unsupported deployment", "japaneast", "eastus", "japaneast", "eastus", "location \"eastus\""},
+			{"unsupported fallback", "eastus2", "", "eastus2", "", "configured AZURE_LOCATION"},
+			{"unsupported deployment", "japaneast", "eastus2", "japaneast", "eastus2", "location \"eastus2\""},
 		} {
 			t.Run(flow+"/"+tt.name, func(t *testing.T) {
 				values := map[string]string{
@@ -93,7 +94,7 @@ func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 						&project.PromptAgentSettings{}, "microsoft_copilot_preview")
 				} else {
 					_, err = configureFoundryProject(withHarnessRegionPolicy(t.Context(), "microsoft_copilot_preview"),
-						client, azureContext, "test", "", "", true, true, false, false, allowed)
+						client, azureContext, "test", "", "", true, true, false, false, allowed, "")
 				}
 				if tt.wantError != "" {
 					require.ErrorContains(t, err, tt.wantError)
@@ -192,6 +193,7 @@ func TestConfigureFoundryProjectRejectsAcrConnectionForHeadlessNewProject(t *tes
 				false,
 				false,
 				nil,
+				"",
 			)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "requires an existing Foundry project")
@@ -215,6 +217,7 @@ func TestConfigureFoundryProjectRejectsAcrConnectionForInteractiveNewProject(t *
 		false,
 		false,
 		nil,
+		"",
 	)
 
 	require.ErrorContains(t, err, "requires an existing Foundry project")
@@ -246,6 +249,7 @@ func TestConfigureFoundryProjectDefersAuthoringWhenAzureContextIsMissing(t *test
 		false,
 		false,
 		nil,
+		"",
 	)
 
 	require.NoError(t, err)
@@ -285,6 +289,7 @@ func TestConfigureFoundryProjectPreservesExistingServiceWhenDeferred(t *testing.
 		false,
 		true,
 		nil,
+		"",
 	)
 
 	require.NoError(t, err)
@@ -327,9 +332,41 @@ func TestConfigureFoundryProjectPreservesExistingServiceWithAzureContext(
 		false,
 		true,
 		nil,
+		"",
 	)
 
 	require.NoError(t, err)
 	require.Nil(t, result.FoundryProject)
 	require.Equal(t, projectAuthoringCurrent, result.AuthoringMode)
+}
+
+func TestConfigureFoundryProjectValidatesACRBeforeSubscriptionWrites(t *testing.T) {
+	t.Parallel()
+	for _, subscription := range []string{"sub", "other"} {
+		t.Run(subscription, func(t *testing.T) {
+			t.Parallel()
+			environments := &testEnvironmentServiceServer{}
+			prompts := &initACRPromptServer{subscription: &azdext.Subscription{
+				Id: subscription, TenantId: "resource-tenant", UserTenantId: "user-tenant",
+			}}
+			client := newTestAzdClient(t, environments, &testWorkflowServiceServer{}, prompts)
+			azureContext := &azdext.AzureContext{Scope: &azdext.AzureScope{Location: "eastus2"}}
+
+			result, err := configureFoundryProject(
+				t.Context(), client, azureContext, "test", "", "", false,
+				false, false, false, []string{"eastus2"}, testInitACRID,
+			)
+			require.Equal(t, 1, prompts.calls)
+			if subscription == "other" {
+				require.ErrorContains(t, err, "same subscription")
+				require.Nil(t, result)
+				require.Empty(t, environments.setKeys)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, projectAuthoringNew, result.AuthoringMode)
+			require.Equal(t, "sub", environments.values["test"]["AZURE_SUBSCRIPTION_ID"])
+			require.Equal(t, "user-tenant", environments.values["test"]["AZURE_TENANT_ID"])
+		})
+	}
 }

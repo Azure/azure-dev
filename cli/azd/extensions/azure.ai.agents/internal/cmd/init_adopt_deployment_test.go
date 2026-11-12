@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"io"
 	"maps"
 	"net/http"
 	"os"
@@ -13,9 +14,9 @@ import (
 	"strconv"
 	"testing"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -316,7 +317,7 @@ func TestValidateInitModelSelectors(t *testing.T) {
 			require.Contains(t, localErr.Suggestion, "--model")
 			// No client is available, so reaching any project or Azure operation would fail.
 			err = finalizeAdoptedProject(t.Context(), &test.flags, nil, "test", "", false,
-				"renamed-agent", TemplateTypeAzureYaml, "")
+				"renamed-agent", TemplateTypeAzureYaml, adoptedProjectPreflight{})
 			require.EqualError(t, err, localErr.Error())
 		})
 	}
@@ -392,10 +393,10 @@ func TestAdoptedDeploymentPreflightBeforeScaffolding(t *testing.T) {
 					}
 					var err error
 					if templateType == TemplateTypeAzureYaml {
-						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, "")
+						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, "", io.Discard)
 					} else {
 						err = runInitFromAzdTemplate(t.Context(), flags, client, http.DefaultClient,
-							&AgentTemplate{Source: source})
+							&AgentTemplate{Source: source}, io.Discard)
 					}
 					localErr, ok := errors.AsType[*azdext.LocalError](err)
 					require.True(t, ok, "expected a selection error, got %v", err)

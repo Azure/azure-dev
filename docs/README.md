@@ -1,6 +1,6 @@
 # Azure Developer CLI Documentation
 
-> Internal documentation for contributors and AI coding agents working on the Azure Developer CLI (`azd`).
+> Documentation for contributors and coding agents working on the Azure Developer CLI (`azd`).
 
 For end-user documentation, see [aka.ms/azd](https://aka.ms/azd). For template examples, see [awesome-azd](https://azure.github.io/awesome-azd/).
 
@@ -22,13 +22,14 @@ Core mental models, terminology, and feature lifecycle.
 
 Task-oriented how-tos for common contributor workflows.
 
-- [Contributing](../CONTRIBUTING.md): Starting points for core contributors, extension authors, and documentation contributors
-- [CLI contribution guide](../cli/azd/CONTRIBUTING.md): How to build, test, lint, and submit changes
+- [Contributing](../CONTRIBUTING.md) — How to build, test, lint, and submit changes
+- [Release Canvas](guides/release-canvas.md) — Follow core releases with private shared tracking and Azure DevOps evidence
 - [Tracking and Recovering a Core Release](guides/releasing-azd.md) — Find publishing runs, build an end-to-end roadmap, and troubleshoot release failures
 - [Adding a New Command](guides/adding-a-new-command.md) — End-to-end walkthrough for new CLI commands
 - [Creating an Extension](guides/creating-an-extension.md) — How to build and publish an azd extension
 - [Observability and Tracing](guides/observability.md) — Adding telemetry, traces, and debugging
 - [Feature Telemetry Guide](guides/feature-telemetry.md) — End-to-end guide for instrumenting telemetry in new features
+- [Telemetry privacy checklist](specs/metrics-audit/privacy-review-checklist.md). Contributor steps, maintainer approval coverage, and PR review guidance
 - [Telemetry Overview](guides/telemetry-overview.md) — Product-facing overview of azd telemetry metrics
 - [Evaluation Scenario CI](guides/evaluation-scenario-ci.md) — Offline package acceptance and the opt-in internal live quality gate
 

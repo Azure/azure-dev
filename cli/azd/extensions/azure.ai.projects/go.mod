@@ -7,13 +7,17 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2 v2.0.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7 v7.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9 v9.0.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi v1.3.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v7 v7.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.8.1
 	github.com/azure/azure-dev/cli/azd v1.37.0
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.19.0
 	github.com/google/uuid v1.6.0
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
@@ -112,3 +116,7 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+require azure.ai.projects/synthesis v0.0.0
+
+replace azure.ai.projects/synthesis => ./synthesis

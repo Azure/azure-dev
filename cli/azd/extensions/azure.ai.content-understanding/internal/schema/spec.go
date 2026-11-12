@@ -83,7 +83,7 @@ func validateContract(data []byte, document any, version string) ([]Finding, err
 		}
 		// Validator messages can echo customer values. Report the constraint,
 		// not the rejected instance or the validator's complete error string.
-		findings = append(findings, Finding{path, fmt.Sprintf(
+		findings = append(findings, Finding{Path: path, Message: fmt.Sprintf(
 			"Violates the CU %s service contract (%s).", version, strings.Join(failure.ErrorKind.KeywordPath(), "/"),
 		)})
 	}

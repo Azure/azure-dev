@@ -50,7 +50,7 @@ func TestRootWithoutHostOrProject(t *testing.T) {
 		want string
 	}{
 		{"help", []string{"--help"}, "Azure Content Understanding"},
-		{"version", []string{"version"}, extensionID + " " + Version + "\n"},
+		{"version", []string{"version"}, "Version: " + Version + "\nExtension name: " + extensionID + "\n\n"},
 		{"version flag", []string{"--version"}, Version},
 		{"json version", []string{"version", "--output", "json"}, `"name":"` + extensionID + `"`},
 		{"metadata", []string{"metadata"}, `"id": "` + extensionID + `"`},
@@ -186,6 +186,14 @@ func TestMetadataUsesRuntimeTree(t *testing.T) {
 	assert.True(t, found, "metadata must include commands added to the runtime tree")
 	document["commands"] = []any{map[string]any{"name": []any{42}, "short": "invalid command"}}
 	assert.Error(t, extensions.ValidateAgainstSchema(schema, document))
+}
+
+func TestVersionTextOutput(t *testing.T) {
+	stdout, stderr, err := executeRoot(t, "version")
+	require.NoError(t, err)
+	assert.Empty(t, stderr)
+	assert.Equal(t, "\nAzure Content Understanding Extension for azd\nVersion: "+Version+
+		"\nExtension name: "+extensionID+"\n\n", stdout)
 }
 
 func TestVersionJSONShape(t *testing.T) {

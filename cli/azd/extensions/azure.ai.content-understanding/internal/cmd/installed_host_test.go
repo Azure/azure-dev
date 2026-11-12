@@ -122,6 +122,45 @@ func TestInstalledHostOffline(t *testing.T) {
 	})
 	require.Contains(t, string(run(true, "extension", "list", "--installed", "-o", "json")), extensionID)
 	require.Contains(t, string(run(true, "ai", "cu", "--help")), "analyzer")
+	require.Contains(t, string(run(true, "ai", "cu", "infra", "generate", "--help")), "human-readable")
+	for _, args := range [][]string{{"ai", "cu", "env-var"}, {"ai", "cu", "env-var", "--help"}} {
+		help := string(run(true, args...))
+		require.Contains(t, help, "Supported environment variables")
+		for _, variable := range environmentVariables {
+			require.Contains(t, help, variable.Name)
+			require.Contains(t, help, "Default: "+variable.Default)
+		}
+	}
+	environment = append(environment, "CU_API_KEY=private-smoke-key")
+	listed := string(run(true, "ai", "cu", "env-var", "list", "-o", "json"))
+	require.Contains(t, listed, `"name": "CU_API_KEY"`)
+	require.Contains(t, listed, `"value": "********"`)
+	require.NotContains(t, listed, "private-smoke-key")
+	keyFailure := string(run(false, "ai", "cu", "doctor",
+		"--endpoint", "https://resource.services.ai.azure.com", "-o", "json"))
+	require.Contains(t, keyFailure, "The CU service request could not be completed.",
+		"a signed-out host must reach the blocked HTTP transport instead of requiring Entra authentication")
+	require.NotContains(t, keyFailure, "private-smoke-key")
+	environment = environment[:len(environment)-1]
+	for _, test := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"invalid region", []string{"--location", "invalid"}, "CU-supported"},
+		{"empty environment", []string{"--environment", ""}, "--environment cannot be empty"},
+		{"empty models", []string{"--models", ""}, "--models cannot be empty"},
+		{"empty endpoint", []string{"--foundry-endpoint", ""}, "--foundry-endpoint cannot be empty"},
+		{"conflicting prefix", []string{"--foundry-endpoint", "foundry", "--foundry-prefix", ""},
+			"Remove --foundry-endpoint or --foundry-prefix"},
+		{"conflicting roles", []string{"--assign-roles=false", "--no-assign-roles=false"},
+			"Use --assign-roles or --no-assign-roles"},
+	} {
+		target := filepath.Join(work, "not-generated", test.name)
+		args := append([]string{"ai", "cu", "infra", "generate", "--output-dir", target}, test.args...)
+		require.Contains(t, string(run(false, args...)), test.want, test.name)
+		require.NoDirExists(t, target, test.name)
+	}
 	var actual map[string]string
 	require.NoError(t, json.Unmarshal(run(true, "ai", "cu", "version", "-o", "json"), &actual))
 	require.Equal(t, map[string]string{"name": extensionID, "version": version}, actual)
@@ -136,6 +175,13 @@ func TestInstalledHostOffline(t *testing.T) {
 	require.Equal(t, map[string]string{
 		"CU_ENDPOINT": "https://resource.services.ai.azure.com", "CU_API_VERSION": "2027-01-01-preview",
 	}, userDefaults)
+	for _, flag := range []string{"--endpoint", "--api-version"} {
+		output := run(false, "ai", "cu", "analyzer", "list", flag, "")
+		require.Contains(t, string(output), "must not be empty")
+	}
+	var unchanged map[string]string
+	require.NoError(t, json.Unmarshal(run(true, "ai", "cu", "config", "list", "-o", "json"), &unchanged))
+	require.Equal(t, userDefaults, unchanged)
 	run(true, "ai", "cu", "config", "unset", "CU_ENDPOINT")
 	run(false, "ai", "cu", "config", "get", "CU_ENDPOINT")
 
@@ -151,6 +197,13 @@ func TestInstalledHostOffline(t *testing.T) {
 	require.NoError(t, json.Unmarshal(output, &result))
 	require.True(t, result.OK)
 	require.True(t, result.Strict)
+	invalidDefinition := "{\n  \"baseAnalyzerId\":\"prebuilt-document\",\n" +
+		"  \"fieldSchema\":{\"fields\":{\"private-field\":{\n    \"type\":\"currency\"\n  }}}\n}"
+	require.NoError(t, os.WriteFile(schema, []byte(invalidDefinition), 0o600))
+	diagnostic := string(run(false, "ai", "cu", "analyzer", "validate", "--schema", schema, "--spec"))
+	require.Contains(t, diagnostic, "Line 4, column 5")
+	require.NotContains(t, diagnostic, "private-field")
+	require.NotContains(t, diagnostic, "currency")
 	require.NoError(t, os.WriteFile(schema, []byte("{invalid"), 0o600))
 	require.Contains(t, string(run(false, "ai", "cu", "analyzer", "validate", "--schema", schema)), "ERROR")
 	run(true, "extension", "uninstall", extensionID)

@@ -1,8 +1,8 @@
 # Foundry Projects
 
-<!-- cspell:ignore Kata kubelet -->
+<!-- cspell:ignore strconv Kata katagen kubelet -->
 
-Manage Microsoft Foundry Project resources from your terminal. (Preview)
+Manage Microsoft Foundry Project resources from your terminal.
 
 Requires azd 1.37.0 or later. Deployment preview uses the stable v1 API.
 
@@ -21,9 +21,10 @@ reporter.Report(ctx, telemetry.Event{
 })
 ```
 
-The example is illustrative; this extension does not currently emit a product
-usage event through this interface. Existing provisioning span attributes are
-unchanged by this adapter. Add an event only after its product question, bounded
+The example is illustrative. Project/deployment add commands and the Foundry
+Provision provider report [operation and internal step timings](../azure.ai.agents/docs/phase-telemetry.md)
+through the existing reporter, including authoring delegated by agent Init.
+Existing provisioning span attributes remain unchanged. Add an event only after its product question, bounded
 values, documentation, and privacy review are agreed. Before emitting, declare each
 `ext.*` attribute in `cli/azd/extensions/telemetry/fields.go` — reuse an existing
 declaration only when its meaning, allowed values, classification, and purpose are
@@ -133,6 +134,160 @@ declaration's binding to its managed name. For hand-edited agent bindings,
 update the JSON object with `azd env set AI_PROJECT_DEPLOYMENT_BINDINGS '<json>'`,
 or set it to `'{}'` to clear explicit bindings.
 
+### Application Insights
+
+New Foundry projects automatically receive a workspace-backed Application
+Insights component and a project-scoped `AppInsights` connection during normal
+provisioning. This includes projects created directly with `azd ai project add`
+and projects created for agents. No additional command, flag, or connection
+service is required. Existing projects are unchanged unless monitoring is
+explicitly configured; upgrading an environment does not opt an existing project
+into monitoring.
+
+To bring your own component, add the optional project setting:
+
+```yaml
+infra:
+  provider: microsoft.foundry
+services:
+  my-project:
+    host: azure.ai.project
+    monitoring:
+      applicationInsightsResourceId: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Insights/components/<component>
+```
+
+The component must already reference an accessible Log Analytics workspace.
+It can belong to another resource group or subscription that the deploying
+identity can read. Provisioning references it without changing its tags,
+authentication, network settings, retention, or workspace, and creates only a
+missing project connection. Credentials are resolved during deployment, not
+stored in generated parameter files or azd environment outputs. A compatible
+existing project or shared account connection is preserved, including
+Managed Identity or Microsoft Entra authentication.
+
+Creating a new Application Insights component for an existing project is not
+supported; an existing project must set `applicationInsightsResourceId` to
+enable monitoring.
+To skip new monitoring setup, use:
+
+```yaml
+services:
+  my-project:
+    host: azure.ai.project
+    monitoring:
+      enabled: false
+```
+
+For embedded infrastructure, this opt-out does not delete or disable an existing
+component, workspace, or connection. It also does not relinquish an existing
+azd-owned supporting resource group's cleanup binding.
+
+New connections use ApiKey authentication, are scoped to one project, and are
+named `azd-appinsights-<project-name-hash>` to stay within resource name limits.
+No monitoring RBAC roles are added. Each user who queries traces needs the
+Log Analytics Reader role on the Application Insights resource; azd does not
+grant it.
+Discovery rejects conflicting destinations, protected names, ambiguous sharing,
+unreadable resources, and authentication or ingestion policies that would need
+to be weakened. ApiKey setup does not enable local authentication. A new
+project with a `network:` block that uses your own agent subnet gets a private
+monitoring path that matches the Foundry samples: the component disables public
+ingestion and keeps public query enabled, and azd adds an Azure Monitor Private
+Link Scope (ingestion Private Only, query Open), an `azuremonitor` private
+endpoint, and the four Azure Monitor private DNS zones. Ingestion is private
+only; trace reads are not restricted to the private network. Right after a
+fresh deployment, private ingestion can return 403 for a while (observed up to
+about 20 minutes) before traces start to arrive. Live testing confirmed that
+Foundry service-side traces from a deployed prompt agent were read from inside
+the network without any post-deployment change.
+With your own agent subnet you can also connect an existing component
+(`reuse-connect`): azd builds its own Private Link Scope, private endpoint and
+DNS zones and links the component and its workspace to the scope, without
+modifying the component. The component must keep local authentication enabled.
+azd does not re-update a component it does not own; if ingestion returns 403
+after provisioning, touching the component (for example, updating a tag) can
+clear it.
+Unsupported private-network cases never block provisioning: shared private DNS zones (`network.dns`), a virtual network that already has an
+Azure Monitor private endpoint (azd does not adopt an existing scope or
+endpoint), or a network azd cannot inspect skip automatic monitoring and azd
+prints a warning (also on stderr). With managed egress (no `agentSubnet`), azd
+also adds two outbound rules to the managed network and grants the account
+identity the Azure AI Enterprise Network Connection Approver role on the
+resource group so the managed private endpoints are approved:
+`ampls-monitor-rule` (target `azuremonitor`) lets the agent runtime reach the
+Private Link Scope, and `foundry-account-pe` (target `account`, to the account
+itself) is required for hosted agents, which otherwise fail with
+`Public access is disabled`. The hosted agent's own identity also needs
+`Monitoring Metrics Publisher` on the Application Insights component to export
+telemetry. That identity exists only after the agent is deployed, so
+`azd deploy` in the agents extension grants it, then updates a tag on the
+component so Application Insights refreshes its cached ingestion authorization
+(best effort, only for azd-created components on the private path; set
+`AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true` to skip it; on skip or failure the
+deploy note carries a warning with the `az role assignment create` command). If you set no
+`isolationMode`, azd uses `AllowInternetOutbound` so the managed network exists.
+Ejected or hand-authored Bicep that bypasses
+azd's checks never creates the private path unless
+`monitoringPrivateLinkApproved` is set. Set `monitoring.enabled: false` to opt
+out silently.
+
+**Impact on a shared virtual network.** The Azure Monitor private DNS zones and
+Private Link Scope change Azure Monitor routing for the whole virtual network,
+not only this project. With ingestion Private Only, any workload in the network
+(or in a network sharing its DNS zones) can send telemetry only to Application
+Insights or Log Analytics resources that are in the scope; telemetry to
+resources outside it stops arriving. A virtual network can use only one Private
+Link Scope, so to keep other workloads' telemetry, add their Application
+Insights components or Log Analytics workspaces as scoped resources of the
+Private Link Scope that azd created. To avoid any change to Azure Monitor
+routing, set `monitoring.enabled: false`. Check for existing workloads before
+you provision. Other monitoring failures can fail normal provisioning; there is
+no second best-effort deployment or agent deployment repair hook.
+
+Monitoring creates billable Azure resources and can store agent telemetry,
+including application-supplied content. Review your application's telemetry,
+data handling, and retention requirements before deployment. Newly created
+workspaces start with 30-day retention; existing workspaces are not changed.
+The normal `AZURE_APPLICATION_INSIGHTS_RESOURCE_ID`,
+`AZURE_APPLICATION_INSIGHTS_APP_ID`,
+`AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID`,
+`AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME`, and
+`AZD_FOUNDRY_MONITORING_MODE` outputs describe provisioning configuration, not
+proof that an agent has emitted or ingested traces.
+
+#### Ejected infrastructure
+
+Monitoring is part of the main infrastructure graph, not an orphan template or
+a separate deployment. Before ejection, `azure.yaml` controls monitoring.
+After ejection, the Bicep files and their parameters, or Terraform files and
+their variables, are authoritative. Changing stale YAML monitoring values does
+not override those files. General configuration loading still requires valid
+YAML and resolvable local references, even for values no longer used by IaC.
+
+Generated Bicep calls `modules/monitoring.bicep`; Terraform declares monitoring
+in `monitoring.tf`. Monitoring modes are `none`, `create`, `reuse-connect`, and
+`already-connected`. The last mode references compatible external monitoring
+without managing its connection. Creating monitoring for a new project shares
+the normal supporting resource group used by ACR rather than creating a separate
+monitoring resource group. Native/Bicep preview uses normal ARM What-If.
+
+Monitoring-enabled Terraform exports require Terraform 1.11 or later and AzAPI
+2.7 or later (existing-project exports retain their higher provider baseline).
+They use an ephemeral credential read and a write-only connection field.
+Previously native-created resources are not implicitly imported into Terraform;
+reference the component explicitly for reuse or perform a deliberate state
+handoff. Terraform resources have normal removal and destroy semantics:
+changing managed monitoring to `none` or deleting its declarations can schedule
+resource deletion, unlike the embedded-provider YAML opt-out. Review the plan
+before applying changes. A reuse-only existing-project export cannot switch to
+creation until its owned supporting resource-group graph is declared.
+
+Export-time discovery selects a stable graph, and Terraform rechecks effective
+connections and policy during planning/apply. Managed resource counts do not
+depend on whether a connection happens to exist. Neither ARM nor Terraform
+provides a transaction across discovery and concurrent connection changes:
+avoid creating different monitoring connections concurrently with provisioning.
+
 ### Deployment preview
 
 `azd deploy --preview` performs no work for an `azure.ai.project` service, just
@@ -154,7 +309,7 @@ User-authored on-disk Bicep templates can still declare their own role assignmen
 
 ### Existing AKS hosting
 
-The Agents init/adoption switch for this preview is **disabled by default**. To enable BYO AKS project initialization and adoption in your shell or CI:
+The BYO AKS preview is **disabled by default**. To enable project initialization, adoption, provisioning, and provisioning preview in your shell or CI:
 
 ```bash
 export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
@@ -166,15 +321,15 @@ In PowerShell:
 $env:AZD_ALPHA_ENABLE_AGENTS_BYO_AKS = 'true'
 ```
 
-The independent `agents.byo_aks` switch uses the process environment. If the variable is absent, BYO AKS project initialization and adoption are disabled. When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable them; empty, false, and invalid values disable them. `alpha.all`, other preview switches, and service `env:` entries do not override this switch. Values already injected into the process by the azd host count. Foundry projects without `agentHosting` do not require this switch.
+The independent `agents.byo_aks` switch uses the process environment. If the variable is absent, BYO AKS use is disabled. When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable it; empty, false, and invalid values disable it. `alpha.all`, other preview switches, and service `env:` entries do not override this switch. Ordinary Agents extension commands may receive selected azd environment values injected by the host. The Projects provisioning listener does not receive that injection: `azd provision` and `azd provision --preview` require the switch in the current shell or CI process environment. `azd env set` alone does not enable it. When the switch is disabled, Projects uses its standard listener without subscribing to BYO preflight reports. Foundry provisioning without effective AKS hosting does not require this switch.
 
 The generated account, project and model deployment resources use API `2025-06-01` without AKS hosting. Only the BYO AKS path uses `2026-07-15-preview`; both paths return the same standard project, endpoint and registry outputs.
 
 Accounts use `cog-<resourceToken>` without AKS hosting and `aks-cog-<resourceToken>` with AKS hosting. The selected account name is also its custom subdomain and is used in Project IDs, endpoints, registry connections, and private endpoints. Storage, managed identity, and registry names are derived from the shared resource token.
 
-Agents init/adoption checks inline and referenced project configuration. A disabled preview returns `feature_not_enabled` with the variable to set. Foundry provider initialization, provision, preview, lifecycle hooks, and Bicep eject do not check this switch.
+Agents init/adoption checks inline and referenced project configuration. The Projects provider also requires this switch for `azd provision` and `azd provision --preview` when effective `agentHosting.enabled=true`. A disabled preview returns the `feature_not_enabled` compatibility error with the variable to set, before credential initialization or BYO AKS, role, or identity reads. Foundry provider initialization, infrastructure state and parameter queries, synthesis, lifecycle hooks, Bicep eject, and `azd down` do not check this switch.
 
-Provision and preview inspect the effective `agentHosting` value after parameter merging, including template defaults when no value is supplied. Enabled hosting requires a matching `agentHosting.clusterResourceId` declaration in `azure.yaml`; removing the YAML declaration does not bypass validation. The hosting value must be a locally readable literal object, not an ARM expression. Invalid combinations are rejected before submitting ARM requests.
+Provision and preview inspect the template's effective `agentHosting` value after parameter merging, including template defaults when no value is supplied. On-disk deployment parameters can override the hosting selections from `azure.yaml`, enable hosting without a YAML declaration, or disable hosting. Local binding lookups require a literal hosting object with a readable `enabled` flag and cluster resource ID; managed identity IDs are read only when needed for an automatic binding. Additional object properties are passed to ARM unchanged. YAML configuration retains its own field and resource-ID validation.
 
 Set `agentHosting.clusterResourceId` on the `azure.ai.project` service to use an existing AKS cluster when creating a **new** Foundry account and project:
 
@@ -188,32 +343,120 @@ services:
       clusterResourceId: ${AKS_CLUSTER_ID}
 ```
 
-`agentHosting` does not require a `network` block or additional subnets. Omit `network` for public networking, or supply it to use the standard account network injection and private-endpoint resources. As with ordinary Foundry projects, private networking does not support an automatically created ACR; use an Agent configuration that does not require building a container image.
+`agentHosting` does not require a `network` block or additional subnets. Omit `network` for public networking, or supply it to use the standard account network injection and private-endpoint resources. Both ordinary Foundry and existing AKS hosting reject automatic ACR creation with private account networking. Use prebuilt images, code/ZIP deployments, or select an external registry for source builds. Selecting an external registry does not change or verify its network connectivity.
 
-Use an existing AKS cluster configured for Foundry agent hosting. The provider resolves the built-in federation role for the required grants and always reads and validates the cluster's kubelet principal object ID, regardless of `includeAcr`. It does not validate AKS or network readiness or reconfigure the cluster.
+Use an existing AKS cluster configured for Foundry agent hosting. Before deployment, the provider reads the cluster and its AgentPool children to check the Foundry hosting prerequisites. Regional VM-size capabilities are read for non-blocking capacity recommendations. When effective hosting is enabled, it always reads and validates the selected cluster's actual kubelet principal object ID, regardless of `includeAcr` or an explicit kubelet binding. It resolves the built-in federation role when that deployment binding is needed. These checks do not create or reconfigure AKS, inspect Kubernetes node Ready conditions, or test runtime connectivity.
 
 The default resource graph creates:
 
 - One StorageV2 account (`st<resourceToken>`), with shared keys, anonymous blobs, and insecure transport disabled.
 - Separate hosting-management and workload user-assigned managed identities.
-- When an Agent requires building a container image, one native azd Container Registry (`cr<resourceToken>`), its Project connection, and `AcrPull` for the Project and AKS kubelet identities. A project without such an Agent does not automatically create a registry; pre-built images and code/ZIP configurations follow the standard Foundry ACR selection.
+- When an Agent requires building a container image, one native azd Container Registry (`cr<resourceToken>`) and its Project connection, or a selected external registry and connection. New BYO AKS deployments grant registry pull access only to the AKS kubelet identity, not the Project identity. Upgrades retain any Project grants created by older versions; see [legacy registry access](#legacy-byo-aks-registry-access). A project without such an Agent does not automatically create a registry; pre-built images and code/ZIP configurations follow the standard Foundry ACR selection.
 - Hosting-management Reader and Kubernetes Extension Contributor roles on the existing cluster, federation-management permission on the workload identity, and workload Storage Blob Data Contributor permission on the storage account.
 
-The account receives a `ManagedCluster` / `default` hosting configuration. Its data-plane access follows the optional `network` configuration. **Storage and any automatically created ACR use public authenticated endpoints**, so the cluster must be able to reach them. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. The deploying principal needs read access to AKS, the built-in role definitions and target resource group, creation rights for the new resources, and role-assignment write rights at the cluster, workload identity and Storage scopes. Creating an ACR additionally requires registry role-assignment write rights. Configuring private networking additionally requires the corresponding network permissions.
+The account receives a `ManagedCluster` / `default` hosting configuration. Its data-plane access follows the optional `network` configuration. **Storage uses a public authenticated endpoint. An ACR is automatically created only without account network isolation and also uses a public authenticated endpoint.** The cluster must be able to reach the selected stores. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. ARM authorizes resource creation and role assignments when executing the deployment.
 
-The deploying principal also needs `Microsoft.Resources/deployments/write` at the existing AKS resource-group scope. The cluster role grants are created through nested ARM deployments in that group, including when it differs from the Foundry target resource group.
+Storage and the two identities can each be supplied independently using complete ARM resource IDs:
 
-Only the existing cluster is selectable through `agentHosting`: supplied Storage accounts, hosting/workload identities, and registries are not supported in that block. Agents using pre-built images retain their standard registry-connection and authentication requirements; azd does not automatically grant the cluster access to an external registry. An existing `endpoint:` cannot receive hosting. `${VAR}` inputs resolve from the active azd environment; a cluster ID is not a Kubernetes context name.
+```yaml
+agentHosting:
+  clusterResourceId: ${AKS_CLUSTER_ID}
+  storageAccountResourceId: ${STORAGE_ACCOUNT_ID}
+  hostingManagementIdentityResourceId: ${HOSTING_IDENTITY_ID}
+  workloadIdentityResourceId: ${WORKLOAD_IDENTITY_ID}
+```
 
-`azd provision --preview` resolves the host bindings and returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives the supporting resource names and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`. Registry outputs are empty when no registry is created.
+Omit any supporting-resource field to retain its default creation/update path. Empty or null Storage and identity selections also retain their defaults, including when an environment variable resolves to an empty value. Undefined variables without a default are rejected, and `clusterResourceId` must resolve to a nonempty cluster resource ID. A supplied resource is referenced without a Storage or identity PUT, reconfiguration, or owner tag. Registry selection follows the standard Foundry rules; `agentHosting` does not accept a registry resource ID. An existing `endpoint:` cannot receive hosting. `${VAR}` inputs resolve from the active azd environment, including in `$ref` service definitions; a cluster ID is not a Kubernetes context name.
 
-`azd down` uses the standard Foundry teardown path, including its confirmation and `--force` behavior. It deletes model deployments and the target resource group with all resources inside it, including pre-existing resources; cleanup is not limited to resources created by the ARM deployment. An existing AKS cluster or network in the target resource group is deleted along with the group. Resources in other resource groups are outside this group-deletion scope. Infrastructure layers retain the standard Foundry resource-group ownership checks.
+Agents using pre-built images retain their standard registry-connection and authentication requirements; azd does not automatically grant the AKS cluster access to an external registry.
 
-Embedded provisioning and Bicep eject are supported through `microsoft.foundry`; Terraform eject is rejected before changing files. On-disk Bicep templates and parameter files remain editable. Keep the AKS hosting, network and registry inputs consistent with the declared hosting configuration.
+For missing principal bindings declared by the template, the provider uses metadata matching the identities selected by the actual compiled Foundry hosting configuration, not the original selector parameters. An identity whose principal is required by an automatic binding is read even when the template also creates or updates it; this metadata read does not change its lifecycle. Default identities that use ARM resource references for their principals retain that path without an existence GET. The kubelet binding uses preflight's AKS metadata. Required bindings fail if matching preflight evidence is unavailable or the principal ID is not a GUID. A missing federation-role binding is resolved in the actual workload identity's subscription when the compiled plan identifies that scope, including when its name is unresolved. Otherwise, it uses the effective supplied workload identity's subscription, or the deployment subscription when that identity is omitted. Explicit bindings take precedence; applicable preflight evidence reads still run.
+
+After local validation, preview opt-in, and credential initialization, preflight collects resource
+and authorization evidence. Required bindings must resolve successfully before they are merged
+and ARM deployment or what-if can proceed.
+Role assignments and built-in role-name lookups are cached within that preparation.
+Role validation compares built-in role IDs, without reading role-definition permissions.
+The federation-role binding resolves the built-in role name on demand in the target subscription.
+
+`azd provision --preview` resolves the host bindings and returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives names for omitted supporting resources and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`. Registry outputs are empty when no registry is selected.
+
+`azd down` uses the standard Foundry teardown path, including its confirmation and `--force` behavior. It deletes model deployments and the target resource group with all resources inside it, including pre-existing resources; cleanup is not limited to resources created by the ARM deployment. An existing AKS cluster, network, supplied Storage, or supplied identity in the target resource group is deleted along with the group. Resources in other resource groups are outside this group-deletion scope. Infrastructure layers retain the standard Foundry resource-group ownership checks.
+
+Embedded provisioning and Bicep eject are supported through `microsoft.foundry`; Terraform eject is rejected before changing files. On-disk Bicep templates and explicit parameters control resource naming, creation and authorization for both default and supplied supporting resources. Bicep compilation, ARM JSON parsing and Foundry Connection compatibility checks apply to on-disk infrastructure. ARM validates the resulting deployment; custom templates are responsible for the resources and grants they declare.
 
 BYO AKS uses the standard Foundry resource-group creation/update behavior. The deployment applies the configured location and tags; an existing target resource group's location must match the deployment location.
 
-The provider supplies `federatedIdentityRoleDefinitionId` when the template declares it, and `kubeletObjectId` when `includeAcr=true` and the template declares it. If a parameters file explicitly supplies either binding, its value must be a nonempty string matching the provider-resolved value, ignoring case. Explicit `kubeletObjectId` values are validated regardless of `includeAcr`; multiple `kubeletObjectId` parameter names differing only by case are rejected. Invalid or conflicting bindings are rejected before deployment or ARM what-if. Omit these parameters to let the provider resolve them automatically; other parameters retain their normal user-supplied precedence.
+The provider fills `federatedIdentityRoleDefinitionId`, the selected identities' required `hostingPrincipalId` / `workloadPrincipalId` bindings, and `byoAksExistingRoleAssignmentKeys` only when the template declares the parameter and the user has not provided it. The same rule applies to `kubeletObjectId` when `includeAcr=true`. Explicit parameter values and envelopes take precedence, with parameter names matched ignoring case. With BYO AKS and `includeAcr=true`, an explicit `kubeletObjectId` must be supplied once in a value envelope containing a literal principal object ID GUID matching the actual kubelet identity read from the effective AKS cluster. Invalid inputs or mismatches fail before registry access preparation; matching values are forwarded unchanged. When `includeAcr=false`, this additional binding validation does not apply. Other explicit bindings retain their existing forwarding behavior. User parameters absent from the template are also forwarded so ARM reports the error. Location, resource-name salt and resource-group parameters follow the normal on-disk parameter precedence and ARM validation.
+
+Provision and preview run read-only preflight for every BYO AKS plan, including plans that supply only AKS and create all supporting resources. Checks cover resource existence and identity metadata, subscription owning tenants, supplied-identity grants, AKS hosting prerequisites, and the selected existing Agent subnet. Ordinary Foundry projects without `agentHosting` do not enter this pipeline.
+
+| Checks | Required evidence |
+|---|---|
+| `aks-type` | AKS Standard cluster with explicit `sku.name=Base`; AKS Automatic and other names fail, and missing type evidence blocks preflight as `UNVERIFIED`. The `sku.tier` pricing tier is not restricted. |
+| `aks-version`, `aks-cni`, `aks-identity`, `aks-federation` | Actual running Kubernetes version at least 1.31; Azure CNI with case-insensitive plugin/mode matching, using Overlay or a nonempty cluster `agentPoolProfiles` list with `podSubnetID` on every pool, including System pools; supported managed cluster identity and kubelet object ID; enabled OIDC with issuer and Workload Identity. |
+| `system-pool` | At least one System child pool exists. |
+| `agent-pool`, `agent-image`, `agent-label` | One complete User Agent pool has Azure Linux, KataVmIsolation, at least one node, an `AKSAzureLinux-V3katagen2-` image at least `202608.14.0`, and `agents.ai.azure.com/sandbox-node=true`. When an existing Agent subnet is selected, the chosen pool must also pass the required Node subnet checks. Configuration, capacity recommendations, and network checks use the same pool; requirements cannot be combined across different pools. If no pool satisfies all required checks, configuration scores select a diagnostic candidate only; mandatory failures still block provisioning. |
+| `network-policy` | Azure or Calico network policy, or the supported Cilium dataplane. |
+| `agent-subnet` | The selected existing `network.agentSubnet` is private IPv4, at least /27, contained in its VNet, non-overlapping with the selected AKS Node subnet, and delegated to `Microsoft.App/environments`. Agent and Node subnet reads must return the requested resource ID. The Agent subnet's provisioning state is not required. New or unselected Agent subnets are not applicable; unrelated Node subnets are not compared. |
+
+System pool VMs are recommended to provide at least 4 available vCPU and 16 GiB; the selected Agent pool's VMs are recommended to provide at least 8 available vCPU and 32 GiB. Lower capacity or unavailable capacity evidence produces a warning on the corresponding pool check, like the supplied Storage zone-redundancy recommendation. The regional VM SKU lookup has a 10-second budget across all pages; a timeout produces a capacity-unverified warning without canceling mandatory checks. Canceling the command still cancels preflight. Capacity recommendations do not change check status, block provisioning, or modify the pools.
+
+Determinate mandatory failures, including nonexistent references, incompatible configuration and missing required role assignments, block deployment and ARM what-if. Each blocked-check error includes its redacted target scope. Unreadable or incomplete Azure evidence retains the corresponding mandatory check result. If the child-pool list cannot be read, `system-pool`, `agent-pool`, `agent-image`, and `agent-label` remain `UNVERIFIED`; a successfully read list with no required pools produces `FAIL`. Cluster-level checks still use the available cluster metadata. An unresolved local template-plan dependency instead produces a visible `WARNING` naming the resource ID, or its type and template/module position, the check ID and the reason; only that dependent check is recorded as `SKIPPED`, not `PASS`. Later independent checks still run, and other mandatory failures still block deployment.
+
+Preflight reports include warnings and skipped checks. On successful provisioning, the extension contributes the complete report to the final command output through the existing postprovision follow-up interface, leaving the text in the terminal history. Persistent success reports are limited to ordinary provisioning output; successful preview and JSON-mode success do not include a persistent report. A preflight failure includes the complete report in the returned error while retaining its error classification and cause. Checks with an underlying error include a `Cause:` line with the error details; URL credentials, query strings, and fragments are removed before display. The report uses the command's error styling in this case; individual check statuses remain unchanged. Errors from deployment operations after preflight retain their original messages without the report. Progress shows only a single-line preflight status summary, not the complete report.
+
+Supplied Storage must have a successful provisioning state, StorageV2 kind, Hot tier, HNS disabled, HTTPS-only transport, and TLS 1.2 or later. When account properties are available, an omitted `isHnsEnabled` is treated as `false`. Missing HTTPS and TLS properties use the Storage API's documented defaults. Preflight does not change supplied Storage settings. Zone redundancy is recommended but does not block provisioning.
+
+Failure to publish the final preflight report is diagnostic only and does not
+block subsequent service deployment. In that case, the report and publication
+error are logged, but are not guaranteed to be visible to the user.
+
+The three identity-role checks run only when the hosting-management identity, workload identity, and Storage are all supplied. In that case the template does not create these role assignments, and missing required roles block provision and preview:
+
+| Check | Identity and target | Accepted built-in roles |
+|---|---|---|
+| `hosting-aks` | Hosting-management identity on AKS | Reader and Kubernetes Extension Contributor; Owner or Contributor can satisfy either requirement. |
+| `hosting-federation` | Hosting-management identity on the workload identity | Managed Identity Federated Identity Credential Contributor, Owner, or Contributor. |
+| `workload-blob` | Workload identity on Storage | Storage Blob Data Contributor or Storage Blob Data Owner; ordinary Owner and Contributor do not qualify. |
+
+Assignments returned by the target scope's `atScope()` query, including inherited assignments, are accepted when the principal and role IDs match and `condition` is empty. Validation does not separately reject `conditionVersion` or delegated-managed-identity metadata, recheck scope ancestry, or infer equivalent permissions from custom roles or combinations of roles. Unreadable or incomplete assignment evidence blocks the checks.
+
+A role-check `PASS` means a matching assignment with an accepted built-in role and no condition was found. It does not establish effective access: preflight does not evaluate deny assignments or execute the required operations. Actual operations may still be denied despite the matching assignment.
+
+When any of the three supporting-resource selections is omitted, these role checks do not run. The built-in template instead creates all four standard role assignments: Reader and Kubernetes Extension Contributor on AKS, federation-management access on the workload identity, and Storage Blob Data Contributor on Storage. This can add grants on supplied resources without reconfiguring or recreating those resources. The deploying principal must be authorized to create the role assignments at each target scope and submit nested deployments (`Microsoft.Resources/deployments/write`) in the corresponding target resource groups, including the AKS resource group. Skipping existing role assignments does not skip their enclosing nested deployments or remove that deployment-permission requirement.
+
+Previously ejected BYO AKS templates are not guaranteed compatible with these grant-creation rules. Regenerate the infrastructure with the current extension, or update the authorization modules to the current rules while preserving authored customizations; old authorization modules are not automatically migrated.
+
+Before that deployment or preview, the provider reads existing assignments at the three target scopes and supplies lowercased `scope|principalId|roleGuid` keys through `byoAksExistingRoleAssignmentKeys`. Only unconditional assignments produce keys; each exact unconditional assignment is skipped regardless of its assignment name. When the selected identity's principal ID is known, a matching conditional assignment without matching unconditional evidence blocks preparation. The final command error identifies the existing assignment ID and condition, the identity resource ID and principal ID, the target scope, and the required role name and definition ID. A resource administrator must review and, if approved, remove the existing condition or replace the assignment with an unconditional grant; creating another assignment for the same principal, scope and role under a different ID conflicts with the existing assignment. azd does not modify existing conditions. Unrelated conditional assignments do not block this check. A new identity whose principal ID is not locally available retains ARM grant creation, but conditional assignments are never used to suppress it. Inherited assignments at a different scope and substitute roles do not suppress a standard assignment at the target. An initial 404 for an omitted target or a target whose creation/reference selection cannot be determined is allowed; other read failures or incomplete assignment data stop preparation rather than being treated as an empty list. When the target resource ID is known, its duplicate-assignment lookup runs even if its creation/reference selection cannot be determined. An unresolved target resource ID produces a `role-assignment-keys SKIPPED` warning for that target; its duplicate-assignment lookup is skipped and the custom template retains its grant-creation behavior. Explicit key bindings retain normal parameter precedence.
+
+Preflight reads supplied supporting resources for their applicable checks and reads selected identities when their metadata is needed for automatic deployment bindings. It does not issue identity or Storage resource GETs merely to check the existence of default supporting resources; ARM retains their ordinary creation/update path. Default-resource existence does not gate preparation, but a required principal binding needs readable metadata with a matching resource ID. The separate role-assignment queries described above still run when needed for deployment deduplication, including at default target scopes.
+
+Preflight uses current Azure state, not a persisted deployment journal. With all three resources supplied, missing required roles block retries as well as initial deployment. With any selection omitted, retries retain the template's grant-creation path and refresh existing-assignment keys. Omitted Storage retains the deterministic `st<resourceToken>` name and ordinary ARM creation/update path even if it already exists; current existence does not convert it into a supplied reference or establish ownership.
+
+Subscription responses are shared only within one preparation. Template scope resolution validates the actual returned ARM ID, while preflight independently validates the top-level owning `tenantId` for every relevant subscription. Each deployment or preview refreshes this evidence.
+
+For both default and supplied supporting resources, preflight identifies resources from the actual compiled ARM template and merged parameters, including local nested modules, resolvable conditions, names, resource scopes, and the selected Agent subnet. Lifecycle classification excludes same-type candidates whose known scopes cannot match the selected resource; unresolved names in those scopes do not affect its classification. Candidates with potentially matching or unresolved scopes retain their dependent uncertainty. It does not compare the template against a standard-template digest or substitute standard names for rewritten resources.
+
+The local plan adapter is bounded, not a general ARM interpreter. Nested-deployment expression scope follows the containing template's `languageVersion`: `2.0` defaults to `inner`, while earlier templates default to `outer`. The adapter supports only inner-scoped evaluation, including the ARM 2.0 default; those nested templates use their own `deployment().name`. Ordinary `reference()` returns resource properties; `reference(..., 'Full')` returns the full resource shape. Runtime-only reference properties, unavailable linked templates and unsupported expressions remain unresolved; dependent checks warn and skip individually. Supported constant `uniqueString` and `guid` expressions use the existing azd-managed Bicep tool. Failures evaluating these functions, including Bicep download or execution failures, stop preparation for deployment and preview. Explicit deployment bindings retain their normal precedence.
+
+#### Legacy BYO AKS registry access
+
+Upgrading or re-ejecting templates does not automatically revoke `AcrPull`
+assignments previously created for the Foundry Project identity. ARM incremental
+deployment leaves those assignments in place even though the current template
+no longer creates them for BYO AKS. azd does not automatically delete or migrate
+these legacy grants.
+
+A resource administrator can review the registry's **Access control (IAM)** role
+assignments in the Azure portal. Identify the Foundry Project's managed identity
+principal ID and distinguish it from the selected AKS cluster's kubelet object ID.
+Before removing an old Project `AcrPull` assignment, confirm its registry scope,
+principal and role, verify that the kubelet has the required pull access, and
+check that no other workload relies on the Project grant. Remove only the
+specific assignment approved for removal; do not remove the Project identity
+or registry connection, which remain necessary for project association and
+binding recovery.
 
 ### Infrastructure layers
 
@@ -266,15 +509,313 @@ Use `--force` with an explicit `--project-id` or `--project-endpoint` when
 replacing a different configured project. The command rejects `--force`
 without an explicit target instead of silently ignoring the flag.
 
-Use `--new-project` when a new project must be created even if the workspace
-already has a project endpoint or project ID configured:
+Use `--new-project` for greenfield setup instead of adopting a workspace
+project endpoint or project ID:
 
 ```sh
 azd ai project add --new-project
 ```
 
 `--new-project` cannot be combined with `--project-id` or
-`--project-endpoint`.
+`--project-endpoint`. If the environment already has a deployed registry
+binding, repeating setup preserves that project identity. Use a new azd
+environment to create another project.
+Setup restores a missing subscription from the deployed project binding and
+rejects a conflicting `AZURE_SUBSCRIPTION_ID` before changing configuration.
+
+### Reuse an external container registry
+
+This preview is **off by default**. Enable the shared process switch before
+running either the projects or agents extension:
+
+```sh
+export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true
+```
+
+In PowerShell, use `$env:AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE = 'true'`.
+Set the same variable in each CI job that operates on the reused registry.
+The switch uses `strconv.ParseBool`; `on` and `yes` do not enable it.
+Core `azd config` alpha settings do not enable this preview. The evaluator
+reads the current process, including values already injected by the azd host;
+it does not open dotenv files itself.
+
+With the switch off, reuse setup and all reuse lifecycle operations fail with
+enablement guidance before changing project files, environment values, saved
+context, or Azure resources. This includes **preview, down, recovery, and
+eject**, even if the environment already has a reuse binding or unfinished
+access cleanup and its legacy registry variables are absent. Re-enable the
+switch to clean up; turning it off does not delete or convert ownership.
+Ordinary automatic registry creation and existing project connection workflows
+without new reuse intent remain available.
+
+The source-build demand consistency correction is always on: a bare `image`
+still requests automatic registry provisioning when package/deploy would build
+from source. Without opt-in, fresh create returns normal outputs without a
+binding-only project identity lookup, canonical binding config write, or new
+mode write. Saved create bindings retain immutable identity validation and
+maintenance. Recovered create ownership remains available for safe operations
+without newly persisting or unsetting a transient binding while off.
+
+Legacy existing-project `reuse-connect` environments without canonical reuse
+bindings or pending operations remain supported without the switch. Canonical
+reuse and pending operations are checked before the existing-project exemption.
+New greenfield reuse intent still requires opt-in.
+
+Guards and lifecycle operations honor `--environment` (forwarded by the host
+as `AZD_ENVIRONMENT`) before the saved default. Environment values, registry
+bindings, and pending operations come from that same selected environment.
+An unreadable explicit selection is an error, not a fallback to the default.
+
+For greenfield reuse, project hooks also check `existingAcrResourceId` in the active on-disk
+`main.parameters.json` or `main.bicepparam`, using the configured Foundry
+path and module for a root or named layer. Removing environment aliases,
+saved bindings, and pending state does not bypass this check. JSON values
+use the host environment's `${VAR}` substitutions; `.bicepparam` takes
+precedence and its expressions are resolved by Bicep. Disabled preflight
+retains normal Bicep installation and module restoration. Dependency caches
+may be populated before evaluation, but rejected reuse does not change
+project files, environment/config values, saved context, or Azure resources.
+Invalid parameters remain errors rather than being treated as non-reuse.
+
+Provider initialization and `azd down` do not compile infrastructure.
+Down checks recorded environment selectors, bindings, pending cleanup, and
+recovered deployment facts instead of current parameter files. Recorded
+reuse still requires the switch; a source-only selector that has not been
+deployed does not block teardown. On-disk provisioning keeps automatic Bicep setup,
+even while the preview is off.
+
+The registry build validation rule reports the same enablement guidance
+before registry lookups. The prepackage, preprovision, and predeploy hooks
+enforce the gate independently of optional provision validation.
+
+For source-built hosted agents in a new Foundry project, select an existing
+Azure Container Registry by its full ARM resource ID:
+
+```sh
+azd ai project add --new-project --acr-resource-id "/subscriptions/<subscription-id>/resourceGroups/<external-resource-group>/providers/Microsoft.ContainerRegistry/registries/<registry-name>"
+```
+
+This is supported with Bicep only. The registry must be in the Foundry project's
+subscription (`AZURE_SUBSCRIPTION_ID`) and outside every resource group managed
+by azd, not just the Foundry group, because `azd down` deletes those groups.
+`AZURE_RESOURCE_GROUP` does not identify every group an application template can
+create. Reuse therefore requires Foundry-only infrastructure: a non-Foundry root
+deployment or any non-Foundry infrastructure layer is rejected, even when the
+registry is outside the groups named in environment values.
+Cross-subscription registry reuse is not supported. You are responsible for
+registry network connectivity and appropriate image push permissions.
+
+An external source-build registry selection supports `agentHosting`. Before
+provisioning, the provider checks the selected AKS kubelet identity for a matching
+registry pull role assignment and creates a missing grant during ARM deployment.
+Classic registries use `AcrPull`; ABAC registries use Container Registry Repository
+Reader. New BYO AKS deployments grant pull access only to the kubelet identity;
+ordinary Foundry hosting continues to use the Project identity. Existing Project
+grants from older BYO AKS deployments are retained as described under
+[legacy registry access](#legacy-byo-aks-registry-access). The Project connection
+continues to use the Project identity as its Managed Identity credential and
+retains the registry address and resource ID for discovery and binding recovery.
+The connection does not itself grant registry access or supply the kubelet's credentials.
+Existing registry networking is not modified, and the provider does not perform
+a connectivity or image-pull test. You must make the registry reachable from AKS.
+Creating missing grants requires role-assignment write permission and nested
+deployment permission on the registry resource group.
+When account network isolation is enabled, source builds require an explicitly
+selected external registry; automatic registry creation is rejected before deployment.
+With isolation disabled, both automatic creation and external reuse are supported.
+Re-eject existing BYO AKS Bicep templates to obtain the kubelet-only access
+contract; older ejected templates are rejected when registry access is enabled.
+
+On teardown, the external registry and pre-existing grants are retained. Only
+verified environment-owned grants and their deployment records are removed.
+If multiple environments share one AKS kubelet identity and registry, a grant
+created by one environment may also be used by another; deleting the owning
+environment can remove that shared access.
+
+Embedded and currently generated ejected Bicep keep the
+`microsoft.foundry` provider, which enforces the switch for provision, preview,
+and down. **Manually changing `infra.provider` to core `bicep` is unsupported**:
+its preview skips extension lifecycle hooks, so it is outside this enforcement
+contract. Arbitrary direct Bicep/ARM execution is also outside the contract.
+Do not change the provider to bypass the switch.
+
+For an ABAC registry (`AbacRepositoryPermissions`), source-built hosted agents
+must use local Docker builds with `docker.remoteBuild: false`. Hosted source
+initialization normally enables remote builds unless network injection requires
+local builds. The current ACR Quick Build request does not authenticate the
+source registry, so ABAC external-registry reuse with
+`docker.remoteBuild: true` is rejected before provisioning. Repository Writer
+permission alone does not make that remote request supported. Use local Docker
+with Repository Writer push permission, a prebuilt image, or a classic RBAC
+registry instead. Code deployments, prebuilt images, and project-only selections
+without source-build demand do not trigger this remote-build restriction.
+The subscription and teardown-scope restrictions still apply to the selector.
+
+An `image` value alone does not select a prebuilt deployment: source build is
+the default, including with `--no-prompt`. To use an existing image, set
+`docker.imagePassthrough: true` together with a nonempty image. Add
+`registryConnectionId` when a private registry connection is needed; it also
+requires `docker.imagePassthrough: true`. The legacy environment value
+`AZD_AGENT_SKIP_ACR=true` also selects prebuilt deployment when the expanded
+image is nonempty.
+
+An authored service-level `docker` block takes precedence over the entire
+`config.docker` block, including through `$ref`. In particular, an explicit
+service-level `docker.remoteBuild: false` retains local builds even when
+`config.docker.remoteBuild` is `true`.
+
+The registry and its images remain externally owned and are retained by
+`azd down`. Default and JSON output identify the selected registry and its
+external ownership.
+
+`project add --output json` includes an optional `containerRegistry` object
+when a registry resource ID is available. Its `resourceId` is the registry ARM
+ID. Its `externallyOwned` boolean is `true` for a reused registry or an
+already-connected registry on an existing project, and `false` for a registry
+managed by azd. Externally owned registries are retained by `azd down`.
+The object is omitted when no registry is known. This is an additive change:
+`schemaVersion` remains `1`, and existing fields retain their names and meanings.
+JSON consumers should tolerate unknown optional fields.
+
+Setting `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` selects the
+same external-registry workflow and reports the same ownership. A registry
+is not considered azd-managed merely because it is in the deployment resource
+group. Existing azd-created registries retain their deployed binding or matching
+legacy outputs; legacy ownership is verified against the previous Azure
+deployment before provisioning or deleting the group. Unreadable environment
+state or unverified ownership stops the operation instead of creating a
+replacement registry.
+For a deployed binding, `azd env refresh` also retains its registry ID,
+endpoint, and connection when the latest deployment has empty registry
+outputs. Refreshing does not change the binding or registry access.
+Project-only provisioning retains an azd-created registry's name and the
+verified nested creation deployment in root deployment tags. Recovery reads
+that creation operation again; the tags alone never establish ownership.
+Missing creation history blocks recovery and teardown rather than permitting
+an unverified deletion.
+An unused external-registry selection also survives refresh when the latest
+deployment has empty registry outputs, even if a source-built agent was added
+to `azure.yaml` after that deployment.
+The external-registry build checks apply to `reuse-connect` selections, not
+azd-created registries retained through a `create` binding or matching legacy
+outputs. Managed registries can remain inside the Foundry resource group.
+Legacy full outputs and partial-deployment project connections do not establish
+registry ownership on their own: recovery requires a successful creation
+operation for that exact registry in the environment's owning deployment
+history, including nested deployments and all operation pages. Read operations
+do not establish ownership and do not invalidate a successful creation operation
+elsewhere in that history. Missing or ambiguous evidence stops
+recovery and teardown before ownership is saved or resources or access grants
+are deleted.
+
+With an external registry selection, prompted subscription and location choices
+are saved only after the final template, parameters, deployment scope, and
+remote-build compatibility pass validation. Build demand is recomputed using
+those prompted values, including environment-dependent service conditions.
+This applies to embedded and on-disk Bicep, local and remote builds, JSON
+parameter files, and `.bicepparam` files, including custom root and
+infrastructure-layer routes. An invalid final selection leaves those choices
+unpersisted.
+
+On-disk Bicep registry/network compatibility is checked after merging authored
+parameters and resolving effective template defaults. Registry selectors supplied
+only in JSON, `.bicepparam`, or a template default are honored. Setting
+`includeAcr` or `enableNetworkIsolation` to `false` in the effective deployment
+parameters remains authoritative.
+Registry access parameter declarations are matched ignoring case, including
+the owned-grant recovery metadata, consistent with ARM parameter matching.
+For BYO AKS, the provider resolves `acrPullPrincipalId` from the effective
+`kubeletObjectId` binding, which must be a literal principal object ID GUID.
+The registry binding retains the Project identity separately from the pull
+identity. Provision and preview reject changes to an external registry's bound
+pull identity rather than transferring an existing access operation.
+When creating an ACR, a declared `enableNetworkIsolation` parameter must have a
+literal boolean value for local compatibility checks; ARM expressions are not
+evaluated locally.
+
+Before provisioning, the flag overrides environment defaults and saves
+`AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `AZD_FOUNDRY_ACR_MODE=reuse-connect`.
+You can select a registry before adding agents; the selection remains pending
+until a source-built agent requires it, including across project-only provisioning,
+environment refresh, and teardown. Configured project or account names do not
+discard an unused selection. Source initialization validates the selector and
+rejects unknown application teardown scopes before changing files or environment
+values.
+Interactive setup validates the selection against the final chosen subscription
+and planned teardown group before scaffolding a new project or environment.
+The validated subscription is reused without a second selection prompt.
+An explicit empty value,
+an existing project selector, or a manifest containing only code, prebuilt-image, or
+non-container agents is rejected. Without a selector, source builds continue
+to create a registry automatically.
+An unused `AZURE_RESOURCE_GROUP` value does not add a teardown group when only
+a Foundry layer is configured.
+
+Project-only Bicep eject retains the registry selection without writing an
+`includeAcr: false` override. Adding a source-built agent later lets the provider
+enable registry access from the new build demand. In an older project-only
+parameters file, remove the generated `parameters.includeAcr` object if it only
+reflects that earlier lack of demand. An intentional user-authored `false`
+override remains authoritative.
+That override controls infrastructure creation, not the service's build mode.
+Remote source builds still validate the selected or bound registry's ABAC
+compatibility when `includeAcr` is `false`.
+
+Removing source-build demand does not release an existing registry binding.
+Recovery can use the deployed project connection even when no azd-owned grants
+exist. After a failed connection deployment, verified access-operation parameters
+allow `azd down` to clean up owned grants before removing deployment evidence.
+An unused selector with no connection or owned access operation remains pending.
+
+Once a project has a deployed registry binding, registry migration is not
+supported. Repeating setup with the same selection preserves the deployed
+project identity and ownership whether ordinary project and registry ID outputs
+are present or absent. Explicit `--project-id` or `--project-endpoint` adoption
+cannot convert this environment's owned project to an existing-project target.
+Bicep eject uses the binding's recorded registry ID when no registry
+environment-variable reference is available. Use a new azd environment to choose
+a different registry; do not clear internal mode or ownership state to bypass
+this check.
+
+Provisioning preview checks existing pull access using the same read-only access
+plan as deployment. It does not create access grants or persist pending access
+operations.
+
+Registry access operations persist their role together with the ownership token.
+If the permission mode changes before a retry, azd retires the previous operation
+only after its deployments have completed and only removes grants with exact
+ownership proof. It then plans a fresh operation for the current role.
+If the mode changes during deployment, azd preserves the deployed grant's exact
+ownership and verifies effective pull access before reporting success. Missing
+access returns retry or cleanup guidance instead of a successful deployment
+result; administrator-managed grants are not changed.
+Re-eject older Foundry Bicep templates before provisioning an external registry
+so their access-operation contract accepts the persisted role and owned-grant
+recovery metadata.
+
+If local registry lifecycle state is lost, azd can recover owned grants from
+retained deployment access-operation metadata. Repeated provisioning retains
+all owned grants, including earlier pull roles after a permission-mode change
+and grants from before a project-only provision. Recovery verifies the registry,
+project principal, role, and ownership marker before recording a grant.
+An already-deleted grant still allows cleanup of its verified deployment records.
+Recovered bindings are saved before cleanup even for azd-created registries or
+when there are no owned grants. If the resource group is deleted but retirement
+of the root deployment fails, the saved binding allows a retry without reading
+the deleted project. Failure to save recovery state prevents destructive cleanup.
+Mismatched or unreadable grant ownership stops teardown. Legacy deployments
+without access-operation metadata do not authorize deleting registry grants.
+
+If deployment fails or is canceled, resource-group and registry-access ownership
+recovery are attempted independently. Recovery errors are reported without
+preventing the other ownership record from being recovered.
+
+Successful `azd down` also removes this environment's subscription-level Foundry
+deployment record before clearing registry lifecycle state, so provisioning again
+does not try to recover the deleted project. Failed cleanup preserves recovery
+state for a retry. Removing the deployment record does not delete external
+resources. Custom deployment roles must allow
+`Microsoft.Resources/deployments/delete` at the project subscription scope.
 
 To use an existing project in automation, initialize it with its full ARM
 resource ID. This stores the project identity in the active azd environment
@@ -284,6 +825,38 @@ and allows managed deployment declarations to be reconciled:
 azd ai project add --project-id "<project-resource-id>"
 azd ai project deployment add --model <model-name>
 ```
+
+Project selection resolves the endpoint from Azure Resource Manager rather than
+assuming the account resource name is its DNS prefix. Azure custom subdomains
+are supported for adoption and generated Bicep/Terraform infrastructure; arbitrary
+domains and reverse proxies are not. Missing endpoint metadata falls back to the
+account's custom subdomain, then its resource name; failed lookups and invalid
+metadata remain errors, except one compatibility case: if account metadata is
+forbidden (HTTP 403), the extension accepts a valid ARM-advertised endpoint
+that still matches the selected project. Missing or invalid advertised
+endpoints, and all other account lookup failures, remain errors.
+`project deployment add` also verifies the configured endpoint against ARM
+metadata, so custom subdomains remain valid when adding managed deployment
+declarations. Rerunning `project add --project-id` for the same project repairs
+stale endpoints without clearing registry or deployment bindings.
+Selecting a different configured project clears the old project-bound state,
+even when agent initialization has already saved the newly selected ARM ID.
+Provisioning with resource declarations verifies that the endpoint belongs to
+that ARM project before making changes; provider initialization remains offline.
+
+For on-disk Bicep under `microsoft.foundry`, omitted `projectResourceId` and
+`projectEndpoint` parameters default to the initialized environment values ahead
+of template `defaultValue` entries, and explicit parameter values must resolve to
+literal strings that still match the initialized project unless
+`azd ai project add --project-id <resource-id>` is rerun. Exported Bicep also
+includes a read-only identity-validation deployment that every resource-changing
+module and supporting resource group depends on. A mismatch fails that deployment
+before those resources are changed. Its deployment-history record can remain.
+
+Teardown also verifies this identity before cleanup. If the project or account
+has already been deleted, teardown leaves project connections untouched and
+continues cleaning up only ownership-verified supporting resources. Other lookup
+failures stop cleanup.
 
 An endpoint-only project is suitable for configuration that does not manage
 resources on the existing project. If managed deployments are already
@@ -302,7 +875,8 @@ Split `host: azure.ai.connection` services are reconciled during deploy by the
 `azure.ai.connections` extension, never by Project provisioning. This applies
 to embedded templates and newly ejected Bicep/Terraform alike. Project synthesis
 does not read Connection or Toolbox payloads, environments, or credentials.
-The system ACR connection used by the Project's registry remains Project-owned.
+The system ACR connection and generated system AppInsights connection remain
+Project-owned.
 
 ### Breaking migration
 
@@ -315,8 +889,8 @@ or `connectionCredentials` are allowed and retain normal parameter substitution;
 parameter names alone do not identify the removed Foundry contract. Linked
 templates are not fetched or inspected by this validation.
 
-Only the generated system ACR connection's name, target, project identity and
-registry resource ID wiring are exempt. Other `ContainerRegistry` connections,
+Only generated system ACR and AppInsights connections with their expected name,
+target, project identity, and resource ID wiring are exempt. Other `ContainerRegistry` connections,
 including those using `ManagedIdentity`, belong in `azure.ai.connection` services.
 Preserve that generated wiring when customizing ejected Bicep, or regenerate it.
 
@@ -340,8 +914,8 @@ azd ai project add --project-id "<project-resource-id>" --infra=terraform
 
 The default format is Bicep. The generated infrastructure references the
 existing account and project without taking ownership of them. It manages only
-declared model deployments, the system ACR connection, and any required container
-registry resources. Endpoint-only setup cannot eject infrastructure; rerun
+declared model deployments, system ACR and explicitly enabled monitoring
+connections, and any required registry or monitoring resources. Endpoint-only setup cannot eject infrastructure; rerun
 `project add` with the full project resource ID.
 
 When an agent needs a registry, ejection preserves the registry state selected
@@ -349,6 +923,9 @@ during initialization: it creates a registry when none exists, connects an
 existing registry when needed, or references an existing project connection
 without managing it. Terraform registry output is always named
 `container-registry.tf`; Bicep uses `modules/container-registry.bicep`.
+Greenfield ejection persists `AZD_FOUNDRY_ACR_MODE` in the azd environment.
+On-disk Foundry initialization also records the mode for previously ejected
+projects, preserving external registry reuse during provisioning and `azd down`.
 Before writing generated files, existing registry endpoints are normalized to
 remove URL credentials, query parameters, and fragments.
 
@@ -370,3 +947,17 @@ existing Foundry project should be reused instead, configure its endpoint and se
 full project resource ID before retrying.
 
 The `azd ai project set`, `show`, and `unset` commands manage the default Foundry project endpoint context. Use `azd ai project add` to author the project service in `azure.yaml`.
+
+## Azure Policy model deployment checks
+
+When targeting an existing Foundry project (`AZURE_AI_PROJECT_ID`), `azd provision` / `azd up` and `azd ai project deployment add` evaluate effective model deployments against the Cognitive Services account's ARM `evaluateDeploymentPolicies` endpoint before submitting deployment changes.
+
+- **Blocking pre-checks (`provision`, `up`, `project deployment add`)**: Assignments with a `Deny` effect fail fast with a validation error (`model_blocked_by_policy`) and a Foundry Portal Govern deep link for the blocking assignment. Assignments with an `Audit` effect are treated as non-blocking. Transport, authentication, or service errors during preflight evaluation fail open so ARM remains the final authority.
+- **Brownfield reconciliation warnings (`project add`)**: Adopting an existing project via `azd ai project add` evaluates reconciled and retained deployments and prints a non-blocking warning to `stderr` (suppressed when `--output` is `json` or `none`) if any deployment is denied by Azure Policy.
+- **Opting out of client-side pre-checks**: Set `AZD_AI_AGENT_SKIP_POLICY_CHECKS=true` (or the legacy alias `AZD_AGENT_SKIP_POLICY_CHECKS=true`) in the active `azd` environment or OS environment:
+
+  ```sh
+  azd env set AZD_AI_AGENT_SKIP_POLICY_CHECKS true
+  ```
+
+  Values are parsed with `strconv.ParseBool`, and values set in the active `azd` environment take precedence over OS environment variables. Skipping client-side pre-checks only bypasses local preflight calls; server-side Azure Policy enforcement in ARM still applies during deployment.

@@ -228,8 +228,11 @@ func testToolboxAccess(t *testing.T, transport accessTransport) *toolboxAccess {
 			return accessCredentialStub{}, nil
 		},
 		roleClient: client,
-		wait:       func(context.Context, time.Duration) error { return nil },
-		attempts:   3,
+		policyQuery: func(context.Context, toolboxResourceGraphRequest) ([]json.RawMessage, error) {
+			return []json.RawMessage{}, nil
+		},
+		wait:     func(context.Context, time.Duration) error { return nil },
+		attempts: 3,
 	}
 }
 

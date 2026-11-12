@@ -523,25 +523,26 @@ func ResolvePromptTargetFromEnv(settings *PromptAgentSettings, env map[string]st
 	if settings == nil || env == nil {
 		return false, nil
 	}
+
+	// Prefer a pre-populated project endpoint before reading env.
+	if strings.TrimSpace(settings.ProjectEndpoint) == "" {
+		settings.ProjectEndpoint = strings.TrimSpace(env[promptProjectEndpointEnvKey])
+	}
+	if strings.TrimSpace(settings.ModelEndpoint) == "" {
+		// x-model-endpoint targets the project endpoint origin.
+		if u, perr := url.Parse(strings.TrimSpace(settings.ProjectEndpoint)); perr == nil &&
+			u.Scheme != "" && u.Host != "" {
+			settings.ModelEndpoint = u.Scheme + "://" + u.Host
+		}
+	}
+
 	settings.OverlayAzdProjectEnv(env)
 	mapped, err := overlayPromptSettingsFromProjectResourceID(settings, env)
 	if err != nil {
 		return false, err
 	}
 
-	// Prefer the config-supplied project endpoint (interactive init); otherwise
-	// read it from the azd environment (--no-prompt / provisioned project).
-	if strings.TrimSpace(settings.ProjectEndpoint) == "" {
-		settings.ProjectEndpoint = strings.TrimSpace(env[promptProjectEndpointEnvKey])
-	}
-
-	if pe := strings.TrimSpace(settings.ProjectEndpoint); pe != "" {
-		// x-model-endpoint targets the account host backing the project.
-		if u, perr := url.Parse(pe); perr == nil && u.Host != "" {
-			if strings.TrimSpace(settings.ModelEndpoint) == "" {
-				settings.ModelEndpoint = u.Scheme + "://" + u.Host
-			}
-		}
+	if strings.TrimSpace(settings.ProjectEndpoint) != "" {
 		return true, nil
 	}
 

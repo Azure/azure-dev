@@ -761,9 +761,11 @@ even when agent initialization has already saved the newly selected ARM ID.
 Provisioning with resource declarations verifies that the endpoint belongs to
 that ARM project before making changes; provider initialization remains offline.
 
-For on-disk Bicep, this check uses the final `projectResourceId` and
-`projectEndpoint` parameter values, including user overrides and template
-defaults. These values must resolve to literal strings. Exported Bicep also
+For on-disk Bicep under `microsoft.foundry`, omitted `projectResourceId` and
+`projectEndpoint` parameters default to the initialized environment values ahead
+of template `defaultValue` entries, and explicit parameter values must resolve to
+literal strings that still match the initialized project unless
+`azd ai project add --project-id <resource-id>` is rerun. Exported Bicep also
 includes a read-only identity-validation deployment that every resource-changing
 module and supporting resource group depends on. A mismatch fails that deployment
 before those resources are changed. Its deployment-history record can remain.

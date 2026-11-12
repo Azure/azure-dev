@@ -425,6 +425,40 @@ func TestProjectEjectIdentityUsesResolvedARMEndpoint(t *testing.T) {
 		"/accounts/other-account/", 1)
 	require.True(t, projectIdentityChanged(map[string]string{"AZURE_AI_PROJECT_ID": project.ResourceId},
 		project.Endpoint, &replacement))
+
+	t.Run("endpoint-only transition for custom subdomain", func(t *testing.T) {
+		values := map[string]string{
+			"AZURE_AI_PROJECT_ID":      project.ResourceId,
+			"AZURE_AI_ACCOUNT_NAME":    project.AccountName,
+			"AZURE_AI_PROJECT_NAME":    project.ProjectName,
+			"FOUNDRY_PROJECT_ENDPOINT": project.Endpoint,
+		}
+		for _, key := range projectReplacementEnvironmentKeys {
+			values[key] = "saved-" + key
+		}
+
+		sameTarget, err := resolvedProjectFromEndpoint(project.Endpoint)
+		require.NoError(t, err)
+		require.False(t, projectIdentityChanged(values, project.Endpoint, sameTarget))
+		samePlan := planProjectEnvironment(values, sameTarget.Mode, sameTarget, false)
+		sameEffective := applyProjectEnvironmentPlan(values, samePlan)
+		require.NotContains(t, sameEffective, "AZURE_AI_PROJECT_ID")
+		require.NotContains(t, sameEffective, "AZURE_AI_ACCOUNT_NAME")
+		for _, key := range projectReplacementEnvironmentKeys {
+			require.Equal(t, values[key], sameEffective[key], key)
+		}
+
+		differentTarget, err := resolvedProjectFromEndpoint(
+			"https://other-dns.services.ai.azure.com/api/projects/project",
+		)
+		require.NoError(t, err)
+		require.True(t, projectIdentityChanged(values, project.Endpoint, differentTarget))
+		differentPlan := planProjectEnvironment(values, differentTarget.Mode, differentTarget, true)
+		differentEffective := applyProjectEnvironmentPlan(values, differentPlan)
+		for _, key := range projectReplacementEnvironmentKeys {
+			require.NotContains(t, differentEffective, key, key)
+		}
+	})
 }
 
 func TestProjectCustomSubdomainInfrastructureEjection(t *testing.T) {

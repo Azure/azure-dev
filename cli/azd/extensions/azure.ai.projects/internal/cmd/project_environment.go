@@ -88,7 +88,9 @@ func projectIdentityChanged(
 			return true
 		}
 	}
-	if strings.TrimSpace(oldValues["AZURE_AI_ACCOUNT_NAME"]) != "" &&
+	// Endpoint-only mode sets AccountName from the URL host.
+	if (project.Mode != projectModeExistingEndpoint || oldEndpoint == "") &&
+		strings.TrimSpace(oldValues["AZURE_AI_ACCOUNT_NAME"]) != "" &&
 		project.AccountName != "" &&
 		!strings.EqualFold(
 			strings.TrimSpace(oldValues["AZURE_AI_ACCOUNT_NAME"]),

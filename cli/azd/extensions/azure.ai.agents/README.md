@@ -1085,8 +1085,11 @@ domains or reverse proxies.
 
 Exporting an existing project with `--infra=bicep` or `--infra=terraform`
 also verifies the configured endpoint against its ARM project before writing
-infrastructure files. This requires Azure read access to the project and account,
-including when exporting an already initialized project.
+infrastructure files, including when exporting an already initialized project.
+Export requires Azure read access to the project and uses the same HTTP 403
+account-read fallback as `init` when the project advertises a valid matching
+endpoint; provisioning the exported Bicep or Terraform templates requires read
+access to both the project and account.
 
 The exported Bicep validates the final project ID and endpoint parameters in a
 read-only deployment before its resource-changing modules and supporting resource

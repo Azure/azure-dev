@@ -1,4 +1,4 @@
-# Guiding principles for `azd`
+# Guiding design principles for `azd`
 
 ## Overview
 

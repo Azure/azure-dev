@@ -27,24 +27,24 @@ func automaticFirewallBinding() (*deploymentBinding, *firewallIdentity) {
 	bootstrapID := serverID + "/firewallRules/" + authoredBootstrapRule
 	runtimeID := serverID + "/firewallRules/aca-1-2-3-4"
 	return &deploymentBinding{
-		automatic: true,
-		values: map[string]string{
-			postgresServerIDEnv: serverID, containerAppIDEnv: appID, "DATABASE_OUTBOUND_IPS": `["1.2.3.4"]`,
-		},
-		outputs: currentDeploymentOutputs{
-			"DATABASE_OUTBOUND_IPS": {Type: "string", Value: `["1.2.3.4"]`},
-		},
-		resources: map[string]bool{
-			strings.ToLower(serverID): true, strings.ToLower(appID): true,
-			strings.ToLower(bootstrapID): true, strings.ToLower(runtimeID): true,
-		},
-		app: &armappcontainers.ContainerApp{ID: new(appID), Properties: &armappcontainers.ContainerAppProperties{
-			OutboundIPAddresses: []*string{new("1.2.3.4")},
-		}},
-	}, &firewallIdentity{
-		subscriptionID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-		resourceGroup:  "rg", postgresServerName: "pg", containerAppName: "app",
-	}
+			automatic: true,
+			values: map[string]string{
+				postgresServerIDEnv: serverID, containerAppIDEnv: appID, "DATABASE_OUTBOUND_IPS": `["1.2.3.4"]`,
+			},
+			outputs: currentDeploymentOutputs{
+				"DATABASE_OUTBOUND_IPS": {Type: "string", Value: `["1.2.3.4"]`},
+			},
+			resources: map[string]bool{
+				strings.ToLower(serverID): true, strings.ToLower(appID): true,
+				strings.ToLower(bootstrapID): true, strings.ToLower(runtimeID): true,
+			},
+			app: &armappcontainers.ContainerApp{ID: new(appID), Properties: &armappcontainers.ContainerAppProperties{
+				OutboundIPAddresses: []*string{new("1.2.3.4")},
+			}},
+		}, &firewallIdentity{
+			subscriptionID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+			resourceGroup:  "rg", postgresServerName: "pg", containerAppName: "app",
+		}
 }
 
 func TestAutomaticFirewallDeletesOnlyVerifiedBroadBootstrapAndConfirmsAbsence(t *testing.T) {
@@ -155,10 +155,11 @@ func TestAutomaticFirewallDeletesOnlyVerifiedBroadBootstrapAndConfirmsAbsence(t 
 }
 
 func TestAutomaticPostProvisionCleanupRunsBeforeCompletionAndSurvivesHandlerFailureOrCancellation(t *testing.T) {
-	scenarios := []string{"success", "inference-failure", "unresolved-final", "cleanup-failure", "cancellation"}
+	scenarios := []string{"success", "repeated-success", "inference-failure", "unresolved-final",
+		"cleanup-failure", "cancellation"}
 	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
-			project, _ := automaticPostgresProject(t)
+			project, service := automaticPostgresProject(t)
 			binding, _ := automaticFirewallBinding()
 			root := "/subscriptions/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/resourceGroups/rg/providers/"
 			identityID := root + "Microsoft.ManagedIdentity/userAssignedIdentities/app"
@@ -168,6 +169,9 @@ func TestAutomaticPostProvisionCleanupRunsBeforeCompletionAndSurvivesHandlerFail
 			binding.values[databaseAdministratorNameEnv] = "developer@example.test"
 			binding.values[databaseAdministratorObjectIDEnv] = testSpringClientID
 			binding.values[databaseUserAccessTenantIDEnv] = testSpringClientID
+			if scenario == "repeated-success" || scenario == "cleanup-failure" {
+				binding.values[databaseAccessConfiguredEnv] = automaticMIProvisioningVersion
+			}
 			binding.resources[strings.ToLower(identityID)] = true
 			binding.resources[strings.ToLower(binding.values[postgresServerIDEnv]+"/databases/petclinic")] = true
 			binding.app.Identity = &armappcontainers.ManagedServiceIdentity{
@@ -200,7 +204,8 @@ func TestAutomaticPostProvisionCleanupRunsBeforeCompletionAndSurvivesHandlerFail
 						require.NoError(t, cleanupCtx.Err())
 						_, bounded := cleanupCtx.Deadline()
 						require.True(t, bounded)
-						require.Empty(t, store.writes)
+						require.Equal(t, []string{databaseAccessConfiguredEnv}, store.writes)
+						require.Equal(t, "pending", store.data[databaseAccessConfiguredEnv])
 						if scenario == "cleanup-failure" {
 							return cleanupFailure
 						}
@@ -223,15 +228,39 @@ func TestAutomaticPostProvisionCleanupRunsBeforeCompletionAndSurvivesHandlerFail
 			} else {
 				require.Equal(t, 1, cleanups)
 			}
-			if scenario == "success" {
+			if scenario == "success" || scenario == "repeated-success" {
 				require.NoError(t, err)
 				require.Equal(t, 1, sqlCalls)
-				require.Equal(t, databaseAccessPolicyVersion, store.data[databaseAccessConfiguredEnv])
+				require.Equal(t, automaticMIProvisioningVersion, store.data[databaseAccessConfiguredEnv])
+				store.writes = nil
+				runtime.prepareNetwork = func(
+					context.Context, *deploymentBinding,
+				) (func(context.Context) error, error) {
+					return nil, nil
+				}
+				runtime.configureAccess = func(context.Context, string, resolvedDatabase, map[string]string) error {
+					t.Fatal("automatic managed-identity deploy must not run administrator SQL")
+					return nil
+				}
+				runtime.recoverAccess = func(context.Context, string, resolvedDatabase, map[string]string) error {
+					t.Fatal("deploy must not recover or mutate temporary administrator registrations")
+					return nil
+				}
+				deployArgs := &azdext.ServiceEventArgs{Project: project, Service: service}
+				require.NoError(t, runtime.PreDeploy(t.Context(), deployArgs))
+				require.Empty(t, store.writes)
+				for _, incomplete := range []string{"pending", "", databaseAccessPolicyVersion} {
+					store.data[databaseAccessConfiguredEnv] = incomplete
+					require.ErrorContains(t, runtime.PreDeploy(t.Context(), deployArgs), "access is incomplete")
+				}
 			} else {
 				require.Error(t, err)
-				require.Empty(t, store.writes)
 				if scenario == "inference-failure" || scenario == "unresolved-final" {
+					require.Empty(t, store.writes)
 					require.Zero(t, sqlCalls)
+				} else {
+					require.Equal(t, []string{databaseAccessConfiguredEnv}, store.writes)
+					require.Equal(t, "pending", store.data[databaseAccessConfiguredEnv])
 				}
 				if scenario == "cleanup-failure" {
 					require.ErrorIs(t, err, cleanupFailure)

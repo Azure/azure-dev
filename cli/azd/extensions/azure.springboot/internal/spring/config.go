@@ -30,6 +30,7 @@ const (
 	provisionedDatabaseAccessEnv          = "SPRING_DATABASE_PROVISIONED_ACCESS"
 	databaseAccessConfiguredEnv           = "SPRING_DATABASE_ACCESS_CONFIGURED"
 	databaseAccessPolicyVersion           = "app-owned-v2"
+	automaticMIProvisioningVersion        = "app-owned-v2-local-provision-v1"
 	azureSubscriptionIDEnv                = "AZURE_SUBSCRIPTION_ID"
 	azureResourceGroupEnv                 = "AZURE_RESOURCE_GROUP"
 	containerAppIDEnv                     = "AZURE_CONTAINER_APP_ID"

@@ -44,15 +44,16 @@ type postgresAccessReconciler struct {
 }
 
 type verifiedPostgresResources struct {
-	SubscriptionID           string
-	ResourceGroup            string
-	ServerName               string
-	ServerID                 string
-	Host                     string
-	AdministratorName        string
-	SessionAdministratorName string
-	IdentityPrincipalID      string
-	IdentityClientID         string
+	PublicNetworkAccessEnabled bool
+	SubscriptionID             string
+	ResourceGroup              string
+	ServerName                 string
+	ServerID                   string
+	Host                       string
+	AdministratorName          string
+	SessionAdministratorName   string
+	IdentityPrincipalID        string
+	IdentityClientID           string
 }
 
 func (r *verifiedPostgresResources) sessionAdministratorName() string {
@@ -286,6 +287,9 @@ func (r *postgresAccessReconciler) verifyResources(
 		ServerID:       database.ServerResourceID,
 		Host:           host,
 	}
+	network, _ := properties["network"].(map[string]any)
+	publicNetworkAccess, _ := network["publicNetworkAccess"].(string)
+	result.PublicNetworkAccessEnabled = strings.EqualFold(publicNetworkAccess, "Enabled")
 	switch database.Authentication {
 	case databaseAuthenticationPassword:
 		if !strings.EqualFold(activeDirectoryAuth, "Disabled") ||
@@ -1414,6 +1418,16 @@ func (r *postgresAccessReconciler) connectWithRetry(
 	return r.connectConfigWithRetry(ctx, config)
 }
 
+type postgresConnectionError struct {
+	cause error
+}
+
+func (e *postgresConnectionError) Error() string {
+	return "connecting to PostgreSQL with verified TLS: " + nonDisclosureError(e.cause).Error()
+}
+
+func (e *postgresConnectionError) Unwrap() error { return e.cause }
+
 func (r *postgresAccessReconciler) connectConfigWithRetry(
 	ctx context.Context,
 	config *pgx.ConnConfig,
@@ -1434,7 +1448,7 @@ func (r *postgresAccessReconciler) connectConfigWithRetry(
 		case <-time.After(time.Duration(attempt+1) * time.Second):
 		}
 	}
-	return nil, fmt.Errorf("connecting to PostgreSQL with verified TLS: %w", nonDisclosureError(err))
+	return nil, &postgresConnectionError{cause: err}
 }
 
 func postgresConnectionConfig(host, databaseName, username, password string) (*pgx.ConnConfig, error) {

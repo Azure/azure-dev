@@ -67,6 +67,8 @@ func TestPostgresPasswordAccessUsesApplicationOwnedPolicyIntegration(t *testing.
 		connect: func(ctx context.Context, requested *pgx.ConnConfig) (*pgx.Conn, error) {
 			config := base.Copy()
 			config.Database = requested.Database
+			config.User = requested.User
+			config.Password = requested.Password
 			return pgx.ConnectConfig(ctx, config)
 		},
 	}

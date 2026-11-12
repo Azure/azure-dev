@@ -118,7 +118,6 @@ func TestProjectLifecycleSkipsProjectsWithoutSpringServices(t *testing.T) {
 }
 
 func TestPreProvisionPreservesSelectedAdministratorWhenUserChanges(t *testing.T) {
-	setTestPostgresBootstrapImage(t)
 	for _, key := range []string{
 		databasePasswordEnv, databaseAppPasswordEnv, databaseAdministratorNameEnv,
 		databaseAdministratorObjectIDEnv, databaseUserAccessTenantIDEnv, "DATABASE_ADMIN_NAME", "DATABASE_ADMIN_OBJECT_ID",
@@ -177,7 +176,6 @@ func TestPreProvisionPreservesSelectedAdministratorWhenUserChanges(t *testing.T)
 }
 
 func TestPreProvisionPromptsForMissingAdministratorInputsBeforePersisting(t *testing.T) {
-	setTestPostgresBootstrapImage(t)
 	for _, key := range []string{
 		databasePasswordEnv, databaseAppPasswordEnv, databaseAdministratorNameEnv,
 		databaseAdministratorObjectIDEnv, databaseUserAccessTenantIDEnv, "DATABASE_ADMIN_NAME", "DATABASE_ADMIN_OBJECT_ID",
@@ -330,7 +328,6 @@ func TestDatabaseFreeLifecycleDoesNotAcquirePostgresRequirements(t *testing.T) {
 			require.NoError(t, runtime.PreProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
 			require.NoError(t, runtime.PostProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
 			require.NoError(t, runtime.PreDeploy(t.Context(), args))
-			require.NoError(t, runtime.PostDeploy(t.Context(), args))
 			require.Zero(t, identities.calls)
 			require.Zero(t, outputs.calls)
 			require.Empty(t, store.writes)
@@ -384,7 +381,6 @@ func TestMixedProjectKeepsDatabaseFreeServiceIndependent(t *testing.T) {
 	}
 }
 func TestPreProvisionRejectsInvalidInputsOrUnavailableUserWithoutWrites(t *testing.T) {
-	setTestPostgresBootstrapImage(t)
 	for _, key := range []string{
 		databasePasswordEnv, databaseAppPasswordEnv, databaseAdministratorNameEnv,
 		databaseAdministratorObjectIDEnv, databaseUserAccessTenantIDEnv, "DATABASE_ADMIN_NAME", "DATABASE_ADMIN_OBJECT_ID",

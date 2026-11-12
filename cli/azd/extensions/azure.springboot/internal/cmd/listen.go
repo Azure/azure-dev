@@ -36,8 +36,5 @@ func configureExtensionHostWithNoPrompt(host *azdext.ExtensionHost, noPrompt boo
 		}, &azdext.ServiceEventOptions{Host: spring.SpringHost}).
 		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return runtime.PreDeploy(ctx, args)
-		}, &azdext.ServiceEventOptions{Host: spring.SpringHost}).
-		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-			return runtime.PostDeploy(ctx, args)
 		}, &azdext.ServiceEventOptions{Host: spring.SpringHost})
 }

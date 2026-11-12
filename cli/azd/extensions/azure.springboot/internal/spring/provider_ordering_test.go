@@ -113,7 +113,6 @@ func (orderingPrincipal) CurrentPrincipalType(context.Context) (provisioning.Pri
 }
 
 func TestBicepProviderResolvesPreparedAdministratorThroughProvisionLifecycle(t *testing.T) {
-	setTestPostgresBootstrapImage(t)
 	configDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configDir)
 	bicepName := "bicep"

@@ -4,7 +4,6 @@
 package spring
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -13,8 +12,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 )
 
 const (
@@ -109,75 +106,4 @@ func decodePostgresBootstrapInput(value string) (postgresBootstrapInput, error) 
 		return postgresBootstrapInput{}, err
 	}
 	return input, nil
-}
-
-func RunPostgresBootstrap(
-	ctx context.Context,
-	encodedInput string,
-	stdout io.Writer,
-	stderr io.Writer,
-) error {
-	input, err := decodePostgresBootstrapInput(encodedInput)
-	if err != nil {
-		return writePostgresBootstrapFailure(stderr, err)
-	}
-
-	credential, err := azidentity.NewManagedIdentityCredential(nil)
-	if err != nil {
-		return writePostgresBootstrapFailure(
-			stderr,
-			fmt.Errorf("creating the bootstrap managed identity credential: %w", err),
-		)
-	}
-	token, err := credential.GetToken(
-		ctx,
-		policy.TokenRequestOptions{Scopes: []string{postgresTokenScope}},
-	)
-	if err != nil {
-		return writePostgresBootstrapFailure(
-			stderr,
-			fmt.Errorf("acquiring the PostgreSQL bootstrap access token: %w", err),
-		)
-	}
-
-	resources := &verifiedPostgresResources{
-		ServerID:                 input.ServerResourceID,
-		Host:                     input.Host,
-		AdministratorName:        input.ExpectedAdministratorName,
-		SessionAdministratorName: input.SessionAdministratorName,
-		IdentityPrincipalID:      strings.ToLower(input.ApplicationPrincipalID),
-	}
-	database := resolvedDatabase{
-		Type:             databasePostgreSQL,
-		ServerResourceID: input.ServerResourceID,
-		Name:             input.DatabaseName,
-		Authentication:   databaseAuthenticationManagedIdentity,
-		Username:         input.ApplicationUsername,
-	}
-	reconciler := newPostgresAccessReconciler(nil)
-	if err := reconciler.reconcileSQLWithAdministratorPassword(
-		ctx,
-		resources,
-		database,
-		map[string]string{},
-		input.EnvironmentName,
-		token.Token,
-	); err != nil {
-		return writePostgresBootstrapFailure(stderr, err)
-	}
-	if err := json.NewEncoder(stdout).Encode(map[string]string{"status": "succeeded"}); err != nil {
-		return fmt.Errorf("writing PostgreSQL bootstrap success output: %w", err)
-	}
-	return nil
-}
-
-func writePostgresBootstrapFailure(writer io.Writer, err error) error {
-	safe := nonDisclosureError(err)
-	if encodeErr := json.NewEncoder(writer).Encode(map[string]string{
-		"status": "failed",
-		"error":  safe.Error(),
-	}); encodeErr != nil {
-		return errors.Join(safe, fmt.Errorf("writing failure output: %w", encodeErr))
-	}
-	return safe
 }

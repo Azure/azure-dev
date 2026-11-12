@@ -29,9 +29,9 @@ Use the same azd executable and profile for installation and template initializa
 If `AZD_CONFIG_DIR` is set, use an absolute path so changing directories does not
 select another profile.
 
-These commands install the development extension; PostgreSQL Entra bootstrap
-also requires its release-configured, digest-pinned MCR runner image. An
-unconfigured build does not provide that image or bypass its repository guard.
+These commands provide the complete development extension. PostgreSQL setup
+runs locally during provisioning; no bootstrap image, container Job, image
+publication, or release-only build input is required.
 
 ## Packaging
 
@@ -108,7 +108,7 @@ JPA, R2DBC, unsupported database libraries, authored database settings, unresolv
 selectors, and incomplete dependency evidence are not treated as database-free.
 These apps keep normal Java/container packaging and deployment verification,
 but do not require PostgreSQL outputs, administrator inputs, a User login,
-the bootstrap image, SQL access, or database firewall preparation. No
+SQL access or database firewall preparation. No
 `SPRING_DATABASE_TYPE=none` value is exported. A database-free service also
 remains independent of PostgreSQL services in the same project.
 
@@ -138,7 +138,7 @@ unresolved client ID is rejected. A passwordless flag alone is insufficient.
 
 Focused datasource and deployment tests cover repeated command-line options,
 empty JVM properties, indexed environment profile groups, and both managed
-identity modes. Full live lifecycle acceptance remains pending. The extension
+identity modes. Live lifecycle acceptance requires a separate Azure run. The extension
 maps a verified system-assigned or attached user-assigned identity to an
 ordinary non-admin PostgreSQL login, or verifies the effective Spring password
 login when the application uses password authentication. A configured User
@@ -199,7 +199,7 @@ environments need the exact deferred administrator parameter bindings described
 in the [design](docs/design.md), because Bicep initializes before
 `preprovision` and resolves the prepared values again before deployment.
 Non-Spring projects, database-free Spring apps, and H2 do not require
-administrator preparation or the bootstrap image. Docker remains necessary
+administrator preparation. Docker remains necessary
 for application-container packaging, not administrator selection.
 
 ## Application-owned startup initialization
@@ -223,27 +223,37 @@ Existing administrator-owned or foreign application objects are rejected,
 not adopted or transferred. Old DML-only readiness markers are insufficient.
 Use a fresh database/environment or a separately approved migration. Changing
 target, auth mode, username or identity likewise needs explicit migration.
-For automatic managed-identity deployments, the extension runs access
-reconciliation in a short-lived Container Apps Job in the application's
-verified environment. The job must report exactly the outbound IPv4 addresses
-already covered by deployment-owned PostgreSQL firewall rules before the
-extension grants its system identity temporary PostgreSQL administrator access.
-The job has no secrets, private registry credentials, user-assigned identities,
-retries, or caller-supplied template override. The extension removes the
-temporary administrator before deleting the job.
+For automatic managed-identity deployments, only `postprovision` performs
+privileged SQL. The extension verifies the current deployment and public
+PostgreSQL endpoint, temporarily opens an owned firewall rule covering
+`0.0.0.0` through `255.255.255.255`, and connects from the local machine using
+hostname-verified TLS. The local network must permit outbound TCP 5432;
+a firewall rule cannot bypass a corporate network restriction or Azure Policy.
+This intentionally permits any IPv4 source during bootstrap; Entra
+authentication and TLS remain required.
 
-Failed executions retain only the unprivileged job for log inspection. A later
-run recovers verified stale jobs by removing any matching administrator first.
-If administrator removal cannot be confirmed, the job is retained so the
-identity/administrator pair can be recovered deterministically. This path
-requires permission to manage Container Apps Jobs and PostgreSQL Entra
-administrators in addition to reading the verified application and firewall
-resources. Release builds enable this path only by injecting a digest-pinned
-runner from `mcr.microsoft.com/azure-dev/azd-spring-postgres-bootstrap`.
-The build scripts accept it through the release-only
-`POSTGRES_BOOTSTRAP_IMAGE` input. Builds without that Microsoft-owned image
-fail before authentication or Azure mutation rather than falling back to an
-untrusted or validation-only image.
+The selected User remains the persistent administrator. An existing caller
+administrator is verified and its actual login alias is used without changing
+or deleting that registration. Otherwise, the extension temporarily registers
+the signed-in User with a separate session login. It removes only that owned
+registration after closing SQL sessions. The app keeps its ordinary managed
+identity login and exact Container Apps runtime firewall rules.
+
+Both temporary resources are cleaned up with bounded, cancellation-independent
+operations, and their absence is checked before readiness is saved. Cleanup
+failure fails provisioning. Ownership records and a local process lock under
+`.azure/spring-postgres-bootstrap/` support recovery by a later `azd provision`
+from the same project. Do not remove that state while cleanup is outstanding.
+A killed process can leave access open: there is no automatic expiration, and
+an accepted firewall deletion is not an instantaneous enforcement boundary.
+Changed or unowned resources are not deleted.
+
+`predeploy` checks current provisioning readiness, deployment/datasource
+bindings, and runtime network policy without administrator SQL. There is no
+postdeploy SQL handler or immediate post-startup SQL ownership audit; rerun
+`azd provision` for reconciliation. Verified stale Jobs from the older
+prototype can still be cleaned up administrator-first; this migration requires
+reading/deleting those Jobs but never creates or starts one.
 
 Password-authenticated and unsupported custom deployments retain local
 reconciliation. `POSTGRES_BOOTSTRAP_CLIENT_IP` remains a troubleshooting-only

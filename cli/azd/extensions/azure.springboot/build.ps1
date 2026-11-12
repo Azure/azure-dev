@@ -21,13 +21,6 @@ $platforms = if ($env:EXTENSION_PLATFORM) {
 }
 
 $ldflags = "-X 'azurespringboot/internal/version.Version=$env:EXTENSION_VERSION'"
-if ($env:POSTGRES_BOOTSTRAP_IMAGE) {
-    if ($env:POSTGRES_BOOTSTRAP_IMAGE -notmatch
-        '^mcr\.microsoft\.com/azure-dev/azd-spring-postgres-bootstrap@sha256:[0-9a-f]{64}$') {
-        throw 'POSTGRES_BOOTSTRAP_IMAGE must be the digest-pinned Microsoft-owned MCR image.'
-    }
-    $ldflags += " -X 'azurespringboot/internal/spring.postgresBootstrapImage=$env:POSTGRES_BOOTSTRAP_IMAGE'"
-}
 
 foreach ($platform in $platforms) {
     $targetOS, $targetArch = $platform -split '/'

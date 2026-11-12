@@ -69,6 +69,7 @@ type Runtime struct {
 	outputs         deploymentOutputVerifier
 	reconcile       func(context.Context, map[string]string) error
 	configureAccess func(context.Context, string, resolvedDatabase, map[string]string) error
+	recoverAccess   func(context.Context, string, resolvedDatabase, map[string]string) error
 	prepareNetwork  func(context.Context, *deploymentBinding) (func(context.Context) error, error)
 	noPrompt        bool
 	prompt          func(context.Context, *azdext.PromptOptions) (string, error)
@@ -85,6 +86,7 @@ func NewRuntime(client *azdext.AzdClient, noPrompt bool) *Runtime {
 		outputs:         newDeploymentOutputVerifier(client),
 		reconcile:       newFirewallReconciler(client).Reconcile,
 		configureAccess: newPostgresAccessDispatcher(client),
+		recoverAccess:   newPostgresLocalAccessReconciler(newPostgresAccessReconciler(client)).Recover,
 		prepareNetwork:  newFirewallReconciler(client).PrepareAutomatic,
 		noPrompt:        noPrompt,
 		prompt: func(ctx context.Context, options *azdext.PromptOptions) (string, error) {
@@ -285,14 +287,6 @@ func (r *Runtime) PreProvision(ctx context.Context, args *azdext.ProjectEventArg
 			return err
 		}
 	}
-	if database.discovered &&
-		preparation.Type == databasePostgreSQL &&
-		preparation.Authentication == databaseAuthenticationManagedIdentity {
-		if err := validatePostgresBootstrapImage(postgresBootstrapImage); err != nil {
-			return err
-		}
-	}
-
 	writes := map[string]string{}
 	switch preparation.Type {
 	case databaseH2:
@@ -665,6 +659,28 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 	if binding, present := ctx.Value(deploymentBindingKey{}).(*deploymentBinding); present {
 		values = binding.values
 	}
+	if database.discovered && database.Authentication == databaseAuthenticationManagedIdentity {
+		database.AdministratorName = strings.TrimSpace(values[databaseAdministratorNameEnv])
+		if !validAdministratorName(database.AdministratorName) ||
+			!validAdministratorObjectID(strings.TrimSpace(values[databaseAdministratorObjectIDEnv])) {
+			return configurationError("the configured PostgreSQL User administrator identity is incomplete")
+		}
+		if err := r.environments.set(ctx, envName, databaseAccessConfiguredEnv, "pending"); err != nil {
+			return err
+		}
+		values = maps.Clone(values)
+		values[databaseAccessConfiguredEnv] = "pending"
+		if binding, present := ctx.Value(deploymentBindingKey{}).(*deploymentBinding); present {
+			pending := *binding
+			pending.values = values
+			ctx = context.WithValue(ctx, deploymentBindingKey{}, &pending)
+		}
+		if r.recoverAccess != nil {
+			if err := r.recoverAccess(ctx, envName, database, values); err != nil {
+				return err
+			}
+		}
+	}
 	closeNetwork, err := r.beginAutomaticNetwork(ctx)
 	defer func() {
 		if cleanupErr := closeNetwork(); cleanupErr != nil && !errors.Is(resultErr, cleanupErr) {
@@ -753,7 +769,7 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 	writes := map[string]string{
 		provisionedDatabaseTypeEnv:   string(database.Type),
 		provisionedDatabaseAccessEnv: database.accessFingerprint(),
-		databaseAccessConfiguredEnv:  databaseAccessPolicyVersion,
+		databaseAccessConfiguredEnv:  databaseProvisioningVersion(database),
 	}
 	if database.discovered {
 		writes[databaseTypeEnv] = string(database.Type)
@@ -847,11 +863,6 @@ func (r *Runtime) PreDeploy(ctx context.Context, args *azdext.ServiceEventArgs) 
 	return r.reconcileService(ctx, args)
 }
 
-// PostDeploy re-verifies managed database access after a successful deployment.
-func (r *Runtime) PostDeploy(ctx context.Context, args *azdext.ServiceEventArgs) error {
-	return r.reconcileService(ctx, args)
-}
-
 func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEventArgs) (resultErr error) {
 	if args == nil || args.Service == nil {
 		return validationError("missing_service_config", "service deployment configuration is missing", "check azure.yaml")
@@ -893,7 +904,7 @@ func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEven
 		return err
 	}
 	if resolved.database.managedAccess() {
-		if values[databaseAccessConfiguredEnv] != databaseAccessPolicyVersion ||
+		if values[databaseAccessConfiguredEnv] != databaseProvisioningVersion(resolved.database) ||
 			values[provisionedDatabaseAccessEnv] != resolved.database.accessFingerprint() {
 			return validationError(
 				"database_access_not_configured",
@@ -901,6 +912,7 @@ func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEven
 				"run azd provision so the extension can verify the login, grants, identity, and cleanup",
 			)
 		}
+
 		if r.outputs == nil {
 			return errors.New("current deployment output verification is unavailable")
 		}
@@ -925,8 +937,10 @@ func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEven
 			values = maps.Clone(values)
 			values[databaseAppPasswordEnv] = resolved.database.appPassword
 		}
-		if err := r.configureAccess(ctx, envName, resolved.database, values); err != nil {
-			return err
+		if !resolved.database.discovered || resolved.database.Authentication != databaseAuthenticationManagedIdentity {
+			if err := r.configureAccess(ctx, envName, resolved.database, values); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -936,4 +950,11 @@ func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEven
 		}
 	}
 	return closeNetwork()
+}
+
+func databaseProvisioningVersion(database resolvedDatabase) string {
+	if database.discovered && database.Authentication == databaseAuthenticationManagedIdentity {
+		return automaticMIProvisioningVersion
+	}
+	return databaseAccessPolicyVersion
 }

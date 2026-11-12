@@ -80,6 +80,11 @@ Source-only Gradle discovery evaluates the production runtime classpath through
 the wrapper; it may download dependencies and execute authored build logic.
 See the [extension design](../../cli/azd/extensions/azure.springboot/docs/design.md)
 for build-system limitations and exact `bootJar` artifact selection.
+Automatic PostgreSQL managed-identity setup runs privileged SQL locally only
+during `postprovision`, with owned temporary public firewall access and, when
+needed, a temporary caller administrator. Cleanup must finish before readiness
+is saved. Deployment checks provisioning and runtime bindings without repeating
+administrator SQL; there is no postdeploy SQL audit or bootstrap runner image.
 
 Extension command metadata can set `"launch": {"noAzdEnvironment": true}` on a command.
 For that command only (not its descendants), azd skips loading the selected

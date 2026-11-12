@@ -95,7 +95,7 @@ This result is not exported as `SPRING_DATABASE_TYPE=none`.
 
 Database-free services retain generic build, packaging, deployment ownership,
 application binding, and endpoint checks. They skip database state writes,
-identity selection, bootstrap-image checks, SQL reconciliation, and database
+identity selection, SQL reconciliation, and database
 network preparation. H2 likewise does not enter PostgreSQL preparation.
 Project database selection ignores database-free services; a verified per-service
 Container App binding prevents them from inheriting another service's PostgreSQL
@@ -191,38 +191,57 @@ does not rotate it. For managed identity, the selected system-assigned or
 attached user-assigned identity must match the verified deployment and
 PostgreSQL Entra mapping.
 
-Automatic managed-identity deployments reconcile PostgreSQL access in a
-short-lived Container Apps Job in the application's verified managed
-environment. This avoids inferring the database TCP source address from an
-unrelated local HTTPS request. Before creating a temporary PostgreSQL
-administrator, the extension reads the job back and verifies:
+Automatic managed-identity deployments reconcile privileged PostgreSQL access
+locally, only in `postprovision`. The public endpoint must already be explicitly
+enabled. The extension never converts private or adopted infrastructure to
+public access. It verifies current resources, authentication, selected User
+administrator, application identity, datasource, and exact deployment-owned
+runtime firewall rules before opening bootstrap access.
 
-- the expected environment, ownership tags, location, and system identity;
-- no secrets, private registries, user-assigned identities, retries, init
-  containers, volumes, command, or caller-supplied execution override;
-- the fixed digest-pinned image, input contract, timeout, and single-replica
-  template;
-- an outbound IPv4 set exactly equal to the application's deployment-owned
-  `aca-<ip>` firewall-rule inventory.
+An owned temporary rule covers `0.0.0.0` through `255.255.255.255`; the latter
+endpoint is deliberate, not the Azure-services-only zero-to-zero rule. This
+avoids treating HTTPS-discovered caller egress as proof of the PostgreSQL TCP
+route, but the local network must still allow TCP 5432. SQL uses a PostgreSQL
+token from the host-backed User credential and verified TLS. Connection-only
+network/authentication propagation failures have a bounded readiness window;
+SQL ownership or grant-policy failures are not retried as readiness failures.
 
-The job receives only a versioned, non-secret input value. Its managed identity
-acquires a token for Azure Database for PostgreSQL and connects with
-hostname-verified TLS. The temporary session administrator is used only for the
-connection. Database and initialization-marker ownership checks continue to
-expect the deployment-verified configured User administrator, preserving the
-`app-owned-v2` policy.
+If the caller already has a User administrator registration in the server's
+authentication tenant, its verified login alias is used and retained.
+Otherwise a uniquely named temporary User registration provides the session
+login. Database ownership checks still use the persistent selected
+administrator, never the temporary session name.
 
-The extension creates the job and its PostgreSQL administrator dynamically
-after Bicep succeeds; neither resource is part of the authored template. It
-starts the stored template without an execution override and polls the exact
-returned execution. On success, cancellation before execution, or start
-failure, cleanup removes the administrator first and then the job. A failed
-execution removes the administrator but temporarily retains the unprivileged
-job for log inspection. Later runs recover only stale jobs whose complete
-template, tags, identity, server, environment, and input contract can still be
-proved; administrator deletion must succeed before job deletion. An
-administrator whose matching owned job no longer exists is never inferred or
-deleted.
+The extension flushes ownership intent under
+`.azure/spring-postgres-bootstrap/` before Azure writes and uses an OS file
+lock to reject overlapping local operations in that project. A subsequent
+provision recovers matching records before unrestricted-firewall inventory
+validation. Recovery checks the exact server/environment, resource identities,
+range and administrator properties; changed or unowned resources fail closed.
+Local state must be retained for recovery. This is not a distributed lease or
+an automatic expiry mechanism.
+
+SQL connections close before cleanup. Firewall and temporary administrator
+cleanup both run even after failure or cancellation, each with a separate
+bounded context. ARM absence is verified, but firewall enforcement may lag
+resource deletion. Cleanup failure keeps recovery state and prevents a ready
+marker. Readiness is invalidated before bootstrap/recovery, including repeat
+provisioning. Only complete SQL, runtime firewall verification and cleanup
+permit readiness to become successful again.
+
+`predeploy` verifies the successful provisioning marker and fingerprint,
+current root deployment, datasource binding and runtime network policy. It
+does not acquire an administrator database token or perform SQL reconciliation.
+The extension does not register a postdeploy SQL handler. Consequently,
+post-startup SQL ownership/effective-privilege drift is no longer audited
+immediately; explicit reprovisioning reconciles it.
+
+Legacy recovery only inventories and deletes verified stale bootstrap Jobs.
+The previous non-secret input shape is retained solely as ownership evidence;
+it is never executed. Exact metadata, identity, environment, template and
+input must still match. The administrator is verified and removed before the
+Job, whose absence is then confirmed. Recent, changed or unmatched resources
+require explicit operator intervention.
 
 Password-authenticated and unsupported custom deployments retain local
 reconciliation. That path can create a temporary exact firewall rule and can
@@ -235,8 +254,8 @@ Legacy automatic deployments may still contain the exact template-authored
 evidence proves ownership and the range remains unrestricted. Unknown, changed,
 or unowned rules are never deleted. New templates must provision only the exact
 Container Apps outbound rules. PostgreSQL remains on a public endpoint; this
-design removes broad bootstrap exposure and split local egress dependence but
-does not provide private networking.
+design removes persistent broad bootstrap exposure but does not provide private
+networking.
 
 For automatic managed-identity provisioning, azd initializes the Bicep provider
 before it invokes the extension's `preprovision` event. A template that maps
@@ -300,18 +319,9 @@ The real PostgreSQL 2024-08-01 API rejected a fresh omitted-name administrator
 request, while the otherwise identical explicitly named control succeeded.
 Keep names and ARM `principalName` required. Live administrator verification
 checks the exact ARM ID, object ID, User type, server authentication tenant and
-explicit name. The existing named v1 runner payload, ownership policy and
-recovery contract remain unchanged; an OID-only payload or protocol bump is not
-part of this implementation. Revised live lifecycle acceptance remains separate
-from this API control and unit-level preparation evidence.
-
-Release builds enable remote reconciliation only with a digest-pinned runner
-from `mcr.microsoft.com/azure-dev/azd-spring-postgres-bootstrap`. The release
-pipeline supplies the published digest through the build-only
-`POSTGRES_BOOTSTRAP_IMAGE` input and must publish that image with vulnerability
-scanning, SBOM, signing, provenance, servicing, and release retention. Builds
-without the release image fail before authentication or Azure mutation;
-validation-only or personal registry images are not accepted.
+explicit name. Legacy input metadata remains available only for conservative
+cleanup. Native extension builds require no runner image or image-related
+linker input.
 
 ## Failure behavior
 

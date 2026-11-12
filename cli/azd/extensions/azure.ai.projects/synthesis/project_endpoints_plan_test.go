@@ -17,11 +17,12 @@ import (
 	"testing"
 	"text/template"
 
+	"azure.ai.projects/synthesis/testutil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBicepExistingProjectIdentityGate(t *testing.T) {
-	bicep := lookupBicep(t)
+	bicep := testutil.LookupBicep(t)
 	for _, tt := range []struct {
 		AcrMode         string
 		AcrPullAssigned bool
@@ -98,7 +99,7 @@ func TestBicepExistingProjectIdentityGate(t *testing.T) {
 }
 
 func TestBicepExistingProjectEndpointIdentity(t *testing.T) {
-	bicep := lookupBicep(t)
+	bicep := testutil.LookupBicep(t)
 	const endpoint = "https://custom-dns.services.ai.azure.com/api/projects/project"
 	cases := []struct {
 		name, endpoint, subdomain, advertised string

@@ -1,6 +1,6 @@
 # Azure Developer CLI (azd) Agents Extension
 
-<!-- cspell:ignore strconv -->
+<!-- cspell:ignore strconv kubelet -->
 ## Project monitoring
 
 New Foundry projects created for agents automatically provision and connect
@@ -1818,10 +1818,17 @@ access grants and related resources it can establish it owns. Customers manage
 network reachability and image-publisher push permissions. See
 [non-interactive configuration](../ai-non-interactive.md#azureaiprojects).
 
-Do not combine an external source-build registry selection with `agentHosting`,
-even for a project-only configuration: reuse does not manage AKS node pull
-access. Remove the selector to use an azd-created registry, or use explicit
-prebuilt images with user-managed registry authentication.
+An external source-build registry selection supports `agentHosting`. The
+Projects provider checks and grants image-pull access to the AKS kubelet
+identity only; ordinary Foundry hosting uses the Project identity. Existing
+registry network settings are retained, and customers must ensure AKS can reach
+the registry. Re-eject older BYO AKS Bicep templates for the kubelet-only access
+contract. See [Projects registry reuse](../azure.ai.projects/README.md#reuse-an-external-container-registry).
+
+Both ordinary Foundry and BYO AKS reject automatic registry creation when account
+network isolation is enabled. Select an external registry for source builds in
+that case. Registry connections continue to use the Foundry Project identity,
+separately from the kubelet's pull grants.
 
 An `image` value alone still defaults to a source build, including with
 `--no-prompt`. Explicit prebuilt selection requires
@@ -2198,7 +2205,7 @@ deployment.
 
 Foundry project services can be provisioned as network-secured, VNet-bound accounts by adding a `network:` block to the `host: azure.ai.project` service in `azure.yaml`. The `azure.ai.projects` extension owns that service and the `microsoft.foundry` provider; this extension still authors the block during agent init. See [Private networking for `host: azure.ai.project`](docs/private-networking.md) for the schema reference, BYO-image requirements, and VNet deployment cheatsheet.
 
-For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes default or independently supplied Storage and hosting/workload identities, required grants, and lifecycle limitations. A native registry is created only when an Agent requires building a container image, following the standard Foundry rules. Foundry networking is optional through `network:` and can be combined with an automatically created registry when using AKS hosting. Terraform eject is not supported for this mode.
+For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes default or independently supplied Storage and hosting/workload identities, read-only preflight, required grants, and lifecycle limitations. A native registry is created only when an Agent requires building a container image and the Foundry account uses public networking. Foundry networking is optional through `network:`. Private account networking rejects automatic registry creation, including with AKS hosting; select an external registry for source builds, or use prebuilt images with `docker.imagePassthrough: true` or code/ZIP deployments without automatic registry creation. Customers must ensure build and AKS access to an external registry. Terraform eject is not supported for this mode.
 
 ## Skill optimization from traces
 

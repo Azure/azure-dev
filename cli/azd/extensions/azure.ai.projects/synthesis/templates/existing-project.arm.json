@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "8945515781842841592"
+      "templateHash": "12235604261462865043"
     }
   },
   "definitions": {
@@ -183,7 +183,7 @@
           "registryName": {
             "value": "[variables('acrName')]"
           },
-          "projectPrincipalId": {
+          "pullPrincipalId": {
             "value": "[reference('foundryAccount::project', '2025-04-01-preview', 'full').identity.principalId]"
           }
         },
@@ -194,7 +194,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "11513645951317576548"
+              "templateHash": "2356462800975162710"
             }
           },
           "parameters": {
@@ -215,7 +215,7 @@
             "registryName": {
               "type": "string"
             },
-            "projectPrincipalId": {
+            "pullPrincipalId": {
               "type": "string"
             },
             "pullAssigned": {
@@ -260,9 +260,9 @@
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
               "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
-              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('projectPrincipalId'), variables('acrPullRoleId'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('pullPrincipalId'), variables('acrPullRoleId'))]",
               "properties": {
-                "principalId": "[parameters('projectPrincipalId')]",
+                "principalId": "[parameters('pullPrincipalId')]",
                 "principalType": "ServicePrincipal",
                 "roleDefinitionId": "[variables('acrPullRoleId')]"
               },
@@ -274,7 +274,7 @@
               "condition": "[and(equals(parameters('mode'), 'reuse-connect'), not(parameters('pullAssigned')))]",
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
-              "name": "[if(empty(parameters('accessOperationId')), format('existing-acr-access-{0}', uniqueString(parameters('projectPrincipalId'), parameters('registryName'))), format('azd-acr-access-{0}', parameters('accessOperationId')))]",
+              "name": "[if(empty(parameters('accessOperationId')), format('existing-acr-access-{0}', uniqueString(parameters('pullPrincipalId'), parameters('registryName'))), format('azd-acr-access-{0}', parameters('accessOperationId')))]",
               "properties": {
                 "expressionEvaluationOptions": {
                   "scope": "inner"
@@ -285,7 +285,7 @@
                     "value": "[parameters('registryName')]"
                   },
                   "principalId": {
-                    "value": "[parameters('projectPrincipalId')]"
+                    "value": "[parameters('pullPrincipalId')]"
                   },
                   "assignmentName": {
                     "value": "[parameters('accessOperationId')]"
@@ -391,7 +391,7 @@
           "registryName": {
             "value": "[variables('effectiveAcrName')]"
           },
-          "projectPrincipalId": {
+          "pullPrincipalId": {
             "value": "[reference('foundryAccount::project', '2025-04-01-preview', 'full').identity.principalId]"
           }
         },
@@ -402,7 +402,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "11513645951317576548"
+              "templateHash": "2356462800975162710"
             }
           },
           "parameters": {
@@ -423,7 +423,7 @@
             "registryName": {
               "type": "string"
             },
-            "projectPrincipalId": {
+            "pullPrincipalId": {
               "type": "string"
             },
             "pullAssigned": {
@@ -468,9 +468,9 @@
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
               "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
-              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('projectPrincipalId'), variables('acrPullRoleId'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('pullPrincipalId'), variables('acrPullRoleId'))]",
               "properties": {
-                "principalId": "[parameters('projectPrincipalId')]",
+                "principalId": "[parameters('pullPrincipalId')]",
                 "principalType": "ServicePrincipal",
                 "roleDefinitionId": "[variables('acrPullRoleId')]"
               },
@@ -482,7 +482,7 @@
               "condition": "[and(equals(parameters('mode'), 'reuse-connect'), not(parameters('pullAssigned')))]",
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
-              "name": "[if(empty(parameters('accessOperationId')), format('existing-acr-access-{0}', uniqueString(parameters('projectPrincipalId'), parameters('registryName'))), format('azd-acr-access-{0}', parameters('accessOperationId')))]",
+              "name": "[if(empty(parameters('accessOperationId')), format('existing-acr-access-{0}', uniqueString(parameters('pullPrincipalId'), parameters('registryName'))), format('azd-acr-access-{0}', parameters('accessOperationId')))]",
               "properties": {
                 "expressionEvaluationOptions": {
                   "scope": "inner"
@@ -493,7 +493,7 @@
                     "value": "[parameters('registryName')]"
                   },
                   "principalId": {
-                    "value": "[parameters('projectPrincipalId')]"
+                    "value": "[parameters('pullPrincipalId')]"
                   },
                   "assignmentName": {
                     "value": "[parameters('accessOperationId')]"

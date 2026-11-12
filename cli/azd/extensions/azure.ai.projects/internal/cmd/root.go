@@ -1,11 +1,13 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore helpformat
+// cspell:ignore helpformat BYOAKS
 package cmd
 
 import (
 	"context"
+	"os"
+	"strconv"
 
 	"azure.ai.projects/internal/helpformat"
 	"azure.ai.projects/internal/provisioning"
@@ -38,7 +40,11 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProjectShowCommand(extCtx))
 	rootCmd.AddCommand(newProjectAddCommand(extCtx))
 	rootCmd.AddCommand(newProjectDeploymentCommand(extCtx))
-	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
+	listenCommand := azdext.NewListenCommand(configureExtensionHost)
+	if enabled, err := strconv.ParseBool(os.Getenv(synthesis.BYOAKSEnvVar)); err == nil && enabled {
+		listenCommand = newListenCommand(configureExtensionHostWithReport)
+	}
+	rootCmd.AddCommand(listenCommand)
 
 	rootCmd.Example = `  # Configure a Foundry project in the current azd project
   azd ai project add
@@ -57,6 +63,10 @@ func NewRootCommand() *cobra.Command {
 
 // configureExtensionHost registers project lifecycle providers.
 func configureExtensionHost(host *azdext.ExtensionHost) {
+	configureExtensionHostWithReport(host, nil)
+}
+
+func configureExtensionHostWithReport(host *azdext.ExtensionHost, report func(string)) {
 	azdClient := host.Client()
 	host.
 		WithServiceTargetPreview(
@@ -70,6 +80,7 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 			func() azdext.ProvisioningProvider {
 				return provisioning.NewFoundryProvisioningProvider(
 					azdClient,
+					report,
 				)
 			},
 		).

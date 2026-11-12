@@ -27,15 +27,6 @@ authentication contract.
 - Reads and polling use the configured retry policy and honor cancellation.
   Write submissions are not automatically retried or replayed after an
   authentication challenge.
-- Service and operation failures preserve typed status, diagnostic codes, and
-  sanitized messages. They retain useful model identifiers while redacting
-  credentials, URLs, paths, quoted customer values, and labeled document data.
-  `ServiceError` and `OperationError` both wrap `azcore.ResponseError`.
-  Terminal operation diagnostics normalize
-  `innererror` into nested `Details` alongside `details`, with limits of eight
-  levels and 32 diagnostics. `DiagnosticsTruncated` marks omitted diagnostics.
-  The shared `RedactDiagnostic` helper also protects the extension's command
-  error boundary without modifying successful result content.
 
 See [client integration requirements](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/cu-rest-client/AZD_PROVENANCE.md) for the behavior to verify
 when changing the client dependency.

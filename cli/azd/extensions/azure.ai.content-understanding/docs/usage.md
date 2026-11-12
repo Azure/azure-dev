@@ -306,23 +306,6 @@ Long diagnostics are shortened; use `--report-file` on the original run to retai
 all per-input outcomes. Diagnosing a failure does not issue another analysis request.
 Missing-resource errors suggest checking the endpoint and available analyzers;
 creation conflicts suggest inspecting the existing analyzer and choosing an unused ID.
-Raw service response bodies are not printed. Diagnostic messages are filtered
-to remove credentials, URLs, paths, quoted customer values, and labeled document data.
-
-Sanitized service messages and nested error codes appear in both the terminal diagnostic and each
-failed input's report `error` string; the `cu-cli/analyze-report/v1` schema is
-unchanged. This applies to HTTP errors, failed polling operations, and inline
-analysis. Unknown service codes retain their diagnostic explanation rather than
-being replaced with a generic failure. Missing and truncated diagnostics are
-identified explicitly; deeper causes take priority over long outer messages.
-For `ModelNotSupported`, the diagnostic retains the incompatible model name when
-provided in the service message. Inspect `supportedModels` with
-`azd ai cu analyzer show <ANALYZER_NAME>` and the resource's `modelDeployments`
-with `azd ai cu defaults show`. With resource-owner approval, map the analyzer's
-model alias to a supported deployed model; defaults changes affect the whole
-resource. Successful result content is not changed by diagnostic filtering.
-The terminal summary includes succeeded, failed, and skipped counts and only
-mentions retained result files when a result file was successfully saved.
 
 In an interactive terminal, analysis shows an animated `Analyzing <target>...`
 status in the action color (`NO_COLOR` disables color). Concurrent inputs share

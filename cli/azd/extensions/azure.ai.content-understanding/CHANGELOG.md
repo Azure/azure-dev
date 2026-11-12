@@ -19,16 +19,6 @@
   use `--pretty=false` to retain original Markdown/HTML.
 - Markdown stdout with `--usage` no longer uses a JSON wrapper.
 
-### Bugs Fixed
-
-- Show sanitized service failure reasons and nested error codes in terminal
-  diagnostics and per-input reports, including HTTP, polling, and inline failures.
-  Keep useful model names and provide actionable guidance for `ModelNotSupported`
-  instead of replacing the root cause with a generic error. Redact credentials
-  and sensitive diagnostic values, and explicitly mark missing or shortened details.
-  Show accurate success/failure/skip counts and only mention retained result files
-  when files were actually saved.
-
 ### Other Changes
 
 - Improve the readability of `azd ai cu version` text output.

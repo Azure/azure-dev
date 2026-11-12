@@ -804,6 +804,55 @@ azd ai agent invoke -p a2a "Hello!"
 With the preview disabled, plain messages use A2A 0.3. To preserve that behavior after enabling it, use
 `azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"`.
 
+Formatted A2A output prints the returned **Context ID** instead of a session summary.
+Tasks also show their **Task ID** and **State**, retaining the protocol's native enum
+spellings. Failed, canceled, and rejected send Tasks return an error rather than
+displaying partial artifacts as completed answers; their IDs and text or structured
+status-message diagnostics remain available for inspection.
+Input-required and auth-required states show the agent's prompt for follow-up.
+Successful `tasks/cancel` (0.3) and `CancelTask` (1.0) requests instead return success
+with the canceled Task's IDs, state, and any status detail, not partial artifacts.
+Successful `tasks/get` (0.3) and `GetTask` (1.0) lookups also return success for
+failed, canceled, or rejected Tasks, showing IDs, state, and status detail instead
+of formatting partial artifacts as completed answers.
+
+Use `--context-id` to return to an earlier context after using another one. For an
+Echo agent, prepare two first-turn request files from the JSON-RPC examples below:
+give them distinct request/message IDs and omit `message.contextId`. Record their
+returned Context IDs as A and B, and confirm they differ before continuing:
+
+```bash
+azd ai agent invoke echo -p a2a --a2a-version 1.0 -f start-a.json --output raw
+azd ai agent invoke echo -p a2a --a2a-version 1.0 -f start-b.json --output raw
+azd ai agent invoke echo -p a2a --a2a-version 1.0 --context-id "<context-a>" "Return to A"
+azd ai agent invoke echo -p a2a --a2a-version 1.0 --context-id "<context-b>" "Return to B"
+```
+
+The follow-ups must return A and B respectively, with fresh Task IDs and the expected
+Echo replies. Context selection provides correlation/routing, not automatic model
+memory; an executor must manage its own conversation state. First-turn context
+creation and hosted-session affinity are service-owned contracts. Do not assume
+`--new-session` creates a new A2A context.
+
+`--context-id` works with A2A 0.3 and 1.0, including local invocation. It is an
+opaque A2A conversation identifier, not a Foundry session ID. When it is provided,
+azd omits cached session routing so Foundry can resolve the selected context.
+Explicit `--session-id` or `--version` still selects caller-specified hosted routing;
+omit those flags when the context should select its own session. Authorization,
+expiration, and agent-specific context support remain enforced by the service.
+If the response omits a context ID, azd does not invent one from another identifier.
+
+The flag is for plain A2A messages only. Do not combine it with `--input-file`,
+`--conversation-id`, `--new-session`, or `--new-conversation`. For complete
+JSON-RPC files, put `contextId` in `params.message`; the file is still sent unchanged.
+For hosted files, an embedded context ID alone does not bypass the cached session.
+Omit `--version` and pass `--new-session` to omit that cached route, or use
+`--session-id` to select the matching hosted session explicitly. These hosted
+routing flags remain unsupported with `--local`.
+Raw output keeps the original response, including its `contextId`, without adding
+ID/state summaries. Other protocols keep their existing session/conversation flags.
+This feature adds no context-reset flag or new local context-persistence mechanism.
+
 Generated 0.3 requests leave execution and output modes unspecified, preserving the
 non-blocking default. A Task may still be in progress; azd prints the initial response
 without polling. A2A 1.0 uses its [synchronous default](https://a2a-protocol.org/v1.0.0/specification/#322-sendmessageconfiguration),
@@ -893,7 +942,8 @@ the A2A specification. Redirects and alternate routes are not followed.
 
 Existing A2A version rules apply locally, and request files are sent unchanged.
 Local A2A sends no Foundry authentication or routing headers and persists no
-session state. For continuity, provide A2A `contextId`/`taskId` in a request file.
+session state. For continuity, use `--context-id` with a plain message, or provide
+A2A `contextId`/`taskId` in a request file.
 These flags are unsupported: `--session-id`, `--new-session`, `--conversation-id`,
 `--new-conversation`, `--version`, `--user-identity`, `--call-id`, and `--client-header`.
 Platform diagnostics are unavailable; omit `--debug-latency` or set it to `false`.
@@ -903,8 +953,8 @@ Use `--output raw` for streaming replies. `--timeout` covers the request and res
 60-second limit. Timeout or Ctrl+C stops the HTTP request, not the A2A task.
 
 For completed Tasks in **both A2A 0.3 and 1.0**, default output prefers answer
-artifacts over generic status messages such as “Done.” Other Tasks prefer status
-messages so prompts, progress, and failure details remain visible, falling back to
+artifacts over generic status messages such as “Done.” Tasks awaiting completion prefer status
+messages so prompts and progress remain visible, falling back to
 artifacts when no status text is present. History is the final text fallback.
 Use `--output raw` to inspect the complete HTTP response and JSON-RPC envelope.
 

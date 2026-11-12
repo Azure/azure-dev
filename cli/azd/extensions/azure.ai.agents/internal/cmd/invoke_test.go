@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,10 +24,13 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/pkg/useragent"
 	projectpkg "azureaiagent/internal/project"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
@@ -1068,6 +1072,9 @@ func TestResolveProtocolRejectsLegacyMetadataBeforeLocalFallback(t *testing.T) {
 	action := &InvokeAction{
 		flags:    &invokeFlags{name: serviceName},
 		noPrompt: true,
+		agentReader: func(context.Context, *remoteContext) (*agent_api.AgentObject, error) {
+			return nil, errors.New("agent metadata read is not permitted")
+		},
 	}
 	_, err = action.resolveProtocol(t.Context())
 	if err == nil {
@@ -1140,6 +1147,67 @@ func TestResolveRemoteContextMatchesDeployedNameToService(t *testing.T) {
 	}
 	if environmentServer.getCurrentCalls != 1 {
 		t.Errorf("getCurrentCalls = %d, want 1", environmentServer.getCurrentCalls)
+	}
+}
+
+func TestResolveRemoteContextValidatesProjectEndpoint(t *testing.T) {
+	const valid = "https://account.services.ai.azure.com/api/projects/project"
+	for _, tt := range []struct {
+		name, protocol, endpoint string
+		explicit, valid          bool
+	}{
+		{name: "automatic selection", endpoint: "https://attacker.example"},
+		{name: "explicit Responses", protocol: "responses", endpoint: "https://attacker.example"},
+		{name: "explicit Invocations", protocol: "invocations", endpoint: "https://attacker.example"},
+		{name: "explicit A2A", protocol: "a2a", endpoint: "https://attacker.example"},
+		{name: "non HTTPS endpoint", endpoint: "http://account.services.ai.azure.com/api/projects/project"},
+		{name: "spoofed host suffix", endpoint: "https://account.services.ai.azure.com.attacker.example"},
+		{name: "normalize service endpoint", endpoint: " HTTPS://ACCOUNT.services.ai.azure.com/api/projects/project/// ",
+			valid: true},
+		{name: "explicit endpoint is also validated", endpoint: "https://attacker.example", explicit: true},
+		{name: "malformed service endpoint hides credentials",
+			endpoint: "https://user:sensitive-password@account.services.ai.azure.com" +
+				"/api/projects/%ZZ?sig=sensitive-query#sensitive-fragment"},
+		{name: "malformed explicit endpoint hides credentials", explicit: true,
+			endpoint: "https://account.services.ai.azure.com/api/projects/%ZZ?sig=sensitive-query"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"target": {Name: "target", Host: AiAgentHost},
+				},
+			}}
+			envServer := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "test"},
+				values: map[string]map[string]string{"test": {
+					"AGENT_TARGET_NAME":                       "agent",
+					"AGENT_TARGET_PROJECT_ENDPOINT":           tt.endpoint,
+					"AGENT_TARGET_RESPONSES_ENDPOINT":         valid + "/responses",
+					"AGENT_TARGET_PROTOCOL_ENDPOINTS_VERSION": "1",
+				}},
+			}
+			t.Setenv("AZD_SERVER", newInvokeRemoteContextTestAzdServer(t, projectServer, envServer))
+			t.Setenv("FOUNDRY_PROJECT_ENDPOINT", valid)
+			action := &InvokeAction{
+				flags: &invokeFlags{name: "target", protocol: tt.protocol}, noPrompt: true,
+			}
+			if tt.explicit {
+				action.endpoint = &parsedAgentEndpoint{AgentName: "agent", ProjectEndpoint: tt.endpoint}
+			}
+			rc, err := action.resolveRemoteContext(t.Context())
+			if !tt.valid {
+				if rc != nil && rc.azdClient != nil {
+					rc.azdClient.Close()
+				}
+				require.Error(t, err)
+				require.NotContains(t, err.Error(), "sensitive")
+				return
+			}
+			require.NoError(t, err)
+			defer rc.azdClient.Close()
+			require.Equal(t, valid, rc.projectEndpoint)
+		})
 	}
 }
 
@@ -1393,29 +1461,29 @@ func TestSelectRemoteInvokeProtocol(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		deployed []agent_api.AgentProtocol
-		local    []agent_api.AgentProtocol
-		want     agent_api.AgentProtocol
-		wantErr  bool
+		name      string
+		deployed  []agent_api.AgentProtocol
+		preferred []agent_api.AgentProtocol
+		want      agent_api.AgentProtocol
+		wantErr   bool
 	}{
 		{
 			name: "unique deployed protocol",
 			deployed: []agent_api.AgentProtocol{
 				agent_api.AgentProtocolInvocations,
 			},
-			local: []agent_api.AgentProtocol{
+			preferred: []agent_api.AgentProtocol{
 				agent_api.AgentProtocolResponses,
 			},
 			want: agent_api.AgentProtocolInvocations,
 		},
 		{
-			name: "local definition disambiguates deployed protocols",
+			name: "saved routing preference disambiguates enabled protocols",
 			deployed: []agent_api.AgentProtocol{
 				agent_api.AgentProtocolResponses,
 				agent_api.AgentProtocolInvocations,
 			},
-			local: []agent_api.AgentProtocol{
+			preferred: []agent_api.AgentProtocol{
 				agent_api.AgentProtocolInvocations,
 			},
 			want: agent_api.AgentProtocolInvocations,
@@ -1429,29 +1497,29 @@ func TestSelectRemoteInvokeProtocol(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "stale local protocol does not disambiguate",
+			name: "disabled preference does not disambiguate enabled protocols",
 			deployed: []agent_api.AgentProtocol{
 				agent_api.AgentProtocolResponses,
 				agent_api.AgentProtocolInvocations,
 			},
-			local: []agent_api.AgentProtocol{
+			preferred: []agent_api.AgentProtocol{
 				agent_api.AgentProtocolA2A,
 			},
 			wantErr: true,
 		},
 		{
-			name: "local definition supplies protocol when deployment data is unavailable",
-			local: []agent_api.AgentProtocol{
+			name: "a preference is not a deployed capability",
+			preferred: []agent_api.AgentProtocol{
 				agent_api.AgentProtocolResponses,
 			},
-			want: agent_api.AgentProtocolResponses,
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := selectRemoteInvokeProtocol(tt.deployed, tt.local)
+			got, err := selectRemoteInvokeProtocol(tt.deployed, tt.preferred)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected an error, got nil")
@@ -1469,6 +1537,435 @@ func TestSelectRemoteInvokeProtocol(t *testing.T) {
 			}
 		})
 	}
+}
+
+type invokeMetadataTransport struct {
+	t          *testing.T
+	statusCode int
+	body       string
+	requests   int
+}
+
+func (transport *invokeMetadataTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	transport.requests++
+	require.Equal(transport.t, http.MethodGet, request.Method)
+	require.Equal(transport.t, "/api/projects/project/agents/agent", request.URL.Path)
+	require.Equal(transport.t, "v1", request.URL.Query().Get("api-version"))
+	require.Equal(transport.t, "Bearer test-token", request.Header.Get("Authorization"))
+	return &http.Response{
+		StatusCode: transport.statusCode,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(transport.body)),
+		Request:    request,
+	}, nil
+}
+
+func mockInvokeMetadata(t *testing.T, statusCode int, body string) *invokeMetadataTransport {
+	t.Helper()
+	transport := &invokeMetadataTransport{t: t, statusCode: statusCode, body: body}
+	previous := recordproxy.Transport
+	recordproxy.Transport = transport
+	t.Cleanup(func() { recordproxy.Transport = previous })
+	return transport
+}
+
+func TestRemoteProtocolUsesLiveConfiguration(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		stale, incomplete  bool
+		version, wantError string
+	}{
+		{name: "changed since deployment"},
+		{name: "legacy cached metadata", stale: true},
+		{name: "incomplete cached metadata", incomplete: true},
+		{name: "explicit current version overrides stale deployed version", version: "7"},
+		{name: "saved version with disabled route requires protocol", version: "2", wantError: "selected agent version"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := mockInvokeMetadata(t, http.StatusOK, `{
+				"name":"agent",
+				"agent_endpoint":{"protocol_configuration":{"invocations":{}}},
+				"versions":{"latest":{"version":"7","definition":{"kind":"hosted"}}}
+			}`)
+			action := &InvokeAction{
+				flags:      &invokeFlags{},
+				credential: responseTestCredential{},
+				resolvedRemoteContext: &remoteContext{
+					name: "agent", projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+					apiVersion: "v1", deployedVersion: "2", version: tt.version,
+					invocableProtocols:                 []agent_api.AgentProtocol{agent_api.AgentProtocolResponses},
+					deployedProtocolMetadata:           true,
+					deployedProtocolMetadataStale:      tt.stale,
+					deployedProtocolMetadataIncomplete: tt.incomplete,
+				},
+			}
+
+			protocol, err := action.resolveProtocol(t.Context())
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				require.Equal(t, 1, transport.requests)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, agent_api.AgentProtocolInvocations, protocol)
+			_, err = action.resolveRemoteContextForInvoke(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, 1, transport.requests)
+		})
+	}
+}
+
+func TestRemoteProtocolDisabledConfigurationSuggestsEnablement(t *testing.T) {
+	for _, endpoint := range []string{
+		`{"protocol_configuration":{}}`,
+		`{"protocols":[]}`,
+		`{"protocol_configuration":{"mcp":{}}}`,
+	} {
+		for _, version := range []string{"", "7"} {
+			t.Run(endpoint+"/version="+version, func(t *testing.T) {
+				mockInvokeMetadata(t, http.StatusOK, `{"name":"agent","agent_endpoint":`+endpoint+
+					`,"versions":{"latest":{"version":"9"}}}`)
+				action := &InvokeAction{
+					flags: &invokeFlags{version: version}, credential: responseTestCredential{},
+					resolvedRemoteContext: &remoteContext{
+						name: "agent", projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+						apiVersion: "v1", invocableProtocols: []agent_api.AgentProtocol{agent_api.AgentProtocolResponses},
+						version: version, deployedVersion: "7",
+					},
+				}
+				_, err := action.resolveProtocol(t.Context())
+				require.Error(t, err)
+				localError, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, exterrors.CodeAgentEndpointProtocolNotEnabled, localError.Code)
+				suggestion := azdext.WrapError(err).GetSuggestion()
+				require.Contains(t, suggestion, "enable")
+				require.Contains(t, suggestion, "public")
+				require.NotContains(t, suggestion, "--protocol")
+			})
+		}
+	}
+}
+
+func TestRemoteProtocolPreservesEnabledSavedVersionRouting(t *testing.T) {
+	for _, tt := range []struct {
+		name, version string
+		saved         []agent_api.AgentProtocol
+		want          agent_api.AgentProtocol
+	}{
+		{name: "saved Responses version", version: "7",
+			saved: []agent_api.AgentProtocol{agent_api.AgentProtocolResponses}, want: agent_api.AgentProtocolResponses},
+		{name: "saved Invocations version", version: "7",
+			saved: []agent_api.AgentProtocol{agent_api.AgentProtocolInvocations}, want: agent_api.AgentProtocolInvocations},
+		{name: "unrelated version still requires protocol", version: "6",
+			saved: []agent_api.AgentProtocol{agent_api.AgentProtocolResponses}},
+		{name: "ambiguous saved routing still requires protocol", version: "7",
+			saved: []agent_api.AgentProtocol{agent_api.AgentProtocolResponses, agent_api.AgentProtocolInvocations}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := mockInvokeMetadata(t, http.StatusOK, `{
+				"name":"agent",
+				"agent_endpoint":{"protocol_configuration":{"responses":{},"invocations":{}}},
+				"versions":{"latest":{"version":"9","definition":{"kind":"hosted"}}}
+			}`)
+			action := &InvokeAction{
+				flags: &invokeFlags{version: tt.version}, credential: responseTestCredential{},
+				resolvedRemoteContext: &remoteContext{
+					name: "agent", projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+					apiVersion: "v1", deployedVersion: "7", version: tt.version,
+					invocableProtocols: tt.saved, deployedProtocolMetadata: true,
+				},
+			}
+			protocol, err := action.resolveProtocol(t.Context())
+			if tt.want == "" {
+				require.ErrorContains(t, err, "selected agent version")
+				require.Contains(t, azdext.WrapError(err).GetSuggestion(), "--protocol")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.want, protocol)
+			}
+			require.Equal(t, 1, transport.requests)
+		})
+	}
+}
+
+func TestA2ATargetUsesLiveConfiguration(t *testing.T) {
+	transport := mockInvokeMetadata(t, http.StatusOK, `{
+		"name":"agent",
+		"agent_endpoint":{"protocol_configuration":{"responses":{}}},
+		"versions":{"latest":{"version":"7","definition":{"kind":"prompt"}}}
+	}`)
+	action := &InvokeAction{
+		flags:      &invokeFlags{protocol: "a2a"},
+		credential: responseTestCredential{},
+		resolvedRemoteContext: &remoteContext{
+			name: "agent", projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+			apiVersion: "v1", invocableProtocols: []agent_api.AgentProtocol{agent_api.AgentProtocolA2A},
+		},
+	}
+
+	rc, err := action.resolveRemoteContextForInvoke(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, action.loadRemoteAgent(t.Context(), rc))
+	err = action.validateA2ATarget(t.Context(), rc)
+	require.ErrorContains(t, err, "a2a")
+	require.Equal(t, 1, transport.requests)
+}
+
+func TestRemoteProtocolDoesNotInferCapabilitiesFromLocalYAML(t *testing.T) {
+	for _, saved := range []bool{false, true} {
+		t.Run(fmt.Sprintf("saved_endpoint=%t", saved), func(t *testing.T) {
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"target": {
+						Name: "target", Host: AiAgentHost, AdditionalProperties: mustStruct(t, map[string]any{
+							"kind": "hosted", "name": "agent",
+							"protocols": []any{map[string]any{"protocol": "a2a", "version": "1.0"}},
+						}),
+					},
+				},
+			}}, &helpersPromptServer{})
+			rc := &remoteContext{
+				name: "agent", serviceName: "target", azdClient: client,
+				projectEndpoint: "https://account.services.ai.azure.com/api/projects/project", apiVersion: "v1",
+			}
+			if saved {
+				rc.invocableProtocols = []agent_api.AgentProtocol{agent_api.AgentProtocolResponses}
+			}
+			reads := 0
+			action := &InvokeAction{
+				flags: &invokeFlags{}, noPrompt: true, resolvedRemoteContext: rc,
+				agentReader: func(context.Context, *remoteContext) (*agent_api.AgentObject, error) {
+					reads++
+					return nil, &azcore.ResponseError{StatusCode: http.StatusForbidden}
+				},
+			}
+
+			protocol, err := action.resolveProtocol(t.Context())
+			if saved {
+				require.NoError(t, err)
+				require.Equal(t, agent_api.AgentProtocolResponses, protocol)
+			} else {
+				require.ErrorContains(t, err, "could not determine an invocable protocol")
+				require.Contains(t, azdext.WrapError(err).GetSuggestion(), "--protocol")
+			}
+			require.Equal(t, 1, reads)
+		})
+	}
+}
+
+func TestA2ARemoteUsesLivePublishedProtocols(t *testing.T) {
+	for _, tt := range []struct {
+		name, endpoint, kind, wantError      string
+		readDenied, missingEndpoint          bool
+		historicalSession, historicalVersion bool
+	}{
+		{name: "disabled despite saved A2A endpoint", kind: "prompt",
+			endpoint: `{"protocol_configuration":{"responses":{}}}`, wantError: "a2a"},
+		{name: "empty published configuration is authoritative", kind: "prompt",
+			endpoint: `{"protocol_configuration":{}}`, wantError: "a2a, responses"},
+		{name: "empty legacy protocols are authoritative", kind: "prompt",
+			endpoint: `{"protocols":[]}`, wantError: "a2a, responses"},
+		{name: "prompt translation also requires Responses", kind: "prompt",
+			endpoint: `{"protocol_configuration":{"a2a":{}}}`, wantError: "responses"},
+		{name: "current protocol configuration", kind: "prompt",
+			endpoint: `{"protocol_configuration":{"a2a":{},"responses":{}}}`},
+		{name: "legacy enabled protocols", kind: "prompt",
+			endpoint: `{"protocols":["responses","a2a"]}`},
+		{name: "native hosted A2A does not require Responses", kind: "hosted",
+			endpoint: `{"protocol_configuration":{"a2a":{}}}`},
+		{name: "historical session does not inspect latest native compatibility", kind: "hosted",
+			endpoint: `{"protocol_configuration":{"a2a":{}}}`, historicalSession: true},
+		{name: "explicit version does not inspect latest native compatibility", kind: "hosted",
+			endpoint: `{"protocol_configuration":{"a2a":{}}}`, historicalVersion: true},
+		{name: "endpoint consumer cannot read metadata", readDenied: true},
+		{name: "metadata omits endpoint configuration", missingEndpoint: true},
+		{name: "metadata omits enabled protocol fields", kind: "prompt", endpoint: `{}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var sends int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				sends++
+				assert.Equal(t, http.MethodPost, request.Method)
+				assert.Equal(t, "/agents/agent/endpoint/protocols/a2a", request.URL.Path)
+				assert.Equal(t, "1.0", request.Header.Get("A2A-Version"))
+				if tt.historicalSession || tt.historicalVersion {
+					assert.Equal(t, "bound-session", request.URL.Query().Get("agent_session_id"))
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"task":`+
+					`{"artifacts":[{"parts":[{"text":"live-agent-result"}]}]}}}`)
+			}))
+			defer server.Close()
+			rc := &remoteContext{
+				name: "agent", projectEndpoint: server.URL, apiVersion: "v1",
+				invocableProtocols: []agent_api.AgentProtocol{agent_api.AgentProtocolA2A},
+			}
+			reads := 0
+			action := &InvokeAction{
+				flags:      &invokeFlags{protocol: "a2a", message: "hello", a2aVersion: "1.0"},
+				credential: responseTestCredential{}, resolvedRemoteContext: rc,
+				agentReader: func(ctx context.Context, target *remoteContext) (*agent_api.AgentObject, error) {
+					reads++
+					require.Same(t, rc, target)
+					if tt.readDenied {
+						return nil, &azcore.ResponseError{StatusCode: http.StatusForbidden}
+					}
+					if tt.missingEndpoint {
+						return &agent_api.AgentObject{Name: "agent"}, nil
+					}
+					var agent agent_api.AgentObject
+					err := json.Unmarshal(fmt.Appendf(nil,
+						`{"name":"agent","agent_endpoint":%s,"versions":{"latest":`+
+							`{"version":"9","definition":{"kind":%q,"container_protocol_versions":`+
+							`[{"protocol":"a2a","version":"0.3.0"}]}}}}`,
+						tt.endpoint, tt.kind), &agent)
+					return &agent, err
+				},
+			}
+			if tt.historicalSession {
+				action.flags.session = "bound-session"
+			}
+			if tt.historicalVersion {
+				action.flags.version = "7"
+				rc.version = "7"
+				previous := createInvokeVersionSession
+				t.Cleanup(func() { createInvokeVersionSession = previous })
+				createInvokeVersionSession = func(
+					_ context.Context, endpoint, name, version, apiVersion string,
+				) (*agent_api.AgentSessionResource, error) {
+					require.Equal(t, server.URL, endpoint)
+					require.Equal(t, "agent", name)
+					require.Equal(t, "7", version)
+					require.Equal(t, "v1", apiVersion)
+					return &agent_api.AgentSessionResource{AgentSessionID: "bound-session"}, nil
+				}
+			}
+
+			output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context(), "1.0") })
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				localError, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, exterrors.CodeAgentEndpointProtocolNotEnabled, localError.Code)
+				require.Zero(t, sends)
+			} else {
+				require.NoError(t, err)
+				require.Contains(t, output, "live-agent-result")
+				require.Equal(t, 1, sends)
+			}
+			require.Equal(t, 1, reads)
+		})
+	}
+}
+
+func TestRemoteContextResolutionDoesNotReadMetadata(t *testing.T) {
+	for _, protocol := range []string{"responses", "invocations", ""} {
+		t.Run("protocol="+protocol, func(t *testing.T) {
+			const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+			projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"target": {Name: "target", Host: AiAgentHost},
+				},
+			}}
+			envServer := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "test"},
+				values: map[string]map[string]string{"test": {
+					"AGENT_TARGET_NAME": "agent", "AGENT_TARGET_PROJECT_ENDPOINT": endpoint,
+					"AGENT_TARGET_RESPONSES_ENDPOINT":         endpoint + "/responses",
+					"AGENT_TARGET_PROTOCOL_ENDPOINTS_VERSION": "1",
+				}},
+			}
+			t.Setenv("AZD_SERVER", newInvokeRemoteContextTestAzdServer(t, projectServer, envServer))
+			transport := mockInvokeMetadata(t, http.StatusForbidden, `{}`)
+			reads := 0
+			action := &InvokeAction{
+				flags: &invokeFlags{name: "target", protocol: protocol}, noPrompt: true,
+				credential: responseTestCredential{},
+				agentReader: func(context.Context, *remoteContext) (*agent_api.AgentObject, error) {
+					reads++
+					return nil, errors.New("metadata must not be read by shared context resolution")
+				},
+			}
+			resolved, err := action.resolveRemoteContextForInvoke(t.Context())
+			require.NoError(t, err)
+			defer resolved.azdClient.Close()
+			require.Equal(t, "agent", resolved.name)
+			require.Equal(t, "target", resolved.serviceName)
+			require.Equal(t, endpoint, resolved.projectEndpoint)
+			require.Zero(t, reads)
+			require.Zero(t, transport.requests)
+			require.False(t, resolved.agentRead)
+		})
+	}
+}
+
+func TestLiveConfigurationReadHasIndependentDeadline(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		timeout int
+		maxWait time.Duration
+	}{
+		{name: "default invocation timeout", timeout: defaultInvokeTimeoutSeconds, maxWait: 5 * time.Second},
+		{name: "unlimited invocation timeout", timeout: 0, maxWait: 5 * time.Second},
+		{name: "shorter invocation timeout", timeout: 1, maxWait: time.Second},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			action := &InvokeAction{
+				flags: &invokeFlags{timeout: tt.timeout},
+				agentReader: func(ctx context.Context, _ *remoteContext) (*agent_api.AgentObject, error) {
+					deadline, ok := ctx.Deadline()
+					require.True(t, ok, "optional metadata reads must have a deadline")
+					require.Positive(t, time.Until(deadline))
+					require.LessOrEqual(t, time.Until(deadline), tt.maxWait)
+					return nil, &azcore.ResponseError{StatusCode: http.StatusForbidden}
+				},
+			}
+			rc := &remoteContext{
+				name: "agent", projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+			}
+			require.NoError(t, action.loadRemoteAgent(t.Context(), rc))
+		})
+	}
+}
+
+func TestLiveConfigurationReadTimeoutFallsBack(t *testing.T) {
+	rc := &remoteContext{
+		name: "agent", projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+		invocableProtocols: []agent_api.AgentProtocol{agent_api.AgentProtocolResponses},
+	}
+	action := &InvokeAction{
+		flags: &invokeFlags{timeout: 1}, resolvedRemoteContext: rc,
+		agentReader: func(ctx context.Context, _ *remoteContext) (*agent_api.AgentObject, error) {
+			if _, ok := ctx.Deadline(); !ok {
+				t.Error("metadata read has no deadline")
+				return nil, errors.New("missing metadata deadline")
+			}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	protocol, err := action.resolveProtocol(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, agent_api.AgentProtocolResponses, protocol)
+	require.NoError(t, t.Context().Err(), "metadata deadline must not cancel the caller")
+}
+
+func TestLiveConfigurationReadPreservesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	action := &InvokeAction{
+		flags: &invokeFlags{}, resolvedRemoteContext: &remoteContext{
+			name: "agent", projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+		},
+		agentReader: func(context.Context, *remoteContext) (*agent_api.AgentObject, error) {
+			cancel()
+			return nil, &azcore.ResponseError{StatusCode: http.StatusForbidden}
+		},
+	}
+	err := action.loadRemoteAgent(ctx, action.resolvedRemoteContext)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestResolveDeployedProtocolUsesPersistedEndpointWithoutMetadata(t *testing.T) {
@@ -2074,6 +2571,83 @@ func TestResolveRemoteSessionID_ReusesCachedVersionSession(t *testing.T) {
 	}
 	if sid != "cached-session" {
 		t.Errorf("session id = %q, want cached-session", sid)
+	}
+}
+
+func TestProjectExplicitVersionUsesVersionScopedSession(t *testing.T) {
+	for _, tt := range []struct {
+		name, protocol, cached, want string
+	}{
+		{name: "automatic protocol creates requested version session", want: "created-v7"},
+		{name: "automatic protocol reuses requested version session", cached: "cached-v7", want: "cached-v7"},
+		{name: "explicit protocol isolates requested version", protocol: "invocations", want: "created-v7"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+			const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+			projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path:     t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{"target": {Name: "target", Host: AiAgentHost}},
+			}}
+			envServer := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "test"},
+				values: map[string]map[string]string{"test": {
+					"AGENT_TARGET_NAME": "agent", "AGENT_TARGET_PROJECT_ENDPOINT": endpoint, "AGENT_TARGET_VERSION": "2",
+					"AGENT_TARGET_ENDPOINT":                   endpoint + "/agents/agent/versions/2",
+					"AGENT_TARGET_RESPONSES_ENDPOINT":         endpoint + "/responses",
+					"AGENT_TARGET_PROTOCOL_ENDPOINTS_VERSION": "1",
+				}},
+			}
+			t.Setenv("AZD_SERVER", newInvokeRemoteContextTestAzdServer(t, projectServer, envServer))
+			oldKey := buildAgentKey(endpoint, "agent", "2", false)
+			key := buildAgentKey(endpoint, "agent", "7", false)
+			saveAgentStateForTest(t, nil, oldKey, agentStateRecord{SessionID: "cached-v2"})
+			if tt.cached != "" {
+				saveAgentStateForTest(t, nil, key, agentStateRecord{SessionID: tt.cached})
+			}
+			creates := 0
+			previous := createInvokeVersionSession
+			t.Cleanup(func() { createInvokeVersionSession = previous })
+			createInvokeVersionSession = func(
+				_ context.Context, project, name, version, _ string,
+			) (*agent_api.AgentSessionResource, error) {
+				creates++
+				require.Equal(t, endpoint, project)
+				require.Equal(t, "agent", name)
+				require.Equal(t, "7", version)
+				return &agent_api.AgentSessionResource{AgentSessionID: "created-v7"}, nil
+			}
+			action := &InvokeAction{
+				flags: &invokeFlags{name: "target", version: "7", protocol: tt.protocol}, noPrompt: true,
+				agentReader: func(context.Context, *remoteContext) (*agent_api.AgentObject, error) {
+					var agent agent_api.AgentObject
+					err := json.Unmarshal([]byte(`{"name":"agent","agent_endpoint":`+
+						`{"protocol_configuration":{"invocations":{}}},"versions":{"latest":{"version":"7"}}}`), &agent)
+					return &agent, err
+				},
+			}
+			protocol, err := action.resolveProtocol(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, agent_api.AgentProtocolInvocations, protocol)
+			rc, err := action.resolveRemoteContextForInvoke(t.Context())
+			require.NoError(t, err)
+			defer rc.azdClient.Close()
+			session, err := action.resolveRemoteSessionID(t.Context(), rc)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, session)
+			require.Equal(t, key, rc.agentKey)
+			oldState := loadAgentStateForTest(t, rc.azdClient, oldKey)
+			state := loadAgentStateForTest(t, rc.azdClient, key)
+			require.NotNil(t, oldState)
+			require.NotNil(t, state)
+			require.Equal(t, "cached-v2", oldState.SessionID)
+			require.Equal(t, tt.want, state.SessionID)
+			wantCreates := 1
+			if tt.cached != "" {
+				wantCreates = 0
+			}
+			require.Equal(t, wantCreates, creates)
+		})
 	}
 }
 

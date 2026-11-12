@@ -680,6 +680,16 @@ func TestBuildPolicyAssignmentPortalURL(t *testing.T) {
 		"https://ai.azure.com/?flight=govern_ignite",
 		BuildPolicyAssignmentPortalURL("invalid-project-id", assignmentID),
 	)
+
+	prefixedAttackerID := "@attacker.example/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/" +
+		"resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj"
+	_, ok := ParseFoundryProjectID(prefixedAttackerID)
+	assert.False(t, ok, "prefixed string must not pass ParseFoundryProjectID")
+	assert.Equal(
+		t,
+		"https://ai.azure.com/?flight=govern_ignite",
+		BuildPolicyAssignmentPortalURL(prefixedAttackerID, assignmentID),
+	)
 }
 
 func TestLoadInventoryAndResourceGraphPagination(t *testing.T) {
@@ -1588,5 +1598,84 @@ func TestResourceGraphJSONAndDataEnvelopeValidation(t *testing.T) {
 		require.NoError(t, err2)
 		require.Len(t, rows2, 1)
 		assert.Empty(t, logs2)
+	})
+}
+
+func TestVerifyPolicyAssignmentsReadAccess(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name           string
+		statusCode     int
+		wantErrContain string
+	}{
+		{name: "200 OK succeeds", statusCode: http.StatusOK},
+		{
+			name:           "401 Unauthorized returns authentication error",
+			statusCode:     http.StatusUnauthorized,
+			wantErrContain: "authentication failed when verifying Azure Policy access (HTTP 401)",
+		},
+		{
+			name:           "403 Forbidden returns permission error",
+			statusCode:     http.StatusForbidden,
+			wantErrContain: "Microsoft.Authorization/policyAssignments/read",
+		},
+		{
+			name:           "400 Bad Request returns HTTP status error",
+			statusCode:     http.StatusBadRequest,
+			wantErrContain: "HTTP 400",
+		},
+		{
+			name:           "404 Not Found returns HTTP status error",
+			statusCode:     http.StatusNotFound,
+			wantErrContain: "HTTP 404",
+		},
+		{
+			name:           "429 Too Many Requests returns HTTP status error",
+			statusCode:     http.StatusTooManyRequests,
+			wantErrContain: "HTTP 429",
+		},
+		{
+			name:           "500 Internal Server Error returns HTTP status error",
+			statusCode:     http.StatusInternalServerError,
+			wantErrContain: "HTTP 500",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			pipeline := newTestPipeline(func(req *http.Request) (*http.Response, error) {
+				assert.Equal(t, http.MethodGet, req.Method)
+				assert.Contains(t, req.URL.Path, "/providers/Microsoft.Authorization/policyAssignments")
+				return &http.Response{
+					StatusCode: tc.statusCode,
+					Body:       io.NopCloser(strings.NewReader(`{}`)),
+					Request:    req,
+				}, nil
+			})
+			err := VerifyPolicyAssignmentsReadAccess(t.Context(), pipeline, "https://management.azure.com", testProjectID)
+			if tc.wantErrContain == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.wantErrContain)
+			}
+		})
+	}
+
+	t.Run("rejects prefixed @attacker.example project ID without invoking HTTP transport", func(t *testing.T) {
+		t.Parallel()
+		callCount := 0
+		pipeline := newTestPipeline(func(req *http.Request) (*http.Response, error) {
+			callCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+				Request:    req,
+			}, nil
+		})
+		prefixedID := "@attacker.example/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/" +
+			"resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj"
+		err := VerifyPolicyAssignmentsReadAccess(t.Context(), pipeline, "https://management.azure.com", prefixedID)
+		require.ErrorContains(t, err, "invalid Foundry project resource ID")
+		assert.Equal(t, 0, callCount)
 	})
 }

@@ -2758,6 +2758,9 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 		ctx, agentClient, request, azdEnv, progress, shouldUpdate,
 	)
 	if err != nil {
+		if policyErr, ok := TryClassifyRuntimePolicyError(err, serviceConfig.GetName(), azdEnv["AZURE_AI_PROJECT_ID"]); ok {
+			return nil, policyErr
+		}
 		return nil, exterrors.ServiceFromAzure(err, deployOp)
 	}
 	if err := validateVoiceAgentDeployResponse(agentObject); err != nil {
@@ -4324,7 +4327,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		)
 		endUpload()
 		if err != nil {
-			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
+			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request, azdEnv["AZURE_AI_PROJECT_ID"])
 		}
 	} else {
 		if localProfile.IsActivity {
@@ -4349,7 +4352,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		)
 		endUpload()
 		if err != nil {
-			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
+			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request, azdEnv["AZURE_AI_PROJECT_ID"])
 		}
 	}
 
@@ -4825,7 +4828,20 @@ func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, servi
 
 var hostedAgentRetryServiceNamePattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_. -]*$`)
 
-func hostedAgentCreateError(err error, serviceName string, request *agent_api.CreateAgentRequest) error {
+func hostedAgentCreateError(
+	err error,
+	serviceName string,
+	request *agent_api.CreateAgentRequest,
+	projectResourceID ...string,
+) error {
+	var projID string
+	if len(projectResourceID) > 0 {
+		projID = projectResourceID[0]
+	}
+	if policyErr, ok := TryClassifyRuntimePolicyError(err, serviceName, projID); ok {
+		return policyErr
+	}
+
 	converted := exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	responseErr, ok := errors.AsType[*azcore.ResponseError](err)
 	if !ok || responseErr.StatusCode != http.StatusBadRequest || responseErr.RawResponse == nil || request == nil {
@@ -4963,7 +4979,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 		ctx, request.Name, versionRequest, agent_api.AgentEndpointAPIVersion,
 	)
 	if err != nil {
-		return nil, hostedAgentCreateError(err, serviceName, request)
+		return nil, hostedAgentCreateError(err, serviceName, request, azdEnv["AZURE_AI_PROJECT_ID"])
 	}
 
 	_, _ = fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)

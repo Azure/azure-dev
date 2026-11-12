@@ -1821,7 +1821,11 @@ The `uses` edge deploys the target before the wrapper. `conversationEngine`
 points at the hosted target service, and `version: deployed` pins the wrapper
 to the target version produced by the current azd environment.
 
-The target must be active and declare `voice_conversation_engine/1.0.0`.
+The target must be active. New targets declare `voice_conversation_engine/1.0.0`.
+For backward compatibility, azd also accepts the existing `invocations_ws/1.0.0`
+contract with both `voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0`
+metadata. This preserves existing Hosted Voice manifests without making the two
+protocol endpoints interchangeable.
 The target and wrapper currently require `AZD_ALPHA_ENABLE_AGENTS_VOICE=true`.
 Configure the conversation engine through the complete manifest shown above;
 this protocol is not offered by the Hosted Agent init protocol picker.

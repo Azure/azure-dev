@@ -88,10 +88,13 @@ func compatibleHostedVoiceVersion() *agent_api.AgentVersionObject {
 		Name:    "target",
 		Version: "7",
 		Status:  "active",
+		Metadata: map[string]string{
+			"voiceLiveCompatible": "true", "bridgeProtocolVersion": "1.0",
+		},
 		Definition: map[string]any{
 			"kind": "hosted",
 			"protocol_versions": []any{map[string]any{
-				"protocol": "voice_conversation_engine",
+				"protocol": "invocations_ws",
 				"version":  "1.0.0",
 			}},
 		},
@@ -216,19 +219,31 @@ func TestValidateHostedVoiceTargetAcceptsLowercaseActiveStatus(t *testing.T) {
 
 func TestValidateHostedVoiceTargetRejectsInvocationsWSOnly(t *testing.T) {
 	version := compatibleHostedVoiceVersion()
+	version.Metadata = nil
 	version.Definition.(map[string]any)["protocol_versions"] = []any{map[string]any{
 		"protocol": "invocations_ws", "version": "1.0.0",
 	}}
-	require.ErrorContains(t, validateHostedVoiceTargetVersion(version), "voice_conversation_engine/1.0.0")
+	require.ErrorContains(t, validateHostedVoiceTargetVersion(version), "voiceLiveCompatible")
 }
 
 func TestValidateHostedVoiceTargetAcceptsBothProtocols(t *testing.T) {
 	version := compatibleHostedVoiceVersion()
+	version.Metadata = nil
 	version.Definition.(map[string]any)["protocol_versions"] = []any{
 		map[string]any{"protocol": "invocations_ws", "version": "1.0.0"},
 		map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"},
 	}
 	require.NoError(t, validateHostedVoiceTargetVersion(version))
+}
+
+func TestValidateHostedVoiceTargetRejectsIncompleteLegacyMetadata(t *testing.T) {
+	for _, key := range []string{"voiceLiveCompatible", "bridgeProtocolVersion"} {
+		t.Run(key, func(t *testing.T) {
+			version := compatibleHostedVoiceVersion()
+			delete(version.Metadata, key)
+			require.ErrorContains(t, validateHostedVoiceTargetVersion(version), key)
+		})
+	}
 }
 
 func TestValidateHostedVoiceTargetRejectsIncompatibleProtocol(t *testing.T) {

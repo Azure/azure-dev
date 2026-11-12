@@ -51,6 +51,8 @@ When designing a shared core feature, identify the operations an extension would
 
 ### Examples and tradeoffs
 
+For example, a language extension restores dependencies, builds the app, and returns a package during `azd deploy`. A compatible service-target extension prepares that package for its target, publishes it, and deploys it. Core coordinates the workflow and passes results between providers. The authors agree on the package format and test the handoff together.
+
 | Need | Preferred boundary and reason | Tradeoff or exception |
 |---|---|---|
 | Provision Microsoft Foundry resources | The [Foundry Projects extension](../../extensions/azure.ai.projects/README.md#azureyaml-ownership) owns `microsoft.foundry` provisioning and `host: azure.ai.project` services, keeping domain configuration outside core while using `azd provision` and `azd deploy`. | Users install an extension and need a compatible host; service-specific dependencies can evolve independently. |
@@ -64,6 +66,8 @@ A missing API is a design gap to discuss, not automatic permission to put the en
 ### API ownership and compatibility
 
 Core maintainers own the host APIs and shared workflow behavior. Extension authors own their domain logic, commands, configuration, release versions, and declared host requirements. Review core changes for their effect on already-published extension binaries as well as clients built with the new SDK.
+
+Include configuration, defaults, lifecycle timing, and shared-state behavior in that review. Core changes can break an extension even when the protobuf contract stays the same. Test affected extension workflows and document how consumers should adapt when behavior must change.
 
 Distinguish these stability boundaries:
 

@@ -3,6 +3,8 @@
 
 package synthesis
 
+// cspell:ignore generatebicep
+
 import (
 	"bytes"
 	"embed"

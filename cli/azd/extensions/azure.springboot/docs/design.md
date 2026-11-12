@@ -234,7 +234,7 @@ current root deployment, datasource binding and runtime network policy. It
 does not acquire an administrator database token or perform SQL reconciliation.
 The extension does not register a postdeploy SQL handler. Consequently,
 post-startup SQL ownership/effective-privilege drift is no longer audited
-immediately; explicit reprovisioning reconciles it.
+immediately; running provisioning again reconciles it.
 
 Legacy recovery only inventories and deletes verified stale bootstrap Jobs.
 The previous non-secret input shape is retained solely as ownership evidence;

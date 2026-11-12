@@ -16,16 +16,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMetadataUsesDedicatedYAMLBlock(t *testing.T) {
+func TestMetadataPreservesOriginalDelimiters(t *testing.T) {
 	source := "---\nmimeType: application/pdf\npages: 1\n---\n# Title\n\nBody.\n"
-	formatted, err := formatMetadata(source)
+	blocks, err := metadataBlocks(source)
 	require.NoError(t, err)
-	assert.Equal(t, "**Metadata**\n\n```yaml\nmimeType: application/pdf\npages: 1\n```\n\n# Title\n\nBody.\n", formatted)
+	require.Len(t, blocks, 1)
+	assert.Equal(t, "---\nmimeType: application/pdf\npages: 1\n---\n", source[blocks[0].Start:blocks[0].Stop])
 	for _, color := range []bool{false, true} {
 		var output bytes.Buffer
 		require.NoError(t, Render(t.Context(), &output, source, 80, color))
 		plain := ansi.Strip(output.String())
-		assert.Contains(t, plain, "Metadata")
+		assert.NotContains(t, plain, "Metadata")
+		assert.Contains(t, plain, "---\nmimeType: application/pdf\npages: 1\n---\n")
 		assert.Contains(t, plain, "mimeType: application/pdf")
 		assert.NotContains(t, plain, "## mimeType")
 		assert.Contains(t, plain, "Title")
@@ -44,9 +46,9 @@ func TestMetadataLeavesMarkdownAndLiteralExamplesAlone(t *testing.T) {
 		"# Examples\n\n~~~markdown\nExample:\n\n*****\n\n---\nmimeType: text/plain\n---\n~~~\n",
 		"<!--\nExample:\n\n*****\n\n---\nmimeType: text/plain\n---\n-->\n",
 	} {
-		formatted, err := formatMetadata(source)
+		blocks, err := metadataBlocks(source)
 		require.NoError(t, err)
-		assert.Equal(t, source, formatted)
+		assert.Empty(t, blocks)
 	}
 }
 
@@ -70,11 +72,11 @@ func TestMetadataAcrossProjectedContentsAndOpaqueValues(t *testing.T) {
 	require.NoError(t, err)
 	original, err := analysis.RenderLLM(payload)
 	require.NoError(t, err)
-	formatted, err := formatMetadata(original)
+	blocks, err := metadataBlocks(original)
 	require.NoError(t, err)
-	assert.Equal(t, 2, strings.Count(formatted, "**Metadata**"))
-	assert.Contains(t, formatted, "`````yaml", "opaque backticks cannot close the metadata code block")
-	assert.Contains(t, formatted, literalExample, "document code examples must stay literal")
+	require.Len(t, blocks, 2)
+	assert.Contains(t, original[blocks[0].Start:blocks[0].Stop], "Not a document table")
+	assert.Contains(t, original, literalExample, "document code examples must stay literal")
 	for _, color := range []bool{false, true} {
 		var result bytes.Buffer
 		require.NoError(t, Render(t.Context(), &result, original, 120, color))
@@ -84,7 +86,7 @@ func TestMetadataAcrossProjectedContentsAndOpaqueValues(t *testing.T) {
 		assert.Contains(t, plain, "mimeType: audio/wav")
 		assert.Contains(t, plain, "Not a document table")
 		assert.Contains(t, plain, "Document body value")
-		assert.NotContains(t, plain, "[HTML table not rendered:")
+		assert.NotContains(t, plain, "HTML table not rendered:")
 		assert.Contains(t, plain, "Transcript.")
 	}
 	assert.True(t, strings.HasPrefix(original, "---\nmimeType: application/pdf\n"))

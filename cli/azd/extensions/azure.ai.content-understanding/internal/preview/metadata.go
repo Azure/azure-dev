@@ -6,7 +6,6 @@ package preview
 import (
 	"fmt"
 	"regexp"
-	"strings"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -19,19 +18,15 @@ var (
 	metadataEnd   = regexp.MustCompile(`(?m)^---(?:\n|$)`)
 )
 
-// formatMetadata recognizes the RenderLLM content boundaries, not arbitrary
+// metadataBlocks recognizes the RenderLLM content boundaries, not arbitrary
 // horizontal rules. Masking candidate YAML keeps its opaque values out of the
 // Markdown parser while retaining fences surrounding literal examples.
-func formatMetadata(source string) (string, error) {
-	type block struct {
-		start, end int
-		yaml       string
-	}
-	var blocks []block
+func metadataBlocks(source string) ([]text.Segment, error) {
+	var blocks []text.Segment
 	masked := []byte(source)
 	for _, match := range metadataStart.FindAllStringIndex(source, -1) {
 		start := match[1] - len("---\n")
-		if len(blocks) != 0 && start < blocks[len(blocks)-1].end {
+		if len(blocks) != 0 && start < blocks[len(blocks)-1].Stop {
 			continue
 		}
 		body := match[1]
@@ -49,7 +44,7 @@ func formatMetadata(source string) (string, error) {
 			len(node.Content[0].Content) < 2 || node.Content[0].Content[0].Value != "mimeType" {
 			continue
 		}
-		blocks = append(blocks, block{start: start, end: end, yaml: content})
+		blocks = append(blocks, text.NewSegment(start, end))
 		for index := start; index < end; index++ {
 			if masked[index] != '\n' {
 				masked[index] = ' '
@@ -57,7 +52,7 @@ func formatMetadata(source string) (string, error) {
 		}
 	}
 	if len(blocks) == 0 {
-		return source, nil
+		return nil, nil
 	}
 	document := goldmark.New().Parser().Parse(text.NewReader(masked))
 	var protected []text.Segment
@@ -76,14 +71,13 @@ func formatMetadata(source string) (string, error) {
 		}
 	})
 	if err != nil {
-		return "", fmt.Errorf("locate preview metadata: %w", err)
+		return nil, fmt.Errorf("locate preview metadata: %w", err)
 	}
-	var result strings.Builder
-	cursor := 0
+	var result []text.Segment
 	for _, block := range blocks {
 		literal := false
 		for _, segment := range protected {
-			if block.start >= segment.Start && block.start < segment.Stop {
+			if block.Start >= segment.Start && block.Start < segment.Stop {
 				literal = true
 				break
 			}
@@ -91,20 +85,7 @@ func formatMetadata(source string) (string, error) {
 		if literal {
 			continue
 		}
-		result.WriteString(source[cursor:block.start])
-		longest, run := 0, 0
-		for _, value := range []byte(block.yaml) {
-			if value == '`' {
-				run++
-				longest = max(longest, run)
-			} else {
-				run = 0
-			}
-		}
-		fence := strings.Repeat("`", max(3, longest+1))
-		result.WriteString("**Metadata**\n\n" + fence + "yaml\n" + block.yaml + fence + "\n\n")
-		cursor = block.end
+		result = append(result, block)
 	}
-	result.WriteString(source[cursor:])
-	return result.String(), nil
+	return result, nil
 }

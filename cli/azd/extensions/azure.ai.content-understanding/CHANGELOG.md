@@ -4,10 +4,20 @@
 
 ### Features Added
 
-- Add `azd ai cu analyze --pretty` to pretty-print a single result in the
-  terminal, with formatted Markdown, colored headings, and simple HTML tables
-  displayed as tables or labeled cards. Default output and saved results remain
-  unchanged.
+- Pretty-print single analysis results by default, with Markdown tables/cards
+  and JSON syntax coloring. Use `--pretty=false` (`-p=false`) for original stdout
+  content. Usage and dry-run support pretty presentation.
+- Add explicit `--output markdown`, equivalent to `default`.
+- Use theme-adaptive syntax highlighting for JSON terminal previews.
+- Include requested Markdown usage in YAML front matter for stdout and saved results.
+
+### Breaking Changes
+
+- Remove `--llm-input` immediately: use `--output markdown` for true or
+  `--output json` for false. Remove analyze's `--output none` without replacement.
+- Redirected analysis output now uses uncolored pretty presentation by default;
+  use `--pretty=false` to retain original Markdown/HTML.
+- Markdown stdout with `--usage` no longer uses a JSON wrapper.
 
 ### Bugs Fixed
 
@@ -21,9 +31,7 @@
 
 ### Other Changes
 
-- Make `azd ai cu version` easier to read with a descriptive title, labeled
-  version and extension name, and spacing before azd update notices. JSON output
-  remains unchanged.
+- Improve the readability of `azd ai cu version` text output.
 - Highlight commands, paths, and identifiers in infrastructure generation
   guidance, and use blue text for wizard questions. Respect `NO_COLOR`.
 

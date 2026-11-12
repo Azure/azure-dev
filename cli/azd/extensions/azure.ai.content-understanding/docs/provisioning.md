@@ -85,7 +85,7 @@ for role definitions.
 
 The generation wizard highlights commands, paths, and identifiers in its guidance,
 and uses blue question text to distinguish prompts from explanations. Set
-`NO_COLOR=1` for plain text. JSON and silent output modes remain uncolored.
+`NO_COLOR=1` for plain text. JSON and silent output modes do not use color.
 
 Sign in first, then use two steps: **generate files**, followed by **deploy
 resources**. Only the second step creates or changes Azure resources and can

@@ -25,6 +25,8 @@ var (
 	diagnosticFieldPath   = regexp.MustCompile(`\b(fieldSchema\.fields|fields|properties)\.[^\s:]+`)
 	diagnosticModelName   = regexp.MustCompile(
 		`(?i)\b(model(?: name)?\s+)(?:'([a-z0-9][a-z0-9._-]{0,127})'|"([a-z0-9][a-z0-9._-]{0,127})")`)
+	diagnosticEndpointExample = regexp.MustCompile(
+		`https://<your-resource>\.services\.ai\.azure\.com(\.(?:\s|$)|\s|$)`)
 )
 
 // RedactDiagnostic preserves diagnostic prose and model identifiers while removing
@@ -35,6 +37,10 @@ func RedactDiagnostic(message string) string {
 		return "Diagnostic omitted because it exceeds the safe text limit."
 	}
 
+	const example = "https://<your-resource>.services.ai.azure.com"
+	const placeholder = "CU_ENDPOINT_EXAMPLE_PLACEHOLDER"
+	// Protect only the literal help example, not real URLs or URL suffixes.
+	message = diagnosticEndpointExample.ReplaceAllString(message, placeholder+"${1}")
 	if start := strings.IndexByte(message, '{'); start >= 0 {
 		message = message[:start] + "[redacted payload]"
 	}
@@ -58,7 +64,7 @@ func RedactDiagnostic(message string) string {
 		}
 		return r
 	}, message)
-	message = strings.TrimSpace(message)
+	message = strings.TrimSpace(strings.ReplaceAll(message, placeholder, example))
 	if len(message) > MaxDiagnosticBytes {
 		return "Diagnostic omitted because it exceeds the safe text limit."
 	}

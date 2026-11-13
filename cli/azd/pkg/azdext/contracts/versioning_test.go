@@ -260,7 +260,7 @@ func TestRecentErrorDetailsAreBetaOnly(t *testing.T) {
 	require.NotNil(t, v1beta.File_azd_extensions_v1beta_errors_proto.Messages().ByName("ToolErrorDetail"))
 }
 
-func TestStructuredServiceMessagesAreBetaOnly(t *testing.T) {
+func TestStructuredServiceMessagesGraduatedWithoutBetaEventCorrelation(t *testing.T) {
 	stableEvent := (&v1.EventMessage{}).ProtoReflect().Descriptor()
 	betaEvent := (&v1beta.EventMessage{}).ProtoReflect().Descriptor()
 
@@ -284,17 +284,34 @@ func TestStructuredServiceMessagesAreBetaOnly(t *testing.T) {
 
 	stableStatus := (&v1.ServiceHandlerStatus{}).ProtoReflect().Descriptor()
 	betaStatus := (&v1beta.ServiceHandlerStatus{}).ProtoReflect().Descriptor()
-	require.Nil(t, stableStatus.Fields().ByName("messages"))
-	require.Equal(
-		t,
-		protoreflect.FieldNumber(6),
-		betaStatus.Fields().ByName("messages").Number(),
-	)
-	require.NotNil(t, v1beta.File_azd_extensions_v1beta_event_proto.
-		Messages().
-		ByName("ServiceEventMessage"))
-	require.NotNil(t, v1beta.File_azd_extensions_v1beta_event_proto.Enums().
-		ByName("ServiceEventMessageKind"))
+	for _, status := range []protoreflect.MessageDescriptor{stableStatus, betaStatus} {
+		messages := status.Fields().ByName("messages")
+		require.NotNil(t, messages, status.FullName())
+		require.Equal(t, protoreflect.FieldNumber(6), messages.Number())
+		require.True(t, messages.IsList())
+		require.Equal(t, protoreflect.Name("ServiceEventMessage"), messages.Message().Name())
+	}
+
+	stableMessage := v1.File_azd_extensions_v1_event_proto.Messages().ByName("ServiceEventMessage")
+	require.NotNil(t, stableMessage)
+	for name, number := range map[protoreflect.Name]protoreflect.FieldNumber{
+		"kind":       1,
+		"message":    2,
+		"suggestion": 3,
+		"links":      4,
+	} {
+		require.Equal(t, number, stableMessage.Fields().ByName(name).Number(), name)
+	}
+
+	stableKind := v1.File_azd_extensions_v1_event_proto.Enums().ByName("ServiceEventMessageKind")
+	require.NotNil(t, stableKind)
+	for name, number := range map[protoreflect.Name]protoreflect.EnumNumber{
+		"SERVICE_EVENT_MESSAGE_KIND_UNSPECIFIED": 0,
+		"SERVICE_EVENT_MESSAGE_KIND_INFO":        1,
+		"SERVICE_EVENT_MESSAGE_KIND_WARNING":     2,
+	} {
+		require.Equal(t, number, stableKind.Values().ByName(name).Number(), name)
+	}
 }
 
 func validateStableSubset(

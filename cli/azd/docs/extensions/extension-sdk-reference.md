@@ -11,7 +11,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
 - [Entry Point & Lifecycle](#entry-point--lifecycle)
   - [Run](#run)
   - [RunOption / WithPreExecute](#runoption--withpreexecute)
-  - [Structured deploy messages (beta)](#structured-deploy-messages-beta)
+  - [Structured deploy messages](#structured-deploy-messages)
 - [Command Scaffolding](#command-scaffolding)
   - [NewExtensionRootCommand](#newextensionrootcommand)
   - [ExtensionCommandOptions](#extensioncommandoptions)
@@ -92,24 +92,24 @@ func main() {
 }
 ```
 
-### Structured deploy messages (beta)
+### Structured deploy messages
 
 Service-level `predeploy` and `postdeploy` handlers can return structured,
-non-blocking info and warning messages. These are beta-only fields on
-`ServiceHandlerStatus.messages`; each message can include text, a suggestion,
-and links. The stable event API and default language scaffolds are unchanged.
+non-blocking info and warning messages on the stable
+`ServiceHandlerStatus.messages` field. Each message requires a kind and text,
+and can include a suggestion and links.
 
-Register a beta handler on the extension host:
+Register a response handler on the extension host:
 
 ```go
-host.WithBetaServiceEventHandler(
+host.WithServiceEventResponseHandler(
     "postdeploy",
     func(_ context.Context, args *azdext.ServiceEventArgs) (
-        *azdext.BetaServiceEventResponse, error,
+        *azdext.ServiceEventResponse, error,
     ) {
-        return &azdext.BetaServiceEventResponse{
-            Messages: []azdext.BetaServiceEventMessage{{
-                Kind:       azdext.BetaServiceEventMessageWarning,
+        return &azdext.ServiceEventResponse{
+            Messages: []*azdext.ServiceEventMessage{{
+                Kind:       azdext.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
                 Message:    "Review the service access policy.",
                 Suggestion: "Update the policy before the next deployment.",
             }},
@@ -119,26 +119,27 @@ host.WithBetaServiceEventHandler(
 )
 ```
 
-Extensions that adopt this API must set `requiredAzdVersion` in their
-extension manifest to require at least the first azd release that supports
-both subscription acknowledgements and `ServiceHandlerStatus.messages`.
-Set the minimum to that release once its version is known; do not publish
-an adopting extension with an older minimum. Older hosts can time out
-during registration or acknowledge the subscription but ignore returned
-messages. An acknowledgement alone does not establish message support.
+Structured messages are stable in azd 1.38.0. Extensions that rely on them
+must use the published SDK v1.38.0 or later and set
+`requiredAzdVersion: ">=1.38.0"`. Older hosts ignore the messages and
+continue the deployment.
 
-The beta event stream must begin with a subscription that includes a
-`request_id` and waits for its acknowledgement. A service status that contains
-messages must echo the invocation's request ID. Legacy beta streams without
-request IDs retain their previous behavior but cannot send structured
-messages.
+The SDK sends only valid messages. A nil message, an unspecified kind, empty
+text, or a link without a URL is dropped and fails the handler with a
+validation error. The host displays returned messages after the deployment
+table and includes them in the `messages` array of deploy/up JSON results.
+Messages returned alongside a handler error are retained, while the error
+still fails the deployment. Use `WithServiceEventHandler` for other service
+lifecycle events. Each event can have only one service handler across
+`WithServiceEventHandler`, `WithServiceEventResponseHandler`, and
+`WithBetaServiceEventHandler`.
 
-The host displays returned messages after the deployment table and includes
-them in the `messages` array of deploy/up JSON results. Messages returned
-alongside a handler error are retained, while the error still fails the
-deployment. Use the existing stable `WithServiceEventHandler` for other
-service lifecycle events; do not register both handler APIs for the same
-event.
+`WithBetaServiceEventHandler` and the `BetaServiceEvent*` types are deprecated
+but remain source-compatible and keep using the beta event stream. Migrate to
+the stable API by replacing `BetaServiceEventResponse` with
+`ServiceEventResponse`, `[]azdext.BetaServiceEventMessage` with
+`[]*azdext.ServiceEventMessage`, and the beta kinds with the
+`ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_*` constants.
 See the [extension framework guide](extension-framework.md#event-service)
 for the host behavior and the demo implementation.
 
@@ -771,6 +772,7 @@ exposed through the stable `azdext` contract facade.
 | Extension usage telemetry | `Telemetry().ReportUsage`, `azdext.ReportUsageRequest/Response` | 1.36.0 | Service, method, and messages deprecated; route retained | `>=1.36.0` |
 | Current Azure principal | `Account().GetCurrentPrincipal`, `azdext.GetCurrentPrincipalRequest/Response`, `azdext.PrincipalType` | 1.36.0 | Method, messages, enum, and `AccountBeta()` deprecated; route retained | `>=1.36.0` |
 | Deployment preview | `WithServiceTargetPreview`, `azdext.ServiceTargetPreviewProvider`, `ServiceTarget().Stream`, stable preview messages and `supports_preview` | 1.37.0 (target) | Preview messages/fields and beta SDK helpers deprecated; route and Go source compatibility retained | `>=1.37.0` |
+| Structured service deploy messages | `WithServiceEventResponseHandler`, `azdext.ServiceEventResponse`, `azdext.ServiceEventMessage`, `azdext.ServiceEventMessageKind`, `ServiceHandlerStatus.messages` | 1.38.0 (target) | Message fields, messages, enum, and beta SDK helpers deprecated; route and Go source compatibility retained | `>=1.38.0` |
 
 The deployment preview graduation targets host and SDK 1.37.0; its
 [audit](https://github.com/Azure/azure-dev/issues/10625) records actual release
@@ -780,7 +782,7 @@ The SDK creates a fresh provider without `Initialize` and uses a dedicated
 stable stream; ordinary deployment behavior is unchanged. Migrate beta provider
 signatures, imports, registration calls, mocks, and test servers together.
 Deprecated beta clients and provider interfaces remain usable, including when
-recompiling against the new SDK. Structured deploy-hook messages do not graduate.
+recompiling against the new SDK.
 
 Upgrading to the 1.36.0 SDK intentionally changes `Telemetry()` from a beta to
 a stable return type; replace `v1beta.ReportUsageRequest/Response` with

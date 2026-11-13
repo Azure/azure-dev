@@ -1648,7 +1648,7 @@ Already-built extensions still use the retained beta route, which delegates to
 the same stable host implementation. No beta removal date is set.
 See the [second graduation record](contract-versioning.md#october-2026-second-graduation-target-azd-1370)
 for release and consumer migration tracking. Structured predeploy/postdeploy
-messages are a separate capability and remain beta-only.
+messages graduated separately in azd 1.38.0.
 
 ## Developer Artifacts
 
@@ -2516,6 +2516,7 @@ used with the beta
   - `service_name`: The name of the service.
   - `status`: Status such as "running", "completed", or "failed".
   - `message`: Optional additional details.
+  - `messages`: Optional structured `ServiceEventMessage` values for `predeploy` and `postdeploy`.
 - **ServiceEventMessage**
   Carries a non-blocking info or warning returned by a service deploy hook.
 
@@ -2525,22 +2526,23 @@ used with the beta
   - `suggestion`: Optional next-step guidance.
   - `links`: Optional references with titles and URLs.
 
-Structured messages are available only on the beta
-`ServiceHandlerStatus.messages` field and only for service `predeploy` and
-`postdeploy` handlers. Go extensions opt in with
-`ExtensionHost.WithBetaServiceEventHandler`; the stable event API and default
-language scaffolds remain unchanged.
+Structured messages use the stable `ServiceHandlerStatus.messages` field in
+azd 1.38.0 or later, and only for service `predeploy` and `postdeploy`
+handlers. Go extensions register them with
+`ExtensionHost.WithServiceEventResponseHandler`. The stable stream correlates
+statuses by extension, service, and event, so no request ID is needed. Older
+hosts ignore the messages and continue the deployment.
 
-The beta event stream must begin with a subscription containing a
-`request_id`, and service statuses carrying messages must echo the invocation
-ID. Statuses without messages retain service/event correlation. Legacy beta
-streams whose first subscription has no request ID keep their existing
-behavior but cannot send structured messages. Returned messages are displayed
-after the deploy table and included in deploy/up JSON results, including when
-the handler also returns an error.
+Returned messages are displayed after the deploy table and included in
+deploy/up JSON results, including when the handler also returns an error. Each
+message needs an info or warning kind and text, and each link needs a URL.
+The deprecated `ExtensionHost.WithBetaServiceEventHandler` keeps using the beta
+event stream, which must begin with a subscription containing a `request_id`;
+service statuses carrying beta messages must echo the invocation ID. Legacy
+beta streams whose first subscription has no request ID cannot send messages.
 
-See [contract versioning](contract-versioning.md#host-registration-and-adaptation)
-for the stream routing rules and the [SDK reference](extension-sdk-reference.md#structured-deploy-messages-beta)
+See [contract versioning](contract-versioning.md#november-2026-third-graduation-target-azd-1380)
+for the graduation record and the [SDK reference](extension-sdk-reference.md#structured-deploy-messages)
 for registration details.
 
 #### ServiceContext and Service Event Arguments

@@ -25,6 +25,9 @@ const (
 )
 
 // How azd presents a service lifecycle message.
+// Deprecated: use azd.extensions.v1.ServiceEventMessageKind in azd 1.38.0 or later.
+//
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/event.proto.
 type ServiceEventMessageKind int32
 
 const (
@@ -272,6 +275,9 @@ func (*EventMessage_SubscribeProjectEventResponse) isEventMessage_MessageType() 
 func (*EventMessage_SubscribeServiceEventResponse) isEventMessage_MessageType() {}
 
 // A non-blocking message returned by a service handler.
+// Deprecated: use azd.extensions.v1.ServiceEventMessage in azd 1.38.0 or later.
+//
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/event.proto.
 type ServiceEventMessage struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	Kind          ServiceEventMessageKind `protobuf:"varint,1,opt,name=kind,proto3,enum=azd.extensions.v1beta.ServiceEventMessageKind" json:"kind,omitempty"`
@@ -748,6 +754,9 @@ type ServiceHandlerStatus struct {
 	// Optional structured error details (set when status is "failed").
 	Error *ExtensionError `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
 	// Non-blocking messages returned by a service deploy handler.
+	// Deprecated: use the v1 messages field in azd 1.38.0 or later.
+	//
+	// Deprecated: Marked as deprecated in azd/extensions/v1beta/event.proto.
 	Messages      []*ServiceEventMessage `protobuf:"bytes,6,rep,name=messages,proto3" json:"messages,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -818,6 +827,7 @@ func (x *ServiceHandlerStatus) GetError() *ExtensionError {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/event.proto.
 func (x *ServiceHandlerStatus) GetMessages() []*ServiceEventMessage {
 	if x != nil {
 		return x.Messages
@@ -843,14 +853,14 @@ const file_azd_extensions_v1beta_event_proto_rawDesc = "" +
 	"request_id\x18\t \x01(\tR\trequestId\x12;\n" +
 	"\x05error\x18\n" +
 	" \x01(\v2%.azd.extensions.v1beta.ExtensionErrorR\x05errorB\x0e\n" +
-	"\fmessage_typeJ\x04\b\v\x10\fR\x0ehandler_output\"\xcb\x01\n" +
+	"\fmessage_typeJ\x04\b\v\x10\fR\x0ehandler_output\"\xcf\x01\n" +
 	"\x13ServiceEventMessage\x12B\n" +
 	"\x04kind\x18\x01 \x01(\x0e2..azd.extensions.v1beta.ServiceEventMessageKindR\x04kind\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1e\n" +
 	"\n" +
 	"suggestion\x18\x03 \x01(\tR\n" +
 	"suggestion\x126\n" +
-	"\x05links\x18\x04 \x03(\v2 .azd.extensions.v1beta.ErrorLinkR\x05links\"8\n" +
+	"\x05links\x18\x04 \x03(\v2 .azd.extensions.v1beta.ErrorLinkR\x05links:\x02\x18\x01\"8\n" +
 	"\x15SubscribeProjectEvent\x12\x1f\n" +
 	"\vevent_names\x18\x01 \x03(\tR\n" +
 	"eventNames\"\x1f\n" +
@@ -877,19 +887,19 @@ const file_azd_extensions_v1beta_event_proto_rawDesc = "" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12;\n" +
-	"\x05error\x18\x04 \x01(\v2%.azd.extensions.v1beta.ExtensionErrorR\x05error\"\x8f\x02\n" +
+	"\x05error\x18\x04 \x01(\v2%.azd.extensions.v1beta.ExtensionErrorR\x05error\"\x93\x02\n" +
 	"\x14ServiceHandlerStatus\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12!\n" +
 	"\fservice_name\x18\x02 \x01(\tR\vserviceName\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x04 \x01(\tR\amessage\x12;\n" +
-	"\x05error\x18\x05 \x01(\v2%.azd.extensions.v1beta.ExtensionErrorR\x05error\x12F\n" +
-	"\bmessages\x18\x06 \x03(\v2*.azd.extensions.v1beta.ServiceEventMessageR\bmessages*\x92\x01\n" +
+	"\x05error\x18\x05 \x01(\v2%.azd.extensions.v1beta.ExtensionErrorR\x05error\x12J\n" +
+	"\bmessages\x18\x06 \x03(\v2*.azd.extensions.v1beta.ServiceEventMessageB\x02\x18\x01R\bmessages*\x96\x01\n" +
 	"\x17ServiceEventMessageKind\x12*\n" +
 	"&SERVICE_EVENT_MESSAGE_KIND_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fSERVICE_EVENT_MESSAGE_KIND_INFO\x10\x01\x12&\n" +
-	"\"SERVICE_EVENT_MESSAGE_KIND_WARNING\x10\x022k\n" +
+	"\"SERVICE_EVENT_MESSAGE_KIND_WARNING\x10\x02\x1a\x02\x18\x012k\n" +
 	"\fEventService\x12[\n" +
 	"\vEventStream\x12#.azd.extensions.v1beta.EventMessage\x1a#.azd.extensions.v1beta.EventMessage(\x010\x01BGZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1betab\x06proto3"
 

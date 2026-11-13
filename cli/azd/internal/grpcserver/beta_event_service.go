@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/url"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
@@ -392,94 +391,15 @@ func collectBetaServiceEventMessages(
 	serviceName string,
 	status *v1beta.ServiceHandlerStatus,
 ) error {
-	if status == nil || len(status.Messages) == 0 {
+	//nolint:staticcheck // Deprecated beta clients still return structured messages on their retained route.
+	if status == nil || len(status.GetMessages()) == 0 {
 		return nil
 	}
-	if eventName != "predeploy" && eventName != "postdeploy" {
-		return fmt.Errorf("messages are not supported for service event %q", eventName)
+	stableStatus := new(azdext.ServiceHandlerStatus)
+	if err := transcodeStableResponse(status, stableStatus); err != nil {
+		return fmt.Errorf("convert beta service handler status: %w", err)
 	}
-	if status.EventName != eventName || status.ServiceName != serviceName {
-		return fmt.Errorf("beta service event messages do not match their invocation")
-	}
-	if status.Status != "completed" && status.Status != "failed" {
-		return fmt.Errorf("beta service event messages require a final handler status")
-	}
-
-	collector := commandresult.ServiceEventMessageCollectorFromContext(ctx)
-	if collector == nil {
-		return fmt.Errorf("beta service event messages require a deploy command")
-	}
-
-	messages := make([]commandresult.ServiceEventMessage, 0, len(status.Messages))
-	for index, message := range status.Messages {
-		if message == nil {
-			return fmt.Errorf("beta service event message %d is empty", index+1)
-		}
-		if strings.TrimSpace(message.GetMessage()) == "" {
-			return fmt.Errorf("beta service event message %d has no text", index+1)
-		}
-
-		kind := ""
-		switch message.GetKind() {
-		case v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO:
-			kind = "info"
-		case v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING:
-			kind = "warning"
-		default:
-			return fmt.Errorf(
-				"beta service event message %d has unsupported kind %s",
-				index+1,
-				message.GetKind(),
-			)
-		}
-
-		item := commandresult.ServiceEventMessage{
-			ExtensionID: extensionID,
-			ServiceName: serviceName,
-			EventName:   eventName,
-			Kind:        kind,
-			Message:     message.GetMessage(),
-			Suggestion:  message.GetSuggestion(),
-		}
-		for linkIndex, link := range message.GetLinks() {
-			if link == nil || strings.TrimSpace(link.GetUrl()) == "" {
-				return fmt.Errorf(
-					"beta service event message %d link %d has no URL",
-					index+1,
-					linkIndex+1,
-				)
-			}
-			linkURL, err := redactBetaServiceEventMessageURL(link.GetUrl())
-			if err != nil {
-				return fmt.Errorf(
-					"beta service event message %d link %d has an invalid URL",
-					index+1,
-					linkIndex+1,
-				)
-			}
-			item.Links = append(item.Links, commandresult.ServiceEventMessageLink{
-				Title: link.GetTitle(),
-				URL:   linkURL,
-			})
-		}
-		messages = append(messages, item)
-	}
-
-	collector.Add(messages)
-	return nil
-}
-
-func redactBetaServiceEventMessageURL(rawURL string) (string, error) {
-	parsedURL, err := url.Parse(rawURL)
-	if err != nil {
-		return "", err
-	}
-	parsedURL.User = nil
-	parsedURL.RawQuery = ""
-	parsedURL.ForceQuery = false
-	parsedURL.Fragment = ""
-	parsedURL.RawFragment = ""
-	return parsedURL.String(), nil
+	return collectServiceEventMessages(ctx, extensionID, eventName, serviceName, stableStatus)
 }
 
 func betaFollowUpLayer(args project.ProjectLifecycleEventArgs) string {

@@ -93,8 +93,8 @@ The beta lifecycle `EventStream` override selects compatibility behavior from
 the first subscription. A subscription without `request_id` is delegated to
 the stable event implementation, preserving legacy correlation for existing
 beta clients. This mode has no beta subscription acknowledgements or
-invocation IDs and cannot use beta-only follow-up or structured deploy
-messages. A subscription with `request_id` selects the current beta mode;
+invocation IDs and cannot use beta-only follow-ups or beta-typed structured
+deploy messages. A subscription with `request_id` selects the current beta mode;
 later subscriptions and project handler statuses must also carry IDs.
 Every modern service invocation uses a unique `request_id`. A status carrying
 structured messages must echo that ID. For compatibility, an ID-less status
@@ -124,14 +124,15 @@ requires a beta method override; stable business logic must not be expected to
 interpret it.
 
 The lifecycle `EventService.EventStream` uses one focused beta override for
-project follow-up contributions and structured service deploy messages.
-`ServiceHandlerStatus.messages` is collected from the final response, so a
-hook can return guidance even when it also fails. The same override handles
-subscription acknowledgements, invocation IDs, and follow-up
-commit/discard behavior; registering a separate message override would
-replace those behaviors. Stable event messages and stable handler APIs remain
-unchanged. Go extensions opt in with
-`ExtensionHost.WithBetaServiceEventHandler`.
+project follow-up contributions and the deprecated beta structured service
+deploy messages. The same override handles subscription acknowledgements,
+invocation IDs, and follow-up commit/discard behavior; registering a separate
+message override would replace those behaviors. Structured service deploy
+messages are stable in azd 1.38.0 or later: both routes collect
+`ServiceHandlerStatus.messages` from the final response with the same
+validation, so a hook can return guidance even when it also fails. Go
+extensions use `ExtensionHost.WithServiceEventResponseHandler`;
+`ExtensionHost.WithBetaServiceEventHandler` remains as a deprecated beta route.
 
 An additive beta-only method does not require a matching stable method.
 `make proto` generates a beta handler that calls a focused override when
@@ -250,6 +251,45 @@ covers the verified agents/projects consumers.
 consumers and pins all nine affected extension modules to the published SDK v1.37.0 with
 `requiredAzdVersion: ">=1.37.0"`, retaining stricter future requirements if needed.
 Do not publish an SDK pin before its version exists or merge local replacements.
+
+## November 2026 third graduation (target azd 1.38.0)
+
+The [third batch audit](https://github.com/Azure/azure-dev/issues/10934) records structured service lifecycle
+message graduation, targeting host and SDK 1.38.0. The permanent
+[history](https://github.com/Azure/azure-dev/issues/10436) links every batch.
+
+The additive stable surface is `ServiceHandlerStatus.messages=6`,
+`ServiceEventMessage(kind=1, message=2, suggestion=3, links=4)` (where `links`
+reuses the stable `ErrorLink`), and `ServiceEventMessageKind` with
+`UNSPECIFIED=0`, `INFO=1`, and `WARNING=2`. Field numbers, names, and types
+match `v1beta`. The stable event stream already correlates service invocations
+by extension, service, and event, and serializes identical keys per stream, so
+messages map to their invocation without a beta `request_id`.
+
+Both routes share one host collector. Messages are accepted only on final
+`predeploy` and `postdeploy` statuses for the invoked service during a deploy
+command. Each message needs an info or warning kind and text, and each link
+needs a URL; link user information, queries, and fragments are redacted.
+Messages from failed hooks are retained. Older hosts ignore the unknown stable
+field, so stable messages are dropped without failing deployment.
+
+The beta message fields, messages, and enum are deprecated, not removed. The
+beta `EventStream` override remains because subscription acknowledgements,
+`EventMessage.request_id`, `error`, invocation IDs, and follow-ups are still
+beta-only. Legacy beta mode (no subscription `request_id`) still rejects
+messages. There is no beta removal date.
+
+The new stable Go API is `ExtensionHost.WithServiceEventResponseHandler` (and
+`EventManager.AddServiceEventResponseHandler`) with
+`azdext.ServiceEventResponseHandler`, `azdext.ServiceEventResponse`, and the
+stable `azdext.ServiceEventMessage` types. `WithBetaServiceEventHandler` and the
+`BetaServiceEvent*` types remain source-compatible but deprecated. An event can
+have only one service handler across the plain, response, and beta APIs. No Go
+source breaks are introduced. The demo extension migrates in the host PR and
+requires azd 1.38.0.
+
+[Consumer migration and release tracking](https://github.com/Azure/azure-dev/issues/10935) covers the agents
+extension's RBAC warnings after SDK v1.38.0 is published.
 
 ## Graduation audit requirements
 

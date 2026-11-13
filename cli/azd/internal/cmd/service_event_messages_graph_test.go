@@ -44,6 +44,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// These deploy and up tests exercise the deprecated beta event route, which remains supported.
+type (
+	betaServiceEventResponse = azdext.BetaServiceEventResponse //nolint:staticcheck // beta route coverage.
+	betaServiceEventMessage  = azdext.BetaServiceEventMessage  //nolint:staticcheck // beta route coverage.
+)
+
+const (
+	betaServiceEventMessageInfo    = azdext.BetaServiceEventMessageInfo    //nolint:staticcheck // beta route coverage.
+	betaServiceEventMessageWarning = azdext.BetaServiceEventMessageWarning //nolint:staticcheck // beta route coverage.
+)
+
 const serviceEventMessageProject = `name: test-project
 services:
   api:
@@ -91,7 +102,7 @@ func TestServiceEventMessagesCommands(t *testing.T) {
 							t, command, serviceEventMessageFormatter(format), serviceEventMessageProject,
 							func(
 								_ context.Context, eventName string, args *azdext.ServiceEventArgs,
-							) (*azdext.BetaServiceEventResponse, error) {
+							) (*betaServiceEventResponse, error) {
 								if args.Service.Name != "api" {
 									return nil, nil
 								}
@@ -195,12 +206,12 @@ func TestServiceEventMessagesCommandsEmptyOutput(t *testing.T) {
 
 				for _, emptyResponse := range []struct {
 					name     string
-					response *azdext.BetaServiceEventResponse
+					response *betaServiceEventResponse
 				}{
 					{name: "nil response"},
-					{name: "nil messages", response: &azdext.BetaServiceEventResponse{}},
-					{name: "empty messages", response: &azdext.BetaServiceEventResponse{
-						Messages: []azdext.BetaServiceEventMessage{},
+					{name: "nil messages", response: &betaServiceEventResponse{}},
+					{name: "empty messages", response: &betaServiceEventResponse{
+						Messages: []betaServiceEventMessage{},
 					}},
 				} {
 					t.Run(emptyResponse.name, func(t *testing.T) {
@@ -208,7 +219,7 @@ func TestServiceEventMessagesCommandsEmptyOutput(t *testing.T) {
 							t, command, serviceEventMessageFormatter(format), serviceEventMessageProject,
 							func(
 								context.Context, string, *azdext.ServiceEventArgs,
-							) (*azdext.BetaServiceEventResponse, error) {
+							) (*betaServiceEventResponse, error) {
 								return emptyResponse.response, nil
 							},
 						)
@@ -261,7 +272,7 @@ func TestServiceEventMessagesCommandsConcurrentOrder(t *testing.T) {
 					t, command, serviceEventMessageFormatter(format), projectYaml,
 					func(
 						ctx context.Context, eventName string, args *azdext.ServiceEventArgs,
-					) (*azdext.BetaServiceEventResponse, error) {
+					) (*betaServiceEventResponse, error) {
 						if eventName != "postdeploy" || args.Service.Name == "worker" {
 							return nil, nil
 						}
@@ -278,10 +289,10 @@ func TestServiceEventMessagesCommandsConcurrentOrder(t *testing.T) {
 								return nil, ctx.Err()
 							}
 						}
-						return &azdext.BetaServiceEventResponse{
-							Messages: []azdext.BetaServiceEventMessage{
-								{Kind: azdext.BetaServiceEventMessageWarning, Message: args.Service.Name + " first warning"},
-								{Kind: azdext.BetaServiceEventMessageInfo, Message: args.Service.Name + " second message"},
+						return &betaServiceEventResponse{
+							Messages: []betaServiceEventMessage{
+								{Kind: betaServiceEventMessageWarning, Message: args.Service.Name + " first warning"},
+								{Kind: betaServiceEventMessageInfo, Message: args.Service.Name + " second message"},
 							},
 						}, nil
 					},
@@ -395,7 +406,7 @@ func TestServiceEventMessagesCommandsJSONQuery(t *testing.T) {
 				serviceEventMessageProject,
 				func(
 					_ context.Context, eventName string, args *azdext.ServiceEventArgs,
-				) (*azdext.BetaServiceEventResponse, error) {
+				) (*betaServiceEventResponse, error) {
 					if args.Service.Name != "api" {
 						return nil, nil
 					}
@@ -422,7 +433,7 @@ func TestServiceEventMessagesCommandsJSONFormattingFailure(t *testing.T) {
 					t, command, &output.JsonFormatter{Query: "["}, serviceEventMessageProject,
 					func(
 						_ context.Context, eventName string, args *azdext.ServiceEventArgs,
-					) (*azdext.BetaServiceEventResponse, error) {
+					) (*betaServiceEventResponse, error) {
 						if args.Service.Name != "api" {
 							return nil, nil
 						}
@@ -469,7 +480,7 @@ func newServiceEventMessageCommandFixture(
 	command string,
 	formatter output.Formatter,
 	projectYaml string,
-	handler func(context.Context, string, *azdext.ServiceEventArgs) (*azdext.BetaServiceEventResponse, error),
+	handler func(context.Context, string, *azdext.ServiceEventArgs) (*betaServiceEventResponse, error),
 	consoleDecorators ...serviceEventMessageConsoleDecorator,
 ) *serviceEventMessageCommandFixture {
 	t.Helper()
@@ -577,9 +588,10 @@ func newServiceEventMessageCommandFixture(
 	require.NoError(t, err)
 	host := azdext.NewExtensionHost(client)
 	for _, eventName := range []string{"predeploy", "postdeploy"} {
+		//nolint:staticcheck // beta route coverage.
 		host.WithBetaServiceEventHandler(eventName, func(
 			ctx context.Context, args *azdext.ServiceEventArgs,
-		) (*azdext.BetaServiceEventResponse, error) {
+		) (*betaServiceEventResponse, error) {
 			return handler(ctx, eventName, args)
 		}, nil)
 	}
@@ -740,14 +752,14 @@ func serviceEventMessageFormatter(format output.Format) output.Formatter {
 	return &output.NoneFormatter{}
 }
 
-func serviceEventMessageResponse(eventName string) *azdext.BetaServiceEventResponse {
+func serviceEventMessageResponse(eventName string) *betaServiceEventResponse {
 	if eventName == "predeploy" {
-		return &azdext.BetaServiceEventResponse{Messages: []azdext.BetaServiceEventMessage{{
-			Kind: azdext.BetaServiceEventMessageInfo, Message: "before-deploy guidance",
+		return &betaServiceEventResponse{Messages: []betaServiceEventMessage{{
+			Kind: betaServiceEventMessageInfo, Message: "before-deploy guidance",
 		}}}
 	}
-	return &azdext.BetaServiceEventResponse{Messages: []azdext.BetaServiceEventMessage{{
-		Kind: azdext.BetaServiceEventMessageWarning, Message: "after-deploy guidance",
+	return &betaServiceEventResponse{Messages: []betaServiceEventMessage{{
+		Kind: betaServiceEventMessageWarning, Message: "after-deploy guidance",
 		Suggestion: "Review the access policy.",
 		Links:      []errorhandler.ErrorLink{{Title: "Access guide", URL: "https://example.com/access"}},
 	}}}

@@ -159,10 +159,10 @@ func Test_AzdClient_EventsBetaIsExplicit(t *testing.T) {
 		Fields().ByName("handler_output"))
 	require.Nil(t, (&v1beta.EventMessage{}).ProtoReflect().Descriptor().
 		Fields().ByName("handler_output"))
-	require.Nil(t, (&ServiceHandlerStatus{}).ProtoReflect().Descriptor().
+	require.NotNil(t, (&ServiceHandlerStatus{}).ProtoReflect().Descriptor().
 		Fields().ByName("messages"))
-	require.NotNil(t, (&v1beta.ServiceHandlerStatus{}).ProtoReflect().Descriptor().
-		Fields().ByName("messages"))
+	require.Nil(t, (&EventMessage{}).ProtoReflect().Descriptor().
+		Fields().ByName("request_id"))
 }
 
 func Test_AzdClient_CommandResult_ReturnsSameClient(t *testing.T) {

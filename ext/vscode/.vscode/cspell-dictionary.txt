@@ -28,7 +28,7 @@ predeploy
 postdeploy
 invalidhost
 unknownkeyword
-aicollection
+aiapplication
 webapps
 reactjs
 azuresql
@@ -39,5 +39,4 @@ ellismg
 networkidle
 qbsearch
 mystorageacct
-aiapps
 itemprop

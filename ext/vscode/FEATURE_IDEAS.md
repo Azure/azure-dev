@@ -30,7 +30,7 @@ This document outlines potential features and enhancements for the Azure Develop
 - ~~Custom template wizard with live preview~~
 - ~~"Add service" command to existing azure.yaml (add database, cache, etc.)~~
 - ~~Browse templates from awesome-azd gallery (https://aka.ms/awesome-azd)~~
-- ~~Filter templates by AI/ML focus (https://aka.ms/aiapps)~~
+- ~~Filter templates by AI/ML focus~~
 - ~~Search templates by language, framework, or Azure service~~
 - ~~Quick start options for users without azure.yaml (init from code, minimal project)~~
 - ~~Category-based template browsing (AI, Web Apps, APIs, Containers, Databases)~~

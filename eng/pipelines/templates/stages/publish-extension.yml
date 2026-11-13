@@ -210,7 +210,7 @@ stages:
                 STATIC_HOST="$(publish-storage-static-host)"
                 ARTIFACTS_DIR="$(Build.ArtifactStagingDirectory)/release"
                 REPO="$(Build.Repository.Name)"
-                REPO_URL="https://$(azuresdk-github-pat)@github.com/${REPO}.git"
+                REPO_URL="https://x-access-token:$(GH_TOKEN)@github.com/${REPO}.git"
                 WORKTREE="$(Agent.TempDirectory)/nightly-registry"
                 REGISTRY_REL="cli/azd/extensions/registry.nightly.json"
 

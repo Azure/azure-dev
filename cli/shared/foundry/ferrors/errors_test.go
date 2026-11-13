@@ -38,4 +38,23 @@ func TestErrors(t *testing.T) {
 	assert.Equal(t, "foundry", svcErr.ServiceName)
 	assert.NotContains(t, svcErr.Error(), "secret=123")
 	require.ErrorIs(t, svcErr, cause)
+
+	policyCodes := []struct {
+		code string
+		want string
+	}{
+		{CodeAgentPolicyBlocked, "agent_policy_blocked"},
+		{CodeAgentKindBlockedByPolicy, "agent_kind_blocked_by_policy"},
+		{CodeContainerImageBlockedByPolicy, "container_image_blocked_by_policy"},
+		{CodeModelBlockedByPolicy, "model_blocked_by_policy"},
+		{CodeToolBlockedByPolicy, "tool_blocked_by_policy"},
+		{CodeToolboxBlockedByPolicy, "toolbox_blocked_by_policy"},
+	}
+	for _, tc := range policyCodes {
+		err := Validation(tc.code, "blocked by policy", "update configuration")
+		assert.Equal(t, tc.want, err.Code)
+		assert.Equal(t, CategoryValidation, err.Category)
+		assert.Equal(t, "blocked by policy", err.Error())
+		assert.Equal(t, "update configuration", err.Suggestion)
+	}
 }

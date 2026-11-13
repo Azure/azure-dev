@@ -60,36 +60,71 @@ func TestGenerationWritesSourcesAndReturnsEntryWithoutMutatingProject(t *testing
 }
 
 func TestGenerationExportsAIProjectLocationMapping(t *testing.T) {
+	// Empty want values mean the parameter should be omitted.
 	tests := []struct {
-		name     string
-		entry    string
-		resource map[string]any
-		want     string
+		name         string
+		entryName    string
+		resourceType string
+		existing     bool
+		want         string
 	}{
-		{"unnamed", "", map[string]any{"type": "ai.project"}, "${AZURE_RESOURCES___AI_DEPLOYMENTS_LOCATION}"},
-		{"named", "models", map[string]any{"type": "ai.project"}, "${AZURE_RESOURCES_MODELS__AI_DEPLOYMENTS_LOCATION}"},
-		{"hyphens", "ai--west-", map[string]any{"type": "ai.project"},
-			"${AZURE_RESOURCES_AI__WEST___AI_DEPLOYMENTS_LOCATION}"},
-		{"existing project", "models", map[string]any{"type": "ai.project", "existing": true}, ""},
-		{"no project", "models", map[string]any{"type": "storage"}, ""},
+		{
+			name:         "unnamed",
+			entryName:    "",
+			resourceType: "ai.project",
+			want:         "${AZURE_RESOURCES___AI_DEPLOYMENTS_LOCATION}",
+		},
+		{
+			name:         "named",
+			entryName:    "models",
+			resourceType: "ai.project",
+			want:         "${AZURE_RESOURCES_MODELS__AI_DEPLOYMENTS_LOCATION}",
+		},
+		{
+			name:         "hyphens",
+			entryName:    "ai--west-",
+			resourceType: "ai.project",
+			want:         "${AZURE_RESOURCES_AI__WEST___AI_DEPLOYMENTS_LOCATION}",
+		},
+		{
+			name:         "existing project",
+			entryName:    "models",
+			resourceType: "ai.project",
+			existing:     true,
+		},
+		{
+			name:         "no project",
+			entryName:    "models",
+			resourceType: "storage",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			request := generationRequest(t)
-			request.Entry.Name = tt.entry
+			// For example, an entry named "models" maps AZURE_AI_DEPLOYMENTS_LOCATION to AZURE_RESOURCES_MODELS__AI_DEPLOYMENTS_LOCATION.
+			request.Entry.Name = tt.entryName
+
+			resource := map[string]any{"type": tt.resourceType}
+			if tt.existing {
+				resource["existing"] = true
+			}
 			var err error
-			request.Entry.Config, err = structpb.NewStruct(map[string]any{"resource": tt.resource})
+			request.Entry.Config, err = structpb.NewStruct(map[string]any{"resource": resource})
 			require.NoError(t, err)
+
 			_, err = NewGenerationProvider().Generate(t.Context(), request)
 			require.NoError(t, err)
+
 			data, err := os.ReadFile(filepath.Join(request.ProjectPath, request.OutputPath, "main.parameters.json"))
 			require.NoError(t, err)
+
 			var file struct {
 				Parameters map[string]struct {
 					Value any `json:"value"`
 				} `json:"parameters"`
 			}
 			require.NoError(t, json.Unmarshal(data, &file))
+
 			if tt.want == "" {
 				require.NotContains(t, file.Parameters, "aiDeploymentsLocation")
 			} else {

@@ -997,10 +997,13 @@ func isAgentConflictError(err error) bool {
 //
 // Managed (prompt) agents are versioned: the create endpoint (POST /agents)
 // only succeeds for a brand-new agent and returns 409 Conflict once the agent
-// exists. Re-deploys therefore fall back to the update endpoint
-// (POST /agents/{name}), which appends a new version. This makes `azd deploy`
-// idempotent: the first run creates the agent, and every later run bumps its
-// version.
+// exists. To avoid an unnecessary 409 on every re-deploy, it checks whether the
+// agent already exists via GET /agents/{name} first:
+//   - If GET succeeds, it updates the agent directly via POST /agents/{name}.
+//   - If GET returns 404 NotFound, it creates the agent via POST /agents and
+//     still falls back to POST /agents/{name} on 409 Conflict in case the agent
+//     was created concurrently between the GET and POST calls.
+//   - Any non-404 error from GET is returned immediately.
 func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 	ctx context.Context,
 	client *agent_api.AgentClient,
@@ -1011,6 +1014,19 @@ func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 	defer phasetelemetry.Start(ctx, phasetelemetry.AgentCreateOrUpdate)()
 
 	apiVersion := ProjectEndpointAPIVersion
+	updateReq := &agent_api.UpdateAgentRequest{
+		Description: request.Description,
+		Metadata:    request.Metadata,
+		Definition:  request.Definition,
+	}
+
+	if _, getErr := client.GetAgentWithHeaders(ctx, request.Name, apiVersion, headers); getErr == nil {
+		fmt.Fprintf(os.Stderr, "Agent %q already exists; publishing a new version.\n", request.Name)
+		return client.UpdateAgentWithHeaders(ctx, request.Name, updateReq, apiVersion, headers)
+	} else if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
+		respErr.StatusCode != http.StatusNotFound {
+		return nil, getErr
+	}
 
 	agent, err := client.CreateAgentWithHeaders(ctx, request, apiVersion, headers)
 	if err == nil {
@@ -1020,12 +1036,7 @@ func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 		return nil, err
 	}
 
-	// The agent already exists — publish a new version instead.
+	// The agent was created concurrently between GET and POST — publish a new version instead.
 	fmt.Fprintf(os.Stderr, "Agent %q already exists; publishing a new version.\n", request.Name)
-	updateReq := &agent_api.UpdateAgentRequest{
-		Description: request.Description,
-		Metadata:    request.Metadata,
-		Definition:  request.Definition,
-	}
 	return client.UpdateAgentWithHeaders(ctx, request.Name, updateReq, apiVersion, headers)
 }

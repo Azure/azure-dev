@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -56,6 +57,47 @@ func TestGenerationWritesSourcesAndReturnsEntryWithoutMutatingProject(t *testing
 	require.NoError(t, err)
 	require.Equal(t, "name: unchanged\n", string(actual))
 	require.NoDirExists(t, filepath.Join(request.ProjectPath, ".azure"))
+}
+
+func TestGenerationExportsAIProjectLocationMapping(t *testing.T) {
+	tests := []struct {
+		name     string
+		entry    string
+		resource map[string]any
+		want     string
+	}{
+		{"unnamed", "", map[string]any{"type": "ai.project"}, "${AZURE_RESOURCES___AI_DEPLOYMENTS_LOCATION}"},
+		{"named", "models", map[string]any{"type": "ai.project"}, "${AZURE_RESOURCES_MODELS__AI_DEPLOYMENTS_LOCATION}"},
+		{"hyphens", "ai--west-", map[string]any{"type": "ai.project"},
+			"${AZURE_RESOURCES_AI__WEST___AI_DEPLOYMENTS_LOCATION}"},
+		{"existing project", "models", map[string]any{"type": "ai.project", "existing": true}, ""},
+		{"no project", "models", map[string]any{"type": "storage"}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := generationRequest(t)
+			request.Entry.Name = tt.entry
+			var err error
+			request.Entry.Config, err = structpb.NewStruct(map[string]any{"resource": tt.resource})
+			require.NoError(t, err)
+			_, err = NewGenerationProvider().Generate(t.Context(), request)
+			require.NoError(t, err)
+			data, err := os.ReadFile(filepath.Join(request.ProjectPath, request.OutputPath, "main.parameters.json"))
+			require.NoError(t, err)
+			var file struct {
+				Parameters map[string]struct {
+					Value any `json:"value"`
+				} `json:"parameters"`
+			}
+			require.NoError(t, json.Unmarshal(data, &file))
+			if tt.want == "" {
+				require.NotContains(t, file.Parameters, "aiDeploymentsLocation")
+			} else {
+				require.Contains(t, file.Parameters, "aiDeploymentsLocation")
+				require.Equal(t, tt.want, file.Parameters["aiDeploymentsLocation"].Value)
+			}
+		})
+	}
 }
 
 func TestGenerationRefusesExistingFilesWithoutForce(t *testing.T) {

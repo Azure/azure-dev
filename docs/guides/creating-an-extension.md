@@ -2,7 +2,7 @@
 
 # Creating an extension
 
-This guide covers how to create, build, and publish an extension for the Azure Developer CLI.
+This guide covers how to create, build, and publish an Azure Developer CLI extension using Go 1.26 or later, which the `--internal` scaffold requires for Microsoft-authored extensions. The `azd x init` command also offers extension templates for .NET (C#), Python, and JavaScript.
 
 ## Design before implementation
 
@@ -26,16 +26,14 @@ azd extensions use a gRPC-based framework to add functionality. The extension fr
 
 ## Prerequisites
 
-- Go 1.26 or later for Go extensions
 - A fork of the [azure-dev](https://github.com/Azure/azure-dev) repository for Microsoft-authored extension contributions
 - The `azd` Developer Extension installed (`azd extension install microsoft.azd.extensions`)
-- One of the supported languages: Go (best support), .NET (C#), Python, or JavaScript
 
 ## Getting started
 
 ### 1. Create the extension
 
-For a community-authored or organization-internal extension, use your own project directory. The Developer Extension provides `azd x init` to create a project from a template; its `--internal` option creates files for Microsoft-authored extensions in this repository and currently supports Go only.
+For a community-authored or organization-internal extension, use your own project directory. The Developer Extension provides `azd x init` to create a project from a template; its `--internal` option creates files for Microsoft-authored extensions in this repository.
 
 For Microsoft-authored extension work, extensions live under `cli/azd/extensions/`. The following directory example uses that layout:
 
@@ -61,12 +59,12 @@ capabilities:
 
 Implement the required interfaces for your declared capabilities. See the extension framework services documentation for interface details.
 
-If your Go extension creates role assignments, use the stable [`Account().GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) method with the target subscription ID and request types from `azdext` or `contracts/v1`. The host resolves the resource-tenant object ID and principal type without returning an access token. Pin the published azd SDK to v1.36.0 or later and set `requiredAzdVersion: ">=1.36.0"` before replacing an existing lookup. The equivalent beta API is deprecated.
+If your extension creates role assignments, use the stable [`Account().GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) method with the target subscription ID and request types from `azdext` or `contracts/v1`. The host resolves the resource-tenant object ID and principal type without returning an access token. Pin the published azd SDK to v1.36.0 or later and set `requiredAzdVersion: ">=1.36.0"` before replacing an existing lookup. The equivalent beta API is deprecated.
 
-Go extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. Extensions must consume an SDK release containing this validation before their binaries enforce it.
+Extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. Extensions must consume an SDK release containing this validation before their binaries enforce it.
 
 The default scaffolds and SDK `EventManager` use the stable `v1` contract.
-Go extensions can opt into beta structured messages for service
+Extensions can opt into beta structured messages for service
 `predeploy`/`postdeploy` handlers with
 `ExtensionHost.WithBetaServiceEventHandler`. See
 [contract versioning](../../cli/azd/docs/extensions/contract-versioning.md)
@@ -78,7 +76,7 @@ for the stream requirements and legacy-client behavior.
 # Using the developer extension
 azd x build
 
-# Or using Go directly
+# Or build directly
 go build
 ```
 
@@ -153,7 +151,7 @@ The latter requires Copilot authentication and consumes model usage; it does not
 
 ## Microsoft-authored extension CI builds
 
-Go extensions in this repository keep a thin `ci-build.ps1` wrapper in each extension directory. The wrapper calls [`cli/azd/extensions/scripts/ci-build.ps1`](../../cli/azd/extensions/scripts/ci-build.ps1), which owns the common build flags, target policy, coverage, record builds, and error handling. The Microsoft-authored extension generation template creates the wrapper. Keep the shared script in the checkout when building an extension.
+Microsoft-authored extensions built with the repository's shared script use a thin `ci-build.ps1` wrapper in the extension directory. The wrapper calls [`cli/azd/extensions/scripts/ci-build.ps1`](../../cli/azd/extensions/scripts/ci-build.ps1), which owns the common build flags, target policy, coverage, record builds, and error handling. The Microsoft-authored extension generation template creates the wrapper. Keep the shared script in the checkout when building an extension.
 
 Run the script from the extension directory with an explicit output filename:
 
@@ -165,7 +163,7 @@ The default version comes from the extension's own `version.txt`. Wrappers pass 
 
 The scripts resolve the effective target through `go env GOOS GOARCH`. Linux amd64 builds disable cgo to avoid inheriting the build agent's GLIBC requirement, as addressed by [Azure/azure-dev#10393](https://github.com/Azure/azure-dev/pull/10393). ARM64 and non-Linux builds preserve the caller's cgo settings, including the macOS ARM64 pipeline's `CGO_ENABLED=1`. The scripts restore cgo environment state after building and leave `GOEXPERIMENT` unchanged.
 
-`-CodeCoverageEnabled` adds Go coverage instrumentation. `-BuildRecordMode` builds both the production binary and a second binary with the `record` tag. Record filenames add `-record` on Linux/macOS or insert `-record` before `.exe` on Windows. Coverage applies to both binaries when both switches are supplied. Release jobs build a separate binary without either switch.
+`-CodeCoverageEnabled` adds coverage instrumentation. `-BuildRecordMode` builds both the production binary and a second binary with the `record` tag. Record filenames add `-record` on Linux/macOS or insert `-record` before `.exe` on Windows. Coverage applies to both binaries when both switches are supplied. Release jobs build a separate binary without either switch.
 
 From the repository root, run the build-contract tests:
 

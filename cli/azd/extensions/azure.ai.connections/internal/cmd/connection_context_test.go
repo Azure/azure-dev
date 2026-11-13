@@ -10,12 +10,14 @@ import (
 	"io"
 	"maps"
 	"net"
+	"net/http"
 	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -308,9 +310,22 @@ func TestResolveConnectionContextWithEnvironmentSelectsEnvironment(t *testing.T)
 			}
 			fixture := newConnectionContextFixture(t, staging, nil)
 
-			// Exercise real credential/client construction, but never request a token or call Azure.
-			resolved, err := resolveConnectionContextWithEnvironment(fixture.ctx, tt.flagEndpoint, "staging")
+			metadataCalls := 0
+			options := identityClientOptions(deleteReadinessTransport(func(request *http.Request) (*http.Response, error) {
+				metadataCalls++
+				assert.Equal(t, http.MethodGet, request.Method)
+				assert.Equal(t, staging["AZURE_AI_PROJECT_ID"], request.URL.Path)
+				assert.Equal(t, "management.azure.com", request.URL.Host)
+				return identityResponse(request, http.StatusOK,
+					`{"properties":{"endpoints":{"AI Foundry API":"`+wantEndpoint+`"}}}`), nil
+			}))
+			resolved, err := resolveConnectionContextWithClients(fixture.ctx, tt.flagEndpoint, "staging",
+				func(tenant string) (azcore.TokenCredential, error) {
+					assert.Equal(t, connectionContextStagingTenant, tenant)
+					return deleteReadinessCredential{}, nil
+				}, options)
 			require.NoError(t, err)
+			assert.Equal(t, 1, metadataCalls)
 			require.NotNil(t, resolved)
 			assert.Equal(t, wantEndpoint, resolved.endpoint)
 			assert.Equal(t, "staging-sub", resolved.sub)

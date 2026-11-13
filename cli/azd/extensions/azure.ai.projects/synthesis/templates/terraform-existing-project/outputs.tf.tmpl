@@ -11,7 +11,7 @@ output "AZURE_AI_PROJECT_NAME" {
 }
 
 output "AZURE_OPENAI_ENDPOINT" {
-  value = "https://${local.foundry_account_name}.openai.azure.com/"
+  value = "https://${local.foundry_account_subdomain}.openai.azure.com/"
 }
 
 output "FOUNDRY_PROJECT_ENDPOINT" {
@@ -19,8 +19,12 @@ output "FOUNDRY_PROJECT_ENDPOINT" {
 
   precondition {
     condition = (
-      lower(local.project_endpoint_account) == lower(local.foundry_account_name) &&
-      lower(local.project_endpoint_project) == lower(local.foundry_project_name)
+      local.foundry_account_subdomain_valid &&
+      local.project_endpoint_account != "" &&
+      lower(local.project_endpoint_account) == lower(local.expected_endpoint_account) &&
+      lower(local.expected_endpoint_account) == lower(local.foundry_account_subdomain) &&
+      lower(local.project_endpoint_project) == lower(local.foundry_project_name) &&
+      lower(local.expected_endpoint_project) == lower(local.foundry_project_name)
     )
     error_message = "project_endpoint must identify the same Foundry project as project_resource_id."
   }

@@ -71,7 +71,8 @@ func (h *azdInfraHost) Subscription(
 	}
 	if !noPrompt {
 		response, err := h.client.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{
-			Message: "Select the Azure subscription for the generated Content Understanding project",
+			Message: actionText(h.outputFormat,
+				"Select the Azure subscription for the generated Content Understanding project"),
 		})
 		if err != nil {
 			return nil, err

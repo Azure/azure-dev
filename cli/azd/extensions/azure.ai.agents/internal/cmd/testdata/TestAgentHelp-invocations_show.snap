@@ -7,7 +7,7 @@ Flags
       --agent-endpoint string : Full protocol endpoint URL of a deployed agent
   -n, --agent-name string     : Agent name (matches azure.yaml service name; auto-detected when only one exists)
       --id string             : Service-assigned ID; defaults to the current ID for the agent and protocol
-  -p, --protocol string       : Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)
+  -p, --protocol string       : Protocol to use: responses, invocations, or a2a (inferred from current invocation or saved deployment; operation support varies)
       --user-identity string  : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
 
 Global Flags

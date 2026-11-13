@@ -73,10 +73,9 @@ func addSessionFlags(cmd *cobra.Command, flags *sessionFlags) {
 
 // sessionContext holds the resolved agent context for session operations.
 type sessionContext struct {
-	endpoint      string // project endpoint (for API calls)
-	agentName     string
-	version       string // from AGENT_{SERVICE}_VERSION env var
-	agentEndpoint string // full AGENT_{SVC}_ENDPOINT (for config key)
+	endpoint  string // project endpoint (for API calls)
+	agentName string
+	version   string // from AGENT_{SERVICE}_VERSION env var
 }
 
 // resolveSessionContext resolves the agent name, version, and project endpoint.
@@ -91,19 +90,19 @@ func resolveSessionContext(
 
 	name := agentName
 	var version string
-	var agentEndpoint string
+	var endpoint string
 
 	if info, err := resolveAgentServiceFromProject(
 		ctx, azdClient, name, noPrompt,
 	); err == nil {
-		if name == "" && info.AgentName != "" {
+		if info.AgentName != "" {
 			name = info.AgentName
 		}
 		if info.Version != "" {
 			version = info.Version
 		}
-		if info.AgentEndpoint != "" {
-			agentEndpoint = info.AgentEndpoint
+		if info.ProjectEndpoint != "" {
+			endpoint = info.ProjectEndpoint
 		}
 	}
 
@@ -116,16 +115,21 @@ func resolveSessionContext(
 		)
 	}
 
-	endpoint, err := resolveAgentEndpoint(ctx, "", "")
+	if endpoint == "" {
+		endpoint, err = resolveAgentEndpoint(ctx, "", "")
+		if err != nil {
+			return nil, err
+		}
+	}
+	endpoint, _, err = validateProjectEndpoint(endpoint)
 	if err != nil {
 		return nil, err
 	}
 
 	return &sessionContext{
-		endpoint:      endpoint,
-		agentName:     name,
-		version:       version,
-		agentEndpoint: agentEndpoint,
+		endpoint:  endpoint,
+		agentName: name,
+		version:   version,
 	}, nil
 }
 
@@ -218,7 +222,8 @@ Positional arguments can be used instead of flags:
 
 // SessionCreateAction implements session creation.
 type SessionCreateAction struct {
-	flags *sessionCreateFlags
+	flags      *sessionCreateFlags
+	credential azcore.TokenCredential
 }
 
 func (a *SessionCreateAction) Run(ctx context.Context) error {
@@ -243,9 +248,12 @@ func (a *SessionCreateAction) Run(ctx context.Context) error {
 		)
 	}
 
-	credential, err := newAgentCredential()
-	if err != nil {
-		return err
+	credential := a.credential
+	if credential == nil {
+		credential, err = newAgentCredential()
+		if err != nil {
+			return err
+		}
 	}
 
 	client := agent_api.NewAgentClient(sc.endpoint, credential)
@@ -273,9 +281,7 @@ func (a *SessionCreateAction) Run(ctx context.Context) error {
 		)
 	}
 
-	if sc.agentEndpoint != "" {
-		persistSessionID(ctx, buildRemoteAgentKeyFromEndpoint(sc.agentEndpoint), session.AgentSessionID)
-	}
+	persistSessionID(ctx, buildAgentKey(sc.endpoint, sc.agentName, version, false), session.AgentSessionID)
 
 	return printSession(session, a.flags.output)
 }
@@ -528,8 +534,9 @@ volume. Returns once cleanup is complete.`,
 
 // SessionDeleteAction implements session deletion.
 type SessionDeleteAction struct {
-	flags     *sessionDeleteFlags
-	sessionID string
+	flags      *sessionDeleteFlags
+	sessionID  string
+	credential azcore.TokenCredential
 }
 
 func (a *SessionDeleteAction) Run(ctx context.Context) error {
@@ -538,9 +545,12 @@ func (a *SessionDeleteAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	credential, err := newAgentCredential()
-	if err != nil {
-		return err
+	credential := a.credential
+	if credential == nil {
+		credential, err = newAgentCredential()
+		if err != nil {
+			return err
+		}
 	}
 
 	client := agent_api.NewAgentClient(sc.endpoint, credential)
@@ -555,6 +565,7 @@ func (a *SessionDeleteAction) Run(ctx context.Context) error {
 	if err != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
 			respErr.StatusCode == http.StatusNotFound {
+			clearSavedSession(ctx, sc, a.sessionID)
 			return exterrors.Validation(
 				exterrors.CodeSessionNotFound,
 				fmt.Sprintf(
@@ -575,21 +586,24 @@ func (a *SessionDeleteAction) Run(ctx context.Context) error {
 		a.sessionID, sc.agentName,
 	)
 
-	// Best-effort: clear stored session if it matches the one we just deleted.
-	if sc.agentEndpoint != "" {
-		if azdClient, err := azdext.NewAzdClient(); err == nil {
-			defer azdClient.Close()
-			agentKey := buildRemoteAgentKeyFromEndpoint(sc.agentEndpoint)
-			if stored, err := getAgentSpecificContextValue(ctx, azdClient, "sessions", agentKey); err == nil &&
-				stored == a.sessionID {
-				if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
-					log.Printf("session delete: failed to clear stored session: %v", err)
-				}
-			}
-		}
-	}
+	clearSavedSession(ctx, sc, a.sessionID)
 
 	return nil
+}
+
+func clearSavedSession(ctx context.Context, sc *sessionContext, sessionID string) {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return
+	}
+	defer azdClient.Close()
+	store, err := newAgentStateStoreForClient(azdClient)
+	if err == nil {
+		err = store.clearSession(ctx, buildAgentKey(sc.endpoint, sc.agentName, sc.version, false), sessionID)
+	}
+	if err != nil {
+		log.Printf("session delete: failed to clear stored session: %v", err)
+	}
 }
 
 // ---------------------------------------------------------------------------

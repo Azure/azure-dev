@@ -101,10 +101,11 @@ AZD_E2E_A2A_LIVE=false go test -mod=readonly ./tests/e2e-live \
    and exact artifact text `AZD_A2A_NATIVE_ECHO_OK`.
 3. Change **only the retained local hosted definition** to `a2a: 0.3.0`, do
    **not** deploy it, and invoke explicit 1.0 again through project-based azd
-   resolution. A completed native Task proves local compatibility advice did
-   not suppress the remote request. Developer advisory logging is normally
-   hidden without `--debug`; the test intentionally does not enable debug or
-   require the diagnostic on stderr. **Do not redeploy this stale project.**
+   resolution. A completed native Task proves local source did not override
+   the deployed endpoint configuration. Remote enablement is read from Foundry
+   when permitted; native version compatibility is enforced for the actual
+   service-selected target, not the edited local declaration.
+   **Do not redeploy this stale project.**
 4. Initialize a distinct `--kind prompt` agent with `--model-deployment`,
    deterministic `--instructions`, and the existing `--project-id`; verify it
    has no native implementation protocols/code configuration. Deploy it using

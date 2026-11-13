@@ -92,6 +92,11 @@ var displayableProtocols = []displayableProtocolEntry{
 		EnvSuffix: "INVOCATIONS_WS",
 		BuildURL:  buildInvocationsWSProtocolURL,
 	},
+	{
+		Protocol:  agent_api.AgentProtocolVoiceConversationEngine,
+		EnvSuffix: "VOICE_CONVERSATION_ENGINE",
+		BuildURL:  buildVoiceConversationEngineProtocolURL,
+	},
 }
 
 // buildResponsesProtocolURL builds the per-agent HTTPS URL for the "responses" protocol.
@@ -130,6 +135,14 @@ func buildInvocationsProtocolURL(projectEndpoint, agentName string) string {
 // (for the wss:// authority) to be callable, so emitting a partial URL would only register a
 // non-callable endpoint. Callers (agentInvocationEndpoints) filter out empty results.
 func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
+	return buildHostedWSProtocolURL(projectEndpoint, agentName, agent_api.AgentProtocolInvocationsWS)
+}
+
+func buildVoiceConversationEngineProtocolURL(projectEndpoint, agentName string) string {
+	return buildHostedWSProtocolURL(projectEndpoint, agentName, agent_api.AgentProtocolVoiceConversationEngine)
+}
+
+func buildHostedWSProtocolURL(projectEndpoint, agentName string, protocol agent_api.AgentProtocol) string {
 	projectEndpoint = strings.TrimSpace(projectEndpoint)
 	u, err := url.Parse(projectEndpoint)
 	if err != nil || u.Host == "" {
@@ -137,8 +150,8 @@ func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
 	}
 
 	return fmt.Sprintf(
-		"wss://%s%s/agents/%s/endpoint/protocols/invocations_ws?api-version=%s",
-		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
+		"wss://%s%s/agents/%s/endpoint/protocols/%s?api-version=%s",
+		u.Host, strings.TrimRight(u.Path, "/"), agentName, protocol, agent_api.AgentEndpointAPIVersion,
 	)
 }
 
@@ -1947,7 +1960,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 		}
 	}
 
-	return p.finalizeDeploy(
+	monitoringWarning := ""
+	if identity := result.agentVersion.InstanceIdentity; identity != nil && privateMonitoringComponentID(azdEnv) != "" {
+		progress("Granting agent identity access to Application Insights")
+		monitoringWarning = p.ensureHostedAgentMonitoringPublisher(ctx, azdEnv, identity.PrincipalID)
+	}
+
+	deployResult, err := p.finalizeDeploy(
 		ctx,
 		progress,
 		serviceConfig,
@@ -1960,6 +1979,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		activityProfile,
 		serviceTargetConfig.Activity,
 	)
+	if err != nil {
+		return nil, err
+	}
+	appendDeployWarning(deployResult, privateMonitoringComponentID(azdEnv), monitoringWarning)
+	return deployResult, nil
 }
 
 func activityBotOwnership(
@@ -2747,6 +2771,9 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 		ctx, agentClient, request, azdEnv, progress, shouldUpdate,
 	)
 	if err != nil {
+		if policyErr, ok := TryClassifyRuntimePolicyError(err, serviceConfig.GetName(), azdEnv["AZURE_AI_PROJECT_ID"]); ok {
+			return nil, policyErr
+		}
 		return nil, exterrors.ServiceFromAzure(err, deployOp)
 	}
 	if err := validateVoiceAgentDeployResponse(agentObject); err != nil {
@@ -3731,7 +3758,8 @@ func fetchAndValidateHostedVoiceTarget(
 		return exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("hosted voice target is not compatible: %s", err),
-			"deploy an active Voice Bridge 1.0 hosted agent with invocations_ws/1.0.0, then retry",
+			"deploy an active target with voice_conversation_engine/1.0.0, or legacy invocations_ws/1.0.0 "+
+				"with voiceLiveCompatible=true and bridgeProtocolVersion=1.0 metadata, then retry",
 		)
 	}
 	return nil
@@ -3769,15 +3797,17 @@ func validateHostedVoiceTargetVersion(version *agent_api.AgentVersionObject) err
 	if definition.Kind != agent_api.AgentKindHosted {
 		return fmt.Errorf("target kind is %q, expected hosted", definition.Kind)
 	}
-	compatibleProtocol := false
+	legacyProtocol := false
 	for _, protocol := range definition.ProtocolVersions {
+		if protocol.Protocol == agent_api.AgentProtocolVoiceConversationEngine && protocol.Version == "1.0.0" {
+			return nil
+		}
 		if protocol.Protocol == agent_api.AgentProtocolInvocationsWS && protocol.Version == "1.0.0" {
-			compatibleProtocol = true
-			break
+			legacyProtocol = true
 		}
 	}
-	if !compatibleProtocol {
-		return fmt.Errorf("target does not declare invocations_ws/1.0.0")
+	if !legacyProtocol {
+		return fmt.Errorf("target must declare voice_conversation_engine/1.0.0 or legacy invocations_ws/1.0.0")
 	}
 	if !strings.EqualFold(strings.TrimSpace(version.Metadata["voiceLiveCompatible"]), "true") {
 		return fmt.Errorf("target metadata voiceLiveCompatible must be true")
@@ -4313,7 +4343,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		)
 		endUpload()
 		if err != nil {
-			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
+			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request, azdEnv["AZURE_AI_PROJECT_ID"])
 		}
 	} else {
 		if localProfile.IsActivity {
@@ -4338,7 +4368,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		)
 		endUpload()
 		if err != nil {
-			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
+			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request, azdEnv["AZURE_AI_PROJECT_ID"])
 		}
 	}
 
@@ -4814,7 +4844,20 @@ func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, servi
 
 var hostedAgentRetryServiceNamePattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_. -]*$`)
 
-func hostedAgentCreateError(err error, serviceName string, request *agent_api.CreateAgentRequest) error {
+func hostedAgentCreateError(
+	err error,
+	serviceName string,
+	request *agent_api.CreateAgentRequest,
+	projectResourceID ...string,
+) error {
+	var projID string
+	if len(projectResourceID) > 0 {
+		projID = projectResourceID[0]
+	}
+	if policyErr, ok := TryClassifyRuntimePolicyError(err, serviceName, projID); ok {
+		return policyErr
+	}
+
 	converted := exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	responseErr, ok := errors.AsType[*azcore.ResponseError](err)
 	if !ok || responseErr.StatusCode != http.StatusBadRequest || responseErr.RawResponse == nil || request == nil {
@@ -4952,7 +4995,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 		ctx, request.Name, versionRequest, agent_api.AgentEndpointAPIVersion,
 	)
 	if err != nil {
-		return nil, hostedAgentCreateError(err, serviceName, request)
+		return nil, hostedAgentCreateError(err, serviceName, request, azdEnv["AZURE_AI_PROJECT_ID"])
 	}
 
 	_, _ = fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)

@@ -1,6 +1,6 @@
 # Azure Developer CLI (azd) Agents Extension
 
-<!-- cspell:ignore strconv -->
+<!-- cspell:ignore strconv kubelet -->
 ## Project monitoring
 
 New Foundry projects created for agents automatically provision and connect
@@ -778,12 +778,41 @@ For plain messages, azd composes both the version-specific JSON-RPC body and
 the `A2A-Version` header. Because azd controls both, `1.0` is a convenience
 default when `--a2a-version` is omitted. A deployed hosted A2A implementation must
 support `1.0` (`1.0.0` in deployment YAML) and match the requested wire version,
-regardless of other protocols. Local working-tree definitions are not authoritative
-for the deployed target, even when `--version` selects the current deployment.
-Local inspection failures and compatibility findings are advisory diagnostics
-shown with `--debug`; Foundry enforces deployed target support. Request and
-file-argument validation remain blocking. Translation availability and restrictions
-can vary by service rollout.
+regardless of other protocols. For automatic remote protocol selection and A2A enablement
+checks, azd reads the current Foundry endpoint configuration when the caller can
+read agent metadata. Local working-tree definitions and saved deployment protocol
+lists are not authoritative for deployed capabilities. Saved endpoints can still
+provide routing hints, but only currently enabled protocols are selected when live
+configuration is available. Explicit Responses/Invocations requests and lifecycle
+commands skip this capability metadata read. Lifecycle commands use the protocol
+saved with the current invocation for the selected target, so protocol changes
+or an explicit `invoke --version` do not redirect them to older work. Current
+work is tracked independently of session versions, and printed follow commands
+include the accepted Response ID. Older state with one saved work type can be
+inferred; if it contains both Response and Invocation IDs without a current
+selection, pass `--protocol` explicitly. Saved endpoint routing is only a fallback
+when no saved invocation identifies a protocol.
+
+A prompt agent's public endpoint must enable both `a2a` and `responses`; declaring
+a hosted implementation protocol in local YAML does not publish that endpoint.
+Optional metadata inspection is limited to five seconds, or a shorter invocation
+timeout. If metadata cannot be read, such as for an endpoint-only consumer without
+`agents/read`, azd leaves validation to Foundry rather than treating the read
+failure as a disabled protocol. Use `--protocol` explicitly when routing is
+ambiguous. If `--version` matches the saved deployment, azd can retain its single
+saved protocol while it remains enabled, even when a newer agent version is latest.
+An explicit `--version` uses version-scoped session/conversation state and cannot
+reuse a session cached under a different saved deployment version. `sessions create`
+uses the same version mapping, so `invoke --version` reuses a session created for
+that version. `sessions delete` clears matching session IDs across the selected
+target's version caches without changing saved conversations or invocation IDs.
+Full-agent deletion clears that target's remote version caches and legacy imports,
+without clearing other agents or local state. Select competing unmarked legacy
+invocation records with explicit `--protocol` and `--id` rather than guessing which is newer.
+Version-specific compatibility remains enforced by Foundry for the
+selected version or session, not inferred from the latest working-tree source.
+Request and file-argument validation remain blocking. Translation availability
+and restrictions can vary by service rollout.
 
 ```bash
 azd ai agent invoke -p a2a "Hello!"
@@ -791,6 +820,55 @@ azd ai agent invoke -p a2a "Hello!"
 
 With the preview disabled, plain messages use A2A 0.3. To preserve that behavior after enabling it, use
 `azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"`.
+
+Formatted A2A output prints the returned **Context ID** instead of a session summary.
+Tasks also show their **Task ID** and **State**, retaining the protocol's native enum
+spellings. Failed, canceled, and rejected send Tasks return an error rather than
+displaying partial artifacts as completed answers; their IDs and text or structured
+status-message diagnostics remain available for inspection.
+Input-required and auth-required states show the agent's prompt for follow-up.
+Successful `tasks/cancel` (0.3) and `CancelTask` (1.0) requests instead return success
+with the canceled Task's IDs, state, and any status detail, not partial artifacts.
+Successful `tasks/get` (0.3) and `GetTask` (1.0) lookups also return success for
+failed, canceled, or rejected Tasks, showing IDs, state, and status detail instead
+of formatting partial artifacts as completed answers.
+
+Use `--context-id` to return to an earlier context after using another one. For an
+Echo agent, prepare two first-turn request files from the JSON-RPC examples below:
+give them distinct request/message IDs and omit `message.contextId`. Record their
+returned Context IDs as A and B, and confirm they differ before continuing:
+
+```bash
+azd ai agent invoke echo -p a2a --a2a-version 1.0 -f start-a.json --output raw
+azd ai agent invoke echo -p a2a --a2a-version 1.0 -f start-b.json --output raw
+azd ai agent invoke echo -p a2a --a2a-version 1.0 --context-id "<context-a>" "Return to A"
+azd ai agent invoke echo -p a2a --a2a-version 1.0 --context-id "<context-b>" "Return to B"
+```
+
+The follow-ups must return A and B respectively, with fresh Task IDs and the expected
+Echo replies. Context selection provides correlation/routing, not automatic model
+memory; an executor must manage its own conversation state. First-turn context
+creation and hosted-session affinity are service-owned contracts. Do not assume
+`--new-session` creates a new A2A context.
+
+`--context-id` works with A2A 0.3 and 1.0, including local invocation. It is an
+opaque A2A conversation identifier, not a Foundry session ID. When it is provided,
+azd omits cached session routing so Foundry can resolve the selected context.
+Explicit `--session-id` or `--version` still selects caller-specified hosted routing;
+omit those flags when the context should select its own session. Authorization,
+expiration, and agent-specific context support remain enforced by the service.
+If the response omits a context ID, azd does not invent one from another identifier.
+
+The flag is for plain A2A messages only. Do not combine it with `--input-file`,
+`--conversation-id`, `--new-session`, or `--new-conversation`. For complete
+JSON-RPC files, put `contextId` in `params.message`; the file is still sent unchanged.
+For hosted files, an embedded context ID alone does not bypass the cached session.
+Omit `--version` and pass `--new-session` to omit that cached route, or use
+`--session-id` to select the matching hosted session explicitly. These hosted
+routing flags remain unsupported with `--local`.
+Raw output keeps the original response, including its `contextId`, without adding
+ID/state summaries. Other protocols keep their existing session/conversation flags.
+This feature adds no context-reset flag or new local context-persistence mechanism.
 
 Generated 0.3 requests leave execution and output modes unspecified, preserving the
 non-blocking default. A Task may still be in progress; azd prints the initial response
@@ -881,7 +959,8 @@ the A2A specification. Redirects and alternate routes are not followed.
 
 Existing A2A version rules apply locally, and request files are sent unchanged.
 Local A2A sends no Foundry authentication or routing headers and persists no
-session state. For continuity, provide A2A `contextId`/`taskId` in a request file.
+session state. For continuity, use `--context-id` with a plain message, or provide
+A2A `contextId`/`taskId` in a request file.
 These flags are unsupported: `--session-id`, `--new-session`, `--conversation-id`,
 `--new-conversation`, `--version`, `--user-identity`, `--call-id`, and `--client-header`.
 Platform diagnostics are unavailable; omit `--debug-latency` or set it to `false`.
@@ -891,8 +970,8 @@ Use `--output raw` for streaming replies. `--timeout` covers the request and res
 60-second limit. Timeout or Ctrl+C stops the HTTP request, not the A2A task.
 
 For completed Tasks in **both A2A 0.3 and 1.0**, default output prefers answer
-artifacts over generic status messages such as “Done.” Other Tasks prefer status
-messages so prompts, progress, and failure details remain visible, falling back to
+artifacts over generic status messages such as “Done.” Tasks awaiting completion prefer status
+messages so prompts and progress remain visible, falling back to
 artifacts when no status text is present. History is the final text fallback.
 Use `--output raw` to inspect the complete HTTP response and JSON-RPC envelope.
 
@@ -1056,6 +1135,34 @@ agent, or launching a client. It records route selection, not successful client
 launch.
 
 ## Initializing a Project
+
+When selecting an existing Microsoft Foundry project, init reads its project
+endpoint and the account's custom subdomain from Azure Resource Manager. The
+custom subdomain can differ from the account resource name; the ARM project ID
+always keeps the real account name. These resolved endpoints are also used for
+connection discovery and saved environment values. Missing endpoint metadata
+uses the account's custom subdomain, then the account name as a compatibility
+fallback. Failed metadata lookups or invalid endpoints stop initialization
+instead of guessing, except one compatibility case: if account metadata is
+forbidden (HTTP 403), init accepts a valid ARM-advertised project endpoint that
+still matches the selected project. Missing or invalid advertised endpoints, and
+all other account lookup failures, remain errors. Only Azure
+`*.services.ai.azure.com` project endpoints are supported, not arbitrary
+domains or reverse proxies.
+
+Exporting an existing project with `--infra=bicep` or `--infra=terraform`
+also verifies the configured endpoint against its ARM project before writing
+infrastructure files, including when exporting an already initialized project.
+Export requires Azure read access to the project and uses the same HTTP 403
+account-read fallback as `init` when the project advertises a valid matching
+endpoint; provisioning the exported Bicep or Terraform templates requires read
+access to both the project and account.
+
+The exported Bicep validates the final project ID and endpoint parameters in a
+read-only deployment before its resource-changing modules and supporting resource
+group can run. Mismatches fail without changing those resources, although the
+validation deployment's history can remain. Keep both parameters consistent when
+editing the generated files or switching environments.
 
 When `azd ai agent init` scaffolds into a subdirectory, the `Next:` block starts
 with `cd <folder>` before the provisioning command, even if that folder already
@@ -1702,10 +1809,17 @@ access grants and related resources it can establish it owns. Customers manage
 network reachability and image-publisher push permissions. See
 [non-interactive configuration](../ai-non-interactive.md#azureaiprojects).
 
-Do not combine an external source-build registry selection with `agentHosting`,
-even for a project-only configuration: reuse does not manage AKS node pull
-access. Remove the selector to use an azd-created registry, or use explicit
-prebuilt images with user-managed registry authentication.
+An external source-build registry selection supports `agentHosting`. The
+Projects provider checks and grants image-pull access to the AKS kubelet
+identity only; ordinary Foundry hosting uses the Project identity. Existing
+registry network settings are retained, and customers must ensure AKS can reach
+the registry. Re-eject older BYO AKS Bicep templates for the kubelet-only access
+contract. See [Projects registry reuse](../azure.ai.projects/README.md#reuse-an-external-container-registry).
+
+Both ordinary Foundry and BYO AKS reject automatic registry creation when account
+network isolation is enabled. Select an external registry for source builds in
+that case. Registry connections continue to use the Foundry Project identity,
+separately from the kubelet's pull grants.
 
 An `image` value alone still defaults to a source build, including with
 `--no-prompt`. Explicit prebuilt selection requires
@@ -1780,11 +1894,8 @@ services:
     uses:
       - ai-project
     protocols:
-      - protocol: invocations_ws
+      - protocol: voice_conversation_engine
         version: 1.0.0
-    metadata:
-      voiceLiveCompatible: "true"
-      bridgeProtocolVersion: "1.0"
     container:
       resources:
         cpu: "1"
@@ -1815,9 +1926,18 @@ The `uses` edge deploys the target before the wrapper. `conversationEngine`
 points at the hosted target service, and `version: deployed` pins the wrapper
 to the target version produced by the current azd environment.
 
-The target must be active, declare `invocations_ws/1.0.0`, and include
-`voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,
-instructions, tools, and other conversation controls belong to the target;
+The target must be active. New targets declare `voice_conversation_engine/1.0.0`.
+For backward compatibility, azd also accepts the existing `invocations_ws/1.0.0`
+contract with both `voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0`
+metadata. This preserves existing Hosted Voice manifests without making the two
+protocol endpoints interchangeable.
+The target and wrapper are available without a Voice feature flag, including
+the dedicated `voice_conversation_engine` and legacy `invocations_ws` paths.
+Configure the conversation engine through the complete manifest shown above;
+this protocol is not offered by the Hosted Agent init protocol picker.
+`invocations_ws` remains an independent Hosted Agent protocol and does not
+substitute for the conversation-engine endpoint. Model, instructions, tools,
+and other conversation controls belong to the target;
 the wrapper owns audio, voice, store, avatar, and greeting configuration.
 
 ## Invocations metadata discovery
@@ -2077,7 +2197,7 @@ deployment.
 
 Foundry project services can be provisioned as network-secured, VNet-bound accounts by adding a `network:` block to the `host: azure.ai.project` service in `azure.yaml`. The `azure.ai.projects` extension owns that service and the `microsoft.foundry` provider; this extension still authors the block during agent init. See [Private networking for `host: azure.ai.project`](docs/private-networking.md) for the schema reference, BYO-image requirements, and VNet deployment cheatsheet.
 
-For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes default or independently supplied Storage and hosting/workload identities, required grants, and lifecycle limitations. A native registry is created only when an Agent requires building a container image, following the standard Foundry rules. Foundry networking is optional through `network:` and can be combined with an automatically created registry when using AKS hosting. Terraform eject is not supported for this mode.
+For an existing AKS cluster, set `agentHosting.clusterResourceId` on that project service. [Existing AKS hosting](../azure.ai.projects/README.md#existing-aks-hosting) describes default or independently supplied Storage and hosting/workload identities, read-only preflight, required grants, and lifecycle limitations. A native registry is created only when an Agent requires building a container image and the Foundry account uses public networking. Foundry networking is optional through `network:`. Private account networking rejects automatic registry creation, including with AKS hosting; select an external registry for source builds, or use prebuilt images with `docker.imagePassthrough: true` or code/ZIP deployments without automatic registry creation. Customers must ensure build and AKS access to an external registry. Terraform eject is not supported for this mode.
 
 ## Skill optimization from traces
 

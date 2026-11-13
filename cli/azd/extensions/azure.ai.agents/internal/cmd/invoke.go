@@ -25,6 +25,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/useragent"
 	"azureaiagent/internal/telemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -49,6 +50,7 @@ type invokeFlags struct {
 	newConversation bool
 	protocol        string
 	a2aVersion      string
+	contextID       string
 	agentEndpoint   string
 	version         string
 	outputFmt       string
@@ -77,6 +79,7 @@ const outputRaw = "raw"
 const outputDefault = "default"
 
 const defaultInvokeTimeoutSeconds = 30 * 60
+const remoteAgentMetadataTimeout = 5 * time.Second
 const maxInvokeVersionLength = 128
 
 var createInvokeVersionSession = createInvokeVersionSessionImpl
@@ -98,6 +101,7 @@ type InvokeAction struct {
 	resolvedBodyLabel     string
 	bodyResolved          bool
 	credential            azcore.TokenCredential
+	agentReader           func(context.Context, *remoteContext) (*agent_api.AgentObject, error)
 	invokeReporter        foundryTelemetry.Reporter
 }
 
@@ -116,11 +120,10 @@ argument is provided it is treated as the message and the agent name
 is auto-detected from azure.yaml. With two arguments the first is the
 agent name and the second is the message.
 
-When --protocol is omitted, complete deployed endpoint data is used when
-available. Endpoint data created by an older extension must be refreshed by
-redeploying or bypassed with --protocol. Otherwise the agent definition is
-used. If neither identifies exactly one invocable protocol, pass --protocol
-explicitly.
+When choosing a remote endpoint protocol, azd reads the current Foundry endpoint
+configuration. If agent metadata cannot be read, saved deployment endpoints are
+used as routing hints and Foundry validates the request. If the protocol cannot
+be determined, pass --protocol explicitly. Local invocations use the project definition.
 
 ` + invokeVoiceHelp + `Request Body:
 Use --input-file/-f to send the contents of a file as the request body
@@ -133,12 +136,22 @@ Use --local to target a locally running agent (started via 'azd ai agent run')
 instead of Foundry. With -p a2a, the server must expose POST /a2a.
 Local A2A sends no Foundry headers and persists no session state. It rejects
 --session-id, --new-session, --conversation-id, --new-conversation,
---version, --user-identity, --call-id, or --client-header. Use A2A
-contextId/taskId in a request file for protocol-level continuity.
+--version, --user-identity, --call-id, or --client-header. Use --context-id
+with a plain A2A message, or contextId/taskId in a request file, for continuity.
 
 Sessions & Identity:
 Except for local A2A, sessions are persisted per-agent — consecutive invokes
 reuse the same session automatically. Pass --new-session to force a reset.
+
+For A2A, the response's Context ID identifies the conversation. Pass
+--context-id to continue that conversation, including an older one.
+It is not a Foundry session ID. Unless --session-id or --version is explicit,
+azd omits cached session routing so Foundry can resolve the selected context.
+Do not combine --context-id with --input-file, --conversation-id, or reset flags.
+
+For hosted A2A request files, an embedded contextId does not bypass cached sessions.
+Use --new-session without --version to omit cached routing, or --session-id for
+the matching session. File bytes are sent unchanged.
 
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
@@ -159,11 +172,17 @@ Response Output:
 Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
-header). Friendly summary lines like "Session:" and "Invocation:" are
+header). Friendly summaries such as Context ID, Task ID, State, Session, and Invocation are
 suppressed in raw mode.
+Default A2A output shows the returned Context ID and, for Tasks, their ID and state.
+Failed, canceled, and rejected send Tasks return an error with IDs and status details;
+input-required and auth-required states remain visible for follow-up.
+A successful A2A cancellation returns canceled state without failing the command.
+Successful task-status lookups return success even when the Task failed or was canceled.
+Text or structured status diagnostics are retained without rendering partial artifacts.
 For completed A2A Tasks, default output prefers answer artifacts over generic
-status messages such as "Done". Other Tasks prefer status messages, falling
-back to artifacts when no status text is present. History is the final fallback.
+status messages such as "Done". Tasks awaiting completion prefer status messages,
+falling back to artifacts when no status text is present. History is the final fallback.
 
 Platform Latency:
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
@@ -183,6 +202,9 @@ Raw output includes the returned headers without a formatted latency summary.` +
   # Invoke using a specific protocol
   azd ai agent invoke --protocol invocations "Hello!"
 ` + invokeA2APreviewExamples + `
+  # Continue an earlier A2A conversation using its returned Context ID
+  azd ai agent invoke -p a2a --context-id <context-id> "Tell me more"
+
   # Invoke with a file as the request body
   azd ai agent invoke -f request.json
 
@@ -261,6 +283,8 @@ Raw output includes the returned headers without a formatted latency summary.` +
 			"pass --protocol when it cannot be determined.")
 	cmd.Flags().StringVar(&flags.a2aVersion, "a2a-version", "",
 		"A2A wire version: 0.3 or 1.0. Defaults to 1.0 for messages; required with --input-file for a2a.")
+	cmd.Flags().StringVar(&flags.contextID, "context-id", "",
+		"A2A context ID returned by a previous invocation (plain messages only)")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,
@@ -462,6 +486,10 @@ func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags, a2aPreview bool)
 			"provide a message as a positional argument, or use --input-file/-f to send a file",
 		)
 	}
+	if err := validateInvokeContextIDFlags(&flags, agent_api.AgentProtocol(flags.protocol),
+		cmd.Flags().Changed("context-id")); err != nil {
+		return err
+	}
 	if err := validateInvokeVersionFlags(cmd, &flags); err != nil {
 		return err
 	}
@@ -646,6 +674,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	if err := validateLocalA2AOptions(a.flags, agent_api.AgentProtocol(a.flags.protocol)); err != nil {
 		return err
 	}
+	if err := validateInvokeContextIDFlags(a.flags, agent_api.AgentProtocol(a.flags.protocol), false); err != nil {
+		return err
+	}
 	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocol(a.flags.protocol), a2aPreview); err != nil {
 		return err
 	}
@@ -693,6 +724,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolResponses, a2aPreview); err != nil {
 				return err
 			}
+			if err := validateInvokeContextIDFlags(a.flags, agent_api.AgentProtocolResponses, false); err != nil {
+				return err
+			}
 			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
 				return err
 			}
@@ -705,6 +739,10 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		return err
 	}
 	if err := validateInvokeA2AVersionFlags(a.flags, protocol, a2aPreview); err != nil {
+		a.closeResolvedRemoteContextClient()
+		return err
+	}
+	if err := validateInvokeContextIDFlags(a.flags, protocol, false); err != nil {
 		a.closeResolvedRemoteContextClient()
 		return err
 	}
@@ -902,7 +940,10 @@ func (a *InvokeAction) resolveProtocol(
 			return "", err
 		}
 
-		protocol, err := a.resolveDeployedProtocol(ctx, rc)
+		var protocol agent_api.AgentProtocol
+		if err = a.loadRemoteAgent(ctx, rc); err == nil {
+			protocol, err = a.resolveDeployedProtocol(ctx, rc)
+		}
 		if err != nil {
 			if rc.azdClient != nil {
 				rc.azdClient.Close()
@@ -938,6 +979,42 @@ func (a *InvokeAction) resolveDeployedProtocol(
 	ctx context.Context,
 	rc *remoteContext,
 ) (agent_api.AgentProtocol, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if rc.agent != nil {
+		enabled := resolveEndpointProtocols(rc.agent.AgentEndpoint)
+		var protocols []agent_api.AgentProtocol
+		for _, protocol := range agent_api.InvocableProtocols() {
+			if slices.Contains(enabled, string(protocol)) {
+				protocols = append(protocols, protocol)
+			}
+		}
+		if len(protocols) == 0 {
+			return "", exterrors.Compatibility(
+				exterrors.CodeAgentEndpointProtocolNotEnabled,
+				"the current deployed agent endpoint has no enabled invocable protocols",
+				"enable an invocable public endpoint protocol (responses, invocations, or a2a) "+
+					"on the deployed agent before invoking",
+			)
+		}
+		if rc.version != "" && rc.version != rc.agent.Versions.Latest.Version {
+			preferred := uniqueAgentProtocols(rc.invocableProtocols)
+			if rc.version == rc.deployedVersion && len(preferred) == 1 &&
+				slices.Contains(protocols, preferred[0]) {
+				return preferred[0], nil
+			}
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"current endpoint configuration does not identify the protocol of the selected agent version",
+				"pass --protocol explicitly when invoking a specific agent version",
+			)
+		}
+
+		// A saved endpoint can express a preference, but only among currently enabled protocols.
+		return selectRemoteInvokeProtocol(protocols, rc.invocableProtocols)
+	}
+
 	if rc.deployedProtocolMetadataIncomplete {
 		return "", exterrors.Compatibility(
 			exterrors.CodeIncompleteAgentProtocolMetadata,
@@ -982,48 +1059,24 @@ func (a *InvokeAction) resolveDeployedProtocol(
 		)
 	}
 
-	deployed := uniqueAgentProtocols(rc.invocableProtocols)
-	var local []agent_api.AgentProtocol
-	if len(deployed) != 1 && rc.azdClient != nil && rc.serviceName != "" {
-		if rc.deployedProtocolMetadata && len(deployed) == 0 {
-			return "", remoteProtocolSelectionError(deployed, "")
-		}
-		var err error
-		local, err = resolveAgentInvocableProtocols(
-			ctx,
-			rc.azdClient,
-			rc.serviceName,
-			a.noPrompt,
-		)
-		if err != nil {
-			return "", remoteProtocolSelectionError(
-				deployed,
-				fmt.Sprintf("the local definition could not determine the protocol: %v", err),
-			)
-		}
-	}
-
-	return selectRemoteInvokeProtocol(deployed, local)
+	return selectRemoteInvokeProtocol(rc.invocableProtocols, nil)
 }
 
 func selectRemoteInvokeProtocol(
 	deployed []agent_api.AgentProtocol,
-	local []agent_api.AgentProtocol,
+	preferred []agent_api.AgentProtocol,
 ) (agent_api.AgentProtocol, error) {
 	deployed = uniqueAgentProtocols(deployed)
-	local = uniqueAgentProtocols(local)
+	preferred = uniqueAgentProtocols(preferred)
 	switch len(deployed) {
 	case 0:
-		if len(local) == 1 {
-			return local[0], nil
-		}
 		return "", remoteProtocolSelectionError(deployed, "")
 	case 1:
 		return deployed[0], nil
 	}
 
-	if len(local) == 1 && containsAgentProtocol(deployed, local[0]) {
-		return local[0], nil
+	if len(preferred) == 1 && containsAgentProtocol(deployed, preferred[0]) {
+		return preferred[0], nil
 	}
 	return "", remoteProtocolSelectionError(deployed, "")
 }
@@ -1087,7 +1140,7 @@ func remoteProtocolSelectionError(
 		names[i] = string(protocol)
 	}
 	message := fmt.Sprintf(
-		"the deployed agent exposes multiple invocable protocols: %s",
+		"endpoint routing data identifies multiple invocable protocols: %s",
 		strings.Join(names, ", "),
 	)
 	if reason != "" {
@@ -1096,7 +1149,7 @@ func remoteProtocolSelectionError(
 	return exterrors.Validation(
 		exterrors.CodeInvalidParameter,
 		message,
-		"pass --protocol to choose one of the deployed protocols",
+		"pass --protocol to choose an endpoint protocol",
 	)
 }
 
@@ -1107,6 +1160,55 @@ func (a *InvokeAction) resolveRemoteContextForInvoke(
 		return a.resolvedRemoteContext, nil
 	}
 	return a.resolveRemoteContext(ctx)
+}
+
+func (a *InvokeAction) loadRemoteAgent(ctx context.Context, rc *remoteContext) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if rc.agentRead || rc.name == "" || rc.projectEndpoint == "" {
+		return nil
+	}
+	rc.agentRead = true
+
+	read := a.agentReader
+	if read == nil {
+		read = a.readRemoteAgent
+	}
+	timeout := remoteAgentMetadataTimeout
+	if a.flags != nil && a.flags.timeout > 0 {
+		timeout = min(timeout, a.httpTimeout())
+	}
+	readCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	agent, err := read(readCtx, rc)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err != nil || agent == nil || agent.Name != rc.name || agent.AgentEndpoint == nil ||
+		(agent.AgentEndpoint.ProtocolConfiguration == nil && agent.AgentEndpoint.Protocols == nil) {
+		// Endpoint consumers may invoke without agents/read. Unreadable metadata is not disabled capability.
+		log.Printf("could not inspect current agent configuration; Foundry will validate the invocation")
+		return nil
+	}
+	rc.agent = agent
+	return nil
+}
+
+func (a *InvokeAction) readRemoteAgent(ctx context.Context, rc *remoteContext) (*agent_api.AgentObject, error) {
+	credential := a.credential
+	if credential == nil {
+		var err error
+		credential, err = newAgentCredential()
+		if err != nil {
+			return nil, err
+		}
+	}
+	apiVersion := rc.apiVersion
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	return agent_api.NewAgentClient(rc.projectEndpoint, credential).GetAgent(ctx, rc.name, apiVersion, false)
 }
 
 func (a *InvokeAction) serviceNameSelector() string {
@@ -1400,15 +1502,16 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 // In ephemeral mode (--agent-endpoint) the project endpoint / agent name /
 // api-version come from the parsed URL.
 //
-// agentKey is the persistence key used by the extension-owned state store. It is
-// non-empty whenever session/conversation IDs should be saved or resumed:
+// agentKey is the version-scoped session/conversation persistence key. It is
+// non-empty whenever IDs should be saved or resumed:
 //   - project mode: derived from AGENT_{SVC}_ENDPOINT
 //   - ephemeral mode: derived from the parsed --agent-endpoint URL
 //     (independent of api-version / trailing slash / fragment)
 //
 // In standalone mode (no parent azd daemon, e.g. running the extension binary
 // directly outside an azd command) azdClient is nil and persistence helpers
-// no-op. agentKey may still be non-empty in that case.
+// no-op. agentKey may still be non-empty in that case. Current work is saved under
+// buildInvocationStateKey(agentKey), independently of the session version.
 type remoteContext struct {
 	name                               string
 	serviceName                        string
@@ -1424,6 +1527,8 @@ type remoteContext struct {
 	deployedProtocolMetadataStale      bool
 	azdClient                          *azdext.AzdClient
 	bearerToken                        string
+	agent                              *agent_api.AgentObject
+	agentRead                          bool
 }
 
 func (rc *remoteContext) nextStepName() string {
@@ -1493,12 +1598,16 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	rc := &remoteContext{apiVersion: DefaultAgentAPIVersion, version: a.flags.version}
 
 	if a.endpoint != nil {
+		projectEndpoint, _, err := validateProjectEndpoint(a.endpoint.ProjectEndpoint)
+		if err != nil {
+			return nil, err
+		}
 		rc.name = a.endpoint.AgentName
-		rc.projectEndpoint = a.endpoint.ProjectEndpoint
+		rc.projectEndpoint = projectEndpoint
 		if a.endpoint.APIVersion != "" {
 			rc.apiVersion = a.endpoint.APIVersion
 		}
-		rc.agentKey = buildAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, rc.version, false)
+		rc.agentKey = buildAgentKey(rc.projectEndpoint, a.endpoint.AgentName, rc.version, false)
 		// Best-effort attach to the parent azd daemon so environment-backed context
 		// remains available. When running the extension
 		// binary directly (standalone), this fails and we proceed without persistence.
@@ -1587,7 +1696,13 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		}
 		rc.projectEndpoint = ep
 	}
-	if rc.agentKey == "" {
+	projectEndpoint, _, err := validateProjectEndpoint(rc.projectEndpoint)
+	if err != nil {
+		azdClient.Close()
+		return nil, err
+	}
+	rc.projectEndpoint = projectEndpoint
+	if rc.agentKey == "" || rc.version != "" {
 		rc.agentKey = buildAgentKey(rc.projectEndpoint, rc.name, rc.version, false)
 	}
 	return rc, nil
@@ -1821,6 +1936,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	applyCustomHeaders(req, a.clientHeaders)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
+	req.Header.Set("User-Agent", useragent.Default())
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	latency := newInvokeLatency(req, a.flags.debugLatency, a.flags.longRunning)
 	if raw {
@@ -1874,7 +1990,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	tracker := &responseIdentityTracker{
 		store:    responseStore,
-		agentKey: agentKey,
+		agentKey: buildInvocationStateKey(agentKey),
 		writer:   os.Stdout,
 	}
 	streamErr := readResponsesSSE(
@@ -1898,8 +2014,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			},
 		},
 	)
-	useCurrent := errors.Is(streamErr, errBackgroundNoWait) && responseStore != nil && tracker.saveErr == nil
-	followCommand := a.responseLifecycleCommand(rc, tracker.responseID, invocationFollow, useCurrent)
+	followCommand := a.responseLifecycleCommand(rc, tracker.responseID, invocationFollow)
 	if a.flags.noWait && tracker.responseID != "" {
 		if errors.Is(streamErr, errBackgroundNoWait) {
 			streamErr = nil
@@ -2113,6 +2228,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	applyCustomHeaders(req, a.clientHeaders)
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
+	req.Header.Set("User-Agent", useragent.Default())
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 	latency := newInvokeLatency(req, a.flags.debugLatency, false)
 	if raw {
@@ -2145,7 +2261,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	if resp.StatusCode < http.StatusBadRequest && invocationID != "" && rc.azdClient != nil && agentKey != "" {
 		if err := newInvocationStateStore(rc.azdClient).Save(
 			ctx,
-			agentKey,
+			buildInvocationStateKey(agentKey),
 			savedInvocation{InvocationID: invocationID},
 		); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: Invocation %s was accepted, but its ID was not saved: %v\n", invocationID, err)
@@ -2199,6 +2315,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		}
 		specRequest := &http.Request{Header: make(http.Header)}
 		applyCustomHeaders(specRequest, a.clientHeaders)
+		specRequest.Header.Set("User-Agent", useragent.Default())
 		applyRemoteUserIdentityHeader(specRequest, &a.flags.userIdentityFlags)
 		_, _, probeErr := fetchOpenAPISpec(
 			ctx,
@@ -2515,6 +2632,7 @@ func handleInvocationLRO(
 		}
 		if bearerToken != "" {
 			req.Header.Set("Authorization", "Bearer "+bearerToken)
+			req.Header.Set("User-Agent", useragent.Default())
 		}
 		options.ApplyHeaders(req.Header)
 		if raw {
@@ -2637,6 +2755,7 @@ func createConversation(
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	req.Header.Set("User-Agent", useragent.Default())
 	options.ApplyHeaders(req.Header)
 
 	client := &http.Client{Timeout: 30 * time.Second}

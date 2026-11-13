@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -17,71 +16,133 @@ import (
 
 	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
-const suppliedStorageID = "/subscriptions/data-sub/resourceGroups/data-rg/providers/Microsoft.Storage/storageAccounts/data"
-const suppliedHostingID = "/subscriptions/identity-sub/resourceGroups/identity-rg/providers/" +
-	"Microsoft.ManagedIdentity/userAssignedIdentities/hosting"
-const suppliedWorkloadID = "/subscriptions/workload-sub/resourceGroups/workload-rg/providers/" +
-	"Microsoft.ManagedIdentity/userAssignedIdentities/workload"
+const suppliedGroupID = "/subscriptions/target-sub/resourceGroups/target-rg"
+const suppliedStorageID = suppliedGroupID + "/providers/Microsoft.Storage/storageAccounts/customer"
+const suppliedHostingID = suppliedGroupID + "/providers/Microsoft.ManagedIdentity/userAssignedIdentities/hosting"
+const suppliedWorkloadID = suppliedGroupID + "/providers/Microsoft.ManagedIdentity/userAssignedIdentities/workload"
+const defaultStorageID = suppliedGroupID + "/providers/Microsoft.Storage/storageAccounts/stabcdefghijklm"
+const defaultWorkloadID = suppliedGroupID +
+	"/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cog-abcdefghijklm-workload-mi"
 const suppliedHostingPrincipal = "22222222-2222-4222-8222-222222222222"
 const suppliedWorkloadPrincipal = "33333333-3333-4333-8333-333333333333"
 
+type suppliedCredential struct{}
+
+func (suppliedCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{Token: "offline-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+}
+
+type suppliedReply struct {
+	status int
+	body   any
+}
+
 type suppliedARMFake struct {
-	mu            sync.Mutex
-	base          *byoARMFake
-	beforeRead    func(*http.Request) error
-	reads         []string
-	identityReply map[string]any
-	replies       map[string]any
+	mu           sync.Mutex
+	base         *byoARMFake
+	overrides    map[string]suppliedReply
+	missingGrant string
+	requests     []string
+	selection    *synthesis.AgentHostingInput
+	reads        []string
 }
 
 func (f *suppliedARMFake) Do(request *http.Request) (*http.Response, error) {
-	if request.Method == http.MethodGet && f.beforeRead != nil {
-		if err := f.beforeRead(request); err != nil {
-			return nil, err
-		}
-	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if request.Method == http.MethodGet {
-		f.reads = append(f.reads, request.URL.Path)
-		if reply, ok := f.replies[request.URL.Path]; ok {
-			return f.base.response(request, 200, reply), nil
+	f.requests = append(f.requests, request.Method+" "+request.URL.Path)
+	if request.Method != http.MethodGet {
+		return f.base.Do(request)
+	}
+	f.reads = append(f.reads, request.URL.Path)
+	path := request.URL.Path
+	lower := strings.ToLower(path)
+	respond := func(status int, body any) (*http.Response, error) { return f.base.response(request, status, body), nil }
+	if reply, ok := f.overrides[lower]; ok {
+		return respond(reply.status, reply.body)
+	}
+	if strings.HasPrefix(lower, "/subscriptions/") && len(strings.Split(path, "/")) == 3 {
+		return respond(200, map[string]any{"id": path, "tenantId": "tenant"})
+	}
+	if strings.EqualFold(path, suppliedGroupID) {
+		return respond(200, map[string]any{"id": suppliedGroupID, "location": "westus"})
+	}
+	selection := f.base.provider.synthResult.Hosting
+	if selection == nil {
+		selection = f.selection
+	}
+	if path != "" && strings.EqualFold(path, selection.StorageAccountResourceID) {
+		return respond(200, map[string]any{
+			"id": path, "kind": "StorageV2", "sku": map[string]any{"name": "Standard_ZRS"},
+			"properties": map[string]any{
+				"provisioningState": "Succeeded", "accessTier": "Hot", "isHnsEnabled": false,
+				"supportsHttpsTrafficOnly": true, "minimumTlsVersion": "TLS1_2",
+			},
+		})
+	}
+	for _, identity := range []struct{ id, principal string }{
+		{selection.HostingManagementIdentityResourceID, suppliedHostingPrincipal},
+		{selection.WorkloadIdentityResourceID, suppliedWorkloadPrincipal},
+	} {
+		if identity.id != "" && strings.EqualFold(path, identity.id) {
+			return respond(200, map[string]any{"id": path, "properties": map[string]any{
+				"principalId": identity.principal, "clientId": identity.principal, "tenantId": "tenant",
+			}})
 		}
-		for _, identity := range []struct{ id, principal string }{
-			{suppliedHostingID, suppliedHostingPrincipal},
-			{suppliedWorkloadID, suppliedWorkloadPrincipal},
-		} {
-			if strings.EqualFold(request.URL.Path, identity.id) {
-				body := f.identityReply
-				if body == nil {
-					body = map[string]any{"id": identity.id, "properties": map[string]any{
-						"principalId": identity.principal,
-					}}
-				}
-				return f.base.response(request, 200, body), nil
+	}
+	if strings.HasSuffix(lower, "/roledefinitions") {
+		return respond(200, map[string]any{"value": []any{map[string]any{
+			"id": path + "/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+			"properties": map[string]any{
+				"roleName": "Managed Identity Federated Identity Credential Contributor", "type": "BuiltInRole",
+			},
+		}}})
+	}
+	const suffix = "/providers/Microsoft.Authorization/roleAssignments"
+	if strings.HasSuffix(lower, strings.ToLower(suffix)) {
+		scope := path[:len(path)-len(suffix)]
+		var principals []string
+		if !strings.EqualFold(scope, f.missingGrant) {
+			principals = append(principals, suppliedHostingPrincipal, suppliedWorkloadPrincipal)
+		}
+		values := []any{}
+		for _, principal := range principals {
+			role := "8e3af657-a8ff-443c-a75c-2fe8c4bcb635"
+			if strings.Contains(strings.ToLower(scope), strings.ToLower("/Microsoft.Storage/storageAccounts/")) {
+				role = "b7e6dc6d-f1e8-4753-8033-0f276bb0955b"
 			}
-		}
-		if request.URL.Path == "/subscriptions/workload-sub/providers/Microsoft.Authorization/roleDefinitions" {
-			return f.base.response(request, 200, map[string]any{"value": []any{map[string]any{
-				"id": request.URL.Path + "/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+			values = append(values, map[string]any{
+				"id": scope + suffix + "/assignment-" + principal,
 				"properties": map[string]any{
-					"roleName": "Managed Identity Federated Identity Credential Contributor", "type": "BuiltInRole",
+					"principalId": principal, "scope": scope,
+					"roleDefinitionId": "/subscriptions/target-sub/providers/" +
+						"Microsoft.Authorization/roleDefinitions/" + role,
 				},
-			}}}), nil
+			})
 		}
+		return respond(200, map[string]any{"value": values})
+	}
+	if strings.Contains(lower, "/microsoft.storage/") || strings.Contains(lower, "/microsoft.managedidentity/") {
+		return respond(404, map[string]any{"error": map[string]string{"code": "ResourceNotFound"}})
 	}
 	return f.base.Do(request)
 }
 
 func suppliedYAML(mask int) string {
 	var raw strings.Builder
-	raw.WriteString("services:\n  project:\n    host: azure.ai.project\n    monitoring: {enabled: false}\n    agentHosting:\n" +
+	raw.WriteString("services:\n  project:\n    host: azure.ai.project\n" +
+		"    monitoring: {enabled: false}\n    agentHosting:\n" +
 		"      clusterResourceId: " + offlineClusterID + "\n")
 	for i, selection := range []struct{ name, id string }{
 		{"storageAccountResourceId", suppliedStorageID},
@@ -95,131 +156,28 @@ func suppliedYAML(mask int) string {
 	return raw.String()
 }
 
-func suppliedProvider(t *testing.T, mask int) (*FoundryProvisioningProvider, *suppliedARMFake) {
+func suppliedProvider(t *testing.T, mask int) (*FoundryProvisioningProvider, *suppliedARMFake, *stubCompiler) {
 	t.Helper()
 	p, base := offlineBYOProvider(t)
 	result, err := synthesis.Synthesize(synthesis.Input{ServiceName: "project", RawAzureYAML: []byte(suppliedYAML(mask))})
 	require.NoError(t, err)
-	p.synthResult = result
-	fake := &suppliedARMFake{base: base}
+	p.synthResult, p.credential = result, suppliedCredential{}
+	fake := &suppliedARMFake{
+		base: base, overrides: map[string]suppliedReply{}, selection: result.Hosting,
+	}
 	p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
 		Transport: fake, Retry: policy.RetryOptions{MaxRetries: -1},
 	}}
-	return p, fake
-}
-
-func TestBYOPrepareConcurrentReads(t *testing.T) {
-	paths := []string{
-		offlineClusterID,
-		"/subscriptions/workload-sub/providers/Microsoft.Authorization/roleDefinitions",
-		suppliedHostingID,
-		suppliedWorkloadID,
-	}
-	for _, test := range []struct {
-		name     string
-		failures []string
-		cancel   bool
-	}{
-		{name: "success"},
-		{name: "cluster failure", failures: paths[:1]},
-		{name: "role failure", failures: paths[1:2]},
-		{name: "hosting identity failure", failures: paths[2:3]},
-		{name: "workload identity failure", failures: paths[3:]},
-		{name: "all reads fail", failures: paths},
-		{name: "role and identity failures", failures: paths[1:]},
-		{name: "identity failures", failures: paths[2:]},
-		{name: "cancellation", cancel: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			p, fake := suppliedProvider(t, 7)
-			source, err := p.resolveTemplate(t.Context(), func(string) {})
-			require.NoError(t, err)
-			source.parameters["includeAcr"] = map[string]any{"value": true}
-			original, err := json.Marshal(source.parameters)
-			require.NoError(t, err)
-
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-			started := make(chan string, len(paths))
-			release := make(chan struct{})
-			releaseReads := sync.OnceFunc(func() { close(release) })
-			readFailure := errors.New("offline binding read failure")
-			fake.beforeRead = func(request *http.Request) error {
-				started <- request.URL.Path
-				select {
-				case <-request.Context().Done():
-					return request.Context().Err()
-				case <-release:
-					if slices.Contains(test.failures, request.URL.Path) {
-						return fmt.Errorf("%s: %w", request.URL.Path, readFailure)
-					}
-					if len(test.failures) > 0 {
-						<-request.Context().Done()
-						return request.Context().Err()
-					}
-					return nil
-				}
-			}
-			done := make(chan struct{})
-			var prepareErr error
-			go func() {
-				defer close(done)
-				prepareErr = p.prepareBYO(ctx, source)
-			}()
-			t.Cleanup(func() {
-				cancel()
-				releaseReads()
-				<-done
-			})
-
-			var observed []string
-			for range paths {
-				select {
-				case path := <-started:
-					observed = append(observed, path)
-				case <-ctx.Done():
-					t.Fatalf("binding reads did not start concurrently: %v", observed)
-				}
-			}
-			assert.ElementsMatch(t, paths, observed)
-			if test.cancel {
-				cancel()
-			} else {
-				releaseReads()
-			}
-			select {
-			case <-done:
-			case <-time.After(5 * time.Second):
-				t.Fatal("binding reads did not finish")
-			}
-
-			switch {
-			case test.cancel:
-				require.ErrorIs(t, prepareErr, context.Canceled)
-			case len(test.failures) > 0:
-				require.ErrorIs(t, prepareErr, readFailure)
-				assert.True(t, slices.ContainsFunc(test.failures, func(path string) bool {
-					return strings.Contains(prepareErr.Error(), path)
-				}), "expected the original error from a failed binding read, got %v", prepareErr)
-			default:
-				require.NoError(t, prepareErr)
-				for name, value := range map[string]string{
-					"kubeletObjectId":                   offlineKubeletObjectID,
-					"hostingPrincipalId":                suppliedHostingPrincipal,
-					"workloadPrincipalId":               suppliedWorkloadPrincipal,
-					"federatedIdentityRoleDefinitionId": paths[1] + "/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-				} {
-					assert.Equal(t, map[string]any{"value": value}, source.parameters[name])
-				}
-			}
-			if prepareErr != nil {
-				current, err := json.Marshal(source.parameters)
-				require.NoError(t, err)
-				assert.JSONEq(t, string(original), string(current), "failed reads must not publish partial bindings")
-			}
-			assert.Zero(t, fake.base.writes)
-			assert.Zero(t, fake.base.previews)
-		})
-	}
+	inner, err := json.Marshal(map[string]any{"parameters": map[string]any{
+		"resourceToken": map[string]any{"value": "abcdefghijklm"},
+		"result":        map[string]any{"value": "abcdefghijklm"},
+	}})
+	require.NoError(t, err)
+	outer, err := json.Marshal(map[string]any{"parametersJson": string(inner)})
+	require.NoError(t, err)
+	compiler := &stubCompiler{buildParamResult: bicep.BuildResult{Compiled: string(outer)}}
+	p.bicepCliInstance = compiler
+	return p, fake, compiler
 }
 
 func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
@@ -227,15 +185,8 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 		for _, registry := range []bool{false, true} {
 			for _, preview := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%d/registry=%t/preview=%t", mask, registry, preview), func(t *testing.T) {
-					p, fake := suppliedProvider(t, mask)
+					p, fake, compiler := suppliedProvider(t, mask)
 					p.armTemplate["contentVersion"] = "2.0.0.0"
-					resources, ok := p.armTemplate["resources"].(map[string]any)
-					require.True(t, ok)
-					resourceGroup, ok := resources["resourceGroup"].(map[string]any)
-					require.True(t, ok)
-					resourceGroup["name"] = "custom-resource-group"
-					compiler := &stubCompiler{}
-					p.bicepCliInstance = compiler
 					p.onDiskSource = &templateSource{
 						mode: templateModeBicep, armTemplate: p.armTemplate,
 						parameters: map[string]any{
@@ -243,16 +194,16 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 							"monitoringMode": map[string]any{"value": "none"},
 						},
 					}
+					var progress strings.Builder
 					if preview {
-						result, err := p.Preview(t.Context(), func(string) {})
+						result, err := p.Preview(t.Context(), func(message string) { progress.WriteString(message) })
 						require.NoError(t, err)
 						require.NotNil(t, result.Preview)
 						assert.Zero(t, fake.base.writes)
 						assert.Equal(t, 1, fake.base.previews)
 					} else {
-						result, err := p.Deploy(t.Context(), func(string) {})
+						result, err := p.Deploy(t.Context(), func(message string) { progress.WriteString(message) })
 						require.NoError(t, err)
-						require.NotNil(t, result.Deployment)
 						expected := ""
 						if registry {
 							expected = offlineRegistryID
@@ -260,12 +211,14 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 						assert.Equal(t, expected, result.Deployment.Outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"].Value)
 						assert.Equal(t, 1, fake.base.writes)
 					}
-					envelope, ok := fake.base.parameters["agentHosting"].(map[string]any)
-					require.True(t, ok)
-					raw, err := json.Marshal(envelope["value"])
-					require.NoError(t, err)
-					var hosting map[string]any
-					require.NoError(t, json.Unmarshal(raw, &hosting))
+					assert.Equal(t, "2.0.0.0", fake.base.template["contentVersion"])
+					if registry {
+						assert.Equal(t, map[string]any{"value": offlineKubeletObjectID},
+							fake.base.parameters["kubeletObjectId"])
+					} else {
+						assert.NotContains(t, fake.base.parameters, "kubeletObjectId")
+					}
+					hosting := fake.base.parameters["agentHosting"].(map[string]any)["value"].(map[string]any)
 					for i, selection := range []struct{ name, id string }{
 						{"storageAccountResourceId", suppliedStorageID},
 						{"hostingManagementIdentityResourceId", suppliedHostingID},
@@ -278,208 +231,318 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 						assert.Equal(t, expected, hosting[selection.name])
 					}
 					for _, identity := range []struct {
-						id, binding, principal string
-						selected               bool
+						name, principal string
+						selected        bool
 					}{
-						{suppliedHostingID, "hostingPrincipalId", suppliedHostingPrincipal, mask&2 != 0},
-						{suppliedWorkloadID, "workloadPrincipalId", suppliedWorkloadPrincipal, mask&4 != 0},
+						{"hostingPrincipalId", suppliedHostingPrincipal, mask&2 != 0},
+						{"workloadPrincipalId", suppliedWorkloadPrincipal, mask&4 != 0},
 					} {
 						if identity.selected {
-							assert.Equal(t, map[string]any{"value": identity.principal},
-								fake.base.parameters[identity.binding])
-							assert.Contains(t, fake.reads, identity.id)
+							assert.Equal(t, identity.principal,
+								fake.base.parameters[identity.name].(map[string]any)["value"])
 						} else {
-							assert.NotContains(t, fake.base.parameters, identity.binding)
-							assert.NotContains(t, fake.reads, identity.id)
+							assert.NotContains(t, fake.base.parameters, identity.name)
 						}
 					}
-					roleSubscription := "target-sub"
-					if mask&4 != 0 {
-						roleSubscription = "workload-sub"
-					}
-					assert.Equal(t, map[string]any{"value": "/subscriptions/" + roleSubscription +
-						"/providers/Microsoft.Authorization/roleDefinitions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
-						fake.base.parameters["federatedIdentityRoleDefinitionId"])
-					assert.Contains(t, fake.reads, offlineClusterID)
-					if registry {
-						assert.Contains(t, fake.base.parameters, "kubeletObjectId")
-					} else {
-						assert.NotContains(t, fake.base.parameters, "kubeletObjectId")
-					}
-					assert.Empty(t, compiler.buildCalls)
-					assert.Empty(t, compiler.buildParamCalls)
+					assert.NotEmpty(t, compiler.buildParamCalls, "the actual Foundry account name uses the resource token")
 					assert.Empty(t, p.virtualEnv)
-					assert.Equal(t, p.armTemplate, fake.base.template)
-				})
-			}
-		}
-	}
-}
-
-func TestBYOSuppliedBindingsPreserveExplicitValues(t *testing.T) {
-	for _, binding := range []string{"hostingPrincipalId", "workloadPrincipalId", "federatedIdentityRoleDefinitionId"} {
-		mask := 0
-		switch binding {
-		case "hostingPrincipalId":
-			mask = 2
-		case "workloadPrincipalId":
-			mask = 4
-		}
-		for _, declared := range []bool{false, true} {
-			for _, preview := range []bool{false, true} {
-				t.Run(fmt.Sprintf("%s/declared=%t/preview=%t", binding, declared, preview), func(t *testing.T) {
-					p, fake := suppliedProvider(t, mask)
-					source, err := p.resolveTemplate(t.Context(), func(string) {})
-					require.NoError(t, err)
-					explicit := map[string]any{"value": "explicit-" + binding}
-					parameterName := strings.ToUpper(binding)
-					source.parameters[parameterName] = explicit
-					if !declared {
-						definitions, ok := source.armTemplate["parameters"].(map[string]any)
-						require.True(t, ok)
-						delete(definitions, binding)
-					}
-					p.onDiskSource = source
+					method := "PUT "
 					if preview {
-						_, err = p.Preview(t.Context(), func(string) {})
-					} else {
-						_, err = p.Deploy(t.Context(), func(string) {})
+						method = "POST "
 					}
-					if declared {
-						require.NoError(t, err)
-					} else {
-						require.ErrorContains(t, err, "InvalidTemplate")
-						require.ErrorContains(t, err, "offline ARM undeclared parameter: "+parameterName)
-						assert.Zero(t, fake.base.writes)
-						assert.Zero(t, fake.base.previews)
+					submissions := 0
+					for _, request := range fake.requests {
+						if strings.HasPrefix(request, method) {
+							submissions++
+						} else {
+							assert.True(t, strings.HasPrefix(request, "GET "), request)
+						}
 					}
-					assert.Equal(t, explicit, fake.base.parameters[parameterName])
-					assert.NotContains(t, fake.base.parameters, binding)
-					assert.Contains(t, fake.reads, offlineClusterID)
-					switch binding {
-					case "hostingPrincipalId":
-						assert.NotContains(t, fake.reads, suppliedHostingID)
-					case "workloadPrincipalId":
-						assert.NotContains(t, fake.reads, suppliedWorkloadID)
-					case "federatedIdentityRoleDefinitionId":
-						assert.NotContains(t, fake.reads,
-							"/subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions")
-					}
+					assert.Equal(t, 1, submissions)
 				})
 			}
 		}
 	}
 }
 
-func TestBYOSuppliedUsesEffectiveDeploymentInputs(t *testing.T) {
-	for _, name := range []string{
-		"parameters", "template default", "without YAML", "disabled", "undeclared", "explicit bindings",
-	} {
-		t.Run(name, func(t *testing.T) {
-			p, fake := suppliedProvider(t, 7)
-			clusterID := offlineClusterID + "-effective"
-			hostingID := suppliedHostingID + "-effective"
-			workloadID := strings.Replace(suppliedWorkloadID, "workload-sub", "effective-sub", 1) + "-effective"
-			hosting := map[string]any{
-				"enabled": true, "hostingType": "custom", "name": "custom",
-				"clusterResourceId": clusterID, "storageAccountResourceId": suppliedStorageID + "-effective",
-				"hostingManagementIdentityResourceId": hostingID, "workloadIdentityResourceId": workloadID,
-				"customSetting": true,
-			}
-			parameters := map[string]any{
-				"AGENTHOSTING":      map[string]any{"value": hosting},
-				"includeAcr":        map[string]any{"value": true},
-				"location":          map[string]any{"value": "[parameters('customRegion')]"},
-				"resourceTokenSalt": map[string]any{"value": nil},
-				"resourceGroupName": map[string]any{"value": false},
-			}
-			definitions, ok := p.armTemplate["parameters"].(map[string]any)
-			require.True(t, ok)
-			switch name {
-			case "template default", "without YAML":
-				result, err := synthesis.Synthesize(synthesis.Input{ServiceName: "project",
-					RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n")})
-				require.NoError(t, err)
-				p.synthResult = result
-				if name == "template default" {
-					delete(parameters, "AGENTHOSTING")
-					definition, ok := definitions["agentHosting"].(map[string]any)
-					require.True(t, ok)
-					definition["defaultValue"] = hosting
+func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) {
+	for _, preview := range []bool{false, true} {
+		for _, failure := range []string{
+			"missing Storage", "forbidden Storage", "missing identity", "tenant", "grant",
+			"Automatic cluster", "missing cluster SKU name",
+		} {
+			t.Run(fmt.Sprintf("%s/preview=%t", failure, preview), func(t *testing.T) {
+				p, fake, _ := suppliedProvider(t, 7)
+				switch failure {
+				case "missing Storage":
+					fake.overrides[strings.ToLower(suppliedStorageID)] = suppliedReply{404,
+						map[string]any{"error": map[string]string{"code": "ResourceNotFound"}}}
+				case "forbidden Storage":
+					fake.overrides[strings.ToLower(suppliedStorageID)] = suppliedReply{403,
+						map[string]any{"error": map[string]string{"code": "AuthorizationFailed"}}}
+				case "missing identity":
+					fake.overrides[strings.ToLower(suppliedHostingID)] = suppliedReply{404,
+						map[string]any{"error": map[string]string{"code": "ResourceNotFound"}}}
+				case "tenant":
+					fake.overrides["/subscriptions/cluster-sub"] = suppliedReply{200,
+						map[string]any{"tenantId": "other-tenant"}}
+				case "grant":
+					fake.missingGrant = suppliedWorkloadID
+				case "Automatic cluster":
+					fake.base.clusterSKUName = "Automatic"
+				case "missing cluster SKU name":
+					fake.base.clusterSKUName = ""
 				}
-			case "disabled":
-				hosting["enabled"] = false
-				hosting["clusterResourceId"] = 42
-			case "undeclared":
-				delete(definitions, "agentHosting")
-				parameters["AGENTHOSTING"] = map[string]any{"value": "leave undeclared parameters to ARM"}
-			case "explicit bindings":
-				hosting["hostingManagementIdentityResourceId"] = map[string]any{"custom": true}
-				hosting["workloadIdentityResourceId"] = 42
-				for _, binding := range []string{
-					"hostingPrincipalId", "workloadPrincipalId", "federatedIdentityRoleDefinitionId", "kubeletObjectId",
-				} {
-					parameters[binding] = map[string]any{"value": "explicit-" + binding}
+				var err error
+				if preview {
+					_, err = p.Preview(t.Context(), func(string) {})
+				} else {
+					_, err = p.Deploy(t.Context(), func(string) {})
 				}
-			}
-			parameters["monitoringMode"] = map[string]any{"value": "none"}
-			p.onDiskSource = &templateSource{
-				mode: templateModeBicep, armTemplate: p.armTemplate, parameters: parameters,
-			}
-			rolePath := "/subscriptions/effective-sub/providers/Microsoft.Authorization/roleDefinitions"
-			fake.replies = map[string]any{
-				clusterID: map[string]any{"properties": fake.base.clusterProperties},
-				hostingID: map[string]any{
-					"id": hostingID, "properties": map[string]any{"principalId": suppliedHostingPrincipal},
-				},
-				workloadID: map[string]any{
-					"id": workloadID, "properties": map[string]any{"principalId": suppliedWorkloadPrincipal},
-				},
-				rolePath: map[string]any{"value": []any{map[string]any{
-					"id": rolePath + "/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-					"properties": map[string]any{
-						"roleName": "Managed Identity Federated Identity Credential Contributor", "type": "BuiltInRole",
-					},
-				}}},
-			}
-			source, err := p.resolveTemplate(t.Context(), func(string) {})
-			require.NoError(t, err)
-			require.NoError(t, p.prepareBYO(t.Context(), source))
-			for parameter, value := range parameters {
-				assert.Equal(t, value, source.parameters[parameter])
-			}
-			assert.NotContains(t, source.parameters, "agentHosting", "the original object or template default is preserved")
-			switch name {
-			case "disabled", "undeclared":
-				assert.Empty(t, fake.reads)
-				assert.NotContains(t, source.parameters, "kubeletObjectId")
-				assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
-			case "explicit bindings":
-				assert.Equal(t, []string{clusterID}, fake.reads)
-			default:
-				assert.ElementsMatch(t, []string{clusterID, rolePath, hostingID, workloadID}, fake.reads)
-				assert.Equal(t, map[string]any{"value": suppliedHostingPrincipal}, source.parameters["hostingPrincipalId"])
-				assert.Equal(t, map[string]any{"value": suppliedWorkloadPrincipal}, source.parameters["workloadPrincipalId"])
-				assert.Equal(t, map[string]any{"value": offlineKubeletObjectID}, source.parameters["kubeletObjectId"])
-				assert.Equal(t, map[string]any{"value": rolePath + "/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
-					source.parameters["federatedIdentityRoleDefinitionId"])
-			}
-			assert.Empty(t, p.virtualEnv)
-		})
+				require.ErrorContains(t, err, "preflight blocked")
+				if failure == "Automatic cluster" || failure == "missing cluster SKU name" {
+					assert.Contains(t, err.Error(), "aks-type")
+					assert.Contains(t, err.Error(), offlineClusterID)
+					assert.Contains(t, err.Error(), "sku.name=Base")
+				}
+				assert.Zero(t, fake.base.writes)
+				assert.Zero(t, fake.base.previews)
+				assert.Empty(t, p.virtualEnv)
+				for _, request := range fake.requests {
+					assert.True(t, strings.HasPrefix(request, "GET "), request)
+				}
+			})
+		}
 	}
 }
 
-func TestBYOSuppliedIdentityRequiresRealPrincipalBinding(t *testing.T) {
-	for _, body := range []map[string]any{
-		{"id": suppliedHostingID},
-		{"id": suppliedHostingID, "properties": map[string]any{"principalId": "invalid"}},
-		{"id": suppliedWorkloadID, "properties": map[string]any{"principalId": suppliedHostingPrincipal}},
+func TestBYOConditionalGrantRetainsExitDiagnostic(t *testing.T) {
+	for _, test := range []struct {
+		name, scope, identity, principal, role, roleID string
+		mask                                           int
+	}{
+		{"storage", suppliedStorageID, suppliedWorkloadID, suppliedWorkloadPrincipal,
+			"Storage Blob Data Contributor", "ba92f5b4-2d11-453d-a403-e96b0029c9fe", 5},
+		{"cluster", offlineClusterID, suppliedHostingID, suppliedHostingPrincipal,
+			"Reader", "acdd72a7-3385-48ef-bd42-f606fba81ae7", 2},
+		{"federation", defaultWorkloadID, suppliedHostingID, suppliedHostingPrincipal,
+			"Managed Identity Federated Identity Credential Contributor", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 2},
+		{"explicit principal", suppliedStorageID, suppliedWorkloadID, "44444444-4444-4444-8444-444444444444",
+			"Storage Blob Data Contributor", "ba92f5b4-2d11-453d-a403-e96b0029c9fe", 5},
+		{"explicit federation", defaultWorkloadID, suppliedHostingID, suppliedHostingPrincipal,
+			"Managed Identity Federated Identity Credential Contributor", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 2},
 	} {
-		p, fake := suppliedProvider(t, 2)
-		fake.identityReply = body
-		_, err := p.Deploy(t.Context(), func(string) {})
-		require.Error(t, err)
-		assert.Zero(t, fake.base.writes)
-		assert.Zero(t, fake.base.previews)
+		for _, preview := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/preview=%t", test.name, preview), func(t *testing.T) {
+				p, fake, _ := suppliedProvider(t, test.mask)
+				const suffix = "/providers/Microsoft.Authorization/roleAssignments"
+				assignmentID := test.scope + suffix + "/55555555-5555-4555-8555-555555555555"
+				roleID := "/subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions/" + test.roleID
+				if strings.HasPrefix(test.name, "explicit ") {
+					name, value := "workloadPrincipalId", test.principal
+					if test.name == "explicit federation" {
+						name, value = "federatedIdentityRoleDefinitionId", roleID
+					}
+					p.onDiskSource = &templateSource{
+						mode: templateModeBicep, armTemplate: p.armTemplate,
+						parameters: map[string]any{name: map[string]any{"value": value}},
+					}
+				}
+				fake.overrides[strings.ToLower(test.scope+suffix)] = suppliedReply{200, map[string]any{
+					"value": []any{map[string]any{
+						"id": assignmentID,
+						"properties": map[string]any{
+							"scope": test.scope, "principalId": test.principal, "roleDefinitionId": roleID,
+							"condition": "restricted test condition", "conditionVersion": "2.0",
+						},
+					}},
+				}}
+				var err error
+				if preview {
+					_, err = p.Preview(t.Context(), func(string) {})
+				} else {
+					_, err = p.Deploy(t.Context(), func(string) {})
+				}
+				require.ErrorContains(t, err, "BYO-AKS preflight blocked")
+				assert.Zero(t, fake.base.writes)
+				assert.Zero(t, fake.base.previews)
+				assert.Empty(t, p.virtualEnv)
+				envelope := azdext.NewProvisioningEnvelope()
+				message := new(azdext.ProvisioningMessage)
+				envelope.SetError(message, err)
+				wire, marshalErr := proto.Marshal(message)
+				require.NoError(t, marshalErr)
+				received := new(azdext.ProvisioningMessage)
+				require.NoError(t, proto.Unmarshal(wire, received))
+				exitErr := fmt.Errorf("provisioning deploy failed: %w", envelope.GetError(received))
+				exitOutput := (&ux.ActionResult{Err: exitErr}).ToString("")
+				for _, detail := range []string{
+					"ERROR:", assignmentID, test.identity, test.principal, test.scope, test.role, roleID,
+					"restricted test condition", "remove its condition", "replace it with an unconditional",
+					"different ID conflicts", "azd does not modify existing conditions",
+				} {
+					assert.Contains(t, exitOutput, detail)
+				}
+			})
+		}
 	}
+}
+
+func TestBYOReadFailureCauseRetainsExitDiagnostic(t *testing.T) {
+	//nolint:gosec // G101: synthetic URL credentials exercise final error redaction.
+	const endpoint = "https://cause-user:cause-password@example.test/resource?sig=cause-secret#cause-fragment"
+	for _, failure := range []string{"transport", "authentication", "decoding"} {
+		for _, preview := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/preview=%t", failure, preview), func(t *testing.T) {
+				p, fake, _ := suppliedProvider(t, 7)
+				cause := errors.New("connection reset while reading " + endpoint)
+				expected := "connection reset while reading https://example.test/resource"
+				if failure == "authentication" {
+					expected = "authentication challenge failed for https://example.test/resource"
+				} else if failure == "decoding" {
+					expected = "cannot unmarshal"
+				}
+				p.armClientOptions.Transport = acrTestTransport(func(request *http.Request) (*http.Response, error) {
+					if request.Method != http.MethodGet || request.URL.Path != offlineClusterID {
+						return fake.Do(request)
+					}
+					switch failure {
+					case "authentication":
+						return fake.base.response(request, http.StatusForbidden, map[string]any{
+							"error": map[string]any{
+								"code": "AuthorizationFailed", "message": "authentication challenge failed for " + endpoint,
+							},
+						}), nil
+					case "decoding":
+						return fake.base.response(request, http.StatusOK, map[string]any{"properties": "invalid"}), nil
+					default:
+						return nil, cause
+					}
+				})
+				var progress strings.Builder
+				writeProgress := func(message string) { progress.WriteString(message) }
+				var err error
+				if preview {
+					_, err = p.Preview(t.Context(), writeProgress)
+				} else {
+					_, err = p.Deploy(t.Context(), writeProgress)
+				}
+				require.ErrorContains(t, err, "BYO-AKS preflight blocked")
+				if failure == "transport" {
+					require.ErrorIs(t, err, cause)
+				} else if failure == "authentication" {
+					service, ok := errors.AsType[*azcore.ResponseError](err)
+					require.True(t, ok)
+					assert.Equal(t, http.StatusForbidden, service.StatusCode)
+					assert.Equal(t, "AuthorizationFailed", service.ErrorCode)
+				}
+				envelope := azdext.NewProvisioningEnvelope()
+				message := new(azdext.ProvisioningMessage)
+				envelope.SetError(message, err)
+				wire, marshalErr := proto.Marshal(message)
+				require.NoError(t, marshalErr)
+				received := new(azdext.ProvisioningMessage)
+				require.NoError(t, proto.Unmarshal(wire, received))
+				exitErr := fmt.Errorf("provisioning failed: %w", envelope.GetError(received))
+				exitOutput := (&ux.ActionResult{Err: exitErr}).ToString("")
+				assert.Contains(t, exitOutput, "ERROR:")
+				assert.Contains(t, progress.String(), "BYO AKS preflight checks failed")
+				assert.NotContains(t, progress.String(), "Cause:")
+				for _, output := range []string{p.preflightReport.String(), exitOutput} {
+					assert.Contains(t, output, "Cause:")
+					assert.Contains(t, output, expected)
+					for _, secret := range []string{"cause-user", "cause-password", "sig=", "cause-secret", "cause-fragment"} {
+						assert.NotContains(t, output, secret)
+					}
+				}
+				assert.Zero(t, fake.base.writes)
+				assert.Zero(t, fake.base.previews)
+				assert.Empty(t, p.virtualEnv)
+			})
+		}
+	}
+}
+
+func TestBYOSuppliedPreviewUsesNormalWhatIfAfterReadOnlyChecks(t *testing.T) {
+	p, fake, _ := suppliedProvider(t, 7)
+	result, err := p.Preview(t.Context(), func(string) {})
+	require.NoError(t, err)
+	require.Len(t, result.Preview.Changes, 1)
+	assert.Equal(t, 1, fake.base.previews)
+	assert.Zero(t, fake.base.writes)
+	assert.True(t, strings.HasSuffix(fake.requests[len(fake.requests)-1], "/whatIf"))
+}
+
+func TestBYODefaultStorageRetainsOrdinaryARMUpdate(t *testing.T) {
+	p, fake, _ := suppliedProvider(t, 2)
+	var progress strings.Builder
+	_, err := p.Deploy(t.Context(), func(message string) { progress.WriteString(message) })
+	require.NoError(t, err)
+	hosting := fake.base.parameters["agentHosting"].(map[string]any)["value"].(map[string]any)
+	assert.Equal(t, "", hosting["storageAccountResourceId"])
+	assert.Contains(t, progress.String(), "BYO AKS preflight checks completed")
+	assert.NotContains(t, progress.String(), "storage-type NOT_APPLICABLE")
+	assert.Contains(t, p.preflightReport.String(), "storage-type NOT_APPLICABLE")
+	assert.Equal(t, 1, fake.base.writes)
+}
+
+func TestBYOExistingDefaultDependencyMissingGrantRetainsARMRetry(t *testing.T) {
+	p, fake, _ := suppliedProvider(t, 2)
+	fake.base.failWrite = true
+	_, err := p.Deploy(t.Context(), func(string) {})
+	require.ErrorContains(t, err, "offline deployment failure")
+	assert.Equal(t, 1, fake.base.writes)
+	fake.base.failWrite = false
+	fake.missingGrant = defaultWorkloadID
+	_, err = p.Deploy(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.Equal(t, 2, fake.base.writes, "mixed selections retain ARM resource and grant creation on retry")
+}
+
+func TestBYOSuppliedWorkloadUsesItsOwnSubscriptionForFederationRole(t *testing.T) {
+	p, fake, _ := suppliedProvider(t, 7)
+	remote := strings.Replace(suppliedWorkloadID, "/target-sub/", "/identity-sub/", 1)
+	result, err := synthesis.Synthesize(synthesis.Input{ServiceName: "project",
+		RawAzureYAML: []byte(strings.Replace(suppliedYAML(7), suppliedWorkloadID, remote, 1))})
+	require.NoError(t, err)
+	p.synthResult = result
+	_, err = p.Deploy(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.Equal(t, "/subscriptions/identity-sub/providers/Microsoft.Authorization/"+
+		"roleDefinitions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		fake.base.parameters["federatedIdentityRoleDefinitionId"].(map[string]any)["value"])
+}
+
+func TestBYOSuppliedExplicitPrincipalDoesNotOverwriteUserInput(t *testing.T) {
+	const principal = "44444444-4444-4444-8444-444444444444"
+	p, fake, _ := suppliedProvider(t, 7)
+	p.onDiskSource = &templateSource{
+		mode: templateModeBicep, armTemplate: p.armTemplate,
+		parameters: map[string]any{
+			"hostingPrincipalId": map[string]any{"value": principal},
+			"monitoringMode":     map[string]any{"value": "none"},
+		},
+	}
+	_, err := p.Deploy(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.Equal(t, 1, fake.base.writes)
+	assert.Equal(t, map[string]any{"value": principal}, fake.base.parameters["hostingPrincipalId"])
+	assert.Equal(t, principal, p.onDiskSource.parameters["hostingPrincipalId"].(map[string]any)["value"])
+	assert.Empty(t, p.virtualEnv)
+}
+
+func TestBYODisabledSupportingSelectionsRetainARMPrecedence(t *testing.T) {
+	p, fake, _ := suppliedProvider(t, 7)
+	p.synthResult.Hosting = nil
+	p.credential = nil
+	source := &templateSource{armTemplate: p.armTemplate, parameters: map[string]any{
+		"agentHosting": map[string]any{"value": map[string]any{
+			"enabled": false, "storageAccountResourceId": suppliedStorageID,
+		}},
+	}}
+	require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
+	assert.Equal(t, map[string]any{"value": map[string]any{
+		"enabled": false, "storageAccountResourceId": suppliedStorageID,
+	}}, source.parameters["agentHosting"])
+	assert.Empty(t, fake.requests)
 }

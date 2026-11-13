@@ -5,7 +5,7 @@
 name: "sessions-lifecycle"
 command: "bash"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
-tags: ["tier:2", "cmd:sessions", "serial-only"]
+tags: ["tier:2", "cmd:sessions", "cmd:invoke", "serial-only"]
 requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
 
 # Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
@@ -17,10 +17,12 @@ pre:
 
 goals:
   - "Run: azd ai agent sessions create. Confirm a new session is created and note its session ID."
+  - "Invoke with --version set to the created session's version. Confirm the invocation reuses that session ID rather than creating another session. If an already-published alternate version is available, exercise this with sessions create --version and invoke --version while leaving the saved deployment unchanged; otherwise report alternate-version coverage as not exercised. Do not publish a version just for this check."
   - "Run: azd ai agent sessions list --output table. Confirm the newly created session appears in the list."
   - "Run: azd ai agent sessions show <session-id> using the ID from create. Confirm session details (status, version) are shown."
   - "Run: azd ai agent sessions delete <session-id>. Confirm the session is deleted (synchronously)."
   - "Run: azd ai agent sessions list again. The service SOFT-DELETES sessions, so it is EXPECTED and acceptable for the entry to still appear with status 'deleted' (it should NOT appear as 'active'). Either the entry being gone OR present with status 'deleted' is a PASS."
   - "Run: azd ai agent sessions show <session-id> for the deleted session and confirm it reports the session as not found / deleted (this verifies the delete took effect even though list may still show it)."
+  - "Invoke the same version after deletion. Confirm it does not reuse the deleted session ID. Record any newly created replacement session as owned test state and delete it before finishing; do not delete pre-existing sessions or change other versions' cached sessions."
   - "Take a screenshot after each step."
   - "Report a finding only if any subcommand errors, if the created session is missing from list before delete, or if after delete the session still shows as 'active' (a soft-deleted 'deleted' status is NOT a finding)."

@@ -116,6 +116,15 @@ type FoundryProvisioningProvider struct {
 	acrDeferPromptedEnv       bool
 	acrPromptedEnv            map[string]string
 	acrRequest                func(context.Context, string, string, string, any) error
+	preflightReport           strings.Builder
+	reportProvisioned         func(string)
+	modelPolicyCheck          func(
+		ctx context.Context,
+		cred azcore.TokenCredential,
+		projectResourceID string,
+		deployments []synthesis.Deployment,
+		env map[string]string,
+	) error
 
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
@@ -138,8 +147,12 @@ func readProjectFile(projectRoot string) ([]byte, string, error) {
 
 // NewFoundryProvisioningProvider constructs the provider with a live
 // AzdClient. The host calls Initialize before any other method.
-func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient) azdext.ProvisioningProvider {
-	return &FoundryProvisioningProvider{azdClient: azdClient}
+func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient, report func(string)) azdext.ProvisioningProvider {
+	return &FoundryProvisioningProvider{
+		azdClient:         azdClient,
+		reportProvisioned: report,
+		modelPolicyCheck:  CheckProjectModelDeploymentsPolicy,
+	}
 }
 
 // Initialize loads azure.yaml, decides between the embedded ARM template
@@ -571,7 +584,10 @@ func (p *FoundryProvisioningProvider) resolveExistingProjectResourceGroup(ctx co
 
 func (p *FoundryProvisioningProvider) resolveExistingProjectInputs(ctx context.Context) error {
 	projectID, err := p.envValue(ctx, "AZURE_AI_PROJECT_ID")
-	if err != nil || projectID == "" {
+	if err != nil {
+		return fmt.Errorf("read AZURE_AI_PROJECT_ID: %w", err)
+	}
+	if projectID == "" {
 		return exterrors.Dependency(
 			exterrors.CodeInvalidServiceConfig,
 			"AZURE_AI_PROJECT_ID is required for an existing Foundry project",
@@ -589,9 +605,16 @@ func (p *FoundryProvisioningProvider) resolveExistingProjectInputs(ctx context.C
 		)
 	}
 	p.existingProjectID = projectID
-	endpointAccount, endpointProject := existingProjectEndpointIdentity(p.brownfieldEndpoint)
-	if endpointAccount == "" || endpointProject == "" ||
-		!strings.EqualFold(endpointAccount, resourceID.Parent.Name) ||
+	normalized, err := synthesis.ValidateFoundryProjectEndpoint(p.brownfieldEndpoint)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid existing Foundry project endpoint: %s", err),
+			"set a valid Azure Foundry project endpoint in azure.yaml",
+		)
+	}
+	_, endpointProject := existingProjectEndpointIdentity(normalized)
+	if endpointProject == "" ||
 		!strings.EqualFold(endpointProject, resourceID.Name) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -660,6 +683,112 @@ func (p *FoundryProvisioningProvider) resolveExistingProjectInputs(ctx context.C
 			exterrors.CodeInvalidServiceConfig,
 			"already-connected requires AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
 			"re-run `azd ai agent init` and select the existing project connection",
+		)
+	}
+	return nil
+}
+
+func (p *FoundryProvisioningProvider) validateExistingProjectIdentity(ctx context.Context) error {
+	if p.brownfieldEndpoint == "" || p.existingProjectReuseOnly {
+		return nil
+	}
+	return p.validateProjectIdentity(ctx, p.existingProjectID, p.brownfieldEndpoint)
+}
+
+func (p *FoundryProvisioningProvider) validateExistingProjectTemplateIdentity(
+	ctx context.Context, source *templateSource,
+) error {
+	if p.brownfieldEndpoint == "" {
+		return nil
+	}
+	projectID, err := projectIdentityParameter(source, "projectResourceId")
+	if err != nil {
+		return err
+	}
+	endpoint, err := projectIdentityParameter(source, "projectEndpoint")
+	if err != nil {
+		return err
+	}
+	return p.validateProjectIdentity(ctx, projectID, endpoint)
+}
+
+func projectIdentityParameter(source *templateSource, name string) (string, error) {
+	supplied := false
+	for key, parameter := range source.parameters {
+		if !strings.EqualFold(key, name) {
+			continue
+		}
+		if supplied {
+			return "", exterrors.Validation(exterrors.CodeConflictingArguments,
+				fmt.Sprintf("multiple %s deployment parameters differ only by case", name),
+				fmt.Sprintf("supply %s only once using the template's parameter name", name))
+		}
+		supplied = true
+		envelope, ok := parameter.(map[string]any)
+		if !ok || len(envelope) != 1 || envelope["value"] == nil {
+			return "", exterrors.Validation(exterrors.CodeInvalidParameter,
+				fmt.Sprintf("%s deployment parameter must use a value envelope", name),
+				fmt.Sprintf("supply parameters.%s.value as a literal string", name))
+		}
+	}
+	value, ok := parameterValue(source, name).(string)
+	if !ok || strings.TrimSpace(value) == "" || strings.HasPrefix(strings.TrimSpace(value), "[") {
+		return "", exterrors.Validation(exterrors.CodeInvalidParameter,
+			fmt.Sprintf("%s must resolve to a non-empty literal string before provisioning", name),
+			"set matching projectResourceId and projectEndpoint values in the infrastructure parameters")
+	}
+	return value, nil
+}
+
+func (p *FoundryProvisioningProvider) validateProjectIdentity(
+	ctx context.Context, projectID, endpoint string,
+) error {
+	id, err := arm.ParseResourceID(projectID)
+	if err != nil || id.Parent == nil || id.SubscriptionID == "" || id.ResourceGroupName == "" ||
+		!strings.EqualFold(id.ResourceType.String(), "Microsoft.CognitiveServices/accounts/projects") {
+		return exterrors.Validation(exterrors.CodeInvalidServiceConfig,
+			"the configured project resource ID is not a Foundry project resource ID",
+			"set projectResourceId to a Microsoft.CognitiveServices/accounts/projects resource ID")
+	}
+	if p.existingProjectID != "" && !strings.EqualFold(strings.TrimSpace(projectID), strings.TrimSpace(p.existingProjectID)) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"projectResourceId must match the existing Foundry project selected during initialization",
+			"set projectResourceId to AZURE_AI_PROJECT_ID or rerun `azd ai project add --project-id <resource-id>`",
+		)
+	}
+	if _, err := synthesis.ValidateFoundryProjectEndpoint(endpoint); err != nil {
+		return exterrors.Validation(exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid existing Foundry project endpoint: %s", err),
+			"set projectEndpoint to a valid Azure Foundry project endpoint")
+	}
+	if p.brownfieldEndpoint != "" && !sameExistingProjectEndpoint(endpoint, p.brownfieldEndpoint) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"projectEndpoint must match the existing Foundry project selected during initialization",
+			"set projectEndpoint to FOUNDRY_PROJECT_ENDPOINT or rerun `azd ai project add --project-id <resource-id>`",
+		)
+	}
+	if err := p.ensureCredential(ctx); err != nil {
+		return err
+	}
+	metadata, err := synthesis.LookupFoundryProject(ctx, id, p.credential, p.armClientOptions)
+	if err != nil {
+		if synthesis.IsFoundryProjectMetadataValidationError(err) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				err.Error(),
+				"verify the selected Foundry project metadata and retry",
+			)
+		}
+		return exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountList)
+	}
+	if !sameExistingProjectEndpoint(endpoint, metadata.Endpoint) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"the configured project resource ID does not identify the project configured by the endpoint",
+			"set matching projectResourceId and projectEndpoint values, or rerun "+
+				"`azd ai project add --project-id <resource-id>` to select the intended project",
 		)
 	}
 	return nil
@@ -960,10 +1089,14 @@ func existingProjectEndpointIdentity(endpoint string) (string, string) {
 }
 
 func sameExistingProjectEndpoint(a, b string) bool {
-	aAccount, aProject := existingProjectEndpointIdentity(a)
-	bAccount, bProject := existingProjectEndpointIdentity(b)
-	return aAccount != "" && aProject != "" &&
-		strings.EqualFold(aAccount, bAccount) && strings.EqualFold(aProject, bProject)
+	normalizedA, errA := synthesis.ValidateFoundryProjectEndpoint(a)
+	normalizedB, errB := synthesis.ValidateFoundryProjectEndpoint(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	aAccount, aProject := existingProjectEndpointIdentity(normalizedA)
+	bAccount, bProject := existingProjectEndpointIdentity(normalizedB)
+	return strings.EqualFold(aAccount, bAccount) && strings.EqualFold(aProject, bProject)
 }
 
 // resolveEnv pulls the env values the provider needs from azd-core. It does
@@ -1300,6 +1433,9 @@ func (p *FoundryProvisioningProvider) State(
 			Outputs: p.existingProjectReuseOutputs(),
 		}}, nil
 	}
+	if err := p.validateExistingProjectIdentity(ctx); err != nil {
+		return nil, err
+	}
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1371,10 +1507,33 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {
+		return nil, err
+	}
+	if projectID, deployments := effectiveModelPolicyTarget(
+		src,
+		p.existingProjectID,
+		p.synthResult,
+	); projectID != "" && len(deployments) > 0 && !ShouldSkipModelPolicyChecks(p.synthesisEnv) {
+		if err := p.ensureCredential(ctx); err != nil {
+			return nil, err
+		}
+		if p.modelPolicyCheck != nil {
+			if err := p.modelPolicyCheck(
+				ctx,
+				p.credential,
+				projectID,
+				deployments,
+				p.synthesisEnv,
+			); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if err := p.validateACRRemoteBuild(ctx, src); err != nil {
 		return nil, err
 	}
-	if err := p.prepareBYO(ctx, src); err != nil {
+	if err := p.prepareBYO(ctx, src, progress); err != nil {
 		return nil, err
 	}
 	if err := p.recoverDeployedACRBinding(ctx); err != nil {
@@ -1477,11 +1636,14 @@ func (p *FoundryProvisioningProvider) Deploy(
 	}
 
 	outputs := p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties))))
-	if err := p.persistACRBinding(ctx, outputs); err != nil {
+	if err := p.persistACRBinding(ctx, src, outputs); err != nil {
 		return nil, err
 	}
 	if err := p.verifyDeployedACRAccess(ctx, src); err != nil {
 		return nil, err
+	}
+	if p.reportProvisioned != nil && p.preflightReport.Len() > 0 {
+		p.reportProvisioned(p.preflightReport.String())
 	}
 	progress("Foundry deployment complete")
 	return &azdext.ProvisioningDeployResult{
@@ -1734,7 +1896,10 @@ func (p *FoundryProvisioningProvider) Preview(
 	if err != nil {
 		return nil, err
 	}
-	if err := p.prepareBYO(ctx, src); err != nil {
+	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {
+		return nil, err
+	}
+	if err := p.prepareBYO(ctx, src, progress); err != nil {
 		return nil, err
 	}
 	if p.greenfieldAcrMode == "reuse-connect" {
@@ -1938,13 +2103,21 @@ func (p *FoundryProvisioningProvider) Destroy(
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
+	existingProjectMissing := false
+	if err := p.validateExistingProjectIdentity(ctx); err != nil {
+		if !isNotFound(err) {
+			return nil, err
+		}
+		existingProjectMissing = true
+		progress("Existing Foundry project or account was not found; leaving project connections untouched")
+	}
 	if err := p.recoverACRBinding(ctx, false); err != nil {
 		return nil, err
 	}
 	if err := p.cleanupACRAccess(ctx); err != nil {
 		return nil, err
 	}
-	if p.brownfieldEndpoint != "" {
+	if p.brownfieldEndpoint != "" && !existingProjectMissing {
 		if p.existingAcrMode == "create" {
 			if err := p.deleteExistingProjectAcrConnection(ctx, progress); err != nil {
 				return nil, err
@@ -2467,6 +2640,7 @@ var canonicalOutputNames = []string{
 	"AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID",
 	"AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME",
 	"AZD_FOUNDRY_MONITORING_MODE",
+	"AZD_MONITORING_PRIVATE_LINK_SCOPE_ID",
 }
 
 var greenfieldOutputNames = []string{
@@ -2487,6 +2661,7 @@ var greenfieldOutputNames = []string{
 	"AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID",
 	"AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME",
 	"AZD_FOUNDRY_MONITORING_MODE",
+	"AZD_MONITORING_PRIVATE_LINK_SCOPE_ID",
 }
 
 var existingProjectOutputNames = []string{
@@ -3011,8 +3186,12 @@ func armResourcesToProto(in []*armresources.ResourceReference) []*azdext.Provisi
 	return out
 }
 
-// isNotFound reports whether the wrapped azcore.ResponseError is a 404.
+// isNotFound reports whether err is a 404 ServiceError or ResponseError.
 func isNotFound(err error) bool {
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	if ok {
+		return serviceErr.StatusCode == 404
+	}
 	respErr, ok := errors.AsType[*azcore.ResponseError](err)
 	return ok && respErr.StatusCode == 404
 }

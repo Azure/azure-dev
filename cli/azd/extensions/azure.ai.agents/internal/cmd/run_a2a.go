@@ -11,30 +11,47 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 )
 
-// isA2AOnlyRunTarget checks container protocols, not remote endpoint enablement.
-func isA2AOnlyRunTarget(def *agent_yaml.ContainerAgent) bool {
-	if def == nil {
-		return false
+func protocolOnlyRunTarget(def *agent_yaml.ContainerAgent) string {
+	if def == nil || len(def.Protocols) == 0 {
+		return ""
 	}
-	for _, protocol := range def.Protocols {
-		if strings.TrimSpace(protocol.Protocol) != "a2a" {
-			return false
+	conversationEngine, hasA2A, onlyClientFreeProtocols, onlyA2A := false, false, true, true
+	for _, declared := range def.Protocols {
+		protocol := strings.TrimSpace(declared.Protocol)
+		onlyA2A = onlyA2A && protocol == nextstep.ProtocolA2A
+		switch protocol {
+		case nextstep.ProtocolVoiceConversationEngine:
+			conversationEngine = true
+		case nextstep.ProtocolInvocationsWS:
+		case nextstep.ProtocolA2A:
+			hasA2A = true
+		default:
+			onlyClientFreeProtocols = false
 		}
 	}
-	return len(def.Protocols) > 0
+	if conversationEngine && onlyClientFreeProtocols {
+		if hasA2A {
+			return nextstep.ProtocolA2A
+		}
+		return nextstep.ProtocolVoiceConversationEngine
+	}
+	if onlyA2A {
+		return nextstep.ProtocolA2A
+	}
+	return ""
 }
 
-// resolveRunClientProfile keeps A2A-only containers out of Activity client setup.
+// resolveRunClientProfile suppresses clients for A2A-only and CE/A2A/WebSocket-only targets.
 func resolveRunClientProfile(def *agent_yaml.ContainerAgent) (activityRunProfile, bool) {
-	if isA2AOnlyRunTarget(def) {
+	if protocolOnlyRunTarget(def) != "" {
 		return activityRunProfile{}, true
 	}
 	return resolveActivityRunProfile(def), false
 }
 
 // withResolvedRunTarget preserves the run target if best-effort state reloading fails or disagrees.
-func withResolvedRunTarget(state *nextstep.State, serviceName string, a2aOnly bool) *nextstep.State {
-	if !a2aOnly {
+func withResolvedRunTarget(state *nextstep.State, serviceName, protocol string) *nextstep.State {
+	if protocol == "" {
 		return state
 	}
 	resolved := nextstep.State{}
@@ -44,13 +61,13 @@ func withResolvedRunTarget(state *nextstep.State, serviceName string, a2aOnly bo
 	resolved.Services = slices.Clone(resolved.Services)
 	for i := range resolved.Services {
 		if resolved.Services[i].Name == serviceName || serviceName == "" && len(resolved.Services) == 1 {
-			resolved.Services[i].Protocol = nextstep.ProtocolA2A
+			resolved.Services[i].Protocol = protocol
 			resolved.Services[i].MultiProtocol = false
 			return &resolved
 		}
 	}
 	resolved.Services = append(resolved.Services, nextstep.ServiceState{
-		Name: serviceName, Protocol: nextstep.ProtocolA2A,
+		Name: serviceName, Protocol: protocol,
 	})
 	return &resolved
 }

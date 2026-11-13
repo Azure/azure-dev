@@ -374,8 +374,9 @@ func (d *Cli) detectContainerEngine() (tools.ContainerEngine, error) {
 	}
 	return tools.ContainerEngineDocker, fmt.Errorf(
 		"neither docker nor podman is installed. " +
-			"Please install Docker: https://aka.ms/azure-dev/docker-install " +
-			"or Podman: https://aka.ms/azure-dev/podman-install")
+			"To build locally, install a container runtime: Docker Engine " +
+			"(https://aka.ms/azure-dev/docker-install) or Podman: " +
+			"https://aka.ms/azure-dev/podman-install")
 }
 
 // validateContainerEngine checks version and readiness without caching failures or holding a lock.

@@ -986,7 +986,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--protocol', '-p'],
-											description: 'Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)',
+											description: 'Protocol to use: responses, invocations, or a2a (inferred from current invocation or saved deployment; operation support varies)',
 											args: [
 												{
 													name: 'protocol',
@@ -1047,7 +1047,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--protocol', '-p'],
-											description: 'Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)',
+											description: 'Protocol to use: responses, invocations, or a2a (inferred from current invocation or saved deployment; operation support varies)',
 											args: [
 												{
 													name: 'protocol',
@@ -1108,7 +1108,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--protocol', '-p'],
-											description: 'Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)',
+											description: 'Protocol to use: responses, invocations, or a2a (inferred from current invocation or saved deployment; operation support varies)',
 											args: [
 												{
 													name: 'protocol',
@@ -1166,6 +1166,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'client-header',
+										},
+									],
+								},
+								{
+									name: ['--context-id'],
+									description: 'A2A context ID returned by a previous invocation (plain messages only)',
+									args: [
+										{
+											name: 'context-id',
 										},
 									],
 								},
@@ -3030,10 +3039,6 @@ const completionSpec: Fig.Spec = {
 									description: 'Use preview inline analysis; never falls back to async',
 								},
 								{
-									name: ['--llm-input'],
-									description: 'Render YAML front matter and Markdown; set false for complete JSON; true conflicts with --output json',
-								},
-								{
 									name: ['--on-existing'],
 									description: 'Existing results: error, skip, reanalyze (default: CU_ON_EXISTS or error)',
 									args: [
@@ -3044,11 +3049,11 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--output', '-o'],
-									description: 'Output format: default (text for LLM input, otherwise JSON), json (complete response), or none',
+									description: 'Result format: default or markdown (YAML front matter and Markdown), json (complete response)',
 									args: [
 										{
 											name: 'output',
-											suggestions: ['default', 'json', 'none'],
+											suggestions: ['default', 'markdown', 'json'],
 										},
 									],
 								},
@@ -3078,6 +3083,10 @@ const completionSpec: Fig.Spec = {
 											name: 'pattern',
 										},
 									],
+								},
+								{
+									name: ['--pretty', '-p'],
+									description: 'Pretty-print terminal output; false keeps original content; do not specify when saving results',
 								},
 								{
 									name: ['--recursive', '-r'],
@@ -3114,7 +3123,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--usage'],
-									description: 'Include usage metadata in streamed results or per-input summaries',
+									description: 'Include usage in Markdown front matter, JSON output, summaries, and reports',
 								},
 								{
 									name: ['--yes', '-y'],

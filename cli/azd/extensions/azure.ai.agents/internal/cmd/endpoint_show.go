@@ -104,6 +104,7 @@ func runEndpointShow(
 			ctx,
 			azdClient,
 			validation.Name,
+			svc.GetName(),
 			extCtx.Environment,
 			flags.output,
 			nil,
@@ -130,6 +131,7 @@ func runHostedEndpointShow(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	agentName string,
+	serviceName string,
 	environmentName string,
 	outputFormat string,
 	resolveAgent hostedEndpointAgentResolver,
@@ -168,6 +170,21 @@ func runHostedEndpointShow(
 		Kind:          agent_yaml.AgentKindHosted,
 		AgentEndpoint: agent.AgentEndpoint,
 		AgentCard:     agent.AgentCard,
+	}
+	envValues, err := promptEnvValues(ctx, azdClient, environmentName)
+	if err != nil {
+		if environmentName != "" || os.Getenv("AZD_ENVIRONMENT") != "" || !isDefaultEnvironmentMissing(err) {
+			return fmt.Errorf("reading the azd environment: %w", err)
+		}
+	}
+	key := "AGENT_" + toServiceKey(serviceName)
+	endpoints, present, stale, incomplete := resolveAgentProtocolEndpointsFromValues(envValues, serviceName)
+	savedProject, _, projectErr := validateProjectEndpoint(envValues[key+"_PROJECT_ENDPOINT"])
+	if present && !stale && !incomplete && envValues[key+"_NAME"] == agent.Name &&
+		projectErr == nil && savedProject == projectEndpoint {
+		if endpoint := endpoints[agent_api.AgentProtocolVoiceConversationEngine]; endpoint != "" {
+			result.Endpoints = map[string]string{"voice_conversation_engine": endpoint}
+		}
 	}
 	return printEndpointShowResult(result, outputFormat)
 }

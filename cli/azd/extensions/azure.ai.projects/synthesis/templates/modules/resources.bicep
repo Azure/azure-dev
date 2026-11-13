@@ -1,4 +1,5 @@
 // Resource-group-scoped resources for a microsoft.foundry service: the
+// cspell:ignore kubelet abbrs managednetworks
 // Foundry (AIServices) account, its project, model deployments, the optional
 // container registry.
 //
@@ -71,6 +72,7 @@ param agentHosting agentHostingType = {
 
 param kubeletObjectId string = ''
 param federatedIdentityRoleDefinitionId string = ''
+param byoAksExistingRoleAssignmentKeys string[] = []
 param hostingPrincipalId string = ''
 param workloadPrincipalId string = ''
 
@@ -78,6 +80,7 @@ param workloadPrincipalId string = ''
 param existingAcrResourceId string = ''
 
 param acrPullAssigned bool = false
+param acrPullPrincipalId string = ''
 param acrAccessOperationId string = ''
 param acrPullRoleDefinitionId string = ''
 
@@ -170,6 +173,7 @@ module prerequisites 'byo-prerequisites.bicep' = if (agentHosting.enabled) {
     hostingIdentityName: hostingIdentityName
     workloadIdentityName: workloadIdentityName
     federatedIdentityRoleDefinitionId: federatedIdentityRoleDefinitionId
+    existingRoleAssignmentKeys: byoAksExistingRoleAssignmentKeys
     hostingIdentityResourceId: suppliedHostingIdentityResourceId
     workloadIdentityResourceId: suppliedWorkloadIdentityResourceId
     storageAccountResourceId: suppliedStorageAccountResourceId
@@ -342,6 +346,22 @@ resource byoFoundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-prev
   }
 }
 
+// VNet-injected (BYO egress) projects need a project-level Agents capability
+// host so agent traffic and traces route through the private network. The
+// platform creates only the account-level host.
+#disable-next-line BCP081
+resource byoProjectCapabilityHost 'Microsoft.CognitiveServices/accounts/projects/capabilityHosts@2025-04-01-preview' = if (useByoNetwork) {
+  name: '${activeFoundryAccountName}/${foundryProjectName}/agents'
+  properties: {
+    #disable-next-line BCP037
+    capabilityHostKind: 'Agents'
+  }
+  dependsOn: [
+    foundryAccount::project
+    byoFoundryAccount::project
+  ]
+}
+
 // Managed-network isolation (managed egress only). Applies the chosen outbound
 // isolation mode to the Microsoft-managed VNet that hosts the agent runtime.
 // Only deployed when an explicit isolationMode is requested; otherwise the
@@ -393,8 +413,8 @@ module existingAcr 'container-registry.bicep' = if (includeAcr && !empty(existin
     mode: 'reuse-connect'
     location: location
     registryName: last(split(existingAcrResourceId, '/'))
-    projectPrincipalId: agentHosting.enabled
-      ? byoFoundryAccount::project!.identity.principalId
+    pullPrincipalId: agentHosting.enabled
+      ? acrPullPrincipalId
       : foundryAccount::project!.identity.principalId
     pullAssigned: acrPullAssigned
     accessOperationId: acrAccessOperationId
@@ -451,3 +471,6 @@ output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = !includeAcr ? '' : (empty(e
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = !includeAcr ? '' : (empty(existingAcrResourceId) ? acr!.outputs.connectionName : existingAcrConnection!.outputs.acrConnectionName)
 output AZURE_FOUNDRY_NETWORK_MODE string = !enableNetworkIsolation ? 'none' : (useManagedEgress ? 'managed' : 'byo')
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = useManagedNetwork ? managedIsolationMode : ''
+output NETWORK_VNET_ID string = enableNetworkIsolation ? network!.outputs.vnetId : ''
+output NETWORK_VNET_LOCATION string = enableNetworkIsolation ? network!.outputs.vnetLocation : ''
+output NETWORK_PE_SUBNET_ID string = enableNetworkIsolation ? network!.outputs.peSubnetId : ''

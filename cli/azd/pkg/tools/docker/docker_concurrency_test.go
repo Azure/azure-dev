@@ -25,23 +25,29 @@ func TestContainerEngineConcurrent(t *testing.T) {
 		dockerErr  error
 		engine     tools.ContainerEngine
 		engineName string
+		installURL string
 		version    string
 	}{
 		{
 			name: "docker first", engine: tools.ContainerEngineDocker, engineName: "Docker",
-			version: "Docker version 20.10.17, build 100c701",
+			installURL: "https://aka.ms/azure-dev/docker-install",
+			version:    "Docker version 20.10.17, build 100c701",
 		},
 		{
 			name: "podman discovery", dockerErr: errors.New("docker not found"),
-			engine: tools.ContainerEnginePodman, engineName: "Podman", version: "podman version 4.3.1",
+			engine: tools.ContainerEnginePodman, engineName: "Podman",
+			installURL: "https://aka.ms/azure-dev/podman-install", version: "podman version 4.3.1",
 		},
 		{
 			name: "podman override", override: "podman",
-			engine: tools.ContainerEnginePodman, engineName: "Podman", version: "podman version 4.3.1",
+			engine: tools.ContainerEnginePodman, engineName: "Podman",
+			installURL: "https://aka.ms/azure-dev/podman-install", version: "podman version 4.3.1",
 		},
 		{
 			name: "docker override", override: "docker",
-			engine: tools.ContainerEngineDocker, engineName: "Docker", version: "Docker version 20.10.17, build 100c701",
+			engine: tools.ContainerEngineDocker, engineName: "Docker",
+			installURL: "https://aka.ms/azure-dev/docker-install",
+			version:    "Docker version 20.10.17, build 100c701",
 		},
 	}
 
@@ -71,7 +77,7 @@ func TestContainerEngineConcurrent(t *testing.T) {
 						assert.Equal(t, tt.engineName, cli.Name())
 						assert.Equal(t, tt.engine, cli.ContainerEngine())
 						assert.NoError(t, cli.CheckInstalled(t.Context()))
-						assert.Equal(t, "https://aka.ms/azure-dev/"+string(tt.engine)+"-install", cli.InstallUrl())
+						assert.Equal(t, tt.installURL, cli.InstallUrl())
 						assert.NoError(t, cli.Pull(t.Context(), "image"))
 					}
 				})

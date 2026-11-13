@@ -162,7 +162,9 @@ func TestVoiceGraduationIgnoresLegacyFlagForInitAndLifecycle(t *testing.T) {
 			manifest := []byte("name: voice-ga\nservices:\n" +
 				"  prompt-voice:\n    host: azure.ai.agent\n    kind: prompt-voice\n" +
 				"  hosted-voice:\n    host: azure.ai.agent\n    kind: hosted\n" +
-				"    protocols:\n      - protocol: invocations_ws\n        version: 1.0.0\n")
+				"    protocols:\n      - protocol: invocations_ws\n        version: 1.0.0\n" +
+				"  conversation-engine:\n    host: azure.ai.agent\n    kind: hosted\n" +
+				"    protocols:\n      - protocol: voice_conversation_engine\n        version: 1.0.0\n")
 			require.NoError(t, requireManifestPreviewFeatures(manifest, root, io.Discard),
 				"Voice init definitions must not use the retired preview gate")
 
@@ -174,6 +176,7 @@ func TestVoiceGraduationIgnoresLegacyFlagForInitAndLifecycle(t *testing.T) {
 			for _, definition := range []map[string]any{
 				{"kind": "prompt-voice"},
 				{"kind": "hosted", "protocols": []any{map[string]any{"protocol": "invocations_ws"}}},
+				{"kind": "hosted", "protocols": []any{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}}},
 			} {
 				props, err := structpb.NewStruct(definition)
 				require.NoError(t, err)

@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -28,6 +29,7 @@ import (
 
 const (
 	resourceGraphAPIVersion       = "2024-04-01"
+	policyAssignmentsAPIVersion   = "2023-04-01"
 	authorizationScopeFilter      = "AtScopeAboveAndBelow"
 	defaultARMEndpoint            = "https://management.azure.com"
 	policyExemptionMarker         = "/providers/microsoft.authorization/policyexemptions/"
@@ -483,6 +485,63 @@ func LoadInventory(
 		ProjectID:   projectID,
 		Assignments: applicable,
 	}, nil
+}
+
+// VerifyPolicyAssignmentsReadAccess probes ARM policyAssignments read access on the Foundry
+// project scope. Azure Resource Graph silently filters out scopes where the caller lacks
+// `Microsoft.Authorization/policyAssignments/read` and returns 200 OK with 0 rows; calling
+// this probe when Resource Graph returns 0 applicable assignments distinguishes a genuinely
+// policy-free project from missing read permission.
+func VerifyPolicyAssignmentsReadAccess(
+	ctx context.Context,
+	pipeline runtime.Pipeline,
+	armEndpoint string,
+	projectResourceID string,
+) error {
+	parsed, ok := ParseFoundryProjectID(projectResourceID)
+	if !ok {
+		return fmt.Errorf("invalid Foundry project resource ID: %s", projectResourceID)
+	}
+	if strings.TrimSpace(armEndpoint) == "" {
+		armEndpoint = defaultARMEndpoint
+	}
+	projectPath := fmt.Sprintf(
+		"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.CognitiveServices/accounts/%s/projects/%s",
+		url.PathEscape(parsed.SubscriptionID),
+		url.PathEscape(parsed.ResourceGroup),
+		url.PathEscape(parsed.ProjectResourceName),
+		url.PathEscape(parsed.ProjectName),
+	)
+	reqURL := fmt.Sprintf(
+		"%s%s/providers/Microsoft.Authorization/policyAssignments?api-version=%s&$filter=atScope()&$top=1",
+		strings.TrimRight(strings.TrimSpace(armEndpoint), "/"),
+		projectPath,
+		policyAssignmentsAPIVersion,
+	)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, reqURL)
+	if err != nil {
+		return fmt.Errorf("create policyAssignments access probe request: %w", err)
+	}
+	req.Raw().Header.Set("Accept", "application/json")
+	resp, err := pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("policyAssignments access probe failed: %w", err)
+	}
+	_ = resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusForbidden:
+		return fmt.Errorf(
+			"current identity does not have Microsoft.Authorization/policyAssignments/read permission on the selected project",
+		)
+	case http.StatusUnauthorized:
+		return fmt.Errorf(
+			"authentication failed when verifying Azure Policy access (HTTP 401); run 'azd auth login' and retry",
+		)
+	default:
+		return fmt.Errorf("verify Azure Policy read access returned HTTP %d", resp.StatusCode)
+	}
 }
 
 func lastScopeSegment(scope string) string {

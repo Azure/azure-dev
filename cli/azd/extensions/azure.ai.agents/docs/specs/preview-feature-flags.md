@@ -9,7 +9,7 @@
 
 Keep preview opt-in decisions inside the owning extensions until the extension framework supports discovery and evaluation. The Agents extension owns its private preview evaluator; the Projects extension independently checks the shared BYO AKS switch for provisioning and provisioning preview when effective AKS hosting is enabled. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality without new ACR reuse intent are not gated.
 
-Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice, prompt-voice, and hosted definitions advertising `invocations_ws` are available unconditionally. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
+Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice, prompt-voice, and hosted definitions advertising `invocations_ws` or `voice_conversation_engine` are available unconditionally. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
 
 ## Ownership and code organization
 
@@ -233,11 +233,10 @@ Provider initialization, infrastructure state and parameter queries, synthesis, 
 Init offers `a2a` only with this preview on. Explicit parsed selections, including
 repeated and comma-separated `--protocol` flags, are validated through a shared
 selection check before authentication or writes. Interactive selection occurs
-before project scaffolding. The independent Voice requirement for `invocations_ws`
-is unchanged. Protocol help is rendered from both feature states without replacing
-Voice flag annotations or pruning the static command metadata. The Hosted protocols
-help block is hidden off. No-prompt init still defaults to Responses regardless of
-both switches. This is an init-selection gate, not a deployment/lifecycle or
+before project scaffolding. Voice protocols require no opt-in. Protocol help keeps
+the always-available protocols while omitting A2A when its preview is off.
+No-prompt init still defaults to Responses regardless of the A2A switch.
+This is an init-selection gate, not a deployment/lifecycle or
 transport gate for existing A2A declarations.
 
 Existing A2A invocation remains available with `agents.a2a` off: omitted

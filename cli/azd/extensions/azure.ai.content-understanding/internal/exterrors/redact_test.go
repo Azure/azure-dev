@@ -76,6 +76,21 @@ func TestRedactionAtStructuredErrorBoundary(t *testing.T) {
 	}
 }
 
+func TestModelDiagnosticSurvivesRepeatedRedaction(t *testing.T) {
+	message := "Provided model 'gpt-6-luna' is not supported by this analyzer.\n" +
+		"Analyzer's configuration is incompatible with the resource's model mapping.\n" +
+		"Invalid value 'private-document'.\n" +
+		"https://user:private-password@example.test/private-file?sig=private-signature\n" +
+		"Authorization: Bearer private-token"
+	for range 4 {
+		message = Redact(message)
+		assert.Contains(t, message, "gpt-6-luna")
+		assert.Contains(t, message, "is not supported by this analyzer")
+		assert.Contains(t, message, "Analyzer's configuration is incompatible with the resource's model mapping.")
+		assert.NotContains(t, message, "private")
+	}
+}
+
 func TestDiagnosticMetadataAndCancellationRemainSafe(t *testing.T) {
 	for _, original := range []error{
 		&azdext.LocalError{Code: "safe_code", Message: "Safe failure.", CauseTypes: []string{"private-path"},

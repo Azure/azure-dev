@@ -182,11 +182,21 @@ Without a specified or configured analyzer, analysis uses `prebuilt-layout`.
 Use `--analyzer` (or `-a`) to select a different analyzer.
 
 Analysis displays YAML front matter and Markdown in the console by default.
-`--llm-input` is enabled by default, so you can omit it. To save that text:
+`--output default` and `--output markdown` select this format. To save that text:
 
 ```bash
 azd ai cu analyze invoice.pdf --output-file invoice.result.md
 ```
+
+Pretty is enabled by default, including when redirected. Use `--pretty=false`
+to obtain original content through stdout. Terminal previews format Markdown and simple HTML tables as
+tables or labeled cards. Colors distinguish headings and tables when enabled.
+Analysis previews apply to one input and also support JSON, usage, and dry-run.
+Saving results automatically disables implicit pretty, including local batches
+that save beside their inputs. Saved results retain original Markdown/HTML tables
+or the complete JSON response. Explicitly supplying `--pretty` when saving results
+is rejected, even as false. See
+[pretty-print behavior and limitations](docs/usage.md#pretty-print-results-in-the-terminal).
 
 For the complete JSON response, including service warnings and usage when
 present, use `--output json`. Display it in the console or save it to a file:

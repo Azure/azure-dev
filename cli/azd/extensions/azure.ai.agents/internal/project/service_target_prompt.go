@@ -214,7 +214,21 @@ const raiPolicyEnvVarName = "RAI_POLICY_ID"
 // neither rai_config nor the policy. Without this, the only visible difference
 // between "your policy is wrong" and "this harness does not take policies yet"
 // is a message that mentions neither.
-func promptCreateError(err error, managed *agent_yaml.PromptAgent) error {
+func promptCreateError(err error, managed *agent_yaml.PromptAgent, serviceAndProject ...string) error {
+	var svcName, projID string
+	if len(serviceAndProject) >= 1 {
+		svcName = strings.TrimSpace(serviceAndProject[0])
+	}
+	if len(serviceAndProject) >= 2 {
+		projID = strings.TrimSpace(serviceAndProject[1])
+	}
+	if svcName == "" && managed != nil {
+		svcName = managed.Name
+	}
+	if policyErr, ok := TryClassifyRuntimePolicyError(err, svcName, projID); ok {
+		return policyErr
+	}
+
 	converted := exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 
 	if !declaresRaiPolicy(managed) {
@@ -403,7 +417,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	headers := promptAgentRequestHeaders(&managed, settings)
 	agent, err := p.createOrUpdatePromptAgent(ctx, client, request, settings, headers)
 	if err != nil {
-		return nil, promptCreateError(err, &managed)
+		return nil, promptCreateError(err, &managed, serviceConfig.GetName(), env["AZURE_AI_PROJECT_ID"])
 	}
 
 	latest := agent.Versions.Latest
@@ -509,25 +523,26 @@ func ResolvePromptTargetFromEnv(settings *PromptAgentSettings, env map[string]st
 	if settings == nil || env == nil {
 		return false, nil
 	}
+
+	// Prefer a pre-populated project endpoint before reading env.
+	if strings.TrimSpace(settings.ProjectEndpoint) == "" {
+		settings.ProjectEndpoint = strings.TrimSpace(env[promptProjectEndpointEnvKey])
+	}
+	if strings.TrimSpace(settings.ModelEndpoint) == "" {
+		// x-model-endpoint targets the project endpoint origin.
+		if u, perr := url.Parse(strings.TrimSpace(settings.ProjectEndpoint)); perr == nil &&
+			u.Scheme != "" && u.Host != "" {
+			settings.ModelEndpoint = u.Scheme + "://" + u.Host
+		}
+	}
+
 	settings.OverlayAzdProjectEnv(env)
 	mapped, err := overlayPromptSettingsFromProjectResourceID(settings, env)
 	if err != nil {
 		return false, err
 	}
 
-	// Prefer the config-supplied project endpoint (interactive init); otherwise
-	// read it from the azd environment (--no-prompt / provisioned project).
-	if strings.TrimSpace(settings.ProjectEndpoint) == "" {
-		settings.ProjectEndpoint = strings.TrimSpace(env[promptProjectEndpointEnvKey])
-	}
-
-	if pe := strings.TrimSpace(settings.ProjectEndpoint); pe != "" {
-		// x-model-endpoint targets the account host backing the project.
-		if u, perr := url.Parse(pe); perr == nil && u.Host != "" {
-			if strings.TrimSpace(settings.ModelEndpoint) == "" {
-				settings.ModelEndpoint = u.Scheme + "://" + u.Host
-			}
-		}
+	if strings.TrimSpace(settings.ProjectEndpoint) != "" {
 		return true, nil
 	}
 

@@ -83,6 +83,32 @@ func TestMemorySnapshotFeatureSwitch(t *testing.T) {
 	require.NoError(t, RequireDefinitionFeatures(definition, io.Discard))
 }
 
+func TestConversationEngineIgnoresRetiredVoiceFeatureSwitch(t *testing.T) {
+	const legacyVoiceFlag = "AZD_ALPHA_ENABLE_AGENTS_VOICE"
+	for _, value := range []string{"unset", "", "false", "0", "invalid", "true"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(legacyVoiceFlag, value)
+			if value == "unset" {
+				require.NoError(t, os.Unsetenv(legacyVoiceFlag))
+			}
+			for _, key := range []string{"protocols", "protocol_versions", "container_protocol_versions"} {
+				for _, protocols := range [][]any{
+					{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}},
+					{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"},
+						map[string]any{"protocol": "invocations_ws", "version": "1.0.0"}},
+				} {
+					definition := map[string]any{"kind": "hosted", key: protocols}
+					require.NoError(t, CheckDefinitionFeatures(definition))
+					require.NoError(t, RequireDefinitionFeatures(definition, io.Discard))
+					notices, err := RequireDefinitionFeatureNotices(definition)
+					require.NoError(t, err)
+					require.Empty(t, notices)
+				}
+			}
+		})
+	}
+}
+
 func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 	for _, feature := range featureflags.All() {
 		t.Setenv(feature.EnvVar, "")
@@ -132,6 +158,12 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 			"protocol_versions": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Feature{}},
 		{"legacy api hosted voice bridge", map[string]any{"kind": "hosted",
 			"container_protocol_versions": []any{map[string]any{"protocol": " invocations_ws "}}}, featureflags.Feature{}},
+		{"hosted conversation engine", map[string]any{"kind": "hosted",
+			"protocols": []any{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}}}, featureflags.Feature{}},
+		{"api hosted conversation engine", map[string]any{"kind": "hosted",
+			"protocol_versions": []any{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}}}, featureflags.Feature{}},
+		{"legacy api hosted conversation engine", map[string]any{"kind": "hosted",
+			"container_protocol_versions": []any{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}}}, featureflags.Feature{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -408,7 +410,7 @@ func TestSanitizeFoundryName(t *testing.T) {
 func TestFoundryProvider_ImplementsContract(t *testing.T) {
 	// Compile-time check is already in the package; runtime sanity check
 	// guards against future signature drift in azdext.
-	p := NewFoundryProvisioningProvider(nil)
+	p := NewFoundryProvisioningProvider(nil, nil)
 	assert.NotNil(t, p)
 }
 
@@ -621,6 +623,15 @@ func TestCanonicalizeOutputName(t *testing.T) {
 		"unknown name must pass through verbatim, not silently dropped")
 }
 
+func TestOwnedPrivateLinkScopeOutputIsCanonicalAndCleaned(t *testing.T) {
+	t.Parallel()
+
+	name := synthesis.OwnedPrivateLinkScopeOutput
+	assert.Equal(t, name, canonicalizeOutputName("azD_MONITORING_PRIVATE_LINK_SCOPE_ID"))
+	assert.Contains(t, greenfieldOutputNames, name)
+	assert.Contains(t, monitoringOutputKeys(), name)
+}
+
 // mapKeys returns a sorted list of keys for stable assert messages.
 func mapKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
@@ -724,6 +735,59 @@ func TestVerifyLayerResourceGroupOwnership(t *testing.T) {
 			var local *azdext.LocalError
 			require.ErrorAs(t, err, &local)
 			assert.Contains(t, local.Message, "refusing to delete")
+		})
+	}
+}
+
+func TestIsNotFound(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "wrapped raw response error 404",
+			err:  fmt.Errorf("wrapped: %w", &azcore.ResponseError{StatusCode: http.StatusNotFound}),
+			want: true,
+		},
+		{
+			name: "wrapped classified service error 404",
+			err: fmt.Errorf("wrapped: %w", exterrors.ServiceFromAzure(
+				&azcore.ResponseError{StatusCode: http.StatusNotFound},
+				exterrors.OpResourceGroupGet,
+			)),
+			want: true,
+		},
+		{
+			name: "wrapped classified service error 403",
+			err: fmt.Errorf("wrapped: %w", exterrors.ServiceFromAzure(
+				&azcore.ResponseError{StatusCode: http.StatusForbidden},
+				exterrors.OpResourceGroupGet,
+			)),
+			want: false,
+		},
+		{
+			name: "wrapped classified service error 500",
+			err: fmt.Errorf("wrapped: %w", exterrors.ServiceFromAzure(
+				&azcore.ResponseError{StatusCode: http.StatusInternalServerError},
+				exterrors.OpResourceGroupGet,
+			)),
+			want: false,
+		},
+		{
+			name: "validation error is not not-found",
+			err: exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				"invalid value",
+				"fix value",
+			),
+			want: false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isNotFound(tt.err))
 		})
 	}
 }
@@ -1550,6 +1614,10 @@ func TestSameExistingProjectEndpoint(t *testing.T) {
 	assert.True(t, sameExistingProjectEndpoint(
 		endpoint,
 		"https://account.services.ai.azure.com/projects/myproject",
+	))
+	assert.True(t, sameExistingProjectEndpoint(
+		endpoint,
+		"https://account.services.ai.azure.com/api/projects/%4DyProject%2f",
 	))
 	assert.False(t, sameExistingProjectEndpoint(
 		endpoint,

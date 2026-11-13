@@ -13,7 +13,11 @@ following behavior with the extension's adapter and command tests.
 - Mark malformed successful responses with `ErrInvalidResponse`.
 - Preserve unsuccessful terminal status and safe service codes in `OperationError`,
   wrapping `azcore.ResponseError` while leaving CLI error classification to the adapter.
-- Retain sanitized nested operation diagnostic codes without service messages or targets.
+- Retain sanitized service diagnostic messages and nested codes from both `details` and
+  `innererror`, without targets, credentials, or raw response bodies. Normalize inner errors into
+  diagnostic `Details`, bound depth/count, and explicitly mark truncation.
+- Share diagnostic filtering with the command boundary so safe model identifiers
+  and root-cause explanations survive repeated sanitization.
 - Bound and sanitize service and polling errors before creating
   `azcore.ResponseError` values.
 - Use a same-resource polling handler that retains terminal envelopes without

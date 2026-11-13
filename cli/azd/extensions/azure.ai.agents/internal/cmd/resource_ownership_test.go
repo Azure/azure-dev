@@ -102,9 +102,9 @@ func TestFoundryResourceOwnershipMetadata(t *testing.T) {
 	toolboxes := readResourceExtensionManifest(t, "../../../azure.ai.toolboxes/extension.yaml")
 
 	assert.True(t, hasResourceDependency(agents, "azure.ai.inspector", "~1.0.0"))
-	assert.True(t, hasResourceDependency(agents, "azure.ai.projects", "~1.0.0"))
+	assert.True(t, hasResourceDependency(agents, "azure.ai.projects", "~1.1.0"))
 	assert.True(t, hasResourceDependency(agents, "azure.ai.connections", "~1.0.0"))
-	assert.True(t, hasResourceDependency(agents, "azure.ai.toolboxes", "~1.0.0"))
+	assert.True(t, hasResourceDependency(agents, "azure.ai.toolboxes", "~1.1.0"))
 	assert.True(t, hasResourceProvider(agents, "azure.ai.agent", "service-target"))
 	assert.False(t, hasResourceProvider(agents, "azure.ai.connection", "service-target"))
 	assert.False(t, hasResourceProvider(agents, "azure.ai.toolbox", "service-target"))
@@ -125,10 +125,19 @@ func TestFoundryReleaseMetadata(t *testing.T) {
 		"azure.ai.skills",
 		"azure.ai.toolboxes",
 	}
+	expectedBundleDependencies := map[string]string{
+		"azure.ai.agents":      "~1.1.0",
+		"azure.ai.connections": "~1.0.0",
+		"azure.ai.inspector":   "~1.0.0",
+		"azure.ai.projects":    "~1.1.0",
+		"azure.ai.routines":    "~1.0.0",
+		"azure.ai.skills":      "~1.0.0",
+		"azure.ai.toolboxes":   "~1.1.0",
+	}
 	bundle := readResourceExtensionManifest(t, "../../../microsoft.foundry/extension.yaml")
 	require.Len(t, bundle.Dependencies, len(extensions))
 	for _, id := range extensions {
-		assert.True(t, hasResourceDependency(bundle, id, "~1.0.0"), id)
+		assert.True(t, hasResourceDependency(bundle, id, expectedBundleDependencies[id]), id)
 	}
 
 	for _, id := range append(extensions, "microsoft.foundry") {

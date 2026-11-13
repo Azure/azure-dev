@@ -29,6 +29,9 @@ type MonitoringResolver struct {
 	Credential    azcore.TokenCredential
 	ClientOptions *arm.ClientOptions
 	Reader        MonitoringReader
+	// PrivateNetwork accepts components whose public ingestion is disabled
+	// because the deployment configures the private path itself.
+	PrivateNetwork bool
 }
 
 func (p *MonitoringResolver) reader() MonitoringReader {
@@ -84,7 +87,7 @@ func (p *MonitoringResolver) ValidateComponent(
 		return fmt.Errorf("the linked Log Analytics workspace does not exist")
 	}
 	if needsKey {
-		if err := MonitoringKeyPolicy(properties); err != nil {
+		if err := MonitoringKeyPolicyFor(properties, p.PrivateNetwork); err != nil {
 			return err
 		}
 		if key, _ := properties["ConnectionString"].(string); strings.TrimSpace(key) == "" {
@@ -94,7 +97,7 @@ func (p *MonitoringResolver) ValidateComponent(
 		if err != nil {
 			return err
 		}
-		return MonitoringKeyPolicy(workspaceProperties)
+		return MonitoringKeyPolicyFor(workspaceProperties, p.PrivateNetwork)
 	}
 	return nil
 }

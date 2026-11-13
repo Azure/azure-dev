@@ -8,7 +8,7 @@ param mode string
 param location string
 param tags object = {}
 param registryName string
-param projectPrincipalId string
+param pullPrincipalId string
 param pullAssigned bool = false
 param accessOperationId string = ''
 param pullRoleDefinitionId string = ''
@@ -48,9 +48,9 @@ resource existingRegistry 'Microsoft.ContainerRegistry/registries@2025-11-01' ex
 
 resource newRegistryAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (mode == 'create') {
   scope: newRegistry
-  name: guid(newRegistry.id, projectPrincipalId, acrPullRoleId)
+  name: guid(newRegistry.id, pullPrincipalId, acrPullRoleId)
   properties: {
-    principalId: projectPrincipalId
+    principalId: pullPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRoleId
   }
@@ -60,10 +60,10 @@ resource newRegistryAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 // roleAssignmentMode. Bicep forbids runtime existing-resource
 // properties in resource conditions/names.
 module existingRegistryAccess 'acr-pull-role-assignment.bicep' = if (mode == 'reuse-connect' && !pullAssigned) {
-  name: empty(accessOperationId) ? 'existing-acr-access-${uniqueString(projectPrincipalId, registryName)}' : 'azd-acr-access-${accessOperationId}'
+  name: empty(accessOperationId) ? 'existing-acr-access-${uniqueString(pullPrincipalId, registryName)}' : 'azd-acr-access-${accessOperationId}'
   params: {
     registryName: registryName
-    principalId: projectPrincipalId
+    principalId: pullPrincipalId
     assignmentName: accessOperationId
     ownershipDescription: empty(accessOperationId) ? '' : 'azd-foundry:${accessOperationId}'
     roleDefinitionId: !empty(accessOperationId)

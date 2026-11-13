@@ -69,7 +69,7 @@ func suggestRemoteBuild(
 		suggestion = fmt.Sprintf(
 			"Services [%s] can build on Azure instead of locally.\n"+
 				"Set 'remoteBuild: true' under the 'docker:' section for each service in azure.yaml,\n"+
-				"or install Docker (https://aka.ms/azure-dev/docker-install)\n"+
+				"or install a container runtime: Docker Engine (https://aka.ms/azure-dev/docker-install)\n"+
 				"or Podman (https://aka.ms/azure-dev/podman-install).",
 			serviceList)
 	}

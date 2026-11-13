@@ -427,13 +427,14 @@ func TestInfraGenerationSupportsNamedFlatEntry(t *testing.T) {
 		return replacementResponse(), nil
 	}}
 
-	err := generationTestManager(t, generator, config).GenerateExtensions(
-		t.Context(), config, &v1beta.InfraGenerateOptions{})
+	infraGenerationManager := generationTestManager(t, generator, config)
+
+	err := infraGenerationManager.GenerateExtensions(t.Context(), config, &v1beta.InfraGenerateOptions{})
 	require.NoError(t, err)
 	require.True(t, called)
 	require.Equal(t, "data", config.Infra.Name)
 	require.Equal(t, provisioning.Terraform, config.Infra.Provider)
-	require.Equal(t, "infra/data", config.Infra.Path)
+	require.Equal(t, filepath.Join("infra", "data"), config.Infra.Path)
 	require.Equal(t, map[string]any{"backend": "custom"}, config.Infra.Config)
 
 	data, err := os.ReadFile(filepath.Join(config.Path, "azure.yaml"))

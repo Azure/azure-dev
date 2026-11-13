@@ -985,6 +985,34 @@ A provisioning provider implements the full lifecycle (`Initialize`, `State`, `D
 > [!NOTE]
 > Commands such as `azd env refresh` do not run the full extension lifecycle. When a project's `infra.provider` names an extension-provided provider, `azd` starts only that extension on demand to resolve the provider, then stops it once the operation completes.
 
+##### Infrastructure Generation Providers (`infra-generation-provider`, beta)
+
+Extensions can independently opt into `azd infra generate` by declaring the
+`infra-generation-provider` capability and a `providers` entry with the same
+type and provider name. Register an `azdext.InfraGenerationProvider` through
+`ExtensionHost.WithInfraGenerationProvider`.
+
+For `azd infra generate`, core starts only installed extensions declaring a
+generation provider used by the project's infrastructure entries. Unrelated
+listener extensions are not started. Already registered generators are reused,
+and listeners started by generation remain running until generation finishes.
+
+The native beta-only `InfraGenerationService.Stream` carries registration,
+and generation requests/results. Generation takes an explicitly present
+`InfraGenerateOptions` message containing `force`, matching `--force`.
+The extension writes its sources within the project and returns a replacement
+provider entry with its provider, path, module, and configuration. It does not
+initialize provisioning, authenticate, or modify project configuration.
+Core validates and saves the replacement entries after all generators succeed,
+preserving their identity, hooks, and dependency edges. Extensions own overwrite
+handling. The resources extension requires `--force` for existing destinations,
+while built-in generation retains core's overwrite prompts. Failures are
+reported explicitly, and files already written remain available. No completion
+callback is sent.
+
+See [Infrastructure generation](extension-sdk-reference.md#infrastructure-generation-beta)
+for the SDK interface and host/version requirements.
+
 ##### Model Context Protocol Server (`mcp-server`)
 
 > Extensions must declare the `mcp-server` capability in their `extension.yaml` file.
@@ -1141,6 +1169,7 @@ Extensions can declare the following capabilities in their manifest:
 - **`service-target-provider`**: Provide custom service deployment targets
 - **`framework-service-provider`**: Provide custom language frameworks and build systems
 - **`provisioning-provider`**: Provide a custom infrastructure provisioning experience (alternative to Bicep / Terraform)
+- **`infra-generation-provider` (beta)**: Export infrastructure sources and update configuration after successful file writes
 - **`validation-provider`**: Contribute validation checks to azd's provision validation and future validation pipelines
 - **`metadata`**: Provide comprehensive metadata about commands and configuration schemas
 

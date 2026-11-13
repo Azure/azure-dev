@@ -66,7 +66,8 @@
           "description": "The type of provider.",
           "enum": [
             "service-target",
-            "provisioning-provider"
+            "provisioning-provider",
+            "infra-generation-provider"
           ]
         },
         "description": {
@@ -113,7 +114,7 @@
     "capabilities": {
       "type": "array",
       "title": "Capabilities",
-      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server, service-target-provider, framework-service-provider, provisioning-provider, validation-provider, metadata. Select one or more from the allowed list. Each value must be unique. Not required for extension packs, which declare dependencies instead and have no executable.",
+      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server, service-target-provider, framework-service-provider, provisioning-provider, infra-generation-provider, validation-provider, metadata. Select one or more from the allowed list. Each value must be unique. Not required for extension packs, which declare dependencies instead and have no executable.",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
@@ -159,6 +160,12 @@
             "const": "validation-provider",
             "title": "Validation Provider",
             "description": "Validation provider enables extensions to contribute checks to azd validation pipelines."
+          },
+          {
+            "type": "string",
+            "const": "infra-generation-provider",
+            "title": "Infrastructure Generation Provider (Beta)",
+            "description": "Generate infrastructure source files and update configuration after the host writes them."
           },
           {
             "type": "string",

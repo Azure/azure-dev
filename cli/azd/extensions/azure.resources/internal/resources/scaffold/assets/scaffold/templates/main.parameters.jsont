@@ -9,6 +9,13 @@
       "location": {
         "value": "${AZURE_LOCATION}"
       },
+      {{/* Preserve the resources provider's saved quota-aware location after export switches this entry to Bicep. */}}
+      {{/* entryEnvKey scopes it as AZURE_RESOURCES_<ENTRY>__AI_DEPLOYMENTS_LOCATION. */}}
+      {{- if .AiFoundryProject}}
+      "aiDeploymentsLocation": {
+        "value": "{{printf "${%s}" (entryEnvKey .LayerName "AZURE_AI_DEPLOYMENTS_LOCATION")}}"
+      },
+      {{- end}}
       {{- range .Parameters}}
       "{{.Name}}": {
         "value": {{formatParam "        " "  " .Value}}

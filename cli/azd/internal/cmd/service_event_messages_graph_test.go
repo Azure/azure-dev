@@ -566,6 +566,7 @@ func newServiceEventMessageCommandFixture(
 		azdext.UnimplementedValidationServiceServer{},
 		azdext.UnimplementedTelemetryServiceServer{},
 		v1beta.UnimplementedCommandResultServiceServer{},
+		v1beta.UnimplementedInfraGenerationServiceServer{},
 	)
 	serverInfo, err := server.Start()
 	require.NoError(t, err)

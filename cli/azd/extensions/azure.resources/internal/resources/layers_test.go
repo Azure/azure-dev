@@ -58,15 +58,14 @@ func TestValidateProjectLayersRejectsRepeatedTopLevelProviders(t *testing.T) {
 }
 
 func TestLayerIdentityAndRepeatability(t *testing.T) {
-	generator := &Generator{}
 	for _, name := range []string{"", "catalog", "orders"} {
 		t.Run(name, func(t *testing.T) {
 			request := GenerateRequest{Name: name, Config: map[string]any{
 				"cache": map[string]any{"type": Redis},
 			}}
-			files, err := generator.Generate(t.Context(), request)
+			files, err := GenerateFromConfig(t.Context(), request)
 			require.NoError(t, err)
-			repeated, err := generator.Generate(t.Context(), request)
+			repeated, err := GenerateFromConfig(t.Context(), request)
 			require.NoError(t, err)
 			require.Equal(t, files, repeated)
 			var parameters struct {
@@ -91,9 +90,8 @@ func TestLayerIdentityAndRepeatability(t *testing.T) {
 }
 
 func TestEntryContentsAreIsolated(t *testing.T) {
-	generator := &Generator{}
 	for _, name := range []string{"catalog-items", "order-receipts"} {
-		files, err := generator.Generate(t.Context(), GenerateRequest{Name: name, Config: map[string]any{
+		files, err := GenerateFromConfig(t.Context(), GenerateRequest{Name: name, Config: map[string]any{
 			"storage": map[string]any{"type": Storage, "containers": []any{name}},
 		}})
 		require.NoError(t, err)

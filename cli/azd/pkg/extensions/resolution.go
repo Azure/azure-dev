@@ -385,6 +385,8 @@ func ProviderTypeForCapability(capability CapabilityType) (ProviderType, bool) {
 		return ServiceTargetProviderType, true
 	case ProvisioningProviderCapability:
 		return ProvisioningProviderType, true
+	case InfraGenerationProviderCapability:
+		return InfraGenerationProviderType, true
 	default:
 		return "", false
 	}

@@ -30,27 +30,28 @@ type ServerInfo struct {
 }
 
 type Server struct {
-	grpcServer           *grpc.Server
-	projectService       azdext.ProjectServiceServer
-	environmentService   azdext.EnvironmentServiceServer
-	promptService        azdext.PromptServiceServer
-	userConfigService    azdext.UserConfigServiceServer
-	deploymentService    azdext.DeploymentServiceServer
-	eventService         azdext.EventServiceServer
-	commandResultService v1beta.CommandResultServiceServer
-	composeService       v1beta.ComposeServiceServer
-	workflowService      azdext.WorkflowServiceServer
-	extensionService     azdext.ExtensionServiceServer
-	serviceTargetService azdext.ServiceTargetServiceServer
-	frameworkService     azdext.FrameworkServiceServer
-	containerService     azdext.ContainerServiceServer
-	accountService       azdext.AccountServiceServer
-	aiModelService       azdext.AiModelServiceServer
-	copilotService       v1beta.CopilotServiceServer
-	provisioningService  azdext.ProvisioningServiceServer
-	validationService    azdext.ValidationServiceServer
-	telemetryService     azdext.TelemetryServiceServer
-	betaServiceOverrides map[BetaService]any
+	grpcServer             *grpc.Server
+	projectService         azdext.ProjectServiceServer
+	environmentService     azdext.EnvironmentServiceServer
+	promptService          azdext.PromptServiceServer
+	userConfigService      azdext.UserConfigServiceServer
+	deploymentService      azdext.DeploymentServiceServer
+	eventService           azdext.EventServiceServer
+	commandResultService   v1beta.CommandResultServiceServer
+	composeService         v1beta.ComposeServiceServer
+	workflowService        azdext.WorkflowServiceServer
+	extensionService       azdext.ExtensionServiceServer
+	serviceTargetService   azdext.ServiceTargetServiceServer
+	frameworkService       azdext.FrameworkServiceServer
+	containerService       azdext.ContainerServiceServer
+	accountService         azdext.AccountServiceServer
+	aiModelService         azdext.AiModelServiceServer
+	copilotService         v1beta.CopilotServiceServer
+	provisioningService    azdext.ProvisioningServiceServer
+	validationService      azdext.ValidationServiceServer
+	telemetryService       azdext.TelemetryServiceServer
+	infraGenerationService v1beta.InfraGenerationServiceServer
+	betaServiceOverrides   map[BetaService]any
 }
 
 func NewServer(
@@ -73,28 +74,30 @@ func NewServer(
 	validationService azdext.ValidationServiceServer,
 	telemetryService azdext.TelemetryServiceServer,
 	commandResultService v1beta.CommandResultServiceServer,
+	infraGenerationService v1beta.InfraGenerationServiceServer,
 ) *Server {
 	server := &Server{
-		projectService:       projectService,
-		environmentService:   environmentService,
-		promptService:        promptService,
-		userConfigService:    userConfigService,
-		deploymentService:    deploymentService,
-		eventService:         eventServiceImpl,
-		commandResultService: commandResultService,
-		composeService:       composeService,
-		workflowService:      workflowService,
-		extensionService:     extensionService,
-		serviceTargetService: serviceTargetService,
-		frameworkService:     frameworkService,
-		containerService:     containerService,
-		accountService:       accountService,
-		aiModelService:       aiModelService,
-		copilotService:       copilotService,
-		provisioningService:  provisioningService,
-		validationService:    validationService,
-		telemetryService:     telemetryService,
-		betaServiceOverrides: map[BetaService]any{},
+		projectService:         projectService,
+		environmentService:     environmentService,
+		promptService:          promptService,
+		userConfigService:      userConfigService,
+		deploymentService:      deploymentService,
+		eventService:           eventServiceImpl,
+		commandResultService:   commandResultService,
+		composeService:         composeService,
+		workflowService:        workflowService,
+		extensionService:       extensionService,
+		serviceTargetService:   serviceTargetService,
+		frameworkService:       frameworkService,
+		containerService:       containerService,
+		accountService:         accountService,
+		aiModelService:         aiModelService,
+		copilotService:         copilotService,
+		provisioningService:    provisioningService,
+		validationService:      validationService,
+		telemetryService:       telemetryService,
+		infraGenerationService: infraGenerationService,
+		betaServiceOverrides:   map[BetaService]any{},
 	}
 	if events, ok := eventServiceImpl.(*eventService); ok {
 		server.WithOptions(WithBetaServiceOverride(

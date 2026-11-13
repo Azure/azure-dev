@@ -59,7 +59,9 @@ func TestManifestMatchesExtensionSchema(t *testing.T) {
 		} `yaml:"providers"`
 	}
 	require.NoError(t, yaml.Unmarshal(manifestBytes, &metadata))
-	require.Len(t, metadata.Providers, 1)
+	require.Len(t, metadata.Providers, 2)
 	require.Equal(t, "resources", metadata.Providers[0].Name)
 	require.Equal(t, "provisioning-provider", metadata.Providers[0].Type)
+	require.Equal(t, "resources", metadata.Providers[1].Name)
+	require.Equal(t, "infra-generation-provider", metadata.Providers[1].Type)
 }

@@ -107,6 +107,43 @@ choice is saved in the environment and reused on later deployments. Deployments
 use your selected environment's cloud configuration, falling back to project
 settings, user settings, then Azure Public Cloud.
 
+## Export infrastructure to Bicep
+
+Run the core generation command to take ownership of the infrastructure:
+
+```sh
+azd infra generate
+```
+
+The extension generates the same Bicep sources used for provisioning, without
+contacting Azure or initializing its provisioning provider. By default, sources
+are written to `infra/<layer-name>/`; an explicitly configured layer `path`
+is used instead and must stay within the project.
+
+The extension writes the files and returns a replacement provider entry.
+After generation succeeds, core replaces the original named
+infrastructure entry in place with `provider: bicep`, the output
+`path`, and `module: main`. Its name, position, hooks, and dependencies are
+preserved, as are other layers, services, and unrelated YAML comments.
+The resource `config` is removed. Future provisioning uses the exported files
+instead of regenerating them from resource declarations.
+
+For a managed Foundry project, the exported parameter file references the
+entry-scoped AI deployment location saved by the resources provider. If no
+location has been saved, Bicep provisioning prompts for the parameter rather
+than using the resources provider's quota-aware location selection.
+
+If generated files already exist, this extension refuses to overwrite them.
+Use `azd infra generate --force` to allow overwriting. A file
+write failure prevents configuration conversion. If configuration conversion fails after
+writing, the command reports the failure and retains the generated files.
+Changes to the selected entry during generation are rejected rather than overwritten.
+
+Generation uses the beta-only `infra-generation-provider` capability and requires
+an azd host and SDK containing `InfraGenerationService` (target azd 1.38.0).
+This extension's local SDK replacement supports development before that release.
+Pin a published SDK containing the API before publishing the extension.
+
 ## Delete resources safely
 
 Removing a resource from `azure.yaml` does **not** delete it from Azure.
@@ -157,7 +194,8 @@ references before provisioning, then provision each layer again. See the
 - `azd resources add` requires interactive input and does not support
   `--no-prompt`. Use saved configuration with `azd provision` for automation.
 - Use `azd resources add`, not `azd add`, for these declarations.
-  `azd infra gen` does not support them.
+- Infrastructure generation supports flat `infra` declarations as well as
+  named `infra.layers` and `layers[].infra` entries.
 - Before using `azd resources add`, move flat `infra` settings into named
   `infra.layers` entries. Top-level project `layers` are not supported by this
   command. Existing top-level `resources` declarations remain supported by

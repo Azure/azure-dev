@@ -107,6 +107,63 @@ func TestAILocationPersistsAcrossProviderInstances(t *testing.T) {
 	}
 }
 
+func TestGeneratedAIParametersPreserveResourceLocationPromptAndReuse(t *testing.T) {
+	prompts := &promptServer{aiLocation: "westus3"}
+	env := &environmentServer{values: map[string]string{
+		"AZURE_ENV_NAME": "dev", "AZURE_SUBSCRIPTION_ID": "sub", "AZURE_LOCATION": "eastus",
+	}}
+	client := newHostClient(t, env, prompts)
+	// Exercise the parameter mapping emitted by the resources generator.
+	files, err := resources.Generate("models", aiConfig())
+	require.NoError(t, err)
+
+	newGeneratedProvider := func() *Provider {
+		p := newAIProvider(t, client, "models")
+		p.envName = "dev"
+		require.NoError(t, os.WriteFile(
+			filepath.Join(p.path, "main.parameters.json"), files["main.parameters.json"], 0o600))
+
+		p.compile = func(context.Context, string) ([]byte, error) {
+			return []byte(`{
+				"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+				"parameters": {
+					"aiDeploymentsLocation": {"type": "string"},
+					"environmentName": {"type": "string"},
+					"layerName": {"type": "string"},
+					"location": {"type": "string"},
+					"principalId": {"type": "string"},
+					"principalType": {"type": "string"}
+				}
+			}`), nil
+		}
+		return p
+	}
+
+	// Recreate the provider to verify the chosen location is persisted outside its in-memory state.
+	for i := range 2 {
+		p := newGeneratedProvider()
+		parameters, err := p.Parameters(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, "aiDeploymentsLocation", parameters[0].Name)
+		require.Equal(t, "westus3", parameters[0].Value)
+		require.Equal(t, []string{"AZURE_RESOURCES_MODELS__AI_DEPLOYMENTS_LOCATION"}, parameters[0].EnvVarMapping)
+		require.Equal(t, i == 0, parameters[0].LocalPrompt)
+		require.Len(t, prompts.aiRequests, 1)
+		prompts.aiErr = status.Error(codes.FailedPrecondition, "interactive input required")
+	}
+
+	prompts.promptErr = status.Error(codes.FailedPrecondition, "interactive input required")
+	p := newGeneratedProvider()
+	// The exported mapping must use the saved value without the resolver or an interactive prompt.
+	p.resolver = nil
+	parameters, err := p.Parameters(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "westus3", parameters[0].Value)
+	require.Equal(t, []string{"AZURE_RESOURCES_MODELS__AI_DEPLOYMENTS_LOCATION"}, parameters[0].EnvVarMapping)
+	require.False(t, parameters[0].LocalPrompt)
+	require.Empty(t, prompts.promptRequests)
+}
+
 func TestAIStateDoesNotPromptForDeploymentLocation(t *testing.T) {
 	prompts := &promptServer{}
 	client := newHostClient(t, &environmentServer{values: map[string]string{}}, prompts)

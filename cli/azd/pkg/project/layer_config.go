@@ -11,7 +11,7 @@ import "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 type ProjectFormat int
 
 const (
-	// ProjectFormatFlat is when you have `services:` and a single `infra:` entry at the top level:
+	// ProjectFormatFlat uses a single `infra` mapping alongside the project's `services` mapping:
 	//
 	// services:
 	//   <services>
@@ -19,8 +19,7 @@ const (
 	//   provider: bicep
 	ProjectFormatFlat ProjectFormat = iota
 
-	// ProjectFormatInfraV1 is when you have `services:` at the top level, similar to the flat infra,
-	// but you have layers in infra:
+	// ProjectFormatInfraV1 uses an `infra.layers` list alongside the project's `services` mapping:
 	//
 	// services:
 	//   <services>
@@ -32,8 +31,7 @@ const (
 	//      provider: bicep
 	ProjectFormatInfraV1
 
-	// ProjectFormatLayersV2 is when you have a top-level `layers:` entry, where each layer
-	// can have `infra` and `services`:
+	// ProjectFormatLayersV2 uses a `layers` list, where each layer can have `infra` and `services`:
 	//
 	// layers:
 	// - name: layer-a

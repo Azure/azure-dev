@@ -44,6 +44,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
 - [Extension Host](#extension-host)
   - [NewExtensionHost](#newextensionhost)
   - [ExtensionHost Methods](#extensionhost-methods)
+- [Infrastructure generation (beta)](#infrastructure-generation-beta)
 - [Client & Utilities](#client--utilities)
   - [AzdClient](#azdclient)
   - [ConfigHelper](#confighelper)
@@ -694,11 +695,61 @@ down the connection.
 | `WithServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Register a deployment target and stable read-only preview; provider also implements `ServiceTargetPreviewProvider`. Targets azd 1.37.0. |
 | `WithBetaServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Deprecated beta preview registration; retained with the `preview.ServiceTargetPreviewProvider` interface. |
 | `WithFrameworkService` | `(language string, factory FrameworkServiceFactory) *ExtensionHost` | Register a custom language/framework build service. |
+| `WithInfraGenerationProvider` | `(name string, provider InfraGenerationProvider) *ExtensionHost` | Register a beta source generator that writes files and returns a replacement infrastructure entry. |
 | `WithProjectEventHandler` | `(eventName string, handler ProjectEventHandler) *ExtensionHost` | Register a project-level lifecycle event handler. |
 | `WithServiceEventHandler` | `(eventName string, handler ServiceEventHandler, options *ServiceEventOptions) *ExtensionHost` | Register a service-level lifecycle event handler (with optional filtering). |
 | `Run` | `(ctx context.Context) error` | Start the host and block until shutdown. |
 
 ---
+
+## Infrastructure generation (beta)
+
+`InfraGenerationService` exists only in `contracts/v1beta`. Go extensions
+register an `azdext.InfraGenerationProvider` with
+`host.WithInfraGenerationProvider("resources", generator)` and declare both
+the `infra-generation-provider` capability and a provider of that type and name
+in their manifest. Generation does not require the provisioning capability.
+
+```go
+type InfraGenerationProvider interface {
+    Generate(context.Context, *v1beta.InfraGenerateRequest) (*v1beta.InfraGenerateResponse, error)
+}
+```
+
+The request includes the project directory, infrastructure entry, planned
+project-relative output directory, and an explicit `*v1beta.InfraGenerateOptions`.
+Without an explicit entry path, core uses `infra/<name>` (or `infra` for an unnamed
+entry). The directory name replaces control characters and `<>:"/\|?*` with
+underscores and removes trailing periods and spaces. On Windows, reserved device
+names are prefixed with `_` using Go's `filepath.IsLocal` check.
+A name reduced to empty becomes `_`. The YAML entry name is unchanged.
+Options are required, and the SDK rejects `nil`. `options.force` carries the
+command's `--force` flag. Extensions own file writes, path safety, and overwrite
+handling. They must not silently overwrite existing files when `force` is false.
+The resources extension refuses existing destinations with guidance to use
+`--force`; it does not prompt. Built-in generation retains core's overwrite prompts.
+
+`Generate` writes all sources before returning a required `entry`
+(`v1beta.ProvisioningOptions`) describing the replacement `provider`, `path`,
+`module`, and provider-specific `config`. The provider need not be Bicep.
+An optional `name` must match the original entry. Runtime fields and returned
+deployment-stack settings are rejected. Core preserves the original identity,
+hooks, dependencies, and deployment stacks and applies the returned provider
+fields after all generators succeed. Extensions must leave project configuration
+unchanged and must not authenticate or initialize a provisioning provider.
+
+Core validates replacement paths and project configuration, detects changes to
+the original entries, and saves the replacements together while preserving
+unrelated edits and YAML comments. On generation failure it does not replace
+entries. Files already written by extensions are not rolled back if generation
+or configuration saving fails. The response carries no file contents, and
+there is no completion callback.
+
+The SDK's host starts the stream before registration, registers handlers, and
+waits for registration acknowledgment before signaling readiness. Core enforces
+the installed extension's capability and declared provider ownership.
+This API targets azd 1.38.0; consumers must require a host containing it and pin
+a published SDK containing these helpers before releasing.
 
 ## Client & Utilities
 
@@ -723,6 +774,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `EventsBeta()` | `v1beta.EventServiceClient` (preview) |
 | `CommandResult()` | `v1beta.CommandResultServiceClient` (preview) |
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
+| `InfraGeneration()` | `v1beta.InfraGenerationServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
 | `BetaServiceTarget()` | `v1beta.ServiceTargetServiceClient` (deprecated for deployment preview; use `ServiceTarget()`) |

@@ -443,6 +443,18 @@ func TestClassifyInstallResolution_SelectedCandidate(t *testing.T) {
 	require.True(t, candidate.HasNewerIncompatible)
 }
 
+func TestGenerationProviderResolutionRequiresMatchingType(t *testing.T) {
+	version := &ExtensionVersion{
+		Capabilities: []CapabilityType{InfraGenerationProviderCapability},
+		Providers:    []Provider{{Name: "resources", Type: ProvisioningProviderType}},
+	}
+	require.False(t, VersionProvidesProvider(version, InfraGenerationProviderCapability, "resources"))
+	version.Providers[0].Type = InfraGenerationProviderType
+	require.True(t, VersionProvidesProvider(version, InfraGenerationProviderCapability, "resources"))
+	version.Capabilities = nil
+	require.False(t, VersionProvidesProvider(version, InfraGenerationProviderCapability, "resources"))
+}
+
 func TestClassifyInstallResolution_ProviderUsesSelectedRelease(t *testing.T) {
 	provisioningDemo := ExtensionVersion{
 		Version:      "2.0.0",

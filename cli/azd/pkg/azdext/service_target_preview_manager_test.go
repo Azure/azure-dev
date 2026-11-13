@@ -346,11 +346,7 @@ func testExtensionHostWithServiceTargetPreview(t *testing.T, beta bool) {
 				registrar.On("Register", mock.Anything, mock.Anything, "demo").
 					Run(func(args mock.Arguments) { registered <- channel }).
 					Return(err)
-				registrar.On("Ready", mock.Anything).Return(nil)
-				registrar.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
-					<-args.Get(0).(context.Context).Done()
-				}).Return(nil)
-				registrar.On("Close").Return(nil)
+				expectHostReceiver(t, &registrar.Mock, nil)
 				return registrar
 			}
 

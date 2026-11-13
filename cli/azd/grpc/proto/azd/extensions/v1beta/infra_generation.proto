@@ -1,0 +1,53 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azd.extensions.v1beta;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta";
+
+import "azd/extensions/v1beta/errors.proto";
+import "azd/extensions/v1beta/provisioning.proto";
+
+// InfraGenerationService separates source generation from provisioning.
+service InfraGenerationService {
+  rpc Stream(stream InfraGenerationMessage) returns (stream InfraGenerationMessage);
+}
+
+message InfraGenerationMessage {
+  string request_id = 1;
+  ExtensionError error = 99;
+  oneof message_type {
+    RegisterInfraGenerationProviderRequest register_request = 2;
+    RegisterInfraGenerationProviderResponse register_response = 3;
+    InfraGenerateRequest generate_request = 4;
+    InfraGenerateResponse generate_response = 5;
+  }
+}
+
+message RegisterInfraGenerationProviderRequest {
+  string name = 1;
+}
+
+message RegisterInfraGenerationProviderResponse {}
+
+// InfraGenerateOptions is required even when all options use their defaults.
+message InfraGenerateOptions {
+  // Allow the extension to overwrite existing generated files.
+  bool force = 1;
+}
+
+message InfraGenerateRequest {
+  string project_path = 1;
+  ProvisioningOptions entry = 2;
+  InfraGenerateOptions options = 3;
+  // Project-relative directory into which the extension should write its sources.
+  string output_path = 4;
+}
+
+message InfraGenerateResponse {
+  // Replacement provider, path, module, and config after the extension writes its files.
+  // Name must be empty or match the original entry. Core preserves identity,
+  // hooks, dependency edges, and deployment stacks. Runtime options are not accepted.
+  ProvisioningOptions entry = 1;
+}

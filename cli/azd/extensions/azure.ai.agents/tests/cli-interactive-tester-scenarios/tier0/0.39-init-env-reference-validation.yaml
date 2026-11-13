@@ -1,5 +1,4 @@
-# Tier 0: reject unsupported references before authentication or writes.
-# No Azure authentication, network, or resource creation is allowed.
+# Tier 0: reject invalid env references before auth or writes.
 name: "init-env-reference-validation"
 command: >-
   azd ai agent init -t ./template/azure.yaml --src ./target --no-prompt
@@ -13,40 +12,30 @@ env:
 pre:
   - run: 'rm -rf -- "$HOME/working/azd-agents-env-reference-validation-{instance}"'
     cwd: "~/working"
-    name: "reset the dedicated offline directory"
+    name: "reset working dir"
   - run: >-
       mkdir -p -- template &&
       cp -r -- "{fixtures_dir}/init-env-reference-validation/." ./template
-    name: "seed a template with an unsupported environment reference"
+    name: "seed invalid env-reference fixture"
 goals:
   - >-
-    OFFLINE CONTRACT: No product prompts are allowed. Fail without answering
-    any prompt. Do not obtain credentials, install or update extensions, fetch
-    files, contact Azure, create cloud resources, or make network calls. Use
-    only the literal init command and read-only inspection; do not repair
-    the fixture.
+    OFFLINE CONTRACT: No product prompts are allowed. Do not sign in,
+    install extensions, fetch files, call Azure, or create cloud resources.
+    Run only the literal init command, inspect files read-only, and do not
+    edit the fixture.
   - >-
-    Wait for init to exit non-zero. Confirm the error identifies service
-    "agent", field environmentVariables[0].value, and an unsupported
-    environment variable reference.
+    Confirm init exits non-zero, names service "agent" and field
+    environmentVariables[0].value, reports an unsupported environment
+    variable reference, and suggests supported syntax.
   - >-
-    Confirm the error suggests supported reference syntax. The output must
-    not contain test-user, test-password, sig=, test-signature, or
-    test-fragment from the rejected value.
+    Confirm the output omits test-user, test-password, sig=,
+    test-signature, and test-fragment. Credential, network, capability, or
+    missing-file errors do not pass.
   - >-
-    Confirm no authentication, subscription, location, project, or agent
-    prompt appears. A credential, network, capability, or missing-file error
-    does not satisfy the required reference validation.
-  - >-
-    Confirm template/azure.yaml remains byte-for-byte identical to
-    '{fixtures_dir}/init-env-reference-validation/azure.yaml'. No files
-    or directories beyond the seeded template may be added, including
-    target, an .azure environment directory, or infrastructure.
+    Confirm template/azure.yaml matches
+    '{fixtures_dir}/init-env-reference-validation/azure.yaml' byte-for-byte
+    and no extra files or directories (such as target or .azure) exist.
   - >-
     Take a best-effort screenshot of the error output; capture failure
-    must not block later product assertions.
-  - >-
-    Report a finding if init succeeds, prompts, reaches authentication or
-    Azure, reports a different error, exposes the rejected credentials,
-    changes the fixture, or adds local artifacts. Do not retry or work
-    around a failed goal.
+    does not block product assertions. Report a finding for any prompt,
+    different error, secret leak, or file change, without retrying.

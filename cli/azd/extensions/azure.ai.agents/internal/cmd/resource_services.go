@@ -265,7 +265,6 @@ func emitResourceServices(
 		agentUses = append(agentUses, skillName)
 	}
 
-	// Validate all generated services before writing any of them.
 	for _, service := range services {
 		if _, err := serviceEnvironmentTemplates(service.host, service.cfg); err != nil {
 			return 0, invalidServiceEnvironmentReferences(service.name, err)
@@ -483,8 +482,7 @@ func addResourceService(
 	return nil
 }
 
-// serviceEnvironmentTemplates scans only fields the resource provider
-// expands. Invalid references fail before this service is written.
+// serviceEnvironmentTemplates scans provider-expanded fields only.
 func serviceEnvironmentTemplates(host string, cfg *structpb.Struct) (map[string]string, error) {
 	if cfg == nil {
 		return nil, nil
@@ -548,11 +546,8 @@ func collectStringEnvironmentTemplates(value string, environment map[string]stri
 		return err
 	}
 	for _, reference := range references {
-		// env is keyed by name, so store one canonical ${NAME}.
-		// A ${NAME:-default} default is re-applied by the owning
-		// extension against the raw config at deploy, so env only
-		// needs NAME's base value. Canonicalizing also keeps mixed
-		// bare and defaulted references deterministic.
+		// Store canonical ${NAME}; providers re-apply :- defaults
+		// against raw config at deploy.
 		environment[reference.Name] = "${" + reference.Name + "}"
 	}
 	return nil

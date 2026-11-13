@@ -40,10 +40,9 @@ var envReferencePrefix = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)(\}|:-
 // References the expander would not resolve are dropped: escaped ones, and any
 // reserved by a Foundry ${{...}} span.
 //
-// A reference inside a :- default is not reported: for example,
-// ${OUTER:-${NESTED}} yields OUTER only. Call [ValidateEnvReferences]
-// first to reject nested defaults and other unsupported forms before
-// using the scan to discover variables that must reach the expander.
+// Defaults are not scanned: ${OUTER:-${NESTED}} yields OUTER only.
+// Call [ValidateEnvReferences] first to reject nested defaults and
+// other unsupported forms.
 func FindEnvReferences(value string) []EnvReference {
 	candidates := envReferenceCandidates(value)
 	if len(candidates) == 0 {
@@ -86,9 +85,8 @@ func FindEnvReferences(value string) []EnvReference {
 // set expanding to empty, so the caller blames the empty value instead of naming
 // B. Neither half is right, so the shape goes.
 //
-// Validate before scanning so every live reference is discovered.
-// Project synthesis and the Agents discovery paths validate first.
-// A raw scanner call alone does not provide this guarantee.
+// Project synthesis and Agents discovery validate before scanning;
+// [FindEnvReferences] alone does not check unsupported forms.
 func ValidateEnvReferences(value string) error {
 	// Non-zero while scanning the inside of a :- default. Nesting is refused on
 	// sight, so one boundary is enough — there is never a second level.

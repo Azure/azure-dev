@@ -1193,30 +1193,25 @@ as a parameter prefix.
 
 ### Environment reference validation
 
-When init adopts an `azure.yaml`, it validates environment references before
-scaffolding the project or saving environment values, including with
-`--no-prompt`. The same validation applies when generating resource service
-`env:` blocks. Errors identify the service and field path, including array
-indices and fields loaded through `$ref`.
+`azd ai agent init` validates environment references before scaffolding or
+saving environment values, including with `--no-prompt`. Generated resource
+service `env:` blocks use the same check. Errors name the service and field
+path, including array indices and `$ref` targets.
 
-The supported forms are `${VAR}`, `${VAR:-default}`, `$${VAR}` for literal
-text, and `${{...}}` for Foundry expressions. Literal defaults and Foundry
-expressions inside defaults remain supported. Shell operators such as
-`${VAR:=x}`, `${VAR:+alt}`, `${VAR:?message}`, `${VAR#prefix}`, and
-`${VAR:0:3}` are rejected instead of silently bypassing variable discovery.
-Nested environment references such as `${OUTER:-${INNER}}` are also rejected.
-Replace them with a single `${VAR}` set in the azd environment, or use a
-literal default.
+Supported forms are `${VAR}`, `${VAR:-default}` (with a literal default or
+`${{...}}`), `$${VAR}` for literal text, and `${{...}}` for Foundry
+expressions. Shell operators (`${VAR:=x}`, `${VAR:+alt}`, `${VAR:?message}`,
+`${VAR#prefix}`, `${VAR:0:3}`) and nested references (`${OUTER:-${INNER}}`)
+are rejected; use a single `${VAR}` or a literal default instead.
 
-Discovery checks the fields that the owning Foundry provider expands: agent
-`environmentVariables[*].value`; connection `target`, `credentials`, `metadata`,
-`audience`, `authorizationUrl`, `tokenUrl`, `refreshUrl`, `connectorName`, and
-`scopes`; project network VNet IDs and DNS subscription; routine `action.input`;
-and toolbox `endpoint` and `tools`. Resource service `env:` generation uses
-the same connection and toolbox fields. Skill fields, toolbox descriptions,
-and connection fields such as `category` and `authType` stay literal and do not
-produce environment entries. Unrelated service fields, hooks, and other service
-hosts are not interpreted as Foundry templates.
+Discovery checks only provider-expanded fields: agent
+`environmentVariables[*].value`; connection `target`, `credentials`,
+`metadata`, `audience`, `authorizationUrl`, `tokenUrl`, `refreshUrl`,
+`connectorName`, and `scopes`; project network VNet IDs and DNS subscription;
+routine `action.input`; and toolbox `endpoint` and `tools`. Generated service
+`env:` blocks scan the same connection and toolbox fields. Skill fields,
+toolbox descriptions, connection `category` and `authType`, hooks, and other
+hosts stay literal.
 
 ## Migrating Legacy Agent Configuration
 

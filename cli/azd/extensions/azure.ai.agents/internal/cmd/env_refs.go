@@ -12,14 +12,12 @@ import (
 	"azureaiagent/internal/exterrors"
 )
 
-// environmentReference uses the shared synthesis scanner's spans.
 type environmentReference = synthesis.EnvReference
 
-// findEnvironmentReferences validates before discovery so init and
-// service env generation see every live expansion.
+// findEnvironmentReferences validates before scanning.
 func findEnvironmentReferences(value string) ([]environmentReference, error) {
 	if err := synthesis.ValidateEnvReferences(value); err != nil {
-		// Defaults in validator errors can contain credentials.
+		// Validator errors can quote secret defaults.
 		return nil, errors.New("unsupported environment variable reference: " +
 			"shell operators, nested defaults, and malformed expressions are not supported")
 	}

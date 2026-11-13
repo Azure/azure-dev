@@ -116,7 +116,8 @@ func TestGenerationExportsAIProjectLocationMapping(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			request := generationRequest(t)
-			// For example, an entry named "models" maps AZURE_AI_DEPLOYMENTS_LOCATION to AZURE_RESOURCES_MODELS__AI_DEPLOYMENTS_LOCATION.
+			// An entry named "models" maps AZURE_AI_DEPLOYMENTS_LOCATION
+			// to AZURE_RESOURCES_MODELS__AI_DEPLOYMENTS_LOCATION.
 			request.Entry.Name = tt.entryName
 
 			resource := map[string]any{"type": tt.resourceType}

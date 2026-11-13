@@ -303,7 +303,8 @@ func TestInfraGenerationFailureLeavesConfigurationUnchanged(t *testing.T) {
 	) (*v1beta.InfraGenerateResponse, error) {
 		return nil, failure
 	}}
-	err := generationTestManager(t, generator, config).GenerateExtensions(t.Context(), config, &v1beta.InfraGenerateOptions{})
+	err := generationTestManager(t, generator, config).GenerateExtensions(
+		t.Context(), config, &v1beta.InfraGenerateOptions{})
 	require.ErrorIs(t, err, failure)
 	data, err := os.ReadFile(filepath.Join(config.Path, "azure.yaml"))
 	require.NoError(t, err)
@@ -319,7 +320,8 @@ func TestInfraGenerationRejectsChangedEntry(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(config.Path, "azure.yaml"), []byte(changed), 0o600))
 		return replacementResponse(), nil
 	}}
-	err := generationTestManager(t, generator, config).GenerateExtensions(t.Context(), config, &v1beta.InfraGenerateOptions{})
+	err := generationTestManager(t, generator, config).GenerateExtensions(
+		t.Context(), config, &v1beta.InfraGenerateOptions{})
 	require.ErrorContains(t, err, "changed during generation")
 	data, err := os.ReadFile(filepath.Join(config.Path, "azure.yaml"))
 	require.NoError(t, err)
@@ -335,7 +337,8 @@ func TestInfraGenerationPreservesUnrelatedEdits(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(config.Path, "azure.yaml"), []byte(changed), 0o600))
 		return replacementResponse(), nil
 	}}
-	err := generationTestManager(t, generator, config).GenerateExtensions(t.Context(), config, &v1beta.InfraGenerateOptions{})
+	err := generationTestManager(t, generator, config).GenerateExtensions(
+		t.Context(), config, &v1beta.InfraGenerateOptions{})
 	require.NoError(t, err)
 	data, err := os.ReadFile(filepath.Join(config.Path, "azure.yaml"))
 	require.NoError(t, err)
@@ -643,7 +646,8 @@ func TestInfraGenerationDoesNotSavePartialReplacements(t *testing.T) {
 		}
 		return replacementResponse(), nil
 	}}
-	err := generationTestManager(t, generator, config).GenerateExtensions(t.Context(), config, &v1beta.InfraGenerateOptions{})
+	err := generationTestManager(t, generator, config).GenerateExtensions(
+		t.Context(), config, &v1beta.InfraGenerateOptions{})
 	require.ErrorIs(t, err, failure)
 	require.Equal(t, 2, calls)
 	data, err := os.ReadFile(filepath.Join(config.Path, "azure.yaml"))
@@ -661,7 +665,8 @@ func TestInfraGenerationValidatesAllInputsBeforeInvokingExtensions(t *testing.T)
 		t.Fatal("invalid input must be rejected before invoking any generator")
 		return nil, nil
 	}}
-	err := generationTestManager(t, generator, config).GenerateExtensions(t.Context(), config, &v1beta.InfraGenerateOptions{})
+	err := generationTestManager(t, generator, config).GenerateExtensions(
+		t.Context(), config, &v1beta.InfraGenerateOptions{})
 	require.ErrorContains(t, err, "project-relative")
 }
 
@@ -750,7 +755,8 @@ func TestInfraGenerationRejectsDanglingConfigurationAliases(t *testing.T) {
 	) (*v1beta.InfraGenerateResponse, error) {
 		return replacementResponse(), nil
 	}}
-	err := generationTestManager(t, generator, config).GenerateExtensions(t.Context(), config, &v1beta.InfraGenerateOptions{})
+	err := generationTestManager(t, generator, config).GenerateExtensions(
+		t.Context(), config, &v1beta.InfraGenerateOptions{})
 	require.ErrorContains(t, err, "validating generated project")
 	data, err := os.ReadFile(filepath.Join(config.Path, "azure.yaml"))
 	require.NoError(t, err)
@@ -767,7 +773,8 @@ func TestInfraGenerationRejectsStaleLoadedEntryBeforeWriting(t *testing.T) {
 		t.Fatal("stale entries must be rejected before invoking the generator")
 		return nil, nil
 	}}
-	err := generationTestManager(t, generator, config).GenerateExtensions(t.Context(), config, &v1beta.InfraGenerateOptions{})
+	err := generationTestManager(t, generator, config).GenerateExtensions(
+		t.Context(), config, &v1beta.InfraGenerateOptions{})
 	require.ErrorContains(t, err, "changed since the project was loaded")
 }
 
@@ -781,7 +788,8 @@ func TestInfraGenerationSavesAllReplacementEntries(t *testing.T) {
 		response.Entry.Path = request.OutputPath
 		return response, nil
 	}}
-	err := generationTestManager(t, generator, config).GenerateExtensions(t.Context(), config, &v1beta.InfraGenerateOptions{})
+	err := generationTestManager(t, generator, config).GenerateExtensions(
+		t.Context(), config, &v1beta.InfraGenerateOptions{})
 	require.NoError(t, err)
 	for _, entry := range config.Infra.Layers[1:] {
 		require.Equal(t, provisioning.Terraform, entry.Provider)

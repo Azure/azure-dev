@@ -1120,7 +1120,7 @@ func TestFindEjectedFoundryProjectInfrastructure(t *testing.T) {
 		{
 			name: "greenfield bicep",
 			writeInfra: func(infraDir string) error {
-				if err := copyEmbeddedBicep(infraDir, "main"); err != nil {
+				if err := copyEmbeddedBicep(infraDir, "main", false); err != nil {
 					return err
 				}
 				return writeJSONFile(

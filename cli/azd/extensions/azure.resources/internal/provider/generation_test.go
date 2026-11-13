@@ -34,29 +34,44 @@ func generationRequest(t *testing.T) *v1beta.InfraGenerateRequest {
 }
 
 func TestGenerationWritesSourcesAndReturnsEntryWithoutMutatingProject(t *testing.T) {
-	request := generationRequest(t)
-	result, err := NewGenerationProvider().Generate(t.Context(), request)
-	require.NoError(t, err)
-	expected, err := resources.Generate("data", resources.Config{
-		"files": {Type: resources.Storage, StorageContainers: []string{"uploads"}},
-	})
-	require.NoError(t, err)
-	root, err := os.OpenRoot(request.ProjectPath)
-	require.NoError(t, err)
-	defer root.Close()
-	for name, contents := range expected {
-		actual, err := root.ReadFile(filepath.Join(request.OutputPath, name))
-		require.NoError(t, err)
-		require.Equal(t, contents, actual)
+	tests := []struct {
+		name       string
+		entryName  string
+		outputPath string
+	}{
+		{name: "unnamed", outputPath: "infra"},
+		{name: "named", entryName: "data", outputPath: "infra/data"},
 	}
-	require.Equal(t, "bicep", result.Entry.Provider)
-	require.Equal(t, request.OutputPath, result.Entry.Path)
-	require.Equal(t, "main", result.Entry.Module)
-	require.Equal(t, "data", result.Entry.Name)
-	actual, err := os.ReadFile(filepath.Join(request.ProjectPath, "azure.yaml"))
-	require.NoError(t, err)
-	require.Equal(t, "name: unchanged\n", string(actual))
-	require.NoDirExists(t, filepath.Join(request.ProjectPath, ".azure"))
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := generationRequest(t)
+			request.Entry.Name = tt.entryName
+			request.OutputPath = tt.outputPath
+			result, err := NewGenerationProvider().Generate(t.Context(), request)
+			require.NoError(t, err)
+			expected, err := resources.Generate(tt.entryName, resources.Config{
+				"files": {Type: resources.Storage, StorageContainers: []string{"uploads"}},
+			})
+			require.NoError(t, err)
+			root, err := os.OpenRoot(request.ProjectPath)
+			require.NoError(t, err)
+			defer root.Close()
+			for name, contents := range expected {
+				actual, err := root.ReadFile(filepath.Join(request.OutputPath, name))
+				require.NoError(t, err)
+				require.Equal(t, contents, actual)
+			}
+			require.Equal(t, "bicep", result.Entry.Provider)
+			require.Equal(t, request.OutputPath, result.Entry.Path)
+			require.Equal(t, "main", result.Entry.Module)
+			require.Equal(t, tt.entryName, result.Entry.Name)
+			actual, err := os.ReadFile(filepath.Join(request.ProjectPath, "azure.yaml"))
+			require.NoError(t, err)
+			require.Equal(t, "name: unchanged\n", string(actual))
+			require.NoDirExists(t, filepath.Join(request.ProjectPath, ".azure"))
+		})
+	}
 }
 
 func TestGenerationExportsAIProjectLocationMapping(t *testing.T) {

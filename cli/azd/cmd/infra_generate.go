@@ -8,10 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -24,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -133,114 +130,98 @@ func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, e
 			output.WithHighLightFormat("azd infra generate"))
 	}
 
-	force := a.flags.force
-	if !force {
-		// When the user accepts, generators (including extensions) may overwrite existing files.
-		var err error
-		force, err = a.confirmOverwrite(ctx)
-		if err != nil {
-			return nil, err
-		}
+	extensionProviderNames := extensionInfraProviderNames(a.projectConfig)
+
+	if len(extensionProviderNames) == 0 { // ie, legacy generation (aspire, old 'resources')
+		return nil, a.runLegacyGeneration(ctx)
 	}
 
-	cleanup, err := a.activateInfraGenerationProviders(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
-	spinnerMessage := "Generating infrastructure"
-
-	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-	generated, err := a.generationManager.Generate(ctx, a.projectConfig, &v1beta.InfraGenerateOptions{Force: force})
-	if err != nil {
-		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
-		return nil, err
-	}
-	a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
-	synthFS := generated.Files
-	if synthFS == nil {
-		return nil, nil
-	}
-
-	root, err := os.OpenRoot(a.azdCtx.ProjectDirectory())
-	if err != nil {
-		return nil, fmt.Errorf("opening infrastructure destination: %w", err)
-	}
-	defer root.Close()
-	if err := writeGeneratedInfrastructureFiles(ctx, root, synthFS); err != nil {
-		return nil, err
-	}
-	return nil, nil
+	return nil, a.runExtensionGeneration(ctx, extensionProviderNames)
 }
 
-// activateInfraGenerationProviders activates extensions for configured non-built-in infrastructure providers
-// using the environment name from the flags. On success, the caller must invoke the returned cleanup function,
-// which is a no-op when no extensions are started.
-func (a *infraGenerateAction) activateInfraGenerationProviders(ctx context.Context) (func(), error) {
+// extensionInfraProviderNames returns referenced providers that aren't
+// built into azd. (ex: azure.resources, azure.foundry, etc...)
+func extensionInfraProviderNames(config *project.ProjectConfig) []string {
 	var providerNames []string
-	for _, entry := range a.projectConfig.InfrastructureConfigs() {
-		if entry.Provider != provisioning.NotSpecified &&
-			!slices.Contains(provisioning.BuiltInProviderKinds(), entry.Provider) {
+	for _, entry := range config.InfrastructureConfigs() {
+		if !provisioning.IsBuiltInProvider(entry.Provider) {
 			providerNames = append(providerNames, string(entry.Provider))
 		}
 	}
-	if len(providerNames) == 0 {
-		return func() {}, nil
-	}
 
-	return a.extensionActivator.EnsureInfraGenerationProviders(ctx, providerNames, a.flags.EnvironmentName)
+	return providerNames
 }
 
-// writeGeneratedInfrastructureFiles writes files from synthFS to root, overwriting existing files.
-// Errors or cancellation can leave previously written files in place.
-func writeGeneratedInfrastructureFiles(ctx context.Context, root *os.Root, synthFS fs.FS) error {
-	if err := fs.WalkDir(synthFS, ".", func(name string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		contents, err := fs.ReadFile(synthFS, name)
+func (a *infraGenerateAction) runLegacyGeneration(ctx context.Context) error {
+	const spinnerMessage = "Generating infrastructure"
+
+	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+	generatedFiles, err := a.generationManager.GenerateLegacy(ctx, a.projectConfig)
+	if err != nil {
+		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		return err
+	}
+	a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+
+	if generatedFiles == nil {
+		return nil
+	}
+
+	return a.writeLegacyGeneratedFiles(ctx, a.azdCtx.ProjectDirectory(), generatedFiles)
+}
+
+func (a *infraGenerateAction) runExtensionGeneration(ctx context.Context, providerNames []string) error {
+	force := a.flags.force
+	if !force {
+		// Extensions write their own files, so check for existing output before running them.
+		var err error
+		force, err = a.confirmExtensionOverwrite(ctx)
 		if err != nil {
 			return err
 		}
-		if err := root.MkdirAll(filepath.Dir(name), osutil.PermissionDirectory); err != nil {
-			return err
-		}
-		return root.WriteFile(name, contents, osutil.PermissionFile)
-	}); err != nil {
-		return fmt.Errorf("writing generated infrastructure: %w", err)
 	}
 
+	//nolint:lll
+	cleanupActivatedProviders, err := a.extensionActivator.EnsureInfraGenerationProviders(
+		ctx, providerNames, a.flags.EnvironmentName)
+	if err != nil {
+		return err
+	}
+	defer cleanupActivatedProviders()
+
+	const spinnerMessage = "Generating infrastructure"
+
+	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+	err = a.generationManager.GenerateExtensions(
+		ctx, a.projectConfig, &v1beta.InfraGenerateOptions{Force: force})
+	if err != nil {
+		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		return err
+	}
+	a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 	return nil
 }
 
-// confirmOverwrite checks whether any folder that generation writes into already contains files, and if so,
-// asks the user whether to overwrite. It returns true only when the user accepted overwriting, false when every
-// folder is empty or missing, and [internal.ErrAbortedByUser] when the user declines. In --no-prompt mode, a
-// non-empty folder is an error.
-func (a *infraGenerateAction) confirmOverwrite(ctx context.Context) (bool, error) {
+// confirmExtensionOverwrite checks whether any extension output folder already contains files and, if so, asks whether
+// to overwrite. It returns false when every folder is empty or missing, and [internal.ErrAbortedByUser] when declined.
+// In --no-prompt mode, a non-empty folder is an error.
+func (a *infraGenerateAction) confirmExtensionOverwrite(ctx context.Context) (bool, error) {
 	projectDir := a.azdCtx.ProjectDirectory()
 
 	var nonEmpty []string
 
-	for _, folder := range a.generationManager.OutputPaths(a.projectConfig) {
+	for _, folder := range a.generationManager.ExtensionOutputPaths(a.projectConfig) {
 		full := folder
 		if !filepath.IsAbs(full) {
 			full = filepath.Join(projectDir, full)
 		}
 
-		hasFiles, err := folderHasEntries(full)
+		empty, err := folderEmpty(full)
 		if err != nil {
 			return false, fmt.Errorf("checking for existing infrastructure: %w", err)
 		}
 
-		if hasFiles {
+		if !empty {
 			nonEmpty = append(nonEmpty, folder)
 		}
 	}
@@ -281,11 +262,11 @@ func (a *infraGenerateAction) confirmOverwrite(ctx context.Context) (bool, error
 	return true, nil
 }
 
-// folderHasEntries returns true if dir exists and contains at least one entry.
-func folderHasEntries(dir string) (bool, error) {
+// folderEmpty returns true if dir has no entries or does not exist.
+func folderEmpty(dir string) (bool, error) {
 	f, err := os.Open(dir)
 	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
+		return true, nil
 	}
 	if err != nil {
 		return false, err
@@ -294,8 +275,12 @@ func folderHasEntries(dir string) (bool, error) {
 
 	_, err = f.Readdirnames(1)
 	if errors.Is(err, io.EOF) {
-		return false, nil
+		return true, nil
 	}
 
-	return err == nil, err
+	if err != nil {
+		return false, err
+	}
+
+	return false, nil
 }

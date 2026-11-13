@@ -194,8 +194,8 @@ references before provisioning, then provision each layer again. See the
 - `azd resources add` requires interactive input and does not support
   `--no-prompt`. Use saved configuration with `azd provision` for automation.
 - Use `azd resources add`, not `azd add`, for these declarations.
-- Infrastructure generation supports named `infra.layers` and `layers[].infra`
-  entries, not unnamed flat `infra` declarations for this extension.
+- Infrastructure generation supports flat `infra` declarations as well as
+  named `infra.layers` and `layers[].infra` entries.
 - Before using `azd resources add`, move flat `infra` settings into named
   `infra.layers` entries. Top-level project `layers` are not supported by this
   command. Existing top-level `resources` declarations remain supported by

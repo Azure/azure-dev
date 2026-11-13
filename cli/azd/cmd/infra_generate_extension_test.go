@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -72,11 +73,12 @@ func generationExtensionAction(
 	container := ioc.NewNestedContainer(nil)
 	require.NoError(t, container.RegisterNamedTransient(project.InfraGenerationProviderKey("resources"),
 		func() project.InfrastructureGenerator { return generator }))
+	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
 	return &infraGenerateAction{
 		projectConfig:      config,
-		generationManager:  project.NewInfraGenerationManager(project.NewImportManager(nil), container),
+		generationManager:  project.NewInfraGenerationManager(project.NewImportManager(nil), container, azdCtx),
 		extensionActivator: &actionGenerationActivator{},
-		azdCtx:             azdcontext.NewAzdContextWithDirectory(dir),
+		azdCtx:             azdCtx,
 		flags:              &infraGenerateFlags{force: true, EnvFlag: &internal.EnvFlag{}},
 		console:            mockinput.NewMockConsole(),
 	}, dir
@@ -102,6 +104,61 @@ func TestInfraGenerateExtensionOwnsFileWrites(t *testing.T) {
 	require.Equal(t, "extension source", string(data))
 	require.NoDirExists(t, filepath.Join(dir, "infra"), "core must not create its own output directory")
 	require.Equal(t, provisioning.Terraform, action.projectConfig.Infra.Layers[0].Provider)
+}
+
+func TestInfraGenerateExtensionUsesResolvedAzureYml(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	projectDir, err := os.Getwd()
+	require.NoError(t, err)
+	projectFile := filepath.Join(dir, "azure.yml")
+	source := "name: example\ninfra:\n  layers:\n    - name: data\n      provider: resources\n"
+	require.NoError(t, os.WriteFile(projectFile, []byte(source), 0o600))
+
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(container, t.Context())
+	ioc.RegisterInstance(container, &internal.GlobalCommandOptions{})
+	ioc.RegisterInstance(container, &cobra.Command{})
+	registerCommonDependencies(container)
+
+	called := false
+	generator := &actionInfrastructureGenerator{generate: func(
+		_ context.Context, request *v1beta.InfraGenerateRequest,
+	) (*v1beta.InfraGenerateResponse, error) {
+		called = true
+		require.Equal(t, projectDir, request.ProjectPath)
+		return &v1beta.InfraGenerateResponse{Entry: &v1beta.ProvisioningOptions{
+			Provider: "bicep", Path: request.OutputPath, Module: "main",
+		}}, nil
+	}}
+	require.NoError(t, container.RegisterNamedTransient(project.InfraGenerationProviderKey("resources"),
+		func() project.InfrastructureGenerator { return generator }))
+
+	var config *project.ProjectConfig
+	require.NoError(t, container.Resolve(&config))
+	var manager *project.InfraGenerationManager
+	require.NoError(t, container.Resolve(&manager))
+	var azdCtx *azdcontext.AzdContext
+	require.NoError(t, container.Resolve(&azdCtx))
+
+	action := &infraGenerateAction{
+		projectConfig:      config,
+		generationManager:  manager,
+		extensionActivator: &actionGenerationActivator{},
+		azdCtx:             azdCtx,
+		flags:              &infraGenerateFlags{force: true, EnvFlag: &internal.EnvFlag{}},
+		console:            mockinput.NewMockConsole(),
+	}
+	_, err = action.Run(t.Context())
+	require.NoError(t, err)
+	require.True(t, called)
+	require.Equal(t, provisioning.Bicep, config.Infra.Layers[0].Provider)
+	data, err := os.ReadFile(projectFile)
+	require.NoError(t, err)
+	saved, err := project.Parse(t.Context(), string(data))
+	require.NoError(t, err)
+	require.Equal(t, provisioning.Bicep, saved.Infra.Layers[0].Provider)
+	require.NoFileExists(t, filepath.Join(dir, "azure.yaml"))
 }
 
 func TestInfraGenerateActivatesOnlyConfiguredGenerators(t *testing.T) {

@@ -13,11 +13,8 @@ import (
 	"fmt"
 	"log"
 	"maps"
-	"net/http"
 	"os"
-	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,10 +26,10 @@ import (
 	"azureaiagent/internal/pkg/foundrypolicy"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/shared/foundry/policy"
 	"github.com/google/uuid"
 )
 
@@ -41,8 +38,7 @@ import (
 // to false. Values set in the active azd environment take precedence over the process
 // environment. Microsoft Foundry still enforces Azure Policy assignments server-side.
 const (
-	skipPolicyPreflightEnvKey       = "AZD_AI_AGENT_SKIP_POLICY_CHECKS"
-	legacySkipPolicyPreflightEnvKey = "AZD_AGENT_SKIP_POLICY_CHECKS"
+	skipPolicyPreflightEnvKey = policy.SkipPolicyChecksEnvKey
 )
 
 type policyPreflightOperations struct {
@@ -884,23 +880,14 @@ func CheckCandidateWithCredential(
 	return EvaluateCandidateWithCredential(ctx, cred, candidate, defaultPolicyPreflightOperations())
 }
 
+// ShouldSkipPolicyChecks reports whether client-side Azure Policy preflight checks
+// are disabled via environment configuration.
+func ShouldSkipPolicyChecks(azdEnv map[string]string) bool {
+	return policy.ShouldSkipPolicyChecks(azdEnv)
+}
+
 func shouldSkipPolicyChecks(azdEnv map[string]string) bool {
-	keys := []string{skipPolicyPreflightEnvKey, legacySkipPolicyPreflightEnvKey}
-	for _, key := range keys {
-		if val := strings.TrimSpace(azdEnv[key]); val != "" {
-			if skip, err := strconv.ParseBool(val); err == nil {
-				return skip
-			}
-		}
-	}
-	for _, key := range keys {
-		if val := strings.TrimSpace(os.Getenv(key)); val != "" {
-			if skip, err := strconv.ParseBool(val); err == nil {
-				return skip
-			}
-		}
-	}
-	return false
+	return ShouldSkipPolicyChecks(azdEnv)
 }
 
 // PolicyViolationsToError converts one or more policy violations into a structured
@@ -941,20 +928,11 @@ func PolicyViolationsToError(serviceName string, violations []foundrypolicy.Viol
 	return exterrors.Validation(code, fullMessage, suggestion)
 }
 
-var (
-	runtimePolicyAssignmentRegex   = regexp.MustCompile(`(?i)noncompliant with policy (/[^\s:]+):`)
-	validPolicyAssignmentIDPattern = regexp.MustCompile(
-		`(?i)^(?:/subscriptions/[^/?#\s]+(?:/[^/?#\s]+)*|` +
-			`/providers/Microsoft\.Management/managementGroups/[^/?#\s]+)/providers/Microsoft\.Authorization/policyAssignments/[^/?#\s]+$`,
-	)
-)
-
-func isValidPolicyAssignmentResourceID(assignmentID string) bool {
-	trimmed := strings.TrimRight(strings.TrimSpace(assignmentID), "/")
-	return trimmed != "" && validPolicyAssignmentIDPattern.MatchString(trimmed)
-}
-
 func safeRuntimePolicyViolationMessage(displayName string, target foundrypolicy.TargetKind) string {
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		displayName = "Azure Policy assignment"
+	}
 	switch target {
 	case foundrypolicy.TargetTool:
 		return fmt.Sprintf("The %q policy doesn't allow one or more tools configured on this agent.", displayName)
@@ -977,132 +955,16 @@ func TryClassifyRuntimePolicyError(
 	serviceName string,
 	projectResourceID string,
 ) (error, bool) {
-	respErr, ok := errors.AsType[*azcore.ResponseError](err)
-	if !ok || respErr == nil || respErr.StatusCode != http.StatusForbidden {
+	violations, ok := policy.ClassifyDataPlanePolicyError(err, projectResourceID)
+	if !ok {
 		return nil, false
 	}
-	if respErr.RawResponse == nil || respErr.RawResponse.Body == nil {
-		return nil, false
+	for i := range violations {
+		violations[i].Message = safeRuntimePolicyViolationMessage(
+			violations[i].DisplayName,
+			violations[i].Target,
+		)
 	}
-	body, readErr := runtime.Payload(respErr.RawResponse)
-	if readErr != nil || len(body) == 0 {
-		return nil, false
-	}
-
-	type runtimePolicyErrorEnvelope struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Error   *struct {
-			Code           string `json:"code"`
-			Message        string `json:"message"`
-			AdditionalInfo *struct {
-				PolicyAssignmentID string `json:"policy_assignment_id"`
-				PolicyDefinitionID string `json:"policy_definition_id"`
-				Effect             string `json:"effect"`
-			} `json:"additionalInfo"`
-		} `json:"error"`
-	}
-
-	var parsed runtimePolicyErrorEnvelope
-	if json.Unmarshal(body, &parsed) != nil {
-		return nil, false
-	}
-
-	code := strings.TrimSpace(respErr.ErrorCode)
-	rawMsg := strings.TrimSpace(parsed.Message)
-	if strings.TrimSpace(parsed.Code) != "" {
-		code = strings.TrimSpace(parsed.Code)
-	}
-	var policyAssignmentID, policyDefinitionID string
-	if parsed.Error != nil {
-		if strings.TrimSpace(parsed.Error.Code) != "" {
-			code = strings.TrimSpace(parsed.Error.Code)
-		}
-		if strings.TrimSpace(parsed.Error.Message) != "" {
-			rawMsg = strings.TrimSpace(parsed.Error.Message)
-		}
-		if parsed.Error.AdditionalInfo != nil {
-			policyAssignmentID = strings.TrimSpace(parsed.Error.AdditionalInfo.PolicyAssignmentID)
-			policyDefinitionID = strings.TrimSpace(parsed.Error.AdditionalInfo.PolicyDefinitionID)
-		}
-	}
-
-	msgLower := strings.ToLower(rawMsg)
-	isPolicyDenied := strings.EqualFold(code, "agent_policy_denied") ||
-		strings.EqualFold(respErr.ErrorCode, "agent_policy_denied") ||
-		((strings.EqualFold(code, "forbidden") || strings.EqualFold(respErr.ErrorCode, "forbidden")) &&
-			strings.Contains(msgLower, "noncompliant with policy ") &&
-			strings.Contains(msgLower, "microsoft.cognitiveservices.data/accounts/"))
-	if !isPolicyDenied {
-		return nil, false
-	}
-
-	var assignmentIDs []string
-	if isValidPolicyAssignmentResourceID(policyAssignmentID) {
-		assignmentIDs = []string{strings.TrimRight(policyAssignmentID, "/")}
-	} else {
-		for _, m := range runtimePolicyAssignmentRegex.FindAllStringSubmatch(rawMsg, -1) {
-			if len(m) >= 2 {
-				id := strings.TrimRight(strings.TrimSpace(m[1]), "/")
-				if isValidPolicyAssignmentResourceID(id) &&
-					!slices.ContainsFunc(assignmentIDs, func(existing string) bool {
-						return strings.EqualFold(existing, id)
-					}) {
-					assignmentIDs = append(assignmentIDs, id)
-				}
-			}
-		}
-	}
-	if len(assignmentIDs) == 0 {
-		if !strings.EqualFold(code, "agent_policy_denied") &&
-			!strings.EqualFold(respErr.ErrorCode, "agent_policy_denied") {
-			return nil, false
-		}
-		assignmentIDs = []string{""}
-	}
-
-	defID := foundrypolicy.NormalizeScope(policyDefinitionID)
-	var target foundrypolicy.TargetKind
-	switch {
-	case defID == foundrypolicy.NormalizeScope(foundrypolicy.DeniedToolsPolicyID) ||
-		defID == foundrypolicy.NormalizeScope(foundrypolicy.AllowedToolsPolicyID) ||
-		strings.Contains(msgLower, "/agents/tools[") ||
-		strings.Contains(msgLower, "/toolboxes/tools["):
-		target = foundrypolicy.TargetTool
-	case defID == foundrypolicy.NormalizeScope(foundrypolicy.DeniedAgentKindsPolicyID) ||
-		defID == foundrypolicy.NormalizeScope(foundrypolicy.AllowedAgentKindsPolicyID) ||
-		strings.Contains(msgLower, "/agents/agentkind"):
-		target = foundrypolicy.TargetAgentKind
-	case defID == foundrypolicy.NormalizeScope(foundrypolicy.DeniedContainerImagesPolicyID) ||
-		defID == foundrypolicy.NormalizeScope(foundrypolicy.AllowedContainerImagesPolicyID) ||
-		strings.Contains(msgLower, "/agents/image"):
-		target = foundrypolicy.TargetContainerImage
-	case defID == foundrypolicy.NormalizeScope(foundrypolicy.AllowedModelsPolicyID):
-		target = foundrypolicy.TargetModel
-	default:
-		target = foundrypolicy.TargetKind("")
-	}
-
-	violations := make([]foundrypolicy.Violation, 0, len(assignmentIDs))
-	for _, id := range assignmentIDs {
-		displayName := "Azure Policy assignment"
-		if trimmed := strings.TrimRight(strings.TrimSpace(id), "/"); trimmed != "" {
-			parts := strings.Split(trimmed, "/")
-			if last := parts[len(parts)-1]; last != "" {
-				displayName = last
-			}
-		}
-		// Never copy rawMsg or respErr.Error() into Violation.Message: request URLs
-		// and service error text may contain connection credentials or tokens.
-		violations = append(violations, foundrypolicy.Violation{
-			Target:       target,
-			AssignmentID: foundrypolicy.NormalizeScope(id),
-			DisplayName:  displayName,
-			PortalURL:    foundrypolicy.BuildPolicyAssignmentPortalURL(projectResourceID, id),
-			Message:      safeRuntimePolicyViolationMessage(displayName, target),
-		})
-	}
-
 	return PolicyViolationsToError(serviceName, violations), true
 }
 

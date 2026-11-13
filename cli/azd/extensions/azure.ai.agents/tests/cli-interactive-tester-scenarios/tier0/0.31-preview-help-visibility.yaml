@@ -19,6 +19,6 @@ goals:
   - "Run 'AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true azd ai agent invoke --help'. Confirm --long-running, --no-wait, and the Long-running Invocations section are shown."
   - "Run 'azd ai agent add --help'. Confirm the supported-definition list includes voice and prompt-voice."
   - "Run 'AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true azd ai agent init --help'. Confirm --instructions retains its existing 'including one using --harness' note and the --harness flag is shown in the flags table."
-  - "Run 'azd ai agent init --kind prompt-voice --agent-name voice-check --no-prompt'. Confirm it proceeds without a feature_not_enabled error."
+  - "Run 'azd ai agent init --help'. Confirm prompt-voice initialization is documented without a Voice opt-in; do not initialize or write project files in this read-only scenario."
   - "Take a screenshot of the default and enabled help output."
   - "Report a finding if disabled preview commands, flags, or help blocks are shown outside the root switch list, an enabled preview is missing, a hidden command cannot run, or any command prompts or mutates a project."

@@ -1464,6 +1464,32 @@ func TestPredeployReturnsPreviewFeatureNotice(t *testing.T) {
 	require.Contains(t, response.Messages[0].Message, "Preview behavior may change.")
 }
 
+func TestPredeployRejectsDisabledMemorySnapshotBeforeMutation(t *testing.T) {
+	clearPreviewProcess(t)
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	svc := &azdext.ServiceConfig{
+		Name: "snapshot-agent", Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "hosted", "name": "snapshot-agent", "enableMemorySnapshot": true,
+		}),
+	}
+	proj := &azdext.ProjectConfig{
+		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{"snapshot-agent": svc},
+	}
+	before := proto.Clone(proj)
+	envServer := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
+	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+		Project: proj, Service: svc,
+	})
+	require.Nil(t, response)
+	require.ErrorContains(t, err, featureflags.MemorySnapshot.ID)
+	require.True(t, proto.Equal(before, proj))
+	require.Zero(t, envServer.getCurrentCalls)
+	require.Zero(t, envServer.getValuesCalls)
+	require.Empty(t, envServer.setKeys)
+}
+
 func TestPredownRejectsUnsupportedRuntimeSourcesBeforeCleanup(t *testing.T) {
 	tests := []struct {
 		name           string

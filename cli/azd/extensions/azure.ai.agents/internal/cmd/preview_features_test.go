@@ -216,17 +216,6 @@ func TestPreviewLocalServicePreservesProjectErrors(t *testing.T) {
 	}
 }
 
-type protocolSelectionServer struct {
-	azdext.UnimplementedPromptServiceServer
-	selectProtocols func(*azdext.MultiSelectRequest) (*azdext.MultiSelectResponse, error)
-}
-
-func (s *protocolSelectionServer) MultiSelect(
-	_ context.Context, request *azdext.MultiSelectRequest,
-) (*azdext.MultiSelectResponse, error) {
-	return s.selectProtocols(request)
-}
-
 func clearPreviewProcess(t *testing.T) {
 	t.Helper()
 	featureflags.ResetNoticesForTesting()
@@ -467,6 +456,9 @@ func TestPreviewMutationCommandsRejectDisabledServices(t *testing.T) {
 		args       []string
 		feature    string
 	}{
+		{"endpoint update", map[string]any{
+			"kind": "hosted", "name": "agent", "enableMemorySnapshot": true,
+		}, []string{"endpoint", "update", "agent", "--no-prompt"}, "agents.memory_snapshot"},
 		{"optimize apply", map[string]any{
 			"kind": "prompt", "harness": map[string]any{"type": "microsoft_copilot_preview"},
 		}, []string{"optimize", "apply", "--agent", "agent", "--candidate", "candidate-test"}, "agents.managed_harness"},

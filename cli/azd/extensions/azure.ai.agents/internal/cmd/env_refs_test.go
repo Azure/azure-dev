@@ -4,10 +4,14 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // TestFindEnvironmentReferencesEscapedOuterKeepsInnerLive pins a
@@ -18,7 +22,8 @@ import (
 func TestFindEnvironmentReferencesEscapedOuterKeepsInnerLive(t *testing.T) {
 	t.Parallel()
 
-	got := findEnvironmentReferences("$${A:-${B}}")
+	got, err := findEnvironmentReferences("$${A:-${B}}")
+	require.NoError(t, err)
 	require.Equal(t, []environmentReference{{Name: "B", Start: 6, End: 10}}, got)
 }
 
@@ -26,9 +31,10 @@ func TestFindEnvironmentReferences(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		value string
-		want  []environmentReference
+		name    string
+		value   string
+		want    []environmentReference
+		wantErr string
 	}{
 		{
 			name:  "bare reference",
@@ -87,15 +93,9 @@ func TestFindEnvironmentReferences(t *testing.T) {
 			},
 		},
 		{
-			// Nested references are unsupported by design. The span
-			// covers the default so scanning resumes after it and
-			// NESTED is never reported.
-			name:  "nested default is spanned, inner name unsupported",
-			value: "${OUTER:-${NESTED}} ${AFTER}",
-			want: []environmentReference{
-				{Name: "OUTER", Start: 0, End: 19, HasDefault: true},
-				{Name: "AFTER", Start: 20, End: 28},
-			},
+			name:    "nested default is rejected before discovery",
+			value:   "${OUTER:-${NESTED}} ${AFTER}",
+			wantErr: "unsupported environment variable reference",
 		},
 		{
 			// A '$' the expander ignores must stay ignored here,
@@ -113,14 +113,22 @@ func TestFindEnvironmentReferences(t *testing.T) {
 			want:  []environmentReference{{Name: "REAL", Start: 5, End: 12}},
 		},
 		{
-			name:  "invalid name yields nothing",
-			value: "${1BAD}",
-			want:  nil,
+			name:    "invalid name is rejected",
+			value:   "${1BAD}",
+			wantErr: "unsupported environment variable reference",
 		},
 		{
-			name:  "unterminated reference yields nothing",
-			value: "${UNCLOSED",
-			want:  nil,
+			name:    "unterminated reference is rejected",
+			value:   "${UNCLOSED",
+			wantErr: "unsupported environment variable reference",
+		},
+		{
+			name:  "escaped shell operator stays literal",
+			value: "$${BAR:=x}",
+		},
+		{
+			name:  "shell operator in a Foundry expression stays reserved",
+			value: "${{ event.body ?? '${BAR:=x}' }}",
 		},
 		{
 			name:  "plain text yields nothing",
@@ -133,7 +141,13 @@ func TestFindEnvironmentReferences(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := findEnvironmentReferences(tt.value)
+			got, err := findEnvironmentReferences(tt.value)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.Nil(t, got)
+				return
+			}
+			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
 	}
@@ -153,12 +167,13 @@ func TestFindEnvironmentReferencesPolicies(t *testing.T) {
 		t.Parallel()
 
 		var references []azureYamlEnvironmentReference
-		collectAzureYamlEnvironmentReferences(
+		err := collectAzureYamlEnvironmentReferences(
 			value,
 			false,
 			&references,
 			map[string]int{},
 		)
+		require.NoError(t, err)
 		require.Equal(t, []azureYamlEnvironmentReference{{Name: "BARE"}}, references)
 	})
 
@@ -166,7 +181,7 @@ func TestFindEnvironmentReferencesPolicies(t *testing.T) {
 		t.Parallel()
 
 		environment := map[string]string{}
-		collectStringEnvironmentTemplates(value, environment)
+		require.NoError(t, collectStringEnvironmentTemplates(value, environment))
 		require.Equal(t, map[string]string{
 			"BARE":         "${BARE}",
 			"WITH_DEFAULT": "${WITH_DEFAULT}",
@@ -174,28 +189,66 @@ func TestFindEnvironmentReferencesPolicies(t *testing.T) {
 	})
 }
 
-// TestNestedDefaultIsNotDiscovered pins the agreed limitation:
-// azd nested references are unsupported, so NESTED reaches
-// neither consumer. Only the env block keeps the outer name;
-// init prompting drops it too because it carries a default.
-// Without this, ${OUTER:-${NESTED}} would look half-supported.
-func TestNestedDefaultIsNotDiscovered(t *testing.T) {
+func TestEnvironmentReferenceCollectorsRejectBeforeCollecting(t *testing.T) {
 	t.Parallel()
 
-	const value = "${OUTER:-${NESTED}}"
+	for _, invalid := range []string{"${BAR:=x}", "${OUTER:-${NESTED}}"} {
+		t.Run(invalid, func(t *testing.T) {
+			t.Parallel()
+			value := "${VALID} " + invalid
+			environment := map[string]string{"EXISTING": "${EXISTING}"}
+			require.Error(t, collectStringEnvironmentTemplates(value, environment))
+			require.Equal(t, map[string]string{"EXISTING": "${EXISTING}"}, environment)
 
-	environment := map[string]string{}
-	collectStringEnvironmentTemplates(value, environment)
-	require.Equal(t, map[string]string{"OUTER": "${OUTER}"}, environment)
+			references := []azureYamlEnvironmentReference{{Name: "EXISTING"}}
+			indexByName := map[string]int{"EXISTING": 0}
+			err := collectAzureYamlEnvironmentReferences(value, false, &references, indexByName)
+			require.Error(t, err)
+			require.Equal(t, []azureYamlEnvironmentReference{{Name: "EXISTING"}}, references)
+			require.Equal(t, map[string]int{"EXISTING": 0}, indexByName)
+		})
+	}
+}
 
-	var references []azureYamlEnvironmentReference
-	collectAzureYamlEnvironmentReferences(
-		value,
-		false,
-		&references,
-		map[string]int{},
-	)
-	require.Empty(t, references)
+func TestEnvironmentReferenceDiagnosticsDoNotExposeValues(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{
+		"${API_URL:=https://test-user:test-password@example.test/path?sig=test-signature#test-fragment}",
+		"${TOKEN:=test-secret}",
+	} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+			content := fmt.Appendf(nil, `services:
+  sample:
+    host: azure.ai.connection
+    credentials:
+      key: '%s'
+`, value)
+			_, initErr := findAzureYamlEnvironmentReferences(content, ".")
+			cfg, err := structpb.NewStruct(map[string]any{
+				"credentials": map[string]any{"key": value},
+			})
+			require.NoError(t, err)
+			server := &recordingProjectServer{}
+			client := newProjectRecorderClient(t, server)
+			serviceErr := addResourceService(t.Context(), client, "sample", AiConnectionHost, cfg, nil)
+
+			for _, err := range []error{initErr, serviceErr} {
+				require.ErrorContains(t, err, `service "sample"`)
+				require.ErrorContains(t, err, "credentials.key:")
+				require.ErrorContains(t, err, "unsupported environment variable reference")
+				for _, sensitive := range []string{
+					value, "test-user", "test-password", "sig=", "test-signature", "test-fragment", "test-secret",
+				} {
+					require.NotContains(t, err.Error(), sensitive)
+				}
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Contains(t, localErr.Suggestion, "${VAR:-default}")
+			}
+		})
+	}
 }
 
 func TestCollectAzureYamlEnvironmentReferencesUpgradesSecret(t *testing.T) {
@@ -203,18 +256,18 @@ func TestCollectAzureYamlEnvironmentReferencesUpgradesSecret(t *testing.T) {
 
 	var references []azureYamlEnvironmentReference
 	indexByName := map[string]int{}
-	collectAzureYamlEnvironmentReferences(
+	require.NoError(t, collectAzureYamlEnvironmentReferences(
 		"${SHARED}",
 		false,
 		&references,
 		indexByName,
-	)
-	collectAzureYamlEnvironmentReferences(
+	))
+	require.NoError(t, collectAzureYamlEnvironmentReferences(
 		"${SHARED}",
 		true,
 		&references,
 		indexByName,
-	)
+	))
 
 	require.Equal(
 		t,
@@ -264,7 +317,9 @@ func TestFindEnvironmentReferencesMatchesExpander(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			for _, reference := range findEnvironmentReferences(value) {
+			references, err := findEnvironmentReferences(value)
+			require.NoError(t, err)
+			for _, reference := range references {
 				require.Truef(
 					t,
 					lookedUp[reference.Name],

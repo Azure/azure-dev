@@ -182,6 +182,13 @@ func emitResourceServices(
 	// the project is provisioned first.
 	siblingUses := []string{projectServiceName}
 	connectionServiceNames := map[string]string{}
+	type resourceService struct {
+		name string
+		host string
+		cfg  *structpb.Struct
+		uses []string
+	}
+	var services []resourceService
 
 	for i := range resources.Connections {
 		conn := resources.Connections[i]
@@ -200,9 +207,7 @@ func emitResourceServices(
 		if err != nil {
 			return 0, fmt.Errorf("marshaling connection service %q config: %w", connName, err)
 		}
-		if err := addResourceService(ctx, azdClient, connName, AiConnectionHost, connCfg, siblingUses); err != nil {
-			return 0, err
-		}
+		services = append(services, resourceService{connName, AiConnectionHost, connCfg, siblingUses})
 		connectionServiceNames[conn.Name] = connName
 		agentUses = append(agentUses, connName)
 		emittedConnections++
@@ -232,9 +237,7 @@ func emitResourceServices(
 				toolboxUses = append(toolboxUses, connectionServiceName)
 			}
 		}
-		if err := addResourceService(ctx, azdClient, toolboxName, AiToolboxHost, toolboxCfg, toolboxUses); err != nil {
-			return 0, err
-		}
+		services = append(services, resourceService{toolboxName, AiToolboxHost, toolboxCfg, toolboxUses})
 		agentUses = append(agentUses, toolboxName)
 	}
 
@@ -258,10 +261,19 @@ func emitResourceServices(
 		if err != nil {
 			return 0, fmt.Errorf("marshaling skill service %q config: %w", skillName, err)
 		}
-		if err := addResourceService(ctx, azdClient, skillName, AiSkillHost, skillCfg, siblingUses); err != nil {
+		services = append(services, resourceService{skillName, AiSkillHost, skillCfg, siblingUses})
+		agentUses = append(agentUses, skillName)
+	}
+
+	for _, service := range services {
+		if _, err := serviceEnvironmentTemplates(service.host, service.cfg); err != nil {
+			return 0, invalidServiceEnvironmentReferences(service.name, err)
+		}
+	}
+	for _, service := range services {
+		if err := addResourceService(ctx, azdClient, service.name, service.host, service.cfg, service.uses); err != nil {
 			return 0, err
 		}
-		agentUses = append(agentUses, skillName)
 	}
 
 	for _, name := range resources.ExtraUses {
@@ -438,9 +450,9 @@ func addResourceService(
 	cfg *structpb.Struct,
 	uses []string,
 ) error {
-	var environment map[string]string
-	if host != AiProjectHost {
-		environment = serviceEnvironmentTemplates(cfg)
+	environment, err := serviceEnvironmentTemplates(host, cfg)
+	if err != nil {
+		return invalidServiceEnvironmentReferences(name, err)
 	}
 	svc := &azdext.ServiceConfig{
 		Name:                 name,
@@ -470,48 +482,75 @@ func addResourceService(
 	return nil
 }
 
-// serviceEnvironmentTemplates discovers client-side templates in the
-// generic nested resource config emitted to azure.yaml.
-func serviceEnvironmentTemplates(cfg *structpb.Struct) map[string]string {
+// serviceEnvironmentTemplates scans provider-expanded fields only.
+func serviceEnvironmentTemplates(host string, cfg *structpb.Struct) (map[string]string, error) {
 	if cfg == nil {
-		return nil
+		return nil, nil
+	}
+
+	var fields []string
+	switch host {
+	case AiConnectionHost:
+		fields = []string{
+			"audience", "authorizationUrl", "connectorName", "credentials",
+			"metadata", "refreshUrl", "scopes", "target", "tokenUrl",
+		}
+	case AiToolboxHost:
+		fields = []string{"endpoint", "tools"}
+	default:
+		return nil, nil
 	}
 
 	environment := map[string]string{}
-	collectEnvironmentTemplates(cfg.AsMap(), environment)
-	if len(environment) == 0 {
-		return nil
+	values := cfg.AsMap()
+	for _, field := range fields {
+		if err := collectEnvironmentTemplates(values[field], field, environment); err != nil {
+			return nil, err
+		}
 	}
-	return environment
+	if len(environment) == 0 {
+		return nil, nil
+	}
+	return environment, nil
 }
 
-func collectEnvironmentTemplates(value any, environment map[string]string) {
+func collectEnvironmentTemplates(value any, fieldPath string, environment map[string]string) error {
 	switch typed := value.(type) {
 	case string:
-		collectStringEnvironmentTemplates(typed, environment)
+		if err := collectStringEnvironmentTemplates(typed, environment); err != nil {
+			return fmt.Errorf("%s: %w", fieldPath, err)
+		}
 	case map[string]any:
-		for _, nested := range typed {
-			collectEnvironmentTemplates(nested, environment)
+		for _, key := range slices.Sorted(maps.Keys(typed)) {
+			childPath := key
+			if fieldPath != "" {
+				childPath = fieldPath + "." + key
+			}
+			if err := collectEnvironmentTemplates(typed[key], childPath, environment); err != nil {
+				return err
+			}
 		}
 	case []any:
-		for _, nested := range typed {
-			collectEnvironmentTemplates(nested, environment)
+		for i, nested := range typed {
+			if err := collectEnvironmentTemplates(nested, fmt.Sprintf("%s[%d]", fieldPath, i), environment); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
-func collectStringEnvironmentTemplates(value string, environment map[string]string) {
-	for _, reference := range findEnvironmentReferences(value) {
-		// env is keyed by name, so store one canonical ${NAME}.
-		// A ${NAME:-default} default is re-applied by the owning
-		// extension against the raw config at deploy, so the env section
-		// only needs NAME's resolved base value. Collapsing every form of
-		// a var to one value also keeps collection deterministic when the
-		// same var appears with and without a default. This assumes a
-		// literal default: a nested ${VAR} default is unsupported and
-		// gets no entry here. See findEnvironmentReferences.
+func collectStringEnvironmentTemplates(value string, environment map[string]string) error {
+	references, err := findEnvironmentReferences(value)
+	if err != nil {
+		return err
+	}
+	for _, reference := range references {
+		// Store canonical ${NAME}; providers re-apply :- defaults
+		// against raw config at deploy.
 		environment[reference.Name] = "${" + reference.Name + "}"
 	}
+	return nil
 }
 
 // escapeFoundryTemplates escapes Foundry ${{...}} spans as $${{...}}

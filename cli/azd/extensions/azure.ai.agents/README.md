@@ -1191,6 +1191,28 @@ Paths containing smart double quotes also use the shell-specific alternatives.
 The same applies to paths starting with a Unicode dash that PowerShell treats
 as a parameter prefix.
 
+### Environment reference validation
+
+`azd ai agent init` validates environment references before scaffolding or
+saving environment values, including with `--no-prompt`. Generated resource
+service `env:` blocks use the same check. Errors name the service and field
+path, including array indices and `$ref` targets.
+
+Supported forms are `${VAR}`, `${VAR:-default}` (with a literal default or
+`${{...}}`), `$${VAR}` for literal text, and `${{...}}` for Foundry
+expressions. Shell operators (`${VAR:=x}`, `${VAR:+alt}`, `${VAR:?message}`,
+`${VAR#prefix}`, `${VAR:0:3}`) and nested references (`${OUTER:-${INNER}}`)
+are rejected; use a single `${VAR}` or a literal default instead.
+
+Discovery checks only provider-expanded fields: agent
+`environmentVariables[*].value`; connection `target`, `credentials`,
+`metadata`, `audience`, `authorizationUrl`, `tokenUrl`, `refreshUrl`,
+`connectorName`, and `scopes`; project network VNet IDs and DNS subscription;
+routine `action.input`; and toolbox `endpoint` and `tools`. Generated service
+`env:` blocks scan the same connection and toolbox fields. Skill fields,
+toolbox descriptions, connection `category` and `authType`, hooks, and other
+hosts stay literal.
+
 ## Migrating Legacy Agent Configuration
 
 New Foundry agent projects keep the agent definition directly on the

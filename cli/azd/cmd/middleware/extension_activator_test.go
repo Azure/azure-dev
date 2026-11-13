@@ -134,6 +134,16 @@ func Test_EnsureProvisioningProviders_EmptyRequest(t *testing.T) {
 	cleanup()
 }
 
+func Test_EnsureInfraGenerationProviders_NoProviderNamesIsNoop(t *testing.T) {
+	t.Parallel()
+
+	var activator ExtensionActivator
+	cleanup, err := activator.EnsureInfraGenerationProviders(t.Context(), nil, "")
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+	cleanup()
+}
+
 func Test_EnsureInfraGenerationProviders_IgnoresUnrelatedExtensions(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

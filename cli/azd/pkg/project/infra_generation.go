@@ -18,6 +18,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/yamlnode"
@@ -36,33 +37,30 @@ func InfraGenerationProviderKey(provider string) string {
 // source files for a single infrastructure entry.
 type InfrastructureGenerator interface {
 	// Generate writes source files for the requested entry and returns the replacement entry that should be
-	// saved to azure.yaml.
+	// saved to the project file.
 	Generate(context.Context, *v1beta.InfraGenerateRequest) (*v1beta.InfraGenerateResponse, error)
 }
 
-// InfraGenerationManager drives `azd infra generate`. It uses built-in generation when no infrastructure
-// entry uses an extension provider, otherwise it delegates to extension generators and saves their
-// replacement entries back to azure.yaml.
+// InfraGenerationManager supports legacy infrastructure generation and extension-based generation.
 type InfraGenerationManager struct {
 	// importer generates infrastructure for the built-in providers.
 	importer *ImportManager
 
 	// locator resolves extension generators registered under InfraGenerationProviderKey.
 	locator ioc.ServiceLocator
+
+	// azdContext identifies the project file loaded by azd.
+	azdContext *azdcontext.AzdContext
 }
 
 // NewInfraGenerationManager creates an InfraGenerationManager.
 //   - importer generates infrastructure for the built-in providers.
 //   - locator resolves extension generators.
-func NewInfraGenerationManager(importer *ImportManager, locator ioc.ServiceLocator) *InfraGenerationManager {
-	return &InfraGenerationManager{importer: importer, locator: locator}
-}
-
-// GeneratedInfrastructure is the result of InfraGenerationManager.Generate.
-type GeneratedInfrastructure struct {
-	// Files contains the sources from built-in generation, which the caller is responsible for writing.
-	// It is nil when extensions generated the infrastructure, since they write their own files.
-	Files fs.FS
+//   - azdContext identifies the project file.
+func NewInfraGenerationManager(
+	importer *ImportManager, locator ioc.ServiceLocator, azdContext *azdcontext.AzdContext,
+) *InfraGenerationManager {
+	return &InfraGenerationManager{importer: importer, locator: locator, azdContext: azdContext}
 }
 
 // generatedInfraEntry tracks a single extension-backed infrastructure entry through generation and saving.
@@ -73,57 +71,59 @@ type generatedInfraEntry struct {
 	// request is the request sent to provider.
 	request *v1beta.InfraGenerateRequest
 
-	// identity is the entry as loaded from the project, used to locate it again in azure.yaml.
+	// identity is the entry as loaded from the project, used to locate it again in the project file.
 	identity provisioning.Options
 
+	// format identifies the persisted project layout used to locate the entry.
+	format ProjectFormat
+
 	// original is the marshaled YAML node for this entry, captured before generation. Saving fails if
-	// azure.yaml no longer matches it, so we never overwrite concurrent edits.
+	// the project file no longer matches it, so we never overwrite concurrent edits.
 	original []byte
 
 	// replacement is the entry returned by provider. It's nil until the generator has run.
 	replacement *v1beta.ProvisioningOptions
 }
 
-// Generate generates infrastructure for the project.
-//   - config is the loaded project.
-//   - options are passed through to each extension generator.
-//
-// When no entry uses an extension provider, the returned GeneratedInfrastructure.Files contains the sources
-// for the caller to write. Otherwise only the extension entries are generated: extensions write their own
-// files, the replacement entries are saved to azure.yaml, built-in entries are left untouched, and Files is
-// nil.
-func (m *InfraGenerationManager) Generate(
+// GenerateLegacy generates infrastructure through the legacy importer for projects without extension providers.
+// The caller is responsible for writing the returned files.
+func (m *InfraGenerationManager) GenerateLegacy(ctx context.Context, config *ProjectConfig) (fs.FS, error) {
+	if slices.ContainsFunc(config.InfrastructureConfigs(), isExtensionInfraEntry) {
+		return nil, fmt.Errorf("legacy infrastructure generation cannot be used with extension providers")
+	}
+
+	return m.importer.GenerateAllInfrastructure(ctx, config)
+}
+
+// GenerateExtensions delegates extension-backed infrastructure entries to their generators and saves the replacement
+// entries to the project file. Extension entries must have distinct output paths.
+func (m *InfraGenerationManager) GenerateExtensions(
 	ctx context.Context, config *ProjectConfig, options *v1beta.InfraGenerateOptions,
-) (*GeneratedInfrastructure, error) {
+) error {
 	if options == nil {
-		return nil, fmt.Errorf("infrastructure generation requires a non-nil options message")
+		return fmt.Errorf("infrastructure generation requires a non-nil options message")
 	}
 
 	// TODO: this first pass just assumes we want to convert _everything_, but I'd like to change
 	// it to allow you to select specific layers to convert.
 	entries := config.InfrastructureConfigs()
-
-	// TODO: right now we're treating these paths (.net import, resources) as a
-	// completely distinct code path. I need to look into this more to see if there's
-	// some merging, or if these are considered their own private world and don't need
-	// to mesh with our extensions based providers.
 	if !slices.ContainsFunc(entries, isExtensionInfraEntry) {
-		files, err := m.importer.GenerateAllInfrastructure(ctx, config)
-		return &GeneratedInfrastructure{Files: files}, err
+		return fmt.Errorf("extension infrastructure generation requires at least one extension provider")
 	}
 
 	if len(config.Resources) > 0 {
-		return nil, fmt.Errorf("generation cannot combine top-level resources with extension infrastructure entries")
+		return fmt.Errorf("generation cannot combine a resources section with extension infrastructure entries")
 	}
 
-	projectFile := filepath.Join(config.Path, "azure.yaml")
+	projectFile := m.azdContext.ProjectPath()
 
 	document, err := readGenerationDocument(projectFile)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	var pending []generatedInfraEntry
+	outputPaths := make(map[string]string)
 
 	for _, entry := range entries {
 		if !isExtensionInfraEntry(entry) {
@@ -132,36 +132,35 @@ func (m *InfraGenerationManager) Generate(
 
 		prepared, err := m.prepareEntry(config, document, entry, options)
 		if err != nil {
-			return nil, err
+			return err
 		}
+
+		outputPath := prepared.request.OutputPath
+		if previous, exists := outputPaths[outputPath]; exists {
+			return fmt.Errorf(
+				"infrastructure entries %q and %q share output path %q; configure a distinct path for each entry",
+				previous, entry.Name, outputPath)
+		}
+		outputPaths[outputPath] = entry.Name
 
 		pending = append(pending, prepared)
 	}
 
 	if err := runGenerators(ctx, pending); err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := saveGeneratedEntries(ctx, config, projectFile, pending); err != nil {
-		return nil, fmt.Errorf("infrastructure files were generated, but updating project configuration failed: %w", err)
+		return fmt.Errorf("infrastructure files were generated, but updating project configuration failed: %w", err)
 	}
 
-	return &GeneratedInfrastructure{}, nil
+	return nil
 }
 
-// OutputPaths returns the folders that Generate writes into for config. Paths are project-relative unless the
-// project configures an absolute infra path.
-func (m *InfraGenerationManager) OutputPaths(config *ProjectConfig) []string {
+// ExtensionOutputPaths returns the folders extension generators write into for config.
+// Paths are project-relative unless the project configures an absolute infra path.
+func (m *InfraGenerationManager) ExtensionOutputPaths(config *ProjectConfig) []string {
 	infraEntries := config.InfrastructureConfigs()
-
-	// Mirrors Generate: without extension entries, the built-in generators write to the project's infra path.
-	if !slices.ContainsFunc(infraEntries, isExtensionInfraEntry) {
-		if config.Infra.Path != "" {
-			return []string{config.Infra.Path}
-		}
-
-		return []string{DefaultProvisioningOptions.Path}
-	}
 
 	var paths []string
 
@@ -174,11 +173,11 @@ func (m *InfraGenerationManager) OutputPaths(config *ProjectConfig) []string {
 	return paths
 }
 
-// generationOutputPath returns the forward-slash-separated, project-relative folder an extension
+// generationOutputPath returns the cleaned, forward-slash-separated, project-relative folder an extension
 // entry generates into.
 func generationOutputPath(entry provisioning.Options) string {
 	if entry.Path != "" {
-		return filepath.ToSlash(entry.Path)
+		return path.Clean(filepath.ToSlash(entry.Path))
 	}
 
 	if entry.Name == "" {
@@ -213,7 +212,7 @@ func isExtensionInfraEntry(entry provisioning.Options) bool {
 		!slices.Contains(provisioning.BuiltInProviderKinds(), entry.Provider)
 }
 
-// prepareEntry resolves the generator for entry, verifies that azure.yaml still matches the loaded project,
+// prepareEntry resolves the generator for entry, verifies that the project file still matches the loaded project,
 // and builds the generation request.
 func (m *InfraGenerationManager) prepareEntry(
 	config *ProjectConfig, document *yaml.Node, entry provisioning.Options, options *v1beta.InfraGenerateOptions,
@@ -242,7 +241,8 @@ func (m *InfraGenerationManager) prepareEntry(
 	// Paths are compared and sent to extensions in slash form so the result doesn't depend on the host OS.
 	entry.Path = filepath.ToSlash(entry.Path)
 
-	original, err := captureUnchangedEntry(config, document, entry)
+	format := config.Format()
+	original, err := captureUnchangedEntry(config, document, entry, format)
 	if err != nil {
 		return generatedInfraEntry{}, err
 	}
@@ -250,6 +250,7 @@ func (m *InfraGenerationManager) prepareEntry(
 	return generatedInfraEntry{
 		provider: provider,
 		identity: entry,
+		format:   format,
 		original: original,
 		request: &v1beta.InfraGenerateRequest{
 			ProjectPath: config.Path,
@@ -287,8 +288,10 @@ func (m *InfraGenerationManager) resolveGenerator(provider provisioning.Provider
 
 // captureUnchangedEntry checks that the entry in document still matches the loaded entry, and returns the
 // entry's marshaled YAML node so saving can later detect concurrent edits.
-func captureUnchangedEntry(config *ProjectConfig, document *yaml.Node, entry provisioning.Options) ([]byte, error) {
-	node, err := findGenerationEntry(document, entry)
+func captureUnchangedEntry(
+	config *ProjectConfig, document *yaml.Node, entry provisioning.Options, format ProjectFormat,
+) ([]byte, error) {
+	node, err := findGenerationEntry(document, entry, format)
 	if err != nil {
 		return nil, err
 	}
@@ -407,8 +410,10 @@ func readGenerationDocument(file string) (*yaml.Node, error) {
 }
 
 // findGenerationEntry returns the YAML node for entry within document.
-func findGenerationEntry(document *yaml.Node, entry provisioning.Options) (*yaml.Node, error) {
-	nodePath, err := generationEntryPath(document, entry)
+func findGenerationEntry(
+	document *yaml.Node, entry provisioning.Options, format ProjectFormat,
+) (*yaml.Node, error) {
+	nodePath, err := generationEntryPath(document, entry, format)
 	if err != nil {
 		return nil, err
 	}
@@ -416,12 +421,28 @@ func findGenerationEntry(document *yaml.Node, entry provisioning.Options) (*yaml
 	return yamlnode.Find(document, nodePath)
 }
 
-// generationEntryPath returns the yamlnode path to entry within document. Entries are located by layer and
-// name, and an unnamed entry outside a layer maps to the top-level `infra` section.
-func generationEntryPath(document *yaml.Node, entry provisioning.Options) (string, error) {
-	sequencePath := "infra.layers"
+// generationEntryPath returns the yamlnode path to entry within document.
+func generationEntryPath(document *yaml.Node, entry provisioning.Options, format ProjectFormat) (string, error) {
+	var sequencePath string
 
-	if entry.Layer != "" {
+	switch format {
+	case ProjectFormatFlat:
+		// A flat infra mapping can also select an extension provider, with or without a name.
+		return "infra", nil
+
+	case ProjectFormatInfraV1:
+		sequencePath = "infra.layers"
+		sequence, err := yamlnode.Find(document, "infra.layers")
+		if err != nil {
+			return "", err
+		}
+		if len(sequence.Content) == 0 {
+			// GetLayers falls back to the root infra entry when the layers list is empty.
+			return "infra", nil
+		}
+
+	case ProjectFormatLayersV2:
+		// Entry names are located within their project layer, not across the whole project.
 		layers, err := yamlnode.Find(document, "layers")
 		if err != nil {
 			return "", err
@@ -434,14 +455,17 @@ func generationEntryPath(document *yaml.Node, entry provisioning.Options) (strin
 				break
 			}
 		}
+
+		if sequencePath == "" {
+			return "", fmt.Errorf("project layer %q was not found", entry.Layer)
+		}
+
+	default:
+		return "", fmt.Errorf("unsupported project format %d", format)
 	}
 
 	sequence, err := yamlnode.Find(document, sequencePath)
 	if err != nil {
-		if entry.Name == "" && entry.Layer == "" {
-			return "infra", nil
-		}
-
 		return "", err
 	}
 
@@ -503,7 +527,7 @@ func saveGeneratedEntries(
 func replaceGeneratedEntry(document *yaml.Node, entry generatedInfraEntry) error {
 	name := entry.request.Entry.Name
 
-	node, err := findGenerationEntry(document, entry.identity)
+	node, err := findGenerationEntry(document, entry.identity, entry.format)
 	if err != nil {
 		return err
 	}

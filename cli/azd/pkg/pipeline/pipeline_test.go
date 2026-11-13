@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -75,113 +76,6 @@ func Test_ConfigOptions_SecretsAndVars(t *testing.T) {
 	}
 	assert.Equal(t, expectedVariables, variables)
 	assert.Equal(t, expectedSecrets, secrets)
-}
-
-// Test_ConfigOptions_EscapedValues tests that JSON-escaped string values are preserved
-// when merging project variables and secrets.
-// This addresses the issue where values like `["api://..."]` need to be escaped
-// to `[\"api://...\"]` when sent to remote pipelines to prevent them from being
-// interpreted as JSON arrays instead of strings.
-func Test_ConfigOptions_EscapedValues(t *testing.T) {
-	projectVariables := []string{"AzureAd_TokenValidationParameters_ValidAudiences"}
-	projectSecrets := []string{}
-
-	initialVariables := map[string]string{}
-	initialSecrets := map[string]string{}
-
-	// This simulates a value that is read from config.json.
-	// After JSON unmarshaling, the value `"[\"api://...\"]"` becomes `["api://..."]` (backslashes consumed)
-	// We need to re-escape it before sending to the pipeline so it's treated as a string, not an array
-	//nolint:gosec // G101: test data, not actual credentials
-	env := map[string]string{
-		"AzureAd_TokenValidationParameters_ValidAudiences": "[\"api://e935a748-8b59-4c26-a59c-9bcc83f5ab57\"]",
-	}
-
-	variables, secrets, err := mergeProjectVariablesAndSecrets(
-		projectVariables, projectSecrets, initialVariables, initialSecrets, nil, env)
-	require.NoError(t, err)
-
-	// After escaping, the value should have backslashes to prevent JSON parsing in the pipeline
-	// The value becomes: [\"api://e935a748-8b59-4c26-a59c-9bcc83f5ab57\"]
-	//nolint:gosec // G101: test data, not actual credentials
-	expectedVariables := map[string]string{
-		"AzureAd_TokenValidationParameters_ValidAudiences": "[\\\"api://e935a748-8b59-4c26-a59c-9bcc83f5ab57\\\"]",
-	}
-	expectedSecrets := map[string]string{}
-
-	assert.Equal(t, expectedVariables, variables)
-	assert.Equal(t, expectedSecrets, secrets)
-}
-
-// Test_ConfigOptions_SimpleValues tests that simple string values are properly escaped
-func Test_ConfigOptions_SimpleValues(t *testing.T) {
-	projectVariables := []string{"SIMPLE_VAR", "VAR_WITH_QUOTES"}
-	projectSecrets := []string{}
-
-	initialVariables := map[string]string{}
-	initialSecrets := map[string]string{}
-
-	env := map[string]string{
-		"SIMPLE_VAR":      "simple-value",
-		"VAR_WITH_QUOTES": "value with \"quotes\"",
-	}
-
-	variables, secrets, err := mergeProjectVariablesAndSecrets(
-		projectVariables, projectSecrets, initialVariables, initialSecrets, nil, env)
-	require.NoError(t, err)
-
-	// Simple values remain mostly the same, quotes get escaped
-	expectedVariables := map[string]string{
-		"SIMPLE_VAR":      "simple-value",
-		"VAR_WITH_QUOTES": "value with \\\"quotes\\\"",
-	}
-	expectedSecrets := map[string]string{}
-
-	assert.Equal(t, expectedVariables, variables)
-	assert.Equal(t, expectedSecrets, secrets)
-}
-
-// Test_escapeValuesForPipeline tests the escape function directly
-func Test_escapeValuesForPipeline(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "JSON array string",
-			input:    "[\"api://guid\"]",
-			expected: "[\\\"api://guid\\\"]",
-		},
-		{
-			name:     "Simple string",
-			input:    "simple",
-			expected: "simple",
-		},
-		{
-			name:     "String with quotes",
-			input:    "value with \"quotes\"",
-			expected: "value with \\\"quotes\\\"",
-		},
-		{
-			name:     "String with backslashes",
-			input:    "path\\to\\file",
-			expected: "path\\\\to\\\\file",
-		},
-		{
-			name:     "Empty string",
-			input:    "",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			values := map[string]string{"test": tt.input}
-			escapeValuesForPipeline(values)
-			assert.Equal(t, tt.expected, values["test"])
-		})
-	}
 }
 
 func Test_ConfigOptions_ProviderParameterWithNilValueUsesMappedEnvVar(t *testing.T) {
@@ -1466,99 +1360,45 @@ func setupGithubCliMocksForCov3(mockContext *mocks.MockContext) {
 	})
 }
 
-// =====================================================================
-// escapeValuesForPipeline - edge cases
-// =====================================================================
-
-func Test_escapeValuesForPipeline_jsonSpecialChars(t *testing.T) {
+// Values are stored in the CI system exactly as they are in the azd environment. Nothing between azd and the
+// provisioning providers decodes them, so they must not be escaped on the way out.
+func Test_mergeProjectVariablesAndSecrets_valuesAreNotEscaped(t *testing.T) {
 	t.Parallel()
 
-	t.Run("escapes json brackets", func(t *testing.T) {
+	values := map[string]string{
+		"QUOTED":    `say "hello"`,
+		"BACKSLASH": `C:\path\to\file`,
+		"ARRAY":     `["api://guid","b"]`,
+		"NEWLINE":   "line1\nline2",
+		"MIXED":     `{"k":"a\"b","list":[1,"two"]}`,
+		"PLAIN":     "simple-value",
+	}
+	names := slices.Sorted(maps.Keys(values))
+
+	t.Run("variables", func(t *testing.T) {
 		t.Parallel()
 
-		values := map[string]string{
-			"KEY": `["api://guid"]`,
-		}
-		escapeValuesForPipeline(values)
-		assert.Equal(t, `[\"api://guid\"]`, values["KEY"])
+		vars, secrets, err := mergeProjectVariablesAndSecrets(
+			names, nil, map[string]string{}, map[string]string{}, nil, maps.Clone(values))
+		require.NoError(t, err)
+		assert.Equal(t, values, vars)
+		assert.Empty(t, secrets)
 	})
 
-	t.Run("escapes backslash", func(t *testing.T) {
+	t.Run("secrets", func(t *testing.T) {
 		t.Parallel()
 
-		values := map[string]string{
-			"KEY": `path\to\file`,
-		}
-		escapeValuesForPipeline(values)
-		assert.Equal(t, `path\\to\\file`, values["KEY"])
-	})
-
-	t.Run("escapes embedded quotes", func(t *testing.T) {
-		t.Parallel()
-
-		values := map[string]string{
-			"KEY": `say "hello"`,
-		}
-		escapeValuesForPipeline(values)
-		assert.Equal(t, `say \"hello\"`, values["KEY"])
-	})
-
-	t.Run("empty map does not panic", func(t *testing.T) {
-		t.Parallel()
-
-		values := map[string]string{}
-		assert.NotPanics(t, func() {
-			escapeValuesForPipeline(values)
-		})
-	})
-
-	t.Run("plain value is unchanged", func(t *testing.T) {
-		t.Parallel()
-
-		values := map[string]string{
-			"SIMPLE": "simple-value",
-		}
-		escapeValuesForPipeline(values)
-		assert.Equal(t, "simple-value", values["SIMPLE"])
+		vars, secrets, err := mergeProjectVariablesAndSecrets(
+			nil, names, map[string]string{}, map[string]string{}, nil, maps.Clone(values))
+		require.NoError(t, err)
+		assert.Empty(t, vars)
+		assert.Equal(t, values, secrets)
 	})
 }
 
 // =====================================================================
 // mergeProjectVariablesAndSecrets - additional edge cases
 // =====================================================================
-
-func Test_mergeProjectVariablesAndSecrets_escapeApplied(t *testing.T) {
-	t.Parallel()
-
-	t.Run("values are escaped for pipeline", func(t *testing.T) {
-		t.Parallel()
-
-		env := map[string]string{
-			"MY_VAR": `["api://guid"]`,
-		}
-		vars, _, err := mergeProjectVariablesAndSecrets(
-			[]string{"MY_VAR"}, nil,
-			map[string]string{}, map[string]string{},
-			nil, env)
-		require.NoError(t, err)
-		// The value should be escaped (brackets with escaped quotes)
-		assert.Equal(t, `[\"api://guid\"]`, vars["MY_VAR"])
-	})
-
-	t.Run("secrets are escaped for pipeline", func(t *testing.T) {
-		t.Parallel()
-
-		env := map[string]string{
-			"MY_SEC": `value with "quotes"`,
-		}
-		_, secrets, err := mergeProjectVariablesAndSecrets(
-			nil, []string{"MY_SEC"},
-			map[string]string{}, map[string]string{},
-			nil, env)
-		require.NoError(t, err)
-		assert.Equal(t, `value with \"quotes\"`, secrets["MY_SEC"])
-	})
-}
 
 // =====================================================================
 // mergeProjectVariablesAndSecrets - provider params with nil Value
@@ -6034,79 +5874,6 @@ func Test_gitHubActionsEnablingChoice_String_panicOnInvalid(t *testing.T) {
 	assert.Panics(t, func() {
 		_ = gitHubActionsEnablingChoice(99).String()
 	})
-}
-
-// ---------------------------------------------------------------------------
-// escapeValuesForPipeline — additional edge cases
-// ---------------------------------------------------------------------------
-
-func Test_escapeValuesForPipeline_additionalEdgeCases(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		input    map[string]string
-		expected map[string]string
-	}{
-		{
-			"empty map",
-			map[string]string{},
-			map[string]string{},
-		},
-		{
-			"plain values unchanged",
-			map[string]string{"key": "value"},
-			map[string]string{"key": "value"},
-		},
-		{
-			"JSON array escaping",
-			map[string]string{"key": `["api://guid"]`},
-			map[string]string{"key": `[\"api://guid\"]`},
-		},
-		{
-			"backslash escaping",
-			map[string]string{"key": `path\to\file`},
-			map[string]string{"key": `path\\to\\file`},
-		},
-		{
-			"double quotes escaped",
-			map[string]string{"key": `say "hello"`},
-			map[string]string{"key": `say \"hello\"`},
-		},
-		{
-			"newline in value",
-			map[string]string{"key": "line1\nline2"},
-			map[string]string{"key": `line1\nline2`},
-		},
-		{
-			"tab in value",
-			map[string]string{"key": "col1\tcol2"},
-			map[string]string{"key": `col1\tcol2`},
-		},
-		{
-			"unicode is preserved",
-			map[string]string{"key": "日本語"},
-			map[string]string{"key": "日本語"},
-		},
-		{
-			"multiple keys",
-			map[string]string{"a": `"x"`, "b": "plain"},
-			map[string]string{"a": `\"x\"`, "b": "plain"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			// Clone input to avoid test pollution
-			m := make(map[string]string, len(tt.input))
-			maps.Copy(m, tt.input)
-
-			escapeValuesForPipeline(m)
-			assert.Equal(t, tt.expected, m)
-		})
-	}
 }
 
 // ---------------------------------------------------------------------------

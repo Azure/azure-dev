@@ -134,11 +134,11 @@ func TestBetaServiceEventManagerStream(t *testing.T) {
 	handlerStatus := response.GetServiceHandlerStatus()
 	require.Equal(t, "completed", handlerStatus.GetStatus())
 	require.Equal(t, "api", handlerStatus.GetServiceName())
-	require.Equal(t, []*v1beta.ServiceEventMessage{{
+	require.Equal(t, []*v1beta.ServiceEventMessage{{ //nolint:staticcheck // beta route coverage.
 		Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO,
 		Message: "api deployed",
 		Links:   []*v1beta.ErrorLink{{Url: "https://example.com/docs", Title: "Deployment guide"}},
-	}}, handlerStatus.GetMessages())
+	}}, handlerStatus.GetMessages()) //nolint:staticcheck // beta route coverage.
 }
 
 func TestBetaServiceEventManagerRegistrationFailures(t *testing.T) {
@@ -360,8 +360,9 @@ func TestBetaServiceEventManagerValidatesReturnedMessages(t *testing.T) {
 			if test.handlerErr != nil {
 				require.Contains(t, handlerStatus.GetMessage(), test.handlerErr.Error())
 			}
-			require.Len(t, handlerStatus.GetMessages(), 1)
-			require.Equal(t, "keep this warning", handlerStatus.GetMessages()[0].GetMessage())
+			messages := handlerStatus.GetMessages() //nolint:staticcheck // beta route coverage.
+			require.Len(t, messages, 1)
+			require.Equal(t, "keep this warning", messages[0].GetMessage())
 			require.NotNil(t, handlerStatus.GetError())
 		})
 	}
@@ -619,11 +620,11 @@ func TestBetaServiceEventManagerReturnsStructuredMessages(t *testing.T) {
 			} else {
 				require.Equal(t, test.handlerErr.Error(), status.GetError().GetMessage())
 			}
-			require.Equal(t, []*v1beta.ServiceEventMessage{{
+			require.Equal(t, []*v1beta.ServiceEventMessage{{ //nolint:staticcheck // beta route coverage.
 				Kind:       v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
 				Message:    "Review the access policy.",
 				Suggestion: "Update the policy before the next deployment.",
-			}}, status.GetMessages())
+			}}, status.GetMessages()) //nolint:staticcheck // beta route coverage.
 		})
 	}
 }

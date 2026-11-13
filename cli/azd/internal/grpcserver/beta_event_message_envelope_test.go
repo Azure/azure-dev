@@ -262,7 +262,7 @@ func TestValidateBetaEventMessageModes(t *testing.T) {
 					EventName:   "predeploy",
 					ServiceName: "api",
 					Status:      "completed",
-					Messages: []*v1beta.ServiceEventMessage{{
+					Messages: []*v1beta.ServiceEventMessage{{ //nolint:staticcheck // beta route coverage.
 						Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
 						Message: "warning",
 					}},

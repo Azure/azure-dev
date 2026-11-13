@@ -40,6 +40,9 @@ type extensionEventManager interface {
 	AddServiceEventHandler(
 		ctx context.Context, eventName string, handler ServiceEventHandler, options *ServiceEventOptions,
 	) error
+	AddServiceEventResponseHandler(
+		ctx context.Context, eventName string, handler ServiceEventResponseHandler, options *ServiceEventOptions,
+	) error
 	Close() error
 }
 
@@ -86,6 +89,12 @@ type ServiceEventRegistration struct {
 	Options   *ServiceEventOptions
 }
 
+type serviceEventResponseRegistration struct {
+	EventName string
+	Handler   ServiceEventResponseHandler
+	Options   *ServiceEventOptions
+}
+
 // ProvisioningProviderRegistration describes a provisioning provider to register with azd core.
 type ProvisioningProviderRegistration struct {
 	Name    string
@@ -110,6 +119,7 @@ type ExtensionHost struct {
 	frameworkServices     []FrameworkServiceRegistration
 	projectHandlers       []ProjectEventRegistration
 	serviceHandlers       []ServiceEventRegistration
+	serviceResponses      []serviceEventResponseRegistration
 	betaServiceHandlers   []betaServiceEventRegistration
 	provisioningProviders []ProvisioningProviderRegistration
 	validationChecks      []ValidationCheckRegistration
@@ -249,8 +259,27 @@ func (er *ExtensionHost) WithServiceEventHandler(
 	return er
 }
 
-// WithBetaServiceEventHandler registers a structured deploy handler.
+// WithServiceEventResponseHandler registers a service-level predeploy or postdeploy handler that can return
+// structured, non-blocking messages. azd 1.38.0 or later displays the messages after deployment and includes them
+// in JSON output; older hosts ignore them. An event cannot also be registered with WithServiceEventHandler or
+// WithBetaServiceEventHandler.
+func (er *ExtensionHost) WithServiceEventResponseHandler(
+	eventName string,
+	handler ServiceEventResponseHandler,
+	options *ServiceEventOptions,
+) *ExtensionHost {
+	er.serviceResponses = append(er.serviceResponses, serviceEventResponseRegistration{
+		EventName: eventName,
+		Handler:   handler,
+		Options:   options,
+	})
+	return er
+}
+
+// WithBetaServiceEventHandler registers a structured deploy handler on the deprecated v1beta route.
 // It supports service-level predeploy and postdeploy events only.
+//
+// Deprecated: use WithServiceEventResponseHandler with stable types in azd 1.38.0 or later.
 func (er *ExtensionHost) WithBetaServiceEventHandler(
 	eventName string,
 	handler BetaServiceEventHandler,
@@ -288,6 +317,9 @@ func (er *ExtensionHost) WithValidationCheck(
 
 // Run wires the configured service targets and event handlers, signals readiness, and blocks until shutdown.
 func (er *ExtensionHost) Run(ctx context.Context) error {
+	if err := er.validateServiceEventResponseRegistrations(); err != nil {
+		return err
+	}
 	if err := er.validateBetaServiceEventRegistrations(); err != nil {
 		return err
 	}
@@ -325,7 +357,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		}
 	}
 	hasFrameworkServices := len(er.frameworkServices) > 0
-	hasEventHandlers := len(er.projectHandlers) > 0 || len(er.serviceHandlers) > 0
+	hasEventHandlers := len(er.projectHandlers) > 0 || len(er.serviceHandlers) > 0 || len(er.serviceResponses) > 0
 	hasBetaServiceEventHandlers := len(er.betaServiceHandlers) > 0
 	hasProvisioningProviders := len(er.provisioningProviders) > 0
 	hasValidationChecks := len(er.validationChecks) > 0
@@ -493,6 +525,24 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		})
 	}
 
+	for _, reg := range er.serviceResponses {
+		r := reg
+		registrationsWaitGroup.Go(func() {
+			if err := er.eventManager.AddServiceEventResponseHandler(
+				ctx,
+				r.EventName,
+				r.Handler,
+				r.Options,
+			); err != nil {
+				registrationErrChan <- fmt.Errorf(
+					"failed to add service event response handler '%s': %w",
+					r.EventName,
+					err,
+				)
+			}
+		})
+	}
+
 	for _, reg := range er.betaServiceHandlers {
 		r := reg
 		registrationsWaitGroup.Go(func() {
@@ -606,9 +656,39 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	}
 }
 
-func (er *ExtensionHost) validateBetaServiceEventRegistrations() error {
-	stableEvents := make(map[string]struct{}, len(er.serviceHandlers))
+func (er *ExtensionHost) validateServiceEventResponseRegistrations() error {
+	registered := make(map[string]struct{}, len(er.serviceHandlers)+len(er.serviceResponses))
 	for _, registration := range er.serviceHandlers {
+		registered[registration.EventName] = struct{}{}
+	}
+
+	for _, registration := range er.serviceResponses {
+		if err := validateServiceEventResponseName(registration.EventName); err != nil {
+			return err
+		}
+		if registration.Handler == nil {
+			return fmt.Errorf(
+				"service event response handler for %q is nil",
+				registration.EventName,
+			)
+		}
+		if _, exists := registered[registration.EventName]; exists {
+			return fmt.Errorf(
+				"service event %q is registered more than once",
+				registration.EventName,
+			)
+		}
+		registered[registration.EventName] = struct{}{}
+	}
+	return nil
+}
+
+func (er *ExtensionHost) validateBetaServiceEventRegistrations() error {
+	stableEvents := make(map[string]struct{}, len(er.serviceHandlers)+len(er.serviceResponses))
+	for _, registration := range er.serviceHandlers {
+		stableEvents[registration.EventName] = struct{}{}
+	}
+	for _, registration := range er.serviceResponses {
 		stableEvents[registration.EventName] = struct{}{}
 	}
 

@@ -89,6 +89,9 @@ const (
 	ProvisioningService_Stream_FullMethodName                              = v1.ProvisioningService_Stream_FullMethodName
 	ProvisioningSkippedReason_PROVISIONING_SKIPPED_REASON_DEPLOYMENT_STATE = v1.ProvisioningSkippedReason_PROVISIONING_SKIPPED_REASON_DEPLOYMENT_STATE
 	ProvisioningSkippedReason_PROVISIONING_SKIPPED_REASON_UNSPECIFIED      = v1.ProvisioningSkippedReason_PROVISIONING_SKIPPED_REASON_UNSPECIFIED
+	ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO                = v1.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO
+	ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_UNSPECIFIED         = v1.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_UNSPECIFIED
+	ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING             = v1.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING
 	ServiceTargetService_Stream_FullMethodName                             = v1.ServiceTargetService_Stream_FullMethodName
 	TelemetryService_ReportUsage_FullMethodName                            = v1.TelemetryService_ReportUsage_FullMethodName
 	UserConfigService_GetSection_FullMethodName                            = v1.UserConfigService_GetSection_FullMethodName
@@ -385,6 +388,8 @@ type (
 	ServiceDeployPreviewResult                               = v1.ServiceDeployPreviewResult
 	ServiceDeployResult                                      = v1.ServiceDeployResult
 	ServiceErrorDetail                                       = v1.ServiceErrorDetail
+	ServiceEventMessage                                      = v1.ServiceEventMessage
+	ServiceEventMessageKind                                  = v1.ServiceEventMessageKind
 	ServiceHandlerStatus                                     = v1.ServiceHandlerStatus
 	ServicePackageResult                                     = v1.ServicePackageResult
 	ServicePublishResult                                     = v1.ServicePublishResult
@@ -542,6 +547,8 @@ var (
 	ProvisioningService_ServiceDesc  = v1.ProvisioningService_ServiceDesc
 	ProvisioningSkippedReason_name   = v1.ProvisioningSkippedReason_name
 	ProvisioningSkippedReason_value  = v1.ProvisioningSkippedReason_value
+	ServiceEventMessageKind_name     = v1.ServiceEventMessageKind_name
+	ServiceEventMessageKind_value    = v1.ServiceEventMessageKind_value
 	ServiceTargetService_ServiceDesc = v1.ServiceTargetService_ServiceDesc
 	TelemetryService_ServiceDesc     = v1.TelemetryService_ServiceDesc
 	UserConfigService_ServiceDesc    = v1.UserConfigService_ServiceDesc

@@ -378,9 +378,9 @@ func betaServiceStatusMessage(
 	statusMessage string,
 	warning string,
 ) *v1beta.EventMessage {
-	messages := []*v1beta.ServiceEventMessage(nil)
+	messages := []*v1beta.ServiceEventMessage(nil) //nolint:staticcheck // beta route coverage.
 	if warning != "" {
-		messages = []*v1beta.ServiceEventMessage{{
+		messages = []*v1beta.ServiceEventMessage{{ //nolint:staticcheck // beta route coverage.
 			Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
 			Message: warning,
 		}}

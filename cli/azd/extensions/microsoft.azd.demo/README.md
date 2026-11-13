@@ -130,10 +130,11 @@ This `listen` command is required when your extension leverages `LifecycleEvents
 
 This command is invoked by `azd` to allow your extension to subscribe to lifecycle events within the current `azd` project and services.
 
-The demo uses beta service handlers for `predeploy` and `postdeploy`. They
-return structured info and warning messages that azd displays after the
+The demo uses stable `WithServiceEventResponseHandler` handlers for `predeploy`
+and `postdeploy`. They return structured info and warning messages
+(`azdext.ServiceEventMessage`) that azd 1.38.0 or later displays after the
 deployment table and includes in deploy/up JSON results. Other demo lifecycle
-handlers continue to use the stable extension host.
+handlers use `WithServiceEventHandler`.
 
 ### `telemetry`
 

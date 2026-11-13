@@ -568,7 +568,7 @@ func TestBetaEventServiceBetaClientFollowUpAndMessagesEndToEnd(t *testing.T) {
 				EventName:   "predeploy",
 				ServiceName: "api",
 				Status:      "completed",
-				Messages: []*v1beta.ServiceEventMessage{{
+				Messages: []*v1beta.ServiceEventMessage{{ //nolint:staticcheck // beta route coverage.
 					Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
 					Message: "RBAC warning retained alongside follow-up",
 				}},
@@ -1049,7 +1049,7 @@ func TestServer_BetaEventStreamCollectsServiceMessages(t *testing.T) {
 				EventName:   "predeploy",
 				ServiceName: "api",
 				Status:      "completed",
-				Messages: []*v1beta.ServiceEventMessage{{
+				Messages: []*v1beta.ServiceEventMessage{{ //nolint:staticcheck // beta route coverage.
 					Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
 					Message: "service RBAC warning",
 				}},
@@ -1150,9 +1150,12 @@ func TestBetaEventServiceSDKStreamContinuesAfterCanceledServiceHandler(t *testin
 	var handlerMu sync.Mutex
 	handlerCalls := 0
 	handlerStarted := make(chan int)
-	host := azdext.NewExtensionHost(client).WithBetaServiceEventHandler(
+	host := azdext.NewExtensionHost(client).WithBetaServiceEventHandler( //nolint:staticcheck // beta route coverage.
 		"predeploy",
-		func(ctx context.Context, _ *azdext.ServiceEventArgs) (*azdext.BetaServiceEventResponse, error) {
+		func(
+			ctx context.Context,
+			_ *azdext.ServiceEventArgs,
+		) (*azdext.BetaServiceEventResponse, error) { //nolint:staticcheck // beta route coverage.
 			handlerMu.Lock()
 			handlerCalls++
 			call := handlerCalls
@@ -1162,7 +1165,7 @@ func TestBetaEventServiceSDKStreamContinuesAfterCanceledServiceHandler(t *testin
 				<-ctx.Done()
 				return nil, ctx.Err()
 			}
-			return &azdext.BetaServiceEventResponse{}, nil
+			return &azdext.BetaServiceEventResponse{}, nil //nolint:staticcheck // beta route coverage.
 		},
 		nil,
 	)
@@ -1350,7 +1353,7 @@ func TestServer_BetaEventStreamCorrelatesConcurrentServiceHooks(t *testing.T) {
 					ServiceName: names[index],
 					Status:      status,
 					Message:     message,
-					Messages: []*v1beta.ServiceEventMessage{
+					Messages: []*v1beta.ServiceEventMessage{ //nolint:staticcheck // beta route coverage.
 						{
 							Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
 							Message: names[index] + " first warning",
@@ -1563,7 +1566,7 @@ func TestCollectBetaServiceEventMessagesRedactsLinkCredentials(t *testing.T) {
 			EventName:   "postdeploy",
 			ServiceName: "api",
 			Status:      "completed",
-			Messages: []*v1beta.ServiceEventMessage{{
+			Messages: []*v1beta.ServiceEventMessage{{ //nolint:staticcheck // beta route coverage.
 				Kind:    v1beta.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
 				Message: "Review the deployment settings.",
 				Links: []*v1beta.ErrorLink{{

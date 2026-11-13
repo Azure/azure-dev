@@ -104,12 +104,13 @@ Extensions can access these azd services via gRPC:
 - **Framework** — Framework service operations
 - **Service Target** — Deployment target operations
 
-Structured deploy messages use the beta event stream. Go extensions opt in
-with `ExtensionHost.WithBetaServiceEventHandler` for service `predeploy` and
-`postdeploy` events; the stable event contract and default language scaffolds
-remain unchanged. See
+Structured deploy messages use the stable event stream in azd 1.38.0 or
+later. Go extensions return them with
+`ExtensionHost.WithServiceEventResponseHandler` for service `predeploy` and
+`postdeploy` events; older hosts ignore them. The deprecated
+`ExtensionHost.WithBetaServiceEventHandler` route is retained. See
 [contract versioning](../../cli/azd/docs/extensions/contract-versioning.md)
-for beta stream routing and legacy-client behavior.
+for routing and compatibility behavior.
 
 ## Error Handling
 

@@ -67,6 +67,14 @@ until the graduation merges and SDK v1.37.0 is published, then migrates preview
 consumers and aligns all affected extension SDK pins/minimum hosts on 1.37.0.
 Do not pin an unpublished version or merge local SDK replacements.
 
+The third batch targets azd 1.38.0 for structured service lifecycle messages
+(`ServiceHandlerStatus.messages`): [batch audit](https://github.com/Azure/azure-dev/issues/10934),
+[consumer migration](https://github.com/Azure/azure-dev/issues/10935). It graduates only the message shape.
+The beta `EventStream` override stays because acknowledgements, request IDs, and
+follow-ups remain beta-only; it shares the stable message collector. The new
+`WithServiceEventResponseHandler` is added beside the deprecated
+`WithBetaServiceEventHandler` without Go source breaks.
+
 ## Verify both client populations
 
 Add tests proving:

@@ -5,6 +5,7 @@ package azdext
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
@@ -532,6 +533,157 @@ func TestEventManager_onInvokeServiceHandler_NoHandler(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)          // Returns empty EventMessage, not nil
 	assert.Nil(t, resp.MessageType) // But the MessageType is nil (empty message)
+}
+
+func TestEventManager_onInvokeServiceHandler_ResponseHandlerMessages(t *testing.T) {
+	info := &ServiceEventMessage{
+		Kind:    ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO,
+		Message: "Deployment guidance.",
+	}
+	warning := &ServiceEventMessage{
+		Kind:       ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+		Message:    "Assign the required role.",
+		Suggestion: "Ask an owner to grant access.",
+		Links:      []*ErrorLink{{Title: "Role guide", Url: "https://aka.ms/role"}},
+	}
+
+	tests := []struct {
+		name         string
+		response     *ServiceEventResponse
+		handlerErr   error
+		wantStatus   string
+		wantErr      []string
+		wantMessages []*ServiceEventMessage
+	}{
+		{
+			name:         "valid messages are returned",
+			response:     &ServiceEventResponse{Messages: []*ServiceEventMessage{info, warning}},
+			wantStatus:   "completed",
+			wantMessages: []*ServiceEventMessage{info, warning},
+		},
+		{
+			name:       "nil response completes without messages",
+			wantStatus: "completed",
+		},
+		{
+			name:         "messages are kept when the handler fails",
+			response:     &ServiceEventResponse{Messages: []*ServiceEventMessage{warning}},
+			handlerErr:   errors.New("role check failed"),
+			wantStatus:   "failed",
+			wantErr:      []string{"role check failed"},
+			wantMessages: []*ServiceEventMessage{warning},
+		},
+		{
+			name: "invalid messages fail the handler and valid messages are kept",
+			response: &ServiceEventResponse{Messages: []*ServiceEventMessage{
+				nil,
+				{Message: "No kind"},
+				{Kind: ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO, Message: " "},
+				{
+					Kind:    ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+					Message: "Missing link URL",
+					Links:   []*ErrorLink{{Title: "No URL"}},
+				},
+				warning,
+			}},
+			wantStatus: "failed",
+			wantErr: []string{
+				"message 1: message is nil",
+				"message 2: unsupported message kind",
+				"message 3: message text is required",
+				"message 4: link 1 URL is required",
+			},
+			wantMessages: []*ServiceEventMessage{warning},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+			eventManager.serviceResponseEvents["predeploy"] = func(
+				context.Context,
+				*ServiceEventArgs,
+			) (*ServiceEventResponse, error) {
+				return tt.response, tt.handlerErr
+			}
+
+			resp, err := eventManager.onInvokeServiceHandler(t.Context(), &InvokeServiceHandler{
+				EventName:      "predeploy",
+				Project:        createTestProjectConfigForEvents(),
+				Service:        createTestServiceConfigForEvents(),
+				ServiceContext: createTestServiceContextForEvents(),
+			})
+			require.NoError(t, err)
+
+			status := resp.GetServiceHandlerStatus()
+			require.NotNil(t, status)
+			require.Equal(t, "predeploy", status.GetEventName())
+			require.Equal(t, "test-service", status.GetServiceName())
+			require.Equal(t, tt.wantStatus, status.GetStatus())
+			for _, wantErr := range tt.wantErr {
+				require.Contains(t, status.GetMessage(), wantErr)
+			}
+			require.Equal(t, tt.wantMessages, status.GetMessages())
+		})
+	}
+}
+
+func TestEventManager_AddServiceEventResponseHandler_Validation(t *testing.T) {
+	handler := func(context.Context, *ServiceEventArgs) (*ServiceEventResponse, error) {
+		return nil, nil
+	}
+
+	tests := []struct {
+		name      string
+		eventName string
+		handler   ServiceEventResponseHandler
+		setup     func(*EventManager)
+		wantErr   string
+	}{
+		{
+			name:      "unsupported event",
+			eventName: "prepackage",
+			handler:   handler,
+			wantErr:   "use predeploy or postdeploy",
+		},
+		{
+			name:      "nil handler",
+			eventName: "predeploy",
+			wantErr:   "is nil",
+		},
+		{
+			name:      "existing service handler",
+			eventName: "predeploy",
+			handler:   handler,
+			setup: func(eventManager *EventManager) {
+				eventManager.serviceEvents["predeploy"] = func(context.Context, *ServiceEventArgs) error {
+					return nil
+				}
+			},
+			wantErr: "already registered",
+		},
+		{
+			name:      "existing response handler",
+			eventName: "postdeploy",
+			handler:   handler,
+			setup: func(eventManager *EventManager) {
+				eventManager.serviceResponseEvents["postdeploy"] = handler
+			},
+			wantErr: "already registered",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+			if tt.setup != nil {
+				tt.setup(eventManager)
+			}
+
+			err := eventManager.AddServiceEventResponseHandler(t.Context(), tt.eventName, tt.handler, nil)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
 }
 
 // Test RemoveProjectEventHandler

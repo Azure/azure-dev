@@ -316,8 +316,19 @@ func (s *eventService) createServiceEventHandler(
 
 				// Extract status from response
 				statusMsg, ok := response.MessageType.(*azdext.EventMessage_ServiceHandlerStatus)
-				if !ok {
+				if !ok || statusMsg.ServiceHandlerStatus == nil {
 					return fmt.Errorf("unexpected response type for service event %s", eventName)
+				}
+
+				// Messages are collected from the final status, so a failing hook can still return guidance.
+				if err := collectServiceEventMessages(
+					ctx,
+					extension.Id,
+					eventName,
+					args.Service.Name,
+					statusMsg.ServiceHandlerStatus,
+				); err != nil {
+					return err
 				}
 
 				if statusMsg.ServiceHandlerStatus.Status == "failed" {

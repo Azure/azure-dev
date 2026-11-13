@@ -6,9 +6,11 @@ Architecture of the gRPC-based extension system in azd.
 
 ## Overview
 
-Extensions are external processes that communicate with azd via gRPC. They allow third parties and first-party teams to add new capabilities — languages, hosting targets, event handlers, and more — without modifying the core CLI.
+Extensions are external processes that communicate with azd via gRPC. They allow Microsoft teams, community authors, and organizations to add new capabilities — languages, hosting targets, event handlers, and more — without modifying the core CLI.
 
 The extension framework itself is **generally available (GA)** and considered stable. See the [Azure Developer CLI extension framework is GA](https://devblogs.microsoft.com/azure-sdk/azd-extension-framework-ga/) announcement for release context. Individual extensions, registries, or specific capabilities may still carry their own experimental or pre-release status independent of the framework's GA status.
+
+For boundary decisions and new extension points, use the authoritative [extension-versus-core decision framework](../../cli/azd/docs/style-guidelines/guiding-principles.md#choose-between-core-and-an-extension). For host API stability and migration policy, use [extension contract versioning](../../cli/azd/docs/extensions/contract-versioning.md).
 
 ## Architecture
 
@@ -31,7 +33,7 @@ Extensions are discovered from registries — JSON manifests that list available
 - **Dev registry:** `https://aka.ms/azd/extensions/registry/dev` — Experimental and pre-release extensions (unsigned builds, backed by `cli/azd/extensions/registry.dev.json`). Not configured by default; users opt in with `azd extension source add`.
 - **Local sources:** File-based manifests for development
 
-The dev registry serves as a staging area for extensions before they graduate to the main registry. Extensions installed from the dev registry are automatically promoted to the main registry when a newer stable version becomes available there. See the [Extension Resolution and Versioning](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#devexperimental-extension-registry) guide for detailed criteria, stability expectations, and submission guidelines.
+The dev registry serves as a staging area for extensions before they graduate to the main registry. Extensions installed from the dev registry can be promoted to the main registry when the [promotion conditions](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#update-and-devmain-promotion) are met. See [creating an extension](../guides/creating-an-extension.md#5-publish-and-share) for the publishing path, and the [Extension Resolution and Versioning](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#devexperimental-extension-registry) guide for stability expectations.
 
 ### Lifecycle
 
@@ -214,9 +216,11 @@ waits for the published SDK before updating the Foundry extensions.
 See [Deployment Preview](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
 for registration and provider requirements.
 
-## First-Party Extensions
+<a id="first-party-extensions"></a>
 
-First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.
+## Microsoft-authored extensions
+
+Microsoft-authored extensions live in `cli/azd/extensions/` and are published through the dev or main registry. Community-authored and organization-internal extensions use their own registry; see [creating an extension](../guides/creating-an-extension.md#5-publish-and-share).
 
 ## Detailed Reference
 

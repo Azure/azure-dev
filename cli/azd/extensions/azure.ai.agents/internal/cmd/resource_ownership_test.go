@@ -156,14 +156,34 @@ func TestFoundryReleaseMetadata(t *testing.T) {
 
 			changelog, err := os.ReadFile(filepath.Join(dir, "CHANGELOG.md"))
 			require.NoError(t, err)
-			_, latest, found := strings.Cut(string(changelog), "\n## ")
+			latest, found := latestReleasedChangelogSection(string(changelog))
 			require.True(t, found)
-			if strings.HasPrefix(latest, "Unreleased\n") {
-				_, latest, found = strings.Cut(latest, "\n## ")
-				require.True(t, found)
-			}
 			assert.True(t, strings.HasPrefix(latest, manifest.Version+" ("), "latest changelog must match version")
 		})
+	}
+}
+
+func latestReleasedChangelogSection(content string) (string, bool) {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	_, latest, found := strings.Cut(content, "\n## ")
+	if found && strings.HasPrefix(latest, "Unreleased\n") {
+		_, latest, found = strings.Cut(latest, "\n## ")
+	}
+	return latest, found
+}
+
+func TestLatestReleasedChangelogSectionLineEndings(t *testing.T) {
+	for _, newline := range []string{"\n", "\r\n"} {
+		for _, unreleased := range []bool{false, true} {
+			content := "# Release History\n"
+			if unreleased {
+				content += "\n## Unreleased\n\n### Other Changes\n\n- Pending\n"
+			}
+			content += "\n## 1.1.0 (2026-11-12)\n\n- Released\n"
+			section, found := latestReleasedChangelogSection(strings.ReplaceAll(content, "\n", newline))
+			require.True(t, found)
+			require.True(t, strings.HasPrefix(section, "1.1.0 ("))
+		}
 	}
 }
 

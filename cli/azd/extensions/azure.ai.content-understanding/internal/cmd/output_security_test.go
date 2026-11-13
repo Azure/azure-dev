@@ -31,7 +31,7 @@ func TestDiagnosticRedactionDoesNotChangeIntentionalResultPayloads(t *testing.T)
 				args := []string{"https://example.com/input.pdf", "--debug"}
 				path := filepath.Join(testutil.TempDir(t), "result")
 				if full {
-					args = append(args, "--llm-input=false")
+					args = append(args, "--output", "json")
 				}
 				if fileOutput {
 					args = append(args, "--output-file", path)

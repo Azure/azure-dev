@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/exterrors"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,6 +125,12 @@ func TestResolveProvisionedScopeAndRuntimeSettings(t *testing.T) {
 	delete(values, "CU_ENDPOINT")
 	_, err := resolve(Options{}, nil, values, nil, nil)
 	require.ErrorContains(t, err, "Specify --endpoint or CU_ENDPOINT")
+	for range 3 {
+		err = exterrors.FromError(err)
+		require.ErrorContains(t, err,
+			"azd ai cu config set CU_ENDPOINT https://<your-resource>.services.ai.azure.com.")
+		require.NotContains(t, err.Error(), "[redacted path]")
+	}
 }
 
 func TestProvisionedValuePresencePrecedence(t *testing.T) {

@@ -1,6 +1,6 @@
 # Foundry Projects
 
-<!-- cspell:ignore strconv Kata kubelet -->
+<!-- cspell:ignore strconv Kata katagen kubelet -->
 
 Manage Microsoft Foundry Project resources from your terminal.
 
@@ -321,7 +321,7 @@ In PowerShell:
 $env:AZD_ALPHA_ENABLE_AGENTS_BYO_AKS = 'true'
 ```
 
-The independent `agents.byo_aks` switch uses the process environment. If the variable is absent, BYO AKS use is disabled. When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable it; empty, false, and invalid values disable it. `alpha.all`, other preview switches, and service `env:` entries do not override this switch. Ordinary Agents extension commands may receive selected azd environment values injected by the host. The Projects provisioning listener does not receive that injection: `azd provision` and `azd provision --preview` require the switch in the current shell or CI process environment. `azd env set` alone does not enable it. Foundry provisioning without effective AKS hosting does not require this switch.
+The independent `agents.byo_aks` switch uses the process environment. If the variable is absent, BYO AKS use is disabled. When explicitly set, only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable it; empty, false, and invalid values disable it. `alpha.all`, other preview switches, and service `env:` entries do not override this switch. Ordinary Agents extension commands may receive selected azd environment values injected by the host. The Projects provisioning listener does not receive that injection: `azd provision` and `azd provision --preview` require the switch in the current shell or CI process environment. `azd env set` alone does not enable it. When the switch is disabled, Projects uses its standard listener without subscribing to BYO preflight reports. Foundry provisioning without effective AKS hosting does not require this switch.
 
 The generated account, project and model deployment resources use API `2025-06-01` without AKS hosting. Only the BYO AKS path uses `2026-07-15-preview`; both paths return the same standard project, endpoint and registry outputs.
 
@@ -343,20 +343,18 @@ services:
       clusterResourceId: ${AKS_CLUSTER_ID}
 ```
 
-`agentHosting` does not require a `network` block or additional subnets. Omit `network` for public networking, or supply it to use the standard account network injection and private-endpoint resources. Existing AKS hosting supports an automatically created ACR with private account networking. Without `agentHosting`, private networking supports prebuilt images, code/ZIP deployments, and source builds using an external registry; it does not support an automatically created ACR.
+`agentHosting` does not require a `network` block or additional subnets. Omit `network` for public networking, or supply it to use the standard account network injection and private-endpoint resources. Both ordinary Foundry and existing AKS hosting reject automatic ACR creation with private account networking. Use prebuilt images, code/ZIP deployments, or select an external registry for source builds. Selecting an external registry does not change or verify its network connectivity.
 
-Use an existing AKS cluster configured for Foundry agent hosting. When effective hosting is enabled, the provider always reads and validates the selected cluster's kubelet principal object ID, regardless of `includeAcr` or an explicit kubelet binding. It resolves the built-in federation role when that deployment binding is needed. It does not validate AKS or network readiness or reconfigure the cluster.
+Use an existing AKS cluster configured for Foundry agent hosting. Before deployment, the provider reads the cluster and its AgentPool children to check the Foundry hosting prerequisites. Regional VM-size capabilities are read for non-blocking capacity recommendations. When effective hosting is enabled, it always reads and validates the selected cluster's actual kubelet principal object ID, regardless of `includeAcr` or an explicit kubelet binding. It resolves the built-in federation role when that deployment binding is needed. These checks do not create or reconfigure AKS, inspect Kubernetes node Ready conditions, or test runtime connectivity.
 
 The default resource graph creates:
 
 - One StorageV2 account (`st<resourceToken>`), with shared keys, anonymous blobs, and insecure transport disabled.
 - Separate hosting-management and workload user-assigned managed identities.
-- When an Agent requires building a container image, one native azd Container Registry (`cr<resourceToken>`), its Project connection, and `AcrPull` for the Project and AKS kubelet identities. A project without such an Agent does not automatically create a registry; pre-built images and code/ZIP configurations follow the standard Foundry ACR selection.
+- When an Agent requires building a container image, one native azd Container Registry (`cr<resourceToken>`) and its Project connection, or a selected external registry and connection. New BYO AKS deployments grant registry pull access only to the AKS kubelet identity, not the Project identity. Upgrades retain any Project grants created by older versions; see [legacy registry access](#legacy-byo-aks-registry-access). A project without such an Agent does not automatically create a registry; pre-built images and code/ZIP configurations follow the standard Foundry ACR selection.
 - Hosting-management Reader and Kubernetes Extension Contributor roles on the existing cluster, federation-management permission on the workload identity, and workload Storage Blob Data Contributor permission on the storage account.
 
-The account receives a `ManagedCluster` / `default` hosting configuration. Its data-plane access follows the optional `network` configuration. **Storage and any automatically created ACR use public authenticated endpoints**, so the cluster must be able to reach them. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. The deploying principal needs read access to AKS, the built-in role definitions and target resource group, creation rights for the new resources, and role-assignment write rights at the cluster, workload identity and Storage scopes. Creating an ACR additionally requires registry role-assignment write rights. Configuring private networking additionally requires the corresponding network permissions.
-
-When the hosting-management identity is omitted, the deploying principal also needs `Microsoft.Resources/deployments/write` at the existing AKS resource-group scope. The cluster role grants are created through nested ARM deployments in that group, including when it differs from the Foundry target resource group.
+The account receives a `ManagedCluster` / `default` hosting configuration. Its data-plane access follows the optional `network` configuration. **Storage uses a public authenticated endpoint. An ACR is automatically created only without account network isolation and also uses a public authenticated endpoint.** The cluster must be able to reach the selected stores. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. ARM authorizes resource creation and role assignments when executing the deployment.
 
 Storage and the two identities can each be supplied independently using complete ARM resource IDs:
 
@@ -372,24 +370,14 @@ Omit any supporting-resource field to retain its default creation/update path. E
 
 Agents using pre-built images retain their standard registry-connection and authentication requirements; azd does not automatically grant the AKS cluster access to an external registry.
 
-A supplied hosting-management identity needs Reader and Kubernetes Extension Contributor on the cluster. A supplied hosting-management identity and a supplied workload identity require an existing federation-management grant between them. A supplied workload identity and supplied Storage require an existing Storage Blob Data Contributor grant. ARM creates the federation or Storage grant when either corresponding resource selection is omitted; two explicit endpoints require existing grants. A supplied hosting-management identity skips the cluster-grant deployments. Cross-subscription grants use the selected workload or Storage resource's subscription and resource group.
+For missing principal bindings declared by the template, the provider uses metadata matching the identities selected by the actual compiled Foundry hosting configuration, not the original selector parameters. An identity whose principal is required by an automatic binding is read even when the template also creates or updates it; this metadata read does not change its lifecycle. Default identities that use ARM resource references for their principals retain that path without an existence GET. The kubelet binding uses preflight's AKS metadata. Required bindings fail if matching preflight evidence is unavailable or the principal ID is not a GUID. A missing federation-role binding is resolved in the actual workload identity's subscription when the compiled plan identifies that scope, including when its name is unresolved. Otherwise, it uses the effective supplied workload identity's subscription, or the deployment subscription when that identity is omitted. Explicit bindings take precedence; applicable preflight evidence reads still run.
 
-The user or automation identity running the deployment also needs the following permissions:
-
-| Resource selection | Required deployer permission |
-|---|---|
-| Supplied workload identity with an omitted hosting-management identity | `Microsoft.Resources/deployments/write` on the supplied workload identity's resource group, where the nested federation-grant deployment runs. |
-| Supplied Storage with an omitted workload identity | `Microsoft.Resources/deployments/write` on the supplied Storage account's resource group, where the nested Storage-grant deployment runs. |
-| Supplied hosting-management identity | `Microsoft.ManagedIdentity/userAssignedIdentities/assign/action` on that identity to attach it to the Foundry account, for example through Managed Identity Operator or an equivalent role. |
-
-These permissions are additional to the applicable resource and role-assignment permissions above. Resource-scoped role-assignment write permission alone does not authorize the resource-group-scoped nested deployments, including in another subscription.
-
-For missing principal bindings declared by the template, the provider reads the effectively selected supplied identities to resolve their principal IDs. A missing federation-role binding is resolved in the effective workload identity's subscription, or the deployment subscription when that identity is omitted. Explicit bindings do not require these lookups. This is deployment binding resolution, not a readiness, networking, or permission preflight. Supplied resources and their existing grants must already be configured for Foundry agent hosting.
-
-After local validation, preview opt-in, and credential initialization, independent AKS, federation-role,
-and supplied-identity reads run concurrently. The first failed read cancels outstanding
-reads and returns its original error; errors are selected by completion order.
-All required reads must succeed before bindings are merged and ARM deployment or what-if can proceed.
+After local validation, preview opt-in, and credential initialization, preflight collects resource
+and authorization evidence. Required bindings must resolve successfully before they are merged
+and ARM deployment or what-if can proceed.
+Role assignments and built-in role-name lookups are cached within that preparation.
+Role validation compares built-in role IDs, without reading role-definition permissions.
+The federation-role binding resolves the built-in role name on demand in the target subscription.
 
 `azd provision --preview` resolves the host bindings and returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives names for omitted supporting resources and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`. Registry outputs are empty when no registry is selected.
 
@@ -399,7 +387,76 @@ Embedded provisioning and Bicep eject are supported through `microsoft.foundry`;
 
 BYO AKS uses the standard Foundry resource-group creation/update behavior. The deployment applies the configured location and tags; an existing target resource group's location must match the deployment location.
 
-The provider fills `federatedIdentityRoleDefinitionId` and supplied identities' `hostingPrincipalId` / `workloadPrincipalId` only when the template declares the parameter and the user has not provided it. The same rule applies to `kubeletObjectId` when `includeAcr=true`. Explicit parameter values and envelopes take precedence, with parameter names matched ignoring case, and are forwarded unchanged. User parameters absent from the template are also forwarded so ARM reports the error. Location, resource-name salt and resource-group parameters follow the normal on-disk parameter precedence and ARM validation.
+The provider fills `federatedIdentityRoleDefinitionId`, the selected identities' required `hostingPrincipalId` / `workloadPrincipalId` bindings, and `byoAksExistingRoleAssignmentKeys` only when the template declares the parameter and the user has not provided it. The same rule applies to `kubeletObjectId` when `includeAcr=true`. Explicit parameter values and envelopes take precedence, with parameter names matched ignoring case. With BYO AKS and `includeAcr=true`, an explicit `kubeletObjectId` must be supplied once in a value envelope containing a literal principal object ID GUID matching the actual kubelet identity read from the effective AKS cluster. Invalid inputs or mismatches fail before registry access preparation; matching values are forwarded unchanged. When `includeAcr=false`, this additional binding validation does not apply. Other explicit bindings retain their existing forwarding behavior. User parameters absent from the template are also forwarded so ARM reports the error. Location, resource-name salt and resource-group parameters follow the normal on-disk parameter precedence and ARM validation.
+
+Provision and preview run read-only preflight for every BYO AKS plan, including plans that supply only AKS and create all supporting resources. Checks cover resource existence and identity metadata, subscription owning tenants, supplied-identity grants, AKS hosting prerequisites, and the selected existing Agent subnet. Ordinary Foundry projects without `agentHosting` do not enter this pipeline.
+
+| Checks | Required evidence |
+|---|---|
+| `aks-type` | AKS Standard cluster with explicit `sku.name=Base`; AKS Automatic and other names fail, and missing type evidence blocks preflight as `UNVERIFIED`. The `sku.tier` pricing tier is not restricted. |
+| `aks-version`, `aks-cni`, `aks-identity`, `aks-federation` | Actual running Kubernetes version at least 1.31; Azure CNI with case-insensitive plugin/mode matching, using Overlay or a nonempty cluster `agentPoolProfiles` list with `podSubnetID` on every pool, including System pools; supported managed cluster identity and kubelet object ID; enabled OIDC with issuer and Workload Identity. |
+| `system-pool` | At least one System child pool exists. |
+| `agent-pool`, `agent-image`, `agent-label` | One complete User Agent pool has Azure Linux, KataVmIsolation, at least one node, an `AKSAzureLinux-V3katagen2-` image at least `202608.14.0`, and `agents.ai.azure.com/sandbox-node=true`. When an existing Agent subnet is selected, the chosen pool must also pass the required Node subnet checks. Configuration, capacity recommendations, and network checks use the same pool; requirements cannot be combined across different pools. If no pool satisfies all required checks, configuration scores select a diagnostic candidate only; mandatory failures still block provisioning. |
+| `network-policy` | Azure or Calico network policy, or the supported Cilium dataplane. |
+| `agent-subnet` | The selected existing `network.agentSubnet` is private IPv4, at least /27, contained in its VNet, non-overlapping with the selected AKS Node subnet, and delegated to `Microsoft.App/environments`. Agent and Node subnet reads must return the requested resource ID. The Agent subnet's provisioning state is not required. New or unselected Agent subnets are not applicable; unrelated Node subnets are not compared. |
+
+System pool VMs are recommended to provide at least 4 available vCPU and 16 GiB; the selected Agent pool's VMs are recommended to provide at least 8 available vCPU and 32 GiB. Lower capacity or unavailable capacity evidence produces a warning on the corresponding pool check, like the supplied Storage zone-redundancy recommendation. The regional VM SKU lookup has a 10-second budget across all pages; a timeout produces a capacity-unverified warning without canceling mandatory checks. Canceling the command still cancels preflight. Capacity recommendations do not change check status, block provisioning, or modify the pools.
+
+Determinate mandatory failures, including nonexistent references, incompatible configuration and missing required role assignments, block deployment and ARM what-if. Each blocked-check error includes its redacted target scope. Unreadable or incomplete Azure evidence retains the corresponding mandatory check result. If the child-pool list cannot be read, `system-pool`, `agent-pool`, `agent-image`, and `agent-label` remain `UNVERIFIED`; a successfully read list with no required pools produces `FAIL`. Cluster-level checks still use the available cluster metadata. An unresolved local template-plan dependency instead produces a visible `WARNING` naming the resource ID, or its type and template/module position, the check ID and the reason; only that dependent check is recorded as `SKIPPED`, not `PASS`. Later independent checks still run, and other mandatory failures still block deployment.
+
+Preflight reports include warnings and skipped checks. On successful provisioning, the extension contributes the complete report to the final command output through the existing postprovision follow-up interface, leaving the text in the terminal history. Persistent success reports are limited to ordinary provisioning output; successful preview and JSON-mode success do not include a persistent report. A preflight failure includes the complete report in the returned error while retaining its error classification and cause. Checks with an underlying error include a `Cause:` line with the error details; URL credentials, query strings, and fragments are removed before display. The report uses the command's error styling in this case; individual check statuses remain unchanged. Errors from deployment operations after preflight retain their original messages without the report. Progress shows only a single-line preflight status summary, not the complete report.
+
+Supplied Storage must have a successful provisioning state, StorageV2 kind, Hot tier, HNS disabled, HTTPS-only transport, and TLS 1.2 or later. When account properties are available, an omitted `isHnsEnabled` is treated as `false`. Missing HTTPS and TLS properties use the Storage API's documented defaults. Preflight does not change supplied Storage settings. Zone redundancy is recommended but does not block provisioning.
+
+Failure to publish the final preflight report is diagnostic only and does not
+block subsequent service deployment. In that case, the report and publication
+error are logged, but are not guaranteed to be visible to the user.
+
+The three identity-role checks run only when the hosting-management identity, workload identity, and Storage are all supplied. In that case the template does not create these role assignments, and missing required roles block provision and preview:
+
+| Check | Identity and target | Accepted built-in roles |
+|---|---|---|
+| `hosting-aks` | Hosting-management identity on AKS | Reader and Kubernetes Extension Contributor; Owner or Contributor can satisfy either requirement. |
+| `hosting-federation` | Hosting-management identity on the workload identity | Managed Identity Federated Identity Credential Contributor, Owner, or Contributor. |
+| `workload-blob` | Workload identity on Storage | Storage Blob Data Contributor or Storage Blob Data Owner; ordinary Owner and Contributor do not qualify. |
+
+Assignments returned by the target scope's `atScope()` query, including inherited assignments, are accepted when the principal and role IDs match and `condition` is empty. Validation does not separately reject `conditionVersion` or delegated-managed-identity metadata, recheck scope ancestry, or infer equivalent permissions from custom roles or combinations of roles. Unreadable or incomplete assignment evidence blocks the checks.
+
+A role-check `PASS` means a matching assignment with an accepted built-in role and no condition was found. It does not establish effective access: preflight does not evaluate deny assignments or execute the required operations. Actual operations may still be denied despite the matching assignment.
+
+When any of the three supporting-resource selections is omitted, these role checks do not run. The built-in template instead creates all four standard role assignments: Reader and Kubernetes Extension Contributor on AKS, federation-management access on the workload identity, and Storage Blob Data Contributor on Storage. This can add grants on supplied resources without reconfiguring or recreating those resources. The deploying principal must be authorized to create the role assignments at each target scope and submit nested deployments (`Microsoft.Resources/deployments/write`) in the corresponding target resource groups, including the AKS resource group. Skipping existing role assignments does not skip their enclosing nested deployments or remove that deployment-permission requirement.
+
+Previously ejected BYO AKS templates are not guaranteed compatible with these grant-creation rules. Regenerate the infrastructure with the current extension, or update the authorization modules to the current rules while preserving authored customizations; old authorization modules are not automatically migrated.
+
+Before that deployment or preview, the provider reads existing assignments at the three target scopes and supplies lowercased `scope|principalId|roleGuid` keys through `byoAksExistingRoleAssignmentKeys`. Only unconditional assignments produce keys; each exact unconditional assignment is skipped regardless of its assignment name. When the selected identity's principal ID is known, a matching conditional assignment without matching unconditional evidence blocks preparation. The final command error identifies the existing assignment ID and condition, the identity resource ID and principal ID, the target scope, and the required role name and definition ID. A resource administrator must review and, if approved, remove the existing condition or replace the assignment with an unconditional grant; creating another assignment for the same principal, scope and role under a different ID conflicts with the existing assignment. azd does not modify existing conditions. Unrelated conditional assignments do not block this check. A new identity whose principal ID is not locally available retains ARM grant creation, but conditional assignments are never used to suppress it. Inherited assignments at a different scope and substitute roles do not suppress a standard assignment at the target. An initial 404 for an omitted target or a target whose creation/reference selection cannot be determined is allowed; other read failures or incomplete assignment data stop preparation rather than being treated as an empty list. When the target resource ID is known, its duplicate-assignment lookup runs even if its creation/reference selection cannot be determined. An unresolved target resource ID produces a `role-assignment-keys SKIPPED` warning for that target; its duplicate-assignment lookup is skipped and the custom template retains its grant-creation behavior. Explicit key bindings retain normal parameter precedence.
+
+Preflight reads supplied supporting resources for their applicable checks and reads selected identities when their metadata is needed for automatic deployment bindings. It does not issue identity or Storage resource GETs merely to check the existence of default supporting resources; ARM retains their ordinary creation/update path. Default-resource existence does not gate preparation, but a required principal binding needs readable metadata with a matching resource ID. The separate role-assignment queries described above still run when needed for deployment deduplication, including at default target scopes.
+
+Preflight uses current Azure state, not a persisted deployment journal. With all three resources supplied, missing required roles block retries as well as initial deployment. With any selection omitted, retries retain the template's grant-creation path and refresh existing-assignment keys. Omitted Storage retains the deterministic `st<resourceToken>` name and ordinary ARM creation/update path even if it already exists; current existence does not convert it into a supplied reference or establish ownership.
+
+Subscription responses are shared only within one preparation. Template scope resolution validates the actual returned ARM ID, while preflight independently validates the top-level owning `tenantId` for every relevant subscription. Each deployment or preview refreshes this evidence.
+
+For both default and supplied supporting resources, preflight identifies resources from the actual compiled ARM template and merged parameters, including local nested modules, resolvable conditions, names, resource scopes, and the selected Agent subnet. Lifecycle classification excludes same-type candidates whose known scopes cannot match the selected resource; unresolved names in those scopes do not affect its classification. Candidates with potentially matching or unresolved scopes retain their dependent uncertainty. It does not compare the template against a standard-template digest or substitute standard names for rewritten resources.
+
+The local plan adapter is bounded, not a general ARM interpreter. Nested-deployment expression scope follows the containing template's `languageVersion`: `2.0` defaults to `inner`, while earlier templates default to `outer`. The adapter supports only inner-scoped evaluation, including the ARM 2.0 default; those nested templates use their own `deployment().name`. Ordinary `reference()` returns resource properties; `reference(..., 'Full')` returns the full resource shape. Runtime-only reference properties, unavailable linked templates and unsupported expressions remain unresolved; dependent checks warn and skip individually. Supported constant `uniqueString` and `guid` expressions use the existing azd-managed Bicep tool. Failures evaluating these functions, including Bicep download or execution failures, stop preparation for deployment and preview. Explicit deployment bindings retain their normal precedence.
+
+#### Legacy BYO AKS registry access
+
+Upgrading or re-ejecting templates does not automatically revoke `AcrPull`
+assignments previously created for the Foundry Project identity. ARM incremental
+deployment leaves those assignments in place even though the current template
+no longer creates them for BYO AKS. azd does not automatically delete or migrate
+these legacy grants.
+
+A resource administrator can review the registry's **Access control (IAM)** role
+assignments in the Azure portal. Identify the Foundry Project's managed identity
+principal ID and distinguish it from the selected AKS cluster's kubelet object ID.
+Before removing an old Project `AcrPull` assignment, confirm its registry scope,
+principal and role, verify that the kubelet has the required pull access, and
+check that no other workload relies on the Project grant. Remove only the
+specific assignment approved for removal; do not remove the Project identity
+or registry connection, which remain necessary for project association and
+binding recovery.
 
 ### Infrastructure layers
 
@@ -548,11 +605,32 @@ registry is outside the groups named in environment values.
 Cross-subscription registry reuse is not supported. You are responsible for
 registry network connectivity and appropriate image push permissions.
 
-An external source-build registry selection cannot be combined with
-`agentHosting`, including an unused project-only selection. Reuse does not
-manage AKS node pull access. Remove the selector and let azd create a registry
-when a source build needs one, or use explicit prebuilt images with
-user-managed registry authentication.
+An external source-build registry selection supports `agentHosting`. Before
+provisioning, the provider checks the selected AKS kubelet identity for a matching
+registry pull role assignment and creates a missing grant during ARM deployment.
+Classic registries use `AcrPull`; ABAC registries use Container Registry Repository
+Reader. New BYO AKS deployments grant pull access only to the kubelet identity;
+ordinary Foundry hosting continues to use the Project identity. Existing Project
+grants from older BYO AKS deployments are retained as described under
+[legacy registry access](#legacy-byo-aks-registry-access). The Project connection
+continues to use the Project identity as its Managed Identity credential and
+retains the registry address and resource ID for discovery and binding recovery.
+The connection does not itself grant registry access or supply the kubelet's credentials.
+Existing registry networking is not modified, and the provider does not perform
+a connectivity or image-pull test. You must make the registry reachable from AKS.
+Creating missing grants requires role-assignment write permission and nested
+deployment permission on the registry resource group.
+When account network isolation is enabled, source builds require an explicitly
+selected external registry; automatic registry creation is rejected before deployment.
+With isolation disabled, both automatic creation and external reuse are supported.
+Re-eject existing BYO AKS Bicep templates to obtain the kubelet-only access
+contract; older ejected templates are rejected when registry access is enabled.
+
+On teardown, the external registry and pre-existing grants are retained. Only
+verified environment-owned grants and their deployment records are removed.
+If multiple environments share one AKS kubelet identity and registry, a grant
+created by one environment may also be used by another; deleting the owning
+environment can remove that shared access.
 
 Embedded and currently generated ejected Bicep keep the
 `microsoft.foundry` provider, which enforces the switch for provision, preview,
@@ -571,7 +649,7 @@ permission alone does not make that remote request supported. Use local Docker
 with Repository Writer push permission, a prebuilt image, or a classic RBAC
 registry instead. Code deployments, prebuilt images, and project-only selections
 without source-build demand do not trigger this remote-build restriction.
-The scope and `agentHosting` restrictions still apply to the selector.
+The subscription and teardown-scope restrictions still apply to the selector.
 
 An `image` value alone does not select a prebuilt deployment: source build is
 the default, including with `--no-prompt`. To use an existing image, set
@@ -646,6 +724,11 @@ only in JSON, `.bicepparam`, or a template default are honored. Setting
 parameters remains authoritative.
 Registry access parameter declarations are matched ignoring case, including
 the owned-grant recovery metadata, consistent with ARM parameter matching.
+For BYO AKS, the provider resolves `acrPullPrincipalId` from the effective
+`kubeletObjectId` binding, which must be a literal principal object ID GUID.
+The registry binding retains the Project identity separately from the pull
+identity. Provision and preview reject changes to an external registry's bound
+pull identity rather than transferring an existing access operation.
 When creating an ACR, a declared `enableNetworkIsolation` parameter must have a
 literal boolean value for local compatibility checks; ARM expressions are not
 evaluated locally.
@@ -743,6 +826,38 @@ azd ai project add --project-id "<project-resource-id>"
 azd ai project deployment add --model <model-name>
 ```
 
+Project selection resolves the endpoint from Azure Resource Manager rather than
+assuming the account resource name is its DNS prefix. Azure custom subdomains
+are supported for adoption and generated Bicep/Terraform infrastructure; arbitrary
+domains and reverse proxies are not. Missing endpoint metadata falls back to the
+account's custom subdomain, then its resource name; failed lookups and invalid
+metadata remain errors, except one compatibility case: if account metadata is
+forbidden (HTTP 403), the extension accepts a valid ARM-advertised endpoint
+that still matches the selected project. Missing or invalid advertised
+endpoints, and all other account lookup failures, remain errors.
+`project deployment add` also verifies the configured endpoint against ARM
+metadata, so custom subdomains remain valid when adding managed deployment
+declarations. Rerunning `project add --project-id` for the same project repairs
+stale endpoints without clearing registry or deployment bindings.
+Selecting a different configured project clears the old project-bound state,
+even when agent initialization has already saved the newly selected ARM ID.
+Provisioning with resource declarations verifies that the endpoint belongs to
+that ARM project before making changes; provider initialization remains offline.
+
+For on-disk Bicep under `microsoft.foundry`, omitted `projectResourceId` and
+`projectEndpoint` parameters default to the initialized environment values ahead
+of template `defaultValue` entries, and explicit parameter values must resolve to
+literal strings that still match the initialized project unless
+`azd ai project add --project-id <resource-id>` is rerun. Exported Bicep also
+includes a read-only identity-validation deployment that every resource-changing
+module and supporting resource group depends on. A mismatch fails that deployment
+before those resources are changed. Its deployment-history record can remain.
+
+Teardown also verifies this identity before cleanup. If the project or account
+has already been deleted, teardown leaves project connections untouched and
+continues cleaning up only ownership-verified supporting resources. Other lookup
+failures stop cleanup.
+
 An endpoint-only project is suitable for configuration that does not manage
 resources on the existing project. If managed deployments are already
 declared, endpoint-only setup stops before clearing the project ID.
@@ -832,3 +947,17 @@ existing Foundry project should be reused instead, configure its endpoint and se
 full project resource ID before retrying.
 
 The `azd ai project set`, `show`, and `unset` commands manage the default Foundry project endpoint context. Use `azd ai project add` to author the project service in `azure.yaml`.
+
+## Azure Policy model deployment checks
+
+When targeting an existing Foundry project (`AZURE_AI_PROJECT_ID`), `azd provision` / `azd up` and `azd ai project deployment add` evaluate effective model deployments against the Cognitive Services account's ARM `evaluateDeploymentPolicies` endpoint before submitting deployment changes.
+
+- **Blocking pre-checks (`provision`, `up`, `project deployment add`)**: Assignments with a `Deny` effect fail fast with a validation error (`model_blocked_by_policy`) and a Foundry Portal Govern deep link for the blocking assignment. Assignments with an `Audit` effect are treated as non-blocking. Transport, authentication, or service errors during preflight evaluation fail open so ARM remains the final authority.
+- **Brownfield reconciliation warnings (`project add`)**: Adopting an existing project via `azd ai project add` evaluates reconciled and retained deployments and prints a non-blocking warning to `stderr` (suppressed when `--output` is `json` or `none`) if any deployment is denied by Azure Policy.
+- **Opting out of client-side pre-checks**: Set `AZD_AI_AGENT_SKIP_POLICY_CHECKS=true` (or the legacy alias `AZD_AGENT_SKIP_POLICY_CHECKS=true`) in the active `azd` environment or OS environment:
+
+  ```sh
+  azd env set AZD_AI_AGENT_SKIP_POLICY_CHECKS true
+  ```
+
+  Values are parsed with `strconv.ParseBool`, and values set in the active `azd` environment take precedence over OS environment variables. Skipping client-side pre-checks only bypasses local preflight calls; server-side Azure Policy enforcement in ARM still applies during deployment.

@@ -360,9 +360,9 @@ func (e *ARMDeploymentPolicyEvaluator) EvaluateModelDeployments(
 	}
 	accountID := fmt.Sprintf(
 		"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.CognitiveServices/accounts/%s",
-		parsed.SubscriptionID,
-		parsed.ResourceGroup,
-		parsed.ProjectResourceName,
+		url.PathEscape(parsed.SubscriptionID),
+		url.PathEscape(parsed.ResourceGroup),
+		url.PathEscape(parsed.ProjectResourceName),
 	)
 
 	var items []evaluateDeploymentPoliciesItem

@@ -559,8 +559,9 @@ func TestFailedAndCanceledPolling(t *testing.T) {
 					_, _ = io.WriteString(w, `{"status":"Running"}`)
 					return
 				}
-				_, _ = io.WriteString(w, `{"status":"`+state+`","error":{"code":"AnalysisFailed","message":"private value",`+
-					`"details":[{"code":"InvalidField","message":"private value","target":"private target",`+
+				_, _ = io.WriteString(w, `{"status":"`+state+`","error":{"code":"AnalysisFailed",`+
+					`"message":"content: private value",`+
+					`"details":[{"code":"InvalidField","message":"content: private value","target":"private target",`+
 					`"details":[{"code":"private value"}]}]}}`)
 			})
 			server = srv
@@ -573,8 +574,10 @@ func TestFailedAndCanceledPolling(t *testing.T) {
 			require.ErrorAs(t, err, &operationErr)
 			assert.Equal(t, strings.ToLower(state), operationErr.Status)
 			assert.Equal(t, "AnalysisFailed", operationErr.Code)
+			assert.Equal(t, "[redacted value]", operationErr.Message)
 			assert.Equal(t, []restclient.OperationDiagnostic{{
-				Code: "InvalidField", Details: []restclient.OperationDiagnostic{{Code: "service_error"}},
+				Code: "InvalidField", Message: "[redacted value]",
+				Details: []restclient.OperationDiagnostic{{Code: "service_error"}},
 			}}, operationErr.Details)
 			var responseErr *azcore.ResponseError
 			require.ErrorAs(t, err, &responseErr)
@@ -594,9 +597,9 @@ func TestInlineTerminalOperationErrors(t *testing.T) {
 					payload, err := json.Marshal(map[string]any{
 						"status": state,
 						"error": map[string]any{
-							"code": code, "message": "private value", "target": "private target",
+							"code": code, "message": "content: private value", "target": "private target",
 							"details": []map[string]any{{
-								"code": "InvalidField", "message": "private value",
+								"code": "InvalidField", "message": "content: private value",
 								"details": []map[string]string{{"code": "private value"}},
 							}},
 						},
@@ -611,7 +614,8 @@ func TestInlineTerminalOperationErrors(t *testing.T) {
 				require.ErrorAs(t, err, &operationErr)
 				assert.Equal(t, strings.ToLower(state), operationErr.Status)
 				assert.Equal(t, []restclient.OperationDiagnostic{{
-					Code: "InvalidField", Details: []restclient.OperationDiagnostic{{Code: "service_error"}},
+					Code: "InvalidField", Message: "[redacted value]",
+					Details: []restclient.OperationDiagnostic{{Code: "service_error"}},
 				}}, operationErr.Details)
 				var responseErr *azcore.ResponseError
 				require.ErrorAs(t, err, &responseErr)
@@ -627,6 +631,94 @@ func TestInlineTerminalOperationErrors(t *testing.T) {
 				assert.Equal(t, http.NoBody, responseErr.RawResponse.Body)
 			})
 		}
+	}
+}
+
+func TestOperationInnerErrorsRetainSafeCodes(t *testing.T) {
+	for _, inline := range []bool{false, true} {
+		t.Run(fmt.Sprint(inline), func(t *testing.T) {
+			client, _ := testClient(t, restclient.APIVersionPreview, func(w http.ResponseWriter, r *http.Request) {
+				if !inline && r.Method == http.MethodPost {
+					w.Header().Set("Operation-Location",
+						"/contentunderstanding/analyzerResults/op?api-version="+restclient.APIVersionPreview)
+					w.WriteHeader(http.StatusAccepted)
+					_, _ = io.WriteString(w, `{"status":"Running"}`)
+					return
+				}
+				_, _ = io.WriteString(w, `{"status":"Failed","error":{"code":"InvalidRequest","message":"Invalid request.",`+
+					`"details":[{"code":"InvalidField","innererror":{"code":"NestedDetail",`+
+					`"message":"content: private detail"}}],`+
+					`"innererror":{"code":"ModelNotSupported","message":"Provided model 'gpt-6-luna' is unsupported.",`+
+					`"innererror":{"code":"private code","target":"private target"}}}}`)
+			})
+			request := restclient.AnalyzeRequest{Inputs: []restclient.AnalysisInput{{URL: "https://example.test/a"}}}
+			var err error
+			if inline {
+				_, err = client.AnalyzeInline(t.Context(), "a", request)
+			} else {
+				poller, beginErr := client.BeginAnalyze(t.Context(), "a", request)
+				require.NoError(t, beginErr)
+				_, err = poller.PollUntilDone(t.Context(), &runtime.PollUntilDoneOptions{Frequency: time.Millisecond})
+			}
+			var operationErr *restclient.OperationError
+			require.ErrorAs(t, err, &operationErr)
+			assert.Equal(t, "InvalidRequest", operationErr.Code)
+			assert.Equal(t, "Invalid request.", operationErr.Message)
+			assert.Equal(t, []restclient.OperationDiagnostic{
+				{Code: "ModelNotSupported", Message: "Provided model gpt-6-luna is unsupported.",
+					Details: []restclient.OperationDiagnostic{{Code: "service_error"}}},
+				{Code: "InvalidField", Details: []restclient.OperationDiagnostic{{
+					Code: "NestedDetail", Message: "[redacted value]",
+				}}},
+			}, operationErr.Details)
+			body, marshalErr := json.Marshal(operationErr)
+			require.NoError(t, marshalErr)
+			assert.NotContains(t, string(body), "private")
+			assert.NotContains(t, err.Error(), "private")
+		})
+	}
+}
+
+func TestOperationDiagnosticLimits(t *testing.T) {
+	for _, deep := range []bool{false, true} {
+		t.Run(fmt.Sprint(deep), func(t *testing.T) {
+			problem := map[string]any{"code": "InvalidRequest"}
+			if deep {
+				current := problem
+				for range 100 {
+					next := map[string]any{"code": "NestedFailure", "message": "content: private"}
+					current["innererror"] = next
+					current = next
+				}
+			} else {
+				var details []map[string]string
+				for range 100 {
+					details = append(details, map[string]string{"code": "NestedFailure", "message": "content: private"})
+				}
+				problem["details"] = details
+				problem["innererror"] = map[string]string{
+					"code": "ModelNotSupported", "message": "Provided model 'gpt-6-luna' is unsupported.",
+				}
+			}
+			payload, err := json.Marshal(map[string]any{"status": "Failed", "error": problem})
+			require.NoError(t, err)
+			client, _ := testClient(t, restclient.APIVersionPreview, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write(payload)
+			})
+			_, err = client.AnalyzeInline(t.Context(), "a", restclient.AnalyzeRequest{
+				Inputs: []restclient.AnalysisInput{{URL: "https://example.test/a"}},
+			})
+			var operationErr *restclient.OperationError
+			require.ErrorAs(t, err, &operationErr)
+			body, marshalErr := json.Marshal(operationErr.Details)
+			require.NoError(t, marshalErr)
+			assert.Contains(t, string(body), "DiagnosticsTruncated")
+			if !deep {
+				assert.Contains(t, string(body), "model gpt-6-luna is unsupported.")
+			}
+			assert.NotContains(t, string(body), "private")
+			assert.LessOrEqual(t, strings.Count(string(body), `"Code"`)+strings.Count(string(body), `"code"`), 40)
+		})
 	}
 }
 

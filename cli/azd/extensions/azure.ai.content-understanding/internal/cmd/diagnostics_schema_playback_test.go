@@ -66,7 +66,9 @@ func TestRecordedDoctorCommands(t *testing.T) {
 										code = "ResourceNotFound"
 									}
 									body, err := json.Marshal(map[string]any{
-										"error": map[string]any{"code": code, "message": "synthetic-private-doctor-detail"},
+										"error": map[string]any{
+											"code": code, "message": "content: synthetic-private-doctor-detail",
+										},
 									})
 									require.NoError(t, err)
 									fixture.Interactions[0].Response.Body = body

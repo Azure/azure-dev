@@ -3,6 +3,15 @@ words:
   - contentunderstanding
   - noninteractive
 overrides:
+  - filename: "internal/preview/json.go"
+    words:
+      - alecthomas
+      - Tokenise
+  - filename: "internal/preview/{render,metadata}.go"
+    words:
+      - goldmark
+      - rowspan
+      - yuin
   - filename: "internal/**/*.go"
     words:
       - exterrors

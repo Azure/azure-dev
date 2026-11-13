@@ -133,13 +133,13 @@ func (a *InvokeAction) a2aLocal(ctx context.Context, version string) error {
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		if raw {
-			if err := handleA2AResponseTo(w, resp, "local", true, version); err != nil {
+			if err := handleA2AResponseTo(w, resp, "local", true, version, body); err != nil {
 				return err
 			}
 		}
 		return fmt.Errorf("POST %s returned HTTP %d: redirects are not followed for local A2A", reqURL, resp.StatusCode)
 	}
-	if err := handleA2AResponseTo(w, resp, "local", raw, version); err != nil {
+	if err := handleA2AResponseTo(w, resp, "local", raw, version, body); err != nil {
 		if !raw && resp.StatusCode >= 400 {
 			_ = printNextIfTerminal(w, nextstep.ResolveAfterInvoke(nil, nextstep.InvokeLocal, "", &nextstep.InvokeFailure{}))
 		}

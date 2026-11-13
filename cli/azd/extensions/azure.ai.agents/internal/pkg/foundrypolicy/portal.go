@@ -17,7 +17,7 @@ import (
 const defaultFoundryGovernPortalURL = "https://ai.azure.com/?flight=govern_ignite"
 
 var foundryProjectIDPattern = regexp.MustCompile(
-	`(?i)/subscriptions/([^/?#]+)/resourceGroups/([^/?#]+)/providers/[^/?#]+/accounts/([^/?#]+)/projects/([^/?#]+)$`,
+	`(?i)^/subscriptions/([^/?#\\@]+)/resourceGroups/([^/?#\\@]+)/providers/[^/?#\\@]+/accounts/([^/?#\\@]+)/projects/([^/?#\\@]+)$`,
 )
 
 var hexGUIDPattern = regexp.MustCompile(`(?i)^[0-9a-f]{32}$`)
@@ -35,8 +35,8 @@ type ParsedProjectID struct {
 //
 //	/subscriptions/{sub}/resourceGroups/{rg}/providers/{provider}/accounts/{account}/projects/{project}
 func ParseFoundryProjectID(projectID string) (*ParsedProjectID, bool) {
-	trimmed := strings.TrimSpace(projectID)
-	if trimmed == "" {
+	trimmed := strings.TrimRight(strings.TrimSpace(projectID), "/")
+	if trimmed == "" || !strings.HasPrefix(trimmed, "/") {
 		return nil, false
 	}
 	matches := foundryProjectIDPattern.FindStringSubmatch(trimmed)

@@ -904,8 +904,7 @@ func cleanupPromptAgentState(
 	return cleanupAgentStateForKey(ctx, azdClient, agentKey)
 }
 
-// cleanupAgentState removes saved agent context for a single service. When only project metadata
-// remains, it can remove the State Store selection but not version-scoped state.
+// cleanupAgentState removes the selected service's remote agent context across cached versions.
 // Returns true if the available cleanup succeeded, false otherwise.
 // Shared by postdownHandler and delete command.
 func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName, serviceName string) bool {
@@ -923,9 +922,8 @@ func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName
 		return cleanupAgentStateForKey(ctx, azdClient, agentKey)
 	}
 
-	// Version-only delete clears the agent endpoint but leaves the deployed name
-	// and project endpoint. There is no versioned key for sessions in this case,
-	// but the version-independent State Store selection must still be removed.
+	// A prior version-only delete can leave only the deployed name and project endpoint.
+	// Full-agent deletion and postdown still have enough information to clean the target.
 	nameResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envName,
 		Key:     fmt.Sprintf("AGENT_%s_NAME", serviceKey),
@@ -946,16 +944,7 @@ func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName
 		log.Printf("cleanupAgentState: invalid State Store target for service %q: %v", serviceName, err)
 		return false
 	}
-	store, err := newAgentStateStoreForClient(azdClient)
-	if err != nil {
-		log.Printf("cleanupAgentState: failed to open agent state: %v", err)
-		return false
-	}
-	if err := store.delete(ctx, target.agentKey); err != nil {
-		log.Printf("cleanupAgentState: failed to clean State Store selection for %s: %v", target.agentKey, err)
-		return false
-	}
-	return true
+	return cleanupAgentStateForKey(ctx, azdClient, target.agentKey+"/versions/latest/remote")
 }
 
 func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, agentKey string) bool {
@@ -965,23 +954,12 @@ func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, a
 		log.Printf("cleanupAgentState: failed to open agent state: %v", err)
 		return false
 	}
-	var failed bool
-	if err := store.delete(ctx, agentKey); err != nil {
+	if err := store.deleteRemoteAgent(ctx, agentKey); err != nil {
 		log.Printf("cleanupAgentState: failed to clean state for %s: %v", agentKey, err)
-		failed = true
-	}
-	// Session keys include the version and /remote suffix. Store selection is
-	// keyed only by project and agent; deleting the versioned key would miss it.
-	if versionIndex := strings.LastIndex(agentKey, "/versions/"); versionIndex >= 0 &&
-		strings.HasSuffix(agentKey, "/remote") {
-		selectionKey := agentKey[:versionIndex]
-		if err := store.delete(ctx, selectionKey); err != nil {
-			log.Printf("cleanupAgentState: failed to clean State Store selection for %s: %v", selectionKey, err)
-			failed = true
-		}
+		return false
 	}
 
-	return !failed
+	return true
 }
 
 func envUpdate(

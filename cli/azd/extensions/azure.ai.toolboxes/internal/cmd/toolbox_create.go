@@ -204,8 +204,14 @@ func createToolboxFromInput(
 	if err != nil {
 		return err
 	}
+	if err := checkToolboxToolsPolicy(ctx, access, scope, name, req.Tools); err != nil {
+		return err
+	}
 	created, err := client.CreateToolboxVersion(ctx, name, req)
 	if err != nil {
+		if policyErr, ok := tryClassifyToolboxPolicyError(err, name, scope); ok {
+			return policyErr
+		}
 		return toolboxWriteError(ctx, err, exterrors.OpCreateToolboxVersion, scope, "", "")
 	}
 

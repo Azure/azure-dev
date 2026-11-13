@@ -37,7 +37,9 @@ func newVersionCommand(outputFormat *string) *cobra.Command {
 				}
 				return nil
 			}
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", extensionID, Version)
+			_, err := fmt.Fprintf(cmd.OutOrStdout(),
+				"\nAzure Content Understanding Extension for azd\nVersion: %s\nExtension name: %s\n\n",
+				Version, extensionID)
 			return err
 		},
 	}, azdext.FlagOptions{Name: "output", AllowedValues: []string{"json"}})

@@ -25,6 +25,8 @@ const (
 	// ProtocolInvocationsWS identifies
 	// bidirectional WebSocket /invocations_ws agents.
 	ProtocolInvocationsWS = "invocations_ws"
+	// ProtocolVoiceConversationEngine identifies Hosted Voice targets.
+	ProtocolVoiceConversationEngine = "voice_conversation_engine"
 	// ProtocolActivity identifies Activity Protocol agents.
 	ProtocolActivity = "activity"
 	// ProtocolActivityLegacy is the legacy value accepted for Activity Protocol agents.
@@ -997,6 +999,7 @@ func ResolveAfterDeploy(
 
 func serviceSupportsAzdInvoke(svc *ServiceState) bool {
 	return svc == nil || (svc.Protocol != ProtocolInvocationsWS &&
+		svc.Protocol != ProtocolVoiceConversationEngine &&
 		svc.Protocol != ProtocolActivity &&
 		svc.Protocol != ProtocolActivityLegacy)
 }

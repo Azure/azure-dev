@@ -22,6 +22,8 @@ func Test_genBicepParamsFromEnvSubst(t *testing.T) {
 		wantParams []scaffold.Parameter
 	}{
 		{"foo", false, "'foo'", nil},
+		{"it's", false, `'it\'s'`, nil},
+		{"C:\\app\nnext\tline\r$", false, `'C:\\app\nnext\tline\r\$'`, nil},
 		{"${MY_VAR}", false, "myVar", []scaffold.Parameter{{Name: "myVar", Value: "${MY_VAR}", Type: "string"}}},
 
 		{"${MY_SECRET}", true, "mySecret",
@@ -33,6 +35,10 @@ func Test_genBicepParamsFromEnvSubst(t *testing.T) {
 				{Name: "world", Value: "${world:=okay}", Type: "string"}}},
 
 		{"${CAT} and ${DOG}", false, "'${cat} and ${dog}'",
+			[]scaffold.Parameter{
+				{Name: "cat", Value: "${CAT}", Type: "string"},
+				{Name: "dog", Value: "${DOG}", Type: "string"}}},
+		{"it's ${CAT} and ${DOG}!", false, `'it\'s ${cat} and ${dog}!'`,
 			[]scaffold.Parameter{
 				{Name: "cat", Value: "${CAT}", Type: "string"},
 				{Name: "dog", Value: "${DOG}", Type: "string"}}},

@@ -125,6 +125,8 @@ type KeyVault struct {
 
 type StorageAccount struct {
 	Containers []string
+	// Implicit accounts have no compose resource ID output, which could overwrite an existing resource's input.
+	Implicit bool
 }
 
 type ServiceSpec struct {
@@ -137,6 +139,8 @@ type ServiceSpec struct {
 	// App Service specific configuration
 	Runtime        *RuntimeInfo
 	StartupCommand string
+	// FunctionStorage is set only for Function App services.
+	FunctionStorage *FunctionStorage
 
 	// Front-end properties.
 	Frontend *Frontend
@@ -176,7 +180,14 @@ type HostKind string
 const (
 	AppServiceKind   HostKind = "appservice"
 	ContainerAppKind HostKind = "containerapp"
+	FunctionAppKind  HostKind = "functionapp"
 )
+
+// FunctionStorage identifies an existing backing account, if one was selected.
+type FunctionStorage struct {
+	// ExistingName is the Bicep symbol for a referenced existing storage account.
+	ExistingName string
+}
 
 type RuntimeInfo struct {
 	Type    string

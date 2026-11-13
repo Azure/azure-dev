@@ -14,6 +14,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -271,8 +272,24 @@ func ghOutputToMap(output string) (map[string]string, error) {
 	return result, nil
 }
 
-func (cli *Cli) ListSecrets(ctx context.Context, repoSlug string) ([]string, error) {
-	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "list")
+type EnvironmentOptions struct {
+	Environment string
+}
+
+func appendEnvironmentArg(args []string, options *EnvironmentOptions) []string {
+	if options != nil && options.Environment != "" {
+		return append(args, "--env", options.Environment)
+	}
+	return args
+}
+
+func (cli *Cli) ListSecrets(
+	ctx context.Context,
+	repoSlug string,
+	options *EnvironmentOptions,
+) ([]string, error) {
+	args := appendEnvironmentArg([]string{"-R", repoSlug, "secret", "list"}, options)
+	runArgs := cli.newRunArgs(args...)
 	output, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed running gh secret list: %w", err)
@@ -280,9 +297,7 @@ func (cli *Cli) ListSecrets(ctx context.Context, repoSlug string) ([]string, err
 	return ghOutputToList(output.Stdout), nil
 }
 
-type ListVariablesOptions struct {
-	Environment string
-}
+type ListVariablesOptions = EnvironmentOptions
 
 //
 //nolint:lll
@@ -300,13 +315,20 @@ func (cli *Cli) ListVariables(
 	runArgs := cli.newRunArgs(args...)
 	output, err := cli.run(ctx, runArgs)
 	if err != nil {
-		return nil, fmt.Errorf("failed running gh secret list: %w", err)
+		return nil, fmt.Errorf("failed running gh variable list: %w", err)
 	}
 	return ghOutputToMap(output.Stdout)
 }
 
-func (cli *Cli) SetSecret(ctx context.Context, repoSlug string, name string, value string) error {
-	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "set", name).WithStdIn(strings.NewReader(value))
+func (cli *Cli) SetSecret(
+	ctx context.Context,
+	repoSlug string,
+	name string,
+	value string,
+	options *EnvironmentOptions,
+) error {
+	args := appendEnvironmentArg([]string{"-R", repoSlug, "secret", "set", name}, options)
+	runArgs := cli.newRunArgs(args...).WithStdIn(strings.NewReader(value))
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh secret set: %w", err)
@@ -314,9 +336,7 @@ func (cli *Cli) SetSecret(ctx context.Context, repoSlug string, name string, val
 	return nil
 }
 
-type SetVariableOptions struct {
-	Environment string
-}
+type SetVariableOptions = EnvironmentOptions
 
 //
 //nolint:lll
@@ -341,8 +361,14 @@ func (cli *Cli) SetVariable(
 	return nil
 }
 
-func (cli *Cli) DeleteSecret(ctx context.Context, repoSlug string, name string) error {
-	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "delete", name)
+func (cli *Cli) DeleteSecret(
+	ctx context.Context,
+	repoSlug string,
+	name string,
+	options *EnvironmentOptions,
+) error {
+	args := appendEnvironmentArg([]string{"-R", repoSlug, "secret", "delete", name}, options)
+	runArgs := cli.newRunArgs(args...)
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh secret delete: %w", err)
@@ -350,13 +376,42 @@ func (cli *Cli) DeleteSecret(ctx context.Context, repoSlug string, name string) 
 	return nil
 }
 
-func (cli *Cli) DeleteVariable(ctx context.Context, repoSlug string, name string) error {
-	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "delete", name)
+func (cli *Cli) DeleteVariable(
+	ctx context.Context,
+	repoSlug string,
+	name string,
+	options *EnvironmentOptions,
+) error {
+	args := appendEnvironmentArg([]string{"-R", repoSlug, "variable", "delete", name}, options)
+	runArgs := cli.newRunArgs(args...)
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh variable delete: %w", err)
 	}
 	return nil
+}
+
+func (cli *Cli) ListEnvironments(ctx context.Context, repoSlug string) ([]string, error) {
+	runArgs := cli.newRunArgs(
+		"api",
+		"--paginate",
+		fmt.Sprintf("/repos/%s/environments?per_page=100", repoSlug),
+		"--jq",
+		".environments[].name",
+	)
+	output, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed listing GitHub environments: %w", err)
+	}
+
+	rawNames := strings.Split(strings.TrimSpace(output.Stdout), "\n")
+	environments := make([]string, 0, len(rawNames))
+	for _, name := range rawNames {
+		if name != "" {
+			environments = append(environments, name)
+		}
+	}
+	return environments, nil
 }
 
 // ghCliVersionRegexp fetches the version number from the output of gh --version, which looks like this:
@@ -485,12 +540,14 @@ func (cli *Cli) CreateEnvironmentIfNotExist(ctx context.Context, repoName string
 	// Doc: https://docs.github.com/en/rest/deployments/environments?apiVersion=2022-11-28#create-or-update-an-environment
 	runArgs := cli.newRunArgs("api",
 		"-X", "PUT",
-		fmt.Sprintf("/repos/%s/environments/%s", repoName, envName),
+		fmt.Sprintf("/repos/%s/environments/%s", repoName, url.PathEscape(envName)),
 		"-H", "Accept: application/vnd.github+json",
 	)
 
-	_, err := cli.run(ctx, runArgs)
-	return err
+	if _, err := cli.run(ctx, runArgs); err != nil {
+		return fmt.Errorf("failed creating GitHub environment %q: %w", envName, err)
+	}
+	return nil
 }
 
 func (cli *Cli) DeleteEnvironment(ctx context.Context, repoName string, envName string) error {

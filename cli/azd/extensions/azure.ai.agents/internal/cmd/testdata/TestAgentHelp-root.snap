@@ -86,8 +86,6 @@ Preview Feature Switches
   We recommend setting overrides in your shell or CI before running azd:
   AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
     Prompt agents that run on a Copilot harness.
-  AZD_ALPHA_ENABLE_AGENTS_VOICE=true
-    Voice, prompt-voice, and hosted voice agents.
   AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
     Long-running Responses invocations.
   AZD_ALPHA_ENABLE_AGENTS_A2A=true

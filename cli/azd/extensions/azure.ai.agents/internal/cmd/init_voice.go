@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
@@ -31,9 +30,6 @@ func runInitVoice(
 ) error {
 	if initACRResourceID(flags) != "" {
 		return initACRConflict("interactive voice initialization", initACRSelectorSource(flags))
-	}
-	if err := featureflags.RequireWithWriter(featureflags.Voice, noticeWriter); err != nil {
-		return err
 	}
 	defer inittelemetry.Start(ctx, inittelemetry.AgentConfiguration)()
 

@@ -18,7 +18,6 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -224,13 +223,7 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 			{Label: "Start new from a template", Value: initModeTemplate},
 		}
 	}
-	voiceEnabled, err := featureflags.IsEnabled(featureflags.Voice)
-	if err != nil {
-		return "", err
-	}
-	if voiceEnabled {
-		choices = append(choices, voiceInitChoice)
-	}
+	choices = append(choices, voiceInitChoice)
 
 	defaultIndex := int32(0)
 

@@ -313,11 +313,10 @@ func applyPreviewVisibility(root *cobra.Command, states map[string]bool) {
 			if usage := flag.Annotations[featureUsageAnnotation]; len(usage) == 2 && off(usage[0]) {
 				flag.Usage = usage[1]
 			}
-			// Init's protocol list depends on two independent previews. Keep its
-			// Voice annotations and full static metadata; render the combined list here.
+			// Init's protocol list depends on the A2A preview.
 			if cmd.Name() == "init" && flag.Name == "protocol" {
 				flag.Usage = "Protocols supported by the agent (" +
-					strings.Join(protocolNames(states[featureflags.Voice.ID], states[featureflags.A2A.ID]), ", ") +
+					strings.Join(protocolNames(states[featureflags.A2A.ID]), ", ") +
 					"). Can be specified multiple times."
 			}
 			ids := flag.Annotations[featureAnnotation]

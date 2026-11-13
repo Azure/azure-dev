@@ -9,7 +9,7 @@ tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
   AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE: "false"
-  AZD_ALPHA_ENABLE_AGENTS_VOICE: "true"
+  AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS: "true"
   AZURE_DEV_COLLECT_TELEMETRY: "no"
   AZD_SKIP_UPDATE_CHECK: "true"
   NO_COLOR: "1"
@@ -24,7 +24,7 @@ goals:
     Run only the literal init command and use read-only inspection afterward.
   - >-
     Confirm init exits non-zero with a disabled foundry.acr_reuse compatibility
-    error naming AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true. The unrelated Voice
+    error naming AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true. The unrelated ManagedHarness
     switch must not enable registry reuse. No source-input, credential, network,
     or daemon error satisfies this goal.
   - >-

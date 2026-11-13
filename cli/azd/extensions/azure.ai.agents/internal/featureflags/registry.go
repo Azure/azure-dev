@@ -21,12 +21,6 @@ var (
 		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS",
 		Description: "Prompt agents that run on a Copilot harness",
 	}
-	// Voice controls managed voice and hosted voice agents.
-	Voice = Feature{
-		ID:          "agents.voice",
-		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_VOICE",
-		Description: "Voice, prompt-voice, and hosted voice agents",
-	}
 	// A2A controls init selection, explicit A2A wire versions, and the 1.0 default.
 	A2A = Feature{
 		ID:          "agents.a2a",
@@ -64,7 +58,7 @@ var (
 // All returns every declared feature in a stable order.
 // The slice is a fresh copy, so callers may change it.
 func All() []Feature {
-	return []Feature{ManagedHarness, Voice, LongRunning, A2A, MemorySnapshot, BYOAKS, FoundryACRReuse, RBACWarnings}
+	return []Feature{ManagedHarness, LongRunning, A2A, MemorySnapshot, BYOAKS, FoundryACRReuse, RBACWarnings}
 }
 
 // Lookup returns the declared feature with the given ID.

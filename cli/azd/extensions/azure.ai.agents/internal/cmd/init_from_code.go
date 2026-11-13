@@ -1190,10 +1190,10 @@ var knownProtocols = []protocolInfo{
 	{Name: "a2a", Version: "1.0.0"},
 }
 
-func protocolNames(voiceEnabled, a2aEnabled bool) []string {
+func protocolNames(a2aEnabled bool) []string {
 	names := make([]string, 0, len(knownProtocols))
 	for _, protocol := range knownProtocols {
-		if protocol.Name == "invocations_ws" && !voiceEnabled || protocol.Name == "a2a" && !a2aEnabled {
+		if protocol.Name == "a2a" && !a2aEnabled {
 			continue
 		}
 		names = append(names, protocol.Name)
@@ -1208,17 +1208,13 @@ func selectHostedProtocols(
 		return selectExplicitHostedProtocols(explicit, writer)
 	}
 	if noPrompt {
-		return promptProtocols(ctx, nil, true, nil, false, false)
-	}
-	voiceEnabled, err := featureflags.IsEnabled(featureflags.Voice)
-	if err != nil {
-		return nil, err
+		return promptProtocols(ctx, nil, true, nil, false)
 	}
 	a2aEnabled, err := featureflags.IsEnabled(featureflags.A2A)
 	if err != nil {
 		return nil, err
 	}
-	records, err := promptProtocols(ctx, client.Prompt(), false, nil, voiceEnabled, a2aEnabled)
+	records, err := promptProtocols(ctx, client.Prompt(), false, nil, a2aEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -1244,10 +1240,6 @@ func selectExplicitHostedProtocols(explicit []string, writer io.Writer) ([]agent
 func requireProtocolPreviewFeatures(records []agent_yaml.ProtocolVersionRecord, writer io.Writer) error {
 	for _, record := range records {
 		switch record.Protocol {
-		case "invocations_ws":
-			if err := featureflags.RequireWithWriter(featureflags.Voice, writer); err != nil {
-				return err
-			}
 		case "a2a":
 			if err := featureflags.RequireWithWriter(featureflags.A2A, writer); err != nil {
 				return err
@@ -1265,7 +1257,7 @@ func promptProtocols(
 	promptClient azdext.PromptServiceClient,
 	noPrompt bool,
 	flagProtocols []string,
-	voiceEnabled, a2aEnabled bool,
+	a2aEnabled bool,
 ) ([]agent_yaml.ProtocolVersionRecord, error) {
 	defer inittelemetry.Start(ctx, inittelemetry.ProtocolSelection)()
 
@@ -1285,7 +1277,7 @@ func promptProtocols(
 	versionOf := make(map[string]string)
 	choices := make([]*azdext.MultiSelectChoice, 0, len(knownProtocols))
 	for _, p := range knownProtocols {
-		if p.Name == "invocations_ws" && !voiceEnabled || p.Name == "a2a" && !a2aEnabled {
+		if p.Name == "a2a" && !a2aEnabled {
 			continue
 		}
 		versionOf[p.Name] = p.Version
@@ -1376,7 +1368,7 @@ func validateExplicitProtocols(flagProtocols []string) ([]agent_yaml.ProtocolVer
 
 // knownProtocolNames returns a comma-separated list of known protocol names.
 func knownProtocolNames() string {
-	return strings.Join(protocolNames(true, true), ", ")
+	return strings.Join(protocolNames(true), ", ")
 }
 
 // promptDeployMode asks the user to choose between code deploy and container deploy.

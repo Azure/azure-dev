@@ -27,22 +27,6 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 		if agent_api.IsCopilotHarness(strings.TrimSpace(harnessType)) {
 			return featureflags.ManagedHarness
 		}
-	case "voice", "prompt-voice":
-		return featureflags.Voice
-	case "hosted":
-		// Manifests use protocols. Foundry API definitions use protocol_versions
-		// or the legacy container_protocol_versions.
-		for _, key := range []string{"protocols", "protocol_versions", "container_protocol_versions"} {
-			protocols, _ := definition[key].([]any)
-			for _, entry := range protocols {
-				protocol, _ := entry.(map[string]any)
-				name, _ := protocol["protocol"].(string)
-				name = strings.TrimSpace(name)
-				if name == "invocations_ws" || name == string(agent_api.AgentProtocolVoiceConversationEngine) {
-					return featureflags.Voice
-				}
-			}
-		}
 	}
 	return featureflags.Feature{}
 }

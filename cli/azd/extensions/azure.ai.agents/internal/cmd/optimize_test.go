@@ -170,7 +170,7 @@ func TestOptimizePreviewTargets(t *testing.T) {
 		{"voice", map[string]any{
 			"kind": "prompt-voice", "name": "agent", "modelType": "managed",
 			"model": map[string]any{"id": "gpt-realtime"},
-		}, featureflags.Voice},
+		}, featureflags.Feature{}},
 	} {
 		for _, mode := range []struct {
 			name     string

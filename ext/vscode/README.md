@@ -37,7 +37,7 @@ The extension works with the YAML extension to provide comprehensive editing sup
 - **Template Tools** - Discover and initialize projects from templates
   - **Quick Start** (shown when no azure.yaml exists) - Initialize from existing code or create minimal project
   - **Browse by Category** - Explore templates organized by type (AI, Web Apps, APIs, Containers, Databases, Functions)
-  - **AI Templates** - Quick access to AI-focused templates from the awesome-azd catalog
+  - **AI Templates** - Quick access to AI-focused templates from [aka.ms/aiapps](https://aka.ms/aiapps)
   - **Search Templates** - Find templates by name, description, or tags
   - **Template Gallery** - Open the full [awesome-azd](https://aka.ms/awesome-azd) gallery in browser
 - **Extensions** - Browse and manage Azure Developer CLI extensions

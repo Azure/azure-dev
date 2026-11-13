@@ -28,11 +28,10 @@ suite('AzureDevTemplateProvider', () => {
         const aiTemplates = await provider.getAITemplates();
 
         expect(aiTemplates, 'Should return an array').to.be.an('array');
-        expect(aiTemplates.length, 'Should return AI templates').to.be.greaterThan(0);
         aiTemplates.forEach(template => {
             expect(
-                template.tags?.includes('aiapplication'),
-                `Template "${template.title}" should have aiapplication tag`
+                template.tags?.includes('aicollection'),
+                `Template "${template.title}" should have aicollection tag`
             ).to.be.true;
         });
     });

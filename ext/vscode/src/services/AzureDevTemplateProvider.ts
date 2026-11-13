@@ -38,7 +38,7 @@ export class AzureDevTemplateProvider {
             name: 'ai',
             displayName: vscode.l10n.t('AI & Machine Learning'),
             icon: '🤖',
-            filter: (t) => t.tags?.some(tag => ['ai', 'gpt', 'aiapplication'].includes(tag)) ?? false
+            filter: (t) => t.tags?.some(tag => ['ai', 'gpt', 'aicollection'].includes(tag)) ?? false
         },
         {
             name: 'webapp',
@@ -95,7 +95,7 @@ export class AzureDevTemplateProvider {
 
     public async getAITemplates(): Promise<Template[]> {
         const templates = await this.getTemplates();
-        return templates.filter(t => t.tags?.includes('aiapplication'));
+        return templates.filter(t => t.tags?.includes('aicollection'));
     }
 
     public async getTemplatesByCategory(categoryName: string): Promise<Template[]> {

@@ -197,7 +197,7 @@ This guide provides a comprehensive list of all extension features and how to te
 
 #### AI Templates
 - Find AI Templates section
-- Should show templates tagged `aiapplication` from awesome-azd
+- Should show templates from aka.ms/aiapps
 - Verify AI-focused templates are highlighted
 
 #### Search Templates
@@ -628,6 +628,7 @@ Right-click azure.yaml → Azure Developer CLI → Down
 - [Azure Developer CLI Documentation](https://aka.ms/azure-dev)
 - [VS Code Extension Documentation](https://aka.ms/azure-dev/vscode)
 - [Template Gallery](https://aka.ms/awesome-azd)
+- [AI Templates](https://aka.ms/aiapps)
 - [GitHub Repository](https://github.com/Azure/azure-dev)
 - [GitHub Issues](https://github.com/Azure/azure-dev/issues)
 - [GitHub Discussions](https://github.com/Azure/azure-dev/discussions)

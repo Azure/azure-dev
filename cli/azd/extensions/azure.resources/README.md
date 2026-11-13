@@ -128,6 +128,11 @@ preserved, as are other layers, services, and unrelated YAML comments.
 The resource `config` is removed. Future provisioning uses the exported files
 instead of regenerating them from resource declarations.
 
+For a managed Foundry project, the exported parameter file references the
+entry-scoped AI deployment location saved by the resources provider. If no
+location has been saved, Bicep provisioning prompts for the parameter rather
+than using the resources provider's quota-aware location selection.
+
 If generated files already exist, this extension refuses to overwrite them.
 Use `azd infra generate --force` to allow overwriting. A file
 write failure prevents configuration conversion. If configuration conversion fails after

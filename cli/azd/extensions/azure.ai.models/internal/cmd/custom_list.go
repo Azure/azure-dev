@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"azure.ai.models/internal/client"
+	"azure.ai.models/internal/fireworks"
 	"azure.ai.models/internal/utils"
 	"azure.ai.models/pkg/models"
 
@@ -21,6 +23,8 @@ import (
 type customListFlags struct {
 	Output      string
 	SourceJobID string
+	Connection  string
+	Account     string
 }
 
 func newCustomListCommand(parentFlags *customFlags) *cobra.Command {
@@ -28,18 +32,46 @@ func newCustomListCommand(parentFlags *customFlags) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List all custom models",
-		Long:  "List all custom models registered in the Azure AI Foundry custom model registry.",
+		Short: "List Foundry custom models or connected Fireworks models",
+		Long: "List registered Foundry custom models, or use --connection and --account " +
+			"to list models in a Fireworks account through a saved project connection.",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.NoArgs(cmd, args); err != nil {
+				return err
+			}
+			return validateCustomListFlags(cmd, flags)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
+			if flags.Connection != "" {
+				return runProviderList(ctx, parentFlags, flags, cmd.OutOrStdout())
+			}
 			return runCustomList(ctx, parentFlags, flags)
 		},
 	}
 
 	cmd.Flags().StringVarP(&flags.Output, "output", "o", "table", "Output format (table, json)")
 	cmd.Flags().StringVar(&flags.SourceJobID, "source-job-id", "", "Filter models by the training job that created them")
+	cmd.Flags().StringVar(&flags.Connection, "connection", "", "Saved Foundry project connection to Fireworks")
+	cmd.Flags().StringVar(&flags.Account, "account", "", "Fireworks account ID (requires --connection)")
 
 	return cmd
+}
+
+func validateCustomListFlags(cmd *cobra.Command, flags *customListFlags) error {
+	if flags.Output != "table" && flags.Output != "json" {
+		return fmt.Errorf("unsupported output format: %s (supported: table, json)", flags.Output)
+	}
+	if cmd.Flags().Changed("connection") || cmd.Flags().Changed("account") {
+		if strings.TrimSpace(flags.Connection) == "" || strings.TrimSpace(flags.Account) == "" {
+			return fmt.Errorf("--connection and --account must both be non-empty")
+		}
+		if cmd.Flags().Changed("source-job-id") {
+			return fmt.Errorf("--source-job-id cannot be used with --connection")
+		}
+		return fireworks.ValidateAccount(flags.Account)
+	}
+	return nil
 }
 
 func runCustomList(ctx context.Context, parentFlags *customFlags, flags *customListFlags) error {

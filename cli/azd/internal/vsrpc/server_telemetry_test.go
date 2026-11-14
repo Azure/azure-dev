@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
@@ -35,7 +36,25 @@ func TestServeRpcExcludesInvocationDropAggregates(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
 	t.Cleanup(tracing.ResetUsageAttributesForTest)
 	baseline := len(rpcSpanRecorder.Ended())
-	spans := func() []tracesdk.ReadOnlySpan { return rpcSpanRecorder.Ended()[baseline:] }
+	targetSpanNames := map[string]struct{}{
+		events.VsRpcEventPrefix + "drop":       {},
+		events.VsRpcEventPrefix + "later":      {},
+		events.VsRpcEventPrefix + "concurrent": {},
+	}
+	recordedSpans := func() []tracesdk.ReadOnlySpan {
+		return rpcSpanRecorder.Ended()[baseline:]
+	}
+	rpcSpans := func() []tracesdk.ReadOnlySpan {
+		recorded := recordedSpans()
+		relevant := make([]tracesdk.ReadOnlySpan, 0, len(recorded))
+		// Other server tests can leave RPC finalizers running, so isolate the spans created by this test.
+		for _, span := range recorded {
+			if _, ok := targetSpanNames[span.Name()]; ok {
+				relevant = append(relevant, span)
+			}
+		}
+		return relevant
+	}
 
 	tracing.SetUsageAttributes(fields.ExtensionVersion.String("1.0.0"))
 	started := make(chan struct{}, 2)
@@ -91,8 +110,8 @@ func TestServeRpcExcludesInvocationDropAggregates(t *testing.T) {
 	}
 
 	// Responses can arrive before the deferred span finalizer completes.
-	require.Eventually(t, func() bool { return len(spans()) == 5 }, 5*time.Second, 10*time.Millisecond)
-	for _, span := range spans() {
+	require.Eventually(t, func() bool { return len(rpcSpans()) == 5 }, 5*time.Second, 10*time.Millisecond)
+	for _, span := range rpcSpans() {
 		attrs := map[attribute.Key]attribute.Value{}
 		for _, attr := range span.Attributes() {
 			attrs[attr.Key] = attr.Value
@@ -105,8 +124,15 @@ func TestServeRpcExcludesInvocationDropAggregates(t *testing.T) {
 	_, command := tracing.Start(ctx, "cmd.vs-server")
 	command.SetAttributes(tracing.GetUsageAttributes()...)
 	command.End()
+	commandSpans := make([]tracesdk.ReadOnlySpan, 0, 1)
+	for _, span := range recordedSpans() {
+		if span.Name() == "cmd.vs-server" {
+			commandSpans = append(commandSpans, span)
+		}
+	}
+	require.Len(t, commandSpans, 1)
 	attrs := map[attribute.Key]attribute.Value{}
-	for _, attr := range spans()[5].Attributes() {
+	for _, attr := range commandSpans[0].Attributes() {
 		attrs[attr.Key] = attr.Value
 	}
 	require.Equal(t, int64(3), attrs[fields.ExtensionUsageDroppedCount.Key].AsInt64())

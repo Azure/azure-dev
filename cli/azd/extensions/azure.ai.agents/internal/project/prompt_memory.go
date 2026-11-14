@@ -13,7 +13,34 @@ import (
 	"azureaiagent/internal/pkg/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
+
+// resolvePromptMemoryModels applies environment deployment bindings before the
+// memory node validates or creates the store.
+func resolvePromptMemoryModels(
+	memory *agent_yaml.PromptMemory,
+	agentService *azdext.ServiceConfig,
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+	env map[string]string,
+) error {
+	if memory == nil {
+		return nil
+	}
+
+	chatModel, err := ResolvePromptAgentModel(memory.ChatModel, agentService, services, projectRoot, env)
+	if err != nil {
+		return err
+	}
+	embeddingModel, err := ResolvePromptAgentModel(memory.EmbeddingModel, agentService, services, projectRoot, env)
+	if err != nil {
+		return err
+	}
+	memory.ChatModel = chatModel
+	memory.EmbeddingModel = embeddingModel
+	return nil
+}
 
 // memorySearchToolType is the wire `type` of the tool that lets an agent recall
 // from a memory store. The `_preview` suffix is part of the contract, not a

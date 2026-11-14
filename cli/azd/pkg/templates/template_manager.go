@@ -198,7 +198,7 @@ func PromptTemplate(
 		return Template{}, fmt.Errorf("prompting for template: %w", err)
 	}
 
-	// Display gallery links before template selection
+	// Display the gallery link before template selection
 	PrintGalleryLinks(console.Handles().Stdout)
 
 	templateChoices := []*Template{}
@@ -260,9 +260,7 @@ func PromptTemplate(
 // PrintGalleryLinks prints the template gallery banner message to the given writer.
 func PrintGalleryLinks(w io.Writer) {
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "For Microsoft AI Gallery, visit",
-		output.WithLinkFormat("https://azure.github.io/ai-app-templates"))
-	fmt.Fprintln(w, "For azd community gallery (awesome-azd), visit",
+	fmt.Fprintln(w, "For azd gallery (awesome-azd), visit",
 		output.WithLinkFormat("https://azure.github.io/awesome-azd"))
 	fmt.Fprintln(w)
 }

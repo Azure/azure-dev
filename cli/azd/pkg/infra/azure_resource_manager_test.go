@@ -1187,3 +1187,96 @@ func TestGetResourceTypeDisplayNameForRedisEnterprise(t *testing.T) {
 		})
 	}
 }
+
+func TestGetResourceTypeDisplayNameForMachineLearningWorkspaces(t *testing.T) {
+	const subscriptionID = "273f1e6b-6c19-4c9e-8b67-5fbe78b14063"
+
+	tests := []struct {
+		name         string
+		kind         any
+		omitKind     bool
+		expectedName string
+	}{
+		{
+			name:         "AI Hub",
+			kind:         "Hub",
+			expectedName: "AI Hub",
+		},
+		{
+			name:         "AI Project",
+			kind:         "Project",
+			expectedName: "AI Project",
+		},
+		{
+			name:         "Machine Learning Workspace (unknown kind)",
+			kind:         "workspace",
+			expectedName: "Machine Learning Workspace",
+		},
+		{
+			name:         "Machine Learning Workspace (null kind)",
+			kind:         nil,
+			expectedName: "Machine Learning Workspace",
+		},
+		{
+			name:         "Machine Learning Workspace (omitted kind)",
+			omitKind:     true,
+			expectedName: "Machine Learning Workspace",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			resourceService := azapi.NewResourceService(
+				mockContext.SubscriptionCredentialProvider,
+				mockContext.ArmClientOptions,
+			)
+			deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
+			resourceID := fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/test-rg/providers/"+
+					"Microsoft.MachineLearningServices/workspaces/test-workspace",
+				subscriptionID,
+			)
+
+			mockContext.HttpClient.When(func(request *http.Request) bool {
+				return request.Method == http.MethodGet &&
+					strings.Contains(request.URL.Path, "/Microsoft.MachineLearningServices/workspaces/test-workspace")
+			}).RespondFn(func(request *http.Request) (*http.Response, error) {
+				response := map[string]any{
+					"id":       resourceID,
+					"name":     "test-workspace",
+					"type":     "Microsoft.MachineLearningServices/workspaces",
+					"location": "eastus2",
+				}
+				if !tt.omitKind {
+					response["kind"] = tt.kind
+				}
+
+				body, err := json.Marshal(response)
+				if err != nil {
+					return nil, err
+				}
+
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewReader(body)),
+					Request: &http.Request{
+						Method: http.MethodGet,
+						URL:    request.URL,
+					},
+				}, nil
+			})
+
+			arm := NewAzureResourceManager(resourceService, deploymentService)
+			displayName, err := arm.GetResourceTypeDisplayName(
+				*mockContext.Context,
+				subscriptionID,
+				resourceID,
+				azapi.AzureResourceTypeMachineLearningWorkspace,
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedName, displayName)
+		})
+	}
+}

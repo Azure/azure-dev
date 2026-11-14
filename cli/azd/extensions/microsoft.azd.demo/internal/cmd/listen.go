@@ -11,6 +11,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.demo/internal/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/inputs"
 	"github.com/spf13/cobra"
 )
 
@@ -53,6 +55,10 @@ func configureExtensionHostWithOutput(host *azdext.ExtensionHost, output io.Writ
 	azdClient := host.Client()
 
 	host.
+		WithBetaInputProvider(
+			[]string{inputs.EnvironmentNameKind, inputs.AzureLocationKind},
+			resolveDemoInput,
+		).
 		WithServiceTarget("demo", func() azdext.ServiceTargetProvider {
 			return project.NewDemoServiceTargetProvider(azdClient)
 		}).
@@ -156,6 +162,30 @@ func configureExtensionHostWithOutput(host *azdext.ExtensionHost, output io.Writ
 			},
 			nil,
 		)
+}
+
+func resolveDemoInput(
+	_ context.Context, definition *v1beta.InputDefinition,
+) (*v1beta.ResolveInputResponse, error) {
+	var values []string
+	switch definition.Kind {
+	case inputs.EnvironmentNameKind:
+		values = []string{"demo", "demo-dev"}
+	case inputs.AzureLocationKind:
+		values = definition.AllowedValues
+		if len(values) == 0 {
+			values = []string{"eastus2", "westus3"}
+		}
+	default:
+		return nil, nil
+	}
+	response := &v1beta.ResolveInputResponse{}
+	for i, value := range values {
+		response.Options = append(response.Options, &v1beta.InputOption{
+			Value: value, Recommended: i == 0, Rationale: "Demo input provider example.",
+		})
+	}
+	return response, nil
 }
 
 func runDemoWork(ctx context.Context, write func(int) error) error {

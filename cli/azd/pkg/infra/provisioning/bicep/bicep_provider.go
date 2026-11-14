@@ -38,6 +38,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -49,6 +50,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/inputs"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -343,6 +345,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
 	// which can reference these values
 	if p.mode == bicepparamMode {
+		// Template constraints are unavailable before compilation; retain the native location fallback.
 		if err := provisioning.EnsureSubscriptionAndLocation(
 			ctx, p.envManager, p.env, p.prompters, provisioning.EnsureSubscriptionAndLocationOptions{}); err != nil {
 			return err
@@ -3619,6 +3622,8 @@ func (p *BicepProvider) ensureParameters(
 		key   string
 		param azure.ArmTemplateParameterDefinition
 	}
+	var locationGroups [][]locationInput
+	var mappedLocations []locationInput
 
 	// make all parameters mapped to AZURE_LOCATION env var to be location parameters
 	for _, key := range sortedKeys {
@@ -3721,6 +3726,17 @@ func (p *BicepProvider) ensureParameters(
 			}
 		}
 
+		if parameterType == provisioning.ParameterTypeString && azdMetadata.Type != nil &&
+			*azdMetadata.Type == azure.AzdMetadataTypeLocation {
+			pending := locationInput{key: key, parameter: param, mapped: slices.Contains(locationParameters, key)}
+			if pending.mapped {
+				mappedLocations = append(mappedLocations, pending)
+			} else {
+				locationGroups = append(locationGroups, []locationInput{pending})
+			}
+			continue
+		}
+
 		// If the parameter is tagged with {type: "generate"}, skip prompting.
 		// We generate it once, then save to config for next attempts.`.
 		if hasMetadata && parameterType == provisioning.ParameterTypeString && azdMetadata.Type != nil &&
@@ -3745,6 +3761,41 @@ func (p *BicepProvider) ensureParameters(
 			param azure.ArmTemplateParameterDefinition
 		}{key: key, param: param})
 	}
+
+	if len(mappedLocations) > 0 {
+		locationGroups = append(locationGroups, mappedLocations)
+	}
+	for _, group := range locationGroups {
+		value, err := p.resolveLocationInput(ctx, group)
+		if err != nil {
+			if _, ambiguity := errors.AsType[*input.PromptRequiredError](err); !ambiguity || !p.console.IsNoPromptMode() {
+				return nil, err
+			}
+			value = nil
+		}
+		for _, pending := range group {
+			if value == nil {
+				parameterPrompts = append(parameterPrompts, struct {
+					key   string
+					param azure.ArmTemplateParameterDefinition
+				}{pending.key, pending.parameter})
+				continue
+			}
+			configuredParameters[pending.key] = azure.ArmParameter{Value: *value}
+			if pending.mapped {
+				p.env.SetLocation(*value)
+			} else {
+				mustSetParamAsConfig(pending.key, *value, p.env.Config, pending.parameter.Secure())
+			}
+			configModified = true
+		}
+	}
+	slices.SortFunc(parameterPrompts, func(a, b struct {
+		key   string
+		param azure.ArmTemplateParameterDefinition
+	}) int {
+		return strings.Compare(a.key, b.key)
+	})
 
 	// If in no-prompt mode and there are missing parameters, return an error with all missing inputs
 	if len(parameterPrompts) > 0 && p.console.IsNoPromptMode() {
@@ -3807,6 +3858,107 @@ func (p *BicepProvider) ensureParameters(
 		}
 	}
 	return configuredParameters, nil
+}
+
+type locationInput struct {
+	key       string
+	parameter azure.ArmTemplateParameterDefinition
+	mapped    bool
+}
+
+func (p *BicepProvider) resolveLocationInput(ctx context.Context, group []locationInput) (*string, error) {
+	available, err := inputs.HasProviders(ctx, p.serviceLocator)
+	if err != nil || !available {
+		return nil, err
+	}
+	key, mapped := group[0].key, group[0].mapped
+	var value *string
+	if mapped {
+		if existing, exists := p.env.LookupEnv(environment.LocationEnvVarName); exists {
+			if existing == "" {
+				return nil, nil
+			}
+			value = new(existing)
+		}
+	}
+	definition := &v1beta.InputDefinition{
+		Id: key, Kind: inputs.AzureLocationKind,
+		Annotations: map[string]string{"azure.subscription": p.env.GetSubscriptionId()},
+	}
+	if mapped {
+		definition.EnvironmentVariable = environment.LocationEnvVarName
+	}
+	var quota []string
+	for _, pending := range group {
+		parameter := pending.parameter
+		metadata, _ := parameter.AzdMetadata()
+		quota = append(quota, metadata.UsageName...)
+		if parameter.AllowedValues != nil {
+			if len(*parameter.AllowedValues) == 0 {
+				return nil, fmt.Errorf("location parameter %q has no allowed values", pending.key)
+			}
+			var allowed []string
+			for _, option := range *parameter.AllowedValues {
+				text, ok := option.(string)
+				if !ok {
+					return nil, fmt.Errorf("location parameter %q has a non-string allowed value", pending.key)
+				}
+				allowed = append(allowed, text)
+			}
+			if definition.AllowedValues == nil {
+				definition.AllowedValues = allowed
+			} else {
+				definition.AllowedValues = slices.DeleteFunc(definition.AllowedValues, func(value string) bool {
+					return !slices.Contains(allowed, value)
+				})
+				if len(definition.AllowedValues) == 0 {
+					return nil, fmt.Errorf("location parameters for %q have no common allowed values", key)
+				}
+			}
+		}
+	}
+	if value != nil && len(definition.AllowedValues) > 0 && !slices.Contains(definition.AllowedValues, *value) {
+		return nil, fmt.Errorf("input provider returned a value outside the allowed values for %q", key)
+	}
+	validate := func(options []inputs.Option) ([]inputs.Option, error) {
+		valid := slices.DeleteFunc(slices.Clone(options), func(option inputs.Option) bool {
+			return slices.ContainsFunc(group, func(pending locationInput) bool {
+				return validateLengthRange(pending.key, pending.parameter.MinLength,
+					pending.parameter.MaxLength)(option.Value) != nil
+			})
+		})
+		if len(valid) > 0 && len(quota) > 0 {
+			values := make([]string, len(valid))
+			for i, option := range valid {
+				values[i] = option.Value
+			}
+			locations, err := p.locationsWithQuotaFor(ctx, p.env.GetSubscriptionId(), values, quota, true)
+			if errors.Is(err, errNoLocationQuota) {
+				return nil, nil
+			}
+			if err != nil {
+				return nil, fmt.Errorf("validating input provider location quota: %w", err)
+			}
+			valid = slices.DeleteFunc(valid, func(option inputs.Option) bool {
+				return !slices.Contains(locations, option.Value)
+			})
+		}
+		return valid, nil
+	}
+	if value == nil {
+		return prompt.ResolveLocationInput(ctx, p.serviceLocator, definition, p.env.GetSubscriptionId(),
+			func(location account.Location) bool {
+				return locationParameterFilterImpl(definition.AllowedValues, location)
+			}, validate)
+	}
+	valid, err := validate([]inputs.Option{{Value: *value}})
+	if err != nil {
+		return nil, err
+	}
+	if len(valid) == 0 {
+		return nil, fmt.Errorf("input provider location does not satisfy constraints for parameter %q", key)
+	}
+	return value, nil
 }
 
 var configInfraParametersKey = "infra.parameters."

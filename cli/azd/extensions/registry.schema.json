@@ -82,6 +82,7 @@
                             "framework-service-provider",
                             "provisioning-provider",
                             "validation-provider",
+                            "input-provider",
                             "metadata"
                         ]
                     }

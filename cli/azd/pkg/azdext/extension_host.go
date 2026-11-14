@@ -113,6 +113,7 @@ type ExtensionHost struct {
 	betaServiceHandlers   []betaServiceEventRegistration
 	provisioningProviders []ProvisioningProviderRegistration
 	validationChecks      []ValidationCheckRegistration
+	betaInputs            []betaInputRegistration
 
 	serviceTargetManager            serviceTargetRegistrar
 	serviceTargetPreviewManager     serviceTargetRegistrar
@@ -122,6 +123,7 @@ type ExtensionHost struct {
 	betaServiceEventManager         betaServiceEventRegistrar
 	provisioningManager             provisioningRegistrar
 	validationManager               *ValidationManager
+	betaInputManager                *betaInputManager
 }
 
 // NewExtensionHost creates a new ExtensionHost for the supplied azd client.
@@ -184,6 +186,9 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 	}
 	if er.validationManager == nil {
 		er.validationManager = NewValidationManager(extensionId, er.client, brokerLogger)
+	}
+	if er.betaInputManager == nil {
+		er.betaInputManager = newBetaInputManager(er.client, extensionId, brokerLogger)
 	}
 }
 
@@ -286,6 +291,13 @@ func (er *ExtensionHost) WithValidationCheck(
 	return er
 }
 
+// WithBetaInputProvider registers a handler for versioned input kinds on the beta channel.
+// Definitions describe needs, not resolver identities. Returning nil from the handler declines an input.
+func (er *ExtensionHost) WithBetaInputProvider(kinds []string, handler BetaInputHandler) *ExtensionHost {
+	er.betaInputs = append(er.betaInputs, betaInputRegistration{kinds: slices.Clone(kinds), handler: handler})
+	return er
+}
+
 // Run wires the configured service targets and event handlers, signals readiness, and blocks until shutdown.
 func (er *ExtensionHost) Run(ctx context.Context) error {
 	if err := er.validateBetaServiceEventRegistrations(); err != nil {
@@ -329,6 +341,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	hasBetaServiceEventHandlers := len(er.betaServiceHandlers) > 0
 	hasProvisioningProviders := len(er.provisioningProviders) > 0
 	hasValidationChecks := len(er.validationChecks) > 0
+	hasBetaInputs := len(er.betaInputs) > 0
 
 	// Set up defer for cleanup
 	defer func() {
@@ -355,6 +368,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		}
 		if hasValidationChecks {
 			_ = er.validationManager.Close()
+		}
+		if hasBetaInputs {
+			_ = er.betaInputManager.Close()
 		}
 	}()
 
@@ -384,6 +400,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	}
 	if hasValidationChecks {
 		receivers = append(receivers, er.validationManager)
+	}
+	if hasBetaInputs {
+		receivers = append(receivers, er.betaInputManager)
 	}
 
 	// Start receiving messages from active managers in separate goroutines
@@ -420,7 +439,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	var registrationsWaitGroup sync.WaitGroup
 	totalCount := len(er.serviceTargets) + len(er.frameworkServices) +
 		len(er.projectHandlers) + len(er.serviceHandlers) + len(er.betaServiceHandlers) +
-		len(er.provisioningProviders) + len(er.validationChecks)
+		len(er.provisioningProviders) + len(er.validationChecks) + len(er.betaInputs)
 	registrationErrChan := make(chan error, totalCount)
 
 	// Register service targets in parallel
@@ -545,6 +564,14 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 					"failed to register validation check '%s/%s': %w",
 					r.CheckType, r.RuleID, err,
 				)
+			}
+		})
+	}
+
+	for _, registration := range er.betaInputs {
+		registrationsWaitGroup.Go(func() {
+			if err := er.betaInputManager.Register(ctx, registration); err != nil {
+				registrationErrChan <- err
 			}
 		})
 	}

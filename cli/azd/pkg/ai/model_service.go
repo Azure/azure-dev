@@ -231,6 +231,24 @@ func (s *AiModelService) ListLocationsWithQuota(
 	allowedLocations []string,
 	requirements []QuotaRequirement,
 ) ([]string, error) {
+	return s.listLocationsWithQuota(ctx, subscriptionId, allowedLocations, requirements, false)
+}
+
+// ListLocationsWithQuotaStrict requires successful usage queries for every supported candidate.
+// Input-provider selection uses this to distinguish unavailable quota data from insufficient quota.
+func (s *AiModelService) ListLocationsWithQuotaStrict(
+	ctx context.Context,
+	subscriptionId string,
+	allowedLocations []string,
+	requirements []QuotaRequirement,
+) ([]string, error) {
+	return s.listLocationsWithQuota(ctx, subscriptionId, allowedLocations, requirements, true)
+}
+
+func (s *AiModelService) listLocationsWithQuota(
+	ctx context.Context, subscriptionId string, allowedLocations []string,
+	requirements []QuotaRequirement, strict bool,
+) ([]string, error) {
 	skuLocations, err := s.azureClient.GetResourceSkuLocations(
 		ctx, subscriptionId, "AIServices", "S0", "Standard", "accounts")
 	if err != nil {
@@ -242,9 +260,10 @@ func (s *AiModelService) ListLocationsWithQuota(
 	}
 
 	var sharedResults syncmap.Map[string, []*armcognitiveservices.Usage]
+	usageErrors := make([]error, len(allowedLocations))
 	var wg sync.WaitGroup
 
-	for _, loc := range allowedLocations {
+	for i, loc := range allowedLocations {
 		// Skip locations where AIServices is not available to avoid unnecessary usage API calls.
 		if !slices.Contains(skuLocations, loc) {
 			continue
@@ -253,12 +272,16 @@ func (s *AiModelService) ListLocationsWithQuota(
 		wg.Go(func() {
 			usages, err := s.azureClient.GetAiUsages(ctx, subscriptionId, loc)
 			if err != nil {
+				usageErrors[i] = fmt.Errorf("getting AI usage in location %q: %w", loc, err)
 				return
 			}
 			sharedResults.Store(loc, usages)
 		})
 	}
 	wg.Wait()
+	if err := errors.Join(usageErrors...); strict && err != nil {
+		return nil, err
+	}
 
 	var results []string
 	sharedResults.Range(func(loc string, usages []*armcognitiveservices.Usage) bool {

@@ -22,16 +22,20 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/inputs"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinputs"
 )
 
 func Test_Middleware_RunAction(t *testing.T) {
@@ -417,6 +421,147 @@ func TestNewExtensionsMiddleware(t *testing.T) {
 // ExtensionsMiddleware.Run — child-action path
 // ---------------------------------------------------------------------------
 
+func TestInputProvidersMiddlewareStartupGate(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		caps        []extensions.CapabilityType
+		request     bool
+		start       bool
+		normalFirst bool
+	}{
+		{name: "no input provider", caps: []extensions.CapabilityType{extensions.LifecycleEventsCapability}, request: true},
+		{name: "input provider", caps: []extensions.CapabilityType{extensions.InputProviderCapability},
+			request: true, start: true},
+		{name: "no input requested", caps: []extensions.CapabilityType{extensions.InputProviderCapability}},
+		{name: "normal middleware starts first", caps: []extensions.CapabilityType{extensions.InputProviderCapability},
+			request: true, start: true, normalFirst: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mockCtx := mocks.NewMockContext(t.Context())
+			manager := createExtensionsManager(t, mockCtx, map[string]*extensions.Extension{
+				"test.ext": {Id: "test.ext", Version: "1.0.0", Capabilities: tt.caps},
+			})
+			var order []string
+			ioc.RegisterInstance[inputs.Resolver](mockCtx.Container, mockinputs.OptionsResolver(
+				func(context.Context, *v1beta.InputDefinition) ([]inputs.Option, error) {
+					order = append(order, "resolve")
+					return nil, nil
+				},
+			))
+			m := &inputProvidersMiddleware{
+				container:        mockCtx.Container,
+				extensionManager: manager,
+				start: func(context.Context) (func(), error) {
+					order = append(order, "extensions")
+					return func() { order = append(order, "cleanup") }, nil
+				},
+			}
+			useInputs := func(ctx context.Context) (*actions.ActionResult, error) {
+				if tt.request {
+					var resolver inputs.Resolver
+					require.NoError(t, mockCtx.Container.Resolve(&resolver))
+					_, err := resolver.ResolveInput(ctx, &v1beta.InputDefinition{})
+					require.NoError(t, err)
+				}
+				order = append(order, "hooks")
+				if tt.start {
+					late := &ExtensionsMiddleware{}
+					return late.Run(ctx, func(context.Context) (*actions.ActionResult, error) {
+						return &actions.ActionResult{}, nil
+					})
+				}
+				return &actions.ActionResult{}, nil
+			}
+			_, err := m.Run(t.Context(), func(ctx context.Context) (*actions.ActionResult, error) {
+				require.Empty(t, order, "listeners must start only when needed")
+				if tt.normalFirst {
+					return (&ExtensionsMiddleware{}).Run(ctx, useInputs)
+				}
+				return useInputs(ctx)
+			})
+			require.NoError(t, err)
+			expected := []string{"hooks"}
+			if tt.request {
+				expected = []string{"resolve", "hooks"}
+			}
+			if tt.start {
+				expected = []string{"extensions", "resolve", "hooks", "cleanup"}
+			}
+			require.Equal(t, expected, order)
+		})
+	}
+}
+
+func TestInputProvidersMiddlewareChildReusesListeners(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	manager := createExtensionsManager(t, mockCtx, map[string]*extensions.Extension{
+		"test.ext": {Id: "test.ext", Version: "1.0.0",
+			Capabilities: []extensions.CapabilityType{extensions.InputProviderCapability}},
+	})
+	ioc.RegisterInstance[inputs.Resolver](mockCtx.Container, mockinputs.OptionsResolver(
+		func(context.Context, *v1beta.InputDefinition) ([]inputs.Option, error) { return nil, nil },
+	))
+	starts, cleanups := 0, 0
+	m := &inputProvidersMiddleware{
+		container: mockCtx.Container, extensionManager: manager,
+		start: func(context.Context) (func(), error) {
+			starts++
+			return func() { cleanups++ }, nil
+		},
+	}
+	_, err := m.Run(t.Context(), func(ctx context.Context) (*actions.ActionResult, error) {
+		child := &inputProvidersMiddleware{container: ioc.NewNestedContainer(mockCtx.Container)}
+		for range 2 {
+			_, err := child.Run(WithChildAction(ctx), func(ctx context.Context) (*actions.ActionResult, error) {
+				var resolver inputs.Resolver
+				require.NoError(t, child.container.Resolve(&resolver))
+				_, err := resolver.ResolveInput(ctx, &v1beta.InputDefinition{})
+				return nil, err
+			})
+			require.NoError(t, err)
+			require.Zero(t, cleanups, "child commands must not stop the parent's listeners")
+		}
+		return nil, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, starts)
+	require.Equal(t, 1, cleanups)
+}
+
+func TestInputProvidersMiddlewareStartupFailure(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	manager := createExtensionsManager(t, mockCtx, map[string]*extensions.Extension{
+		"test.ext": {Id: "test.ext", Version: "1.0.0",
+			Capabilities: []extensions.CapabilityType{extensions.InputProviderCapability}},
+	})
+	ioc.RegisterInstance[inputs.Resolver](mockCtx.Container, mockinputs.OptionsResolver(
+		func(context.Context, *v1beta.InputDefinition) ([]inputs.Option, error) {
+			t.Fatal("must not resolve inputs after listener startup fails")
+			return nil, nil
+		},
+	))
+	startErr := errors.New("listener startup failed")
+	starts := 0
+	m := &inputProvidersMiddleware{
+		container: mockCtx.Container, extensionManager: manager,
+		start: func(context.Context) (func(), error) {
+			starts++
+			return nil, startErr
+		},
+	}
+	_, err := m.Run(t.Context(), func(ctx context.Context) (*actions.ActionResult, error) {
+		var resolver inputs.Resolver
+		require.NoError(t, mockCtx.Container.Resolve(&resolver))
+		for range 2 {
+			_, err := resolver.ResolveInput(ctx, &v1beta.InputDefinition{})
+			require.ErrorIs(t, err, startErr)
+		}
+		return nil, startErr
+	})
+	require.ErrorIs(t, err, startErr)
+	require.Equal(t, 1, starts, "failed startup must not be replayed")
+}
+
 func TestExtensionsMiddleware_Run_ChildAction_SkipsExtensions(t *testing.T) {
 	t.Parallel()
 	// When the context marks a child action, Run must delegate to next()
@@ -663,6 +808,10 @@ func TestExtensionsMiddleware_Run_ListInstalledError(t *testing.T) {
 
 	_, err = m.Run(t.Context(), nextOK)
 	require.Error(t, err, "should propagate ListInstalled error")
+
+	activation := &inputProviderActivation{ctx: t.Context(), extensionManager: manager}
+	_, err = activation.ensureStarted()
+	require.Error(t, err, "on-demand startup should propagate ListInstalled error")
 }
 
 // ---------------------------------------------------------------------------
@@ -906,7 +1055,8 @@ func TestListenCapabilities_ContainsExpectedValues(t *testing.T) {
 	require.Contains(t, listenCapabilities, extensions.FrameworkServiceProviderCapability)
 	require.Contains(t, listenCapabilities, extensions.ProvisioningProviderCapability)
 	require.Contains(t, listenCapabilities, extensions.ValidationProviderCapability)
-	require.Len(t, listenCapabilities, 5)
+	require.Contains(t, listenCapabilities, extensions.InputProviderCapability)
+	require.Len(t, listenCapabilities, 6)
 }
 
 // ---------------------------------------------------------------------------

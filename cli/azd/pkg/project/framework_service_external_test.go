@@ -36,6 +36,19 @@ func Test_externalTool_Methods(t *testing.T) {
 	})
 }
 
+func TestServiceConfigToProtoMapsAbsentDockerToEmptyOptions(t *testing.T) {
+	protoConfig, err := serviceConfigToProto(nil, &ServiceConfig{
+		Name:         "api",
+		Language:     ServiceLanguageJava,
+		Host:         "springbootapp",
+		RelativePath: ".",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, protoConfig.GetDocker())
+	assert.Empty(t, protoConfig.GetDocker().GetPath())
+	assert.Empty(t, protoConfig.GetDocker().GetContext())
+}
+
 func Test_ServiceStableFiltered(t *testing.T) {
 	t.Run("AllEnabled", func(t *testing.T) {
 		im := NewImportManager(nil)

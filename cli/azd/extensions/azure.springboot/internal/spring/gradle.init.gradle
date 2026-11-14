@@ -1,0 +1,47 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+import groovy.json.JsonOutput
+
+gradle.projectsEvaluated {
+    if (gradle.parent != null) {
+        return
+    }
+    def project = gradle.rootProject
+    if (project.allprojects.size() != 1 || !gradle.includedBuilds.empty) {
+        throw new GradleException("azure.springboot requires a single-project Gradle build")
+    }
+    def bootJar = project.tasks.findByName("bootJar")
+    if (!project.pluginManager.hasPlugin("org.springframework.boot") || bootJar == null || !bootJar.enabled) {
+        throw new GradleException("azure.springboot requires an enabled Spring Boot bootJar task")
+    }
+    def classpath = project.configurations.findByName("runtimeClasspath")
+    if (classpath == null || !classpath.canBeResolved) {
+        throw new GradleException("azure.springboot requires a resolvable runtimeClasspath")
+    }
+    def operation = System.getProperty("azd.spring.operation")
+    project.tasks.register("azdSpringReport") {
+        if (operation == "package") {
+            dependsOn(bootJar)
+        } else if (operation == "build") {
+            dependsOn(project.tasks.named("classes"))
+        }
+        doLast {
+            if (operation == "package" && (!bootJar.enabled || bootJar.state.noSource ||
+                (bootJar.state.skipped && !bootJar.state.upToDate && bootJar.state.skipMessage != "FROM-CACHE"))) {
+                throw new GradleException("azure.springboot cannot package a skipped bootJar")
+            }
+            // Unlike the dependencies display task, this fails on unresolved production dependencies.
+            def dependencies = classpath.resolvedConfiguration.resolvedArtifacts.collect {
+                "${it.moduleVersion.id.group}:${it.moduleVersion.id.name}".toString()
+            }.unique().sort()
+            def report = [
+                version: 1,
+                root: project.projectDir.absolutePath,
+                dependencies: dependencies,
+                archive: bootJar.archiveFile.get().asFile.absolutePath
+            ]
+            new File(System.getProperty("azd.spring.report")).setText(JsonOutput.toJson(report), "UTF-8")
+        }
+    }
+}

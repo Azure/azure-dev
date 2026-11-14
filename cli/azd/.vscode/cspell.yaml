@@ -643,6 +643,98 @@ overrides:
     words:
       - HKLM
       - norestart
+  - filename: docs/environment-variables.md
+    words:
+      - springboot
+  - filename: "extensions/azure.springboot/**/*.{go,md,gradle}"
+    words:
+      - abcdefghijkmnopqrstuvwxyz
+      - ABCDEFGHJKLMNPQRSTUVWXYZ
+      - armpostgresqlflexibleservers
+      - authid
+      - allprojects
+      - azurespringboot
+      - bicepprovider
+      - bypassrls
+      - coreproject
+      - createdb
+      - createrole
+      - Dazd
+      - datdba
+      - datname
+      - dbname
+      - Dmaven
+      - Dspring
+      - dbcp
+      - esac
+      - extensionless
+      - flywaydb
+      - gitcommitid
+      - goruntime
+      - gradlew
+      - hashtextextended
+      - Hikari
+      - hikaricp
+      - hsqldb
+      - isadmin
+      - jackc
+      - JNDI
+      - jedis
+      - jooq
+      - liquibase
+      - managedidentity
+      - managedidentityenabled
+      - mybatis
+      - nonstring
+      - nonsymlink
+      - nspname
+      - nspowner
+      - ojdbc
+      - passwordless
+      - PETCLINIC
+      - pgaadauth
+      - pgconn
+      - PGDBNAME
+      - PGHOST
+      - PGPORT
+      - principaltype
+      - proname
+      - pronamespace
+      - proowner
+      - relkind
+      - relname
+      - relnamespace
+      - relowner
+      - reprovision
+      - rolbypassrls
+      - rolcanlogin
+      - rolcreatedb
+      - rolcreaterole
+      - rolename
+      - rolname
+      - rolreplication
+      - rolsuper
+      - shobj
+      - springboot
+      - springbootapp
+      - subprojects
+      - sslfactory
+      - sslfactoryarg
+      - sslhostnameverifier
+      - sslmode
+      - sslrootcert
+      - temurin
+      - typname
+      - typnamespace
+      - typowner
+      - typrelid
+      - typtype
+      - UAMI
+      - ufeff
+      - userbyid
+      - xact
+      - xiaofeicao
+      - zaxxer
   - filename: docs/extensions/extension-telemetry.md
     words:
       - dcount

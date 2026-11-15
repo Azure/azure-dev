@@ -1,6 +1,6 @@
 [
   {
-    "model": "MAI/MAI-Code-1.1-Flash",
+    "model": "MAI/MAI-Code-2-Flash",
     "renderers": ["mai_harmony", "mai_harmony_internal"]
   },
   {

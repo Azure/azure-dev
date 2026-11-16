@@ -451,7 +451,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// Register all registrations in parallel - service targets, framework services, event handlers, and provisioning
 	var registrationsWaitGroup sync.WaitGroup
 	totalCount := len(er.serviceTargets) + len(er.frameworkServices) +
-		len(er.projectHandlers) + len(er.serviceHandlers) + len(er.betaServiceHandlers) +
+		len(er.projectHandlers) + len(er.serviceHandlers) + len(er.serviceResponses) + len(er.betaServiceHandlers) +
 		len(er.provisioningProviders) + len(er.validationChecks)
 	registrationErrChan := make(chan error, totalCount)
 

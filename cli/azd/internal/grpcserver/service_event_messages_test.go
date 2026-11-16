@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
@@ -120,13 +121,13 @@ func TestEventService_createServiceEventHandler_ServiceEventMessages(t *testing.
 				t,
 				extension.Id,
 				func(msg *azdext.EventMessage) *azdext.EventMessage {
-					invoke := msg.GetInvokeServiceHandler()
-					require.NotNil(t, invoke)
+					// This runs in the broker's send path, so report failures without FailNow and still reply.
+					assert.NotNil(t, msg.GetInvokeServiceHandler())
 					return &azdext.EventMessage{
 						MessageType: &azdext.EventMessage_ServiceHandlerStatus{
 							ServiceHandlerStatus: &azdext.ServiceHandlerStatus{
-								EventName:   invoke.GetEventName(),
-								ServiceName: invoke.GetService().GetName(),
+								EventName:   tt.eventName,
+								ServiceName: serviceConfig.Name,
 								Status:      tt.status,
 								Message:     "handler failed",
 								Messages:    tt.messages,
@@ -236,8 +237,9 @@ func TestStableSDKServiceEventResponseHandlerEndToEnd(t *testing.T) {
 	eventCtx := commandresult.WithServiceEventMessageCollector(t.Context(), collector)
 
 	// The stable subscription is not acknowledged, so raise the event until the host has registered the handler.
+	var raiseErr error
 	require.Eventually(t, func() bool {
-		require.NoError(t, serviceConfig.RaiseEvent(
+		raiseErr = serviceConfig.RaiseEvent(
 			eventCtx,
 			ext.Event("predeploy"),
 			project.ServiceLifecycleEventArgs{
@@ -245,9 +247,10 @@ func TestStableSDKServiceEventResponseHandlerEndToEnd(t *testing.T) {
 				Service:        serviceConfig,
 				ServiceContext: project.NewServiceContext(),
 			},
-		))
-		return len(collector.Snapshot([]string{"api"})) > 0
+		)
+		return raiseErr != nil || len(collector.Snapshot([]string{"api"})) > 0
 	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, raiseErr)
 
 	require.Equal(t, []commandresult.ServiceEventMessage{{
 		ExtensionID: extension.Id,

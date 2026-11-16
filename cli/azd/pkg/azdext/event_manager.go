@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -201,14 +202,25 @@ func (em *EventManager) AddServiceEventHandler(
 		},
 	}
 
-	err := em.broker.Send(ctx, msg)
-	if err != nil {
+	em.eventsMutex.Lock()
+	if _, hasResponseHandler := em.serviceResponseEvents[eventName]; hasResponseHandler {
+		em.eventsMutex.Unlock()
+		return fmt.Errorf("service event %q is already registered", eventName)
+	}
+	previous, hadPrevious := em.serviceEvents[eventName]
+	em.serviceEvents[eventName] = handler
+	em.eventsMutex.Unlock()
+
+	if err := em.broker.Send(ctx, msg); err != nil {
+		em.eventsMutex.Lock()
+		if hadPrevious {
+			em.serviceEvents[eventName] = previous
+		} else {
+			delete(em.serviceEvents, eventName)
+		}
+		em.eventsMutex.Unlock()
 		return err
 	}
-
-	em.eventsMutex.Lock()
-	defer em.eventsMutex.Unlock()
-	em.serviceEvents[eventName] = handler
 
 	return nil
 }
@@ -226,14 +238,6 @@ func (em *EventManager) AddServiceEventResponseHandler(
 	}
 	if handler == nil {
 		return fmt.Errorf("service event response handler for %q is nil", eventName)
-	}
-
-	em.eventsMutex.RLock()
-	_, hasHandler := em.serviceEvents[eventName]
-	_, hasResponseHandler := em.serviceResponseEvents[eventName]
-	em.eventsMutex.RUnlock()
-	if hasHandler || hasResponseHandler {
-		return fmt.Errorf("service event %q is already registered", eventName)
 	}
 
 	if err := em.ensureStream(ctx); err != nil {
@@ -254,13 +258,23 @@ func (em *EventManager) AddServiceEventResponseHandler(
 		},
 	}
 
+	// Reserve the event before subscribing so concurrent registrations cannot create duplicate subscriptions.
+	em.eventsMutex.Lock()
+	_, hasHandler := em.serviceEvents[eventName]
+	_, hasResponseHandler := em.serviceResponseEvents[eventName]
+	if hasHandler || hasResponseHandler {
+		em.eventsMutex.Unlock()
+		return fmt.Errorf("service event %q is already registered", eventName)
+	}
+	em.serviceResponseEvents[eventName] = handler
+	em.eventsMutex.Unlock()
+
 	if err := em.broker.Send(ctx, msg); err != nil {
+		em.eventsMutex.Lock()
+		delete(em.serviceResponseEvents, eventName)
+		em.eventsMutex.Unlock()
 		return err
 	}
-
-	em.eventsMutex.Lock()
-	defer em.eventsMutex.Unlock()
-	em.serviceResponseEvents[eventName] = handler
 
 	return nil
 }
@@ -356,11 +370,12 @@ func (em *EventManager) onInvokeServiceHandler(
 	var handlerError *ExtensionError
 
 	var messages []*ServiceEventMessage
-	var handlerErr error
+	var handlerErr, validationErr error
 	if hasResponseHandler {
 		var response *ServiceEventResponse
 		response, handlerErr = responseHandler(ctx, args)
-		messages, handlerErr = validServiceEventMessages(response, handlerErr)
+		messages, validationErr = validServiceEventMessages(response)
+		handlerErr = errors.Join(handlerErr, validationErr)
 	} else {
 		handlerErr = handler(ctx, args)
 	}
@@ -371,6 +386,10 @@ func (em *EventManager) onInvokeServiceHandler(
 		handlerStatus = "failed"
 		handlerMessage = handlerErr.Error()
 		handlerError = WrapError(handlerErr)
+		if validationErr != nil {
+			// Typed errors keep only their own text; retain the validation diagnostics.
+			handlerError.Message = handlerMessage
+		}
 		log.Printf("invokeServiceHandler error for event %s: %v", req.EventName, handlerErr)
 	}
 
@@ -399,24 +418,22 @@ func validateServiceEventResponseName(eventName string) error {
 	return nil
 }
 
-// validServiceEventMessages returns the valid messages and joins validation failures to the handler error.
-func validServiceEventMessages(
-	response *ServiceEventResponse,
-	handlerErr error,
-) ([]*ServiceEventMessage, error) {
+// validServiceEventMessages returns the valid messages and the joined validation failures.
+func validServiceEventMessages(response *ServiceEventResponse) ([]*ServiceEventMessage, error) {
 	if response == nil {
-		return nil, handlerErr
+		return nil, nil
 	}
 
 	var messages []*ServiceEventMessage
+	var validationErr error
 	for index, message := range response.Messages {
 		if err := validateServiceEventMessage(message); err != nil {
-			handlerErr = errors.Join(handlerErr, fmt.Errorf("message %d: %w", index+1, err))
+			validationErr = errors.Join(validationErr, fmt.Errorf("message %d: %w", index+1, err))
 			continue
 		}
 		messages = append(messages, message)
 	}
-	return messages, handlerErr
+	return messages, validationErr
 }
 
 func validateServiceEventMessage(message *ServiceEventMessage) error {
@@ -435,6 +452,9 @@ func validateServiceEventMessage(message *ServiceEventMessage) error {
 	for index, link := range message.GetLinks() {
 		if link == nil || strings.TrimSpace(link.GetUrl()) == "" {
 			return fmt.Errorf("link %d URL is required", index+1)
+		}
+		if _, err := url.Parse(link.GetUrl()); err != nil {
+			return fmt.Errorf("link %d URL is invalid", index+1)
 		}
 	}
 	return nil

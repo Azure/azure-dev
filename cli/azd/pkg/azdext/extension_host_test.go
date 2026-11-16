@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -629,6 +630,33 @@ func TestExtensionHost_ServiceEventResponseHandlers(t *testing.T) {
 		cancel()
 		require.NoError(t, <-done)
 		mockEventManager.AssertExpectations(t)
+	})
+
+	t.Run("returns response handler registration errors", func(t *testing.T) {
+		mockEventManager := &MockExtensionEventManager{}
+		mockEventManager.On("AddServiceEventResponseHandler", mock.Anything, "predeploy", mock.Anything, mock.Anything).
+			Return(errors.New("subscription failed"))
+		mockEventManager.On("Ready", mock.Anything).Return(nil)
+		mockEventManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+			<-args.Get(0).(context.Context).Done()
+		}).Return(nil)
+		mockEventManager.On("Close").Return(nil)
+
+		host := NewExtensionHost(newTestAzdClient())
+		host.eventManager = mockEventManager
+		host.WithServiceEventResponseHandler("predeploy", responseHandler, nil)
+
+		done := make(chan error, 1)
+		go func() {
+			done <- host.Run(t.Context())
+		}()
+
+		select {
+		case err := <-done:
+			require.ErrorContains(t, err, "failed to add service event response handler 'predeploy': subscription failed")
+		case <-time.After(5 * time.Second):
+			t.Fatal("extension host did not return the registration error")
+		}
 	})
 }
 

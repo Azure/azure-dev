@@ -2,10 +2,13 @@
 
 <!-- cspell:ignore Chdir azext azureresources -->
 
-## Project Overview
+## Project overview
 This is the official Visual Studio Code extension for the Azure Developer CLI (azd). It provides an integrated development experience for building, deploying, and managing Azure applications.
 
-## Core Development Principles
+Run the commands below from `ext/vscode/`. Install dependencies with `npm install`
+when needed.
+
+## Core development principles
 
 ### Documentation
 - **Always keep the [README.md](../README.md) up to date** with any changes to:
@@ -16,8 +19,8 @@ This is the official Visual Studio Code extension for the Azure Developer CLI (a
   - Prerequisites
   - Known issues or limitations
 
-### Code Quality & Testing
-Before submitting any changes or pushing code, **always run the following checks** to avoid pipeline failures:
+### Code quality and testing
+Before committing, submitting changes, or pushing code, run these checks:
 
 1. **Linting**: `npm run lint`
    - Ensures code follows TypeScript and ESLint standards
@@ -33,66 +36,41 @@ Before submitting any changes or pushing code, **always run the following checks
    - **IMPORTANT**: If you modify existing code, ensure related tests still pass
    - **IMPORTANT**: If you add new functionality, add corresponding unit tests
 
-### Pre-Commit Checklist
-✅ Run `npm run lint` and fix all issues
-✅ Run `npx cspell "src/**/*.ts" --config .vscode/cspell.yaml` and fix spelling errors
-✅ Run `npm run unit-test` and ensure all tests pass
-✅ Update [README.md](../README.md) if functionality changed
-✅ Verify merge conflicts are resolved (no `<<<<<<<`, `=======`, `>>>>>>>` markers)
+Update [README.md](../README.md) if functionality changed. Verify that merge
+conflicts are resolved and no `<<<<<<<`, `=======`, or `>>>>>>>` markers remain.
 
-## Code Style & Conventions
+## Code style and conventions
 
-### File Organization
+### File organization
 - Extension entry point: `src/extension.ts`
 - Commands: `src/commands/`
 - Language features: `src/language/` (IntelliSense, diagnostics, etc.)
 - Views & tree providers: `src/views/`
 - Utilities: `src/utils/`
 - Tests: `src/test/`
+- Constants: `src/constants/`
+- Services: `src/services/`
 
-### Naming Conventions
+### Naming conventions
 - Use PascalCase for classes and interfaces
 - Use camelCase for functions, methods, and variables
 - Use descriptive names that clearly indicate purpose
 - Prefix private members with underscore if needed for clarity
 
-### Copyright Headers
+### Copyright headers
 All TypeScript source files MUST include the Microsoft copyright header at the very top of the file:
 ```typescript
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 ```
 
-### TypeScript Guidelines
+### TypeScript guidelines
 - Use explicit types where possible, avoid `any`
-- Leverage VS Code API types from `vscode` module
+- Use VS Code API types from the `vscode` module
 - Use `async/await` for asynchronous operations
 - Handle errors gracefully with try/catch blocks
 
-### Modern Go Patterns (Go 1.26+)
-When working in Go code under `cli/azd/`, prefer these patterns:
-
-- Use `errors.AsType[*MyError](err)` instead of `var e *MyError; errors.As(err, &e)`
-- Use `slices.SortFunc(items, func(a, b T) int { return cmp.Compare(a.Name, b.Name) })` instead of `sort.Slice`
-- Use `slices.Clone(s)` instead of `append([]T{}, s...)`
-- Use `slices.Sorted(maps.Keys(m))` instead of collecting keys and sorting them separately
-- Use `http.NewRequestWithContext(ctx, method, url, body)` instead of `http.NewRequest(...)`
-- Use `new(expr)` instead of `to.Ptr(expr)`; `go fix ./...` applies this automatically
-- Use `wg.Go(func() { ... })` instead of `wg.Add(1); go func() { defer wg.Done(); ... }()`
-- Use `for i := range n` instead of `for i := 0; i < n; i++` for simple counted loops
-- Use `t.Context()` instead of `context.Background()` in tests
-- Use `t.Chdir(dir)` instead of `os.Chdir` plus a deferred restore in tests
-- Run `go fix ./...` before committing; CI enforces these modernizations
-
-### Go Linting Rules
-When writing Go code under `cli/azd/`:
-
-- **Max line length is 125 characters** (enforced by `lll` linter, tab width 4)
-- Break long `if` conditions across lines using `&&` or `||` at line end
-- Add cspell overrides to `cli/azd/.vscode/cspell.yaml` using file-scoped `overrides` entries
-- Run `golangci-lint run ./...` before committing
-
-### Azure YAML Language Features
+### Azure YAML language features
 When working on `azure.yaml` language support in `src/language/`:
 - Use YAML parser from `yaml` package
 - Provide helpful diagnostics with clear error messages
@@ -105,10 +83,11 @@ When working on `azure.yaml` language support in `src/language/`:
 - Use Chai for assertions
 - Mock VS Code APIs when necessary using Sinon
 - Keep tests focused and isolated
+- Use `UserCancelledError` from `@microsoft/vscode-azext-utils` for testing user cancellation scenarios
 
-## Common Tasks
+## Common tasks
 
-### Adding a New Command
+### Adding a new command
 1. Create command handler in `src/commands/`
 2. Register in `src/commands/registerCommands.ts`
 3. Add to `package.json` contributions
@@ -116,98 +95,98 @@ When working on `azure.yaml` language support in `src/language/`:
 5. Update README.md with new command documentation
 6. Add tests for the command
 
-### Adding Language Features
+### Adding language features
 1. Create provider in `src/language/`
 2. Register in `src/language/languageFeatures.ts`
 3. Test with various `azure.yaml` files
 4. Add diagnostics tests in `src/test/suite/unit/`
 
-### Debugging the Extension
+### Debugging the extension
 - Press F5 to launch Extension Development Host
 - Set breakpoints in TypeScript source
 - Use Debug Console for logging
 - Check Output > Azure Developer CLI for extension logs
 
-## VS Code Extension APIs
+## VS Code extension APIs
 - Follow [VS Code Extension API](https://code.visualstudio.com/api) best practices
 - Use `@microsoft/vscode-azext-utils` for Azure extension utilities
 - Integrate with Azure Resources API via `@microsoft/vscode-azureresources-api`
 - Use localization with `vscode.l10n.t()` for all user-facing text
 
-## Performance Best Practices
+## Performance best practices
 
-### Activation & Startup
+### Activation and startup
 - **Minimize activation time**: Keep `activate()` function lightweight
 - Use **lazy activation events** - be specific with `activationEvents` in package.json
 - Avoid synchronous file I/O during activation
 - Defer expensive operations until they're actually needed
 - Use `ExtensionContext.subscriptions` for proper cleanup
 
-### Memory Management
+### Memory management
 - **Dispose resources properly**: Always dispose of subscriptions, watchers, and providers
 - Use `vscode.Disposable` pattern for all resources that need cleanup
 - Avoid memory leaks by unsubscribing from events when no longer needed
 - Clear caches and collections when they grow too large
 - Use weak references where appropriate
 
-### Asynchronous Operations
+### Asynchronous operations
 - **Never block the main thread**: Use async/await for all I/O operations
 - Use `Promise.all()` for parallel operations when possible
 - Implement proper cancellation using `CancellationToken`
 - Debounce frequent operations (e.g., text document changes)
 - Use background workers for CPU-intensive tasks
 
-### Tree Views & Data Providers
+### Tree views and data providers
 - Implement efficient `getChildren()` - return only visible items
 - Cache tree data when appropriate to avoid redundant queries
 - Use `vscode.EventEmitter` efficiently - only fire events when data actually changes
 - Implement `getTreeItem()` to be synchronous and fast
 - Use `collapsibleState` wisely to control initial expansion
 
-### Language Features
+### Language features
 - **Debounce document change events** (see `documentDebounce.ts`)
 - Use incremental parsing when possible
 - Cache parsed ASTs or syntax trees
 - Limit diagnostic computation to visible range when feasible
 - Return early from providers when results aren't needed
 
-### File System Operations
+### File system operations
 - Use `vscode.workspace.fs` API for better performance
 - Batch file operations when possible
-- Use `FileSystemWatcher` instead of polling
+- Use the shared `FileSystemWatcherService` instead of polling
 - Avoid recursive directory scans in large workspaces
 - Cache file system queries with appropriate invalidation
 
-### Commands & UI
+### Commands and UI
 - Keep command handlers fast and responsive
 - Show progress indicators for long-running operations
 - Use `withProgress()` for operations that take >1 second
 - Provide cancellation support for long operations
 - Avoid multiple sequential `showQuickPick` or `showInputBox` calls
 
-### Extension Size & Bundle
+### Extension size and bundle
 - Minimize extension bundle size - exclude unnecessary dependencies
 - Use webpack to bundle and tree-shake code
 - Lazy load large dependencies only when needed
 - Consider code splitting for rarely-used features
 - Optimize images and assets
 
-### Best Practices from This Codebase
+### Best practices from this codebase
 - Use `documentDebounce()` utility for text change events (1000ms delay)
-- Leverage `Lazy<T>` and `AsyncLazy<T>` for deferred initialization
+- Use `Lazy<T>` and `AsyncLazy<T>` for deferred initialization
 - Implement proper `vscode.Disposable` cleanup in all providers
 - Use telemetry to measure and track performance metrics
 - Follow the patterns in `src/views/` for efficient tree providers
 
-### User Interface Best Practices
+### User interface best practices
 - All user-facing strings shown in the UI, error messages, etc. must use `vscode.l10n.t()`
 - All user-facing strings in package.json must be extracted into package.nls.json
 - Instead of `vscode.window.showQuickPick`, use `IActionContext.ui.showQuickPick`
 - Instead of `vscode.window.showInputBox`, use `IActionContext.ui.showInputBox`
 - The same applies for `showWarningMessage`, `showOpenDialog`, and `showWorkspaceFolderPick`
-- FileSystemWatchers are a scarce resource on some systems - consolidate into shared watchers when possible
+- FileSystemWatchers are a scarce resource on some systems - use the shared `FileSystemWatcherService`
 
-## Build & Package
+## Build and package
 - Development build: `npm run dev-build`
 - Production build: `npm run build`
 - Watch mode: `npm run watch`
@@ -215,7 +194,7 @@ When working on `azure.yaml` language support in `src/language/`:
 - CI build: `npm run ci-build`
 - CI package: `npm run ci-package`
 
-## Additional Resources
+## Additional resources
 - [Azure Developer CLI Documentation](https://learn.microsoft.com/azure/developer/azure-developer-cli/)
 - [VS Code Extension API](https://code.visualstudio.com/api)
 - [Contributing Guide](../CONTRIBUTING.md)

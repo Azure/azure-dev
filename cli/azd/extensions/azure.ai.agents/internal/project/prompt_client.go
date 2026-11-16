@@ -253,6 +253,15 @@ func (s *PromptAgentSettings) OverlayAzdProjectEnv(env map[string]string) {
 		}
 	}
 	if strings.TrimSpace(s.ModelEndpoint) == "" {
+		pe := strings.TrimSpace(s.ProjectEndpoint)
+		if pe == "" {
+			pe = strings.TrimSpace(env[promptProjectEndpointEnvKey])
+		}
+		if u, err := url.Parse(pe); err == nil && u.Scheme != "" && u.Host != "" {
+			s.ModelEndpoint = u.Scheme + "://" + u.Host
+		}
+	}
+	if strings.TrimSpace(s.ModelEndpoint) == "" {
 		if v := strings.TrimSpace(env["AZURE_AI_ACCOUNT_NAME"]); v != "" {
 			s.ModelEndpoint = fmt.Sprintf("https://%s.services.ai.azure.com", v)
 		}

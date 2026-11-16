@@ -83,6 +83,7 @@ func NewRemoteChecks(deps Dependencies) []Check {
 		newCheckAuth(deps),
 		newCheckFoundryEndpoint(deps),
 		newCheckRBAC(deps),
+		newCheckPolicy(deps),
 		newCheckAgentStatus(deps),
 		newCheckConnections(deps),
 		newCheckProjectStorageRBAC(deps),

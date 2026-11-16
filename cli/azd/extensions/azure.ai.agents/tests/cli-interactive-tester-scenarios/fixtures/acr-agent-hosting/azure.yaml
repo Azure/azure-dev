@@ -1,6 +1,6 @@
 name: acr-agent-hosting
 infra:
-  provider: microsoft.foundry
+  provider: bicep
 services:
   ai-project:
     host: azure.ai.project

@@ -23,6 +23,16 @@ func toolboxNotFoundOrService(err error, name, op string) error {
 			"run 'azd ai toolbox list' to see available toolboxes",
 		)
 	}
+	if policyErr, ok := tryClassifyToolboxPolicyError(err, name, nil); ok {
+		return policyErr
+	}
+	return exterrors.ServiceFromAzure(err, op)
+}
+
+func toolboxVersionWriteError(err error, name, op string) error {
+	if policyErr, ok := tryClassifyToolboxPolicyError(err, name, nil); ok {
+		return policyErr
+	}
 	return exterrors.ServiceFromAzure(err, op)
 }
 

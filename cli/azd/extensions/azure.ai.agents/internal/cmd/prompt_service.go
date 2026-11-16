@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"strings"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )

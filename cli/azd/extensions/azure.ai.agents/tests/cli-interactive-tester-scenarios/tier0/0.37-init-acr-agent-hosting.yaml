@@ -1,10 +1,11 @@
-# Tier 0: reject external source-build registries with agentHosting.
+# Tier 0: reject unknown application teardown scopes with ACR reuse and agentHosting.
 # Offline only; no Azure authentication or resource creation.
 name: "init-acr-agent-hosting"
 command: "azd ai agent init --src ./src --no-prompt"
 cwd: "~/working/azd-agents-acr-agent-hosting-{instance}"
 tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
 env:
+  AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE: "true"
   AZD_DISABLE_AGENT_DETECT: "1"
   AZURE_ENV_NAME: "acr-env"
   AZURE_DEV_COLLECT_TELEMETRY: "no"
@@ -29,14 +30,16 @@ goals:
     init command and read-only inspections; do not repair fixtures or retry.
   - >-
     Wait for 'azd ai agent init --src ./src --no-prompt' to exit non-zero.
-    Confirm the error says existing registry reuse is not supported with
-    agentHosting and says to use an azd-created registry or remove agentHosting.
+    Confirm the error says application infrastructure teardown scopes cannot be
+    established for external registry reuse and says to use Foundry-only
+    infrastructure or an azd-created registry in a new environment.
     The registry selector comes only from the seeded environment, with no active
     Agent service required to trigger validation.
   - >-
     Confirm no authentication, subscription, location, project, registry, or agent
     wizard prompt appears. An AI capability, credential, network, or cluster
-    lookup error does not satisfy the required unsupported-combination error.
+    lookup error does not satisfy the required teardown-scope error.
+    An error rejecting agentHosting with registry reuse is also a finding.
   - >-
     Confirm azure.yaml and .azure/acr-env/.env remain byte-for-byte identical to
     their files in '{fixtures_dir}/acr-agent-hosting', .azure/config.json matches

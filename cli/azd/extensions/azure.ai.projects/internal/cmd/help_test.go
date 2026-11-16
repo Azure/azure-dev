@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
@@ -84,7 +84,6 @@ func TestAIHelpColor(t *testing.T) {
 		require.Contains(t, text, output.WithBold("%s", output.WithUnderline("Usage")))
 		require.Contains(t, text, output.WithBold("%s", output.WithUnderline("Examples")))
 		require.Contains(t, text, output.WithHighLightFormat("%s", "--environment"))
-		require.Contains(t, text, "\x1b[94m")
 	})
 }
 

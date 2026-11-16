@@ -29,6 +29,32 @@ func TestEnsureCompatibleProject(t *testing.T) {
 		expectedErrorSubstring string
 	}{
 		{
+			name: "extension provider",
+			setupFunc: func(t *testing.T) *project.ProjectConfig {
+				return &project.ProjectConfig{
+					Path: t.TempDir(),
+					Infra: provisioning.Options{
+						Provider: "custom", Config: map[string]any{"private": true},
+					},
+				}
+			},
+			expectError:            true,
+			expectedErrorSubstring: `extension provider "custom"`,
+		},
+		{
+			name: "extension provider layer",
+			setupFunc: func(t *testing.T) *project.ProjectConfig {
+				return &project.ProjectConfig{
+					Path: t.TempDir(),
+					Infra: provisioning.Options{Layers: []provisioning.Options{
+						{Name: "extension", Provider: "custom"},
+					}},
+				}
+			},
+			expectError:            true,
+			expectedErrorSubstring: `extension provider "custom"`,
+		},
+		{
 			name: "no infra folder",
 			setupFunc: func(t *testing.T) *project.ProjectConfig {
 				// Create temp project directory

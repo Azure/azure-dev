@@ -6,7 +6,7 @@ package cmd
 import (
 	"strings"
 
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/spf13/cobra"
 )

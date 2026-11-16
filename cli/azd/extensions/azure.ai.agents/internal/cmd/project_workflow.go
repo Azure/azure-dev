@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"

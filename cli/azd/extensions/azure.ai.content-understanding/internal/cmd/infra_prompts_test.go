@@ -331,6 +331,11 @@ func TestInfraGenerateSectionsAndActionColors(t *testing.T) {
 				if mode == "NO_COLOR" {
 					assert.NotContains(t, text, "\x1b")
 				} else {
+					if mode == "default" {
+						assert.Contains(t, text, "`\x1b[94mazd ai cu infra generate\x1b[0m`")
+						assert.Contains(t, text, "`\x1b[94mprebuilt-invoice\x1b[0m`")
+						assert.Contains(t, text, "`\x1b[94mazd up\x1b[0m`")
+					}
 					assert.Contains(t, text, "\x1b[94mazd auth login\x1b[0m\x1b[90m    # (one-time)\x1b[0m")
 					assert.Contains(t, text,
 						"\x1b[94mazd up\x1b[0m\x1b[90m    # "+
@@ -338,6 +343,53 @@ func TestInfraGenerateSectionsAndActionColors(t *testing.T) {
 					assert.Contains(t, text, "\n\n\x1b[94mRun azd ai cu doctor afterwards")
 					assert.NotContains(t, text, "\x1b[94mGenerated")
 				}
+			}
+		})
+	}
+}
+
+func TestInfraGuidanceAndQuestionColors(t *testing.T) {
+	setHelpColor(t, true)
+	for _, mode := range []string{"default", "NO_COLOR", "json", "none"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("NO_COLOR", "")
+			if mode == "NO_COLOR" {
+				t.Setenv("NO_COLOR", "1")
+			}
+			format := mode
+			if mode == "NO_COLOR" {
+				format = "default"
+			}
+			rpc, host, choices := generationPromptFixture(t)
+			var text bytes.Buffer
+			host.output, host.outputFormat = &text, format
+			checkQuestion := func(message string) {
+				if mode == "default" {
+					assert.True(t, strings.HasPrefix(message, "\x1b[94m"), message)
+					assert.True(t, strings.HasSuffix(message, "\x1b[0m"), message)
+				} else {
+					assert.NotContains(t, message, "\x1b")
+				}
+			}
+			rpc.promptText = func(req *azdext.PromptRequest) (*azdext.PromptResponse, error) {
+				checkQuestion(req.GetOptions().GetMessage())
+				return &azdext.PromptResponse{Value: req.GetOptions().GetDefaultValue()}, nil
+			}
+			rpc.selectOption = func(req *azdext.SelectRequest) (*azdext.SelectResponse, error) {
+				checkQuestion(req.GetOptions().GetMessage())
+				return &azdext.SelectResponse{Value: req.GetOptions().SelectedIndex}, nil
+			}
+			rpc.confirm = func(req *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
+				checkQuestion(req.GetOptions().GetMessage())
+				return &azdext.ConfirmResponse{Value: req.GetOptions().DefaultValue}, nil
+			}
+			_, err := host.PromptGeneration(t.Context(), choices, generationPrompts{true, true, true, true})
+			require.NoError(t, err)
+			if mode == "default" {
+				assert.Contains(t, text.String(), "`\x1b[94m.azure/<env>/\x1b[0m`")
+				assert.Contains(t, text.String(), "`\x1b[94m<prefix>-<unique-suffix>\x1b[0m`")
+			} else {
+				assert.NotContains(t, text.String(), "\x1b")
 			}
 		})
 	}
@@ -447,9 +499,9 @@ func TestInfraGenerationVisibleGuidance(t *testing.T) {
 			rpc.promptText = func(request *azdext.PromptRequest) (*azdext.PromptResponse, error) {
 				if request.GetOptions().GetRequired() {
 					beforePrompt("Input your azd environment name. An azd environment name:",
-						"lets azd store this deployment's config + outputs under .azure/<env>/")
-					assert.Contains(t, output.String(), "seeds your Azure resource names (e.g. rg-<env>, proj-<env>)")
-					assert.Contains(t, output.String(), "keeps separate stacks apart, such as dev, test, or prod")
+						"lets azd store this deployment's config + outputs under `.azure/<env>/`")
+					assert.Contains(t, output.String(), "seeds your Azure resource names (e.g. `rg-<env>`, `proj-<env>`)")
+					assert.Contains(t, output.String(), "keeps separate stacks apart, such as `dev`, `test`, or `prod`")
 					assert.Equal(t, "Enter your environment name (1-64 letters, numbers, -, _, ., or parentheses)",
 						request.GetOptions().GetMessage())
 				} else {
@@ -458,7 +510,7 @@ func TestInfraGenerationVisibleGuidance(t *testing.T) {
 						"(lowercase letters, numbers, hyphen; blank to skip)", request.GetOptions().GetMessage())
 					assert.Contains(t, output.String(), "must be globally unique")
 					assert.Contains(t, output.String(),
-						"If you provide a prefix, azd constructs the resource name as <prefix>-<unique-suffix>.")
+						"If you provide a prefix, azd constructs the resource name as `<prefix>-<unique-suffix>`.")
 				}
 				return &azdext.PromptResponse{Value: request.GetOptions().GetDefaultValue()}, nil
 			}

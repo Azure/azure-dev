@@ -19,6 +19,7 @@
 /.vscode/cspell-github-user-aliases.txt                  @Azure/azure-dev-core @JerryYangKai @Siglud @XiaofuHuang @Yimin-Jin @achauhan-scc @anchenyi @aprilk-ms @chienyuanchang @davidm00 @eriolchan @glharper @hizixin @huimiu @hund030 @kingernupur @lc48t @m5i-work @m7md7sien @omkarmore83 @saanikaguptamicrosoft @sakoll @shrutiyer @smulumbi @sujit-kamireddy @therealjohn @trangevi @v1212 @valangar @wanglliwang @yungshinlintw
 
 # ── CLI extensions (AI) ──────────────────────────────────────────────────────
+/cli/shared/foundry/                                     @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 /cli/azd/extensions/ai-non-interactive.md                @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 /cli/azd/extensions/azure.ai.agents/                     @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 /cli/azd/test/functional/ai_agents/                      @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
@@ -39,6 +40,7 @@
 /cli/azd/extensions/microsoft.foundry/                   @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 
 # ── Extensions ────────────────────────────────────────────────────────────────
+/cli/azd/extensions/azure.resources/                      @Azure/azure-dev-core
 /ext/                                                    @vhvb1989 @tg-msft @RickWinter
 /ext/azuredevops/                                        @vhvb1989 @hemarina @tg-msft @RickWinter
 /ext/devcontainer/                                       @vhvb1989 @hemarina @tg-msft @RickWinter
@@ -61,4 +63,4 @@
 /cli/azd/pkg/azdext/contracts_v1_aliases.go              @Azure/azure-dev-core
 
 # ── This file (most specific -- must be last for /.github/) ───────────────────
-/.github/CODEOWNERS                                      @tg-msft @RickWinter @richardpark-msft @Azure/azure-sdk-eng
+/.github/CODEOWNERS                                      @tg-msft @RickWinter @richardpark-msft @vhvb1989 @Azure/azure-sdk-eng

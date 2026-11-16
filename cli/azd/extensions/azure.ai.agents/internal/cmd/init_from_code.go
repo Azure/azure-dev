@@ -4,13 +4,13 @@
 package cmd
 
 import (
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 	"context"
 	"errors"
 	"fmt"
@@ -1101,6 +1101,17 @@ func (a *InitFromCodeAction) addToProject(
 	); err != nil {
 		return err
 	}
+
+	warnInitServicePolicyIfBlocked(
+		ctx,
+		a.azdClient,
+		a.credential,
+		a.environment,
+		a.selectedFoundryProject,
+		serviceConfig,
+		a.projectConfig.GetPath(),
+		resourceDeployments,
+	)
 
 	printAgentAddedMessage(agentName)
 	return nil

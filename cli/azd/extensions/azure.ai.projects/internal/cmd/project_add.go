@@ -24,10 +24,11 @@ import (
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/phasetelemetry"
 	"azure.ai.projects/internal/provisioning"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -406,8 +407,15 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return rollbackProjectAdd(err, restoreService, restoreProvider)
 	}
-	reconciledDefault, reconciledChanged, restoreReconciled, err := reconcileAdoptedDeployments(
-		ctx, client, projectRoot, envName, target, serviceName, a.flags.noPrompt,
+	reconciledDefault, reconciledChanged, restoreReconciled, err := reconcileAdoptedDeploymentsWithWriter(
+		ctx,
+		client,
+		projectRoot,
+		envName,
+		target,
+		serviceName,
+		a.flags.noPrompt,
+		policyWarningWriterForOutput(a.stderr, a.flags),
 	)
 	if err != nil {
 		return rollbackProjectAdd(err, restoreEnvironment, restoreService, restoreProvider)
@@ -492,8 +500,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			projectRoot,
 			serviceName,
 			infra,
-			target.Endpoint,
-			target.ResourceId,
+			target,
 			ejectValues,
 		); err != nil {
 			return rollbackProjectAdd(
@@ -587,6 +594,13 @@ func withProjectRollbackContext(
 	return rollback(rollbackCtx)
 }
 
+func policyWarningWriterForOutput(stderr io.Writer, flags *projectAddFlags) io.Writer {
+	if flags != nil && (flags.output == "json" || flags.output == "none") {
+		return nil
+	}
+	return stderr
+}
+
 func writeProjectEndpointWarning(
 	writer io.Writer,
 	pathWarning bool,
@@ -636,11 +650,11 @@ func resolveProjectTarget(
 	}
 	envProjectID := values["AZURE_AI_PROJECT_ID"]
 	if serviceEndpointValue != "" && envProjectID != "" {
-		inferred, err := projectFromResourceID(envProjectID)
+		inferred, err := lookupResolvedProject(ctx, client, envProjectID)
 		if err != nil {
 			return nil, err
 		}
-		if !equalProjectEndpoint(serviceEndpointValue, inferred.Endpoint) {
+		if !projectEndpointMatchesTarget(serviceEndpointValue, inferred) {
 			if flags.noPrompt {
 				return nil, exterrors.Validation(
 					"project_target_mismatch",
@@ -663,9 +677,8 @@ func resolveProjectTarget(
 			if choice.GetValue() == 1 {
 				return resolvedProjectFromEndpoint(serviceEndpointValue)
 			}
-		} else {
-			return lookupResolvedProject(ctx, client, envProjectID)
 		}
+		return inferred, nil
 	}
 	if envProjectID != "" {
 		return lookupResolvedProject(ctx, client, envProjectID)
@@ -763,7 +776,7 @@ func promptProjectTarget(
 			"retry `azd ai project add`",
 		)
 	}
-	return &projects[index], nil
+	return lookupResolvedProject(ctx, client, projects[index].ResourceId)
 }
 
 func resolveInteractiveSubscription(
@@ -894,7 +907,7 @@ func confirmExplicitProjectReplacement(
 	}
 	oldID := strings.TrimSpace(values["AZURE_AI_PROJECT_ID"])
 	if (oldEndpoint == "" && oldID == "") ||
-		(oldEndpoint == "" || equalProjectEndpoint(oldEndpoint, target.Endpoint)) &&
+		(oldEndpoint == "" || projectEndpointMatchesTarget(oldEndpoint, target)) &&
 			(oldID == "" || strings.EqualFold(oldID, target.ResourceId)) {
 		return nil
 	}
@@ -1085,19 +1098,34 @@ func lookupResolvedProject(
 			"run `azd auth login` and retry",
 		)
 	}
-	projectsClient, err := armcognitiveservices.NewProjectsClient(
-		project.SubscriptionId, credential, azure.NewArmClientOptions(),
-	)
+	return hydrateResolvedProject(ctx, project, credential, azure.NewArmClientOptions())
+}
+
+func hydrateResolvedProject(
+	ctx context.Context,
+	project *resolvedProject,
+	credential azcore.TokenCredential,
+	options *arm.ClientOptions,
+) (*resolvedProject, error) {
+	id, err := arm.ParseResourceID(project.ResourceId)
 	if err != nil {
-		return nil, fmt.Errorf("create Foundry projects client: %w", err)
+		return nil, fmt.Errorf("parse Foundry project resource ID: %w", err)
 	}
-	response, err := projectsClient.Get(ctx,
-		project.ResourceGroupName, project.AccountName, project.ProjectName, nil)
+	metadata, err := synthesis.LookupFoundryProject(ctx, id, credential, options)
 	if err != nil {
+		if synthesis.IsFoundryProjectMetadataValidationError(err) {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				err.Error(),
+				"verify the selected Foundry project metadata and retry",
+			)
+		}
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCognitiveAccountList)
 	}
-	if response.Project.Location != nil {
-		project.Location = *response.Project.Location
+	project.Endpoint = metadata.Endpoint
+	project.OpenAIEndpoint = metadata.OpenAIEndpoint
+	if metadata.Project.Location != nil {
+		project.Location = *metadata.Project.Location
 	}
 	return project, nil
 }
@@ -2056,7 +2084,8 @@ func ejectProjectInfra(
 			}
 		}
 	} else {
-		if err := copyEmbeddedBicep(infraDir, target.module); err != nil {
+		_, byoAks := result.Parameters["agentHosting"]
+		if err := copyEmbeddedBicep(infraDir, target.module, byoAks); err != nil {
 			return cleanup(err)
 		}
 		parameters := map[string]any{"parameters": map[string]any{}}
@@ -2138,17 +2167,52 @@ func projectFilePath(projectRoot string) (string, error) {
 	)
 }
 
-func copyEmbeddedBicep(destination, module string) error {
-	if err := copyEmbeddedTree(
-		synthesis.TemplatesFS(),
-		"templates",
-		destination,
-		map[string]struct{}{
-			"main.arm.json":       {},
-			"brownfield.bicep":    {},
-			"brownfield.arm.json": {},
-		},
-	); err != nil {
+func copyEmbeddedBicep(destination, module string, byoAks bool) error {
+	const root = "templates"
+	files := synthesis.TemplatesFS()
+	// #nosec G301
+	if err := os.MkdirAll(destination, 0755); err != nil {
+		return err
+	}
+	if err := fs.WalkDir(files, root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == root {
+			return nil
+		}
+		relative, err := filepath.Rel(root, filepath.FromSlash(path))
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(destination, relative)
+		if entry.IsDir() {
+			// #nosec G301
+			return os.MkdirAll(target, 0755)
+		}
+		base := filepath.Base(path)
+		if strings.HasSuffix(base, ".tmpl") || !byoAks && strings.HasPrefix(base, "byo-") ||
+			strings.HasPrefix(base, "container-registry-") {
+			return nil
+		}
+		switch base {
+		case "main.arm.json", "existing-project.bicep",
+			"existing-project-eject.bicep", "existing-project.arm.json":
+			return nil
+		}
+		var data []byte
+		switch path {
+		case "templates/main.bicep", "templates/modules/resources.bicep", "templates/modules/acr.bicep":
+			data, err = synthesis.RenderBicepTemplate(path, byoAks)
+		default:
+			data, err = fs.ReadFile(files, path)
+		}
+		if err != nil {
+			return err
+		}
+		// #nosec G306
+		return os.WriteFile(target, data, 0644)
+	}); err != nil {
 		return err
 	}
 	if module == "" || module == "main" {
@@ -2174,8 +2238,16 @@ func writeTerraformEjectedInfraAt(
 	if err != nil {
 		return err
 	}
+	monitoring, err := synthesis.RenderTerraformMonitoring(parameters, false)
+	if err != nil {
+		return err
+	}
+	maps.Copy(variables, monitoring.Variables)
 	if err := copyEmbeddedTerraform(infraDir, includeAcr); err != nil {
 		return fmt.Errorf("copy Terraform templates: %w", err)
+	}
+	if err := writeTerraformMonitoring(infraDir, monitoring); err != nil {
+		return err
 	}
 	if err := renderTerraformOutputs(infraDir, includeAcr, layer); err != nil {
 		return fmt.Errorf("render Terraform outputs: %w", err)
@@ -2229,12 +2301,24 @@ func terraformEjectionVariables(
 }
 
 func copyEmbeddedTerraform(destination string, includeAcr bool) error {
-	skip := map[string]struct{}{"outputs.tf.tmpl": {}}
+	skip := map[string]struct{}{
+		"outputs.tf.tmpl": {}, "monitoring.tf.tmpl": {}, "provider-monitoring.tf.tmpl": {},
+	}
 	if !includeAcr {
 		skip["container-registry.tf"] = struct{}{}
 	}
 	return copyEmbeddedTree(synthesis.TerraformTemplatesFS(), "templates/terraform", destination,
 		skip)
+}
+
+func writeTerraformMonitoring(destination string, monitoring synthesis.TerraformMonitoring) error {
+	for name, data := range monitoring.Files {
+		// #nosec G306 -- generated infrastructure is intended to be human-readable.
+		if err := os.WriteFile(filepath.Join(destination, name), data, 0644); err != nil {
+			return fmt.Errorf("write monitoring infrastructure %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func renderTerraformOutputs(destination string, includeAcr, layer bool) error {

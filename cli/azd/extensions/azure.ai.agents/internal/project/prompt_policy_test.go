@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
@@ -108,4 +109,33 @@ func TestPromptCreateErrorWithoutPolicyIsUnchanged(t *testing.T) {
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	require.NotContains(t, localErr.Suggestion, "Responsible AI policy")
+}
+
+func TestPromptCreateErrorPreservesStructuredError(t *testing.T) {
+	t.Parallel()
+	managed := agent_yaml.PromptAgent{
+		Harness:  &agent_yaml.PromptHarness{Type: agent_api.ManagedAgentHarnessMicrosoftCopilot},
+		Policies: []agent_yaml.Policy{{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: raiPolicyID}},
+	}
+
+	require.NoError(t, promptCreateError(nil, &managed))
+
+	serviceErr := exterrors.ServiceFromAzure(&azcore.ResponseError{
+		StatusCode: http.StatusForbidden,
+		ErrorCode:  "Forbidden",
+	}, exterrors.OpGetAgent)
+	gotService := promptCreateError(serviceErr, &managed)
+	require.Same(t, serviceErr, gotService)
+	typedService, ok := errors.AsType[*azdext.ServiceError](gotService)
+	require.True(t, ok)
+	require.Equal(t, "get_agent.Forbidden", typedService.ErrorCode)
+	require.NotContains(t, typedService.Suggestion, "Responsible AI policy")
+
+	localErr := exterrors.ServiceFromAzure(errors.New("transport failed"), exterrors.OpGetAgent)
+	gotLocal := promptCreateError(localErr, &managed)
+	require.Same(t, localErr, gotLocal)
+	typedLocal, ok := errors.AsType[*azdext.LocalError](gotLocal)
+	require.True(t, ok)
+	require.Equal(t, exterrors.OpGetAgent, typedLocal.Code)
+	require.NotContains(t, typedLocal.Suggestion, "Responsible AI policy")
 }

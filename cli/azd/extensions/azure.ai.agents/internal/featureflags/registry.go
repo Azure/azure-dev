@@ -5,7 +5,7 @@
 
 package featureflags
 
-import "azureaiagent/internal/synthesis"
+import "azure.ai.projects/synthesis"
 
 // Every agents and shared Foundry preview is listed by All.
 var (

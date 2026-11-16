@@ -332,7 +332,7 @@ func TestRESTTransportSafeErrorsAndRetryPolicy(t *testing.T) {
 	t.Run("nested service code is safe", func(t *testing.T) {
 		client := newRESTTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
 			response := restResponse(request, http.StatusBadRequest,
-				`{"error":{"code":"InvalidRequest","message":"private value",`+
+				`{"error":{"code":"InvalidRequest","message":"content: private value",`+
 					`"innererror":{"code":"DefaultsNotSet"}}}`)
 			response.Header.Set("x-ms-error-code", "InvalidRequest")
 			return response, nil
@@ -444,9 +444,10 @@ func TestRESTTransportTerminalOperationErrors(t *testing.T) {
 							response.Header.Set("Operation-Location", location)
 							return response, nil
 						}
-						payload := fmt.Sprintf(`{"status":%q,"error":{"code":%q,"message":"private value",`+
-							`"details":[{"code":"InvalidField","message":"private value","target":"private target",`+
-							`"details":[{"code":"private value","message":"private value"}]}]}}`,
+						payload := fmt.Sprintf(`{"status":%q,"error":{"code":%q,"message":"content: private value",`+
+							`"details":[{"code":"InvalidField","message":"content: private value",`+
+							`"target":"private target",`+
+							`"details":[{"code":"private value","message":"content: private value"}]}]}}`,
 							tc.status, tc.code)
 						status := http.StatusOK
 						if mode == "analysis" && !polled {
@@ -497,8 +498,8 @@ func TestRESTTransportTerminalOperationErrors(t *testing.T) {
 					assert.NotContains(t, domain.Message, "HTTP 200")
 					assert.NotContains(t, err.Error(), "private value")
 					assert.Equal(t, []Diagnostic{{
-						Code: "InvalidField", Message: "The service reported an operation error.",
-						Details: []Diagnostic{{Code: "service_error", Message: "The service reported an operation error."}},
+						Code: "InvalidField", Message: "[redacted value]",
+						Details: []Diagnostic{{Code: "service_error", Message: "[redacted value]"}},
 					}}, domain.Details)
 					expectedCalls := 1
 					if polled {

@@ -104,7 +104,7 @@ func resolve(
 	if endpoint == "" {
 		return result, invalid("missing_endpoint",
 			"Specify --endpoint or CU_ENDPOINT, or run "+
-				"azd ai cu config set CU_ENDPOINT https://<resource>.services.ai.azure.com.")
+				"azd ai cu config set CU_ENDPOINT https://<your-resource>.services.ai.azure.com.")
 	}
 	if result.Endpoint, err = cuclient.NormalizeEndpoint(endpoint); err != nil {
 		return result, err

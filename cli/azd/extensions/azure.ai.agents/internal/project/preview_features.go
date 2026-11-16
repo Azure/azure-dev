@@ -8,10 +8,10 @@ import (
 	"io"
 	"strings"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/phasetelemetry"
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -71,9 +71,10 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 				protocols, _ := value.([]any)
 				for _, entry := range protocols {
 					protocol, _ := entry.(map[string]any)
-					for _, name := range foldValues(protocol, "protocol") {
-						text, _ := name.(string)
-						if strings.TrimSpace(text) == "invocations_ws" {
+					for _, raw := range foldValues(protocol, "protocol") {
+						text, _ := raw.(string)
+						name := strings.TrimSpace(text)
+						if name == "invocations_ws" || name == string(agent_api.AgentProtocolVoiceConversationEngine) {
 							return featureflags.Voice
 						}
 					}

@@ -17,12 +17,12 @@ import (
 	"strings"
 	"time"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/phasetelemetry"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -206,7 +206,9 @@ func expandPromptAgentToolValue(value any, env map[string]string, path string) (
 // above points at the same variable the scaffold writes.
 const raiPolicyEnvVarName = "RAI_POLICY_ID"
 
-// promptCreateError converts a failed agent create into an actionable error.
+// promptCreateError converts a failed agent create or update into an actionable
+// error while returning already-structured errors (such as preflight GET
+// failures) unchanged.
 //
 // Guardrails get a suggestion of their own. The managed harness has been
 // observed to reject rai_config outright while the same policy is accepted by a
@@ -214,7 +216,31 @@ const raiPolicyEnvVarName = "RAI_POLICY_ID"
 // neither rai_config nor the policy. Without this, the only visible difference
 // between "your policy is wrong" and "this harness does not take policies yet"
 // is a message that mentions neither.
-func promptCreateError(err error, managed *agent_yaml.PromptAgent) error {
+func promptCreateError(err error, managed *agent_yaml.PromptAgent, serviceAndProject ...string) error {
+	if err == nil {
+		return nil
+	}
+	if serviceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
+		return serviceErr
+	}
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return localErr
+	}
+
+	var svcName, projID string
+	if len(serviceAndProject) >= 1 {
+		svcName = strings.TrimSpace(serviceAndProject[0])
+	}
+	if len(serviceAndProject) >= 2 {
+		projID = strings.TrimSpace(serviceAndProject[1])
+	}
+	if svcName == "" && managed != nil {
+		svcName = managed.Name
+	}
+	if policyErr, ok := TryClassifyRuntimePolicyError(err, svcName, projID); ok {
+		return policyErr
+	}
+
 	converted := exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 
 	if !declaresRaiPolicy(managed) {
@@ -403,7 +429,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	headers := promptAgentRequestHeaders(&managed, settings)
 	agent, err := p.createOrUpdatePromptAgent(ctx, client, request, settings, headers)
 	if err != nil {
-		return nil, promptCreateError(err, &managed)
+		return nil, promptCreateError(err, &managed, serviceConfig.GetName(), env["AZURE_AI_PROJECT_ID"])
 	}
 
 	latest := agent.Versions.Latest
@@ -509,25 +535,26 @@ func ResolvePromptTargetFromEnv(settings *PromptAgentSettings, env map[string]st
 	if settings == nil || env == nil {
 		return false, nil
 	}
+
+	// Prefer a pre-populated project endpoint before reading env.
+	if strings.TrimSpace(settings.ProjectEndpoint) == "" {
+		settings.ProjectEndpoint = strings.TrimSpace(env[promptProjectEndpointEnvKey])
+	}
+	if strings.TrimSpace(settings.ModelEndpoint) == "" {
+		// x-model-endpoint targets the project endpoint origin.
+		if u, perr := url.Parse(strings.TrimSpace(settings.ProjectEndpoint)); perr == nil &&
+			u.Scheme != "" && u.Host != "" {
+			settings.ModelEndpoint = u.Scheme + "://" + u.Host
+		}
+	}
+
 	settings.OverlayAzdProjectEnv(env)
 	mapped, err := overlayPromptSettingsFromProjectResourceID(settings, env)
 	if err != nil {
 		return false, err
 	}
 
-	// Prefer the config-supplied project endpoint (interactive init); otherwise
-	// read it from the azd environment (--no-prompt / provisioned project).
-	if strings.TrimSpace(settings.ProjectEndpoint) == "" {
-		settings.ProjectEndpoint = strings.TrimSpace(env[promptProjectEndpointEnvKey])
-	}
-
-	if pe := strings.TrimSpace(settings.ProjectEndpoint); pe != "" {
-		// x-model-endpoint targets the account host backing the project.
-		if u, perr := url.Parse(pe); perr == nil && u.Host != "" {
-			if strings.TrimSpace(settings.ModelEndpoint) == "" {
-				settings.ModelEndpoint = u.Scheme + "://" + u.Host
-			}
-		}
+	if strings.TrimSpace(settings.ProjectEndpoint) != "" {
 		return true, nil
 	}
 
@@ -982,10 +1009,14 @@ func isAgentConflictError(err error) bool {
 //
 // Managed (prompt) agents are versioned: the create endpoint (POST /agents)
 // only succeeds for a brand-new agent and returns 409 Conflict once the agent
-// exists. Re-deploys therefore fall back to the update endpoint
-// (POST /agents/{name}), which appends a new version. This makes `azd deploy`
-// idempotent: the first run creates the agent, and every later run bumps its
-// version.
+// exists. To avoid an unnecessary 409 on every re-deploy, it checks whether the
+// agent already exists via GET /agents/{name} first:
+//   - If GET succeeds, it updates the agent directly via POST /agents/{name}.
+//   - If GET returns 404 NotFound, it creates the agent via POST /agents and
+//     still falls back to POST /agents/{name} on 409 Conflict in case the agent
+//     was created concurrently between the GET and POST calls.
+//   - Any non-404 error from GET is classified under OpGetAgent and returned
+//     immediately without attempting to create or update the agent.
 func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 	ctx context.Context,
 	client *agent_api.AgentClient,
@@ -996,6 +1027,19 @@ func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 	defer phasetelemetry.Start(ctx, phasetelemetry.AgentCreateOrUpdate)()
 
 	apiVersion := ProjectEndpointAPIVersion
+	updateReq := &agent_api.UpdateAgentRequest{
+		Description: request.Description,
+		Metadata:    request.Metadata,
+		Definition:  request.Definition,
+	}
+
+	if _, getErr := client.GetAgentWithHeaders(ctx, request.Name, apiVersion, headers); getErr == nil {
+		fmt.Fprintf(os.Stderr, "Agent %q already exists; publishing a new version.\n", request.Name)
+		return client.UpdateAgentWithHeaders(ctx, request.Name, updateReq, apiVersion, headers)
+	} else if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
+		respErr.StatusCode != http.StatusNotFound {
+		return nil, exterrors.ServiceFromAzure(getErr, exterrors.OpGetAgent)
+	}
 
 	agent, err := client.CreateAgentWithHeaders(ctx, request, apiVersion, headers)
 	if err == nil {
@@ -1005,12 +1049,7 @@ func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 		return nil, err
 	}
 
-	// The agent already exists — publish a new version instead.
+	// The agent was created concurrently between GET and POST — publish a new version instead.
 	fmt.Fprintf(os.Stderr, "Agent %q already exists; publishing a new version.\n", request.Name)
-	updateReq := &agent_api.UpdateAgentRequest{
-		Description: request.Description,
-		Metadata:    request.Metadata,
-		Definition:  request.Definition,
-	}
 	return client.UpdateAgentWithHeaders(ctx, request.Name, updateReq, apiVersion, headers)
 }

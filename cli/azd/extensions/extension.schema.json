@@ -65,7 +65,8 @@
           "title": "Provider Type",
           "description": "The type of provider.",
           "enum": [
-            "service-target"
+            "service-target",
+            "provisioning-provider"
           ]
         },
         "description": {

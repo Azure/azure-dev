@@ -1,5 +1,6 @@
 {
     "regions": [
-        "eastus2euap"
+        "eastus2euap",
+        "westus2"
     ]
 }

@@ -12,11 +12,11 @@ import (
 	"slices"
 	"strings"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/envkey"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
@@ -673,6 +673,7 @@ func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 	sawInvocations := false
 	sawActivity := false
 	sawInvocationsWS := false
+	sawVoiceConversationEngine := false
 	sawA2A := false
 	for _, p := range hosted.Protocols {
 		switch strings.TrimSpace(p.Protocol) {
@@ -682,6 +683,8 @@ func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 			sawA2A = true
 		case ProtocolInvocationsWS:
 			sawInvocationsWS = true
+		case ProtocolVoiceConversationEngine:
+			sawVoiceConversationEngine = true
 		case ProtocolInvocations:
 			sawInvocations = true
 		case ProtocolActivity, ProtocolActivityLegacy:
@@ -699,6 +702,9 @@ func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 	}
 	if sawInvocationsWS {
 		return ProtocolInvocationsWS, multiProtocol
+	}
+	if sawVoiceConversationEngine {
+		return ProtocolVoiceConversationEngine, multiProtocol
 	}
 	return "", multiProtocol
 }

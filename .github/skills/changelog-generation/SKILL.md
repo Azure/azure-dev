@@ -102,6 +102,18 @@ cspell lint "<changelog-path>" --relative --config "$(git rev-parse --show-tople
 
 If new names or handles trigger errors, add them to `.vscode/cspell-github-user-aliases.txt`.
 
+### Core Release Tracking Handoff
+
+Changelog preparation is not release publication. Once the core changelog PR
+exists, offer the [azd release canvas](../../../docs/guides/release-canvas.md)
+as the next step when canvas support is available. For canvas-initiated preparation,
+tracking already exists: return the PR link so the driver can link it inside that
+release. Otherwise, the driver can select **New release**, create tracking with the
+version only, and link the existing PR there. Publishing follows after the PR
+merges. Ask before opening the canvas; do not create tracking issues or queue a
+pipeline implicitly as part of changelog generation. If canvas support is not
+available, link the guide instead. Extension releases do not use this core canvas.
+
 ---
 
 ## Error Handling

@@ -176,7 +176,7 @@ func runSkillRemoveWith(
 	}
 	created, err := client.CreateToolboxVersion(ctx, toolboxName, req)
 	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
+		return toolboxVersionWriteError(err, toolboxName, exterrors.OpCreateToolboxVersion)
 	}
 
 	if err := emitSkillRemoveResult(toolboxName, created.Version, names, parent.output); err != nil {

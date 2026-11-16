@@ -15,10 +15,10 @@ import (
 	"sync"
 	"testing"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/phasetelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/recordproxy"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"

@@ -188,7 +188,7 @@ func testAgentRBACMessages(t *testing.T, betaEnabled bool) {
 	}
 	account := &rbacMessageAccountServer{}
 	stable := &rbacMessageStableEvents{
-		registrations: make(chan *azdext.EventMessage, 8),
+		registrations: make(chan *azdext.EventMessage, 10),
 		responses:     make(chan *azdext.EventMessage, 1),
 		streams:       make(chan azdext.EventService_EventStreamServer, 1),
 	}
@@ -278,8 +278,8 @@ func testAgentRBACMessages(t *testing.T, betaEnabled bool) {
 	case <-ctx.Done():
 		t.Fatal("missing stable stream")
 	}
-	stableRegistrations := 5
-	wantServiceEvents := []string{"postdeploy"}
+	stableRegistrations := 7
+	wantServiceEvents := []string{"prebuild", "prepackage", "postdeploy"}
 	if !betaEnabled {
 		stableRegistrations++
 		wantServiceEvents = append(wantServiceEvents, "predeploy")

@@ -1,6 +1,22 @@
 # Release History
 
-<!-- cspell:ignore Deeksharma JerryYangKai vebudumu yiliuTo Yimin -->
+<!-- cspell:ignore Deeksharma JerryYangKai kseager vebudumu yiliuTo Yimin -->
+
+## 1.1.0 (2026-11-12)
+
+### Features Added
+
+- [[#10743]](https://github.com/Azure/azure-dev/pull/10743) Export default Application Insights monitoring in Bicep and Terraform templates generated for new Foundry projects, with opt-in existing Application Insights connections for adopted projects. Thanks @kseager for the contribution!
+- [[#10819]](https://github.com/Azure/azure-dev/pull/10819) Support private Application Insights monitoring for network-isolated Foundry projects, including hosted-agent Monitoring Metrics Publisher role grants during deployment. Thanks @kseager for the contribution!
+- [[#10879]](https://github.com/Azure/azure-dev/pull/10879) Add Foundry Azure Policy preflight checks across agent initialization, deployment, and doctor diagnostics with Foundry Govern portal links.
+- [[#10888]](https://github.com/Azure/azure-dev/pull/10888) Add actionable Foundry Govern guidance for runtime HTTP 403 Azure Policy denials during agent deployment and verify policy-assignment read access.
+- [[#10894]](https://github.com/Azure/azure-dev/pull/10894) Add `--context-id` to `azd ai agent invoke` to resume earlier A2A conversations and surface returned context IDs, task IDs, and task states in default output. Thanks @adamra-msft for the contribution!
+
+### Bugs Fixed
+
+- [[#10865]](https://github.com/Azure/azure-dev/pull/10865) Fix missing extension `User-Agent` headers on direct remote agent invocation, lifecycle, and metadata requests while preserving skill attribution and custom client headers. Thanks @adamra-msft for the contribution!
+- [[#10867]](https://github.com/Azure/azure-dev/pull/10867) Fix remote agent protocol selection and session management to validate against live Foundry endpoint metadata instead of local YAML definitions. Thanks @adamra-msft for the contribution!
+- [[#10887]](https://github.com/Azure/azure-dev/pull/10887) Fix Foundry project and Azure OpenAI endpoint resolution for accounts with custom subdomains across agent initialization, adoption, infrastructure export, and doctor checks.
 
 ## 1.0.0 (2026-11-05)
 

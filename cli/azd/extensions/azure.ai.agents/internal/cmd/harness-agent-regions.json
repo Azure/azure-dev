@@ -1,13 +1,26 @@
 {
     "regions": [
         "australiaeast",
+        "brazilsouth",
         "canadacentral",
+        "canadaeast",
         "centralus",
+        "eastus",
+        "francecentral",
         "germanywestcentral",
+        "italynorth",
         "japaneast",
+        "koreacentral",
+        "northcentralus",
+        "norwayeast",
+        "polandcentral",
+        "southeastasia",
+        "southindia",
+        "spaincentral",
         "swedencentral",
         "uksouth",
         "westeurope",
-        "westus"
+        "westus",
+        "westus3"
     ]
 }

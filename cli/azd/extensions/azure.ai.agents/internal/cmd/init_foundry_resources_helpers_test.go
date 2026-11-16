@@ -231,18 +231,19 @@ func TestFoundryProjectInfo_Endpoint(t *testing.T) {
 func TestVerifyFoundryProjectConnection(t *testing.T) {
 	t.Parallel()
 
-	project := FoundryProjectInfo{AccountName: "account", ProjectName: "project"}
+	project := FoundryProjectInfo{
+		AccountName: "account", ProjectName: "project",
+		ProjectEndpoint: "https://custom-dns.services.ai.azure.com/api/projects/project",
+	}
 	connections := []azure.Connection{
 		{Name: "private-registry", ID: "/connections/private-registry", Type: azure.ConnectionTypeCustomKeys},
 	}
 	loader := func(
 		_ context.Context,
 		_ azcore.TokenCredential,
-		accountName string,
-		projectName string,
+		projectEndpoint string,
 	) ([]azure.Connection, error) {
-		require.Equal(t, "account", accountName)
-		require.Equal(t, "project", projectName)
+		require.Equal(t, project.Endpoint(), projectEndpoint)
 		return connections, nil
 	}
 
@@ -259,7 +260,7 @@ func TestVerifyFoundryProjectConnection(t *testing.T) {
 	loadErr := errors.New("service unavailable")
 	err = verifyFoundryProjectConnection(
 		t.Context(), nil, project, "private-registry",
-		func(context.Context, azcore.TokenCredential, string, string) ([]azure.Connection, error) {
+		func(context.Context, azcore.TokenCredential, string) ([]azure.Connection, error) {
 			return nil, loadErr
 		},
 	)
@@ -1400,7 +1401,6 @@ func TestConfigureExistingProjectAcrPreservesConnectionDiscoveryError(t *testing
 	loadConnections := func(
 		context.Context,
 		azcore.TokenCredential,
-		string,
 		string,
 	) ([]azure.Connection, error) {
 		return nil, discoveryErr

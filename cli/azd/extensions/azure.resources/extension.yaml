@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: azure.resources
+displayName: Azure Resources (Preview)
+description: Generate and provision Azure resources declared in azure.yaml.
+namespace: resources
+usage: azd resources <command> [options]
+language: go
+version: 0.1.0-beta.1
+requiredAzdVersion: ">=1.38.0"
+capabilities:
+    - custom-commands
+    - metadata
+    - provisioning-provider
+providers:
+    - name: resources
+      type: provisioning-provider
+      description: Generate and provision Azure resources using Bicep.

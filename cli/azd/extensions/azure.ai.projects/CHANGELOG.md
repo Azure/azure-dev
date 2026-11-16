@@ -1,5 +1,19 @@
 # Release History
 
+<!-- cspell:ignore kseager -->
+
+## 1.1.0 (2026-11-12)
+
+### Features Added
+
+- [[#10743]](https://github.com/Azure/azure-dev/pull/10743) Provision workspace-backed Application Insights and a project `AppInsights` connection by default for new Foundry projects, and support connecting an existing Application Insights component via `monitoring.applicationInsightsResourceId`. Thanks @kseager for the contribution!
+- [[#10819]](https://github.com/Azure/azure-dev/pull/10819) Add private Application Insights monitoring through Azure Monitor Private Link Scopes for customer-VNet and managed-VNet Foundry projects. Thanks @kseager for the contribution!
+- [[#10902]](https://github.com/Azure/azure-dev/pull/10902) Add Azure Policy preflight checks and Foundry Govern remediation links for model deployments during `azd ai project deployment add`, `azd ai project add`, and `azd provision`.
+
+### Bugs Fixed
+
+- [[#10887]](https://github.com/Azure/azure-dev/pull/10887) Fix Foundry project and Azure OpenAI endpoint resolution for accounts with custom subdomains across project adoption, model deployment authoring, provisioning, and teardown.
+
 ## 1.0.0 (2026-11-05)
 
 ### Breaking Changes

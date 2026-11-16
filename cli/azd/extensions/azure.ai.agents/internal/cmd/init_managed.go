@@ -236,6 +236,8 @@ func runInitManaged(
 		}
 	}
 
+	warnInitPromptPolicyIfBlocked(ctx, credential, foundryProject, &promptAgent, deployment)
+
 	printManagedInitSummary(agentName, model, harness, serviceRelPath, projectTargetDir, existingProject, &settings)
 	return nil
 }

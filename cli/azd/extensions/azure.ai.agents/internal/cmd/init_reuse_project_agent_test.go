@@ -17,8 +17,8 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"

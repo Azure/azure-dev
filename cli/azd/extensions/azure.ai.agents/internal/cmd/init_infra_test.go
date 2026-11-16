@@ -18,10 +18,10 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 	"azureaiagent/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -555,6 +555,41 @@ services:
 	assert.FileExists(t, filepath.Join(dir, "custom", "foundry", "project.bicep"))
 	assert.FileExists(t, filepath.Join(dir, "custom", "foundry", "project.parameters.json"))
 	assert.NoFileExists(t, filepath.Join(dir, "custom", "foundry", "main.bicep"))
+}
+
+func TestEjectInfra_ModuleNamedMonitoringDoesNotCollideWithMonitoringTemplate(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+infra:
+  provider: bicep
+  layers:
+    - name: app
+      path: infra/app
+    - name: foundry
+      path: infra/foundry
+      module: monitoring
+      provider: microsoft.foundry
+      dependsOn: [app]
+services:
+  my-foundry:
+    host: azure.ai.project
+`)
+
+	require.NoError(t, ejectInfra(dir, "bicep"))
+	entrypoint, err := os.ReadFile(filepath.Join(dir, "infra", "foundry", "monitoring.bicep"))
+	require.NoError(t, err)
+	moduleTemplate, err := os.ReadFile(filepath.Join(dir, "infra", "foundry", "modules", "monitoring.bicep"))
+	require.NoError(t, err)
+	embedded, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/modules/monitoring.bicep")
+	require.NoError(t, err)
+	mainTemplate, err := synthesis.RenderBicepTemplate("templates/main.bicep", false)
+	require.NoError(t, err)
+
+	assert.Equal(t, string(mainTemplate), string(entrypoint), "entrypoint must stay the renamed main.bicep")
+	assert.Equal(t, string(embedded), string(moduleTemplate), "monitoring module must be the embedded template")
+	assert.Contains(t, string(entrypoint), "modules/monitoring.bicep")
+	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "monitoring.parameters.json"))
 }
 
 func TestEjectInfra_RefusesNonEmptyDeclaredFoundryTarget(t *testing.T) {
@@ -1259,12 +1294,21 @@ func TestNormalizeContainerRegistryEndpointRejectsMalformedURL(t *testing.T) {
 }
 
 func TestEjectInfra_NewProjectBicepCompiles(t *testing.T) {
+	t.Setenv(synthesis.BYOAKSEnvVar, "true")
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	bicep := testutil.LookupBicep(t)
 
+	const projectYAML = `name: my-project
+services:
+  my-foundry:
+    host: azure.ai.project
+`
 	for _, tt := range []struct {
 		name         string
 		azureYAML    string
 		templatePath string
+		environment  map[string]string
+		byoAks       bool
 	}{
 		{
 			name:         "container_agent",
@@ -1272,13 +1316,43 @@ func TestEjectInfra_NewProjectBicepCompiles(t *testing.T) {
 			templatePath: filepath.Join("infra", "main.bicep"),
 		},
 		{
-			name: "without_registry",
-			azureYAML: `name: my-project
-services:
-  my-foundry:
-    host: azure.ai.project
+			name:         "without_registry",
+			azureYAML:    projectYAML,
+			templatePath: filepath.Join("infra", "main.bicep"),
+		},
+		{
+			name: "byo_network",
+			azureYAML: projectYAML + `    network:
+      agentSubnet: {vnet: "${VNET_ID}", name: agents}
+      peSubnet: {vnet: "${VNET_ID}", name: endpoints}
+    monitoring:
+      enabled: false
 `,
 			templatePath: filepath.Join("infra", "main.bicep"),
+		},
+		{
+			name: "managed_network",
+			azureYAML: projectYAML + `    network:
+      isolationMode: AllowOnlyApprovedOutbound
+      peSubnet: {vnet: "${VNET_ID}", name: endpoints}
+`,
+			templatePath: filepath.Join("infra", "main.bicep"),
+		},
+		{
+			name:         "external_registry",
+			azureYAML:    validFoundryAzureYAML,
+			templatePath: filepath.Join("infra", "main.bicep"),
+			environment: map[string]string{
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/11111111-1111-1111-1111-111111111111/" +
+					"resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/sharedregistry",
+			},
+		},
+		{
+			name: "byo_aks",
+			azureYAML: strings.Replace(validFoundryAzureYAML, "    host: azure.ai.project",
+				"    host: azure.ai.project\n    agentHosting:\n      clusterResourceId: ${CLUSTER_ID}", 1),
+			templatePath: filepath.Join("infra", "main.bicep"),
+			byoAks:       true,
 		},
 		{
 			name: "custom_module",
@@ -1297,8 +1371,31 @@ services:
 			dir := t.TempDir()
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), tt.azureYAML)
 			withCapturedStdout(t, func() {
-				require.NoError(t, ejectInfra(dir, "bicep"))
+				require.NoError(t, ejectInfra(dir, "bicep", tt.environment))
 			})
+
+			infraDir := filepath.Join(dir, filepath.Dir(tt.templatePath))
+			require.NoError(t, filepath.WalkDir(infraDir, func(path string, entry fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				assert.False(t, strings.HasSuffix(entry.Name(), ".tmpl"), "source template leaked: %s", path)
+				if !tt.byoAks {
+					assert.False(t, strings.HasPrefix(entry.Name(), "byo-"), "AKS-only module leaked: %s", path)
+				}
+				return nil
+			}))
+			resources, err := os.ReadFile(filepath.Join(infraDir, "modules", "resources.bicep"))
+			require.NoError(t, err)
+			assert.Contains(t, string(resources), "byoProjectCapabilityHost", "ordinary private networking must remain")
+			assert.Contains(t, string(resources), "foundryManagedNetwork")
+			assert.Contains(t, string(resources), "pullPrincipalId:")
+			assert.FileExists(t, filepath.Join(infraDir, "modules", "monitoring.bicep"))
+			if tt.byoAks {
+				assert.FileExists(t, filepath.Join(infraDir, "modules", "byo-prerequisites.bicep"))
+			} else {
+				assert.Contains(t, string(resources), "pullPrincipalId: foundryAccount::project.identity.principalId")
+			}
 
 			out := filepath.Join(t.TempDir(), "main.json")
 			cmd := exec.CommandContext(t.Context(), bicep, "build",
@@ -1306,6 +1403,37 @@ services:
 			output, err := cmd.CombinedOutput()
 			require.NoErrorf(t, err, "generated %s Bicep failed to compile: %s", tt.name, output)
 			require.FileExists(t, out)
+			compiled, err := os.ReadFile(out)
+			require.NoError(t, err)
+			var template struct {
+				Parameters map[string]json.RawMessage `json:"parameters"`
+				Outputs    map[string]json.RawMessage `json:"outputs"`
+			}
+			require.NoError(t, json.Unmarshal(compiled, &template))
+			parameters, err := os.ReadFile(filepath.Join(infraDir,
+				strings.TrimSuffix(filepath.Base(tt.templatePath), ".bicep")+".parameters.json"))
+			require.NoError(t, err)
+			var parameterFile struct {
+				Parameters map[string]json.RawMessage `json:"parameters"`
+			}
+			require.NoError(t, json.Unmarshal(parameters, &parameterFile))
+			for name := range parameterFile.Parameters {
+				assert.Contains(t, template.Parameters, name, "exported parameters must match the selected template")
+			}
+			assert.Contains(t, template.Outputs, "FOUNDRY_PROJECT_ENDPOINT")
+			assert.Contains(t, template.Outputs, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+			assert.Contains(t, template.Outputs, "AZURE_APPLICATION_INSIGHTS_RESOURCE_ID")
+			if tt.byoAks {
+				assert.Contains(t, template.Parameters, "agentHosting")
+				assert.Contains(t, string(compiled), "agentHostingConfigurations")
+				assert.Contains(t, string(compiled), "parameters('kubeletObjectId'), variables('acrPullRoleId')")
+			} else {
+				for _, symbol := range []string{
+					"agentHosting", "kubeletObjectId", "byoAks", "byoFoundryAccount", "2026-07-15-preview",
+				} {
+					assert.NotContains(t, string(compiled), symbol)
+				}
+			}
 		})
 	}
 }
@@ -1471,6 +1599,40 @@ services:
 	assert.Contains(t, string(provider), "subscription_id = local.project_subscription_id")
 	assert.Contains(t, string(provider), "tenant_id       = var.tenant_id")
 	assert.Contains(t, string(tfvars), `"tenant_id": "${AZURE_TENANT_ID}"`)
+}
+
+func TestWriteExistingProjectTerraformTemplatesSeparatesAdjunctResourceGroup(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []infraEjectAcrMode{
+		infraEjectAcrNone, infraEjectAcrCreate, infraEjectAcrReuseConnect, infraEjectAcrAlreadyConnected,
+	} {
+		t.Run(string(mode), func(t *testing.T) {
+			t.Parallel()
+			dir := filepath.Join(t.TempDir(), "infra")
+			artifacts, err := writeExistingProjectTerraformTemplates(dir, "infra", mode, false)
+			require.NoError(t, err)
+			adjunctPath := filepath.Join(dir, "adjunct-resource-group.tf")
+			if mode == infraEjectAcrCreate {
+				adjunct, err := os.ReadFile(adjunctPath) //nolint:gosec // test-owned path
+				require.NoError(t, err)
+				assert.Contains(t, string(adjunct), `resource "azurerm_resource_group" "adjunct"`)
+				registry, err := os.ReadFile(filepath.Join(dir, "container-registry.tf")) //nolint:gosec
+				require.NoError(t, err)
+				assert.NotContains(t, string(registry), `resource "azurerm_resource_group"`)
+				assert.Contains(t, string(registry), "azurerm_resource_group.adjunct.name")
+				assert.Contains(t, artifacts, ejectArtifact{
+					relPath: "infra/adjunct-resource-group.tf",
+					bytes:   len(adjunct),
+				})
+			} else {
+				assert.NoFileExists(t, adjunctPath)
+				for _, artifact := range artifacts {
+					assert.NotEqual(t, "infra/adjunct-resource-group.tf", artifact.relPath)
+				}
+			}
+		})
+	}
 }
 
 func TestEjectInfra_ExistingProjectTerraformPrebuiltOmitsAcr(t *testing.T) {
@@ -2324,6 +2486,8 @@ services:
       dns:
         resourceGroup: rg-dns
         subscription: "${AZURE_DNS_SUBSCRIPTION_ID}"
+    monitoring:
+      enabled: false
     deployments: []
     agents:
       - name: my-agent
@@ -2385,6 +2549,8 @@ services:
         vnet: "${AZURE_VNET_ID}"
         name: pe-subnet
         prefix: 192.168.11.0/24
+    monitoring:
+      enabled: false
     deployments: []
     agents:
       - name: my-agent
@@ -2463,6 +2629,8 @@ services:
     network:
       agentSubnet: {vnet: "${VNET_ID}", name: agents}
       peSubnet: {vnet: "${VNET_ID}", name: endpoints}
+    monitoring:
+      enabled: false
 `
 	t.Run("Bicep preserves the provider and unresolved inputs", func(t *testing.T) {
 		dir := t.TempDir()
@@ -4031,6 +4199,8 @@ services:
     host: azure.ai.project
     network:
       peSubnet: {vnet: "${AZURE_VNET_ID}", name: pe-subnet}
+    monitoring:
+      enabled: false
     deployments: []
     agents:
       - name: my-agent

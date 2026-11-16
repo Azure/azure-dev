@@ -86,6 +86,29 @@ func TestMemorySnapshotFeatureSwitch(t *testing.T) {
 	require.NoError(t, RequireDefinitionFeatures(definition, io.Discard))
 }
 
+func TestConversationEngineVoiceFeatureSwitch(t *testing.T) {
+	for _, value := range []string{"unset", "false", "true"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(featureflags.Voice.EnvVar, value)
+			if value == "unset" {
+				require.NoError(t, os.Unsetenv(featureflags.Voice.EnvVar))
+			}
+			for _, key := range []string{"protocols", "protocol_versions", "container_protocol_versions"} {
+				err := CheckDefinitionFeatures(map[string]any{
+					"kind": "hosted", key: []any{map[string]any{
+						"protocol": "voice_conversation_engine", "version": "1.0.0",
+					}},
+				})
+				if value == "true" {
+					require.NoError(t, err)
+				} else {
+					require.ErrorContains(t, err, featureflags.Voice.ID)
+				}
+			}
+		})
+	}
+}
+
 func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 	for _, feature := range featureflags.All() {
 		t.Setenv(feature.EnvVar, "")

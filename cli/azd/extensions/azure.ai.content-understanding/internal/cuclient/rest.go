@@ -326,7 +326,7 @@ func parseUsage(raw json.RawMessage) (*Usage, error) {
 func restOperationDomainError(err error, operation string) error {
 	if failure, ok := errors.AsType[*restclient.OperationError](err); ok {
 		domain := operationError(operation, failure.Status, &wireDiagnostic{
-			Code: failure.Code, Details: operationDiagnosticDetails(failure.Details),
+			Code: failure.Code, Message: failure.Message, Details: operationDiagnosticDetails(failure.Details),
 		})
 		domain.StatusCode = failure.ResponseError.StatusCode
 		return domain
@@ -340,7 +340,9 @@ func operationDiagnosticDetails(values []restclient.OperationDiagnostic) []wireD
 	}
 	result := make([]wireDiagnostic, len(values))
 	for i, value := range values {
-		result[i] = wireDiagnostic{Code: value.Code, Details: operationDiagnosticDetails(value.Details)}
+		result[i] = wireDiagnostic{
+			Code: value.Code, Message: value.Message, Details: operationDiagnosticDetails(value.Details),
+		}
 	}
 	return result
 }
@@ -407,9 +409,23 @@ func restDomainError(err error) error {
 		if response.RawResponse != nil {
 			retryAfterHeader = response.RawResponse.Header.Get("Retry-After")
 		}
-		return serviceResponseError(response.StatusCode, response.ErrorCode, retryAfterHeader)
+		domain := serviceResponseError(response.StatusCode, response.ErrorCode, retryAfterHeader)
+		if service, ok := errors.AsType[*restclient.ServiceError](err); ok {
+			appendServiceDiagnostics(domain, &wireDiagnostic{
+				Code: service.Diagnostic.Code, Message: service.Diagnostic.Message,
+				Details: operationDiagnosticDetails(service.Diagnostic.Details),
+			})
+		} else {
+			appendServiceDiagnostics(domain, nil)
+		}
+		return domain
 	}
 	return transportError(err)
+}
+
+// RedactDiagnostic shares diagnostic safety rules with the REST client and command boundary.
+func RedactDiagnostic(message string) string {
+	return restclient.RedactDiagnostic(message)
 }
 
 type safeTokenCredential struct {

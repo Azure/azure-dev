@@ -214,11 +214,14 @@ func TestInputProvidersShareProvisioningActivation(t *testing.T) {
 		inputFirst   bool
 		inputFailure bool
 		missing      bool
+		reported     bool
 	}{
 		{name: "activator first"},
 		{name: "input first", inputFirst: true},
 		{name: "unrelated input failure does not block provisioning", inputFailure: true},
 		{name: "missing provisioning registration fails without restarting", missing: true},
+		{name: "reported provisioning failure retains guidance", missing: true, reported: true},
+		{name: "simultaneous failures retain the provisioning cause", missing: true, reported: true, inputFailure: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			mockCtx := mocks.NewMockContext(t.Context())
@@ -242,10 +245,16 @@ func TestInputProvidersShareProvisioningActivation(t *testing.T) {
 				}))
 			starts, cleanups := 0, 0
 			startErr := errors.New("unrelated input provider failed")
+			reportedErr := errors.New("provisioning credentials unavailable")
 			m := &inputProvidersMiddleware{
 				container: mockCtx.Container, extensionManager: manager,
 				start: func(context.Context) (func(), error) {
 					starts++
+					if tt.reported {
+						extension, err := manager.GetInstalled(extensions.FilterOptions{Id: "demo.ext"})
+						require.NoError(t, err)
+						extension.SetReportedError(reportedErr)
+					}
 					if !tt.missing {
 						ioc.RegisterNamedInstance[provisioning.Provider](mockCtx.Container, "demo",
 							provisioningTest.NewTestProvider(nil, nil, nil, nil))
@@ -278,7 +287,22 @@ func TestInputProvidersShareProvisioningActivation(t *testing.T) {
 				cleanup()
 				require.Zero(t, cleanups, "the parent command owns the shared listeners")
 				if tt.missing {
-					require.ErrorContains(t, err, "did not register provisioning provider")
+					suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+					require.True(t, ok, "%v", err)
+					require.Contains(t, suggestion.Error(), "extension 'demo.ext'")
+					require.Contains(t, suggestion.Error(), "provisioning provider 'demo'")
+					require.Contains(t, suggestion.Error(), "provisioning provider was not registered")
+					require.NotEmpty(t, suggestion.Message)
+					require.Contains(t, suggestion.Suggestion, "--debug")
+					require.Contains(t, suggestion.Suggestion, "azd extension update demo.ext")
+					if tt.reported {
+						require.ErrorIs(t, err, reportedErr)
+						require.Contains(t, suggestion.Error(), "failed to start: provisioning credentials unavailable")
+					}
+					if tt.inputFailure {
+						require.ErrorIs(t, err, startErr)
+						require.Contains(t, suggestion.Error(), "shared extension startup:")
+					}
 					return nil, err
 				}
 				require.NoError(t, err)

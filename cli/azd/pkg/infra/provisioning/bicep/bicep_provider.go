@@ -3946,10 +3946,15 @@ func (p *BicepProvider) resolveLocationInput(ctx context.Context, group []locati
 		return valid, nil
 	}
 	if value == nil {
+		help, _ := group[0].parameter.Description()
 		return prompt.ResolveLocationInput(ctx, p.serviceLocator, definition, p.env.GetSubscriptionId(),
 			func(location account.Location) bool {
 				return locationParameterFilterImpl(definition.AllowedValues, location)
-			}, validate)
+			}, inputs.ResolveOptions{
+				FilterOptions: validate,
+				PromptMessage: parameterPromptMessage(key, group[0].parameter),
+				PromptHelp:    help,
+			})
 	}
 	valid, err := validate([]inputs.Option{{Value: *value}})
 	if err != nil {

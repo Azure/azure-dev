@@ -169,18 +169,22 @@ func usageNameDetailsFromString(usageName string) (usageNameDetails, error) {
 	}, nil
 }
 
+func parameterPromptMessage(key string, param azure.ArmTemplateParameterDefinition) string {
+	kind := "parameter"
+	if param.Secure() {
+		kind = "secured parameter"
+	}
+	return fmt.Sprintf("Enter a value for the '%s' infrastructure %s:", key, kind)
+}
+
 func (p *BicepProvider) promptForParameter(
 	ctx context.Context,
 	key string,
 	param azure.ArmTemplateParameterDefinition,
 	mappedToAzureLocationParams []string,
 ) (any, error) {
-	securedParam := "parameter"
 	isSecuredParam := param.Secure()
-	if isSecuredParam {
-		securedParam = "secured parameter"
-	}
-	msg := fmt.Sprintf("Enter a value for the '%s' infrastructure %s:", key, securedParam)
+	msg := parameterPromptMessage(key, param)
 	help, _ := param.Description()
 	azdMetadata, _ := param.AzdMetadata()
 	paramType := provisioning.ParameterTypeFromArmType(param.Type)

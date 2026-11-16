@@ -413,11 +413,12 @@ func EnsureSubscriptionAndLocation(
 	}
 
 	location := env.GetLocation()
+	locationPrompt := "Select an Azure location to use:"
 	if _, exists := env.LookupEnv(environment.LocationEnvVarName); !exists {
 		value, err := prompt.ResolveLocationInput(ctx, options.InputServiceLocator, &v1beta.InputDefinition{
 			Id: "azure.location", Kind: inputs.AzureLocationKind, EnvironmentVariable: environment.LocationEnvVarName,
 			Annotations: map[string]string{"azure.subscription": env.GetSubscriptionId()},
-		}, env.GetSubscriptionId(), options.LocationFiler, nil)
+		}, env.GetSubscriptionId(), options.LocationFiler, inputs.ResolveOptions{PromptMessage: locationPrompt})
 		if err != nil {
 			return err
 		}
@@ -444,7 +445,7 @@ func EnsureSubscriptionAndLocation(
 		loc, err := prompter.PromptLocation(
 			ctx,
 			env.GetSubscriptionId(),
-			"Select an Azure location to use:",
+			locationPrompt,
 			options.LocationFiler,
 			options.SelectDefaultLocation,
 		)

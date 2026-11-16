@@ -211,36 +211,113 @@ func TestInputProviderEnvironmentName(t *testing.T) {
 	}
 }
 
+func TestInputProviderEnvironmentPromptPreservesHelp(t *testing.T) {
+	var native input.ConsoleOptions
+	for _, provider := range []bool{false, true} {
+		t.Run(map[bool]string{false: "native", true: "provider"}[provider], func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			manager := createEnvManagerForManagerTest(t, mockContext).(*manager)
+			manager.serviceLocator = mockContext.Container
+			prompts := 0
+			check := func(options input.ConsoleOptions) bool {
+				prompts++
+				if provider {
+					require.Equal(t, native.Message, options.Message)
+					require.Equal(t, native.Help, options.Help)
+				} else {
+					native = options
+					require.Contains(t, options.Help, "example-env")
+				}
+				return true
+			}
+			if provider {
+				ioc.RegisterInstance[inputs.Resolver](mockContext.Container, mockinputs.OptionsResolver(
+					func(context.Context, *v1beta.InputDefinition) ([]inputs.Option, error) {
+						return []inputs.Option{{Value: "first-env"}, {Value: "second-env"}}, nil
+					}))
+				mockContext.Console.WhenSelect(check).Respond(0)
+			} else {
+				mockContext.Console.WhenPrompt(check).Respond("first-env")
+			}
+			env, err := manager.Create(t.Context(), Spec{Examples: []string{"example-env"}})
+			require.NoError(t, err)
+			require.Equal(t, "first-env", env.Name())
+			require.Equal(t, 1, prompts)
+		})
+	}
+}
+
 func TestInputProviderEnvironmentNameAvoidsExistingState(t *testing.T) {
+	for _, create := range []bool{false, true} {
+		for _, existingName := range []string{"demo", "Demo"} {
+			t.Run(existingName, func(t *testing.T) {
+				t.Run(map[bool]string{false: "load or initialize", true: "create"}[create], func(t *testing.T) {
+					mockContext := mocks.NewMockContext(t.Context())
+					mockContext.Console.WhenSelect(func(input.ConsoleOptions) bool { return true }).Respond(0)
+					mockContext.Console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
+					manager := createEnvManagerForManagerTest(t, mockContext).(*manager)
+					manager.serviceLocator = mockContext.Container
+					existing := New(existingName)
+					require.NoError(t, existing.Config.Set("infra.parameters.saved", "preserve-me"))
+					require.NoError(t, manager.Save(t.Context(), existing))
+					configPath, err := manager.ConfigPath(existing)
+					require.NoError(t, err)
+					before, err := os.ReadFile(configPath)
+					require.NoError(t, err)
+					want := "demo-dev"
+					candidatePath := filepath.Join(manager.azdContext.EnvironmentDirectory(), "demo")
+					if _, err := os.Stat(candidatePath); errors.Is(err, os.ErrNotExist) {
+						want = "demo"
+					} else {
+						require.NoError(t, err)
+					}
+					ioc.RegisterInstance[inputs.Resolver](mockContext.Container, mockinputs.OptionsResolver(
+						func(context.Context, *v1beta.InputDefinition) ([]inputs.Option, error) {
+							return []inputs.Option{{Value: "demo", Recommended: true}, {Value: "demo-dev"}}, nil
+						}))
+					var env *Environment
+					if create {
+						env, err = manager.Create(t.Context(), Spec{})
+					} else {
+						env, err = manager.LoadOrInitInteractive(t.Context(), "")
+					}
+					require.NoError(t, err)
+					require.Equal(t, want, env.Name())
+					after, err := os.ReadFile(configPath)
+					require.NoError(t, err)
+					require.Equal(t, before, after)
+				})
+			})
+		}
+	}
+}
+
+func TestInputProviderEnvironmentNameRejectsUnsafeLocalPath(t *testing.T) {
 	for _, create := range []bool{false, true} {
 		t.Run(map[bool]string{false: "load or initialize", true: "create"}[create], func(t *testing.T) {
 			mockContext := mocks.NewMockContext(t.Context())
-			mockContext.Console.WhenSelect(func(input.ConsoleOptions) bool { return true }).Respond(0)
-			mockContext.Console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
 			manager := createEnvManagerForManagerTest(t, mockContext).(*manager)
 			manager.serviceLocator = mockContext.Container
-			existing := New("demo")
-			require.NoError(t, existing.Config.Set("infra.parameters.saved", "preserve-me"))
-			require.NoError(t, manager.Save(t.Context(), existing))
-			configPath, err := manager.ConfigPath(existing)
-			require.NoError(t, err)
-			before, err := os.ReadFile(configPath)
-			require.NoError(t, err)
+			require.NoError(t, os.MkdirAll(manager.azdContext.EnvironmentDirectory(), 0700))
+			path := filepath.Join(manager.azdContext.EnvironmentDirectory(), "demo")
+			require.NoError(t, os.WriteFile(path, []byte("preserve-me"), 0600))
 			ioc.RegisterInstance[inputs.Resolver](mockContext.Container, mockinputs.OptionsResolver(
 				func(context.Context, *v1beta.InputDefinition) ([]inputs.Option, error) {
 					return []inputs.Option{{Value: "demo", Recommended: true}, {Value: "demo-dev"}}, nil
 				}))
 			var env *Environment
+			var err error
 			if create {
 				env, err = manager.Create(t.Context(), Spec{})
 			} else {
 				env, err = manager.LoadOrInitInteractive(t.Context(), "")
 			}
+			require.ErrorIs(t, err, azdcontext.ErrUnsafeEnvironmentPath)
+			require.Nil(t, env)
+			content, err := os.ReadFile(path)
 			require.NoError(t, err)
-			require.Equal(t, "demo-dev", env.Name())
-			after, err := os.ReadFile(configPath)
-			require.NoError(t, err)
-			require.Equal(t, before, after)
+			require.Equal(t, "preserve-me", string(content))
+			require.NoDirExists(t, filepath.Join(manager.azdContext.EnvironmentDirectory(), "demo-dev"))
 		})
 	}
 }

@@ -23,11 +23,10 @@ func ResolveLocationInput(
 	definition *v1beta.InputDefinition,
 	subscriptionID string,
 	filter LocationFilterPredicate,
-	validate func([]inputs.Option) ([]inputs.Option, error),
+	settings inputs.ResolveOptions,
 ) (*string, error) {
 	var locations []account.Location
 	loaded := false
-	settings := inputs.ResolveOptions{FilterOptions: validate}
 	if definition.EnvironmentVariable != "" {
 		settings.Sources = []input.InputSource{{
 			Kind: input.InputSourceEnvironment, Name: definition.EnvironmentVariable,

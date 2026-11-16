@@ -45,12 +45,14 @@ type Resolver interface {
 	ResolveInput(context.Context, *v1beta.InputDefinition) ([]Option, error)
 }
 
-// ResolveOptions supplies native validation and consumer-specific remediation.
+// ResolveOptions supplies native validation, prompt text, and consumer-specific remediation.
 type ResolveOptions struct {
 	Filter        func(string) (bool, error)
 	FilterOptions func([]Option) ([]Option, error)
 	Sources       []input.InputSource
 	Description   string
+	PromptMessage string
+	PromptHelp    string
 }
 
 // HasProviders checks availability without starting listeners or requesting values.
@@ -227,8 +229,12 @@ func Resolve(
 			details[i] += ": " + strings.Join(option.Rationales, "; ")
 		}
 	}
+	message := settings.PromptMessage
+	if message == "" {
+		message = fmt.Sprintf("Select a value for %s:", definition.Id)
+	}
 	index, err := console.Select(ctx, input.ConsoleOptions{
-		Message: fmt.Sprintf("Select a value for %s:", definition.Id), Options: choices, OptionDetails: details,
+		Message: message, Help: settings.PromptHelp, Options: choices, OptionDetails: details,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("selecting input %q: %w", definition.Id, err)

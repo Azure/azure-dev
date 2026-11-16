@@ -49,6 +49,7 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 		otherMissing   bool
 		resolved       *string
 		options        []inputs.Option
+		prompt         bool
 		quotaFailure   bool
 		usageFailure   bool
 		wantCalls      int
@@ -57,6 +58,11 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 	}{
 		{name: "missing mapped location", fileValue: "${AZURE_LOCATION}", resolved: new("eastus2"),
 			wantCalls: 1, wantLocation: "eastus2"},
+		{name: "interactive selection preserves parameter prompt and help", fileValue: "${AZURE_LOCATION}", prompt: true,
+			options: []inputs.Option{{Value: "eastus2"}, {Value: "westus3"}},
+			parameter: azure.ArmTemplateParameterDefinition{Type: "string", Metadata: map[string]json.RawMessage{
+				"description": json.RawMessage(`"Choose where to deploy the resources."`),
+			}}, wantCalls: 1, wantLocation: "eastus2"},
 		{name: "shared binding resolves once", fileValue: "${AZURE_LOCATION}", resolved: new("eastus2"),
 			repeated: true, wantCalls: 1, wantLocation: "eastus2"},
 		{name: "shared allowed values are intersected before selection", fileValue: "${AZURE_LOCATION}", repeated: true,
@@ -149,7 +155,14 @@ func TestInputProviderRequiredBicepLocation(t *testing.T) {
 				t.Setenv(environment.LocationEnvVarName, "")
 			}
 			mockContext := mocks.NewMockContext(t.Context())
-			mockContext.Console.SetNoPromptMode(true)
+			mockContext.Console.SetNoPromptMode(!tt.prompt)
+			if tt.prompt {
+				mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+					require.Equal(t, "Enter a value for the 'location' infrastructure parameter:", options.Message)
+					require.Equal(t, "Choose where to deploy the resources.", options.Help)
+					return true
+				}).Respond(0)
+			}
 			env := environment.New("test")
 			env.SetSubscriptionId("subscription")
 			if tt.existing != "" {

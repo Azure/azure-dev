@@ -115,6 +115,8 @@ func TestInputOptionSelection(t *testing.T) {
 		prompt    bool
 		index     int
 		promptErr error
+		message   string
+		help      string
 		want      *string
 		wantErr   string
 		wantNote  string
@@ -138,6 +140,9 @@ func TestInputOptionSelection(t *testing.T) {
 			}, want: new("westus3")},
 		{name: "options without recommendations prompt", prompt: true, index: 1,
 			options: []inputs.Option{{Value: "westus3"}, {Value: "eastus2"}}, want: new("westus3")},
+		{name: "consumer prompt and help are preserved", prompt: true,
+			message: "Select an Azure location to use:", help: "Choose the deployment region.",
+			options: []inputs.Option{{Value: "eastus2"}, {Value: "westus3"}}, want: new("eastus2")},
 		{name: "ambiguous recommendations fail in no-prompt mode", noPrompt: true,
 			options: []inputs.Option{{Value: "eastus2", Recommended: true}, {Value: "westus3", Recommended: true}},
 			wantErr: "prompt required"},
@@ -168,6 +173,12 @@ func TestInputOptionSelection(t *testing.T) {
 			prompts := 0
 			mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 				prompts++
+				message := tt.message
+				if message == "" {
+					message = "Select a value for location:"
+				}
+				require.Equal(t, message, options.Message)
+				require.Equal(t, tt.help, options.Help)
 				require.Len(t, options.Options, 2)
 				require.Contains(t, options.Options[0], "eastus2")
 				if tt.options[0].Recommended && tt.options[1].Recommended {
@@ -182,9 +193,10 @@ func TestInputOptionSelection(t *testing.T) {
 			))
 			value, err := inputs.Resolve(t.Context(), mockContext.Container, &v1beta.InputDefinition{
 				Id: "location", Kind: inputs.AzureLocationKind, EnvironmentVariable: "AZURE_LOCATION",
-			}, inputs.ResolveOptions{Filter: tt.filter, Sources: []input.InputSource{{
-				Kind: input.InputSourceEnvironment, Name: "AZURE_LOCATION",
-			}}})
+			}, inputs.ResolveOptions{Filter: tt.filter, PromptMessage: tt.message, PromptHelp: tt.help,
+				Sources: []input.InputSource{{
+					Kind: input.InputSourceEnvironment, Name: "AZURE_LOCATION",
+				}}})
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				require.Nil(t, value)

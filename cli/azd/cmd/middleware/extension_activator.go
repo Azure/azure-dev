@@ -102,10 +102,11 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 			for _, ext := range toStart {
 				for _, name := range declaredProviders(ext, names) {
 					if !a.providerResolvable(name) {
+						var cause error = errors.New("provisioning provider was not registered")
 						if startErr != nil {
-							return noop, startErr
+							cause = fmt.Errorf("%w (shared extension startup: %w)", cause, startErr)
 						}
-						return noop, fmt.Errorf("extension %q did not register provisioning provider %q", ext.Id, name)
+						return noop, provisioningExtensionStartupError(ext, []string{name}, cause)
 					}
 				}
 			}
@@ -167,25 +168,29 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 			continue
 		}
 
-		// Fail fast with the actual startup error rather than an opaque resolution failure later.
-		ext := toStart[i]
-		if reported := ext.GetReportedError(); reported != nil {
-			startErr = fmt.Errorf("%w: %w", startErr, reported)
-		}
-
 		cleanup()
-		return noop, &internal.ErrorWithSuggestion{
-			Err: fmt.Errorf("extension '%s', which provides provisioning provider '%s', failed to start: %w",
-				ext.Id, strings.Join(declaredProviders(ext, names), "', '"), startErr),
-			Suggestion: fmt.Sprintf(
-				"Run with %s for details, or check for an update with %s",
-				output.WithHighLightFormat("--debug"),
-				output.WithHighLightFormat("azd extension update %s", ext.Id),
-			),
-		}
+		return noop, provisioningExtensionStartupError(toStart[i], declaredProviders(toStart[i], names), startErr)
 	}
 
 	return cleanup, nil
+}
+
+func provisioningExtensionStartupError(
+	extension *extensions.Extension, providerNames []string, cause error,
+) *internal.ErrorWithSuggestion {
+	if reported := extension.GetReportedError(); reported != nil {
+		cause = fmt.Errorf("%w: %w", reported, cause)
+	}
+	return &internal.ErrorWithSuggestion{
+		Err: fmt.Errorf("extension '%s', which provides provisioning provider '%s', failed to start: %w",
+			extension.Id, strings.Join(providerNames, "', '"), cause),
+		Message: "The required provisioning provider is unavailable because its extension did not finish starting.",
+		Suggestion: fmt.Sprintf(
+			"Run with %s for details, or check for an update with %s",
+			output.WithHighLightFormat("--debug"),
+			output.WithHighLightFormat("azd extension update %s", extension.Id),
+		),
+	}
 }
 
 // ExtensionsForProvisioningProviders returns the installed extension IDs that declare any of the

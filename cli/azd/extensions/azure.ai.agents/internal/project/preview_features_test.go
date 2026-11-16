@@ -226,6 +226,8 @@ func TestPreviewGatesIgnorePropertyCase(t *testing.T) {
 		{"protocols upper", map[string]any{"kind": "hosted", "Protocols": ws}, featureflags.Voice},
 		{"protocol key upper", map[string]any{"kind": "hosted",
 			"protocols": []any{map[string]any{"Protocol": "invocations_ws"}}}, featureflags.Voice},
+		{"voice engine key upper", map[string]any{"kind": "hosted",
+			"Protocols": []any{map[string]any{"Protocol": "voice_conversation_engine"}}}, featureflags.Voice},
 		{"protocol null collision", map[string]any{"kind": "hosted",
 			"protocols": []any{map[string]any{"protocol": nil, "Protocol": "invocations_ws"}}}, featureflags.Voice},
 		{"harness type upper", map[string]any{"kind": "prompt",

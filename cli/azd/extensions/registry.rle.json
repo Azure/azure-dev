@@ -2085,6 +2085,107 @@
             }
           },
           "breakingChanges": true
+        },
+        {
+          "version": "0.8.55-preview",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai rle <command> [options]",
+          "examples": [
+            {
+              "name": "prepare",
+              "description": "Build Harbor task images remotely in ACR and upload bundles without creating an environment version.",
+              "usage": "azd ai rle prepare --taskset-dir ./data"
+            },
+            {
+              "name": "publish",
+              "description": "Publish prepared Harbor tasks, a JSONL bundle with a separate grader, or an OpenEnv image from rle.toml.",
+              "usage": "azd ai rle publish"
+            },
+            {
+              "name": "run",
+              "description": "Build and run the local RLE environment container (Gym: OpenEnv only).",
+              "usage": "azd ai rle run"
+            },
+            {
+              "name": "rollout",
+              "description": "Execute one rollout of the environment version declared in rle.toml. Policy defaults to model.policy_type or loom; --policy_type overrides it. The model defaults to model.name.",
+              "usage": "azd ai rle rollout --task-file task.json"
+            },
+            {
+              "name": "models",
+              "description": "List supported RLE model identifiers and renderers.",
+              "usage": "azd ai rle models"
+            },
+            {
+              "name": "list",
+              "description": "List RLE environments in a Foundry project.",
+              "usage": "azd ai rle list"
+            },
+            {
+              "name": "show",
+              "description": "Show stored status and Harbor Ready/Total for rle.name and rle.version. Use --name to list all versions.",
+              "usage": "azd ai rle show [--name <environment-name>]"
+            },
+            {
+              "name": "show tasks",
+              "description": "Browse Harbor task image statuses with Previous/Next pages. Defaults to rle.name and rle.version.",
+              "usage": "azd ai rle show tasks [--name <environment-name>] [--version <version>]"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "797fcc76b8f56fb620cf24533739a37b5a1b066c6dfafe01c7a310684a1a0f84"
+              },
+              "entryPoint": "azure-ai-rle-darwin-amd64",
+              "url": "https://raw.githubusercontent.com/Azure/azure-dev/rle-releases/cli/azd/extensions/azure.ai.rle/artifacts/0.8.55-preview/azure-ai-rle-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "03c07666070f51044e2dcf2e7f5e19dbe5bc4c53e0e2d842585ad1899d1cc79a"
+              },
+              "entryPoint": "azure-ai-rle-darwin-arm64",
+              "url": "https://raw.githubusercontent.com/Azure/azure-dev/rle-releases/cli/azd/extensions/azure.ai.rle/artifacts/0.8.55-preview/azure-ai-rle-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9766e4edc236d046e2f58c0d6b4efe8f00a017714740b0d0df61667096c9e307"
+              },
+              "entryPoint": "azure-ai-rle-linux-amd64",
+              "url": "https://raw.githubusercontent.com/Azure/azure-dev/rle-releases/cli/azd/extensions/azure.ai.rle/artifacts/0.8.55-preview/azure-ai-rle-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "c726661f9dd4efa0ba1723470e0199a6aa3cc2daca574f9416eda4510e197011"
+              },
+              "entryPoint": "azure-ai-rle-linux-arm64",
+              "url": "https://raw.githubusercontent.com/Azure/azure-dev/rle-releases/cli/azd/extensions/azure.ai.rle/artifacts/0.8.55-preview/azure-ai-rle-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "395236052e8c6a36c91c739a94d54ace9d5d722f783a78abd8a736cd5fc0ea80"
+              },
+              "entryPoint": "azure-ai-rle-windows-amd64.exe",
+              "url": "https://raw.githubusercontent.com/Azure/azure-dev/rle-releases/cli/azd/extensions/azure.ai.rle/artifacts/0.8.55-preview/azure-ai-rle-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9b7074677b49175fc406bc0124caff9c89303c5d2c3471046d77394169cf44bf"
+              },
+              "entryPoint": "azure-ai-rle-windows-arm64.exe",
+              "url": "https://raw.githubusercontent.com/Azure/azure-dev/rle-releases/cli/azd/extensions/azure.ai.rle/artifacts/0.8.55-preview/azure-ai-rle-windows-arm64.zip"
+            }
+          },
+          "breakingChanges": true
         }
       ],
       "tags": [

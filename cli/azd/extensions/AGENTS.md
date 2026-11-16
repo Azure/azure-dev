@@ -19,8 +19,7 @@ Derive expected behavior from requirements, not only the implementation.
 Do not run live services for unit tests. For documentation-only changes, do not
 add unrelated tests.
 
-This link is the extension-local entry point, not a guarantee of independent
-skill discovery. Verify instruction loading with the intended client.
+Open the linked file directly; do not rely on automatic nested skill discovery.
 
 ## Security and safe operations
 

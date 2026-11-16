@@ -1,6 +1,17 @@
 ---
 name: azd-extension-unit-testing
-description: "Write, update, and review feature-aligned Go unit tests for azure.ai.agents, azure.ai.connections, azure.ai.inspector, azure.ai.projects, azure.ai.routines, azure.ai.skills, and azure.ai.toolboxes. Use for unit test cases, regression tests, acceptance-criteria mapping, mock assertions, and unit coverage gaps. Establish expected behavior from requirements, not the current implementation alone. Not for CLI subprocess tests, recorded HTTP playback, live integration, E2E, CI changes, or skill migration."
+description: >-
+  Write, update, and statically review feature-aligned Go unit tests for
+  azure.ai.agents, azure.ai.connections, azure.ai.inspector, azure.ai.projects,
+  azure.ai.routines, azure.ai.skills, and azure.ai.toolboxes.
+  USE FOR: unit test cases, regression tests, acceptance-criteria mapping,
+  mock assertions, and unit coverage gaps.
+  Establish expected behavior from requirements, not the implementation alone.
+  DO NOT USE FOR: CLI subprocess tests, recorded HTTP playback, live integration,
+  E2E, CI changes, or skill migration.
+license: MIT
+metadata:
+  version: "1.0"
 ---
 
 # AZD Extension Unit Testing
@@ -14,6 +25,11 @@ Work only on the requested feature and extension. Read applicable `AGENTS.md`
 and existing tests first. Reuse the module's framework, mocks, and helpers.
 Do not add dependencies, change CI, migrate skills, or modify production behavior
 unless separately requested. Report defects exposed by a tests-only task.
+
+**Review-only tasks, including PR/code reviews, are static-only:** inspect code
+and supplied evidence without editing files, building, running tests, installing
+tools, or executing PR code. Execution guidance below applies only to
+test-authoring tasks and never overrides a reviewer's read-only restrictions.
 
 ## 1. Define the expected behavior
 
@@ -81,23 +97,27 @@ be rejected when it violates the selected scenario.
 - Do not weaken assertions, change expected results, or add skips merely to
   match a product defect. Harmless internal refactors should not break tests.
 
-## 5. Verify the tests and report evidence
+## 5. Verify or review the evidence
 
-- Run the smallest relevant tests using the repository's configured runner.
-  Record the exact command and outcome.
-- For a bug regression, verify failure on the unfixed behavior and success after
-  the fix when safely feasible. Do not disturb unrelated work to obtain this
-  evidence; report when the failing baseline was not verified.
+- **Test authoring:** Run the smallest relevant tests using the repository's
+  configured runner. Record the exact command and outcome. For a bug regression,
+  verify failure on the unfixed behavior and success after the fix when safely
+  feasible; do not disturb unrelated work to obtain this evidence.
+- **Review only:** Inspect assertions, mocks, CI selection, and existing evidence
+  statically. Do not execute code to obtain missing evidence. Report whether
+  failure-before/success-after evidence was supplied; do not claim independent
+  verification.
 - A compile error, missing fixture/tool, or environment failure is not evidence
   that an assertion detects the intended defect.
 - Check module boundaries, build tags, and platform constraints. A local pass
   does not prove CI selects the test; nested Go modules may need separate runs.
-- If measuring coverage, state the tested module, revision, platform, and
+- When reporting coverage, state the tested module, revision, platform, and
   exclusions. Use it to identify relevant gaps, not to claim functional
   completeness or average unrelated package percentages.
 
-Summarize: requirement/scenario tested, assertions added, commands run and
-results, skipped or unverified cases, and whether existing CI executes the tests.
+Summarize: requirement/scenario covered, assertions added or reviewed, commands
+run in authoring mode or evidence inspected in review mode, skipped or unverified
+cases, and whether the CI configuration selects the tests.
 Do not claim owner approval, CI execution, or complete coverage without evidence.
 
 ## References

@@ -104,9 +104,10 @@ be rejected when it violates the selected scenario.
   verify failure on the unfixed behavior and success after the fix when safely
   feasible; do not disturb unrelated work to obtain this evidence.
 - **Review only:** Inspect assertions, mocks, CI selection, and existing evidence
-  statically. Do not execute code to obtain missing evidence. Report whether
-  failure-before/success-after evidence was supplied; do not claim independent
-  verification.
+  statically. Do not execute code to obtain missing evidence. Assess whether
+  failure-before/success-after evidence was supplied without claiming independent
+  verification. Return only relevant findings in the host reviewer's required
+  format; do not add a separate evidence summary.
 - A compile error, missing fixture/tool, or environment failure is not evidence
   that an assertion detects the intended defect.
 - Check module boundaries, build tags, and platform constraints. A local pass
@@ -115,9 +116,9 @@ be rejected when it violates the selected scenario.
   exclusions. Use it to identify relevant gaps, not to claim functional
   completeness or average unrelated package percentages.
 
-Summarize: requirement/scenario covered, assertions added or reviewed, commands
-run in authoring mode or evidence inspected in review mode, skipped or unverified
-cases, and whether the CI configuration selects the tests.
+**Test-authoring summary:** State the requirement/scenario covered, assertions
+added, commands run and results, skipped or unverified cases, and whether the
+CI configuration selects the tests. This summary does not apply to review mode.
 Do not claim owner approval, CI execution, or complete coverage without evidence.
 
 ## References

@@ -10,13 +10,23 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/recordproxy"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
+
+type nonRetriableTransportError struct {
+	msg string
+}
+
+func (e *nonRetriableTransportError) Error() string { return e.msg }
+
+func (e *nonRetriableTransportError) NonRetriable() {}
 
 func TestPromptAgentRequestHeaders(t *testing.T) {
 	settings := &PromptAgentSettings{ModelEndpoint: "https://model.example.com"}
@@ -76,14 +86,25 @@ func TestPromptCreateOrUpdatePromptAgent(t *testing.T) {
 		header http.Header
 	}
 
+	managedWithPolicy := agent_yaml.PromptAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Name: agentName, Kind: agent_yaml.AgentKindPrompt},
+		Harness:         agent_yaml.NewPromptHarness(agent_api.ManagedAgentHarnessMicrosoftCopilot),
+		Policies:        []agent_yaml.Policy{{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: raiPolicyID}},
+	}
+
 	tests := []struct {
-		name           string
-		getCode        int
-		createCode     int
-		updateCode     int
-		wantCalls      []string
-		wantVersion    string
-		wantStatusCode int
+		name              string
+		getCode           int
+		getTransportErr   error
+		createCode        int
+		updateCode        int
+		wantCalls         []string
+		wantVersion       string
+		wantGetServiceErr bool
+		wantGetLocalErr   bool
+		wantStatusCode    int
+		wantErrorCode     string
+		wantRaiSuggestion bool
 	}{
 		{
 			name:       "new agent GET 404 then POST /agents 201",
@@ -118,16 +139,27 @@ func TestPromptCreateOrUpdatePromptAgent(t *testing.T) {
 			wantVersion: "2",
 		},
 		{
-			name:           "preflight GET 403 fails fast without create or update",
-			getCode:        http.StatusForbidden,
-			wantCalls:      []string{"GET /api/projects/proj/agents/my-prompt-agent"},
-			wantStatusCode: http.StatusForbidden,
+			name:              "preflight GET 403 fails fast without create or update",
+			getCode:           http.StatusForbidden,
+			wantCalls:         []string{"GET /api/projects/proj/agents/my-prompt-agent"},
+			wantGetServiceErr: true,
+			wantStatusCode:    http.StatusForbidden,
+			wantErrorCode:     "get_agent.get_failed",
 		},
 		{
-			name:           "preflight GET 501 fails fast without create or update",
-			getCode:        http.StatusNotImplemented,
-			wantCalls:      []string{"GET /api/projects/proj/agents/my-prompt-agent"},
-			wantStatusCode: http.StatusNotImplemented,
+			name:              "preflight GET 501 fails fast without create or update",
+			getCode:           http.StatusNotImplemented,
+			wantCalls:         []string{"GET /api/projects/proj/agents/my-prompt-agent"},
+			wantGetServiceErr: true,
+			wantStatusCode:    http.StatusNotImplemented,
+			wantErrorCode:     "get_agent.get_failed",
+		},
+		{
+			name:            "preflight GET transport error fails fast without create or update",
+			getTransportErr: &nonRetriableTransportError{msg: "dial tcp: connection refused"},
+			wantCalls:       []string{"GET /api/projects/proj/agents/my-prompt-agent"},
+			wantGetLocalErr: true,
+			wantErrorCode:   exterrors.OpGetAgent,
 		},
 		{
 			name:       "create non-409 error returns error without update",
@@ -137,7 +169,9 @@ func TestPromptCreateOrUpdatePromptAgent(t *testing.T) {
 				"GET /api/projects/proj/agents/my-prompt-agent",
 				"POST /api/projects/proj/agents",
 			},
-			wantStatusCode: http.StatusBadRequest,
+			wantStatusCode:    http.StatusBadRequest,
+			wantErrorCode:     "create_agent.create_failed",
+			wantRaiSuggestion: true,
 		},
 	}
 
@@ -159,6 +193,9 @@ func TestPromptCreateOrUpdatePromptAgent(t *testing.T) {
 				var body string
 				switch {
 				case req.Method == http.MethodGet && req.URL.Path == "/api/projects/proj/agents/"+agentName:
+					if tt.getTransportErr != nil {
+						return nil, tt.getTransportErr
+					}
 					code = tt.getCode
 					if code == http.StatusOK {
 						body = `{"name":"` + agentName + `","versions":{"latest":{"version":"1","status":"active"}}}`
@@ -225,13 +262,53 @@ func TestPromptCreateOrUpdatePromptAgent(t *testing.T) {
 			}
 			require.Equal(t, tt.wantCalls, gotCallSummary)
 
-			if tt.wantStatusCode != 0 {
+			switch {
+			case tt.wantGetServiceErr:
 				require.Error(t, err)
+				require.Nil(t, got)
+				serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+				require.True(t, ok, "expected *azdext.ServiceError, got %T: %v", err, err)
+				require.Equal(t, tt.wantErrorCode, serviceErr.ErrorCode)
+				require.Equal(t, tt.wantStatusCode, serviceErr.StatusCode)
+
+				deployErr := promptCreateError(err, &managedWithPolicy, "my-prompt-svc")
+				deployServiceErr, ok := errors.AsType[*azdext.ServiceError](deployErr)
+				require.True(t, ok)
+				require.Same(t, serviceErr, deployServiceErr)
+				require.Equal(t, tt.wantErrorCode, deployServiceErr.ErrorCode)
+				require.NotContains(t, deployServiceErr.Suggestion, "Responsible AI policy")
+			case tt.wantGetLocalErr:
+				require.Error(t, err)
+				require.Nil(t, got)
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok, "expected *azdext.LocalError, got %T: %v", err, err)
+				require.Equal(t, tt.wantErrorCode, localErr.Code)
+				require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
+
+				deployErr := promptCreateError(err, &managedWithPolicy, "my-prompt-svc")
+				deployLocalErr, ok := errors.AsType[*azdext.LocalError](deployErr)
+				require.True(t, ok)
+				require.Same(t, localErr, deployLocalErr)
+				require.Equal(t, tt.wantErrorCode, deployLocalErr.Code)
+				require.NotContains(t, deployLocalErr.Suggestion, "Responsible AI policy")
+			case tt.wantStatusCode != 0:
+				require.Error(t, err)
+				require.Nil(t, got)
 				respErr, ok := errors.AsType[*azcore.ResponseError](err)
 				require.True(t, ok, "expected *azcore.ResponseError, got %T: %v", err, err)
 				require.Equal(t, tt.wantStatusCode, respErr.StatusCode)
-				require.Nil(t, got)
-			} else {
+
+				deployErr := promptCreateError(err, &managedWithPolicy, "my-prompt-svc")
+				deployServiceErr, ok := errors.AsType[*azdext.ServiceError](deployErr)
+				require.True(t, ok)
+				require.Equal(t, tt.wantErrorCode, deployServiceErr.ErrorCode)
+				require.Equal(t, tt.wantStatusCode, deployServiceErr.StatusCode)
+				if tt.wantRaiSuggestion {
+					require.Contains(t, deployServiceErr.Suggestion, "Responsible AI policy")
+				} else {
+					require.NotContains(t, deployServiceErr.Suggestion, "Responsible AI policy")
+				}
+			default:
 				require.NoError(t, err)
 				require.NotNil(t, got)
 				require.Equal(t, agentName, got.Name)

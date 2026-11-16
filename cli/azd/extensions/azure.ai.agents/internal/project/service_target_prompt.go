@@ -206,7 +206,9 @@ func expandPromptAgentToolValue(value any, env map[string]string, path string) (
 // above points at the same variable the scaffold writes.
 const raiPolicyEnvVarName = "RAI_POLICY_ID"
 
-// promptCreateError converts a failed agent create into an actionable error.
+// promptCreateError converts a failed agent create or update into an actionable
+// error while returning already-structured errors (such as preflight GET
+// failures) unchanged.
 //
 // Guardrails get a suggestion of their own. The managed harness has been
 // observed to reject rai_config outright while the same policy is accepted by a
@@ -215,6 +217,16 @@ const raiPolicyEnvVarName = "RAI_POLICY_ID"
 // between "your policy is wrong" and "this harness does not take policies yet"
 // is a message that mentions neither.
 func promptCreateError(err error, managed *agent_yaml.PromptAgent, serviceAndProject ...string) error {
+	if err == nil {
+		return nil
+	}
+	if serviceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
+		return serviceErr
+	}
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return localErr
+	}
+
 	var svcName, projID string
 	if len(serviceAndProject) >= 1 {
 		svcName = strings.TrimSpace(serviceAndProject[0])
@@ -1003,7 +1015,8 @@ func isAgentConflictError(err error) bool {
 //   - If GET returns 404 NotFound, it creates the agent via POST /agents and
 //     still falls back to POST /agents/{name} on 409 Conflict in case the agent
 //     was created concurrently between the GET and POST calls.
-//   - Any non-404 error from GET is returned immediately.
+//   - Any non-404 error from GET is classified under OpGetAgent and returned
+//     immediately without attempting to create or update the agent.
 func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 	ctx context.Context,
 	client *agent_api.AgentClient,
@@ -1025,7 +1038,7 @@ func (p *AgentServiceTargetProvider) createOrUpdatePromptAgent(
 		return client.UpdateAgentWithHeaders(ctx, request.Name, updateReq, apiVersion, headers)
 	} else if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
 		respErr.StatusCode != http.StatusNotFound {
-		return nil, getErr
+		return nil, exterrors.ServiceFromAzure(getErr, exterrors.OpGetAgent)
 	}
 
 	agent, err := client.CreateAgentWithHeaders(ctx, request, apiVersion, headers)

@@ -174,7 +174,15 @@ func (r *Runtime) resolveProject(
 	var selected resolvedDatabase
 	hasDatabase := false
 	for _, service := range services {
-		item, err := r.resolveService(ctx, project, service, nil, values, requireLate)
+		serviceCtx, bindErr := bindServiceContext(ctx, service.GetName())
+		if bindErr != nil {
+			return nil, resolvedDatabase{}, bindErr
+		}
+		serviceValues := values
+		if binding, present := serviceCtx.Value(deploymentBindingKey{}).(*deploymentBinding); present {
+			serviceValues = binding.values
+		}
+		item, err := r.resolveService(serviceCtx, project, service, nil, serviceValues, requireLate)
 		if err != nil {
 			return nil, resolvedDatabase{}, err
 		}
@@ -716,10 +724,18 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 	if err := validateProvisionedBindings(database, values); err != nil {
 		return err
 	}
-	if r.client != nil || (binding != nil && binding.app != nil) {
+	if r.client != nil || (binding != nil && (binding.app != nil || len(binding.apps) > 0)) {
 		for _, service := range services {
+			serviceCtx, bindErr := bindServiceContext(ctx, service.service.GetName())
+			if bindErr != nil {
+				return bindErr
+			}
+			serviceValues := values
+			if bound, present := serviceCtx.Value(deploymentBindingKey{}).(*deploymentBinding); present {
+				serviceValues = bound.values
+			}
 			if err := r.verifyExplicitDatasource(
-				ctx, args.Project, service.service, nil, service.database, values,
+				serviceCtx, args.Project, service.service, nil, service.database, serviceValues,
 			); err != nil {
 				return err
 			}

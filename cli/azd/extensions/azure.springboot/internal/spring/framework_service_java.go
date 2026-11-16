@@ -11,6 +11,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -403,8 +404,8 @@ func effectiveEnvironmentValue(commandEnv []string, name string) (string, bool) 
 }
 
 func environmentSliceValue(values []string, name string) (string, bool) {
-	for i := len(values) - 1; i >= 0; i-- {
-		key, value, found := strings.Cut(values[i], "=")
+	for _, value := range slices.Backward(values) {
+		key, value, found := strings.Cut(value, "=")
 		if found && key == name {
 			return value, true
 		}

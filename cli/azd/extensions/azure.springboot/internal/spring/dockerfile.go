@@ -89,7 +89,7 @@ func servicePath(project *azdext.ProjectConfig, service *azdext.ServiceConfig) (
 		)
 	}
 
-	if err := validateJavaBuild(servicePath, service.Name); err != nil {
+	if err := validateJavaBuildInProject(projectPath, servicePath, service.Name); err != nil {
 		return "", err
 	}
 	return servicePath, nil

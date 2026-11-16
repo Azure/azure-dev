@@ -275,3 +275,155 @@ func TestDeployedDatasourceRejectsMountsBeforeReadingSecrets(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "mounted application files")
 }
+
+func TestMultiModuleProjectResolvesPostgresAndDatabaseFreeServices(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".mvn", "wrapper"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "mvnw"), []byte("wrapper"), 0o600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, ".mvn", "wrapper", "maven-wrapper.properties"), []byte("props"), 0o600,
+	))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "pom.xml"), []byte(`<project>
+		<parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId></parent>
+		<groupId>org.springframework.samples</groupId>
+		<artifactId>spring-petclinic-multiservice</artifactId>
+		<packaging>pom</packaging>
+	</project>`), 0o600))
+
+	restJavaDir := filepath.Join(root, "petclinic-rest", "src", "main", "java", "app")
+	restResDir := filepath.Join(root, "petclinic-rest", "src", "main", "resources")
+	webJavaDir := filepath.Join(root, "petclinic-web", "src", "main", "java", "web")
+	webResDir := filepath.Join(root, "petclinic-web", "src", "main", "resources")
+	for _, dir := range []string{restJavaDir, restResDir, webJavaDir, webResDir} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(restJavaDir, "App.java"), []byte(
+		"package app;\nimport org.springframework.boot.SpringApplication;\n"+
+			"public class App { public static void main(String[] args) { SpringApplication.run(App.class, args); } }\n",
+	), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(webJavaDir, "Web.java"), []byte(
+		"package web;\nimport org.springframework.boot.SpringApplication;\n"+
+			"public class Web { public static void main(String[] args) { SpringApplication.run(Web.class, args); } }\n",
+	), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "petclinic-rest", "pom.xml"), []byte(`<project>
+		<parent>
+			<groupId>org.springframework.samples</groupId>
+			<artifactId>spring-petclinic-multiservice</artifactId>
+			<relativePath>../pom.xml</relativePath>
+		</parent>
+		<artifactId>spring-petclinic-rest</artifactId>
+		<dependencies>
+			<dependency>
+				<groupId>org.postgresql</groupId>
+				<artifactId>postgresql</artifactId>
+				<scope>runtime</scope>
+			</dependency>
+			<dependency>
+				<groupId>com.azure</groupId>
+				<artifactId>azure-identity-extensions</artifactId>
+			</dependency>
+		</dependencies>
+	</project>`), 0o600))
+	jdbcURL := "jdbc:postgresql://actual.example:5432/petclinic?" +
+		"sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt&" +
+		"authenticationPluginClassName=" + azurePostgreSQLPlugin + "&azure.managedIdentityEnabled=true"
+	require.NoError(t, os.WriteFile(filepath.Join(restResDir, "application.properties"), []byte(
+		"spring.datasource.url=${POSTGRES_URL:"+jdbcURL+"}\n"+
+			"spring.datasource.username=petclinic_app\n",
+	), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "petclinic-web", "pom.xml"), []byte(`<project>
+		<parent>
+			<groupId>org.springframework.samples</groupId>
+			<artifactId>spring-petclinic-multiservice</artifactId>
+			<relativePath>../pom.xml</relativePath>
+		</parent>
+		<artifactId>spring-petclinic-web</artifactId>
+		<dependencies>
+			<dependency>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-starter-webmvc</artifactId>
+			</dependency>
+		</dependencies>
+	</project>`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(webResDir, "application.properties"), []byte(
+		"server.port=8080\npetclinic.backend.url=${PETCLINIC_BACKEND_URL:http://localhost:9966/petclinic}\n",
+	), 0o600))
+
+	restSvc := &azdext.ServiceConfig{Name: "petclinic-rest", Host: SpringHost, RelativePath: "./petclinic-rest"}
+	webSvc := &azdext.ServiceConfig{Name: "petclinic-web", Host: SpringHost, RelativePath: "./petclinic-web"}
+	project := &azdext.ProjectConfig{
+		Path: root,
+		Services: map[string]*azdext.ServiceConfig{
+			"petclinic-rest": restSvc,
+			"petclinic-web":  webSvc,
+		},
+	}
+
+	runtime := new(Runtime)
+	services, selected, err := runtime.resolveProject(t.Context(), project, map[string]string{}, true, false)
+	require.NoError(t, err)
+	require.Len(t, services, 2)
+	require.Equal(t, databasePostgreSQL, selected.Type)
+
+	subscription := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	serverID := "/subscriptions/" + subscription + "/resourceGroups/rg/providers/" +
+		"Microsoft.DBforPostgreSQL/flexibleServers/pg"
+	restAppID := "/subscriptions/" + subscription + "/resourceGroups/rg/providers/" +
+		"Microsoft.App/containerApps/petclinic-rest"
+	webAppID := "/subscriptions/" + subscription + "/resourceGroups/rg/providers/" +
+		"Microsoft.App/containerApps/petclinic-web"
+	principalID := "22222222-3333-4444-5555-666666666666"
+
+	binding := &deploymentBinding{
+		original: true,
+		values: map[string]string{
+			postgresServerIDEnv:           serverID,
+			postgresHostEnv:               "actual.example",
+			serviceIdentityPrincipalIDEnv: principalID,
+			"CONTAINER_APP_ENVIRONMENT_ID": "/subscriptions/" + subscription +
+				"/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/cae",
+		},
+		resources: map[string]bool{
+			strings.ToLower(serverID):                          true,
+			strings.ToLower(serverID + "/databases/petclinic"): true,
+			strings.ToLower(restAppID):                         true,
+			strings.ToLower(webAppID):                          true,
+			strings.ToLower("/subscriptions/" + subscription +
+				"/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/cae"): true,
+		},
+		apps: map[string]*armappcontainers.ContainerApp{
+			"petclinic-rest": {
+				ID: new(restAppID),
+				Identity: &armappcontainers.ManagedServiceIdentity{
+					Type:        new(armappcontainers.ManagedServiceIdentityTypeSystemAssigned),
+					PrincipalID: new(principalID),
+				},
+				Properties: &armappcontainers.ContainerAppProperties{Template: &armappcontainers.Template{
+					Containers: []*armappcontainers.Container{{Env: []*armappcontainers.EnvironmentVar{
+						{Name: new("SPRING_DATASOURCE_URL"), Value: new(jdbcURL)},
+						{Name: new("SPRING_DATASOURCE_USERNAME"), Value: new("petclinic_app")},
+					}}},
+				}},
+			},
+			"petclinic-web": {
+				ID: new(webAppID),
+				Identity: &armappcontainers.ManagedServiceIdentity{
+					Type:        new(armappcontainers.ManagedServiceIdentityTypeSystemAssigned),
+					PrincipalID: new("33333333-4444-5555-6666-777777777777"),
+				},
+				Properties: &armappcontainers.ContainerAppProperties{Template: &armappcontainers.Template{
+					Containers: []*armappcontainers.Container{{Env: []*armappcontainers.EnvironmentVar{
+						{Name: new("PETCLINIC_BACKEND_URL"), Value: new("https://petclinic-rest.example/petclinic")},
+					}}},
+				}},
+			},
+		},
+	}
+
+	ctx := context.WithValue(t.Context(), deploymentBindingKey{}, binding)
+	services, selected, err = runtime.resolveProject(ctx, project, binding.values, false, true)
+	require.NoError(t, err)
+	require.Len(t, services, 2)
+	require.Equal(t, databasePostgreSQL, selected.Type)
+	require.Equal(t, restAppID, selected.AppIdentity.ResourceID)
+}

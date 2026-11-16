@@ -92,6 +92,7 @@ func (s *azureContainerAppResourceService) Resolve(
 	if err != nil {
 		return nil, err
 	}
+	fromPersistedIdentity := candidate != nil
 	var defaultErr error
 	if candidate == nil && defaultResolver != nil {
 		var defaultTarget *azdext.TargetResource
@@ -122,26 +123,8 @@ func (s *azureContainerAppResourceService) Resolve(
 			"run azd provision to restore the authored infrastructure outputs",
 		)
 	}
-	if !strings.EqualFold(candidate.GetSubscriptionId(), subscriptionID) {
-		return nil, validationError(
-			"mismatched_container_app_subscription",
-			"the persisted Container App identity does not match the selected subscription",
-			"select the environment's original subscription",
-		)
-	}
-	if candidate.GetResourceType() != "" && !strings.EqualFold(candidate.GetResourceType(), containerAppType) {
-		return nil, validationError(
-			"unsupported_target_resource",
-			fmt.Sprintf("service %q resolved unsupported resource type %q", service.GetName(), candidate.GetResourceType()),
-			"configure the service to use a Microsoft.App/containerApps resource",
-		)
-	}
-	if candidate.GetResourceGroupName() == "" || candidate.GetResourceName() == "" {
-		return nil, validationError(
-			"incomplete_container_app_identity",
-			"the persisted Container App identity is incomplete",
-			"restore the authored infrastructure outputs and retry",
-		)
+	if err := validateCandidateTarget(subscriptionID, service, candidate); err != nil {
+		return nil, err
 	}
 
 	reader, err := s.reader(ctx, subscriptionID)
@@ -151,6 +134,25 @@ func (s *azureContainerAppResourceService) Resolve(
 	app, err := reader.Get(ctx, candidate.GetResourceGroupName(), candidate.GetResourceName())
 	if err != nil {
 		return nil, fmt.Errorf("reading the target Container App: %w", nonDisclosureError(err))
+	}
+	if fromPersistedIdentity && defaultResolver != nil && app.ID != "" &&
+		strings.EqualFold(app.Type, containerAppType) &&
+		hasDifferentServiceTag(app.Tags, service.GetName()) &&
+		!hasConflictingEnvironmentTag(app.Tags, envName) {
+		defaultTarget, fallbackErr := defaultResolver()
+		if fallbackErr != nil {
+			return nil, fmt.Errorf("resolving the default Container App target: %w", nonDisclosureError(fallbackErr))
+		}
+		if defaultTarget != nil {
+			if err := validateCandidateTarget(subscriptionID, service, defaultTarget); err != nil {
+				return nil, err
+			}
+			candidate = defaultTarget
+			app, err = reader.Get(ctx, candidate.GetResourceGroupName(), candidate.GetResourceName())
+			if err != nil {
+				return nil, fmt.Errorf("reading the target Container App: %w", nonDisclosureError(err))
+			}
+		}
 	}
 	if app.ID == "" || !strings.EqualFold(app.Type, containerAppType) ||
 		!tagEqualsPointers(app.Tags, azdServiceNameTag, service.GetName()) {
@@ -180,6 +182,55 @@ func (s *azureContainerAppResourceService) Resolve(
 			"resourceId": app.ID,
 		},
 	}, nil
+}
+
+func validateCandidateTarget(
+	subscriptionID string, service *azdext.ServiceConfig, candidate *azdext.TargetResource,
+) error {
+	if !strings.EqualFold(candidate.GetSubscriptionId(), subscriptionID) {
+		return validationError(
+			"mismatched_container_app_subscription",
+			"the persisted Container App identity does not match the selected subscription",
+			"select the environment's original subscription",
+		)
+	}
+	if candidate.GetResourceType() != "" && !strings.EqualFold(candidate.GetResourceType(), containerAppType) {
+		return validationError(
+			"unsupported_target_resource",
+			fmt.Sprintf(
+				"service %q resolved unsupported resource type %q",
+				service.GetName(),
+				candidate.GetResourceType(),
+			),
+			"configure the service to use a Microsoft.App/containerApps resource",
+		)
+	}
+	if candidate.GetResourceGroupName() == "" || candidate.GetResourceName() == "" {
+		return validationError(
+			"incomplete_container_app_identity",
+			"the persisted Container App identity is incomplete",
+			"restore the authored infrastructure outputs and retry",
+		)
+	}
+	return nil
+}
+
+func hasDifferentServiceTag(tags map[string]*string, serviceName string) bool {
+	for key, value := range tags {
+		if strings.EqualFold(key, azdServiceNameTag) {
+			return value != nil && strings.TrimSpace(*value) != "" && *value != serviceName
+		}
+	}
+	return false
+}
+
+func hasConflictingEnvironmentTag(tags map[string]*string, envName string) bool {
+	for key, value := range tags {
+		if strings.EqualFold(key, azdEnvironmentTag) {
+			return value == nil || !strings.EqualFold(*value, envName)
+		}
+	}
+	return false
 }
 
 func targetFromPersistedIdentity(

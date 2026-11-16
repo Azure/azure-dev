@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -49,6 +50,19 @@ func (v *azureDeploymentOutputVerifier) Verify(
 		binding, err = v.Read(ctx, values)
 		if err != nil {
 			return nil, err
+		}
+	}
+	if binding != nil && binding.values[containerAppIDEnv] == "" &&
+		database.AppIdentity != nil && database.AppIdentity.Type == databaseAppIdentityTypeSystemAssigned {
+		for _, app := range binding.apps {
+			if app != nil && app.ID != nil && strings.EqualFold(*app.ID, database.AppIdentity.ResourceID) {
+				selected := *binding
+				selected.app = app
+				selected.values = maps.Clone(binding.values)
+				selected.values[containerAppIDEnv] = *app.ID
+				binding = &selected
+				break
+			}
 		}
 	}
 	if !binding.original {

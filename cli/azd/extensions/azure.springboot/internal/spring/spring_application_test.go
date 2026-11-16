@@ -122,8 +122,40 @@ func TestDatabaseFreeDependencyEvidenceRejectsUnresolvedMavenInputs(t *testing.T
 	}
 }
 
+func TestMultiModuleParentPOMDependenciesResolveWithinProjectRoot(t *testing.T) {
+	root := springConfigFixture(t, map[string]string{
+		"pom.xml": `<project>
+			<parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId></parent>
+			<groupId>org.springframework.samples</groupId>
+			<artifactId>spring-petclinic-multiservice</artifactId>
+			<packaging>pom</packaging>
+		</project>`,
+		"petclinic-web/pom.xml": `<project>
+			<parent>
+				<groupId>org.springframework.samples</groupId>
+				<artifactId>spring-petclinic-multiservice</artifactId>
+				<relativePath>../pom.xml</relativePath>
+			</parent>
+			<artifactId>spring-petclinic-web</artifactId>
+			<dependencies>
+				<dependency>
+					<groupId>org.springframework.boot</groupId>
+					<artifactId>spring-boot-starter-webmvc</artifactId>
+				</dependency>
+			</dependencies>
+		</project>`,
+	})
+	dependencies, err := readSpringDependenciesInProject(
+		t.Context(), root, filepath.Join(root, "petclinic-web"),
+	)
+	require.NoError(t, err)
+	require.Equal(t, springDependencies{}, dependencies)
+}
+
 func TestPackagedJDBCEvidenceIsNotDatabaseFree(t *testing.T) {
-	for _, dependency := range []string{"spring-jdbc-6.jar", "spring-data-jpa-3.jar", "mysql-connector-j-9.jar"} {
+	for _, dependency := range []string{
+		"spring-jdbc-6.jar", "spring-data-jpa-3.jar", "mysql-connector-j-9.jar", "hibernate-core-6.jar",
+	} {
 		archive, err := openSpringArchive(springJarFixture(t, [][2]string{
 			{"BOOT-INF/classes/application.properties", "server.port=8080"},
 			{"BOOT-INF/lib/" + dependency, ""},
@@ -133,4 +165,14 @@ func TestPackagedJDBCEvidenceIsNotDatabaseFree(t *testing.T) {
 		_, err = inferSpringDatasource(datasourceProperties(t, ""), archive.dependencies, true)
 		require.Error(t, err)
 	}
+
+	validatorArchive, err := openSpringArchive(springJarFixture(t, [][2]string{
+		{"BOOT-INF/classes/application.properties", "server.port=8080"},
+		{"BOOT-INF/lib/hibernate-validator-9.1.3.Final.jar", ""},
+	}))
+	require.NoError(t, err)
+	require.NoError(t, validatorArchive.reader.Close())
+	discovered, err := inferSpringDatasource(datasourceProperties(t, ""), validatorArchive.dependencies, true)
+	require.NoError(t, err)
+	require.Equal(t, databaseNone, discovered.engine)
 }

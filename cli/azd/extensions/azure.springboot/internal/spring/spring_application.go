@@ -120,10 +120,59 @@ func readSpringConfigurationData(reader io.Reader) ([]byte, error) {
 }
 
 func readSpringDependencies(ctx context.Context, root string) (springDependencies, error) {
+	return readSpringDependenciesInProject(ctx, root, root)
+}
+
+type mavenPOMDeclaration struct {
+	Group    string `xml:"groupId"`
+	Artifact string `xml:"artifactId"`
+	Parent   struct {
+		Group        string  `xml:"groupId"`
+		Artifact     string  `xml:"artifactId"`
+		RelativePath *string `xml:"relativePath"`
+	} `xml:"parent"`
+	Dependencies []struct {
+		Group    string `xml:"groupId"`
+		Artifact string `xml:"artifactId"`
+		Scope    string `xml:"scope"`
+	} `xml:"dependencies>dependency"`
+	Profiles []struct {
+		Dependencies []struct {
+			Group    string `xml:"groupId"`
+			Artifact string `xml:"artifactId"`
+			Scope    string `xml:"scope"`
+		} `xml:"dependencies>dependency"`
+	} `xml:"profiles>profile"`
+}
+
+func readMavenPOM(pomPath string) (*mavenPOMDeclaration, error) {
+	info, err := os.Lstat(pomPath)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, configurationError("the application Maven dependency declaration cannot be read")
+	}
+	file, err := os.Open(pomPath) //nolint:gosec // G304: path is contained and verified by callers
+	if err != nil {
+		return nil, configurationError("the application Maven dependency declaration cannot be read")
+	}
+	defer file.Close()
+	data, err := readSpringConfigurationData(file)
+	if err != nil {
+		return nil, err
+	}
+	var pom mavenPOMDeclaration
+	if err := xml.Unmarshal(data, &pom); err != nil {
+		return nil, configurationError("the application Maven dependency declaration is invalid")
+	}
+	return &pom, nil
+}
+
+func readSpringDependenciesInProject(
+	ctx context.Context, projectRoot, serviceRoot string,
+) (springDependencies, error) {
 	if err := ctx.Err(); err != nil {
 		return springDependencies{}, err
 	}
-	system, err := detectJavaBuild(root)
+	system, err := detectJavaBuild(serviceRoot)
 	if err != nil {
 		return springDependencies{}, err
 	}
@@ -131,69 +180,137 @@ func readSpringDependencies(ctx context.Context, root string) (springDependencie
 		runner := azdexec.NewCommandRunner(&azdexec.RunnerOptions{
 			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
 		})
-		report, err := runGradle(ctx, runner, root, nil, "restore")
+		report, err := runGradle(ctx, runner, serviceRoot, nil, "restore")
 		if err != nil {
 			return springDependencies{}, err
 		}
 		return springDependenciesFromCoordinates(report.Dependencies), nil
 	}
-	file, err := os.Open(filepath.Join(root, "pom.xml"))
-	if err != nil {
-		return springDependencies{}, configurationError("the application Maven dependency declaration cannot be read")
-	}
-	defer file.Close()
-	data, err := readSpringConfigurationData(file)
+
+	resolvedProject, err := filepath.Abs(projectRoot)
 	if err != nil {
 		return springDependencies{}, err
 	}
-	type dependency struct {
-		Group    string `xml:"groupId"`
-		Artifact string `xml:"artifactId"`
-		Scope    string `xml:"scope"`
+	resolvedProject, err = filepath.EvalSymlinks(resolvedProject)
+	if err != nil {
+		return springDependencies{}, err
 	}
-	var pom struct {
-		Parent struct {
-			Group    string `xml:"groupId"`
-			Artifact string `xml:"artifactId"`
-		} `xml:"parent"`
-		Dependencies []dependency `xml:"dependencies>dependency"`
-		Profiles     []struct {
-			Dependencies []dependency `xml:"dependencies>dependency"`
-		} `xml:"profiles>profile"`
+
+	currentPOM, err := filepath.Abs(filepath.Join(serviceRoot, "pom.xml"))
+	if err != nil {
+		return springDependencies{}, err
 	}
-	if err := xml.Unmarshal(data, &pom); err != nil {
-		return springDependencies{}, configurationError("the application Maven dependency declaration is invalid")
+	currentPOM, err = filepath.EvalSymlinks(currentPOM)
+	if err != nil {
+		return springDependencies{}, configurationError(
+			"the application Maven dependency declaration cannot be read",
+		)
 	}
-	for _, profile := range pom.Profiles {
-		for _, dependency := range profile.Dependencies {
-			if dependency.Scope != "test" {
-				return springDependencies{}, configurationError(
-					"Maven profile dependencies require packaged JAR evidence",
-				)
-			}
-		}
-	}
+
 	var coordinates []string
-	for _, dependency := range pom.Dependencies {
-		if dependency.Scope == "test" || dependency.Scope == "provided" || dependency.Scope == "system" {
-			continue
-		}
-		if dependency.Group == "" || dependency.Artifact == "" ||
-			strings.Contains(dependency.Group+dependency.Artifact+dependency.Scope, "${") {
+	visited := map[string]bool{}
+	const maxParentDepth = 8
+	unresolvedExternalParent := false
+
+	for depth := range maxParentDepth {
+		_ = depth
+		key := strings.ToLower(currentPOM)
+		if visited[key] {
 			return springDependencies{}, configurationError(
-				"unresolved Maven runtime dependencies require packaged JAR evidence",
+				"the application Maven parent hierarchy contains a cycle",
 			)
 		}
-		coordinates = append(coordinates, dependency.Group+":"+dependency.Artifact)
+		visited[key] = true
+
+		pom, err := readMavenPOM(currentPOM)
+		if err != nil {
+			return springDependencies{}, err
+		}
+		for _, profile := range pom.Profiles {
+			for _, dep := range profile.Dependencies {
+				if dep.Scope != "test" {
+					return springDependencies{}, configurationError(
+						"Maven profile dependencies require packaged JAR evidence",
+					)
+				}
+			}
+		}
+		for _, dep := range pom.Dependencies {
+			if dep.Scope == "test" || dep.Scope == "provided" || dep.Scope == "system" {
+				continue
+			}
+			if dep.Group == "" || dep.Artifact == "" ||
+				strings.Contains(dep.Group+dep.Artifact+dep.Scope, "${") {
+				return springDependencies{}, configurationError(
+					"unresolved Maven runtime dependencies require packaged JAR evidence",
+				)
+			}
+			coordinates = append(coordinates, dep.Group+":"+dep.Artifact)
+		}
+
+		if pom.Parent.Artifact == "" ||
+			(pom.Parent.Group == "org.springframework.boot" &&
+				pom.Parent.Artifact == "spring-boot-starter-parent") {
+			unresolvedExternalParent = false
+			break
+		}
+
+		parentPOM, ok := resolveContainedParentPOM(
+			resolvedProject, filepath.Dir(currentPOM), pom.Parent.Group, pom.Parent.Artifact, pom.Parent.RelativePath,
+		)
+		if !ok {
+			unresolvedExternalParent = true
+			break
+		}
+		currentPOM = parentPOM
+		unresolvedExternalParent = true
 	}
+
 	result := springDependenciesFromCoordinates(coordinates)
-	if !result.h2 && !result.postgresql && pom.Parent.Artifact != "" &&
-		(pom.Parent.Group != "org.springframework.boot" || pom.Parent.Artifact != "spring-boot-starter-parent") {
+	if !result.h2 && !result.postgresql && unresolvedExternalParent {
 		return springDependencies{}, configurationError(
 			"inherited Maven runtime dependencies require packaged JAR evidence",
 		)
 	}
 	return result, nil
+}
+
+func resolveContainedParentPOM(
+	projectRoot, currentDir, expectedGroup, expectedArtifact string, rawRelativePath *string,
+) (string, bool) {
+	relPath := "../pom.xml"
+	if rawRelativePath != nil {
+		relPath = strings.TrimSpace(*rawRelativePath)
+		if relPath == "" {
+			return "", false
+		}
+	}
+	if filepath.IsAbs(relPath) || strings.Contains(relPath, ":") {
+		return "", false
+	}
+	candidate := filepath.Join(currentDir, filepath.FromSlash(relPath))
+	if info, err := os.Lstat(candidate); err == nil && info.IsDir() {
+		candidate = filepath.Join(candidate, "pom.xml")
+	}
+	if !regularContainedFile(projectRoot, candidate) {
+		return "", false
+	}
+	resolved, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return "", false
+	}
+	parentPOM, err := readMavenPOM(resolved)
+	if err != nil {
+		return "", false
+	}
+	effectiveGroup := parentPOM.Group
+	if effectiveGroup == "" {
+		effectiveGroup = parentPOM.Parent.Group
+	}
+	if parentPOM.Artifact != expectedArtifact || (expectedGroup != "" && effectiveGroup != expectedGroup) {
+		return "", false
+	}
+	return resolved, true
 }
 
 func springDependenciesFromCoordinates(coordinates []string) springDependencies {
@@ -217,6 +334,9 @@ func springDependenciesFromCoordinates(coordinates []string) springDependencies 
 
 func isDatabaseDependency(artifact string) bool {
 	name := strings.ToLower(artifact)
+	if strings.HasPrefix(name, "hibernate-validator") {
+		return false
+	}
 	if strings.Contains(name, "jdbc") || strings.Contains(name, "r2dbc") {
 		return true
 	}

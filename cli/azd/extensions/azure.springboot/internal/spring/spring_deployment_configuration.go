@@ -221,7 +221,11 @@ func (r *Runtime) readServiceDatasource(
 	if config.packaged != nil {
 		dependencies = *config.packaged
 	} else {
-		dependencies, err = readSpringDependencies(ctx, root)
+		projectRoot := root
+		if project != nil && strings.TrimSpace(project.GetPath()) != "" {
+			projectRoot = project.GetPath()
+		}
+		dependencies, err = readSpringDependenciesInProject(ctx, projectRoot, root)
 		if err != nil {
 			return nil, err
 		}

@@ -66,6 +66,40 @@ func TestServicePathRejectsTraversal(t *testing.T) {
 	require.ErrorContains(t, err, "outside the azd project")
 }
 
+func TestServicePathSupportsMultiModuleAncestorMavenWrapper(t *testing.T) {
+	outer := t.TempDir()
+	projectRoot := filepath.Join(outer, "reactor")
+	moduleDir := filepath.Join(projectRoot, "petclinic-web")
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, ".mvn", "wrapper"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(moduleDir, "src"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectRoot, "mvnw"), []byte("wrapper"), 0o600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, ".mvn", "wrapper", "maven-wrapper.properties"), []byte("props"), 0o600,
+	))
+	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "pom.xml"), []byte("<project/>"), 0o600))
+
+	service := &azdext.ServiceConfig{Name: "petclinic-web", Host: SpringHost, RelativePath: "./petclinic-web"}
+	project := &azdext.ProjectConfig{
+		Path:     projectRoot,
+		Services: map[string]*azdext.ServiceConfig{"petclinic-web": service},
+	}
+	resolved, err := servicePath(project, service)
+	require.NoError(t, err)
+	expectedModule, err := filepath.EvalSymlinks(moduleDir)
+	require.NoError(t, err)
+	require.Equal(t, expectedModule, resolved)
+
+	// Wrapper outside projectRoot must not satisfy contained lookup.
+	require.NoError(t, os.Remove(filepath.Join(projectRoot, "mvnw")))
+	require.NoError(t, os.MkdirAll(filepath.Join(outer, ".mvn", "wrapper"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outer, "mvnw"), []byte("wrapper"), 0o600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(outer, ".mvn", "wrapper", "maven-wrapper.properties"), []byte("props"), 0o600,
+	))
+	_, err = servicePath(project, service)
+	require.ErrorContains(t, err, "missing required Maven project path")
+}
+
 func TestServicePathRejectsLinkedDirectoryOutsideProject(t *testing.T) {
 	project, service := createMavenProject(t)
 	outside, _ := createMavenProject(t)

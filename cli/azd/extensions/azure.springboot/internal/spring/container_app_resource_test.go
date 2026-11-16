@@ -74,6 +74,63 @@ func TestContainerAppResourceResolveUsesPersistedCustomIdentity(t *testing.T) {
 	require.Equal(t, "westus3", target.GetMetadata()["location"])
 }
 
+func TestContainerAppResourceResolveFallsBackForSiblingServiceIdentity(t *testing.T) {
+	restID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/petclinic-rest"
+	webID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/petclinic-web"
+	reader := &fakeContainerAppReader{snapshots: []*containerAppSnapshot{
+		{
+			ID:       restID,
+			Name:     "petclinic-rest",
+			Type:     containerAppType,
+			Location: "westus2",
+			Tags: map[string]*string{
+				azdEnvironmentTag: new("dev"),
+				azdServiceNameTag: new("petclinic-rest"),
+			},
+		},
+		{
+			ID:       webID,
+			Name:     "petclinic-web",
+			Type:     containerAppType,
+			Location: "westus2",
+			Tags: map[string]*string{
+				azdEnvironmentTag: new("dev"),
+				azdServiceNameTag: new("petclinic-web"),
+			},
+		},
+	}}
+	resources := &azureContainerAppResourceService{
+		reader: func(context.Context, string) (containerAppReader, error) {
+			return reader, nil
+		},
+	}
+
+	target, err := resources.Resolve(
+		context.WithValue(t.Context(), deploymentBindingKey{}, &deploymentBinding{
+			resources: map[string]bool{
+				"/subscriptions/sub/resourcegroups/rg/providers/microsoft.app/containerapps/petclinic-rest": true,
+				"/subscriptions/sub/resourcegroups/rg/providers/microsoft.app/containerapps/petclinic-web":  true,
+			},
+		}),
+		"sub",
+		"dev",
+		map[string]string{containerAppIDEnv: restID},
+		&azdext.ServiceConfig{Name: "petclinic-web"},
+		func() (*azdext.TargetResource, error) {
+			return &azdext.TargetResource{
+				SubscriptionId:    "sub",
+				ResourceGroupName: "rg",
+				ResourceName:      "petclinic-web",
+				ResourceType:      containerAppType,
+			}, nil
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "petclinic-web", target.GetResourceName())
+	require.Equal(t, webID, target.GetMetadata()["resourceId"])
+}
+
 func TestContainerAppResourceResolveFailsClosedOnOwnershipAndResolverErrors(t *testing.T) {
 	t.Run("ownership", func(t *testing.T) {
 		reader := &fakeContainerAppReader{snapshots: []*containerAppSnapshot{{

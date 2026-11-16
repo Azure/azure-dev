@@ -43,8 +43,10 @@ container pipeline. Project `Dockerfile` and `.dockerignore` files are not read
 or modified.
 
 Packaging requires Docker and a supported project at the service's `project`
-path. Maven projects require `pom.xml`, `mvnw`,
-`.mvn/wrapper/maven-wrapper.properties`, and `src`. Gradle projects require
+path. Maven services require `pom.xml` and `src` at the service path, with
+`mvnw` and `.mvn/wrapper/maven-wrapper.properties` at the service path or a
+contained ancestor directory within the azd project (supporting multi-module
+Maven reactors). Gradle projects require
 `build.gradle` or `build.gradle.kts`, `src`, `gradle/wrapper/gradle-wrapper.jar`,
 `gradle/wrapper/gradle-wrapper.properties`, and the platform wrapper (`gradlew`
 on Unix, `gradlew.bat` on Windows). On Unix, check in the executable bit for

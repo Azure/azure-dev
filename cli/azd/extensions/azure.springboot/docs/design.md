@@ -24,12 +24,11 @@ input does not trigger a fallback to Gradle. Otherwise, `build.gradle` or
 `build.gradle.kts` selects the extension-local Gradle adapter. Other Java hosts
 retain native Maven behavior, and core existing-code discovery is unchanged.
 
-A Maven Wrapper project contains:
-
-- `pom.xml`
-- `mvnw`
-- `.mvn/wrapper/maven-wrapper.properties`
-- `src`
+A Maven Wrapper service contains `pom.xml` and `src` at its service root, and
+locates `mvnw` and `.mvn/wrapper/maven-wrapper.properties` at the service root
+or a contained ancestor directory within the azd project. Contained local
+`<parent>` POM hierarchies within the azd project are also traversed during
+source-only dependency discovery.
 
 A Gradle project contains a build script, `src`, the platform wrapper
 (`gradlew` with executable permission on Unix or `gradlew.bat` on Windows),

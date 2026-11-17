@@ -926,6 +926,63 @@ Errors are distinct from empty results:
 
 JSON stays on stdout, and progress messages go to stderr.
 
+### Searching retained agent logs
+
+`azd ai agent monitor --since <window>` (with the default `--type console`)
+searches the logs a deployed hosted agent retained in the Application Insights
+resource connected to its Foundry project, instead of reading a live session
+stream. It works outside an azd project with `--project-endpoint` and the
+deployed agent name, or `--agent-endpoint`, and does not need a session.
+
+```bash
+# Warnings and errors from the last 24 hours, newest 50 records
+azd ai agent monitor support --since 24h --level warning \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+
+# Records mentioning "timeout" in one session over the last 7 days, as JSON
+azd ai agent monitor support --since 7d --search timeout --session-id "<session-id>" --output json \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+```
+
+- `--level` sets a minimum severity: `verbose`, `information`, `warning`,
+  `error`, or `critical` (aliases `debug`, `info`, `warn`). Exceptions without a
+  severity count as `error`.
+- `--search` matches message text, and exception type, case-insensitively.
+- `--session-id` narrows the results to records that carry that session ID.
+- `--tail` (default 50, up to 300) caps the result at the newest matching
+  records, printed oldest first. When more records match, `truncated` is `true`
+  and a warning is written to stderr.
+- `--follow`, `--raw`, and `--user-identity` apply only to the live stream and
+  are rejected with `--since`. `--level` and `--search` require `--since`.
+- `--type system --since` fails with `unsupported_log_source`: hosted-agent
+  system events are not retained in Application Insights.
+
+Coverage: the search reads the `traces` and `exceptions` tables and returns only
+records attributed to the agent through `gen_ai.agent.name` or `gen_ai.agent.id`.
+These are the application log records and exceptions that the agent exported
+through OpenTelemetry. Lines written directly to stdout or stderr appear only if
+the agent exported them as log records, so this is not a full copy of the live
+console stream. Each record carries `agent_version`, and `session_id` and
+`trace_id` when recorded; the command has no version filter. Records from the
+Azure Monitor exporter itself (for example, export retries) carry the agent's
+identity and are included.
+
+`--output json` returns `project_endpoint`, `agent_name`, `telemetry`,
+`window`, `filters`, `coverage` (source, tables, `sampled`, and notes),
+`truncated`, `partial_error`, and `data`. Each record has `timestamp` (RFC 3339
+UTC), `record_type` (`log` or `exception`), `severity`, `severity_level`,
+`message`, `exception_type`, `agent_version`, `session_id`, `trace_id`,
+`span_id`, `logger`, `role_instance`, `item_count`, and `attributes` (with the
+same credential redaction as trace exports). Sampling is reported only in
+`coverage`; truncation and partial query results also produce stderr warnings.
+Retention and ingestion delay limit what the window can return.
+
+No matches print `No log records found ...` (stderr with `--output json`, which
+keeps `"data": []`). Missing or ambiguous Application Insights connections,
+missing resources, and denied access fail with the same errors as trace
+queries, and agents of kind `prompt` or `workflow` fail with
+`unsupported_agent_kind`.
+
 ## Initializing an A2A hosted agent
 
 Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI before initializing

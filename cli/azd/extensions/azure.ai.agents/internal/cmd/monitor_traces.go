@@ -81,8 +81,9 @@ type traceOptions struct {
 
 func addMonitorTraceFlags(cmd *cobra.Command, flags *monitorTraceFlags) {
 	cmd.Flags().StringVar(&flags.since, monitorSinceFlag, "",
-		"With --type traces, how far back to search, such as 30m, 6h, or 7d "+
-			"(default 1h when listing, 30d with --trace-id)")
+		"How far back to search, such as 30m, 6h, or 7d. With --type traces, defaults to 1h when listing "+
+			"and 30d with --trace-id. With --type console, searches retained logs in Application Insights "+
+			"instead of reading the live session stream")
 	cmd.Flags().StringVar(&flags.traceID, monitorTraceIDFlag, "",
 		"With --type traces, export one trace (operation ID) with all of its recorded spans")
 	cmd.Flags().StringVar(&flags.status, monitorStatusFlag, traceStatusAll,
@@ -91,27 +92,43 @@ func addMonitorTraceFlags(cmd *cobra.Command, flags *monitorTraceFlags) {
 		"With --type traces, write the JSON result to this file instead of stdout")
 }
 
-// validateMonitorModeFlags rejects flags that do not apply to the selected --type.
+// validateMonitorModeFlags rejects flags that do not apply to the selected --type and
+// returns trace options for --type traces, or log query options for console logs with --since.
 // All checks are local so bad input fails before authentication.
-func validateMonitorModeFlags(cmd *cobra.Command, flags *monitorFlags, output string) (*traceOptions, error) {
+func validateMonitorModeFlags(
+	cmd *cobra.Command, flags *monitorFlags, output string,
+) (*traceOptions, *logQueryOptions, error) {
 	changed := func(name string) bool { return cmd.Flags().Changed(name) }
 
 	if flags.logType != monitorTypeTraces {
-		for _, name := range []string{monitorSinceFlag, monitorTraceIDFlag, monitorStatusFlag, monitorOutFileFlag} {
+		if changed(monitorSinceFlag) {
+			logOpts, err := validateMonitorLogQueryFlags(cmd, flags, output)
+			return nil, logOpts, err
+		}
+		for _, name := range []string{monitorLevelFlag, monitorSearchFlag} {
 			if changed(name) {
-				return nil, exterrors.Validation(
+				return nil, nil, exterrors.Validation(
+					exterrors.CodeConflictingArguments,
+					fmt.Sprintf("--%s requires --since", name),
+					"add --since (for example --since 24h) to search the agent's retained logs",
+				)
+			}
+		}
+		for _, name := range []string{monitorTraceIDFlag, monitorStatusFlag, monitorOutFileFlag} {
+			if changed(name) {
+				return nil, nil, exterrors.Validation(
 					exterrors.CodeConflictingArguments,
 					fmt.Sprintf("--%s is only valid with --type traces", name),
 					"add --type traces to list or export agent traces",
 				)
 			}
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	for _, name := range []string{"follow", "raw", "session-id", "user-identity"} {
+	for _, name := range []string{"follow", "raw", "session-id", "user-identity", monitorLevelFlag, monitorSearchFlag} {
 		if changed(name) {
-			return nil, exterrors.Validation(
+			return nil, nil, exterrors.Validation(
 				exterrors.CodeConflictingArguments,
 				fmt.Sprintf("--%s cannot be used with --type traces", name),
 				"traces are read from the project's Application Insights resource, not from a session log stream; "+
@@ -119,6 +136,14 @@ func validateMonitorModeFlags(cmd *cobra.Command, flags *monitorFlags, output st
 			)
 		}
 	}
+
+	traceOpts, err := validateTraceOptions(cmd, flags, output)
+	return traceOpts, nil, err
+}
+
+// validateTraceOptions validates the settings for --type traces.
+func validateTraceOptions(cmd *cobra.Command, flags *monitorFlags, output string) (*traceOptions, error) {
+	changed := func(name string) bool { return cmd.Flags().Changed(name) }
 
 	opts := &traceOptions{
 		traceID: flags.traces.traceID,
@@ -378,6 +403,11 @@ func appInsightsConnectionResourceID(conn azure.Connection) string {
 }
 
 func classifyTraceQueryError(err error, source *traceTelemetrySource) error {
+	return classifyTelemetryQueryError(err, source, exterrors.OpQueryTraces)
+}
+
+// classifyTelemetryQueryError maps Application Insights query failures for operation op.
+func classifyTelemetryQueryError(err error, source *traceTelemetrySource, op string) error {
 	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		switch respErr.StatusCode {
 		case http.StatusNotFound:
@@ -388,12 +418,12 @@ func classifyTraceQueryError(err error, source *traceTelemetrySource) error {
 				"reconnect an existing Application Insights resource to the project in the Foundry portal",
 			)
 		case http.StatusUnauthorized, http.StatusForbidden:
-			return withServiceSuggestion(exterrors.ServiceFromAzure(err, exterrors.OpQueryTraces),
+			return withServiceSuggestion(exterrors.ServiceFromAzure(err, op),
 				fmt.Sprintf("confirm your account can read logs for Application Insights resource %s "+
 					"(for example, the Log Analytics Reader or Monitoring Reader role)", source.ResourceID))
 		}
 	}
-	return exterrors.ServiceFromAzure(err, exterrors.OpQueryTraces)
+	return exterrors.ServiceFromAzure(err, op)
 }
 
 // kqlString quotes a value as a KQL string literal.

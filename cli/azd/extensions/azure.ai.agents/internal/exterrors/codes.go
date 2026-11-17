@@ -143,6 +143,7 @@ const (
 	CodeTraceNotFound               = "trace_not_found"
 	CodeTraceAgentMismatch          = "trace_agent_mismatch"
 	CodeInvalidTelemetryQueryResult = "invalid_telemetry_query_result"
+	CodeUnsupportedLogSource        = "unsupported_log_source"
 )
 
 // Error codes for agent delete errors.
@@ -245,6 +246,7 @@ const (
 	OpListAgentVersions       = "list_agent_versions"
 	OpListConnections         = "list_connections"
 	OpQueryTraces             = "query_traces"
+	OpQueryLogs               = "query_logs"
 	OpGetTelephonyBinding     = "get_telephony_binding"
 	OpUpdateAgent             = "update_agent"
 	OpGetActivityBot          = "get_activity_bot"

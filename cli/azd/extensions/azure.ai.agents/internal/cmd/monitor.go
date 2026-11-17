@@ -29,6 +29,7 @@ type monitorFlags struct {
 	raw       bool
 	direct    directAgentTargetFlags
 	traces    monitorTraceFlags
+	logs      monitorLogFlags
 }
 
 // MonitorAction handles the execution of the monitor command.
@@ -53,6 +54,20 @@ With --type console (default) or --type system, streams console output
 required — it is auto-resolved from the last invocation, or you can specify one
 explicitly with --session-id. Use --follow to stream logs in real-time, or omit
 it to fetch recent logs and exit.
+
+With --type console and --since, searches the agent's retained logs in the
+Application Insights resource connected to the Foundry project instead of a
+live session. No session is required; --session-id narrows the results to one
+session. Use --level to set a minimum severity (verbose, information, warning,
+error, critical) and --search to match message text (case-insensitive). --tail
+limits how many of the newest matching records are returned (shown oldest
+first). Only records the agent exported through OpenTelemetry with its
+gen_ai.agent.name or gen_ai.agent.id are returned: application log records and
+exceptions, not every stdout/stderr line. System events are not retained, so
+--type system does not accept --since. Each record includes its agent version,
+session ID, and trace ID when recorded; --output json returns them with the
+query window, filters, and coverage notes. --follow, --raw, and --user-identity
+apply only to the live stream.
 
 With --type traces, lists the agent's recorded OpenTelemetry traces from the
 Application Insights resource connected to the Foundry project, newest first.
@@ -108,6 +123,14 @@ when streaming session logs.`,
   # Fetch system event logs
   azd ai agent monitor --type system
 
+  # Search the last 24 hours of retained logs for warnings and errors
+  azd ai agent monitor support --since 24h --level warning \
+    --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
+
+  # Find retained log records mentioning "timeout" in one session, as JSON
+  azd ai agent monitor support --since 7d --search timeout --session-id <session-id> --output json \
+    --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
+
   # List failed traces from the last 24 hours for a deployed agent
   azd ai agent monitor support --type traces --since 24h --status failed \
     --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
@@ -125,7 +148,7 @@ when streaming session logs.`,
 			if err := validateMonitorFlags(flags); err != nil {
 				return err
 			}
-			traceOpts, err := validateMonitorModeFlags(cmd, flags, extCtx.OutputFormat)
+			traceOpts, logOpts, err := validateMonitorModeFlags(cmd, flags, extCtx.OutputFormat)
 			if err != nil {
 				return err
 			}
@@ -135,7 +158,7 @@ when streaming session logs.`,
 			if err != nil {
 				return err
 			}
-			if target != nil && traceOpts == nil && flags.sessionID != "" {
+			if target != nil && traceOpts == nil && logOpts == nil && flags.sessionID != "" {
 				if err := validateDirectSessionID(
 					flags.sessionID, directSessionsListCommand(&flags.direct, target)); err != nil {
 					return err
@@ -147,6 +170,9 @@ when streaming session logs.`,
 			if target != nil {
 				if traceOpts != nil {
 					return runMonitorTracesForTarget(ctx, target, traceOpts)
+				}
+				if logOpts != nil {
+					return runMonitorLogQueryForTarget(ctx, target, logOpts)
 				}
 				return runDirectMonitorLogs(ctx, flags, target)
 			}
@@ -178,6 +204,9 @@ when streaming session logs.`,
 			if traceOpts != nil {
 				return runMonitorTracesForTarget(ctx, agentContext, traceOpts)
 			}
+			if logOpts != nil {
+				return runMonitorLogQueryForTarget(ctx, agentContext, logOpts)
+			}
 
 			// Resolve session ID for session-based logstream.
 			if flags.sessionID == "" {
@@ -205,10 +234,12 @@ when streaming session logs.`,
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.sessionID, "session-id", "s", "", "Session ID to stream logs for")
+	cmd.Flags().StringVarP(&flags.sessionID, "session-id", "s", "",
+		"Session ID to stream logs for, or with --since, to narrow retained logs to")
 	cmd.Flags().BoolVarP(&flags.follow, "follow", "f", false, "Stream logs in real-time")
 	cmd.Flags().IntVarP(&flags.tail, "tail", "l", 50,
-		"Number of trailing log lines to fetch, or with --type traces, the most traces to list (1-300)")
+		"Number of trailing log lines to fetch, or with --since, the most log records to return, "+
+			"or with --type traces, the most traces to list (1-300)")
 	cmd.Flags().StringVarP(&flags.logType, "type", "t", monitorTypeConsole,
 		"Type of data: 'console' (stdout/stderr), 'system' (container events), "+
 			"or 'traces' (recorded OpenTelemetry traces)")
@@ -217,9 +248,11 @@ when streaming session logs.`,
 	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
 	addDirectAgentTargetFlags(cmd, &flags.direct, "the [name] argument")
 	addMonitorTraceFlags(cmd, &flags.traces)
+	addMonitorLogFlags(cmd, &flags.logs)
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
-		Name:  "output",
-		Usage: "The output format for --type traces: table (default) or json; logs are always printed as text",
+		Name: "output",
+		Usage: "The output format for --type traces and for console logs with --since: table (default) or json; " +
+			"live session logs are always printed as text",
 	})
 
 	return cmd

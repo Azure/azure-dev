@@ -32,19 +32,63 @@ tools:
     mode: gh-proxy
     toolsets: [repos, issues, pull_requests, labels, search]
   bash: [jq, rg]
-steps:
-  - name: Validate dispatched issue
-    if: github.event_name == 'workflow_dispatch'
-    env:
-      GH_TOKEN: ${{ github.token }}
-      ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
-    run: |
-      if ! [[ "$ISSUE_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
-        echo "::error::issue_number must be a positive integer"
-        exit 1
-      fi
-      gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" \
-        --jq 'if .pull_request then error("target is a pull request") elif .state != "open" then error("issue is not open") else "ok" end'
+jobs:
+  validate_issue:
+    runs-on: ubuntu-latest
+    needs: []
+    permissions:
+      issues: read
+    outputs:
+      valid: ${{ steps.validate.outputs.valid }}
+    steps:
+      - name: Validate dispatched issue
+        id: validate
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            if (context.eventName !== "workflow_dispatch") {
+              core.setOutput("valid", "true");
+              return;
+            }
+
+            const issueNumberInput = context.payload.inputs?.issue_number;
+            const issueNumber = typeof issueNumberInput === "number"
+              ? issueNumberInput
+              : typeof issueNumberInput === "string" && /^[1-9]\d*$/.test(issueNumberInput)
+                ? Number(issueNumberInput)
+                : Number.NaN;
+            if (!Number.isSafeInteger(issueNumber) || issueNumber < 1) {
+              core.info("Skipping re-triage because issue_number is not a positive integer.");
+              core.setOutput("valid", "false");
+              return;
+            }
+
+            let issue;
+            try {
+              ({ data: issue } = await github.rest.issues.get({
+                ...context.repo,
+                issue_number: issueNumber,
+              }));
+            } catch (error) {
+              if (error.status === 404) {
+                core.info(`Skipping re-triage because issue #${issueNumber} does not exist.`);
+                core.setOutput("valid", "false");
+                return;
+              }
+              throw error;
+            }
+
+            const valid = !issue.pull_request && issue.state === "open";
+            if (!valid) {
+              core.info(`Skipping re-triage because #${issueNumber} is not an open issue.`);
+            }
+            core.setOutput("valid", String(valid));
+  activation:
+    needs: validate_issue
+    if: needs.validate_issue.outputs.valid == 'true'
+  agent:
+    needs: [activation, validate_issue]
+    if: needs.validate_issue.outputs.valid == 'true' && needs.activation.outputs.daily_ai_credits_exceeded != 'true'
 safe-outputs:
   group-reports: true
   report-failed-jobs: false
@@ -82,6 +126,7 @@ safe-outputs:
   remove-labels:
     allowed: [bug, enhancement, question]
     max: 2
+    pull-requests: false
     target: ${{ github.event.issue.number || github.event.inputs.issue_number }}
   set-issue-type:
     allowed: [Bug, Feature, Task]
@@ -120,6 +165,7 @@ Objective: Reduce maintainer effort spent classifying new issues without mislabe
    - `Feature` for a request to add or change user-facing behavior
    - `Task` for maintenance, documentation, testing, investigation, refactoring, release, process work, or a pure usage or support question
    - if the issue does not provide enough actionable information to determine intent with high confidence, leave the issue type unset
+   - if the issue type is unset and existing `bug`, `enhancement`, or `question` labels conflict with the proposed type or with one another, leave the issue type and those labels unchanged and call `noop` to report the disagreement; `question` is consistent with `Task` only for pure usage or support questions
 5. Add only existing labels that are clearly supported by the issue:
    - request a label only when confidence is `HIGH`; omit labels supported only by a possible or indirect relationship
    - apply each label directly; do not set `suggest`, which only proposes the label for human review

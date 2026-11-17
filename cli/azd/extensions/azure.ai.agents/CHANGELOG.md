@@ -4,16 +4,13 @@
 
 ## 1.2.0 (2026-11-17)
 
-### Breaking Changes
-
-- [[#10878]](https://github.com/Azure/azure-dev/pull/10878) Reject unsupported shell operators and nested defaults in Foundry environment references during agent initialization, before writing project files.
-
 ### Features Added
 
 - [[#10901]](https://github.com/Azure/azure-dev/pull/10901) Make Voice and prompt-voice agents available without the preview flag, including hosted Voice conversation engines and `invocations_ws`.
 
 ### Bugs Fixed
 
+- [[#10878]](https://github.com/Azure/azure-dev/pull/10878) Fix Foundry environment reference discovery silently skipping unsupported shell operators and nested defaults; agent initialization now rejects them before writing project files.
 - [[#10915]](https://github.com/Azure/azure-dev/pull/10915) Fix Bicep infrastructure exports to omit AKS-only resources and parameters when AKS hosting is not configured. Thanks @yiliuTo for the contribution!
 
 ### Other Changes

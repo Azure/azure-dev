@@ -20,6 +20,9 @@ when the root is missing. Export reports whether the queried telemetry contains
 every span the trace references (root and parent spans, truncation, partial
 query errors) and notes sampling. A span absent from the telemetry is reported
 by ID without implying that the operation failed or why the span is absent.
+Missing-root, missing-parent, and sampling details are kept in JSON only.
+Only truncation or partial query results produce warnings. Exports preserve raw
+parent links and do not add synthetic roots like the Foundry portal's display.
 Credential-bearing attributes are redacted; prompts and responses recorded in
 spans are kept. Reading traces requires read access to the project connections
 and to the Application Insights logs.

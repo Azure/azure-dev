@@ -1,0 +1,12 @@
+# Tier 0: offline trace export help; no Azure authentication or telemetry queries.
+name: "monitor-traces-help"
+command: "azd ai agent monitor --help"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:monitor", "cmd:help", "parallel-safe"]
+goals:
+  - "Confirm the command exits zero without any product prompts or Azure authentication."
+  - "Confirm help describes --type traces, --trace-id, --out-file, --project-endpoint, and --agent-endpoint."
+  - "Confirm help says missing-root, missing-parent, and sampling details are kept in JSON only, and only truncation or partial query results produce warnings."
+  - "Confirm help says exports preserve raw parent links and do not add synthetic roots like the Foundry portal's display."
+  - "Take a screenshot of the final help output."
+  - "Report a finding if help contradicts this warning policy or the command requires a local azd project. This scenario checks help only; it does not verify live trace export."

@@ -568,9 +568,11 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 		assert.False(t, export.Completeness.Complete)
 		assert.False(t, export.Completeness.RootSpanFound)
 		assert.Equal(t, []string{"missing-parent"}, export.Completeness.MissingParentSpanIDs)
+		assert.Equal(t, "missing-parent", export.Spans[0].ParentSpanID)
+		assert.Empty(t, errOut.String())
 	})
 
-	t.Run("partial trace is flagged", func(t *testing.T) {
+	t.Run("missing parent and sampling stay in JSON only", func(t *testing.T) {
 		later := exportRow("dependency", "child", "missing-parent", "chat", true, 4, supportAgentAttributes)
 		later[0] = "2026-11-16T11:00:01Z"
 		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
@@ -586,14 +588,15 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 		assert.True(t, export.Completeness.RootSpanFound)
 		assert.True(t, export.Completeness.Sampled)
 		assert.Equal(t, []string{"missing-parent"}, export.Completeness.MissingParentSpanIDs)
-		assert.Contains(t, errOut.String(),
+		assert.Contains(t, export.Completeness.Notes[0],
 			"1 parent span ID(s) referenced by recorded spans were not found in the queried telemetry")
-		assert.Contains(t, errOut.String(), "the export of trace trace-1 may not contain every span")
+		assert.Contains(t, export.Completeness.Notes[1], "1 span record(s) have item_count > 1")
+		assert.Empty(t, errOut.String())
 	})
 
-	t.Run("out file", func(t *testing.T) {
+	t.Run("out file keeps missing root parents and sampling in JSON only", func(t *testing.T) {
 		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
-			exportRow("request", "root", "", "invoke_agent", true, 1, supportAgentAttributes),
+			exportRow("request", "invoke", "missing-parent", "invoke_agent", true, 4, supportAgentAttributes),
 		)})
 		opts := exportOptions()
 		opts.output = "table"
@@ -602,12 +605,98 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 
 		require.NoError(t, runMonitorTraces(t.Context(), testTraceTarget(), opts, deps, &out, &errOut))
 		assert.Empty(t, out.String())
-		assert.Contains(t, errOut.String(), "Wrote trace trace-1 (1 spans, 0 exceptions)")
+		assert.Equal(t, "Wrote trace trace-1 (1 spans, 0 exceptions) to "+opts.outFile+"\n", errOut.String())
 
 		data, err := os.ReadFile(opts.outFile)
 		require.NoError(t, err)
 		var export traceExport
 		require.NoError(t, json.Unmarshal(data, &export))
 		assert.Equal(t, "trace-1", export.TraceID)
+		assert.False(t, export.Completeness.Complete)
+		assert.False(t, export.Completeness.RootSpanFound)
+		assert.True(t, export.Completeness.Sampled)
+		assert.Equal(t, []string{"missing-parent"}, export.Completeness.MissingParentSpanIDs)
+		require.Len(t, export.Completeness.Notes, 3)
+		require.Len(t, export.Spans, 1)
+		assert.Equal(t, "missing-parent", export.Spans[0].ParentSpanID)
 	})
+}
+
+func TestRunMonitorTraces_ExportQueryWarnings(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		truncated    bool
+		partialError string
+	}{
+		{name: "successful query", truncated: false},
+		{name: "truncated query", truncated: true},
+		{name: "partial query", partialError: "some data was not read"},
+		{name: "truncated partial query", truncated: true, partialError: "some data was not read"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rows := [][]any{
+				exportRow("request", "invoke", "missing-parent", "invoke_agent", true, 4, supportAgentAttributes),
+			}
+			if tt.truncated {
+				for range maxTraceExportSpans {
+					rows = append(rows, exportRow("dependency", "", "invoke", "chat", true, 1, `{}`))
+				}
+			}
+			result := queryResult(traceExportColumns, rows...)
+			if tt.partialError != "" {
+				result.Error = &azure.LogsQueryError{Code: "PartialError", Message: tt.partialError}
+			}
+
+			for _, format := range []string{"json", "table", "file"} {
+				t.Run(format, func(t *testing.T) {
+					deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: result})
+					opts := exportOptions()
+					opts.output = format
+					if format == "file" {
+						opts.outFile = filepath.Join(t.TempDir(), "trace.json")
+					}
+					var out, errOut bytes.Buffer
+					require.NoError(t, runMonitorTraces(t.Context(), testTraceTarget(), opts, deps, &out, &errOut))
+
+					warningCount := 0
+					if tt.truncated {
+						warningCount++
+						assert.Contains(t, errOut.String(), "only the first 5000 were exported")
+					}
+					if tt.partialError != "" {
+						warningCount++
+						assert.Contains(t, errOut.String(), "query returned a partial error: "+tt.partialError)
+					}
+					assert.Equal(t, warningCount, strings.Count(errOut.String(), "WARNING:"))
+					assert.NotContains(t, errOut.String(), "no root span")
+					assert.NotContains(t, errOut.String(), "parent span ID(s)")
+					assert.NotContains(t, errOut.String(), "telemetry is sampled")
+					assert.NotContains(t, errOut.String(), "may not contain every span")
+
+					if format == "table" {
+						assert.Contains(t, out.String(), "Complete: no")
+						return
+					}
+					data := out.Bytes()
+					if format == "file" {
+						assert.Empty(t, out.String())
+						assert.Contains(t, errOut.String(), "Wrote trace trace-1")
+						var err error
+						data, err = os.ReadFile(opts.outFile)
+						require.NoError(t, err)
+					}
+					var export traceExport
+					require.NoError(t, json.Unmarshal(data, &export))
+					assert.False(t, export.Completeness.Complete)
+					assert.False(t, export.Completeness.RootSpanFound)
+					assert.True(t, export.Completeness.Sampled)
+					assert.Equal(t, []string{"missing-parent"}, export.Completeness.MissingParentSpanIDs)
+					assert.Equal(t, tt.truncated, export.Completeness.Truncated)
+					assert.Equal(t, tt.partialError, export.Completeness.PartialError)
+					assert.Len(t, export.Completeness.Notes, 3+warningCount)
+					assert.Equal(t, "missing-parent", export.Spans[0].ParentSpanID)
+				})
+			}
+		})
+	}
 }

@@ -981,13 +981,13 @@ func writeTraceList(result *traceListResult, opts *traceOptions, out, errOut io.
 }
 
 func writeTraceExport(export *traceExport, opts *traceOptions, out, errOut io.Writer) error {
-	for _, note := range export.Completeness.Notes {
-		fmt.Fprintf(errOut, "WARNING: %s\n", note)
+	if export.Completeness.Truncated {
+		fmt.Fprintf(errOut, "WARNING: the trace has more than %d spans; only the first %d were exported.\n",
+			maxTraceExportSpans, maxTraceExportSpans)
 	}
-	if !export.Completeness.Complete {
-		fmt.Fprintf(errOut,
-			"WARNING: the export of trace %s may not contain every span; see completeness in the exported JSON.\n",
-			export.TraceID)
+	if export.Completeness.PartialError != "" {
+		fmt.Fprintf(errOut, "WARNING: results may be incomplete; the query returned a partial error: %s\n",
+			export.Completeness.PartialError)
 	}
 
 	if opts.outFile != "" {

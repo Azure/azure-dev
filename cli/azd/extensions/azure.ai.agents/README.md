@@ -893,13 +893,19 @@ Insights telemetry contains, not whether the traced operation succeeded.
 but that are not in the queried telemetry. The telemetry does not show why a
 span is absent: possible causes include a service that sends no telemetry to
 this Application Insights resource, sampling, the `--since` window, retention,
-and ingestion delay. A trace view in the Foundry portal can show a root span
-that is absent from this export. `completeness.complete` is `false` when the
+and ingestion delay. When no recorded root exists and multiple spans have
+absent parents, the Foundry portal can generate a synthetic root with a random
+span ID and reparent those spans for display. This export contains only recorded
+spans and preserves their original parent IDs; it does not add portal display
+wrappers. `completeness.complete` is `false` when the
 root or a referenced parent is absent, when the trace has more than 5,000 spans
 and was truncated, or when the query returned a partial error. `sampled` is
 `true` when a span stands for several sampled operations (`item_count > 1`);
-sampling alone does not set `complete` to `false`. Each limitation and sampling
-is also printed as a warning on stderr. Attributes whose names identify
+sampling alone does not set `complete` to `false`. Missing-root, missing-parent,
+and sampling details appear only in the JSON `completeness` fields and notes.
+Only truncation and partial query results produce warnings on stderr; missing
+spans or sampling alone do not produce an incomplete-export warning. Query and
+service failures remain errors. Attributes whose names identify
 credentials (such as
 `authorization`, `cookie`, `api_key`, `password`, `secret`, or tokens) and values
 that start with `Bearer ` are replaced with `[REDACTED]`. Prompt and response

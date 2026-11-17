@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -805,7 +806,7 @@ func (a *SessionListAction) Run(ctx context.Context) error {
 		)
 	}
 
-	return printSessionList(result, a.flags.output)
+	return printSessionList(result, a.flags.output, os.Stdout, os.Stderr)
 }
 
 // ---------------------------------------------------------------------------
@@ -859,37 +860,53 @@ func printSessionTable(session *agent_api.AgentSessionResource) error {
 }
 
 func printSessionList(
-	result *agent_api.SessionListResult, format string,
+	result *agent_api.SessionListResult, format string, out, errOut io.Writer,
 ) error {
+	if len(result.Data) == 0 {
+		message := "No sessions found."
+		if result.PaginationToken != nil && *result.PaginationToken != "" {
+			message = "No sessions found on this page."
+		}
+		messageOut := errOut
+		if format == "table" {
+			messageOut = out
+		}
+		if _, err := fmt.Fprintln(messageOut, message); err != nil {
+			return err
+		}
+	}
+
 	switch format {
 	case "table":
-		return printSessionListTable(result)
+		return printSessionListTable(result, out)
 	default:
-		return printSessionListJSON(result)
+		return printSessionListJSON(result, out)
 	}
 }
 
-func printSessionListJSON(result *agent_api.SessionListResult) error {
+func printSessionListJSON(result *agent_api.SessionListResult, out io.Writer) error {
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return fmt.Errorf(
 			"failed to marshal session list to JSON: %w", err,
 		)
 	}
-	fmt.Println(string(data))
-	return nil
+	_, err = fmt.Fprintln(out, string(data))
+	return err
 }
 
-func printSessionListTable(result *agent_api.SessionListResult) error {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(
-		w,
-		"SESSION ID\tSTATUS\tVERSION\tCREATED\tLAST ACCESSED\tEXPIRES",
-	)
-	fmt.Fprintln(
-		w,
-		"----------\t------\t-------\t-------\t-------------\t-------",
-	)
+func printSessionListTable(result *agent_api.SessionListResult, out io.Writer) error {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	if len(result.Data) > 0 {
+		fmt.Fprintln(
+			w,
+			"SESSION ID\tSTATUS\tVERSION\tCREATED\tLAST ACCESSED\tEXPIRES",
+		)
+		fmt.Fprintln(
+			w,
+			"----------\t------\t-------\t-------\t-------------\t-------",
+		)
+	}
 
 	for _, s := range result.Data {
 		fmt.Fprintf(
@@ -908,11 +925,13 @@ func printSessionListTable(result *agent_api.SessionListResult) error {
 	}
 
 	if result.PaginationToken != nil && *result.PaginationToken != "" {
-		fmt.Printf(
+		_, err := fmt.Fprintf(
+			out,
 			"\nMore results available. "+
 				"Use --pagination-token %q to fetch the next page.\n",
 			*result.PaginationToken,
 		)
+		return err
 	}
 
 	return nil

@@ -745,6 +745,11 @@ structured error. Pass `--user-identity` when the session belongs to a specific
 user. The other file commands (`upload`, `delete`, `mkdir`, `stat`) and session
 commands (`create`, `stop`, `delete`) still require an azd project.
 
+`sessions list` defaults to JSON. An empty result also prints `No sessions found.`
+to stderr, leaving stdout as machine-readable JSON. With `--output table`, the
+message replaces the empty table. An empty page with a continuation token instead
+says `No sessions found on this page.` and retains the pagination information.
+
 ## Initializing an A2A hosted agent
 
 Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI before initializing

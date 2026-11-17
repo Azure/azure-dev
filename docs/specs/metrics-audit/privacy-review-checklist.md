@@ -95,6 +95,20 @@ Existing global command metadata and telemetry opt-out behavior are unchanged.
 Help and flag-parser failures do not execute the action; action-level validation failures record `failed` with zero counts.
 A maintainer must assess approval coverage before rollout. This records the proposed scope, not completed approval.
 
+## Recorded scope for BYO AKS provisioning
+
+`azure.ai.projects` emits one dedicated `ext.usage` adoption event (`extension.event=agent.hosting.selected`) with one bounded enum attribute:
+
+| Field | Classification / purpose | Proposed handling |
+|-------|--------------------------|-------------------|
+| `ext.agent.hosting.mode` | SystemMetadata / FeatureInsight | Bounded string enum (`byo_aks`), endpoint `N/A`, not hashed, not a measurement |
+
+Emitted once per Foundry provision `Deploy` after template resolution when effective `agentHosting.enabled=true` is resolved from `azure.yaml`, `$ref` service definitions, or on-disk deployment parameters, before the `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` preview gate, resource-ID validation, preflight checks, and ARM deployment.
+Excluded on `Preview` (`azd provision --preview`), projects without `agentHosting`, `enabled=false` parameter overrides, and malformed `agentHosting` envelopes.
+Correlate outcomes on `operation_Id` with `cmd.provision`, `cmd.up`, or `agent.phase.completed` (plus host `machine.id`), and container packaging with `agent.context.resolved` (`ext.agent.container.mode`).
+No cluster IDs, managed identity IDs, storage account IDs, ACR names, endpoints, file paths, error text, outcomes, or PII are emitted.
+A maintainer must assess approval coverage before rollout. This records the proposed scope, not completed approval.
+
 ## Related references
 
 | Need | Reference |

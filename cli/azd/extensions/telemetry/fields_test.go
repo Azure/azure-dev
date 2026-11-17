@@ -33,6 +33,16 @@ func TestAgentInitStepFieldsUseAgentNamespace(t *testing.T) {
 	}
 }
 
+func TestAgentHostingModeField(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "ext.agent.hosting.mode", string(AgentHostingMode.Key))
+	require.Equal(t, fields.SystemMetadata, AgentHostingMode.Classification)
+	require.Equal(t, fields.FeatureInsight, AgentHostingMode.Purpose)
+	require.Equal(t, "N/A", AgentHostingMode.Endpoint)
+	require.False(t, AgentHostingMode.IsMeasurement)
+}
+
 // The contract is:
 //  1. fields.go contains valid field declarations.
 //  2. production extension source uses statically discoverable attribute keys.

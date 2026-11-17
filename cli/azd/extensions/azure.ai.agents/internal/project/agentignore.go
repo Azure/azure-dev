@@ -10,10 +10,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	gitignore "github.com/denormal/go-gitignore"
@@ -201,34 +199,6 @@ func walkCodePackageFiles(
 
 		return visit(path, relPath)
 	})
-}
-
-// codePackageSensitivePaths lists what code deploy would package from srcDir even though
-// sensitiveExclusionsContent matches it, which happens only when the project's
-// .agentignore re-includes it. The result is sorted, and a re-included directory is
-// reported once (for example ".git/") rather than file by file.
-func codePackageSensitivePaths(ctx context.Context, srcDir string) ([]string, error) {
-	matcher, err := newAgentIgnoreMatcher(ctx, srcDir)
-	if err != nil {
-		return nil, err
-	}
-	if !matcher.hasUserIgnore {
-		// The built-in defaults exclude every sensitive path.
-		return nil, nil
-	}
-
-	found := map[string]struct{}{}
-	err = walkCodePackageFiles(srcDir, matcher, func(_, relPath string) error {
-		if root := sensitivePathRoot(relPath); root != "" {
-			found[root] = struct{}{}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return slices.Sorted(maps.Keys(found)), nil
 }
 
 // sensitivePathRoot returns the shortest prefix of relPath, a packaged file path relative

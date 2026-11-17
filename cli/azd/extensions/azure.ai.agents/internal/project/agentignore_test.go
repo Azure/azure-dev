@@ -253,7 +253,7 @@ func TestZipSourceDirExcludesSecretsWithUserIgnore(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{".agentignore", "__pycache__/main.pyc", "main.py"}, names)
 
-	sensitive, err := codePackageSensitivePaths(t.Context(), dir)
+	sensitive, err := codePackageSensitivePathsFromZip(t.Context(), zipPath)
 	require.NoError(t, err)
 	require.Empty(t, sensitive)
 }
@@ -271,9 +271,13 @@ func TestCodePackageSensitivePathsReportsNegatedSecrets(t *testing.T) {
 		".git/refs/heads/main": "0123abcd\n",
 	})
 
+	zipPath, _, err := zipSourceDir(t.Context(), dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(zipPath) })
+
 	// Only the negated patterns are re-included, and a re-included directory is
 	// reported once rather than file by file.
-	sensitive, err := codePackageSensitivePaths(t.Context(), dir)
+	sensitive, err := codePackageSensitivePathsFromZip(t.Context(), zipPath)
 	require.NoError(t, err)
 	require.Equal(t, []string{".env", ".git/", "config/.env"}, sensitive)
 }

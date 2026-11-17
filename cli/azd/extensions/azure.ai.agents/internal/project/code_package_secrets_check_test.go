@@ -39,9 +39,11 @@ func TestCheckCodePackageSecrets(t *testing.T) {
 			codeConfig: map[string]any{
 				"runtime": "dotnet_10", "entryPoint": "app.dll", "dependencyResolution": "bundled",
 			},
+			packageCode: true,
 		},
 		{
-			name: "container agent",
+			name:        "container agent",
+			packageCode: true,
 		},
 	}
 

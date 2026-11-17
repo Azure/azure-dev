@@ -75,7 +75,7 @@ func deploymentNode(
 // provisionedDeploymentResolver is the live deploymentResolver. Model
 // deployments for prompt agents are provisioned by azd infra (recorded at init
 // and applied during `azd provision`), so at deploy time the deployment must
-// already exist. This resolver checks for unprovisioned model deployment state
+// already exist. This resolver checks for pending model deployment state
 // and never issues a data-plane create, while keeping the seam so the graph can
 // enforce the create-if-missing contract in tests and future live wiring.
 type provisionedDeploymentResolver struct {

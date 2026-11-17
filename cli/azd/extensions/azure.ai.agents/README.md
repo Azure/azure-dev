@@ -742,8 +742,10 @@ separate agent name. File commands require `--session-id`. Direct session and
 file commands read the agent first and reject prompt and workflow agents before
 calling the sessions API, because those kinds have no sessions or session files;
 the service checks agents with other or undeclared kinds. A missing agent or
-session, or denied access, returns a
-structured error. Pass `--user-identity` when the session belongs to a specific
+session, or denied access, returns a structured error. File list and download
+check agent compatibility even when `--session-id` is omitted, so prompt and
+workflow agents do not receive a suggestion to list sessions that cannot exist.
+Pass `--user-identity` when the session belongs to a specific
 user. The other file commands (`upload`, `delete`, `mkdir`, `stat`) and session
 commands (`create`, `stop`, `delete`) still require an azd project.
 

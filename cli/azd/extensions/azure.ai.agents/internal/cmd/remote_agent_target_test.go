@@ -271,42 +271,67 @@ func newTestResponseError(t *testing.T, status int) error {
 
 func TestPrepareDirectFilesContext(t *testing.T) {
 	target := &AgentContext{ProjectEndpoint: testProjectEndpoint, Name: "support-prod"}
+	const listCommand = `azd ai agent sessions list --agent-name support-prod --project-endpoint "` +
+		testProjectEndpoint + `"`
 
 	t.Run("hosted agent", func(t *testing.T) {
 		reader := &fakeRemoteAgentReader{agent: agentWithKind("support-prod", "hosted")}
-		fc, err := prepareDirectFilesContext(t.Context(), reader, target, "sess-1")
+		fc, err := prepareDirectFilesContext(t.Context(), reader, target, "sess-1", listCommand)
 		require.NoError(t, err)
 		assert.Equal(t, "support-prod", reader.gotName)
 		assert.Equal(t, target, fc.AgentContext)
 		assert.Equal(t, "sess-1", fc.sessionID)
+		assert.Equal(t, listCommand, fc.sessionsListCommand)
 	})
 
 	t.Run("undeclared kind is left to the service", func(t *testing.T) {
 		reader := &fakeRemoteAgentReader{agent: agentWithKind("support-prod", "")}
-		_, err := prepareDirectFilesContext(t.Context(), reader, target, "sess-1")
+		_, err := prepareDirectFilesContext(t.Context(), reader, target, "sess-1", listCommand)
 		require.NoError(t, err)
 	})
 
 	for _, kind := range []string{"prompt", "workflow"} {
 		t.Run("rejects "+kind, func(t *testing.T) {
-			reader := &fakeRemoteAgentReader{agent: agentWithKind("support-prod", kind)}
-			_, err := prepareDirectFilesContext(t.Context(), reader, target, "sess-1")
-			localErr := requireLocalErrorCode(t, err, exterrors.CodeUnsupportedAgentKind)
-			assert.Contains(t, localErr.Message, kind)
-			assert.Contains(t, localErr.Message, "does not support session files")
+			for _, sessionID := range []string{"", " ", "sess-1"} {
+				t.Run("session="+sessionID, func(t *testing.T) {
+					reader := &fakeRemoteAgentReader{agent: agentWithKind("support-prod", kind)}
+					fc, err := prepareDirectFilesContext(t.Context(), reader, target, sessionID, listCommand)
+					localErr := requireLocalErrorCode(t, err, exterrors.CodeUnsupportedAgentKind)
+					assert.Nil(t, fc)
+					assert.Contains(t, localErr.Message, kind)
+					assert.Contains(t, localErr.Message, "does not support session files")
+					assert.NotContains(t, localErr.Suggestion, "sessions list")
+					assert.Equal(t, 1, reader.gotCalls)
+				})
+			}
 		})
 	}
 
+	t.Run("supported target requires session after checking kind", func(t *testing.T) {
+		for _, kind := range []string{"hosted", "voice", "", "future-kind"} {
+			t.Run("kind="+kind, func(t *testing.T) {
+				for _, sessionID := range []string{"", " "} {
+					reader := &fakeRemoteAgentReader{agent: agentWithKind("support-prod", kind)}
+					fc, err := prepareDirectFilesContext(t.Context(), reader, target, sessionID, listCommand)
+					localErr := requireLocalErrorCode(t, err, exterrors.CodeInvalidSessionId)
+					assert.Nil(t, fc)
+					assert.Contains(t, localErr.Suggestion, listCommand)
+					assert.Equal(t, 1, reader.gotCalls)
+				}
+			})
+		}
+	})
+
 	t.Run("agent not found", func(t *testing.T) {
 		reader := &fakeRemoteAgentReader{err: newTestResponseError(t, http.StatusNotFound)}
-		_, err := prepareDirectFilesContext(t.Context(), reader, target, "sess-1")
+		_, err := prepareDirectFilesContext(t.Context(), reader, target, "sess-1", listCommand)
 		localErr := requireLocalErrorCode(t, err, exterrors.CodeAgentNotFound)
 		assert.Contains(t, localErr.Message, "support-prod")
 	})
 
 	t.Run("agent access denied", func(t *testing.T) {
 		reader := &fakeRemoteAgentReader{err: newTestResponseError(t, http.StatusForbidden)}
-		_, err := prepareDirectFilesContext(t.Context(), reader, target, "sess-1")
+		_, err := prepareDirectFilesContext(t.Context(), reader, target, "sess-1", listCommand)
 		serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
 		require.True(t, ok, "expected ServiceError, got %T", err)
 		assert.Equal(t, http.StatusForbidden, serviceErr.StatusCode)
@@ -449,16 +474,23 @@ func TestDirectTargetCommands_RejectInvalidInputsBeforeAuth(t *testing.T) {
 			wantCode: exterrors.CodeConflictingArguments,
 		},
 		{
-			name: "files list requires session in direct mode",
+			name: "files list rejects malformed session in direct mode",
 			cmd:  func() *cobra.Command { return newFilesListCommand(nil) },
-			args: []string{"/data", "--agent-name", "support",
+			args: []string{"/data", "--agent-name", "support", "--session-id", "../other",
 				"--project-endpoint", testProjectEndpoint},
 			wantCode: exterrors.CodeInvalidSessionId,
 		},
 		{
+			name: "files list rejects malformed target without session",
+			cmd:  func() *cobra.Command { return newFilesListCommand(nil) },
+			args: []string{"/data", "--agent-name", "support",
+				"--project-endpoint", "https://example.com/api/projects/proj"},
+			wantCode: exterrors.CodeInvalidParameter,
+		},
+		{
 			name: "files list endpoint with agent name",
 			cmd:  func() *cobra.Command { return newFilesListCommand(nil) },
-			args: []string{"--agent-name", "support", "--session-id", "s1",
+			args: []string{"--agent-name", "support",
 				"--agent-endpoint", testAgentEndpoint},
 			wantCode: exterrors.CodeConflictingArguments,
 		},
@@ -478,16 +510,22 @@ func TestDirectTargetCommands_RejectInvalidInputsBeforeAuth(t *testing.T) {
 		{
 			name: "files download both endpoints",
 			cmd:  func() *cobra.Command { return newFilesDownloadCommand(nil) },
-			args: []string{"/data/a.csv", "--session-id", "s1", "--agent-endpoint", testAgentEndpoint,
+			args: []string{"/data/a.csv", "--agent-endpoint", testAgentEndpoint,
 				"--project-endpoint", testProjectEndpoint},
 			wantCode: exterrors.CodeConflictingArguments,
 		},
 		{
-			name: "files download requires session in direct mode",
+			name: "files download rejects malformed session in direct mode",
 			cmd:  func() *cobra.Command { return newFilesDownloadCommand(nil) },
 			args: []string{"/data/a.csv", "--agent-endpoint", testAgentEndpoint,
-				"--session-id", ""},
+				"--session-id", "a/b"},
 			wantCode: exterrors.CodeInvalidSessionId,
+		},
+		{
+			name:     "files download rejects malformed target without session",
+			cmd:      func() *cobra.Command { return newFilesDownloadCommand(nil) },
+			args:     []string{"/data/a.csv", "--agent-endpoint", "not-an-endpoint"},
+			wantCode: exterrors.CodeInvalidParameter,
 		},
 		{
 			name:     "sessions list project endpoint without name",
@@ -517,13 +555,28 @@ func TestDirectTargetCommands_RejectInvalidInputsBeforeAuth(t *testing.T) {
 	}
 }
 
-// The missing-session hint must name the same direct selector so it is runnable.
+// Supported targets retain a runnable hint with the same direct selector.
 func TestFilesDirectMissingSession_SuggestsDirectSessionsList(t *testing.T) {
-	err := executeUnderRoot(newFilesListCommand(nil),
-		"/data", "--agent-name", "support", "--project-endpoint", testProjectEndpoint)
-	localErr := requireLocalErrorCode(t, err, exterrors.CodeInvalidSessionId)
-	assert.Contains(t, localErr.Suggestion,
-		`azd ai agent sessions list --agent-name support --project-endpoint "`+testProjectEndpoint+`"`)
+	for _, args := range [][]string{
+		{"--project-endpoint", testProjectEndpoint},
+		{"--agent-endpoint", testAgentEndpoint},
+	} {
+		t.Run(args[0], func(t *testing.T) {
+			cmd, flags := newDirectTargetTestCommand(t, args...)
+			name := ""
+			if args[0] == "--project-endpoint" {
+				name = "support"
+			}
+			target, err := resolveDirectAgentTarget(cmd, flags, name, name != "", "--agent-name")
+			require.NoError(t, err)
+			reader := &fakeRemoteAgentReader{agent: agentWithKind("support", "hosted")}
+			listCommand := directSessionsListCommand(flags, target)
+			_, err = prepareDirectFilesContext(t.Context(), reader, target, "", listCommand)
+			localErr := requireLocalErrorCode(t, err, exterrors.CodeInvalidSessionId)
+			assert.Contains(t, localErr.Suggestion, listCommand)
+			assert.Contains(t, localErr.Suggestion, args[0])
+		})
+	}
 }
 
 func TestClassifyDirectSessionListError(t *testing.T) {

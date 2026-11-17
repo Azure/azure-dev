@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"azureaiagent/internal/exterrors"
@@ -108,33 +109,39 @@ func resolveReadOnlyFilesContext(
 	if target == nil {
 		return resolveFilesContext(ctx, flags, noPrompt)
 	}
-	if err := validateDirectSessionID(flags.session, directSessionsListCommand(direct, target)); err != nil {
-		return nil, err
+	listCommand := directSessionsListCommand(direct, target)
+	if strings.TrimSpace(flags.session) != "" {
+		if err := validateDirectSessionID(flags.session, listCommand); err != nil {
+			return nil, err
+		}
 	}
 	client, err := target.NewClient()
 	if err != nil {
 		return nil, err
 	}
-	fc, err := prepareDirectFilesContext(ctx, client, target, flags.session)
-	if err != nil {
-		return nil, err
-	}
-	fc.sessionsListCommand = directSessionsListCommand(direct, target)
-	return fc, nil
+	return prepareDirectFilesContext(ctx, client, target, flags.session, listCommand)
 }
 
 // prepareDirectFilesContext confirms the remote agent exists and is a kind that can
-// have session files. The session itself is validated by the file request.
+// have session files before requiring a session ID. The session itself is validated
+// by the file request.
 func prepareDirectFilesContext(
 	ctx context.Context,
 	client remoteAgentReader,
 	target *AgentContext,
-	sessionID string,
+	sessionID, listCommand string,
 ) (*filesContext, error) {
 	if err := requireDirectSessionSupport(ctx, client, target, featureSessionFiles); err != nil {
 		return nil, err
 	}
-	return &filesContext{AgentContext: target, sessionID: sessionID}, nil
+	if err := validateDirectSessionID(sessionID, listCommand); err != nil {
+		return nil, err
+	}
+	return &filesContext{
+		AgentContext:        target,
+		sessionID:           sessionID,
+		sessionsListCommand: listCommand,
+	}, nil
 }
 
 // resolveFilesContext resolves agent details and session from the azd environment.

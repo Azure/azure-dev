@@ -895,9 +895,9 @@ span is absent: possible causes include a service that sends no telemetry to
 this Application Insights resource, sampling, the `--since` window, retention,
 and ingestion delay. When no recorded root exists and multiple spans have
 absent parents, the Foundry portal can generate a synthetic root with a random
-span ID and reparent those spans for display. This export contains only recorded
-spans and preserves their original parent IDs; it does not add portal display
-wrappers. `completeness.complete` is `false` when the
+span ID and assign those spans to the synthetic root for display. This export
+contains only recorded spans and preserves their original parent IDs; it does
+not add portal display wrappers. `completeness.complete` is `false` when the
 root or a referenced parent is absent, when the trace has more than 5,000 spans
 and was truncated, or when the query returned a partial error. `sampled` is
 `true` when a span stands for several sampled operations (`item_count > 1`);

@@ -492,12 +492,13 @@ overrides:
   - filename: "extensions/azure.ai.agents/internal/{cmd/optimize*.go,pkg/agents/optconfig/*.go}"
     words:
       - optconfig
-  - filename: "extensions/azure.ai.agents/internal/{cmd/monitor_traces*.go,pkg/azure/logs_query_client*.go}"
+  - filename: "extensions/azure.ai.agents/internal/{cmd/monitor_{logs,traces}*.go,pkg/azure/logs_query_client*.go}"
     words:
       - anyif
       - apikey
       - connectionstring
       - countif
+      - gettype
       - ifexists
       - isfuzzy
       - isnotempty

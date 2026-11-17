@@ -14,6 +14,8 @@ import (
 	"github.com/drone/envsubst/parse"
 )
 
+const deploymentStacksOptionKey = "DeploymentStacks"
+
 // deploymentStacksEnabled reports whether the Deployment Stacks alpha feature is active. This
 // mirrors the deployment-service selection in cmd/container.go: only when the feature is enabled
 // is the stacks deployment service used (and the deployment-stacks options actually consumed).
@@ -35,31 +37,6 @@ func (p *BicepProvider) deploymentProjectName() string {
 	}
 
 	return p.projectName
-}
-
-// hasActiveDeploymentStacksConfig reports whether an effective deployment-stacks configuration is
-// present (config supplied AND the alpha feature enabled). When true, the deployment-state shortcut
-// must be bypassed: the stacks deny/unmanage settings — including ${VAR}-resolved deny lists — can
-// change independently of the ARM template and parameters that the state hash covers. Skipping the
-// deployment would otherwise leave stale deny settings on the stack and would also bypass the
-// ${VAR} resolution/validation performed while building the options map.
-func (p *BicepProvider) hasActiveDeploymentStacksConfig() bool {
-	return p.options.DeploymentStacks != nil && p.deploymentStacksEnabled()
-}
-
-// useDeploymentStateShortcut reports whether the deployment-state shortcut (which skips a
-// redeploy when the template and parameters are unchanged) may be used. It returns false when
-// deployment-state tracking is disabled (--no-state), when the parameters hash could not be
-// computed, or when an active deployment-stacks configuration is present. In the stacks case the
-// deny/unmanage settings — including ${VAR}-resolved deny lists — can change independently of the
-// template+parameters the state hash covers, so the shortcut must be bypassed to avoid leaving
-// stale settings on the stack and to preserve ${VAR} resolution/validation.
-func (p *BicepProvider) useDeploymentStateShortcut(parametersHashErr error) bool {
-	if p.ignoreDeploymentState || parametersHashErr != nil {
-		return false
-	}
-
-	return !p.hasActiveDeploymentStacksConfig()
 }
 
 // resolveDeploymentStacksMap resolves the typed deployment-stacks configuration into a
@@ -222,7 +199,7 @@ func (p *BicepProvider) deploymentOptionsMap(includeDenySettings bool) (map[stri
 	// The typed DeploymentStacksConfig is not JSON-serializable in a form the API layer can
 	// consume (ExpandableString has no exported fields), so always drop whatever convert.ToMap
 	// produced for it and only re-add a resolved map when stacks are actually in play.
-	delete(optionsMap, "DeploymentStacks")
+	delete(optionsMap, deploymentStacksOptionKey)
 
 	if !p.deploymentStacksEnabled() {
 		return optionsMap, nil
@@ -234,7 +211,7 @@ func (p *BicepProvider) deploymentOptionsMap(includeDenySettings bool) (map[stri
 	}
 
 	if stacks != nil {
-		optionsMap["DeploymentStacks"] = stacks
+		optionsMap[deploymentStacksOptionKey] = stacks
 	}
 
 	return optionsMap, nil

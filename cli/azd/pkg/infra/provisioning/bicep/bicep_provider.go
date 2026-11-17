@@ -784,6 +784,24 @@ func parametersHash(templateParameters azure.ArmTemplateParameterDefinitions, pa
 	return fmt.Sprintf("%x", hash256.Sum(nil)), nil
 }
 
+func (p *BicepProvider) deploymentParametersHash(planned *compileBicepResult, options map[string]any) (string, error) {
+	paramsHash, err := parametersHash(planned.Template.Parameters, planned.Parameters)
+	if err != nil || !p.deploymentStacksEnabled() {
+		return paramsHash, err
+	}
+
+	// Include absent options as null so stacks with a legacy, parameters-only hash redeploy once
+	// even if their configuration has already been removed. Standard deployments retain their hash.
+	inputs, err := json.Marshal(struct {
+		ParametersHash   string
+		DeploymentStacks any
+	}{paramsHash, options[deploymentStacksOptionKey]})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(inputs)), nil
+}
+
 // prevDeploymentEqualToCurrent compares the template hash from a previous deployment against a current template.
 func prevDeploymentEqualToCurrent(prev *azapi.ResourceDeployment, templateHash, paramsHash string) bool {
 	if prev == nil {
@@ -809,7 +827,7 @@ func prevDeploymentEqualToCurrent(prev *azapi.ResourceDeployment, templateHash, 
 	}
 
 	if *prevParamHash != paramsHash {
-		logDS("template parameters are different from previous deployment")
+		logDS("template parameters or deployment stack options differ from the previous deployment")
 		return false
 	}
 
@@ -839,22 +857,20 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 	result := p.convertToDeployment(planned.Template)
 
+	optionsMap, err := p.deploymentOptionsMap(true)
+	if err != nil {
+		return nil, err
+	}
+
 	// parameters hash is required for doing deployment state validation check but also to set the hash
 	// after a successful deployment.
-	currentParamsHash, parametersHashErr := parametersHash(planned.Template.Parameters, planned.Parameters)
+	currentParamsHash, parametersHashErr := p.deploymentParametersHash(planned, optionsMap)
 	if parametersHashErr != nil {
 		// fail to hash parameters won't stop the operation. It only disables deployment state and recording parameters hash
 		logDS("%s", parametersHashErr.Error())
 	}
 
-	useDeploymentState := p.useDeploymentStateShortcut(parametersHashErr)
-	if !useDeploymentState && !p.ignoreDeploymentState && parametersHashErr == nil {
-		// The only remaining reason the shortcut is disabled here is an active deployment-stacks
-		// configuration; surface it in the deployment-stacks debug log.
-		logDS("deployment stacks configuration present; bypassing deployment-state shortcut")
-	}
-
-	if useDeploymentState {
+	if !p.ignoreDeploymentState && parametersHashErr == nil {
 		deploymentState, stateErr := p.deploymentState(ctx, planned, deployment, currentParamsHash)
 		if stateErr == nil {
 			// As a heuristic, we also check the existence of all resource groups
@@ -920,11 +936,6 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	}
 	if parametersHashErr == nil {
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = new(currentParamsHash)
-	}
-
-	optionsMap, err := p.deploymentOptionsMap(true)
-	if err != nil {
-		return nil, err
 	}
 
 	// Provision validation runs two independent, config-gated steps:

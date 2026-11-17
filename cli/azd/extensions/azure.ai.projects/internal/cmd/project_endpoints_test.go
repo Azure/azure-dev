@@ -333,7 +333,7 @@ func TestProjectDeploymentAddAfterCustomSubdomainAuthoring(t *testing.T) {
 				require.Equal(t, []synthesis.Deployment{{
 					Name:  "chat",
 					Model: synthesis.DeploymentModel{Format: "OpenAI", Name: "gpt-4.1", Version: "2025-04-14"},
-					Sku:   synthesis.DeploymentSku{Name: "GlobalStandard", Capacity: 1},
+					Sku:   synthesis.DeploymentSku{Name: "GlobalStandard", Capacity: int(defaultDeploymentCapacity)},
 				}}, deployments)
 			}
 			// #nosec G304 -- path is under the test-owned root.

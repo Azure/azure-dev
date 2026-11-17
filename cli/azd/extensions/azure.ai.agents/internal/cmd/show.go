@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
-	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
@@ -215,7 +214,6 @@ Use --versions to list every version of one agent instead of its latest version.
 		"(no azd project required)"
 	cmd.Flags().BoolVar(&flags.versions, "versions", false,
 		"List every version of the agent instead of showing its latest version")
-	previewHelpText(cmd, featureflags.Voice, "a prompt, hosted, or voice agent", "an agent")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"json", "table"},

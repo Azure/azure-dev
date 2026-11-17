@@ -2,6 +2,16 @@
 
 <!-- cspell:ignore kseager -->
 
+## 1.1.1 (2026-11-17)
+
+### Bugs Fixed
+
+- [[#10915]](https://github.com/Azure/azure-dev/pull/10915) Fix Bicep infrastructure exports to omit AKS-only resources and parameters when AKS hosting is not configured. Thanks @yiliuTo for the contribution!
+
+### Other Changes
+
+- [[#10971]](https://github.com/Azure/azure-dev/pull/10971) Raise the default model deployment capacity from 10 to 250, limited by SKU bounds and available quota.
+
 ## 1.1.0 (2026-11-12)
 
 ### Features Added

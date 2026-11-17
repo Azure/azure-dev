@@ -17,7 +17,6 @@ import (
 )
 
 func TestACRReuseProcessSwitch(t *testing.T) {
-	t.Setenv("AZD_ALPHA_ENABLE_AGENTS_VOICE", "true")
 	t.Setenv("AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS", "true")
 	for _, value := range []string{"", "false", "0", "on", "yes", " true", "True", "TRUE", "t", "T", "1", "true"} {
 		t.Run(value, func(t *testing.T) {

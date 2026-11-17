@@ -258,6 +258,13 @@ func (pm *PipelineManager) Configure(
 		return result, err
 	}
 
+	environmentProvider, hasEnvironmentProvider := pm.ciProvider.(ciEnvironmentProvider)
+	if !hasEnvironmentProvider {
+		if err := pm.ensurePipelineDefinition(ctx); err != nil {
+			return result, fmt.Errorf("ensuring pipeline definition: %w", err)
+		}
+	}
+
 	// ServiceManagementReference can be set as user config (~/.azd/config.json)
 	userConfig, err := pm.userConfigManager.Load()
 	if err != nil {
@@ -286,7 +293,7 @@ func (pm *PipelineManager) Configure(
 		return result, fmt.Errorf("ensuring git remote: %w", err)
 	}
 
-	if environmentProvider, ok := pm.ciProvider.(ciEnvironmentProvider); ok {
+	if hasEnvironmentProvider {
 		pm.gitHubEnvironment, err = environmentProvider.resolveEnvironment(ctx, gitRepoInfo)
 		if err != nil {
 			return result, fmt.Errorf("resolving GitHub environment: %w", err)
@@ -294,11 +301,13 @@ func (pm *PipelineManager) Configure(
 	}
 
 	// Generate or validate the pipeline definition after the repository and GitHub environment are known.
-	if err := pm.ensurePipelineDefinition(ctx); err != nil {
-		return result, fmt.Errorf("ensuring pipeline definition: %w", err)
+	if hasEnvironmentProvider {
+		if err := pm.ensurePipelineDefinition(ctx); err != nil {
+			return result, fmt.Errorf("ensuring pipeline definition: %w", err)
+		}
 	}
 
-	if environmentProvider, ok := pm.ciProvider.(ciEnvironmentProvider); ok {
+	if hasEnvironmentProvider {
 		if err := environmentProvider.ensureEnvironment(ctx, gitRepoInfo); err != nil {
 			return result, fmt.Errorf("ensuring GitHub environment: %w", err)
 		}
@@ -1331,17 +1340,20 @@ func renderPipelineDefinition(props projectProperties) ([]byte, error) {
 		AlphaFeatures               []string
 		IsTerraform                 bool
 	}{
-		BranchName:                  props.BranchName,
-		GitHubEnvironment:           props.GitHubEnvironment,
-		GitHubEnvironmentYaml:       strconv.Quote(props.GitHubEnvironment),
-		GitHubEnvironmentExpression: strings.ReplaceAll(props.GitHubEnvironment, "'", "''"),
-		FedCredLogIn:                props.AuthType == AuthTypeFederated,
-		InstallDotNetForAspire:      props.HasAppHost,
-		Variables:                   props.Variables,
-		Secrets:                     props.Secrets,
-		RequiredExtensions:          props.RequiredExtensions,
-		AlphaFeatures:               props.RequiredAlphaFeatures,
-		IsTerraform:                 props.IsTerraform,
+		BranchName:            props.BranchName,
+		GitHubEnvironment:     props.GitHubEnvironment,
+		GitHubEnvironmentYaml: strconv.Quote(props.GitHubEnvironment),
+		GitHubEnvironmentExpression: strconv.Quote(fmt.Sprintf(
+			"${{ inputs.environment || '%s' }}",
+			strings.ReplaceAll(props.GitHubEnvironment, "'", "''"),
+		)),
+		FedCredLogIn:           props.AuthType == AuthTypeFederated,
+		InstallDotNetForAspire: props.HasAppHost,
+		Variables:              props.Variables,
+		Secrets:                props.Secrets,
+		RequiredExtensions:     props.RequiredExtensions,
+		AlphaFeatures:          props.RequiredAlphaFeatures,
+		IsTerraform:            props.IsTerraform,
 	}
 
 	appendUnique := func(values []string, value string) []string {
@@ -1549,7 +1561,7 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if props.CiProvider == ciProviderGitHubActions && props.GitHubEnvironment != "" {
+	if props.CiProvider == ciProviderGitHubActions {
 		if err := pm.validateGitHubWorkflow(ctx, props); err != nil {
 			return err
 		}

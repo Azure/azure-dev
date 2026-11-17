@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -380,16 +381,16 @@ func (p *GitHubCiProvider) resolveEnvironment(
 		return environmentName, nil
 	}
 
+	if p.console.IsNoPromptMode() {
+		return "", nil
+	}
+
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 	repositoryVariables, err := p.ghCli.ListVariables(ctx, repoSlug, nil)
 	if err != nil {
 		return "", fmt.Errorf("checking existing repository pipeline configuration: %w", err)
 	}
 	if repositoryVariables[environment.EnvNameEnvVarName] == p.env.Name() {
-		return "", nil
-	}
-
-	if p.console.IsNoPromptMode() {
 		return "", nil
 	}
 
@@ -451,11 +452,30 @@ func (p *GitHubCiProvider) ensureEnvironment(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 ) error {
+	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 	if !p.createEnvironment {
+		if p.gitHubEnvironment == "" {
+			return nil
+		}
+		environments, err := p.ghCli.ListEnvironments(ctx, repoSlug)
+		if err != nil {
+			return fmt.Errorf(
+				"checking configured GitHub environment %q: %w",
+				p.gitHubEnvironment,
+				err,
+			)
+		}
+		if !slices.Contains(environments, p.gitHubEnvironment) {
+			return fmt.Errorf(
+				"configured GitHub environment %q does not exist in %s; create it or update %s",
+				p.gitHubEnvironment,
+				repoSlug,
+				gitHubEnvironmentPersistedKey,
+			)
+		}
 		return nil
 	}
 
-	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 	if err := p.ghCli.CreateEnvironmentIfNotExist(ctx, repoSlug, p.gitHubEnvironment); err != nil {
 		return err
 	}
@@ -494,15 +514,11 @@ func (p *GitHubCiProvider) credentialOptions(
 			if err != nil {
 				return nil, err
 			}
-			credentialName := credentialNameSanitizer.ReplaceAllString(
-				fmt.Sprintf("%s-%s", repoDetails.owner+"-"+repoDetails.repoName, p.gitHubEnvironment),
-				"-",
-			)
 			return &CredentialOptions{
 				EnableFederatedCredentials: true,
 				FederatedCredentialOptions: []*graphsdk.FederatedIdentityCredential{
 					{
-						Name:        credentialName,
+						Name:        gitHubEnvironmentCredentialName(subject),
 						Issuer:      federatedIdentityIssuer,
 						Subject:     subject,
 						Description: new("Created by Azure Developer CLI"),
@@ -596,6 +612,12 @@ func (p *GitHubCiProvider) resolveOIDCEnvironmentSubject(
 	if err != nil {
 		return "", err
 	}
+	if !oidcConfig.UseDefault && !slices.Contains(oidcConfig.IncludeClaimKeys, "context") {
+		return "", fmt.Errorf(
+			"GitHub OIDC subject template for %s must include the context claim to use environment-scoped credentials",
+			repoSlug,
+		)
+	}
 	escapedName := strings.ReplaceAll(environmentName, ":", "%3A")
 	subject, err := github.BuildOIDCSubject(
 		repoSlug,
@@ -604,7 +626,25 @@ func (p *GitHubCiProvider) resolveOIDCEnvironmentSubject(
 		"environment:"+escapedName,
 	)
 	if err != nil {
-		return "", fmt.Errorf("building OIDC subject for GitHub environment %q: %w", environmentName, err)
+		if p.console.IsNoPromptMode() {
+			return "", fmt.Errorf("building OIDC subject for GitHub environment %q: %w", environmentName, err)
+		}
+		p.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: fmt.Sprintf(
+				"Unable to build the GitHub environment OIDC subject from the repository template: %v. "+
+					"Enter the subject manually.",
+				err,
+			),
+		})
+		subject, err = github.BuildOIDCSubject(
+			repoSlug,
+			nil,
+			&github.OIDCSubjectConfig{UseDefault: true},
+			"environment:"+escapedName,
+		)
+		if err != nil {
+			return "", err
+		}
 	}
 	if p.console.IsNoPromptMode() {
 		return subject, nil
@@ -622,6 +662,11 @@ func (p *GitHubCiProvider) resolveOIDCEnvironmentSubject(
 		return "", errors.New("GitHub environment OIDC subject cannot be empty")
 	}
 	return resolvedSubject, nil
+}
+
+func gitHubEnvironmentCredentialName(subject string) string {
+	hash := sha256.Sum256([]byte(subject))
+	return fmt.Sprintf("azd-environment-%x", hash[:16])
 }
 
 // ***  ciProvider implementation ******

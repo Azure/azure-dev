@@ -154,6 +154,26 @@ func TestGitHubEnvironmentCredentialOptions(t *testing.T) {
 		"repo:Azure-Samples/my-repo:environment:prod%3Awest",
 		options.FederatedCredentialOptions[0].Subject,
 	)
+	require.Equal(
+		t,
+		gitHubEnvironmentCredentialName(options.FederatedCredentialOptions[0].Subject),
+		options.FederatedCredentialOptions[0].Name,
+	)
+	require.NotContains(t, options.FederatedCredentialOptions[0].Name, "prod")
+}
+
+func TestGitHubEnvironmentCredentialName(t *testing.T) {
+	t.Parallel()
+
+	mainEnvironment := gitHubEnvironmentCredentialName("repo:o/r:environment:main")
+	mainBranch := credentialNameSanitizer.ReplaceAllString("o-r-main", "-")
+	require.NotEqual(t, mainBranch, mainEnvironment)
+	require.NotEqual(
+		t,
+		gitHubEnvironmentCredentialName("repo:o/r:environment:prod/west"),
+		gitHubEnvironmentCredentialName("repo:o/r:environment:prod-west"),
+	)
+	require.LessOrEqual(t, len(mainEnvironment), 120)
 }
 
 func TestGitHubEnvironmentResolution(t *testing.T) {
@@ -172,6 +192,23 @@ func TestGitHubEnvironmentResolution(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.Equal(t, "production", environmentName)
+	})
+
+	t.Run("missing persisted environment fails before configuration", func(t *testing.T) {
+		t.Parallel()
+
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "/repos/o/r/environments?per_page=100")
+		}).Respond(exec.NewRunResult(0, "development\n", ""))
+		provider := createGitHubCiProvider(t, mockContext)
+		provider.env.DotenvSet(gitHubEnvironmentPersistedKey, "production")
+		repoDetails := &gitRepositoryDetails{owner: "o", repoName: "r"}
+
+		_, err := provider.resolveEnvironment(t.Context(), repoDetails)
+		require.NoError(t, err)
+		err = provider.ensureEnvironment(t.Context(), repoDetails)
+		require.ErrorContains(t, err, `configured GitHub environment "production" does not exist`)
 	})
 
 	t.Run("migrates matching repository configuration", func(t *testing.T) {
@@ -255,9 +292,6 @@ func TestGitHubEnvironmentResolution(t *testing.T) {
 
 		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
-		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
-			return strings.Contains(cmd, "variable list")
-		}).Respond(exec.NewRunResult(0, "", ""))
 		provider := createGitHubCiProvider(t, mockContext)
 
 		environmentName, err := provider.resolveEnvironment(
@@ -295,6 +329,54 @@ func TestGitHubEnvironmentResolution(t *testing.T) {
 			t,
 			strings.Join(mockContext.Console.Output(), "\n"),
 			"GitHub environments could not be listed",
+		)
+	})
+}
+
+func TestResolveOIDCEnvironmentSubject(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects custom template without context", func(t *testing.T) {
+		t.Parallel()
+
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.Console.SetNoPromptMode(true)
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "/repos/o/r/actions/oidc/customization/sub")
+		}).Respond(exec.NewRunResult(
+			0,
+			`{"use_default":false,"include_claim_keys":["repository"]}`,
+			"",
+		))
+		provider := createGitHubCiProvider(t, mockContext)
+
+		_, err := provider.resolveOIDCEnvironmentSubject(t.Context(), "o/r", "production")
+		require.ErrorContains(t, err, "must include the context claim")
+	})
+
+	t.Run("allows manual subject for unsupported claim", func(t *testing.T) {
+		t.Parallel()
+
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "/repos/o/r/actions/oidc/customization/sub")
+		}).Respond(exec.NewRunResult(
+			0,
+			`{"use_default":false,"include_claim_keys":["repository","context","job_workflow_ref"]}`,
+			"",
+		))
+		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "OIDC subject for GitHub environment")
+		}).Respond("custom:environment:production")
+		provider := createGitHubCiProvider(t, mockContext)
+
+		subject, err := provider.resolveOIDCEnvironmentSubject(t.Context(), "o/r", "production")
+		require.NoError(t, err)
+		require.Equal(t, "custom:environment:production", subject)
+		require.Contains(
+			t,
+			strings.Join(mockContext.Console.Output(), "\n"),
+			"Unable to build the GitHub environment OIDC subject",
 		)
 	})
 }

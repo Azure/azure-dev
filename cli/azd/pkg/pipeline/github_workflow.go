@@ -6,6 +6,7 @@ package pipeline
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,7 +21,16 @@ import (
 )
 
 var githubEnvironmentFallbackPattern = regexp.MustCompile(
-	`^\s*\$\{\{\s*(?:inputs|github\.event\.inputs)\.environment\s*\|\|\s*'((?:''|[^'])*)'\s*\}\}\s*$`,
+	`^\s*\$\{\{\s*(inputs|github\.event\.inputs)\.environment\s*\|\|\s*'((?:''|[^'])*)'\s*\}\}\s*$`,
+)
+var githubAzdDeploymentCommandPattern = regexp.MustCompile(
+	`(?:^|[\s;&|])azd\s+(?:up|provision|deploy)(?:\s|$)`,
+)
+
+const (
+	githubWorkflowInputNone     = ""
+	githubWorkflowInputUnified  = "inputs"
+	githubWorkflowInputDispatch = "github.event.inputs"
 )
 
 type githubWorkflowJob struct {
@@ -32,6 +42,10 @@ type githubWorkflowJob struct {
 type githubWorkflowAnalysis struct {
 	hasAutomaticTrigger      bool
 	hasEnvironmentInput      bool
+	hasWorkflowDispatch      bool
+	hasWorkflowCall          bool
+	dispatchInputGuaranteed  bool
+	callInputGuaranteed      bool
 	deploymentJobs           []githubWorkflowJob
 	missingEnvironmentJobs   []string
 	unsafeEnvironmentJobs    []string
@@ -41,9 +55,24 @@ type githubWorkflowAnalysis struct {
 func (pm *PipelineManager) validateGitHubWorkflow(ctx context.Context, props projectProperties) error {
 	workflowPath := findPipelineFile(ciProviderGitHubActions, props.RepoRoot)
 	if workflowPath == "" {
-		return fmt.Errorf(
-			"GitHub environment %q was selected, but no azure-dev GitHub Actions workflow was found",
-			props.GitHubEnvironment,
+		workflows, err := findGitHubWorkflowFiles(props.RepoRoot)
+		if err != nil {
+			return fmt.Errorf("finding GitHub Actions workflows: %w", err)
+		}
+		if len(workflows) == 0 && props.GitHubEnvironment == "" {
+			return nil
+		}
+		scope := fmt.Sprintf("GitHub environment %q", props.GitHubEnvironment)
+		if props.GitHubEnvironment == "" {
+			scope = "repository-scoped variables and secrets"
+		}
+		return pm.confirmAmbiguousGitHubWorkflow(
+			ctx,
+			fmt.Sprintf(
+				"azd could not locate azure-dev.yml or azure-dev.yaml to verify that workflows in %s use %s",
+				props.RepoRoot,
+				scope,
+			),
 		)
 	}
 
@@ -58,7 +87,8 @@ func (pm *PipelineManager) validateGitHubWorkflow(ctx context.Context, props pro
 	if err != nil {
 		return fmt.Errorf("rendering legacy GitHub Actions workflow: %w", err)
 	}
-	if bytes.Equal(contents, legacyContents) {
+	if props.GitHubEnvironment != "" &&
+		bytes.Equal(normalizeWorkflowLineEndings(contents), normalizeWorkflowLineEndings(legacyContents)) {
 		if pm.console.IsNoPromptMode() {
 			return fmt.Errorf(
 				"the azd-generated workflow %s must be updated to use GitHub environment %q",
@@ -105,6 +135,24 @@ func (pm *PipelineManager) validateGitHubWorkflow(ctx context.Context, props pro
 			fmt.Sprintf("azd could not find a job that runs azd up, provision, or deploy in %s", workflowPath),
 		)
 	}
+
+	if props.GitHubEnvironment == "" {
+		var environmentJobs []string
+		for _, job := range analysis.deploymentJobs {
+			if job.environment != "" {
+				environmentJobs = append(environmentJobs, job.name)
+			}
+		}
+		if len(environmentJobs) > 0 {
+			return fmt.Errorf(
+				"GitHub Actions deployment job(s) %s select a GitHub environment, but azd is configured to use "+
+					"repository-scoped variables and secrets",
+				strings.Join(environmentJobs, ", "),
+			)
+		}
+		return nil
+	}
+
 	if len(analysis.missingEnvironmentJobs) > 0 {
 		return fmt.Errorf(
 			"GitHub Actions deployment job(s) %s do not select an environment; add environment: %q to each job",
@@ -114,31 +162,33 @@ func (pm *PipelineManager) validateGitHubWorkflow(ctx context.Context, props pro
 	}
 	if len(analysis.unsafeEnvironmentJobs) > 0 {
 		return fmt.Errorf(
-			"GitHub Actions deployment job(s) %s use inputs.environment without a fallback for automatic triggers; "+
-				"add a fallback such as environment: ${{ inputs.environment || '%s' }}",
+			"GitHub Actions deployment job(s) %s can evaluate to an empty environment; require the input, give it "+
+				"a nonempty default, or add a fallback such as environment: ${{ inputs.environment || '%s' }}",
 			strings.Join(analysis.unsafeEnvironmentJobs, ", "),
 			strings.ReplaceAll(props.GitHubEnvironment, "'", "''"),
 		)
 	}
 
-	incompatibleJobs := githubWorkflowIncompatibleJobs(analysis, props.GitHubEnvironment)
-	if len(incompatibleJobs) > 0 {
-		return fmt.Errorf(
-			"GitHub Actions workflow %s does not deploy every deployment job to GitHub environment %q; "+
-				"incompatible job(s): %s",
-			workflowPath,
-			props.GitHubEnvironment,
-			strings.Join(incompatibleJobs, ", "),
-		)
-	}
+	ambiguousConfirmed := false
 	if len(analysis.ambiguousEnvironmentJobs) > 0 {
-		return pm.confirmAmbiguousGitHubWorkflow(
+		if err := pm.confirmAmbiguousGitHubWorkflow(
 			ctx,
 			fmt.Sprintf(
 				"azd could not determine the GitHub environment used by deployment job(s) %s in %s",
 				strings.Join(analysis.ambiguousEnvironmentJobs, ", "),
 				workflowPath,
 			),
+		); err != nil {
+			return err
+		}
+		ambiguousConfirmed = true
+	}
+
+	if !ambiguousConfirmed && !githubWorkflowCanReachEnvironment(analysis, props.GitHubEnvironment) {
+		return fmt.Errorf(
+			"GitHub Actions workflow %s cannot select GitHub environment %q for any deployment job",
+			workflowPath,
+			props.GitHubEnvironment,
 		)
 	}
 
@@ -197,6 +247,28 @@ func findPipelineFile(provider ciProviderType, repoRoot string) string {
 	return ""
 }
 
+func findGitHubWorkflowFiles(repoRoot string) ([]string, error) {
+	workflowDirectory := filepath.Join(repoRoot, gitHubRoot, gitHubWorkflows)
+	entries, err := os.ReadDir(workflowDirectory)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var workflows []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		extension := strings.ToLower(filepath.Ext(entry.Name()))
+		if extension == ".yml" || extension == ".yaml" {
+			workflows = append(workflows, filepath.Join(workflowDirectory, entry.Name()))
+		}
+	}
+	return workflows, nil
+}
+
 func analyzeGitHubWorkflow(contents []byte) (*githubWorkflowAnalysis, error) {
 	var document yaml.Node
 	if err := yaml.Unmarshal(contents, &document); err != nil {
@@ -210,7 +282,13 @@ func analyzeGitHubWorkflow(contents []byte) (*githubWorkflowAnalysis, error) {
 	analysis := &githubWorkflowAnalysis{}
 	onNode := yamlMappingValue(root, "on")
 	analysis.hasAutomaticTrigger = githubWorkflowHasAutomaticTrigger(onNode)
-	analysis.hasEnvironmentInput = githubWorkflowHasEnvironmentInput(onNode)
+	dispatchInput := githubWorkflowEnvironmentInput(onNode, "workflow_dispatch")
+	callInput := githubWorkflowEnvironmentInput(onNode, "workflow_call")
+	analysis.hasWorkflowDispatch = yamlMappingValue(onNode, "workflow_dispatch") != nil
+	analysis.hasWorkflowCall = yamlMappingValue(onNode, "workflow_call") != nil
+	analysis.hasEnvironmentInput = dispatchInput != nil || callInput != nil
+	analysis.dispatchInputGuaranteed = githubWorkflowInputGuaranteed(dispatchInput)
+	analysis.callInputGuaranteed = githubWorkflowInputGuaranteed(callInput)
 
 	jobs := yamlMappingValue(root, "jobs")
 	if jobs == nil || jobs.Kind != yaml.MappingNode {
@@ -231,17 +309,16 @@ func analyzeGitHubWorkflow(contents []byte) (*githubWorkflowAnalysis, error) {
 		}
 		analysis.deploymentJobs = append(analysis.deploymentJobs, workflowJob)
 
+		inputKind := githubWorkflowInputKind(environmentName)
 		switch {
 		case environmentName == "":
 			analysis.missingEnvironmentJobs = append(analysis.missingEnvironmentJobs, jobName)
-		case workflowJob.dynamic &&
-			analysis.hasAutomaticTrigger &&
-			githubWorkflowUsesOnlyEnvironmentInput(environmentName):
+		case workflowJob.dynamic && inputKind != githubWorkflowInputNone &&
+			!githubWorkflowInputIsSafe(analysis, inputKind):
 			analysis.unsafeEnvironmentJobs = append(analysis.unsafeEnvironmentJobs, jobName)
 		case workflowJob.dynamic:
 			_, hasFallback := githubWorkflowEnvironmentFallback(environmentName)
-			usesOnlyEnvironmentInput := githubWorkflowUsesOnlyEnvironmentInput(environmentName)
-			if !hasFallback && (!usesOnlyEnvironmentInput || !analysis.hasEnvironmentInput) {
+			if !hasFallback && inputKind == githubWorkflowInputNone {
 				analysis.ambiguousEnvironmentJobs = append(analysis.ambiguousEnvironmentJobs, jobName)
 			}
 		}
@@ -267,10 +344,10 @@ func githubWorkflowHasAutomaticTrigger(onNode *yaml.Node) bool {
 	}
 	switch onNode.Kind {
 	case yaml.ScalarNode:
-		return onNode.Value != "workflow_dispatch"
+		return onNode.Value != "workflow_dispatch" && onNode.Value != "workflow_call"
 	case yaml.SequenceNode:
 		for _, event := range onNode.Content {
-			if event.Value != "workflow_dispatch" {
+			if event.Value != "workflow_dispatch" && event.Value != "workflow_call" {
 				return true
 			}
 		}
@@ -285,15 +362,22 @@ func githubWorkflowHasAutomaticTrigger(onNode *yaml.Node) bool {
 	return false
 }
 
-func githubWorkflowHasEnvironmentInput(onNode *yaml.Node) bool {
-	for _, trigger := range []string{"workflow_dispatch", "workflow_call"} {
-		triggerNode := yamlMappingValue(onNode, trigger)
-		inputs := yamlMappingValue(triggerNode, "inputs")
-		if yamlMappingValue(inputs, "environment") != nil {
-			return true
-		}
+func githubWorkflowEnvironmentInput(onNode *yaml.Node, trigger string) *yaml.Node {
+	triggerNode := yamlMappingValue(onNode, trigger)
+	inputs := yamlMappingValue(triggerNode, "inputs")
+	return yamlMappingValue(inputs, "environment")
+}
+
+func githubWorkflowInputGuaranteed(inputNode *yaml.Node) bool {
+	if inputNode == nil {
+		return false
 	}
-	return false
+	required := yamlMappingValue(inputNode, "required")
+	if required != nil && required.Value == "true" {
+		return true
+	}
+	defaultValue := yamlMappingValue(inputNode, "default")
+	return defaultValue != nil && strings.TrimSpace(defaultValue.Value) != ""
 }
 
 func githubWorkflowJobRunsAzd(job *yaml.Node) bool {
@@ -306,10 +390,7 @@ func githubWorkflowJobRunsAzd(job *yaml.Node) bool {
 		if run == nil {
 			continue
 		}
-		command := run.Value
-		if strings.Contains(command, "azd up") ||
-			strings.Contains(command, "azd provision") ||
-			strings.Contains(command, "azd deploy") {
+		if githubAzdDeploymentCommandPattern.MatchString(run.Value) {
 			return true
 		}
 	}
@@ -320,6 +401,9 @@ func githubWorkflowJobEnvironment(job *yaml.Node) string {
 	environmentNode := yamlMappingValue(job, "environment")
 	if environmentNode == nil {
 		return ""
+	}
+	for environmentNode.Kind == yaml.AliasNode {
+		environmentNode = environmentNode.Alias
 	}
 	if environmentNode.Kind == yaml.ScalarNode {
 		return strings.TrimSpace(environmentNode.Value)
@@ -333,51 +417,80 @@ func githubWorkflowJobEnvironment(job *yaml.Node) string {
 
 func githubWorkflowEnvironmentFallback(expression string) (string, bool) {
 	matches := githubEnvironmentFallbackPattern.FindStringSubmatch(expression)
-	if len(matches) != 2 {
+	if len(matches) != 3 {
 		return "", false
 	}
-	return strings.ReplaceAll(matches[1], "''", "'"), true
+	return strings.ReplaceAll(matches[2], "''", "'"), true
 }
 
-func githubWorkflowUsesOnlyEnvironmentInput(expression string) bool {
+func githubWorkflowInputKind(expression string) string {
 	normalized := strings.Join(strings.Fields(expression), "")
-	return normalized == "${{inputs.environment}}" ||
-		normalized == "${{github.event.inputs.environment}}"
+	switch normalized {
+	case "${{inputs.environment}}":
+		return githubWorkflowInputUnified
+	case "${{github.event.inputs.environment}}":
+		return githubWorkflowInputDispatch
+	default:
+		return githubWorkflowInputNone
+	}
 }
 
-func githubWorkflowIncompatibleJobs(
+func githubWorkflowInputIsSafe(analysis *githubWorkflowAnalysis, inputKind string) bool {
+	if analysis.hasAutomaticTrigger {
+		return false
+	}
+	switch inputKind {
+	case githubWorkflowInputUnified:
+		return (!analysis.hasWorkflowDispatch || analysis.dispatchInputGuaranteed) &&
+			(!analysis.hasWorkflowCall || analysis.callInputGuaranteed)
+	case githubWorkflowInputDispatch:
+		return analysis.hasWorkflowDispatch &&
+			!analysis.hasWorkflowCall &&
+			analysis.dispatchInputGuaranteed
+	default:
+		return false
+	}
+}
+
+func githubWorkflowCanReachEnvironment(
 	analysis *githubWorkflowAnalysis,
 	environmentName string,
-) []string {
-	var incompatibleJobs []string
+) bool {
 	for _, job := range analysis.deploymentJobs {
 		if job.environment == environmentName {
-			continue
+			return true
 		}
 		if job.dynamic {
 			fallback, hasFallback := githubWorkflowEnvironmentFallback(job.environment)
 			if hasFallback {
-				if fallback != environmentName {
-					incompatibleJobs = append(
-						incompatibleJobs,
-						fmt.Sprintf("%s (fallback %q)", job.name, fallback),
-					)
+				if fallback == environmentName {
+					return true
 				}
-				continue
+				matches := githubEnvironmentFallbackPattern.FindStringSubmatch(job.environment)
+				if len(matches) == 3 && githubWorkflowHasInputKind(analysis, matches[1]) {
+					return true
+				}
 			}
-			if githubWorkflowUsesOnlyEnvironmentInput(job.environment) &&
-				!analysis.hasAutomaticTrigger &&
-				analysis.hasEnvironmentInput {
-				continue
+			inputKind := githubWorkflowInputKind(job.environment)
+			if inputKind != githubWorkflowInputNone && githubWorkflowHasInputKind(analysis, inputKind) {
+				return true
 			}
-			continue
-		}
-		if job.environment != "" {
-			incompatibleJobs = append(
-				incompatibleJobs,
-				fmt.Sprintf("%s (%q)", job.name, job.environment),
-			)
 		}
 	}
-	return incompatibleJobs
+	return false
+}
+
+func githubWorkflowHasInputKind(analysis *githubWorkflowAnalysis, inputKind string) bool {
+	switch inputKind {
+	case githubWorkflowInputUnified:
+		return analysis.hasEnvironmentInput
+	case githubWorkflowInputDispatch:
+		return analysis.hasWorkflowDispatch
+	default:
+		return false
+	}
+}
+
+func normalizeWorkflowLineEndings(contents []byte) []byte {
+	return bytes.ReplaceAll(contents, []byte("\r\n"), []byte("\n"))
 }

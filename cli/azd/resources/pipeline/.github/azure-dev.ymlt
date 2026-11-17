@@ -26,7 +26,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
 {{- if .GitHubEnvironment }}
-    environment: ${{ "{{" }} inputs.environment || '{{ .GitHubEnvironmentExpression }}' {{ "}}" }}
+    environment: {{ .GitHubEnvironmentExpression }}
 {{- end }}
     env:
       AZURE_CLIENT_ID: ${{ "{{" }} vars.AZURE_CLIENT_ID {{ "}}" }}

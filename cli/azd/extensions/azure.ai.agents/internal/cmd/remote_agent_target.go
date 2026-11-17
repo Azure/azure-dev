@@ -156,14 +156,25 @@ func validateDirectProjectEndpoint(raw string) (string, error) {
 	return normalized, nil
 }
 
+// directSessionsListCommand returns a `sessions list` command line that targets the
+// same remote agent with the same direct selector the user supplied.
+func directSessionsListCommand(flags *directAgentTargetFlags, target *AgentContext) string {
+	if flags.agentEndpoint != "" {
+		return fmt.Sprintf("azd ai agent sessions list --agent-endpoint %q", flags.agentEndpoint)
+	}
+	return fmt.Sprintf("azd ai agent sessions list --agent-name %s --project-endpoint %q",
+		target.Name, target.ProjectEndpoint)
+}
+
 // validateDirectSessionID requires an explicit session ID in direct mode because
 // direct targets never read or write locally stored session selections.
-func validateDirectSessionID(sessionID string) error {
+// listCommand is the `sessions list` command suggested for finding a session ID.
+func validateDirectSessionID(sessionID, listCommand string) error {
 	if strings.TrimSpace(sessionID) == "" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidSessionId,
 			"--session-id is required with --agent-endpoint or --project-endpoint",
-			"run `azd ai agent sessions list --agent-name <agent-name>` to find a session ID",
+			fmt.Sprintf("run `%s` to find a session ID", listCommand),
 		)
 	}
 	if strings.ContainsAny(sessionID, "/\\?#") || strings.TrimSpace(sessionID) != sessionID {
@@ -225,7 +236,11 @@ func requireSessionFilesSupport(agent *agent_api.AgentObject) error {
 }
 
 // classifySessionFileError maps session file API failures to actionable errors.
-func classifySessionFileError(err error, operation, agentName, sessionID, remotePath string) error {
+// listCommand is the `sessions list` command to suggest; empty uses the project form.
+func classifySessionFileError(err error, operation, agentName, sessionID, remotePath, listCommand string) error {
+	if listCommand == "" {
+		listCommand = "azd ai agent sessions list"
+	}
 	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		switch respErr.StatusCode {
 		case http.StatusNotFound:
@@ -236,7 +251,7 @@ func classifySessionFileError(err error, operation, agentName, sessionID, remote
 			return exterrors.Validation(
 				exterrors.CodeSessionNotFound,
 				fmt.Sprintf("%s not found for agent %q (session %q)", target, agentName, sessionID),
-				"verify the session ID and path; use `azd ai agent sessions list` to see available sessions",
+				fmt.Sprintf("verify the session ID and path; run `%s` to see available sessions", listCommand),
 			)
 		case http.StatusUnauthorized, http.StatusForbidden:
 			return withServiceSuggestion(exterrors.ServiceFromAzure(err, operation),

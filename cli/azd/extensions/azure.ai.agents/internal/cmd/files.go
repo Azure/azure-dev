@@ -78,6 +78,8 @@ func addFilesFlags(cmd *cobra.Command, flags *filesFlags) {
 type filesContext struct {
 	*AgentContext
 	sessionID string
+	// sessionsListCommand is the direct-mode `sessions list` hint; empty in project mode.
+	sessionsListCommand string
 }
 
 // addDirectFilesFlags registers direct remote targeting on read-only file commands.
@@ -106,14 +108,19 @@ func resolveReadOnlyFilesContext(
 	if target == nil {
 		return resolveFilesContext(ctx, flags, noPrompt)
 	}
-	if err := validateDirectSessionID(flags.session); err != nil {
+	if err := validateDirectSessionID(flags.session, directSessionsListCommand(direct, target)); err != nil {
 		return nil, err
 	}
 	client, err := target.NewClient()
 	if err != nil {
 		return nil, err
 	}
-	return prepareDirectFilesContext(ctx, client, target, flags.session)
+	fc, err := prepareDirectFilesContext(ctx, client, target, flags.session)
+	if err != nil {
+		return nil, err
+	}
+	fc.sessionsListCommand = directSessionsListCommand(direct, target)
+	return fc, nil
 }
 
 // prepareDirectFilesContext confirms the remote agent exists and is a kind that can
@@ -337,8 +344,9 @@ type filesDownloadFlags struct {
 // FilesDownloadAction handles downloading a file from a session.
 type FilesDownloadAction struct {
 	*AgentContext
-	flags     *filesDownloadFlags
-	sessionID string
+	flags               *filesDownloadFlags
+	sessionID           string
+	sessionsListCommand string
 }
 
 func newFilesDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -390,9 +398,10 @@ a deployed hosted agent without an azd project, supply --agent-endpoint, or
 			}
 
 			action := &FilesDownloadAction{
-				AgentContext: fc.AgentContext,
-				flags:        flags,
-				sessionID:    fc.sessionID,
+				AgentContext:        fc.AgentContext,
+				flags:               flags,
+				sessionID:           fc.sessionID,
+				sessionsListCommand: fc.sessionsListCommand,
 			}
 
 			return action.Run(ctx)
@@ -423,7 +432,8 @@ func (a *FilesDownloadAction) Run(ctx context.Context) error {
 		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
-		return classifySessionFileError(err, exterrors.OpDownloadSessionFile, a.Name, a.sessionID, a.flags.file)
+		return classifySessionFileError(
+			err, exterrors.OpDownloadSessionFile, a.Name, a.sessionID, a.flags.file, a.sessionsListCommand)
 	}
 	defer body.Close()
 
@@ -458,9 +468,10 @@ type filesListFlags struct {
 // FilesListAction handles listing files in a session.
 type FilesListAction struct {
 	*AgentContext
-	flags      *filesListFlags
-	sessionID  string
-	remotePath string
+	flags               *filesListFlags
+	sessionID           string
+	remotePath          string
+	sessionsListCommand string
 }
 
 func newFilesListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -516,10 +527,11 @@ a deployed hosted agent without an azd project, supply --agent-endpoint, or
 			}
 
 			action := &FilesListAction{
-				AgentContext: fc.AgentContext,
-				flags:        flags,
-				sessionID:    fc.sessionID,
-				remotePath:   remotePath,
+				AgentContext:        fc.AgentContext,
+				flags:               flags,
+				sessionID:           fc.sessionID,
+				remotePath:          remotePath,
+				sessionsListCommand: fc.sessionsListCommand,
 			}
 
 			return action.Run(ctx)
@@ -553,7 +565,8 @@ func (a *FilesListAction) Run(ctx context.Context) error {
 		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
-		return classifySessionFileError(err, exterrors.OpListSessionFiles, a.Name, a.sessionID, a.remotePath)
+		return classifySessionFileError(
+			err, exterrors.OpListSessionFiles, a.Name, a.sessionID, a.remotePath, a.sessionsListCommand)
 	}
 
 	switch a.flags.output {

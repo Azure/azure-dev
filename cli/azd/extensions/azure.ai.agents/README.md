@@ -714,14 +714,18 @@ capabilities do not change the agent kind and follow the hosted behavior above.
 
 ### Inspecting a deployed agent without an azd project
 
-`azd ai agent show`, `azd ai agent files list`, and `azd ai agent files download`
-accept an explicit cloud target, so you can inspect an agent from any directory,
-including agents that azd did not deploy. Supply either a full agent protocol
-endpoint URL with `--agent-endpoint`, or a Foundry project endpoint with
-`--project-endpoint` plus the deployed agent name:
+`azd ai agent show`, `azd ai agent sessions list`, `azd ai agent sessions show`,
+`azd ai agent files list`, and `azd ai agent files download` accept an explicit
+cloud target, so you can inspect an agent from any directory, including agents
+that azd did not deploy. Supply either a full agent protocol endpoint URL with
+`--agent-endpoint`, or a Foundry project endpoint with `--project-endpoint` plus
+the deployed agent name:
 
 ```bash
 azd ai agent show support \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+
+azd ai agent sessions list --agent-name support \
   --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
 
 azd ai agent files list /data --agent-name support --session-id "<session-id>" \
@@ -738,8 +742,8 @@ separate agent name. File commands require `--session-id`. Prompt and workflow
 agents are rejected because they have no session files; other kinds are checked
 by the service. A missing agent or session, or denied access, returns a
 structured error. Pass `--user-identity` when the session belongs to a specific
-user. The other file commands (`upload`, `delete`, `mkdir`, `stat`) still require
-an azd project.
+user. The other file commands (`upload`, `delete`, `mkdir`, `stat`) and session
+commands (`create`, `stop`, `delete`) still require an azd project.
 
 ## Initializing an A2A hosted agent
 

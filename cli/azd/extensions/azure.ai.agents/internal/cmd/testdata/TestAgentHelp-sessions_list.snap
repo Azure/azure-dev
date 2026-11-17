@@ -2,13 +2,18 @@ List sessions for a hosted agent endpoint.
 
 Returns a paged list of sessions with their status, version, and timestamps.
 
+To list sessions without an azd project, supply --agent-endpoint, or
+--project-endpoint with the deployed agent name in --agent-name.
+
 Usage
   azd ai agent sessions list [flags]
 
 Flags
-  -n, --agent-name string       : Agent name (matches azure.yaml service name; auto-detected when only one exists)
+      --agent-endpoint string   : Full protocol endpoint URL of a deployed agent (no azd project required)
+  -n, --agent-name string       : Agent name: the azure.yaml service name, or the deployed agent name with --project-endpoint
       --limit int32             : Maximum number of sessions to return
       --pagination-token string : Continuation token from a previous list response
+      --project-endpoint string : Foundry project endpoint URL; requires the deployed agent name via --agent-name (no azd project required)
       --user-identity string    : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
 
 Global Flags
@@ -28,3 +33,7 @@ Examples
 
   List in table format
     azd ai agent sessions list --output table
+
+  List sessions of a deployed agent without an azd project
+    azd ai agent sessions list --agent-name support \
+      --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>

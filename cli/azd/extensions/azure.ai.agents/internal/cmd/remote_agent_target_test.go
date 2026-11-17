@@ -205,12 +205,30 @@ func TestResolveDirectAgentTarget_IgnoresCurrentDirectory(t *testing.T) {
 }
 
 func TestValidateDirectSessionID(t *testing.T) {
-	assert.NoError(t, validateDirectSessionID("sess-123"))
+	const listCommand = "azd ai agent sessions list --agent-endpoint \"x\""
+	assert.NoError(t, validateDirectSessionID("sess-123", listCommand))
+	localErr := requireLocalErrorCode(t, validateDirectSessionID("", listCommand), exterrors.CodeInvalidSessionId)
+	assert.Contains(t, localErr.Suggestion, listCommand)
 	for _, sessionID := range []string{"", "  ", "../other", "a/b", "a?b", " sess"} {
 		t.Run(sessionID, func(t *testing.T) {
-			requireLocalErrorCode(t, validateDirectSessionID(sessionID), exterrors.CodeInvalidSessionId)
+			requireLocalErrorCode(t, validateDirectSessionID(sessionID, listCommand), exterrors.CodeInvalidSessionId)
 		})
 	}
+}
+
+func TestDirectSessionsListCommand(t *testing.T) {
+	cmd, flags := newDirectTargetTestCommand(t, "--project-endpoint", testProjectEndpoint+"/")
+	target, err := resolveDirectAgentTarget(cmd, flags, "support-prod", true, "--agent-name")
+	require.NoError(t, err)
+	assert.Equal(t,
+		`azd ai agent sessions list --agent-name support-prod --project-endpoint "`+testProjectEndpoint+`"`,
+		directSessionsListCommand(flags, target))
+
+	cmd, flags = newDirectTargetTestCommand(t, "--agent-endpoint", testAgentEndpoint)
+	target, err = resolveDirectAgentTarget(cmd, flags, "", false, "--agent-name")
+	require.NoError(t, err)
+	assert.Equal(t, `azd ai agent sessions list --agent-endpoint "`+testAgentEndpoint+`"`,
+		directSessionsListCommand(flags, target))
 }
 
 type fakeRemoteAgentReader struct {
@@ -299,15 +317,24 @@ func TestPrepareDirectFilesContext(t *testing.T) {
 func TestClassifySessionFileError(t *testing.T) {
 	t.Run("missing session", func(t *testing.T) {
 		err := classifySessionFileError(newTestResponseError(t, http.StatusNotFound),
-			exterrors.OpListSessionFiles, "support", "sess-1", "/data")
+			exterrors.OpListSessionFiles, "support", "sess-1", "/data", "")
 		localErr := requireLocalErrorCode(t, err, exterrors.CodeSessionNotFound)
 		assert.Contains(t, localErr.Message, "sess-1")
 		assert.Contains(t, localErr.Message, "/data")
+		assert.Contains(t, localErr.Suggestion, "`azd ai agent sessions list`")
+	})
+
+	t.Run("missing session suggests direct list command", func(t *testing.T) {
+		const listCommand = `azd ai agent sessions list --agent-endpoint "x"`
+		err := classifySessionFileError(newTestResponseError(t, http.StatusNotFound),
+			exterrors.OpGetSession, "support", "sess-1", "", listCommand)
+		localErr := requireLocalErrorCode(t, err, exterrors.CodeSessionNotFound)
+		assert.Contains(t, localErr.Suggestion, listCommand)
 	})
 
 	t.Run("denied session keeps status and identity hint", func(t *testing.T) {
 		err := classifySessionFileError(newTestResponseError(t, http.StatusForbidden),
-			exterrors.OpDownloadSessionFile, "support", "sess-1", "/data/out.csv")
+			exterrors.OpDownloadSessionFile, "support", "sess-1", "/data/out.csv", "")
 		serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
 		require.True(t, ok, "expected ServiceError, got %T", err)
 		assert.Equal(t, http.StatusForbidden, serviceErr.StatusCode)
@@ -317,7 +344,7 @@ func TestClassifySessionFileError(t *testing.T) {
 
 	t.Run("other service failure", func(t *testing.T) {
 		err := classifySessionFileError(newTestResponseError(t, http.StatusInternalServerError),
-			exterrors.OpListSessionFiles, "support", "sess-1", "")
+			exterrors.OpListSessionFiles, "support", "sess-1", "", "")
 		serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
 		require.True(t, ok, "expected ServiceError, got %T", err)
 		assert.Equal(t, http.StatusInternalServerError, serviceErr.StatusCode)
@@ -425,6 +452,25 @@ func TestDirectTargetCommands_RejectInvalidInputsBeforeAuth(t *testing.T) {
 				"--session-id", ""},
 			wantCode: exterrors.CodeInvalidSessionId,
 		},
+		{
+			name:     "sessions list project endpoint without name",
+			cmd:      func() *cobra.Command { return newSessionListCommand(nil) },
+			args:     []string{"--project-endpoint", testProjectEndpoint},
+			wantCode: exterrors.CodeInvalidAgentName,
+		},
+		{
+			name:     "sessions list endpoint with agent name",
+			cmd:      func() *cobra.Command { return newSessionListCommand(nil) },
+			args:     []string{"--agent-name", "support", "--agent-endpoint", testAgentEndpoint},
+			wantCode: exterrors.CodeConflictingArguments,
+		},
+		{
+			name: "sessions show direct target with environment",
+			cmd:  func() *cobra.Command { return newSessionShowCommand(nil) },
+			args: []string{"s1", "--agent-endpoint", testAgentEndpoint,
+				"--environment", "dev"},
+			wantCode: exterrors.CodeConflictingArguments,
+		},
 	}
 
 	for _, tt := range tests {
@@ -434,15 +480,69 @@ func TestDirectTargetCommands_RejectInvalidInputsBeforeAuth(t *testing.T) {
 	}
 }
 
+// The missing-session hint must name the same direct selector so it is runnable.
+func TestFilesDirectMissingSession_SuggestsDirectSessionsList(t *testing.T) {
+	err := executeUnderRoot(newFilesListCommand(nil),
+		"/data", "--agent-name", "support", "--project-endpoint", testProjectEndpoint)
+	localErr := requireLocalErrorCode(t, err, exterrors.CodeInvalidSessionId)
+	assert.Contains(t, localErr.Suggestion,
+		`azd ai agent sessions list --agent-name support --project-endpoint "`+testProjectEndpoint+`"`)
+}
+
+func TestClassifyDirectSessionListError(t *testing.T) {
+	sc := &sessionContext{endpoint: testProjectEndpoint, agentName: "support-prod", direct: true}
+
+	localErr := requireLocalErrorCode(t,
+		classifyDirectSessionListError(newTestResponseError(t, http.StatusNotFound), sc),
+		exterrors.CodeAgentNotFound)
+	assert.Contains(t, localErr.Message, "support-prod")
+	assert.Contains(t, localErr.Suggestion, "hosted agents")
+
+	err := classifyDirectSessionListError(newTestResponseError(t, http.StatusForbidden), sc)
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok, "expected ServiceError, got %T", err)
+	assert.Equal(t, http.StatusForbidden, serviceErr.StatusCode)
+	assert.Contains(t, serviceErr.Suggestion, "--user-identity")
+}
+
+func TestResolveDirectSessionContext(t *testing.T) {
+	newCmd := func(args ...string) (*cobra.Command, *directAgentTargetFlags, *string) {
+		var agentName string
+		cmd, direct := &cobra.Command{Use: "list"}, &directAgentTargetFlags{}
+		cmd.Flags().String("environment", "", "")
+		cmd.Flags().StringVarP(&agentName, "agent-name", "n", "", "")
+		addDirectSessionFlags(cmd, direct)
+		require.NoError(t, cmd.ParseFlags(args))
+		return cmd, direct, &agentName
+	}
+
+	cmd, direct, name := newCmd("--agent-name", "support-prod", "--project-endpoint", testProjectEndpoint)
+	sc, err := resolveDirectSessionContext(cmd, direct, *name)
+	require.NoError(t, err)
+	require.NotNil(t, sc)
+	assert.True(t, sc.direct)
+	assert.Equal(t, testProjectEndpoint, sc.endpoint)
+	assert.Equal(t, "support-prod", sc.agentName)
+	assert.Empty(t, sc.version)
+	assert.Contains(t, sc.sessionsListCommand, "--project-endpoint")
+
+	cmd, direct, name = newCmd("--agent-name", "local-service")
+	sc, err = resolveDirectSessionContext(cmd, direct, *name)
+	require.NoError(t, err)
+	assert.Nil(t, sc, "project mode must fall back to azure.yaml resolution")
+}
+
 func TestDirectTargetFlags_OnlyOnReadOnlyCommands(t *testing.T) {
 	for _, cmd := range []*cobra.Command{
 		newShowCommand(nil), newFilesListCommand(nil), newFilesDownloadCommand(nil),
+		newSessionListCommand(nil), newSessionShowCommand(nil),
 	} {
 		assert.NotNil(t, cmd.Flags().Lookup(directAgentEndpointFlag), cmd.Name())
 		assert.NotNil(t, cmd.Flags().Lookup(directProjectEndpointFlag), cmd.Name())
 	}
 	for _, cmd := range []*cobra.Command{
 		newFilesUploadCommand(nil), newFilesRemoveCommand(nil), newFilesMkdirCommand(nil),
+		newSessionCreateCommand(nil), newSessionStopCommand(nil), newSessionDeleteCommand(nil),
 	} {
 		assert.Nil(t, cmd.Flags().Lookup(directAgentEndpointFlag), cmd.Name())
 		assert.Nil(t, cmd.Flags().Lookup(directProjectEndpointFlag), cmd.Name())

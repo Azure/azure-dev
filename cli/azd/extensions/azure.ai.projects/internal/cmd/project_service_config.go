@@ -146,6 +146,38 @@ func projectLifecycleHandler(
 	return seedProjectModelDeploymentName(ctx, azdClient, envName, values, cfg.Deployments)
 }
 
+func projectPredeployHandler(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	args *azdext.ProjectEventArgs,
+) error {
+	if args == nil || args.Project == nil {
+		return fmt.Errorf("project lifecycle event has no project")
+	}
+
+	_, found, err := loadProjectServiceConfig(
+		args.Project.Services,
+		args.Project.Path,
+	)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+
+	envName, values, err := projectLifecycleEnvironment(ctx, azdClient)
+	if err != nil {
+		return err
+	}
+	if err := provisioning.NewACRRemoteBuildCheck(azdClient).ValidateProject(
+		ctx, args.Project, envName, values,
+	); err != nil {
+		return err
+	}
+	return synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project)
+}
+
 func validateProjectACRBuilds(ctx context.Context, client *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	if args == nil || args.Project == nil {
 		return fmt.Errorf("project lifecycle event has no project")

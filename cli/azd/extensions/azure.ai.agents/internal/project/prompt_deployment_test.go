@@ -6,11 +6,16 @@ package project
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // fakeDeploymentResolver records existence checks and creations.
@@ -148,4 +153,149 @@ func TestGraphResolve_ResolvesInOrderWhenValid(t *testing.T) {
 	if len(order) != 2 || order[0] != nodeDeployment || order[1] != nodeAgent {
 		t.Errorf("resolve order: got %v", order)
 	}
+}
+
+func TestProvisionedDeploymentResolver_PendingProvisionSignal(t *testing.T) {
+	t.Parallel()
+
+	for _, pending := range []string{
+		"model_deployment",
+		"project",
+		"acr, model_deployment",
+		"project,app_insights",
+	} {
+		t.Run(pending, func(t *testing.T) {
+			t.Parallel()
+
+			managed := &agent_yaml.PromptAgent{Model: "gpt-4.1-mini", Instructions: "i"}
+			managed.Name = "agent"
+			env := map[string]string{
+				"AI_AGENT_PENDING_PROVISION": pending,
+			}
+			g, err := newPromptGraph(t.TempDir(), managed, &PromptAgentSettings{}, env, nil)
+			require.NoError(t, err)
+
+			err = g.resolve(t.Context(), nil)
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Same(t, localErr, err, "deploymentNode must return structured LocalError without fmt.Errorf wrapping")
+			require.Equal(t, exterrors.CodeModelDeploymentNotFound, localErr.Code)
+			require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+			require.Contains(t, localErr.Message, `"gpt-4.1-mini"`)
+			require.Contains(t, localErr.Suggestion, "azd provision")
+		})
+	}
+}
+
+func TestProvisionedDeploymentResolver_DeclaredProjectDeploymentState(t *testing.T) {
+	t.Parallel()
+
+	newProjectServices := func(t *testing.T, modelName string) (*azdext.ServiceConfig, map[string]*azdext.ServiceConfig) {
+		t.Helper()
+		props, err := structpb.NewStruct(map[string]any{
+			"deployments": []any{
+				map[string]any{"name": modelName},
+			},
+		})
+		require.NoError(t, err)
+		agentSvc := &azdext.ServiceConfig{
+			Name: "agent",
+			Host: "azure.ai.agent",
+			Uses: []string{"ai-project"},
+		}
+		projectServices := map[string]*azdext.ServiceConfig{
+			"ai-project": {
+				Name:                 "ai-project",
+				Host:                 FoundryProjectHost,
+				AdditionalProperties: props,
+			},
+			"agent": agentSvc,
+		}
+		return agentSvc, projectServices
+	}
+
+	t.Run("declared deployment without AI_PROJECT_DEPLOYMENTS and no on-disk infra fails", func(t *testing.T) {
+		t.Parallel()
+
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0o600))
+		agentSvc, projectServices := newProjectServices(t, "gpt-4.1-mini")
+		managed := &agent_yaml.PromptAgent{Model: "gpt-4.1-mini", Instructions: "i"}
+		managed.Name = "agent"
+
+		g, err := newPromptGraph(root, managed, &PromptAgentSettings{}, map[string]string{}, nil)
+		require.NoError(t, err)
+		g.projectRoot = root
+		g.agentService = agentSvc
+		g.projectServices = projectServices
+
+		err = g.resolve(t.Context(), nil)
+		require.Error(t, err)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		require.Same(t, localErr, err)
+		require.Equal(t, exterrors.CodeModelDeploymentNotFound, localErr.Code)
+		require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+	})
+
+	t.Run("declared deployment succeeds when AI_PROJECT_DEPLOYMENTS is set and pending is empty", func(t *testing.T) {
+		t.Parallel()
+
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0o600))
+		agentSvc, projectServices := newProjectServices(t, "gpt-4.1-mini")
+		managed := &agent_yaml.PromptAgent{Model: "gpt-4.1-mini", Instructions: "i"}
+		managed.Name = "agent"
+		env := map[string]string{
+			"AI_PROJECT_DEPLOYMENTS": `[{"name":"gpt-4.1-mini"}]`,
+		}
+
+		g, err := newPromptGraph(root, managed, &PromptAgentSettings{}, env, nil)
+		require.NoError(t, err)
+		g.projectRoot = root
+		g.agentService = agentSvc
+		g.projectServices = projectServices
+
+		require.NoError(t, g.resolve(t.Context(), nil))
+	})
+
+	t.Run("undeclared model deployment reuse succeeds without AI_PROJECT_DEPLOYMENTS", func(t *testing.T) {
+		t.Parallel()
+
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0o600))
+		agentSvc, projectServices := newProjectServices(t, "other-deployment")
+		managed := &agent_yaml.PromptAgent{Model: "reused-existing-deployment", Instructions: "i"}
+		managed.Name = "agent"
+
+		g, err := newPromptGraph(root, managed, &PromptAgentSettings{}, map[string]string{}, nil)
+		require.NoError(t, err)
+		g.projectRoot = root
+		g.agentService = agentSvc
+		g.projectServices = projectServices
+
+		require.NoError(t, g.resolve(t.Context(), nil))
+	})
+
+	t.Run("declared deployment succeeds when infrastructure is on disk", func(t *testing.T) {
+		t.Parallel()
+
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0o600))
+		infraDir := filepath.Join(root, "infra")
+		require.NoError(t, os.MkdirAll(infraDir, 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(infraDir, "main.bicep"), []byte("// on disk\n"), 0o600))
+		agentSvc, projectServices := newProjectServices(t, "gpt-4.1-mini")
+		managed := &agent_yaml.PromptAgent{Model: "gpt-4.1-mini", Instructions: "i"}
+		managed.Name = "agent"
+
+		g, err := newPromptGraph(root, managed, &PromptAgentSettings{}, map[string]string{}, nil)
+		require.NoError(t, err)
+		g.projectRoot = root
+		g.agentService = agentSvc
+		g.projectServices = projectServices
+
+		require.NoError(t, g.resolve(t.Context(), nil))
+	})
 }

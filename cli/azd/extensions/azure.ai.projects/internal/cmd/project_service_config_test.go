@@ -822,3 +822,90 @@ func TestProjectLifecycleHandlerSeedsRuntimeModelName(t *testing.T) {
 		})
 	}
 }
+
+func TestProjectPredeployHandlerDoesNotWriteDeploymentsOrPrompt(t *testing.T) {
+	for _, noPrompt := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noPrompt=%v", noPrompt), func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", strconv.FormatBool(noPrompt))
+			server := &recordingProjectEnvironmentServer{
+				envName: "dev",
+				values: map[string]string{
+					"AZURE_SUBSCRIPTION_ID": "sub",
+					"AZURE_LOCATION":        "westus",
+				},
+			}
+			client := newProjectEnvironmentClient(t, server)
+			args := &azdext.ProjectEventArgs{
+				Project: &azdext.ProjectConfig{
+					Services: map[string]*azdext.ServiceConfig{
+						"project": {
+							Host: aiProjectHost,
+							AdditionalProperties: mustProjectProperties(t, map[string]any{
+								"deployments": []any{
+									map[string]any{
+										"name":  "chat",
+										"model": map[string]any{"name": "gpt-4.1-mini", "version": "2025-04-14"},
+										"sku":   map[string]any{"name": "GlobalStandard", "capacity": 10},
+									},
+								},
+							}),
+						},
+					},
+				},
+			}
+
+			require.NoError(t, projectPredeployHandler(t.Context(), client, args))
+			assert.Empty(t, server.models)
+			assert.Empty(t, server.deployments)
+			assert.Empty(t, server.key)
+			assert.NotContains(t, server.values, projectDeploymentsEnvKey)
+			assert.NotContains(t, server.values, "AZURE_AI_MODEL_DEPLOYMENT_NAME")
+		})
+	}
+
+	t.Run("validates project and ACR reuse", func(t *testing.T) {
+		require.ErrorContains(t, projectPredeployHandler(t.Context(), nil, nil), "no project")
+
+		// No azure.ai.project service is a no-op before environment lookup.
+		require.NoError(t, projectPredeployHandler(t.Context(), nil, &azdext.ProjectEventArgs{
+			Project: &azdext.ProjectConfig{
+				Services: map[string]*azdext.ServiceConfig{
+					"agent": {Host: "azure.ai.agent"},
+				},
+			},
+		}))
+
+		// Duplicate azure.ai.project services fail config validation.
+		require.ErrorContains(t, projectPredeployHandler(t.Context(), nil, &azdext.ProjectEventArgs{
+			Project: &azdext.ProjectConfig{
+				Services: map[string]*azdext.ServiceConfig{
+					"first":  {Host: aiProjectHost},
+					"second": {Host: aiProjectHost},
+				},
+			},
+		}), "multiple services")
+
+		// ACR reuse gate runs during predeploy.
+		t.Setenv(synthesis.ACRReuseEnvVar, "false")
+		root := t.TempDir()
+		raw := []byte("infra:\n  provider: microsoft.foundry\nservices:\n  project:\n    host: azure.ai.project\n")
+		require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), raw, 0o600))
+		server := &recordingProjectEnvironmentServer{
+			envName: "dev",
+			values:  map[string]string{},
+			config: map[string][]byte{
+				synthesis.ACRPendingConfigKey: []byte(`{"version":1}`),
+			},
+		}
+		client := newProjectEnvironmentClient(t, server)
+		err := projectPredeployHandler(t.Context(), client, &azdext.ProjectEventArgs{
+			Project: &azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					"project": {Host: aiProjectHost},
+				},
+			},
+		})
+		require.ErrorContains(t, err, synthesis.ACRReuseEnvVar)
+	})
+}

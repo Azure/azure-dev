@@ -20,6 +20,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/inittelemetry"
+	"azureaiagent/internal/pkg/recordproxy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -514,16 +515,254 @@ kind: prompt
 }
 
 func TestPrintPromptInitNextSteps(t *testing.T) {
-	stdout := withCapturedStdout(t, func() {
-		printPromptInitNextSteps("prompt-agent")
+	t.Run("needs provision", func(t *testing.T) {
+		stdout := withCapturedStdout(t, func() {
+			printPromptInitNextSteps("prompt-agent", true)
+		})
+
+		require.Contains(t, stdout, "  cd prompt-agent\n")
+		require.Contains(t, stdout, "azd up")
+		require.NotContains(t, stdout, "azd deploy")
+		require.Contains(t, stdout, `azd ai agent invoke "hello"`)
+		require.NotContains(t, stdout, "azd ai agent run")
+		require.NotContains(t, stdout, "--local")
 	})
 
-	require.Contains(t, stdout, "  cd prompt-agent\n")
-	require.Contains(t, stdout, "azd up")
-	require.Contains(t, stdout, "azd deploy")
-	require.Contains(t, stdout, `azd ai agent invoke "hello"`)
-	require.NotContains(t, stdout, "azd ai agent run")
-	require.NotContains(t, stdout, "--local")
+	t.Run("ready to deploy", func(t *testing.T) {
+		stdout := withCapturedStdout(t, func() {
+			printPromptInitNextSteps("prompt-agent", false)
+		})
+
+		require.Contains(t, stdout, "  cd prompt-agent\n")
+		require.Contains(t, stdout, "azd deploy")
+		require.NotContains(t, stdout, "azd up")
+		require.Contains(t, stdout, `azd ai agent invoke "hello"`)
+		require.NotContains(t, stdout, "azd ai agent run")
+		require.NotContains(t, stdout, "--local")
+	})
+
+	t.Run("adoption prompt-only state aware", func(t *testing.T) {
+		envServer := &testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "dev"},
+			values: map[string]map[string]string{
+				"dev": {
+					"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/proj",
+				},
+			},
+		}
+		projServer := &recordingProjectServer{
+			existing: map[string]*azdext.ServiceConfig{
+				"agent": {
+					Name: "agent",
+					Host: AiAgentHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "prompt", "name": "agent", "model": "gpt-4.1-mini", "instructions": "i",
+					}),
+				},
+			},
+		}
+		grpcServer := grpc.NewServer()
+		azdext.RegisterEnvironmentServiceServer(grpcServer, envServer)
+		azdext.RegisterProjectServiceServer(grpcServer, projServer)
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		go func() { _ = grpcServer.Serve(listener) }()
+		t.Cleanup(func() {
+			grpcServer.Stop()
+			_ = listener.Close()
+		})
+		client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+		require.NoError(t, err)
+		t.Cleanup(func() { client.Close() })
+
+		readyStdout := withCapturedStdout(t, func() {
+			printAdoptionNextSteps(t.Context(), client, "prompt-agent", true)
+		})
+		require.Contains(t, readyStdout, "azd deploy")
+		require.NotContains(t, readyStdout, "azd up")
+
+		envServer.values["dev"][pendingProvisionEnvVar] = "model_deployment"
+		pendingStdout := withCapturedStdout(t, func() {
+			printAdoptionNextSteps(t.Context(), client, "prompt-agent", true)
+		})
+		require.Contains(t, pendingStdout, "azd up")
+		require.NotContains(t, pendingStdout, "azd deploy")
+	})
+}
+
+type managedInitAiModelServer struct {
+	azdext.UnimplementedAiModelServiceServer
+}
+
+func (*managedInitAiModelServer) ListModels(
+	context.Context, *azdext.ListModelsRequest,
+) (*azdext.ListModelsResponse, error) {
+	return &azdext.ListModelsResponse{
+		Models: []*azdext.AiModel{
+			{
+				Name:      "gpt-4.1-mini",
+				Locations: []string{"eastus2"},
+				Versions: []*azdext.AiModelVersion{
+					{Version: "2025-04-14", IsDefault: true},
+				},
+			},
+		},
+	}, nil
+}
+
+func (*managedInitAiModelServer) ResolveModelDeployments(
+	context.Context, *azdext.ResolveModelDeploymentsRequest,
+) (*azdext.ResolveModelDeploymentsResponse, error) {
+	return &azdext.ResolveModelDeploymentsResponse{
+		Deployments: []*azdext.AiModelDeployment{
+			{
+				ModelName: "gpt-4.1-mini",
+				Format:    "OpenAI",
+				Version:   "2025-04-14",
+				Sku:       &azdext.AiModelSku{Name: "GlobalStandard"},
+				Capacity:  10,
+			},
+		},
+	}, nil
+}
+
+func TestRunInitManaged_PendingModelDeploymentSignalAndNextSteps(t *testing.T) {
+	const projectID = "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/acct/projects/proj"
+
+	for _, tt := range []struct {
+		name            string
+		flags           initFlags
+		initialPending  string
+		wantPending     string
+		wantContains    string
+		wantNotContains string
+	}{
+		{
+			name: "existing project with new model deployment requires provision",
+			flags: initFlags{
+				noPrompt:          true,
+				agentName:         "test-agent",
+				projectResourceId: projectID,
+				model:             "gpt-4.1-mini",
+			},
+			wantPending:     "model_deployment",
+			wantContains:    "azd up",
+			wantNotContains: "azd deploy",
+		},
+		{
+			name: "existing project with existing model deployment clears pending signal",
+			flags: initFlags{
+				noPrompt:          true,
+				agentName:         "test-agent",
+				projectResourceId: projectID,
+				modelDeployment:   "existing-gpt",
+			},
+			initialPending:  "model_deployment",
+			wantPending:     "",
+			wantContains:    "azd deploy",
+			wantNotContains: "azd up",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			bin := t.TempDir()
+			//nolint:gosec // fake credential for offline HTTP assertions
+			token := `{"token":"offline-test-token","expiresOn":"2099-01-01T00:00:00Z"}`
+			name, script := "azd", "#!/bin/sh\nprintf '%s\\n' '"+token+"'\n"
+			if runtime.GOOS == "windows" {
+				name, script = "azd.cmd", "@echo off\r\necho "+token+"\r\n"
+			}
+			executable := filepath.Join(bin, name)
+			require.NoError(t, os.WriteFile(executable, []byte(script), 0o600))
+			//nolint:gosec // the offline fixture must execute on Unix
+			require.NoError(t, os.Chmod(executable, 0o700))
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+			root := t.TempDir()
+			t.Chdir(root)
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"),
+				[]byte("name: test\nservices:\n  ai-project:\n    host: azure.ai.project\n"),
+				0o600,
+			))
+
+			originalTransport := recordproxy.Transport
+			recordproxy.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				body := `{"value":[]}`
+				switch {
+				case strings.Contains(req.URL.Path, "/projects/proj"):
+					body = fmt.Sprintf(
+						`{"id":%q,"name":"acct/proj","location":"eastus2",`+
+							`"properties":{"endpoints":{"AI Foundry API":`+
+							`"https://acct.services.ai.azure.com/api/projects/proj"}}}`,
+						projectID,
+					)
+				case strings.Contains(req.URL.Path, "/deployments"):
+					body = `{"value":[{"name":"existing-gpt","properties":{"model":{` +
+						`"name":"gpt-4.1-mini","format":"OpenAI","version":"2025-04-14"}},` +
+						`"sku":{"name":"GlobalStandard","capacity":10}}]}`
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": {"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(body)),
+					Request:    req,
+				}, nil
+			})
+			t.Cleanup(func() { recordproxy.Transport = originalTransport })
+
+			envValues := map[string]string{
+				"AZURE_SUBSCRIPTION_ID": "sub",
+				"AZURE_LOCATION":        "eastus2",
+			}
+			if tt.initialPending != "" {
+				envValues[pendingProvisionEnvVar] = tt.initialPending
+			}
+			envServer := &reuseInitACREnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					current:      &azdext.Environment{Name: "dev"},
+					environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
+					values:       map[string]map[string]string{"dev": envValues},
+				},
+			}
+			projServer := &recordingProjectServer{
+				projectPath: root,
+				existing: map[string]*azdext.ServiceConfig{
+					"ai-project": {Name: "ai-project", Host: AiProjectHost},
+				},
+			}
+
+			grpcServer := grpc.NewServer()
+			azdext.RegisterEnvironmentServiceServer(grpcServer, envServer)
+			azdext.RegisterProjectServiceServer(grpcServer, projServer)
+			azdext.RegisterWorkflowServiceServer(grpcServer, &testWorkflowServiceServer{})
+			azdext.RegisterPromptServiceServer(grpcServer, &helpersPromptServer{})
+			azdext.RegisterAccountServiceServer(grpcServer, &projectSetupAccountServer{})
+			azdext.RegisterAiModelServiceServer(grpcServer, &managedInitAiModelServer{})
+
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = grpcServer.Serve(listener) }()
+			t.Cleanup(func() {
+				grpcServer.Stop()
+				_ = listener.Close()
+			})
+
+			client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+			require.NoError(t, err)
+			t.Cleanup(func() { client.Close() })
+
+			flags := tt.flags
+			var runErr error
+			stdout := withCapturedStdout(t, func() {
+				runErr = runInitManaged(t.Context(), &flags, client, "")
+			})
+			require.NoError(t, runErr)
+			require.Equal(t, tt.wantPending, envServer.values["dev"][pendingProvisionEnvVar])
+			require.Contains(t, stdout, tt.wantContains)
+			require.NotContains(t, stdout, tt.wantNotContains)
+		})
+	}
 }
 
 // Prompt-only adoption preserves paths in each shell's navigation hint.
@@ -553,7 +792,7 @@ func TestPrintPromptInitNextSteps_PreexistingTargetIsShellSafe(t *testing.T) {
 			require.Equal(t, tt.dir, display)
 
 			stdout := withCapturedStdout(t, func() {
-				printPromptInitNextSteps(display)
+				printPromptInitNextSteps(display, true)
 			})
 			require.Contains(t, stdout, "  "+tt.want+"\n")
 			require.Contains(t, stdout, "  Set-Location -LiteralPath '"+

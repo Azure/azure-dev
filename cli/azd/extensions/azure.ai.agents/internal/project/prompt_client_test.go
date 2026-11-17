@@ -4,8 +4,12 @@
 package project
 
 import (
+	"errors"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +23,13 @@ func TestDefaultPromptAgentSettings(t *testing.T) {
 
 func TestPromptAgentSettingsValidateRequiresFoundryProject(t *testing.T) {
 	settings := DefaultPromptAgentSettings()
-	require.ErrorContains(t, settings.Validate(), "projectEndpoint")
+	err := settings.Validate()
+	require.ErrorContains(t, err, "projectEndpoint")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeMissingAiProjectEndpoint, localErr.Code)
+	require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+	require.Contains(t, localErr.Suggestion, "azd provision")
 
 	settings.SubscriptionID = "sub"
 	settings.ResourceGroup = "rg"

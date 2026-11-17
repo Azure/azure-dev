@@ -2160,15 +2160,22 @@ func printAdoptionNextSteps(
 	folderDisplay string,
 	promptOnly bool,
 ) {
-	if promptOnly {
-		printPromptInitNextSteps(folderDisplay)
-		return
-	}
 	var stateOpts []nextstep.Option
 	if folderDisplay != "" {
 		stateOpts = append(stateOpts, nextstep.WithCreatedFolder(folderDisplay))
 	}
-	state, _ := nextstep.AssembleState(ctx, azdClient, stateOpts...)
+	var state *nextstep.State
+	if azdClient != nil {
+		state, _ = nextstep.AssembleState(ctx, azdClient, stateOpts...)
+	}
+	if promptOnly {
+		needsProvision := state == nil ||
+			len(state.PendingProvisionReasons) > 0 ||
+			!state.HasProjectEndpoint ||
+			len(state.MissingInfraVars) > 0
+		printPromptInitNextSteps(folderDisplay, needsProvision)
+		return
+	}
 	_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, azdClient)))
 }
 

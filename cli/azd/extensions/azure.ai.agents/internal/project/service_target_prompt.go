@@ -376,7 +376,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	}
 	if strings.TrimSpace(settings.ProjectEndpoint) == "" {
 		return nil, exterrors.Dependency(
-			exterrors.CodeInvalidServiceConfig,
+			exterrors.CodeMissingAiProjectEndpoint,
 			"a Foundry project endpoint is required to deploy a prompt agent",
 			"run `azd provision` to create the Foundry project",
 		)

@@ -57,6 +57,8 @@ func TestResolveDirectAgentTarget(t *testing.T) {
 		wantEndpoint string
 		wantAgent    string
 		wantCode     string
+		// nameSupplied marks the name selector as explicitly supplied even when empty.
+		nameSupplied bool
 	}{
 		{name: "project mode when no direct flag", agentName: "local-service", wantNil: true},
 		{
@@ -84,6 +86,18 @@ func TestResolveDirectAgentTarget(t *testing.T) {
 			args:      []string{"--agent-endpoint", testAgentEndpoint},
 			agentName: "support",
 			wantCode:  exterrors.CodeConflictingArguments,
+		},
+		{
+			name:         "agent endpoint conflicts with explicitly empty name",
+			args:         []string{"--agent-endpoint", testAgentEndpoint},
+			nameSupplied: true,
+			wantCode:     exterrors.CodeConflictingArguments,
+		},
+		{
+			name:         "project endpoint rejects explicitly empty name",
+			args:         []string{"--project-endpoint", testProjectEndpoint},
+			nameSupplied: true,
+			wantCode:     exterrors.CodeInvalidAgentName,
 		},
 		{
 			name: "both endpoints conflict",
@@ -153,7 +167,8 @@ func TestResolveDirectAgentTarget(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd, flags := newDirectTargetTestCommand(t, tt.args...)
-			target, err := resolveDirectAgentTarget(cmd, flags, tt.agentName, "--agent-name")
+			target, err := resolveDirectAgentTarget(
+				cmd, flags, tt.agentName, tt.nameSupplied || tt.agentName != "", "--agent-name")
 			if tt.wantCode != "" {
 				requireLocalErrorCode(t, err, tt.wantCode)
 				assert.Nil(t, target)
@@ -174,7 +189,7 @@ func TestResolveDirectAgentTarget(t *testing.T) {
 func TestResolveDirectAgentTarget_IgnoresCurrentDirectory(t *testing.T) {
 	args := []string{"--project-endpoint", testProjectEndpoint}
 	cmd, flags := newDirectTargetTestCommand(t, args...)
-	want, err := resolveDirectAgentTarget(cmd, flags, "support-prod", "--agent-name")
+	want, err := resolveDirectAgentTarget(cmd, flags, "support-prod", true, "--agent-name")
 	require.NoError(t, err)
 
 	projectDir := t.TempDir()
@@ -184,7 +199,7 @@ func TestResolveDirectAgentTarget_IgnoresCurrentDirectory(t *testing.T) {
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://other.services.ai.azure.com/api/projects/other")
 
 	cmd, flags = newDirectTargetTestCommand(t, args...)
-	got, err := resolveDirectAgentTarget(cmd, flags, "support-prod", "--agent-name")
+	got, err := resolveDirectAgentTarget(cmd, flags, "support-prod", true, "--agent-name")
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
 }
@@ -381,6 +396,19 @@ func TestDirectTargetCommands_RejectInvalidInputsBeforeAuth(t *testing.T) {
 			cmd:  func() *cobra.Command { return newFilesListCommand(nil) },
 			args: []string{"--agent-name", "support", "--session-id", "s1",
 				"--agent-endpoint", testAgentEndpoint},
+			wantCode: exterrors.CodeConflictingArguments,
+		},
+		{
+			name: "files list endpoint with explicitly empty agent name",
+			cmd:  func() *cobra.Command { return newFilesListCommand(nil) },
+			args: []string{"--agent-name=", "--session-id", "s1",
+				"--agent-endpoint", testAgentEndpoint},
+			wantCode: exterrors.CodeConflictingArguments,
+		},
+		{
+			name:     "show endpoint with explicitly empty positional name",
+			cmd:      func() *cobra.Command { return newShowCommand(nil) },
+			args:     []string{"", "--agent-endpoint", testAgentEndpoint},
 			wantCode: exterrors.CodeConflictingArguments,
 		},
 		{

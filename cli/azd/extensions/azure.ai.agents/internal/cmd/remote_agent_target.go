@@ -42,12 +42,14 @@ func addDirectAgentTargetFlags(cmd *cobra.Command, flags *directAgentTargetFlags
 
 // resolveDirectAgentTarget returns the explicitly selected remote agent, or nil when
 // neither --agent-endpoint nor --project-endpoint is set. name is the explicit agent
-// selector for the command and nameSelector describes it in error messages. All
-// checks are local so conflicting inputs fail before authentication.
+// selector for the command, nameSupplied reports whether the user supplied it (even
+// as an empty value), and nameSelector describes it in error messages. All checks
+// are local so conflicting inputs fail before authentication.
 func resolveDirectAgentTarget(
 	cmd *cobra.Command,
 	flags *directAgentTargetFlags,
 	name string,
+	nameSupplied bool,
 	nameSelector string,
 ) (*AgentContext, error) {
 	agentEndpointSet := cmd.Flags().Changed(directAgentEndpointFlag)
@@ -72,7 +74,7 @@ func resolveDirectAgentTarget(
 	}
 
 	if agentEndpointSet {
-		if name != "" {
+		if nameSupplied || name != "" {
 			return nil, exterrors.Validation(
 				exterrors.CodeConflictingArguments,
 				fmt.Sprintf("--agent-endpoint cannot be combined with %s", nameSelector),

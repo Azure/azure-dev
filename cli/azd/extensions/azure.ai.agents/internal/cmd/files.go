@@ -98,7 +98,8 @@ func resolveReadOnlyFilesContext(
 	direct *directAgentTargetFlags,
 	noPrompt bool,
 ) (*filesContext, error) {
-	target, err := resolveDirectAgentTarget(cmd, direct, flags.agentName, "--agent-name")
+	target, err := resolveDirectAgentTarget(
+		cmd, direct, flags.agentName, cmd.Flags().Changed("agent-name"), "--agent-name")
 	if err != nil {
 		return nil, err
 	}

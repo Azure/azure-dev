@@ -88,7 +88,8 @@ it never reads azure.yaml or azd environment values.`,
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			target, err := resolveDirectAgentTarget(cmd, &flags.direct, flags.name, "the [name] argument")
+			target, err := resolveDirectAgentTarget(
+				cmd, &flags.direct, flags.name, len(args) > 0, "the [name] argument")
 			if err != nil {
 				return err
 			}

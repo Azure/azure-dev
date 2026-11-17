@@ -25,7 +25,7 @@ const (
 )
 
 // How azd presents a service lifecycle message.
-// Deprecated: use azd.extensions.v1.ServiceEventMessageKind in azd 1.38.0 or later.
+// Deprecated: use azd.extensions.v1.ServiceEventMessageKind in azd 1.39.0 or later.
 //
 // Deprecated: Marked as deprecated in azd/extensions/v1beta/event.proto.
 type ServiceEventMessageKind int32
@@ -275,7 +275,7 @@ func (*EventMessage_SubscribeProjectEventResponse) isEventMessage_MessageType() 
 func (*EventMessage_SubscribeServiceEventResponse) isEventMessage_MessageType() {}
 
 // A non-blocking message returned by a service handler.
-// Deprecated: use azd.extensions.v1.ServiceEventMessage in azd 1.38.0 or later.
+// Deprecated: use azd.extensions.v1.ServiceEventMessage in azd 1.39.0 or later.
 //
 // Deprecated: Marked as deprecated in azd/extensions/v1beta/event.proto.
 type ServiceEventMessage struct {
@@ -754,7 +754,7 @@ type ServiceHandlerStatus struct {
 	// Optional structured error details (set when status is "failed").
 	Error *ExtensionError `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
 	// Non-blocking messages returned by a service deploy handler.
-	// Deprecated: use the v1 messages field in azd 1.38.0 or later.
+	// Deprecated: use the v1 messages field in azd 1.39.0 or later.
 	//
 	// Deprecated: Marked as deprecated in azd/extensions/v1beta/event.proto.
 	Messages      []*ServiceEventMessage `protobuf:"bytes,6,rep,name=messages,proto3" json:"messages,omitempty"`

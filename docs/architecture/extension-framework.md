@@ -104,7 +104,7 @@ Extensions can access these azd services via gRPC:
 - **Framework** — Framework service operations
 - **Service Target** — Deployment target operations
 
-Structured deploy messages use the stable event stream in azd 1.38.0 or
+Structured deploy messages use the stable event stream in azd 1.39.0 or
 later. Go extensions return them with
 `ExtensionHost.WithServiceEventResponseHandler` for service `predeploy` and
 `postdeploy` events; older hosts ignore them. The deprecated

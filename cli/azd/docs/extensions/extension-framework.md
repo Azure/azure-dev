@@ -1648,7 +1648,7 @@ Already-built extensions still use the retained beta route, which delegates to
 the same stable host implementation. No beta removal date is set.
 See the [second graduation record](contract-versioning.md#october-2026-second-graduation-target-azd-1370)
 for release and consumer migration tracking. Structured predeploy/postdeploy
-messages graduated separately in azd 1.38.0.
+messages graduated separately in azd 1.39.0.
 
 ## Developer Artifacts
 
@@ -2527,7 +2527,7 @@ used with the beta
   - `links`: Optional references with titles and URLs.
 
 Structured messages use the stable `ServiceHandlerStatus.messages` field in
-azd 1.38.0 or later, and only for service `predeploy` and `postdeploy`
+azd 1.39.0 or later, and only for service `predeploy` and `postdeploy`
 handlers. Go extensions register them with
 `ExtensionHost.WithServiceEventResponseHandler`. The stable stream correlates
 statuses by extension, service, and event, so no request ID is needed. Older

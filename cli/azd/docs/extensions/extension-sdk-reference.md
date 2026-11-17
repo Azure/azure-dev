@@ -119,9 +119,9 @@ host.WithServiceEventResponseHandler(
 )
 ```
 
-Structured messages are stable in azd 1.38.0. Extensions that rely on them
-must use the published SDK v1.38.0 or later and set
-`requiredAzdVersion: ">=1.38.0"`. Older hosts ignore the messages and
+Structured messages are stable in azd 1.39.0. Extensions that rely on them
+must use the published SDK v1.39.0 or later and set
+`requiredAzdVersion: ">=1.39.0"`. Older hosts ignore the messages and
 continue the deployment.
 
 The SDK sends only valid messages. A nil message, an unspecified kind, empty
@@ -772,7 +772,7 @@ exposed through the stable `azdext` contract facade.
 | Extension usage telemetry | `Telemetry().ReportUsage`, `azdext.ReportUsageRequest/Response` | 1.36.0 | Service, method, and messages deprecated; route retained | `>=1.36.0` |
 | Current Azure principal | `Account().GetCurrentPrincipal`, `azdext.GetCurrentPrincipalRequest/Response`, `azdext.PrincipalType` | 1.36.0 | Method, messages, enum, and `AccountBeta()` deprecated; route retained | `>=1.36.0` |
 | Deployment preview | `WithServiceTargetPreview`, `azdext.ServiceTargetPreviewProvider`, `ServiceTarget().Stream`, stable preview messages and `supports_preview` | 1.37.0 (target) | Preview messages/fields and beta SDK helpers deprecated; route and Go source compatibility retained | `>=1.37.0` |
-| Structured service deploy messages | `WithServiceEventResponseHandler`, `azdext.ServiceEventResponse`, `azdext.ServiceEventMessage`, `azdext.ServiceEventMessageKind`, `ServiceHandlerStatus.messages` | 1.38.0 (target) | Message fields, messages, enum, and beta SDK helpers deprecated; route and Go source compatibility retained | `>=1.38.0` |
+| Structured service deploy messages | `WithServiceEventResponseHandler`, `azdext.ServiceEventResponse`, `azdext.ServiceEventMessage`, `azdext.ServiceEventMessageKind`, `ServiceHandlerStatus.messages` | 1.39.0 (target) | Message fields, messages, enum, and beta SDK helpers deprecated; route and Go source compatibility retained | `>=1.39.0` |
 
 The deployment preview graduation targets host and SDK 1.37.0; its
 [audit](https://github.com/Azure/azure-dev/issues/10625) records actual release

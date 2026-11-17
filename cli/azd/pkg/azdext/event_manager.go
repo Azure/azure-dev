@@ -52,7 +52,7 @@ type ServiceEventResponse struct {
 }
 
 // ServiceEventResponseHandler handles a service predeploy or postdeploy event and can return structured messages.
-// azd 1.38.0 or later displays the messages after deployment and includes them in JSON output, even when the
+// azd 1.39.0 or later displays the messages after deployment and includes them in JSON output, even when the
 // handler also returns an error. Older hosts ignore the messages.
 type ServiceEventResponseHandler func(ctx context.Context, args *ServiceEventArgs) (*ServiceEventResponse, error)
 

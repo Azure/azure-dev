@@ -99,6 +99,6 @@ message ServiceHandlerStatus {
   // Optional structured error details (set when status is "failed").
   ExtensionError error = 5;
   // Non-blocking messages returned by a service predeploy or postdeploy handler.
-  // Requires azd 1.38.0 or later; older hosts ignore this field.
+  // Requires azd 1.39.0 or later; older hosts ignore this field.
   repeated ServiceEventMessage messages = 6;
 }

@@ -128,7 +128,7 @@ project follow-up contributions and the deprecated beta structured service
 deploy messages. The same override handles subscription acknowledgements,
 invocation IDs, and follow-up commit/discard behavior; registering a separate
 message override would replace those behaviors. Structured service deploy
-messages are stable in azd 1.38.0 or later: both routes collect
+messages are stable in azd 1.39.0 or later: both routes collect
 `ServiceHandlerStatus.messages` from the final response with the same
 validation, so a hook can return guidance even when it also fails. Go
 extensions use `ExtensionHost.WithServiceEventResponseHandler`;
@@ -252,10 +252,10 @@ consumers and pins all nine affected extension modules to the published SDK v1.3
 `requiredAzdVersion: ">=1.37.0"`, retaining stricter future requirements if needed.
 Do not publish an SDK pin before its version exists or merge local replacements.
 
-## November 2026 third graduation (target azd 1.38.0)
+## November 2026 third graduation (target azd 1.39.0)
 
 The [third batch audit](https://github.com/Azure/azure-dev/issues/10934) records structured service lifecycle
-message graduation, targeting host and SDK 1.38.0. The permanent
+message graduation, targeting host and SDK 1.39.0. The permanent
 [history](https://github.com/Azure/azure-dev/issues/10436) links every batch.
 
 The additive stable surface is `ServiceHandlerStatus.messages=6`,
@@ -286,11 +286,11 @@ stable `azdext.ServiceEventMessage` types. `WithBetaServiceEventHandler` and the
 `BetaServiceEvent*` types remain source-compatible but deprecated. An event can
 have only one service handler across the plain, response, and beta APIs. No Go
 source breaks are introduced. The demo extension migrates in the host PR and
-requires azd 1.38.0. The non-Go scaffold proto and its JavaScript and Python
+requires azd 1.39.0. The non-Go scaffold proto and its JavaScript and Python
 bindings include the stable fields.
 
 [Consumer migration and release tracking](https://github.com/Azure/azure-dev/issues/10935) covers the agents
-extension's RBAC warnings after SDK v1.38.0 is published.
+extension's RBAC warnings after SDK v1.39.0 is published.
 
 ## Graduation audit requirements
 

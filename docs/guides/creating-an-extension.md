@@ -58,7 +58,7 @@ Go extensions that resolve local Foundry configuration `$ref` files should use [
 The default scaffolds and SDK `EventManager` use the stable `v1` contract.
 Go extensions can return structured messages from service
 `predeploy`/`postdeploy` handlers with
-`ExtensionHost.WithServiceEventResponseHandler` (azd 1.38.0 or later). See
+`ExtensionHost.WithServiceEventResponseHandler` (azd 1.39.0 or later). See
 [contract versioning](../../cli/azd/docs/extensions/contract-versioning.md)
 for compatibility and the deprecated beta route.
 

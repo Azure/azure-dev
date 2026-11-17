@@ -633,13 +633,88 @@ func TestMultiDatabasePostgresServicesReconcileAndEnforcePerServiceAccess(t *tes
 		}))
 	}
 
-	// 4. Mutating one service's database access after provisioning fails per-service immutability.
-	mutatedBinding := makeBinding("customers_app", store.data)
-	mutatedCtx := context.WithValue(t.Context(), deploymentBindingKey{}, mutatedBinding)
-	_, _, err := runtime.resolveProject(mutatedCtx, project, mutatedBinding.values, false, true)
+	// 4. Case-only PostgreSQL role mutation after provisioning fails both resolveProject and PreDeploy.
+	caseMutatedBinding := makeBinding("Vets_App", store.data)
+	caseMutatedCtx := context.WithValue(t.Context(), deploymentBindingKey{}, caseMutatedBinding)
+	_, _, err := runtime.resolveProject(caseMutatedCtx, project, caseMutatedBinding.values, false, true)
 	require.ErrorContains(t, err, "changes the provisioned PostgreSQL access identity")
 
-	// 5. Role collision across distinct identities on initial provision fails closed.
+	runtime.outputs = &delegatingOutputVerifier{
+		read: func(v map[string]string) (*deploymentBinding, error) { return makeBinding("Vets_App", v), nil },
+		verify: func(ctx context.Context, db resolvedDatabase, v map[string]string) (*deploymentBinding, error) {
+			return liveVerifier.Verify(ctx, db, v)
+		},
+	}
+	err = runtime.PreDeploy(t.Context(), &azdext.ServiceEventArgs{Project: project, Service: vetsSvc})
+	require.ErrorContains(t, err, "changes the provisioned PostgreSQL access identity")
+
+	// 5. Case-distinct PostgreSQL roles (customers_app vs Customers_App) on one shared user-assigned identity
+	// reconcile as two distinct targets rather than collapsing via case-insensitive deduplication.
+	sharedUAID := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.ManagedIdentity/userAssignedIdentities/shared-mi"
+	sharedClientID := "99999999-aaaa-bbbb-cccc-dddddddddddd"
+	sharedPrincipal := "eeeeeeee-ffff-0000-1111-222222222222"
+	sharedStore := &fakeEnvironmentStore{name: "dev", data: maps.Clone(envValues)}
+	var caseReconciled []string
+	makeSharedCaseBinding := func(extra map[string]string) *deploymentBinding {
+		merged := maps.Clone(envValues)
+		maps.Copy(merged, extra)
+		b := makeBinding("Customers_App", merged)
+		b.outputs = map[string]currentDeploymentOutput{}
+		for svcName, pair := range map[string][2]string{
+			"customers-service": {"CUSTOMERS_SERVICE", "customers_app"},
+			"vets-service":      {"VETS_SERVICE", "Customers_App"},
+		} {
+			svcKey, username := pair[0], pair[1]
+			ca := b.apps[svcName]
+			ca.Identity = &armappcontainers.ManagedServiceIdentity{
+				Type: new(armappcontainers.ManagedServiceIdentityTypeUserAssigned),
+				UserAssignedIdentities: map[string]*armappcontainers.UserAssignedIdentity{
+					sharedUAID: {ClientID: new(sharedClientID), PrincipalID: new(sharedPrincipal)},
+				},
+			}
+			ca.Properties.Template.Containers[0].Env = []*armappcontainers.EnvironmentVar{
+				{Name: new("SPRING_DATASOURCE_URL"), Value: new(mkJDBC("customers") + "&azure.clientId=" + sharedClientID)},
+				{Name: new("SPRING_DATASOURCE_USERNAME"), Value: new(username)},
+			}
+			b.values["SERVICE_"+svcKey+"_IDENTITY_ID"] = sharedUAID
+			b.values["SERVICE_"+svcKey+"_IDENTITY_CLIENT_ID"] = sharedClientID
+			b.values["SERVICE_"+svcKey+"_IDENTITY_PRINCIPAL_ID"] = sharedPrincipal
+			b.outputs["SERVICE_"+svcKey+"_IDENTITY_ID"] = currentDeploymentOutput{
+				Type: "String", Value: sharedUAID,
+			}
+			b.outputs["SERVICE_"+svcKey+"_IDENTITY_CLIENT_ID"] = currentDeploymentOutput{
+				Type: "String", Value: sharedClientID,
+			}
+			b.outputs["SERVICE_"+svcKey+"_IDENTITY_PRINCIPAL_ID"] = currentDeploymentOutput{
+				Type: "String", Value: sharedPrincipal,
+			}
+			b.resources[strings.ToLower(sharedUAID)] = true
+		}
+		return b
+	}
+	sharedRuntime := &Runtime{
+		environments: sharedStore,
+		identities:   identities,
+		outputs: &delegatingOutputVerifier{
+			read: func(v map[string]string) (*deploymentBinding, error) { return makeSharedCaseBinding(v), nil },
+			verify: func(ctx context.Context, db resolvedDatabase, v map[string]string) (*deploymentBinding, error) {
+				return liveVerifier.Verify(ctx, db, v)
+			},
+		},
+		reconcile: func(context.Context, map[string]string) error { return nil },
+		prepareNetwork: func(context.Context, *deploymentBinding) (func(context.Context) error, error) {
+			return func(context.Context) error { return nil }, nil
+		},
+		configureAccess: func(_ context.Context, _ string, db resolvedDatabase, _ map[string]string) error {
+			caseReconciled = append(caseReconciled, db.Name+":"+db.Username)
+			return nil
+		},
+	}
+	require.NoError(t, sharedRuntime.PostProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
+	require.Equal(t, []string{"customers:customers_app", "customers:Customers_App"}, caseReconciled)
+
+	// 6. Role collision across distinct identities on initial provision fails closed.
 	collisionBinding := makeBinding("customers_app", nil)
 	collisionCtx := context.WithValue(t.Context(), deploymentBindingKey{}, collisionBinding)
 	_, _, err = runtime.resolveProject(collisionCtx, project, collisionBinding.values, false, true)

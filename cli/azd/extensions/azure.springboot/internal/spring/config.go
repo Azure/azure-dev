@@ -115,11 +115,22 @@ func serviceProvisionedAccessEnvKey(serviceName string) string {
 	return "SERVICE_" + environment.Key(serviceName) + "_" + provisionedDatabaseAccessEnv
 }
 
+func normalizeAccessFingerprint(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	parts := strings.Split(trimmed, "|")
+	if len(parts) != 8 {
+		return trimmed
+	}
+	parts[3] = strings.ToLower(parts[3])
+	parts[7] = strings.ToLower(parts[7])
+	return strings.Join(parts, "|")
+}
+
 func expectedProvisionedAccess(values map[string]string, serviceName string) string {
 	if perService := strings.TrimSpace(values[serviceProvisionedAccessEnvKey(serviceName)]); perService != "" {
-		return perService
+		return normalizeAccessFingerprint(perService)
 	}
-	return strings.TrimSpace(values[provisionedDatabaseAccessEnv])
+	return normalizeAccessFingerprint(values[provisionedDatabaseAccessEnv])
 }
 
 type resolvedService struct {

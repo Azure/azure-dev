@@ -147,7 +147,7 @@ func (r *Runtime) resolveService(
 	}
 	if database.managedAccess() && !database.ServerDeferred {
 		if provisioned := expectedProvisionedAccess(values, service.GetName()); provisioned != "" &&
-			!strings.EqualFold(provisioned, database.accessFingerprint()) {
+			provisioned != database.accessFingerprint() {
 			return nil, validationError(
 				"database_access_change",
 				fmt.Sprintf("service %q changes the provisioned PostgreSQL access identity", service.GetName()),
@@ -835,7 +835,7 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 	for _, target := range prepared {
 		targetDB := target.database
 		targetDB.AdministratorName = database.AdministratorName
-		fp := strings.ToLower(targetDB.accessFingerprint())
+		fp := targetDB.accessFingerprint()
 		if reconciledTargets[fp] {
 			continue
 		}
@@ -1008,10 +1008,7 @@ func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEven
 	}
 	if resolved.database.managedAccess() {
 		if values[databaseAccessConfiguredEnv] != databaseProvisioningVersion(resolved.database) ||
-			!strings.EqualFold(
-				expectedProvisionedAccess(values, args.Service.GetName()),
-				resolved.database.accessFingerprint(),
-			) {
+			expectedProvisionedAccess(values, args.Service.GetName()) != resolved.database.accessFingerprint() {
 			return validationError(
 				"database_access_not_configured",
 				"managed PostgreSQL application access is incomplete for this deployment",

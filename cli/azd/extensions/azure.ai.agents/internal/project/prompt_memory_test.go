@@ -231,6 +231,14 @@ func TestDeployPromptAgentReconcilesMemoryModels(t *testing.T) {
 						)),
 						Request: req,
 					}, nil
+				case req.Method == http.MethodGet &&
+					req.URL.Path == "/api/projects/project/agents/agent":
+					return &http.Response{
+						StatusCode: http.StatusNotFound,
+						Header:     http.Header{"Content-Type": {"application/json"}},
+						Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"NotFound"}}`)),
+						Request:    req,
+					}, nil
 				case req.Method == http.MethodPost &&
 					req.URL.Path == "/api/projects/project/agents":
 					body, readErr := io.ReadAll(req.Body)
@@ -264,6 +272,7 @@ func TestDeployPromptAgentReconcilesMemoryModels(t *testing.T) {
 			require.Equal(t, []string{
 				"GET /api/projects/project/memory_stores/conversation-memory",
 				"POST /api/projects/project/memory_stores",
+				"GET /api/projects/project/agents/agent",
 				"POST /api/projects/project/agents",
 			}, requests)
 			require.Equal(t, "conversation-memory", storeReq.Name)

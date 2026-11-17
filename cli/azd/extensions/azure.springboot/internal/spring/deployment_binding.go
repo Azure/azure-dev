@@ -15,6 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
 
 type deploymentBinding struct {
@@ -44,7 +45,54 @@ func bindServiceContext(ctx context.Context, serviceName string) (context.Contex
 	selected.app = app
 	selected.values = maps.Clone(binding.values)
 	selected.values[containerAppIDEnv] = *app.ID
+	if err := bindServiceIdentityOutputs(serviceName, app, &selected); err != nil {
+		return nil, err
+	}
 	return context.WithValue(ctx, deploymentBindingKey{}, &selected), nil
+}
+
+func bindServiceIdentityOutputs(
+	serviceName string, app *armappcontainers.ContainerApp, selected *deploymentBinding,
+) error {
+	prefix := "SERVICE_" + environment.Key(serviceName)
+	for _, candidate := range []struct {
+		authored []string
+		internal string
+	}{
+		{[]string{prefix + "_IDENTITY_ID"}, serviceIdentityIDEnv},
+		{[]string{prefix + "_IDENTITY_CLIENT_ID"}, serviceIdentityClientIDEnv},
+		{[]string{prefix + "_IDENTITY_PRINCIPAL_ID", prefix + "_PRINCIPAL_ID"}, serviceIdentityPrincipalIDEnv},
+	} {
+		for _, authored := range candidate.authored {
+			if len(selected.outputs) > 0 {
+				output, present, err := findDeploymentOutput(selected.outputs, authored)
+				if err != nil {
+					return err
+				}
+				if !present {
+					continue
+				}
+				val, ok := output.Value.(string)
+				if !ok || !strings.EqualFold(output.Type, "string") ||
+					strings.TrimSpace(val) == "" || !strings.EqualFold(val, selected.values[authored]) {
+					return fmt.Errorf("%s was not emitted consistently by the current root deployment", authored)
+				}
+				selected.values[candidate.internal] = val
+				break
+			}
+			if val := strings.TrimSpace(selected.values[authored]); val != "" {
+				selected.values[candidate.internal] = val
+				break
+			}
+		}
+	}
+	if len(selected.apps) > 1 && strings.TrimSpace(selected.values[serviceIdentityPrincipalIDEnv]) == "" &&
+		hasSystemAssignedIdentity(app.Identity) && app.Identity.PrincipalID != nil {
+		if principalID := strings.TrimSpace(*app.Identity.PrincipalID); principalID != "" {
+			selected.values[serviceIdentityPrincipalIDEnv] = principalID
+		}
+	}
+	return nil
 }
 
 func (b *deploymentBinding) requireResource(resourceID string) error {

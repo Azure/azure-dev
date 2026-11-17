@@ -146,7 +146,7 @@ func (r *Runtime) resolveService(
 		)
 	}
 	if database.managedAccess() && !database.ServerDeferred {
-		if provisioned := values[provisionedDatabaseAccessEnv]; provisioned != "" &&
+		if provisioned := expectedProvisionedAccess(values, service.GetName()); provisioned != "" &&
 			!strings.EqualFold(provisioned, database.accessFingerprint()) {
 			return nil, validationError(
 				"database_access_change",
@@ -171,6 +171,7 @@ func (r *Runtime) resolveProject(
 	}
 
 	resolved := make([]*resolvedService, 0, len(services))
+	var dbServices []*resolvedService
 	var selected resolvedDatabase
 	hasDatabase := false
 	for _, service := range services {
@@ -186,16 +187,17 @@ func (r *Runtime) resolveProject(
 		if err != nil {
 			return nil, resolvedDatabase{}, err
 		}
-		if hasDatabase && item.mode != databaseNone && !compatibleDatabaseSelection(selected, item.database) {
-			return nil, resolvedDatabase{}, validationError(
-				"conflicting_service_database_configuration",
-				"Spring services in one project resolve to incompatible database targets or application identities",
-				fmt.Sprintf("use one compatible managed database access configuration for all %s services", SpringHost),
-			)
-		}
 		if item.mode != databaseNone {
-			selected = item.database
-			hasDatabase = true
+			for _, prior := range dbServices {
+				if compatErr := checkCompatibleDatabaseSelection(prior.database, item.database); compatErr != nil {
+					return nil, resolvedDatabase{}, compatErr
+				}
+			}
+			if !hasDatabase {
+				selected = item.database
+				hasDatabase = true
+			}
+			dbServices = append(dbServices, item)
 		}
 		if validateFiles {
 			if err := validateSpringBuild(project, service); err != nil {
@@ -210,20 +212,44 @@ func (r *Runtime) resolveProject(
 	return resolved, selected, nil
 }
 
-func compatibleDatabaseSelection(left, right resolvedDatabase) bool {
+func checkCompatibleDatabaseSelection(left, right resolvedDatabase) error {
 	if left.discovered && right.discovered && (left.selectionPending || right.selectionPending) {
-		return true
+		return nil
 	}
 	if left.Type != right.Type || left.Authentication != right.Authentication {
-		return false
+		return validationError(
+			"conflicting_service_database_configuration",
+			"Spring services in one project resolve to incompatible database types or authentication modes",
+			fmt.Sprintf("use one compatible managed database access configuration for all %s services", SpringHost),
+		)
 	}
-	if !left.managedAccess() {
-		return true
+	if !left.managedAccess() || left.ServerDeferred || right.ServerDeferred {
+		return nil
 	}
-	return strings.EqualFold(left.ServerResourceID, right.ServerResourceID) &&
-		left.Name == right.Name &&
-		left.Username == right.Username &&
-		identityResourceID(left) == identityResourceID(right)
+	if !strings.EqualFold(left.ServerResourceID, right.ServerResourceID) {
+		return validationError(
+			"conflicting_service_database_configuration",
+			"Spring services in one project resolve to different PostgreSQL servers",
+			fmt.Sprintf("use one provisioned PostgreSQL Flexible Server for all %s services", SpringHost),
+		)
+	}
+	if left.Username != "" && left.Username == right.Username {
+		if identityResourceID(left) != identityResourceID(right) {
+			return validationError(
+				"conflicting_service_database_role",
+				"multiple Spring services with different managed identities cannot share one PostgreSQL role login",
+				"configure a distinct SPRING_DATASOURCE_USERNAME for each service identity",
+			)
+		}
+		if left.Authentication == databaseAuthenticationPassword && left.appPassword != right.appPassword {
+			return validationError(
+				"conflicting_service_database_role",
+				"multiple Spring services sharing one PostgreSQL role login configure different passwords",
+				"configure one consistent password or distinct PostgreSQL roles per service",
+			)
+		}
+	}
+	return nil
 }
 
 func identityResourceID(database resolvedDatabase) string {
@@ -655,14 +681,16 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 			provisionedDatabaseTypeEnv: string(database.Type),
 		})
 	}
+	var pgServices []*resolvedService
 	for _, service := range services {
 		if service.mode == databasePostgreSQL {
-			ctx, err = bindServiceContext(ctx, service.service.GetName())
-			if err != nil {
-				return err
-			}
-			break
+			pgServices = append(pgServices, service)
 		}
+	}
+	baseCtx := ctx
+	ctx, err = bindServiceContext(baseCtx, pgServices[0].service.GetName())
+	if err != nil {
+		return err
 	}
 	if binding, present := ctx.Value(deploymentBindingKey{}).(*deploymentBinding); present {
 		values = binding.values
@@ -678,6 +706,12 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 		}
 		values = maps.Clone(values)
 		values[databaseAccessConfiguredEnv] = "pending"
+		if binding, present := baseCtx.Value(deploymentBindingKey{}).(*deploymentBinding); present {
+			pendingBase := *binding
+			pendingBase.values = maps.Clone(binding.values)
+			pendingBase.values[databaseAccessConfiguredEnv] = "pending"
+			baseCtx = context.WithValue(baseCtx, deploymentBindingKey{}, &pendingBase)
+		}
 		if binding, present := ctx.Value(deploymentBindingKey{}).(*deploymentBinding); present {
 			pending := *binding
 			pending.values = values
@@ -712,21 +746,49 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 	if r.outputs == nil {
 		return errors.New("current deployment output verification is unavailable")
 	}
-	values["AZURE_ENV_NAME"] = envName
-	binding, err := r.outputs.Verify(ctx, database, values)
-	if err != nil {
-		return err
+	type preparedPostgresTarget struct {
+		service  *azdext.ServiceConfig
+		database resolvedDatabase
+		ctx      context.Context
+		values   map[string]string
+		binding  *deploymentBinding
 	}
-	if binding != nil {
-		values = binding.values
-		ctx = context.WithValue(ctx, deploymentBindingKey{}, binding)
+	prepared := make([]preparedPostgresTarget, 0, len(pgServices))
+	for _, pgSvc := range pgServices {
+		svcCtx, bindErr := bindServiceContext(baseCtx, pgSvc.service.GetName())
+		if bindErr != nil {
+			return bindErr
+		}
+		svcValues := maps.Clone(values)
+		if bound, present := svcCtx.Value(deploymentBindingKey{}).(*deploymentBinding); present {
+			svcValues = maps.Clone(bound.values)
+			if values[databaseAccessConfiguredEnv] != "" {
+				svcValues[databaseAccessConfiguredEnv] = values[databaseAccessConfiguredEnv]
+			}
+		}
+		svcValues["AZURE_ENV_NAME"] = envName
+		verifiedBinding, verifyErr := r.outputs.Verify(svcCtx, pgSvc.database, svcValues)
+		if verifyErr != nil {
+			return verifyErr
+		}
+		if verifiedBinding != nil {
+			svcValues = verifiedBinding.values
+			svcCtx = context.WithValue(svcCtx, deploymentBindingKey{}, verifiedBinding)
+		}
+		if err := validateProvisionedBindings(pgSvc.database, svcValues); err != nil {
+			return err
+		}
+		prepared = append(prepared, preparedPostgresTarget{
+			service: pgSvc.service, database: pgSvc.database,
+			ctx: svcCtx, values: svcValues, binding: verifiedBinding,
+		})
 	}
-	if err := validateProvisionedBindings(database, values); err != nil {
-		return err
-	}
-	if r.client != nil || (binding != nil && (binding.app != nil || len(binding.apps) > 0)) {
+	values = prepared[0].values
+	ctx = prepared[0].ctx
+	firstBinding := prepared[0].binding
+	if r.client != nil || (firstBinding != nil && (firstBinding.app != nil || len(firstBinding.apps) > 0)) {
 		for _, service := range services {
-			serviceCtx, bindErr := bindServiceContext(ctx, service.service.GetName())
+			serviceCtx, bindErr := bindServiceContext(baseCtx, service.service.GetName())
 			if bindErr != nil {
 				return bindErr
 			}
@@ -769,12 +831,23 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 			)
 		}
 	}
-	if database.discovered && database.Authentication == databaseAuthenticationPassword {
-		values = maps.Clone(values)
-		values[databaseAppPasswordEnv] = database.appPassword
-	}
-	if err := r.configureAccess(ctx, envName, database, values); err != nil {
-		return err
+	reconciledTargets := map[string]bool{}
+	for _, target := range prepared {
+		targetDB := target.database
+		targetDB.AdministratorName = database.AdministratorName
+		fp := strings.ToLower(targetDB.accessFingerprint())
+		if reconciledTargets[fp] {
+			continue
+		}
+		callValues := target.values
+		if targetDB.discovered && targetDB.Authentication == databaseAuthenticationPassword {
+			callValues = maps.Clone(target.values)
+			callValues[databaseAppPasswordEnv] = targetDB.appPassword
+		}
+		if err := r.configureAccess(target.ctx, envName, targetDB, callValues); err != nil {
+			return err
+		}
+		reconciledTargets[fp] = true
 	}
 	if err := r.reconcile(ctx, values); err != nil {
 		return err
@@ -783,15 +856,29 @@ func (r *Runtime) PostProvision(ctx context.Context, args *azdext.ProjectEventAr
 		return err
 	}
 	writes := map[string]string{
-		provisionedDatabaseTypeEnv:   string(database.Type),
-		provisionedDatabaseAccessEnv: database.accessFingerprint(),
-		databaseAccessConfiguredEnv:  databaseProvisioningVersion(database),
+		provisionedDatabaseTypeEnv:  string(database.Type),
+		databaseAccessConfiguredEnv: databaseProvisioningVersion(database),
 	}
-	if database.discovered {
-		writes[databaseTypeEnv] = string(database.Type)
-		writes[databaseAuthenticationEnv] = string(database.Authentication)
-		writes[databaseNameEnv] = database.Name
-		writes[databaseUsernameEnv] = database.Username
+	if len(pgServices) == 1 {
+		writes[provisionedDatabaseAccessEnv] = database.accessFingerprint()
+		if database.discovered {
+			writes[databaseTypeEnv] = string(database.Type)
+			writes[databaseAuthenticationEnv] = string(database.Authentication)
+			writes[databaseNameEnv] = database.Name
+			writes[databaseUsernameEnv] = database.Username
+		}
+	} else {
+		fingerprints := make([]string, 0, len(pgServices))
+		for _, pgSvc := range pgServices {
+			fp := pgSvc.database.accessFingerprint()
+			writes[serviceProvisionedAccessEnvKey(pgSvc.service.GetName())] = fp
+			fingerprints = append(fingerprints, pgSvc.service.GetName()+"="+fp)
+		}
+		writes[provisionedDatabaseAccessEnv] = "multi:" + strings.Join(fingerprints, ";")
+		if database.discovered {
+			writes[databaseTypeEnv] = string(database.Type)
+			writes[databaseAuthenticationEnv] = string(database.Authentication)
+		}
 	}
 	if database.AdministratorName != "" {
 		writes[databaseAdministratorNameEnv] = database.AdministratorName
@@ -921,7 +1008,10 @@ func (r *Runtime) reconcileService(ctx context.Context, args *azdext.ServiceEven
 	}
 	if resolved.database.managedAccess() {
 		if values[databaseAccessConfiguredEnv] != databaseProvisioningVersion(resolved.database) ||
-			values[provisionedDatabaseAccessEnv] != resolved.database.accessFingerprint() {
+			!strings.EqualFold(
+				expectedProvisionedAccess(values, args.Service.GetName()),
+				resolved.database.accessFingerprint(),
+			) {
 			return validationError(
 				"database_access_not_configured",
 				"managed PostgreSQL application access is incomplete for this deployment",

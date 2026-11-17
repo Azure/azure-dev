@@ -172,6 +172,7 @@ func TestGradleReportsRejectInvalidEvidenceAndPreserveCancellation(t *testing.T)
 		func(r *gradleReport) { r.Archive = filepath.Join(t.TempDir(), "outside.jar") },
 		func(r *gradleReport) { r.Dependencies = nil },
 		func(r *gradleReport) { r.Dependencies = []string{"invalid-coordinate"} },
+		func(r *gradleReport) { r.LocalFiles = []string{"relative.jar"} },
 	} {
 		report := good
 		mutate(&report)

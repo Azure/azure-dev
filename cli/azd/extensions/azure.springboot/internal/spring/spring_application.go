@@ -5,6 +5,7 @@ package spring
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/xml"
 	"errors"
@@ -60,16 +61,9 @@ func openSpringArchive(filename string) (*springArchive, error) {
 			archive.resources[name] = file
 		}
 		if name, present := strings.CutPrefix(file.Name, "BOOT-INF/lib/"); present && strings.HasSuffix(name, ".jar") {
-			archive.dependencies.database = archive.dependencies.database || isDatabaseDependency(name)
-			switch {
-			case strings.HasPrefix(name, "h2-"):
-				archive.dependencies.h2 = true
-			case strings.HasPrefix(name, "postgresql-"):
-				archive.dependencies.postgresql = true
-			case strings.HasPrefix(name, "azure-identity-extensions-"):
-				archive.dependencies.azureIdentity = true
-			case strings.HasPrefix(name, "spring-cloud-azure-starter-jdbc-postgresql-"):
-				archive.dependencies.azureJDBC = true
+			mergeSpringDependencies(&archive.dependencies, classifyLibraryJarName(name))
+			if nested, ok := classifyEmbeddedJar(file); ok {
+				mergeSpringDependencies(&archive.dependencies, nested)
 			}
 		}
 	}
@@ -184,7 +178,7 @@ func readSpringDependenciesInProject(
 		if err != nil {
 			return springDependencies{}, err
 		}
-		return springDependenciesFromCoordinates(report.Dependencies), nil
+		return classifyGradleDependencies(serviceRoot, report)
 	}
 
 	resolvedProject, err := filepath.Abs(projectRoot)
@@ -236,7 +230,7 @@ func readSpringDependenciesInProject(
 			}
 		}
 		for _, dep := range pom.Dependencies {
-			if dep.Scope == "test" || dep.Scope == "provided" || dep.Scope == "system" {
+			if dep.Scope == "test" || dep.Scope == "system" {
 				continue
 			}
 			if dep.Group == "" || dep.Artifact == "" ||
@@ -330,6 +324,128 @@ func springDependenciesFromCoordinates(coordinates []string) springDependencies 
 		}
 	}
 	return result
+}
+
+func mergeSpringDependencies(target *springDependencies, extra springDependencies) {
+	target.database = target.database || extra.database
+	target.h2 = target.h2 || extra.h2
+	target.postgresql = target.postgresql || extra.postgresql
+	target.azureIdentity = target.azureIdentity || extra.azureIdentity
+	target.azureJDBC = target.azureJDBC || extra.azureJDBC
+}
+
+func classifyLibraryJarName(name string) springDependencies {
+	lower := strings.ToLower(name)
+	result := springDependencies{database: isDatabaseDependency(lower)}
+	switch {
+	case strings.HasPrefix(lower, "h2-") || lower == "h2.jar":
+		result.h2, result.database = true, true
+	case strings.HasPrefix(lower, "postgresql-") || lower == "postgresql.jar":
+		result.postgresql, result.database = true, true
+	case strings.HasPrefix(lower, "azure-identity-extensions-") || lower == "azure-identity-extensions.jar":
+		result.azureIdentity = true
+	case strings.HasPrefix(lower, "spring-cloud-azure-starter-jdbc-postgresql-") ||
+		lower == "spring-cloud-azure-starter-jdbc-postgresql.jar":
+		result.azureJDBC, result.database = true, true
+	}
+	return result
+}
+
+func classifyDriverJarEntries(files []*zip.File) springDependencies {
+	var result springDependencies
+	var coordinates []string
+	for _, entry := range files {
+		name := entry.Name
+		switch {
+		case name == "org/h2/Driver.class":
+			result.h2, result.database = true, true
+		case name == "org/postgresql/Driver.class":
+			result.postgresql, result.database = true, true
+		case strings.HasPrefix(name, "com/azure/identity/extensions/"):
+			result.azureIdentity = true
+		case name == "META-INF/services/java.sql.Driver" ||
+			name == "META-INF/services/io.r2dbc.spi.ConnectionFactoryProvider":
+			result.database = true
+		case strings.HasPrefix(name, "META-INF/maven/"):
+			parts := strings.Split(strings.TrimPrefix(name, "META-INF/maven/"), "/")
+			if len(parts) >= 3 && parts[0] != "" && parts[1] != "" {
+				coordinates = append(coordinates, parts[0]+":"+parts[1])
+			}
+		}
+	}
+	if len(coordinates) > 0 {
+		mergeSpringDependencies(&result, springDependenciesFromCoordinates(coordinates))
+	}
+	return result
+}
+
+func classifyEmbeddedJar(file *zip.File) (springDependencies, bool) {
+	const maxEmbeddedJarBytes = 64 * 1024 * 1024
+	if file == nil || file.UncompressedSize64 == 0 || file.UncompressedSize64 > maxEmbeddedJarBytes {
+		return springDependencies{}, false
+	}
+	reader, err := file.Open()
+	if err != nil {
+		return springDependencies{}, false
+	}
+	data, readErr := io.ReadAll(io.LimitReader(reader, maxEmbeddedJarBytes+1))
+	if errors.Join(readErr, reader.Close()) != nil || len(data) > maxEmbeddedJarBytes {
+		return springDependencies{}, false
+	}
+	nested, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil || len(nested.File) > 50000 {
+		return springDependencies{}, false
+	}
+	return classifyDriverJarEntries(nested.File), true
+}
+
+func classifyGradleDependencies(serviceRoot string, report gradleReport) (springDependencies, error) {
+	resolvedRoot, err := filepath.Abs(serviceRoot)
+	if err != nil {
+		return springDependencies{}, configurationError("the Spring service project directory cannot be resolved")
+	}
+	resolvedRoot, err = filepath.EvalSymlinks(resolvedRoot)
+	if err != nil {
+		return springDependencies{}, configurationError("the Spring service project directory is unavailable")
+	}
+	result := springDependenciesFromCoordinates(report.Dependencies)
+	for _, localFile := range report.LocalFiles {
+		classified, err := classifyLocalRuntimeFile(resolvedRoot, localFile)
+		if err != nil {
+			return springDependencies{}, err
+		}
+		mergeSpringDependencies(&result, classified)
+	}
+	return result, nil
+}
+
+func classifyLocalRuntimeFile(projectRoot, filename string) (springDependencies, error) {
+	if !regularContainedFile(projectRoot, filename) || !strings.HasSuffix(strings.ToLower(filename), ".jar") {
+		return springDependencies{}, configurationError(
+			"unclassified local Gradle runtime file dependencies require packaged JAR evidence",
+		)
+	}
+	resolved, err := filepath.EvalSymlinks(filename)
+	if err != nil {
+		return springDependencies{}, configurationError(
+			"a local Gradle runtime file dependency cannot be resolved",
+		)
+	}
+	reader, err := zip.OpenReader(resolved)
+	if err != nil {
+		return springDependencies{}, configurationError(
+			"a local Gradle runtime dependency JAR is not readable",
+		)
+	}
+	defer reader.Close()
+	if len(reader.File) > 50000 {
+		return springDependencies{}, configurationError(
+			"a local Gradle runtime dependency JAR exceeds the supported entry count",
+		)
+	}
+	result := classifyLibraryJarName(filepath.Base(resolved))
+	mergeSpringDependencies(&result, classifyDriverJarEntries(reader.File))
+	return result, nil
 }
 
 func isDatabaseDependency(artifact string) bool {

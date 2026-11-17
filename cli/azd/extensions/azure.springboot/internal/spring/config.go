@@ -13,6 +13,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
 
 const (
@@ -108,6 +109,17 @@ func (d resolvedDatabase) accessFingerprint() string {
 		identityType,
 		identity,
 	}, "|")
+}
+
+func serviceProvisionedAccessEnvKey(serviceName string) string {
+	return "SERVICE_" + environment.Key(serviceName) + "_" + provisionedDatabaseAccessEnv
+}
+
+func expectedProvisionedAccess(values map[string]string, serviceName string) string {
+	if perService := strings.TrimSpace(values[serviceProvisionedAccessEnvKey(serviceName)]); perService != "" {
+		return perService
+	}
+	return strings.TrimSpace(values[provisionedDatabaseAccessEnv])
 }
 
 type resolvedService struct {

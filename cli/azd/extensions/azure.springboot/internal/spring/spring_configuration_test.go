@@ -245,11 +245,12 @@ func TestSpringConfigurationImportsAndActivatedDocuments(t *testing.T) {
 
 func TestSpringConfigurationRejectsUnsafeOrAmbiguousSources(t *testing.T) {
 	for name, content := range map[string]string{
-		"import cycle":      "spring.config.import=application.properties",
-		"remote import":     "spring.config.import=optional:configserver:credential",
-		"placeholder cycle": "spring.datasource.url=${loop}\nloop=${spring.datasource.url}",
-		"profile cycle":     "spring.profiles.active=prod\nspring.profiles.group.prod=prod",
-		"aliases":           "spring.datasource.username=one\nspring.datasource.user-name=two",
+		"import cycle":       "spring.config.import=application.properties",
+		"bad configserver":   "spring.config.import=optional:configserver:credential",
+		"unsupported scheme": "spring.config.import=optional:vault:credential",
+		"placeholder cycle":  "spring.datasource.url=${loop}\nloop=${spring.datasource.url}",
+		"profile cycle":      "spring.profiles.active=prod\nspring.profiles.group.prod=prod",
+		"aliases":            "spring.datasource.username=one\nspring.datasource.user-name=two",
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := springConfigFixture(t, map[string]string{"src/main/resources/application.properties": content})
@@ -261,6 +262,101 @@ func TestSpringConfigurationRejectsUnsafeOrAmbiguousSources(t *testing.T) {
 			require.NotContains(t, err.Error(), "credential")
 		})
 	}
+}
+
+func TestSpringConfigServerImportHonorsOverridePrecedenceAndDisableFlag(t *testing.T) {
+	root := springConfigFixture(t, map[string]string{
+		"src/main/resources/application.yml": "spring:\n  application:\n    name: customers-service\n" +
+			"  config:\n    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888/}\n",
+	})
+	postgresDeps := springDependencies{database: true, postgresql: true, azureIdentity: true}
+	jdbcURL := "jdbc:postgresql://pg.example:5432/customers?" +
+		"sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt&" +
+		"authenticationPluginClassName=" + azurePostgreSQLPlugin + "&azure.managedIdentityEnabled=true"
+
+	// 1. Database-free service with configserver import stays databaseNone.
+	cfgFree, err := loadSpringConfiguration(t.Context(), springConfigInput{root: root, deployed: true})
+	require.NoError(t, err)
+	freeDS, err := inferSpringDatasource(cfgFree, springDependencies{}, true)
+	require.NoError(t, err)
+	require.Equal(t, databaseNone, freeDS.engine)
+
+	// 2. Pre-provision / Package (requireFinal=false) defers cleanly when URL is not yet overridden.
+	cfgPending, err := loadSpringConfiguration(t.Context(), springConfigInput{root: root, allowPending: true})
+	require.NoError(t, err)
+	pendingDS, err := inferSpringDatasource(cfgPending, postgresDeps, false)
+	require.NoError(t, err)
+	require.True(t, pendingDS.pending)
+	require.True(t, pendingDS.selectionPending)
+
+	// 3. Final verification fails closed without explicit container datasource overrides.
+	_, err = inferSpringDatasource(cfgFree, postgresDeps, true)
+	require.ErrorContains(t, err, "Config Server imports require explicit container datasource overrides")
+
+	// 4. Final verification succeeds when Container App env supplies SPRING_DATASOURCE_URL + USERNAME.
+	cfgOverridden, err := loadSpringConfiguration(t.Context(), springConfigInput{
+		root:     root,
+		deployed: true,
+		environment: map[string]string{
+			"SPRING_DATASOURCE_URL":      jdbcURL,
+			"SPRING_DATASOURCE_USERNAME": "customers_app",
+		},
+	})
+	require.NoError(t, err)
+	finalDS, err := inferSpringDatasource(cfgOverridden, postgresDeps, true)
+	require.NoError(t, err)
+	require.Equal(t, databasePostgreSQL, finalDS.engine)
+	require.Equal(t, "customers", finalDS.name)
+	require.Equal(t, "customers_app", finalDS.username)
+
+	// 5. SPRING_CLOUD_CONFIG_ENABLED=false disables configserver import completely.
+	disabledRoot := springConfigFixture(t, map[string]string{
+		"src/main/resources/application.properties": "spring.config.import=configserver:not-a-valid-url\n" +
+			"spring.datasource.url=" + jdbcURL + "\nspring.datasource.username=customers_app\n",
+	})
+	cfgDisabled, err := loadSpringConfiguration(t.Context(), springConfigInput{
+		root:        disabledRoot,
+		deployed:    true,
+		environment: map[string]string{"SPRING_CLOUD_CONFIG_ENABLED": "false"},
+	})
+	require.NoError(t, err)
+	disabledDS, err := inferSpringDatasource(cfgDisabled, postgresDeps, true)
+	require.NoError(t, err)
+	require.Equal(t, databasePostgreSQL, disabledDS.engine)
+}
+
+func TestSpringProfileSelectorsExpandBeforeSplittingAcrossScalarAndIndexedForms(t *testing.T) {
+	t.Run("scalar placeholder and default with commas", func(t *testing.T) {
+		root := springConfigFixture(t, map[string]string{
+			"src/main/resources/application.properties": "spring.profiles.active=${DEPLOY_PROFILES:prod,database}\n" +
+				"spring.profiles.include=${INCLUDED_PROFILES:common,audit}\n" +
+				"spring.profiles.group.prod=${PROD_GROUP:tls,cloud}\n",
+			"src/main/resources/application-database.properties": "spring.datasource.username=db_user\n",
+			"src/main/resources/application-cloud.properties":    "spring.datasource.username=cloud_user\n",
+		})
+		cfgDefault, err := loadSpringConfiguration(t.Context(), springConfigInput{root: root})
+		require.NoError(t, err)
+		require.Equal(t, []string{"common", "audit", "prod", "tls", "cloud", "database"}, cfgDefault.profiles)
+
+		cfgEnv, err := loadSpringConfiguration(t.Context(), springConfigInput{
+			root:        root,
+			environment: map[string]string{"DEPLOY_PROFILES": "prod,database", "INCLUDED_PROFILES": "metrics,trace"},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"metrics", "trace", "prod", "tls", "cloud", "database"}, cfgEnv.profiles)
+	})
+
+	t.Run("indexed YAML default active include and group lists", func(t *testing.T) {
+		root := springConfigFixture(t, map[string]string{
+			"src/main/resources/application.yaml": "spring:\n  profiles:\n" +
+				"    default:\n      - ${DEFAULT_PROFILES:local,h2}\n" +
+				"    include:\n      - ${INCLUDE_FIRST:shared,telemetry}\n" +
+				"    group:\n      h2:\n        - ${H2_GROUP:embedded,seed}\n",
+		})
+		cfg, err := loadSpringConfiguration(t.Context(), springConfigInput{root: root})
+		require.NoError(t, err)
+		require.Equal(t, []string{"shared", "telemetry", "local", "h2", "embedded", "seed"}, cfg.profiles)
+	})
 }
 
 func TestSpringConfigurationDoesNotReadHostExternalFilesForDeployedApp(t *testing.T) {

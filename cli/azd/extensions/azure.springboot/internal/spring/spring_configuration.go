@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -40,23 +41,28 @@ type springConfigInput struct {
 }
 
 type springConfiguration struct {
-	properties       springProperties
-	environment      map[string]string
-	profiles         []string
-	packaged         *springDependencies
-	allowPending     bool
-	selectionPending bool
+	properties           springProperties
+	overrides            springProperties
+	environment          map[string]string
+	profiles             []string
+	packaged             *springDependencies
+	allowPending         bool
+	selectionPending     bool
+	configServerImport   bool
+	configServerRequired bool
 }
 
 type springConfigLoader struct {
-	ctx       context.Context
-	input     springConfigInput
-	profiles  []string
-	values    springProperties
-	loading   map[string]bool
-	loaded    map[string]bool
-	count     int
-	overrides springProperties
+	ctx                  context.Context
+	input                springConfigInput
+	profiles             []string
+	values               springProperties
+	loading              map[string]bool
+	loaded               map[string]bool
+	count                int
+	overrides            springProperties
+	configServerImport   bool
+	configServerRequired bool
 }
 
 const hikariPropertiesPrefix = "spring.datasource.hikari.data-source-properties"
@@ -101,14 +107,26 @@ func (p springProperties) get(key string) (string, bool) {
 }
 
 func (p springProperties) list(key string) []string {
-	value, _ := p.get(key)
-	result := splitSpringList(value)
+	var result []string
+	for _, item := range p.rawList(key) {
+		result = append(result, splitSpringList(item)...)
+	}
+	return result
+}
+
+func (p springProperties) rawList(key string) []string {
+	var result []string
+	if value, present := p.get(key); present && strings.TrimSpace(value) != "" {
+		result = append(result, value)
+	}
 	for i := 0; ; i++ {
 		item, found := p.get(fmt.Sprintf("%s[%d]", key, i))
 		if !found {
 			break
 		}
-		result = append(result, splitSpringList(item)...)
+		if strings.TrimSpace(item) != "" {
+			result = append(result, item)
+		}
 	}
 	return result
 }
@@ -161,8 +179,10 @@ func loadSpringConfiguration(ctx context.Context, input springConfigInput) (*spr
 		if err := loader.loadLocations(overrides); err != nil {
 			if errors.Is(err, errPendingSpringSelection) {
 				configuration := &springConfiguration{
-					properties: overrides, environment: input.environment,
+					properties: overrides, overrides: overrides, environment: input.environment,
 					selectionPending: true, allowPending: true,
+					configServerImport:   loader.configServerImport,
+					configServerRequired: loader.configServerRequired,
 				}
 				if input.packaged != nil {
 					configuration.packaged = &input.packaged.dependencies
@@ -173,7 +193,10 @@ func loadSpringConfiguration(ctx context.Context, input springConfigInput) (*spr
 		}
 		maps.Copy(loader.values, overrides)
 		configuration := &springConfiguration{
-			properties: loader.values, environment: input.environment, allowPending: input.allowPending,
+			properties: loader.values, overrides: overrides,
+			environment: input.environment, allowPending: input.allowPending,
+			configServerImport:   loader.configServerImport,
+			configServerRequired: loader.configServerRequired,
 		}
 		if input.packaged != nil {
 			configuration.packaged = &input.packaged.dependencies
@@ -405,6 +428,23 @@ func (l *springConfigLoader) loadLocation(location, relative string, names []str
 	}
 	optional := strings.HasPrefix(location, "optional:")
 	location = strings.TrimPrefix(location, "optional:")
+	if strings.HasPrefix(location, "configserver:") {
+		disabled, disableErr := l.configServerDisabled()
+		if disableErr != nil {
+			return disableErr
+		}
+		if disabled {
+			return nil
+		}
+		if err := validateConfigServerLocation(strings.TrimPrefix(location, "configserver:")); err != nil {
+			return err
+		}
+		l.configServerImport = true
+		if !optional {
+			l.configServerRequired = true
+		}
+		return nil
+	}
 	if location == "file:./config/*/" && !l.input.deployed {
 		base, err := l.resolveFile("file:./config/", "")
 		if err != nil {
@@ -464,6 +504,56 @@ func (l *springConfigLoader) loadLocation(location, relative string, names []str
 		return nil
 	}
 	return l.loadFile(profileFileName(location, profile), relative, optional || profile != "", profile != "")
+}
+
+func validateConfigServerLocation(target string) error {
+	trimmed := strings.TrimSpace(target)
+	if trimmed == "" {
+		return nil
+	}
+	for entry := range strings.SplitSeq(trimmed, ",") {
+		candidate := strings.TrimSpace(entry)
+		if candidate == "" {
+			return configurationError("a Spring Cloud Config Server import URL is invalid")
+		}
+		parsed, err := url.Parse(candidate)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
+			parsed.Hostname() == "" || parsed.Opaque != "" {
+			return configurationError("a Spring Cloud Config Server import URL is invalid")
+		}
+	}
+	return nil
+}
+
+func (l *springConfigLoader) configServerDisabled() (bool, error) {
+	raw, present := l.overrides.get("spring.cloud.config.enabled")
+	if !present {
+		raw, present = l.values.get("spring.cloud.config.enabled")
+	}
+	if !present {
+		return false, nil
+	}
+	resolved, err := l.resolveSelector(raw)
+	if err != nil {
+		return false, err
+	}
+	enabled, err := springBoolean(resolved)
+	if err != nil {
+		return false, err
+	}
+	return !enabled, nil
+}
+
+func (c *springConfiguration) hasOverride(keys ...string) bool {
+	if c == nil || c.overrides == nil {
+		return false
+	}
+	for _, key := range keys {
+		if value, present := c.overrides.get(key); present && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (l *springConfigLoader) resolveSelector(value string) (string, error) {
@@ -688,27 +778,55 @@ func flattenSpringValues(prefix string, value any, properties springProperties, 
 	return nil
 }
 
+func (c *springConfiguration) resolveSelectorList(key string) ([]string, bool, error) {
+	var resolved []string
+	for _, raw := range c.properties.rawList(key) {
+		expanded, err := c.expand(raw, c.allowPending, map[string]bool{key: true})
+		if err != nil {
+			return nil, false, err
+		}
+		if strings.Contains(expanded, "${") {
+			return nil, true, nil
+		}
+		resolved = append(resolved, splitSpringList(expanded)...)
+	}
+	return resolved, false, nil
+}
+
 func (c *springConfiguration) activeProfiles() ([]string, error) {
-	profiles := c.properties.list("spring.profiles.active")
+	profiles, pending, err := c.resolveSelectorList("spring.profiles.active")
+	if err != nil {
+		return nil, err
+	}
+	if pending {
+		c.selectionPending = true
+		return nil, nil
+	}
 	if len(profiles) == 0 {
-		profiles = c.properties.list("spring.profiles.default")
+		profiles, pending, err = c.resolveSelectorList("spring.profiles.default")
+		if err != nil {
+			return nil, err
+		}
+		if pending {
+			c.selectionPending = true
+			return nil, nil
+		}
 		if len(profiles) == 0 {
 			profiles = []string{"default"}
 		}
 	}
-	profiles = append(c.properties.list("spring.profiles.include"), profiles...)
+	included, pending, err := c.resolveSelectorList("spring.profiles.include")
+	if err != nil {
+		return nil, err
+	}
+	if pending {
+		c.selectionPending = true
+		return nil, nil
+	}
+	profiles = append(included, profiles...)
 	result := []string{}
 	var expand func(string, map[string]bool) error
 	expand = func(name string, stack map[string]bool) error {
-		resolved, err := c.expand(name, c.allowPending, map[string]bool{})
-		if err != nil {
-			return err
-		}
-		if strings.Contains(resolved, "${") {
-			c.selectionPending = true
-			return nil
-		}
-		name = resolved
 		if name == "none" {
 			return nil
 		}
@@ -723,25 +841,35 @@ func (c *springConfiguration) activeProfiles() ([]string, error) {
 		}
 		result = append(result, name)
 		stack[name] = true
-		for _, member := range c.properties.list("spring.profiles.group." + name) {
+		members, memberPending, err := c.resolveSelectorList("spring.profiles.group." + name)
+		if err != nil {
+			delete(stack, name)
+			return err
+		}
+		if memberPending {
+			c.selectionPending = true
+			delete(stack, name)
+			return nil
+		}
+		for _, member := range members {
 			if err := expand(member, stack); err != nil {
+				delete(stack, name)
 				return err
+			}
+			if c.selectionPending {
+				delete(stack, name)
+				return nil
 			}
 		}
 		delete(stack, name)
 		return nil
 	}
 	for _, profile := range profiles {
-		value, err := c.expand(profile, c.allowPending, map[string]bool{})
-		if err != nil {
+		if err := expand(profile, map[string]bool{}); err != nil {
 			return nil, err
 		}
-		if strings.Contains(value, "${") {
-			c.selectionPending = true
+		if c.selectionPending {
 			return nil, nil
-		}
-		if err := expand(value, map[string]bool{}); err != nil {
-			return nil, err
 		}
 	}
 	return result, nil

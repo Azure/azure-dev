@@ -1,9 +1,8 @@
 # yaml-language-server: $schema=../extension.schema.json
 id: azure.springboot
-namespace: spring
 displayName: Azure Spring Boot
 description: Prepares Spring Boot services for deployment to Azure Container Apps.
-usage: azd spring <command> [options]
+usage: "Use host: springbootapp in azure.yaml."
 version: 0.1.0
 requiredAzdVersion: ">=1.37.2"
 language: go

@@ -31,6 +31,7 @@ type gradleReport struct {
 	Version      int      `json:"version"`
 	Root         string   `json:"root"`
 	Dependencies []string `json:"dependencies"`
+	LocalFiles   []string `json:"localFiles,omitempty"`
 	Archive      string   `json:"archive"`
 }
 
@@ -209,6 +210,14 @@ func runGradle(
 	}
 	for _, coordinate := range report.Dependencies {
 		if len(coordinate) > 1024 || strings.Count(coordinate, ":") != 1 {
+			return report, invalidGradleReport()
+		}
+	}
+	if len(report.LocalFiles) > 10000 {
+		return report, invalidGradleReport()
+	}
+	for _, localFile := range report.LocalFiles {
+		if len(localFile) == 0 || len(localFile) > 4096 || !filepath.IsAbs(localFile) {
 			return report, invalidGradleReport()
 		}
 	}

@@ -72,8 +72,11 @@ func TestSpringPackagedResourcesRejectAmbiguityAndTraversal(t *testing.T) {
 func TestSpringRuntimeDependenciesExcludeTestScope(t *testing.T) {
 	root := springConfigFixture(t, map[string]string{"pom.xml": `<project><dependencies>
 <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId><scope>test</scope></dependency>
-<dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
-<dependency><groupId>com.azure</groupId><artifactId>azure-identity-extensions</artifactId></dependency>
+<dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId><scope>system</scope></dependency>
+<dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>provided</scope></dependency>
+<dependency>
+<groupId>com.azure</groupId><artifactId>azure-identity-extensions</artifactId><scope>provided</scope>
+</dependency>
 </dependencies></project>`})
 	dependencies, err := readSpringDependencies(t.Context(), root)
 	require.NoError(t, err)
@@ -175,4 +178,75 @@ func TestPackagedJDBCEvidenceIsNotDatabaseFree(t *testing.T) {
 	discovered, err := inferSpringDatasource(datasourceProperties(t, ""), validatorArchive.dependencies, true)
 	require.NoError(t, err)
 	require.Equal(t, databaseNone, discovered.engine)
+}
+
+func writeCustomJar(t *testing.T, path string, entries [][2]string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	file, err := os.Create(path)
+	require.NoError(t, err)
+	writer := zip.NewWriter(file)
+	for _, entry := range entries {
+		resource, createErr := writer.Create(entry[0])
+		require.NoError(t, createErr)
+		_, writeErr := resource.Write([]byte(entry[1]))
+		require.NoError(t, writeErr)
+	}
+	require.NoError(t, writer.Close())
+	require.NoError(t, file.Close())
+}
+
+func TestGradleLocalFileDependenciesClassifyDriversAndRejectIncompleteEvidence(t *testing.T) {
+	root := t.TempDir()
+	localPGJar := filepath.Join(root, "libs", "custom-pg-bundle.jar")
+	writeCustomJar(t, localPGJar, [][2]string{
+		{"org/postgresql/Driver.class", "bytecode"},
+		{"com/azure/identity/extensions/jdbc/postgresql/Plugin.class", "bytecode"},
+	})
+	deps, err := classifyGradleDependencies(root, gradleReport{
+		Version:      1,
+		Root:         root,
+		Dependencies: []string{"org.springframework.boot:spring-boot-starter-web"},
+		LocalFiles:   []string{localPGJar},
+	})
+	require.NoError(t, err)
+	require.True(t, deps.postgresql)
+	require.True(t, deps.azureIdentity)
+	require.True(t, deps.database)
+
+	nestedBytes, err := os.ReadFile(localPGJar)
+	require.NoError(t, err)
+	bootArchive, err := openSpringArchive(springJarFixture(t, [][2]string{
+		{"BOOT-INF/classes/application.properties", "server.port=8080"},
+		{"BOOT-INF/lib/custom-pg-bundle.jar", string(nestedBytes)},
+	}))
+	require.NoError(t, err)
+	require.NoError(t, bootArchive.reader.Close())
+	require.True(t, bootArchive.dependencies.postgresql)
+	require.True(t, bootArchive.dependencies.azureIdentity)
+
+	vendorJar := filepath.Join(root, "libs", "vendor-driver.jar")
+	writeCustomJar(t, vendorJar, [][2]string{
+		{"META-INF/services/java.sql.Driver", "com.vendor.Driver\n"},
+	})
+	vendorDeps, err := classifyGradleDependencies(root, gradleReport{
+		Version:      1,
+		Root:         root,
+		Dependencies: []string{"org.springframework.boot:spring-boot-starter-web"},
+		LocalFiles:   []string{vendorJar},
+	})
+	require.NoError(t, err)
+	require.True(t, vendorDeps.database)
+	_, err = inferSpringDatasource(datasourceProperties(t, ""), vendorDeps, true)
+	require.Error(t, err)
+
+	classesDir := filepath.Join(root, "extra-classes")
+	require.NoError(t, os.MkdirAll(classesDir, 0o700))
+	_, err = classifyGradleDependencies(root, gradleReport{
+		Version:      1,
+		Root:         root,
+		Dependencies: []string{},
+		LocalFiles:   []string{classesDir},
+	})
+	require.ErrorContains(t, err, "packaged JAR evidence")
 }

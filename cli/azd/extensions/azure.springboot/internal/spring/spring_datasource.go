@@ -121,6 +121,18 @@ func inferSpringDatasource(
 			return &discoveredDatasource{engine: databaseNone}, nil
 		}
 	}
+	if config.configServerImport {
+		urlOverridden := config.hasOverride("spring.datasource.url", "spring.datasource.hikari.jdbc-url")
+		if !requireFinal && !urlOverridden {
+			return &discoveredDatasource{pending: true, selectionPending: true}, nil
+		}
+		if requireFinal && !urlOverridden {
+			return nil, configurationError(
+				"Spring Cloud Config Server imports require explicit container datasource overrides " +
+					"or SPRING_CLOUD_CONFIG_ENABLED=false",
+			)
+		}
+	}
 	if strings.HasPrefix(jdbcURL, "jdbc:h2:") || (jdbcURL == "" && dependencies.h2 && driver != "org.postgresql.Driver") {
 		if !dependencies.h2 || (driver != "" && driver != "org.h2.Driver") {
 			return nil, configurationError("the H2 datasource does not match the application runtime dependencies")
@@ -200,6 +212,15 @@ func inferSpringDatasource(
 	for key, target := range map[string]*string{"user": &result.username, "password": &result.password} {
 		if selected, present := driverProperties[key]; present {
 			*target = selected
+		}
+	}
+	if requireFinal && config.configServerImport {
+		_, urlHasUser := parameters["user"]
+		if !urlHasUser && !config.hasOverride("spring.datasource.username", "spring.datasource.hikari.username") {
+			return nil, configurationError(
+				"Spring Cloud Config Server imports require explicit container datasource username overrides " +
+					"or SPRING_CLOUD_CONFIG_ENABLED=false",
+			)
 		}
 	}
 	if selected, present := driverProperties["PGPORT"]; present && !urlPort {

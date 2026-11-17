@@ -410,34 +410,66 @@ func loadServiceModuleParameters(path string, values map[string]string) (map[str
 		if err := json.Unmarshal(rawValue, &value); err != nil {
 			return nil, fmt.Errorf("decoding service module parameter %q: %w", name, err)
 		}
-		if stringValue, ok := value.(string); ok {
-			for _, match := range parameterExpression.FindAllStringSubmatch(stringValue, -1) {
-				if match[2] == "" {
-					if current, present := lookup(match[1]); !present || current == "" {
-						return nil, validationError(
-							"missing_service_parameter_value",
-							fmt.Sprintf("service module parameter %q requires environment value %s", name, match[1]),
-							"restore the required azd environment output and retry",
-						)
-					}
-				}
-			}
-			expanded, err := osutil.NewExpandableString(stringValue).Envsubst(func(key string) string {
-				value, _ := lookup(key)
-				return value
-			})
-			if err != nil {
-				return nil, validationError(
-					"invalid_service_parameter_expression",
-					fmt.Sprintf("service module parameter %q has an invalid environment expression", name),
-					"use a valid azd environment expression",
-				)
-			}
-			value = expanded
+		expanded, err := expandServiceParameterValue(name, value, lookup)
+		if err != nil {
+			return nil, err
 		}
-		resolved[name] = map[string]any{"value": value}
+		resolved[name] = map[string]any{"value": expanded}
 	}
 	return resolved, nil
+}
+
+func expandServiceParameterValue(
+	name string, value any, lookup func(string) (string, bool),
+) (any, error) {
+	switch typed := value.(type) {
+	case string:
+		for _, match := range parameterExpression.FindAllStringSubmatch(typed, -1) {
+			if match[2] == "" {
+				if current, present := lookup(match[1]); !present || current == "" {
+					return nil, validationError(
+						"missing_service_parameter_value",
+						fmt.Sprintf("service module parameter %q requires environment value %s", name, match[1]),
+						"restore the required azd environment output and retry",
+					)
+				}
+			}
+		}
+		expanded, err := osutil.NewExpandableString(typed).Envsubst(func(key string) string {
+			resolved, _ := lookup(key)
+			return resolved
+		})
+		if err != nil {
+			return nil, validationError(
+				"invalid_service_parameter_expression",
+				fmt.Sprintf("service module parameter %q has an invalid environment expression", name),
+				"use a valid azd environment expression",
+			)
+		}
+		return expanded, nil
+	case map[string]any:
+		expandedMap := make(map[string]any, len(typed))
+		for key, item := range typed {
+			expandedItem, err := expandServiceParameterValue(name, item, lookup)
+			if err != nil {
+				return nil, err
+			}
+			expandedMap[key] = expandedItem
+		}
+		return expandedMap, nil
+	case []any:
+		expandedSlice := make([]any, len(typed))
+		for index, item := range typed {
+			expandedItem, err := expandServiceParameterValue(name, item, lookup)
+			if err != nil {
+				return nil, err
+			}
+			expandedSlice[index] = expandedItem
+		}
+		return expandedSlice, nil
+	default:
+		return value, nil
+	}
 }
 
 func serviceDeploymentName(serviceName string) string {

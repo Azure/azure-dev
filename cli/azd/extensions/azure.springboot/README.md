@@ -116,7 +116,14 @@ remains independent of PostgreSQL services in the same project.
 
 Unresolved infrastructure-dependent profile, configuration-location, and
 datasource selectors remain pending during preparation. Final resolution must
-succeed before access setup. The standard local `file:./config/*/` search visits
+succeed before access setup. `spring.config.import: [optional:]configserver:...`
+is honored when `spring.cloud.config.enabled=false`, when a module has no
+database dependencies, or when higher-precedence Container App environment /
+launch overrides explicitly supply `spring.datasource.url` and `username`.
+Multiple PostgreSQL `springbootapp` services in one project may target distinct
+databases, roles, and managed identities on the same provisioned PostgreSQL
+Flexible Server (distinct identities cannot share one PostgreSQL role login).
+The standard local `file:./config/*/` search visits
 contained immediate directories in sorted order; deployed reads never
 substitute host external files for container files.
 

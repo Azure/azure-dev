@@ -54,12 +54,15 @@ func (v *azureDeploymentOutputVerifier) Verify(
 	}
 	if binding != nil && binding.values[containerAppIDEnv] == "" &&
 		database.AppIdentity != nil && database.AppIdentity.Type == databaseAppIdentityTypeSystemAssigned {
-		for _, app := range binding.apps {
+		for serviceName, app := range binding.apps {
 			if app != nil && app.ID != nil && strings.EqualFold(*app.ID, database.AppIdentity.ResourceID) {
 				selected := *binding
 				selected.app = app
 				selected.values = maps.Clone(binding.values)
 				selected.values[containerAppIDEnv] = *app.ID
+				if err := bindServiceIdentityOutputs(serviceName, app, &selected); err != nil {
+					return nil, err
+				}
 				binding = &selected
 				break
 			}

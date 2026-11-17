@@ -644,7 +644,7 @@ overrides:
   - filename: docs/environment-variables.md
     words:
       - springboot
-  - filename: "extensions/azure.springboot/**/*.{go,md,gradle}"
+  - filename: "extensions/azure.springboot/**/*.{go,md,gradle,yaml}"
     words:
       - abcdefghijkmnopqrstuvwxyz
       - ABCDEFGHJKLMNPQRSTUVWXYZ
@@ -654,6 +654,7 @@ overrides:
       - azurespringboot
       - bicepprovider
       - bypassrls
+      - configserver
       - coreproject
       - createdb
       - createrole

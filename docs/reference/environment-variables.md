@@ -77,7 +77,8 @@ For details on the external authentication protocol, see [cli/azd/docs/external-
 The unpublished `azure.springboot` development extension reads and prepares the
 `DATABASE_ADMIN_NAME` and `DATABASE_ADMIN_OBJECT_ID` inputs,
 verifies database and identity outputs against the datasource discovered from
-effective Spring configuration, and owns `SPRING_DATABASE_*` readiness state.
+effective Spring configuration, and owns `SPRING_DATABASE_*` and
+`SERVICE_<KEY>_SPRING_DATABASE_PROVISIONED_ACCESS` readiness state.
 These are not universal core azd settings.
 For PostgreSQL managed-identity provisioning, interactive `up`/`provision`
 prompts for a missing User object ID (defaulting to the host's current User),

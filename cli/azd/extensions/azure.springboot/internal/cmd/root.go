@@ -15,8 +15,7 @@ const extensionID = "azure.springboot"
 // NewRootCommand creates the Spring Boot extension command.
 func NewRootCommand() *cobra.Command {
 	root, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
-		Name:    "spring",
-		Use:     "spring <command> [options]",
+		Name:    extensionID,
 		Short:   "Prepare Spring Boot services for Azure Container Apps.",
 		Version: version.Version,
 	})
@@ -28,9 +27,6 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
 		configureExtensionHostWithNoPrompt(host, extCtx.NoPrompt)
 	}))
-	root.AddCommand(azdext.NewVersionCommand(extensionID, version.Version, &extCtx.OutputFormat))
-	root.AddCommand(azdext.NewMetadataCommand("1.0", extensionID, func() *cobra.Command {
-		return root
-	}))
+	root.AddCommand(azdext.NewMetadataCommand("1.0", extensionID, NewRootCommand))
 	return root
 }

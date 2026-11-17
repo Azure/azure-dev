@@ -98,7 +98,15 @@ identity selection, SQL reconciliation, and database
 network preparation. H2 likewise does not enter PostgreSQL preparation.
 Project database selection ignores database-free services; a verified per-service
 Container App binding prevents them from inheriting another service's PostgreSQL
-settings or identity. Generic application outputs do not require database outputs.
+settings or identity. Multiple PostgreSQL `springbootapp` services on the same
+provisioned Flexible Server may bind distinct databases, non-admin roles, and
+Container App managed identities; per-service access fingerprints verify each
+service independently during deploy, while conflicting role claims across
+distinct identities fail closed. `spring.config.import: [optional:]configserver:...`
+defers during preparation/packaging when database JARs are present, skips when
+`spring.cloud.config.enabled=false`, and requires explicit higher-precedence
+container datasource overrides during final deployment verification. Generic
+application outputs do not require database outputs.
 
 For PostgreSQL, the extension follows Spring Boot, HikariCP, and pgJDBC
 precedence:

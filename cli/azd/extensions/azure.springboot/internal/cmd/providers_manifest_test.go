@@ -21,4 +21,9 @@ func TestConfigureExtensionHostMatchesManifest(t *testing.T) {
 	require.Len(t, host.ServiceTargets(), 1)
 	require.Equal(t, "springbootapp", host.ServiceTargets()[0].Host)
 	require.NotEqual(t, "azure.springboot", host.ServiceTargets()[0].Host)
+
+	root := NewRootCommand()
+	for _, sub := range root.Commands() {
+		require.True(t, sub.Hidden, "unexpected public subcommand %q on provider-only extension", sub.Name())
+	}
 }

@@ -6,6 +6,7 @@ package spring
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -426,4 +427,236 @@ func TestMultiModuleProjectResolvesPostgresAndDatabaseFreeServices(t *testing.T)
 	require.Len(t, services, 2)
 	require.Equal(t, databasePostgreSQL, selected.Type)
 	require.Equal(t, restAppID, selected.AppIdentity.ResourceID)
+}
+
+func TestMultiDatabasePostgresServicesReconcileAndEnforcePerServiceAccess(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".mvn", "wrapper"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "mvnw"), []byte("wrapper"), 0o600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, ".mvn", "wrapper", "maven-wrapper.properties"), []byte("props"), 0o600,
+	))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "pom.xml"), []byte(`<project>
+		<parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId></parent>
+		<groupId>org.springframework.samples</groupId>
+		<artifactId>petclinic-microservices</artifactId>
+		<packaging>pom</packaging>
+	</project>`), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "infra"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "infra", "main.parameters.json"), []byte(`{
+		"parameters": {
+			"databaseAdministratorName": {"value": "${DATABASE_ADMIN_NAME=azd-preprovision-pending}"},
+			"databaseAdministratorObjectId": {"value": "${DATABASE_ADMIN_OBJECT_ID=00000000-0000-0000-0000-000000000000}"}
+		}
+	}`), 0o600))
+
+	writeModule := func(name, depsXML, appYML string) *azdext.ServiceConfig {
+		javaDir := filepath.Join(root, name, "src", "main", "java", "svc")
+		resDir := filepath.Join(root, name, "src", "main", "resources")
+		require.NoError(t, os.MkdirAll(javaDir, 0o755))
+		require.NoError(t, os.MkdirAll(resDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(javaDir, "App.java"), []byte(
+			"package svc;\nimport org.springframework.boot.SpringApplication;\n"+
+				"public class App { public static void main(String[] a) { SpringApplication.run(App.class, a); } }\n",
+		), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(root, name, "pom.xml"), []byte(`<project>
+			<parent>
+				<groupId>org.springframework.samples</groupId>
+				<artifactId>petclinic-microservices</artifactId>
+				<relativePath>../pom.xml</relativePath>
+			</parent>
+			<artifactId>`+name+`</artifactId>
+			<dependencies>`+depsXML+`</dependencies>
+		</project>`), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(resDir, "application.yml"), []byte(appYML), 0o600))
+		return &azdext.ServiceConfig{Name: name, Host: SpringHost, RelativePath: "./" + name}
+	}
+
+	pgDeps := `<dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>` +
+		`<dependency><groupId>com.azure</groupId><artifactId>azure-identity-extensions</artifactId></dependency>`
+	webDeps := `<dependency><groupId>org.springframework.boot</groupId>` +
+		`<artifactId>spring-boot-starter-webmvc</artifactId></dependency>`
+	configImportYML := "spring:\n  config:\n    import: optional:configserver:http://localhost:8888/\n"
+
+	customersSvc := writeModule("customers-service", pgDeps, configImportYML)
+	vetsSvc := writeModule("vets-service", pgDeps, configImportYML)
+	gatewaySvc := writeModule("api-gateway", webDeps, configImportYML)
+
+	project := &azdext.ProjectConfig{
+		Path:  root,
+		Infra: &azdext.InfraOptions{Provider: "bicep", Path: "infra", Module: "main"},
+		Services: map[string]*azdext.ServiceConfig{
+			"customers-service": customersSvc,
+			"vets-service":      vetsSvc,
+			"api-gateway":       gatewaySvc,
+		},
+	}
+
+	subscription := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	adminOID := "11111111-2222-3333-4444-555555555555"
+	tenantID := "99999999-8888-7777-6666-555555555555"
+	serverID := "/subscriptions/" + subscription + "/resourceGroups/rg/providers/" +
+		"Microsoft.DBforPostgreSQL/flexibleServers/pg"
+	caeID := "/subscriptions/" + subscription + "/resourceGroups/rg/providers/" +
+		"Microsoft.App/managedEnvironments/cae"
+	customersAppID := "/subscriptions/" + subscription + "/resourceGroups/rg/providers/" +
+		"Microsoft.App/containerApps/customers-service"
+	vetsAppID := "/subscriptions/" + subscription + "/resourceGroups/rg/providers/" +
+		"Microsoft.App/containerApps/vets-service"
+	gatewayAppID := "/subscriptions/" + subscription + "/resourceGroups/rg/providers/" +
+		"Microsoft.App/containerApps/api-gateway"
+	customersPrincipal := "22222222-3333-4444-5555-666666666666"
+	vetsPrincipal := "33333333-4444-5555-6666-777777777777"
+
+	mkJDBC := func(dbName string) string {
+		return "jdbc:postgresql://pg.example:5432/" + dbName + "?" +
+			"sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt&" +
+			"authenticationPluginClassName=" + azurePostgreSQLPlugin + "&azure.managedIdentityEnabled=true"
+	}
+
+	envValues := map[string]string{
+		azureSubscriptionIDEnv:           subscription,
+		azureResourceGroupEnv:            "rg",
+		"DATABASE_ADMIN_NAME":            "admin@example.com",
+		"DATABASE_ADMIN_OBJECT_ID":       adminOID,
+		databaseAdministratorNameEnv:     "admin@example.com",
+		databaseAdministratorObjectIDEnv: adminOID,
+		databaseUserAccessTenantIDEnv:    tenantID,
+		postgresServerIDEnv:              serverID,
+		postgresHostEnv:                  "pg.example",
+		"CONTAINER_APP_ENVIRONMENT_ID":   caeID,
+	}
+
+	makeBinding := func(vetsRole string, base map[string]string) *deploymentBinding {
+		merged := maps.Clone(envValues)
+		maps.Copy(merged, base)
+		return &deploymentBinding{
+			original:  true,
+			automatic: true,
+			values:    merged,
+			resources: map[string]bool{
+				strings.ToLower(serverID):                          true,
+				strings.ToLower(serverID + "/databases/customers"): true,
+				strings.ToLower(serverID + "/databases/vets"):      true,
+				strings.ToLower(customersAppID):                    true,
+				strings.ToLower(vetsAppID):                         true,
+				strings.ToLower(gatewayAppID):                      true,
+				strings.ToLower(caeID):                             true,
+			},
+			apps: map[string]*armappcontainers.ContainerApp{
+				"customers-service": {
+					ID: new(customersAppID),
+					Identity: &armappcontainers.ManagedServiceIdentity{
+						Type:        new(armappcontainers.ManagedServiceIdentityTypeSystemAssigned),
+						PrincipalID: new(customersPrincipal),
+					},
+					Properties: &armappcontainers.ContainerAppProperties{Template: &armappcontainers.Template{
+						Containers: []*armappcontainers.Container{{Env: []*armappcontainers.EnvironmentVar{
+							{Name: new("SPRING_DATASOURCE_URL"), Value: new(mkJDBC("customers"))},
+							{Name: new("SPRING_DATASOURCE_USERNAME"), Value: new("customers_app")},
+						}}},
+					}},
+				},
+				"vets-service": {
+					ID: new(vetsAppID),
+					Identity: &armappcontainers.ManagedServiceIdentity{
+						Type:        new(armappcontainers.ManagedServiceIdentityTypeSystemAssigned),
+						PrincipalID: new(vetsPrincipal),
+					},
+					Properties: &armappcontainers.ContainerAppProperties{Template: &armappcontainers.Template{
+						Containers: []*armappcontainers.Container{{Env: []*armappcontainers.EnvironmentVar{
+							{Name: new("SPRING_DATASOURCE_URL"), Value: new(mkJDBC("vets"))},
+							{Name: new("SPRING_DATASOURCE_USERNAME"), Value: new(vetsRole)},
+						}}},
+					}},
+				},
+				"api-gateway": {
+					ID: new(gatewayAppID),
+					Identity: &armappcontainers.ManagedServiceIdentity{
+						Type:        new(armappcontainers.ManagedServiceIdentityTypeSystemAssigned),
+						PrincipalID: new("44444444-5555-6666-7777-888888888888"),
+					},
+					Properties: &armappcontainers.ContainerAppProperties{Template: &armappcontainers.Template{
+						Containers: []*armappcontainers.Container{{Env: []*armappcontainers.EnvironmentVar{}}},
+					}},
+				},
+			},
+		}
+	}
+
+	// 1. PreProvision succeeds with configserver-imported modules before deployment.
+	store := &fakeEnvironmentStore{name: "dev", data: maps.Clone(envValues)}
+	identities := &fakeDeveloperIdentityResolver{
+		identity: &developerIdentity{ObjectID: adminOID, UserAccessTenantID: tenantID},
+	}
+	var reconciled []string
+	liveVerifier := &azureDeploymentOutputVerifier{}
+	runtime := &Runtime{
+		environments: store,
+		identities:   identities,
+		outputs: &delegatingOutputVerifier{
+			read: func(v map[string]string) (*deploymentBinding, error) { return makeBinding("vets_app", v), nil },
+			verify: func(ctx context.Context, db resolvedDatabase, v map[string]string) (*deploymentBinding, error) {
+				return liveVerifier.Verify(ctx, db, v)
+			},
+		},
+		reconcile: func(context.Context, map[string]string) error { return nil },
+		prepareNetwork: func(context.Context, *deploymentBinding) (func(context.Context) error, error) {
+			return func(context.Context) error { return nil }, nil
+		},
+		configureAccess: func(_ context.Context, _ string, db resolvedDatabase, v map[string]string) error {
+			reconciled = append(
+				reconciled,
+				db.Name+":"+db.Username+":"+v[serviceIdentityPrincipalIDEnv],
+			)
+			return nil
+		},
+	}
+
+	require.NoError(t, runtime.PreProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
+
+	// 2. PostProvision reconciles both PostgreSQL services with their respective principals and skips api-gateway.
+	require.NoError(t, runtime.PostProvision(t.Context(), &azdext.ProjectEventArgs{Project: project}))
+	require.Equal(t, []string{
+		"customers:customers_app:" + customersPrincipal,
+		"vets:vets_app:" + vetsPrincipal,
+	}, reconciled)
+	require.NotEmpty(t, store.data[serviceProvisionedAccessEnvKey("customers-service")])
+	require.NotEmpty(t, store.data[serviceProvisionedAccessEnvKey("vets-service")])
+	require.True(t, strings.HasPrefix(store.data[provisionedDatabaseAccessEnv], "multi:"))
+
+	// 3. PreDeploy passes for all 3 services using their per-service fingerprints.
+	for _, svc := range []*azdext.ServiceConfig{customersSvc, vetsSvc, gatewaySvc} {
+		require.NoError(t, runtime.PreDeploy(t.Context(), &azdext.ServiceEventArgs{
+			Project: project,
+			Service: svc,
+		}))
+	}
+
+	// 4. Mutating one service's database access after provisioning fails per-service immutability.
+	mutatedBinding := makeBinding("customers_app", store.data)
+	mutatedCtx := context.WithValue(t.Context(), deploymentBindingKey{}, mutatedBinding)
+	_, _, err := runtime.resolveProject(mutatedCtx, project, mutatedBinding.values, false, true)
+	require.ErrorContains(t, err, "changes the provisioned PostgreSQL access identity")
+
+	// 5. Role collision across distinct identities on initial provision fails closed.
+	collisionBinding := makeBinding("customers_app", nil)
+	collisionCtx := context.WithValue(t.Context(), deploymentBindingKey{}, collisionBinding)
+	_, _, err = runtime.resolveProject(collisionCtx, project, collisionBinding.values, false, true)
+	require.ErrorContains(t, err, "cannot share one PostgreSQL role login")
+}
+
+type delegatingOutputVerifier struct {
+	read   func(map[string]string) (*deploymentBinding, error)
+	verify func(context.Context, resolvedDatabase, map[string]string) (*deploymentBinding, error)
+}
+
+func (v *delegatingOutputVerifier) Read(_ context.Context, values map[string]string) (*deploymentBinding, error) {
+	return v.read(values)
+}
+
+func (v *delegatingOutputVerifier) Verify(
+	ctx context.Context, db resolvedDatabase, values map[string]string,
+) (*deploymentBinding, error) {
+	return v.verify(ctx, db, values)
 }

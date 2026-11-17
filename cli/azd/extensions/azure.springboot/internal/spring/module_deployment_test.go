@@ -305,6 +305,16 @@ func TestLoadServiceModuleParametersRejectsFlattenedAndRefValues(t *testing.T) {
 			content: `{"parameters":{"imageName":{"value":"${SERVICE_API_IMAGE_NAME}"}}}`,
 			wantErr: "requires environment value",
 		},
+		{
+			name:    "missing nested object value",
+			content: `{"parameters":{"container":{"value":{"image":"${SERVICE_API_IMAGE_NAME}"}}}}`,
+			wantErr: "requires environment value",
+		},
+		{
+			name:    "missing nested array value",
+			content: `{"parameters":{"images":{"value":["${SERVICE_API_IMAGE_NAME}"]}}}`,
+			wantErr: "requires environment value",
+		},
 	}
 
 	for _, test := range tests {
@@ -315,6 +325,31 @@ func TestLoadServiceModuleParametersRejectsFlattenedAndRefValues(t *testing.T) {
 			require.ErrorContains(t, err, test.wantErr)
 		})
 	}
+}
+
+func TestLoadServiceModuleParametersExpandsNestedObjectsAndArrays(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "service.parameters.json")
+	content := `{
+  "parameters": {
+    "container": {
+      "value": {
+        "image": "${SERVICE_API_IMAGE_NAME}",
+        "replicas": 2,
+        "labels": ["${AZURE_ENV_NAME}", "${OPTIONAL_LABEL:-default-label}"]
+      }
+    }
+  }
+}`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	resolved, err := loadServiceModuleParameters(path, map[string]string{
+		"SERVICE_API_IMAGE_NAME": "registry.example/api:v1",
+		"AZURE_ENV_NAME":         "prod",
+	})
+	require.NoError(t, err)
+	container := resolved["container"].(map[string]any)["value"].(map[string]any)
+	require.Equal(t, "registry.example/api:v1", container["image"])
+	require.Equal(t, float64(2), container["replicas"])
+	require.Equal(t, []any{"prod", "default-label"}, container["labels"])
 }
 
 func TestResolveServiceModulePathsRejectsEscapeAndBicepParam(t *testing.T) {

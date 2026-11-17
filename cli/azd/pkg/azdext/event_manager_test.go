@@ -9,6 +9,7 @@ import (
 	"io"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
@@ -615,6 +616,20 @@ func TestEventManager_onInvokeServiceHandler_ResponseHandlerMessages(t *testing.
 			wantMessages: []*ServiceEventMessage{warning},
 		},
 		{
+			name: "opaque link URLs are rejected because their credentials cannot be redacted",
+			response: &ServiceEventResponse{Messages: []*ServiceEventMessage{
+				{
+					Kind:    ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+					Message: "Opaque link",
+					Links:   []*ErrorLink{{Title: "Opaque", Url: "https:user:password@example.com/docs"}},
+				},
+				warning,
+			}},
+			wantStatus:   "failed",
+			wantErr:      []string{"message 1: link 1 URL is invalid"},
+			wantMessages: []*ServiceEventMessage{warning},
+		},
+		{
 			name:     "typed handler errors keep validation diagnostics",
 			response: &ServiceEventResponse{Messages: []*ServiceEventMessage{nil, warning}},
 			handlerErr: &ServiceError{
@@ -827,6 +842,34 @@ func TestEventManager_ServiceEventRegistrationReservations(t *testing.T) {
 		stream.mu.Unlock()
 		require.NoError(t, eventManager.AddServiceEventHandler(t.Context(), "predeploy", plainHandler, nil))
 	})
+}
+
+func TestEventManager_onInvokeServiceHandler_HandlerCanRemoveHandlers(t *testing.T) {
+	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+	eventManager.serviceResponseEvents["predeploy"] = func(
+		context.Context,
+		*ServiceEventArgs,
+	) (*ServiceEventResponse, error) {
+		eventManager.RemoveServiceEventHandler("predeploy")
+		return nil, nil
+	}
+
+	done := make(chan *EventMessage, 1)
+	go func() {
+		resp, _ := eventManager.onInvokeServiceHandler(t.Context(), &InvokeServiceHandler{
+			EventName: "predeploy",
+			Service:   createTestServiceConfigForEvents(),
+		})
+		done <- resp
+	}()
+
+	select {
+	case resp := <-done:
+		require.Equal(t, "completed", resp.GetServiceHandlerStatus().GetStatus())
+		require.NotContains(t, eventManager.serviceResponseEvents, "predeploy")
+	case <-time.After(5 * time.Second):
+		t.Fatal("service handler deadlocked while removing a handler")
+	}
 }
 
 // Test RemoveProjectEventHandler

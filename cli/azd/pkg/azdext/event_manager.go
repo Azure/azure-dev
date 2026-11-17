@@ -343,10 +343,11 @@ func (em *EventManager) onInvokeServiceHandler(
 	ctx context.Context,
 	req *InvokeServiceHandler,
 ) (*EventMessage, error) {
+	// Release the lock before running extension code so handlers can register or remove handlers.
 	em.eventsMutex.RLock()
-	defer em.eventsMutex.RUnlock()
 	handler, exists := em.serviceEvents[req.EventName]
 	responseHandler, hasResponseHandler := em.serviceResponseEvents[req.EventName]
+	em.eventsMutex.RUnlock()
 
 	if !exists && !hasResponseHandler {
 		// No handler registered, return empty response (not an error)
@@ -453,7 +454,7 @@ func validateServiceEventMessage(message *ServiceEventMessage) error {
 		if link == nil || strings.TrimSpace(link.GetUrl()) == "" {
 			return fmt.Errorf("link %d URL is required", index+1)
 		}
-		if _, err := url.Parse(link.GetUrl()); err != nil {
+		if parsedURL, err := url.Parse(link.GetUrl()); err != nil || parsedURL.Opaque != "" {
 			return fmt.Errorf("link %d URL is invalid", index+1)
 		}
 	}

@@ -105,6 +105,10 @@ func redactServiceEventMessageURL(rawURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Opaque URLs such as "https:user:password@host" keep credentials outside User, so they cannot be redacted.
+	if parsedURL.Opaque != "" {
+		return "", fmt.Errorf("opaque URLs are not supported")
+	}
 	parsedURL.User = nil
 	parsedURL.RawQuery = ""
 	parsedURL.ForceQuery = false

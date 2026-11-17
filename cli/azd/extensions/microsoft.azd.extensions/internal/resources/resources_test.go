@@ -169,11 +169,10 @@ func TestNonGoScaffoldEventMessageMatchesStableContract(t *testing.T) {
 			"subscribe_project_event_response",
 			"subscribe_service_event_response",
 			"request_id",
-			"ServiceEventMessage",
-			"service_event_message",
 		} {
 			require.NotContains(t, string(generated), betaOnlyField, path)
 		}
+		require.Contains(t, string(generated), "ServiceEventMessage", path)
 	}
 }
 
@@ -279,7 +278,7 @@ func serviceHandlerStatusFields(t *testing.T, proto []byte) map[string]string {
 var azdModuleRequirePattern = regexp.MustCompile(`github\.com/azure/azure-dev/cli/azd (\S+)`)
 var eventMessageOneofPattern = regexp.MustCompile(`(?s)message EventMessage\s*\{.*?oneof message_type\s*\{(.*?)\n\s*\}`)
 var serviceHandlerStatusPattern = regexp.MustCompile(`(?s)message ServiceHandlerStatus\s*\{(.*?)\n\s*\}`)
-var protoFieldPattern = regexp.MustCompile(`(?m)^\s*([\w.]+)\s+(\w+)\s*=\s*(\d+);`)
+var protoFieldPattern = regexp.MustCompile(`(?m)^\s*((?:repeated\s+)?[\w.]+)\s+(\w+)\s*=\s*(\d+);`)
 
 // pseudoVersionPattern matches the trailing "<yyyymmddhhmmss>-<12 hex digits>" that the Go
 // toolchain appends when a module is referenced by commit rather than by a published tag.

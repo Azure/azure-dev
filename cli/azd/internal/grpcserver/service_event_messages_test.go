@@ -86,6 +86,17 @@ func TestEventService_createServiceEventHandler_ServiceEventMessages(t *testing.
 			wantErr:   `messages are not supported for service event "prepackage"`,
 		},
 		{
+			name:      "opaque link URLs are rejected",
+			eventName: "predeploy",
+			status:    "completed",
+			messages: []*azdext.ServiceEventMessage{{
+				Kind:    azdext.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+				Message: "Opaque link",
+				Links:   []*azdext.ErrorLink{{Url: "https:user:password@example.com/docs"}},
+			}},
+			wantErr: "service event message 1 link 1 has an invalid URL",
+		},
+		{
 			name:      "unspecified kind is rejected",
 			eventName: "predeploy",
 			status:    "completed",

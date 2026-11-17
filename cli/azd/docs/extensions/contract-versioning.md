@@ -269,8 +269,8 @@ messages map to their invocation without a beta `request_id`.
 Both routes share one host collector. Messages are accepted only on final
 `predeploy` and `postdeploy` statuses for the invoked service during a deploy
 command. Each message needs an info or warning kind and text, and each link
-needs a URL; link user information, queries, and fragments are redacted.
-Messages from failed hooks are retained. Older hosts ignore the unknown stable
+needs a URL; link user information, queries, and fragments are redacted, and
+opaque URLs are rejected. Messages from failed hooks are retained. Older hosts ignore the unknown stable
 field, so stable messages are dropped without failing deployment.
 
 The beta message fields, messages, and enum are deprecated, not removed. The
@@ -286,7 +286,8 @@ stable `azdext.ServiceEventMessage` types. `WithBetaServiceEventHandler` and the
 `BetaServiceEvent*` types remain source-compatible but deprecated. An event can
 have only one service handler across the plain, response, and beta APIs. No Go
 source breaks are introduced. The demo extension migrates in the host PR and
-requires azd 1.38.0.
+requires azd 1.38.0. The non-Go scaffold proto and its JavaScript and Python
+bindings include the stable fields.
 
 [Consumer migration and release tracking](https://github.com/Azure/azure-dev/issues/10935) covers the agents
 extension's RBAC warnings after SDK v1.38.0 is published.

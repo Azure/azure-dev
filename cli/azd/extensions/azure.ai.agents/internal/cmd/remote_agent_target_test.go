@@ -461,10 +461,29 @@ func TestDirectTargetCommands_RejectInvalidInputsBeforeAuth(t *testing.T) {
 			wantCode: exterrors.CodeConflictingArguments,
 		},
 		{
-			name:     "show project endpoint without name",
+			name:     "show versions with project endpoint and no name",
 			cmd:      func() *cobra.Command { return newShowCommand(nil) },
-			args:     []string{"--project-endpoint", testProjectEndpoint},
+			args:     []string{"--project-endpoint", testProjectEndpoint, "--versions"},
 			wantCode: exterrors.CodeInvalidAgentName,
+		},
+		{
+			name:     "show list with environment",
+			cmd:      func() *cobra.Command { return newShowCommand(nil) },
+			args:     []string{"--project-endpoint", testProjectEndpoint, "--environment", "dev"},
+			wantCode: exterrors.CodeConflictingArguments,
+		},
+		{
+			name:     "show list with malformed project endpoint",
+			cmd:      func() *cobra.Command { return newShowCommand(nil) },
+			args:     []string{"--project-endpoint", testAgentEndpoint},
+			wantCode: exterrors.CodeInvalidParameter,
+		},
+		{
+			name: "show list with both endpoints",
+			cmd:  func() *cobra.Command { return newShowCommand(nil) },
+			args: []string{"--project-endpoint", testProjectEndpoint,
+				"--agent-endpoint", testAgentEndpoint},
+			wantCode: exterrors.CodeConflictingArguments,
 		},
 		{
 			name: "show direct target with environment",

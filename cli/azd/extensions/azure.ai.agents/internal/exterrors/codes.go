@@ -47,6 +47,7 @@ const (
 // Error codes for malformed locally saved protocol resource state.
 const (
 	CodeInvalidResponseState   = "invalid_response_state"
+	CodeInvalidServiceResponse = "invalid_service_response"
 	CodeInvalidInvocationState = "invalid_invocation_state"
 )
 
@@ -230,6 +231,8 @@ const (
 	OpCreateConversation      = "create_conversation"
 	OpCreateTelephonyBinding  = "create_telephony_binding"
 	OpGetAgent                = "get_agent"
+	OpListAgents              = "list_agents"
+	OpListAgentVersions       = "list_agent_versions"
 	OpGetTelephonyBinding     = "get_telephony_binding"
 	OpUpdateAgent             = "update_agent"
 	OpGetActivityBot          = "get_activity_bot"

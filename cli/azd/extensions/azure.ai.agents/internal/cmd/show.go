@@ -26,9 +26,10 @@ import (
 )
 
 type showFlags struct {
-	name   string
-	output string
-	direct directAgentTargetFlags
+	name     string
+	output   string
+	versions bool
+	direct   directAgentTargetFlags
 }
 
 // ShowAction handles the execution of the show command.
@@ -62,7 +63,16 @@ To inspect a deployed agent without an azd project, supply its cloud identity
 directly: either --agent-endpoint with a full agent protocol URL, or
 --project-endpoint with the deployed Foundry agent name as the positional
 argument. Direct mode reads only the remote agent and shows its latest version;
-it never reads azure.yaml or azd environment values.`,
+it never reads azure.yaml or azd environment values.
+
+To list every agent deployed in a Foundry project, including agents not deployed
+by azd, run show without a name and with --project-endpoint. Outside an azd
+project, show without a name lists agents in the project selected by the active
+azd environment, ` + "`azd ai project set`" + `, or FOUNDRY_PROJECT_ENDPOINT. Inside an
+azd project, show without a name keeps resolving the agent service from
+azure.yaml. Listing follows every page of results.
+
+Use --versions to list every version of one agent instead of its latest version.`,
 		Example: `  # Show status (auto-resolves from azure.yaml)
   azd ai agent show
 
@@ -72,8 +82,16 @@ it never reads azure.yaml or azd environment values.`,
   # Show status as JSON
   azd ai agent show --output json
 
+  # List every agent deployed in a Foundry project
+  azd ai agent show \
+    --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
+
   # Show a deployed agent without an azd project
   azd ai agent show support \
+    --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
+
+  # List every version of a deployed agent
+  azd ai agent show support --versions \
     --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
 
   # Show a deployed agent from its protocol endpoint URL
@@ -81,19 +99,31 @@ it never reads azure.yaml or azd environment values.`,
     "https://<account>.services.ai.azure.com/api/projects/<project>/agents/support/endpoint/protocols/invocations"`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) > 0 {
+			nameSupplied := len(args) > 0
+			if nameSupplied {
 				flags.name = args[0]
 			}
 			flags.output = extCtx.OutputFormat
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
+			listEndpoint, err := resolveExplicitAgentListEndpoint(cmd, flags, nameSupplied)
+			if err != nil {
+				return err
+			}
+			if listEndpoint != "" {
+				return runShowAgentList(ctx, &resolvedEndpoint{Endpoint: listEndpoint, Source: SourceFlag}, flags.output)
+			}
+
 			target, err := resolveDirectAgentTarget(
-				cmd, &flags.direct, flags.name, len(args) > 0, "the [name] argument")
+				cmd, &flags.direct, flags.name, nameSupplied, "the [name] argument")
 			if err != nil {
 				return err
 			}
 			if target != nil {
+				if flags.versions {
+					return runShowVersions(ctx, target, flags.output)
+				}
 				return runDirectShow(ctx, flags, target)
 			}
 
@@ -102,6 +132,16 @@ it never reads azure.yaml or azd environment values.`,
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			if !nameSupplied {
+				scope, err := resolveNamelessShowListScope(ctx, azdClient.Project().Get, flags.versions)
+				if err != nil {
+					return err
+				}
+				if scope != nil {
+					return runShowAgentList(ctx, scope, flags.output)
+				}
+			}
 
 			// Prompt (kind=managed) agents are azd services too, but they live
 			// on the harness rather than the Foundry service. Resolve the
@@ -112,6 +152,9 @@ it never reads azure.yaml or azd environment values.`,
 			); pErr != nil {
 				return pErr
 			} else if isPrompt {
+				if flags.versions {
+					return runPromptShowVersions(ctx, flags, pctx)
+				}
 				return runPromptShow(ctx, flags, pctx)
 			}
 
@@ -126,6 +169,13 @@ it never reads azure.yaml or azd environment values.`,
 						"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
 					info.ServiceName,
 				)
+			}
+			if flags.versions {
+				agentContext, err := newAgentContext(ctx, "", "", info.AgentName, "")
+				if err != nil {
+					return err
+				}
+				return runShowVersions(ctx, agentContext, flags.output)
 			}
 			if info.Version == "" {
 				return fmt.Errorf(
@@ -160,6 +210,11 @@ it never reads azure.yaml or azd environment values.`,
 	}
 
 	addDirectAgentTargetFlags(cmd, &flags.direct, "the [name] argument")
+	cmd.Flags().Lookup(directProjectEndpointFlag).Usage = "Foundry project endpoint URL; " +
+		"with [name], shows that deployed agent, and without [name], lists every agent in the project " +
+		"(no azd project required)"
+	cmd.Flags().BoolVar(&flags.versions, "versions", false,
+		"List every version of the agent instead of showing its latest version")
 	previewHelpText(cmd, featureflags.Voice, "a prompt, hosted, or voice agent", "an agent")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",

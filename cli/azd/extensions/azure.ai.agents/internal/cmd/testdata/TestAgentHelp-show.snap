@@ -10,12 +10,22 @@ directly: either --agent-endpoint with a full agent protocol URL, or
 argument. Direct mode reads only the remote agent and shows its latest version;
 it never reads azure.yaml or azd environment values.
 
+To list every agent deployed in a Foundry project, including agents not deployed
+by azd, run show without a name and with --project-endpoint. Outside an azd
+project, show without a name lists agents in the project selected by the active
+azd environment, `azd ai project set`, or FOUNDRY_PROJECT_ENDPOINT. Inside an
+azd project, show without a name keeps resolving the agent service from
+azure.yaml. Listing follows every page of results.
+
+Use --versions to list every version of one agent instead of its latest version.
+
 Usage
   azd ai agent show [name] [flags]
 
 Flags
       --agent-endpoint string   : Full protocol endpoint URL of a deployed agent (no azd project required)
-      --project-endpoint string : Foundry project endpoint URL; requires the deployed agent name via the [name] argument (no azd project required)
+      --project-endpoint string : Foundry project endpoint URL; with [name], shows that deployed agent, and without [name], lists every agent in the project (no azd project required)
+      --versions                : List every version of the agent instead of showing its latest version
 
 Global Flags
   -C, --cwd string         : Sets the current working directory
@@ -35,8 +45,16 @@ Examples
   Show status as JSON
     azd ai agent show --output json
 
+  List every agent deployed in a Foundry project
+    azd ai agent show \
+      --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
+
   Show a deployed agent without an azd project
     azd ai agent show support \
+      --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
+
+  List every version of a deployed agent
+    azd ai agent show support --versions \
       --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
 
   Show a deployed agent from its protocol endpoint URL

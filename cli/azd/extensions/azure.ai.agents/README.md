@@ -754,6 +754,42 @@ to stderr, leaving stdout as machine-readable JSON. With `--output table`, the
 message replaces the empty table. An empty page with a continuation token instead
 says `No sessions found on this page.` and retains the pagination information.
 
+### Listing deployed agents and versions
+
+`azd ai agent show` without an agent name lists every agent deployed in a Foundry
+project, including agents that azd did not deploy. Add `--versions` with an agent
+name to list that agent's version history instead of its latest version:
+
+```bash
+azd ai agent show \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+
+azd ai agent show support --versions \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+```
+
+`--project-endpoint` always selects the project, regardless of the current
+directory. Without the flag, a nameless `show` outside an azd project lists the
+project from the active azd environment's `FOUNDRY_PROJECT_ENDPOINT`, then
+`azd ai project set`, then the `FOUNDRY_PROJECT_ENDPOINT` environment variable.
+Inside an azd project, a nameless `show` keeps showing the agent service from
+`azure.yaml`. Inside a project, `show [service] --versions` lists the deployed
+agent's versions.
+
+Listing follows every page of results and fails rather than printing a partial
+list when the service returns no usable continuation cursor. Table output shows
+the project and where it came from, then `NAME`, `KIND`, `LATEST VERSION`,
+`STATUS`, and `CREATED` (or `VERSION`, `STATUS`, `CREATED`, and `DESCRIPTION`
+for versions). JSON output has a stable shape:
+`{"project_endpoint", "endpoint_source", "data": [{"name", "id", "kind",
+"latest_version", "status", "created_at"}]}` for agents and
+`{"project_endpoint", "agent_name", "data": [{"version", "id", "status",
+"created_at", "description"}]}` for versions. An empty project prints
+`No agents found.`; with `--output json`, stdout keeps `"data": []` and the
+message goes to stderr. A missing project or agent returns a not-found error,
+and denied access returns a service error with a role suggestion, so neither is
+reported as an empty list.
+
 ## Initializing an A2A hosted agent
 
 Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI before initializing

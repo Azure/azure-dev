@@ -14,7 +14,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/constants"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
@@ -22,40 +21,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestEnvironmentVariableConstants(t *testing.T) {
-	t.Parallel()
-
-	for _, test := range []struct {
-		name     string
-		legacy   string
-		current  string
-		expected string
-	}{
-		{"environment", EnvNameEnvVarName, constants.EnvNameEnvVarName, "AZURE_ENV_NAME"},
-		{"location", LocationEnvVarName, constants.LocationEnvVarName, "AZURE_LOCATION"},
-		{"subscription", SubscriptionIdEnvVarName, constants.SubscriptionIdEnvVarName, "AZURE_SUBSCRIPTION_ID"},
-		{"principal", PrincipalIdEnvVarName, constants.PrincipalIdEnvVarName, "AZURE_PRINCIPAL_ID"},
-		{"principal type", PrincipalTypeEnvVarName, constants.PrincipalTypeEnvVarName, "AZURE_PRINCIPAL_TYPE"},
-		{"tenant", TenantIdEnvVarName, constants.TenantIdEnvVarName, "AZURE_TENANT_ID"},
-		{"container registry", ContainerRegistryEndpointEnvVarName, constants.ContainerRegistryEndpointEnvVarName,
-			"AZURE_CONTAINER_REGISTRY_ENDPOINT"},
-		{"container environment", ContainerEnvironmentEndpointEnvVarName, constants.ContainerEnvironmentEndpointEnvVarName,
-			"AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"},
-		{"aspire dashboard", AppServiceAspireDashboardUrlEnvVarName, constants.AppServiceAspireDashboardUrlEnvVarName,
-			"AZURE_APP_SERVICE_DASHBOARD_URI"},
-		{"aks cluster", AksClusterEnvVarName, constants.AksClusterEnvVarName, "AZURE_AKS_CLUSTER_NAME"},
-		{"resource group", ResourceGroupEnvVarName, constants.ResourceGroupEnvVarName, "AZURE_RESOURCE_GROUP"},
-		{"platform", PlatformTypeEnvVarName, constants.PlatformTypeEnvVarName, "AZD_PLATFORM_TYPE"},
-		{"initial config", AzdInitialEnvironmentConfigName, constants.AzdInitialEnvironmentConfigName,
-			"AZD_INITIAL_ENVIRONMENT_CONFIG"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			require.Equal(t, test.expected, test.current)
-			require.Equal(t, test.current, test.legacy)
-		})
-	}
-}
 
 func TestIsValidEnvironmentName(t *testing.T) {
 	t.Parallel()

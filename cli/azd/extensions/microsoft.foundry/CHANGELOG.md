@@ -1,5 +1,11 @@
 # Release History
 
+## 1.2.0 (2026-11-17)
+
+### Features Added
+
+- Update bundled extensions to `azure.ai.agents` `~1.2.0`, `azure.ai.connections` `~1.0.1`, and `azure.ai.projects` `~1.1.1`.
+
 ## 1.1.0 (2026-11-12)
 
 ### Features Added

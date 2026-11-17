@@ -326,62 +326,63 @@ func exportRow(kind, spanID, parentID, name string, success any, itemCount float
 
 const supportAgentAttributes = `{"gen_ai.agent.name":"support","gen_ai.agent.id":"support:3","gen_ai.operation.name":"invoke_agent"}`
 
-func TestAssessTraceCompleteness_UpstreamServiceBoundaries(t *testing.T) {
+func TestAssessTraceCompleteness_ReportsAbsentSpansWithoutGuessingCause(t *testing.T) {
 	at := func(seconds int) time.Time { return time.Date(2026, 11, 16, 22, 55, seconds, 0, time.UTC) }
 	span := func(id, parent, role string, start time.Time, items int64) traceSpan {
 		return traceSpan{SpanID: id, ParentSpanID: parent, Role: role, ItemCount: items, start: start}
 	}
 
-	t.Run("hosted agent invocation entered from Foundry services", func(t *testing.T) {
-		// Shape of a real hosted-agent trace: the agent service request and the
-		// Responses API invocation are each called by Foundry spans that are not
-		// exported to the project's Application Insights resource.
+	t.Run("hosted agent trace without recorded root or entry parents", func(t *testing.T) {
+		// Sanitized shape of a real hosted-agent trace: the earliest span of the agentsv2
+		// and responsesapi roles each reference a parent that is not in the telemetry.
 		spans := []traceSpan{
-			span("agentsvc-request", "platform-parent-a", "agentsv2", at(56), 1),
+			span("agentsvc-request", "absent-parent-a", "agentsv2", at(56), 1),
 			span("agent-token", "agentsvc-request", "hosted-agent", at(63), 1),
 			span("agent-invoke", "agentsvc-request", "hosted-agent", at(64), 3),
 			span("agent-chat", "agent-invoke", "hosted-agent", at(64), 4),
-			span("responses-invoke", "platform-parent-b", "responsesapi", at(66), 1),
+			span("responses-invoke", "absent-parent-b", "responsesapi", at(66), 1),
 			span("responses-chat", "responses-invoke", "responsesapi", at(67), 1),
 		}
 		result := assessTraceCompleteness("trace-1", spans, false, "")
-		assert.True(t, result.Complete)
+		assert.False(t, result.Complete)
 		assert.False(t, result.RootSpanFound)
-		assert.Equal(t, []string{"platform-parent-a", "platform-parent-b"}, result.UpstreamParentSpanIDs)
-		assert.Empty(t, result.MissingParentSpanIDs)
+		assert.Equal(t, []string{"absent-parent-a", "absent-parent-b"}, result.MissingParentSpanIDs)
 		assert.True(t, result.Sampled)
+		require.Len(t, result.Notes, 3)
+		assert.Contains(t, result.Notes[0], "no root span (a span without a parent) was found in the queried telemetry")
+		assert.Contains(t, result.Notes[1], "2 parent span ID(s) referenced by recorded spans were not found")
+		for _, note := range result.Notes[:2] {
+			assert.Contains(t, note, "does not mean the operation failed")
+			assert.Contains(t, note, "the telemetry does not show why")
+		}
+		assert.Contains(t, result.Notes[2], "2 span record(s) have item_count > 1")
+	})
+
+	t.Run("earliest span of a role with an absent parent is still reported", func(t *testing.T) {
+		// The absent parent can be a sampled or filtered span of the same service, so
+		// being the first span of its role does not make the parent external.
+		spans := []traceSpan{
+			span("root", "", "agentsv2", at(55), 1),
+			span("agent-invoke", "lost-span", "hosted-agent", at(56), 1),
+			span("agent-chat", "agent-invoke", "hosted-agent", at(57), 1),
+		}
+		result := assessTraceCompleteness("trace-1", spans, false, "")
+		assert.False(t, result.Complete)
+		assert.True(t, result.RootSpanFound)
+		assert.Equal(t, []string{"lost-span"}, result.MissingParentSpanIDs)
 		require.Len(t, result.Notes, 1)
-		assert.Contains(t, result.Notes[0], "2 span record(s) have item_count > 1")
+		assert.Contains(t, result.Notes[0], "1 parent span ID(s)")
 	})
 
-	t.Run("lost span within a service is still missing", func(t *testing.T) {
+	t.Run("recorded root and parents are complete", func(t *testing.T) {
 		spans := []traceSpan{
-			span("agentsvc-request", "platform-parent", "agentsv2", at(56), 1),
-			span("agent-invoke", "agentsvc-request", "hosted-agent", at(57), 1),
-			span("agent-tool", "lost-span", "hosted-agent", at(58), 1),
+			span("root", "trace-1", "agentsv2", at(55), 1),
+			span("agent-invoke", "root", "hosted-agent", at(56), 1),
 		}
 		result := assessTraceCompleteness("trace-1", spans, false, "")
-		assert.False(t, result.Complete)
-		assert.Equal(t, []string{"platform-parent"}, result.UpstreamParentSpanIDs)
-		assert.Equal(t, []string{"lost-span"}, result.MissingParentSpanIDs)
-	})
-
-	t.Run("parent shared with a later span of the same service is missing", func(t *testing.T) {
-		spans := []traceSpan{
-			span("first", "lost-span", "hosted-agent", at(56), 1),
-			span("second", "lost-span", "hosted-agent", at(57), 1),
-		}
-		result := assessTraceCompleteness("trace-1", spans, false, "")
-		assert.False(t, result.Complete)
-		assert.Empty(t, result.UpstreamParentSpanIDs)
-		assert.Equal(t, []string{"lost-span"}, result.MissingParentSpanIDs)
-	})
-
-	t.Run("unknown role cannot be classified as upstream", func(t *testing.T) {
-		result := assessTraceCompleteness("trace-1", []traceSpan{span("child", "lost-span", "", at(56), 1)}, false, "")
-		assert.False(t, result.Complete)
-		assert.Equal(t, []string{"lost-span"}, result.MissingParentSpanIDs)
-		assert.Contains(t, result.Notes[0], "root span was not found")
+		assert.True(t, result.Complete)
+		assert.Empty(t, result.MissingParentSpanIDs)
+		assert.Empty(t, result.Notes)
 	})
 }
 
@@ -564,9 +565,9 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 		require.Len(t, export.Spans, 2)
 		assert.Equal(t, "GET /msi/token", export.Spans[1].Name)
 		assert.Equal(t, "invoke", export.Spans[1].ParentSpanID)
-		assert.True(t, export.Completeness.Complete)
-		assert.Equal(t, []string{"missing-parent"}, export.Completeness.UpstreamParentSpanIDs)
-		assert.Empty(t, export.Completeness.MissingParentSpanIDs)
+		assert.False(t, export.Completeness.Complete)
+		assert.False(t, export.Completeness.RootSpanFound)
+		assert.Equal(t, []string{"missing-parent"}, export.Completeness.MissingParentSpanIDs)
 	})
 
 	t.Run("partial trace is flagged", func(t *testing.T) {
@@ -585,9 +586,9 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 		assert.True(t, export.Completeness.RootSpanFound)
 		assert.True(t, export.Completeness.Sampled)
 		assert.Equal(t, []string{"missing-parent"}, export.Completeness.MissingParentSpanIDs)
-		assert.Empty(t, export.Completeness.UpstreamParentSpanIDs)
-		assert.Contains(t, errOut.String(), "parent span(s) referenced by recorded spans are missing")
-		assert.Contains(t, errOut.String(), "trace trace-1 is incomplete")
+		assert.Contains(t, errOut.String(),
+			"1 parent span ID(s) referenced by recorded spans were not found in the queried telemetry")
+		assert.Contains(t, errOut.String(), "the export of trace trace-1 may not contain every span")
 	})
 
 	t.Run("out file", func(t *testing.T) {

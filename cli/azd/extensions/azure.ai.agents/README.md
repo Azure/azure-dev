@@ -863,7 +863,6 @@ version `1`) is:
   "completeness": {
     "complete": true,
     "root_span_found": true,
-    "upstream_parent_span_ids": [],
     "missing_parent_span_ids": [],
     "truncated": false,
     "sampled": false,
@@ -886,23 +885,22 @@ version `1`) is:
 }
 ```
 
-Timestamps are RFC 3339 UTC. A distributed root span's `parent_span_id` is
-empty or equals the trace ID. Hosted agent traces often have no recorded
-distributed root: the Foundry agent service and Responses API call into the
-agent from spans that are not exported to the project's Application Insights
-resource, so the root shown in the Foundry portal may not be in the export. A
-missing parent is listed in `upstream_parent_span_ids` when every span that
-references it is the earliest recorded span of its `role` (`cloud_RoleName`),
-which is how a call from another service appears. Upstream parents do not make
-the trace incomplete and are not printed as warnings. Other missing parents are
-listed in `missing_parent_span_ids`, which indicates lost spans within a
-service. `completeness.complete` is `false` when such a parent is missing, when
-no root or upstream parent was found (for example, outside `--since` or
-retention), when the trace has more than 5,000 spans and was truncated, or when
-the query returned a partial error. `sampled` is `true` when a span stands for
-several sampled operations (`item_count > 1`); sampling alone does not make the
-trace incomplete. Each limitation and sampling is also printed as a warning on
-stderr. Attributes whose names identify credentials (such as
+Timestamps are RFC 3339 UTC. A root span's `parent_span_id` is empty or equals
+the trace ID. `completeness` describes only what the queried Application
+Insights telemetry contains, not whether the traced operation succeeded.
+`root_span_found` is `false` when no recorded span is a root, and
+`missing_parent_span_ids` lists parent span IDs that recorded spans reference
+but that are not in the queried telemetry. The telemetry does not show why a
+span is absent: possible causes include a service that sends no telemetry to
+this Application Insights resource, sampling, the `--since` window, retention,
+and ingestion delay. A trace view in the Foundry portal can show a root span
+that is absent from this export. `completeness.complete` is `false` when the
+root or a referenced parent is absent, when the trace has more than 5,000 spans
+and was truncated, or when the query returned a partial error. `sampled` is
+`true` when a span stands for several sampled operations (`item_count > 1`);
+sampling alone does not set `complete` to `false`. Each limitation and sampling
+is also printed as a warning on stderr. Attributes whose names identify
+credentials (such as
 `authorization`, `cookie`, `api_key`, `password`, `secret`, or tokens) and values
 that start with `Bearer ` are replaced with `[REDACTED]`. Prompt and response
 content that the agent recorded in span attributes is kept, so handle exported

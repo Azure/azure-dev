@@ -548,16 +548,16 @@ type traceException struct {
 	Attributes   map[string]any `json:"attributes"`
 }
 
-// traceCompleteness explains whether all spans of the trace were read.
+// traceCompleteness reports whether the queried data contains every span the trace
+// references. It describes what was found, not whether the traced operation succeeded.
 type traceCompleteness struct {
-	Complete              bool     `json:"complete"`
-	RootSpanFound         bool     `json:"root_span_found"`
-	UpstreamParentSpanIDs []string `json:"upstream_parent_span_ids"`
-	MissingParentSpanIDs  []string `json:"missing_parent_span_ids"`
-	Truncated             bool     `json:"truncated"`
-	Sampled               bool     `json:"sampled"`
-	PartialError          string   `json:"partial_error,omitempty"`
-	Notes                 []string `json:"notes"`
+	Complete             bool     `json:"complete"`
+	RootSpanFound        bool     `json:"root_span_found"`
+	MissingParentSpanIDs []string `json:"missing_parent_span_ids"`
+	Truncated            bool     `json:"truncated"`
+	Sampled              bool     `json:"sampled"`
+	PartialError         string   `json:"partial_error,omitempty"`
+	Notes                []string `json:"notes"`
 }
 
 // traceExport is the documented export format for one trace.
@@ -788,81 +788,57 @@ func exportTrace(
 	return export, nil
 }
 
-// assessTraceCompleteness reports missing parents, a missing root, truncation, partial
-// query errors, and sampling. A trace is complete only when none of these limit it.
-//
-// Platform services (for example, the Foundry agent service) can start a trace and
-// call into the agent without exporting their own spans to the project's Application
-// Insights resource. A missing parent is classified as upstream when every span that
-// references it is the earliest recorded span of its cloud role, which is how an
-// incoming call from another service appears. Upstream parents are reported but do
-// not make the trace incomplete. Any other missing parent indicates lost spans.
+// assessTraceCompleteness reports a missing root, parent span IDs that no recorded span
+// has, truncation, partial query errors, and sampling. Complete means the queried data
+// contains a root and every referenced parent and nothing was cut off; it says nothing
+// about whether the traced operation succeeded. The query results cannot show why a
+// span is absent, so absent spans are reported without guessing their cause.
 func assessTraceCompleteness(traceID string, spans []traceSpan, truncated bool, partialError string) traceCompleteness {
 	ids := make(map[string]bool, len(spans))
-	firstOfRole := map[string]int{}
-	for i, span := range spans {
+	for _, span := range spans {
 		if span.SpanID != "" {
 			ids[span.SpanID] = true
-		}
-		if span.Role == "" {
-			continue
-		}
-		if first, ok := firstOfRole[span.Role]; !ok || span.start.Before(spans[first].start) {
-			firstOfRole[span.Role] = i
 		}
 	}
 
 	result := traceCompleteness{
-		Truncated:             truncated,
-		PartialError:          partialError,
-		UpstreamParentSpanIDs: []string{},
-		MissingParentSpanIDs:  []string{},
-		Notes:                 []string{},
+		Truncated:            truncated,
+		PartialError:         partialError,
+		MissingParentSpanIDs: []string{},
+		Notes:                []string{},
 	}
-	// upstream[parent] is true while every orphan referencing parent is a role entry span.
-	upstream := map[string]bool{}
-	for i, span := range spans {
-		parent := span.ParentSpanID
-		if parent == "" || parent == traceID {
-			result.RootSpanFound = true
-			continue
-		}
-		if ids[parent] {
-			continue
-		}
-		first, ok := firstOfRole[span.Role]
-		entry := ok && first == i
-		if prior, seen := upstream[parent]; seen {
-			upstream[parent] = prior && entry
-		} else {
-			upstream[parent] = entry
-		}
-	}
+	missing := map[string]bool{}
 	sampledSpans := 0
 	for _, span := range spans {
 		if span.ItemCount > 1 {
 			result.Sampled = true
 			sampledSpans++
 		}
-	}
-	for parent, isUpstream := range upstream {
-		if isUpstream {
-			result.UpstreamParentSpanIDs = append(result.UpstreamParentSpanIDs, parent)
-		} else {
-			result.MissingParentSpanIDs = append(result.MissingParentSpanIDs, parent)
+		parent := span.ParentSpanID
+		if parent == "" || parent == traceID {
+			result.RootSpanFound = true
+			continue
+		}
+		if !ids[parent] {
+			missing[parent] = true
 		}
 	}
-	slices.Sort(result.UpstreamParentSpanIDs)
+	for parent := range missing {
+		result.MissingParentSpanIDs = append(result.MissingParentSpanIDs, parent)
+	}
 	slices.Sort(result.MissingParentSpanIDs)
 
-	if !result.RootSpanFound && len(result.UpstreamParentSpanIDs) == 0 {
+	const absenceReasons = "this does not mean the operation failed, and the telemetry does not show why " +
+		"(for example, a service that sends no telemetry to this Application Insights resource, sampling, " +
+		"the --since window, retention, or ingestion delay)"
+	if !result.RootSpanFound {
 		result.Notes = append(result.Notes,
-			"the root span was not found; it may be outside the --since window, past retention, or not yet ingested")
+			"no root span (a span without a parent) was found in the queried telemetry; "+absenceReasons)
 	}
 	if len(result.MissingParentSpanIDs) > 0 {
 		result.Notes = append(result.Notes, fmt.Sprintf(
-			"%d parent span(s) referenced by recorded spans are missing; spans from the same service were lost, "+
-				"sampled out, or are outside the --since window", len(result.MissingParentSpanIDs)))
+			"%d parent span ID(s) referenced by recorded spans were not found in the queried telemetry "+
+				"(see missing_parent_span_ids); %s", len(result.MissingParentSpanIDs), absenceReasons))
 	}
 	if truncated {
 		result.Notes = append(result.Notes, fmt.Sprintf(
@@ -877,8 +853,7 @@ func assessTraceCompleteness(traceID string, spans []traceSpan, truncated bool, 
 			sampledSpans))
 	}
 
-	result.Complete = (result.RootSpanFound || len(result.UpstreamParentSpanIDs) > 0) &&
-		len(result.MissingParentSpanIDs) == 0 && !truncated && partialError == ""
+	result.Complete = result.RootSpanFound && len(result.MissingParentSpanIDs) == 0 && !truncated && partialError == ""
 	return result
 }
 
@@ -1010,7 +985,9 @@ func writeTraceExport(export *traceExport, opts *traceOptions, out, errOut io.Wr
 		fmt.Fprintf(errOut, "WARNING: %s\n", note)
 	}
 	if !export.Completeness.Complete {
-		fmt.Fprintf(errOut, "WARNING: trace %s is incomplete; see completeness in the exported JSON.\n", export.TraceID)
+		fmt.Fprintf(errOut,
+			"WARNING: the export of trace %s may not contain every span; see completeness in the exported JSON.\n",
+			export.TraceID)
 	}
 
 	if opts.outFile != "" {

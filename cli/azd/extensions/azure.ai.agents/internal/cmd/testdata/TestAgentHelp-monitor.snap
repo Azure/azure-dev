@@ -16,10 +16,10 @@ gen_ai.operation.name and matching gen_ai.agent.name or gen_ai.agent.id.
 Infrastructure spans with inherited agent identity alone do not qualify.
 Export retains all spans of a qualifying trace, including infrastructure spans.
 The list shows the root span name, or the earliest matching GenAI span name
-when the root is missing. Export reports whether the trace is complete and why
-not (missing spans, truncation, or partial query errors) and notes sampling.
-Parents in Foundry services that do not export to the project's Application
-Insights are reported as upstream parents and do not make a trace incomplete.
+when the root is missing. Export reports whether the queried telemetry contains
+every span the trace references (root and parent spans, truncation, partial
+query errors) and notes sampling. A span absent from the telemetry is reported
+by ID without implying that the operation failed or why the span is absent.
 Credential-bearing attributes are redacted; prompts and responses recorded in
 spans are kept. Reading traces requires read access to the project connections
 and to the Application Insights logs.

@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -87,7 +86,6 @@ func TestVoiceAgentAddedMessageUsesServiceKey(t *testing.T) {
 }
 
 func TestInitVoiceFlagInteractiveSelection(t *testing.T) {
-	t.Setenv(featureflags.Voice.EnvVar, "true")
 	for _, nonempty := range []bool{false, true} {
 		for _, specified := range []bool{false, true} {
 			count := int32(2)
@@ -169,7 +167,6 @@ func TestNewVoiceRejectsExplicitCodeInputsBeforeHostAccess(t *testing.T) {
 }
 
 func TestInteractiveVoiceRejectsCodeInputsOnlyOnVoiceSelection(t *testing.T) {
-	t.Setenv(featureflags.Voice.EnvVar, "true")
 	t.Chdir(t.TempDir())
 	require.NoError(t, os.WriteFile("app.py", []byte("# existing code"), 0600))
 	command := newInitCommand(nil)

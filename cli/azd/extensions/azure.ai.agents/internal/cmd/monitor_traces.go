@@ -412,14 +412,17 @@ const traceSpansSource = `union isfuzzy=true
     (requests | extend span_kind = 'request'),
     (dependencies | extend span_kind = 'dependency')`
 
-// agentSpanFilter keeps spans whose GenAI agent attributes identify agentName.
-// gen_ai.agent.id has the form <agent-name>:<version>.
+// Agent identity can be inherited by infrastructure spans, so require a GenAI
+// operation on the same span. Agent IDs can be UUIDs or <agent-name>:<version>.
 const agentSpanFilter = `extend agent_name_attr = tostring(customDimensions['gen_ai.agent.name']),
     agent_id_attr = tostring(customDimensions['gen_ai.agent.id'])
-| where agent_name_attr =~ agentName or agent_id_attr =~ agentName or agent_id_attr startswith strcat(agentName, ':')`
+| where gettype(customDimensions['gen_ai.operation.name']) == 'string'
+| where isnotempty(tostring(customDimensions['gen_ai.operation.name']))
+| where agent_name_attr =~ agentName or agent_id_attr =~ agentName
+    or (agent_id_attr startswith strcat(agentName, ':') and strlen(agent_id_attr) > strlen(agentName) + 1)`
 
 // buildTraceListQuery returns the newest traces (operation IDs) that contain at least
-// one span attributed to the agent. limit+1 rows are requested to detect truncation.
+// one GenAI span attributed to the agent. limit+1 rows detect truncation.
 func buildTraceListQuery(agentName, status string, start, end time.Time, limit int) string {
 	statusFilter := ""
 	switch status {
@@ -434,11 +437,13 @@ let spans = %s
 | where timestamp between (%s .. %s);
 let agentTraces = spans
 | %s
-| extend agent_version_attr = iff(agent_id_attr startswith strcat(agentName, ':'),
-    substring(agent_id_attr, strlen(agentName) + 1), '')
+| extend agent_version_attr = coalesce(tostring(customDimensions['gen_ai.agent.version']),
+    iff(agent_id_attr startswith strcat(agentName, ':'), substring(agent_id_attr, strlen(agentName) + 1), ''))
 | extend conversation_attr = tostring(customDimensions['gen_ai.conversation.id'])
+| extend agent_span_name = coalesce(name, tostring(customDimensions['gen_ai.operation.name']))
 | summarize agent_version = take_anyif(agent_version_attr, isnotempty(agent_version_attr)),
-    conversation_id = take_anyif(conversation_attr, isnotempty(conversation_attr)) by operation_Id;
+    conversation_id = take_anyif(conversation_attr, isnotempty(conversation_attr)),
+    arg_min(timestamp, agent_span_name) by operation_Id;
 spans
 | where operation_Id in ((agentTraces | project operation_Id))
 | summarize start_time = min(timestamp), end_time = max(timestamp + duration * 1ms), span_count = count(),
@@ -446,6 +451,7 @@ spans
     root_span_name = take_anyif(name, isempty(operation_ParentId) or operation_ParentId == operation_Id)
     by operation_Id
 | join kind=inner agentTraces on operation_Id
+| extend root_span_name = coalesce(root_span_name, agent_span_name)
 %s| order by start_time desc
 | take %d
 | project trace_id = operation_Id, start_time, end_time, span_count, failed_span_count, sampled,
@@ -720,9 +726,6 @@ func exportTrace(
 	belongsToAgent := false
 	for _, record := range records {
 		attributes := recordDynamic(record, "attributes")
-		if spanAttributesMatchAgent(attributes, target.Name) {
-			belongsToAgent = true
-		}
 		timestamp, ok := recordTime(record, "timestamp")
 		if !ok {
 			return nil, exterrors.Internal(exterrors.CodeInvalidTelemetryQueryResult,
@@ -741,6 +744,9 @@ func exportTrace(
 			continue
 		}
 
+		if genAISpanMatchesAgent(attributes, target.Name) {
+			belongsToAgent = true
+		}
 		durationMs := recordFloat(record, "duration_ms")
 		status := "unset"
 		if success, ok := record["success"].(bool); ok {
@@ -771,9 +777,9 @@ func exportTrace(
 	if !belongsToAgent {
 		return nil, exterrors.Validation(
 			exterrors.CodeTraceAgentMismatch,
-			fmt.Sprintf("trace %q has no spans attributed to agent %q", opts.traceID, target.Name),
-			"check that the trace belongs to this agent; traces are attributed by the gen_ai.agent.name "+
-				"and gen_ai.agent.id span attributes",
+			fmt.Sprintf("trace %q has no GenAI spans attributed to agent %q", opts.traceID, target.Name),
+			"check that the trace contains a span with gen_ai.operation.name and matching gen_ai.agent.name "+
+				"or gen_ai.agent.id; inherited agent identity on infrastructure spans alone does not qualify",
 		)
 	}
 
@@ -842,7 +848,11 @@ func assessTraceCompleteness(traceID string, spans []traceSpan, truncated bool, 
 	return result
 }
 
-func spanAttributesMatchAgent(attributes map[string]any, agentName string) bool {
+func genAISpanMatchesAgent(attributes map[string]any, agentName string) bool {
+	operation, _ := attributes["gen_ai.operation.name"].(string)
+	if operation == "" {
+		return false
+	}
 	name, _ := attributes["gen_ai.agent.name"].(string)
 	id, _ := attributes["gen_ai.agent.id"].(string)
 	if strings.EqualFold(name, agentName) || strings.EqualFold(id, agentName) {

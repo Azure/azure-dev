@@ -817,9 +817,20 @@ logs (`--type console|system`), which then require `--session-id`.
 The command reads the agent, then the project's Application Insights connection.
 It uses only the connection's resource ID, never its credentials, and queries
 that resource through the Azure Monitor Log Analytics query API with your
-signed-in identity. A trace is attributed to the agent when one of its spans has
+signed-in identity. A trace is attributed to the agent when one of its request
+or dependency spans has a non-empty `gen_ai.operation.name` (for example,
+`invoke_agent`, `chat`, or `execute_tool`) and, on that same span,
 `gen_ai.agent.name` equal to the agent name, or `gen_ai.agent.id` equal to the
-name or `<name>:<version>`.
+name or `<name>:<version>`. Agent identity alone does not qualify: infrastructure
+requests such as token refresh and telemetry configuration can inherit these
+attributes without being GenAI operations. Exports retain every recorded span of
+a qualifying trace, including its infrastructure requests. This follows the
+[GenAI operation span conventions used by Foundry](https://learn.microsoft.com/azure/foundry/how-to/develop/langchain-traces#understand-trace-structure).
+
+The list's `ROOT SPAN` column shows a recorded root span's name. If the root is
+missing or unnamed, it shows the earliest matching GenAI span's name (falling
+back to its operation name if unnamed). This display fallback does not imply
+that the trace is complete; export still reports missing roots and parents.
 
 - `--since` accepts durations such as `30m`, `6h`, or `7d` (up to `730d`). It
   defaults to `1h` for listing and `30d` for export.
@@ -895,7 +906,7 @@ Errors are distinct from empty results:
 | The connected resource no longer exists | `telemetry_resource_not_found` |
 | Denied access to connections or logs | Service error with a role suggestion (for example, Log Analytics Reader) |
 | `--trace-id` matches no spans in the window | `trace_not_found` |
-| `--trace-id` has no spans attributed to the agent | `trace_agent_mismatch`; nothing is exported |
+| `--trace-id` has no GenAI operation spans attributed to the agent | `trace_agent_mismatch`; nothing is exported |
 | No traces match the list filters | `No traces found ...` (stderr with `--output json`, which keeps `"data": []`) |
 
 JSON stays on stdout, and progress messages go to stderr.

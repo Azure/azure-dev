@@ -11,10 +11,13 @@ Application Insights resource connected to the Foundry project, newest first.
 Use --since to set the window, --status failed to find failed interactions, and
 --tail to limit how many traces are listed. Use --trace-id to export one trace
 with every recorded span, including span and parent IDs, timestamps, status,
-and attributes. Traces are attributed to the agent through the gen_ai.agent.name
-and gen_ai.agent.id span attributes; a trace with no spans for the selected agent
-is rejected. Export reports whether the trace is complete and why not (missing
-parent or root spans, truncation, partial query errors, or sampling).
+and attributes. A trace must contain a GenAI operation span with a non-empty
+gen_ai.operation.name and matching gen_ai.agent.name or gen_ai.agent.id.
+Infrastructure spans with inherited agent identity alone do not qualify.
+Export retains all spans of a qualifying trace, including infrastructure spans.
+The list shows the root span name, or the earliest matching GenAI span name
+when the root is missing. Export reports whether the trace is complete and why
+not (missing parent or root spans, truncation, partial query errors, or sampling).
 Credential-bearing attributes are redacted; prompts and responses recorded in
 spans are kept. Reading traces requires read access to the project connections
 and to the Application Insights logs.

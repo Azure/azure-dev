@@ -185,6 +185,10 @@ func TestBuildTraceQueries(t *testing.T) {
 	assert.Contains(t, list, "| where failed_span_count > 0")
 	assert.Contains(t, list, "| take 11")
 	assert.Contains(t, list, "datetime(2026-11-16T11:00:00Z) .. datetime(2026-11-16T12:00:00Z)")
+	assert.Contains(t, list, "| where isnotempty(tostring(customDimensions['gen_ai.operation.name']))")
+	assert.Contains(t, list, "arg_min(timestamp, agent_span_name) by operation_Id")
+	assert.Contains(t, list, "| extend root_span_name = coalesce(root_span_name, agent_span_name)")
+	assert.Contains(t, list, "coalesce(tostring(customDimensions['gen_ai.agent.version'])")
 
 	assert.Contains(t, buildTraceListQuery("support", traceStatusSucceeded, start, testTraceNow, 5),
 		"| where failed_span_count == 0")
@@ -320,7 +324,73 @@ func exportRow(kind, spanID, parentID, name string, success any, itemCount float
 	}
 }
 
-const supportAgentAttributes = `{"gen_ai.agent.name":"support","gen_ai.agent.id":"support:3"}`
+const supportAgentAttributes = `{"gen_ai.agent.name":"support","gen_ai.agent.id":"support:3","gen_ai.operation.name":"invoke_agent"}`
+
+func TestGenAISpanMatchesAgent(t *testing.T) {
+	tests := []struct {
+		name       string
+		attributes string
+		want       bool
+	}{
+		{
+			name: "hosted invocation with UUID agent ID",
+			attributes: `{"gen_ai.agent.name":"support","gen_ai.agent.id":"00000000-0000-0000-0000-000000000001",
+				"gen_ai.agent.version":"1","gen_ai.operation.name":"invoke_agent"}`,
+			want: true,
+		},
+		{
+			name:       "versioned agent ID without name",
+			attributes: `{"gen_ai.agent.id":"support:3","gen_ai.operation.name":"invoke_agent"}`,
+			want:       true,
+		},
+		{
+			name:       "case insensitive agent identity",
+			attributes: `{"gen_ai.agent.name":"SUPPORT","gen_ai.operation.name":"invoke_agent"}`,
+			want:       true,
+		},
+		{
+			name:       "partial trace with model operation",
+			attributes: `{"gen_ai.agent.name":"support","gen_ai.operation.name":"chat"}`,
+			want:       true,
+		},
+		{
+			name:       "tool operation",
+			attributes: `{"gen_ai.agent.name":"support","gen_ai.operation.name":"execute_tool"}`,
+			want:       true,
+		},
+		{
+			name: "inherited agent identity on infrastructure span",
+			attributes: `{"gen_ai.agent.name":"support","gen_ai.agent.id":"00000000-0000-0000-0000-000000000001",
+				"gen_ai.agent.version":"1","_MS.ProcessedByMetricExtractors":"True"}`,
+		},
+		{
+			name:       "empty operation",
+			attributes: `{"gen_ai.agent.name":"support","gen_ai.operation.name":""}`,
+		},
+		{
+			name:       "invalid operation attribute type",
+			attributes: `{"gen_ai.agent.name":"support","gen_ai.operation.name":42}`,
+		},
+		{
+			name:       "GenAI span from another agent",
+			attributes: `{"gen_ai.agent.name":"support-other","gen_ai.agent.id":"support-other:1","gen_ai.operation.name":"invoke_agent"}`,
+		},
+		{
+			name:       "role without agent identity",
+			attributes: `{"service.name":"support","gen_ai.operation.name":"invoke_agent"}`,
+		},
+		{
+			name:       "empty version does not identify agent",
+			attributes: `{"gen_ai.agent.id":"support:","gen_ai.operation.name":"invoke_agent"}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			attributes := recordDynamic(map[string]any{"attributes": tt.attributes}, "attributes")
+			assert.Equal(t, tt.want, genAISpanMatchesAgent(attributes, "support"))
+		})
+	}
+}
 
 func exportOptions() *traceOptions {
 	return &traceOptions{
@@ -370,12 +440,73 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 	t.Run("trace from another agent", func(t *testing.T) {
 		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
 			exportRow("request", "root", "", "invoke_agent", true, 1,
-				`{"gen_ai.agent.name":"support-other","gen_ai.agent.id":"support-other:1"}`),
+				`{"gen_ai.agent.name":"support-other","gen_ai.agent.id":"support-other:1","gen_ai.operation.name":"invoke_agent"}`),
 		)})
 		var out bytes.Buffer
 		err := runMonitorTraces(t.Context(), testTraceTarget(), exportOptions(), deps, &out, &bytes.Buffer{})
 		requireLocalErrorCode(t, err, exterrors.CodeTraceAgentMismatch)
 		assert.Empty(t, out.String())
+	})
+
+	t.Run("infrastructure-only traces are rejected", func(t *testing.T) {
+		for _, name := range []string{
+			"GET /metadata/instance/compute", "GET /msi/token",
+			"GET /AzMonSDKDynamicConfiguration", "GET /AzMonSDKDynamicConfigurationChanges",
+		} {
+			t.Run(name, func(t *testing.T) {
+				deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
+					exportRow("dependency", "infra", "trace-1", name, true, 1,
+						`{"gen_ai.agent.name":"support","gen_ai.agent.id":"00000000-0000-0000-0000-000000000001","gen_ai.agent.version":"1"}`),
+				)})
+				var out bytes.Buffer
+				opts := exportOptions()
+				opts.outFile = filepath.Join(t.TempDir(), "trace.json")
+				err := runMonitorTraces(t.Context(), testTraceTarget(), opts, deps, &out, &bytes.Buffer{})
+				requireLocalErrorCode(t, err, exterrors.CodeTraceAgentMismatch)
+				assert.Empty(t, out.String())
+				assert.NoFileExists(t, opts.outFile)
+			})
+		}
+	})
+
+	t.Run("operation and selected agent must occur on same span", func(t *testing.T) {
+		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
+			exportRow("dependency", "infra", "", "GET /msi/token", true, 1,
+				`{"gen_ai.agent.name":"support"}`),
+			exportRow("dependency", "other", "infra", "invoke_agent other", true, 1,
+				`{"gen_ai.agent.name":"other","gen_ai.operation.name":"invoke_agent"}`),
+		)})
+		var out bytes.Buffer
+		err := runMonitorTraces(t.Context(), testTraceTarget(), exportOptions(), deps, &out, &bytes.Buffer{})
+		requireLocalErrorCode(t, err, exterrors.CodeTraceAgentMismatch)
+		assert.Empty(t, out.String())
+	})
+
+	t.Run("exception attributes cannot qualify a trace", func(t *testing.T) {
+		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
+			exportRow("exception", "", "missing-parent", "", nil, 1, supportAgentAttributes),
+		)})
+		err := runMonitorTraces(t.Context(), testTraceTarget(), exportOptions(), deps, &bytes.Buffer{}, &bytes.Buffer{})
+		requireLocalErrorCode(t, err, exterrors.CodeTraceAgentMismatch)
+	})
+
+	t.Run("hosted trace retains infrastructure children", func(t *testing.T) {
+		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
+			exportRow("request", "invoke", "missing-parent", "invoke_agent", true, 1,
+				`{"gen_ai.agent.name":"support","gen_ai.agent.id":"00000000-0000-0000-0000-000000000001",
+				"gen_ai.operation.name":"invoke_agent","gen_ai.agent.version":"1"}`),
+			exportRow("dependency", "token", "invoke", "GET /msi/token", true, 1,
+				`{"gen_ai.agent.name":"support","gen_ai.agent.id":"00000000-0000-0000-0000-000000000001"}`),
+		)})
+		var out, errOut bytes.Buffer
+		require.NoError(t, runMonitorTraces(t.Context(), testTraceTarget(), exportOptions(), deps, &out, &errOut))
+		var export traceExport
+		require.NoError(t, json.Unmarshal(out.Bytes(), &export))
+		require.Len(t, export.Spans, 2)
+		assert.Equal(t, "GET /msi/token", export.Spans[1].Name)
+		assert.Equal(t, "invoke", export.Spans[1].ParentSpanID)
+		assert.False(t, export.Completeness.Complete)
+		assert.Equal(t, []string{"missing-parent"}, export.Completeness.MissingParentSpanIDs)
 	})
 
 	t.Run("partial trace is flagged", func(t *testing.T) {

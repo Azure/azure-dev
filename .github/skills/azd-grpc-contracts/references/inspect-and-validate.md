@@ -75,7 +75,11 @@ The checks answer different questions:
 | `proto-version-compatibility` | Current `v1` remains a compatible subset of current `v1beta` |
 | `proto-breaking` | Neither channel breaks its previously merged contract |
 | Generated diff | Checked-in bindings, facade aliases, adapters, and scaffolds match sources |
-| Go tests | Registration, transcoding, overrides, status details, and SDK behavior |
+| Go tests | Registration, transcoding, overrides, status details, SDK behavior, and `Beta` naming of public SDK APIs that expose `v1beta` |
+
+When reviewing a change that adds `v1beta` functionality, also confirm every new
+public `pkg/azdext` accessor, `ExtensionHost` registration, and SDK type that
+exposes `v1beta` types includes `Beta` in its name.
 
 Do not weaken a compatibility rule to make a proposed contract pass. Correct
 the contract or explicitly design a new major stable version.

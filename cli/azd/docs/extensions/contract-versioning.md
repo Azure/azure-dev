@@ -30,6 +30,34 @@ alongside the stable `Project()` accessor. Clients whose SDK exposes it use
 `ProjectBeta().GetAddServiceCapabilities` before opting into
 typed `AddService` completion acknowledgments.
 
+## Beta SDK naming
+
+Extension authors must be able to tell from the Go SDK call site that they
+depend on preview functionality. Every new public `pkg/azdext` name whose
+signature or exported shape exposes `contracts/v1beta` types, directly or
+through another SDK type, must contain `Beta`:
+
+| SDK surface | Convention | Examples |
+|---|---|---|
+| `AzdClient` accessor | `<Service>Beta()` | `ProjectBeta()`, `EventsBeta()`, `AccountBeta()` |
+| `ExtensionHost` registration | `WithBeta<Capability>` | `WithBetaServiceEventHandler`, `WithBetaServiceTargetPreview` |
+| Provider interfaces, registrations, envelopes, handler types | `Beta<Name>` | `BetaServiceEventHandler`, `BetaServiceEventResponse` |
+
+This applies to beta-only services and to beta additions on shared services.
+Protobuf services, messages, and fields do not use `Beta`; the
+`azd.extensions.v1beta` package already identifies the channel, and graduation
+copies the same names into `v1`.
+
+Beta names also keep graduation additive. Graduation adds the stable SDK name
+without `Beta`, using `v1` types, and marks the `Beta` name `Deprecated:` while
+keeping its beta route, as `AccountBeta()` and `WithBetaServiceTargetPreview`
+did. An unmarked accessor that returns a `v1beta` client cannot later switch to
+`v1` without breaking callers' source.
+
+`Compose()`, `Copilot()`, and `CommandResult()` predate this rule and keep their
+names for source compatibility. `TestBetaSDKSurfaceIsNamedBeta` in `pkg/azdext`
+enforces the convention and lists these exceptions; do not add new ones.
+
 ## Channel policy
 
 `v1` is the compatibility-protected stable contract. Changes must be additive:

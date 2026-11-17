@@ -34,6 +34,9 @@ Graduation is an additive change to the existing stable major. Do not create
      facade aliases; never edit generated aliases directly.
    - Update the SDK documentation.
    - Preserve or deliberately migrate any existing beta client accessor.
+     Add the stable SDK API under the name without `Beta` (for example
+     `Account()` or `WithServiceTargetPreview`) and mark the existing `Beta`
+     name `Deprecated:` rather than changing its types.
 6. Regenerate all checked-in artifacts with `go tool mage generateProtos`.
 7. Update contract lifecycle docs, SDK references, examples, and minimum host
    versions.

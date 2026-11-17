@@ -37,7 +37,17 @@ Do not modify `v1` merely to make a preview feature easier to implement.
    - The stable route remains unchanged.
    - Beta-only methods without an override fail with `codes.Unimplemented`.
    - Shared methods without an override continue to delegate to stable behavior.
-7. Update SDK examples and the extension's `requiredAzdVersion` when the new
+7. Name every new public `pkg/azdext` API that exposes the beta capability
+   with `Beta`, following
+   `cli/azd/docs/extensions/contract-versioning.md#beta-sdk-naming`:
+   - `AzdClient` accessors use `<Service>Beta()`, for example `EventsBeta()`.
+   - `ExtensionHost` registrations use `WithBeta<Capability>`.
+   - Provider interfaces, registrations, envelopes, and handler types use
+     `Beta<Name>`.
+   - Do not add `Beta` to protobuf services, messages, or fields; the
+     `v1beta` package already identifies the channel.
+   - Never add to the legacy exceptions in `TestBetaSDKSurfaceIsNamedBeta`.
+8. Update SDK examples and the extension's `requiredAzdVersion` when the new
    API requires a newer host.
 
 ## Validate

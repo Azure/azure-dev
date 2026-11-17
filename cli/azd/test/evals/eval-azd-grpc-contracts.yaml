@@ -116,3 +116,31 @@ stimuli:
         name: "judge: safe graduation plan"
         config:
           scoring: binary
+
+  - name: add-beta-only-service
+    prompt: >-
+      Plan a new beta-only extension gRPC service with a bidirectional stream
+      that extensions register providers on, including the Go SDK accessor and
+      ExtensionHost registration method extension authors will call. Do not
+      edit files.
+    rubric:
+      - "Adds the service only under v1beta with a native v1beta implementation and no stable adapter"
+      - "Keeps Beta out of protobuf names because the v1beta package identifies the channel"
+      - "Names the public Go SDK accessor, registration method, and provider types with Beta, such as FooBeta() and WithBetaFoo"
+      - "Explains that Beta SDK names keep graduation additive instead of changing an accessor return type"
+    graders:
+      - type: skill-invocation
+        name: "azd grpc contracts skill activated"
+        config:
+          required:
+            - azd-grpc-contracts
+      - type: output-matches
+        name: "uses Beta SDK names"
+        config:
+          pattern: '(?s)(?=.*[A-Z][A-Za-z]*Beta\(\))(?=.*WithBeta[A-Z])'
+      - type: diff-empty
+        name: "planning did not modify the repository"
+      - type: prompt
+        name: "judge: beta-only service plan with visible beta SDK names"
+        config:
+          scoring: binary

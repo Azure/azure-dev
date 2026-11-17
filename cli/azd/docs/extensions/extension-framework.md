@@ -1654,7 +1654,9 @@ messages are a separate capability and remain beta-only.
 
 `azd` uses versioned gRPC contracts for communication between core and
 extensions. See [Extension contract versioning](contract-versioning.md) for
-the stable and beta channel policy.
+the stable and beta channel policy. Go SDK APIs that use the beta channel
+include `Beta` in their names, such as `EventsBeta()` and
+`WithBetaServiceEventHandler`; see [Beta SDK naming](contract-versioning.md#beta-sdk-naming).
 
 - Stable proto files @ [grpc/proto/azd/extensions/v1](../../grpc/proto/azd/extensions/v1/)
 - Beta proto files @ [grpc/proto/azd/extensions/v1beta](../../grpc/proto/azd/extensions/v1beta/)

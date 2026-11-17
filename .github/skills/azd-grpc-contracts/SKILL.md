@@ -72,6 +72,11 @@ Never edit generated protobuf, facade, or adapter files directly.
 - Changing an existing public Go accessor from a `v1beta` return type to `v1`
   is source-breaking. Stop and get an explicit API migration decision before
   making that change.
+- Every new public `pkg/azdext` name that exposes `v1beta` types includes
+  `Beta` (`<Service>Beta()`, `WithBeta<Capability>`, `Beta<Type>`) so extension
+  authors can see they depend on preview APIs. Protobuf names never include
+  `Beta`. `TestBetaSDKSurfaceIsNamedBeta` enforces this; never extend its
+  legacy exception list.
 
 ## Exit criteria
 

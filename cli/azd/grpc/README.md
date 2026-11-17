@@ -16,6 +16,11 @@ into stable after they have been validated. `ComposeService`,
 beta-only. Removing or renumbering fields, changing field types, and reusing
 reserved names or numbers remain breaking changes in either channel.
 
+Protobuf names never include `Beta`; the package identifies the channel. The
+handwritten Go SDK must make beta use visible instead: public `pkg/azdext`
+accessors, registrations, and types that expose `v1beta` contracts include
+`Beta` in their names. See [Beta SDK naming](../docs/extensions/contract-versioning.md#beta-sdk-naming).
+
 `TelemetryService.ReportUsage` and `AccountService.GetCurrentPrincipal`
 graduate to stable in azd 1.36.0 (October 2026). Their deprecated beta routes
 continue delegating to stable behavior; removing them requires a separately

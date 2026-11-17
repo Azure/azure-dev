@@ -27,6 +27,21 @@ overrides:
     - filename: docs/architecture/extension-framework.md
       words:
           - generateprojectclient
+          - Dockerfiles
+          - springboot
+    - filename: docs/concepts/glossary.md
+      words:
+          - springbootapp
+    - filename: docs/guides/creating-an-extension.md
+      words:
+          - Dockerfiles
+          - springboot
+    - filename: docs/reference/environment-variables.md
+      words:
+          - springboot
+    - filename: docs/reference/feature-status.md
+      words:
+          - springbootapp
     - filename: ./SECURITY.md
       words:
           - MSRC

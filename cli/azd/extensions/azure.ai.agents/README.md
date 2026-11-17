@@ -712,6 +712,35 @@ Missing, unknown, or malformed kinds return a structured validation error rather
 than falling back to hosted-agent behavior. Hosted Activity and session
 capabilities do not change the agent kind and follow the hosted behavior above.
 
+### Inspecting a deployed agent without an azd project
+
+`azd ai agent show`, `azd ai agent files list`, and `azd ai agent files download`
+accept an explicit cloud target, so you can inspect an agent from any directory,
+including agents that azd did not deploy. Supply either a full agent protocol
+endpoint URL with `--agent-endpoint`, or a Foundry project endpoint with
+`--project-endpoint` plus the deployed agent name:
+
+```bash
+azd ai agent show support \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+
+azd ai agent files list /data --agent-name support --session-id "<session-id>" \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>" --no-prompt
+
+azd ai agent files download /data/report.csv --session-id "<session-id>" \
+  --agent-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>/agents/support/endpoint/protocols/invocations"
+```
+
+Direct mode never reads `azure.yaml`, `AGENT_<SERVICE>_*` outputs, or azd
+environment values, and it does not store the session ID. The two flags cannot be
+combined with each other, with `--environment`, or (for `--agent-endpoint`) with a
+separate agent name. File commands require `--session-id`. Prompt and workflow
+agents are rejected because they have no session files; other kinds are checked
+by the service. A missing agent or session, or denied access, returns a
+structured error. Pass `--user-identity` when the session belongs to a specific
+user. The other file commands (`upload`, `delete`, `mkdir`, `stat`) still require
+an azd project.
+
 ## Initializing an A2A hosted agent
 
 Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI before initializing

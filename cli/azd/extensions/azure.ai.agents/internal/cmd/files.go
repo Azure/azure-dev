@@ -42,10 +42,19 @@ azd environment. Use --agent-name to select a specific agent when the project
 has multiple azure.ai.agent services. The session ID is automatically resolved
 from the last invoke session, or can be overridden with --session-id.
 
+The list and download commands can also read from a deployed hosted agent
+without an azd project: supply --agent-endpoint, or --project-endpoint with
+the deployed agent name in --agent-name, together with --session-id. Commands
+that change session files require an azd project.
+
 For agents configured with header-based isolation, pass --user-identity
 on each file operation.`,
 		Example: `  # List files in the current hosted agent session
-  azd ai agent files list`,
+  azd ai agent files list
+
+  # List files of a deployed agent without an azd project
+  azd ai agent files list /data --agent-name support --session-id <session-id> \
+    --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>`,
 	}
 
 	cmd.AddCommand(newFilesUploadCommand(extCtx))
@@ -69,6 +78,59 @@ func addFilesFlags(cmd *cobra.Command, flags *filesFlags) {
 type filesContext struct {
 	*AgentContext
 	sessionID string
+}
+
+// addDirectFilesFlags registers direct remote targeting on read-only file commands.
+func addDirectFilesFlags(cmd *cobra.Command, direct *directAgentTargetFlags) {
+	addDirectAgentTargetFlags(cmd, direct, "--agent-name")
+	cmd.Flags().Lookup("agent-name").Usage = "Agent name: the azure.yaml service name, " +
+		"or the deployed agent name with --project-endpoint"
+	cmd.Flags().Lookup("session-id").Usage = "Session ID override (defaults to last invoke session; " +
+		"required with --agent-endpoint or --project-endpoint)"
+}
+
+// resolveReadOnlyFilesContext resolves a direct remote target when one is supplied
+// and otherwise falls back to project-based resolution.
+func resolveReadOnlyFilesContext(
+	ctx context.Context,
+	cmd *cobra.Command,
+	flags *filesFlags,
+	direct *directAgentTargetFlags,
+	noPrompt bool,
+) (*filesContext, error) {
+	target, err := resolveDirectAgentTarget(cmd, direct, flags.agentName, "--agent-name")
+	if err != nil {
+		return nil, err
+	}
+	if target == nil {
+		return resolveFilesContext(ctx, flags, noPrompt)
+	}
+	if err := validateDirectSessionID(flags.session); err != nil {
+		return nil, err
+	}
+	client, err := target.NewClient()
+	if err != nil {
+		return nil, err
+	}
+	return prepareDirectFilesContext(ctx, client, target, flags.session)
+}
+
+// prepareDirectFilesContext confirms the remote agent exists and is a kind that can
+// have session files. The session itself is validated by the file request.
+func prepareDirectFilesContext(
+	ctx context.Context,
+	client remoteAgentReader,
+	target *AgentContext,
+	sessionID string,
+) (*filesContext, error) {
+	agent, err := getDirectAgent(ctx, client, target)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireSessionFilesSupport(agent); err != nil {
+		return nil, err
+	}
+	return &filesContext{AgentContext: target, sessionID: sessionID}, nil
 }
 
 // resolveFilesContext resolves agent details and session from the azd environment.
@@ -266,6 +328,7 @@ func (a *FilesUploadAction) Run(ctx context.Context) error {
 
 type filesDownloadFlags struct {
 	filesFlags
+	direct     directAgentTargetFlags
 	file       string
 	targetPath string
 }
@@ -290,7 +353,10 @@ Downloads a file from the specified remote path in the session's
 filesystem and saves it locally. If --target-path is not provided,
 the local path defaults to the basename of the remote file.
 
-Agent details are automatically resolved from the azd environment.`,
+Agent details are automatically resolved from the azd environment. To read from
+a deployed hosted agent without an azd project, supply --agent-endpoint, or
+--project-endpoint with the deployed agent name in --agent-name, together with
+--session-id. Direct mode does not read or save local session state.`,
 		Example: `  # Download a file (local path defaults to remote filename)
   azd ai agent files download /data/output.csv
 
@@ -298,7 +364,11 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files download /data/output.csv --target-path ./output.csv
 
   # Download with flags
-  azd ai agent files download --file /data/output.csv --session-id <session-id>`,
+  azd ai agent files download --file /data/output.csv --session-id <session-id>
+
+  # Download from a deployed agent without an azd project
+  azd ai agent files download /data/output.csv --agent-name support --session-id <session-id> \
+    --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -313,7 +383,7 @@ Agent details are automatically resolved from the azd environment.`,
 				)
 			}
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
+			fc, err := resolveReadOnlyFilesContext(ctx, cmd, &flags.filesFlags, &flags.direct, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -329,6 +399,7 @@ Agent details are automatically resolved from the azd environment.`,
 	}
 
 	addFilesFlags(cmd, &flags.filesFlags)
+	addDirectFilesFlags(cmd, &flags.direct)
 	cmd.Flags().StringVarP(&flags.file, "file", "f", "", "Remote file path to download")
 	cmd.Flags().StringVarP(&flags.targetPath, "target-path", "t", "", "Local destination path (defaults to remote filename)")
 
@@ -351,7 +422,7 @@ func (a *FilesDownloadAction) Run(ctx context.Context) error {
 		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to download file: %w", err)
+		return classifySessionFileError(err, exterrors.OpDownloadSessionFile, a.Name, a.sessionID, a.flags.file)
 	}
 	defer body.Close()
 
@@ -379,6 +450,7 @@ func (a *FilesDownloadAction) Run(ctx context.Context) error {
 
 type filesListFlags struct {
 	filesFlags
+	direct directAgentTargetFlags
 	output string
 }
 
@@ -403,7 +475,10 @@ func newFilesListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 Lists files and directories at the specified path in the session's filesystem.
 When no path is provided, lists the root directory.
 
-Agent details are automatically resolved from the azd environment.`,
+Agent details are automatically resolved from the azd environment. To read from
+a deployed hosted agent without an azd project, supply --agent-endpoint, or
+--project-endpoint with the deployed agent name in --agent-name, together with
+--session-id. Direct mode does not read or save local session state.`,
 		Example: `  # List files in the root directory (agent auto-detected)
   azd ai agent files list
 
@@ -414,14 +489,22 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files list /data --output table
 
   # List with explicit session
-  azd ai agent files list --session-id <session-id>`,
+  azd ai agent files list --session-id <session-id>
+
+  # List files of a deployed agent without an azd project
+  azd ai agent files list /data --agent-name support --session-id <session-id> --no-prompt \
+    --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
+
+  # List files using the agent's protocol endpoint URL
+  azd ai agent files list /data --session-id <session-id> --agent-endpoint \
+    "https://<account>.services.ai.azure.com/api/projects/<project>/agents/support/endpoint/protocols/invocations"`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.output = extCtx.OutputFormat
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
+			fc, err := resolveReadOnlyFilesContext(ctx, cmd, &flags.filesFlags, &flags.direct, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -443,6 +526,7 @@ Agent details are automatically resolved from the azd environment.`,
 	}
 
 	addFilesFlags(cmd, &flags.filesFlags)
+	addDirectFilesFlags(cmd, &flags.direct)
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"json", "table"},
@@ -468,7 +552,7 @@ func (a *FilesListAction) Run(ctx context.Context) error {
 		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to list files: %w", err)
+		return classifySessionFileError(err, exterrors.OpListSessionFiles, a.Name, a.sessionID, a.remotePath)
 	}
 
 	switch a.flags.output {

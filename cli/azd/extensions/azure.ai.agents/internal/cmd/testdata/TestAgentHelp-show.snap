@@ -4,8 +4,18 @@ The agent name and version are resolved automatically from the azure.yaml servic
 configuration and the current azd environment. Optionally specify the service name
 (from azure.yaml) as a positional argument when multiple agent services exist.
 
+To inspect a deployed agent without an azd project, supply its cloud identity
+directly: either --agent-endpoint with a full agent protocol URL, or
+--project-endpoint with the deployed Foundry agent name as the positional
+argument. Direct mode reads only the remote agent and shows its latest version;
+it never reads azure.yaml or azd environment values.
+
 Usage
   azd ai agent show [name] [flags]
+
+Flags
+      --agent-endpoint string   : Full protocol endpoint URL of a deployed agent (no azd project required)
+      --project-endpoint string : Foundry project endpoint URL; requires the deployed agent name via the [name] argument (no azd project required)
 
 Global Flags
   -C, --cwd string         : Sets the current working directory
@@ -24,3 +34,11 @@ Examples
 
   Show status as JSON
     azd ai agent show --output json
+
+  Show a deployed agent without an azd project
+    azd ai agent show support \
+      --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
+
+  Show a deployed agent from its protocol endpoint URL
+    azd ai agent show --agent-endpoint \
+      "https://<account>.services.ai.azure.com/api/projects/<project>/agents/support/endpoint/protocols/invocations"

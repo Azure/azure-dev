@@ -243,6 +243,8 @@ const (
 	OpDeleteSession           = "delete_session"
 	OpStopSession             = "stop_session"
 	OpListSessions            = "list_sessions"
+	OpListSessionFiles        = "list_session_files"
+	OpDownloadSessionFile     = "download_session_file"
 	OpCreateToolboxVersion    = "create_toolbox_version"
 	OpGetToolbox              = "get_toolbox"
 	OpEnsureToolboxConnection = "ensure_toolbox_connection"

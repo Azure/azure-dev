@@ -28,6 +28,7 @@ import (
 type showFlags struct {
 	name   string
 	output string
+	direct directAgentTargetFlags
 }
 
 // ShowAction handles the execution of the show command.
@@ -55,7 +56,13 @@ func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 The agent name and version are resolved automatically from the azure.yaml service
 configuration and the current azd environment. Optionally specify the service name
-(from azure.yaml) as a positional argument when multiple agent services exist.`,
+(from azure.yaml) as a positional argument when multiple agent services exist.
+
+To inspect a deployed agent without an azd project, supply its cloud identity
+directly: either --agent-endpoint with a full agent protocol URL, or
+--project-endpoint with the deployed Foundry agent name as the positional
+argument. Direct mode reads only the remote agent and shows its latest version;
+it never reads azure.yaml or azd environment values.`,
 		Example: `  # Show status (auto-resolves from azure.yaml)
   azd ai agent show
 
@@ -63,7 +70,15 @@ configuration and the current azd environment. Optionally specify the service na
   azd ai agent show my-agent
 
   # Show status as JSON
-  azd ai agent show --output json`,
+  azd ai agent show --output json
+
+  # Show a deployed agent without an azd project
+  azd ai agent show support \
+    --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
+
+  # Show a deployed agent from its protocol endpoint URL
+  azd ai agent show --agent-endpoint \
+    "https://<account>.services.ai.azure.com/api/projects/<project>/agents/support/endpoint/protocols/invocations"`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
@@ -72,6 +87,14 @@ configuration and the current azd environment. Optionally specify the service na
 			flags.output = extCtx.OutputFormat
 
 			ctx := azdext.WithAccessToken(cmd.Context())
+
+			target, err := resolveDirectAgentTarget(cmd, &flags.direct, flags.name, "the [name] argument")
+			if err != nil {
+				return err
+			}
+			if target != nil {
+				return runDirectShow(ctx, flags, target)
+			}
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -135,6 +158,7 @@ configuration and the current azd environment. Optionally specify the service na
 		},
 	}
 
+	addDirectAgentTargetFlags(cmd, &flags.direct, "the [name] argument")
 	previewHelpText(cmd, featureflags.Voice, "a prompt, hosted, or voice agent", "an agent")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
@@ -209,6 +233,25 @@ func (a *ShowAction) Run(ctx context.Context) error {
 	}
 
 	return printShowResult(result, a.flags.output, suggestions)
+}
+
+// runDirectShow shows the latest version of an explicitly targeted agent. It omits
+// project-derived playground links, endpoint env values, and next-step guidance.
+func runDirectShow(ctx context.Context, flags *showFlags, target *AgentContext) error {
+	client, err := target.NewClient()
+	if err != nil {
+		return err
+	}
+	return showDirectAgent(ctx, client, target, flags.output)
+}
+
+func showDirectAgent(ctx context.Context, client remoteAgentReader, target *AgentContext, output string) error {
+	agent, err := getDirectAgent(ctx, client, target)
+	if err != nil {
+		return err
+	}
+	latest := agent.Versions.Latest
+	return printShowResult(&showResult{AgentVersionObject: &latest}, output, nil)
 }
 
 type showVersionReader interface {

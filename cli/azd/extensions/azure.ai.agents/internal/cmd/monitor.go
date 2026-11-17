@@ -27,6 +27,8 @@ type monitorFlags struct {
 	logType   string
 	utc       bool
 	raw       bool
+	direct    directAgentTargetFlags
+	traces    monitorTraceFlags
 }
 
 // MonitorAction handles the execution of the monitor command.
@@ -35,28 +37,48 @@ type MonitorAction struct {
 	flags *monitorFlags
 }
 
+const featureSessionLogs = "session logs"
+
 func newMonitorCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &monitorFlags{}
 	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "monitor [name]",
-		Short: "Monitor logs from a hosted agent.",
-		Long: `Monitor logs from a hosted agent.
+		Short: "Monitor logs and traces from a deployed agent.",
+		Long: `Monitor logs and traces from a deployed agent.
 
-Streams console output (stdout/stderr) or system events from an agent session.
-A session ID is required — it is auto-resolved from the last invocation, or you can
-specify one explicitly with --session-id.
-Use --follow to stream logs in real-time, or omit it to fetch recent logs and exit.
-This is useful for troubleshooting agent issues or monitoring agent behavior.
+With --type console (default) or --type system, streams console output
+(stdout/stderr) or system events from a hosted agent session. A session ID is
+required — it is auto-resolved from the last invocation, or you can specify one
+explicitly with --session-id. Use --follow to stream logs in real-time, or omit
+it to fetch recent logs and exit.
+
+With --type traces, lists the agent's recorded OpenTelemetry traces from the
+Application Insights resource connected to the Foundry project, newest first.
+Use --since to set the window, --status failed to find failed interactions, and
+--tail to limit how many traces are listed. Use --trace-id to export one trace
+with every recorded span, including span and parent IDs, timestamps, status,
+and attributes. Traces are attributed to the agent through the gen_ai.agent.name
+and gen_ai.agent.id span attributes; a trace with no spans for the selected agent
+is rejected. Export reports whether the trace is complete and why not (missing
+parent or root spans, truncation, partial query errors, or sampling).
+Credential-bearing attributes are redacted; prompts and responses recorded in
+spans are kept. Reading traces requires read access to the project connections
+and to the Application Insights logs.
 
 When run from an azd project, the agent name and version are resolved from the
 azure.yaml service configuration and current azd environment. Optionally specify
 the service name as a positional argument when multiple agent services exist.
 
-Outside an azd project, the positional value is treated as the hosted agent name.
+Outside an azd project, the positional value is treated as the deployed agent name.
 The Foundry project endpoint is resolved from the global project context configured
 by azd ai project set, or from FOUNDRY_PROJECT_ENDPOINT.
+
+To target a deployed agent explicitly, supply --project-endpoint with the deployed
+Foundry agent name as the positional argument, or --agent-endpoint with a full
+agent protocol URL. Direct targets never read azure.yaml or azd environment
+values, and log streaming then requires --session-id.
 
 For agents configured with header-based isolation, pass --user-identity
 when streaming session logs.`,
@@ -76,18 +98,50 @@ when streaming session logs.`,
   azd ai agent monitor --session-id <session-id> --follow
 
   # Fetch system event logs
-  azd ai agent monitor --type system`,
+  azd ai agent monitor --type system
+
+  # List failed traces from the last 24 hours for a deployed agent
+  azd ai agent monitor support --type traces --since 24h --status failed \
+    --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
+
+  # Export one trace with all of its spans to a file
+  azd ai agent monitor support --type traces --trace-id <trace-id> --out-file ./trace.json \
+    --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) > 0 {
+			nameSupplied := len(args) > 0
+			if nameSupplied {
 				flags.name = args[0]
 			}
 
 			if err := validateMonitorFlags(flags); err != nil {
 				return err
 			}
+			traceOpts, err := validateMonitorModeFlags(cmd, flags, extCtx.OutputFormat)
+			if err != nil {
+				return err
+			}
+
+			target, err := resolveDirectAgentTarget(
+				cmd, &flags.direct, flags.name, nameSupplied, "the [name] argument")
+			if err != nil {
+				return err
+			}
+			if target != nil && traceOpts == nil && flags.sessionID != "" {
+				if err := validateDirectSessionID(
+					flags.sessionID, directSessionsListCommand(&flags.direct, target)); err != nil {
+					return err
+				}
+			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
+
+			if target != nil {
+				if traceOpts != nil {
+					return runMonitorTracesForTarget(ctx, target, traceOpts)
+				}
+				return runDirectMonitorLogs(ctx, flags, target)
+			}
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -111,6 +165,10 @@ when streaming session logs.`,
 			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)
 			if err != nil {
 				return monitorEndpointError(err)
+			}
+
+			if traceOpts != nil {
+				return runMonitorTracesForTarget(ctx, agentContext, traceOpts)
 			}
 
 			// Resolve session ID for session-based logstream.
@@ -141,14 +199,51 @@ when streaming session logs.`,
 
 	cmd.Flags().StringVarP(&flags.sessionID, "session-id", "s", "", "Session ID to stream logs for")
 	cmd.Flags().BoolVarP(&flags.follow, "follow", "f", false, "Stream logs in real-time")
-	cmd.Flags().IntVarP(&flags.tail, "tail", "l", 50, "Number of trailing log lines to fetch (1-300)")
-	cmd.Flags().StringVarP(&flags.logType, "type", "t", "console",
-		"Type of logs: 'console' (stdout/stderr) or 'system' (container events)")
+	cmd.Flags().IntVarP(&flags.tail, "tail", "l", 50,
+		"Number of trailing log lines to fetch, or with --type traces, the most traces to list (1-300)")
+	cmd.Flags().StringVarP(&flags.logType, "type", "t", monitorTypeConsole,
+		"Type of data: 'console' (stdout/stderr), 'system' (container events), "+
+			"or 'traces' (recorded OpenTelemetry traces)")
 	cmd.Flags().BoolVar(&flags.utc, "utc", false, "Display timestamps in UTC instead of local time")
 	cmd.Flags().BoolVar(&flags.raw, "raw", false, "Print the raw SSE stream without formatting")
 	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
+	addDirectAgentTargetFlags(cmd, &flags.direct, "the [name] argument")
+	addMonitorTraceFlags(cmd, &flags.traces)
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:  "output",
+		Usage: "The output format for --type traces: table (default) or json; logs are always printed as text",
+	})
 
 	return cmd
+}
+
+// runMonitorTracesForTarget lists or exports traces for the deployed agent named by target.
+func runMonitorTracesForTarget(ctx context.Context, target *AgentContext, opts *traceOptions) error {
+	traceTarget := &AgentContext{ProjectEndpoint: target.ProjectEndpoint, Name: target.Name}
+	deps, err := newTraceDeps(traceTarget)
+	if err != nil {
+		return err
+	}
+	return runMonitorTraces(ctx, traceTarget, opts, deps, os.Stdout, os.Stderr)
+}
+
+// runDirectMonitorLogs streams session logs for an explicitly targeted agent. Direct
+// targets never read stored session selections, so --session-id is required.
+func runDirectMonitorLogs(ctx context.Context, flags *monitorFlags, target *AgentContext) error {
+	client, err := target.NewClient()
+	if err != nil {
+		return err
+	}
+	if err := requireDirectSessionSupport(ctx, client, target, featureSessionLogs); err != nil {
+		return err
+	}
+	if err := validateDirectSessionID(
+		flags.sessionID, directSessionsListCommand(&flags.direct, target)); err != nil {
+		return err
+	}
+
+	action := &MonitorAction{AgentContext: target, flags: flags}
+	return action.Run(ctx)
 }
 
 func resolveMonitorAgentInfo(
@@ -258,8 +353,10 @@ func validateMonitorFlags(flags *monitorFlags) error {
 		return fmt.Errorf("--tail must be between 1 and 300, got %d", flags.tail)
 	}
 
-	if flags.logType != "console" && flags.logType != "system" {
-		return fmt.Errorf("--type must be 'console' or 'system', got '%s'", flags.logType)
+	switch flags.logType {
+	case monitorTypeConsole, monitorTypeSystem, monitorTypeTraces:
+	default:
+		return fmt.Errorf("--type must be 'console', 'system', or 'traces', got '%s'", flags.logType)
 	}
 
 	return nil

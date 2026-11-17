@@ -790,6 +790,116 @@ message goes to stderr. A missing project or agent returns a not-found error,
 and denied access returns a service error with a role suggestion, so neither is
 reported as an empty list.
 
+### Listing and exporting agent traces
+
+`azd ai agent monitor --type traces` reads the OpenTelemetry traces that a deployed
+agent recorded in the Application Insights resource connected to its Foundry
+project. It accepts the same direct targets as `show`, so it works from any
+directory and for agents that azd did not deploy:
+
+```bash
+# List the newest traces from the last 24 hours that contain a failed span
+azd ai agent monitor support --type traces --since 24h --status failed \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+
+# Export one trace with all of its spans
+azd ai agent monitor support --type traces --trace-id "<trace-id>" --out-file ./trace.json \
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
+```
+
+Inside an azd project, `azd ai agent monitor [service] --type traces` uses the
+deployed agent name from the azd environment, which can differ from the service
+name. Outside a project without endpoint flags, the positional value is the
+deployed agent name and the project comes from `azd ai project set` or
+`FOUNDRY_PROJECT_ENDPOINT`. Direct targets also work for console and system
+logs (`--type console|system`), which then require `--session-id`.
+
+The command reads the agent, then the project's Application Insights connection.
+It uses only the connection's resource ID, never its credentials, and queries
+that resource through the Azure Monitor Log Analytics query API with your
+signed-in identity. A trace is attributed to the agent when one of its spans has
+`gen_ai.agent.name` equal to the agent name, or `gen_ai.agent.id` equal to the
+name or `<name>:<version>`.
+
+- `--since` accepts durations such as `30m`, `6h`, or `7d` (up to `730d`). It
+  defaults to `1h` for listing and `30d` for export.
+- `--tail` (default 50, at most 300) limits how many traces are listed, newest
+  first. When more traces match, JSON output sets `"truncated": true` and stderr
+  prints a warning.
+- `--status` filters listed traces by whether any span failed: `all` (default),
+  `failed`, or `succeeded`.
+- `--trace-id` exports every span and exception recorded for one trace (operation
+  ID). It cannot be combined with `--status` or `--tail`.
+- `--out-file` writes the JSON result to a file (permissions `0600`, overwriting
+  an existing file) and prints a confirmation to stderr.
+- `--follow`, `--raw`, `--session-id`, and `--user-identity` apply only to logs.
+
+List JSON output is `{"project_endpoint", "agent_name", "telemetry":
+{"connection_name", "resource_id"}, "window": {"start", "end"}, "status_filter",
+"truncated", "partial_error", "data": [{"trace_id", "start_time", "end_time",
+"duration_ms", "span_count", "failed_span_count", "status", "sampled",
+"root_span_name", "agent_version", "conversation_id"}]}`. Export JSON (schema
+version `1`) is:
+
+```json
+{
+  "schema_version": "1",
+  "trace_id": "<operation ID>",
+  "project_endpoint": "...",
+  "agent_name": "support",
+  "telemetry": { "connection_name": "...", "resource_id": "..." },
+  "window": { "start": "...", "end": "..." },
+  "completeness": {
+    "complete": true,
+    "root_span_found": true,
+    "missing_parent_span_ids": [],
+    "truncated": false,
+    "sampled": false,
+    "partial_error": "",
+    "notes": []
+  },
+  "spans": [
+    {
+      "span_id": "...", "parent_span_id": "...", "name": "...",
+      "kind": "request|dependency", "type": "...", "target": "...", "role": "...",
+      "start_time": "...", "end_time": "...", "duration_ms": 12.5,
+      "status": "ok|error|unset", "result_code": "...", "item_count": 1,
+      "attributes": {}
+    }
+  ],
+  "exceptions": [
+    { "timestamp": "...", "parent_span_id": "...", "type": "...", "message": "...",
+      "problem_id": "...", "attributes": {} }
+  ]
+}
+```
+
+Timestamps are RFC 3339 UTC. The root span's `parent_span_id` is empty or equals
+the trace ID. `completeness.complete` is `false` when the root span or a
+referenced parent span is missing (for example, outside `--since` or retention),
+when the trace has more than 5,000 spans and was truncated, or when the query
+returned a partial error. `sampled` is `true` when a span stands for several
+sampled operations (`item_count > 1`). Each limitation is also printed as a
+warning on stderr. Attributes whose names identify credentials (such as
+`authorization`, `cookie`, `api_key`, `password`, `secret`, or tokens) and values
+that start with `Bearer ` are replaced with `[REDACTED]`. Prompt and response
+content that the agent recorded in span attributes is kept, so handle exported
+traces as sensitive data.
+
+Errors are distinct from empty results:
+
+| Condition | Result |
+|---|---|
+| No Application Insights connection in the project | `tracing_not_configured` |
+| Several connections to different resources and no default | `ambiguous_tracing_connection` |
+| The connected resource no longer exists | `telemetry_resource_not_found` |
+| Denied access to connections or logs | Service error with a role suggestion (for example, Log Analytics Reader) |
+| `--trace-id` matches no spans in the window | `trace_not_found` |
+| `--trace-id` has no spans attributed to the agent | `trace_agent_mismatch`; nothing is exported |
+| No traces match the list filters | `No traces found ...` (stderr with `--output json`, which keeps `"data": []`) |
+
+JSON stays on stdout, and progress messages go to stderr.
+
 ## Initializing an A2A hosted agent
 
 Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI before initializing

@@ -135,6 +135,16 @@ const (
 	CodeSessionNotFound = "session_not_found"
 )
 
+// Error codes for agent trace errors.
+const (
+	CodeTracingNotConfigured        = "tracing_not_configured"
+	CodeAmbiguousTracingConnection  = "ambiguous_tracing_connection"
+	CodeTelemetryResourceNotFound   = "telemetry_resource_not_found"
+	CodeTraceNotFound               = "trace_not_found"
+	CodeTraceAgentMismatch          = "trace_agent_mismatch"
+	CodeInvalidTelemetryQueryResult = "invalid_telemetry_query_result"
+)
+
 // Error codes for agent delete errors.
 const (
 	CodeAgentNotFound          = "agent_not_found"
@@ -233,6 +243,8 @@ const (
 	OpGetAgent                = "get_agent"
 	OpListAgents              = "list_agents"
 	OpListAgentVersions       = "list_agent_versions"
+	OpListConnections         = "list_connections"
+	OpQueryTraces             = "query_traces"
 	OpGetTelephonyBinding     = "get_telephony_binding"
 	OpUpdateAgent             = "update_agent"
 	OpGetActivityBot          = "get_activity_bot"

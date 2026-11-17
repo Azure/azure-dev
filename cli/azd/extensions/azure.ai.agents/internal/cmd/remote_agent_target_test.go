@@ -565,6 +565,73 @@ func TestDirectTargetCommands_RejectInvalidInputsBeforeAuth(t *testing.T) {
 				"--environment", "dev"},
 			wantCode: exterrors.CodeConflictingArguments,
 		},
+		{
+			name:     "monitor project endpoint without name",
+			cmd:      func() *cobra.Command { return newMonitorCommand(nil) },
+			args:     []string{"--type", "traces", "--project-endpoint", testProjectEndpoint},
+			wantCode: exterrors.CodeInvalidAgentName,
+		},
+		{
+			name:     "monitor agent endpoint with positional name",
+			cmd:      func() *cobra.Command { return newMonitorCommand(nil) },
+			args:     []string{"support", "--type", "traces", "--agent-endpoint", testAgentEndpoint},
+			wantCode: exterrors.CodeConflictingArguments,
+		},
+		{
+			name: "monitor direct logs reject malformed session",
+			cmd:  func() *cobra.Command { return newMonitorCommand(nil) },
+			args: []string{"support", "--session-id", "../x",
+				"--project-endpoint", testProjectEndpoint},
+			wantCode: exterrors.CodeInvalidSessionId,
+		},
+		{
+			name: "monitor traces with session id",
+			cmd:  func() *cobra.Command { return newMonitorCommand(nil) },
+			args: []string{"support", "--type", "traces", "--session-id", "s1",
+				"--project-endpoint", testProjectEndpoint},
+			wantCode: exterrors.CodeConflictingArguments,
+		},
+		{
+			name: "monitor traces with follow",
+			cmd:  func() *cobra.Command { return newMonitorCommand(nil) },
+			args: []string{"support", "--type", "traces", "--follow",
+				"--project-endpoint", testProjectEndpoint},
+			wantCode: exterrors.CodeConflictingArguments,
+		},
+		{
+			name:     "monitor console logs with since",
+			cmd:      func() *cobra.Command { return newMonitorCommand(nil) },
+			args:     []string{"support", "--since", "1h", "--project-endpoint", testProjectEndpoint},
+			wantCode: exterrors.CodeConflictingArguments,
+		},
+		{
+			name: "monitor trace export with status",
+			cmd:  func() *cobra.Command { return newMonitorCommand(nil) },
+			args: []string{"support", "--type", "traces", "--trace-id", "abc", "--status", "failed",
+				"--project-endpoint", testProjectEndpoint},
+			wantCode: exterrors.CodeConflictingArguments,
+		},
+		{
+			name: "monitor traces with invalid trace id",
+			cmd:  func() *cobra.Command { return newMonitorCommand(nil) },
+			args: []string{"support", "--type", "traces", "--trace-id", "a'b",
+				"--project-endpoint", testProjectEndpoint},
+			wantCode: exterrors.CodeInvalidParameter,
+		},
+		{
+			name: "monitor traces with invalid since",
+			cmd:  func() *cobra.Command { return newMonitorCommand(nil) },
+			args: []string{"support", "--type", "traces", "--since", "0d",
+				"--project-endpoint", testProjectEndpoint},
+			wantCode: exterrors.CodeInvalidParameter,
+		},
+		{
+			name: "monitor traces with invalid status",
+			cmd:  func() *cobra.Command { return newMonitorCommand(nil) },
+			args: []string{"support", "--type", "traces", "--status", "broken",
+				"--project-endpoint", testProjectEndpoint},
+			wantCode: exterrors.CodeInvalidParameter,
+		},
 	}
 
 	for _, tt := range tests {

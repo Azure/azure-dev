@@ -87,7 +87,7 @@ func TestValidateMonitorFlags_InvalidType(t *testing.T) {
 	}
 	err := validateMonitorFlags(flags)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "--type must be 'console' or 'system'")
+	assert.Contains(t, err.Error(), "--type must be 'console', 'system', or 'traces'")
 }
 
 func TestMonitorCommand_DefaultValues(t *testing.T) {
@@ -379,12 +379,12 @@ func TestValidateMonitorFlags_TableDriven(t *testing.T) {
 		{
 			name:    "invalid log type",
 			flags:   monitorFlags{tail: 50, logType: "debug"},
-			wantErr: "--type must be 'console' or 'system'",
+			wantErr: "--type must be 'console', 'system', or 'traces'",
 		},
 		{
 			name:    "empty log type",
 			flags:   monitorFlags{tail: 50, logType: ""},
-			wantErr: "--type must be 'console' or 'system'",
+			wantErr: "--type must be 'console', 'system', or 'traces'",
 		},
 	}
 

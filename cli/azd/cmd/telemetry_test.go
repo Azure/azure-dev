@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	extTelemetry "github.com/azure/azure-dev/cli/azd/extensions/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -401,6 +402,14 @@ func TestTelemetryFieldConstants(t *testing.T) {
 
 		dependencyCount := fields.ExtensionDependencyUpdateCount.Int(2)
 		require.Equal(t, "extension.dependency_update_count", string(dependencyCount.Key))
+
+		hostingMode := extTelemetry.AgentHostingMode.String("byo_aks")
+		require.Equal(t, "ext.agent.hosting.mode", string(hostingMode.Key))
+		require.Equal(t, "byo_aks", hostingMode.Value.AsString())
+		require.Equal(t, fields.SystemMetadata, extTelemetry.AgentHostingMode.Classification)
+		require.Equal(t, fields.FeatureInsight, extTelemetry.AgentHostingMode.Purpose)
+		require.Equal(t, "N/A", extTelemetry.AgentHostingMode.Endpoint)
+		require.False(t, extTelemetry.AgentHostingMode.IsMeasurement)
 	})
 
 	// Provision validation telemetry fields (emitted by both the Bicep

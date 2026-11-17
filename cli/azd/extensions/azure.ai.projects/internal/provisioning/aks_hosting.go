@@ -17,6 +17,7 @@ import (
 
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/onboarding"
+	"azure.ai.projects/internal/phasetelemetry"
 	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -32,6 +33,12 @@ type byoHostingParameters struct {
 	WorkloadIdentityResourceID          json.RawMessage `json:"workloadIdentityResourceId"`
 }
 
+func markBYOAKSTelemetry(ctx context.Context, source *templateSource) {
+	if hosting, err := byoHostingParameter(source); err == nil && hosting.Enabled {
+		phasetelemetry.BYOAKS(ctx)
+	}
+}
+
 func (p *FoundryProvisioningProvider) prepareBYO(
 	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
 ) (prepareErr error) {
@@ -44,6 +51,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if !hosting.Enabled {
 		return nil
 	}
+	phasetelemetry.BYOAKS(ctx)
 	if include, _ := parameterValue(source, "includeAcr").(bool); include &&
 		!templateDeclaresParameter(source, "acrPullPrincipalId") {
 		return errors.New("the ejected Bicep registry access contract is outdated; " +

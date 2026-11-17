@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore BYOAKS
+
 package telemetry
 
 import (
@@ -31,6 +33,16 @@ func TestAgentInitStepFieldsUseAgentNamespace(t *testing.T) {
 			require.False(t, test.field.IsMeasurement)
 		})
 	}
+}
+
+func TestAgentHostingBYOAKSField(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "ext.agent.hosting.byo_aks", string(AgentHostingBYOAKS.Key))
+	require.Equal(t, fields.SystemMetadata, AgentHostingBYOAKS.Classification)
+	require.Equal(t, fields.FeatureInsight, AgentHostingBYOAKS.Purpose)
+	require.Equal(t, "N/A", AgentHostingBYOAKS.Endpoint)
+	require.False(t, AgentHostingBYOAKS.IsMeasurement)
 }
 
 // The contract is:

@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore BYOAKS
+
 // Package phasetelemetry records extension-owned operation and step timings.
 package phasetelemetry
 
@@ -95,6 +97,26 @@ type Timing struct {
 	dropped  int
 	finished bool
 	timedOut bool
+	byoAKS   bool
+}
+
+// BYOAKS marks an active provider provision phase as BYO AKS.
+func BYOAKS(ctx context.Context) {
+	if timing, ok := ctx.Value(contextKey{}).(*Timing); ok {
+		timing.BYOAKS()
+	}
+}
+
+// BYOAKS marks an active provider provision phase as BYO AKS.
+func (t *Timing) BYOAKS() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	if !t.finished && t.name == Provision && t.scope == Provider {
+		t.byoAKS = true
+	}
+	t.mu.Unlock()
 }
 
 // Timeout marks an observed business polling deadline without changing its error.
@@ -172,6 +194,7 @@ func (t *Timing) End(ctx context.Context, err error) {
 	steps := append([]step(nil), t.steps...)
 	dropped := t.dropped
 	timedOut := t.timedOut
+	byoAKS := t.byoAKS
 	t.mu.Unlock()
 	if t.reporter == nil {
 		return
@@ -182,19 +205,40 @@ func (t *Timing) End(ctx context.Context, err error) {
 	if result == "error" && timedOut {
 		result = "timeout"
 	}
-	t.reporter.Report(reportCtx, foundryTelemetry.Event{
-		Name: "agent.phase.completed",
-		Attributes: map[string]string{
-			"agent.phase.name":               string(t.name),
-			"agent.phase.scope":              string(t.scope),
-			"agent.phase.attempt_id":         t.attempt,
-			"agent.phase.start_time":         t.started.UTC().Format(time.RFC3339Nano),
-			"agent.phase.end_time":           ended.UTC().Format(time.RFC3339Nano),
-			"agent.phase.duration_ms":        milliseconds(ended.Sub(t.started)),
-			"agent.phase.outcome":            result,
-			"agent.phase.step.dropped_count": strconv.Itoa(dropped),
-		},
-	})
+	startTime := t.started.UTC().Format(time.RFC3339Nano)
+	endTime := ended.UTC().Format(time.RFC3339Nano)
+	durationMs := milliseconds(ended.Sub(t.started))
+	droppedCount := strconv.Itoa(dropped)
+	if byoAKS {
+		t.reporter.Report(reportCtx, foundryTelemetry.Event{
+			Name: "agent.phase.completed",
+			Attributes: map[string]string{
+				"agent.phase.name":               string(t.name),
+				"agent.phase.scope":              string(t.scope),
+				"agent.phase.attempt_id":         t.attempt,
+				"agent.phase.start_time":         startTime,
+				"agent.phase.end_time":           endTime,
+				"agent.phase.duration_ms":        durationMs,
+				"agent.phase.outcome":            result,
+				"agent.phase.step.dropped_count": droppedCount,
+				"agent.hosting.byo_aks":          "true",
+			},
+		})
+	} else {
+		t.reporter.Report(reportCtx, foundryTelemetry.Event{
+			Name: "agent.phase.completed",
+			Attributes: map[string]string{
+				"agent.phase.name":               string(t.name),
+				"agent.phase.scope":              string(t.scope),
+				"agent.phase.attempt_id":         t.attempt,
+				"agent.phase.start_time":         startTime,
+				"agent.phase.end_time":           endTime,
+				"agent.phase.duration_ms":        durationMs,
+				"agent.phase.outcome":            result,
+				"agent.phase.step.dropped_count": droppedCount,
+			},
+		})
+	}
 	for i, step := range steps {
 		if reportCtx.Err() != nil {
 			azdext.NewLogger("phase.telemetry").Debug("phase timing reporting deadline reached")

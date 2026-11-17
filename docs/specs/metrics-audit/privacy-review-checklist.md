@@ -95,6 +95,20 @@ Existing global command metadata and telemetry opt-out behavior are unchanged.
 Help and flag-parser failures do not execute the action; action-level validation failures record `failed` with zero counts.
 A maintainer must assess approval coverage before rollout. This records the proposed scope, not completed approval.
 
+## Recorded scope for BYO AKS provisioning
+
+`azure.ai.projects` reuses the existing `ext.usage` phase completion event (`extension.event=agent.phase.completed`, `ext.agent.phase.name=provision`, `ext.agent.phase.scope=provider`) and adds one optional attribute:
+
+| Field | Classification / purpose | Proposed handling |
+|-------|--------------------------|-------------------|
+| `ext.agent.hosting.byo_aks` | SystemMetadata / FeatureInsight | Optional string `"true"`, endpoint `N/A`, not hashed, not a measurement |
+
+Marked once effective `agentHosting.enabled=true` is resolved from `azure.yaml`, `$ref` service definitions, or on-disk deployment parameters, before the `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` preview gate, resource-ID validation, preflight checks, and ARM deployment.
+Omitted on all other phases, `command` scope, `agent.phase.step`, `azd provision --preview`, projects without `agentHosting`, `enabled=false` parameter overrides, and malformed `agentHosting` envelopes.
+Correlate on `operation_Id` with `cmd.provision` or `cmd.up` (plus host `machine.id`) and `agent.context.resolved` (`ext.agent.container.mode`).
+No cluster IDs, managed identity IDs, storage account IDs, ACR names, endpoints, file paths, error text, or PII are emitted.
+A maintainer must assess approval coverage before rollout. This records the proposed scope, not completed approval.
+
 ## Related references
 
 | Need | Reference |

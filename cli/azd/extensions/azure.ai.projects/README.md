@@ -24,6 +24,9 @@ reporter.Report(ctx, telemetry.Event{
 The example is illustrative. Project/deployment add commands and the Foundry
 Provision provider report [operation and internal step timings](../azure.ai.agents/docs/phase-telemetry.md)
 through the existing reporter, including authoring delegated by agent Init.
+When Foundry provisioning resolves effective BYO AKS hosting
+(`agentHosting.enabled=true`), the provider `provision` completion also sets
+`ext.agent.hosting.byo_aks="true"` without resource IDs or cluster metadata.
 Existing provisioning span attributes remain unchanged. Add an event only after its product question, bounded
 values, documentation, and privacy review are agreed. Before emitting, declare each
 `ext.*` attribute in `cli/azd/extensions/telemetry/fields.go` — reuse an existing

@@ -32,9 +32,10 @@ be summed with, the projects command's phase and internal timings.
 
 Both events use the existing `ext.usage` channel, with `extension.event` equal to
 `agent.phase.completed` or `agent.phase.step`. The host supplies extension ID,
-extension version, and trace correlation. All new properties are string encoded,
-un-hashed `SystemMetadata` / `PerformanceAndHealth`, with endpoint `N/A`.
-They are not native measurements.
+extension version, and trace correlation. Timing properties are string encoded,
+un-hashed `SystemMetadata` / `PerformanceAndHealth`, with endpoint `N/A`; the
+optional `ext.agent.hosting.byo_aks` marker uses `SystemMetadata` /
+`FeatureInsight` with endpoint `N/A`. None are native measurements.
 
 | Final property | Event | Meaning |
 |---|---|---|
@@ -46,6 +47,7 @@ They are not native measurements.
 | `ext.agent.phase.duration_ms` | Completed | Inclusive monotonic elapsed milliseconds, with three decimals. |
 | `ext.agent.phase.outcome` | Completed | `success`, `error`, `canceled`, `timeout`, from the operation's returned error. |
 | `ext.agent.phase.step.dropped_count` | Completed | Steps exceeding the local 24-step limit; **not** host rejection, reporting loss, or overall completeness. |
+| `ext.agent.hosting.byo_aks` | Completed | Optional `"true"` on `azure.ai.projects` `provision` (`provider` scope) when effective `agentHosting.enabled=true` is resolved before the `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` gate, ID validation, preflight, and ARM deploy. Omitted otherwise. |
 | `ext.agent.phase.step.id` | Step | Fixed business identifier from the coverage table below. |
 | `ext.agent.phase.step.sequence` | Step | Start order within one attempt, beginning at 1. |
 | `ext.agent.phase.step.start_offset_ms` | Step | Monotonic offset from the phase start. |
@@ -84,6 +86,10 @@ polling loop or retry policy.
 - Join by operation ID, extension ID, and attempt ID. Step sequence is local to
   the attempt. Separate provision/deploy commands can have different operation
   IDs; these fields do not join their cross-command journey.
+- For BYO AKS provisioning adoption (`ext.agent.hosting.byo_aks="true"`), count
+  distinct machines via host `machine.id`, or join `cmd.provision`, `cmd.up`,
+  and `agent.context.resolved` (`ext.agent.container.mode`) on `operation_Id`.
+  `azd provision --preview` emits no phase event.
 - Calculate step start as phase start plus the offset. Do not use the delayed
   usage event timestamp or its native duration as the business time.
 - Completions are sent before their buffered steps with one shared one-second

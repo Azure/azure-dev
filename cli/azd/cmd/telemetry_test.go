@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore BYOAKS
+
 package cmd
 
 import (
@@ -21,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	extTelemetry "github.com/azure/azure-dev/cli/azd/extensions/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -401,6 +404,14 @@ func TestTelemetryFieldConstants(t *testing.T) {
 
 		dependencyCount := fields.ExtensionDependencyUpdateCount.Int(2)
 		require.Equal(t, "extension.dependency_update_count", string(dependencyCount.Key))
+
+		byoAKS := extTelemetry.AgentHostingBYOAKS.String("true")
+		require.Equal(t, "ext.agent.hosting.byo_aks", string(byoAKS.Key))
+		require.Equal(t, "true", byoAKS.Value.AsString())
+		require.Equal(t, fields.SystemMetadata, extTelemetry.AgentHostingBYOAKS.Classification)
+		require.Equal(t, fields.FeatureInsight, extTelemetry.AgentHostingBYOAKS.Purpose)
+		require.Equal(t, "N/A", extTelemetry.AgentHostingBYOAKS.Endpoint)
+		require.False(t, extTelemetry.AgentHostingBYOAKS.IsMeasurement)
 	})
 
 	// Provision validation telemetry fields (emitted by both the Bicep

@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore BYOAKS
+
 package provisioning
 
 import (
@@ -1795,6 +1797,7 @@ func (p *FoundryProvisioningProvider) resolveTemplateSource(
 			parameters:  merged,
 			sourcePath:  p.onDiskSource.sourcePath,
 		}
+		markBYOAKSTelemetry(ctx, source)
 		return source, nil
 	}
 
@@ -1821,6 +1824,7 @@ func (p *FoundryProvisioningProvider) resolveTemplateSource(
 		armTemplate: p.armTemplate,
 		parameters:  parameters,
 	}
+	markBYOAKSTelemetry(ctx, src)
 	return src, nil
 }
 

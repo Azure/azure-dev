@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore BYOAKS
+
 // Package telemetry declares the classification metadata for attributes emitted
 // by first-party azd extensions and verifies, at test time, that every attribute
 // an extension reports is declared here.
@@ -201,6 +203,14 @@ var (
 	// AgentContainerMode records the effective hosted-agent container or code mode.
 	AgentContainerMode = fields.AttributeKey{
 		Key:            attribute.Key("ext.agent.container.mode"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.FeatureInsight,
+		Endpoint:       "N/A",
+	}
+
+	// AgentHostingBYOAKS marks BYO AKS Foundry provision phases.
+	AgentHostingBYOAKS = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.hosting.byo_aks"),
 		Classification: fields.SystemMetadata,
 		Purpose:        fields.FeatureInsight,
 		Endpoint:       "N/A",

@@ -4,8 +4,16 @@ steps:
       artifactName: docs
       targetPath: docs
 
+  - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+    parameters:
+      TokenOwners:
+        - MicrosoftDocs
+
   # Credentials are required to sync private repo
   - template: /eng/pipelines/templates/steps/set-git-credentials.yml
+    parameters:
+      GitHubPat: $(GH_TOKEN)
+      CredentialUsername: x-access-token
 
   - pwsh: |
       git clone https://github.com/MicrosoftDocs/azure-dev-docs-pr/

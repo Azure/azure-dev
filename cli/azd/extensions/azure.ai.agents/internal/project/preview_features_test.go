@@ -76,33 +76,33 @@ func TestMemorySnapshotFeatureSwitch(t *testing.T) {
 		require.ErrorContains(t, RequireDefinitionFeatures(definition, io.Discard), featureflags.MemorySnapshot.ID)
 	}
 	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
-	t.Setenv(featureflags.Voice.EnvVar, "false")
 	definition := map[string]any{
 		"kind": "hosted", "enableMemorySnapshot": true,
 		"protocols": []any{map[string]any{"protocol": "invocations_ws"}},
 	}
-	require.ErrorContains(t, RequireDefinitionFeatures(definition, io.Discard), featureflags.Voice.ID)
-	t.Setenv(featureflags.Voice.EnvVar, "true")
 	require.NoError(t, RequireDefinitionFeatures(definition, io.Discard))
 }
 
-func TestConversationEngineVoiceFeatureSwitch(t *testing.T) {
-	for _, value := range []string{"unset", "false", "true"} {
+func TestConversationEngineIgnoresRetiredVoiceFeatureSwitch(t *testing.T) {
+	const legacyVoiceFlag = "AZD_ALPHA_ENABLE_AGENTS_VOICE"
+	for _, value := range []string{"unset", "", "false", "0", "invalid", "true"} {
 		t.Run(value, func(t *testing.T) {
-			t.Setenv(featureflags.Voice.EnvVar, value)
+			t.Setenv(legacyVoiceFlag, value)
 			if value == "unset" {
-				require.NoError(t, os.Unsetenv(featureflags.Voice.EnvVar))
+				require.NoError(t, os.Unsetenv(legacyVoiceFlag))
 			}
 			for _, key := range []string{"protocols", "protocol_versions", "container_protocol_versions"} {
-				err := CheckDefinitionFeatures(map[string]any{
-					"kind": "hosted", key: []any{map[string]any{
-						"protocol": "voice_conversation_engine", "version": "1.0.0",
-					}},
-				})
-				if value == "true" {
+				for _, protocols := range [][]any{
+					{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}},
+					{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"},
+						map[string]any{"protocol": "invocations_ws", "version": "1.0.0"}},
+				} {
+					definition := map[string]any{"kind": "hosted", key: protocols}
+					require.NoError(t, CheckDefinitionFeatures(definition))
+					require.NoError(t, RequireDefinitionFeatures(definition, io.Discard))
+					notices, err := RequireDefinitionFeatureNotices(definition)
 					require.NoError(t, err)
-				} else {
-					require.ErrorContains(t, err, featureflags.Voice.ID)
+					require.Empty(t, notices)
 				}
 			}
 		})
@@ -150,14 +150,20 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 			"kind": "prompt", "name": "agent", "model": "gpt-4.1-mini", "instructions": "Be helpful.",
 			"harness": map[string]any{"type": " \tgithub_copilot_preview\r\n "},
 		}, featureflags.ManagedHarness},
-		{"voice", map[string]any{"kind": "voice"}, featureflags.Voice},
-		{"prompt voice", map[string]any{"kind": "prompt-voice"}, featureflags.Voice},
+		{"voice", map[string]any{"kind": "voice"}, featureflags.Feature{}},
+		{"prompt voice", map[string]any{"kind": "prompt-voice"}, featureflags.Feature{}},
 		{"hosted voice bridge", map[string]any{"kind": "hosted",
-			"protocols": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Voice},
+			"protocols": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Feature{}},
 		{"api hosted voice bridge", map[string]any{"kind": "hosted",
-			"protocol_versions": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Voice},
+			"protocol_versions": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Feature{}},
 		{"legacy api hosted voice bridge", map[string]any{"kind": "hosted",
-			"container_protocol_versions": []any{map[string]any{"protocol": " invocations_ws "}}}, featureflags.Voice},
+			"container_protocol_versions": []any{map[string]any{"protocol": " invocations_ws "}}}, featureflags.Feature{}},
+		{"hosted conversation engine", map[string]any{"kind": "hosted",
+			"protocols": []any{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}}}, featureflags.Feature{}},
+		{"api hosted conversation engine", map[string]any{"kind": "hosted",
+			"protocol_versions": []any{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}}}, featureflags.Feature{}},
+		{"legacy api hosted conversation engine", map[string]any{"kind": "hosted",
+			"container_protocol_versions": []any{map[string]any{"protocol": "voice_conversation_engine", "version": "1.0.0"}}}, featureflags.Feature{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -210,10 +216,8 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 
 func TestPreviewGatesIgnorePropertyCase(t *testing.T) {
 	t.Setenv(featureflags.MemorySnapshot.EnvVar, "false")
-	t.Setenv(featureflags.Voice.EnvVar, "false")
 	t.Setenv(featureflags.ManagedHarness.EnvVar, "false")
 
-	ws := []any{map[string]any{"protocol": "invocations_ws"}}
 	for _, tc := range []struct {
 		name       string
 		definition map[string]any
@@ -223,13 +227,6 @@ func TestPreviewGatesIgnorePropertyCase(t *testing.T) {
 		{"snapshot colliding", map[string]any{"kind": "hosted",
 			"enableMemorySnapshot": false, "enablememorysnapshot": true}, featureflags.MemorySnapshot},
 		{"snapshot off", map[string]any{"kind": "hosted", "EnableMemorySnapshot": false}, featureflags.Feature{}},
-		{"protocols upper", map[string]any{"kind": "hosted", "Protocols": ws}, featureflags.Voice},
-		{"protocol key upper", map[string]any{"kind": "hosted",
-			"protocols": []any{map[string]any{"Protocol": "invocations_ws"}}}, featureflags.Voice},
-		{"voice engine key upper", map[string]any{"kind": "hosted",
-			"Protocols": []any{map[string]any{"Protocol": "voice_conversation_engine"}}}, featureflags.Voice},
-		{"protocol null collision", map[string]any{"kind": "hosted",
-			"protocols": []any{map[string]any{"protocol": nil, "Protocol": "invocations_ws"}}}, featureflags.Voice},
 		{"harness type upper", map[string]any{"kind": "prompt",
 			"harness": map[string]any{"Type": "microsoft_copilot_preview"}}, featureflags.ManagedHarness},
 		{"harness key upper", map[string]any{"kind": "prompt",
@@ -238,8 +235,6 @@ func TestPreviewGatesIgnorePropertyCase(t *testing.T) {
 			"harness": map[string]any{"type": nil, "Type": "microsoft_copilot_preview"}}, featureflags.ManagedHarness},
 		{"harness key collision", map[string]any{"kind": "prompt",
 			"harness": nil, "Harness": map[string]any{"type": "microsoft_copilot_preview"}}, featureflags.ManagedHarness},
-		{"protocols collision", map[string]any{"kind": "hosted",
-			"protocols": []any{}, "Protocols": ws}, featureflags.Voice},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()

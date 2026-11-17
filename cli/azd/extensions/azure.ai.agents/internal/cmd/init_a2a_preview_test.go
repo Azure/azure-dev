@@ -21,61 +21,55 @@ import (
 )
 
 func TestInitProtocolPreviewCombinations(t *testing.T) {
-	for _, voice := range []bool{false, true} {
-		for _, a2a := range []bool{false, true} {
-			t.Run(fmt.Sprintf("voice=%t/a2a=%t", voice, a2a), func(t *testing.T) {
-				clearPreviewProcess(t)
-				t.Setenv(featureflags.Voice.EnvVar, strconv.FormatBool(voice))
-				t.Setenv(featureflags.A2A.EnvVar, strconv.FormatBool(a2a))
-				text, err := executeRoot(t, "init", "--help")
-				require.NoError(t, err)
-				require.Contains(t, text, "Protocols supported by the agent ("+
-					strings.Join(protocolNames(voice, a2a), ", ")+")")
-				require.Equal(t, a2a, strings.Contains(text, "Hosted protocols:"))
-				require.Equal(t, voice, strings.Contains(text, "Voice Agents\n"))
+	for _, a2a := range []bool{false, true} {
+		t.Run(fmt.Sprintf("a2a=%t", a2a), func(t *testing.T) {
+			clearPreviewProcess(t)
+			t.Setenv(featureflags.A2A.EnvVar, strconv.FormatBool(a2a))
+			text, err := executeRoot(t, "init", "--help")
+			require.NoError(t, err)
+			require.Contains(t, text, "Protocols supported by the agent ("+
+				strings.Join(protocolNames(a2a), ", ")+")")
+			require.Equal(t, a2a, strings.Contains(text, "Hosted protocols:"))
+			require.Contains(t, text, "Voice Agents\n")
 
-				// Construction keeps complete metadata, independently of help state.
-				root := NewRootCommand()
-				init, _, err := root.Find([]string{"init"})
-				require.NoError(t, err)
-				flag := init.Flags().Lookup("protocol")
-				require.Contains(t, flag.Usage, "responses, invocations, invocations_ws, activity, a2a")
-				require.Equal(t, []string{featureflags.Voice.ID}, flag.Annotations[featureAnnotation])
+			// Construction keeps complete metadata, independently of help state.
+			root := NewRootCommand()
+			init, _, err := root.Find([]string{"init"})
+			require.NoError(t, err)
+			flag := init.Flags().Lookup("protocol")
+			require.Contains(t, flag.Usage, "responses, invocations, invocations_ws, activity, a2a")
+			require.Empty(t, flag.Annotations[featureAnnotation])
 
-				client := &fakePromptClient{multiSelectFn: func(
-					_ context.Context, request *azdext.MultiSelectRequest, _ ...grpc.CallOption,
-				) (*azdext.MultiSelectResponse, error) {
-					var names []string
-					for _, choice := range request.Options.Choices {
-						names = append(names, choice.Value)
-						require.Equal(t, choice.Value, choice.Label)
-						require.Equal(t, choice.Value == "responses", choice.Selected)
-					}
-					require.Equal(t, protocolNames(voice, a2a), names)
-					return &azdext.MultiSelectResponse{Values: request.Options.Choices}, nil
-				}}
-				got, err := promptProtocols(t.Context(), client, false, nil, voice, a2a)
-				require.NoError(t, err)
-				want := []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}
-				require.Equal(t, want, got)
-				got, err = selectHostedProtocols(t.Context(), nil, true, nil, io.Discard)
-				require.NoError(t, err)
-				require.Equal(t, want, got, "no-prompt default must not require any RPC or preview")
-
-				for _, protocol := range []string{"a2a", "invocations_ws"} {
-					_, err := selectHostedProtocols(t.Context(), nil, true, []string{protocol}, io.Discard)
-					enabled := a2a
-					if protocol == "invocations_ws" {
-						enabled = voice
-					}
-					if enabled {
-						require.NoError(t, err)
-					} else {
-						require.ErrorContains(t, err, "preview feature")
-					}
+			client := &fakePromptClient{multiSelectFn: func(
+				_ context.Context, request *azdext.MultiSelectRequest, _ ...grpc.CallOption,
+			) (*azdext.MultiSelectResponse, error) {
+				var names []string
+				for _, choice := range request.Options.Choices {
+					names = append(names, choice.Value)
+					require.Equal(t, choice.Value, choice.Label)
+					require.Equal(t, choice.Value == "responses", choice.Selected)
 				}
-			})
-		}
+				require.Equal(t, protocolNames(a2a), names)
+				return &azdext.MultiSelectResponse{Values: request.Options.Choices}, nil
+			}}
+			got, err := promptProtocols(t.Context(), client, false, nil, a2a)
+			require.NoError(t, err)
+			want := []agent_yaml.ProtocolVersionRecord{{Protocol: "responses", Version: "2.0.0"}}
+			require.Equal(t, want, got)
+			got, err = selectHostedProtocols(t.Context(), nil, true, nil, io.Discard)
+			require.NoError(t, err)
+			require.Equal(t, want, got, "no-prompt default must not require any RPC or preview")
+
+			for _, protocol := range []string{"a2a", "invocations_ws"} {
+				_, err := selectHostedProtocols(t.Context(), nil, true, []string{protocol}, io.Discard)
+				enabled := protocol == "invocations_ws" || a2a
+				if enabled {
+					require.NoError(t, err)
+				} else {
+					require.ErrorContains(t, err, "preview feature")
+				}
+			}
+		})
 	}
 }
 
@@ -88,8 +82,6 @@ func TestInitA2AExplicitRejectedBeforeAuthAndRPC(t *testing.T) {
 		} {
 			t.Run(route+"/"+strings.Join(selection, "_"), func(t *testing.T) {
 				clearPreviewProcess(t)
-				// Voice enabled must not enable the independent A2A preview.
-				t.Setenv(featureflags.Voice.EnvVar, "true")
 				root := t.TempDir()
 				t.Chdir(root)
 				host := &initScopeHost{}

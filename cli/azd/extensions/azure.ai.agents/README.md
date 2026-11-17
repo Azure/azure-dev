@@ -738,9 +738,11 @@ azd ai agent files download /data/report.csv --session-id "<session-id>" \
 Direct mode never reads `azure.yaml`, `AGENT_<SERVICE>_*` outputs, or azd
 environment values, and it does not store the session ID. The two flags cannot be
 combined with each other, with `--environment`, or (for `--agent-endpoint`) with a
-separate agent name. File commands require `--session-id`. Prompt and workflow
-agents are rejected because they have no session files; other kinds are checked
-by the service. A missing agent or session, or denied access, returns a
+separate agent name. File commands require `--session-id`. Direct session and
+file commands read the agent first and reject prompt and workflow agents before
+calling the sessions API, because those kinds have no sessions or session files;
+the service checks agents with other or undeclared kinds. A missing agent or
+session, or denied access, returns a
 structured error. Pass `--user-identity` when the session belongs to a specific
 user. The other file commands (`upload`, `delete`, `mkdir`, `stat`) and session
 commands (`create`, `stop`, `delete`) still require an azd project.

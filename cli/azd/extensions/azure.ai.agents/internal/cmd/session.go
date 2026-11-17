@@ -163,6 +163,16 @@ func resolveDirectSessionContext(
 	}, nil
 }
 
+// checkDirectSessionTarget rejects directly targeted agents whose kind has no
+// sessions, matching the files commands. Project mode keeps its existing behavior.
+func checkDirectSessionTarget(ctx context.Context, client remoteAgentReader, sc *sessionContext) error {
+	if !sc.direct {
+		return nil
+	}
+	return requireDirectSessionSupport(ctx, client,
+		&AgentContext{ProjectEndpoint: sc.endpoint, Name: sc.agentName}, featureSessions)
+}
+
 // classifyDirectSessionListError maps list failures for an explicitly targeted
 // agent. The sessions collection exists for every agent, so 404 means the agent.
 func classifyDirectSessionListError(err error, sc *sessionContext) error {
@@ -423,6 +433,9 @@ func (a *SessionShowAction) Run(ctx context.Context) error {
 	}
 
 	client := agent_api.NewAgentClient(sc.endpoint, credential)
+	if err := checkDirectSessionTarget(ctx, client, sc); err != nil {
+		return err
+	}
 
 	session, err := client.GetSession(
 		ctx,
@@ -778,6 +791,9 @@ func (a *SessionListAction) Run(ctx context.Context) error {
 	}
 
 	client := agent_api.NewAgentClient(sc.endpoint, credential)
+	if err := checkDirectSessionTarget(ctx, client, sc); err != nil {
+		return err
+	}
 
 	var limit *int32
 	if a.limitChanged {

@@ -293,6 +293,7 @@ func TestPrepareDirectFilesContext(t *testing.T) {
 			_, err := prepareDirectFilesContext(t.Context(), reader, target, "sess-1")
 			localErr := requireLocalErrorCode(t, err, exterrors.CodeUnsupportedAgentKind)
 			assert.Contains(t, localErr.Message, kind)
+			assert.Contains(t, localErr.Message, "does not support session files")
 		})
 	}
 
@@ -311,6 +312,42 @@ func TestPrepareDirectFilesContext(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, serviceErr.StatusCode)
 		assert.Contains(t, serviceErr.ErrorCode, exterrors.OpGetAgent)
 		assert.NotEmpty(t, serviceErr.Suggestion)
+	})
+}
+
+func TestCheckDirectSessionTarget(t *testing.T) {
+	direct := &sessionContext{endpoint: testProjectEndpoint, agentName: "support-prod", direct: true}
+
+	t.Run("project mode does not read the agent", func(t *testing.T) {
+		reader := &fakeRemoteAgentReader{agent: agentWithKind("support-prod", "prompt")}
+		require.NoError(t, checkDirectSessionTarget(t.Context(), reader,
+			&sessionContext{endpoint: testProjectEndpoint, agentName: "support-prod"}))
+		assert.Zero(t, reader.gotCalls)
+	})
+
+	for _, kind := range []string{"hosted", ""} {
+		t.Run("allows kind="+kind, func(t *testing.T) {
+			reader := &fakeRemoteAgentReader{agent: agentWithKind("support-prod", kind)}
+			require.NoError(t, checkDirectSessionTarget(t.Context(), reader, direct))
+			assert.Equal(t, "support-prod", reader.gotName)
+		})
+	}
+
+	for _, kind := range []string{"prompt", "workflow"} {
+		t.Run("rejects "+kind, func(t *testing.T) {
+			reader := &fakeRemoteAgentReader{agent: agentWithKind("support-prod", kind)}
+			err := checkDirectSessionTarget(t.Context(), reader, direct)
+			localErr := requireLocalErrorCode(t, err, exterrors.CodeUnsupportedAgentKind)
+			assert.Contains(t, localErr.Message, kind)
+			assert.Contains(t, localErr.Message, "does not support sessions")
+		})
+	}
+
+	t.Run("agent not found", func(t *testing.T) {
+		reader := &fakeRemoteAgentReader{err: newTestResponseError(t, http.StatusNotFound)}
+		err := checkDirectSessionTarget(t.Context(), reader, direct)
+		localErr := requireLocalErrorCode(t, err, exterrors.CodeAgentNotFound)
+		assert.Contains(t, localErr.Message, testProjectEndpoint)
 	})
 }
 

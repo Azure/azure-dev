@@ -131,11 +131,7 @@ func prepareDirectFilesContext(
 	target *AgentContext,
 	sessionID string,
 ) (*filesContext, error) {
-	agent, err := getDirectAgent(ctx, client, target)
-	if err != nil {
-		return nil, err
-	}
-	if err := requireSessionFilesSupport(agent); err != nil {
+	if err := requireDirectSessionSupport(ctx, client, target, featureSessionFiles); err != nil {
 		return nil, err
 	}
 	return &filesContext{AgentContext: target, sessionID: sessionID}, nil

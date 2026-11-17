@@ -219,17 +219,35 @@ func classifyDirectAgentError(err error, target *AgentContext) error {
 	return exterrors.ServiceFromAzure(err, exterrors.OpGetAgent)
 }
 
-// requireSessionFilesSupport rejects agent kinds that never have session
+// Features named in unsupported-kind errors for directly targeted agents.
+const (
+	featureSessions     = "sessions"
+	featureSessionFiles = "session files"
+)
+
+// requireDirectSessionSupport reads a directly targeted agent and rejects kinds
+// that never have sessions, before any session API request is sent.
+func requireDirectSessionSupport(
+	ctx context.Context, client remoteAgentReader, target *AgentContext, feature string,
+) error {
+	agent, err := getDirectAgent(ctx, client, target)
+	if err != nil {
+		return err
+	}
+	return requireSessionSupport(agent, feature)
+}
+
+// requireSessionSupport rejects agent kinds that never have sessions or session
 // filesystems. Agents without a declared kind are left to the service.
-func requireSessionFilesSupport(agent *agent_api.AgentObject) error {
+func requireSessionSupport(agent *agent_api.AgentObject, feature string) error {
 	definition, _ := agent.Versions.Latest.Definition.(map[string]any)
 	kind, _ := definition["kind"].(string)
 	switch agent_api.AgentKind(kind) {
 	case agent_api.AgentKindPrompt, agent_api.AgentKindWorkflow:
 		return exterrors.Compatibility(
 			exterrors.CodeUnsupportedAgentKind,
-			fmt.Sprintf("agent %q has kind %q, which does not support session files", agent.Name, kind),
-			"session files are available only for hosted agents",
+			fmt.Sprintf("agent %q has kind %q, which does not support %s", agent.Name, kind, feature),
+			feature+" are available only for hosted agents",
 		)
 	}
 	return nil

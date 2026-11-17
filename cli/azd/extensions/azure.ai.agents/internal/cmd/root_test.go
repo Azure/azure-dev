@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -49,8 +50,21 @@ func TestRootCommand_PublicPreviewCommandsVisible(t *testing.T) {
 	}
 }
 
-func TestVoicePublicPreviewHelp(t *testing.T) {
-	setPreviewProcess(t, "true")
+func TestVoiceGAHelp(t *testing.T) {
+	for _, value := range []string{"unset", "false"} {
+		t.Run(value, func(t *testing.T) {
+			clearPreviewProcess(t)
+			t.Setenv("AZD_ALPHA_ENABLE_AGENTS_VOICE", "false")
+			if value == "unset" {
+				require.NoError(t, os.Unsetenv("AZD_ALPHA_ENABLE_AGENTS_VOICE"))
+			}
+			checkVoiceGAHelp(t)
+		})
+	}
+}
+
+func checkVoiceGAHelp(t *testing.T) {
+	t.Helper()
 	t.Setenv("NO_COLOR", "1")
 	for _, tt := range []struct {
 		name     string
@@ -122,6 +136,7 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 				require.NotContains(t, text, unwanted)
 			}
 			require.NotContains(t, strings.ToLower(text), "private preview")
+			require.NotContains(t, text, "AZD_ALPHA_ENABLE_AGENTS_VOICE")
 		})
 	}
 }

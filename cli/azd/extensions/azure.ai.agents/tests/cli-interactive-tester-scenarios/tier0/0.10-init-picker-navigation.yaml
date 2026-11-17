@@ -11,7 +11,7 @@ tags: ["tier:0", "cmd:init", "picker", "parallel-safe"]
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
 
-# Voice is explicitly enabled for this picker-navigation scenario.
+# Voice is available by default without a feature switch.
 # Seed a file so the picker also includes the existing-code option.
 pre:
   - run: "rm -rf ~/working/azd-agents-picker-{instance}"

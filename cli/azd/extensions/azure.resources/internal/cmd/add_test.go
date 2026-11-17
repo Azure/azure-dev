@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -31,6 +30,7 @@ type addPromptServer struct {
 	acceptProvision    bool
 	confirmations      []*v1.ConfirmRequest
 	layerPrompts       int
+	layerName          string
 	followUp           string
 	commands           [][]string
 	hostProject        string
@@ -51,6 +51,9 @@ func (s *addPromptServer) Prompt(_ context.Context, req *v1.PromptRequest) (*v1.
 	}
 	if strings.Contains(req.Options.Message, "layer") {
 		s.layerPrompts++
+		if s.layerName != "" {
+			value = s.layerName
+		}
 	}
 	if value == "" {
 		value = "cache"
@@ -313,12 +316,16 @@ func TestAddExistingLayerDeclineDoesNotWrite(t *testing.T) {
 	for _, provider := range []string{"resources", "bicep", "terraform"} {
 		t.Run(provider, func(t *testing.T) {
 			original := "name: example\ninfra:\n  layers:\n    - name: data\n      provider: " + provider + "\n"
-			prompts := &addPromptServer{}
-			saved, _, environment, err := runAddTest(t, original, []string{"--layer", "data"}, prompts)
+			prompts := &addPromptServer{layerName: "data"}
+			saved, _, environment, err := runAddTest(t, original, nil, prompts)
 			require.NoError(t, err)
 			require.Equal(t, original, saved)
 			require.Zero(t, environment.writes)
-			require.Zero(t, prompts.layerPrompts, "explicit --layer must not prompt for another name")
+			if provider == "resources" {
+				require.Zero(t, prompts.layerPrompts)
+			} else {
+				require.Equal(t, 1, prompts.layerPrompts)
+			}
 			require.Len(t, prompts.confirmations, 1)
 			require.Equal(t, new(false), prompts.confirmations[0].Options.DefaultValue)
 		})
@@ -327,19 +334,22 @@ func TestAddExistingLayerDeclineDoesNotWrite(t *testing.T) {
 
 func TestAddNoPromptLeavesProjectUnchanged(t *testing.T) {
 	original := "name: example\n"
-	saved, _, environment, err := runAddTest(t, original, []string{"--no-prompt", "--layer", "data"},
+	saved, _, environment, err := runAddTest(t, original, []string{"--no-prompt"},
 		&addPromptServer{})
 	require.ErrorContains(t, err, "requires interactive input")
 	require.Equal(t, original, saved)
 	require.Zero(t, environment.writes)
 }
 
-func TestAddExplicitEmptyLayerIsRejected(t *testing.T) {
+func TestAddRejectsInvalidPromptedLayer(t *testing.T) {
 	original := "name: example\n"
-	saved, _, environment, err := runAddTest(t, original, []string{"--layer="}, &addPromptServer{})
-	require.ErrorContains(t, err, "--layer")
+	prompts := &addPromptServer{layerName: "../invalid"}
+	saved, _, host, err := runAddTest(t, original, nil, prompts)
+	require.ErrorContains(t, err, "invalid infrastructure layer name")
 	require.Equal(t, original, saved)
-	require.Zero(t, environment.writes)
+	require.Equal(t, 1, prompts.layerPrompts)
+	require.Empty(t, host.project.layerRequests)
+	require.Zero(t, host.writes)
 }
 
 func TestAddInvalidProjectDoesNotPromptOrWrite(t *testing.T) {
@@ -362,15 +372,15 @@ func TestAddRejectsUnsupportedOutput(t *testing.T) {
 }
 
 func TestAddWizardWritesOnlySelectedLayerConfig(t *testing.T) {
-	prompts := &addPromptServer{}
-	saved, output, host, err := runAddTest(t, "name: example\n", []string{"--layer", "data"}, prompts)
+	prompts := &addPromptServer{layerName: "data"}
+	saved, output, host, err := runAddTest(t, "name: example\n", nil, prompts)
 	require.NoError(t, err)
 	project := readAddTestProject(t, saved, "data")
 	require.Len(t, project.config, 2)
 	require.Equal(t, "db.redis", project.config["redis"].Type)
 	require.Equal(t, "keyvault", project.config["vault"].Type)
 	require.NotContains(t, saved, "\nresources:")
-	require.Zero(t, prompts.layerPrompts)
+	require.Equal(t, 1, prompts.layerPrompts)
 	require.Empty(t, prompts.confirmations, "new layers are saved without final confirmation")
 	require.Contains(t, output, "azure.yaml updated:\n"+
 		"  Added resources layer \"data\".\n"+
@@ -397,6 +407,99 @@ func TestAddWizardSavesAfterPromptingForLayer(t *testing.T) {
 	require.Empty(t, prompts.confirmations)
 }
 
+func TestAddReusesExistingResourcesLayerWithoutNamePrompt(t *testing.T) {
+	original := `name: example
+infra:
+  layers:
+    - name: data
+      provider: resources
+`
+	prompts := &addPromptServer{acceptExisting: true}
+
+	saved, output, host, err := runAddTest(t, original, nil, prompts)
+	require.NoError(t, err)
+
+	// Add the wizard's resources to data instead of creating a second layer.
+	project := readAddTestProject(t, saved, "data")
+	require.Len(t, project.layers, 1)
+	require.Len(t, project.config, 2)
+
+	require.Zero(t, prompts.layerPrompts)
+	require.Len(t, prompts.confirmations, 1)
+	require.Equal(t, `Add resources to existing layer "data"?`, prompts.confirmations[0].Options.Message)
+	require.Equal(t, new(false), prompts.confirmations[0].Options.DefaultValue)
+
+	require.Len(t, host.project.layerRequests, 1)
+	require.Contains(t, output, "azd provision data")
+}
+
+func TestAddReusesResourcesLayerAndPreservesOtherLayers(t *testing.T) {
+	original := `name: example
+infra:
+  layers:
+    - name: platform
+      provider: bicep
+      path: infra/platform
+    - name: data
+      provider: resources
+      config:
+        files:
+          type: storage
+`
+	prompts := &addPromptServer{acceptExisting: true}
+
+	saved, output, host, err := runAddTest(t, original, nil, prompts)
+	require.NoError(t, err)
+
+	project := readAddTestProject(t, saved, "data")
+	require.Len(t, project.layers, 2)
+	require.Equal(t, map[string]any{
+		"name": "platform", "provider": "bicep", "path": "infra/platform",
+	}, project.layers[0])
+	require.Equal(t, 1, project.index)
+	require.Len(t, project.config, 3)
+	require.Equal(t, "storage", project.config["files"].Type)
+	require.Equal(t, "db.redis", project.config["redis"].Type)
+	require.Equal(t, "keyvault", project.config["vault"].Type)
+
+	require.Zero(t, prompts.layerPrompts)
+	require.Len(t, prompts.confirmations, 1)
+	require.Equal(t, `Add resources to existing layer "data"?`, prompts.confirmations[0].Options.Message)
+	require.Equal(t, new(false), prompts.confirmations[0].Options.DefaultValue)
+	require.Len(t, host.project.layerRequests, 1)
+	require.Empty(t, host.project.requests)
+	require.Contains(t, output, "Updated resources layer \"data\".")
+	require.Contains(t, output, "azd provision data")
+}
+
+func TestAddDoesNotDefaultToLayerWithoutExplicitProvider(t *testing.T) {
+	// infra declares resources, but data itself has no provider and must not inherit it.
+	original := `name: example
+infra:
+  provider: resources
+  layers:
+    - name: data
+`
+	prompts := &addPromptServer{}
+
+	// Accept the wizard's default name rather than explicitly selecting data.
+	saved, output, host, err := runAddTest(t, original, nil, prompts)
+	require.NoError(t, err)
+
+	// Preserve data and append the default resources layer with the wizard's resources.
+	project := readAddTestProject(t, saved, defaultResourcesLayer)
+	require.Len(t, project.layers, 2)
+	require.Equal(t, map[string]any{"name": "data"}, project.layers[0])
+	require.Equal(t, defaultResourcesLayer, project.resourcesLayer)
+	require.Len(t, project.config, 2)
+
+	// Creating a new layer needs no reuse confirmation; the follow-up must name the new layer.
+	require.Equal(t, 1, prompts.layerPrompts)
+	require.Empty(t, prompts.confirmations)
+	require.Len(t, host.project.layerRequests, 1)
+	require.Contains(t, output, "azd provision "+defaultResourcesLayer)
+}
+
 func TestAddWizardReplacesOnlyExplicitlyAcceptedLayer(t *testing.T) {
 	original := `name: example
 infra:
@@ -408,8 +511,8 @@ infra:
       provider: bicep
       path: infra/native
 `
-	prompts := &addPromptServer{acceptExisting: true}
-	saved, output, _, err := runAddTest(t, original, []string{"--layer", "data"}, prompts)
+	prompts := &addPromptServer{acceptExisting: true, layerName: "data"}
+	saved, output, _, err := runAddTest(t, original, nil, prompts)
 	require.NoError(t, err)
 	project := readAddTestProject(t, saved, "data")
 	require.Equal(t, "resources", project.provider)
@@ -477,13 +580,13 @@ infra:
 		{name: "resource", wantApply: []string{"provision", "application", "--environment", "staging"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			prompts := &addPromptServer{followUp: "Yes (preview changes)", acceptProvision: true}
+			prompts := &addPromptServer{followUp: "Yes (preview changes)", acceptProvision: true, layerName: "application"}
 			if test.hasService {
 				dir := t.TempDir()
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("fastapi\n"), 0o600))
 				prompts.hostProject = dir
 			}
-			_, _, _, err := runAddTest(t, original, []string{"--layer", "application", "--environment", "staging"}, prompts)
+			_, _, _, err := runAddTest(t, original, []string{"--environment", "staging"}, prompts)
 			require.NoError(t, err)
 			require.Equal(t, [][]string{
 				{"provision", "application", "--preview", "--environment", "staging"},
@@ -541,35 +644,18 @@ func TestAddHostPreviewDoesNotDeployWithoutSuccessfulConfirmation(t *testing.T) 
 	}
 }
 
-func TestAddRejectsSecondResourcesLayerWithoutMutations(t *testing.T) {
-	for _, inherited := range []bool{false, true} {
-		t.Run(fmt.Sprint(inherited), func(t *testing.T) {
-			infraProvider, layerProvider := "", "      provider: resources\n"
-			if inherited {
-				infraProvider, layerProvider = "  provider: resources\n", ""
-			}
-			original := "name: example\ninfra:\n" + infraProvider + "  layers:\n    - name: data\n" + layerProvider
-			prompts := &addPromptServer{}
-			saved, _, host, err := runAddTest(t, original, []string{"--layer", "app"}, prompts)
-			require.ErrorContains(t, err, "only one resources infrastructure entry")
-			require.Equal(t, original, saved)
-			require.Empty(t, host.project.layerRequests)
-			require.Empty(t, host.saved)
-			require.Empty(t, prompts.confirmations)
-			require.Zero(t, prompts.layerPrompts)
-		})
-	}
-}
-
-func TestAddFixedDefaultDoesNotSelectExistingResourcesLayer(t *testing.T) {
+func TestAddExistingResourcesLayerDeclineDoesNotPromptForNameOrWrite(t *testing.T) {
 	original := "name: example\ninfra:\n  layers:\n    - name: data\n      provider: resources\n"
 	prompts := &addPromptServer{}
+
 	saved, _, host, err := runAddTest(t, original, nil, prompts)
-	require.ErrorContains(t, err, "only one resources infrastructure entry")
-	require.ErrorContains(t, err, "infra.azureresources")
+
+	// Declining is a successful cancellation, with no project or environment writes.
+	require.NoError(t, err)
 	require.Equal(t, original, saved)
-	require.Equal(t, 1, prompts.layerPrompts)
-	require.Empty(t, prompts.confirmations)
+	require.Zero(t, prompts.layerPrompts)
+	require.Len(t, prompts.confirmations, 1)
+	require.Equal(t, `Add resources to existing layer "data"?`, prompts.confirmations[0].Options.Message)
 	require.Empty(t, host.project.layerRequests)
 	require.Empty(t, host.saved)
 }
@@ -580,7 +666,7 @@ func TestAddRejectsMissingSelectedEnvironmentBeforeMutations(t *testing.T) {
 		environmentError:   status.Error(codes.NotFound, "environment not found"),
 		existingResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/shared",
 	}
-	saved, _, host, err := runAddTest(t, original, []string{"--layer", "data", "--environment", "missing"}, prompts)
+	saved, _, host, err := runAddTest(t, original, []string{"--environment", "missing"}, prompts)
 	require.ErrorContains(t, err, `getting environment "missing"`)
 	require.Equal(t, original, saved)
 	require.Zero(t, host.currentCalls)
@@ -595,7 +681,7 @@ func TestAddUsesSelectedEnvironmentForDiscoverySavingAndWorkflow(t *testing.T) {
 	for _, selection := range []string{"flag", "environment variable"} {
 		t.Run(selection, func(t *testing.T) {
 			t.Setenv("AZD_ENVIRONMENT", "")
-			args := []string{"--layer", "data"}
+			var args []string
 			if selection == "flag" {
 				args = append(args, "--environment", "staging")
 			} else {
@@ -603,6 +689,7 @@ func TestAddUsesSelectedEnvironmentForDiscoverySavingAndWorkflow(t *testing.T) {
 			}
 			prompts := &addPromptServer{
 				followUp: "Yes (preview changes)", acceptProvision: true,
+				layerName: "data",
 				existingResourceID: "/subscriptions/sub/resourceGroups/rg/providers/" +
 					"Microsoft.Storage/storageAccounts/shared",
 			}

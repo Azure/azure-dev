@@ -135,8 +135,8 @@ func TestAddServicePayloadValidationBeforeSaving(t *testing.T) {
 func TestAddHostCommandDelegatesServiceWriteToRPC(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("fastapi\n"), 0o600))
-	prompts := &addPromptServer{hostProject: dir}
-	saved, output, host, err := runAddTest(t, "name: example\n", []string{"--layer", "application"}, prompts)
+	prompts := &addPromptServer{hostProject: dir, layerName: "application"}
+	saved, output, host, err := runAddTest(t, "name: example\n", nil, prompts)
 	require.NoError(t, err)
 	require.Len(t, host.project.requests, 1)
 	request := host.project.requests[0]
@@ -158,9 +158,10 @@ func TestAddHostCommandRestoresProjectAfterServiceRPCFailure(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("fastapi\n"), 0o600))
 	prompts := &addPromptServer{
 		hostProject: dir, serviceError: status.Error(codes.PermissionDenied, "service update denied"),
+		layerName: "application",
 	}
 	original := "name: example\n"
-	saved, output, host, err := runAddTest(t, original, []string{"--layer", "application"}, prompts)
+	saved, output, host, err := runAddTest(t, original, nil, prompts)
 	require.ErrorContains(t, err, "saving services.")
 	require.ErrorContains(t, err, "azure.yaml was left unchanged")
 	require.Len(t, host.project.requests, 1)
@@ -176,9 +177,10 @@ func TestAddLayerRPCFailureStopsBeforeServiceWrites(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("fastapi\n"), 0o600))
 	prompts := &addPromptServer{
 		hostProject: dir, layerError: status.Error(codes.PermissionDenied, "layer update denied"),
+		layerName: "application",
 	}
 	original := "name: example\n"
-	saved, output, host, err := runAddTest(t, original, []string{"--layer", "application"}, prompts)
+	saved, output, host, err := runAddTest(t, original, nil, prompts)
 	require.ErrorContains(t, err, `saving infrastructure layer "application"`)
 	require.ErrorContains(t, err, "layer update denied")
 	require.Equal(t, original, saved)

@@ -22,17 +22,20 @@ import (
 const defaultResourcesLayer = "azureresources"
 
 type addProject struct {
-	layers   []any
-	index    int
-	target   map[string]any
-	provider string
-	config   resources.Config
-	services map[string]map[string]any
+	layers         []any
+	index          int
+	target         map[string]any
+	provider       string
+	resourcesLayer string
+	config         resources.Config
+	services       map[string]map[string]any
 }
 
 func loadProject(ctx context.Context, client azdext.ProjectServiceClient) (map[string]any, error) {
 	project := map[string]any{}
-	for _, path := range []string{"resources", "layers", "services", "infra"} {
+	for _, path := range []string{
+		resources.FieldResources, resources.FieldLayers, resources.FieldServices, resources.FieldInfra,
+	} {
 		response, err := client.GetConfigValue(ctx, &azdext.GetProjectConfigValueRequest{Path: path})
 		if err != nil {
 			return nil, fmt.Errorf("reading project %s: %w", path, err)
@@ -44,98 +47,145 @@ func loadProject(ctx context.Context, client azdext.ProjectServiceClient) (map[s
 	return project, nil
 }
 
+// parseProject validates that the project is compatible with 'resources' and parses
+// it.
 func parseProject(project map[string]any, layerName string) (*addProject, error) {
-	if layerName == "" {
-		return nil, errors.New("infrastructure layer name must not be empty")
-	}
-	if err := resources.ValidateEntryName(layerName); err != nil {
-		return nil, fmt.Errorf("invalid infrastructure layer name: %w", err)
-	}
-	if legacy, ok := project["resources"].(map[string]any); ok && len(legacy) > 0 {
-		return nil, errors.New("azd resources add writes to infra.layers[].config, not top-level resources; " +
-			"migrate legacy resources before using this command")
-	}
-	if _, exists := project["layers"]; exists {
-		return nil, errors.New("azd resources add currently supports infra.layers, not top-level project layers")
-	}
-	if err := resources.ValidateProjectLayers(project, ""); err != nil {
+	if err := validateProjectForResources(project, layerName); err != nil {
 		return nil, err
 	}
-	p := &addProject{index: -1, config: resources.Config{}, services: map[string]map[string]any{}}
-	if services, exists := project["services"]; exists {
-		serviceMap, ok := services.(map[string]any)
-		if !ok {
-			return nil, errors.New("services must be a mapping")
-		}
-		for name, value := range serviceMap {
-			service, ok := value.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("service %q must be a mapping", name)
-			}
-			p.services[name] = service
-		}
+
+	services, err := parseServices(project)
+	if err != nil {
+		return nil, err
 	}
-	if value, exists := project["infra"]; exists {
-		infra, ok := value.(map[string]any)
+
+	layers, err := parseInfra(project)
+	if err != nil {
+		return nil, err
+	}
+
+	addProjectState := &addProject{
+		index: -1, config: resources.Config{}, services: services, layers: layers,
+	}
+	if err := addProjectState.readLayers(layerName); err != nil {
+		return nil, err
+	}
+
+	return addProjectState, nil
+}
+
+func validateProjectForResources(project map[string]any, layerName string) error {
+	if layerName == "" {
+		return errors.New("infrastructure layer name must not be empty")
+	}
+	if err := resources.ValidateEntryName(layerName); err != nil {
+		return fmt.Errorf("invalid infrastructure layer name: %w", err)
+	}
+
+	// the old top level .Resources isn't compatible with our approach
+	if legacy, ok := project[resources.FieldResources].(map[string]any); ok && len(legacy) > 0 {
+		return errors.New("azd resources add writes to infra.layers[].config, not top-level resources; " +
+			"migrate legacy resources before using this command")
+	}
+
+	if _, exists := project[resources.FieldLayers]; exists {
+		return errors.New("azd resources add currently supports infra.layers, not top-level project layers")
+	}
+
+	return resources.ValidateProjectLayers(project, "")
+}
+
+func parseServices(project map[string]any) (map[string]map[string]any, error) {
+	services := map[string]map[string]any{}
+	raw, exists := project[resources.FieldServices]
+	if !exists {
+		return services, nil
+	}
+
+	serviceMap, ok := raw.(map[string]any)
+	if !ok {
+		return nil, errors.New("services must be a mapping")
+	}
+	for name, value := range serviceMap {
+		service, ok := value.(map[string]any)
 		if !ok {
-			return nil, errors.New("infra must be a mapping")
+			return nil, fmt.Errorf("service %q must be a mapping", name)
 		}
-		if layers, exists := infra["layers"]; exists {
-			p.layers, ok = layers.([]any)
-			if !ok {
-				return nil, errors.New("infra.layers must be a sequence")
-			}
-		} else if len(infra) > 0 {
+		services[name] = service
+	}
+
+	return services, nil
+}
+
+func parseInfra(project map[string]any) ([]any, error) {
+	raw, exists := project[resources.FieldInfra]
+	if !exists {
+		return nil, nil
+	}
+
+	infra, ok := raw.(map[string]any)
+	if !ok {
+		return nil, errors.New("infra must be a mapping")
+	}
+	rawLayers, exists := infra[resources.FieldLayers]
+	if !exists {
+		if len(infra) > 0 {
 			return nil, errors.New("move existing flat infrastructure into infra.layers before using azd resources add")
 		}
+		return nil, nil
 	}
-	names := map[string]bool{}
+
+	layers, ok := rawLayers.([]any)
+	if !ok {
+		return nil, errors.New("infra.layers must be a sequence")
+	}
+	return layers, nil
+}
+
+func (p *addProject) readLayers(layerName string) error {
 	for i, value := range p.layers {
-		layer, ok := value.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("infra.layers[%d] must be a mapping", i)
+		layer, err := resources.UnmarshalProjectLayer(value)
+		if err != nil {
+			return fmt.Errorf("infra.layers[%d] %w", i, err)
 		}
-		name, ok := layer["name"].(string)
-		if !ok || name == "" || names[name] {
-			return nil, fmt.Errorf("infra.layers[%d] requires a unique, nonempty name", i)
+		if layer.Provider == resources.ProviderName {
+			p.resourcesLayer = layer.Name
 		}
-		names[name] = true
-		if name != layerName {
-			continue
-		}
-		p.index, p.target = i, layer
-		provider, exists := layer["provider"]
-		if !exists {
-			infra, ok := project["infra"].(map[string]any)
-			if !ok {
-				return nil, errors.New("infra must be a mapping")
-			}
-			provider = infra["provider"]
-		}
-		p.provider, ok = provider.(string)
-		if provider != nil && !ok {
-			return nil, fmt.Errorf("layer %q provider must be a string", layerName)
-		}
-		if p.provider != resources.ProviderName {
-			continue
-		}
-		config, exists := layer["config"]
-		if !exists {
-			continue
-		}
-		raw, ok := config.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("layer %q config must be a mapping", layerName)
-		}
-		if len(raw) > 0 {
-			config, err := resources.Decode(raw)
-			if err != nil {
-				return nil, fmt.Errorf("layer %q: %w", layerName, err)
-			}
-			p.config = config
+
+		if layer.Name == layerName {
+			p.index, p.target, p.provider = i, layer.Raw, layer.Provider
 		}
 	}
-	return p, nil
+
+	if p.provider == resources.ProviderName {
+		config, err := unmarshalResourceConfig(p.target, layerName)
+		if err != nil {
+			return err
+		}
+		p.config = config
+	}
+	return nil
+}
+
+func unmarshalResourceConfig(layer map[string]any, layerName string) (resources.Config, error) {
+	value, exists := layer[resources.FieldConfig]
+	if !exists {
+		return resources.Config{}, nil
+	}
+
+	raw, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("layer %q config must be a mapping", layerName)
+	}
+	if len(raw) == 0 {
+		return resources.Config{}, nil
+	}
+
+	config, err := resources.Decode(raw)
+	if err != nil {
+		return nil, fmt.Errorf("layer %q: %w", layerName, err)
+	}
+	return config, nil
 }
 
 func (p *addProject) layerChange(
@@ -148,16 +198,23 @@ func (p *addProject) layerChange(
 	if err := result.Resources.Validate(); err != nil {
 		return nil, err
 	}
+
 	layers := slices.Clone(p.layers)
-	layer := map[string]any{"name": layerName, "provider": resources.ProviderName, "config": raw}
+
+	layer := map[string]any{
+		resources.FieldName:     layerName,
+		resources.FieldProvider: resources.ProviderName,
+		resources.FieldConfig:   raw,
+	}
+
 	if p.target != nil && p.provider == resources.ProviderName {
 		layer = maps.Clone(p.target)
 		config := map[string]any{}
-		if existing, ok := layer["config"].(map[string]any); ok {
+		if existing, ok := layer[resources.FieldConfig].(map[string]any); ok {
 			config = maps.Clone(existing)
 		}
 		maps.Copy(config, raw)
-		layer["config"] = config
+		layer[resources.FieldConfig] = config
 	}
 	if p.index < 0 {
 		layers = append(layers, layer)
@@ -168,7 +225,9 @@ func (p *addProject) layerChange(
 	if err != nil {
 		return nil, err
 	}
-	return &azdext.SetProjectConfigValueRequest{Path: "infra.layers", Value: value}, nil
+	return &azdext.SetProjectConfigValueRequest{
+		Path: resources.FieldInfra + "." + resources.FieldLayers, Value: value,
+	}, nil
 }
 
 // serviceChanges prepares every RPC payload before any project mutation.
@@ -186,7 +245,9 @@ func (p *addProject) serviceChanges(result *add.Result) ([]*azdext.SetProjectCon
 		if err != nil {
 			return nil, fmt.Errorf("encoding service %q: %w", name, err)
 		}
-		requests = append(requests, &azdext.SetProjectConfigSectionRequest{Path: "services." + name, Section: section})
+		requests = append(requests, &azdext.SetProjectConfigSectionRequest{
+			Path: resources.FieldServices + "." + name, Section: section,
+		})
 	}
 	return requests, nil
 }
@@ -217,7 +278,7 @@ func saveAddServices(
 
 // restoreAddProject puts infra and services back to the values read before add started.
 func restoreAddProject(ctx context.Context, client azdext.ProjectServiceClient, original map[string]any) error {
-	for _, path := range []string{"services", "infra"} {
+	for _, path := range []string{resources.FieldServices, resources.FieldInfra} {
 		value, existed := original[path]
 		if !existed {
 			if _, err := client.UnsetConfig(ctx, &azdext.UnsetProjectConfigRequest{Path: path}); err != nil {

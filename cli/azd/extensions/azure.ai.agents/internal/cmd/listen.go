@@ -404,6 +404,7 @@ func predeployHandler(
 			Message: notice,
 		})
 	}
+	messages = append(messages, project.CheckCodePackageSecrets(ctx, svc, args.Project.GetPath())...)
 	response := &azdext.BetaServiceEventResponse{Messages: messages}
 	fail := func(err error) (*azdext.BetaServiceEventResponse, error) {
 		return response, err

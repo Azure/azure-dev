@@ -9,8 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	gitignore "github.com/denormal/go-gitignore"
@@ -37,6 +40,23 @@ appPackage.zip
 TEAMS_APP_SETUP.md
 `
 
+// sensitiveExclusionsContent lists paths that commonly hold secrets or local state:
+// .env files, azd environment values under .azure/, and git history. Unlike the other
+// defaults, they also apply when the project has its own .agentignore, so a file written
+// for an unrelated reason can't silently ship them. Because later gitignore patterns win,
+// that file can still re-include one with an explicit negation.
+const sensitiveExclusionsContent = `# Security / secrets. Excluded even when removed from this file;
+# re-include one only if the agent must deploy it, for example: !.env
+.env
+.env.*
+.azure/
+.git/
+`
+
+// sensitiveMatcher matches only sensitiveExclusionsContent. Relative matching ignores
+// the base directory, so one matcher serves every source directory.
+var sensitiveMatcher = gitignore.New(strings.NewReader(sensitiveExclusionsContent), "", nil)
+
 // utf8BOM is the byte order mark that some Windows editors prepend to UTF-8 files.
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
@@ -47,7 +67,9 @@ type agentIgnoreMatcher struct {
 }
 
 // newAgentIgnoreMatcher creates a matcher by reading .agentignore from srcDir.
-// If no .agentignore exists, defaults are used.
+// If no .agentignore exists, defaults are used. A user file replaces the defaults
+// except for the sensitive and azd-managed exclusions, which still apply unless the
+// file re-includes a path with a negation.
 func newAgentIgnoreMatcher(ctx context.Context, srcDir string) (*agentIgnoreMatcher, error) {
 	_ = ctx // reserved for future cancellation support
 	m := &agentIgnoreMatcher{}
@@ -119,9 +141,114 @@ func loadAgentIgnore(ctx context.Context, srcDir string) (gitignore.GitIgnore, e
 
 	// Strip UTF-8 BOM
 	data = bytes.TrimPrefix(data, utf8BOM)
-	data = append([]byte(azdManagedExclusionsContent+"\n"), data...)
+
+	// Always-applied exclusions go first. gitignore lets later patterns win, so they hold
+	// unless the user's file explicitly re-includes a path with a negation.
+	data = append([]byte(sensitiveExclusionsContent+"\n"+azdManagedExclusionsContent+"\n"), data...)
 
 	return gitignore.New(bytes.NewReader(data), srcDir, nil), nil
+}
+
+// walkCodePackageFiles calls visit for every file that code deploy packages from srcDir:
+// regular files the matcher doesn't exclude, outside excluded directories. relPath is
+// relative to srcDir and uses forward slashes.
+func walkCodePackageFiles(
+	srcDir string,
+	matcher *agentIgnoreMatcher,
+	visit func(path, relPath string) error,
+) error {
+	return filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Get relative path
+		relPath, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+
+		// Skip root
+		if relPath == "." {
+			return nil
+		}
+
+		// Normalize to forward slashes for ZIP
+		relPath = filepath.ToSlash(relPath)
+
+		// Skip symlinked directories to avoid traversing outside the project root
+		if d.IsDir() && d.Type()&fs.ModeSymlink != 0 {
+			return filepath.SkipDir
+		}
+
+		// Check directory exclusions
+		if d.IsDir() {
+			if matcher.ShouldExclude(relPath, true) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Skip symlinks to avoid including files outside the agent directory
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+
+		// Check file exclusions
+		if matcher.ShouldExclude(relPath, false) {
+			return nil
+		}
+
+		return visit(path, relPath)
+	})
+}
+
+// codePackageSensitivePaths lists what code deploy would package from srcDir even though
+// sensitiveExclusionsContent matches it, which happens only when the project's
+// .agentignore re-includes it. The result is sorted, and a re-included directory is
+// reported once (for example ".git/") rather than file by file.
+func codePackageSensitivePaths(ctx context.Context, srcDir string) ([]string, error) {
+	matcher, err := newAgentIgnoreMatcher(ctx, srcDir)
+	if err != nil {
+		return nil, err
+	}
+	if !matcher.hasUserIgnore {
+		// The built-in defaults exclude every sensitive path.
+		return nil, nil
+	}
+
+	found := map[string]struct{}{}
+	err = walkCodePackageFiles(srcDir, matcher, func(_, relPath string) error {
+		if root := sensitivePathRoot(relPath); root != "" {
+			found[root] = struct{}{}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.Sorted(maps.Keys(found)), nil
+}
+
+// sensitivePathRoot returns the shortest prefix of relPath, a packaged file path relative
+// to the source directory, that sensitiveExclusionsContent matches, or "" when none does.
+// A matching directory prefix keeps its trailing slash.
+func sensitivePathRoot(relPath string) string {
+	for i, r := range relPath {
+		if r == '/' && matchesSensitivePath(relPath[:i], true) {
+			return relPath[:i+1]
+		}
+	}
+	if matchesSensitivePath(relPath, false) {
+		return relPath
+	}
+	return ""
+}
+
+func matchesSensitivePath(relPath string, isDir bool) bool {
+	match := sensitiveMatcher.Relative(relPath, isDir)
+	return match != nil && match.Ignore()
 }
 
 // DefaultAgentIgnoreContent returns the default .agentignore file content
@@ -146,12 +273,7 @@ appPackage.zip
 .appPackage.zip.azd-generated
 TEAMS_APP_SETUP.md
 
-# Security / secrets
-.env
-.env.*
-.azure/
-.git/
-
+` + sensitiveExclusionsContent + `
 # Python
 __pycache__/
 .venv/

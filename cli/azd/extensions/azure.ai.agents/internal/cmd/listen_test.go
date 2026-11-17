@@ -1464,6 +1464,42 @@ func TestPredeployReturnsPreviewFeatureNotice(t *testing.T) {
 	require.Contains(t, response.Messages[0].Message, "Preview behavior may change.")
 }
 
+func TestPredeployWarnsAboutSecretsInCodePackage(t *testing.T) {
+	clearPreviewProcess(t)
+	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
+	root := t.TempDir()
+	srcDir := filepath.Join(root, "src")
+	require.NoError(t, os.MkdirAll(srcDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, ".agentignore"), []byte("!.env\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, ".env"), []byte("API_KEY=secret\n"), 0o600))
+	service := &azdext.ServiceConfig{
+		Name:         "code-agent",
+		Host:         AiAgentHost,
+		RelativePath: "src",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "hosted", "name": "code-agent",
+			"codeConfiguration": map[string]any{"runtime": "python_3_13", "entryPoint": "main.py"},
+		}),
+	}
+	project := &azdext.ProjectConfig{
+		Path: root, Services: map[string]*azdext.ServiceConfig{"code-agent": service},
+	}
+	client := newTestAzdClient(
+		t,
+		&testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}},
+		&testWorkflowServiceServer{},
+	)
+
+	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+		Project: project,
+		Service: service,
+	})
+	require.NoError(t, err)
+	require.Len(t, response.Messages, 1)
+	require.Equal(t, azdext.BetaServiceEventMessageWarning, response.Messages[0].Kind)
+	require.Contains(t, response.Messages[0].Message, ".agentignore re-includes them: .env")
+}
+
 func TestPredeployRejectsDisabledMemorySnapshotBeforeMutation(t *testing.T) {
 	clearPreviewProcess(t)
 	t.Setenv("AGENT_DEFINITION_PATH", "")

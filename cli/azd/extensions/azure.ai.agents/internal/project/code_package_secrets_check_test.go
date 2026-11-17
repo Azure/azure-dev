@@ -4,6 +4,8 @@
 package project
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -12,14 +14,24 @@ import (
 
 func TestCheckCodePackageSecrets(t *testing.T) {
 	tests := []struct {
-		name        string
-		codeConfig  map[string]any
-		wantWarning bool
+		name          string
+		codeConfig    map[string]any
+		packageCode   bool
+		wantWarning   bool
+		cleanupSource bool
 	}{
 		{
 			name:        "code agent",
 			codeConfig:  map[string]any{"runtime": "python_3_13", "entryPoint": "main.py"},
+			packageCode: true,
 			wantWarning: true,
+		},
+		{
+			name:          "code agent after source cleanup",
+			codeConfig:    map[string]any{"runtime": "python_3_13", "entryPoint": "main.py"},
+			packageCode:   true,
+			wantWarning:   true,
+			cleanupSource: true,
 		},
 		{
 			// .NET bundled mode packages `dotnet publish` output, not the source directory.
@@ -45,6 +57,20 @@ func TestCheckCodePackageSecrets(t *testing.T) {
 			}
 			writeTestFiles(t, root, files)
 
+			var packageArtifacts []*azdext.Artifact
+			if tt.packageCode {
+				zipPath, _, err := zipSourceDir(t.Context(), filepath.Join(root, "src"))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = os.Remove(zipPath) })
+				packageArtifacts = []*azdext.Artifact{{
+					Location: zipPath,
+					Metadata: map[string]string{"type": "code-zip"},
+				}}
+				if tt.cleanupSource {
+					require.NoError(t, os.RemoveAll(filepath.Join(root, "src")))
+				}
+			}
+
 			properties := map[string]any{"kind": "hosted", "name": "worker"}
 			if tt.codeConfig != nil {
 				properties["codeConfiguration"] = tt.codeConfig
@@ -56,7 +82,7 @@ func TestCheckCodePackageSecrets(t *testing.T) {
 				AdditionalProperties: mustStruct(t, properties),
 			}
 
-			messages := CheckCodePackageSecrets(t.Context(), svc, root)
+			messages := CheckCodePackageSecrets(t.Context(), svc, root, packageArtifacts)
 			if !tt.wantWarning {
 				require.Empty(t, messages)
 				return

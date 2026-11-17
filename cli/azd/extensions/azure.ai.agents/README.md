@@ -603,9 +603,11 @@ for two sets that azd always applies before your patterns:
 Because later patterns win, a negation in `.agentignore` can still re-include
 one of these paths, for example `!.env`. Do this only when the agent must deploy
 the file. If a negation re-includes `.env` files, `.azure/`, or `.git/`,
-`azd deploy` and `azd up` warn before uploading the package and list what it
-will include. The warning follows the same display rules as the
-[retained developer RBAC warnings](#retained-developer-rbac-warnings).
+the beta `predeploy` check returns a warning listing the paths in the package.
+When retained warnings are enabled, azd displays it after the deployment graph
+finishes, so it may appear after the package has been uploaded. Otherwise, it is
+available only in hook output, which the host may discard. See the
+[retained developer RBAC warnings](#retained-developer-rbac-warnings) for details.
 
 To ship files that the defaults leave out, edit the generated `.agentignore`
 rather than starting an empty one. For example, to keep Python bytecode in a

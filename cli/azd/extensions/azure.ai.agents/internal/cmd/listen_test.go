@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -1484,6 +1485,17 @@ func TestPredeployWarnsAboutSecretsInCodePackage(t *testing.T) {
 	project := &azdext.ProjectConfig{
 		Path: root, Services: map[string]*azdext.ServiceConfig{"code-agent": service},
 	}
+	packageFile, err := os.CreateTemp(root, "code-*.zip")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(packageFile.Name()) })
+	zipWriter := zip.NewWriter(packageFile)
+	zipEntry, err := zipWriter.Create(".env")
+	require.NoError(t, err)
+	_, err = zipEntry.Write([]byte("API_KEY=secret\n"))
+	require.NoError(t, err)
+	require.NoError(t, zipWriter.Close())
+	require.NoError(t, packageFile.Close())
+
 	client := newTestAzdClient(
 		t,
 		&testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}},
@@ -1493,6 +1505,10 @@ func TestPredeployWarnsAboutSecretsInCodePackage(t *testing.T) {
 	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
 		Project: project,
 		Service: service,
+		ServiceContext: &azdext.ServiceContext{Package: []*azdext.Artifact{{
+			Location: packageFile.Name(),
+			Metadata: map[string]string{"type": "code-zip"},
+		}}},
 	})
 	require.NoError(t, err)
 	require.Len(t, response.Messages, 1)

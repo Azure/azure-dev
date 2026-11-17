@@ -4,12 +4,13 @@
 package project
 
 import (
+	"archive/zip"
 	"context"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"strings"
-
-	"azureaiagent/internal/pkg/paths"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -22,9 +23,9 @@ const maxListedSensitivePaths = 5
 // so deploying would upload them to the Foundry project. A check that can't complete is
 // skipped; packaging reports any real problem with the service or its .agentignore.
 func CheckCodePackageSecrets(
-	ctx context.Context, svc *azdext.ServiceConfig, projectRoot string,
+	ctx context.Context, svc *azdext.ServiceConfig, projectRoot string, packageArtifacts []*azdext.Artifact,
 ) []azdext.BetaServiceEventMessage {
-	sensitive, err := serviceCodePackageSensitivePaths(ctx, svc, projectRoot)
+	sensitive, err := serviceCodePackageSensitivePaths(ctx, svc, projectRoot, packageArtifacts)
 	if err != nil {
 		log.Printf("skipping %s secrets check for service %q: %v", agentIgnoreFileName, svc.GetName(), err)
 		return nil
@@ -51,20 +52,44 @@ func CheckCodePackageSecrets(
 	}}
 }
 
-// serviceCodePackageSensitivePaths returns codePackageSensitivePaths for the service's
-// source directory, or nil when the service doesn't package that directory.
+// serviceCodePackageSensitivePaths returns sensitive paths from the service's code ZIP,
+// or nil when the service doesn't package a code ZIP.
 func serviceCodePackageSensitivePaths(
-	ctx context.Context, svc *azdext.ServiceConfig, projectRoot string,
+	ctx context.Context, svc *azdext.ServiceConfig, projectRoot string, packageArtifacts []*azdext.Artifact,
 ) ([]string, error) {
 	agentDef, isHosted, _, err := LoadHostedAgentDefinition(svc, projectRoot)
 	if err != nil || !isHosted || agentDef.CodeConfiguration == nil || isDotnetBundled(agentDef.CodeConfiguration) {
 		return nil, err
 	}
 
-	srcDir, err := paths.JoinAllowRoot(projectRoot, svc.GetRelativePath())
-	if err != nil {
-		return nil, err
+	for _, artifact := range packageArtifacts {
+		if artifact.GetMetadata()["type"] == "code-zip" {
+			if artifact.GetLocation() == "" {
+				return nil, fmt.Errorf("code ZIP artifact has no location")
+			}
+			return codePackageSensitivePathsFromZip(ctx, artifact.GetLocation())
+		}
 	}
 
-	return codePackageSensitivePaths(ctx, srcDir)
+	return nil, nil
+}
+
+func codePackageSensitivePathsFromZip(ctx context.Context, zipPath string) ([]string, error) {
+	archive, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return nil, fmt.Errorf("opening code package archive: %w", err)
+	}
+	defer archive.Close()
+
+	found := map[string]struct{}{}
+	for _, file := range archive.File {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if root := sensitivePathRoot(file.Name); root != "" {
+			found[root] = struct{}{}
+		}
+	}
+
+	return slices.Sorted(maps.Keys(found)), nil
 }

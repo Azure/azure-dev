@@ -2,10 +2,13 @@
 name: azd-extension-spec-authoring
 description: >-
   Draft, update, and statically review user-facing feature and experience specs
-  for azd extensions. Use for CLI or YAML contract changes, acceptance criteria,
-  Given/When/Then scenarios, and checking whether a spec is ready for parallel
-  product and test development. Do not use for implementation, executable test
-  generation, live runs, CI design, or architecture decisions alone.
+  for azd extensions. USE FOR: CLI or YAML contract changes, acceptance
+  criteria, and checking readiness for parallel product and test development.
+  DO NOT USE FOR: implementation, executable test generation, live runs, CI
+  design, or architecture decisions alone.
+license: MIT
+metadata:
+  version: "1.0"
 ---
 
 # azd Extension Spec Authoring

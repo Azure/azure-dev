@@ -16,8 +16,8 @@ defaults:
   runs: 2
   timeout: 8m
   executor: copilot-sdk
-  model: gpt-5.6-terra
-  judge_model: gpt-5.6-terra
+  model: gpt-6.1-terra
+  judge_model: gpt-6.1-terra
 
 scoring:
   threshold: 0.8
@@ -42,7 +42,7 @@ stimuli:
       - type: output-matches
         name: "reports beta-only services"
         config:
-          pattern: '(?is)(?=.*ComposeService)(?=.*CopilotService)(?=.*CommandResultService)'
+          pattern: "(?is)(?=.*ComposeService)(?=.*CopilotService)(?=.*CommandResultService)"
       - type: output-contains
         name: "names the cross-channel check"
         config:
@@ -74,11 +74,11 @@ stimuli:
       - type: output-matches
         name: "requires focused override"
         config:
-          pattern: 'Beta[A-Za-z]+[A-Za-z]+Override|focused beta override'
+          pattern: "Beta[A-Za-z]+[A-Za-z]+Override|focused beta override"
       - type: output-matches
         name: "keeps stable contract unchanged"
         config:
-          pattern: '(?is)(?:(?:keep|leave).*?(?:v1.*?(?:unchanged|unmodified)|(?:preview )?field.*?out of.*?v1)|do not modify.*?v1)'
+          pattern: "(?is)(?:(?:keep|leave).*?(?:v1.*?(?:unchanged|unmodified)|(?:preview )?field.*?out of.*?v1)|do not modify.*?v1)"
       - type: diff-empty
         name: "planning did not modify the repository"
       - type: prompt
@@ -105,11 +105,11 @@ stimuli:
       - type: output-matches
         name: "preserves beta clients"
         config:
-          pattern: '(?is)(keep|retain|preserve).*v1beta.*(route|client|service)'
+          pattern: "(?is)(keep|retain|preserve).*v1beta.*(route|client|service)"
       - type: output-matches
         name: "flags accessor compatibility"
         config:
-          pattern: '(?is)(accessor|return type).*(source.break|breaking)'
+          pattern: "(?is)(accessor|return type).*(source.break|breaking)"
       - type: diff-empty
         name: "graduation plan did not modify the repository"
       - type: prompt

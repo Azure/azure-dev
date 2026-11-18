@@ -17,6 +17,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
+
+	"azureaiagent/internal/exterrors"
 )
 
 const toolboxConnectionsAPIVersion = "2025-04-01-preview"
@@ -84,7 +86,7 @@ func (c *FoundryToolboxConnectionsClient) ProjectEndpoint(ctx context.Context) (
 		} `json:"properties"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&project); err != nil {
-		return "", fmt.Errorf("decoding Foundry project endpoint: %w", err)
+		return "", exterrors.WrapResponseParse(err, "decoding Foundry project endpoint")
 	}
 	return project.Properties.Endpoints["AI Foundry API"], nil
 }
@@ -114,7 +116,7 @@ func (c *FoundryToolboxConnectionsClient) GetConnection(
 	}
 	var body toolboxConnectionBody
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("decoding toolbox connection: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "decoding toolbox connection")
 	}
 	return &body.Properties, nil
 }

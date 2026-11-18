@@ -210,6 +210,7 @@ const (
 // These are usually paired with [Internal] for unexpected failures
 // that are not directly caused by user input.
 const (
+	CodeDeadlineExceeded              = "deadline_exceeded"
 	CodeAzdClientFailed               = "azd_client_failed"
 	CodeCognitiveServicesClientFailed = "cognitiveservices_client_failed"
 	CodeContainerStartFailed          = "container_start_failed"
@@ -217,6 +218,14 @@ const (
 	CodeAgentCreateFailed             = "agent_create_failed"
 	CodeMsaAppIDAlreadyInUse          = "msa_app_id_already_in_use"
 	CodeMultipleBotsForMsaAppID       = "multiple_bots_for_msa_app_id"
+)
+
+// Suffixes appended to operation names by [ServiceFromAzure] when a request
+// fails outside an HTTP error status response.
+const (
+	SuffixTransport     = "_transport"
+	SuffixResponseRead  = "_response_read"
+	SuffixResponseParse = "_response_parse"
 )
 
 // Operation names for [ServiceFromAzure] errors.

@@ -5,14 +5,19 @@ package exterrors
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
@@ -66,6 +71,170 @@ func TestServiceFromAzurePreservesStructuredError(t *testing.T) {
 	}
 
 	assert.Same(t, expected, ServiceFromAzure(expected, OpCreateAgent))
+}
+
+type timeoutNetError struct{}
+
+func (timeoutNetError) Error() string   { return "i/o timeout" }
+func (timeoutNetError) Timeout() bool   { return true }
+func (timeoutNetError) Temporary() bool { return true }
+
+func TestServiceFromAzureClassifiesNonResponseFailures(t *testing.T) {
+	tests := []struct {
+		name               string
+		err                error
+		op                 string
+		wantCategory       azdext.LocalErrorCategory
+		wantCode           string
+		wantSuggestionPart string
+	}{
+		{
+			name:         "context deadline exceeded maps to deadline_exceeded",
+			err:          fmt.Errorf("HTTP request failed: %w", context.DeadlineExceeded),
+			op:           OpCreateAgent,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     CodeDeadlineExceeded,
+		},
+		{
+			name:         "net timeout maps to deadline_exceeded",
+			err:          &url.Error{Op: "Post", URL: "https://acct.services.ai.azure.com/agents", Err: timeoutNetError{}},
+			op:           OpCreateAgent,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     CodeDeadlineExceeded,
+		},
+		{
+			name:               "azidentity AuthenticationFailedError maps to auth_failed",
+			err:                fmt.Errorf("token failed: %w", &azidentity.AuthenticationFailedError{}),
+			op:                 OpCreateAgent,
+			wantCategory:       azdext.LocalErrorCategoryAuth,
+			wantCode:           CodeAuthFailed,
+			wantSuggestionPart: "azd auth login",
+		},
+		{
+			name:               "azidentity AuthenticationRequiredError maps to auth_failed",
+			err:                fmt.Errorf("token required: %w", &azidentity.AuthenticationRequiredError{}),
+			op:                 OpGetAgent,
+			wantCategory:       azdext.LocalErrorCategoryAuth,
+			wantCode:           CodeAuthFailed,
+			wantSuggestionPart: "azd auth login",
+		},
+		{
+			name:               "AzureDeveloperCLICredential exit failure maps to auth_failed",
+			err:                errors.New("AzureDeveloperCLICredential: exit status 1"),
+			op:                 OpCreateAgent,
+			wantCategory:       azdext.LocalErrorCategoryAuth,
+			wantCode:           CodeAuthFailed,
+			wantSuggestionPart: "azd auth login",
+		},
+		{
+			name:               "AzureDeveloperCLICredential missing executable maps to credential_creation_failed",
+			err:                errors.New("AzureDeveloperCLICredential: executable not found on path"),
+			op:                 OpCreateAgent,
+			wantCategory:       azdext.LocalErrorCategoryAuth,
+			wantCode:           CodeCredentialCreationFailed,
+			wantSuggestionPart: "on PATH",
+		},
+		{
+			name:         "post-2xx response read error maps to operation_response_read",
+			err:          WrapResponseRead(io.ErrUnexpectedEOF, "failed to read response body"),
+			op:           OpCreateAgent,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     OpCreateAgent + SuffixResponseRead,
+		},
+		{
+			name:         "post-2xx response parse error maps to operation_response_parse",
+			err:          WrapResponseParse(errors.New("unexpected end of JSON input"), "failed to parse response"),
+			op:           OpGetAgent,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     OpGetAgent + SuffixResponseParse,
+		},
+		{
+			name: "DNS failure maps to dependency operation_transport",
+			err: &url.Error{
+				Op:  "Get",
+				URL: "https://acct.services.ai.azure.com/agents/my-agent",
+				Err: &net.OpError{
+					Op:  "dial",
+					Net: "tcp",
+					Err: &net.DNSError{Err: "no such host", Name: "acct.services.ai.azure.com"},
+				},
+			},
+			op:                 OpGetAgent,
+			wantCategory:       azdext.LocalErrorCategoryDependency,
+			wantCode:           OpGetAgent + SuffixTransport,
+			wantSuggestionPart: "DNS",
+		},
+		{
+			name: "TLS certificate failure maps to dependency operation_transport",
+			err: &url.Error{
+				Op:  "Post",
+				URL: "https://acct.services.ai.azure.com/agents",
+				Err: &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}},
+			},
+			op:                 OpCreateAgent,
+			wantCategory:       azdext.LocalErrorCategoryDependency,
+			wantCode:           OpCreateAgent + SuffixTransport,
+			wantSuggestionPart: "TLS",
+		},
+		{
+			name: "HTTP connection drop maps to dependency operation_transport",
+			err: &url.Error{
+				Op:  "Post",
+				URL: "https://acct.services.ai.azure.com/agents",
+				Err: io.ErrUnexpectedEOF,
+			},
+			op:                 OpCreateAgent,
+			wantCategory:       azdext.LocalErrorCategoryDependency,
+			wantCode:           OpCreateAgent + SuffixTransport,
+			wantSuggestionPart: "network connection",
+		},
+		{
+			name:         "untyped error preserves fallback internal operation code",
+			err:          errors.New("unexpected SDK failure"),
+			op:           OpCreateAgent,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     OpCreateAgent,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ServiceFromAzure(tt.err, tt.op)
+			localErr, ok := errors.AsType[*azdext.LocalError](got)
+			require.True(t, ok, "expected *azdext.LocalError, got %T: %v", got, got)
+			assert.Equal(t, tt.wantCategory, localErr.Category)
+			assert.Equal(t, tt.wantCode, localErr.Code)
+			if tt.wantSuggestionPart != "" {
+				assert.Contains(t, localErr.Suggestion, tt.wantSuggestionPart)
+			}
+		})
+	}
+}
+
+func TestServiceFromAzureRedactsSensitiveURLParts(t *testing.T) {
+	u := &url.URL{
+		Scheme:   "https",
+		User:     url.UserPassword("svcuser", "placeholder-cred"),
+		Host:     "example.services.ai.azure.com",
+		Path:     "/api/projects/proj/agents",
+		RawQuery: "sig=sastoken123&api-version=v1",
+		Fragment: "fragtoken",
+	}
+	rawURL := u.String()
+	urlErr := fmt.Errorf("HTTP request failed: %w", &url.Error{
+		Op:  "Post",
+		URL: rawURL,
+		Err: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection reset by peer")},
+	})
+
+	got := ServiceFromAzure(urlErr, OpCreateAgent)
+	localErr, ok := errors.AsType[*azdext.LocalError](got)
+	require.True(t, ok)
+	assert.Contains(t, localErr.Message, "https://example.services.ai.azure.com/api/projects/proj/agents")
+	assert.NotContains(t, localErr.Message, "svcuser")
+	assert.NotContains(t, localErr.Message, "placeholder-cred")
+	assert.NotContains(t, localErr.Message, "sastoken123")
+	assert.NotContains(t, localErr.Message, "fragtoken")
 }
 
 func TestFromHostPreservesServiceDetails(t *testing.T) {

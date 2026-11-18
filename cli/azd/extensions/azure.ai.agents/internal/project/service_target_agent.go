@@ -4297,7 +4297,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	if getErr != nil {
 		// Only fall back to create on 404; classify every other service response.
 		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
-			return nil, exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
+			return nil, exterrors.ServiceFromAzure(getErr, exterrors.OpGetAgent)
 		}
 		// Agent doesn't exist — create
 		progress("Creating new agent from code package")
@@ -4511,8 +4511,8 @@ func augmentDeployNote(state *nextstep.State, artifacts []*azdext.Artifact, proj
 // final endpoint artifact only; scanning from the end keeps this in
 // sync should the convention shift to multi-note artifacts in future.
 func lastNoteArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
-	for i := len(artifacts) - 1; i >= 0; i-- {
-		a := artifacts[i]
+	for _, a := range slices.Backward(artifacts) {
+
 		if a == nil || a.Metadata == nil {
 			continue
 		}
@@ -4980,7 +4980,7 @@ func reconcileCreateRequestWithDeployedDigitalWorkerType(
 	if getErr != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
 			respErr.StatusCode != http.StatusNotFound {
-			return false, exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
+			return false, exterrors.ServiceFromAzure(getErr, exterrors.OpGetAgent)
 		}
 		return false, nil
 	}

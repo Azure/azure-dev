@@ -6,7 +6,32 @@ Use this guide together with the entire [CLI handbook](../AGENTS.md) and the
 affected extension's local `AGENTS.md`, when present. Local guides describe
 extension-specific contracts, ownership, and exceptions.
 
-## Unit test authoring
+## Feature and test authoring
+
+At the start of a user-facing extension feature request, look for an agreed
+contract in the request, linked work, and relevant repository docs. Accept a
+spec URL, a repository path, or confirmed acceptance criteria; do not
+repeatedly ask for a spec link when the behavior is already clear.
+
+If no agreed contract covers a material decision, or the sources conflict,
+ask the requester a direct question for the source or the specific decision.
+Stop the affected work and wait for the answer. Do not substitute an
+unsolicited design, implement the affected behavior, or write dependent
+assertions. Existing code and related specs provide context, not approval of
+new behavior. Use the
+[spec-authoring skill](skills/azd-extension-spec-authoring/SKILL.md) to draft,
+update, or review the spec.
+
+Use the agreed behavior to plan both implementation and tests. Choose the
+smallest test boundary that proves the contract. If a scenario requires the real
+CLI and service and has no equivalent coverage, use the E2E skill to confirm
+the scenario and write the test code. Report missing fixture capabilities
+separately from contract gaps.
+
+Open the linked skills as needed. The root VS Code workspace registers this
+directory; clients that do not use that setting can follow the same links.
+
+### Unit test authoring
 
 For behavior changes in `azure.ai.agents`, `azure.ai.connections`,
 `azure.ai.inspector`, `azure.ai.projects`, `azure.ai.routines`, `azure.ai.skills`,
@@ -19,16 +44,22 @@ Derive expected behavior from requirements, not only the implementation.
 Do not run live services for unit tests. For documentation-only changes, do not
 add unrelated tests.
 
-Open the linked file directly; these shared documents are loaded through this
-guide, not assumed native skill discovery.
-
-## E2E test authoring
+### E2E test authoring
 
 Before implementing or reviewing executable E2E tests from a test plan or
 acceptance criteria, read and follow the
 [E2E-testing skill](skills/azd-extension-e2e-testing/SKILL.md).
-Open the linked file directly; these shared documents are loaded through this
-guide, not assumed native skill discovery.
+
+For new or materially changed E2E scenarios, show the proposed steps and
+observable results in the conversation by default, and get confirmation
+before writing test code. Reuse an already confirmed plan for the same scope.
+Do not require or routinely ask for a GitHub issue; use an existing task or
+propose a new one only when independent tracking is useful. Proceed without
+issue changes unless the user explicitly authorizes them.
+
+An agreed product spec or a request to add a test does not by itself confirm
+a new E2E plan. If the scenario has not been confirmed, end the turn with the
+preview and confirmation request instead of editing test files.
 
 Reuse compatible test helpers and keep feature assertions separate from
 environment setup and CI orchestration. Report CI selection gaps rather than

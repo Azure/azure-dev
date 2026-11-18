@@ -4,25 +4,26 @@ description: >-
   Write, update, and statically review executable, feature-level E2E tests for
   Foundry extensions in Azure/azure-dev. Translate test plans and acceptance
   criteria into real CLI tests with meaningful assertions and isolated fixtures.
-  USE FOR: test-plan-to-code implementation, live CLI regression tests,
-  feature coverage gaps, deterministic test agents, and E2E assertion review.
-  DO NOT USE FOR: test-plan-only issues, unit-only tests, automatic live execution,
-  interactive-scenario YAML authoring, CI redesign, or skill migration.
+  USE FOR: E2E scenario confirmation, test-plan-to-code implementation, live
+  CLI regression tests, feature coverage gaps, and E2E assertion review.
+  DO NOT USE FOR: product spec authoring, unit-only tests, automatic live
+  execution, interactive-scenario YAML authoring, CI redesign, or skill migration.
 license: MIT
 metadata:
-  version: "1.1"
+  version: "1.2"
 ---
 
 # AZD Extension E2E Testing
 
 ## Purpose and boundaries
 
-Turn an agreed feature contract into executable E2E test code, not another test
-plan. Keep feature assertions separate from environment provisioning and CI
-orchestration. Use the repository's existing language, framework, and helpers;
-the current agents live suite uses Go.
+Turn an agreed feature contract into executable E2E test code. Confirm the
+scenario without creating a second independently maintained test plan. Keep
+feature assertions separate from environment provisioning and CI orchestration.
+Use the repository's existing language, framework, and helpers; the current
+agents live suite uses Go.
 
-Read applicable `AGENTS.md` files, the source test plan, and neighboring tests.
+Read applicable `AGENTS.md` files, the source spec or plan, and neighboring tests.
 Change only the requested tests and necessary test fixtures. Do not modify
 product behavior, CI, credentials, labels, or execution policy unless separately
 requested. Report product defects exposed by a tests-only task.
@@ -57,23 +58,28 @@ The authoring workflow below does not override these restrictions.
   do not force every feature through init/provision/deploy/invoke when its
   contract concerns a different operation.
 
-### Test-plan issue readiness
+### Confirm scenarios before writing code
 
-- Read the referenced test-plan task issue and relevant clarifications before
-  authoring. Reuse its identity instead of creating a duplicate tracking issue.
-- Check that the feature goal, scenario scope, prerequisites, inputs, observable
-  expected results, and resource cleanup boundaries are clear. Keep owner and
-  priority decisions with the feature owner; leave unknown values unconfirmed.
-- During authoring, offer a concise issue update for missing details and request
-  owner confirmation for material expectations. When a new issue draft is useful,
-  use `[Feature] <scenario>`. Sufficient acceptance criteria can support coding
-  even without an existing issue; do not require issue creation as a gate.
-- Keep proposed issue text in the response unless a file or publication is
-  requested. Do not create or edit issue content or metadata without explicit
-  permission. Standalone plan-only requests do not generate E2E code.
-- Link generated tests to the source issue and distinguish implementation,
-  offline validation, live execution, and CI evidence in any requested status
-  update. Never mark a case verified merely because its code was generated.
+- Read the referenced spec, existing plan or task, and relevant clarifications.
+  If a material expectation is unconfirmed or conflicts across sources, ask the
+  requester for the source or the decision. Wait before writing affected tests.
+- For a new or materially changed scenario, show a short plan in the
+  conversation by default: the source and scenario, setup and inputs, user
+  steps, observable pass criteria, and any fixture or cleanup dependencies.
+  If the user has not confirmed that plan, end the turn with the preview and
+  ask for confirmation. Do not edit test files in that turn, even if the
+  request says to implement the test or the product spec is already agreed.
+  An already confirmed plan covering the same steps and outcomes does not
+  need another approval.
+- Do not require a GitHub issue or routinely ask whether to create one.
+  Suggest separate tracking only when it helps with handoff, deferred work,
+  or a fixture or CI blocker. Prefer an existing task. If a new draft is
+  useful, name it `[Feature] <scenario>`. Link the spec and scenario instead of
+  copying the steps. Do not create or edit an issue without explicit permission;
+  confirming a plan does not authorize publication or live execution.
+- Keep plan-only requests at the plan stage. Link generated tests to the agreed
+  requirement source even when there is no issue. Distinguish implementation,
+  offline validation, live execution, and CI evidence in any status update.
 
 ## 2. Establish the real E2E boundary
 

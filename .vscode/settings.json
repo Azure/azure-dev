@@ -1,5 +1,8 @@
 {
   "cSpell.import": ["cspell.yaml"],
+  "chat.agentSkillsLocations": {
+    "cli/azd/extensions/skills": true
+  },
   "go.testFlags": [
     "-timeout",
     "30m"

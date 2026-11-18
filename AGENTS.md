@@ -26,10 +26,16 @@ rules and exceptions.
 | Work | Required starting point |
 |---|---|
 | Core CLI (`cli/azd/`) | Read the entire [CLI handbook](cli/azd/AGENTS.md), including conditional UX, telemetry, release, and testing guidance. |
-| Microsoft-authored extensions (`cli/azd/extensions/`) | Read the entire [CLI handbook](cli/azd/AGENTS.md), the [shared extension guide](cli/azd/extensions/AGENTS.md), and any extension-local `AGENTS.md`. |
+| Microsoft-authored extensions (`cli/azd/extensions/`) | Read the entire [CLI handbook](cli/azd/AGENTS.md), the [shared extension guide](cli/azd/extensions/AGENTS.md), including its [feature and test authoring workflow](cli/azd/extensions/AGENTS.md#feature-and-test-authoring), and any extension-local `AGENTS.md`. |
 | VS Code extension (`ext/vscode/`) | Read the [VS Code guide](ext/vscode/AGENTS.md). |
 | Go code | Check the affected module's Go version. For `cli/azd/`, follow the [Go conventions](cli/azd/AGENTS.md#modern-go) in the CLI handbook. |
 | Documentation | Follow the [documentation maintenance instructions](.github/instructions/documentation.instructions.md) and the relevant area guide. |
+
+For extension implementation requests, ask and wait if a material user-facing
+decision has no agreed source. Before adding or materially changing an E2E
+scenario, show its test steps and expected results and wait for confirmation
+unless that same plan was already confirmed. A request to implement is not
+confirmation of a test plan that has not been shown.
 
 For **every PR review**, inspect the full changed-file list first. If any file
 under `cli/azd/extensions/` changes, including in a fork PR, apply the

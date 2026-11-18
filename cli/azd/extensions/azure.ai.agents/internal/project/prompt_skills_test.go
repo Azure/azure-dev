@@ -57,6 +57,7 @@ func TestPromptSkillsNodes(t *testing.T) {
 			require.ErrorContains(t, err, "SKILL_SKILL_B_VERSION")
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
+			require.Contains(t, localErr.Suggestion, `run 'azd deploy "skill-b"' or 'azd deploy --all'`)
 			require.Contains(t, localErr.Suggestion, "azd ai skill add skill-b")
 			require.Empty(t, managed.ResolvedSkills)
 		})

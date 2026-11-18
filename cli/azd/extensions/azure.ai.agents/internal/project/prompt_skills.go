@@ -106,7 +106,10 @@ func validateSkillDependencies(ctx context.Context, g *promptGraph, skills []str
 			return exterrors.Dependency(
 				exterrors.CodeFoundryDependencyNotReady,
 				fmt.Sprintf("skill %q has no enabled %s sibling service", name, foundrySkillHost),
-				fmt.Sprintf("add an %s service named %q and run 'azd deploy --all'", foundrySkillHost, name),
+				fmt.Sprintf(
+					"add an %s service named %q with 'azd ai skill add %s ...' and run 'azd deploy --all'",
+					foundrySkillHost, name, name,
+				),
 			)
 		}
 		if !slices.Contains(g.agentService.GetUses(), name) {
@@ -162,9 +165,9 @@ func resolveSkillMarkers(skills []string, projectEndpoint string, env map[string
 				exterrors.CodeFoundryDependencyNotReady,
 				fmt.Sprintf("skill %q has not been published (%s is not set)", name, versionKey),
 				fmt.Sprintf(
-					"add an %s service named %q with 'azd ai skill add %s ...' and list %q in the "+
-						"agent service's uses:, then run 'azd deploy --all'",
-					foundrySkillHost, name, name, name,
+					"run 'azd deploy %q' or 'azd deploy --all' to publish the skill, or add an %s service "+
+						"named %q with 'azd ai skill add %s ...' and list %q in the agent service's uses:",
+					name, foundrySkillHost, name, name, name,
 				),
 			)
 		}

@@ -21,6 +21,19 @@ add unrelated tests.
 
 Open the linked file directly; do not rely on automatic nested skill discovery.
 
+## E2E test authoring
+
+Before implementing or reviewing executable E2E tests from a test plan or
+acceptance criteria, read and follow the
+[E2E-testing skill](.github/skills/azd-extension-e2e-testing/SKILL.md).
+Open the linked file directly; do not rely on automatic nested skill discovery.
+
+Reuse compatible test helpers and keep feature assertions separate from
+environment setup and CI orchestration. Report CI selection gaps rather than
+changing workflows unless separately requested. Writing tests does not authorize
+live execution, authentication, deployment, or deletion. For plan-only requests,
+do not generate test code.
+
 ## Security and safe operations
 
 - Redact credentials from URLs before terminal output, logs, error messages,

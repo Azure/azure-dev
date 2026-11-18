@@ -338,6 +338,7 @@ func TestParameterResolverReconfigurationClearsAIRequirements(t *testing.T) {
 	require.Nil(t, resolver.requirements)
 	require.NotEqual(t, firstKey, resolver.locationKey)
 	var mapping []string
+	//nolint:lll
 	value, prompted, err := resolver.ResolveParameter(t.Context(), nil, "aiDeploymentsLocation", map[string]string{}, &mapping)
 	require.NoError(t, err)
 	require.Nil(t, value)

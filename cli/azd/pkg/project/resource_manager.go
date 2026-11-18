@@ -143,9 +143,14 @@ func (rm *resourceManager) GetServiceResources(
 	)
 }
 
-// isHostResource checks if a resource type represents a host (deployment target).
+// isHostResource checks if a resource type represents a host (deployment target) for the given service host.
 // Host resources are those that can receive application deployments.
-func isHostResource(resourceType string) bool {
+func isHostResource(host ServiceTargetKind, resourceType string) bool {
+	// Storage accounts are usually supporting resources, so they are only hosts for the storage target.
+	if host == StorageTarget {
+		return strings.EqualFold(resourceType, string(azapi.AzureResourceTypeStorageAccount))
+	}
+
 	// Check if the Azure resource type corresponds to a known host type
 	// Use case-insensitive comparison to handle variations in Azure API responses
 	return strings.EqualFold(resourceType, string(azapi.AzureResourceTypeWebSite)) || // App Service, Function App
@@ -181,7 +186,7 @@ func (rm *resourceManager) GetServiceResource(
 		// Filter to only host-type resources to avoid false positives from supporting resources like managed identities
 		hostResources := make([]*azapi.ResourceExtended, 0)
 		for _, resource := range resources {
-			if isHostResource(resource.Type) {
+			if isHostResource(serviceConfig.Host, resource.Type) {
 				hostResources = append(hostResources, resource)
 			}
 		}

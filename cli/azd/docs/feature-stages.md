@@ -42,6 +42,7 @@ As of `1.21.1`, each Azure Developer CLI feature has been evaluated and assigned
 | IaC          | Layered Provisioning     | Beta      |
 | Host         | Azure App Service        | Stable    |
 | Host         | Azure Static Web Apps    | Stable    |
+| Host         | Azure Storage static website | Beta      |
 | Host         | Azure Container Apps     | Stable    |
 | Host         | Azure Functions          | Stable    |
 | Host         | Azure Kubernetes Service | Beta      |

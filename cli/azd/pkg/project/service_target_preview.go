@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
@@ -112,6 +113,25 @@ func (at *staticWebAppTarget) PreviewWithTarget(
 		"",
 		"production environment of Azure Static Web App",
 		map[string]any{"environment": "production"},
+	), nil
+}
+
+func (st *storageTarget) PreviewWithTarget(
+	_ context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) (*ServiceDeployPreviewResult, error) {
+	if err := checkResourceType(targetResource, azapi.AzureResourceTypeStorageAccount); err != nil {
+		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
+
+	return newServiceTargetPreview(
+		serviceConfig,
+		targetResource,
+		"upload static content and remove stale files",
+		"",
+		"static website ($web container) of Azure Storage account",
+		map[string]any{"container": storage.StaticWebsiteContainerName},
 	), nil
 }
 

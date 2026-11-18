@@ -23,6 +23,7 @@ func TestBuiltInServiceTargetsImplementResourcePreview(t *testing.T) {
 		StaticWebAppTarget:  &staticWebAppTarget{},
 		AksTarget:           &aksTarget{},
 		AiEndpointTarget:    &aiEndpointTarget{},
+		StorageTarget:       &storageTarget{},
 	}
 
 	for _, kind := range BuiltInServiceTargetKinds() {
@@ -120,6 +121,19 @@ func TestBuiltInServiceTargetPreviews(t *testing.T) {
 			wantDetailKey:   "environment",
 			wantDetailValue: "production",
 			wantTargetType:  azapi.AzureResourceTypeStaticWebSite,
+		},
+		{
+			name: "StorageStaticWebsite",
+			serviceConfig: &ServiceConfig{
+				Project: projectConfig, Name: "site", Host: StorageTarget,
+			},
+			targetResource:  targetResource("sitestorage", azapi.AzureResourceTypeStorageAccount),
+			previewer:       &storageTarget{},
+			wantMessage:     []string{"Service site", "static website", "sitestorage"},
+			wantOperation:   "upload static content and remove stale files",
+			wantDetailKey:   "container",
+			wantDetailValue: "$web",
+			wantTargetType:  azapi.AzureResourceTypeStorageAccount,
 		},
 		{
 			name: "AksManifests",

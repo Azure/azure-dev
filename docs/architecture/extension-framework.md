@@ -195,7 +195,7 @@ scaffolds for manual recovery, without trusting custom metadata or trailers.
 `azd deploy --preview` calls an optional `Preview` on each selected service target
 instead of packaging, publishing, and deploying. Service targets are not initialized
 and deploy hooks do not run; hosts without preview support are reported and skipped.
-The built-in App Service, Container Apps, Functions, Static Web Apps, AKS, and AI
+The built-in App Service, Container Apps, Functions, Static Web Apps, Storage, AKS, and AI
 endpoint hosts report the resolved Azure target and the deployment operation they
 would perform.
 

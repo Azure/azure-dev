@@ -66,7 +66,7 @@ not edit the flat configuration shown above. See the
 |---|---|---|
 | `project` | string | Relative path to the service source directory |
 | `language` | string | Service language (`dotnet`, `csharp`, `fsharp`, `py`, `js`, `ts`, `java`, `docker`, `custom`) |
-| `host` | string | **Required.** Hosting target (`appservice`, `containerapp`, `function`, `staticwebapp`, `aks`, etc.) |
+| `host` | string | **Required.** Hosting target (`appservice`, `containerapp`, `function`, `staticwebapp`, `storage`, `aks`, etc.) |
 | `module` | string | Bicep module path for the service's infrastructure |
 | `hooks` | map | Service-level lifecycle hooks |
 | `docker` | object | Docker build configuration |
@@ -202,6 +202,46 @@ services:
     host: function
     docker:
       path: ./Dockerfile
+```
+
+### Storage static website (`host: storage`)
+
+Deploys static content (HTML, CSS, JavaScript, images) to the
+[static website](https://learn.microsoft.com/azure/storage/blobs/storage-blob-static-website) of an Azure Storage account.
+azd locates the storage account through the `azd-service-name` tag (or `resourceName`), like other hosts. For this host,
+only resources of type `Microsoft.Storage/storageAccounts` are considered, and storage accounts are not treated as hosts
+for any other service.
+
+During `azd deploy`, azd:
+
+1. Uses the framework build output, or `dist` when set, as the content folder. The project root is rejected so that
+   `azure.yaml` and `.azure` are never published.
+2. Enables static website hosting when it is off, using `index.html` as the index document and `404.html` as the error
+   document when that file exists. An existing static website configuration is left unchanged.
+3. Uploads every file to the `$web` container with a `Content-Type` derived from the file extension, then deletes
+   blobs in `$web` that are no longer part of the content.
+
+Infrastructure requirements:
+
+- The account `kind` must be `StorageV2` or `BlockBlobStorage`.
+- The deploying identity needs two kinds of access on the account:
+  - Management: `Microsoft.Storage/storageAccounts/blobServices/read` to read the static website setting, and
+    `.../blobServices/write` when azd must enable it. `Contributor`, `Owner`, or `Storage Account Contributor` include
+    both.
+  - Data: `Storage Blob Data Contributor` (or `Storage Blob Data Owner`) to create `$web`, upload, and delete blobs.
+    `Owner` and `Contributor` do not grant blob data access.
+- Blob public network access must allow the machine running azd. Shared key access and anonymous blob access are not
+  required.
+
+Example:
+
+```yaml
+services:
+  web:
+    project: ./src/web
+    language: js
+    host: storage
+    dist: dist
 ```
 
 ## See Also

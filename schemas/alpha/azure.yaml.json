@@ -279,6 +279,7 @@
                             "function",
                             "springapp",
                             "staticwebapp",
+                            "storage",
                             "aks",
                             "ai.endpoint",
                             "azure.ai.agent",
@@ -774,7 +775,8 @@
                                 "host": {
                                     "enum": [
                                         "springapp",
-                                        "staticwebapp"
+                                        "staticwebapp",
+                                        "storage"
                                     ]
                                 }
                             }

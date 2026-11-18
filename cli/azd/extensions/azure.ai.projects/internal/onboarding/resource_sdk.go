@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore armcompute armstorage kubelet
+// cspell:ignore armstorage kubelet
 
 package onboarding
 
@@ -13,12 +13,10 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
@@ -227,7 +225,6 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	selected, networkReport := c.selectAgentPool(ctx, plan, cluster, pools)
 	if cluster != nil {
 		kubelet, checks := aksResourceChecks(*cluster, pools, poolsKnown, selected)
-		c.poolCapacityWarnings(ctx, *cluster, pools, selected, checks)
 		facts.KubeletObjectID = kubelet
 		report = append(report, checks...)
 	} else {
@@ -314,73 +311,6 @@ func (c *sdkResourceChecker) readAgentPools(
 		pools = append(pools, page.Value...)
 	}
 	return pools, nil
-}
-
-func (c *sdkResourceChecker) poolCapacityWarnings(
-	ctx context.Context, cluster armcontainerservice.ManagedCluster, pools []*armcontainerservice.AgentPool,
-	selected *armcontainerservice.AgentPool, report Report,
-) {
-	var candidates []*armcontainerservice.AgentPool
-	for _, pool := range pools {
-		if pool != nil && pool.Properties != nil &&
-			(resourceValue(pool.Properties.Mode) == "System" || pool == selected) {
-			candidates = append(candidates, pool)
-		}
-	}
-	if len(candidates) == 0 {
-		return
-	}
-	id, err := existingResourceID(resourceValue(cluster.ID), "Microsoft.ContainerService/managedClusters")
-	var skus []*armcompute.ResourceSKU
-	if err == nil {
-		capacityCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		skus, err = c.readSKUs(capacityCtx, id.SubscriptionID, resourceValue(cluster.Location))
-	}
-	warnings := map[string][]string{}
-	for _, pool := range candidates {
-		checkID, cpu, memory := "system-pool", 4.0, 16.0
-		if pool == selected {
-			checkID, cpu, memory = "agent-pool", 8, 32
-		}
-		warning := ""
-		if err != nil {
-			warning = fmt.Sprintf(
-				"Pool %s capacity could not be verified: %s. At least %g available vCPU / %g GiB per VM is recommended; "+
-					"this recommendation does not block provisioning or change the pool.",
-				resourceValue(pool.Name), err, cpu, memory)
-		} else {
-			warning = poolCapacityWarning(pool, skus, resourceValue(cluster.Location), cpu, memory)
-		}
-		if warning != "" {
-			warnings[checkID] = append(warnings[checkID], warning)
-		}
-	}
-	for i := range report {
-		if messages := warnings[report[i].ID]; len(messages) > 0 {
-			report[i].Warning = strings.Join(messages, " ")
-		}
-	}
-}
-
-func (c *sdkResourceChecker) readSKUs(
-	ctx context.Context, subscription, location string,
-) ([]*armcompute.ResourceSKU, error) {
-	client, err := armcompute.NewResourceSKUsClient(subscription, c.credential, c.options)
-	if err != nil {
-		return nil, err
-	}
-	filter := "location eq '" + strings.ReplaceAll(location, "'", "''") + "'"
-	pager := client.NewListPager(&armcompute.ResourceSKUsClientListOptions{Filter: &filter})
-	var result []*armcompute.ResourceSKU
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, page.Value...)
-	}
-	return result, nil
 }
 
 func (c *sdkResourceChecker) readStorage(

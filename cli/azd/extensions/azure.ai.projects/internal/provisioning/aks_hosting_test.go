@@ -121,18 +121,6 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 				}},
 		}}), nil
 	}
-	if request.Method == http.MethodGet &&
-		strings.EqualFold(request.URL.Path, "/subscriptions/cluster-sub/providers/Microsoft.Compute/skus") {
-		var values []any
-		for _, size := range []struct{ name, cpu string }{{"Standard_E4s_v5", "4"}, {"Standard_D8as_v5", "8"}} {
-			values = append(values, map[string]any{
-				"name": size.name, "resourceType": "virtualMachines", "locations": []string{"westus"},
-				"capabilities": []any{map[string]any{"name": "vCPUs", "value": size.cpu},
-					map[string]any{"name": "MemoryGB", "value": "32"}},
-			})
-		}
-		return f.response(request, 200, map[string]any{"value": values}), nil
-	}
 	if request.Method == http.MethodGet && request.URL.Path == offlineVNetID {
 		return f.response(request, 200, map[string]any{
 			"id": offlineVNetID, "location": "westus", "properties": map[string]any{
@@ -358,7 +346,7 @@ func TestBYOPrepareFeatureGateUsesProcessEnvironment(t *testing.T) {
 				p.credential = nil
 			}
 
-			err = p.prepareBYO(t.Context(), source, func(string) {})
+			err = p.prepareBYO(t.Context(), source)
 			if test.enabled {
 				require.NoError(t, err)
 				assert.Subset(t, fake.reads, []string{
@@ -873,7 +861,6 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				require.ErrorContains(t, err, "does not exist")
 				assert.Contains(t, requests.requests, "GET "+missingStorage)
 				assert.Zero(t, requests.writes)
-				assert.NotContains(t, provider.preflightReport.String(), "storage-type SKIPPED")
 			} else if scenario == "overlapping selected Node subnet" {
 				require.ErrorContains(t, err, "agent-subnet FAIL")
 				assert.Zero(t, requests.writes)
@@ -881,15 +868,10 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 				require.NoError(t, err, progress.String())
 				assert.Equal(t, 1, requests.writes)
 			}
-			if strings.HasPrefix(scenario, "unknown Storage") {
-				assert.Contains(t, provider.preflightReport.String(), "utcNow")
-			}
 			if scenario == "unknown workload name" || scenario == "cross subscription unknown workload" {
-				assert.Contains(t, provider.preflightReport.String(), "utcNow")
 				assert.Equal(t, map[string]any{"value": "/subscriptions/" + subscription + "/providers/" +
 					"Microsoft.Authorization/roleDefinitions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
 					requests.parameters["federatedIdentityRoleDefinitionId"])
-				assert.Contains(t, provider.preflightReport.String(), "resource-refs PASS [/subscriptions/target-sub]")
 			}
 			if scenario == "actual cluster selection" {
 				assert.Contains(t, requests.requests, "GET "+requests.clusterID)
@@ -897,18 +879,8 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 					"the account's actual cluster controls AKS evidence, not the YAML selector")
 				assert.Equal(t, map[string]any{"value": requests.kubeletID}, requests.parameters["kubeletObjectId"])
 			}
-			if network {
-				if noNetworkSelection {
-					assert.Contains(t, provider.preflightReport.String(), "agent-subnet NOT_APPLICABLE")
-				}
-				if scenario == "new selected subnets" {
-					assert.Contains(t, provider.preflightReport.String(), "agent-subnet NOT_APPLICABLE")
-					assert.NotContains(t, requests.requests, "GET "+offlineVNetID+"/subnets/agents")
-				} else if unknownField == "networkInjections" {
-					assert.Contains(t, provider.preflightReport.String(), "agent-subnet SKIPPED")
-				} else if scenario != "overlapping selected Node subnet" && !noNetworkSelection {
-					assert.Contains(t, provider.preflightReport.String(), "agent-subnet PASS")
-				}
+			if scenario == "new selected subnets" {
+				assert.NotContains(t, requests.requests, "GET "+offlineVNetID+"/subnets/agents")
 			}
 			assert.NotContains(t, requests.requests, "GET "+defaultStorageID,
 				"an edited or unknown name must not fall back to the standard naming formula")
@@ -947,7 +919,7 @@ func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
 	} {
 		delete(definitions, name)
 	}
-	require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
+	require.NoError(t, p.prepareBYO(t.Context(), source))
 	assert.NotContains(t, source.parameters, "kubeletObjectId")
 	assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
 	assert.NotContains(t, source.parameters, "hostingPrincipalId")
@@ -975,7 +947,7 @@ func TestBYOPreflightAcceptsExternalRegistry(t *testing.T) {
 			case "binding":
 				p.acrBinding = acrTestBinding()
 			}
-			require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
+			require.NoError(t, p.prepareBYO(t.Context(), source))
 			assert.NotEmpty(t, fake.requests)
 		})
 	}
@@ -1009,7 +981,7 @@ func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {
 			source, err := p.resolveTemplate(t.Context(), func(string) {})
 			require.NoError(t, err)
 			source.parameters[test.key] = map[string]any{"value": test.value}
-			require.ErrorContains(t, p.prepareBYO(t.Context(), source, func(string) {}), test.expected)
+			require.ErrorContains(t, p.prepareBYO(t.Context(), source), test.expected)
 			assert.Empty(t, fake.requests)
 		})
 	}

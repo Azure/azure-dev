@@ -20,8 +20,6 @@ import (
 	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
 
@@ -32,11 +30,7 @@ type byoHostingParameters struct {
 	WorkloadIdentityResourceID          json.RawMessage `json:"workloadIdentityResourceId"`
 }
 
-func (p *FoundryProvisioningProvider) prepareBYO(
-	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
-) (prepareErr error) {
-	p.preflightReport.Reset()
-	defer func() { prepareErr = p.preflightFailure(prepareErr) }()
+func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *templateSource) error {
 	hosting, err := byoHostingParameter(source)
 	if err != nil {
 		return err
@@ -164,8 +158,8 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions, evidence),
 		Access:    evidence,
 	}
-	facts, report, preflightErr := pipeline.Preflight(ctx, plan)
-	if err := p.writeBYOPreflight(report, preflightErr, progress); err != nil {
+	facts, _, err := pipeline.Preflight(ctx, plan)
+	if err != nil {
 		return err
 	}
 	_, needsKubelet := hostBindings["kubeletObjectId"]
@@ -230,8 +224,8 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 				*principal = value
 			}
 		}
-		keys, checks, err := evidence.ExistingRoleAssignmentKeys(ctx, plan, grantFacts, federationRoleID)
-		if err := p.writeBYOPreflight(checks, err, progress); err != nil {
+		keys, _, err := evidence.ExistingRoleAssignmentKeys(ctx, plan, grantFacts, federationRoleID)
+		if err != nil {
 			return fmt.Errorf("resolve existing BYO AKS role assignments: %w", err)
 		}
 		resolvedBindings["byoAksExistingRoleAssignmentKeys"] = keys
@@ -242,58 +236,6 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	source.parameters = mergeParameters(source.parameters, hostBindings)
 	return nil
 }
-
-func (p *FoundryProvisioningProvider) writeBYOPreflight(
-	report onboarding.Report, preflightErr error, progress grpcbroker.ProgressFunc,
-) error {
-	var output strings.Builder
-	if err := report.Write(&output); err != nil {
-		return errors.Join(preflightErr, err)
-	}
-	if output.Len() > 0 {
-		p.preflightReport.WriteString(output.String())
-		if preflightErr != nil {
-			progress("BYO AKS preflight checks failed")
-		} else {
-			progress("BYO AKS preflight checks completed")
-		}
-	}
-	return preflightErr
-}
-
-func (p *FoundryProvisioningProvider) preflightFailure(err error) error {
-	if err == nil || p.preflightReport.Len() == 0 {
-		return err
-	}
-	message := onboarding.RedactDiagnostic(err.Error()) +
-		"\n\nBYO-AKS preflight report:\n" + p.preflightReport.String()
-	wire := azdext.WrapError(err)
-	var classified error
-	if wire.GetOrigin() != azdext.ErrorOrigin_ERROR_ORIGIN_UNSPECIFIED {
-		classified = azdext.UnwrapError(wire)
-	}
-	if value, ok := errors.AsType[*azdext.ServiceError](classified); ok {
-		value.Message = message
-	} else if value, ok := errors.AsType[*azdext.LocalError](classified); ok {
-		value.Message = message
-	} else if value, ok := errors.AsType[*azdext.ToolError](classified); ok {
-		if original, ok := errors.AsType[*azdext.ToolError](err); ok {
-			value = new(*original)
-			classified = value
-		}
-		value.Message = message
-	}
-	return &byoPreflightError{cause: err, classified: classified, message: message}
-}
-
-type byoPreflightError struct {
-	cause, classified error
-	message           string
-}
-
-func (e *byoPreflightError) Error() string { return e.message }
-
-func (e *byoPreflightError) Unwrap() []error { return []error{e.classified, e.cause} }
 
 func byoARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
 	var result arm.ClientOptions

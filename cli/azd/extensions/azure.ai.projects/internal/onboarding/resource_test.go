@@ -169,18 +169,6 @@ func resourceFake() *readFake {
 			"nodeLabels": map[string]any{"agents.ai.azure.com/sandbox-node": "true"},
 		}},
 	}}}
-	var skus []any
-	for _, size := range []struct {
-		name, cpu string
-	}{{"Standard_E4s_v5", "4"}, {"Standard_D8as_v5", "8"}} {
-		skus = append(skus, map[string]any{
-			"name": size.name, "resourceType": "virtualMachines", "locations": []string{"westus"},
-			"capabilities": []any{map[string]any{"name": "vCPUs", "value": size.cpu},
-				map[string]any{"name": "MemoryGB", "value": "32"}},
-		})
-	}
-	fake.replies["/subscriptions/cluster-sub/providers/microsoft.compute/skus"] =
-		readReply{200, map[string]any{"value": skus}}
 	return fake
 }
 
@@ -207,9 +195,10 @@ func TestResourceCheckerReadsOnlySupportingResources(t *testing.T) {
 	for _, id := range aksCheckIDs {
 		assert.Equal(t, Pass, checkWithID(t, report, id).Status)
 	}
-	assert.Len(t, fake.requests, 8, "two subscription tenants, three supporting resources, AKS, pools and SKUs")
+	assert.Len(t, fake.requests, 7, "two subscription tenants, three supporting resources, AKS and pools")
 	assert.Equal(t, 1, fake.count(testCluster))
 	assert.Equal(t, 1, fake.count(testCluster+"/agentPools"))
+	assert.Zero(t, fake.count("/subscriptions/cluster-sub/providers/Microsoft.Compute/skus"))
 	for _, request := range fake.requests {
 		assert.Equal(t, http.MethodGet, request.method)
 		assert.NotContains(t, request.path, "Microsoft.Network")
@@ -267,7 +256,6 @@ func TestResourceCheckerSelectsOnePoolWithCompleteNetworkEvidence(t *testing.T) 
 					Properties: new(*first.Properties),
 				}
 				second.Properties.NodeLabels = maps.Clone(first.Properties.NodeLabels)
-				first.Properties.VMSize, second.Properties.VMSize = new("First_Size"), new("Second_Size")
 				networkID := testGroup + "/providers/Microsoft.Network/virtualNetworks/network"
 				agentSubnetID := networkID + "/subnets/agents"
 				firstSubnetID, secondSubnetID := networkID+"/subnets/first", networkID+"/subnets/second"
@@ -368,8 +356,6 @@ func TestResourceCheckerSelectsOnePoolWithCompleteNetworkEvidence(t *testing.T) 
 						assert.Equal(t, Pass, check.Status)
 					}
 				}
-				capacity := checkWithID(t, report, "agent-pool")
-				assert.Contains(t, capacity.Warning, "Pool "+*selected.Name+":")
 				assert.Equal(t, Pass, checkWithID(t, report, "system-pool").Status)
 				for _, check := range report {
 					assert.NotEqual(t, otherSubnetID, check.Scope, "do not retain another pool's network report")
@@ -680,19 +666,19 @@ func TestStorageRulesRetainSourceStandardsAndDefaults(t *testing.T) {
 		var account armstorage.Account
 		require.NoError(t, json.Unmarshal(raw, &account))
 		report := storageResourceChecks(account)
-		require.NoError(t, report.Err(), "redundancy is a recommendation, not a blocking requirement")
-		assert.Equal(t, sku != "Standard_ZRS", report[0].Warning != "")
+		require.NoError(t, report.Err(), "Storage redundancy does not block provisioning")
 	}
 }
 
-func TestResourceReportURLNonDisclosure(t *testing.T) {
-	//nolint:gosec // G101: synthetic URL credentials exercise report and error redaction.
+func TestResourceBlockedErrorURLNonDisclosure(t *testing.T) {
+	//nolint:gosec // G101: synthetic URL credentials exercise blocking-error redaction.
 	report := Report{{ID: "resource-refs", Mandatory: true, Status: Fail,
 		Scope:    "https://user:private-password@host/path?sig=private-token#private-fragment",
 		Observed: "read https://user:private-password@host/path?sig=private-token#private-fragment"}}
-	var output strings.Builder
-	require.NoError(t, report.Write(&output))
-	assert.NotContains(t, output.String()+report.Err().Error(), "private-")
-	assert.Contains(t, output.String(), "https://host/path")
-	assert.Contains(t, report.Err().Error(), "resource-refs FAIL [https://host/path]")
+	err := report.Err()
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "private-")
+	assert.NotContains(t, err.Error(), "user:")
+	assert.NotContains(t, err.Error(), "sig=")
+	assert.Contains(t, err.Error(), "resource-refs FAIL [https://host/path]")
 }

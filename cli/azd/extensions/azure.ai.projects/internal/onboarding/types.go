@@ -10,7 +10,6 @@ package onboarding
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/url"
 	"regexp"
 	"strings"
@@ -36,7 +35,6 @@ type Check struct {
 	Observed    string
 	Missing     string
 	Remediation string
-	Warning     string
 	Mandatory   bool
 	Cause       error
 }
@@ -58,32 +56,6 @@ func (r Report) Err() error {
 	}
 	if len(blocked) > 0 {
 		return &BlockedError{Checks: blocked}
-	}
-	return nil
-}
-
-// Write renders evidence to the caller's writer.
-func (r Report) Write(w io.Writer) error {
-	for _, c := range r {
-		if _, err := fmt.Fprintf(w, "%s %s [%s]\n  Expected: %s\n  Observed: %s\n"+
-			"  Missing evidence/permission: %s\n  Remediation: %s\n",
-			c.ID, c.Status, RedactDiagnostic(c.Scope), RedactDiagnostic(c.Expected), RedactDiagnostic(c.Observed),
-			RedactDiagnostic(c.Missing), RedactDiagnostic(c.Remediation)); err != nil {
-			return err
-		}
-		if c.Cause != nil {
-			if _, err := fmt.Fprintf(w, "  Cause: %s\n", RedactDiagnostic(c.Cause.Error())); err != nil {
-				return err
-			}
-		}
-	}
-	for _, c := range r {
-		if c.Warning != "" {
-			if _, err := fmt.Fprintf(w, "WARNING: %s [%s]: %s\n",
-				c.ID, RedactDiagnostic(c.Scope), RedactDiagnostic(c.Warning)); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }
@@ -145,7 +117,6 @@ func SkippedCheck(id, scope, requirement, reason string) Check {
 	return Check{
 		ID: id, Scope: scope, Status: Skipped, Expected: requirement,
 		Observed: "check skipped: " + reason, Missing: reason,
-		Warning: "skipped " + requirement + ": " + reason,
 	}
 }
 

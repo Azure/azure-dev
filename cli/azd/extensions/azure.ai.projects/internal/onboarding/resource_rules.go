@@ -1,17 +1,15 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore armcompute armstorage GZRS Kata katagen kubelet kubeletidentity OSSKU RAGRS RAGZRS
+// cspell:ignore armstorage Kata katagen kubelet kubeletidentity OSSKU
 
 package onboarding
 
 import (
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 )
@@ -88,99 +86,6 @@ func agentImage(raw string) (bool, bool) {
 		return false, false
 	}
 	return numericVersion(strings.TrimPrefix(raw, family), []int{202608, 14, 0})
-}
-
-func vmSizes(pool *armcontainerservice.ManagedClusterAgentPoolProfileProperties) []string {
-	var result []string
-	if pool.VMSize != nil {
-		result = append(result, *pool.VMSize)
-	}
-	if pool.VirtualMachinesProfile != nil && pool.VirtualMachinesProfile.Scale != nil {
-		for _, manual := range pool.VirtualMachinesProfile.Scale.Manual {
-			if manual == nil {
-				result = append(result, "")
-			} else {
-				result = append(result, resourceValue(manual.Size))
-			}
-		}
-	}
-	for _, actual := range pool.VirtualMachineNodesStatus {
-		if actual == nil {
-			result = append(result, "")
-		} else {
-			result = append(result, resourceValue(actual.Size))
-		}
-	}
-	slices.Sort(result)
-	return slices.Compact(result)
-}
-
-func skuCapacity(
-	skus []*armcompute.ResourceSKU, region, size string, cpu, memory float64,
-) (Status, string) {
-	for _, sku := range skus {
-		if sku == nil || !strings.EqualFold(resourceValue(sku.Name), size) ||
-			resourceValue(sku.ResourceType) != "virtualMachines" {
-			continue
-		}
-		inRegion := false
-		for _, location := range sku.Locations {
-			inRegion = inRegion || strings.EqualFold(resourceValue(location), region)
-		}
-		for _, location := range sku.LocationInfo {
-			inRegion = inRegion || location != nil && strings.EqualFold(resourceValue(location.Location), region)
-		}
-		if !inRegion {
-			continue
-		}
-		capabilities := map[string]float64{}
-		for _, capability := range sku.Capabilities {
-			if capability == nil {
-				continue
-			}
-			value, err := strconv.ParseFloat(resourceValue(capability.Value), 64)
-			if err == nil {
-				capabilities[resourceValue(capability.Name)] = value
-			}
-		}
-		cores, hasCPU := capabilities["vCPUs"]
-		if available, ok := capabilities["vCPUsAvailable"]; ok {
-			cores, hasCPU = available, true
-		}
-		ram, hasMemory := capabilities["MemoryGB"]
-		if !hasCPU || !hasMemory {
-			return Unverified, "SKU lacks vCPUs/vCPUsAvailable or MemoryGB capability"
-		}
-		detail := fmt.Sprintf("%s in %s: %g available vCPU / %g GiB", size, region, cores, ram)
-		if !(cores >= cpu && ram >= memory) {
-			return Fail, detail
-		}
-		return Pass, detail
-	}
-	return Unverified, fmt.Sprintf("no exact virtualMachines SKU capability for %s in %s", size, region)
-}
-
-func poolCapacityWarning(
-	pool *armcontainerservice.AgentPool, skus []*armcompute.ResourceSKU, region string, cpu, memory float64,
-) string {
-	sizes := vmSizes(pool.Properties)
-	var details []string
-	if len(sizes) == 0 {
-		details = append(details, "pool has no explicit VM size evidence")
-	}
-	for _, size := range sizes {
-		status, detail := skuCapacity(skus, region, size, cpu, memory)
-		if status != Pass {
-			details = append(details, detail)
-		}
-	}
-	if len(details) == 0 {
-		return ""
-	}
-	return fmt.Sprintf(
-		"Pool %s: %s. At least %g available vCPU / %g GiB per VM is recommended; "+
-			"this recommendation does not block provisioning or change the pool.",
-		resourceValue(pool.Name), strings.Join(details, "; "), cpu, memory)
 }
 
 func agentPoolChecks(pool *armcontainerservice.AgentPool) Report {
@@ -399,18 +304,6 @@ func storageResourceChecks(account armstorage.Account) Report {
 		sku = resourceValue(account.SKU.Name)
 	}
 	typeCheck.Observed += "; SKU=" + sku
-	switch strings.ToUpper(strings.TrimSpace(sku)) {
-	case "STANDARD_ZRS", "STANDARD_GZRS", "STANDARD_RAGZRS", "PREMIUM_ZRS":
-	case "STANDARD_LRS", "STANDARD_GRS", "STANDARD_RAGRS", "PREMIUM_LRS":
-		typeCheck.Warning = fmt.Sprintf(
-			"Supplied Storage account uses %s without zone redundancy. "+
-				"Zone redundancy is recommended; this recommendation does not block provisioning or change the account.",
-			sku)
-	default:
-		typeCheck.Warning = "The supplied Storage account SKU does not establish zone redundancy. " +
-			"Zone redundancy is recommended; confirm the account's redundancy setting. " +
-			"This recommendation does not block provisioning or change the account."
-	}
 	// Accounts.GetProperties uses API 2024-01-01. Its documented defaults are:
 	// HTTPS=true (since 2019-04-01), minimum TLS=1.0.
 	https := p.EnableHTTPSTrafficOnly == nil || *p.EnableHTTPSTrafficOnly

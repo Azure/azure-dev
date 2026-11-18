@@ -10,7 +10,7 @@ description: >-
   interactive-scenario YAML authoring, CI redesign, or skill migration.
 license: MIT
 metadata:
-  version: "1.0"
+  version: "1.1"
 ---
 
 # AZD Extension E2E Testing
@@ -56,6 +56,24 @@ The authoring workflow below does not override these restrictions.
 - Keep each test focused on one coherent behavior. Share setup through fixtures;
   do not force every feature through init/provision/deploy/invoke when its
   contract concerns a different operation.
+
+### Test-plan issue readiness
+
+- Read the referenced test-plan task issue and relevant clarifications before
+  authoring. Reuse its identity instead of creating a duplicate tracking issue.
+- Check that the feature goal, scenario scope, prerequisites, inputs, observable
+  expected results, and resource cleanup boundaries are clear. Keep owner and
+  priority decisions with the feature owner; leave unknown values unconfirmed.
+- During authoring, offer a concise issue update for missing details and request
+  owner confirmation for material expectations. When a new issue draft is useful,
+  use `[Feature] <scenario>`. Sufficient acceptance criteria can support coding
+  even without an existing issue; do not require issue creation as a gate.
+- Keep proposed issue text in the response unless a file or publication is
+  requested. Do not create or edit issue content or metadata without explicit
+  permission. Standalone plan-only requests do not generate E2E code.
+- Link generated tests to the source issue and distinguish implementation,
+  offline validation, live execution, and CI evidence in any requested status
+  update. Never mark a case verified merely because its code was generated.
 
 ## 2. Establish the real E2E boundary
 

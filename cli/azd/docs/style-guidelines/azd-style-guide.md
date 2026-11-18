@@ -71,6 +71,11 @@ func (s *Service) Run(ctx context.Context) error {
 }
 ```
 
+## Environment variable naming
+
+Use the `AZD_` prefix for new environment variables that azd defines to control azd behavior. Keep
+names required by external platforms, tools, and established project or integration contracts.
+
 ## User Experience Patterns
 
 ### Progress Reports

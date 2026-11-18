@@ -6,12 +6,14 @@ package cmd
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -43,6 +45,19 @@ func Test_NewPipelineConfigFlags(t *testing.T) {
 	global := &internal.GlobalCommandOptions{}
 	flags := newPipelineConfigFlags(cmd, global)
 	require.NotNil(t, flags)
+}
+
+func Test_PipelineConfig_RequiresInteractive(t *testing.T) {
+	t.Parallel()
+
+	group := pipelineActions(actions.NewActionDescriptor("azd", nil))
+
+	configIdx := slices.IndexFunc(group.Children(), func(d *actions.ActionDescriptor) bool {
+		return d.Name == "config"
+	})
+	require.GreaterOrEqual(t, configIdx, 0)
+	require.True(t, group.Children()[configIdx].Options.RequireInteractive)
+	require.False(t, group.Options.RequireInteractive, "only 'pipeline config' should require interactive input")
 }
 
 type pipelineConfigTestActivator struct {

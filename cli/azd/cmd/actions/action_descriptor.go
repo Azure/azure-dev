@@ -201,6 +201,11 @@ type ActionDescriptorOptions struct {
 	GroupingOptions CommandGroupOptions
 	// Whether or not the command requires a principal login
 	RequireLogin bool
+	// Whether the command requires interactive input. When set, the command fails before
+	// login or action resolution if prompts are disabled (for example, with --no-prompt).
+	// Use this when the command's prompts make decisions that azd can't safely infer, so
+	// automatically accepting their defaults could produce the wrong result.
+	RequireInteractive bool
 	// Whether the command should execute as fast as possible, skipping
 	// non-essential background work like update checks.
 	// Use for programmatic/hidden commands (e.g., auth token) where

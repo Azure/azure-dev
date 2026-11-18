@@ -570,6 +570,15 @@ func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 			return !descriptor.Options.DisableTroubleshooting
 		}).
 		UseMiddleware("cancellation", middleware.NewCancellationMiddleware).
+		// Runs before loginGuard so commands that require interactive input fail before
+		// attempting login or resolving actions with side effects.
+		UseMiddlewareWhen(
+			"interactiveGuard",
+			middleware.NewInteractiveGuardMiddleware,
+			func(descriptor *actions.ActionDescriptor) bool {
+				return descriptor.Options.RequireInteractive
+			},
+		).
 		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			// Check if the command or any of its parents require login
 			current := descriptor

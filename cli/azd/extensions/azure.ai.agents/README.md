@@ -906,9 +906,10 @@ Only truncation and partial query results produce warnings on stderr; missing
 spans or sampling alone do not produce an incomplete-export warning. Query and
 service failures remain errors. Attributes whose names identify
 credentials (such as
-`authorization`, `cookie`, `api_key`, `password`, `secret`, or tokens) and values
-that start with `Bearer ` are replaced with `[REDACTED]`. HTTP URL values have
-user information, query strings, and fragments removed. Prompt and response
+`authorization`, `cookie`, `api_key`, `password`, `secret`, or `token`) and values
+that start with `Bearer ` are replaced with `[REDACTED]`. Token usage counters
+are kept. HTTP URL values have user information, query strings, and fragments
+removed. Prompt and response
 content that the agent recorded in span attributes is kept, so handle exported
 traces as sensitive data.
 

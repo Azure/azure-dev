@@ -34,7 +34,10 @@ func testLogRows() [][]any {
 		{"2026-11-16T11:45:00Z", "log", 2.0, "Retrying due to server request error",
 			"", "1", "session-a", "7ce8546a1be04f0d94c30247b5e0f596", "53bfe56de8e09581",
 			"azure.monitor.opentelemetry.exporter.export._base", "instance-1", 2.0,
-			map[string]any{"gen_ai.agent.name": "support", "authorization": "Bearer secret"}},
+			map[string]any{ // #nosec G101 -- synthetic credentials
+				"gen_ai.agent.name": "support", "authorization": "Bearer secret",
+				"token": "synthetic-opaque-value", "gen_ai.usage.input_tokens": 42.0,
+			}},
 		{"2026-11-16T11:40:00Z", "log", 1.0, "AgentServerHost started",
 			"", "1", "session-b", "", "", "azure.ai.agentserver", "instance-1", 1.0,
 			map[string]any{"gen_ai.agent.name": "support"}},
@@ -100,6 +103,9 @@ func TestRunMonitorLogQuery_JSON(t *testing.T) {
 	assert.Equal(t, "7ce8546a1be04f0d94c30247b5e0f596", result.Data[0].TraceID)
 	assert.Equal(t, "53bfe56de8e09581", result.Data[0].SpanID)
 	assert.Equal(t, redactedValue, result.Data[0].Attributes["authorization"])
+	assert.Equal(t, redactedValue, result.Data[0].Attributes["token"])
+	assert.Equal(t, 42.0, result.Data[0].Attributes["gen_ai.usage.input_tokens"])
+	assert.NotContains(t, out.String(), "synthetic-opaque-value")
 	assert.Equal(t, "exception", result.Data[1].RecordType)
 	assert.Equal(t, "error", result.Data[1].Severity)
 	assert.Equal(t, "ServiceRequestError", result.Data[1].ExceptionType)

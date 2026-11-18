@@ -960,6 +960,7 @@ var sensitiveAttributeNames = map[string]bool{
 	"password":                  true,
 	"secret":                    true,
 	"client_secret":             true,
+	"token":                     true,
 	"access_token":              true,
 	"refresh_token":             true,
 	"id_token":                  true,

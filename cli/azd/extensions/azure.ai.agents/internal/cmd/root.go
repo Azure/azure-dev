@@ -50,7 +50,7 @@ func NewRootCommand() *cobra.Command {
 		switch operation {
 		case "deploy", "init", "listen", "metadata", "version":
 		default:
-			if !cmd.Flags().Changed(directAgentEndpointFlag) && !cmd.Flags().Changed(directProjectEndpointFlag) {
+			if !hasDirectInspectionTarget(cmd, operation) {
 				telemetryReporter.reportProject(cmd.Context(), operation)
 			}
 		}

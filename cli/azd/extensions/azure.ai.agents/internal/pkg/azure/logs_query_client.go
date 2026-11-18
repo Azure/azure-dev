@@ -10,8 +10,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -27,16 +31,23 @@ const (
 	logsQueryScope    = "https://api.loganalytics.io/.default"
 )
 
-// appInsightsResourceIDPattern matches an Application Insights component resource ID.
-// Resource IDs come from service responses, so they are validated before being
-// placed in a request URL.
+// Validate the ID shape separately from the provider-specific naming rules.
 var appInsightsResourceIDPattern = regexp.MustCompile(
-	`(?i)^/subscriptions/[0-9a-f-]+/resourceGroups/[\w.()-]+/providers/microsoft\.insights/components/[\w.()-]+$`,
+	`(?i)^/subscriptions/[0-9a-f-]+/resourceGroups/([\p{L}\p{Nd}_.()-]{1,90})/` +
+		`providers/microsoft\.insights/components/([^/]+)$`,
 )
 
 // IsAppInsightsResourceID reports whether id is an Application Insights component resource ID.
 func IsAppInsightsResourceID(id string) bool {
-	return appInsightsResourceIDPattern.MatchString(id)
+	parts := appInsightsResourceIDPattern.FindStringSubmatch(id)
+	if parts == nil || strings.HasSuffix(parts[1], ".") {
+		return false
+	}
+	// https://learn.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftinsights
+	component := parts[2]
+	return utf8.ValidString(component) && utf8.RuneCountInString(component) <= 260 &&
+		!strings.HasSuffix(component, " ") && !strings.HasSuffix(component, ".") &&
+		!strings.ContainsAny(component, `%&\?/#`) && strings.IndexFunc(component, unicode.IsControl) == -1
 }
 
 // LogsQueryClient runs KQL queries against an Azure resource through the Azure
@@ -136,7 +147,11 @@ func (c *LogsQueryClient) QueryResource(
 		return nil, fmt.Errorf("failed to encode query: %w", err)
 	}
 
-	req, err := runtime.NewRequest(ctx, http.MethodPost, c.endpoint+resourceID+"/query")
+	segments := strings.Split(resourceID, "/")
+	for i, segment := range segments {
+		segments[i] = url.PathEscape(segment)
+	}
+	req, err := runtime.NewRequest(ctx, http.MethodPost, c.endpoint+strings.Join(segments, "/")+"/query")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

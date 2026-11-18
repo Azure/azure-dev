@@ -101,17 +101,6 @@ func appInsightsConnection(name, resourceID string, isDefault bool) azure.Connec
 }
 
 func queryResult(columns []string, rows ...[]any) *azure.LogsQueryResult {
-	if len(columns) > 0 && columns[len(columns)-1] == "agent_match_count" {
-		matches := 0
-		for _, row := range rows {
-			if row[1] != "exception" && genAISpanMatchesAgent(recordDynamic(map[string]any{"attributes": row[14]}, "attributes"), "support") {
-				matches++
-			}
-		}
-		for i := range rows {
-			rows[i] = append(rows[i], float64(matches))
-		}
-	}
 	table := azure.LogsQueryTable{Name: "PrimaryResult", Rows: rows}
 	for _, column := range columns {
 		table.Columns = append(table.Columns, azure.LogsQueryColumn{Name: column})
@@ -119,18 +108,11 @@ func queryResult(columns []string, rows ...[]any) *azure.LogsQueryResult {
 	return &azure.LogsQueryResult{Tables: []azure.LogsQueryTable{table}}
 }
 
-func genAISpanMatchesAgent(attributes map[string]any, agentName string) bool {
-	operation, _ := attributes["gen_ai.operation.name"].(string)
-	if operation == "" {
-		return false
+func exportQueryResult(matches int, rows ...[]any) *azure.LogsQueryResult {
+	for i, row := range rows {
+		rows[i] = append(row, float64(matches))
 	}
-	name, _ := attributes["gen_ai.agent.name"].(string)
-	id, _ := attributes["gen_ai.agent.id"].(string)
-	if name != "" {
-		return strings.EqualFold(name, agentName)
-	}
-	prefix := agentName + ":"
-	return strings.EqualFold(id, agentName) || len(id) > len(prefix) && strings.EqualFold(id[:len(prefix)], prefix)
+	return queryResult(traceExportColumns, rows...)
 }
 
 var testTraceNow = time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
@@ -207,6 +189,15 @@ func TestMillisecondsPreserveSubmillisecondPrecision(t *testing.T) {
 }
 
 func TestResolveTracingSource(t *testing.T) {
+	t.Run("accepts provider-valid resource names", func(t *testing.T) {
+		id := strings.Replace(testAppInsightsID, "/rg/", "/rg-\u00e9quipe/", 1)
+		id = strings.TrimSuffix(id, "/appi-one") + "/agent telemetry"
+		lister := &fakeConnectionLister{connections: []azure.Connection{appInsightsConnection("telemetry", id, true)}}
+		source, err := resolveTracingSource(t.Context(), lister, testProjectEndpoint)
+		require.NoError(t, err)
+		assert.Equal(t, id, source.ResourceID)
+	})
+
 	t.Run("no connection", func(t *testing.T) {
 		lister := &fakeConnectionLister{connections: []azure.Connection{
 			{Name: "search", Type: azure.ConnectionTypeCognitiveSearch, Target: "https://search"},
@@ -322,10 +313,23 @@ func TestBuildTraceQueries(t *testing.T) {
 
 	export := buildTraceExportQuery("trace-1", "support", testFoundryProjectID, start, testTraceNow, 100)
 	assert.Contains(t, export, "let traceId = 'trace-1';")
+	assert.Contains(t, export, "let projectId = '"+testFoundryProjectID+"';")
+	assert.Contains(t, export, "let agentName = 'support';")
 	assert.Contains(t, export, "| take 101")
+	assert.Contains(t, export, "| where operation_Id == traceId")
+	assert.Contains(t, export, "foundry_project = tostring(customDimensions['microsoft.foundry.project.id'])")
+	assert.Contains(t, export, "gen_ai_project = tostring(customDimensions['gen_ai.azure_ai_project.id'])")
+	assert.Contains(t, export, "isnotempty(foundry_project) or isnotempty(gen_ai_project)")
 	assert.Contains(t, export, "isempty(foundry_project) or foundry_project =~ projectId")
 	assert.Contains(t, export, "isempty(gen_ai_project) or gen_ai_project =~ projectId")
 	assert.Contains(t, export, "iff(isnotempty(agent_name_attr), agent_name_attr =~ agentName,")
+	assert.Contains(t, export, "agent_id_attr =~ agentName or")
+	assert.Contains(t, export, "agent_id_attr startswith strcat(agentName, ':') and strlen(agent_id_attr) > strlen(agentName) + 1")
+	assert.Contains(t, export,
+		"let agentMatches = toscalar(scoped | where span_kind != 'exception' | "+
+			"where gettype(customDimensions['gen_ai.operation.name']) == 'string'\n"+
+			"| where isnotempty(tostring(customDimensions['gen_ai.operation.name'])) | count);")
+	assert.Less(t, strings.Index(export, "agent_name_attr =~ agentName"), strings.Index(export, "let agentMatches"))
 	assert.Less(t, strings.Index(export, "let agentMatches"), strings.Index(export, "| take 101"))
 }
 
@@ -523,76 +527,6 @@ func TestAssessTraceCompleteness_ReportsAbsentSpansWithoutGuessingCause(t *testi
 	})
 }
 
-func TestGenAISpanMatchesAgent(t *testing.T) {
-	tests := []struct {
-		name       string
-		attributes string
-		want       bool
-	}{
-		{
-			name: "hosted invocation with UUID agent ID",
-			attributes: `{"gen_ai.agent.name":"support","gen_ai.agent.id":"00000000-0000-0000-0000-000000000001",
-				"gen_ai.agent.version":"1","gen_ai.operation.name":"invoke_agent"}`,
-			want: true,
-		},
-		{
-			name:       "versioned agent ID without name",
-			attributes: `{"gen_ai.agent.id":"support:3","gen_ai.operation.name":"invoke_agent"}`,
-			want:       true,
-		},
-		{
-			name:       "case insensitive agent identity",
-			attributes: `{"gen_ai.agent.name":"SUPPORT","gen_ai.operation.name":"invoke_agent"}`,
-			want:       true,
-		},
-		{
-			name:       "partial trace with model operation",
-			attributes: `{"gen_ai.agent.name":"support","gen_ai.operation.name":"chat"}`,
-			want:       true,
-		},
-		{
-			name:       "tool operation",
-			attributes: `{"gen_ai.agent.name":"support","gen_ai.operation.name":"execute_tool"}`,
-			want:       true,
-		},
-		{
-			name: "inherited agent identity on infrastructure span",
-			attributes: `{"gen_ai.agent.name":"support","gen_ai.agent.id":"00000000-0000-0000-0000-000000000001",
-				"gen_ai.agent.version":"1","_MS.ProcessedByMetricExtractors":"True"}`,
-		},
-		{
-			name:       "empty operation",
-			attributes: `{"gen_ai.agent.name":"support","gen_ai.operation.name":""}`,
-		},
-		{
-			name:       "invalid operation attribute type",
-			attributes: `{"gen_ai.agent.name":"support","gen_ai.operation.name":42}`,
-		},
-		{
-			name:       "GenAI span from another agent",
-			attributes: `{"gen_ai.agent.name":"support-other","gen_ai.agent.id":"support-other:1","gen_ai.operation.name":"invoke_agent"}`,
-		},
-		{
-			name:       "conflicting agent name takes precedence over agent ID",
-			attributes: `{"gen_ai.agent.name":"other","gen_ai.agent.id":"support:1","gen_ai.operation.name":"invoke_agent"}`,
-		},
-		{
-			name:       "role without agent identity",
-			attributes: `{"service.name":"support","gen_ai.operation.name":"invoke_agent"}`,
-		},
-		{
-			name:       "empty version does not identify agent",
-			attributes: `{"gen_ai.agent.id":"support:","gen_ai.operation.name":"invoke_agent"}`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			attributes := recordDynamic(map[string]any{"attributes": tt.attributes}, "attributes")
-			assert.Equal(t, tt.want, genAISpanMatchesAgent(attributes, "support"))
-		})
-	}
-}
-
 func exportOptions() *traceOptions {
 	return &traceOptions{
 		traceID: "trace-1", since: defaultTraceExportWindow, sinceLabel: "30d", output: "json",
@@ -605,11 +539,8 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 		for range maxTraceExportSpans + 1 {
 			rows = append(rows, exportRow("dependency", "child", "", "dependency", true, 1, `{}`))
 		}
-		result := queryResult(traceExportColumns, rows...)
 		// The scalar count covers the full window, including a match beyond the returned rows.
-		for _, row := range result.Tables[0].Rows {
-			row[len(row)-1] = float64(1)
-		}
+		result := exportQueryResult(1, rows...)
 		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: result})
 		var out, errOut bytes.Buffer
 		require.NoError(t, runMonitorTraces(t.Context(), testTraceTarget(), exportOptions(), deps, &out, &errOut))
@@ -619,10 +550,12 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 		assert.Len(t, export.Spans, maxTraceExportSpans)
 	})
 	t.Run("complete trace with redaction", func(t *testing.T) {
-		logs := &fakeTraceQuerier{result: queryResult(traceExportColumns,
+		logs := &fakeTraceQuerier{result: exportQueryResult(1,
 			exportRow("request", "root", "trace-1", "invoke_agent", true, 1, supportAgentAttributes),
-			exportRow("dependency", "child", "root", "chat", false, 1,
-				`{"http.request.header.authorization":"Bearer abc","gen_ai.prompt":"hello","x":"bearer token"}`),
+			exportRow("dependency", "child", "root", "chat", false, 1, // #nosec G101 -- synthetic credentials
+				`{"http.request.header.authorization":"Bearer abc","gen_ai.prompt":"hello","x":"bearer token",`+
+					`"token":"synthetic-opaque-value","custom.token":"synthetic-namespaced-value",`+
+					`"gen_ai.usage.output_tokens":42}`),
 			exportRow("exception", "", "child", "", nil, 1, `{"api_key":"k"}`),
 		)}
 		deps, _, _ := newFakeTraceDeps(logs)
@@ -644,26 +577,21 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 		assert.Equal(t, "2026-11-16T11:00:00.25Z", export.Spans[0].EndTime)
 		assert.Equal(t, redactedValue, export.Spans[1].Attributes["http.request.header.authorization"])
 		assert.Equal(t, redactedValue, export.Spans[1].Attributes["x"])
+		assert.Equal(t, redactedValue, export.Spans[1].Attributes["token"])
+		assert.Equal(t, redactedValue, export.Spans[1].Attributes["custom.token"])
+		assert.Equal(t, 42.0, export.Spans[1].Attributes["gen_ai.usage.output_tokens"])
+		assert.NotContains(t, out.String(), "synthetic-opaque-value")
+		assert.NotContains(t, out.String(), "synthetic-namespaced-value")
 		assert.Equal(t, "hello", export.Spans[1].Attributes["gen_ai.prompt"])
 		require.Len(t, export.Exceptions, 1)
 		assert.Equal(t, redactedValue, export.Exceptions[0].Attributes["api_key"])
 	})
 
-	t.Run("not found", func(t *testing.T) {
+	t.Run("no scoped rows, including traces from another agent", func(t *testing.T) {
 		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns)})
-		err := runMonitorTraces(t.Context(), testTraceTarget(), exportOptions(), deps,
-			&bytes.Buffer{}, &bytes.Buffer{})
-		requireLocalErrorCode(t, err, exterrors.CodeTraceNotFound)
-	})
-
-	t.Run("trace from another agent", func(t *testing.T) {
-		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
-			exportRow("request", "root", "", "invoke_agent", true, 1,
-				`{"gen_ai.agent.name":"support-other","gen_ai.agent.id":"support-other:1","gen_ai.operation.name":"invoke_agent"}`),
-		)})
 		var out bytes.Buffer
 		err := runMonitorTraces(t.Context(), testTraceTarget(), exportOptions(), deps, &out, &bytes.Buffer{})
-		requireLocalErrorCode(t, err, exterrors.CodeTraceAgentMismatch)
+		requireLocalErrorCode(t, err, exterrors.CodeTraceNotFound)
 		assert.Empty(t, out.String())
 	})
 
@@ -673,7 +601,7 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 			"GET /AzMonSDKDynamicConfiguration", "GET /AzMonSDKDynamicConfigurationChanges",
 		} {
 			t.Run(name, func(t *testing.T) {
-				deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
+				deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: exportQueryResult(0,
 					exportRow("dependency", "infra", "trace-1", name, true, 1,
 						`{"gen_ai.agent.name":"support","gen_ai.agent.id":"00000000-0000-0000-0000-000000000001","gen_ai.agent.version":"1"}`),
 				)})
@@ -688,21 +616,8 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 		}
 	})
 
-	t.Run("operation and selected agent must occur on same span", func(t *testing.T) {
-		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
-			exportRow("dependency", "infra", "", "GET /msi/token", true, 1,
-				`{"gen_ai.agent.name":"support"}`),
-			exportRow("dependency", "other", "infra", "invoke_agent other", true, 1,
-				`{"gen_ai.agent.name":"other","gen_ai.operation.name":"invoke_agent"}`),
-		)})
-		var out bytes.Buffer
-		err := runMonitorTraces(t.Context(), testTraceTarget(), exportOptions(), deps, &out, &bytes.Buffer{})
-		requireLocalErrorCode(t, err, exterrors.CodeTraceAgentMismatch)
-		assert.Empty(t, out.String())
-	})
-
 	t.Run("exception attributes cannot qualify a trace", func(t *testing.T) {
-		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
+		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: exportQueryResult(0,
 			exportRow("exception", "", "missing-parent", "", nil, 1, supportAgentAttributes),
 		)})
 		err := runMonitorTraces(t.Context(), testTraceTarget(), exportOptions(), deps, &bytes.Buffer{}, &bytes.Buffer{})
@@ -710,7 +625,7 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 	})
 
 	t.Run("hosted trace retains infrastructure children", func(t *testing.T) {
-		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
+		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: exportQueryResult(1,
 			exportRow("request", "invoke", "missing-parent", "invoke_agent", true, 1,
 				`{"gen_ai.agent.name":"support","gen_ai.agent.id":"00000000-0000-0000-0000-000000000001",
 				"gen_ai.operation.name":"invoke_agent","gen_ai.agent.version":"1"}`),
@@ -734,7 +649,7 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 	t.Run("missing parent and sampling stay in JSON only", func(t *testing.T) {
 		later := exportRow("dependency", "child", "missing-parent", "chat", true, 4, supportAgentAttributes)
 		later[0] = "2026-11-16T11:00:01Z"
-		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
+		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: exportQueryResult(2,
 			exportRow("request", "root", "", "invoke_agent", true, 1, supportAgentAttributes),
 			later,
 		)})
@@ -754,7 +669,7 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 	})
 
 	t.Run("out file keeps missing root parents and sampling in JSON only", func(t *testing.T) {
-		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: queryResult(traceExportColumns,
+		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: exportQueryResult(1,
 			exportRow("request", "invoke", "missing-parent", "invoke_agent", true, 4, supportAgentAttributes),
 		)})
 		opts := exportOptions()
@@ -801,7 +716,7 @@ func TestRunMonitorTraces_ExportQueryWarnings(t *testing.T) {
 					rows = append(rows, exportRow("dependency", "", "invoke", "chat", true, 1, `{}`))
 				}
 			}
-			result := queryResult(traceExportColumns, rows...)
+			result := exportQueryResult(1, rows...)
 			if tt.partialError != "" {
 				result.Error = &azure.LogsQueryError{Code: "PartialError", Message: tt.partialError}
 			}

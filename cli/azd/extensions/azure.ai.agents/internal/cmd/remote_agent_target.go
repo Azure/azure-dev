@@ -25,6 +25,15 @@ const (
 	directProjectEndpointFlag = "project-endpoint"
 )
 
+func hasDirectInspectionTarget(cmd *cobra.Command, operation string) bool {
+	switch operation {
+	case "show", "monitor", "sessions.list", "sessions.show", "files.list", "files.download":
+		return cmd.Flags().Changed(directAgentEndpointFlag) || cmd.Flags().Changed(directProjectEndpointFlag)
+	default:
+		return false
+	}
+}
+
 // directAgentTargetFlags selects a deployed agent from explicit cloud identity
 // instead of azure.yaml services and azd environment outputs.
 type directAgentTargetFlags struct {

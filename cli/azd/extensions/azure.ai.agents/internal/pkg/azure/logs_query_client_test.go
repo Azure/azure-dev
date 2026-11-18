@@ -74,6 +74,27 @@ func TestLogsQueryClient_QueryResource(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, respErr.StatusCode)
 	})
 
+	t.Run("escapes Azure-valid resource names", func(t *testing.T) {
+		id := strings.Replace(testComponentID, "/rg/", "/rg-\u00e9quipe/", 1)
+		id = strings.TrimSuffix(id, "/appi") + "/agent telemetry"
+		client := &LogsQueryClient{
+			endpoint: logsQueryEndpoint,
+			pipeline: newTestPipeline(func(req *http.Request) (*http.Response, error) {
+				assert.Equal(t, "/v1"+id+"/query", req.URL.Path)
+				assert.Contains(t, req.URL.EscapedPath(), "/resourceGroups/rg-%C3%A9quipe/")
+				assert.True(t, strings.HasSuffix(req.URL.EscapedPath(), "/components/agent%20telemetry/query"))
+				assert.Empty(t, req.URL.RawQuery)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"tables":[]}`)),
+					Request:    req,
+				}, nil
+			}),
+		}
+		_, err := client.QueryResource(t.Context(), id, "requests", start, end)
+		require.NoError(t, err)
+	})
+
 	t.Run("rejects non Application Insights resource IDs", func(t *testing.T) {
 		client := &LogsQueryClient{
 			endpoint: logsQueryEndpoint,
@@ -86,6 +107,14 @@ func TestLogsQueryClient_QueryResource(t *testing.T) {
 			"",
 			"InstrumentationKey=abc",
 			testComponentID + "/../../other",
+			testComponentID + "%2fquery",
+			testComponentID + "?query=value",
+			testComponentID + "#fragment",
+			testComponentID + "\\other",
+			testComponentID + "\nother",
+			testComponentID + " ",
+			testComponentID + ".",
+			strings.Replace(testComponentID, "/rg/", "/../", 1),
 			"/subscriptions/0/resourceGroups/rg/providers/Microsoft.OperationalInsights/workspaces/ws",
 		} {
 			_, err := client.QueryResource(t.Context(), id, "requests", start, end)

@@ -6,34 +6,6 @@ Use this guide together with the entire [CLI handbook](../AGENTS.md) and the
 affected extension's local `AGENTS.md`, when present. Local guides describe
 extension-specific contracts, ownership, and exceptions.
 
-## Unit test authoring
-
-For behavior changes in `azure.ai.agents`, `azure.ai.connections`,
-`azure.ai.inspector`, `azure.ai.projects`, `azure.ai.routines`, `azure.ai.skills`,
-or `azure.ai.toolboxes`, assess existing unit tests and add or update relevant
-tests in the same change. If no test changes are needed, explain why.
-
-Before planning, writing, or reviewing these unit tests, read and follow the
-[unit-testing skill](.github/skills/azd-extension-unit-testing/SKILL.md).
-Derive expected behavior from requirements, not only the implementation.
-Do not run live services for unit tests. For documentation-only changes, do not
-add unrelated tests.
-
-Open the linked file directly; do not rely on automatic nested skill discovery.
-
-## E2E test authoring
-
-Before implementing or reviewing executable E2E tests from a test plan or
-acceptance criteria, read and follow the
-[E2E-testing skill](.github/skills/azd-extension-e2e-testing/SKILL.md).
-Open the linked file directly; do not rely on automatic nested skill discovery.
-
-Reuse compatible test helpers and keep feature assertions separate from
-environment setup and CI orchestration. Report CI selection gaps rather than
-changing workflows unless separately requested. Writing tests does not authorize
-live execution, authentication, deployment, or deletion. For plan-only requests,
-do not generate test code.
-
 ## Security and safe operations
 
 - Redact credentials from URLs before terminal output, logs, error messages,

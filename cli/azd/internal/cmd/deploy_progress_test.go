@@ -6,11 +6,14 @@ package cmd
 import (
 	"bytes"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 func TestDeployProgressTracker_NonInteractive(t *testing.T) {
@@ -170,6 +173,71 @@ func TestDeployProgressTracker_StartTicker(t *testing.T) {
 	output := buf.String()
 	assert.Contains(t, output, "web")
 	assert.Contains(t, output, "Service")
+}
+
+func TestDeployProgressTracker_PauseErasesTableAndSuppressesRender(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+
+	tracker.Render()
+	buf.Reset()
+
+	tracker.PauseRendering()
+	// Header + divider + one service row.
+	assert.Equal(t, "\033[3A\033[J", buf.String(), "pause must erase the rendered table")
+
+	buf.Reset()
+	tracker.Update("web", phaseDeploying, "")
+	tracker.Render()
+	assert.Empty(t, buf.String(), "no output while paused")
+
+	tracker.ResumeRendering()
+	output := buf.String()
+	assert.Contains(t, output, "Deploying")
+	assert.NotContains(t, output, "\033[3A", "resume must draw below the prompt, not over it")
+}
+
+// Regression test for https://github.com/Azure/azure-dev/issues/10252: an interactive
+// prompt displayed while the ticker runs must not be overwritten by periodic redraws.
+func TestDeployProgressTracker_StartTicker_PausedDuringInteraction(t *testing.T) {
+	w := &lockedBuffer{}
+	tracker := newDeployProgressTracker(w, true, []string{"web"})
+	stop := tracker.StartTicker(t.Context())
+	defer stop()
+
+	endInteraction := input.BeginInteraction()
+	_, _ = w.Write([]byte("? Select a deployment target\n"))
+	promptEnd := w.Len()
+
+	// Wait for at least one tick while the prompt is active.
+	time.Sleep(1500 * time.Millisecond)
+	assert.Equal(t, promptEnd, w.Len(), "tracker must not write while a prompt is active")
+
+	endInteraction()
+	assert.Contains(t, w.String()[promptEnd:], "web", "tracker must redraw after the prompt completes")
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Len()
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func TestDeployProgressTracker_StartTicker_NonInteractive(t *testing.T) {

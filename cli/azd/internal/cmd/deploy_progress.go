@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 // Column widths for the progress table.
@@ -69,6 +71,8 @@ type deployProgressTracker struct {
 	writer      io.Writer
 	interactive bool
 	lastLines   int // how many lines we rendered last time (for ANSI overwrite)
+	// paused is set while an interactive prompt owns the terminal; see PauseRendering.
+	paused bool
 }
 
 // ansiEscapeRe matches ANSI escape sequences (CSI and OSC).
@@ -173,6 +177,10 @@ func (t *deployProgressTracker) Render() {
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	if t.paused {
+		return
+	}
 
 	var buf strings.Builder
 
@@ -295,15 +303,46 @@ func (t *deployProgressTracker) RenderFinal() {
 	fmt.Fprint(t.writer, buf.String())
 }
 
+// PauseRendering implements [input.TerminalRenderer]. It erases the dynamic table and
+// suppresses redraws so an interactive prompt can own the terminal. Because Render holds
+// the same lock while writing, no redraw is in flight once this returns.
+func (t *deployProgressTracker) PauseRendering() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.paused = true
+	if t.interactive && t.lastLines > 0 {
+		// Move to the top of the table and erase it, leaving the cursor where the prompt
+		// should render.
+		fmt.Fprintf(t.writer, "\033[%dA\033[J", t.lastLines)
+		t.lastLines = 0
+	}
+}
+
+// ResumeRendering implements [input.TerminalRenderer]. It re-enables redraws and renders
+// the table immediately below whatever the prompt left on screen.
+func (t *deployProgressTracker) ResumeRendering() {
+	t.mu.Lock()
+	t.paused = false
+	t.mu.Unlock()
+
+	t.Render()
+}
+
 // StartTicker begins periodic rendering and returns a stop function that
 // cancels the ticker and waits for the goroutine to exit, ensuring no
 // concurrent Render is in flight when the caller proceeds to RenderFinal.
+//
+// While the ticker runs, the tracker is registered as an [input.TerminalRenderer]
+// so interactive prompts pause it instead of being overwritten by redraws.
 func (t *deployProgressTracker) StartTicker(
 	ctx context.Context,
 ) func() {
 	if !t.interactive {
 		return func() {} // no-op for non-interactive
 	}
+
+	unregister := input.RegisterTerminalRenderer(t)
 
 	tickCtx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
@@ -323,7 +362,11 @@ func (t *deployProgressTracker) StartTicker(
 	// Initial render
 	t.Render()
 
-	return func() { cancel(); wg.Wait() }
+	return sync.OnceFunc(func() {
+		cancel()
+		wg.Wait()
+		unregister()
+	})
 }
 
 func phaseIcon(phase deployPhase) string {

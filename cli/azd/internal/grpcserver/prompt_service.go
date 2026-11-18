@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -1492,9 +1493,13 @@ func newPromptLock() *promptLock {
 func (s *promptService) acquirePromptLock(ctx context.Context) (func(), error) {
 	select {
 	case s.lock.ch <- struct{}{}:
-		return func() {
+		// Extension prompts render directly through pkg/ux, so they must also pause live
+		// terminal renderers such as the deploy progress table.
+		endInteraction := input.BeginInteraction()
+		return sync.OnceFunc(func() {
+			endInteraction()
 			<-s.lock.ch
-		}, nil
+		}), nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

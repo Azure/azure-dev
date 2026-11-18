@@ -325,6 +325,28 @@ created/modified/deleted grouping and sorts paths within each group.
 
 ---
 
+## Terminal ownership during interactive prompts
+
+Live terminal renderers, such as the deploy progress table, redraw from a
+background goroutine while graph steps run. Any step can show an interactive
+prompt (for example, the App Service deployment-slot picker or an extension
+calling the gRPC `PromptService`). A redraw would overwrite that prompt.
+
+`pkg/input` provides a process-wide interaction coordinator:
+
+- Renderers implement `input.TerminalRenderer` and register with
+  `input.RegisterTerminalRenderer` while they own the terminal. The deploy
+  progress tracker registers in `StartTicker` and removes its registration in the stop function.
+- Interactive prompts call `input.BeginInteraction` and the returned end function.
+  `AskerConsole` prompts do this in `doInteraction`/`DoInteraction`. The gRPC
+  `PromptService` does it while holding its prompt lock. Prompts that call `pkg/ux`
+  directly must do the same.
+- While at least one interaction is active, every registered renderer is paused.
+  `PauseRendering` must wait for in-flight output and erase dynamic content.
+  Renderers resume when the last overlapping interaction ends.
+
+---
+
 ## Lock Acquisition Order
 
 Consistent lock ordering prevents deadlocks. The environment persistence path

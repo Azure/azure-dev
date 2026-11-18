@@ -430,3 +430,162 @@ func TestHostedAgentResourceErrorsAcrossDeploymentModes(t *testing.T) {
 		})
 	}
 }
+
+func TestPreflightGetAgentErrorsUseGetAgentOperation(t *testing.T) {
+	t.Run("deployHostedCodeAgent preflight GetAgent 403 attributes to get_agent", func(t *testing.T) {
+		originalTransport := recordproxy.Transport
+		t.Cleanup(func() { recordproxy.Transport = originalTransport })
+
+		writeRequests := 0
+		recordproxy.Transport = hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
+			if request.Method != http.MethodGet {
+				writeRequests++
+			}
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Header:     http.Header{"Content-Type": {"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"Forbidden","message":"access denied"}}`)),
+				Request:    request,
+			}, nil
+		})
+
+		env := map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_LOCATION": "eastus"}
+		provider := &AgentServiceTargetProvider{
+			credential:    hostedResourceErrorCredential{},
+			dependencyEnv: env,
+		}
+		zipPath := filepath.Join(t.TempDir(), "agent.zip")
+		require.NoError(t, os.WriteFile(zipPath, []byte("test-zip"), 0o600))
+
+		_, err := provider.deployHostedCodeAgent(
+			t.Context(),
+			&azdext.ServiceConfig{Name: "my-service"},
+			&azdext.ServiceContext{Package: []*azdext.Artifact{{
+				Location: zipPath,
+				Metadata: map[string]string{"type": "code-zip", "sha256": "test-sha"},
+			}}},
+			func(string) {},
+			agent_yaml.ContainerAgent{
+				AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindHosted, Name: "foundry-agent"},
+				CodeConfiguration: &agent_yaml.CodeConfiguration{
+					Runtime:    "python_3_13",
+					EntryPoint: "agent.py",
+				},
+			},
+			env,
+		)
+
+		require.Error(t, err)
+		require.Zero(t, writeRequests)
+		serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+		require.True(t, ok, "expected *azdext.ServiceError, got %T: %v", err, err)
+		require.Equal(t, exterrors.OpGetAgent+".Forbidden", serviceErr.ErrorCode)
+		require.Equal(t, http.StatusForbidden, serviceErr.StatusCode)
+	})
+
+	t.Run("container createAgent preflight GetAgent transport error attributes to get_agent_transport", func(t *testing.T) {
+		originalTransport := recordproxy.Transport
+		t.Cleanup(func() { recordproxy.Transport = originalTransport })
+
+		writeRequests := 0
+		recordproxy.Transport = hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
+			if request.Method != http.MethodGet {
+				writeRequests++
+			}
+			return nil, &nonRetriableTransportError{msg: "dial tcp: connection refused"}
+		})
+
+		env := map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_LOCATION": "eastus"}
+		provider := &AgentServiceTargetProvider{
+			credential:    hostedResourceErrorCredential{},
+			dependencyEnv: env,
+		}
+
+		_, err := provider.createAgent(t.Context(), "my-service", hostedResourceRequest("1", "2Gi"), env)
+		require.Error(t, err)
+		require.Zero(t, writeRequests)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "expected *azdext.LocalError, got %T: %v", err, err)
+		require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+		require.Equal(t, exterrors.OpGetAgent+exterrors.SuffixTransport, localErr.Code)
+	})
+}
+
+type failingReadCloser struct {
+	err error
+}
+
+func (f failingReadCloser) Read([]byte) (int, error) { return 0, f.err }
+func (f failingReadCloser) Close() error             { return nil }
+
+func TestCreateAgentPost2xxReadAndParseClassification(t *testing.T) {
+	t.Run("truncated 200 body classifies as create_agent_response_read", func(t *testing.T) {
+		originalTransport := recordproxy.Transport
+		t.Cleanup(func() { recordproxy.Transport = originalTransport })
+
+		recordproxy.Transport = hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
+			if request.Method == http.MethodGet {
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Header:     http.Header{"Content-Type": {"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"not_found"}}`)),
+					Request:    request,
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Header:     http.Header{"Content-Type": {"application/json"}},
+				Body:       failingReadCloser{err: io.ErrUnexpectedEOF},
+				Request:    request,
+			}, nil
+		})
+
+		env := map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_LOCATION": "eastus"}
+		provider := &AgentServiceTargetProvider{
+			credential:    hostedResourceErrorCredential{},
+			dependencyEnv: env,
+		}
+
+		_, err := provider.createAgent(t.Context(), "my-service", hostedResourceRequest("1", "2Gi"), env)
+		require.Error(t, err)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "expected *azdext.LocalError, got %T: %v", err, err)
+		require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
+		require.Equal(t, exterrors.OpCreateAgent+exterrors.SuffixResponseRead, localErr.Code)
+	})
+
+	t.Run("invalid JSON 200 body classifies as create_agent_response_parse", func(t *testing.T) {
+		originalTransport := recordproxy.Transport
+		t.Cleanup(func() { recordproxy.Transport = originalTransport })
+
+		recordproxy.Transport = hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
+			if request.Method == http.MethodGet {
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Header:     http.Header{"Content-Type": {"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"not_found"}}`)),
+					Request:    request,
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Header:     http.Header{"Content-Type": {"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`<!DOCTYPE html><html>gateway html</html>`)),
+				Request:    request,
+			}, nil
+		})
+
+		env := map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "AZURE_LOCATION": "eastus"}
+		provider := &AgentServiceTargetProvider{
+			credential:    hostedResourceErrorCredential{},
+			dependencyEnv: env,
+		}
+
+		_, err := provider.createAgent(t.Context(), "my-service", hostedResourceRequest("1", "2Gi"), env)
+		require.Error(t, err)
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "expected *azdext.LocalError, got %T: %v", err, err)
+		require.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
+		require.Equal(t, exterrors.OpCreateAgent+exterrors.SuffixResponseParse, localErr.Code)
+	})
+}

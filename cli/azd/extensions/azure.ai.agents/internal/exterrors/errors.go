@@ -15,8 +15,12 @@ package exterrors
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -146,7 +150,8 @@ func ValidationFromError(err error, code, contextMessage, suggestion string) err
 // ---------------------------------------------------------------------------
 
 // ServiceFromAzure wraps an [azcore.ResponseError] into an [azdext.ServiceError] with operation context.
-// It also preserves existing structured errors and authentication failures.
+// It also classifies cancellations, timeouts, authentication/credential errors, post-2xx response
+// read/parse failures, and client-side HTTP transport errors into actionable structured errors.
 func ServiceFromAzure(err error, operation string) error {
 	if err == nil {
 		return nil
@@ -154,8 +159,7 @@ func ServiceFromAzure(err error, operation string) error {
 	if structured := structuredError(err); structured != nil {
 		return structured
 	}
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		serviceName := ""
 		if respErr.RawResponse != nil && respErr.RawResponse.Request != nil {
 			serviceName = respErr.RawResponse.Request.Host
@@ -168,7 +172,7 @@ func ServiceFromAzure(err error, operation string) error {
 			code = fmt.Sprintf("%d", respErr.StatusCode)
 		}
 		return &azdext.ServiceError{
-			Message:     fmt.Sprintf("%s: %s", operation, respErr.Error()),
+			Message:     fmt.Sprintf("%s: %s", operation, safeErrorMessage(respErr)),
 			ErrorCode:   fmt.Sprintf("%s.%s", operation, code),
 			StatusCode:  respErr.StatusCode,
 			ServiceName: serviceName,
@@ -177,10 +181,128 @@ func ServiceFromAzure(err error, operation string) error {
 	if IsCancellation(err) {
 		return Cancelled(fmt.Sprintf("%s was cancelled", operation))
 	}
-	if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
-		return Auth(CodeAuthFailed, err.Error(), "run `azd auth login` to authenticate")
+	safeMsg := safeErrorMessage(err)
+	if isDeadlineOrTimeout(err) {
+		return Internal(CodeDeadlineExceeded, fmt.Sprintf("%s: %s", operation, safeMsg))
 	}
-	return Internal(operation, fmt.Sprintf("%s: %s", operation, err.Error()))
+	if authErr := classifyCredentialFailure(err, safeMsg); authErr != nil {
+		return authErr
+	}
+	if isResponseReadError(err) {
+		return Internal(operation+SuffixResponseRead, fmt.Sprintf("%s: %s", operation, safeMsg))
+	}
+	if _, ok := errors.AsType[*ResponseParseError](err); ok {
+		return Internal(operation+SuffixResponseParse, fmt.Sprintf("%s: %s", operation, safeMsg))
+	}
+	if suggestion, ok := transportErrorSuggestion(err); ok {
+		return Dependency(
+			operation+SuffixTransport,
+			fmt.Sprintf("%s: %s", operation, safeMsg),
+			suggestion,
+		)
+	}
+	return Internal(operation, fmt.Sprintf("%s: %s", operation, safeMsg))
+}
+
+func isDeadlineOrTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if st, ok := status.FromError(err); ok && st.Code() == codes.DeadlineExceeded {
+		return true
+	}
+	if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
+		return true
+	}
+	return false
+}
+
+// classifyCredentialFailure detects Azure credential acquisition failures.
+// azidentity's credentialUnavailableError is unexported, so after checking
+// exported azidentity error types we fall back to matching the credential
+// type prefixes emitted by azidentity when token acquisition fails.
+func classifyCredentialFailure(err error, safeMsg string) error {
+	if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
+		return Auth(CodeAuthFailed, safeMsg, "run `azd auth login` to authenticate")
+	}
+	if _, ok := errors.AsType[*azidentity.AuthenticationRequiredError](err); ok {
+		return Auth(CodeAuthFailed, safeMsg, "run `azd auth login` to authenticate")
+	}
+
+	text := err.Error()
+	for _, credentialName := range []string{
+		"AzureDeveloperCLICredential",
+		"DefaultAzureCredential",
+	} {
+		if strings.Contains(text, credentialName) {
+			if strings.Contains(text, "executable not found on path") ||
+				strings.Contains(text, "is not recognized") {
+				return Auth(
+					CodeCredentialCreationFailed,
+					safeMsg,
+					"check that `azd` is installed and on PATH",
+				)
+			}
+			return Auth(CodeAuthFailed, safeMsg, "run `azd auth login` to authenticate")
+		}
+	}
+	return nil
+}
+
+// isResponseReadError reports whether err failed while reading an HTTP response
+// body after headers arrived, including errors wrapped by azcore's unexported
+// bodyDownloadPolicy ("body download policy: ...").
+func isResponseReadError(err error) bool {
+	if _, ok := errors.AsType[*ResponseReadError](err); ok {
+		return true
+	}
+	for current := err; current != nil; current = errors.Unwrap(current) {
+		if strings.HasPrefix(current.Error(), "body download policy: ") {
+			return true
+		}
+	}
+	return false
+}
+
+func transportErrorSuggestion(err error) (string, bool) {
+	if _, ok := errors.AsType[*net.DNSError](err); ok {
+		return "check your network connection, VPN, or Private Endpoint DNS settings and retry", true
+	}
+	if isTLSHandshakeError(err) {
+		return "check your TLS proxy, firewall, or certificate configuration and retry", true
+	}
+	if _, ok := errors.AsType[*net.OpError](err); ok {
+		return "check your network connection, proxy, or firewall settings and retry", true
+	}
+	if netErr, ok := errors.AsType[net.Error](err); ok && !netErr.Timeout() {
+		return "check your network connection, proxy, or firewall settings and retry", true
+	}
+	if _, ok := errors.AsType[*url.Error](err); ok {
+		return "check your network connection, proxy, or firewall settings and retry", true
+	}
+	return "", false
+}
+
+func isTLSHandshakeError(err error) bool {
+	if _, ok := errors.AsType[*tls.RecordHeaderError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[x509.CertificateInvalidError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[x509.HostnameError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[x509.SystemRootsError](err); ok {
+		return true
+	}
+	return false
 }
 
 // FromHost converts an error returned by an azd host gRPC service. Service metadata

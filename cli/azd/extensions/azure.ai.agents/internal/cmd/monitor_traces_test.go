@@ -139,7 +139,7 @@ func TestParseTraceWindow(t *testing.T) {
 }
 
 func TestRedactTelemetryURLs(t *testing.T) {
-	values := map[string]any{
+	values := map[string]any{ // #nosec G101 -- synthetic credentials test URL redaction
 		"url.full": "https://user:password@example.com/blob?sig=secret#fragment",
 		"nested":   map[string]any{"http.url": "https://example.com/path?token=secret"},
 		"array":    []any{"https://example.com/path?sig=secret"},

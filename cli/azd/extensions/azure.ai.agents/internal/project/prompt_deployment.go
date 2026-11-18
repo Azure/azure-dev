@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -82,40 +81,10 @@ type provisionedDeploymentResolver struct {
 	graph *promptGraph
 }
 
-func (r provisionedDeploymentResolver) Exists(_ context.Context, modelName string) (bool, error) {
+func (r provisionedDeploymentResolver) Exists(_ context.Context, _ string) (bool, error) {
 	if r.graph != nil && r.graph.env != nil {
 		if hasPendingModelOrProjectProvision(r.graph.env["AI_AGENT_PENDING_PROVISION"]) {
 			return false, nil
-		}
-		if r.graph.agentService != nil && r.graph.projectServices != nil {
-			lookup := func(name string) string {
-				if value, ok := r.graph.env[name]; ok {
-					return value
-				}
-				value, _ := os.LookupEnv(name)
-				return value
-			}
-			declared, err := usedProjectDeploymentNames(
-				r.graph.agentService, r.graph.projectServices, r.graph.projectRoot, lookup,
-			)
-			if err != nil {
-				return false, err
-			}
-			if containsDeploymentName(declared, modelName) {
-				onDisk, err := promptModelInfrastructureOnDisk(r.graph.projectRoot)
-				if err != nil {
-					return false, err
-				}
-				if !onDisk {
-					_, present, err := DecodeProjectDeploymentsEnv(r.graph.env["AI_PROJECT_DEPLOYMENTS"])
-					if err != nil {
-						return false, err
-					}
-					if !present {
-						return false, nil
-					}
-				}
-			}
 		}
 	}
 	return true, nil

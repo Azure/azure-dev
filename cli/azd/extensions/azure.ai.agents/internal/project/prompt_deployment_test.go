@@ -215,7 +215,7 @@ func TestProvisionedDeploymentResolver_DeclaredProjectDeploymentState(t *testing
 		return agentSvc, projectServices
 	}
 
-	t.Run("declared deployment without AI_PROJECT_DEPLOYMENTS and no on-disk infra fails", func(t *testing.T) {
+	t.Run("declared deployment without AI_PROJECT_DEPLOYMENTS succeeds when pending is empty", func(t *testing.T) {
 		t.Parallel()
 
 		root := t.TempDir()
@@ -225,6 +225,27 @@ func TestProvisionedDeploymentResolver_DeclaredProjectDeploymentState(t *testing
 		managed.Name = "agent"
 
 		g, err := newPromptGraph(root, managed, &PromptAgentSettings{}, map[string]string{}, nil)
+		require.NoError(t, err)
+		g.projectRoot = root
+		g.agentService = agentSvc
+		g.projectServices = projectServices
+
+		require.NoError(t, g.resolve(t.Context(), nil))
+	})
+
+	t.Run("declared deployment fails when AI_AGENT_PENDING_PROVISION has model_deployment", func(t *testing.T) {
+		t.Parallel()
+
+		root := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0o600))
+		agentSvc, projectServices := newProjectServices(t, "gpt-4.1-mini")
+		managed := &agent_yaml.PromptAgent{Model: "gpt-4.1-mini", Instructions: "i"}
+		managed.Name = "agent"
+		env := map[string]string{
+			"AI_AGENT_PENDING_PROVISION": "model_deployment",
+		}
+
+		g, err := newPromptGraph(root, managed, &PromptAgentSettings{}, env, nil)
 		require.NoError(t, err)
 		g.projectRoot = root
 		g.agentService = agentSvc

@@ -857,11 +857,66 @@ func TestProjectPredeployHandlerDoesNotWriteDeploymentsOrPrompt(t *testing.T) {
 			require.NoError(t, projectPredeployHandler(t.Context(), client, args))
 			assert.Empty(t, server.models)
 			assert.Empty(t, server.deployments)
-			assert.Empty(t, server.key)
 			assert.NotContains(t, server.values, projectDeploymentsEnvKey)
-			assert.NotContains(t, server.values, "AZURE_AI_MODEL_DEPLOYMENT_NAME")
+			assert.Equal(t, "chat", server.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
 		})
 	}
+
+	t.Run("seeds from AI_PROJECT_DEPLOYMENTS override or skips when empty or on-disk", func(t *testing.T) {
+		const key = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
+		const override = `[{"name":"env-chat","model":{"name":"gpt-4.1","format":"OpenAI","version":"1"},` +
+			`"sku":{"name":"Standard","capacity":1}}]`
+		for _, tc := range []struct {
+			name     string
+			override string
+			onDisk   bool
+			want     string
+		}{
+			{name: "from AI_PROJECT_DEPLOYMENTS", override: override, want: "env-chat"},
+			{name: "empty AI_PROJECT_DEPLOYMENTS", override: "[]", want: ""},
+			{name: "on-disk infra present", onDisk: true, want: ""},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				root := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0o600))
+				if tc.onDisk {
+					infra := filepath.Join(root, "infra")
+					require.NoError(t, os.MkdirAll(infra, 0o750))
+					require.NoError(t, os.WriteFile(filepath.Join(infra, "main.bicep"), []byte("// on disk\n"), 0o600))
+				}
+				values := map[string]string{}
+				if tc.override != "" {
+					values[projectDeploymentsEnvKey] = tc.override
+				}
+				server := &recordingProjectEnvironmentServer{
+					envName: "dev",
+					values:  values,
+				}
+				client := newProjectEnvironmentClient(t, server)
+				args := &azdext.ProjectEventArgs{
+					Project: &azdext.ProjectConfig{
+						Path: root,
+						Services: map[string]*azdext.ServiceConfig{
+							"project": {
+								Host: aiProjectHost,
+								AdditionalProperties: mustProjectProperties(t, map[string]any{
+									"deployments": []any{
+										map[string]any{"name": "yaml-chat"},
+									},
+								}),
+							},
+						},
+					},
+				}
+
+				require.NoError(t, projectPredeployHandler(t.Context(), client, args))
+				assert.Empty(t, server.models)
+				assert.Empty(t, server.deployments)
+				assert.Equal(t, tc.override, server.values[projectDeploymentsEnvKey])
+				assert.Equal(t, tc.want, server.values[key])
+			})
+		}
+	})
 
 	t.Run("validates project and ACR reuse", func(t *testing.T) {
 		require.ErrorContains(t, projectPredeployHandler(t.Context(), nil, nil), "no project")

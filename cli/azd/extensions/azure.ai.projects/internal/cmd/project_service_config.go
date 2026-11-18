@@ -155,7 +155,7 @@ func projectPredeployHandler(
 		return fmt.Errorf("project lifecycle event has no project")
 	}
 
-	_, found, err := loadProjectServiceConfig(
+	cfg, found, err := loadProjectServiceConfig(
 		args.Project.Services,
 		args.Project.Path,
 	)
@@ -175,7 +175,21 @@ func projectPredeployHandler(
 	); err != nil {
 		return err
 	}
-	return synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project)
+	if err := synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project); err != nil {
+		return err
+	}
+	onDisk, err := projectOnDiskFoundryTemplatePresent(args.Project)
+	if err != nil || onDisk {
+		return err
+	}
+	deployments, present, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey])
+	if err != nil {
+		return err
+	}
+	if !present {
+		deployments = cfg.Deployments
+	}
+	return seedProjectModelDeploymentName(ctx, azdClient, envName, values, deployments)
 }
 
 func validateProjectACRBuilds(ctx context.Context, client *azdext.AzdClient, args *azdext.ProjectEventArgs) error {

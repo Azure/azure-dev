@@ -6,17 +6,90 @@ package analysis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/exterrors"
 	"azure.ai.content-understanding/internal/testutil"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestExecutionProgressTracksOnlyStartedInputs(t *testing.T) {
+	inputs := discoverFiles(t, "a.pdf", "b.pdf", "skipped.pdf")
+	plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error"})
+	require.NoError(t, err)
+	plan.Outputs[2].Skipped = true
+	var mu sync.Mutex
+	events := map[int][]bool{}
+	options := runOptions()
+	options.Progress = func(index int, input Input, active bool) error {
+		mu.Lock()
+		defer mu.Unlock()
+		assert.Equal(t, inputs[index], input)
+		events[index] = append(events[index], active)
+		return nil
+	}
+	client := fakeAnalysisClient{analyze: func(
+		context.Context, cuclient.AnalyzeRequest,
+	) (cuclient.AnalyzeResponse, error) {
+		return cuclient.AnalyzeResponse{JSON: json.RawMessage(terminal)}, nil
+	}}
+	_, err = Execute(t.Context(), client, plan, options)
+	require.NoError(t, err)
+	require.Equal(t, map[int][]bool{0: {true, false}, 1: {true, false}}, events)
+}
+
+func TestAnalysisProgressCompletesOnFailureAndCancellation(t *testing.T) {
+	for _, cancelled := range []bool{false, true} {
+		t.Run(fmt.Sprint(cancelled), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			input := discoverFiles(t, "invoice.pdf")[0]
+			var events []bool
+			options := runOptions()
+			options.Progress = func(_ int, _ Input, active bool) error {
+				events = append(events, active)
+				return nil
+			}
+			want := errors.New("analysis failed")
+			if cancelled {
+				want = context.Canceled
+			}
+			client := fakeAnalysisClient{analyze: func(
+				context.Context, cuclient.AnalyzeRequest,
+			) (cuclient.AnalyzeResponse, error) {
+				if cancelled {
+					cancel()
+				}
+				return cuclient.AnalyzeResponse{}, want
+			}}
+			_, _, err := analyzeWithProgress(ctx, client, input, 0, false, options)
+			require.ErrorIs(t, err, want)
+			require.Equal(t, []bool{true, false}, events)
+		})
+	}
+}
+
+func TestAnalysisProgressFailurePreventsRequest(t *testing.T) {
+	want := errors.New("progress writer failed")
+	options := runOptions()
+	options.Progress = func(int, Input, bool) error { return want }
+	client := fakeAnalysisClient{analyze: func(
+		context.Context, cuclient.AnalyzeRequest,
+	) (cuclient.AnalyzeResponse, error) {
+		t.Error("must not analyze after progress output fails")
+		return cuclient.AnalyzeResponse{}, nil
+	}}
+	_, _, err := analyzeWithProgress(t.Context(), client, Input{}, 0, false, options)
+	require.ErrorIs(t, err, want)
+}
 
 func TestExecutionFailureDiagnosticsAreActionableAndBounded(t *testing.T) {
 	for _, count := range []int{1, 12} {

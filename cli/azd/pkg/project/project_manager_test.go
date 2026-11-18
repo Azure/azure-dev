@@ -112,7 +112,7 @@ func Test_suggestRemoteBuild(t *testing.T) {
 			},
 			toolErr:        dockerMissing,
 			wantSuggestion: true,
-			wantContains:   "install Docker",
+			wantContains:   "Docker Engine",
 		},
 		{
 			name:           "Empty_services_no_suggestion",
@@ -698,7 +698,7 @@ func Test_suggestRemoteBuild_Extended(t *testing.T) {
 		require.NotNil(t, result)
 		assert.Contains(t, result.Suggestion, "api")
 		assert.Contains(t, result.Suggestion, "remoteBuild")
-		assert.Contains(t, result.Suggestion, "install Docker")
+		assert.Contains(t, result.Suggestion, "Docker Engine")
 	})
 
 	t.Run("PodmanUnavailable_Suggestion", func(t *testing.T) {

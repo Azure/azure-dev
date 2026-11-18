@@ -44,7 +44,7 @@ func TestFoundryACRReuseIsIndependent(t *testing.T) {
 	}
 	t.Setenv(FoundryACRReuse.EnvVar, "true")
 	require.NoError(t, Require(FoundryACRReuse))
-	require.ErrorContains(t, Require(Voice), Voice.ID)
+	require.ErrorContains(t, Require(ManagedHarness), ManagedHarness.ID)
 	t.Setenv(FoundryACRReuse.EnvVar, "")
 	for _, feature := range All() {
 		if feature != FoundryACRReuse {

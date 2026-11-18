@@ -570,7 +570,8 @@ rules:
     suggestion: >-
       If your services use Container Apps or AKS, you can build on Azure instead
       of locally. Set 'remoteBuild: true' under the 'docker:' section for each
-      service in azure.yaml. Otherwise, install Docker or Podman.
+      service in azure.yaml. Otherwise, install a container runtime, Docker Engine
+      or Podman.
     links:
       - url: "https://aka.ms/azure-dev/docker-install"
         title: "Install Docker"

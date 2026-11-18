@@ -83,11 +83,12 @@ func (display *ProvisioningProgressDisplay) getResourceTypeDisplayName(
 	)
 
 	if err != nil {
-		// Dynamic resource type translation failed -- fallback to static translation
-		displayName = azapi.GetResourceTypeDisplayName(resourceType)
+		// Dynamic resource type translation failed -- fallback to static translation.
+		// Do not cache the fallback: a later poll can retry the lookup after the resource is available.
+		return azapi.GetResourceTypeDisplayName(resourceType)
 	}
 
-	// Cache the result (even if empty)
+	// Cache the result (even if empty).
 	display.resourceDisplayNames[resourceId] = displayName
 	return displayName
 }
@@ -251,6 +252,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 
 		display.displayedResources[dedupKey] = true
 	}
+	if !display.console.IsSpinnerInteractive() {
+		// In non-interactive output, in-progress names are not rendered; avoid
+		// querying ARM for values that would be discarded.
+		return
+	}
+
 	// update progress
 	inProgress := []string{}
 	for _, inProgResource := range inProgressResources {
@@ -267,12 +274,6 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		if resourceTypeDisplayName != "" {
 			inProgress = append(inProgress, resourceTypeDisplayName)
 		}
-	}
-
-	if !display.console.IsSpinnerInteractive() {
-		// If non-interactive, we simply do not want to display spinner messages that ends up
-		// being individual lines of messages on the console
-		return
 	}
 
 	// ensure stable ordering

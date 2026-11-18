@@ -1,0 +1,9 @@
+name: env-reference-validation
+services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: env-reference-validation
+    environmentVariables:
+      - name: API_URL
+        value: '${API_URL:=https://test-user:test-password@example.test/path?sig=test-signature#test-fragment}'

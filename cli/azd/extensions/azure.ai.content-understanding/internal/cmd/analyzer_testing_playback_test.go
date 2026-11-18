@@ -77,7 +77,8 @@ func TestRecordedAnalyzerFieldReport(t *testing.T) {
 							} else {
 								envelope["status"] = json.RawMessage(`"Failed"`)
 								envelope["error"] = json.RawMessage(`{
-									"code":"InvalidRequest","message":"synthetic-private-message-not-for-field-report"
+									"code":"InvalidRequest","message":"Unsupported document format.\n` +
+									`content: synthetic-private-message-not-for-field-report"
 								}`)
 							}
 							body, err := json.Marshal(envelope)
@@ -114,8 +115,12 @@ func TestRecordedAnalyzerFieldReport(t *testing.T) {
 								},
 								"samples": []any{map[string]any{
 									"input": "sample_invoice.pdf", "status": "error",
-									"error": "The analysis operation failed. Service code: InvalidRequest. " +
-										"Check the analyzer configuration, input, and dependencies before retrying.",
+									"error": "The analysis operation failed. Service code: InvalidRequest.\n" +
+										"InvalidRequest: Unsupported document format.\n[redacted value] " +
+										"Correct the reported service problem before retrying. " +
+										"Use azd ai cu analyzer show <ANALYZER_NAME> " +
+										"to inspect the analyzer configuration. " +
+										"If the cause is unclear, report the error codes to support.",
 									"fields": map[string]any{},
 								}},
 							})

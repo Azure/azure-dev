@@ -21,9 +21,8 @@ type operationPoller[T any] struct {
 	location    string
 	done        bool
 	failed      bool
-	code        string
 	status      string
-	details     []OperationDiagnostic
+	problem     OperationDiagnostic
 	operationID string
 	response    *http.Response
 	payload     []byte
@@ -84,7 +83,7 @@ func (p *operationPoller[T]) Result(_ context.Context, out *T) error {
 		return errors.New("operation has not completed")
 	}
 	if p.failed {
-		return newOperationError(p.response, p.status, OperationDiagnostic{Code: p.code, Details: p.details})
+		return newOperationError(p.response, p.status, p.problem)
 	}
 	if err := json.Unmarshal(p.payload, out); err != nil {
 		return errors.Join(ErrInvalidResponse, err)
@@ -120,9 +119,8 @@ func (p *operationPoller[T]) accept(resp *http.Response, polled bool) error {
 	case "failed", "canceled", "cancelled":
 		p.done = true
 		p.failed = true
-		p.code = state.Error.Code
 		p.status = strings.ToLower(state.Status)
-		p.details = state.Error.Details
+		p.problem = state.Error
 	case "notstarted", "running":
 	default:
 		if state.AnalyzerID != "" && (p.location == "" || strings.EqualFold(state.Status, "ready")) {
@@ -139,7 +137,7 @@ func (p *operationPoller[T]) accept(resp *http.Response, polled bool) error {
 
 func newOperationError(resp *http.Response, status string, problem OperationDiagnostic) error {
 	code := problem.Code
-	if !serviceErrorCodePattern.MatchString(code) {
+	if !serviceErrorCodePattern.MatchString(code) || redactResponseDiagnostic(code, resp) != code {
 		code = ""
 	}
 	responseCode := code
@@ -151,24 +149,39 @@ func newOperationError(resp *http.Response, status string, problem OperationDiag
 	if !errors.As(err, &responseError) {
 		return err
 	}
+	diagnostic := safeOperationDiagnostics([]OperationDiagnostic{problem}, resp)[0]
 	return &OperationError{
-		Status: status, Code: code, Details: safeOperationDiagnostics(problem.Details), ResponseError: responseError,
+		Status: status, Code: code,
+		Message: diagnostic.Message, Details: diagnostic.Details, ResponseError: responseError,
 	}
 }
 
-func safeOperationDiagnostics(values []OperationDiagnostic) []OperationDiagnostic {
-	if values == nil {
-		return nil
-	}
-	result := make([]OperationDiagnostic, len(values))
-	for i, value := range values {
-		code := value.Code
-		if !serviceErrorCodePattern.MatchString(code) {
-			code = "service_error"
+func safeOperationDiagnostics(values []OperationDiagnostic, response *http.Response) []OperationDiagnostic {
+	remaining := 32
+	var visit func([]OperationDiagnostic, int) []OperationDiagnostic
+	visit = func(values []OperationDiagnostic, depth int) []OperationDiagnostic {
+		var result []OperationDiagnostic
+		for _, value := range values {
+			if remaining == 0 || depth == 8 {
+				result = append(result, OperationDiagnostic{Code: "DiagnosticsTruncated"})
+				break
+			}
+			remaining--
+			code := value.Code
+			if !serviceErrorCodePattern.MatchString(code) || redactResponseDiagnostic(code, response) != code {
+				code = "service_error"
+			}
+			children := value.Details
+			if value.InnerError != nil {
+				children = append([]OperationDiagnostic{*value.InnerError}, children...)
+			}
+			result = append(result, OperationDiagnostic{
+				Code: code, Message: redactResponseDiagnostic(value.Message, response), Details: visit(children, depth+1),
+			})
 		}
-		result[i] = OperationDiagnostic{Code: code, Details: safeOperationDiagnostics(value.Details)}
+		return result
 	}
-	return result
+	return visit(values, 0)
 }
 
 func (c *Client) operationLocation(value, baseURL string) (string, error) {

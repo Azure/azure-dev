@@ -24,7 +24,8 @@ import (
 )
 
 type mockResourceManager struct {
-	operations []*armdeployments.DeploymentOperation
+	operations    []*armdeployments.DeploymentOperation
+	displayNameFn func(context.Context, string, string, azapi.AzureResourceType) (string, error)
 }
 
 func (mock *mockResourceManager) WalkDeploymentOperations(
@@ -47,6 +48,10 @@ func (mock *mockResourceManager) GetResourceTypeDisplayName(
 	resourceId string,
 	resourceType azapi.AzureResourceType,
 ) (string, error) {
+	if mock.displayNameFn != nil {
+		return mock.displayNameFn(ctx, subscriptionId, resourceId, resourceType)
+	}
+
 	return string(resourceType), nil
 }
 
@@ -157,6 +162,57 @@ func TestReportProgress(t *testing.T) {
 	err = progressDisplay.ReportProgress(*mockContext.Context, &startTime)
 	require.NoError(t, err)
 	assert.Len(t, mockContext.Console.Output(), outputLength)
+}
+
+func TestReportProgressRetriesResourceTypeLookupAfterTransientError(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.Console.SetTerminal(true)
+	deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
+	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
+	deployment := NewSubscriptionDeployment(scope, "DEPLOYMENT_NAME")
+	mockAzDeploymentShow(t, *mockContext)
+
+	lookupCalls := 0
+	resourceManager := &mockResourceManager{
+		displayNameFn: func(
+			ctx context.Context,
+			subscriptionID string,
+			resourceID string,
+			resourceType azapi.AzureResourceType,
+		) (string, error) {
+			lookupCalls++
+			if lookupCalls == 1 {
+				return "", fmt.Errorf("workspace is not available yet")
+			}
+
+			return "AI Hub", nil
+		},
+		operations: []*armdeployments.DeploymentOperation{{
+			ID: new("workspace-operation-id"),
+			Properties: &armdeployments.DeploymentOperationProperties{
+				ProvisioningOperation: to.Ptr(armdeployments.ProvisioningOperationCreate),
+				ProvisioningState:     to.Ptr(string(armdeployments.ProvisioningStateRunning)),
+				Timestamp:             new(time.Now().UTC()),
+				Duration:              new("PT1S"),
+				TargetResource: &armdeployments.TargetResource{
+					ResourceType: to.Ptr(string(azapi.AzureResourceTypeMachineLearningWorkspace)),
+					ID:           new("workspace-resource-id"),
+					ResourceName: new("workspace"),
+				},
+			},
+		}},
+	}
+	progressDisplay := NewProvisioningProgressDisplay(resourceManager, mockContext.Console, deployment)
+	startTime := time.Now().Add(-time.Minute)
+
+	require.NoError(t, progressDisplay.ReportProgress(*mockContext.Context, &startTime))
+	resourceManager.operations[0].Properties.ProvisioningState =
+		to.Ptr(string(armdeployments.ProvisioningStateSucceeded))
+	resourceManager.operations[0].Properties.Timestamp = new(time.Now().UTC())
+	require.NoError(t, progressDisplay.ReportProgress(*mockContext.Context, &startTime))
+
+	assert.Equal(t, 2, lookupCalls)
+	assert.Equal(t, "AI Hub", progressDisplay.resourceDisplayNames["workspace-resource-id"])
 }
 
 type walkSkipAwareResourceManager struct {

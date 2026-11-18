@@ -3039,10 +3039,6 @@ const completionSpec: Fig.Spec = {
 									description: 'Use preview inline analysis; never falls back to async',
 								},
 								{
-									name: ['--llm-input'],
-									description: 'Render YAML front matter and Markdown; set false for complete JSON; true conflicts with --output json',
-								},
-								{
 									name: ['--on-existing'],
 									description: 'Existing results: error, skip, reanalyze (default: CU_ON_EXISTS or error)',
 									args: [
@@ -3053,11 +3049,11 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--output', '-o'],
-									description: 'Output format: default (text for LLM input, otherwise JSON), json (complete response), or none',
+									description: 'Result format: default or markdown (YAML front matter and Markdown), json (complete response)',
 									args: [
 										{
 											name: 'output',
-											suggestions: ['default', 'json', 'none'],
+											suggestions: ['default', 'markdown', 'json'],
 										},
 									],
 								},
@@ -3087,6 +3083,10 @@ const completionSpec: Fig.Spec = {
 											name: 'pattern',
 										},
 									],
+								},
+								{
+									name: ['--pretty', '-p'],
+									description: 'Pretty-print terminal output; false keeps original content; do not specify when saving results',
 								},
 								{
 									name: ['--recursive', '-r'],
@@ -3123,7 +3123,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--usage'],
-									description: 'Include usage metadata in streamed results or per-input summaries',
+									description: 'Include usage in Markdown front matter, JSON output, summaries, and reports',
 								},
 								{
 									name: ['--yes', '-y'],

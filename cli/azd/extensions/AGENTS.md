@@ -29,8 +29,8 @@ CLI and service and has no equivalent coverage, follow the applicable E2E
 guidance below. Report missing fixture capabilities separately from contract
 gaps.
 
-Open the linked skills as needed. The root VS Code workspace registers this
-directory; clients that do not use that setting can follow the same links.
+Open the relevant linked `SKILL.md` as needed. This workflow does not depend
+on editor-specific skill discovery.
 
 ### Unit test authoring
 

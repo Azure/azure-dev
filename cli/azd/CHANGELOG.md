@@ -8,7 +8,6 @@
 
 ### Other Changes
 
-- [[#10883]](https://github.com/Azure/azure-dev/pull/10883) Clarify local container build prerequisites for Docker Engine and Podman, including Podman machine setup on Windows and macOS.
 - [[#10930]](https://github.com/Azure/azure-dev/pull/10930) Update the bundled Bicep CLI to v0.49.2.
 
 ## 1.38.0 (2026-11-11)

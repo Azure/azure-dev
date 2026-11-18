@@ -107,18 +107,29 @@ func resolveDirectAgentTarget(
 }
 
 func agentContextFromAgentEndpoint(raw string) (*AgentContext, error) {
-	if u, err := url.Parse(raw); err == nil && strings.EqualFold(u.Scheme, "wss") {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, exterrors.Validation(exterrors.CodeInvalidParameter, "invalid --agent-endpoint URL", agentEndpointHint)
+	}
+	if strings.EqualFold(u.Scheme, "wss") {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--agent-endpoint does not accept WebSocket (wss) URLs for this command",
 			"supply an https agent endpoint, such as the invocations or responses protocol URL",
 		)
 	}
+	query, queryErr := url.ParseQuery(u.RawQuery)
+	if u.User != nil || u.Fragment != "" || u.ForceQuery || queryErr != nil ||
+		(len(query) > 0 && (len(query) != 1 || len(query["api-version"]) != 1)) {
+		return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
+			"--agent-endpoint must not contain credentials, a fragment, or unsupported query parameters",
+			"use a protocol endpoint URL with only an optional api-version parameter")
+	}
 	parsed, err := parseAgentEndpoint(raw)
 	if err != nil {
 		return nil, err
 	}
-	u, err := url.Parse(parsed.ProjectEndpoint)
+	u, err = url.Parse(parsed.ProjectEndpoint)
 	if err != nil {
 		return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
 			"--agent-endpoint project URL is invalid", agentEndpointHint)
@@ -135,6 +146,13 @@ func validateDirectProjectEndpoint(raw string) (string, error) {
 			"--project-endpoint requires a non-empty URL",
 			"supply https://<account>.services.ai.azure.com/api/projects/<project>",
 		)
+	}
+	original, parseErr := url.Parse(strings.TrimSpace(raw))
+	if parseErr != nil || original.User != nil || original.RawQuery != "" || original.ForceQuery ||
+		original.Fragment != "" {
+		return "", exterrors.Validation(exterrors.CodeInvalidParameter,
+			"--project-endpoint must not contain credentials, query parameters, or a fragment",
+			"supply the Foundry project endpoint URL without those components")
 	}
 	normalized, pathWarning, err := validateProjectEndpoint(raw)
 	if err != nil {
@@ -160,7 +178,15 @@ func validateDirectProjectEndpoint(raw string) (string, error) {
 // same remote agent with the same direct selector the user supplied.
 func directSessionsListCommand(flags *directAgentTargetFlags, target *AgentContext) string {
 	if flags.agentEndpoint != "" {
-		return fmt.Sprintf("azd ai agent sessions list --agent-endpoint %q", flags.agentEndpoint)
+		u, err := url.Parse(flags.agentEndpoint)
+		if err == nil {
+			u.User = nil
+			u.RawQuery = ""
+			u.ForceQuery = false
+			u.Fragment = ""
+			u.RawFragment = ""
+			return fmt.Sprintf("azd ai agent sessions list --agent-endpoint %q", u.String())
+		}
 	}
 	return fmt.Sprintf("azd ai agent sessions list --agent-name %s --project-endpoint %q",
 		target.Name, target.ProjectEndpoint)

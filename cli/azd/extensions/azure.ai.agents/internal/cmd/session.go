@@ -392,6 +392,11 @@ To inspect a session without an azd project, supply --agent-endpoint, or
 			if err != nil {
 				return err
 			}
+			if sc != nil {
+				if err := validateDirectSessionID(args[0], sc.sessionsListCommand); err != nil {
+					return err
+				}
+			}
 			action.direct = sc
 			action.sessionID = args[0]
 			return action.Run(ctx)

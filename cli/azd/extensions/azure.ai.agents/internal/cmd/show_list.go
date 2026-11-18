@@ -16,6 +16,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -374,6 +375,27 @@ func resolveExplicitAgentListEndpoint(cmd *cobra.Command, flags *showFlags, name
 type projectGetter func(
 	context.Context, *azdext.EmptyRequest, ...grpc.CallOption,
 ) (*azdext.GetProjectResponse, error)
+
+func resolveOutsideProjectVersionTarget(
+	ctx context.Context, getProject projectGetter, name string,
+) (*AgentContext, error) {
+	response, err := getProject(ctx, &azdext.EmptyRequest{})
+	if err != nil && !isMissingAzdProjectError(err) {
+		return nil, err
+	}
+	if err == nil && response.GetProject() != nil {
+		return nil, nil
+	}
+	if err := agent_yaml.ValidateAgentName(name); err != nil {
+		return nil, exterrors.Validation(exterrors.CodeInvalidAgentName,
+			fmt.Sprintf("agent name %q is invalid", name), "supply a deployed Foundry agent name")
+	}
+	scope, err := resolveProjectEndpoint(ctx, resolveProjectEndpointOpts{})
+	if err != nil {
+		return nil, err
+	}
+	return &AgentContext{ProjectEndpoint: scope.Endpoint, Name: name}, nil
+}
 
 // resolveNamelessShowListScope decides what `show` without a name does when no
 // endpoint flag is set. Inside an azd project it returns nil so the existing

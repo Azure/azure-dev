@@ -9,9 +9,11 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode"
 
 	"azureaiagent/internal/exterrors"
 
@@ -29,7 +31,9 @@ const (
 	// logQueryDataSource identifies where historical log records are read from.
 	logQueryDataSource = "application_insights"
 	// Table session IDs are shortened so rows stay readable; JSON keeps full IDs.
-	logTableSessionIDLength = 12
+	logTableSessionIDLength  = 12
+	telemetryAttributionNote = "only records explicitly attributed to both the selected project and agent are returned; " +
+		"unattributed or conflicting records are excluded, so results may not include all telemetry"
 )
 
 // Application Insights severity levels.
@@ -49,7 +53,7 @@ var logQueryCoverageNotes = []string{
 		"to the connected Application Insights resource (traces and exceptions tables)",
 	"output written directly to stdout or stderr, and platform system events, are included only if the agent " +
 		"exported them as log records; use monitor without --since to read a session's live console stream",
-	"only records attributed to the selected agent (gen_ai.agent.name or gen_ai.agent.id) are returned",
+	telemetryAttributionNote,
 	"exceptions without a severity level are treated as error",
 }
 
@@ -264,7 +268,7 @@ func runMonitorLogQuery(
 	fmt.Fprintf(errOut, "Querying logs for agent %s from Application Insights connection %s...\n",
 		target.Name, source.ConnectionName)
 
-	query := buildLogQuery(target.Name, opts, start, end)
+	query := buildLogQuery(target.Name, source.ProjectID, opts, start, end)
 	response, err := deps.logs.QueryResource(ctx, source.ResourceID, query, start, end)
 	if err != nil {
 		return classifyTelemetryQueryError(err, source, exterrors.OpQueryLogs)
@@ -317,7 +321,7 @@ func runMonitorLogQuery(
 
 // buildLogQuery returns retained log records attributed to the agent, newest first.
 // limit+1 rows detect truncation.
-func buildLogQuery(agentName string, opts *logQueryOptions, start, end time.Time) string {
+func buildLogQuery(agentName, projectID string, opts *logQueryOptions, start, end time.Time) string {
 	var filters strings.Builder
 	if opts.sessionID != "" {
 		fmt.Fprintf(&filters, "| where session_id == %s\n", kqlString(opts.sessionID))
@@ -331,6 +335,7 @@ func buildLogQuery(agentName string, opts *logQueryOptions, start, end time.Time
 	}
 
 	return fmt.Sprintf(`let agentName = %s;
+let projectId = %s;
 union isfuzzy=true
     (traces | extend record_type = 'log', message = tostring(message),
         severity_level = toint(severityLevel), exception_type = ''),
@@ -339,10 +344,8 @@ union isfuzzy=true
         severity_level = toint(coalesce(toint(severityLevel), 3)),
         exception_type = tostring(column_ifexists('type', '')))
 | where timestamp between (%s .. %s)
-| extend agent_name_attr = tostring(customDimensions['gen_ai.agent.name']),
-    agent_id_attr = tostring(customDimensions['gen_ai.agent.id'])
-| where agent_name_attr =~ agentName or agent_id_attr =~ agentName
-    or (agent_id_attr startswith strcat(agentName, ':') and strlen(agent_id_attr) > strlen(agentName) + 1)
+| %s
+| %s
 | extend session_id = tostring(customDimensions['microsoft.session.id']),
     agent_version = coalesce(tostring(customDimensions['gen_ai.agent.version']),
         iff(agent_id_attr startswith strcat(agentName, ':'), substring(agent_id_attr, strlen(agentName) + 1), ''))
@@ -352,7 +355,8 @@ union isfuzzy=true
     trace_id = operation_Id, span_id = operation_ParentId,
     logger = tostring(customDimensions['logger_name']), role_instance = cloud_RoleInstance,
     item_count = itemCount, attributes = customDimensions`,
-		kqlString(agentName), kqlDatetime(start), kqlDatetime(end), filters.String(), opts.limit+1)
+		kqlString(agentName), kqlString(projectID), kqlDatetime(start), kqlDatetime(end),
+		projectTelemetryFilter, agentTelemetryFilter, filters.String(), opts.limit+1)
 }
 
 func logRecordFromRow(row map[string]any) (logRecord, error) {
@@ -418,9 +422,9 @@ func writeLogQueryResult(result *logQueryResult, opts *logQueryOptions, out, err
 		return writeIndentedJSON(out, result)
 	}
 
-	fmt.Fprintf(out, "Agent: %s\nProject: %s\nTelemetry: %s (%s)\nWindow: %s to %s\n\n",
+	fmt.Fprintf(out, "Agent: %s\nProject: %s\nTelemetry: %s (%s)\nWindow: %s to %s\nCoverage: %s\n\n",
 		result.AgentName, result.ProjectEndpoint, result.Telemetry.ConnectionName, result.Telemetry.ResourceID,
-		result.Window.Start, result.Window.End)
+		result.Window.Start, result.Window.End, telemetryAttributionNote)
 	if len(result.Data) == 0 {
 		_, err := fmt.Fprintf(out, "%s\n%s\n", emptyNotice, emptyHint)
 		return err
@@ -470,5 +474,15 @@ func shortenID(id string, length int) string {
 }
 
 func singleLine(text string) string {
-	return strings.Join(strings.Fields(text), " ")
+	text = strings.Join(strings.Fields(text), " ")
+	var out strings.Builder
+	for _, r := range text {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			quoted := strconv.QuoteRune(r)
+			out.WriteString(quoted[1 : len(quoted)-1])
+		} else {
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
 }

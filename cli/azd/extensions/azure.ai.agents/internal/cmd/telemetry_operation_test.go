@@ -300,16 +300,20 @@ func TestOperationServiceClassPropertyPrecedence(t *testing.T) {
 type operationTelemetryServer struct {
 	contracts.UnimplementedTelemetryServiceServer
 	azdext.UnimplementedProjectServiceServer
-	mu          sync.Mutex
-	events      []*contracts.ReportUsageRequest
-	err         error
-	block       bool
-	traceparent string
+	mu           sync.Mutex
+	events       []*contracts.ReportUsageRequest
+	err          error
+	block        bool
+	traceparent  string
+	projectCalls int
 }
 
 func (s *operationTelemetryServer) Get(
 	ctx context.Context, req *azdext.EmptyRequest,
 ) (*azdext.GetProjectResponse, error) {
+	s.mu.Lock()
+	s.projectCalls++
+	s.mu.Unlock()
 	props, err := structpb.NewStruct(map[string]any{"kind": "hosted"})
 	if err != nil {
 		return nil, err
@@ -319,6 +323,30 @@ func (s *operationTelemetryServer) Get(
 			"agent": {Host: AiAgentHost, AdditionalProperties: props},
 		},
 	}}, nil
+}
+
+func TestRootDirectSelectorsDoNotReadProjectForTelemetry(t *testing.T) {
+	server := grpc.NewServer()
+	capture := &operationTelemetryServer{}
+	contracts.RegisterTelemetryServiceServer(server, capture)
+	azdext.RegisterProjectServiceServer(server, capture)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+
+	for _, args := range [][]string{
+		{"show", "support", "--agent-endpoint", "invalid"},
+		{"show", "support", "--project-endpoint", "invalid"},
+	} {
+		_, err := executeRoot(t, args...)
+		require.Error(t, err)
+	}
+	capture.mu.Lock()
+	defer capture.mu.Unlock()
+	require.Zero(t, capture.projectCalls)
+	require.Empty(t, capture.events)
 }
 
 func (s *operationTelemetryServer) ReportUsage(

@@ -231,6 +231,27 @@ func TestDirectSessionsListCommand(t *testing.T) {
 		directSessionsListCommand(flags, target))
 }
 
+func TestDirectEndpointsRejectCredentialsAndUnsupportedComponents(t *testing.T) {
+	for _, tc := range []struct {
+		flag, endpoint, name string
+	}{
+		{"--project-endpoint", testProjectEndpoint + "?sig=secret", "support"},
+		{"--project-endpoint", testProjectEndpoint + "#secret", "support"},
+		{"--project-endpoint", "https://user:secret@acct.services.ai.azure.com/api/projects/proj", "support"},
+		{"--agent-endpoint", testAgentEndpoint + "?sig=secret", ""},
+		{"--agent-endpoint", testAgentEndpoint + "#secret", ""},
+		{"--agent-endpoint", strings.Replace(testAgentEndpoint, "https://", "https://user:secret@", 1), ""},
+		{"--agent-endpoint", "https://user:secret@%", ""},
+	} {
+		t.Run(tc.flag+tc.endpoint, func(t *testing.T) {
+			cmd, flags := newDirectTargetTestCommand(t, tc.flag, tc.endpoint)
+			_, err := resolveDirectAgentTarget(cmd, flags, tc.name, tc.name != "", "--agent-name")
+			localErr := requireLocalErrorCode(t, err, exterrors.CodeInvalidParameter)
+			assert.NotContains(t, localErr.Message+localErr.Suggestion, "secret")
+		})
+	}
+}
+
 type fakeRemoteAgentReader struct {
 	agent    *agent_api.AgentObject
 	err      error
@@ -564,6 +585,12 @@ func TestDirectTargetCommands_RejectInvalidInputsBeforeAuth(t *testing.T) {
 			args: []string{"s1", "--agent-endpoint", testAgentEndpoint,
 				"--environment", "dev"},
 			wantCode: exterrors.CodeConflictingArguments,
+		},
+		{
+			name:     "sessions show rejects malformed direct session",
+			cmd:      func() *cobra.Command { return newSessionShowCommand(nil) },
+			args:     []string{"a/b", "--agent-endpoint", testAgentEndpoint},
+			wantCode: exterrors.CodeInvalidSessionId,
 		},
 		{
 			name:     "monitor project endpoint without name",

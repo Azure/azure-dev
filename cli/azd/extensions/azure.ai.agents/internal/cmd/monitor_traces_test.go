@@ -26,6 +26,7 @@ import (
 const (
 	testAppInsightsID      = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/microsoft.insights/components/appi-one"
 	testOtherAppInsightsID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/microsoft.insights/components/appi-two"
+	testFoundryProjectID   = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/projects/project"
 )
 
 type fakeConnectionLister struct {
@@ -59,6 +60,7 @@ func (f *fakeTraceQuerier) QueryResource(
 func appInsightsConnection(name, resourceID string, isDefault bool) azure.Connection {
 	return azure.Connection{
 		Name:      name,
+		ID:        testFoundryProjectID + "/connections/" + name,
 		Type:      azure.ConnectionTypeAppInsights,
 		Target:    resourceID,
 		IsDefault: isDefault,
@@ -66,11 +68,36 @@ func appInsightsConnection(name, resourceID string, isDefault bool) azure.Connec
 }
 
 func queryResult(columns []string, rows ...[]any) *azure.LogsQueryResult {
+	if len(columns) > 0 && columns[len(columns)-1] == "agent_match_count" {
+		matches := 0
+		for _, row := range rows {
+			if row[1] != "exception" && genAISpanMatchesAgent(recordDynamic(map[string]any{"attributes": row[14]}, "attributes"), "support") {
+				matches++
+			}
+		}
+		for i := range rows {
+			rows[i] = append(rows[i], float64(matches))
+		}
+	}
 	table := azure.LogsQueryTable{Name: "PrimaryResult", Rows: rows}
 	for _, column := range columns {
 		table.Columns = append(table.Columns, azure.LogsQueryColumn{Name: column})
 	}
 	return &azure.LogsQueryResult{Tables: []azure.LogsQueryTable{table}}
+}
+
+func genAISpanMatchesAgent(attributes map[string]any, agentName string) bool {
+	operation, _ := attributes["gen_ai.operation.name"].(string)
+	if operation == "" {
+		return false
+	}
+	name, _ := attributes["gen_ai.agent.name"].(string)
+	id, _ := attributes["gen_ai.agent.id"].(string)
+	if name != "" {
+		return strings.EqualFold(name, agentName)
+	}
+	prefix := agentName + ":"
+	return strings.EqualFold(id, agentName) || len(id) > len(prefix) && strings.EqualFold(id[:len(prefix)], prefix)
 }
 
 var testTraceNow = time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
@@ -105,10 +132,45 @@ func TestParseTraceWindow(t *testing.T) {
 		assert.Equal(t, want, got, raw)
 	}
 
-	for _, raw := range []string{"", "0d", "-1h", "731d", "1w", "abc"} {
+	for _, raw := range []string{"", "0d", "-1h", "731d", "213504d", "1w", "abc"} {
 		_, err := parseTraceWindow(raw)
 		requireLocalErrorCode(t, err, exterrors.CodeInvalidParameter)
 	}
+}
+
+func TestRedactTelemetryURLs(t *testing.T) {
+	values := map[string]any{
+		"url.full": "https://user:password@example.com/blob?sig=secret#fragment",
+		"nested":   map[string]any{"http.url": "https://example.com/path?token=secret"},
+		"array":    []any{"https://example.com/path?sig=secret"},
+		"prompt":   "keep this prompt",
+	}
+	data, err := json.Marshal(redactTraceAttributes(values))
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "secret")
+	assert.NotContains(t, string(data), "password")
+	assert.NotContains(t, string(data), "fragment")
+	assert.Contains(t, string(data), "https://example.com/blob")
+	assert.Contains(t, string(data), "keep this prompt")
+}
+
+func TestWriteTraceJSONFileReplacesExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trace.json")
+	require.NoError(t, os.WriteFile(path, []byte("old"), 0o644)) // #nosec G306 -- test replacing a readable file
+	require.NoError(t, writeTraceJSONFile(path, map[string]string{"value": "new"}))
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"new"`)
+	if os.PathSeparator != '\\' {
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
+}
+
+func TestMillisecondsPreserveSubmillisecondPrecision(t *testing.T) {
+	assert.Equal(t, 400*time.Microsecond, msDuration(0.4))
+	assert.Equal(t, 1600*time.Microsecond, msDuration(1.6))
 }
 
 func TestResolveTracingSource(t *testing.T) {
@@ -134,7 +196,7 @@ func TestResolveTracingSource(t *testing.T) {
 		lister := &fakeConnectionLister{connections: []azure.Connection{conn}}
 		source, err := resolveTracingSource(t.Context(), lister, testProjectEndpoint)
 		require.NoError(t, err)
-		assert.Equal(t, traceTelemetrySource{ConnectionName: "appi", ResourceID: testAppInsightsID}, *source)
+		assert.Equal(t, traceTelemetrySource{ConnectionName: "appi", ResourceID: testAppInsightsID, ProjectID: testFoundryProjectID}, *source)
 	})
 
 	t.Run("connections to the same resource", func(t *testing.T) {
@@ -157,6 +219,22 @@ func TestResolveTracingSource(t *testing.T) {
 		assert.Equal(t, testOtherAppInsightsID, source.ResourceID)
 	})
 
+	t.Run("invalid default is not replaced by a nondefault", func(t *testing.T) {
+		lister := &fakeConnectionLister{connections: []azure.Connection{
+			appInsightsConnection("valid", testAppInsightsID, false),
+			appInsightsConnection("default", "InstrumentationKey=secret", true),
+		}}
+		_, err := resolveTracingSource(t.Context(), lister, testProjectEndpoint)
+		requireLocalErrorCode(t, err, exterrors.CodeTracingNotConfigured)
+	})
+
+	t.Run("missing project identity cannot scope telemetry", func(t *testing.T) {
+		conn := appInsightsConnection("appi", testAppInsightsID, true)
+		conn.ID = ""
+		_, err := resolveTracingSource(t.Context(), &fakeConnectionLister{connections: []azure.Connection{conn}}, testProjectEndpoint)
+		requireLocalErrorCode(t, err, exterrors.CodeTracingNotConfigured)
+	})
+
 	t.Run("ambiguous connections", func(t *testing.T) {
 		lister := &fakeConnectionLister{connections: []azure.Connection{
 			appInsightsConnection("first", testAppInsightsID, false),
@@ -165,6 +243,15 @@ func TestResolveTracingSource(t *testing.T) {
 		_, err := resolveTracingSource(t.Context(), lister, testProjectEndpoint)
 		localErr := requireLocalErrorCode(t, err, exterrors.CodeAmbiguousTracingConnection)
 		assert.Contains(t, localErr.Message, "first, second")
+	})
+
+	t.Run("same resource with conflicting project identities is ambiguous", func(t *testing.T) {
+		first := appInsightsConnection("first", testAppInsightsID, false)
+		second := appInsightsConnection("second", testAppInsightsID, false)
+		second.ID = strings.Replace(second.ID, "/projects/project/", "/projects/other/", 1)
+		_, err := resolveTracingSource(t.Context(),
+			&fakeConnectionLister{connections: []azure.Connection{first, second}}, testProjectEndpoint)
+		requireLocalErrorCode(t, err, exterrors.CodeAmbiguousTracingConnection)
 	})
 
 	t.Run("access denied", func(t *testing.T) {
@@ -180,7 +267,7 @@ func TestBuildTraceQueries(t *testing.T) {
 	assert.Equal(t, `'a\'b\\c'`, kqlString(`a'b\c`))
 
 	start := testTraceNow.Add(-time.Hour)
-	list := buildTraceListQuery("sup'port", traceStatusFailed, start, testTraceNow, 10)
+	list := buildTraceListQuery("sup'port", testFoundryProjectID, traceStatusFailed, start, testTraceNow, 10)
 	assert.Contains(t, list, `let agentName = 'sup\'port';`)
 	assert.Contains(t, list, "| where failed_span_count > 0")
 	assert.Contains(t, list, "| take 11")
@@ -189,15 +276,24 @@ func TestBuildTraceQueries(t *testing.T) {
 	assert.Contains(t, list, "arg_min(timestamp, agent_span_name) by operation_Id")
 	assert.Contains(t, list, "| extend root_span_name = coalesce(root_span_name, agent_span_name)")
 	assert.Contains(t, list, "coalesce(tostring(customDimensions['gen_ai.agent.version'])")
+	assert.Contains(t, list, "let projectId = '"+testFoundryProjectID+"';")
+	assert.Contains(t, list, "isnotempty(foundry_project) or isnotempty(gen_ai_project)")
+	assert.Contains(t, list, "isempty(foundry_project) or foundry_project =~ projectId")
+	assert.Contains(t, list, "isempty(gen_ai_project) or gen_ai_project =~ projectId")
+	assert.Contains(t, list, "iff(isnotempty(agent_name_attr), agent_name_attr =~ agentName,")
 
-	assert.Contains(t, buildTraceListQuery("support", traceStatusSucceeded, start, testTraceNow, 5),
+	assert.Contains(t, buildTraceListQuery("support", testFoundryProjectID, traceStatusSucceeded, start, testTraceNow, 5),
 		"| where failed_span_count == 0")
-	assert.NotContains(t, buildTraceListQuery("support", traceStatusAll, start, testTraceNow, 5),
+	assert.NotContains(t, buildTraceListQuery("support", testFoundryProjectID, traceStatusAll, start, testTraceNow, 5),
 		"failed_span_count >")
 
-	export := buildTraceExportQuery("trace-1", start, testTraceNow, 100)
+	export := buildTraceExportQuery("trace-1", "support", testFoundryProjectID, start, testTraceNow, 100)
 	assert.Contains(t, export, "let traceId = 'trace-1';")
 	assert.Contains(t, export, "| take 101")
+	assert.Contains(t, export, "isempty(foundry_project) or foundry_project =~ projectId")
+	assert.Contains(t, export, "isempty(gen_ai_project) or gen_ai_project =~ projectId")
+	assert.Contains(t, export, "iff(isnotempty(agent_name_attr), agent_name_attr =~ agentName,")
+	assert.Less(t, strings.Index(export, "let agentMatches"), strings.Index(export, "| take 101"))
 }
 
 var traceListColumns = []string{
@@ -314,7 +410,7 @@ func TestRunMonitorTraces_FailsBeforeQuery(t *testing.T) {
 
 var traceExportColumns = []string{
 	"timestamp", "span_kind", "span_id", "parent_id", "name", "duration_ms", "success",
-	"result_code", "type", "target", "role", "item_count", "message", "problem_id", "attributes",
+	"result_code", "type", "target", "role", "item_count", "message", "problem_id", "attributes", "agent_match_count",
 }
 
 func exportRow(kind, spanID, parentID, name string, success any, itemCount float64, attributes string) []any {
@@ -343,14 +439,14 @@ func TestAssessTraceCompleteness_ReportsAbsentSpansWithoutGuessingCause(t *testi
 			span("responses-invoke", "absent-parent-b", "responsesapi", at(66), 1),
 			span("responses-chat", "responses-invoke", "responsesapi", at(67), 1),
 		}
-		result := assessTraceCompleteness("trace-1", spans, false, "")
+		result := assessTraceCompleteness("trace-1", spans, nil, false, "")
 		assert.False(t, result.Complete)
 		assert.False(t, result.RootSpanFound)
 		assert.Equal(t, []string{"absent-parent-a", "absent-parent-b"}, result.MissingParentSpanIDs)
 		assert.True(t, result.Sampled)
 		require.Len(t, result.Notes, 3)
 		assert.Contains(t, result.Notes[0], "no root span (a span without a parent) was found in the queried telemetry")
-		assert.Contains(t, result.Notes[1], "2 parent span ID(s) referenced by recorded spans were not found")
+		assert.Contains(t, result.Notes[1], "2 parent span ID(s) referenced by recorded spans or exceptions were not found")
 		for _, note := range result.Notes[:2] {
 			assert.Contains(t, note, "does not mean the operation failed")
 			assert.Contains(t, note, "the telemetry does not show why")
@@ -366,7 +462,7 @@ func TestAssessTraceCompleteness_ReportsAbsentSpansWithoutGuessingCause(t *testi
 			span("agent-invoke", "lost-span", "hosted-agent", at(56), 1),
 			span("agent-chat", "agent-invoke", "hosted-agent", at(57), 1),
 		}
-		result := assessTraceCompleteness("trace-1", spans, false, "")
+		result := assessTraceCompleteness("trace-1", spans, nil, false, "")
 		assert.False(t, result.Complete)
 		assert.True(t, result.RootSpanFound)
 		assert.Equal(t, []string{"lost-span"}, result.MissingParentSpanIDs)
@@ -379,10 +475,18 @@ func TestAssessTraceCompleteness_ReportsAbsentSpansWithoutGuessingCause(t *testi
 			span("root", "trace-1", "agentsv2", at(55), 1),
 			span("agent-invoke", "root", "hosted-agent", at(56), 1),
 		}
-		result := assessTraceCompleteness("trace-1", spans, false, "")
+		result := assessTraceCompleteness("trace-1", spans, nil, false, "")
 		assert.True(t, result.Complete)
 		assert.Empty(t, result.MissingParentSpanIDs)
 		assert.Empty(t, result.Notes)
+	})
+
+	t.Run("missing exception parent makes trace incomplete", func(t *testing.T) {
+		spans := []traceSpan{span("root", "", "agent", at(55), 1)}
+		exceptions := []traceException{{ParentSpanID: "missing"}}
+		result := assessTraceCompleteness("trace-1", spans, exceptions, false, "")
+		assert.False(t, result.Complete)
+		assert.Equal(t, []string{"missing"}, result.MissingParentSpanIDs)
 	})
 }
 
@@ -436,6 +540,10 @@ func TestGenAISpanMatchesAgent(t *testing.T) {
 			attributes: `{"gen_ai.agent.name":"support-other","gen_ai.agent.id":"support-other:1","gen_ai.operation.name":"invoke_agent"}`,
 		},
 		{
+			name:       "conflicting agent name takes precedence over agent ID",
+			attributes: `{"gen_ai.agent.name":"other","gen_ai.agent.id":"support:1","gen_ai.operation.name":"invoke_agent"}`,
+		},
+		{
 			name:       "role without agent identity",
 			attributes: `{"service.name":"support","gen_ai.operation.name":"invoke_agent"}`,
 		},
@@ -459,6 +567,24 @@ func exportOptions() *traceOptions {
 }
 
 func TestRunMonitorTraces_Export(t *testing.T) {
+	t.Run("agent span after export limit still establishes ownership", func(t *testing.T) {
+		rows := make([][]any, 0, maxTraceExportSpans+1)
+		for range maxTraceExportSpans + 1 {
+			rows = append(rows, exportRow("dependency", "child", "", "dependency", true, 1, `{}`))
+		}
+		result := queryResult(traceExportColumns, rows...)
+		// The scalar count covers the full window, including a match beyond the returned rows.
+		for _, row := range result.Tables[0].Rows {
+			row[len(row)-1] = float64(1)
+		}
+		deps, _, _ := newFakeTraceDeps(&fakeTraceQuerier{result: result})
+		var out, errOut bytes.Buffer
+		require.NoError(t, runMonitorTraces(t.Context(), testTraceTarget(), exportOptions(), deps, &out, &errOut))
+		var export traceExport
+		require.NoError(t, json.Unmarshal(out.Bytes(), &export))
+		assert.True(t, export.Completeness.Truncated)
+		assert.Len(t, export.Spans, maxTraceExportSpans)
+	})
 	t.Run("complete trace with redaction", func(t *testing.T) {
 		logs := &fakeTraceQuerier{result: queryResult(traceExportColumns,
 			exportRow("request", "root", "trace-1", "invoke_agent", true, 1, supportAgentAttributes),
@@ -476,7 +602,7 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 		var export traceExport
 		require.NoError(t, json.Unmarshal(out.Bytes(), &export))
 		assert.Equal(t, traceExportSchemaVersion, export.SchemaVersion)
-		assert.True(t, export.Completeness.Complete)
+		assert.False(t, export.Completeness.Complete)
 		assert.True(t, export.Completeness.RootSpanFound)
 		require.Len(t, export.Spans, 2)
 		assert.Equal(t, "ok", export.Spans[0].Status)
@@ -589,7 +715,7 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 		assert.True(t, export.Completeness.Sampled)
 		assert.Equal(t, []string{"missing-parent"}, export.Completeness.MissingParentSpanIDs)
 		assert.Contains(t, export.Completeness.Notes[0],
-			"1 parent span ID(s) referenced by recorded spans were not found in the queried telemetry")
+			"1 parent span ID(s) referenced by recorded spans or exceptions were not found in the queried telemetry")
 		assert.Contains(t, export.Completeness.Notes[1], "1 span record(s) have item_count > 1")
 		assert.Empty(t, errOut.String())
 	})
@@ -616,7 +742,7 @@ func TestRunMonitorTraces_Export(t *testing.T) {
 		assert.False(t, export.Completeness.RootSpanFound)
 		assert.True(t, export.Completeness.Sampled)
 		assert.Equal(t, []string{"missing-parent"}, export.Completeness.MissingParentSpanIDs)
-		require.Len(t, export.Completeness.Notes, 3)
+		require.Len(t, export.Completeness.Notes, 4)
 		require.Len(t, export.Spans, 1)
 		assert.Equal(t, "missing-parent", export.Spans[0].ParentSpanID)
 	})
@@ -693,7 +819,7 @@ func TestRunMonitorTraces_ExportQueryWarnings(t *testing.T) {
 					assert.Equal(t, []string{"missing-parent"}, export.Completeness.MissingParentSpanIDs)
 					assert.Equal(t, tt.truncated, export.Completeness.Truncated)
 					assert.Equal(t, tt.partialError, export.Completeness.PartialError)
-					assert.Len(t, export.Completeness.Notes, 3+warningCount)
+					assert.Len(t, export.Completeness.Notes, 4+warningCount)
 					assert.Equal(t, "missing-parent", export.Spans[0].ParentSpanID)
 				})
 			}

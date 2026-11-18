@@ -151,6 +151,15 @@ func TestResolveMonitorAgentInfo_PrefersProjectService(t *testing.T) {
 	assert.Contains(t, info.AgentEndpoint, "/agents/deployed-agent/versions/7")
 }
 
+func TestResolveMonitorAgentContext_UsesDeployedProject(t *testing.T) {
+	info := &AgentServiceInfo{ProjectEndpoint: testProjectEndpoint, AgentName: "deployed-agent", Version: "7"}
+	target, err := resolveMonitorAgentContext(t.Context(), info)
+	require.NoError(t, err)
+	assert.Equal(t, testProjectEndpoint, target.ProjectEndpoint)
+	assert.Equal(t, "deployed-agent", target.Name)
+	assert.Equal(t, "7", target.Version)
+}
+
 func TestResolveMonitorAgentInfo_UsesDirectNameWithoutProject(t *testing.T) {
 	t.Parallel()
 

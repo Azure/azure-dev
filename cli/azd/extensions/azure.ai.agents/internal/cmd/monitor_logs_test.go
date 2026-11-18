@@ -47,19 +47,23 @@ func testLogOptions(output string) *logQueryOptions {
 
 func TestBuildLogQuery(t *testing.T) {
 	start := testTraceNow.Add(-time.Hour)
-	query := buildLogQuery("sup'port", &logQueryOptions{limit: 20}, start, testTraceNow)
+	query := buildLogQuery("sup'port", testFoundryProjectID, &logQueryOptions{limit: 20}, start, testTraceNow)
 	assert.Contains(t, query, `let agentName = 'sup\'port';`)
 	assert.Contains(t, query, "(traces | extend record_type = 'log'")
 	assert.Contains(t, query, "(exceptions | extend record_type = 'exception'")
 	assert.Contains(t, query, "datetime(2026-11-16T11:00:00Z) .. datetime(2026-11-16T12:00:00Z)")
 	// Records are isolated to the selected agent; records without agent identity never match.
-	assert.Contains(t, query, "| where agent_name_attr =~ agentName or agent_id_attr =~ agentName")
+	assert.Contains(t, query, "| where iff(isnotempty(agent_name_attr), agent_name_attr =~ agentName,")
+	assert.Contains(t, query, "let projectId = '"+testFoundryProjectID+"';")
+	assert.Contains(t, query, "isnotempty(foundry_project) or isnotempty(gen_ai_project)")
+	assert.Contains(t, query, "isempty(foundry_project) or foundry_project =~ projectId")
+	assert.Contains(t, query, "isempty(gen_ai_project) or gen_ai_project =~ projectId")
 	assert.Contains(t, query, "| order by timestamp desc\n| take 21")
 	assert.NotContains(t, query, "session_id ==")
 	assert.NotContains(t, query, "severity_level >=")
 	assert.NotContains(t, query, " contains ")
 
-	filtered := buildLogQuery("support", &logQueryOptions{
+	filtered := buildLogQuery("support", testFoundryProjectID, &logQueryOptions{
 		limit: 5, sessionID: "session-a", minSeverity: 2, search: `it's "slow"`,
 	}, start, testTraceNow)
 	assert.Contains(t, filtered, "| where session_id == 'session-a'")
@@ -121,6 +125,10 @@ func TestRunMonitorLogQuery_Table(t *testing.T) {
 	assert.Less(t, bytes.Index(out.Bytes(), []byte("AgentServerHost started")),
 		bytes.Index(out.Bytes(), []byte("ServiceRequestError")), "records print oldest first")
 	assert.NotContains(t, errOut.String(), "WARNING")
+}
+
+func TestLogTableEscapesTerminalControls(t *testing.T) {
+	assert.Equal(t, `hello\x1b[2J \u202e`, singleLine("hello\x1b[2J\n\u202e"))
 }
 
 func TestRunMonitorLogQuery_Empty(t *testing.T) {

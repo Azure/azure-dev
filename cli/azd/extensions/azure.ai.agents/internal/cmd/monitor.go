@@ -61,8 +61,8 @@ live session. No session is required; --session-id narrows the results to one
 session. Use --level to set a minimum severity (verbose, information, warning,
 error, critical) and --search to match message text (case-insensitive). --tail
 limits how many of the newest matching records are returned (shown oldest
-first). Only records the agent exported through OpenTelemetry with its
-gen_ai.agent.name or gen_ai.agent.id are returned: application log records and
+first). Only records attributed to the selected Foundry project and agent are
+returned: application log records and
 exceptions, not every stdout/stderr line. System events are not retained, so
 --type system does not accept --since. Each record includes its agent version,
 session ID, and trace ID when recorded; --output json returns them with the
@@ -73,11 +73,13 @@ With --type traces, lists the agent's recorded OpenTelemetry traces from the
 Application Insights resource connected to the Foundry project, newest first.
 Use --since to set the window, --status failed to find failed interactions, and
 --tail to limit how many traces are listed. Use --trace-id to export one trace
-with every recorded span, including span and parent IDs, timestamps, status,
+with its attributed spans, including span and parent IDs, timestamps, status,
 and attributes. A trace must contain a GenAI operation span with a non-empty
 gen_ai.operation.name and matching gen_ai.agent.name or gen_ai.agent.id.
 Infrastructure spans with inherited agent identity alone do not qualify.
-Export retains all spans of a qualifying trace, including infrastructure spans.
+Records without project or agent attribution, or with conflicting project
+attribution, are excluded from both traces and retained logs. Results can be
+incomplete even when the connected resource contains more telemetry.
 The list shows the root span name, or the earliest matching GenAI span name
 when the root is missing. Export reports whether the queried telemetry contains
 every span the trace references (root and parent spans, truncation, partial
@@ -135,7 +137,7 @@ when streaming session logs.`,
   azd ai agent monitor support --type traces --since 24h --status failed \
     --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
 
-  # Export one trace with all of its spans to a file
+  # Export the attributed spans of one trace to a file
   azd ai agent monitor support --type traces --trace-id <trace-id> --out-file ./trace.json \
     --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>`,
 		Args: cobra.MaximumNArgs(1),
@@ -196,7 +198,7 @@ when streaming session logs.`,
 				)
 			}
 
-			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)
+			agentContext, err := resolveMonitorAgentContext(ctx, info)
 			if err != nil {
 				return monitorEndpointError(err)
 			}
@@ -256,6 +258,17 @@ when streaming session logs.`,
 	})
 
 	return cmd
+}
+
+func resolveMonitorAgentContext(ctx context.Context, info *AgentServiceInfo) (*AgentContext, error) {
+	if info.ProjectEndpoint != "" {
+		endpoint, _, err := validateProjectEndpoint(info.ProjectEndpoint)
+		if err != nil {
+			return nil, err
+		}
+		return &AgentContext{ProjectEndpoint: endpoint, Name: info.AgentName, Version: info.Version}, nil
+	}
+	return newAgentContext(ctx, "", "", info.AgentName, info.Version)
 }
 
 // runMonitorTracesForTarget lists or exports traces for the deployed agent named by target.

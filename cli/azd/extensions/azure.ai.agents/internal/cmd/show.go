@@ -71,7 +71,9 @@ azd environment, ` + "`azd ai project set`" + `, or FOUNDRY_PROJECT_ENDPOINT. In
 azd project, show without a name keeps resolving the agent service from
 azure.yaml. Listing follows every page of results.
 
-Use --versions to list every version of one agent instead of its latest version.`,
+Use --versions to list every version of one agent instead of its latest version.
+Outside an azd project, a name with --versions uses the same shared project
+context as a nameless show when no endpoint is supplied.`,
 		Example: `  # Show status (auto-resolves from azure.yaml)
   azd ai agent show
 
@@ -139,6 +141,15 @@ Use --versions to list every version of one agent instead of its latest version.
 				}
 				if scope != nil {
 					return runShowAgentList(ctx, scope, flags.output)
+				}
+			}
+			if nameSupplied && flags.versions {
+				target, err := resolveOutsideProjectVersionTarget(ctx, azdClient.Project().Get, flags.name)
+				if err != nil {
+					return err
+				}
+				if target != nil {
+					return runShowVersions(ctx, target, flags.output)
 				}
 			}
 

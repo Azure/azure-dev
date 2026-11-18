@@ -18,6 +18,8 @@ azd project, show without a name keeps resolving the agent service from
 azure.yaml. Listing follows every page of results.
 
 Use --versions to list every version of one agent instead of its latest version.
+Outside an azd project, a name with --versions uses the same shared project
+context as a nameless show when no endpoint is supplied.
 
 Usage
   azd ai agent show [name] [flags]

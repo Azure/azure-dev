@@ -6,6 +6,7 @@ tags: ["tier:0", "cmd:monitor", "cmd:help", "parallel-safe"]
 goals:
   - "Confirm the command exits zero without any product prompts or Azure authentication."
   - "Confirm help describes --type traces, --trace-id, --out-file, --project-endpoint, and --agent-endpoint."
+  - "Confirm help says records without project or agent attribution, or with conflicting project attribution, are excluded from traces and retained logs, and results can be incomplete."
   - "Confirm help says missing-root, missing-parent, and sampling details are kept in JSON only, and only truncation or partial query results produce warnings."
   - "Confirm help says exports preserve raw parent links and do not add synthetic roots like the Foundry portal's display."
   - "Take a screenshot of the final help output."

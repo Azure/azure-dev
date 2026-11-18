@@ -266,3 +266,24 @@ func TestResolveNamelessShowListScope(t *testing.T) {
 		requireLocalErrorCode(t, err, exterrors.CodeInvalidAgentName)
 	})
 }
+
+func TestResolveOutsideProjectVersionTarget(t *testing.T) {
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", testProjectEndpoint)
+	stubHostedSources(t, azdHostedSources{})
+	noProject := status.Error(codes.Unknown, "no project exists; to create a new project, run `azd init`")
+
+	target, err := resolveOutsideProjectVersionTarget(t.Context(), projectResult(nil, noProject), "support")
+	require.NoError(t, err)
+	require.NotNil(t, target)
+	assert.Equal(t, testProjectEndpoint, target.ProjectEndpoint)
+	assert.Equal(t, "support", target.Name)
+
+	target, err = resolveOutsideProjectVersionTarget(t.Context(),
+		projectResult(&azdext.GetProjectResponse{Project: &azdext.ProjectConfig{Name: "app"}}, nil), "support")
+	require.NoError(t, err)
+	assert.Nil(t, target)
+	_, err = resolveOutsideProjectVersionTarget(t.Context(), projectResult(nil, status.Error(codes.Unavailable, "down")), "support")
+	require.Error(t, err)
+	_, err = resolveOutsideProjectVersionTarget(t.Context(), projectResult(nil, noProject), "invalid/name")
+	requireLocalErrorCode(t, err, exterrors.CodeInvalidAgentName)
+}

@@ -761,7 +761,8 @@ directory. Without the flag, a nameless `show` outside an azd project lists the
 project from the active azd environment's `FOUNDRY_PROJECT_ENDPOINT`, then
 `azd ai project set`, then the `FOUNDRY_PROJECT_ENDPOINT` environment variable.
 Inside an azd project, a nameless `show` keeps showing the agent service from
-`azure.yaml`. Inside a project, `show [service] --versions` lists the deployed
+`azure.yaml`. Outside a project, `show <name> --versions` uses the same shared
+project context. Inside a project, `show [service] --versions` lists the deployed
 agent's versions.
 
 Listing follows every page of results and fails rather than printing a partial
@@ -790,7 +791,7 @@ directory and for agents that azd did not deploy:
 azd ai agent monitor support --type traces --since 24h --status failed \
   --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
 
-# Export one trace with all of its spans
+# Export the attributed spans of one trace
 azd ai agent monitor support --type traces --trace-id "<trace-id>" --out-file ./trace.json \
   --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>"
 ```
@@ -811,8 +812,14 @@ or dependency spans has a non-empty `gen_ai.operation.name` (for example,
 `gen_ai.agent.name` equal to the agent name, or `gen_ai.agent.id` equal to the
 name or `<name>:<version>`. Agent identity alone does not qualify: infrastructure
 requests such as token refresh and telemetry configuration can inherit these
-attributes without being GenAI operations. Exports retain every recorded span of
-a qualifying trace, including its infrastructure requests. This follows the
+attributes without being GenAI operations. Both trace and log queries require
+each returned record to identify the selected project through
+`microsoft.foundry.project.id` or `gen_ai.azure_ai_project.id` and the selected
+agent through `gen_ai.agent.name` or `gen_ai.agent.id`. If both project IDs
+are present, both must match. When an agent name is present, it must match even
+if the agent ID also names the selected agent. Records with missing or conflicting attribution
+are excluded, including infrastructure spans and exceptions, to avoid mixing
+data from projects that share an Application Insights resource. This follows the
 [GenAI operation span conventions used by Foundry](https://learn.microsoft.com/azure/foundry/how-to/develop/langchain-traces#understand-trace-structure).
 
 The list's `ROOT SPAN` column shows a recorded root span's name. If the root is
@@ -827,15 +834,16 @@ that the trace is complete; export still reports missing roots and parents.
   prints a warning.
 - `--status` filters listed traces by whether any span failed: `all` (default),
   `failed`, or `succeeded`.
-- `--trace-id` exports every span and exception recorded for one trace (operation
+- `--trace-id` exports attributed spans and exceptions for one trace (operation
   ID). It cannot be combined with `--status` or `--tail`.
-- `--out-file` writes the JSON result to a file (permissions `0600`, overwriting
-  an existing file) and prints a confirmation to stderr.
+- `--out-file` atomically replaces the destination with a new JSON file and
+  prints a confirmation to stderr. On Unix the new file has permissions `0600`;
+  on Windows access follows the directory's inherited ACL.
 - `--follow`, `--raw`, `--session-id`, and `--user-identity` apply only to logs.
 
 List JSON output is `{"project_endpoint", "agent_name", "telemetry":
-{"connection_name", "resource_id"}, "window": {"start", "end"}, "status_filter",
-"truncated", "partial_error", "data": [{"trace_id", "start_time", "end_time",
+{"connection_name", "resource_id", "project_id"}, "window": {"start", "end"}, "status_filter",
+"truncated", "partial_error", "coverage_notes", "data": [{"trace_id", "start_time", "end_time",
 "duration_ms", "span_count", "failed_span_count", "status", "sampled",
 "root_span_name", "agent_version", "conversation_id"}]}`. Export JSON (schema
 version `1`) is:
@@ -846,16 +854,16 @@ version `1`) is:
   "trace_id": "<operation ID>",
   "project_endpoint": "...",
   "agent_name": "support",
-  "telemetry": { "connection_name": "...", "resource_id": "..." },
+  "telemetry": { "connection_name": "...", "resource_id": "...", "project_id": "..." },
   "window": { "start": "...", "end": "..." },
   "completeness": {
-    "complete": true,
+    "complete": false,
     "root_span_found": true,
     "missing_parent_span_ids": [],
     "truncated": false,
     "sampled": false,
     "partial_error": "",
-    "notes": []
+    "notes": ["only records explicitly attributed to both the selected project and agent are returned; unattributed or conflicting records are excluded, so results may not include all telemetry"]
   },
   "spans": [
     {
@@ -877,7 +885,7 @@ Timestamps are RFC 3339 UTC. A root span's `parent_span_id` is empty or equals
 the trace ID. `completeness` describes only what the queried Application
 Insights telemetry contains, not whether the traced operation succeeded.
 `root_span_found` is `false` when no recorded span is a root, and
-`missing_parent_span_ids` lists parent span IDs that recorded spans reference
+`missing_parent_span_ids` lists parent span IDs that recorded spans or exceptions reference
 but that are not in the queried telemetry. The telemetry does not show why a
 span is absent: possible causes include a service that sends no telemetry to
 this Application Insights resource, sampling, the `--since` window, retention,
@@ -885,18 +893,20 @@ and ingestion delay. When no recorded root exists and multiple spans have
 absent parents, the Foundry portal can generate a synthetic root with a random
 span ID and assign those spans to the synthetic root for display. This export
 contains only recorded spans and preserves their original parent IDs; it does
-not add portal display wrappers. `completeness.complete` is `false` when the
-root or a referenced parent is absent, when the trace has more than 5,000 spans
-and was truncated, or when the query returned a partial error. `sampled` is
+not add portal display wrappers. `completeness.complete` is always `false`
+because unattributed records are excluded and cannot be proven absent.
+The notes also report absent roots or parents, truncation after 5,000 records,
+and partial query errors. `sampled` is
 `true` when a span stands for several sampled operations (`item_count > 1`);
-sampling alone does not set `complete` to `false`. Missing-root, missing-parent,
+sampling is recorded separately. Missing-root, missing-parent,
 and sampling details appear only in the JSON `completeness` fields and notes.
 Only truncation and partial query results produce warnings on stderr; missing
 spans or sampling alone do not produce an incomplete-export warning. Query and
 service failures remain errors. Attributes whose names identify
 credentials (such as
 `authorization`, `cookie`, `api_key`, `password`, `secret`, or tokens) and values
-that start with `Bearer ` are replaced with `[REDACTED]`. Prompt and response
+that start with `Bearer ` are replaced with `[REDACTED]`. HTTP URL values have
+user information, query strings, and fragments removed. Prompt and response
 content that the agent recorded in span attributes is kept, so handle exported
 traces as sensitive data.
 
@@ -946,14 +956,14 @@ azd ai agent monitor support --since 7d --search timeout --session-id "<session-
   system events are not retained in Application Insights.
 
 Coverage: the search reads the `traces` and `exceptions` tables and returns only
-records attributed to the agent through `gen_ai.agent.name` or `gen_ai.agent.id`.
+records attributed to the selected project and agent, as described above.
 These are the application log records and exceptions that the agent exported
 through OpenTelemetry. Lines written directly to stdout or stderr appear only if
 the agent exported them as log records, so this is not a full copy of the live
 console stream. Each record carries `agent_version`, and `session_id` and
 `trace_id` when recorded; the command has no version filter. Records from the
-Azure Monitor exporter itself (for example, export retries) carry the agent's
-identity and are included.
+Azure Monitor exporter itself (for example, export retries) are included only
+when they carry the required project and agent identity.
 
 `--output json` returns `project_endpoint`, `agent_name`, `telemetry`,
 `window`, `filters`, `coverage` (source, tables, `sampled`, and notes),

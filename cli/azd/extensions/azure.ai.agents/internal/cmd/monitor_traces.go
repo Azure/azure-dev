@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,6 +25,7 @@ import (
 	"azureaiagent/internal/pkg/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/spf13/cobra"
 )
 
@@ -85,7 +87,7 @@ func addMonitorTraceFlags(cmd *cobra.Command, flags *monitorTraceFlags) {
 			"and 30d with --trace-id. With --type console, searches retained logs in Application Insights "+
 			"instead of reading the live session stream")
 	cmd.Flags().StringVar(&flags.traceID, monitorTraceIDFlag, "",
-		"With --type traces, export one trace (operation ID) with all of its recorded spans")
+		"With --type traces, export attributed spans of one trace (operation ID)")
 	cmd.Flags().StringVar(&flags.status, monitorStatusFlag, traceStatusAll,
 		"With --type traces, filter listed traces by outcome: 'all', 'failed', or 'succeeded'")
 	cmd.Flags().StringVar(&flags.outFile, monitorOutFileFlag, "",
@@ -237,7 +239,9 @@ func parseTraceWindow(raw string) (time.Duration, error) {
 	if days, ok := strings.CutSuffix(value, "d"); ok {
 		var n int
 		n, err = strconv.Atoi(days)
-		window = time.Duration(n) * 24 * time.Hour
+		if err == nil && n > 0 && n <= int(maxTraceWindow/(24*time.Hour)) {
+			window = time.Duration(n) * 24 * time.Hour
+		}
 	} else {
 		window, err = time.ParseDuration(value)
 	}
@@ -294,6 +298,7 @@ func newTraceDeps(target *AgentContext) (*traceDeps, error) {
 type traceTelemetrySource struct {
 	ConnectionName string `json:"connection_name"`
 	ResourceID     string `json:"resource_id"`
+	ProjectID      string `json:"project_id"`
 }
 
 type traceWindow struct {
@@ -341,9 +346,20 @@ func resolveTracingSource(
 	for _, conn := range candidates {
 		resourceID := appInsightsConnectionResourceID(conn)
 		if resourceID == "" {
+			if conn.IsDefault {
+				return nil, exterrors.Dependency(exterrors.CodeTracingNotConfigured,
+					fmt.Sprintf("default Application Insights connection %q does not identify a resource", conn.Name),
+					"reconnect the default Application Insights resource in the Foundry portal")
+			}
 			continue
 		}
-		source := traceTelemetrySource{ConnectionName: conn.Name, ResourceID: resourceID}
+		projectID, err := tracingConnectionProjectID(conn.ID)
+		if err != nil {
+			return nil, exterrors.Dependency(exterrors.CodeTracingNotConfigured,
+				fmt.Sprintf("Application Insights connection %q does not identify its Foundry project", conn.Name),
+				"reconnect Application Insights to the project and retry")
+		}
+		source := traceTelemetrySource{ConnectionName: conn.Name, ResourceID: resourceID, ProjectID: projectID}
 		sources = append(sources, source)
 		if conn.IsDefault {
 			defaults = append(defaults, source)
@@ -358,11 +374,13 @@ func resolveTracingSource(
 		)
 	}
 
-	if source, ok := singleTelemetryResource(sources); ok {
-		return &source, nil
-	}
 	if source, ok := singleTelemetryResource(defaults); ok {
 		return &source, nil
+	}
+	if len(defaults) == 0 {
+		if source, ok := singleTelemetryResource(sources); ok {
+			return &source, nil
+		}
 	}
 	names := make([]string, 0, len(sources))
 	for _, source := range sources {
@@ -371,10 +389,20 @@ func resolveTracingSource(
 	slices.Sort(names)
 	return nil, exterrors.Dependency(
 		exterrors.CodeAmbiguousTracingConnection,
-		fmt.Sprintf("project %s has several Application Insights connections for different resources: %s",
+		fmt.Sprintf("project %s has Application Insights connections with different resources or project identities: %s",
 			projectEndpoint, strings.Join(names, ", ")),
 		"mark one connection as the project default in the Foundry portal, or remove the unused connections",
 	)
+}
+
+func tracingConnectionProjectID(connectionID string) (string, error) {
+	id, err := arm.ParseResourceID(connectionID)
+	if err != nil || id.Parent == nil || id.SubscriptionID == "" || id.ResourceGroupName == "" ||
+		!strings.EqualFold(id.ResourceType.String(), "Microsoft.CognitiveServices/accounts/projects/connections") ||
+		!strings.EqualFold(id.Parent.ResourceType.String(), "Microsoft.CognitiveServices/accounts/projects") {
+		return "", fmt.Errorf("invalid Foundry project connection ID")
+	}
+	return id.Parent.String(), nil
 }
 
 // singleTelemetryResource returns the source when every entry targets the same resource.
@@ -383,7 +411,8 @@ func singleTelemetryResource(sources []traceTelemetrySource) (traceTelemetrySour
 		return traceTelemetrySource{}, false
 	}
 	for _, source := range sources[1:] {
-		if !strings.EqualFold(source.ResourceID, sources[0].ResourceID) {
+		if !strings.EqualFold(source.ResourceID, sources[0].ResourceID) ||
+			!strings.EqualFold(source.ProjectID, sources[0].ProjectID) {
 			return traceTelemetrySource{}, false
 		}
 	}
@@ -442,18 +471,28 @@ const traceSpansSource = `union isfuzzy=true
     (requests | extend span_kind = 'request'),
     (dependencies | extend span_kind = 'dependency')`
 
+// Both project attributes, when present, must identify the selected project.
+// Unattributed records cannot safely be assigned to a project sharing the resource.
+const projectTelemetryFilter = `extend foundry_project = tostring(customDimensions['microsoft.foundry.project.id']),
+    gen_ai_project = tostring(customDimensions['gen_ai.azure_ai_project.id'])
+| where (isnotempty(foundry_project) or isnotempty(gen_ai_project))
+    and (isempty(foundry_project) or foundry_project =~ projectId)
+    and (isempty(gen_ai_project) or gen_ai_project =~ projectId)`
+
+const agentTelemetryFilter = `extend agent_name_attr = tostring(customDimensions['gen_ai.agent.name']),
+    agent_id_attr = tostring(customDimensions['gen_ai.agent.id'])
+| where iff(isnotempty(agent_name_attr), agent_name_attr =~ agentName,
+    agent_id_attr =~ agentName or
+    (agent_id_attr startswith strcat(agentName, ':') and strlen(agent_id_attr) > strlen(agentName) + 1))`
+
 // Agent identity can be inherited by infrastructure spans, so require a GenAI
 // operation on the same span. Agent IDs can be UUIDs or <agent-name>:<version>.
-const agentSpanFilter = `extend agent_name_attr = tostring(customDimensions['gen_ai.agent.name']),
-    agent_id_attr = tostring(customDimensions['gen_ai.agent.id'])
-| where gettype(customDimensions['gen_ai.operation.name']) == 'string'
-| where isnotempty(tostring(customDimensions['gen_ai.operation.name']))
-| where agent_name_attr =~ agentName or agent_id_attr =~ agentName
-    or (agent_id_attr startswith strcat(agentName, ':') and strlen(agent_id_attr) > strlen(agentName) + 1)`
+const agentSpanFilter = `where gettype(customDimensions['gen_ai.operation.name']) == 'string'
+| where isnotempty(tostring(customDimensions['gen_ai.operation.name']))`
 
 // buildTraceListQuery returns the newest traces (operation IDs) that contain at least
 // one GenAI span attributed to the agent. limit+1 rows detect truncation.
-func buildTraceListQuery(agentName, status string, start, end time.Time, limit int) string {
+func buildTraceListQuery(agentName, projectID, status string, start, end time.Time, limit int) string {
 	statusFilter := ""
 	switch status {
 	case traceStatusFailed:
@@ -463,8 +502,11 @@ func buildTraceListQuery(agentName, status string, start, end time.Time, limit i
 	}
 
 	return fmt.Sprintf(`let agentName = %s;
+let projectId = %s;
 let spans = %s
-| where timestamp between (%s .. %s);
+| where timestamp between (%s .. %s)
+| %s
+| %s;
 let agentTraces = spans
 | %s
 | extend agent_version_attr = coalesce(tostring(customDimensions['gen_ai.agent.version']),
@@ -486,20 +528,26 @@ spans
 | take %d
 | project trace_id = operation_Id, start_time, end_time, span_count, failed_span_count, sampled,
     root_span_name, agent_version, conversation_id`,
-		kqlString(agentName), traceSpansSource, kqlDatetime(start), kqlDatetime(end),
-		agentSpanFilter, statusFilter, limit+1)
+		kqlString(agentName), kqlString(projectID), traceSpansSource, kqlDatetime(start), kqlDatetime(end),
+		projectTelemetryFilter, agentTelemetryFilter, agentSpanFilter, statusFilter, limit+1)
 }
 
 // buildTraceExportQuery returns every span and exception recorded for one trace.
 // maxSpans+1 rows are requested to detect truncation.
-func buildTraceExportQuery(traceID string, start, end time.Time, maxSpans int) string {
+func buildTraceExportQuery(traceID, agentName, projectID string, start, end time.Time, maxSpans int) string {
 	return fmt.Sprintf(`let traceId = %s;
-union isfuzzy=true
+let agentName = %s;
+let projectId = %s;
+let scoped = materialize(union isfuzzy=true
     (requests | extend span_kind = 'request'),
     (dependencies | extend span_kind = 'dependency'),
     (exceptions | extend span_kind = 'exception')
 | where timestamp between (%s .. %s)
 | where operation_Id == traceId
+| %s
+| %s);
+let agentMatches = toscalar(scoped | where span_kind != 'exception' | %s | count);
+scoped
 | order by timestamp asc
 | take %d
 | project timestamp, span_kind,
@@ -515,8 +563,9 @@ union isfuzzy=true
     item_count = itemCount,
     message = tostring(column_ifexists('outerMessage', '')),
     problem_id = tostring(column_ifexists('problemId', '')),
-    attributes = customDimensions`,
-		kqlString(traceID), kqlDatetime(start), kqlDatetime(end), maxSpans+1)
+    attributes = customDimensions, agent_match_count = agentMatches`,
+		kqlString(traceID), kqlString(agentName), kqlString(projectID), kqlDatetime(start), kqlDatetime(end),
+		projectTelemetryFilter, agentTelemetryFilter, agentSpanFilter, maxSpans+1)
 }
 
 // traceSummary is one listed trace.
@@ -545,6 +594,7 @@ type traceListResult struct {
 	StatusFilter    string               `json:"status_filter"`
 	Truncated       bool                 `json:"truncated"`
 	PartialError    string               `json:"partial_error,omitempty"`
+	CoverageNotes   []string             `json:"coverage_notes"`
 	Data            []traceSummary       `json:"data"`
 }
 
@@ -648,7 +698,7 @@ func listTraces(
 	opts *traceOptions,
 	start, end time.Time,
 ) (*traceListResult, error) {
-	query := buildTraceListQuery(target.Name, opts.status, start, end, opts.limit)
+	query := buildTraceListQuery(target.Name, source.ProjectID, opts.status, start, end, opts.limit)
 	response, err := logs.QueryResource(ctx, source.ResourceID, query, start, end)
 	if err != nil {
 		return nil, classifyTraceQueryError(err, source)
@@ -661,6 +711,7 @@ func listTraces(
 		Window:          newTraceWindow(start, end),
 		StatusFilter:    opts.status,
 		PartialError:    partialQueryError(response),
+		CoverageNotes:   []string{telemetryAttributionNote},
 		Data:            []traceSummary{},
 	}
 
@@ -716,7 +767,7 @@ func exportTrace(
 	opts *traceOptions,
 	start, end time.Time,
 ) (*traceExport, error) {
-	query := buildTraceExportQuery(opts.traceID, start, end, maxTraceExportSpans)
+	query := buildTraceExportQuery(opts.traceID, target.Name, source.ProjectID, start, end, maxTraceExportSpans)
 	response, err := logs.QueryResource(ctx, source.ResourceID, query, start, end)
 	if err != nil {
 		return nil, classifyTraceQueryError(err, source)
@@ -725,7 +776,8 @@ func exportTrace(
 	records := response.PrimaryTable().Records()
 	partialError := partialQueryError(response)
 	if len(records) == 0 {
-		message := fmt.Sprintf("trace %q was not found in Application Insights resource %s within the last %s",
+		message := fmt.Sprintf("trace %q was not found with the selected project and agent attribution "+
+			"in Application Insights resource %s within the last %s",
 			opts.traceID, source.ResourceID, opts.sinceLabel)
 		if partialError != "" {
 			message += " (the query returned a partial error: " + partialError + ")"
@@ -733,7 +785,7 @@ func exportTrace(
 		return nil, exterrors.Validation(
 			exterrors.CodeTraceNotFound,
 			message,
-			"widen --since; the trace may be outside the retention period, sampled out, "+
+			"records without project and agent attribution are excluded; widen --since; the trace may be outside the retention period, sampled out, "+
 				"or not yet ingested (ingestion can take several minutes)",
 		)
 	}
@@ -754,7 +806,7 @@ func exportTrace(
 		Exceptions:      []traceException{},
 	}
 
-	belongsToAgent := false
+	belongsToAgent := recordInt(records[0], "agent_match_count") > 0
 	for _, record := range records {
 		attributes := recordDynamic(record, "attributes")
 		timestamp, ok := recordTime(record, "timestamp")
@@ -775,9 +827,6 @@ func exportTrace(
 			continue
 		}
 
-		if genAISpanMatchesAgent(attributes, target.Name) {
-			belongsToAgent = true
-		}
 		durationMs := recordFloat(record, "duration_ms")
 		status := "unset"
 		if success, ok := record["success"].(bool); ok {
@@ -814,7 +863,9 @@ func exportTrace(
 		)
 	}
 
-	export.Completeness = assessTraceCompleteness(opts.traceID, export.Spans, truncated, partialError)
+	export.Completeness = assessTraceCompleteness(opts.traceID, export.Spans, export.Exceptions, truncated, partialError)
+	export.Completeness.Complete = false
+	export.Completeness.Notes = append(export.Completeness.Notes, telemetryAttributionNote)
 	return export, nil
 }
 
@@ -823,7 +874,9 @@ func exportTrace(
 // contains a root and every referenced parent and nothing was cut off; it says nothing
 // about whether the traced operation succeeded. The query results cannot show why a
 // span is absent, so absent spans are reported without guessing their cause.
-func assessTraceCompleteness(traceID string, spans []traceSpan, truncated bool, partialError string) traceCompleteness {
+func assessTraceCompleteness(
+	traceID string, spans []traceSpan, exceptions []traceException, truncated bool, partialError string,
+) traceCompleteness {
 	ids := make(map[string]bool, len(spans))
 	for _, span := range spans {
 		if span.SpanID != "" {
@@ -853,6 +906,12 @@ func assessTraceCompleteness(traceID string, spans []traceSpan, truncated bool, 
 			missing[parent] = true
 		}
 	}
+	for _, exception := range exceptions {
+		parent := exception.ParentSpanID
+		if parent != "" && parent != traceID && !ids[parent] {
+			missing[parent] = true
+		}
+	}
 	for parent := range missing {
 		result.MissingParentSpanIDs = append(result.MissingParentSpanIDs, parent)
 	}
@@ -867,7 +926,7 @@ func assessTraceCompleteness(traceID string, spans []traceSpan, truncated bool, 
 	}
 	if len(result.MissingParentSpanIDs) > 0 {
 		result.Notes = append(result.Notes, fmt.Sprintf(
-			"%d parent span ID(s) referenced by recorded spans were not found in the queried telemetry "+
+			"%d parent span ID(s) referenced by recorded spans or exceptions were not found in the queried telemetry "+
 				"(see missing_parent_span_ids); %s", len(result.MissingParentSpanIDs), absenceReasons))
 	}
 	if truncated {
@@ -885,20 +944,6 @@ func assessTraceCompleteness(traceID string, spans []traceSpan, truncated bool, 
 
 	result.Complete = result.RootSpanFound && len(result.MissingParentSpanIDs) == 0 && !truncated && partialError == ""
 	return result
-}
-
-func genAISpanMatchesAgent(attributes map[string]any, agentName string) bool {
-	operation, _ := attributes["gen_ai.operation.name"].(string)
-	if operation == "" {
-		return false
-	}
-	name, _ := attributes["gen_ai.agent.name"].(string)
-	id, _ := attributes["gen_ai.agent.id"].(string)
-	if strings.EqualFold(name, agentName) || strings.EqualFold(id, agentName) {
-		return true
-	}
-	prefix := agentName + ":"
-	return len(id) > len(prefix) && strings.EqualFold(id[:len(prefix)], prefix)
 }
 
 // sensitiveAttributeNames are attribute name segments whose values carry credentials.
@@ -933,13 +978,40 @@ func redactTraceAttributes(attributes map[string]any) map[string]any {
 			redacted[key] = redactedValue
 			continue
 		}
-		if text, ok := value.(string); ok && strings.HasPrefix(strings.ToLower(strings.TrimSpace(text)), "bearer ") {
-			redacted[key] = redactedValue
-			continue
-		}
-		redacted[key] = value
+		redacted[key] = redactTelemetryValue(value)
 	}
 	return redacted
+}
+
+func redactTelemetryValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		return redactTraceAttributes(v)
+	case []any:
+		result := make([]any, len(v))
+		for i, item := range v {
+			result[i] = redactTelemetryValue(item)
+		}
+		return result
+	case string:
+		text := strings.TrimSpace(v)
+		if strings.HasPrefix(strings.ToLower(text), "bearer ") {
+			return redactedValue
+		}
+		if strings.HasPrefix(strings.ToLower(text), "https://") || strings.HasPrefix(strings.ToLower(text), "http://") {
+			u, err := url.Parse(text)
+			if err != nil {
+				return redactedValue
+			}
+			u.User = nil
+			u.RawQuery = ""
+			u.ForceQuery = false
+			u.Fragment = ""
+			u.RawFragment = ""
+			return u.String()
+		}
+	}
+	return value
 }
 
 func partialQueryError(response *azure.LogsQueryResult) string {
@@ -991,9 +1063,9 @@ func writeTraceList(result *traceListResult, opts *traceOptions, out, errOut io.
 		return writeIndentedJSON(out, result)
 	}
 
-	fmt.Fprintf(out, "Agent: %s\nProject: %s\nTelemetry: %s (%s)\nWindow: %s to %s\n\n",
+	fmt.Fprintf(out, "Agent: %s\nProject: %s\nTelemetry: %s (%s)\nWindow: %s to %s\nCoverage: %s\n\n",
 		result.AgentName, result.ProjectEndpoint, result.Telemetry.ConnectionName, result.Telemetry.ResourceID,
-		result.Window.Start, result.Window.End)
+		result.Window.Start, result.Window.End, telemetryAttributionNote)
 	if len(result.Data) == 0 {
 		_, err := fmt.Fprintf(out, "%s\n%s\n", emptyNotice, emptyHint)
 		return err
@@ -1103,15 +1175,28 @@ func orderSpanTree(traceID string, spans []traceSpan) []spanTreeRow {
 	return rows
 }
 
-// writeTraceJSONFile writes trace output with owner-only permissions because traces
-// can contain prompts, responses, and tool data.
+// writeTraceJSONFile replaces the destination with a newly created private file.
 func writeTraceJSONFile(path string, value any) error {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal result to JSON: %w", err)
 	}
 	data = append(data, '\n')
-	if err := os.WriteFile(filepath.Clean(path), data, 0o600); err != nil {
+	path = filepath.Clean(path)
+	file, err := os.CreateTemp(filepath.Dir(path), ".azd-trace-*")
+	if err == nil {
+		temp := file.Name()
+		defer os.Remove(temp)
+		_, err = file.Write(data)
+		closeErr := file.Close()
+		if err == nil {
+			err = closeErr
+		}
+		if err == nil {
+			err = os.Rename(temp, path)
+		}
+	}
+	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidFilePath,
 			fmt.Sprintf("failed to write %s: %v", path, err),
@@ -1132,7 +1217,7 @@ func msDuration(ms float64) time.Duration {
 	if math.IsNaN(ms) || math.IsInf(ms, 0) || ms < 0 {
 		return 0
 	}
-	return time.Duration(ms * float64(time.Millisecond)).Round(time.Millisecond)
+	return time.Duration(ms * float64(time.Millisecond))
 }
 
 func recordString(record map[string]any, key string) string {

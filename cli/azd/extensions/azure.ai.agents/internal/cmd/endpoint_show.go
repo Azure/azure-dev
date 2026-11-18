@@ -14,7 +14,6 @@ import (
 	"text/tabwriter"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -72,9 +71,6 @@ their deployed Responses endpoint.` + endpointShowVoiceHelp,
 		AllowedValues: []string{"json", "table"},
 		Default:       "table",
 	})
-	previewHelpText(cmd, featureflags.Voice, "a hosted, prompt, or voice agent", "an agent")
-	previewHelp(cmd, featureflags.Voice, []string{endpointShowVoiceHelp}, nil)
-
 	return cmd
 }
 

@@ -40,7 +40,7 @@ func diagnostics(values []wireDiagnostic, redact bool) []Diagnostic {
 			if !serviceCodePattern.MatchString(result[i].Code) {
 				result[i].Code = "service_error"
 			}
-			result[i].Message = "The service reported an operation error."
+			result[i].Message = RedactDiagnostic(value.Message)
 			result[i].Target = ""
 		}
 	}

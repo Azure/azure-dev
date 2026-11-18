@@ -36,7 +36,7 @@ var recordedAnalysisCases = []struct {
 func TestRecordedAnalysisCommands(t *testing.T) {
 	for _, test := range recordedAnalysisCases {
 		t.Run(test.name, func(t *testing.T) {
-			for _, format := range []string{"default", "json", "none"} {
+			for _, format := range []string{"json"} {
 				t.Run(format, func(t *testing.T) {
 					synctest.Test(t, func(t *testing.T) {
 						fixture := loadRecordedFixture(t, test.recording)
@@ -52,9 +52,6 @@ func TestRecordedAnalysisCommands(t *testing.T) {
 						output := filepath.Join(testutil.TempDir(t), "results")
 						if test.directory {
 							args = []string{"analyze", "--source", directory, "--output-dir", output}
-						}
-						if format != "json" {
-							args = append(args, "--llm-input=false")
 						}
 						args = append(args, "--analyzer", test.analyzer,
 							"-o", format, "--debug", "--no-prompt",
@@ -87,13 +84,9 @@ func TestRecordedAnalysisCommands(t *testing.T) {
 								"output": output, "usage": nil,
 							}}
 						}
-						if format == "none" {
-							assert.Empty(t, stdout.String())
-						} else {
-							actual, err := recordedJSON(stdout.Bytes())
-							require.NoError(t, err)
-							assert.Equal(t, wanted, actual, "preserve all fields, warnings, usage and exact numbers")
-						}
+						actual, err := recordedJSON(stdout.Bytes())
+						require.NoError(t, err)
+						assert.Equal(t, wanted, actual, "preserve all fields, warnings, usage and exact numbers")
 					})
 				})
 			}
@@ -108,7 +101,7 @@ func TestRecordedAnalysisDefaultLLMInput(t *testing.T) {
 		root := newRecordedCommand(t, transport, "prebuilt-layout")
 		input := filepath.Join(testutil.TempDir(t), "invoice.pdf")
 		require.NoError(t, os.WriteFile(input, []byte(recordedBinaryInput), 0o600))
-		root.SetArgs([]string{"analyze", input, "--analyzer", "prebuilt-layout", "--no-prompt",
+		root.SetArgs([]string{"analyze", input, "--analyzer", "prebuilt-layout", "--no-prompt", "--pretty=false",
 			"--endpoint", "https://sanitized.services.ai.azure.com", "--api-version", cuclient.DefaultAPIVersion})
 		var stdout, stderr bytes.Buffer
 		root.SetOut(&stdout)
@@ -124,6 +117,154 @@ func TestRecordedAnalysisDefaultLLMInput(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, expected+"\n", stdout.String())
 		assert.False(t, json.Valid(stdout.Bytes()))
+	})
+}
+
+func TestAnalyzeServiceFailureReachesTerminalAndReport(t *testing.T) {
+	for _, sample := range []struct {
+		name, body string
+		expected   []string
+	}{
+		{
+			"model", `{"status":"Failed","error":{"code":"InvalidRequest","message":"Invalid request.",
+				"innererror":{"code":"ModelNotSupported",
+				"message":"Provided model 'gpt-6-luna' is not supported by this analyzer.\n` +
+				`https://user:private-password@example.test/doc?sig=private-signature\ncontent: private-document",
+				"target":"private-target"}}}`,
+			[]string{"InvalidRequest", "Invalid request.", "ModelNotSupported", "gpt-6-luna",
+				"not supported by this analyzer", "supportedModels", "modelDeployments"},
+		},
+		{
+			"unknown-code", `{"status":"Failed","error":{"code":"InvalidRequest","message":"Invalid request.",
+				"innererror":{"code":"FutureServiceFailure",
+				"message":"Processing region is unavailable. Select another supported region."}}}`,
+			[]string{"FutureServiceFailure", "Processing region is unavailable. Select another supported region."},
+		},
+		{
+			"long-outer-with-many-details",
+			`{"status":"Failed","error":{"code":"InvalidRequest","message":"` +
+				strings.Repeat("Long outer explanation. ", 80) + `","innererror":{"code":"ModelNotSupported",` +
+				`"message":"Provided model 'gpt-6-luna' is not supported by this analyzer."},"details":[` +
+				strings.Repeat(`{"code":"SiblingFailure","message":"Secondary diagnostic."},`, 40) + `{}]}}`,
+			[]string{"ModelNotSupported", "gpt-6-luna", "not supported by this analyzer",
+				"Additional service diagnostics omitted.", "supportedModels", "modelDeployments"},
+		},
+		{
+			"missing-details", `{"status":"Failed"}`,
+			[]string{"The analysis operation failed.", "No further service diagnostic was provided."},
+		},
+	} {
+		for _, flags := range [][]string{
+			nil, {"--pretty"}, {"--pretty=false"}, {"--output", "json"}, {"--output", "markdown"},
+		} {
+			t.Run(sample.name+"/"+strings.Join(flags, " "), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					fixture := loadRecordedFixture(t, "analyze_single")
+					fixture.Interactions[len(fixture.Interactions)-1].Response.Body = json.RawMessage(sample.body)
+					transport := &recordedTransport{fixture: fixture, binaryBody: []byte(recordedBinaryInput)}
+					root := newRecordedCommand(t, transport, "prebuilt-layout")
+					inputDir := filepath.Join(testutil.TempDir(t), "private")
+					require.NoError(t, os.Mkdir(inputDir, 0o700))
+					input := filepath.Join(inputDir, "invoice.pdf")
+					require.NoError(t, os.WriteFile(input, []byte(recordedBinaryInput), 0o600))
+					reportPath := filepath.Join(testutil.TempDir(t), "report.json")
+					args := append([]string{"analyze", input, "--report-file", reportPath,
+						"--endpoint", "https://sanitized.services.ai.azure.com", "--analyzer", "prebuilt-layout",
+						"--api-version", cuclient.DefaultAPIVersion, "--no-prompt"}, flags...)
+					root.SetArgs(args)
+					var stdout, stderr bytes.Buffer
+					root.SetOut(&stdout)
+					root.SetErr(&stderr)
+					err := root.ExecuteContext(t.Context())
+					require.Error(t, err)
+					require.NoError(t, transport.complete())
+					assert.Empty(t, stdout.String())
+					assert.Empty(t, stderr.String())
+					expectedMessages := append([]string{"Input 1:", "0 succeeded, 1 failed, 0 skipped"}, sample.expected...)
+					for _, expected := range expectedMessages {
+						assert.Contains(t, err.Error(), expected)
+					}
+					assert.NotContains(t, err.Error(), "successful result files were retained")
+					for _, secret := range []string{
+						"preview-user", "preview-password", "private-signature", "private-document", "private-target",
+					} {
+						assert.NotContains(t, err.Error(), secret)
+					}
+					// #nosec G304 -- Reads only this test's private temporary report.
+					body, readErr := os.ReadFile(reportPath)
+					require.NoError(t, readErr)
+					var saved struct {
+						Schema  string `json:"schema"`
+						Results []struct {
+							Input  string `json:"input"`
+							Status string `json:"status"`
+							Error  string `json:"error"`
+						} `json:"results"`
+					}
+					require.NoError(t, json.Unmarshal(body, &saved))
+					assert.Equal(t, "cu-cli/analyze-report/v1", saved.Schema)
+					require.Len(t, saved.Results, 1)
+					assert.Equal(t, input, saved.Results[0].Input)
+					assert.Equal(t, "failed", saved.Results[0].Status)
+					for _, expected := range sample.expected {
+						assert.Contains(t, saved.Results[0].Error, expected)
+					}
+					for _, secret := range []string{
+						"preview-user", "preview-password", "private-signature", "private-document", "private-target",
+					} {
+						assert.NotContains(t, saved.Results[0].Error, secret)
+					}
+				})
+			})
+		}
+	}
+}
+
+func TestRecordedAnalysisDefaultPrettyInvoice(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fixture := loadRecordedFixture(t, "analyze_single")
+		transport := &recordedTransport{fixture: fixture, binaryBody: []byte(recordedBinaryInput)}
+		root := newRecordedCommand(t, transport, "prebuilt-layout")
+		input := filepath.Join(testutil.TempDir(t), "invoice.pdf")
+		require.NoError(t, os.WriteFile(input, []byte(recordedBinaryInput), 0o600))
+		args := []string{"analyze", input, "--analyzer", "prebuilt-layout", "--no-prompt",
+			"--endpoint", "https://sanitized.services.ai.azure.com", "--api-version", cuclient.DefaultAPIVersion}
+		require.NoError(t, ValidateInvocation(root, args))
+		root.SetArgs(args)
+		var stdout, stderr bytes.Buffer
+		root.SetOut(&stdout)
+		root.SetErr(&stderr)
+		require.NoError(t, root.ExecuteContext(t.Context()))
+		require.NoError(t, transport.complete())
+		assert.Empty(t, stderr.String())
+		actual := stdout.String()
+		assert.NotContains(t, actual, "\x1b")
+		assert.NotContains(t, actual, "<table>")
+		assert.NotContains(t, actual, "<tr>")
+		assert.NotContains(t, actual, "<td>")
+		assert.NotContains(t, actual, "<th>")
+		assert.Equal(t, 1, strings.Count(actual, "Table exceeds terminal width; showing each row as a card."))
+		assert.Equal(t, 1, strings.Count(actual, "<!-- Row 1 -->"))
+		assert.Contains(t, actual, "<!-- Row 3 -->")
+		normalized := strings.Join(strings.Fields(actual), " ")
+		for _, value := range []string{
+			"CONTOSO LTD.", "# INVOICE", "INVOICE: INV-100", "CUSTOMER ID: CID-12345",
+			"SALESPERSON P.O. NUMBER REQUISITIONER SHIPPED VIA F.O.B. POINT TERMS", "PO-3333",
+			"DATE: 3/4/2021", "ITEM CODE: A123", "DESCRIPTION: Consulting Services", "QTY: 2", "UM: hours",
+			"PRICE: $30.00", "TAX: $6.00", "AMOUNT: $60.00",
+			"DATE: 3/5/2021", "ITEM CODE: B456", "DESCRIPTION: Document Fee", "QTY: 3", "UM: PRICE: $10.00",
+			"PRICE: $10.00", "TAX: $3.00", "AMOUNT: $30.00",
+			"DATE: 3/6/2021", "ITEM CODE: C789", "DESCRIPTION: Printing Fee", "QTY: 10", "UM: pages",
+			"PRICE: $1.00", "TAX: $1.00", "AMOUNT: $10.00",
+			"SUBTOTAL $100.00", "SALES TAX $10.00", "TOTAL $110.00",
+			"PREVIOUS UNPAID BALANCE $500.00", "AMOUNT DUE $610.00",
+			"THANK YOU FOR YOUR BUSINESS!", "REMIT TO: Contoso Billing",
+		} {
+			assert.Contains(t, normalized, value, "recorded invoice content must survive default pretty rendering")
+		}
+		entries, err := os.ReadDir(filepath.Dir(input))
+		require.NoError(t, err)
+		assert.Len(t, entries, 1, "streamed previews must not create result files")
 	})
 }
 

@@ -6,6 +6,7 @@ package cuclient
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -382,7 +383,8 @@ func (b *measuredBody) Close() error { b.closed = true; return nil }
 
 func TestBoundedErrorBodyAndRedaction(t *testing.T) {
 	for _, payload := range []string{
-		`{"error":{"code":"Forbidden","message":"private-body-token","details":[{"message":"private-detail"}]}}`,
+		`{"error":{"code":"Forbidden","message":"token: private-body-token",` +
+			`"details":[{"message":"content: private-detail"}]}}`,
 		`private malformed response`, strings.Repeat("private-body-token", maxErrorBodyBytes),
 		`{"error":{"code":"invalid code private-token"}}`,
 	} {
@@ -420,7 +422,7 @@ func TestActionableServiceFailureDiagnostics(t *testing.T) {
 			client := newRESTTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 				calls++
 				return response(test.status, fmt.Sprintf(
-					`{"error":{"code":%q,"message":"private response body"}}`, test.code)), nil
+					`{"error":{"code":%q,"message":"content: private response body"}}`, test.code)), nil
 			})
 			var err error
 			if test.status == http.StatusConflict {
@@ -445,11 +447,12 @@ func TestActionableServiceFailureDiagnostics(t *testing.T) {
 	}
 }
 
-func TestOperationFailureDiagnosticsDoNotExposeServiceMessages(t *testing.T) {
+func TestOperationFailureDiagnosticsPreserveSafeMessages(t *testing.T) {
 	for _, code := range []string{"InvalidRequest", "invalid private code"} {
 		domain := operationError("analysis", "Failed", &wireDiagnostic{
-			Code: code, Message: "private authored content",
+			Code: code, Message: "The document format is unsupported.\ncontent: private authored content",
 		})
+		require.Contains(t, domain.Message, "The document format is unsupported.")
 		require.NotContains(t, domain.Message, "private")
 		if code == "InvalidRequest" {
 			require.Contains(t, domain.Message, "Service code: InvalidRequest")
@@ -458,6 +461,155 @@ func TestOperationFailureDiagnosticsDoNotExposeServiceMessages(t *testing.T) {
 		}
 	}
 }
+
+func TestHTTPServiceFailuresPreserveSanitizedRootCause(t *testing.T) {
+	for _, phase := range []string{"submission", "poll", "inline"} {
+		for _, code := range []string{"ModelNotSupported", "FutureServiceFailure"} {
+			t.Run(phase+"/"+code, func(t *testing.T) {
+				mode := AnalysisModeAsync
+				if phase == "inline" {
+					mode = AnalysisModeInline
+				}
+				request, submit, _ := analysisSubmission(mode, false)
+				body := `{"error":{"code":"InvalidRequest","message":"Invalid request.",` +
+					`"innererror":{"code":"` + code + `","message":"Provided model 'gpt-6-luna' cannot be used.\n` +
+					`Authorization: Bearer private-token\ncontent: private-document"}}}`
+				steps := []wireStep{submit}
+				if phase == "poll" {
+					steps = append(steps, wireStep{
+						method: http.MethodGet, path: "/analyzerResults/op1", status: http.StatusBadRequest, response: body,
+					})
+				} else {
+					steps[0].status, steps[0].response = http.StatusBadRequest, body
+				}
+				client := newWireClient(t, PreviewAPIVersion, steps...)
+				_, err := client.Analyze(t.Context(), request)
+				var domain *Error
+				require.ErrorAs(t, err, &domain)
+				require.Equal(t, ErrorValidation, domain.Kind)
+				require.Equal(t, http.StatusBadRequest, domain.StatusCode)
+				require.Equal(t, code, domain.Code)
+				require.Contains(t, domain.Message, "InvalidRequest")
+				require.Contains(t, domain.Message, "Invalid request.")
+				require.Contains(t, domain.Message, "gpt-6-luna")
+				require.Contains(t, domain.Message, "cannot be used")
+				require.NotContains(t, domain.Message, "private")
+				require.NotNil(t, domain.Details)
+				if code == "ModelNotSupported" {
+					require.Contains(t, domain.Suggestion, "supportedModels")
+					require.Contains(t, domain.Suggestion, "modelDeployments")
+				}
+			})
+		}
+	}
+}
+
+func TestOperationFailureIncludesNestedCauseAndGuidance(t *testing.T) {
+	for _, code := range []string{"InvalidRequest", "ModelNotSupported", "invalid private code"} {
+		domain := operationError("analysis", "Failed", &wireDiagnostic{
+			Code: code, Message: "Invalid request.\ncontent: private service message",
+			Details: []wireDiagnostic{{
+				Code: "NestedFailure", Details: []wireDiagnostic{{
+					Code: "ModelNotSupported",
+					Message: "Provided model 'gpt-6-luna' is not supported by this analyzer.\n" +
+						"content: private document content",
+				}},
+			}},
+		})
+		require.Contains(t, domain.Message, "ModelNotSupported")
+		require.Contains(t, domain.Message, "gpt-6-luna")
+		require.Contains(t, domain.Message, "not supported by this analyzer")
+		require.Contains(t, domain.Suggestion, "supportedModels")
+		require.Contains(t, domain.Suggestion, "modelDeployments")
+		require.Contains(t, domain.Suggestion, "resource-wide")
+		require.NotContains(t, domain.Message+domain.Suggestion, "private")
+	}
+	var details []wireDiagnostic
+	for index := range 20 {
+		details = append(details, wireDiagnostic{Code: fmt.Sprintf("%s%d", strings.Repeat("x", 120), index)})
+	}
+	details = append(details, wireDiagnostic{Code: "ModelNotSupported"})
+	domain := operationError("analysis", "Failed", &wireDiagnostic{Code: "InvalidRequest", Details: details})
+	require.Contains(t, domain.Message, "ModelNotSupported")
+	require.Contains(t, domain.Message, "Additional service diagnostics omitted.")
+	require.Contains(t, domain.Suggestion, "supportedModels")
+	require.Less(t, len(domain.Message+domain.Suggestion), 1400)
+}
+
+func TestOperationFailureWithoutDiagnosticDetails(t *testing.T) {
+	for _, problem := range []*wireDiagnostic{nil, {}, {Code: "invalid private code"}} {
+		domain := operationError("analysis", "Failed", problem)
+		require.Equal(t, "analysis_operation_failed", domain.Code)
+		require.Equal(t, "The analysis operation failed. No further service diagnostic was provided.", domain.Message)
+		require.NotEmpty(t, domain.Suggestion)
+		require.NotContains(t, domain.Message+domain.Suggestion, "private")
+		require.NotContains(t, domain.Suggestion, "modelDeployments")
+	}
+}
+
+func TestOperationDiagnosticPrioritiesAndLimits(t *testing.T) {
+	problem := &wireDiagnostic{
+		Code: "InvalidRequest", Message: strings.Repeat("Long outer explanation. ", 80),
+		Details: []wireDiagnostic{{
+			Code: "ModelNotSupported", Message: "Provided model 'gpt-6-luna' is not supported by this analyzer.",
+		}},
+	}
+	domain := operationError("analysis", "Failed", problem)
+	require.Contains(t, domain.Message, "model gpt-6-luna is not supported")
+	require.Contains(t, domain.Message, "[diagnostic truncated]")
+	require.Less(t, strings.Index(domain.Message, "model gpt-6-luna"), strings.Index(domain.Message, "Long outer"))
+
+	current := problem
+	for range 12 {
+		current.Details = []wireDiagnostic{{Code: "NestedFailure"}}
+		current = &current.Details[0]
+	}
+	domain = operationError("analysis", "Failed", problem)
+	require.Contains(t, domain.Message, "Additional service diagnostics omitted.")
+}
+
+func TestReflectedBearerCredentialsAreRedacted(t *testing.T) {
+	for _, mode := range []string{"http", "poll", "inline"} {
+		t.Run(mode, func(t *testing.T) {
+			calls := 0
+			client := newRESTTransport(t, PreviewAPIVersion, func(request *http.Request) (*http.Response, error) {
+				calls++
+				if mode == "poll" && calls == 1 {
+					result := response(http.StatusAccepted, `{"status":"Running"}`)
+					result.Header.Set("Operation-Location", "/contentunderstanding/analyzerResults/op")
+					return result, nil
+				}
+				credential := strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer ")
+				require.NotEmpty(t, credential)
+				body := fmt.Sprintf(
+					`{"status":"Failed","error":{"code":%q,"message":%q,"innererror":{"code":"InvalidModel","message":%q}}}`,
+					credential, "Unsupported model. "+credential, "Bearer "+credential,
+				)
+				status := http.StatusOK
+				if mode == "http" {
+					status = http.StatusBadRequest
+				}
+				// Deliberately omit Response.Request, as custom transports may do.
+				return response(status, body), nil
+			})
+			request := AnalyzeRequest{
+				AnalyzerID: "custom", Mode: AnalysisModeAsync, Input: Input{URL: "https://example.test/a"},
+			}
+			if mode == "inline" {
+				request.Mode = AnalysisModeInline
+			}
+			_, err := client.Analyze(t.Context(), request)
+			var domain *Error
+			require.ErrorAs(t, err, &domain)
+			require.Contains(t, domain.Message, "Unsupported model.")
+			require.NotContains(t, domain.Message+domain.Code, "private-access-token")
+			payload, marshalErr := json.Marshal(domain.Details)
+			require.NoError(t, marshalErr)
+			require.NotContains(t, string(payload), "private-access-token")
+		})
+	}
+}
+
 func TestResponseErrorCategories(t *testing.T) {
 	for _, test := range []struct {
 		status int

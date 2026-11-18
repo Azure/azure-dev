@@ -144,14 +144,14 @@ func runInfraGenerate(
 	showGuidance := !extCtx.NoPrompt && extCtx.OutputFormat != "json" && extCtx.OutputFormat != "none"
 	if showGuidance {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(),
-			"azd ai cu infra generate -> %s\n\n"+
+			guidanceText(extCtx.OutputFormat, "`azd ai cu infra generate` -> %s\n\n"+
 				"`azd ai cu infra generate` generates an azd template. After the Microsoft Foundry resource "+
 				"is provisioned, its post-provision script can optionally deploy supported chat completion "+
-				"and embeddings models for prebuilt analyzers such as prebuilt-invoice and for custom analyzers.\n"+
-				"It doesn't create any Azure resources itself - you run azd up afterwards "+
+				"and embeddings models for prebuilt analyzers such as `prebuilt-invoice` and for custom analyzers.\n"+
+				"It doesn't create any Azure resources itself - you run `azd up` afterwards "+
 				"to do the actual provisioning.\n"+
-				"Choose the Azure subscription used to provision resources, then configure the deployment.\n\n",
-			output); err != nil {
+				"Choose the Azure subscription used to provision resources, then configure the deployment.\n\n"),
+			actionText(extCtx.OutputFormat, output)); err != nil {
 			return fmt.Errorf("write infrastructure introduction: %w", err)
 		}
 	}

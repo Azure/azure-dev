@@ -864,6 +864,8 @@ func Test_CheckInstalled_NeitherAvailable(t *testing.T) {
 	err := docker.CheckInstalled(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "neither docker nor podman is installed")
+	require.Contains(t, err.Error(), "https://aka.ms/azure-dev/docker-install")
+	require.Contains(t, err.Error(), "https://aka.ms/azure-dev/podman-install")
 }
 
 func Test_ContainerEngine_LazyDetection(t *testing.T) {

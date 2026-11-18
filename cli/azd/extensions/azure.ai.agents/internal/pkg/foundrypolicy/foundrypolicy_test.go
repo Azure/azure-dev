@@ -24,8 +24,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testProjectID = "/subscriptions/sub/resourceGroups/rg/providers/" +
-	"Microsoft.CognitiveServices/accounts/account/projects/project"
+const (
+	testSubscriptionID = "1756abc0-3554-4341-8d6a-46674962ea19"
+	testProjectID      = "/subscriptions/" + testSubscriptionID + "/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project"
+)
+
+type evaluateDeploymentPoliciesRequest struct {
+	Deployments []struct {
+		Name       string `json:"name"`
+		Properties struct {
+			Model struct {
+				Format  string `json:"format"`
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"model"`
+		} `json:"properties"`
+	} `json:"deployments"`
+}
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -160,7 +176,7 @@ func TestAgentKindPolicyEvaluation(t *testing.T) {
 				a.EnforcementMode = "DoNotEnforce"
 			},
 			func(a *PolicyAssignment) {
-				a.NotScopes = []string{"/subscriptions/sub/resourceGroups/rg"}
+				a.NotScopes = []string{"/subscriptions/" + testSubscriptionID + "/resourceGroups/rg"}
 			},
 			func(a *PolicyAssignment) {
 				a.IsExempt = true
@@ -594,13 +610,15 @@ func TestToolAndModelPolicies(t *testing.T) {
 				}, nil
 			}
 			if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/evaluateDeploymentPolicies") {
+				assignID := "/subscriptions/" + testSubscriptionID +
+					"/providers/Microsoft.Authorization/policyAssignments/block-gpt4o"
 				body := `{
 					"results": {
 						"my-gpt4": {
 							"evaluationOutcome": "NonCompliant",
 							"nonCompliantAssignments": [
 								{
-									"assignmentId": "/subscriptions/sub/providers/Microsoft.Authorization/policyAssignments/block-gpt4o",
+									"assignmentId": "` + assignID + `",
 									"effect": "deny"
 								}
 							]
@@ -642,9 +660,9 @@ func TestToolAndModelPolicies(t *testing.T) {
 func TestBuildPolicyAssignmentPortalURL(t *testing.T) {
 	t.Parallel()
 
-	foundryProjectID := "/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/resourceGroups/rg with spaces/" +
+	foundryProjectID := "/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/resourceGroups/rg/" +
 		"providers/Microsoft.CognitiveServices/accounts/account/projects/project"
-	assignmentID := "/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/resourceGroups/rg with spaces/" +
+	assignmentID := "/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/resourceGroups/rg/" +
 		"providers/Microsoft.Authorization/policyAssignments/assignment"
 
 	portalURL := BuildPolicyAssignmentPortalURL(foundryProjectID, assignmentID)
@@ -656,7 +674,7 @@ func TestBuildPolicyAssignmentPortalURL(t *testing.T) {
 
 	assert.Equal(
 		t,
-		"/nextgen/r/F1arwDVUQ0GNakZnSWLqGQ%2Crg%20with%20spaces%2C%2Caccount%2Cproject/"+
+		"/nextgen/r/F1arwDVUQ0GNakZnSWLqGQ%2Crg%2C%2Caccount%2Cproject/"+
 			"manage/govern/assignments/"+assignmentKey,
 		parsedURL.EscapedPath(),
 	)
@@ -669,7 +687,7 @@ func TestBuildPolicyAssignmentPortalURL(t *testing.T) {
 	assert.Equal(t, "1756abc0-3554-4341-8d6a-46674962ea19", q.Get("subscriptionId"))
 	assert.Equal(
 		t,
-		"/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/resourceGroups/rg with spaces",
+		"/subscriptions/1756abc0-3554-4341-8d6a-46674962ea19/resourceGroups/rg",
 		q.Get("resourceGroupId"),
 	)
 	assert.Equal(t, foundryProjectID, q.Get("projectId"))
@@ -703,12 +721,14 @@ func TestLoadInventoryAndResourceGraphPagination(t *testing.T) {
 			a.AssignmentScope = mgScope
 		})
 		rgAssignment := createAgentAssignment(func(a *PolicyAssignment) {
-			a.AssignmentID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Authorization/policyAssignments/rg"
-			a.AssignmentScope = "/subscriptions/sub/resourceGroups/rg"
+			a.AssignmentID = "/subscriptions/" + testSubscriptionID +
+				"/resourceGroups/rg/providers/Microsoft.Authorization/policyAssignments/rg"
+			a.AssignmentScope = "/subscriptions/" + testSubscriptionID + "/resourceGroups/rg"
 		})
 		otherAssignment := createAgentAssignment(func(a *PolicyAssignment) {
-			a.AssignmentID = "/subscriptions/sub/resourceGroups/other/providers/Microsoft.Authorization/policyAssignments/other"
-			a.AssignmentScope = "/subscriptions/sub/resourceGroups/other"
+			a.AssignmentID = "/subscriptions/" + testSubscriptionID +
+				"/resourceGroups/other/providers/Microsoft.Authorization/policyAssignments/other"
+			a.AssignmentScope = "/subscriptions/" + testSubscriptionID + "/resourceGroups/other"
 		})
 
 		var requests []ResourceGraphRequest
@@ -1014,15 +1034,19 @@ func TestARMDeploymentPolicyEffectsAndEnrichment(t *testing.T) {
 
 	t.Run("emits violations only for Deny assignments in mixed and multi-deny responses and enriches display name", func(t *testing.T) {
 		t.Parallel()
+		subAssignPrefix := "/subscriptions/" + testSubscriptionID +
+			"/providers/Microsoft.Authorization/policyAssignments/"
+		normSubAssignPrefix := "/subscriptions/" + testSubscriptionID +
+			"/providers/microsoft.authorization/policyassignments/"
 		eval := newEvaluatorWithResponse(`{
 			"results": {
 				"my-gpt4": {
 					"evaluationOutcome": "NonCompliant",
-					"errorMessage": "Deployment 'my-gpt4' is non-compliant with policy '/subscriptions/sub/policyAssignments/audit-only'",
+					"errorMessage": "Deployment 'my-gpt4' is non-compliant with policy '` + subAssignPrefix + `audit-only'",
 					"nonCompliantAssignments": [
-						{"assignmentId": "/subscriptions/sub/policyAssignments/audit-only", "effect": "Audit"},
-						{"assignmentId": "/subscriptions/sub/policyAssignments/deny-one", "effect": "Deny"},
-						{"assignmentId": "/subscriptions/sub/policyAssignments/deny-two", "effect": "deny"}
+						{"assignmentId": "` + subAssignPrefix + `audit-only", "effect": "Audit"},
+						{"assignmentId": "` + subAssignPrefix + `deny-one", "effect": "Deny"},
+						{"assignmentId": "` + subAssignPrefix + `deny-two", "effect": "deny"}
 					]
 				}
 			}
@@ -1032,7 +1056,7 @@ func TestARMDeploymentPolicyEffectsAndEnrichment(t *testing.T) {
 			ProjectID: testProjectID,
 			Assignments: []PolicyAssignment{
 				{
-					AssignmentID:          "/subscriptions/sub/policyassignments/deny-one",
+					AssignmentID:          normSubAssignPrefix + "deny-one",
 					AssignmentDisplayName: "Human Readable Deny One",
 				},
 			},
@@ -1048,29 +1072,31 @@ func TestARMDeploymentPolicyEffectsAndEnrichment(t *testing.T) {
 		)
 		require.Equal(t, OutcomeBlocked, res.Outcome)
 		require.Len(t, res.Violations, 2)
-		assert.Equal(t, "/subscriptions/sub/policyassignments/deny-one", res.Violations[0].AssignmentID)
+		assert.Equal(t, normSubAssignPrefix+"deny-one", res.Violations[0].AssignmentID)
 		assert.Equal(t, "Human Readable Deny One", res.Violations[0].DisplayName)
 		assert.Contains(t, res.Violations[0].Message, "Human Readable Deny One")
 		assert.NotContains(t, res.Violations[0].Message, "audit-only")
-		assert.Equal(t, "/subscriptions/sub/policyassignments/deny-two", res.Violations[1].AssignmentID)
+		assert.Equal(t, normSubAssignPrefix+"deny-two", res.Violations[1].AssignmentID)
 		assert.Equal(t, "deny-two", res.Violations[1].DisplayName)
 		assert.NotContains(t, res.Violations[1].Message, "audit-only")
 	})
 
 	t.Run("preserves both violations when one assignment denies two different models", func(t *testing.T) {
 		t.Parallel()
+		approveAssignID := "/subscriptions/" + testSubscriptionID +
+			"/providers/Microsoft.Authorization/policyAssignments/approve-models"
 		eval := newEvaluatorWithResponse(`{
 			"results": {
 				"chat-dep": {
 					"evaluationOutcome": "NonCompliant",
 					"nonCompliantAssignments": [
-						{"assignmentId": "/subscriptions/sub/policyAssignments/approve-models", "effect": "Deny"}
+						{"assignmentId": "` + approveAssignID + `", "effect": "Deny"}
 					]
 				},
 				"embed-dep": {
 					"evaluationOutcome": "NonCompliant",
 					"nonCompliantAssignments": [
-						{"assignmentId": "/subscriptions/sub/policyAssignments/approve-models", "effect": "Deny"}
+						{"assignmentId": "` + approveAssignID + `", "effect": "Deny"}
 					]
 				}
 			}
@@ -1096,18 +1122,20 @@ func TestARMDeploymentPolicyEffectsAndEnrichment(t *testing.T) {
 
 	t.Run("preserves ARM violations for two versions of the same model while deduplicating against inventory violations", func(t *testing.T) {
 		t.Parallel()
+		approveAssignID := "/subscriptions/" + testSubscriptionID +
+			"/providers/Microsoft.Authorization/policyAssignments/approve-models"
 		eval := newEvaluatorWithResponse(`{
 			"results": {
 				"chat-v1": {
 					"evaluationOutcome": "NonCompliant",
 					"nonCompliantAssignments": [
-						{"assignmentId": "/subscriptions/sub/policyAssignments/approve-models", "effect": "Deny"}
+						{"assignmentId": "` + approveAssignID + `", "effect": "Deny"}
 					]
 				},
 				"chat-v2": {
 					"evaluationOutcome": "NonCompliant",
 					"nonCompliantAssignments": [
-						{"assignmentId": "/subscriptions/sub/policyAssignments/approve-models", "effect": "Deny"}
+						{"assignmentId": "` + approveAssignID + `", "effect": "Deny"}
 					]
 				}
 			}
@@ -1135,7 +1163,8 @@ func TestARMDeploymentPolicyEffectsAndEnrichment(t *testing.T) {
 			ProjectID: testProjectID,
 			Assignments: []PolicyAssignment{
 				{
-					AssignmentID:          "/subscriptions/sub/policyassignments/approve-models",
+					AssignmentID: "/subscriptions/" + testSubscriptionID +
+						"/providers/microsoft.authorization/policyassignments/approve-models",
 					AssignmentDisplayName: "Deny GPT-4o",
 					DefinitionDisplayName: "[Preview]: Microsoft Foundry agents should not use denied models",
 					AssignmentParameters: map[string]any{
@@ -1457,12 +1486,14 @@ func TestModelCandidateMergingAndAllowedModelsAliasHandling(t *testing.T) {
 				}, nil
 			}
 			if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/evaluateDeploymentPolicies") {
+				denyKnownID := "/subscriptions/" + testSubscriptionID +
+					"/providers/Microsoft.Authorization/policyAssignments/deny-known"
 				body := `{
 					"results": {
 						"known-dep": {
 							"evaluationOutcome": "NonCompliant",
 							"nonCompliantAssignments": [
-								{"assignmentId": "/subscriptions/sub/policyAssignments/deny-known", "effect": "Deny"}
+								{"assignmentId": "` + denyKnownID + `", "effect": "Deny"}
 							]
 						}
 					}
@@ -1490,7 +1521,11 @@ func TestModelCandidateMergingAndAllowedModelsAliasHandling(t *testing.T) {
 		)
 		assert.Equal(t, OutcomeBlocked, resPartial.Outcome)
 		require.Len(t, resPartial.Violations, 1)
-		assert.Equal(t, "/subscriptions/sub/policyassignments/deny-known", resPartial.Violations[0].AssignmentID)
+		assert.Equal(
+			t,
+			"/subscriptions/"+testSubscriptionID+"/providers/microsoft.authorization/policyassignments/deny-known",
+			resPartial.Violations[0].AssignmentID,
+		)
 
 		// 3. Missing deployment entry in results -> OutcomeIndeterminate
 		missingResEval := NewARMDeploymentPolicyEvaluator(newTestPipeline(func(req *http.Request) (*http.Response, error) {

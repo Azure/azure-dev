@@ -40,12 +40,9 @@ var envReferencePrefix = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)(\}|:-
 // References the expander would not resolve are dropped: escaped ones, and any
 // reserved by a Foundry ${{...}} span.
 //
-// A reference inside a :- default is not reported: nested azd references are
-// unsupported by design, so ${OUTER:-${NESTED}} yields OUTER only.
-// [foundry.ExpandEnv] still resolves NESTED at deploy, but nothing discovers it,
-// so init never prompts for it and it gets no entry in the generated service env
-// block. It then resolves only where the consumer keeps an azd environment
-// fallback, and to empty where a declared env: drops it. Keep defaults literal.
+// Defaults are not scanned: ${OUTER:-${NESTED}} yields OUTER only.
+// Call [ValidateEnvReferences] first to reject nested defaults and
+// other unsupported forms.
 func FindEnvReferences(value string) []EnvReference {
 	candidates := envReferenceCandidates(value)
 	if len(candidates) == 0 {
@@ -88,14 +85,8 @@ func FindEnvReferences(value string) []EnvReference {
 // set expanding to empty, so the caller blames the empty value instead of naming
 // B. Neither half is right, so the shape goes.
 //
-// Where this runs, it makes [FindEnvReferences] complete: every occurrence the
-// expander acts on is one the scanner saw. That is a property of the *call*,
-// not of the scanner — only callers that invoke this get it. Today that is the
-// three project network fields (network.agentSubnet.vnet, network.peSubnet.vnet,
-// network.dns.subscription). Discovery-only consumers, such as init prompting
-// and the generated service env block, still scan values that were never
-// validated; extending the check to them is tracked by
-// https://github.com/Azure/azure-dev/issues/9428.
+// Project synthesis and Agents discovery validate before scanning;
+// [FindEnvReferences] alone does not check unsupported forms.
 func ValidateEnvReferences(value string) error {
 	// Non-zero while scanning the inside of a :- default. Nesting is refused on
 	// sight, so one boundary is enough — there is never a second level.

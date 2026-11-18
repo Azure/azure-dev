@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"azure.ai.content-understanding/internal/config"
@@ -36,6 +37,14 @@ func actionText(format, text string) string {
 		return text
 	}
 	return output.WithHighLightFormat("%s", text)
+}
+
+func guidanceText(format, text string) string {
+	parts := strings.Split(text, "`")
+	for i := 1; i < len(parts)-1; i += 2 {
+		parts[i] = actionText(format, parts[i])
+	}
+	return strings.Join(parts, "`")
 }
 
 func commentText(format, text string) string {

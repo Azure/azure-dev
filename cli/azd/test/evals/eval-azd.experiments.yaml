@@ -11,7 +11,7 @@ evals:
 
 # Axes:
 # - skills: azd skill off vs on
-# - model: claude-sonnet-5 vs gpt-5.6-terra
+# - model: claude-sonnet-5 vs gpt-6.1-terra
 #
 # An empty skills list replaces the eval's skills entirely (no skills); the
 # other value injects the azd skill.
@@ -27,7 +27,7 @@ matrix:
     path: /defaults/model
     values:
       - claude-sonnet-5: claude-sonnet-5
-      - gpt-5.6-terra: gpt-5.6-terra
+      - gpt-6.1-terra: gpt-6.1-terra
 
 # Control variant that deltas are measured against.
 baseline:

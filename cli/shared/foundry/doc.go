@@ -7,6 +7,7 @@
 // Consumers import child packages such as:
 //   - github.com/azure/azure-dev/cli/shared/foundry/access
 //   - github.com/azure/azure-dev/cli/shared/foundry/ferrors
+//   - github.com/azure/azure-dev/cli/shared/foundry/policy
 //
 // This module must not require or import github.com/azure/azure-dev/cli/azd or
 // any extension's internal packages.

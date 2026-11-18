@@ -61,7 +61,7 @@ func (t *boundedErrorTransport) Do(request *http.Request) (*http.Response, error
 	return response, nil
 }
 
-func serviceResponseError(statusCode int, code, retryAfterHeader string) error {
+func serviceResponseError(statusCode int, code, retryAfterHeader string) *Error {
 	if !serviceCodePattern.MatchString(code) {
 		code = fmt.Sprintf("http_%d", statusCode)
 	}

@@ -58,9 +58,6 @@ func TestInitExplicitRemoteTemplateLoadingTiming(t *testing.T) {
 			wantErr: "does not declare an agent service"},
 		{name: "invalid staged definition", content: "services:\n  agent:\n    host: azure.ai.agent\n" +
 			"    $ref: ./missing.yaml\n", wantErr: "missing.yaml"},
-		{name: "preview validation failure", content: "services:\n  agent:\n    host: azure.ai.agent\n" +
-			"    kind: prompt-voice\n    name: voice-agent\n    modelType: managed\n    model:\n      id: gpt-realtime\n",
-			wantErr: "agents.voice"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			clearPreviewProcess(t)

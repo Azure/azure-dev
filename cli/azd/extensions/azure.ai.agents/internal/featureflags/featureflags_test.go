@@ -213,7 +213,7 @@ func TestIsEnabledDoesNotLoadLocalConfiguration(t *testing.T) {
 		filepath.Join(".azure", "config.json"):     `{"version":1,"defaultEnvironment":"default"}`,
 		filepath.Join(".azure", "default", ".env"): dotenv.String(),
 		filepath.Join(".azure", "selected", ".env"): "AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=false\n" +
-			"AZD_ALPHA_ENABLE_AGENTS_VOICE=false\nAZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=false\n",
+			"AZD_ALPHA_ENABLE_AGENTS_A2A=false\nAZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=false\n",
 	}
 	for path, contents := range files {
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/servicekey"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -552,7 +553,7 @@ func mapHarness(promptAgent PromptAgent) *agent_api.ManagedAgentHarness {
 func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillReference {
 	seen := map[string]int{}
 	var skills []agent_api.SkillReference
-	add := func(name, version string) {
+	addAuthored := func(name, version string) {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			return
@@ -571,12 +572,43 @@ func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillRefere
 			Version: strings.TrimSpace(version),
 		})
 	}
+	addResolved := func(name, version string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		version = strings.TrimSpace(version)
+		key := strings.ToLower(name)
+		if index, ok := seen[key]; ok {
+			if skills[index].Version == "" {
+				skills[index].Version = version
+			}
+			return
+		}
+		if sanitized := servicekey.SanitizeServiceName(name); sanitized != "" {
+			for i := range skills {
+				if skills[i].Version == "" &&
+					strings.EqualFold(servicekey.SanitizeServiceName(skills[i].Name), sanitized) {
+					skills[i].Name = sanitized
+					skills[i].Version = version
+					seen[strings.ToLower(sanitized)] = i
+					return
+				}
+			}
+		}
+		seen[key] = len(skills)
+		skills = append(skills, agent_api.SkillReference{
+			Type:    "skill_reference",
+			Name:    name,
+			Version: version,
+		})
+	}
 	// Authored pins take precedence; local resolution only fills missing versions.
 	for _, skill := range promptAgent.Skills {
-		add(skill.Name, skill.Version)
+		addAuthored(skill.Name, skill.Version)
 	}
 	for _, skill := range promptAgent.ResolvedSkills {
-		add(skill.Name, skill.Version)
+		addResolved(skill.Name, skill.Version)
 	}
 	return skills
 }

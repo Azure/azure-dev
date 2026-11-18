@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -35,9 +33,9 @@ const (
 	AiConnectionHost = "azure.ai.connection"
 	// AiToolboxHost owns a single Foundry toolbox (toolset).
 	AiToolboxHost = "azure.ai.toolbox"
-	// AiSkillHost owns a single Foundry skill and its versions. azd never
-	// uploads a skill bundle itself; it emits one service per skills/<name>/
-	// folder and attaches the version that extension publishes.
+	// AiSkillHost owns a single Foundry skill and its versions. The
+	// azure.ai.skills extension owns and deploys skill services; the agents
+	// extension only attaches the version that service publishes.
 	AiSkillHost = "azure.ai.skill"
 
 	// projectEndpointEnvVar carries the concrete Foundry project endpoint in the
@@ -47,57 +45,48 @@ const (
 	projectEndpointEnvVar = "FOUNDRY_PROJECT_ENDPOINT"
 )
 
-// promptResourceServices derives the sibling Foundry services a prompt or
-// managed agent needs from its scaffolded definition and folder layout, so a
-// prompt agent's azure.yaml carries the same hosts as a hosted agent's.
+// promptResourceServices derives the sibling Foundry service uses: edges a
+// prompt or managed agent needs from its scaffolded definition.
 //
 //   - Each connection name adds a uses: edge when that azure.ai.connection
 //     service already exists; name references do not define new resources.
-//   - Each skills/<dir>/ folder becomes an azure.ai.skill service keyed by the
-//     name its SKILL.md declares. The agents extension never uploads a bundle
-//     itself; at deploy time it attaches the version the skill service
-//     published.
-//   - toolbox: names an existing toolbox rather than defining one, so there is
-//     nothing to write as a service. Its name is added to the agent's uses: when
-//     a toolbox service of that name is already in azure.yaml, which is what
-//     orders the toolbox ahead of the agent; a uses: entry naming a service that
-//     does not exist would fail the project load instead.
+//   - Each versionless skill reference adds a uses: edge when that
+//     azure.ai.skill service already exists; the azure.ai.skills extension owns
+//     skill service authoring and deployment.
+//   - Each toolbox reference adds a uses: edge when that azure.ai.toolbox
+//     service already exists.
 //
 // Deployments are left to the caller, which owns the model selection flow.
 func promptResourceServices(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	promptAgent *agent_yaml.PromptAgent,
-	serviceSourceDir string,
-	serviceRelPath string,
 ) (foundryResources, error) {
 	resources := foundryResources{}
 
 	for _, connection := range promptAgent.Connections {
 		name := servicekey.SanitizeServiceName(connection)
-		if name != "" && serviceHasHost(ctx, azdClient, name, AiConnectionHost) {
+		if name != "" && serviceHasHost(ctx, azdClient, name, AiConnectionHost) &&
+			!slices.Contains(resources.ExtraUses, name) {
 			resources.ExtraUses = append(resources.ExtraUses, name)
 		}
 	}
 
-	bundles, err := project.ScanSkillBundles(serviceSourceDir)
-	if err != nil {
-		return foundryResources{}, err
-	}
-	for _, bundle := range bundles {
-		if resources.Skills == nil {
-			resources.Skills = map[string]project.SkillService{}
+	for _, skill := range agent_yaml.PromptAgentSkillReferences(*promptAgent) {
+		if strings.TrimSpace(skill.Version) != "" {
+			continue
 		}
-		resources.Skills[bundle.Name] = project.SkillService{
-			Description: bundle.Description,
-			// Relative to azure.yaml, which lives in the directory init runs in.
-			Archive: "./" + path.Join(filepath.ToSlash(serviceRelPath), bundle.RelPath),
+		name := servicekey.SanitizeServiceName(skill.Name)
+		if name != "" && serviceHasHost(ctx, azdClient, name, AiSkillHost) &&
+			!slices.Contains(resources.ExtraUses, name) {
+			resources.ExtraUses = append(resources.ExtraUses, name)
 		}
 	}
 
 	for _, tb := range promptAgent.Toolboxes {
 		name := strings.TrimSpace(tb.Name)
-		if name != "" && serviceHasHost(ctx, azdClient, name, AiToolboxHost) {
+		if name != "" && serviceHasHost(ctx, azdClient, name, AiToolboxHost) &&
+			!slices.Contains(resources.ExtraUses, name) {
 			resources.ExtraUses = append(resources.ExtraUses, name)
 		}
 	}
@@ -126,12 +115,11 @@ type foundryResources struct {
 	Connections []project.Connection
 	// Toolboxes become one azure.ai.toolbox service each.
 	Toolboxes []project.Toolbox
-	// Skills become one azure.ai.skill service each, keyed by skill name.
-	Skills map[string]project.SkillService
 	// ExtraUses are service keys added to the agent's uses: list without
-	// emitting a service for them. A prompt agent's `toolbox:` names an
-	// *existing* toolbox, so there is no definition to write, but the edge is
-	// still needed for ordering and for the deploy-time dependency check.
+	// emitting a service for them. A prompt agent's `connections:`, `skills:`,
+	// and `toolboxes:` name existing sibling services, so there is no
+	// definition to write, but the edge is still needed for ordering and for
+	// the deploy-time dependency check.
 	ExtraUses []string
 }
 
@@ -239,30 +227,6 @@ func emitResourceServices(
 		}
 		services = append(services, resourceService{toolboxName, AiToolboxHost, toolboxCfg, toolboxUses})
 		agentUses = append(agentUses, toolboxName)
-	}
-
-	// The service key is the skill name the azure.ai.skills extension creates,
-	// and the name the agent's SKILL.md declares, so iterate in sorted order to
-	// keep repeated inits byte-identical.
-	for _, skill := range slices.Sorted(maps.Keys(resources.Skills)) {
-		skillName := servicekey.SanitizeServiceName(skill)
-		if skillName == "" {
-			fmt.Fprintf(os.Stderr,
-				"warning: skill %q has no characters usable as an azure.yaml service key; "+
-					"skipping it. Rename the skill so it is written to azure.yaml.\n",
-				skill)
-			continue
-		}
-		if err := reserveServiceName(usedNames, skillName, fmt.Sprintf("skill %q", skill)); err != nil {
-			return 0, err
-		}
-		definition := resources.Skills[skill]
-		skillCfg, err := project.MarshalStruct(&definition)
-		if err != nil {
-			return 0, fmt.Errorf("marshaling skill service %q config: %w", skillName, err)
-		}
-		services = append(services, resourceService{skillName, AiSkillHost, skillCfg, siblingUses})
-		agentUses = append(agentUses, skillName)
 	}
 
 	for _, service := range services {

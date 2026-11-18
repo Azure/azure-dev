@@ -1642,26 +1642,26 @@ func TestPredownIgnoresPromptDeploymentReadiness(t *testing.T) {
 	}{
 		{"empty instructions", "", false, "non-empty instructions"},
 		{"blank instructions", " \t", false, "non-empty instructions"},
-		{"malformed local skill", "Help.", true, "is missing 'description'"},
+		{"conflicting skill versions", "Help.", true, `conflicting authored versions "1" and "2"`},
 	} {
 		for _, source := range []string{"direct", "root ref"} {
 			t.Run(tt.name+"/"+source, func(t *testing.T) {
 				root := t.TempDir()
-				props := mustStruct(t, map[string]any{
+				propValues := map[string]any{
 					"kind": "prompt", "name": "agent", "model": "gpt-4.1", "instructions": tt.instructions,
-				})
+				}
+				if tt.brokenSkill {
+					propValues["skills"] = []any{
+						map[string]any{"name": "broken", "version": "1"},
+						map[string]any{"name": "broken", "version": "2"},
+					}
+				}
+				props := mustStruct(t, propValues)
 				if source == "root ref" {
 					data, err := json.Marshal(props.AsMap())
 					require.NoError(t, err)
 					require.NoError(t, os.WriteFile(filepath.Join(root, "definition.yaml"), data, 0o600))
 					props = mustStruct(t, map[string]any{"$ref": "./definition.yaml"})
-				}
-				if tt.brokenSkill {
-					skillDir := filepath.Join(root, "skills", "broken")
-					require.NoError(t, os.MkdirAll(skillDir, 0o700))
-					require.NoError(t, os.WriteFile(
-						filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: broken\n---\n"), 0o600,
-					))
 				}
 				proj := &azdext.ProjectConfig{
 					Path: root,

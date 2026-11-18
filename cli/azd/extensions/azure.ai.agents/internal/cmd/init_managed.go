@@ -144,11 +144,6 @@ func runInitManaged(
 	if err != nil {
 		return err
 	}
-	if err := updatePendingModelDeploymentSignal(
-		ctx, azdClient, env.Name, deployment != nil, provisionDeployment,
-	); err != nil {
-		log.Printf("warning: failed to update model deployment provision signal: %v", err)
-	}
 	if deployment != nil {
 		model = deployment.Name
 	}
@@ -226,6 +221,11 @@ func runInitManaged(
 		deployments,
 	); err != nil {
 		return err
+	}
+	if err := updatePendingModelDeploymentSignal(
+		ctx, azdClient, env.Name, deployment != nil, provisionDeployment,
+	); err != nil {
+		log.Printf("warning: failed to update model deployment provision signal: %v", err)
 	}
 	if _, err := emitResourceServices(
 		ctx, azdClient, agentName,

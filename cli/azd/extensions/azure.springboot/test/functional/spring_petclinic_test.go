@@ -35,7 +35,8 @@ const (
 	proposedTemplateCommit           = "6110dca64d6bbaed2998faa92cfb5941b725a849"
 	proposedTemplateAdminNameBinding = "${DATABASE_ADMIN_NAME=azd-preprovision-pending}"
 	proposedTemplateAdminIDBinding   = "${DATABASE_ADMIN_OBJECT_ID=00000000-0000-0000-0000-000000000000}"
-	gitMetadataAccommodation         = "Packaging Maven project without Git commit metadata because the repository has no commits."
+	gitMetadataAccommodation         = "Packaging Maven project without Git commit metadata " +
+		"because the repository has no commits."
 )
 
 type petclinicSourceManifest struct {
@@ -195,6 +196,9 @@ func verifyProposedPetclinicTemplate(t *testing.T, projectDir string) {
 }
 
 func Test_CLI_SpringExtension_BundleInstallsWithoutBaseTarget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping CLI extension bundle install test in short mode")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
 

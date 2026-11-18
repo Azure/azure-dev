@@ -3,5 +3,9 @@
 
 package version
 
-// Version is the current extension version. Release builds may override it with ldflags.
-var Version = "0.1.0"
+// Version, Commit, and BuildDate are populated at build time by release pipelines via ldflags.
+var (
+	Version   = "0.1.0"
+	Commit    = "none"
+	BuildDate = "unknown"
+)

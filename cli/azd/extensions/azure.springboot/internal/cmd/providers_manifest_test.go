@@ -26,4 +26,8 @@ func TestConfigureExtensionHostMatchesManifest(t *testing.T) {
 	for _, sub := range root.Commands() {
 		require.True(t, sub.Hidden, "unexpected public subcommand %q on provider-only extension", sub.Name())
 	}
+	versionSub, _, err := root.Find([]string{"version"})
+	require.NoError(t, err)
+	require.Equal(t, "version", versionSub.Name())
+	require.True(t, versionSub.Hidden)
 }

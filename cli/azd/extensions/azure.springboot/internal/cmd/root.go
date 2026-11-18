@@ -27,6 +27,9 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
 		configureExtensionHostWithNoPrompt(host, extCtx.NoPrompt)
 	}))
+	versionCmd := azdext.NewVersionCommand(extensionID, version.Version, &extCtx.OutputFormat)
+	versionCmd.Hidden = true
+	root.AddCommand(versionCmd)
 	root.AddCommand(azdext.NewMetadataCommand("1.0", extensionID, NewRootCommand))
 	return root
 }

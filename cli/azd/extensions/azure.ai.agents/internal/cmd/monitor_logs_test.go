@@ -129,6 +129,23 @@ func TestRunMonitorLogQuery_Table(t *testing.T) {
 
 func TestLogTableEscapesTerminalControls(t *testing.T) {
 	assert.Equal(t, `hello\x1b[2J \u202e`, singleLine("hello\x1b[2J\n\u202e"))
+
+	const untrusted = "v\x1b[2J"
+	result := &logQueryResult{Data: []logRecord{{
+		AgentVersion: untrusted, SessionID: untrusted, Message: untrusted,
+	}}}
+	var out, errOut bytes.Buffer
+	require.NoError(t, writeLogQueryResult(result, &logQueryOptions{output: "table"}, &out, &errOut))
+	assert.NotContains(t, out.String(), "\x1b")
+	assert.Equal(t, 3, bytes.Count(out.Bytes(), []byte(`v\x1b[2J`)))
+
+	out.Reset()
+	require.NoError(t, writeLogQueryResult(result, &logQueryOptions{output: "json"}, &out, &errOut))
+	var decoded logQueryResult
+	require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
+	assert.Equal(t, result.Data[0].AgentVersion, decoded.Data[0].AgentVersion)
+	assert.Equal(t, result.Data[0].SessionID, decoded.Data[0].SessionID)
+	assert.Equal(t, result.Data[0].Message, decoded.Data[0].Message)
 }
 
 func TestRunMonitorLogQuery_Empty(t *testing.T) {

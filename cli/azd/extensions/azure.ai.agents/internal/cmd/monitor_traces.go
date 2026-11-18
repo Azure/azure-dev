@@ -1038,7 +1038,7 @@ func writeTraceList(result *traceListResult, opts *traceOptions, out, errOut io.
 	}
 	if result.PartialError != "" {
 		fmt.Fprintf(errOut, "WARNING: results may be incomplete; the query returned a partial error: %s\n",
-			result.PartialError)
+			singleLine(result.PartialError))
 	}
 
 	emptyNotice := fmt.Sprintf("No traces found for agent %q in the last %s.", result.AgentName, opts.sinceLabel)
@@ -1064,8 +1064,9 @@ func writeTraceList(result *traceListResult, opts *traceOptions, out, errOut io.
 	}
 
 	fmt.Fprintf(out, "Agent: %s\nProject: %s\nTelemetry: %s (%s)\nWindow: %s to %s\nCoverage: %s\n\n",
-		result.AgentName, result.ProjectEndpoint, result.Telemetry.ConnectionName, result.Telemetry.ResourceID,
-		result.Window.Start, result.Window.End, telemetryAttributionNote)
+		singleLine(result.AgentName), singleLine(result.ProjectEndpoint), singleLine(result.Telemetry.ConnectionName),
+		singleLine(result.Telemetry.ResourceID), singleLine(result.Window.Start), singleLine(result.Window.End),
+		telemetryAttributionNote)
 	if len(result.Data) == 0 {
 		_, err := fmt.Fprintf(out, "%s\n%s\n", emptyNotice, emptyHint)
 		return err
@@ -1076,8 +1077,9 @@ func writeTraceList(result *traceListResult, opts *traceOptions, out, errOut io.
 	fmt.Fprintln(w, "--------\t-----\t--------\t-----\t------\t------\t-------\t---------")
 	for _, trace := range result.Data {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\t%s\t%s\n",
-			trace.TraceID, formatTraceTime(trace.start, opts.utc), msDuration(float64(trace.DurationMs)),
-			trace.SpanCount, trace.FailedSpanCount, trace.Status, trace.AgentVersion, trace.RootSpanName)
+			singleLine(trace.TraceID), formatTraceTime(trace.start, opts.utc), msDuration(float64(trace.DurationMs)),
+			trace.SpanCount, trace.FailedSpanCount, singleLine(trace.Status),
+			singleLine(trace.AgentVersion), singleLine(trace.RootSpanName))
 	}
 	return w.Flush()
 }
@@ -1089,7 +1091,7 @@ func writeTraceExport(export *traceExport, opts *traceOptions, out, errOut io.Wr
 	}
 	if export.Completeness.PartialError != "" {
 		fmt.Fprintf(errOut, "WARNING: results may be incomplete; the query returned a partial error: %s\n",
-			export.Completeness.PartialError)
+			singleLine(export.Completeness.PartialError))
 	}
 
 	if opts.outFile != "" {
@@ -1110,7 +1112,8 @@ func writeTraceExport(export *traceExport, opts *traceOptions, out, errOut io.Wr
 		complete = "no"
 	}
 	fmt.Fprintf(out, "Trace: %s\nAgent: %s\nTelemetry: %s (%s)\nSpans: %d  Exceptions: %d  Complete: %s\n\n",
-		export.TraceID, export.AgentName, export.Telemetry.ConnectionName, export.Telemetry.ResourceID,
+		singleLine(export.TraceID), singleLine(export.AgentName), singleLine(export.Telemetry.ConnectionName),
+		singleLine(export.Telemetry.ResourceID),
 		len(export.Spans), len(export.Exceptions), complete)
 
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
@@ -1119,8 +1122,8 @@ func writeTraceExport(export *traceExport, opts *traceOptions, out, errOut io.Wr
 	for _, row := range orderSpanTree(export.TraceID, export.Spans) {
 		span := row.span
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s%s\n",
-			formatTraceTime(span.start, opts.utc), msDuration(span.DurationMs), span.Status, span.Kind,
-			strings.Repeat("  ", row.depth), span.Name)
+			formatTraceTime(span.start, opts.utc), msDuration(span.DurationMs), singleLine(span.Status),
+			singleLine(span.Kind), strings.Repeat("  ", row.depth), singleLine(span.Name))
 	}
 	if err := w.Flush(); err != nil {
 		return err

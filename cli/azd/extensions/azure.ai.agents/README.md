@@ -723,8 +723,10 @@ azd ai agent files download /data/report.csv --session-id "<session-id>" \
   --agent-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>/agents/support/endpoint/protocols/invocations"
 ```
 
-Direct mode never reads `azure.yaml`, `AGENT_<SERVICE>_*` outputs, or azd
-environment values, and it does not store the session ID. The two flags cannot be
+Direct target resolution does not use `azure.yaml`, `AGENT_<SERVICE>_*` outputs,
+or azd environment values, and it does not store the session ID. Inside an azd
+project, the azd host may still load the selected environment and resolve its
+Key Vault references before the extension starts. The two flags cannot be
 combined with each other, with `--environment`, or (for `--agent-endpoint`) with a
 separate agent name. File commands require `--session-id`. Direct session and
 file commands read the agent first and reject prompt and workflow agents before

@@ -278,7 +278,8 @@ func endpointSourceLabel(source EndpointSource) string {
 }
 
 func printAgentList(result *agentListResult, output string, out, errOut io.Writer) error {
-	scope := fmt.Sprintf("Project: %s (from %s)", result.ProjectEndpoint, endpointSourceLabel(result.EndpointSource))
+	scope := fmt.Sprintf("Project: %s (from %s)", singleLine(result.ProjectEndpoint),
+		singleLine(endpointSourceLabel(result.EndpointSource)))
 	switch output {
 	case "json":
 		if len(result.Data) == 0 {
@@ -300,7 +301,8 @@ func printAgentList(result *agentListResult, output string, out, errOut io.Write
 		fmt.Fprintln(w, "----\t----\t--------------\t------\t-------")
 		for _, agent := range result.Data {
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				agent.Name, agent.Kind, agent.LatestVersion, agent.Status, agent.CreatedAt)
+				singleLine(agent.Name), singleLine(agent.Kind), singleLine(agent.LatestVersion),
+				singleLine(agent.Status), singleLine(agent.CreatedAt))
 		}
 		return w.Flush()
 	default:
@@ -318,7 +320,8 @@ func printAgentVersionList(result *agentVersionListResult, output string, out, e
 		}
 		return writeIndentedJSON(out, result)
 	case "", "table":
-		if _, err := fmt.Fprintf(out, "Agent: %s\nProject: %s\n\n", result.AgentName, result.ProjectEndpoint); err != nil {
+		if _, err := fmt.Fprintf(out, "Agent: %s\nProject: %s\n\n",
+			singleLine(result.AgentName), singleLine(result.ProjectEndpoint)); err != nil {
 			return err
 		}
 		if len(result.Data) == 0 {
@@ -329,7 +332,8 @@ func printAgentVersionList(result *agentVersionListResult, output string, out, e
 		fmt.Fprintln(w, "VERSION\tSTATUS\tCREATED\tDESCRIPTION")
 		fmt.Fprintln(w, "-------\t------\t-------\t-----------")
 		for _, version := range result.Data {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", version.Version, version.Status, version.CreatedAt, version.Description)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", singleLine(version.Version), singleLine(version.Status),
+				singleLine(version.CreatedAt), singleLine(version.Description))
 		}
 		return w.Flush()
 	default:
@@ -366,7 +370,7 @@ func resolveExplicitAgentListEndpoint(cmd *cobra.Command, flags *showFlags, name
 		return "", exterrors.Validation(
 			exterrors.CodeConflictingArguments,
 			"--environment cannot be combined with --project-endpoint",
-			"--project-endpoint does not read azd environment values; remove --environment",
+			"--project-endpoint does not use azd environment values for target resolution; remove --environment",
 		)
 	}
 	return validateDirectProjectEndpoint(flags.direct.projectEndpoint)

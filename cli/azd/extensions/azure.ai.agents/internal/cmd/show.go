@@ -61,8 +61,9 @@ configuration and the current azd environment. Optionally specify the service na
 To inspect a deployed agent without an azd project, supply its cloud identity
 directly: either --agent-endpoint with a full agent protocol URL, or
 --project-endpoint with the deployed Foundry agent name as the positional
-argument. Direct mode reads only the remote agent and shows its latest version;
-it never reads azure.yaml or azd environment values.
+argument. Direct target resolution does not use azure.yaml or azd environment
+values. When launched inside an azd project, the azd host may still load its
+environment and resolve Key Vault references before the extension starts.
 
 To list every agent deployed in a Foundry project, including agents not deployed
 by azd, run show without a name and with --project-endpoint. Outside an azd
@@ -180,14 +181,7 @@ context as a nameless show when no endpoint is supplied.`,
 					info.ServiceName,
 				)
 			}
-			if flags.versions {
-				agentContext, err := newAgentContext(ctx, "", "", info.AgentName, "")
-				if err != nil {
-					return err
-				}
-				return runShowVersions(ctx, agentContext, flags.output)
-			}
-			if info.Version == "" {
+			if !flags.versions && info.Version == "" {
 				return fmt.Errorf(
 					"agent version could not be resolved from azd environment for service '%s'\n\n"+
 						"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
@@ -195,9 +189,12 @@ context as a nameless show when no endpoint is supplied.`,
 				)
 			}
 
-			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)
+			agentContext, err := resolveServiceAgentContext(ctx, info)
 			if err != nil {
 				return err
+			}
+			if flags.versions {
+				return runShowVersions(ctx, agentContext, flags.output)
 			}
 
 			// Resolve the current environment name for env var lookups

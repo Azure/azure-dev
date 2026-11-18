@@ -151,9 +151,23 @@ func TestResolveMonitorAgentInfo_PrefersProjectService(t *testing.T) {
 	assert.Contains(t, info.AgentEndpoint, "/agents/deployed-agent/versions/7")
 }
 
-func TestResolveMonitorAgentContext_UsesDeployedProject(t *testing.T) {
+func TestResolveServiceAgentContext_UsesDeployedProject(t *testing.T) {
+	stubHostedSources(t, azdHostedSources{
+		EnvValue: "https://other.services.ai.azure.com/api/projects/other",
+	})
 	info := &AgentServiceInfo{ProjectEndpoint: testProjectEndpoint, AgentName: "deployed-agent", Version: "7"}
-	target, err := resolveMonitorAgentContext(t.Context(), info)
+	target, err := resolveServiceAgentContext(t.Context(), info)
+	require.NoError(t, err)
+	assert.Equal(t, testProjectEndpoint, target.ProjectEndpoint)
+	assert.Equal(t, "deployed-agent", target.Name)
+	assert.Equal(t, "7", target.Version)
+}
+
+func TestResolveServiceAgentContext_FallsBackToSharedProject(t *testing.T) {
+	stubHostedSources(t, azdHostedSources{EnvValue: testProjectEndpoint})
+	target, err := resolveServiceAgentContext(t.Context(), &AgentServiceInfo{
+		ServiceName: "local-service", AgentName: "deployed-agent", Version: "7",
+	})
 	require.NoError(t, err)
 	assert.Equal(t, testProjectEndpoint, target.ProjectEndpoint)
 	assert.Equal(t, "deployed-agent", target.Name)

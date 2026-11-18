@@ -102,8 +102,9 @@ by azd ai project set, or from FOUNDRY_PROJECT_ENDPOINT.
 
 To target a deployed agent explicitly, supply --project-endpoint with the deployed
 Foundry agent name as the positional argument, or --agent-endpoint with a full
-agent protocol URL. Direct targets never read azure.yaml or azd environment
-values, and log streaming then requires --session-id.
+agent protocol URL. Direct target resolution does not use azure.yaml or azd
+environment values, and log streaming then requires --session-id. The azd host
+may still load the selected environment before launching the extension.
 
 For agents configured with header-based isolation, pass --user-identity
 when streaming session logs.`,
@@ -198,7 +199,7 @@ when streaming session logs.`,
 				)
 			}
 
-			agentContext, err := resolveMonitorAgentContext(ctx, info)
+			agentContext, err := resolveServiceAgentContext(ctx, info)
 			if err != nil {
 				return monitorEndpointError(err)
 			}
@@ -258,17 +259,6 @@ when streaming session logs.`,
 	})
 
 	return cmd
-}
-
-func resolveMonitorAgentContext(ctx context.Context, info *AgentServiceInfo) (*AgentContext, error) {
-	if info.ProjectEndpoint != "" {
-		endpoint, _, err := validateProjectEndpoint(info.ProjectEndpoint)
-		if err != nil {
-			return nil, err
-		}
-		return &AgentContext{ProjectEndpoint: endpoint, Name: info.AgentName, Version: info.Version}, nil
-	}
-	return newAgentContext(ctx, "", "", info.AgentName, info.Version)
 }
 
 // runMonitorTracesForTarget lists or exports traces for the deployed agent named by target.

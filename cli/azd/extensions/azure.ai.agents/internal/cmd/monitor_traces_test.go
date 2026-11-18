@@ -29,6 +29,39 @@ const (
 	testFoundryProjectID   = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/projects/project"
 )
 
+func TestTraceTablesEscapeTerminalControlsAndPreserveJSON(t *testing.T) {
+	const untrusted = "v\x1b[2J"
+	t.Run("list", func(t *testing.T) {
+		result := &traceListResult{Data: []traceSummary{{
+			TraceID: untrusted, Status: untrusted, AgentVersion: untrusted, RootSpanName: untrusted,
+		}}}
+		var out, errOut bytes.Buffer
+		require.NoError(t, writeTraceList(result, &traceOptions{output: "table"}, &out, &errOut))
+		assert.NotContains(t, out.String(), "\x1b")
+		assert.Equal(t, 4, bytes.Count(out.Bytes(), []byte(`v\x1b[2J`)))
+		out.Reset()
+		require.NoError(t, writeTraceList(result, &traceOptions{output: "json"}, &out, &errOut))
+		var decoded traceListResult
+		require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
+		assert.Equal(t, result.Data[0].RootSpanName, decoded.Data[0].RootSpanName)
+		assert.Equal(t, result.Data[0].AgentVersion, decoded.Data[0].AgentVersion)
+	})
+	t.Run("export", func(t *testing.T) {
+		result := &traceExport{TraceID: "trace", Spans: []traceSpan{{
+			SpanID: "span", Name: untrusted, Status: untrusted, Kind: untrusted,
+		}}}
+		var out, errOut bytes.Buffer
+		require.NoError(t, writeTraceExport(result, &traceOptions{output: "table"}, &out, &errOut))
+		assert.NotContains(t, out.String(), "\x1b")
+		assert.Equal(t, 3, bytes.Count(out.Bytes(), []byte(`v\x1b[2J`)))
+		out.Reset()
+		require.NoError(t, writeTraceExport(result, &traceOptions{output: "json"}, &out, &errOut))
+		var decoded traceExport
+		require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
+		assert.Equal(t, result.Spans[0].Name, decoded.Spans[0].Name)
+	})
+}
+
 type fakeConnectionLister struct {
 	connections []azure.Connection
 	err         error

@@ -143,6 +143,27 @@ func TestRunListAgents_TablePrintsAgents(t *testing.T) {
 	assert.Contains(t, out.String(), "support  hosted  3               active")
 }
 
+func TestAgentTablesEscapeTerminalControlsAndPreserveJSON(t *testing.T) {
+	const untrusted = "v\x1b[2J"
+	agents := &agentListResult{Data: []agentListSummary{{Name: untrusted, Kind: untrusted}}}
+	versions := &agentVersionListResult{Data: []agentVersionSummary{{
+		Version: untrusted, Status: untrusted, Description: untrusted,
+	}}}
+	var out, errOut bytes.Buffer
+	require.NoError(t, printAgentList(agents, "table", &out, &errOut))
+	assert.NotContains(t, out.String(), "\x1b")
+	assert.Equal(t, 2, bytes.Count(out.Bytes(), []byte(`v\x1b[2J`)))
+	out.Reset()
+	require.NoError(t, printAgentVersionList(versions, "table", &out, &errOut))
+	assert.NotContains(t, out.String(), "\x1b")
+	assert.Equal(t, 3, bytes.Count(out.Bytes(), []byte(`v\x1b[2J`)))
+	out.Reset()
+	require.NoError(t, printAgentVersionList(versions, "json", &out, &errOut))
+	var decoded agentVersionListResult
+	require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
+	assert.Equal(t, untrusted, decoded.Data[0].Description)
+}
+
 func TestRunListAgents_ServiceErrors(t *testing.T) {
 	t.Run("missing project", func(t *testing.T) {
 		client := &fakeAgentInventory{err: newTestResponseError(t, http.StatusNotFound)}

@@ -407,7 +407,7 @@ func writeLogQueryResult(result *logQueryResult, opts *logQueryOptions, out, err
 	}
 	if result.PartialError != "" {
 		fmt.Fprintf(errOut, "WARNING: results may be incomplete; the query returned a partial error: %s\n",
-			result.PartialError)
+			singleLine(result.PartialError))
 	}
 
 	emptyNotice := fmt.Sprintf("No log records found for agent %q in the last %s%s.",
@@ -423,8 +423,9 @@ func writeLogQueryResult(result *logQueryResult, opts *logQueryOptions, out, err
 	}
 
 	fmt.Fprintf(out, "Agent: %s\nProject: %s\nTelemetry: %s (%s)\nWindow: %s to %s\nCoverage: %s\n\n",
-		result.AgentName, result.ProjectEndpoint, result.Telemetry.ConnectionName, result.Telemetry.ResourceID,
-		result.Window.Start, result.Window.End, telemetryAttributionNote)
+		singleLine(result.AgentName), singleLine(result.ProjectEndpoint), singleLine(result.Telemetry.ConnectionName),
+		singleLine(result.Telemetry.ResourceID), singleLine(result.Window.Start), singleLine(result.Window.End),
+		telemetryAttributionNote)
 	if len(result.Data) == 0 {
 		_, err := fmt.Fprintf(out, "%s\n%s\n", emptyNotice, emptyHint)
 		return err
@@ -439,8 +440,8 @@ func writeLogQueryResult(result *logQueryResult, opts *logQueryOptions, out, err
 			message = record.ExceptionType + ": " + message
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			formatTraceTime(record.time, opts.utc), record.Severity, record.AgentVersion,
-			shortenID(record.SessionID, logTableSessionIDLength), singleLine(message))
+			formatTraceTime(record.time, opts.utc), singleLine(record.Severity), singleLine(record.AgentVersion),
+			singleLine(shortenID(record.SessionID, logTableSessionIDLength)), singleLine(message))
 	}
 	if err := w.Flush(); err != nil {
 		return err

@@ -69,7 +69,7 @@ func resolveDirectAgentTarget(
 		return nil, exterrors.Validation(
 			exterrors.CodeConflictingArguments,
 			"--environment cannot be combined with --agent-endpoint or --project-endpoint",
-			"direct targets do not read azd environment values; remove --environment",
+			"direct target resolution does not use azd environment values; remove --environment",
 		)
 	}
 

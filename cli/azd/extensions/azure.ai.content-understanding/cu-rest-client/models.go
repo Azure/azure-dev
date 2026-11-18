@@ -20,14 +20,28 @@ var ErrInvalidResponse = errors.New("invalid Content Understanding response")
 type OperationError struct {
 	Status        string
 	Code          string
+	Message       string
 	Details       []OperationDiagnostic
 	ResponseError *azcore.ResponseError
 }
 
-// OperationDiagnostic retains nested service codes without customer messages or targets.
+// ServiceError retains sanitized HTTP failure diagnostics and wraps azcore.ResponseError.
+type ServiceError struct {
+	Diagnostic    OperationDiagnostic
+	ResponseError *azcore.ResponseError
+}
+
+func (e *ServiceError) Error() string { return e.ResponseError.Error() }
+
+func (e *ServiceError) Unwrap() error { return e.ResponseError }
+
+// OperationDiagnostic retains bounded service codes and sanitized messages, never targets.
+// Returned diagnostics normalize InnerError into Details.
 type OperationDiagnostic struct {
-	Code    string                `json:"code"`
-	Details []OperationDiagnostic `json:"details,omitempty"`
+	Code       string                `json:"code"`
+	Message    string                `json:"message,omitempty"`
+	Details    []OperationDiagnostic `json:"details,omitempty"`
+	InnerError *OperationDiagnostic  `json:"innererror,omitempty"`
 }
 
 func (e *OperationError) Error() string {

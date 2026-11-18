@@ -11,12 +11,15 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/internal/phasetelemetry"
+	"azure.ai.projects/internal/provisioning"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -26,6 +29,8 @@ const (
 	deploymentCreated   deploymentMutation = "created"
 	deploymentReplaced  deploymentMutation = "replaced"
 	deploymentUnchanged deploymentMutation = "unchanged"
+
+	defaultDeploymentCapacity = provisioning.DefaultDeploymentCapacity
 )
 
 type selectedDeployment struct {
@@ -77,6 +82,8 @@ func selectModelDeployment(
 	selection deploymentSelectionOptions,
 	noPrompt bool,
 ) (*selectedDeployment, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.DeploymentReconciliation)()
+
 	if err := validateDeploymentSelection(selection); err != nil {
 		return nil, err
 	}
@@ -105,8 +112,8 @@ func selectModelDeployment(
 	if selection.Capacity > 0 {
 		options.Capacity = new(selection.Capacity)
 	}
-	candidates, err := resolveDeploymentCandidates(
-		ctx, client, azureContext, modelName, options,
+	candidates, err := resolveDeploymentCandidatesWithFallback(
+		ctx, client, azureContext, modelName, options, selection.Capacity == 0,
 	)
 	if err != nil {
 		return nil, err
@@ -233,34 +240,11 @@ func resolveDeploymentCapacity(candidate *azdext.AiModelDeployment) (int32, erro
 }
 
 func deploymentCapacityBaseline(sku *azdext.AiModelSku) int32 {
-	if minCapacity := sku.GetMinCapacity(); minCapacity > 0 {
-		return minCapacity
-	}
-	if capacityStep := sku.GetCapacityStep(); capacityStep > 0 {
-		return capacityStep
-	}
-	return 1
+	return provisioning.DeploymentCapacityBaseline(sku)
 }
 
 func deploymentCapacityValid(sku *azdext.AiModelSku, capacity int32) bool {
-	if capacity <= 0 {
-		return false
-	}
-	if minCapacity := sku.GetMinCapacity(); minCapacity > 0 &&
-		capacity < minCapacity {
-		return false
-	}
-	if maxCapacity := sku.GetMaxCapacity(); maxCapacity > 0 &&
-		capacity > maxCapacity {
-		return false
-	}
-	if capacityStep := sku.GetCapacityStep(); capacityStep > 0 {
-		baseline := deploymentCapacityBaseline(sku)
-		if capacity < baseline || (capacity-baseline)%capacityStep != 0 {
-			return false
-		}
-	}
-	return true
+	return provisioning.DeploymentCapacityValid(sku, capacity)
 }
 
 func validateDeploymentSelection(selection deploymentSelectionOptions) error {
@@ -319,6 +303,19 @@ func resolveDeploymentCandidates(
 	modelName string,
 	options *azdext.AiModelDeploymentOptions,
 ) ([]*azdext.AiModelDeployment, error) {
+	return resolveDeploymentCandidatesWithFallback(
+		ctx, client, azureContext, modelName, options, false,
+	)
+}
+
+func resolveDeploymentCandidatesWithFallback(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	modelName string,
+	options *azdext.AiModelDeploymentOptions,
+	fallbackCapacity bool,
+) ([]*azdext.AiModelDeployment, error) {
 	if options == nil || len(options.GetLocations()) == 0 {
 		return nil, missingDeploymentLocationError()
 	}
@@ -326,7 +323,7 @@ func resolveDeploymentCandidates(
 	if len(locations) <= 1 {
 		return resolveDeploymentCandidatesAtLocation(
 			ctx, client, azureContext, modelName, options,
-			len(locations) == 1,
+			len(locations) == 1, fallbackCapacity,
 		)
 	}
 
@@ -340,7 +337,7 @@ func resolveDeploymentCandidates(
 			Capacity:  options.Capacity,
 		}
 		locationCandidates, err := resolveDeploymentCandidatesAtLocation(
-			ctx, client, azureContext, modelName, locationOptions, true,
+			ctx, client, azureContext, modelName, locationOptions, true, fallbackCapacity,
 		)
 		if err != nil {
 			if isDeploymentNoMatchError(err) {
@@ -382,7 +379,10 @@ func resolveDeploymentCandidatesAtLocation(
 	modelName string,
 	options *azdext.AiModelDeploymentOptions,
 	checkQuota bool,
+	fallbackCapacity bool,
 ) ([]*azdext.AiModelDeployment, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.AzureQuery)()
+
 	request := &azdext.ResolveModelDeploymentsRequest{
 		AzureContext: azureContext,
 		ModelName:    modelName,
@@ -395,7 +395,35 @@ func resolveDeploymentCandidatesAtLocation(
 	if err != nil {
 		return nil, fmt.Errorf("resolve model deployment %q: %w", modelName, err)
 	}
-	return response.GetDeployments(), nil
+	if !fallbackCapacity {
+		return response.GetDeployments(), nil
+	}
+	deployments := make([]*azdext.AiModelDeployment, 0, len(response.GetDeployments()))
+	for _, candidate := range response.GetDeployments() {
+		resolved, ok := applyFallbackDefaultCapacity(candidate)
+		if !ok {
+			continue
+		}
+		deployments = append(deployments, resolved)
+	}
+	return deployments, nil
+}
+
+func applyFallbackDefaultCapacity(candidate *azdext.AiModelDeployment) (*azdext.AiModelDeployment, bool) {
+	if candidate == nil {
+		return nil, false
+	}
+	sku := candidate.GetSku()
+	if sku == nil {
+		return candidate, true
+	}
+	capacity, ok := provisioning.ClampDeploymentCapacity(candidate, defaultDeploymentCapacity)
+	if !ok {
+		return nil, false
+	}
+	cloned := proto.Clone(candidate).(*azdext.AiModelDeployment)
+	cloned.Capacity = capacity
+	return cloned, true
 }
 
 func promptForDeploymentCandidate(
@@ -463,6 +491,7 @@ func deploymentCandidateKey(candidate *azdext.AiModelDeployment) string {
 		candidate.GetLocation(),
 		candidate.GetModelName(),
 		candidate.GetVersion(),
+		fmt.Sprintf("%02d", provisioning.SkuPriority(sku)),
 		sku,
 		fmt.Sprintf("%09d", candidate.GetCapacity()),
 	}, "\x00")
@@ -475,6 +504,8 @@ func reconcileDeploymentWithRollback(
 	requested synthesis.Deployment,
 	force bool,
 ) (deploymentMutation, func() error, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.ConfigurationSave)()
+
 	service, _, err := reconciler.discoverProjectService(ctx)
 	if err != nil {
 		return "", nil, err

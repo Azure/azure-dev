@@ -1,11 +1,11 @@
 # Azure AI Toolboxes Extension - Agent Instructions
 
-Use this file together with `cli/azd/AGENTS.md`. This guide supplements the root azd
-instructions with the conventions that are specific to this extension.
+Use this file together with the [shared extension guide](../AGENTS.md) and
+`cli/azd/AGENTS.md`. This guide adds conventions specific to this extension.
 
 ## Overview
 
-`azure.ai.toolboxes` is a first-party azd extension under
+`azure.ai.toolboxes` is a Microsoft-authored azd extension under
 `cli/azd/extensions/azure.ai.toolboxes/`. It runs as a separate Go binary and talks
 to the azd host over gRPC.
 
@@ -32,22 +32,7 @@ azd x build
 go build
 ```
 
-If extension work depends on a new azd core change, plan for two PRs:
-
-1. Land the core change in `cli/azd` first.
-2. Land the extension change after that, updating this module to the newer azd
-   dependency with `go get github.com/azure/azure-dev/cli/azd && go mod tidy`.
-
-For local development, draft work, or validating both sides together before the
-core PR is merged, you may temporarily add:
-
-```go
-replace github.com/azure/azure-dev/cli/azd => ../../
-```
-
-That `replace` points this extension at your local `cli/azd` checkout instead of
-the version in `go.mod`. Do not merge the extension with that `replace` still
-present.
+For changes that depend on core, follow the [core dependency guidance](../AGENTS.md#core-dependency-changes).
 
 ## Package boundaries
 
@@ -204,7 +189,6 @@ log.Printf("No toolboxes found on project")                    // use fmt.Print*
 
 ## Other extension conventions
 
-- Use modern Go 1.26 patterns where they help readability.
 - Reserved azd globals (`--output`, `--no-prompt`) are inherited from `extCtx`,
   not registered as flags on each verb.
 - Lowercase-normalize `--output` when reading it from `extCtx` so downstream

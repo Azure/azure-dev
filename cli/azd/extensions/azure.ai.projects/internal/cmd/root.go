@@ -1,14 +1,17 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore helpformat
+// cspell:ignore helpformat BYOAKS
 package cmd
 
 import (
 	"context"
+	"os"
+	"strconv"
 
 	"azure.ai.projects/internal/helpformat"
 	"azure.ai.projects/internal/provisioning"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -18,7 +21,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "project",
 		Use:   "project <command> [options]",
-		Short: "Manage Microsoft Foundry Project resources from your terminal. (Preview)",
+		Short: "Manage Microsoft Foundry Project resources from your terminal.",
 	})
 
 	rootCmd.SilenceUsage = true
@@ -37,20 +40,33 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newProjectShowCommand(extCtx))
 	rootCmd.AddCommand(newProjectAddCommand(extCtx))
 	rootCmd.AddCommand(newProjectDeploymentCommand(extCtx))
-	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
+	listenCommand := azdext.NewListenCommand(configureExtensionHost)
+	if enabled, err := strconv.ParseBool(os.Getenv(synthesis.BYOAKSEnvVar)); err == nil && enabled {
+		listenCommand = newListenCommand(configureExtensionHostWithReport)
+	}
+	rootCmd.AddCommand(listenCommand)
 
 	rootCmd.Example = `  # Configure a Foundry project in the current azd project
   azd ai project add
 
   # Inspect the resolved project endpoint
   azd ai project show`
-	helpformat.Install(rootCmd, "azd ai", projectHelpFooter)
+	helpformat.Install(rootCmd, "azd ai", projectHelpFooter())
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		applyProjectACRVisibility(rootCmd)
+		defaultHelp(cmd, args)
+	})
 
 	return rootCmd
 }
 
 // configureExtensionHost registers project lifecycle providers.
 func configureExtensionHost(host *azdext.ExtensionHost) {
+	configureExtensionHostWithReport(host, nil)
+}
+
+func configureExtensionHostWithReport(host *azdext.ExtensionHost, report func(string)) {
 	azdClient := host.Client()
 	host.
 		WithServiceTargetPreview(
@@ -64,9 +80,17 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 			func() azdext.ProvisioningProvider {
 				return provisioning.NewFoundryProvisioningProvider(
 					azdClient,
+					report,
 				)
 			},
 		).
+		WithValidationCheck(azdext.ValidationCheckRegistration{
+			CheckType: azdext.ValidationCheckTypeProvision,
+			RuleID:    provisioning.ACRRemoteBuildRuleID,
+			Factory: func() azdext.ValidationCheckProvider {
+				return provisioning.NewACRRemoteBuildCheck(azdClient)
+			},
+		}).
 		WithValidationCheck(azdext.ValidationCheckRegistration{
 			CheckType: azdext.ValidationCheckTypeProvision,
 			RuleID:    provisioning.ResourceGroupLocationRuleID,
@@ -76,6 +100,12 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 				)
 			},
 		}).
+		WithProjectEventHandler(
+			"prepackage",
+			func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+				return validateProjectACRBuilds(ctx, azdClient, args)
+			},
+		).
 		WithProjectEventHandler(
 			"preprovision",
 			func(
@@ -93,5 +123,8 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 			) error {
 				return projectLifecycleHandler(ctx, azdClient, args)
 			},
-		)
+		).
+		WithProjectEventHandler("predown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return synthesis.RequireACRReuseForProjectState(ctx, azdClient, args.Project)
+		})
 }

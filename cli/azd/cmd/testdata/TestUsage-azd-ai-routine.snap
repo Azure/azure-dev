@@ -1,5 +1,5 @@
 
-Manage Microsoft Foundry Routines from your terminal. (Beta)
+Manage Microsoft Foundry Routines from your terminal.
 
 Usage
   azd ai routine [flags]

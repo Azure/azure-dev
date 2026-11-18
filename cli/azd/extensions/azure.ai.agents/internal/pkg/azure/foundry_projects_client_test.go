@@ -5,6 +5,8 @@ package azure
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -89,82 +91,72 @@ func TestValidateNextLinkOrigin_NilBaseURL(t *testing.T) {
 }
 
 func TestNewFoundryProjectsClient_InvalidInputs(t *testing.T) {
-	tests := []struct {
-		name        string
-		accountName string
-		projectName string
-	}{
-		{
-			name:        "account name with control characters",
-			accountName: "account\x00name",
-			projectName: "project",
-		},
-		{
-			name:        "project name with control characters",
-			accountName: "account",
-			projectName: "project\x00name",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client, err := NewFoundryProjectsClient(tt.accountName, tt.projectName, nil)
-			// If the URL parses successfully (Go is permissive), client should still be non-nil
-			// The key thing is that the constructor doesn't panic
-			if err != nil {
-				require.Nil(t, client)
-			} else {
-				require.NotNil(t, client)
-			}
+	t.Parallel()
+	for _, endpoint := range []string{
+		"", " \t ", "https://account\x00name.services.ai.azure.com/api/projects/project",
+		"https://account.services.ai.azure.com/api/projects/project\x00name",
+		"https://example.com/api/projects/project",
+		"http://account.services.ai.azure.com/api/projects/project",
+		"https://account.services.ai.azure.com",
+		"https://user:password@account.services.ai.azure.com/api/projects/project?sig=secret",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			client, err := NewFoundryProjectsClient(endpoint, nil)
+			require.Error(t, err)
+			require.Nil(t, client)
+			require.NotContains(t, err.Error(), "password")
+			require.NotContains(t, err.Error(), "secret")
 		})
 	}
 }
 
-func TestNewFoundryProjectsClient_EmptyInputs(t *testing.T) {
-	tests := []struct {
-		name        string
-		accountName string
-		projectName string
-		errContains string
-	}{
-		{
-			name:        "empty account name",
-			accountName: "",
-			projectName: "myproject",
-			errContains: "accountName must not be empty",
-		},
-		{
-			name:        "whitespace-only account name",
-			accountName: "   ",
-			projectName: "myproject",
-			errContains: "accountName must not be empty",
-		},
-		{
-			name:        "empty project name",
-			accountName: "myaccount",
-			projectName: "",
-			errContains: "projectName must not be empty",
-		},
-		{
-			name:        "whitespace-only project name",
-			accountName: "myaccount",
-			projectName: "  \t ",
-			errContains: "projectName must not be empty",
-		},
-		{
-			name:        "both empty",
-			accountName: "",
-			projectName: "",
-			errContains: "accountName must not be empty",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client, err := NewFoundryProjectsClient(tt.accountName, tt.projectName, nil)
-			require.Error(t, err)
-			require.Nil(t, client)
-			require.Contains(t, err.Error(), tt.errContains)
+func TestFoundryProjectsClient_CustomSubdomainRequests(t *testing.T) {
+	t.Parallel()
+	const endpoint = "https://custom-dns.services.ai.azure.com/api/projects/project"
+	for _, crossOrigin := range []bool{false, true} {
+		t.Run(fmt.Sprint(crossOrigin), func(t *testing.T) {
+			t.Parallel()
+			client, err := NewFoundryProjectsClient(endpoint+"/", nil)
+			require.NoError(t, err)
+			var requests []string
+			client.pipeline = newTestPipeline(func(request *http.Request) (*http.Response, error) {
+				require.Equal(t, "custom-dns.services.ai.azure.com", request.URL.Host)
+				requests = append(requests, request.Method+" "+request.URL.String())
+				body := `{"value":[{"name":"registry"}]}`
+				if len(requests) == 1 {
+					next := endpoint + "/connections?skip=1"
+					if crossOrigin {
+						next = "https://resource-account.services.ai.azure.com/api/projects/project/connections?sig=secret"
+					}
+					body = fmt.Sprintf(`{"value":[{"name":"insights"}],"nextLink":%q}`, next)
+				}
+				if request.Method == http.MethodPost {
+					body = `{"name":"insights","type":"AppInsights"}`
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+					Body: io.NopCloser(strings.NewReader(body)), Request: request,
+				}, nil
+			})
+			connections, err := client.GetAllConnections(t.Context())
+			if crossOrigin {
+				require.ErrorContains(t, err, "origin mismatch")
+				require.NotContains(t, err.Error(), "sig=")
+				require.NotContains(t, err.Error(), "secret")
+				require.Len(t, requests, 1)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, connections, 2)
+			require.Equal(t, []string{
+				"GET " + endpoint + "/connections?api-version=v1",
+				"GET " + endpoint + "/connections?skip=1",
+			}, requests)
+			connection, err := client.GetConnectionWithCredentials(t.Context(), "insights")
+			require.NoError(t, err)
+			require.Equal(t, "insights", connection.Name)
+			require.Equal(t, "POST "+endpoint+
+				"/connections/insights/getConnectionWithCredentials?api-version=v1", requests[2])
 		})
 	}
 }

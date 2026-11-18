@@ -1609,6 +1609,15 @@ protocols:
 			want: ProtocolInvocationsWS,
 		},
 		{
+			name: "single voice conversation engine protocol",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: voice_conversation_engine
+    version: "1.0.0"
+`,
+			want: ProtocolVoiceConversationEngine,
+		},
+		{
 			name: "single activity protocol",
 			manifest: `kind: hostedAgent
 protocols:
@@ -1643,6 +1652,17 @@ protocols:
 protocols:
   - protocol: invocations_ws
     version: "2.0.0"
+  - protocol: responses
+    version: "2.0.0"
+`,
+			want: ProtocolResponses,
+		},
+		{
+			name: "responses wins over voice conversation engine",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: voice_conversation_engine
+    version: "1.0.0"
   - protocol: responses
     version: "2.0.0"
 `,

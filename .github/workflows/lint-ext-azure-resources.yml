@@ -1,0 +1,47 @@
+name: ext-azure-resources-lint
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/azure.resources/**"
+      - "cli/azd/pkg/azdext/**"
+      - ".github/workflows/lint-ext-azure-resources.yml"
+      - ".github/workflows/verify-ext-providers.yml"
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint-go.yml
+    with:
+      working-directory: cli/azd/extensions/azure.resources
+
+  verify-providers:
+    uses: ./.github/workflows/verify-ext-providers.yml
+    with:
+      working-directory: cli/azd/extensions/azure.resources
+
+  test:
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: cli/azd/extensions/azure.resources
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: cli/azd/go.mod
+      - run: go build ./...
+      - run: go test ./... -race -count=1

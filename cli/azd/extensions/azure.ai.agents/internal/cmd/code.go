@@ -21,7 +21,7 @@ import (
 func newCodeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "code",
-		Short: "Manage agent source code. (Preview)",
+		Short: "Manage agent source code.",
 		Long:  `Commands for managing the source code of code-based hosted agents.`,
 		Example: `  # Download the deployed agent source code
   azd ai agent code download`,
@@ -51,7 +51,7 @@ func newCodeDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "download [service]",
-		Short: "Download agent source code from Foundry. (Preview)",
+		Short: "Download agent source code from Foundry.",
 		Long: `Download the source code of a code-based hosted agent.
 
 Downloads the deployed source code as a zip archive and extracts it to

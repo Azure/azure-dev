@@ -6,6 +6,7 @@ trigger:
   paths:
     include:
       - cli/azd/extensions/azure.ai.agents
+      - cli/azd/extensions/azure.ai.projects/synthesis
       - cli/azd/extensions/scripts/ci-build.ps1
       - /eng/pipelines/templates/stages/release-azd-extension.yml
       - /eng/pipelines/templates/stages/publish-extension-pr.yml
@@ -15,9 +16,15 @@ trigger:
       - /eng/pipelines/templates/variables/image.yml
 
 pr:
+  drafts: false
+  autoCancel: true
+  branches:
+    include:
+      - main
   paths:
     include:
       - cli/azd/extensions/azure.ai.agents
+      - cli/azd/extensions/azure.ai.projects/synthesis
       - cli/azd/extensions/scripts/ci-build.ps1
       - eng/pipelines/release-ext-azure-ai-agents.yml
       - /eng/pipelines/templates/stages/release-azd-extension.yml

@@ -93,7 +93,7 @@ func (rs *ResourceService) GetResource(
 			Type:     *res.Type,
 			Location: *res.Location,
 		},
-		Kind: *res.Kind,
+		Kind: convert.ToValueWithDefault(res.Kind, ""),
 	}, nil
 }
 

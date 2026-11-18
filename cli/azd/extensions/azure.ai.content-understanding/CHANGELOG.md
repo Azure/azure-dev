@@ -1,6 +1,31 @@
 # Release History
 
-## 0.1.1-preview (Unreleased)
+## 0.1.2-preview (2026-11-12)
+
+### Features Added
+
+- Pretty-print single analysis results by default, with Markdown tables/cards
+  and JSON syntax coloring. Use `--pretty=false` (`-p=false`) for original stdout
+  content. Usage and dry-run support pretty presentation.
+- Add explicit `--output markdown`, equivalent to `default`.
+- Use theme-adaptive syntax highlighting for JSON terminal previews.
+- Include requested Markdown usage in YAML front matter for stdout and saved results.
+
+### Breaking Changes
+
+- Remove `--llm-input` immediately: use `--output markdown` for true or
+  `--output json` for false. Remove analyze's `--output none` without replacement.
+- Redirected analysis output now uses uncolored pretty presentation by default;
+  use `--pretty=false` to retain original Markdown/HTML.
+- Markdown stdout with `--usage` no longer uses a JSON wrapper.
+
+### Other Changes
+
+- Improve the readability of `azd ai cu version` text output.
+- Highlight commands, paths, and identifiers in infrastructure generation
+  guidance, and use blue text for wizard questions. Respect `NO_COLOR`.
+
+## 0.1.1-preview (2026-11-03)
 
 ### Features Added
 

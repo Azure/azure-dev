@@ -6,15 +6,17 @@ package cmd
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -591,7 +593,10 @@ services:
 		"bicep",
 		mustReadProjectFile(t, root),
 		"https://account.services.ai.azure.com/api/projects/new",
-		newID,
+		&resolvedProject{
+			ResourceId: newID,
+			Endpoint:   "https://account.services.ai.azure.com/api/projects/new",
+		},
 		env,
 	)
 	require.NoError(t, err)
@@ -631,7 +636,10 @@ func TestEjectExistingProjectRollbackRemovesStagedFiles(t *testing.T) {
 		"bicep",
 		mustReadProjectFile(t, root),
 		"https://account.services.ai.azure.com/api/projects/project",
-		resourceID,
+		&resolvedProject{
+			ResourceId: resourceID,
+			Endpoint:   "https://account.services.ai.azure.com/api/projects/project",
+		},
 		map[string]string{"AZD_AGENT_SKIP_ACR": "true"},
 	)
 
@@ -684,11 +692,68 @@ func TestWriteExistingProjectTerraformAcrModes(t *testing.T) {
 			} else {
 				assert.NoFileExists(t, registryPath)
 			}
+			adjunctPath := filepath.Join(dir, "adjunct-resource-group.tf")
+			if test.mode == projectEjectAcrCreate {
+				// #nosec G304
+				adjunct, err := os.ReadFile(adjunctPath)
+				require.NoError(t, err)
+				assert.Contains(t, string(adjunct), `resource "azurerm_resource_group" "adjunct"`)
+				// #nosec G304
+				registry, err := os.ReadFile(registryPath)
+				require.NoError(t, err)
+				assert.NotContains(t, string(registry), `resource "azurerm_resource_group"`)
+				assert.Contains(t, string(registry), "azurerm_resource_group.adjunct.name")
+			} else {
+				assert.NoFileExists(t, adjunctPath)
+			}
 			// #nosec G304
 			outputs, err := os.ReadFile(filepath.Join(dir, "outputs.tf"))
 			require.NoError(t, err)
 			assert.Contains(t, string(outputs), `AZD_FOUNDRY_ACR_MODE`)
 			assertProjectEjectionOmitsConnections(t, dir)
+		})
+	}
+}
+
+func TestWriteExistingProjectTerraformAcrTemplateSetsAvoidDuplicateProjectData(t *testing.T) {
+	params := map[string]any{
+		"deployments": []synthesis.Deployment{},
+	}
+	tests := []struct {
+		name         string
+		mode         projectEjectAcrMode
+		pullAssigned bool
+	}{
+		{name: "none", mode: projectEjectAcrNone},
+		{name: "create", mode: projectEjectAcrCreate},
+		{name: "reuse-connect", mode: projectEjectAcrReuseConnect},
+		{name: "reuse-connect-pull-assigned", mode: projectEjectAcrReuseConnect, pullAssigned: true},
+		{name: "already-connected", mode: projectEjectAcrAlreadyConnected},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			values := map[string]string{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT": "https://registry.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+					"Microsoft.ContainerRegistry/registries/registry",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED": map[bool]string{true: "true", false: "false"}[test.pullAssigned],
+			}
+			require.NoError(t, writeExistingProjectTerraform(dir, "main", params, test.mode, values))
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			declarations := 0
+			for _, entry := range entries {
+				if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".tf") {
+					continue
+				}
+				// #nosec G304 -- path is under the test-owned root.
+				content, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+				require.NoError(t, err)
+				declarations += strings.Count(string(content), `data "azapi_resource" "project"`)
+			}
+			require.Equal(t, 1, declarations,
+				"exactly one project data declaration must exist in the rendered Terraform template set")
 		})
 	}
 }
@@ -875,6 +940,27 @@ func TestExistingProjectEjectionDoesNotEmitReplacedRegistryState(t *testing.T) {
 	}
 }
 
+func TestWriteExistingProjectBicepModuleNamedMonitoringDoesNotCollide(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, writeExistingProjectBicep(
+		dir, "monitoring", map[string]any{"deployments": []synthesis.Deployment{}}, projectEjectAcrNone, nil,
+	))
+
+	// #nosec G304 -- test reads from its own temp directory
+	entrypoint, err := os.ReadFile(filepath.Join(dir, "monitoring.bicep"))
+	require.NoError(t, err)
+	// #nosec G304 -- test reads from its own temp directory
+	moduleTemplate, err := os.ReadFile(filepath.Join(dir, "modules", "monitoring.bicep"))
+	require.NoError(t, err)
+	embedded, err := fs.ReadFile(synthesis.TemplatesFS(), "templates/modules/monitoring.bicep")
+	require.NoError(t, err)
+
+	assert.Equal(t, string(embedded), string(moduleTemplate), "monitoring module must be the embedded template")
+	assert.NotEqual(t, string(embedded), string(entrypoint), "entrypoint must not be the monitoring module")
+	assert.Contains(t, string(entrypoint), "modules/monitoring.bicep")
+	assert.FileExists(t, filepath.Join(dir, "modules", "monitoring-connection.bicep"))
+}
+
 func TestWriteExistingProjectBicepAcrModes(t *testing.T) {
 	params := map[string]any{
 		"deployments": []synthesis.Deployment{},
@@ -1037,6 +1123,12 @@ type transactionEnvironmentServer struct {
 	failKey string
 	calls   int
 	setLog  []string
+}
+
+func (s *transactionEnvironmentServer) GetConfig(
+	context.Context, *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	return &azdext.GetConfigResponse{}, nil
 }
 
 func (s *transactionEnvironmentServer) Select(

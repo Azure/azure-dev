@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/phasetelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -348,6 +349,8 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 	env map[string]string,
 	progress azdext.ProgressReporter,
 ) (map[string]any, error) {
+	defer phasetelemetry.Start(ctx, phasetelemetry.DependencyValidation)()
+
 	// The skills/ convention folder sits next to the file
 	// that supplies the definition. With the definition inline on the service
 	// entry there is no such file, so they are anchored at the service

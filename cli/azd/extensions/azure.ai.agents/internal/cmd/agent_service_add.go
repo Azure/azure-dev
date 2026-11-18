@@ -18,7 +18,6 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/pkg/projectconfig"
 	projectpkg "azureaiagent/internal/project"
@@ -211,10 +210,6 @@ project tree. Deploy it with
 		"Override the Agent service's project directory.",
 	)
 	_ = cmd.MarkFlagRequired("file")
-	previewHelpText(cmd, featureflags.Voice,
-		"a prompt, hosted (including code\ndeployment), voice, or prompt-voice Agent.",
-		"a prompt or hosted (including code\ndeployment) Agent.")
-
 	return azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"default", "json"},
@@ -330,7 +325,7 @@ func (a *agentServiceAddAction) Run(ctx context.Context) (runErr error) {
 	if err != nil {
 		return err
 	}
-	if err := projectpkg.RequireDefinitionFeatures(definition.ResolvedProperties); err != nil {
+	if err := projectpkg.RequireDefinitionFeatures(definition.ResolvedProperties, a.errOut); err != nil {
 		return err
 	}
 	dependencies, err := planAgentServiceUses(

@@ -22,11 +22,12 @@ const (
 	AgentProtocolActivityProtocol AgentProtocol = "activity"
 	// AgentProtocolActivityProtocolLegacy is the pre-rename Activity wire value,
 	// preserved for back-compat when reading manifests authored before the rename.
-	AgentProtocolActivityProtocolLegacy AgentProtocol = "activity_protocol"
-	AgentProtocolInvocations            AgentProtocol = "invocations"
-	AgentProtocolInvocationsWS          AgentProtocol = "invocations_ws"
-	AgentProtocolResponses              AgentProtocol = "responses"
-	AgentProtocolA2A                    AgentProtocol = "a2a"
+	AgentProtocolActivityProtocolLegacy  AgentProtocol = "activity_protocol"
+	AgentProtocolInvocations             AgentProtocol = "invocations"
+	AgentProtocolInvocationsWS           AgentProtocol = "invocations_ws"
+	AgentProtocolVoiceConversationEngine AgentProtocol = "voice_conversation_engine"
+	AgentProtocolResponses               AgentProtocol = "responses"
+	AgentProtocolA2A                     AgentProtocol = "a2a"
 )
 
 // IsActivityProtocolName reports whether the given definition-level protocol name

@@ -157,7 +157,7 @@ func (config *ProjectConfig) Validate() error {
 			}
 		}
 		infra := provisioning.Options{Layers: layer.Infra}
-		if err := infra.ValidateProjectLayers(); err != nil {
+		if err := infra.Validate(); err != nil {
 			return fmt.Errorf("validating layer %q: %w", layer.Name, err)
 		}
 	}

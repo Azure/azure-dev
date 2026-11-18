@@ -23,6 +23,34 @@ func frontMatter(t *testing.T, output string) map[string]any {
 	return decoded
 }
 
+func TestMarkdownOperationUsage(t *testing.T) {
+	raw := json.RawMessage(`{"contents":[
+		{"kind":"document","mimeType":"application/pdf","metadata":{"usage":"document metadata"},"markdown":"First"},
+		{"kind":"document","mimeType":"application/pdf","markdown":"Second"}]}`)
+	usage := json.RawMessage(`{"large":9007199254740993,"fraction":1.234567890123456789,"zero":0,"future":[null,{}]}`)
+	output, err := renderLLM(raw, usage)
+	require.NoError(t, err)
+	blocks := strings.Split(output, "\n\n*****\n\n")
+	require.Len(t, blocks, 2)
+	first := frontMatter(t, blocks[0])
+	assert.Contains(t, first, "usage")
+	assert.Equal(t, map[string]any{"usage": "document metadata"}, first["metadata"])
+	assert.NotContains(t, frontMatter(t, blocks[1]), "usage")
+	assert.Contains(t, blocks[0], "9007199254740993")
+	assert.Contains(t, blocks[0], "1.234567890123456789")
+	assert.True(t, strings.HasSuffix(blocks[0], "First"))
+	assert.True(t, strings.HasSuffix(blocks[1], "Second"))
+
+	original, err := RenderLLM(raw)
+	require.NoError(t, err)
+	assert.NotContains(t, frontMatter(t, original), "usage")
+	_, err = renderLLM(raw, json.RawMessage(`{`))
+	require.Error(t, err)
+	missing, err := renderLLM(raw, json.RawMessage(`null`))
+	require.NoError(t, err)
+	assert.Nil(t, frontMatter(t, missing)["usage"])
+}
+
 func TestLLMFieldTypesMetadataAndWarnings(t *testing.T) {
 	raw := `{"contents":[{"kind":"document","mimeType":"application/pdf","metadata":{"empty":{},"array":[],"flag":true},
 		"fields":{

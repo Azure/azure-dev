@@ -4,14 +4,37 @@
 package cmd
 
 import (
+	"bytes"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/stretchr/testify/require"
 )
 
 const maxCommandSearchDepth = 16
+
+func TestInspectorHelpHasNoMaturityLabels(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, path := range [][]string{nil, {"launch"}} {
+		t.Run(strings.Join(append([]string{"inspector"}, path...), "_"), func(t *testing.T) {
+			root := NewRootCommand()
+			command, _, err := root.Find(path)
+			require.NoError(t, err)
+			require.NotRegexp(t, `(?i)\((preview|beta)\)`, command.Short+"\n"+command.Long)
+
+			var buf bytes.Buffer
+			root.SetOut(&buf)
+			root.SetErr(&buf)
+			root.SetArgs(append(append([]string{}, path...), "--help"))
+			require.NoError(t, root.Execute())
+			require.Contains(t, buf.String(), "Usage:\n  inspector")
+			require.NotRegexp(t, `(?i)\((preview|beta)\)`, buf.String())
+		})
+	}
+}
 
 func TestRootCommandLaunchIsExplicitSubcommand(t *testing.T) {
 	root := NewRootCommand()

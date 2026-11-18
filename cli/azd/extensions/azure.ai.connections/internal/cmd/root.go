@@ -18,7 +18,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "connection",
 		Use:   "connection <command> [options]",
-		Short: "Manage Microsoft Foundry Connections from your terminal. (Preview)",
+		Short: "Manage Microsoft Foundry Connections from your terminal.",
 	})
 
 	rootCmd.SilenceUsage = true

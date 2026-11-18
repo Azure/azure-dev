@@ -1,6 +1,6 @@
 # Foundry Routines
 
-Manage Microsoft Foundry Routines from your terminal. (Preview)
+Manage Microsoft Foundry Routines from your terminal.
 
 Requires azd 1.37.0 or later.
 

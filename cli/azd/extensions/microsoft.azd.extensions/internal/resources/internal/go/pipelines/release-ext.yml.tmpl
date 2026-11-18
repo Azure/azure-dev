@@ -15,6 +15,11 @@ trigger:
       - /eng/scripts/Set-ExtensionVersionVariable.ps1
 
 pr:
+  drafts: false
+  autoCancel: true
+  branches:
+    include:
+      - main
   paths:
     include:
       - cli/azd/extensions/{{.Metadata.Id}}

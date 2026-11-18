@@ -1,0 +1,26 @@
+import: ../../azd/.vscode/cspell.yaml
+words:
+  - aiservices
+  - armauthorization
+  - authorizationfailed
+  - authorizationpermissionmismatch
+  - azpolicy
+  - envsubst
+  - exterrors
+  - ferrors
+  - idempotently
+  - managementgroups
+  - permissiondenied
+  - policyassignments
+  - policydefinitions
+  - policyexemptions
+  - policyresources
+  - resourcecontainers
+  - roledefinitions
+  - skiptoken
+  - strcat
+  - todatetime
+  - tolower
+  - tostring
+ignorePaths:
+  - "**/*_test.go"

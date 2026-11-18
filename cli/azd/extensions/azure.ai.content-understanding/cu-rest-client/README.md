@@ -27,8 +27,6 @@ authentication contract.
 - Reads and polling use the configured retry policy and honor cancellation.
   Write submissions are not automatically retried or replayed after an
   authentication challenge.
-- Service and operation failures preserve typed status and safe diagnostic codes
-  without exposing raw service messages.
 
 See [client integration requirements](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/cu-rest-client/AZD_PROVENANCE.md) for the behavior to verify
 when changing the client dependency.

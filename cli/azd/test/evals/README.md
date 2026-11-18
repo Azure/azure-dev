@@ -16,27 +16,22 @@ npm ci
 
 ## Targets
 
-The scenario evals use GPT-5.6 Terra with GPT-5.6 Luna as the judge. Both experiment
-matrices keep Luna as the judge across their Sonnet 5 and Terra variants. The starter
-eval uses Sonnet 5 with Terra as its judge.
-The gRPC contract skill eval uses Terra for both the executor and judge.
-
 NOTE: the evals are a first pass, so you will see them fail - things have yet to be tuned.
 
 Each eval definition targets a different azd scenario. Run them via npm:
 
-| Command                          | Targets                                                                                      |
-| -------------------------------- | -------------------------------------------------------------------------------------------- |
-| `npm run eval:simple`            | `eval.yaml` — starter example showing Vally features (fixtures, worktrees)                   |
-| `npm run eval:qna`               | `eval-azd-qna.yaml` — asking the LLM about azd, but without any files (pure Q&A)             |
-| `npm run eval:deploy`            | `eval-azd-deploy.yaml` — does the model suggest azd for an app + Azure, skill loaded         |
-| `npm run eval:grpc-contracts`    | `eval-azd-grpc-contracts.yaml` — validates v1/v1beta contract lifecycle guidance             |
-| `npm run eval:experiment`        | `eval-azd.experiments.yaml` — skills on/off baseline (see the file header)                   |
-| `npm run eval:foundry:skill`     | `eval-foundry-skill.yaml` — does the official Foundry skill route and comply with its own rules |
-| `npm run eval:foundry:authoring` | `eval-foundry-authoring.yaml` — editing Foundry service entries in `azure.yaml`              |
-| `npm run eval:foundry:cli`       | `eval-foundry-cli.yaml` — driving the real `azd ai` CLI offline                              |
-| `npm run eval:foundry:experiment`| `eval-foundry.experiments.yaml` — Foundry skill on/off × model                               |
-| `npm run report`                 | generates a simple report from latest eval and experiment runs                               |
+| Command                           | Targets                                                                                         |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `npm run eval:simple`             | `eval.yaml` — starter example showing Vally features (fixtures, worktrees)                      |
+| `npm run eval:qna`                | `eval-azd-qna.yaml` — asking the LLM about azd, but without any files (pure Q&A)                |
+| `npm run eval:deploy`             | `eval-azd-deploy.yaml` — does the model suggest azd for an app + Azure, skill loaded            |
+| `npm run eval:grpc-contracts`     | `eval-azd-grpc-contracts.yaml` — validates v1/v1beta contract lifecycle guidance                |
+| `npm run eval:experiment`         | `eval-azd.experiments.yaml` — skills on/off baseline (see the file header)                      |
+| `npm run eval:foundry:skill`      | `eval-foundry-skill.yaml` — does the official Foundry skill route and comply with its own rules |
+| `npm run eval:foundry:authoring`  | `eval-foundry-authoring.yaml` — editing Foundry service entries in `azure.yaml`                 |
+| `npm run eval:foundry:cli`        | `eval-foundry-cli.yaml` — driving the real `azd ai` CLI offline                                 |
+| `npm run eval:foundry:experiment` | `eval-foundry.experiments.yaml` — Foundry skill on/off × model                                  |
+| `npm run report`                  | generates a simple report from latest eval and experiment runs                                  |
 
 ## Main folders
 
@@ -73,11 +68,11 @@ These target the Foundry/AI extensions (`microsoft.foundry` and the `azure.ai.*`
 extensions under `cli/azd/extensions/`). They are a small seed meant to be built on,
 not a comprehensive suite.
 
-| Eval | Needs | What it asks |
-| --- | --- | --- |
-| `eval-foundry-skill.yaml` | the fetched skill | Does the official skill route to the right sub-skill, and does the agent tag azd commands the way the skill requires? |
-| `eval-foundry-authoring.yaml` | nothing | Can an agent migrate a legacy agent definition, and add a second agent across several turns? |
-| `eval-foundry-cli.yaml` | `azd` + Foundry extensions | Can an agent discover and drive the Foundry CLI, and stay read-only when asked? |
+| Eval                          | Needs                      | What it asks                                                                                                          |
+| ----------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `eval-foundry-skill.yaml`     | the fetched skill          | Does the official skill route to the right sub-skill, and does the agent tag azd commands the way the skill requires? |
+| `eval-foundry-authoring.yaml` | nothing                    | Can an agent migrate a legacy agent definition, and add a second agent across several turns?                          |
+| `eval-foundry-cli.yaml`       | `azd` + Foundry extensions | Can an agent discover and drive the Foundry CLI, and stay read-only when asked?                                       |
 
 Two stimuli each -- a pattern to copy rather than a sweep.
 

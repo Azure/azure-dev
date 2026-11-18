@@ -98,6 +98,15 @@ type Dependencies struct {
 		projectResourceID string,
 	) (*project.ProjectStorageRBACResult, error)
 
+	// probeProjectPolicy is a test seam: when non-nil it replaces the
+	// production `project.QueryProjectPolicy` call inside the
+	// `remote.policy` check.
+	probeProjectPolicy func(
+		ctx context.Context,
+		azdClient *azdext.AzdClient,
+		projectResourceID string,
+	) (*project.ProjectPolicyResult, error)
+
 	// readProjectResourceIDFn is a test seam: when non-nil it
 	// replaces the production `readProjectResourceID` call inside
 	// the `remote.rbac` check, letting unit tests exercise the
@@ -161,12 +170,12 @@ type Dependencies struct {
 	// replaces the production `realProbeFoundryConnections` call
 	// inside the check, letting unit tests cover the all-match /
 	// partial / none / probe-error branches without going through
-	// `azd auth` or hitting Foundry. The probe receives the account
-	// + project derived from `AZURE_AI_PROJECT_ID` and returns the
+	// `azd auth` or hitting Foundry. The probe receives the validated
+	// project endpoint surfaced by prior checks and returns the
 	// connection names that exist on that project.
 	probeFoundryConnections func(
 		ctx context.Context,
-		accountName, projectName string,
+		projectEndpoint string,
 	) ([]string, error)
 }
 

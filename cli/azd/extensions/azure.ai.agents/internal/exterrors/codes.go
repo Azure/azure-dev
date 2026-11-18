@@ -109,8 +109,10 @@ const (
 // These are usually paired with [Compatibility] for version mismatches.
 const (
 	CodeIncompatibleAzdVersion          = "incompatible_azd_version"
+	CodeIncompatibleProjectsExtension   = "incompatible_projects_extension"
 	CodeIncompleteAgentProtocolMetadata = "incomplete_agent_protocol_metadata"
 	CodeLegacyAgentProtocolMetadata     = "legacy_agent_protocol_metadata"
+	CodeAgentEndpointProtocolNotEnabled = "agent_endpoint_protocol_not_enabled"
 	CodeDeprecatedEvalCommand           = "deprecated_eval_command"
 	// CodeFeatureNotEnabled is returned when an opt-in extension feature is off.
 	CodeFeatureNotEnabled = "feature_not_enabled"
@@ -192,6 +194,15 @@ const (
 	CodeDeveloperMissingRoleAssignWriteRole = "developer_missing_role_assign_write_role"
 	CodeDeveloperMissingACRRole             = "developer_missing_acr_role"
 	CodeACRResolutionFailed                 = "acr_resolution_failed"
+)
+
+// Error codes for Azure Policy pre-flight checks.
+const (
+	CodeAgentPolicyBlocked            = "agent_policy_blocked"
+	CodeAgentKindBlockedByPolicy      = "agent_kind_blocked_by_policy"
+	CodeContainerImageBlockedByPolicy = "container_image_blocked_by_policy"
+	CodeModelBlockedByPolicy          = "model_blocked_by_policy"
+	CodeToolBlockedByPolicy           = "tool_blocked_by_policy"
 )
 
 // Error codes commonly used for internal errors.

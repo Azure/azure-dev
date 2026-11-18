@@ -96,6 +96,25 @@ func TestIsFoundryHost(t *testing.T) {
 	assert.False(t, isFoundryHost(""))
 }
 
+func TestValidateProjectEndpointMalformedURLsHideCredentials(t *testing.T) {
+	t.Parallel()
+	for _, endpoint := range []string{
+		"https://account.services.ai.azure.com/api/projects/%ZZ?sig=sensitive-query",
+		"https://user:sensitive-password@account.services.ai.azure.com" +
+			"/api/projects/%ZZ?sig=sensitive-query#sensitive-fragment",
+		"https://account.services.ai.azure.com:sensitive-port/api/projects/project?sig=sensitive-query",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			t.Parallel()
+			normalized, _, err := validateProjectEndpoint(endpoint)
+			require.ErrorContains(t, err, "invalid project endpoint URL")
+			assert.Empty(t, normalized)
+			assert.NotContains(t, err.Error(), "sensitive")
+			assert.NotContains(t, err.Error(), endpoint)
+		})
+	}
+}
+
 func TestNoProjectEndpointError(t *testing.T) {
 	t.Parallel()
 	err := noProjectEndpointError()

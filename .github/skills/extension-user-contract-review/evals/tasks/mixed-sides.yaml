@@ -16,12 +16,13 @@ inputs:
     The host supports both LEFT and RIGHT inline comments.
     Complete conversation and review history: empty, with no spec links or prior threads.
 graders:
-  - type: code
+  - type: program
     name: preserve-both-diff-sides
     config:
-      language: javascript
-      assertions:
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 2"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.map(c => c.side + ':' + c.line).sort().join(',') === 'LEFT:24,RIGHT:58'"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.every(c => c.path === 'cli/azd/extensions/example/internal/cmd/options.go' && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread'))"
-        - "/complete.*1 files? inspected; 2 new contract comments; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 2"
+        - "review.comments.map(c => c.side + ':' + c.line).sort().join(',') === 'LEFT:24,RIGHT:58'"
+        - "review.comments.every(c => c.path === 'cli/azd/extensions/example/internal/cmd/options.go' && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread'))"
+        - "/complete.*1 files? inspected; 2 new contract comments; 0 existing threads/.test(review.body)"

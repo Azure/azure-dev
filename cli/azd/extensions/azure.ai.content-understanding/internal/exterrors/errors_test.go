@@ -22,6 +22,21 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+func TestEndpointExampleDoesNotBypassDiagnosticRedaction(t *testing.T) {
+	const example = "https://<your-resource>.services.ai.azure.com"
+	for _, message := range []string{
+		"Use " + example + ". https://user:password@example.com/file?sig=secret#fragment",
+		"payload: " + example + " secret",
+		"Use " + example + "?sig=secret#fragment",
+	} {
+		safe := Redact(message)
+		for _, secret := range []string{"user:", "password", "sig=", "secret", "#fragment"} {
+			assert.NotContains(t, safe, secret)
+		}
+		assert.Equal(t, safe, Redact(safe))
+	}
+}
+
 func TestPreservesStructuredErrors(t *testing.T) {
 	hostError, err := status.New(codes.FailedPrecondition, "host message").WithDetails(
 		&azdext.ActionableErrorDetail{Suggestion: "host suggestion"},

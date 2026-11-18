@@ -18,13 +18,14 @@ inputs:
     "Approved experiences spec: https://github.com/example/experiences/pull/77".
     No timeout thread exists and no spec was supplied for timeout.
 graders:
-  - type: code
+  - type: program
     name: single-authored-anchor-with-own-spec-request
     config:
-      language: javascript
-      assertions:
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 1"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].path === 'cli/azd/extensions/example/schema/config.json' && JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].line === 14"
-        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.')"
-        - "!JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('/77')"
-        - "/complete.*2 files inspected; 1 new contract comments?; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
+      command: node
+      args:
+        - .github/skills/extension-user-contract-review/evals/review-grader.cjs
+        - "review.comments.length === 1"
+        - "review.comments[0].path === 'cli/azd/extensions/example/schema/config.json' && review.comments[0].line === 14"
+        - "review.comments[0].body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.')"
+        - "!review.comments[0].body.includes('/77')"
+        - "/complete.*2 files inspected; 1 new contract comments?; 0 existing threads/.test(review.body)"

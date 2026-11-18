@@ -259,11 +259,11 @@ func TestOptionsValidate(t *testing.T) {
 			)
 		})
 
-	t.Run("provider-managed legacy layer without path is invalid",
+	t.Run("default provider layer without path is invalid",
 		func(t *testing.T) {
 			opts := &Options{
 				Layers: []Options{
-					{Name: "foundry", Provider: ProviderKind("microsoft.foundry")},
+					{Name: "default"},
 				},
 			}
 			err := opts.Validate()
@@ -275,7 +275,17 @@ func TestOptionsValidate(t *testing.T) {
 			{Name: "foundry", Provider: ProviderKind("microsoft.foundry")},
 		}}
 
-		require.NoError(t, opts.ValidateProjectLayers())
+		require.NoError(t, opts.Validate())
+	})
+
+	t.Run("extension configuration remains opaque", func(t *testing.T) {
+		opts := &Options{Layers: []Options{{
+			Name: "application", Provider: "custom",
+			Config: map[string]any{"customSetting": []any{"value", true}},
+		}}}
+
+		require.NotContains(t, BuiltInProviderKinds(), ProviderKind("custom"))
+		require.NoError(t, opts.Validate())
 	})
 
 	t.Run("legacy layers allow root provider config", func(t *testing.T) {

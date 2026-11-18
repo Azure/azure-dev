@@ -1,0 +1,1554 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.48.1.52935",
+      "templateHash": "12235604261462865043"
+    }
+  },
+  "definitions": {
+    "deploymentType": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "model": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "format": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        "sku": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "capacity": {
+              "type": "int"
+            }
+          }
+        }
+      }
+    }
+  },
+  "parameters": {
+    "projectResourceId": {
+      "type": "string"
+    },
+    "resourceGroupName": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "resourceTokenSalt": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {}
+    },
+    "deployments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/deploymentType"
+      },
+      "defaultValue": []
+    },
+    "acrMode": {
+      "type": "string",
+      "defaultValue": "none",
+      "allowedValues": [
+        "none",
+        "create",
+        "reuse-connect",
+        "already-connected"
+      ]
+    },
+    "existingAcrResourceId": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "existingAcrEndpoint": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "existingAcrConnectionName": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "acrPullAssigned": {
+      "type": "bool",
+      "defaultValue": false
+    },
+    "projectEndpoint": {
+      "type": "string"
+    },
+    "monitoringMode": {
+      "type": "string",
+      "defaultValue": "none",
+      "allowedValues": [
+        "none",
+        "reuse-connect",
+        "already-connected"
+      ]
+    },
+    "applicationInsightsResourceId": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "monitoringCreateConnection": {
+      "type": "bool",
+      "defaultValue": true
+    },
+    "monitoringConnectionName": {
+      "type": "string",
+      "defaultValue": ""
+    }
+  },
+  "variables": {
+    "projectIdParts": "[split(parameters('projectResourceId'), '/')]",
+    "projectSubscriptionId": "[variables('projectIdParts')[2]]",
+    "projectResourceGroupName": "[variables('projectIdParts')[4]]",
+    "accountName": "[variables('projectIdParts')[8]]",
+    "projectName": "[variables('projectIdParts')[10]]",
+    "tokenSeed": "[format('{0}{1}{2}', subscription().subscriptionId, parameters('resourceGroupName'), parameters('resourceTokenSalt'))]",
+    "acrName": "[format('cr{0}', toLower(uniqueString(variables('tokenSeed'))))]",
+    "createAcr": "[equals(parameters('acrMode'), 'create')]",
+    "createAdjunctGroup": "[variables('createAcr')]",
+    "reuseAcr": "[or(equals(parameters('acrMode'), 'reuse-connect'), equals(parameters('acrMode'), 'already-connected'))]",
+    "createAcrConnection": "[or(equals(parameters('acrMode'), 'create'), equals(parameters('acrMode'), 'reuse-connect'))]",
+    "effectiveAcrName": "[if(variables('createAcr'), variables('acrName'), if(variables('reuseAcr'), last(split(parameters('existingAcrResourceId'), '/')), ''))]"
+  },
+  "resources": {
+    "foundryAccount::project": {
+      "existing": true,
+      "type": "Microsoft.CognitiveServices/accounts/projects",
+      "apiVersion": "2025-04-01-preview",
+      "subscriptionId": "[variables('projectSubscriptionId')]",
+      "resourceGroup": "[variables('projectResourceGroupName')]",
+      "name": "[format('{0}/{1}', variables('accountName'), variables('projectName'))]"
+    },
+    "adjunctResourceGroup": {
+      "condition": "[variables('createAdjunctGroup')]",
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "[parameters('resourceGroupName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]"
+    },
+    "foundryAccount": {
+      "existing": true,
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2025-04-01-preview",
+      "subscriptionId": "[variables('projectSubscriptionId')]",
+      "resourceGroup": "[variables('projectResourceGroupName')]",
+      "name": "[variables('accountName')]"
+    },
+    "newContainerRegistry": {
+      "condition": "[variables('createAcr')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "container-registry",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "mode": {
+            "value": "create"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "registryName": {
+            "value": "[variables('acrName')]"
+          },
+          "pullPrincipalId": {
+            "value": "[reference('foundryAccount::project', '2025-04-01-preview', 'full').identity.principalId]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "2356462800975162710"
+            }
+          },
+          "parameters": {
+            "mode": {
+              "type": "string",
+              "allowedValues": [
+                "create",
+                "reuse-connect"
+              ]
+            },
+            "location": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {}
+            },
+            "registryName": {
+              "type": "string"
+            },
+            "pullPrincipalId": {
+              "type": "string"
+            },
+            "pullAssigned": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "accessOperationId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "pullRoleDefinitionId": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "variables": {
+            "acrPullRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
+            "repositoryReaderRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b93aa761-3e63-49ed-ac28-beffa264f7ac')]"
+          },
+          "resources": [
+            {
+              "condition": "[equals(parameters('mode'), 'create')]",
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-07-01",
+              "name": "[parameters('registryName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Premium"
+              },
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "adminUserEnabled": false,
+                "publicNetworkAccess": "Enabled",
+                "zoneRedundancy": "Disabled"
+              }
+            },
+            {
+              "condition": "[equals(parameters('mode'), 'create')]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('pullPrincipalId'), variables('acrPullRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('pullPrincipalId')]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[variables('acrPullRoleId')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]"
+              ]
+            },
+            {
+              "condition": "[and(equals(parameters('mode'), 'reuse-connect'), not(parameters('pullAssigned')))]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[if(empty(parameters('accessOperationId')), format('existing-acr-access-{0}', uniqueString(parameters('pullPrincipalId'), parameters('registryName'))), format('azd-acr-access-{0}', parameters('accessOperationId')))]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "registryName": {
+                    "value": "[parameters('registryName')]"
+                  },
+                  "principalId": {
+                    "value": "[parameters('pullPrincipalId')]"
+                  },
+                  "assignmentName": {
+                    "value": "[parameters('accessOperationId')]"
+                  },
+                  "ownershipDescription": "[if(empty(parameters('accessOperationId')), createObject('value', ''), createObject('value', format('azd-foundry:{0}', parameters('accessOperationId'))))]",
+                  "roleDefinitionId": "[if(not(empty(parameters('accessOperationId'))), createObject('value', parameters('pullRoleDefinitionId')), if(equals(parameters('mode'), 'reuse-connect'), if(equals(reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').roleAssignmentMode, 'AbacRepositoryPermissions'), createObject('value', variables('repositoryReaderRoleId')), createObject('value', variables('acrPullRoleId'))), createObject('value', variables('acrPullRoleId'))))]"
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "367829090767611126"
+                    }
+                  },
+                  "parameters": {
+                    "registryName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Name of the Azure Container Registry."
+                      }
+                    },
+                    "principalId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Principal receiving pull access on the registry."
+                      }
+                    },
+                    "roleDefinitionId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Pull role definition resource ID (AcrPull or Container Registry Repository Reader)."
+                      }
+                    },
+                    "assignmentName": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "ownershipDescription": {
+                      "type": "string",
+                      "defaultValue": ""
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+                      "name": "[if(empty(parameters('assignmentName')), guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('principalId'), parameters('roleDefinitionId')), parameters('assignmentName'))]",
+                      "properties": {
+                        "principalId": "[parameters('principalId')]",
+                        "principalType": "ServicePrincipal",
+                        "roleDefinitionId": "[parameters('roleDefinitionId')]",
+                        "description": "[parameters('ownershipDescription')]"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "endpoint": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'create'), reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer, reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').loginServer)]"
+            },
+            "resourceId": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'create'), resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "adjunctResourceGroup",
+        "foundryAccount::project"
+      ]
+    },
+    "existingContainerRegistry": {
+      "condition": "[and(equals(parameters('acrMode'), 'reuse-connect'), not(parameters('acrPullAssigned')))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "container-registry",
+      "subscriptionId": "[split(parameters('existingAcrResourceId'), '/')[2]]",
+      "resourceGroup": "[split(parameters('existingAcrResourceId'), '/')[4]]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "mode": {
+            "value": "reuse-connect"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "registryName": {
+            "value": "[variables('effectiveAcrName')]"
+          },
+          "pullPrincipalId": {
+            "value": "[reference('foundryAccount::project', '2025-04-01-preview', 'full').identity.principalId]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "2356462800975162710"
+            }
+          },
+          "parameters": {
+            "mode": {
+              "type": "string",
+              "allowedValues": [
+                "create",
+                "reuse-connect"
+              ]
+            },
+            "location": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {}
+            },
+            "registryName": {
+              "type": "string"
+            },
+            "pullPrincipalId": {
+              "type": "string"
+            },
+            "pullAssigned": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "accessOperationId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "pullRoleDefinitionId": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "variables": {
+            "acrPullRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
+            "repositoryReaderRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b93aa761-3e63-49ed-ac28-beffa264f7ac')]"
+          },
+          "resources": [
+            {
+              "condition": "[equals(parameters('mode'), 'create')]",
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-07-01",
+              "name": "[parameters('registryName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Premium"
+              },
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "adminUserEnabled": false,
+                "publicNetworkAccess": "Enabled",
+                "zoneRedundancy": "Disabled"
+              }
+            },
+            {
+              "condition": "[equals(parameters('mode'), 'create')]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('pullPrincipalId'), variables('acrPullRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('pullPrincipalId')]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[variables('acrPullRoleId')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]"
+              ]
+            },
+            {
+              "condition": "[and(equals(parameters('mode'), 'reuse-connect'), not(parameters('pullAssigned')))]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[if(empty(parameters('accessOperationId')), format('existing-acr-access-{0}', uniqueString(parameters('pullPrincipalId'), parameters('registryName'))), format('azd-acr-access-{0}', parameters('accessOperationId')))]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "registryName": {
+                    "value": "[parameters('registryName')]"
+                  },
+                  "principalId": {
+                    "value": "[parameters('pullPrincipalId')]"
+                  },
+                  "assignmentName": {
+                    "value": "[parameters('accessOperationId')]"
+                  },
+                  "ownershipDescription": "[if(empty(parameters('accessOperationId')), createObject('value', ''), createObject('value', format('azd-foundry:{0}', parameters('accessOperationId'))))]",
+                  "roleDefinitionId": "[if(not(empty(parameters('accessOperationId'))), createObject('value', parameters('pullRoleDefinitionId')), if(equals(parameters('mode'), 'reuse-connect'), if(equals(reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').roleAssignmentMode, 'AbacRepositoryPermissions'), createObject('value', variables('repositoryReaderRoleId')), createObject('value', variables('acrPullRoleId'))), createObject('value', variables('acrPullRoleId'))))]"
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "367829090767611126"
+                    }
+                  },
+                  "parameters": {
+                    "registryName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Name of the Azure Container Registry."
+                      }
+                    },
+                    "principalId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Principal receiving pull access on the registry."
+                      }
+                    },
+                    "roleDefinitionId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Pull role definition resource ID (AcrPull or Container Registry Repository Reader)."
+                      }
+                    },
+                    "assignmentName": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "ownershipDescription": {
+                      "type": "string",
+                      "defaultValue": ""
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+                      "name": "[if(empty(parameters('assignmentName')), guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('principalId'), parameters('roleDefinitionId')), parameters('assignmentName'))]",
+                      "properties": {
+                        "principalId": "[parameters('principalId')]",
+                        "principalType": "ServicePrincipal",
+                        "roleDefinitionId": "[parameters('roleDefinitionId')]",
+                        "description": "[parameters('ownershipDescription')]"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "endpoint": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'create'), reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer, reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').loginServer)]"
+            },
+            "resourceId": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'create'), resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "foundryAccount::project"
+      ]
+    },
+    "projectResources": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "foundry-project-resources",
+      "subscriptionId": "[variables('projectSubscriptionId')]",
+      "resourceGroup": "[variables('projectResourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "accountName": {
+            "value": "[variables('accountName')]"
+          },
+          "projectName": {
+            "value": "[variables('projectName')]"
+          },
+          "deployments": {
+            "value": "[parameters('deployments')]"
+          },
+          "acrName": {
+            "value": "[variables('effectiveAcrName')]"
+          },
+          "acrEndpoint": "[if(variables('createAcr'), createObject('value', reference('newContainerRegistry').outputs.endpoint.value), if(and(equals(parameters('acrMode'), 'reuse-connect'), not(parameters('acrPullAssigned'))), createObject('value', reference('existingContainerRegistry').outputs.endpoint.value), createObject('value', parameters('existingAcrEndpoint'))))]",
+          "acrResourceId": "[if(variables('createAcr'), createObject('value', reference('newContainerRegistry').outputs.resourceId.value), if(and(equals(parameters('acrMode'), 'reuse-connect'), not(parameters('acrPullAssigned'))), createObject('value', reference('existingContainerRegistry').outputs.resourceId.value), createObject('value', parameters('existingAcrResourceId'))))]",
+          "createAcrConnection": {
+            "value": "[variables('createAcrConnection')]"
+          },
+          "existingAcrConnectionName": {
+            "value": "[parameters('existingAcrConnectionName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "8439686740805277616"
+            }
+          },
+          "definitions": {
+            "deploymentType": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "format": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "sku": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "capacity": {
+                      "type": "int"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "parameters": {
+            "accountName": {
+              "type": "string"
+            },
+            "projectName": {
+              "type": "string"
+            },
+            "deployments": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/deploymentType"
+              },
+              "defaultValue": []
+            },
+            "acrName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "acrEndpoint": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "acrResourceId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "createAcrConnection": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "existingAcrConnectionName": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "resources": {
+            "foundryAccountPreview::project": {
+              "existing": true,
+              "type": "Microsoft.CognitiveServices/accounts/projects",
+              "apiVersion": "2025-04-01-preview",
+              "name": "[format('{0}/{1}', parameters('accountName'), parameters('projectName'))]"
+            },
+            "foundryAccount": {
+              "existing": true,
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2025-06-01",
+              "name": "[parameters('accountName')]"
+            },
+            "modelDeployments": {
+              "copy": {
+                "name": "modelDeployments",
+                "count": "[length(parameters('deployments'))]",
+                "mode": "serial",
+                "batchSize": 1
+              },
+              "type": "Microsoft.CognitiveServices/accounts/deployments",
+              "apiVersion": "2025-06-01",
+              "name": "[format('{0}/{1}', parameters('accountName'), parameters('deployments')[copyIndex()].name)]",
+              "properties": {
+                "model": "[parameters('deployments')[copyIndex()].model]"
+              },
+              "sku": "[parameters('deployments')[copyIndex()].sku]"
+            },
+            "foundryAccountPreview": {
+              "existing": true,
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2025-04-01-preview",
+              "name": "[parameters('accountName')]"
+            },
+            "acrConnection": {
+              "condition": "[parameters('createAcrConnection')]",
+              "type": "Microsoft.CognitiveServices/accounts/projects/connections",
+              "apiVersion": "2025-04-01-preview",
+              "name": "[format('{0}/{1}/{2}', parameters('accountName'), parameters('projectName'), format('{0}-conn', parameters('acrName')))]",
+              "properties": {
+                "category": "ContainerRegistry",
+                "target": "[parameters('acrEndpoint')]",
+                "authType": "ManagedIdentity",
+                "credentials": {
+                  "clientId": "[reference('foundryAccountPreview::project', '2025-04-01-preview', 'full').identity.principalId]",
+                  "resourceId": "[parameters('acrResourceId')]"
+                },
+                "isSharedToAll": true,
+                "metadata": {
+                  "ResourceId": "[parameters('acrResourceId')]"
+                }
+              },
+              "dependsOn": [
+                "foundryAccountPreview::project"
+              ]
+            }
+          },
+          "outputs": {
+            "acrConnectionName": {
+              "type": "string",
+              "value": "[if(parameters('createAcrConnection'), format('{0}-conn', parameters('acrName')), parameters('existingAcrConnectionName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "existingContainerRegistry",
+        "newContainerRegistry"
+      ]
+    },
+    "monitoring": {
+      "condition": "[not(equals(parameters('monitoringMode'), 'none'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "foundry-monitoring",
+      "subscriptionId": "[variables('projectSubscriptionId')]",
+      "resourceGroup": "[variables('projectResourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "mode": {
+            "value": "[parameters('monitoringMode')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "projectResourceId": {
+            "value": "[parameters('projectResourceId')]"
+          },
+          "applicationInsightsResourceId": {
+            "value": "[parameters('applicationInsightsResourceId')]"
+          },
+          "createConnection": {
+            "value": "[parameters('monitoringCreateConnection')]"
+          },
+          "existingConnectionName": {
+            "value": "[parameters('monitoringConnectionName')]"
+          },
+          "environmentName": "[if(contains(parameters('tags'), 'azd-env-name'), createObject('value', string(parameters('tags')['azd-env-name'])), createObject('value', ''))]",
+          "resourceTokenSalt": {
+            "value": "[parameters('resourceTokenSalt')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "11506587318951603642"
+            }
+          },
+          "parameters": {
+            "mode": {
+              "type": "string",
+              "allowedValues": [
+                "none",
+                "create",
+                "reuse-connect",
+                "already-connected"
+              ]
+            },
+            "location": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {}
+            },
+            "projectResourceId": {
+              "type": "string"
+            },
+            "applicationInsightsResourceId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "createConnection": {
+              "type": "bool",
+              "defaultValue": true
+            },
+            "existingConnectionName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "environmentName": {
+              "type": "string"
+            },
+            "resourceTokenSalt": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "privateNetwork": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "When true, new monitoring resources accept ingestion only through an Azure Monitor private link. Queries stay public."
+              }
+            },
+            "vnetId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "vnetLocation": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "peSubnetId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "dnsZonesResourceGroup": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "dnsZonesSubscription": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "managedEgressRule": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "When true, the project uses managed egress and needs an outbound rule so the managed network can reach the private link scope."
+              }
+            }
+          },
+          "variables": {
+            "networkConnectionApproverRoleId": "b556d68e-0be0-4f35-a333-ad7ee1ce17ea",
+            "createResources": "[equals(parameters('mode'), 'create')]",
+            "publicNetworkAccess": "[if(parameters('privateNetwork'), 'Disabled', 'Enabled')]",
+            "token": "[uniqueString(parameters('projectResourceId'), resourceGroup().id, parameters('resourceTokenSalt'))]",
+            "projectParts": "[split(parameters('projectResourceId'), '/')]",
+            "componentParts": "[split(parameters('applicationInsightsResourceId'), '/')]",
+            "connectionName": "[format('azd-appinsights-{0}', take(replace(guid(toLower(variables('projectParts')[10])), '-', ''), 13))]",
+            "monitoringTags": "[union(parameters('tags'), createObject('azd-created-by', 'azure.ai.projects', 'azd-environment', parameters('environmentName'), 'azd-monitoring-project', guid(toLower(parameters('projectResourceId')))))]"
+          },
+          "resources": [
+            {
+              "condition": "[variables('createResources')]",
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[format('log-{0}', variables('token'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('monitoringTags')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30,
+                "publicNetworkAccessForIngestion": "[variables('publicNetworkAccess')]",
+                "publicNetworkAccessForQuery": "Enabled"
+              }
+            },
+            {
+              "condition": "[variables('createResources')]",
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[format('appi-{0}', variables('token'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('monitoringTags')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]",
+                "publicNetworkAccessForIngestion": "[variables('publicNetworkAccess')]",
+                "publicNetworkAccessForQuery": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('managedEgressRule')]",
+              "type": "Microsoft.CognitiveServices/accounts/managedNetworks/outboundRules",
+              "apiVersion": "2025-10-01-preview",
+              "name": "[format('{0}/default/ampls-monitor-rule', variables('projectParts')[8])]",
+              "properties": {
+                "type": "PrivateEndpoint",
+                "destination": {
+                  "serviceResourceId": "[reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link'), '2025-04-01').outputs.azureMonitorPrivateLinkScopeResourceId.value]",
+                  "subresourceTarget": "azuremonitor"
+                },
+                "category": "UserDefined"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-network-approver')]",
+                "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link')]"
+              ]
+            },
+            {
+              "condition": "[parameters('managedEgressRule')]",
+              "type": "Microsoft.CognitiveServices/accounts/managedNetworks/outboundRules",
+              "apiVersion": "2025-10-01-preview",
+              "name": "[format('{0}/default/foundry-account-pe', variables('projectParts')[8])]",
+              "properties": {
+                "type": "PrivateEndpoint",
+                "destination": {
+                  "serviceResourceId": "[resourceId('Microsoft.CognitiveServices/accounts', variables('projectParts')[8])]",
+                  "subresourceTarget": "account"
+                },
+                "category": "UserDefined"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts/managedNetworks/outboundRules', split(format('{0}/default/ampls-monitor-rule', variables('projectParts')[8]), '/')[0], split(format('{0}/default/ampls-monitor-rule', variables('projectParts')[8]), '/')[1], split(format('{0}/default/ampls-monitor-rule', variables('projectParts')[8]), '/')[2])]"
+              ]
+            },
+            {
+              "condition": "[and(or(variables('createResources'), equals(parameters('mode'), 'reuse-connect')), parameters('privateNetwork'))]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "foundry-monitoring-private-link",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "location": {
+                    "value": "[parameters('vnetLocation')]"
+                  },
+                  "suffix": {
+                    "value": "[variables('token')]"
+                  },
+                  "applicationInsightsResourceId": "[if(variables('createResources'), createObject('value', resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])))]",
+                  "logAnalyticsWorkspaceResourceId": "[if(variables('createResources'), createObject('value', resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8]), '2020-02-02').WorkspaceResourceId))]",
+                  "vnetId": {
+                    "value": "[parameters('vnetId')]"
+                  },
+                  "peSubnetId": {
+                    "value": "[parameters('peSubnetId')]"
+                  },
+                  "dnsZonesResourceGroup": {
+                    "value": "[parameters('dnsZonesResourceGroup')]"
+                  },
+                  "dnsZonesSubscription": {
+                    "value": "[parameters('dnsZonesSubscription')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "10577939142835646204"
+                    }
+                  },
+                  "parameters": {
+                    "location": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Azure region of the customer VNet; the private endpoint must be in the same region."
+                      }
+                    },
+                    "suffix": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Suffix for unique resource and link names."
+                      }
+                    },
+                    "applicationInsightsResourceId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "ARM resource id of the Application Insights component to scope."
+                      }
+                    },
+                    "logAnalyticsWorkspaceResourceId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "ARM resource id of the Log Analytics workspace to scope."
+                      }
+                    },
+                    "vnetId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "ARM resource id of the customer VNet."
+                      }
+                    },
+                    "peSubnetId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "ARM resource id of the private-endpoint subnet."
+                      }
+                    },
+                    "dnsZonesResourceGroup": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Resource group holding existing private DNS zones. Empty creates and links new zones."
+                      }
+                    },
+                    "dnsZonesSubscription": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Subscription holding existing private DNS zones. Empty defaults to this subscription."
+                      }
+                    }
+                  },
+                  "variables": {
+                    "copy": [
+                      {
+                        "name": "zoneIds",
+                        "count": "[length(variables('monitorDnsZoneNames'))]",
+                        "input": "[if(variables('useExistingZones'), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('existingZonesSubscription'), parameters('dnsZonesResourceGroup')), 'Microsoft.Network/privateDnsZones', variables('monitorDnsZoneNames')[copyIndex('zoneIds')]), resourceId('Microsoft.Network/privateDnsZones', variables('monitorDnsZoneNames')[copyIndex('zoneIds')]))]"
+                      }
+                    ],
+                    "monitorDnsZoneNames": [
+                      "privatelink.monitor.azure.com",
+                      "privatelink.oms.opinsights.azure.com",
+                      "privatelink.ods.opinsights.azure.com",
+                      "privatelink.agentsvc.azure-automation.net"
+                    ],
+                    "useExistingZones": "[not(empty(parameters('dnsZonesResourceGroup')))]",
+                    "existingZonesSubscription": "[if(empty(parameters('dnsZonesSubscription')), subscription().subscriptionId, parameters('dnsZonesSubscription'))]",
+                    "scopeName": "[format('ampls-{0}', parameters('suffix'))]"
+                  },
+                  "resources": [
+                    {
+                      "type": "microsoft.insights/privateLinkScopes",
+                      "apiVersion": "2021-07-01-preview",
+                      "name": "[variables('scopeName')]",
+                      "location": "global",
+                      "properties": {
+                        "accessModeSettings": {
+                          "ingestionAccessMode": "PrivateOnly",
+                          "queryAccessMode": "Open"
+                        }
+                      }
+                    },
+                    {
+                      "type": "Microsoft.Insights/privateLinkScopes/scopedResources",
+                      "apiVersion": "2021-07-01-preview",
+                      "name": "[format('{0}/{1}', variables('scopeName'), 'appinsights-scoped')]",
+                      "properties": {
+                        "linkedResourceId": "[parameters('applicationInsightsResourceId')]"
+                      },
+                      "dependsOn": [
+                        "[resourceId('microsoft.insights/privateLinkScopes', variables('scopeName'))]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Insights/privateLinkScopes/scopedResources",
+                      "apiVersion": "2021-07-01-preview",
+                      "name": "[format('{0}/{1}', variables('scopeName'), 'workspace-scoped')]",
+                      "properties": {
+                        "linkedResourceId": "[parameters('logAnalyticsWorkspaceResourceId')]"
+                      },
+                      "dependsOn": [
+                        "[resourceId('microsoft.insights/privateLinkScopes', variables('scopeName'))]",
+                        "[resourceId('Microsoft.Insights/privateLinkScopes/scopedResources', variables('scopeName'), 'appinsights-scoped')]"
+                      ]
+                    },
+                    {
+                      "copy": {
+                        "name": "zones",
+                        "count": "[length(variables('monitorDnsZoneNames'))]"
+                      },
+                      "condition": "[not(variables('useExistingZones'))]",
+                      "type": "Microsoft.Network/privateDnsZones",
+                      "apiVersion": "2020-06-01",
+                      "name": "[variables('monitorDnsZoneNames')[copyIndex()]]",
+                      "location": "global"
+                    },
+                    {
+                      "copy": {
+                        "name": "zoneLinks",
+                        "count": "[length(variables('monitorDnsZoneNames'))]"
+                      },
+                      "condition": "[not(variables('useExistingZones'))]",
+                      "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+                      "apiVersion": "2024-06-01",
+                      "name": "[format('{0}/{1}', variables('monitorDnsZoneNames')[copyIndex()], format('{0}-{1}-link', replace(variables('monitorDnsZoneNames')[copyIndex()], '.', '-'), parameters('suffix')))]",
+                      "location": "global",
+                      "properties": {
+                        "virtualNetwork": {
+                          "id": "[parameters('vnetId')]"
+                        },
+                        "registrationEnabled": false
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Network/privateDnsZones', variables('monitorDnsZoneNames')[copyIndex()])]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Network/privateEndpoints",
+                      "apiVersion": "2024-05-01",
+                      "name": "[format('{0}-private-endpoint', variables('scopeName'))]",
+                      "location": "[parameters('location')]",
+                      "properties": {
+                        "subnet": {
+                          "id": "[parameters('peSubnetId')]"
+                        },
+                        "privateLinkServiceConnections": [
+                          {
+                            "name": "[format('{0}-private-link-service-connection', variables('scopeName'))]",
+                            "properties": {
+                              "privateLinkServiceId": "[resourceId('microsoft.insights/privateLinkScopes', variables('scopeName'))]",
+                              "groupIds": [
+                                "azuremonitor"
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      "dependsOn": [
+                        "[resourceId('microsoft.insights/privateLinkScopes', variables('scopeName'))]",
+                        "[resourceId('Microsoft.Insights/privateLinkScopes/scopedResources', variables('scopeName'), 'appinsights-scoped')]",
+                        "[resourceId('Microsoft.Insights/privateLinkScopes/scopedResources', variables('scopeName'), 'workspace-scoped')]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+                      "apiVersion": "2024-05-01",
+                      "name": "[format('{0}/{1}', format('{0}-private-endpoint', variables('scopeName')), format('{0}-dns-group', variables('scopeName')))]",
+                      "properties": {
+                        "copy": [
+                          {
+                            "name": "privateDnsZoneConfigs",
+                            "count": "[length(variables('monitorDnsZoneNames'))]",
+                            "input": {
+                              "name": "[replace(variables('monitorDnsZoneNames')[copyIndex('privateDnsZoneConfigs')], '.', '-')]",
+                              "properties": {
+                                "privateDnsZoneId": "[variables('zoneIds')[copyIndex('privateDnsZoneConfigs')]]"
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Network/privateEndpoints', format('{0}-private-endpoint', variables('scopeName')))]",
+                        "zoneLinks"
+                      ]
+                    }
+                  ],
+                  "outputs": {
+                    "azureMonitorPrivateLinkScopeResourceId": {
+                      "type": "string",
+                      "value": "[resourceId('microsoft.insights/privateLinkScopes', variables('scopeName'))]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))]",
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('managedEgressRule')]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "foundry-monitoring-network-approver",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "principalId": {
+                    "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('projectParts')[8]), '2025-06-01', 'full').identity.principalId]"
+                  },
+                  "roleDefinitionId": {
+                    "value": "[variables('networkConnectionApproverRoleId')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "785343973509457050"
+                    }
+                  },
+                  "parameters": {
+                    "principalId": {
+                      "type": "string"
+                    },
+                    "roleDefinitionId": {
+                      "type": "string"
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "name": "[guid(resourceGroup().id, parameters('principalId'), parameters('roleDefinitionId'))]",
+                      "properties": {
+                        "principalId": "[parameters('principalId')]",
+                        "principalType": "ServicePrincipal",
+                        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionId'))]"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[and(variables('createResources'), parameters('privateNetwork'))]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "foundry-monitoring-resync",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "name": {
+                    "value": "[format('appi-{0}', variables('token'))]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[variables('monitoringTags')]"
+                  },
+                  "workspaceResourceId": {
+                    "value": "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
+                  },
+                  "publicNetworkAccessForIngestion": {
+                    "value": "[variables('publicNetworkAccess')]"
+                  },
+                  "publicNetworkAccessForQuery": {
+                    "value": "Enabled"
+                  },
+                  "privateLinkScopeResourceId": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link'), '2025-04-01').outputs.azureMonitorPrivateLinkScopeResourceId.value]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "10336562090588378730"
+                    }
+                  },
+                  "parameters": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "tags": {
+                      "type": "object"
+                    },
+                    "workspaceResourceId": {
+                      "type": "string"
+                    },
+                    "publicNetworkAccessForIngestion": {
+                      "type": "string"
+                    },
+                    "publicNetworkAccessForQuery": {
+                      "type": "string"
+                    },
+                    "privateLinkScopeResourceId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "The private link scope resource ID. Hashing it into a tag orders this deployment after the scope."
+                      }
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Insights/components",
+                      "apiVersion": "2020-02-02",
+                      "name": "[parameters('name')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[union(parameters('tags'), createObject('azd-ampls-link', uniqueString(parameters('privateLinkScopeResourceId'), parameters('name'))))]",
+                      "kind": "web",
+                      "properties": {
+                        "Application_Type": "web",
+                        "WorkspaceResourceId": "[parameters('workspaceResourceId')]",
+                        "publicNetworkAccessForIngestion": "[parameters('publicNetworkAccessForIngestion')]",
+                        "publicNetworkAccessForQuery": "[parameters('publicNetworkAccessForQuery')]"
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "id": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.Insights/components', parameters('name'))]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link')]",
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('createConnection'), or(equals(parameters('mode'), 'create'), equals(parameters('mode'), 'reuse-connect')))]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "foundry-monitoring-connection",
+              "subscriptionId": "[variables('projectParts')[2]]",
+              "resourceGroup": "[variables('projectParts')[4]]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "accountName": {
+                    "value": "[variables('projectParts')[8]]"
+                  },
+                  "projectName": {
+                    "value": "[variables('projectParts')[10]]"
+                  },
+                  "applicationInsightsResourceId": "[if(equals(parameters('mode'), 'none'), createObject('value', ''), if(variables('createResources'), if(parameters('privateNetwork'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-resync'), '2025-04-01').outputs.id.value), createObject('value', resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token'))))), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8]))))]",
+                  "environmentName": {
+                    "value": "[parameters('environmentName')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "languageVersion": "2.0",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "12065248471814645758"
+                    }
+                  },
+                  "parameters": {
+                    "accountName": {
+                      "type": "string"
+                    },
+                    "projectName": {
+                      "type": "string"
+                    },
+                    "applicationInsightsResourceId": {
+                      "type": "string"
+                    },
+                    "environmentName": {
+                      "type": "string"
+                    }
+                  },
+                  "variables": {
+                    "componentParts": "[split(parameters('applicationInsightsResourceId'), '/')]"
+                  },
+                  "resources": {
+                    "account::project": {
+                      "existing": true,
+                      "type": "Microsoft.CognitiveServices/accounts/projects",
+                      "apiVersion": "2025-04-01-preview",
+                      "name": "[format('{0}/{1}', parameters('accountName'), parameters('projectName'))]"
+                    },
+                    "account": {
+                      "existing": true,
+                      "type": "Microsoft.CognitiveServices/accounts",
+                      "apiVersion": "2025-04-01-preview",
+                      "name": "[parameters('accountName')]"
+                    },
+                    "component": {
+                      "existing": true,
+                      "type": "Microsoft.Insights/components",
+                      "apiVersion": "2020-02-02",
+                      "subscriptionId": "[variables('componentParts')[2]]",
+                      "resourceGroup": "[variables('componentParts')[4]]",
+                      "name": "[variables('componentParts')[8]]"
+                    },
+                    "connection": {
+                      "@options": {
+                        "onlyIfNotExists": []
+                      },
+                      "type": "Microsoft.CognitiveServices/accounts/projects/connections",
+                      "apiVersion": "2025-04-01-preview",
+                      "name": "[format('{0}/{1}/{2}', parameters('accountName'), parameters('projectName'), format('azd-appinsights-{0}', take(replace(guid(toLower(parameters('projectName'))), '-', ''), 13)))]",
+                      "properties": {
+                        "category": "AppInsights",
+                        "authType": "ApiKey",
+                        "target": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])]",
+                        "credentials": {
+                          "key": "[reference('component').ConnectionString]"
+                        },
+                        "metadata": {
+                          "ApiType": "Azure",
+                          "ResourceId": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])]",
+                          "azd-created-by": "azure.ai.projects",
+                          "azd-environment": "[parameters('environmentName')]",
+                          "azd-monitoring-project": "[resourceId('Microsoft.CognitiveServices/accounts/projects', parameters('accountName'), parameters('projectName'))]"
+                        }
+                      },
+                      "dependsOn": [
+                        "component"
+                      ]
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))]",
+                "[resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-resync')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "privateLinkScopeResourceId": {
+              "type": "string",
+              "value": "[if(and(or(equals(parameters('mode'), 'create'), equals(parameters('mode'), 'reuse-connect')), parameters('privateNetwork')), reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-private-link'), '2025-04-01').outputs.azureMonitorPrivateLinkScopeResourceId.value, '')]"
+            },
+            "applicationInsightsResourceId": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'none'), '', if(variables('createResources'), if(parameters('privateNetwork'), reference(resourceId('Microsoft.Resources/deployments', 'foundry-monitoring-resync'), '2025-04-01').outputs.id.value, resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])))]"
+            },
+            "applicationInsightsAppId": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'none'), '', if(variables('createResources'), reference(resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token'))), '2020-02-02').AppId, reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8]), '2020-02-02').AppId))]"
+            },
+            "logAnalyticsWorkspaceResourceId": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'none'), '', if(variables('createResources'), reference(resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token'))), '2020-02-02').WorkspaceResourceId, reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8]), '2020-02-02').WorkspaceResourceId))]"
+            },
+            "projectConnectionName": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'none'), '', if(and(parameters('createConnection'), not(equals(parameters('mode'), 'already-connected'))), variables('connectionName'), parameters('existingConnectionName')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "adjunctResourceGroup"
+      ]
+    }
+  },
+  "outputs": {
+    "AZURE_AI_PROJECT_ID": {
+      "type": "string",
+      "value": "[parameters('projectResourceId')]"
+    },
+    "AZURE_AI_ACCOUNT_NAME": {
+      "type": "string",
+      "value": "[variables('accountName')]"
+    },
+    "AZURE_AI_PROJECT_NAME": {
+      "type": "string",
+      "value": "[variables('projectName')]"
+    },
+    "AZURE_OPENAI_ENDPOINT": {
+      "type": "string",
+      "value": "[format('https://{0}.openai.azure.com/', if(not(empty(tryGet(reference('foundryAccount'), 'customSubDomainName'))), reference('foundryAccount').customSubDomainName, first(split(last(split(parameters('projectEndpoint'), '://')), '.'))))]"
+    },
+    "FOUNDRY_PROJECT_ENDPOINT": {
+      "type": "string",
+      "value": "[parameters('projectEndpoint')]"
+    },
+    "AZURE_FOUNDRY_RESOURCE_GROUP": {
+      "type": "string",
+      "value": "[if(variables('createAdjunctGroup'), parameters('resourceGroupName'), '')]"
+    },
+    "AZURE_CONTAINER_REGISTRY_ENDPOINT": {
+      "type": "string",
+      "value": "[if(equals(parameters('acrMode'), 'none'), '', if(variables('createAcr'), reference('newContainerRegistry').outputs.endpoint.value, if(and(equals(parameters('acrMode'), 'reuse-connect'), not(parameters('acrPullAssigned'))), reference('existingContainerRegistry').outputs.endpoint.value, parameters('existingAcrEndpoint'))))]"
+    },
+    "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": {
+      "type": "string",
+      "value": "[if(equals(parameters('acrMode'), 'none'), '', if(variables('createAcr'), reference('newContainerRegistry').outputs.resourceId.value, if(and(equals(parameters('acrMode'), 'reuse-connect'), not(parameters('acrPullAssigned'))), reference('existingContainerRegistry').outputs.resourceId.value, parameters('existingAcrResourceId'))))]"
+    },
+    "AZURE_AI_PROJECT_ACR_CONNECTION_NAME": {
+      "type": "string",
+      "value": "[reference('projectResources').outputs.acrConnectionName.value]"
+    },
+    "AZD_FOUNDRY_ACR_MODE": {
+      "type": "string",
+      "value": "[parameters('acrMode')]"
+    },
+    "AZURE_APPLICATION_INSIGHTS_RESOURCE_ID": {
+      "type": "string",
+      "value": "[if(not(equals(parameters('monitoringMode'), 'none')), reference('monitoring').outputs.applicationInsightsResourceId.value, '')]"
+    },
+    "AZURE_APPLICATION_INSIGHTS_APP_ID": {
+      "type": "string",
+      "value": "[if(not(equals(parameters('monitoringMode'), 'none')), reference('monitoring').outputs.applicationInsightsAppId.value, '')]"
+    },
+    "AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID": {
+      "type": "string",
+      "value": "[if(not(equals(parameters('monitoringMode'), 'none')), reference('monitoring').outputs.logAnalyticsWorkspaceResourceId.value, '')]"
+    },
+    "AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME": {
+      "type": "string",
+      "value": "[if(not(equals(parameters('monitoringMode'), 'none')), reference('monitoring').outputs.projectConnectionName.value, '')]"
+    },
+    "AZD_FOUNDRY_MONITORING_MODE": {
+      "type": "string",
+      "value": "[parameters('monitoringMode')]"
+    }
+  }
+}

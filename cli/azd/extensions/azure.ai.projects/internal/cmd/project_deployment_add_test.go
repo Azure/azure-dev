@@ -15,12 +15,15 @@ import (
 
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/provisioning"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -58,6 +61,13 @@ func (s *selfInitializingProjectServer) PromptLocation(
 	*azdext.PromptLocationRequest,
 ) (*azdext.PromptLocationResponse, error) {
 	return &azdext.PromptLocationResponse{Location: s.location}, nil
+}
+
+func (s *selfInitializingProjectServer) Select(
+	context.Context,
+	*azdext.SelectRequest,
+) (*azdext.SelectResponse, error) {
+	return &azdext.SelectResponse{Value: new(int32(0))}, nil
 }
 
 func (s *selfInitializingProjectServer) GetConfigSection(
@@ -150,17 +160,31 @@ type selfInitializingEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	current string
 	values  map[string]string
+	config  map[string][]byte
 	failKey string
 	// failValue, when non-nil, fails only a write of that exact value for failKey.
 	// A nil failValue keeps the first write of failKey as the failure.
-	failValue *string
-	setLog    []string
+	failValue   *string
+	setLog      []string
+	projectRoot string
+	readErr     error
+	currentErr  error
+}
+
+func (s *selfInitializingEnvironmentServer) GetConfig(
+	_ context.Context, request *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	value, found := s.config[request.GetPath()]
+	return &azdext.GetConfigResponse{Value: value, Found: found}, nil
 }
 
 func (s *selfInitializingEnvironmentServer) GetCurrent(
 	context.Context,
 	*azdext.EmptyRequest,
 ) (*azdext.EnvironmentResponse, error) {
+	if s.currentErr != nil {
+		return nil, s.currentErr
+	}
 	return &azdext.EnvironmentResponse{
 		Environment: &azdext.Environment{Name: s.current},
 	}, nil
@@ -178,6 +202,19 @@ func (s *selfInitializingEnvironmentServer) GetValues(
 	_ context.Context,
 	_ *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
+	if s.readErr != nil {
+		return nil, s.readErr
+	}
+	if s.projectRoot != "" {
+		exists, err := projectFileExists(s.projectRoot)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return nil, status.Error(codes.Unknown,
+				"no project exists; to create a new project, run `azd init`")
+		}
+	}
 	response := &azdext.KeyValueListResponse{}
 	for key, value := range s.values {
 		response.KeyValues = append(response.KeyValues, &azdext.KeyValue{
@@ -208,8 +245,10 @@ type selfInitializingAIService struct {
 	request        *azdext.ResolveModelDeploymentsRequest
 	requests       []*azdext.ResolveModelDeploymentsRequest
 	deployment     *azdext.AiModelDeployment
+	deployments    []*azdext.AiModelDeployment
 	location       string
 	respectRequest bool
+	firstCallErr   error
 }
 
 type selfInitializingWorkflowServer struct {
@@ -248,6 +287,31 @@ func (s *selfInitializingAIService) ResolveModelDeployments(
 	s.calls++
 	s.request = request
 	s.requests = append(s.requests, request)
+	if s.calls == 1 && s.firstCallErr != nil {
+		return nil, s.firstCallErr
+	}
+	if len(s.deployments) > 0 {
+		var matched []*azdext.AiModelDeployment
+		for _, d := range s.deployments {
+			sku := d.GetSku()
+			capVal := sku.GetDefaultCapacity()
+			if request.GetOptions().Capacity != nil {
+				pref := request.GetOptions().GetCapacity()
+				if deploymentCapacityValid(sku, pref) {
+					capVal = pref
+				}
+			}
+			if d.RemainingQuota != nil && float64(capVal) > *d.RemainingQuota {
+				continue
+			}
+			cloned := proto.Clone(d).(*azdext.AiModelDeployment)
+			cloned.Capacity = capVal
+			matched = append(matched, cloned)
+		}
+		return &azdext.ResolveModelDeploymentsResponse{
+			Deployments: matched,
+		}, nil
+	}
 	location := s.location
 	if s.respectRequest && len(request.GetOptions().GetLocations()) == 1 {
 		location = request.GetOptions().GetLocations()[0]
@@ -365,7 +429,7 @@ func TestProjectDeploymentAddEnvironmentDeployments(t *testing.T) {
 	selected := synthesis.Deployment{
 		Name:  "chat",
 		Model: synthesis.DeploymentModel{Name: "gpt-4.1", Format: "OpenAI", Version: "2025-04-14"},
-		Sku:   synthesis.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+		Sku:   synthesis.DeploymentSku{Name: "GlobalStandard", Capacity: int(defaultDeploymentCapacity)},
 	}
 	other := selected
 	other.Name = "other"
@@ -928,23 +992,26 @@ func TestSelectModelDeploymentUsesRequestedLocationForEmptyCandidate(t *testing.
 		[]string{"eastus"},
 		aiServer.request.Options.Locations,
 	)
+	assert.Nil(t, aiServer.request.Options.Capacity)
 }
 
-func TestSelectModelDeploymentUsesSkuBaselineForMissingCapacity(t *testing.T) {
+func TestSelectModelDeploymentFallsBackAndClampsToRemainingQuota(t *testing.T) {
 	root := t.TempDir()
 	client, _, _, aiServer, _ := newSelfInitializingDeploymentClient(t, root)
 	aiServer.deployment = &azdext.AiModelDeployment{
-		ModelName: "gpt-4.1",
+		ModelName: "gpt-5",
 		Format:    "OpenAI",
-		Version:   "2025-04-14",
+		Version:   "2025-08-07",
 		Location:  "eastus",
 		Sku: &azdext.AiModelSku{
 			Name:            "GlobalStandard",
-			MinCapacity:     100,
-			CapacityStep:    100,
-			DefaultCapacity: 0,
+			MinCapacity:     1,
+			MaxCapacity:     1000,
+			CapacityStep:    1,
+			DefaultCapacity: 10,
 		},
-		Capacity: 0,
+		Capacity:       10,
+		RemainingQuota: new(float64(150)),
 	}
 
 	selected, err := selectModelDeployment(
@@ -956,13 +1023,228 @@ func TestSelectModelDeploymentUsesSkuBaselineForMissingCapacity(t *testing.T) {
 				Location:       "eastus",
 			},
 		},
-		modelSelection{Name: "gpt-4.1"},
+		modelSelection{Name: "gpt-5"},
 		deploymentSelectionOptions{},
 		true,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, selected)
-	assert.Equal(t, 100, selected.Deployment.Sku.Capacity)
+	require.Len(t, aiServer.requests, 1)
+	assert.Nil(t, aiServer.requests[0].GetOptions().Capacity)
+	assert.Equal(t, 150, selected.Deployment.Sku.Capacity)
+}
+
+func TestSelectModelDeploymentClampsWhenCoreSubstitutesDefaultCapacity(t *testing.T) {
+	tests := []struct {
+		name           string
+		sku            *azdext.AiModelSku
+		substitutedCap int32
+		remainingQuota float64
+		wantCapacity   int
+	}{
+		{
+			name: "maxCapacity lower than defaultDeploymentCapacity clamps to maxCapacity",
+			sku: &azdext.AiModelSku{
+				Name:            "GlobalStandard",
+				MinCapacity:     1,
+				MaxCapacity:     100,
+				CapacityStep:    1,
+				DefaultCapacity: 10,
+			},
+			substitutedCap: 10,
+			remainingQuota: 150,
+			wantCapacity:   100,
+		},
+		{
+			name: "step-misaligned defaultDeploymentCapacity clamps to baseline-aligned remaining quota",
+			sku: &azdext.AiModelSku{
+				Name:            "GlobalStandard",
+				MinCapacity:     1,
+				MaxCapacity:     1000,
+				CapacityStep:    10,
+				DefaultCapacity: 11,
+			},
+			substitutedCap: 11,
+			remainingQuota: 155,
+			wantCapacity:   151,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			client, _, _, aiServer, _ := newSelfInitializingDeploymentClient(t, root)
+			aiServer.deployment = &azdext.AiModelDeployment{
+				ModelName:      "gpt-5",
+				Format:         "OpenAI",
+				Version:        "2025-08-07",
+				Location:       "eastus",
+				Sku:            tt.sku,
+				Capacity:       tt.substitutedCap,
+				RemainingQuota: new(tt.remainingQuota),
+			}
+
+			selected, err := selectModelDeployment(
+				t.Context(),
+				client,
+				&azdext.AzureContext{
+					Scope: &azdext.AzureScope{
+						SubscriptionId: "subscription",
+						Location:       "eastus",
+					},
+				},
+				modelSelection{Name: "gpt-5"},
+				deploymentSelectionOptions{},
+				true,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, selected)
+			require.Len(t, aiServer.requests, 1)
+			assert.Equal(t, tt.wantCapacity, selected.Deployment.Sku.Capacity)
+		})
+	}
+}
+
+func TestSelectModelDeploymentRecoversGlobalStandardWhenInitialCapacityFiltersItOut(t *testing.T) {
+	root := t.TempDir()
+	client, _, _, aiServer, _ := newSelfInitializingDeploymentClient(t, root)
+	aiServer.deployments = []*azdext.AiModelDeployment{
+		{
+			ModelName: "gpt-5.4",
+			Format:    "OpenAI",
+			Version:   "2026-03-05",
+			Location:  "eastus",
+			Sku: &azdext.AiModelSku{
+				Name:            "DataZoneStandard",
+				MinCapacity:     1,
+				MaxCapacity:     1000,
+				CapacityStep:    1,
+				DefaultCapacity: 10,
+			},
+			Capacity:       10,
+			RemainingQuota: new(float64(1000)),
+		},
+		{
+			ModelName: "gpt-5.4",
+			Format:    "OpenAI",
+			Version:   "2026-03-05",
+			Location:  "eastus",
+			Sku: &azdext.AiModelSku{
+				Name:            "GlobalStandard",
+				MinCapacity:     1,
+				MaxCapacity:     1000,
+				CapacityStep:    1,
+				DefaultCapacity: 10,
+			},
+			Capacity:       10,
+			RemainingQuota: new(float64(72)),
+		},
+	}
+
+	selected, err := selectModelDeployment(
+		t.Context(),
+		client,
+		&azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "subscription",
+				Location:       "eastus",
+			},
+		},
+		modelSelection{Name: "gpt-5.4"},
+		deploymentSelectionOptions{},
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selected)
+	require.Len(t, aiServer.requests, 1)
+	assert.Nil(t, aiServer.requests[0].GetOptions().Capacity)
+	assert.Equal(t, "GlobalStandard", selected.Deployment.Sku.Name)
+	assert.Equal(t, 72, selected.Deployment.Sku.Capacity)
+}
+
+func TestSelectModelDeploymentUsesSkuBaselineForMissingCapacity(t *testing.T) {
+	tests := []struct {
+		name         string
+		sku          *azdext.AiModelSku
+		capacity     int32
+		wantCapacity int
+	}{
+		{
+			name: "aligns defaultDeploymentCapacity down to step baseline",
+			sku: &azdext.AiModelSku{
+				Name:            "GlobalStandard",
+				MinCapacity:     100,
+				CapacityStep:    100,
+				DefaultCapacity: 0,
+			},
+			capacity:     0,
+			wantCapacity: 200,
+		},
+		{
+			name: "unit step baseline resolves to defaultDeploymentCapacity",
+			sku: &azdext.AiModelSku{
+				Name:            "GlobalStandard",
+				MinCapacity:     1,
+				CapacityStep:    1,
+				DefaultCapacity: 0,
+			},
+			capacity:     0,
+			wantCapacity: int(defaultDeploymentCapacity),
+		},
+		{
+			name: "unconstrained SKU upgrades to defaultDeploymentCapacity",
+			sku: &azdext.AiModelSku{
+				Name:            "GlobalStandard",
+				DefaultCapacity: 10,
+			},
+			capacity:     10,
+			wantCapacity: int(defaultDeploymentCapacity),
+		},
+		{
+			name: "baseline above defaultDeploymentCapacity uses baseline",
+			sku: &azdext.AiModelSku{
+				Name:            "GlobalStandard",
+				MinCapacity:     300,
+				CapacityStep:    100,
+				MaxCapacity:     1000,
+				DefaultCapacity: 300,
+			},
+			capacity:     0,
+			wantCapacity: 300,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			client, _, _, aiServer, _ := newSelfInitializingDeploymentClient(t, root)
+			aiServer.deployment = &azdext.AiModelDeployment{
+				ModelName: "gpt-4.1",
+				Format:    "OpenAI",
+				Version:   "2025-04-14",
+				Location:  "eastus",
+				Sku:       tt.sku,
+				Capacity:  tt.capacity,
+			}
+
+			selected, err := selectModelDeployment(
+				t.Context(),
+				client,
+				&azdext.AzureContext{
+					Scope: &azdext.AzureScope{
+						SubscriptionId: "subscription",
+						Location:       "eastus",
+					},
+				},
+				modelSelection{Name: "gpt-4.1"},
+				deploymentSelectionOptions{},
+				true,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, selected)
+			assert.Equal(t, tt.wantCapacity, selected.Deployment.Sku.Capacity)
+		})
+	}
 }
 
 func TestSelectModelDeploymentRejectsMismatchedModelFormat(t *testing.T) {
@@ -1090,7 +1372,7 @@ func TestFindEjectedFoundryProjectInfrastructure(t *testing.T) {
 		{
 			name: "greenfield bicep",
 			writeInfra: func(infraDir string) error {
-				if err := copyEmbeddedBicep(infraDir, "main"); err != nil {
+				if err := copyEmbeddedBicep(infraDir, "main", false); err != nil {
 					return err
 				}
 				return writeJSONFile(
@@ -1340,4 +1622,93 @@ func TestProjectDeploymentEjectedInfraError(t *testing.T) {
 	assert.Equal(t, exterrors.CodeProjectDeploymentEjected, localErr.Code)
 	assert.Contains(t, localErr.Message, "main.parameters.json")
 	assert.Contains(t, localErr.Suggestion, "azd provision")
+}
+
+func TestProjectDeploymentAddBlocksPolicyDeniedModelBeforeMutation(t *testing.T) {
+	const (
+		projectID = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-foundry/" +
+			"providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project"
+		endpoint = "https://my-account.services.ai.azure.com/api/projects/my-project"
+	)
+
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte("name: test\n"),
+		0600,
+	))
+
+	client, projectServer, envServer, _, _ := newSelfInitializingDeploymentClient(t, root)
+	projectServer.project.Services["project"] = &azdext.ServiceConfig{
+		Name: "project",
+		Host: aiProjectHost,
+	}
+	projectServer.services["project"] = map[string]any{
+		"host":     aiProjectHost,
+		"endpoint": endpoint,
+	}
+	envServer.values["AZURE_AI_PROJECT_ID"] = projectID
+	envServer.values["FOUNDRY_PROJECT_ENDPOINT"] = endpoint
+
+	prevEval := evaluateProjectDeploymentPolicy
+	var called bool
+	evaluateProjectDeploymentPolicy = func(
+		_ context.Context,
+		_ azcore.TokenCredential,
+		gotProjectID string,
+		deployments []synthesis.Deployment,
+		_ map[string]string,
+	) error {
+		called = true
+		assert.Equal(t, projectID, gotProjectID)
+		require.Len(t, deployments, 1)
+		assert.Equal(t, "chat", deployments[0].Name)
+		assert.Equal(t, "gpt-4.1", deployments[0].Model.Name)
+		return provisioning.ModelPolicyViolationsToError([]provisioning.ModelPolicyViolation{
+			{
+				DeploymentName: "chat",
+				ModelFormat:    "OpenAI",
+				ModelName:      "gpt-4.1",
+				ModelVersion:   "2025-04-14",
+				DisplayName:    "approved-models",
+				PortalURL:      "https://ai.azure.com/?flight=govern_ignite",
+			},
+		})
+	}
+	t.Cleanup(func() {
+		evaluateProjectDeploymentPolicy = prevEval
+	})
+
+	beforeEnv := maps.Clone(envServer.values)
+	action := &ProjectDeploymentAddAction{
+		client: client,
+		flags: &projectDeploymentFlags{
+			model:  "gpt-4.1",
+			name:   "chat",
+			output: "none",
+		},
+		extCtx: &azdext.ExtensionContext{
+			Environment:  "test",
+			NoPrompt:     true,
+			OutputFormat: "none",
+		},
+	}
+
+	err := action.runWithProjectLookup(
+		t.Context(),
+		func(_ context.Context, _ *azdext.AzdClient, id string) (*resolvedProject, error) {
+			return projectFromResourceID(id)
+		},
+	)
+	require.Error(t, err)
+	assert.True(t, called)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeModelBlockedByPolicy, localErr.Code)
+	assert.False(t, projectServer.deploymentSet, "denied deployment must not be written to azure.yaml")
+	assert.Empty(t, envServer.setLog, "denied deployment must not mutate environment values")
+	assert.Equal(t, beforeEnv, envServer.values)
 }

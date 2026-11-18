@@ -91,13 +91,9 @@ func TestInlineAnalysisWithoutMIMETypeThroughCommand(t *testing.T) {
 					assert.JSONEq(t, terminal, stdout.String())
 					assert.NotContains(t, stdout.String(), "mimeType")
 				case "usage":
-					var result struct {
-						Result string         `json:"result"`
-						Usage  map[string]int `json:"usage"`
-					}
-					require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
-					assert.Contains(t, result.Result, "# Invoice")
-					assert.Equal(t, 1, result.Usage["documentPagesStandardInline"])
+					assert.Contains(t, stdout.String(), "# Invoice")
+					assert.Contains(t, stdout.String(), "usage:")
+					assert.Contains(t, stdout.String(), "documentPagesStandardInline: 1")
 				}
 				// #nosec G304 -- Reads this test's explicitly requested private report.
 				body, err := os.ReadFile(report)

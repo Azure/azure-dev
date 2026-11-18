@@ -32,7 +32,7 @@ func (h *azdInfraHost) PromptGeneration(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(h.output, "\n%s\n", text); err != nil {
+		if _, err := fmt.Fprintf(h.output, "\n%s\n", guidanceText(h.outputFormat, text)); err != nil {
 			return fmt.Errorf("write infrastructure guidance: %w", err)
 		}
 		return nil
@@ -50,7 +50,7 @@ func (h *azdInfraHost) PromptGeneration(
 				return err
 			}
 			response, err := h.client.Prompt().Prompt(ctx, &azdext.PromptRequest{Options: &azdext.PromptOptions{
-				Message: message, HelpMessage: help, DefaultValue: *value,
+				Message: actionText(h.outputFormat, message), HelpMessage: help, DefaultValue: *value,
 				Required: value == &choices.Environment,
 			}})
 			if err != nil {
@@ -80,9 +80,9 @@ func (h *azdInfraHost) PromptGeneration(
 	if err := promptText(prompts.environment,
 		"Enter your environment name (1-64 letters, numbers, -, _, ., or parentheses)",
 		"Input your azd environment name. An azd environment name:\n"+
-			"  - lets azd store this deployment's config + outputs under .azure/<env>/ in the generated directory.\n"+
-			"  - seeds your Azure resource names (e.g. rg-<env>, proj-<env>).\n"+
-			"  - keeps separate stacks apart, such as dev, test, or prod.",
+			"  - lets azd store this deployment's config + outputs under `.azure/<env>/` in the generated directory.\n"+
+			"  - seeds your Azure resource names (e.g. `rg-<env>`, `proj-<env>`).\n"+
+			"  - keeps separate stacks apart, such as `dev`, `test`, or `prod`.",
 		&choices.Environment, "invalid_environment"); err != nil {
 		return choices, err
 	}
@@ -93,7 +93,7 @@ func (h *azdInfraHost) PromptGeneration(
 			return choices, err
 		}
 		options := &azdext.SelectOptions{
-			Message:     "Azure region (where the Foundry resource is created)",
+			Message:     actionText(h.outputFormat, "Azure region (where the Foundry resource is created)"),
 			HelpMessage: "Region for the new Microsoft Foundry resource.", EnableFiltering: new(true),
 		}
 		index := int32(0)
@@ -118,9 +118,9 @@ func (h *azdInfraHost) PromptGeneration(
 		"Optional Microsoft Foundry resource name prefix (lowercase letters, numbers, hyphen; blank to skip)",
 		"Microsoft Foundry resource naming\n"+
 			"The resource name becomes part of the public endpoint host "+
-			"(for example, https://<name>.services.ai.azure.com), so it must be globally unique.\n"+
-			"If you provide a prefix, azd constructs the resource name as <prefix>-<unique-suffix>. "+
-			"Without a prefix, it uses aif-<unique-suffix>.",
+			"(for example, `https://<name>.services.ai.azure.com`), so it must be globally unique.\n"+
+			"If you provide a prefix, azd constructs the resource name as `<prefix>-<unique-suffix>`. "+
+			"Without a prefix, it uses `aif-<unique-suffix>`.",
 		&choices.FoundryPrefix, "invalid_foundry_prefix"); err != nil {
 		return choices, err
 	}
@@ -134,7 +134,7 @@ func (h *azdInfraHost) PromptGeneration(
 			return choices, err
 		}
 		response, err := h.client.Prompt().Confirm(ctx, &azdext.ConfirmRequest{Options: &azdext.ConfirmOptions{
-			Message: "Assign RBAC roles to your user on the Microsoft Foundry resource?",
+			Message: actionText(h.outputFormat, "Assign RBAC roles to your user on the Microsoft Foundry resource?"),
 			HelpMessage: "Requires permission to create role assignments, such as Owner, User Access Administrator, " +
 				"or Role Based Access Control Administrator. If skipped, ask an administrator to grant access for Entra ID.",
 			DefaultValue: new(false),
@@ -156,7 +156,7 @@ func (h *azdInfraHost) PromptGeneration(
 func (h *azdInfraHost) promptModels(ctx context.Context, models []infra.Model) ([]infra.Model, error) {
 	const message = "Select live CU-supported models to deploy"
 	options := &azdext.MultiSelectOptions{
-		Message: message,
+		Message: actionText(h.outputFormat, message),
 		HelpMessage: "Accept or change the recommended selections. Clear all selections to deploy no models. " +
 			"Select only one version of each model family.",
 		AllowEmptySelection: new(true), EnableFiltering: new(true),
@@ -167,7 +167,8 @@ func (h *azdInfraHost) promptModels(ctx context.Context, models []infra.Model) (
 		if !ok || (local.Code != "ambiguous_model_version" && local.Code != "no_deployable_models") {
 			return nil, err
 		}
-		options.Message = warningText(h.outputFormat, "No models preselected: "+local.Message) + "\n" + message
+		options.Message = warningText(h.outputFormat, "No models preselected: "+local.Message) + "\n" +
+			actionText(h.outputFormat, message)
 	}
 	for _, model := range models {
 		label := fmt.Sprintf("%s | %s | %s", model.Selector(), model.Kind, model.SKU)
@@ -204,7 +205,7 @@ func (h *azdInfraHost) promptModels(ctx context.Context, models []infra.Model) (
 		if err == nil {
 			// A host without a terminal can accept preselected choices at EOF; require an explicit opt-in to deploy.
 			confirmation, err := h.client.Prompt().Confirm(ctx, &azdext.ConfirmRequest{Options: &azdext.ConfirmOptions{
-				Message:      "Deploy these models: " + strings.Join(selectors, ", ") + "?",
+				Message:      actionText(h.outputFormat, "Deploy these models: "+strings.Join(selectors, ", ")+"?"),
 				HelpMessage:  "Model deployment can incur Azure charges. No models will be deployed unless you confirm.",
 				DefaultValue: new(false),
 			}})

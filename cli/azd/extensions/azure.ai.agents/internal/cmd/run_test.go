@@ -476,7 +476,7 @@ func TestValidateInspectorPortForProfile(t *testing.T) {
 		name        string
 		flags       runFlags
 		isActivity  bool
-		a2aOnly     bool
+		protocol    string
 		wantErrPart string
 	}{
 		{
@@ -498,20 +498,20 @@ func TestValidateInspectorPortForProfile(t *testing.T) {
 			flags: runFlags{port: 0},
 		},
 		{
-			name:    "A2A-only agent allows an unset Inspector port",
-			flags:   runFlags{port: 9091},
-			a2aOnly: true,
+			name:     "A2A-only agent allows an unset Inspector port",
+			flags:    runFlags{port: 9091},
+			protocol: "a2a",
 		},
 		{
 			name:        "A2A-only agent rejects an explicit distinct Inspector port",
 			flags:       runFlags{port: 9091, inspectorPort: 9002, inspectorPortSet: true},
-			a2aOnly:     true,
+			protocol:    "a2a",
 			wantErrPart: "not supported for A2A-only agents",
 		},
 		{
 			name:        "A2A-only agent rejects an explicit equal Inspector port",
 			flags:       runFlags{port: 9091, inspectorPort: 9091, inspectorPortSet: true},
-			a2aOnly:     true,
+			protocol:    "a2a",
 			wantErrPart: "not supported for A2A-only agents",
 		},
 	}
@@ -521,10 +521,10 @@ func TestValidateInspectorPortForProfile(t *testing.T) {
 			t.Parallel()
 
 			flags := tt.flags
-			err := validateInspectorPortForProfile(&flags, tt.isActivity, tt.a2aOnly)
+			err := validateInspectorPortForProfile(&flags, tt.isActivity, tt.protocol)
 			if tt.wantErrPart != "" {
 				if err == nil {
-					t.Fatalf("validateInspectorPortForProfile(%+v, %t, %t) = nil, want error", tt.flags, tt.isActivity, tt.a2aOnly)
+					t.Fatalf("validateInspectorPortForProfile(%+v, %t, %q) = nil, want error", tt.flags, tt.isActivity, tt.protocol)
 				}
 				if !strings.Contains(err.Error(), tt.wantErrPart) {
 					t.Fatalf("error = %q, want it to contain %q", err.Error(), tt.wantErrPart)
@@ -533,10 +533,10 @@ func TestValidateInspectorPortForProfile(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf(
-					"validateInspectorPortForProfile(%+v, %t, %t) = %v, want nil",
+					"validateInspectorPortForProfile(%+v, %t, %q) = %v, want nil",
 					tt.flags,
 					tt.isActivity,
-					tt.a2aOnly,
+					tt.protocol,
 					err,
 				)
 			}
@@ -1593,7 +1593,7 @@ func TestEmitNextAfterBind_ReturnsSilentlyWhenPortNeverBinds(t *testing.T) {
 		// ctx-cancel path takes over.
 		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 		defer cancel()
-		emitNextAfterBind(ctx, nil, "svc", port, false)
+		emitNextAfterBind(ctx, nil, "svc", port, "")
 	}()
 	select {
 	case <-done:
@@ -1615,7 +1615,7 @@ func TestEmitNextAfterBind_ReturnsSilentlyOnContextCancellation(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		emitNextAfterBind(ctx, nil, "svc", port, false)
+		emitNextAfterBind(ctx, nil, "svc", port, "")
 	}()
 	select {
 	case <-done:

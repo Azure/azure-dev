@@ -1,0 +1,54 @@
+# Tier 0: reject registry reuse with unverified IaC teardown scopes.
+# Offline only; no Azure authentication or resource creation.
+name: "init-acr-unverified-scopes"
+command: "azd ai agent init --src ./src --no-prompt"
+cwd: "~/working/azd-agents-acr-unverified-scopes-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZURE_ENV_NAME: "acr-env"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-acr-unverified-scopes-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: >-
+      mkdir -p -- .azure/acr-env src &&
+      cp -- "{fixtures_dir}/acr-unverified-scopes/azure.yaml" ./azure.yaml &&
+      cp -- "{fixtures_dir}/acr-env-preflight/config.json" .azure/config.json &&
+      cp -- "{fixtures_dir}/acr-unverified-scopes/environment.env" .azure/acr-env/.env &&
+      cp -r -- "{fixtures_dir}/acr-unverified-scopes/infra" ./infra &&
+      cp -r -- "{fixtures_dir}/from-code/." ./src
+    name: "seed a registry in a custom application teardown group"
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Fail without answering any
+    prompt. Do not obtain credentials, contact Azure, fetch files, install or
+    update extensions, or create cloud resources. Run only the literal init
+    command and read-only inspections; do not repair fixtures or retry.
+  - >-
+    Wait for 'azd ai agent init --src ./src --no-prompt' to exit non-zero.
+    Confirm the error says application infrastructure teardown scopes cannot be
+    established for external registry reuse and AZURE_RESOURCE_GROUP does not
+    describe every group deleted by azd down. Confirm the guidance says to use
+    Foundry-only infrastructure or an azd-created registry in a new environment.
+    The registry selector comes only from the seeded environment.
+  - >-
+    Confirm no authentication, subscription, location, project, registry, or agent
+    wizard prompt appears. An AI capability, credential, or network error does
+    not satisfy the required teardown-scope validation.
+  - >-
+    Confirm azure.yaml and .azure/acr-env/.env remain byte-for-byte identical to
+    their files in '{fixtures_dir}/acr-unverified-scopes', .azure/config.json
+    matches '{fixtures_dir}/acr-env-preflight/config.json', infra matches
+    '{fixtures_dir}/acr-unverified-scopes/infra', and src matches
+    '{fixtures_dir}/from-code'. No files beyond the seeded tree may be added.
+  - >-
+    Take a best-effort screenshot of the error; capture failure must not block
+    later product assertions.
+  - >-
+    Report a finding if init succeeds, prompts, reaches Azure, reports another
+    error, changes seeded files, or adds artifacts. Do not work around a failed
+    goal.

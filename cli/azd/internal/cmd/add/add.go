@@ -67,13 +67,13 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	// Having a subscription is required for any azd compose (add)
-	err = provisioning.EnsureSubscription(ctx, a.envManager, a.env, a.prompter)
+	err = ensureCompatibleProject(ctx, a.importManager, prjConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	err = ensureCompatibleProject(ctx, a.importManager, prjConfig)
+	// Having a subscription is required for any azd compose (add)
+	err = provisioning.EnsureSubscription(ctx, a.envManager, a.env, a.prompter)
 	if err != nil {
 		return nil, err
 	}
@@ -387,6 +387,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 // ensureCompatibleProject checks if the project is compatible with the add command.
 // A project is incompatible if:
+// - It uses an extension infrastructure provider
 // - It has an Aspire app host
 // - It appears to be a non-compose template (has infra files but no resources defined in azure.yaml)
 func ensureCompatibleProject(
@@ -394,6 +395,17 @@ func ensureCompatibleProject(
 	importManager *project.ImportManager,
 	prjConfig *project.ProjectConfig,
 ) error {
+	for _, entry := range prjConfig.InfrastructureConfigs() {
+		if entry.Provider != provisioning.NotSpecified &&
+			!slices.Contains(provisioning.BuiltInProviderKinds(), entry.Provider) {
+			return &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf("incompatible project: infrastructure uses extension provider %q", entry.Provider),
+				Suggestion: "Edit the provider configuration in azure.yaml directly. " +
+					"azd add currently supports only legacy resource declarations.",
+			}
+		}
+	}
+
 	if hasAppHost := importManager.HasAppHost(ctx, prjConfig); hasAppHost {
 		return &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf("incompatible project: found Aspire app host"),

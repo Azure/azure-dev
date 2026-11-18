@@ -6,17 +6,25 @@ package provisioning
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/status"
 )
 
 // ProjectDeploymentsEnvKey holds the active environment's managed model deployments.
 const ProjectDeploymentsEnvKey = "AI_PROJECT_DEPLOYMENTS"
+
+// DefaultDeploymentCapacity is the preferred deployment capacity for project model deployments
+// when a declaration does not specify an explicit positive capacity.
+const DefaultDeploymentCapacity int32 = 250
 
 // EncodeProjectDeployments encodes deployments using the azd environment escape contract.
 func EncodeProjectDeployments(deployments []synthesis.Deployment) (string, error) {
@@ -131,14 +139,17 @@ func PromptProjectDeployments(
 		if model.GetModel().GetName() == "" {
 			return nil, fmt.Errorf("no model selected for deployment %q", declaration.Name)
 		}
-		response, err := client.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
-			AzureContext: azureContext,
-			ModelName:    model.GetModel().GetName(),
-			Options: &azdext.AiModelDeploymentOptions{
-				Locations: []string{azureContext.GetScope().GetLocation()},
-			},
-			Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
-		})
+		preferredCapacity := DefaultDeploymentCapacity
+		if declaration.Sku.Capacity > 0 && declaration.Sku.Capacity <= math.MaxInt32 {
+			preferredCapacity = int32(declaration.Sku.Capacity)
+		}
+		response, err := promptAiDeploymentWithFallback(
+			ctx,
+			client,
+			azureContext,
+			model.GetModel(),
+			preferredCapacity,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("select deployment %q: %w", declaration.Name, err)
 		}
@@ -156,4 +167,242 @@ func PromptProjectDeployments(
 		})
 	}
 	return deployments, nil
+}
+
+var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
+
+// SkuPriority returns the relative priority of a deployment SKU (lower is higher priority).
+func SkuPriority(skuName string) int {
+	for i, preferred := range defaultSkuPriority {
+		if preferred == skuName {
+			return i
+		}
+	}
+	return len(defaultSkuPriority)
+}
+
+// DeploymentCapacityBaseline returns the minimum valid capacity baseline for a SKU.
+func DeploymentCapacityBaseline(sku *azdext.AiModelSku) int32 {
+	if minCapacity := sku.GetMinCapacity(); minCapacity > 0 {
+		return minCapacity
+	}
+	if capacityStep := sku.GetCapacityStep(); capacityStep > 0 {
+		return capacityStep
+	}
+	return 1
+}
+
+// DeploymentCapacityValid reports whether capacity satisfies the SKU's min, max, and step constraints.
+func DeploymentCapacityValid(sku *azdext.AiModelSku, capacity int32) bool {
+	if capacity <= 0 {
+		return false
+	}
+	if minCapacity := sku.GetMinCapacity(); minCapacity > 0 && capacity < minCapacity {
+		return false
+	}
+	if maxCapacity := sku.GetMaxCapacity(); maxCapacity > 0 && capacity > maxCapacity {
+		return false
+	}
+	if capacityStep := sku.GetCapacityStep(); capacityStep > 0 {
+		baseline := DeploymentCapacityBaseline(sku)
+		if capacity < baseline || (capacity-baseline)%capacityStep != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// ClampDeploymentCapacity clamps preferredCapacity downward to the SKU's max, step, and remaining quota bounds.
+func ClampDeploymentCapacity(
+	candidate *azdext.AiModelDeployment,
+	preferredCapacity int32,
+) (int32, bool) {
+	sku := candidate.GetSku()
+	if sku == nil || preferredCapacity <= 0 {
+		return 0, false
+	}
+	lowerBound := DeploymentCapacityBaseline(sku)
+	upperBound := max(lowerBound, preferredCapacity)
+	if maxCapacity := sku.GetMaxCapacity(); maxCapacity > 0 && upperBound > maxCapacity {
+		upperBound = maxCapacity
+	}
+	if candidate.RemainingQuota != nil {
+		remaining := int32(candidate.GetRemainingQuota())
+		if remaining < upperBound {
+			upperBound = remaining
+		}
+	}
+	if upperBound < lowerBound {
+		return 0, false
+	}
+	if step := sku.GetCapacityStep(); step > 0 {
+		upperBound -= (upperBound - lowerBound) % step
+	}
+	if !DeploymentCapacityValid(sku, upperBound) {
+		return 0, false
+	}
+	if candidate.RemainingQuota != nil && float64(upperBound) > candidate.GetRemainingQuota() {
+		return 0, false
+	}
+	return upperBound, true
+}
+
+// IsDeploymentCapacityFallbackError reports whether err is a gRPC AI error caused by capacity/SKU filtering.
+func IsDeploymentCapacityFallbackError(err error) bool {
+	for current := err; current != nil; current = errors.Unwrap(current) {
+		st, ok := status.FromError(current)
+		if !ok {
+			continue
+		}
+		for _, detail := range st.Details() {
+			info, ok := detail.(*errdetails.ErrorInfo)
+			if ok && info.Domain == azdext.AiErrorDomain &&
+				(info.Reason == azdext.AiErrorReasonNoValidSkus ||
+					info.Reason == azdext.AiErrorReasonNoDeploymentMatch) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func promptAiDeploymentWithFallback(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	model *azdext.AiModel,
+	preferredCapacity int32,
+) (*azdext.PromptAiDeploymentResponse, error) {
+	modelName := model.GetName()
+	locations := []string{azureContext.GetScope().GetLocation()}
+	if candidate, clamped, scopeCandidate, ok := resolveClampedPromptDeployment(
+		ctx, client, azureContext, model, locations, preferredCapacity,
+	); ok {
+		retryOpts := &azdext.AiModelDeploymentOptions{
+			Locations: locations,
+			Capacity:  new(clamped),
+		}
+		if scopeCandidate {
+			if version := candidate.GetVersion(); version != "" {
+				retryOpts.Versions = []string{version}
+			}
+			if skuName := candidate.GetSku().GetName(); skuName != "" {
+				retryOpts.Skus = []string{skuName}
+			}
+		}
+		response, err := client.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
+			AzureContext: azureContext,
+			ModelName:    modelName,
+			Options:      retryOpts,
+			Quota:        &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
+		})
+		if err == nil || !IsDeploymentCapacityFallbackError(err) {
+			return response, err
+		}
+	} else {
+		response, err := client.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
+			AzureContext: azureContext,
+			ModelName:    modelName,
+			Options: &azdext.AiModelDeploymentOptions{
+				Locations: locations,
+				Capacity:  new(preferredCapacity),
+			},
+			Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
+		})
+		if err == nil || !IsDeploymentCapacityFallbackError(err) {
+			return response, err
+		}
+	}
+
+	return client.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
+		AzureContext: azureContext,
+		ModelName:    modelName,
+		Options: &azdext.AiModelDeploymentOptions{
+			Locations: locations,
+		},
+		Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
+	})
+}
+
+func resolveClampedPromptDeployment(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	model *azdext.AiModel,
+	locations []string,
+	preferredCapacity int32,
+) (*azdext.AiModelDeployment, int32, bool, bool) {
+	resolveResp, err := client.Ai().ResolveModelDeployments(ctx, &azdext.ResolveModelDeploymentsRequest{
+		AzureContext: azureContext,
+		ModelName:    model.GetName(),
+		Options: &azdext.AiModelDeploymentOptions{
+			Locations: locations,
+		},
+		Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
+	})
+	if err != nil || len(resolveResp.GetDeployments()) == 0 {
+		return nil, 0, false, false
+	}
+
+	defaultVersions := make(map[string]struct{}, len(model.GetVersions()))
+	for _, v := range model.GetVersions() {
+		if v.GetIsDefault() {
+			defaultVersions[v.GetVersion()] = struct{}{}
+		}
+	}
+
+	var bestCandidate *azdext.AiModelDeployment
+	var bestCap int32
+	bestDefault := false
+	bestPriority := len(defaultSkuPriority) + 1
+	for _, candidate := range resolveResp.GetDeployments() {
+		clamped, ok := ClampDeploymentCapacity(candidate, preferredCapacity)
+		if !ok || clamped <= 0 {
+			continue
+		}
+		_, isDefault := defaultVersions[candidate.GetVersion()]
+		priority := SkuPriority(candidate.GetSku().GetName())
+		better := false
+		if bestCandidate == nil {
+			better = true
+		} else if isDefault != bestDefault {
+			better = isDefault
+		} else if priority != bestPriority {
+			better = priority < bestPriority
+		} else if clamped != bestCap {
+			better = clamped > bestCap
+		}
+		if better {
+			bestCandidate = candidate
+			bestCap = clamped
+			bestDefault = isDefault
+			bestPriority = priority
+		}
+	}
+	if bestCandidate == nil || bestCap >= preferredCapacity {
+		return nil, 0, false, false
+	}
+	scopeCandidate := needsPromptCandidateScoping(
+		resolveResp.GetDeployments(), bestCap, preferredCapacity,
+	)
+	return bestCandidate, bestCap, scopeCandidate, true
+}
+
+func needsPromptCandidateScoping(
+	candidates []*azdext.AiModelDeployment,
+	targetCapacity int32,
+	preferredCapacity int32,
+) bool {
+	for _, candidate := range candidates {
+		if candidate == nil || candidate.GetSku() == nil {
+			continue
+		}
+		if !DeploymentCapacityValid(candidate.GetSku(), targetCapacity) {
+			return true
+		}
+		if clamped, ok := ClampDeploymentCapacity(candidate, preferredCapacity); ok && clamped > targetCapacity {
+			return true
+		}
+	}
+	return false
 }

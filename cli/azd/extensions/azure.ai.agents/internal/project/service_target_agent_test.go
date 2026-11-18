@@ -2504,6 +2504,7 @@ func newServiceTargetTestClient(
 	t.Helper()
 
 	srv := grpc.NewServer()
+	azdext.RegisterEnvironmentServiceServer(srv, &stubInitializeEnvServer{})
 	if containerSrv != nil {
 		azdext.RegisterContainerServiceServer(srv, containerSrv)
 	}
@@ -2585,6 +2586,18 @@ type stubInitializeEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 }
 
+func (s *stubInitializeEnvServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	return &azdext.KeyValueListResponse{}, nil
+}
+
+func (s *stubInitializeEnvServer) GetConfig(
+	context.Context, *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	return &azdext.GetConfigResponse{}, nil
+}
+
 func (s *stubInitializeEnvServer) GetCurrent(
 	context.Context, *azdext.EmptyRequest,
 ) (*azdext.EnvironmentResponse, error) {
@@ -2659,7 +2672,7 @@ func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *az
 }
 
 type legacyPreBuiltEnvironmentServer struct {
-	azdext.UnimplementedEnvironmentServiceServer
+	stubInitializeEnvServer
 }
 
 func (s *legacyPreBuiltEnvironmentServer) GetValue(
@@ -3252,6 +3265,7 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	protocols := []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "1.0.0"},
 		{Protocol: "invocations", Version: "1.0.0"},
+		{Protocol: "voice_conversation_engine", Version: "1.0.0"},
 	}
 	agentVersion := &agent_api.AgentVersionObject{
 		Name:    "my-agent",
@@ -3289,6 +3303,11 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 		t,
 		"https://proj.azure.com/agents/my-agent/endpoint/protocols/invocations?api-version=v1",
 		envStub.values["AGENT_MY_SVC_INVOCATIONS_ENDPOINT"],
+	)
+	require.Equal(
+		t,
+		"wss://proj.azure.com/agents/my-agent/endpoint/protocols/voice_conversation_engine?api-version=v1",
+		envStub.values["AGENT_MY_SVC_VOICE_CONVERSATION_ENGINE_ENDPOINT"],
 	)
 
 	// Base agent endpoint for session management
@@ -4017,6 +4036,19 @@ func TestAgentInvocationEndpoints_SkipsInvocationsWSWithMalformedEndpoint(t *tes
 	got := agentInvocationEndpoints(malformed, agentName, protocols)
 	require.Len(t, got, 1, "invocations_ws entry should be filtered when builder returns empty")
 	require.Equal(t, "responses", got[0].Protocol)
+}
+
+func TestAgentInvocationEndpoints_ConversationEngine(t *testing.T) {
+	got := agentInvocationEndpoints(
+		"https://account.services.ai.azure.com/api/projects/project",
+		"engine",
+		[]agent_yaml.ProtocolVersionRecord{{Protocol: "voice_conversation_engine", Version: "1.0.0"}},
+	)
+	require.Equal(t, []protocolEndpointInfo{{
+		Protocol: "voice_conversation_engine",
+		URL: "wss://account.services.ai.azure.com/api/projects/project/agents/engine/endpoint/protocols/" +
+			"voice_conversation_engine?api-version=v1",
+	}}, got)
 }
 
 func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {

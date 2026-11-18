@@ -148,9 +148,11 @@ func validateSkillTraceConnection(
 		return nil
 	}
 	resource, err := arm.ParseResourceID(connection.ResourceID)
-	if connection.Type != "appinsights" || err != nil || resource.SubscriptionID == "" || resource.ResourceGroupName == "" ||
+	if connection.Type != "application_insights" || err != nil ||
+		resource.SubscriptionID == "" || resource.ResourceGroupName == "" ||
 		!strings.EqualFold(resource.ResourceType.String(), "Microsoft.Insights/components") {
-		return fmt.Errorf("trace_connection_configuration requires type appinsights and an App Insights component ARM resource_id")
+		return fmt.Errorf("trace_connection_configuration requires type application_insights and " +
+			"an App Insights component ARM resource_id")
 	}
 	if target != nil && connection.AgentName != nil {
 		return fmt.Errorf("trace_connection_configuration.agent_name cannot be combined with target_configuration")

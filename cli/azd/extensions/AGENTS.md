@@ -14,19 +14,21 @@ or `azure.ai.toolboxes`, assess existing unit tests and add or update relevant
 tests in the same change. If no test changes are needed, explain why.
 
 Before planning, writing, or reviewing these unit tests, read and follow the
-[unit-testing skill](microsoft.foundry/.github/skills/azd-extension-unit-testing/SKILL.md).
+[unit-testing skill](skills/azd-extension-unit-testing/SKILL.md).
 Derive expected behavior from requirements, not only the implementation.
 Do not run live services for unit tests. For documentation-only changes, do not
 add unrelated tests.
 
-Open the linked file directly; do not rely on automatic nested skill discovery.
+Open the linked file directly; these shared documents are loaded through this
+guide, not assumed native skill discovery.
 
 ## E2E test authoring
 
 Before implementing or reviewing executable E2E tests from a test plan or
 acceptance criteria, read and follow the
-[E2E-testing skill](microsoft.foundry/.github/skills/azd-extension-e2e-testing/SKILL.md).
-Open the linked file directly; do not rely on automatic nested skill discovery.
+[E2E-testing skill](skills/azd-extension-e2e-testing/SKILL.md).
+Open the linked file directly; these shared documents are loaded through this
+guide, not assumed native skill discovery.
 
 Reuse compatible test helpers and keep feature assertions separate from
 environment setup and CI orchestration. Report CI selection gaps rather than

@@ -30,6 +30,19 @@ import (
 const testPolicyProjectID = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-foundry/" +
 	"providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project"
 
+type evaluateDeploymentPoliciesRequest struct {
+	Deployments []struct {
+		Name       string `json:"name"`
+		Properties struct {
+			Model struct {
+				Format  string `json:"format"`
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"model"`
+		} `json:"properties"`
+	} `json:"deployments"`
+}
+
 func TestEvaluateProjectModelDeploymentsPolicy_DenyBlocksAndAuditAllows(t *testing.T) {
 	const (
 		denyAssignmentID = "/subscriptions/00000000-0000-0000-0000-000000000001/providers/" +
@@ -275,6 +288,8 @@ func TestParseFoundryProjectResourceIDAndPortalURL(t *testing.T) {
 		"https://attacker.example/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/" +
 			"providers/Microsoft.CognitiveServices/accounts/acc/projects/proj",
 		"/subscriptions/not-a-uuid/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acc/projects/proj",
+		"/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/" +
+			"providers/Microsoft.Other/accounts/acc/projects/proj",
 		"/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/" +
 			"providers/Microsoft.CognitiveServices/accounts/acc/projects/proj/extra",
 		testPolicyProjectID + "//",

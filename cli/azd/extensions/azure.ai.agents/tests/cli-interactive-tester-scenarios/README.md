@@ -363,9 +363,10 @@ in any order, any time.
 | `tier0/0.36-init-acr-unverified-scopes.yaml` | External registry reuse with custom application teardown groups fails before authentication or local writes |
 | `tier0/0.36-optimize-download-input-validation.yaml` | Empty download candidate rejected before authentication or file creation |
 | `tier0/0.37-init-acr-agent-hosting.yaml` | External source-build registry selection with AKS agent hosting fails before authentication or local writes |
-| `tier0/0.36-init-acr-feature-disabled.yaml` | A valid reuse selector requires the shared switch, independently of Voice, before authentication or writes |
+| `tier0/0.36-init-acr-feature-disabled.yaml` | A valid reuse selector requires the shared switch, independently of ManagedHarness, before authentication or writes |
 | `tier0/0.37-acr-feature-help.yaml` | Default-off and enabled ACR selector/help discovery, with the canonical switch always listed at the root |
 | `tier0/0.38-eject-acr-feature-disabled.yaml` | Eject rejects an alias-free canonical reuse binding while disabled, without changing files or saved lifecycle state |
+| `tier0/0.39-init-env-reference-validation.yaml` | Invalid environment references fail with service and field path before auth or local writes, without exposing secret defaults |
 
 The skill optimization scenarios are offline help and invalid-input checks.
 The Go tests cover submission, polling, candidate details, and file downloads

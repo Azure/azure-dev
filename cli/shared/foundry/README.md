@@ -19,9 +19,17 @@ or import `github.com/azure/azure-dev/cli/azd` or extension-internal packages.
   propagation/sync polling (`Ensure[T]`, `PollReadiness`), and sanitized write
   error remediation (`WriteError`).
 - **`ferrors/`**: Module-owned typed errors (`*ferrors.Error`, `Category`,
-  `CodeAuthFailed`) that extensions translate into their local `exterrors` or
-  `azdext.LocalError` / `azdext.ServiceError` representation at the extension
-  boundary.
+  `CodeAuthFailed`, `CodeAgentPolicyBlocked`, `CodeAgentKindBlockedByPolicy`,
+  `CodeContainerImageBlockedByPolicy`, `CodeModelBlockedByPolicy`,
+  `CodeToolBlockedByPolicy`, `CodeToolboxBlockedByPolicy`) that extensions
+  translate into their local `exterrors` or `azdext.LocalError` /
+  `azdext.ServiceError` representation at the extension boundary.
+- **`policy/`**: Best-effort, fail-open Azure Policy preflight and runtime
+  evaluation for Microsoft Foundry agents, hosted container images/registries,
+  models/deployments (`evaluateDeploymentPolicies`), and tools across Foundry
+  extensions, including Resource Graph inventory loading, caching, Foundry
+  Govern deep-link construction, and credential-safe data-plane 403 policy error
+  classification.
 
 ## Versioning and release
 

@@ -126,6 +126,18 @@ func TestValidateLocalExplicitAzureYaml(t *testing.T) {
 			wantErr: "top-level 'template:'",
 		},
 		{
+			name: "invalid environment reference fails without a host",
+			content: `services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    environmentVariables:
+      - name: VALUE
+        value: ${BAR:=x}
+`,
+			wantErr: "environmentVariables[0].value:",
+		},
+		{
 			name:    "remote input remains deferred",
 			pointer: "HTTPS://github.com/example/private/blob/main/azure.yaml",
 		},
@@ -196,6 +208,93 @@ func TestLoadExplicitAzureYamlRemote(t *testing.T) {
 	recorder := &initTimingRecorder{}
 	timing.Flush(ctx, recorder)
 	require.Len(t, recordedStepDurations(t, recorder, inittelemetry.TemplateLoading), 1)
+}
+
+func TestEnvironmentReferencePreflightBeforeScaffolding(t *testing.T) {
+	for _, templateType := range []string{TemplateTypeAzureYaml, TemplateTypeAzd} {
+		for _, layout := range []struct {
+			name           string
+			referenced     bool
+			existingTarget bool
+		}{
+			{"inline-new-target", false, false},
+			{"referenced-existing-target", true, true},
+		} {
+			for _, noPrompt := range []bool{false, true} {
+				name := fmt.Sprintf("%s/%s/noPrompt=%t", templateType, layout.name, noPrompt)
+				t.Run(name, func(t *testing.T) {
+					root := t.TempDir()
+					t.Chdir(root)
+					target := filepath.Join(root, "target")
+					envPath := filepath.Join(target, ".azure", "test", ".env")
+					originalEnv := []byte("UNCHANGED=yes\n")
+					if layout.existingTarget {
+						require.NoError(t, os.MkdirAll(filepath.Dir(envPath), 0o700))
+						require.NoError(t, os.WriteFile(envPath, originalEnv, 0o600))
+					}
+					source := t.TempDir()
+					definition := []byte(`kind: hosted
+name: sample
+environmentVariables:
+  - name: VALUE
+    value: ${OUTER:-${NESTED}}
+`)
+					content := []byte("services:\n  sample:\n    host: azure.ai.agent\n")
+					if layout.referenced {
+						require.NoError(t, os.WriteFile(filepath.Join(source, "agent.yaml"), definition, 0o600))
+						content = append(content, []byte("    $ref: ./agent.yaml\n")...)
+					} else {
+						for line := range strings.SplitSeq(strings.TrimSpace(string(definition)), "\n") {
+							content = fmt.Appendf(content, "    %s\n", line)
+						}
+					}
+					manifestPath := filepath.Join(source, "azure.yaml")
+					require.NoError(t, os.WriteFile(manifestPath, content, 0o600))
+					env := &testEnvironmentServiceServer{values: map[string]map[string]string{
+						"test": {"UNCHANGED": "yes"},
+					}}
+					workflow := &testWorkflowServiceServer{}
+					prompts := &testPromptServiceServer{}
+					client := newTestAzdClient(t, env, workflow, prompts)
+					flags := &initFlags{
+						src: target, env: "test", noPrompt: noPrompt, templatePointer: manifestPath,
+					}
+
+					var err error
+					if templateType == TemplateTypeAzureYaml {
+						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient,
+							content, source, io.Discard)
+					} else {
+						err = runInitFromAzdTemplate(t.Context(), flags, client, http.DefaultClient,
+							&AgentTemplate{Source: source}, io.Discard)
+					}
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok, "expected a validation error, got %v", err)
+					require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+					require.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+					require.Contains(t, localErr.Message, `service "sample"`)
+					require.Contains(t, localErr.Message, "environmentVariables[0].value:")
+					require.NotEmpty(t, localErr.Suggestion)
+					require.Zero(t, workflow.runCalls)
+					require.Zero(t, env.getValuesCalls)
+					require.Empty(t, env.setKeys)
+					require.Equal(t, map[string]string{"UNCHANGED": "yes"}, env.values["test"])
+					require.Empty(t, prompts.promptRequests)
+					require.NoFileExists(t, filepath.Join(target, "azure.yaml"))
+					if layout.existingTarget {
+						after, err := os.ReadFile(envPath)
+						require.NoError(t, err)
+						require.Equal(t, originalEnv, after)
+					} else {
+						require.NoDirExists(t, target)
+					}
+					after, err := os.ReadFile(manifestPath)
+					require.NoError(t, err)
+					require.Equal(t, content, after)
+				})
+			}
+		}
+	}
 }
 
 func TestExplicitManifestErrorsRedactCredentials(t *testing.T) {

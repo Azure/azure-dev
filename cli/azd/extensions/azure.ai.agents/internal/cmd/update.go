@@ -11,7 +11,6 @@ import (
 	"os"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -80,9 +79,6 @@ Prompt, voice, and workflow agents do not support endpoint/card updates.`,
 	}
 
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Skip confirmation prompts for breaking changes")
-	previewHelpText(cmd, featureflags.Voice,
-		"Prompt, voice, and workflow agents do not support endpoint/card updates.",
-		"Only hosted agents support endpoint/card updates.")
 	gateAgentServices(cmd)
 
 	return cmd

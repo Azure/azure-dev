@@ -221,6 +221,18 @@ subscription and resource group from the endpoint alone. Persist the full
 `azd ai project add --project-id <project-resource-id>`, before deploying its
 first Connection. The error includes environment-specific setup guidance.
 
+The endpoint's DNS subdomain does not have to match the ARM account name.
+Before using `AZURE_AI_PROJECT_ID`, the extension reads that ARM project's
+advertised `AI Foundry API` endpoint and checks it against the resolved endpoint.
+This requires permission to read the ARM project. Authentication, authorization,
+and other metadata lookup failures are returned rather than trusting an
+unverified ID. A missing, invalid, stale, or mismatched ID falls back to the
+ARM resource ID returned by an existing Connection on the resolved data-plane
+endpoint. If that project has no Connections, persist its matching project ID;
+an unrelated environment ID cannot be used to create its first Connection.
+Every ARM operation uses the verified or discovered account and project names,
+never a name inferred from the endpoint's hostname.
+
 ### Readiness markers
 
 Each deployment attempt first clears the service's previous readiness marker.

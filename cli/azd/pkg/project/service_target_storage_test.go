@@ -31,6 +31,16 @@ type fakeStorageWebsiteClient struct {
 	uploaded map[string]string
 	deleted  []string
 	getErr   error
+	// uploadErr fails every upload when set.
+	uploadErr error
+	// calls records the order of mutating operations.
+	calls []string
+}
+
+func (f *fakeStorageWebsiteClient) record(call string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, call)
 }
 
 func (f *fakeStorageWebsiteClient) GetStaticWebsite(context.Context) (*storage.StaticWebsiteProperties, error) {
@@ -42,6 +52,7 @@ func (f *fakeStorageWebsiteClient) GetStaticWebsite(context.Context) (*storage.S
 
 func (f *fakeStorageWebsiteClient) EnableStaticWebsite(_ context.Context, index string, errorDoc string) error {
 	f.enabled = []string{index, errorDoc}
+	f.record("enable")
 	return nil
 }
 
@@ -52,6 +63,10 @@ func (f *fakeStorageWebsiteClient) ListBlobs(context.Context) ([]string, error) 
 }
 
 func (f *fakeStorageWebsiteClient) UploadFile(_ context.Context, name string, _ string, contentType string) error {
+	if f.uploadErr != nil {
+		return f.uploadErr
+	}
+	f.record("upload")
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.uploaded[name] = contentType
@@ -59,6 +74,7 @@ func (f *fakeStorageWebsiteClient) UploadFile(_ context.Context, name string, _ 
 }
 
 func (f *fakeStorageWebsiteClient) DeleteBlob(_ context.Context, name string) error {
+	f.record("delete")
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deleted = append(f.deleted, name)
@@ -152,6 +168,49 @@ func TestStorageTargetPackage(t *testing.T) {
 		require.True(t, isSuggestion, "expected ErrorWithSuggestion, got %v", err)
 	})
 
+	t.Run("RejectsFolderContainingProjectRoot", func(t *testing.T) {
+		parent := t.TempDir()
+		root := filepath.Join(parent, "app")
+		writeStaticSite(t, root, "azure.yaml", "web/index.html")
+
+		serviceConfig := createTestServiceConfig("web", StorageTarget, ServiceLanguageCustom)
+		serviceConfig.Project.Path = root
+		serviceConfig.OutputPath = filepath.Join("..", "..")
+
+		_, err := (&storageTarget{}).Package(
+			t.Context(), serviceConfig, storageDeployContext(t, serviceConfig.Path()), newTestProgress(t))
+		_, isSuggestion := errors.AsType[*errorhandler.ErrorWithSuggestion](err)
+		require.True(t, isSuggestion, "expected ErrorWithSuggestion, got %v", err)
+		require.ErrorContains(t, err, "cannot be the project root or contain it")
+	})
+
+	t.Run("RequiresDistForBuildLanguages", func(t *testing.T) {
+		root := t.TempDir()
+		writeStaticSite(t, filepath.Join(root, "web"), "index.html", ".env")
+
+		serviceConfig := createTestServiceConfig("web", StorageTarget, ServiceLanguageJavaScript)
+		serviceConfig.Project.Path = root
+
+		_, err := (&storageTarget{}).Package(
+			t.Context(), serviceConfig, storageDeployContext(t, serviceConfig.Path()), newTestProgress(t))
+		suggestion, isSuggestion := errors.AsType[*errorhandler.ErrorWithSuggestion](err)
+		require.True(t, isSuggestion, "expected ErrorWithSuggestion, got %v", err)
+		require.Contains(t, suggestion.Suggestion, "dist")
+	})
+
+	t.Run("AllowsServiceFolderWithoutLanguage", func(t *testing.T) {
+		root := t.TempDir()
+		writeStaticSite(t, filepath.Join(root, "web"), "index.html")
+
+		serviceConfig := createTestServiceConfig("web", StorageTarget, ServiceLanguageNone)
+		serviceConfig.Project.Path = root
+
+		result, err := (&storageTarget{}).Package(
+			t.Context(), serviceConfig, storageDeployContext(t, serviceConfig.Path()), newTestProgress(t))
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(root, "web"), result.Artifacts[0].Location)
+	})
+
 	t.Run("MissingFolder", func(t *testing.T) {
 		root := t.TempDir()
 		serviceConfig := createTestServiceConfig("web", StorageTarget, ServiceLanguageNone)
@@ -197,6 +256,116 @@ func TestStorageTargetDeploy(t *testing.T) {
 		endpoint, found := result.Artifacts.FindFirst(WithKind(ArtifactKindEndpoint))
 		require.True(t, found)
 		require.Equal(t, "https://acct.z13.web.core.windows.net/", endpoint.Location)
+	})
+
+	t.Run("EnablesWebsiteAfterContentIsInPlace", func(t *testing.T) {
+		content := t.TempDir()
+		writeStaticSite(t, content, "index.html")
+
+		client := &fakeStorageWebsiteClient{existing: []string{"private.txt"}, uploaded: map[string]string{}}
+		_, err := newTestStorageTarget(client, "StorageV2").Deploy(
+			t.Context(),
+			createTestServiceConfig("web", StorageTarget, ServiceLanguageNone),
+			storageDeployContext(t, content),
+			storageTargetResource(),
+			newTestProgress(t),
+		)
+		require.NoError(t, err)
+		require.Equal(t, []string{"upload", "delete", "enable"}, client.calls)
+	})
+
+	t.Run("LeavesWebsiteDisabledWhenUploadFails", func(t *testing.T) {
+		content := t.TempDir()
+		writeStaticSite(t, content, "index.html")
+
+		client := &fakeStorageWebsiteClient{uploadErr: errors.New("upload failed"), uploaded: map[string]string{}}
+		_, err := newTestStorageTarget(client, "StorageV2").Deploy(
+			t.Context(),
+			createTestServiceConfig("web", StorageTarget, ServiceLanguageNone),
+			storageDeployContext(t, content),
+			storageTargetResource(),
+			newTestProgress(t),
+		)
+		require.ErrorContains(t, err, "upload failed")
+		require.Nil(t, client.enabled)
+	})
+
+	t.Run("UsesStorageTargetPackageArtifact", func(t *testing.T) {
+		root := t.TempDir()
+		content := filepath.Join(root, "web", "dist")
+		writeStaticSite(t, content, "index.html")
+
+		serviceConfig := createTestServiceConfig("web", StorageTarget, ServiceLanguageNone)
+		serviceConfig.Project.Path = root
+
+		// The framework artifact comes first; the storage target's validated artifact is appended last.
+		serviceContext := storageDeployContext(t, root)
+		require.NoError(t, serviceContext.Package.Add(&Artifact{
+			Kind:         ArtifactKindDirectory,
+			Location:     content,
+			LocationKind: LocationKindLocal,
+		}))
+
+		client := &fakeStorageWebsiteClient{uploaded: map[string]string{}}
+		_, err := newTestStorageTarget(client, "StorageV2").Deploy(
+			t.Context(), serviceConfig, serviceContext, storageTargetResource(), newTestProgress(t))
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{"index.html": "text/html; charset=utf-8"}, client.uploaded)
+	})
+
+	t.Run("RejectsProjectRootFromPackage", func(t *testing.T) {
+		root := t.TempDir()
+		writeStaticSite(t, root, "azure.yaml", ".azure/dev/.env")
+
+		serviceConfig := createTestServiceConfig("web", StorageTarget, ServiceLanguageNone)
+		serviceConfig.Project.Path = root
+
+		client := &fakeStorageWebsiteClient{uploaded: map[string]string{}}
+		_, err := newTestStorageTarget(client, "StorageV2").Deploy(
+			t.Context(), serviceConfig, storageDeployContext(t, root), storageTargetResource(), newTestProgress(t))
+		require.ErrorContains(t, err, "cannot be the project root or contain it")
+		require.Empty(t, client.uploaded)
+	})
+
+	t.Run("RejectsSymbolicLinks", func(t *testing.T) {
+		content := t.TempDir()
+		writeStaticSite(t, content, "index.html")
+		if err := os.Symlink(filepath.Join(content, "index.html"), filepath.Join(content, "link.html")); err != nil {
+			t.Skipf("symbolic links are not supported: %v", err)
+		}
+
+		client := &fakeStorageWebsiteClient{uploaded: map[string]string{}}
+		_, err := newTestStorageTarget(client, "StorageV2").Deploy(
+			t.Context(),
+			createTestServiceConfig("web", StorageTarget, ServiceLanguageNone),
+			storageDeployContext(t, content),
+			storageTargetResource(),
+			newTestProgress(t),
+		)
+		_, isSuggestion := errors.AsType[*errorhandler.ErrorWithSuggestion](err)
+		require.True(t, isSuggestion, "expected ErrorWithSuggestion, got %v", err)
+		require.ErrorContains(t, err, "symbolic link")
+		require.Empty(t, client.uploaded)
+	})
+
+	t.Run("FollowsSymlinkedContentFolder", func(t *testing.T) {
+		content := t.TempDir()
+		writeStaticSite(t, content, "index.html")
+		link := filepath.Join(t.TempDir(), "site")
+		if err := os.Symlink(content, link); err != nil {
+			t.Skipf("symbolic links are not supported: %v", err)
+		}
+
+		client := &fakeStorageWebsiteClient{uploaded: map[string]string{}}
+		_, err := newTestStorageTarget(client, "StorageV2").Deploy(
+			t.Context(),
+			createTestServiceConfig("web", StorageTarget, ServiceLanguageNone),
+			storageDeployContext(t, link),
+			storageTargetResource(),
+			newTestProgress(t),
+		)
+		require.NoError(t, err)
+		require.Contains(t, client.uploaded, "index.html")
 	})
 
 	t.Run("KeepsExistingWebsiteConfiguration", func(t *testing.T) {
@@ -262,6 +431,13 @@ func TestStorageTargetDeploy(t *testing.T) {
 		)
 		require.ErrorContains(t, err, "does not match expected resource type")
 	})
+}
+
+func TestStorageAccountResourceId(t *testing.T) {
+	resourceId, err := storageAccountResourceId(storageTargetResource())
+	require.NoError(t, err)
+	require.Equal(t, "/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Storage/storageAccounts/acct",
+		resourceId.String())
 }
 
 func TestStaticContentType(t *testing.T) {

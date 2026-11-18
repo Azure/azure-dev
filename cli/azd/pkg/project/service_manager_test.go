@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -1466,4 +1467,26 @@ func (f *fakeSimpleServiceLocator) Resolve(_ any) error {
 
 func (f *fakeSimpleServiceLocator) Invoke(_ any) error {
 	return nil
+}
+
+func Test_copyPackageDirectory(t *testing.T) {
+	t.Run("CopiesAndKeepsSource", func(t *testing.T) {
+		source := filepath.Join(t.TempDir(), "dist")
+		writeStaticSite(t, source, "index.html", "assets/app.js")
+		dest := filepath.Join(t.TempDir(), "out")
+
+		location, err := copyPackageDirectory(source, dest)
+		require.NoError(t, err)
+		require.Equal(t, dest, location)
+		require.FileExists(t, filepath.Join(dest, "assets", "app.js"))
+		require.FileExists(t, filepath.Join(source, "index.html"))
+	})
+
+	t.Run("RejectsOutputInsideSource", func(t *testing.T) {
+		source := t.TempDir()
+		writeStaticSite(t, source, "index.html")
+
+		_, err := copyPackageDirectory(source, filepath.Join(source, "out"))
+		require.ErrorContains(t, err, "cannot be inside the package directory")
+	})
 }

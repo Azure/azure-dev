@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -24,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -128,25 +130,24 @@ func (st *storageTarget) Package(
 	}
 	packagePath = filepath.Clean(packagePath)
 
-	// Uploading the project root would publish azure.yaml and the .azure folder (which holds environment
-	// values) to a publicly readable website.
-	if serviceConfig.Project != nil && packagePath == filepath.Clean(serviceConfig.Project.Path) {
+	// Build languages (js, python, ...) report the service source folder when no output folder is configured.
+	// Publishing that folder would expose sources, dependencies and .env files, so require an explicit `dist`.
+	language := serviceConfig.Language
+	if packagePath == filepath.Clean(serviceConfig.Path()) && strings.TrimSpace(serviceConfig.OutputPath) == "" &&
+		language != ServiceLanguageNone && language != ServiceLanguageCustom {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
-				"the content folder for service '%s' cannot be the project root: %s", serviceConfig.Name, packagePath),
-			Message: "Static website content would include azure.yaml and the .azure folder, " +
-				"which are publicly readable once uploaded.",
-			Suggestion: "Move the service to a subfolder, or set 'dist' in azure.yaml to the folder " +
-				"containing the built static files.",
+				"no static content output folder configured for service '%s' (language '%s')",
+				serviceConfig.Name, language),
+			Message: "Without 'dist', azd would publish the service source folder, including dependencies " +
+				"and local configuration files, to a publicly readable website.",
+			Suggestion: "Set 'dist' in azure.yaml to the folder containing the built static files, " +
+				"for example 'dist: build'.",
 		}
 	}
 
-	info, err := os.Stat(packagePath)
-	if err != nil || !info.IsDir() {
-		return nil, fmt.Errorf(
-			"static content folder '%s' for service '%s' does not exist. "+
-				"Set 'dist' in azure.yaml to the folder containing the built static files",
-			packagePath, serviceConfig.Name)
+	if _, err := resolveStaticContentDir(serviceConfig, packagePath); err != nil {
+		return nil, err
 	}
 
 	return &ServicePackageResult{
@@ -185,11 +186,17 @@ func (st *storageTarget) Deploy(
 		return nil, err
 	}
 
-	artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindDirectory))
+	// The storage target's own package artifact is appended after the framework artifact, so use the last one.
+	// The folder is validated again because `--from-package` skips Package.
+	artifact, found := serviceContext.Package.FindLast(WithKind(ArtifactKindDirectory))
 	if !found || artifact.Location == "" {
 		return nil, fmt.Errorf("no static content folder found in package artifacts for service '%s'", serviceConfig.Name)
 	}
-	contentPath := artifact.Location
+
+	contentPath, err := resolveStaticContentDir(serviceConfig, artifact.Location)
+	if err != nil {
+		return nil, err
+	}
 
 	files, err := collectStaticFiles(contentPath)
 	if err != nil {
@@ -235,17 +242,6 @@ func (st *storageTarget) Deploy(
 		return nil, storageDataPlaneError(targetResource, err)
 	}
 
-	if !website.Enabled {
-		progress.SetProgress(NewServiceProgress("Enabling static website"))
-		errorDocument := ""
-		if _, has := files[storageDefaultErrorDocument]; has {
-			errorDocument = storageDefaultErrorDocument
-		}
-		if err := client.EnableStaticWebsite(ctx, storageDefaultIndexDocument, errorDocument); err != nil {
-			return nil, storageDataPlaneError(targetResource, err)
-		}
-	}
-
 	if err := client.EnsureWebContainer(ctx); err != nil {
 		return nil, storageDataPlaneError(targetResource, err)
 	}
@@ -286,6 +282,19 @@ func (st *storageTarget) Deploy(
 		}
 	}
 
+	// Enable the website only after the content is in place, so blobs that were already in a private $web
+	// container are not exposed if the upload or cleanup fails.
+	if !website.Enabled {
+		progress.SetProgress(NewServiceProgress("Enabling static website"))
+		errorDocument := ""
+		if _, has := files[storageDefaultErrorDocument]; has {
+			errorDocument = storageDefaultErrorDocument
+		}
+		if err := client.EnableStaticWebsite(ctx, storageDefaultIndexDocument, errorDocument); err != nil {
+			return nil, storageDataPlaneError(targetResource, err)
+		}
+	}
+
 	endpoints := []string{}
 	if storageAccount.Properties.PrimaryEndpoints.Web != "" {
 		endpoints = append(endpoints, storageAccount.Properties.PrimaryEndpoints.Web)
@@ -321,14 +330,12 @@ func (st *storageTarget) getStorageAccount(
 	ctx context.Context,
 	targetResource *environment.TargetResource,
 ) (*storageAccountInfo, error) {
-	resourceId := arm.ResourceID{
-		SubscriptionID:    targetResource.SubscriptionId(),
-		ResourceGroupName: targetResource.ResourceGroupName(),
-		ResourceType:      arm.NewResourceType("Microsoft.Storage", "storageAccounts"),
-		Name:              targetResource.ResourceName(),
+	resourceId, err := storageAccountResourceId(targetResource)
+	if err != nil {
+		return nil, err
 	}
 
-	raw, err := st.resourceService.GetRawResource(ctx, resourceId, storageAccountApiVersion)
+	raw, err := st.resourceService.GetRawResource(ctx, *resourceId, storageAccountApiVersion)
 	if err != nil {
 		return nil, fmt.Errorf("getting storage account '%s': %w", targetResource.ResourceName(), err)
 	}
@@ -339,6 +346,17 @@ func (st *storageTarget) getStorageAccount(
 	}
 
 	return info, nil
+}
+
+// storageAccountResourceId parses the account ID so that ResourceID.String() returns the full ID used by ARM.
+func storageAccountResourceId(targetResource *environment.TargetResource) (*arm.ResourceID, error) {
+	resourceId, err := arm.ParseResourceID(azure.StorageAccountRID(
+		targetResource.SubscriptionId(), targetResource.ResourceGroupName(), targetResource.ResourceName()))
+	if err != nil {
+		return nil, fmt.Errorf("parsing storage account resource ID: %w", err)
+	}
+
+	return resourceId, nil
 }
 
 func (st *storageTarget) createWebsiteClient(
@@ -381,12 +399,78 @@ func storageDataPlaneError(targetResource *environment.TargetResource, err error
 	}
 }
 
+// resolveStaticContentDir resolves the static content folder, following symbolic links, and rejects folders that
+// would publish the project configuration. Uploading the project root, or any folder that contains it, would publish
+// azure.yaml and the .azure folder (which holds environment values) to a publicly readable website.
+func resolveStaticContentDir(serviceConfig *ServiceConfig, contentPath string) (string, error) {
+	absPath, err := filepath.Abs(contentPath)
+	if err != nil {
+		return "", fmt.Errorf("resolving static content folder '%s': %w", contentPath, err)
+	}
+
+	resolved, err := filepath.EvalSymlinks(absPath)
+	if err == nil {
+		var info os.FileInfo
+		if info, err = os.Stat(resolved); err == nil && !info.IsDir() {
+			err = fmt.Errorf("'%s' is not a folder", resolved)
+		}
+	}
+	if err != nil {
+		return "", fmt.Errorf(
+			"static content folder '%s' for service '%s' does not exist. "+
+				"Set 'dist' in azure.yaml to the folder containing the built static files: %w",
+			absPath, serviceConfig.Name, err)
+	}
+
+	if serviceConfig.Project != nil && serviceConfig.Project.Path != "" {
+		projectRoot, err := filepath.Abs(serviceConfig.Project.Path)
+		if err != nil {
+			return "", fmt.Errorf("resolving project root: %w", err)
+		}
+		if resolvedRoot, err := filepath.EvalSymlinks(projectRoot); err == nil {
+			projectRoot = resolvedRoot
+		}
+
+		if isPathWithin(projectRoot, resolved) {
+			return "", &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"the content folder for service '%s' cannot be the project root or contain it: %s",
+					serviceConfig.Name, absPath),
+				Message: "Static website content would include azure.yaml and the .azure folder, " +
+					"which are publicly readable once uploaded.",
+				Suggestion: "Move the service to a subfolder, or set 'dist' in azure.yaml to the folder " +
+					"containing the built static files.",
+			}
+		}
+	}
+
+	return resolved, nil
+}
+
+// isPathWithin reports whether path is dir or one of its descendants.
+func isPathWithin(path string, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
 // collectStaticFiles maps blob names (forward-slash relative paths) to local file paths for every file under root.
 func collectStaticFiles(root string) (map[string]string, error) {
 	files := map[string]string{}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return &internal.ErrorWithSuggestion{
+				Err:     fmt.Errorf("static content contains a symbolic link: %s", path),
+				Message: "azd does not follow symbolic links when uploading static website content.",
+				Suggestion: "Replace the symbolic link with the file or folder it points to, " +
+					"or exclude it from the build output, and run 'azd deploy' again.",
+			}
 		}
 		if !d.Type().IsRegular() {
 			return nil
@@ -399,6 +483,9 @@ func collectStaticFiles(root string) (map[string]string, error) {
 		files[filepath.ToSlash(rel)] = path
 		return nil
 	})
+	if _, isSuggestion := errors.AsType[*internal.ErrorWithSuggestion](err); isSuggestion {
+		return nil, err
+	}
 	if err != nil {
 		return nil, fmt.Errorf("reading static content from '%s': %w", root, err)
 	}

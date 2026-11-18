@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/otiai10/copy"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -454,10 +455,17 @@ func (sm *serviceManager) Package(
 	// Package path can be a file path or a container image name
 	// We only move to desired output path for file based packages
 	if packageArtifact, has := serviceContext.Package.FindLast(); has {
-		_, err = os.Stat(packageArtifact.Location)
+		packageInfo, err := os.Stat(packageArtifact.Location)
 		hasPackageFile := err == nil
 
-		if hasPackageFile && options.OutputPath != "" {
+		if hasPackageFile && packageInfo.IsDir() && options.OutputPath != "" {
+			destDirectory, err := copyPackageDirectory(packageArtifact.Location, options.OutputPath)
+			if err != nil {
+				return nil, err
+			}
+
+			packageArtifact.Location = destDirectory
+		} else if hasPackageFile && options.OutputPath != "" {
 			var destFilePath string
 			var destDirectory string
 
@@ -1064,6 +1072,37 @@ func (sm *serviceManager) GetTargetResource(
 	}
 
 	return sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
+}
+
+// copyPackageDirectory copies the contents of a directory package to the output path, leaving the source intact
+// because directory packages usually point at build output or source folders.
+func copyPackageDirectory(sourcePath string, outputPath string) (string, error) {
+	sourceDirectory, err := filepath.Abs(sourcePath)
+	if err != nil {
+		return "", fmt.Errorf("resolving package directory '%s': %w", sourcePath, err)
+	}
+
+	destDirectory, err := filepath.Abs(outputPath)
+	if err != nil {
+		return "", fmt.Errorf("resolving output path '%s': %w", outputPath, err)
+	}
+
+	if destDirectory == sourceDirectory {
+		return destDirectory, nil
+	}
+
+	if rel, err := filepath.Rel(sourceDirectory, destDirectory); err == nil &&
+		rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf(
+			"output path '%s' cannot be inside the package directory '%s'", destDirectory, sourceDirectory)
+	}
+
+	if err := copy.Copy(sourceDirectory, destDirectory); err != nil {
+		return "", fmt.Errorf(
+			"failed copying package directory '%s' to '%s': %w", sourceDirectory, destDirectory, err)
+	}
+
+	return destDirectory, nil
 }
 
 // Copies a file from the source path to the destination path

@@ -945,7 +945,7 @@
       "description": "Register and version Foundry datasets from your terminal. (Beta)",
       "versions": [
         {
-          "version": "1.0.0-beta.2.nightly.7089709",
+          "version": "1.0.0-beta.2.nightly.7093924",
           "requiredAzdVersion": ">=1.37.0",
           "capabilities": [
             "custom-commands",
@@ -968,7 +968,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "5b1a51a03083d2413877022d87dd9446ffb25617ad684b85c51b6ba4cd5b229f"
+                "value": "9ca44b5b8e4aca6075efbe60559bc894d0c5eabd575c8f74112bed8deb5e618c"
               },
               "entryPoint": "azure-ai-dataset-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-dataset/nightly/azure-ai-dataset-darwin-amd64.zip"
@@ -976,7 +976,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "d5f8e0d9821656567474ac2ea900c50e9c84d10f457d95868bdb809ac1ec0ec6"
+                "value": "209c84d72ed1d83603322ac21ae3e71058c6490e17ab292a1b8310d826348da9"
               },
               "entryPoint": "azure-ai-dataset-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-dataset/nightly/azure-ai-dataset-darwin-arm64.zip"
@@ -984,7 +984,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e987936e693e955a327327bf0a43aa9cfbb1276bd54adae3fecf144aa703a4c1"
+                "value": "f7dd4371d4bf99da6e18d51598c9987eee81cddeabcb8670ee7abeca14f7cda4"
               },
               "entryPoint": "azure-ai-dataset-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-dataset/nightly/azure-ai-dataset-linux-amd64.tar.gz"
@@ -992,7 +992,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "0b6db135e9a9eb67d9ac3400115632dbfc86e61426b9430578a492382eca0170"
+                "value": "37481ea49010e5c9d1b8e5fd9706d746a7b5c6e9a199e721328bd9972b469c6a"
               },
               "entryPoint": "azure-ai-dataset-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-dataset/nightly/azure-ai-dataset-linux-arm64.tar.gz"
@@ -1000,7 +1000,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "bc6a13791dc7d8f7e02d9be0d4b40d013e24c93aa9b42bde3c371c3c466e8688"
+                "value": "eac7cf088996ae6a9b83e07a84b6b6548e8374f42f84f7a312fd93359eaad96a"
               },
               "entryPoint": "azure-ai-dataset-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-dataset/nightly/azure-ai-dataset-windows-amd64.zip"
@@ -1008,7 +1008,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "dd8ff0819117e1e3b47612d65a9cc3e2f20a438bbff64fcd510db6c1fd4832f8"
+                "value": "6405f5e20af308e04abdefcb933190c700ecbb1e8597f3a3d279cba19a28113f"
               },
               "entryPoint": "azure-ai-dataset-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-dataset/nightly/azure-ai-dataset-windows-arm64.zip"

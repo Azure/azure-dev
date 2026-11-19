@@ -4,6 +4,10 @@
 
 For end-user documentation, see [aka.ms/azd](https://aka.ms/azd). For template examples, see [awesome-azd](https://azure.github.io/awesome-azd/).
 
+Before designing a change, read the [guiding principles](../cli/azd/docs/style-guidelines/guiding-principles.md) for command design and choosing between core and extensions. For extension user experience and code standards, use the [extensions style guide](../cli/azd/docs/extensions/extensions-style-guide.md).
+
+The principles page owns the [extension-versus-core decision framework](../cli/azd/docs/style-guidelines/guiding-principles.md#choose-between-core-and-an-extension) and [design and PR review checklist](../cli/azd/docs/style-guidelines/guiding-principles.md#design-and-pr-review-checklist). The [contract versioning guide](../cli/azd/docs/extensions/contract-versioning.md) owns host API compatibility policy; the [CLI contribution guide](../cli/azd/CONTRIBUTING.md) owns contribution mechanics. Link these sources rather than copying their rules into new guides.
+
 ---
 
 ## Concepts
@@ -63,11 +67,11 @@ System overviews, design context, and decision records.
 | A system design or ADR | `docs/architecture/` |
 | Detailed implementation design | `cli/azd/docs/design/` |
 | Extension development details | `cli/azd/docs/extensions/` |
-| Style and coding standards | `cli/azd/docs/style-guidelines/` |
+| Core CLI user experience and code standards | `cli/azd/docs/style-guidelines/` |
 
 ## Related documentation
 
 - [AGENTS.md](../AGENTS.md) — AI agent coding instructions
 - [cli/azd/docs/](../cli/azd/docs/) — Detailed implementation-level documentation
-- [cli/azd/docs/style-guidelines/](../cli/azd/docs/style-guidelines/) — Code style guide
-- [cli/azd/docs/extensions/](../cli/azd/docs/extensions/) — Extension framework details
+- [cli/azd/docs/style-guidelines/](../cli/azd/docs/style-guidelines/): Core CLI user experience and code standards
+- [cli/azd/docs/extensions/](../cli/azd/docs/extensions/): Extension framework details, user experience guidance, and code standards

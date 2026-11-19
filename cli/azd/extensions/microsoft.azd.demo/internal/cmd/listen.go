@@ -131,24 +131,24 @@ func configureExtensionHostWithOutput(host *azdext.ExtensionHost, output io.Writ
 				return err
 			})
 		}, nil).
-		WithBetaServiceEventHandler(
+		WithServiceEventResponseHandler(
 			"predeploy",
-			func(_ context.Context, args *azdext.ServiceEventArgs) (*azdext.BetaServiceEventResponse, error) {
-				return &azdext.BetaServiceEventResponse{
-					Messages: []azdext.BetaServiceEventMessage{{
-						Kind:    azdext.BetaServiceEventMessageInfo,
+			func(_ context.Context, args *azdext.ServiceEventArgs) (*azdext.ServiceEventResponse, error) {
+				return &azdext.ServiceEventResponse{
+					Messages: []*azdext.ServiceEventMessage{{
+						Kind:    azdext.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO,
 						Message: fmt.Sprintf("Preparing service %q for deployment.", args.Service.Name),
 					}},
 				}, nil
 			},
 			nil,
 		).
-		WithBetaServiceEventHandler(
+		WithServiceEventResponseHandler(
 			"postdeploy",
-			func(_ context.Context, args *azdext.ServiceEventArgs) (*azdext.BetaServiceEventResponse, error) {
-				return &azdext.BetaServiceEventResponse{
-					Messages: []azdext.BetaServiceEventMessage{{
-						Kind:       azdext.BetaServiceEventMessageWarning,
+			func(_ context.Context, args *azdext.ServiceEventArgs) (*azdext.ServiceEventResponse, error) {
+				return &azdext.ServiceEventResponse{
+					Messages: []*azdext.ServiceEventMessage{{
+						Kind:       azdext.ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
 						Message:    fmt.Sprintf("Demo warning for service %q.", args.Service.Name),
 						Suggestion: "This is an example structured deploy message.",
 					}},

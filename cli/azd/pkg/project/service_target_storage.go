@@ -130,25 +130,31 @@ func (st *storageTarget) Package(
 	}
 	packagePath = filepath.Clean(packagePath)
 
-	// Build languages (js, python, ...) report the service source folder when no output folder is configured.
-	// Publishing that folder would expose sources, dependencies and .env files, so require an explicit `dist`.
+	// Framework packages for build languages (js, python, dotnet, ...) contain sources, dependencies, server binaries
+	// or configuration files unless `dist` narrows them to the static output, so require an explicit `dist`.
 	language := serviceConfig.Language
-	if packagePath == filepath.Clean(serviceConfig.Path()) && strings.TrimSpace(serviceConfig.OutputPath) == "" &&
+	if strings.TrimSpace(serviceConfig.OutputPath) == "" &&
 		language != ServiceLanguageNone && language != ServiceLanguageCustom {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
 				"no static content output folder configured for service '%s' (language '%s')",
 				serviceConfig.Name, language),
-			Message: "Without 'dist', azd would publish the service source folder, including dependencies " +
-				"and local configuration files, to a publicly readable website.",
+			Message: "Without 'dist', azd would publish the full framework package, which can include sources, " +
+				"dependencies, server binaries and configuration files, to a publicly readable website.",
 			Suggestion: "Set 'dist' in azure.yaml to the folder containing the built static files, " +
-				"for example 'dist: build'.",
+				"for example 'dist: build' for JavaScript or 'dist: wwwroot' for .NET.",
+			Links: []errorhandler.ErrorLink{{
+				URL:   "https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-schema",
+				Title: "azure.yaml schema reference",
+			}},
 		}
 	}
 
-	if _, err := resolveStaticContentDir(serviceConfig, packagePath); err != nil {
+	resolvedPath, err := resolveStaticContentDir(serviceConfig, packagePath)
+	if err != nil {
 		return nil, err
 	}
+	packagePath = resolvedPath
 
 	return &ServicePackageResult{
 		Artifacts: ArtifactCollection{
@@ -431,7 +437,7 @@ func resolveStaticContentDir(serviceConfig *ServiceConfig, contentPath string) (
 			projectRoot = resolvedRoot
 		}
 
-		if isPathWithin(projectRoot, resolved) {
+		if isSubPath(projectRoot, resolved) {
 			return "", &internal.ErrorWithSuggestion{
 				Err: fmt.Errorf(
 					"the content folder for service '%s' cannot be the project root or contain it: %s",
@@ -445,16 +451,6 @@ func resolveStaticContentDir(serviceConfig *ServiceConfig, contentPath string) (
 	}
 
 	return resolved, nil
-}
-
-// isPathWithin reports whether path is dir or one of its descendants.
-func isPathWithin(path string, dir string) bool {
-	rel, err := filepath.Rel(dir, path)
-	if err != nil {
-		return false
-	}
-
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // collectStaticFiles maps blob names (forward-slash relative paths) to local file paths for every file under root.

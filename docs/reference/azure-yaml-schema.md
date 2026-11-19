@@ -215,7 +215,8 @@ for any other service.
 During `azd deploy`, azd:
 
 1. Uses the framework build output, or `dist` when set, as the content folder. For build languages such as `js`, `ts`,
-   or `python`, `dist` is required so that sources, dependencies, and `.env` files are not published. The project root,
+   `python`, or `dotnet`, `dist` is required so that sources, dependencies, server binaries, and configuration files
+   are not published (for example, `dist: build` for JavaScript or `dist: wwwroot` for .NET). The project root,
    or any folder that contains it, is rejected so that `azure.yaml` and `.azure` are never published. Symbolic links
    inside the content folder are rejected.
 2. Uploads every file to the `$web` container with a `Content-Type` derived from the file extension, then deletes
@@ -223,6 +224,9 @@ During `azd deploy`, azd:
 3. Enables static website hosting when it is off, using `index.html` as the index document and `404.html` as the error
    document when that file exists. This happens after the upload succeeds, so existing `$web` content is not exposed
    by a failed deployment. An existing static website configuration is left unchanged.
+
+`azd package <service> --output-path <path>` copies the content folder to `<path>/<service>`, replacing any previous
+export there. Deploy that folder later with `azd deploy <service> --from-package <path>/<service>`.
 
 Infrastructure requirements:
 

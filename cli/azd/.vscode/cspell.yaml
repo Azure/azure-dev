@@ -184,6 +184,7 @@ overrides:
   - filename: pkg/project/service_target_storage.go
     words:
       - webp
+      - wwwroot
   - filename: pkg/output/colors.go
     words:
       - termenv

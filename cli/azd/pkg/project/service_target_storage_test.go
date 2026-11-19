@@ -135,6 +135,7 @@ func TestStorageTargetPackage(t *testing.T) {
 
 		serviceConfig := createTestServiceConfig("web", StorageTarget, ServiceLanguageJavaScript)
 		serviceConfig.Project.Path = root
+		serviceConfig.OutputPath = "dist"
 
 		result, err := (&storageTarget{}).Package(
 			t.Context(), serviceConfig, storageDeployContext(t, dist), newTestProgress(t))
@@ -196,6 +197,42 @@ func TestStorageTargetPackage(t *testing.T) {
 		suggestion, isSuggestion := errors.AsType[*errorhandler.ErrorWithSuggestion](err)
 		require.True(t, isSuggestion, "expected ErrorWithSuggestion, got %v", err)
 		require.Contains(t, suggestion.Suggestion, "dist")
+	})
+
+	t.Run("RequiresDistForDotNetPublishOutput", func(t *testing.T) {
+		root := t.TempDir()
+		publish := t.TempDir()
+		writeStaticSite(t, publish, "web.dll", "appsettings.json", "wwwroot/index.html")
+
+		serviceConfig := createTestServiceConfig("web", StorageTarget, ServiceLanguageDotNet)
+		serviceConfig.Project.Path = root
+
+		_, err := (&storageTarget{}).Package(
+			t.Context(), serviceConfig, storageDeployContext(t, publish), newTestProgress(t))
+		suggestion, isSuggestion := errors.AsType[*errorhandler.ErrorWithSuggestion](err)
+		require.True(t, isSuggestion, "expected ErrorWithSuggestion, got %v", err)
+		require.Contains(t, suggestion.Suggestion, "wwwroot")
+	})
+
+	t.Run("ReturnsResolvedSymlinkedDist", func(t *testing.T) {
+		root := t.TempDir()
+		target := filepath.Join(t.TempDir(), "build")
+		writeStaticSite(t, target, "index.html")
+		require.NoError(t, os.MkdirAll(filepath.Join(root, "web"), 0700))
+		if err := os.Symlink(target, filepath.Join(root, "web", "dist")); err != nil {
+			t.Skipf("symbolic links are not supported: %v", err)
+		}
+
+		serviceConfig := createTestServiceConfig("web", StorageTarget, ServiceLanguageNone)
+		serviceConfig.Project.Path = root
+		serviceConfig.OutputPath = "dist"
+
+		result, err := (&storageTarget{}).Package(
+			t.Context(), serviceConfig, storageDeployContext(t, serviceConfig.Path()), newTestProgress(t))
+		require.NoError(t, err)
+		resolvedTarget, err := filepath.EvalSymlinks(target)
+		require.NoError(t, err)
+		require.Equal(t, resolvedTarget, result.Artifacts[0].Location)
 	})
 
 	t.Run("AllowsServiceFolderWithoutLanguage", func(t *testing.T) {

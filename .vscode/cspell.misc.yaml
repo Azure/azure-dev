@@ -16,6 +16,9 @@ ignorePaths:
 
     - eng # not required
 overrides:
+    - filename: docs/reference/azure-yaml-schema.md
+      words:
+          - wwwroot
     - filename: .github/skills/extension-user-contract-review/evals/**/*.yaml
       words:
           - evals

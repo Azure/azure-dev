@@ -459,7 +459,8 @@ func (sm *serviceManager) Package(
 		hasPackageFile := err == nil
 
 		if hasPackageFile && packageInfo.IsDir() && options.OutputPath != "" {
-			destDirectory, err := copyPackageDirectory(packageArtifact.Location, options.OutputPath)
+			destDirectory, err := copyPackageDirectory(
+				packageArtifact.Location, filepath.Join(options.OutputPath, serviceConfig.Name))
 			if err != nil {
 				return nil, err
 			}
@@ -1074,27 +1075,35 @@ func (sm *serviceManager) GetTargetResource(
 	return sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
 }
 
-// copyPackageDirectory copies the contents of a directory package to the output path, leaving the source intact
-// because directory packages usually point at build output or source folders.
-func copyPackageDirectory(sourcePath string, outputPath string) (string, error) {
-	sourceDirectory, err := filepath.Abs(sourcePath)
+// copyPackageDirectory exports a directory package to destPath, replacing any previous export there so removed files
+// do not linger. The source is left intact because directory packages usually point at build output folders.
+func copyPackageDirectory(sourcePath string, destPath string) (string, error) {
+	sourceDirectory, err := resolvePathAliases(sourcePath)
 	if err != nil {
 		return "", fmt.Errorf("resolving package directory '%s': %w", sourcePath, err)
 	}
 
-	destDirectory, err := filepath.Abs(outputPath)
+	destDirectory, err := resolvePathAliases(destPath)
 	if err != nil {
-		return "", fmt.Errorf("resolving output path '%s': %w", outputPath, err)
+		return "", fmt.Errorf("resolving output path '%s': %w", destPath, err)
 	}
 
-	if destDirectory == sourceDirectory {
+	// Symbolic links, bind mounts, or case-insensitive file systems can make two different paths the same folder.
+	sourceInfo, err := os.Stat(sourceDirectory)
+	if err != nil {
+		return "", fmt.Errorf("reading package directory '%s': %w", sourceDirectory, err)
+	}
+	if destInfo, err := os.Stat(destDirectory); err == nil && os.SameFile(sourceInfo, destInfo) {
 		return destDirectory, nil
 	}
 
-	if rel, err := filepath.Rel(sourceDirectory, destDirectory); err == nil &&
-		rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if isSubPath(destDirectory, sourceDirectory) || isSubPath(sourceDirectory, destDirectory) {
 		return "", fmt.Errorf(
-			"output path '%s' cannot be inside the package directory '%s'", destDirectory, sourceDirectory)
+			"output path '%s' and package directory '%s' cannot contain one another", destDirectory, sourceDirectory)
+	}
+
+	if err := os.RemoveAll(destDirectory); err != nil {
+		return "", fmt.Errorf("removing previous package export '%s': %w", destDirectory, err)
 	}
 
 	if err := copy.Copy(sourceDirectory, destDirectory); err != nil {
@@ -1103,6 +1112,44 @@ func copyPackageDirectory(sourcePath string, outputPath string) (string, error) 
 	}
 
 	return destDirectory, nil
+}
+
+// resolvePathAliases returns the absolute path with symbolic links resolved for the longest existing prefix, so
+// paths that do not exist yet can still be compared with existing ones.
+func resolvePathAliases(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+
+	missing := []string{}
+	current := absPath
+	for {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			return filepath.Join(append([]string{resolved}, missing...)...), nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return absPath, nil
+		}
+		missing = append([]string{filepath.Base(current)}, missing...)
+		current = parent
+	}
+}
+
+// isSubPath reports whether path is dir or one of its descendants.
+func isSubPath(path string, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // Copies a file from the source path to the destination path

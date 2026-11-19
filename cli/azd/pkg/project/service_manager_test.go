@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1473,20 +1474,68 @@ func Test_copyPackageDirectory(t *testing.T) {
 	t.Run("CopiesAndKeepsSource", func(t *testing.T) {
 		source := filepath.Join(t.TempDir(), "dist")
 		writeStaticSite(t, source, "index.html", "assets/app.js")
-		dest := filepath.Join(t.TempDir(), "out")
+		dest := filepath.Join(t.TempDir(), "out", "web")
 
 		location, err := copyPackageDirectory(source, dest)
 		require.NoError(t, err)
-		require.Equal(t, dest, location)
-		require.FileExists(t, filepath.Join(dest, "assets", "app.js"))
+		require.FileExists(t, filepath.Join(location, "assets", "app.js"))
 		require.FileExists(t, filepath.Join(source, "index.html"))
+	})
+
+	t.Run("ReplacesPreviousExport", func(t *testing.T) {
+		source := filepath.Join(t.TempDir(), "dist")
+		writeStaticSite(t, source, "index.html")
+		dest := filepath.Join(t.TempDir(), "web")
+		writeStaticSite(t, dest, "removed.js")
+
+		location, err := copyPackageDirectory(source, dest)
+		require.NoError(t, err)
+		require.FileExists(t, filepath.Join(location, "index.html"))
+		require.NoFileExists(t, filepath.Join(location, "removed.js"))
 	})
 
 	t.Run("RejectsOutputInsideSource", func(t *testing.T) {
 		source := t.TempDir()
 		writeStaticSite(t, source, "index.html")
 
-		_, err := copyPackageDirectory(source, filepath.Join(source, "out"))
-		require.ErrorContains(t, err, "cannot be inside the package directory")
+		_, err := copyPackageDirectory(source, filepath.Join(source, "out", "web"))
+		require.ErrorContains(t, err, "cannot contain one another")
+	})
+
+	t.Run("RejectsOutputContainingSource", func(t *testing.T) {
+		parent := t.TempDir()
+		source := filepath.Join(parent, "web", "dist")
+		writeStaticSite(t, source, "index.html")
+
+		_, err := copyPackageDirectory(source, filepath.Join(parent, "web"))
+		require.ErrorContains(t, err, "cannot contain one another")
+		require.FileExists(t, filepath.Join(source, "index.html"))
+	})
+
+	t.Run("SymlinkedOutputToSourceIsNoOp", func(t *testing.T) {
+		source := filepath.Join(t.TempDir(), "dist")
+		writeStaticSite(t, source, "index.html")
+		dest := filepath.Join(t.TempDir(), "web")
+		if err := os.Symlink(source, dest); err != nil {
+			t.Skipf("symbolic links are not supported: %v", err)
+		}
+
+		_, err := copyPackageDirectory(source, dest)
+		require.NoError(t, err)
+		content, err := os.ReadFile(filepath.Join(source, "index.html"))
+		require.NoError(t, err)
+		require.Equal(t, "index.html", string(content))
+	})
+
+	t.Run("RejectsOutputUnderSymlinkedSource", func(t *testing.T) {
+		source := filepath.Join(t.TempDir(), "dist")
+		writeStaticSite(t, source, "index.html")
+		alias := filepath.Join(t.TempDir(), "export")
+		if err := os.Symlink(source, alias); err != nil {
+			t.Skipf("symbolic links are not supported: %v", err)
+		}
+
+		_, err := copyPackageDirectory(source, filepath.Join(alias, "web"))
+		require.ErrorContains(t, err, "cannot contain one another")
 	})
 }

@@ -165,6 +165,9 @@ const (
 	// process can exit as fast as possible. Set automatically by CobraBuilder when
 	// ActionDescriptorOptions.Lightspeed is true.
 	AnnotationLightspeed = "azd.lightspeed"
+
+	// AnnotationRequireInteractive identifies commands that cannot run with prompts disabled.
+	AnnotationRequireInteractive = "azd.requireInteractive"
 )
 
 // GetGroupCommandAnnotation check if there is a grouping annotation for the command. Returns the annotation value as an
@@ -202,7 +205,7 @@ type ActionDescriptorOptions struct {
 	// Whether or not the command requires a principal login
 	RequireLogin bool
 	// Whether the command requires interactive input. When set, the command fails before
-	// login or action resolution if prompts are disabled (for example, with --no-prompt).
+	// command preparation and execution if prompts are disabled (for example, with --no-prompt).
 	// Use this when the command's prompts make decisions that azd can't safely infer, so
 	// automatically accepting their defaults could produce the wrong result.
 	RequireInteractive bool

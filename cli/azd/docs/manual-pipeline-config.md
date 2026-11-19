@@ -18,9 +18,7 @@ This command **must** be executed by someone who has a `Contributor` role, in or
 The next steps can be used to manually configure a pipeline without a `Contributor` role, for example, by using an existing service principal.
 
 `azd pipeline config` requires interactive input, so it fails in no-prompt mode (`--no-prompt`, `--non-interactive`,
-`AZD_NON_INTERACTIVE=true`, or automatic CI/CD or AI-agent detection). Its prompts default to azd's suggestions, such as
-creating a new repository or identity, or pushing your code. Without someone to review them, those suggestions could
-create or change resources you didn't intend.
+`AZD_NON_INTERACTIVE=true`, or automatic CI/CD or AI-agent detection). Run `azd pipeline config --no-prompt=false` manually in an interactive terminal to review and answer its prompts.
 
 If you can't run the command interactively, configure the pipeline with the manual steps below.
 

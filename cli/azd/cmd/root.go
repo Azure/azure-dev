@@ -88,6 +88,13 @@ func newRootCmd(
 		Use:   "azd",
 		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your project on Azure", productName),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if blockedByNoPrompt(cmd, opts) {
+				return fmt.Errorf(
+					"%w: %s was invoked with prompts disabled. Run '%s --no-prompt=false' in an interactive terminal.",
+					internal.ErrInteractiveRequired, cmd.CommandPath(), cmd.CommandPath(),
+				)
+			}
+
 			// If there was a platform configuration error report it to the user until it is resolved
 			// Using fmt.Printf directly here since we can't leverage our IoC container to resolve a console instance
 			if errors.Is(platform.Error, platform.ErrPlatformNotSupported) {
@@ -559,6 +566,10 @@ func newRootCmd(
 	return cmd
 }
 
+func blockedByNoPrompt(cmd *cobra.Command, opts *internal.GlobalCommandOptions) bool {
+	return opts.NoPrompt && cmd.Annotations[actions.AnnotationRequireInteractive] == "true"
+}
+
 func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 	root.
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
@@ -570,15 +581,6 @@ func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 			return !descriptor.Options.DisableTroubleshooting
 		}).
 		UseMiddleware("cancellation", middleware.NewCancellationMiddleware).
-		// Runs before loginGuard so commands that require interactive input fail before
-		// attempting login or resolving actions with side effects.
-		UseMiddlewareWhen(
-			"interactiveGuard",
-			middleware.NewInteractiveGuardMiddleware,
-			func(descriptor *actions.ActionDescriptor) bool {
-				return descriptor.Options.RequireInteractive
-			},
-		).
 		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			// Check if the command or any of its parents require login
 			current := descriptor

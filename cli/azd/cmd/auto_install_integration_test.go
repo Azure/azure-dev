@@ -173,7 +173,10 @@ func TestExecuteWithAutoInstall_InvalidProjectYamlReturnsParseError(t *testing.T
 
 	projectDir := t.TempDir()
 	t.Chdir(projectDir)
-	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"),
+		[]byte(`{"extension":{"sources":{}}}`), 0o600))
 	t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
 	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
 	t.Setenv("NO_COLOR", "1")
@@ -194,6 +197,113 @@ func TestExecuteWithAutoInstall_InvalidProjectYamlReturnsParseError(t *testing.T
 	})
 
 	require.ErrorContains(t, result.Err, "unable to parse azure.yaml file")
+}
+
+func TestExecuteWithAutoInstall_RejectsNoPromptBeforePreparingPipeline(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"),
+		[]byte(`{"extension":{"sources":{}}}`), 0o600))
+
+	// Keep the test offline even if a regression reaches the update check.
+	t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+	t.Chdir(t.TempDir())
+
+	// Point --cwd at a missing directory to verify that rejection leaves it uncreated.
+	cwd := filepath.Join(t.TempDir(), "not-created")
+	originalArgs := os.Args
+	t.Cleanup(func() { os.Args = originalArgs })
+	os.Args = []string{"azd", "pipeline", "config", "--no-prompt", "--cwd", cwd}
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(container, t.Context())
+
+	// Use the CLI entry point to cover global flag parsing and root construction as well as execution.
+	result := ExecuteWithAutoInstall(t.Context(), container)
+
+	require.ErrorIs(t, result.Err, internal.ErrInteractiveRequired)
+	require.NoDirExists(t, cwd)
+	// Even a skipped update check returns a closed channel if the check was reached.
+	require.Nil(t, result.LatestVersion, "the update check must not be started")
+}
+
+func TestExecuteWithAutoInstall_InteractiveRequirementBeforeExtensions(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		help       bool
+		missingCwd bool
+		flagError  string
+	}{
+		{name: "missing project extension"},
+		{name: "missing cwd", missingCwd: true},
+		{name: "help", args: []string{"--help"}, help: true},
+		{
+			name:      "invalid flag",
+			args:      []string{"--unknown-flag"},
+			flagError: "unknown flag: --unknown-flag",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configDir := t.TempDir()
+			t.Setenv("AZD_CONFIG_DIR", configDir)
+			require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"),
+				[]byte(`{"extension":{"sources":{}}}`), 0o600))
+			t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
+			t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+			t.Setenv("NO_COLOR", "1")
+			t.Chdir(t.TempDir())
+
+			// A missing required extension would fail first if auto-install ran before the guard.
+			require.NoError(t, project.Save(t.Context(), &project.ProjectConfig{
+				Name: "interactive-guard",
+				RequiredVersions: &project.RequiredVersions{
+					Extensions: map[string]*string{"test.missing": nil},
+				},
+			}, "azure.yaml"))
+
+			originalArgs := os.Args
+			t.Cleanup(func() { os.Args = originalArgs })
+			os.Args = append([]string{"azd", "pipeline", "config", "--no-prompt"}, tt.args...)
+			cwd := filepath.Join(t.TempDir(), "not-created")
+			if tt.missingCwd {
+				os.Args = append(os.Args, "--cwd", cwd)
+			}
+			opts := &internal.GlobalCommandOptions{}
+			require.NoError(t, ParseGlobalFlags(os.Args[1:], opts))
+			container := ioc.NewNestedContainer(nil)
+			ioc.RegisterInstance(container, t.Context())
+			ioc.RegisterInstance(container, opts)
+
+			// Build the root here to capture Cobra's stdout and stderr separately.
+			root := NewRootCmd(false, nil, container)
+			var stdout, stderr bytes.Buffer
+			root.SetOut(&stdout)
+			root.SetErr(&stderr)
+			root.SetArgs(os.Args[1:])
+			result := executeWithAutoInstallCommand(t.Context(), container, root, opts, &ExecuteResult{})
+			if tt.missingCwd {
+				require.NoDirExists(t, cwd)
+			}
+
+			// Help and flag errors take precedence over the interactive-mode error.
+			switch {
+			case tt.help:
+				require.NoError(t, result.Err)
+				require.Contains(t, stdout.String(), "requires interactive input")
+			case tt.flagError != "":
+				require.ErrorContains(t, result.Err, tt.flagError)
+				require.Contains(t, stderr.String(), tt.flagError)
+			default:
+				require.ErrorIs(t, result.Err, internal.ErrInteractiveRequired)
+				require.Empty(t, stdout.String())
+				require.Equal(t, "Error: interactive mode required: azd pipeline config was invoked with prompts disabled. "+
+					"Run 'azd pipeline config --no-prompt=false' in an interactive terminal.\n", stderr.String())
+			}
+		})
+	}
 }
 
 // TestExecuteWithAutoInstallIntegration tests the integration between

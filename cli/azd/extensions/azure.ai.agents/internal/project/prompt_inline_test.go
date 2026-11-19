@@ -4,6 +4,7 @@
 package project
 
 import (
+	"encoding/json"
 	"maps"
 	"os"
 	"path/filepath"
@@ -77,6 +78,7 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 
 	temperature := 0.0
 	topP := 0.9
+	maxOutputTokens := 4000
 	original := agent_yaml.PromptAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Kind: agent_yaml.AgentKindPrompt,
@@ -96,18 +98,20 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 		StructuredInputs: map[string]any{
 			"context": map[string]any{"required": false},
 		},
-		Connections: []string{"search"},
-		Toolboxes:   []agent_yaml.ToolboxReference{{Name: "research-tools"}},
+		Connections:     []string{"search"},
+		Toolboxes:       []agent_yaml.ToolboxReference{{Name: "research-tools"}},
+		MaxOutputTokens: &maxOutputTokens,
 	}
 
 	props, err := PromptAgentDefinitionToServiceProperties(original)
 	require.NoError(t, err)
 	for _, key := range []string{
 		"toolChoice", "temperature", "topP", "text", "reasoning", "structuredInputs", "toolboxes",
+		"maxOutputTokens",
 	} {
 		require.Contains(t, props.AsMap(), key)
 	}
-	for _, key := range []string{"tool_choice", "top_p", "structured_inputs", "toolbox"} {
+	for _, key := range []string{"tool_choice", "top_p", "structured_inputs", "toolbox", "max_output_tokens"} {
 		require.NotContains(t, props.AsMap(), key)
 	}
 
@@ -132,6 +136,17 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 	require.Len(t, got.Connections, 1)
 	require.Equal(t, "search", got.Connections[0])
 	require.Equal(t, []agent_yaml.ToolboxReference{{Name: "research-tools"}}, got.Toolboxes)
+	require.Equal(t, original.MaxOutputTokens, got.MaxOutputTokens)
+
+	// The deployment request built from the decoded agent carries the cap.
+	request, err := agent_yaml.CreatePromptAgentAPIRequest(got, nil)
+	require.NoError(t, err)
+	definition, ok := request.Definition.(agent_api.ManagedAgentDefinition)
+	require.True(t, ok)
+	require.Equal(t, original.MaxOutputTokens, definition.MaxOutputTokens)
+	body, err := json.Marshal(definition)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"max_output_tokens":4000`)
 
 	// Never authored: the deploy graph resolves it from the skills/ folder.
 }

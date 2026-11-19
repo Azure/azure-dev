@@ -353,7 +353,7 @@ instructions: You are helpful.
 func TestPromptAgent_MaxOutputTokensMustBePositive(t *testing.T) {
 	t.Parallel()
 
-	for _, value := range []string{"0", "-1"} {
+	for _, value := range []string{"0", "-1", "2147483648"} {
 		err := ValidateAgentDefinition([]byte(`
 kind: prompt
 name: capped-agent
@@ -361,6 +361,6 @@ model: gpt-4.1-mini
 instructions: You are helpful.
 maxOutputTokens: ` + value + `
 `))
-		require.ErrorContains(t, err, "maxOutputTokens must be positive for prompt agents", value)
+		require.ErrorContains(t, err, promptMaxOutputTokensError, value)
 	}
 }

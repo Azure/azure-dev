@@ -479,6 +479,12 @@ func TestExtensionsMiddleware_Run_NoListenCapabilities(t *testing.T) {
 			Version:      "1.0.0",
 			Capabilities: []extensions.CapabilityType{"some-other-capability"},
 		},
+		"test.generator": {
+			Id:           "test.generator",
+			DisplayName:  "Test Generator",
+			Version:      "1.0.0",
+			Capabilities: []extensions.CapabilityType{extensions.InfraGenerationProviderCapability},
+		},
 	}
 
 	mockCtx := mocks.NewMockContext(t.Context())
@@ -905,9 +911,8 @@ func TestListenCapabilities_ContainsExpectedValues(t *testing.T) {
 	require.Contains(t, listenCapabilities, extensions.ServiceTargetProviderCapability)
 	require.Contains(t, listenCapabilities, extensions.FrameworkServiceProviderCapability)
 	require.Contains(t, listenCapabilities, extensions.ProvisioningProviderCapability)
-	require.Contains(t, listenCapabilities, extensions.InfraGenerationProviderCapability)
 	require.Contains(t, listenCapabilities, extensions.ValidationProviderCapability)
-	require.Len(t, listenCapabilities, 6)
+	require.Len(t, listenCapabilities, 5)
 }
 
 // ---------------------------------------------------------------------------

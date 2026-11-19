@@ -197,6 +197,20 @@ func TestDeployProgressTracker_PauseErasesTableAndSuppressesRender(t *testing.T)
 	assert.NotContains(t, output, "\033[3A", "resume must draw below the prompt, not over it")
 }
 
+func TestDeployProgressTracker_PauseErasesWrappedRows(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+	// On a 20-column terminal the 41-column header and 55-column divider wrap onto 3 rows
+	// each and the 37-column service row onto 2 rows.
+	tracker.termWidth = func() int { return 20 }
+
+	tracker.Render()
+	buf.Reset()
+
+	tracker.PauseRendering()
+	assert.Equal(t, "\033[8A\033[J", buf.String(), "pause must erase every wrapped row")
+}
+
 // Regression test for https://github.com/Azure/azure-dev/issues/10252: an interactive
 // prompt displayed while the ticker runs must not be overwritten by periodic redraws.
 func TestDeployProgressTracker_StartTicker_PausedDuringInteraction(t *testing.T) {

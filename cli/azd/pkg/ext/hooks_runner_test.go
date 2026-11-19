@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
@@ -1465,4 +1466,71 @@ func hookSpanAttr(t *testing.T, span *mocktracing.Span, key attribute.Key) attri
 	}
 	t.Fatalf("attribute %q was not set", key)
 	return attribute.Value{}
+}
+
+type pauseTrackingRenderer struct {
+	paused bool
+}
+
+func (r *pauseTrackingRenderer) PauseRendering()  { r.paused = true }
+func (r *pauseTrackingRenderer) ResumeRendering() { r.paused = false }
+
+// Interactive hooks own the terminal, so live renderers such as the deploy progress table
+// must be paused while they run. See #10252.
+func Test_ExecHook_InteractivePausesTerminalRenderers(t *testing.T) {
+	for _, interactive := range []bool{true, false} {
+		t.Run(fmt.Sprintf("Interactive=%t", interactive), func(t *testing.T) {
+			cwd := t.TempDir()
+			ostest.Chdir(t, cwd)
+
+			env := environment.NewWithValues("test", map[string]string{})
+			require.NoError(t, os.MkdirAll(filepath.Join(cwd, "scripts"), osutil.PermissionDirectory))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(cwd, "scripts", "hook.sh"), nil, osutil.PermissionExecutableFile,
+			))
+
+			hooksMap := map[string][]*HookConfig{
+				"predeploy": {{
+					Name:        "predeploy",
+					Shell:       string(language.HookKindBash),
+					Run:         "scripts/hook.sh",
+					Interactive: interactive,
+				}},
+			}
+
+			envManager := &mockenv.MockEnvManager{}
+			envManager.On("Reload", mock.Anything, env).Return(nil)
+
+			renderer := &pauseTrackingRenderer{}
+			unregister := input.RegisterTerminalRenderer(renderer)
+			defer unregister()
+
+			var pausedDuringHook bool
+			mockContext := mocks.NewMockContext(t.Context())
+			mockContext.Container.MustRegisterNamedTransient(
+				string(language.HookKindBash),
+				func() tools.HookExecutor {
+					return &configCaptureExecutor{
+						onExecute: func(tools.ExecutionContext) { pausedDuringHook = renderer.paused },
+					}
+				},
+			)
+
+			runner := NewHooksRunner(
+				NewHooksManager(HooksManagerOptions{Cwd: cwd}, mockContext.CommandRunner),
+				mockContext.CommandRunner,
+				envManager,
+				mockContext.Console,
+				cwd,
+				hooksMap,
+				env,
+				mockContext.Container,
+			)
+
+			err := runner.RunHooks(*mockContext.Context, HookTypePre, "project", nil, "deploy")
+			require.NoError(t, err)
+			require.Equal(t, interactive, pausedDuringHook)
+			require.False(t, renderer.paused, "renderer must resume after the hook completes")
+		})
+	}
 }

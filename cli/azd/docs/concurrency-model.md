@@ -339,10 +339,12 @@ calling the gRPC `PromptService`). A redraw would overwrite that prompt.
   progress tracker registers in `StartTicker` and removes its registration in the stop function.
 - Interactive prompts call `input.BeginInteraction` and the returned end function.
   `AskerConsole` prompts do this in `doInteraction`/`DoInteraction`. The gRPC
-  `PromptService` does it while holding its prompt lock. Prompts that call `pkg/ux`
-  directly must do the same.
+  `PromptService` does it while holding its prompt lock, which AI model pickers acquire
+  before their loading spinners start. Hooks marked `interactive: true` do it while the
+  hook runs. Prompts that call `pkg/ux` directly must do the same.
 - While at least one interaction is active, every registered renderer is paused.
-  `PauseRendering` must wait for in-flight output and erase dynamic content.
+  `PauseRendering` must wait for in-flight output and erase dynamic content,
+  including rows created by terminal line wrapping.
   Renderers resume when the last overlapping interaction ends.
 
 ---

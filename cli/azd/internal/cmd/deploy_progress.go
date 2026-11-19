@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 )
 
 // Column widths for the progress table.
@@ -70,7 +71,11 @@ type deployProgressTracker struct {
 	serviceIdx  map[string]int
 	writer      io.Writer
 	interactive bool
-	lastLines   int // how many lines we rendered last time (for ANSI overwrite)
+	// lastLines is the number of physical terminal rows (including wrapped rows) occupied by the
+	// last render, used to move the cursor back over it.
+	lastLines int
+	// termWidth returns the terminal width in columns, used to account for wrapped rows.
+	termWidth func() int
 	// paused is set while an interactive prompt owns the terminal; see PauseRendering.
 	paused bool
 }
@@ -107,7 +112,18 @@ func newDeployProgressTracker(
 		serviceIdx:  idx,
 		writer:      writer,
 		interactive: interactive,
+		termWidth:   ux.ConsoleWidth,
 	}
+}
+
+// physicalRows returns how many terminal rows a line of plain text occupies when it is
+// printed followed by a newline on a terminal that is width columns wide.
+func physicalRows(line string, width int) int {
+	visible := ux.VisibleLength(line)
+	if width <= 0 || visible <= width {
+		return 1
+	}
+	return (visible + width - 1) / width
 }
 
 // Update sets a service's phase and optional detail message.
@@ -209,16 +225,19 @@ func (t *deployProgressTracker) Render() {
 		strings.Repeat("─", elapsedColWidth),
 		strings.Repeat("─", detailColWidth))
 
-	buf.WriteString("\033[2K") // clear line
-	buf.WriteString(header)
-	buf.WriteString("\n")
-	buf.WriteString("\033[2K")
-	buf.WriteString(divider)
-	buf.WriteString("\n")
-
-	lines := 2
-	for _, svc := range t.services {
+	width := t.termWidth()
+	lines := 0
+	writeLine := func(line string) {
 		buf.WriteString("\033[2K") // clear line before writing
+		buf.WriteString(line)
+		buf.WriteString("\n")
+		lines += physicalRows(line, width)
+	}
+
+	writeLine(header)
+	writeLine(divider)
+
+	for _, svc := range t.services {
 
 		icon := phaseIcon(svc.phase)
 		elapsed := ""
@@ -237,9 +256,7 @@ func (t *deployProgressTracker) Render() {
 			phaseColWidth, svc.phase,
 			elapsedColWidth, elapsed, detail,
 		)
-		buf.WriteString(line)
-		buf.WriteString("\n")
-		lines++
+		writeLine(line)
 	}
 
 	t.lastLines = lines

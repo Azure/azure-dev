@@ -696,7 +696,7 @@ down the connection.
 | `WithServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Register a deployment target and stable read-only preview; provider also implements `ServiceTargetPreviewProvider`. Targets azd 1.37.0. |
 | `WithBetaServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Deprecated beta preview registration; retained with the `preview.ServiceTargetPreviewProvider` interface. |
 | `WithFrameworkService` | `(language string, factory FrameworkServiceFactory) *ExtensionHost` | Register a custom language/framework build service. |
-| `WithInfraGenerationProvider` | `(name string, provider InfraGenerationProvider) *ExtensionHost` | Register a beta source generator that writes files and returns a replacement infrastructure entry. |
+| `WithBetaInfraGenerationProvider` | `(name string, provider BetaInfraGenerationProvider) *ExtensionHost` | Register a beta source generator that writes files and returns a replacement infrastructure entry. |
 | `WithProjectEventHandler` | `(eventName string, handler ProjectEventHandler) *ExtensionHost` | Register a project-level lifecycle event handler. |
 | `WithServiceEventHandler` | `(eventName string, handler ServiceEventHandler, options *ServiceEventOptions) *ExtensionHost` | Register a service-level lifecycle event handler (with optional filtering). |
 | `Run` | `(ctx context.Context) error` | Start the host and block until shutdown. |
@@ -705,14 +705,15 @@ down the connection.
 
 ## Infrastructure generation (beta)
 
-`InfraGenerationService` exists only in `contracts/v1beta`. Go extensions
-register an `azdext.InfraGenerationProvider` with
-`host.WithInfraGenerationProvider("resources", generator)` and declare both
+`InfraGenerationService` exists only in `contracts/v1beta` and is exposed by
+`AzdClient.InfraGenerationBeta()`. Go extensions
+register an `azdext.BetaInfraGenerationProvider` with
+`host.WithBetaInfraGenerationProvider("resources", generator)` and declare both
 the `infra-generation-provider` capability and a provider of that type and name
 in their manifest. Generation does not require the provisioning capability.
 
 ```go
-type InfraGenerationProvider interface {
+type BetaInfraGenerationProvider interface {
     Generate(context.Context, *v1beta.InfraGenerateRequest) (*v1beta.InfraGenerateResponse, error)
 }
 ```
@@ -775,7 +776,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `EventsBeta()` | `v1beta.EventServiceClient` (preview) |
 | `CommandResult()` | `v1beta.CommandResultServiceClient` (preview) |
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
-| `InfraGeneration()` | `v1beta.InfraGenerationServiceClient` (preview) |
+| `InfraGenerationBeta()` | `v1beta.InfraGenerationServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
 | `BetaServiceTarget()` | `v1beta.ServiceTargetServiceClient` (deprecated for deployment preview; use `ServiceTarget()`) |

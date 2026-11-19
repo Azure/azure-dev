@@ -64,7 +64,7 @@ func VerifyProvidersMatchManifest(configure func(host *ExtensionHost), manifestP
 		registered[extensions.ProvisioningProviderType] = append(
 			registered[extensions.ProvisioningProviderType], reg.Name)
 	}
-	for _, reg := range host.InfraGenerationProviders() {
+	for _, reg := range host.BetaInfraGenerationProviders() {
 		registered[extensions.InfraGenerationProviderType] = append(
 			registered[extensions.InfraGenerationProviderType], reg.Name)
 	}

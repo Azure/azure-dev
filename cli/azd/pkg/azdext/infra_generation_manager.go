@@ -15,21 +15,21 @@ import (
 	"github.com/google/uuid"
 )
 
-// InfraGenerationProvider writes source files and returns a replacement infrastructure entry.
+// BetaInfraGenerationProvider writes source files and returns a replacement infrastructure entry.
 // Generate must leave project configuration unchanged and honor the overwrite option.
-type InfraGenerationProvider interface {
+type BetaInfraGenerationProvider interface {
 	Generate(ctx context.Context, request *v1beta.InfraGenerateRequest) (*v1beta.InfraGenerateResponse, error)
 }
 
-// InfraGenerationProviderRegistration associates a provider name with its generator.
-type InfraGenerationProviderRegistration struct {
+// BetaInfraGenerationProviderRegistration associates a provider name with its generator.
+type BetaInfraGenerationProviderRegistration struct {
 	Name     string
-	Provider InfraGenerationProvider
+	Provider BetaInfraGenerationProvider
 }
 
 type infraGenerationRegistrar interface {
 	serviceReceiver
-	Register(context.Context, string, InfraGenerationProvider) error
+	Register(context.Context, string, BetaInfraGenerationProvider) error
 	Close() error
 }
 
@@ -40,13 +40,13 @@ type infraGenerationManager struct {
 	mu     sync.Mutex // protects stream initialization and closure
 	broker *grpcbroker.MessageBroker[v1beta.InfraGenerationMessage]
 	// providers routes generation and completion requests by entry.provider.
-	providers *providerRegistry[InfraGenerationProvider]
+	providers *providerRegistry[BetaInfraGenerationProvider]
 }
 
 func newInfraGenerationManager(id string, client *AzdClient, logger *log.Logger) *infraGenerationManager {
 	return &infraGenerationManager{
 		id: id, client: client, logger: logger,
-		providers: newProviderRegistry[InfraGenerationProvider]("infrastructure generation"),
+		providers: newProviderRegistry[BetaInfraGenerationProvider]("infrastructure generation"),
 	}
 }
 
@@ -56,7 +56,7 @@ func (m *infraGenerationManager) ensureStream(ctx context.Context) error {
 	if m.broker != nil {
 		return nil
 	}
-	stream, err := m.client.InfraGeneration().Stream(ctx)
+	stream, err := m.client.InfraGenerationBeta().Stream(ctx)
 	if err != nil {
 		return fmt.Errorf("opening infrastructure generation stream: %w", err)
 	}
@@ -69,7 +69,7 @@ func (m *infraGenerationManager) ensureStream(ctx context.Context) error {
 	return nil
 }
 
-func (m *infraGenerationManager) Register(ctx context.Context, name string, provider InfraGenerationProvider) error {
+func (m *infraGenerationManager) Register(ctx context.Context, name string, provider BetaInfraGenerationProvider) error {
 	if strings.TrimSpace(name) == "" || provider == nil {
 		return fmt.Errorf("infrastructure generation requires a provider name and implementation")
 	}
@@ -118,7 +118,7 @@ func (m *infraGenerationManager) Close() error {
 	return nil
 }
 
-func (m *infraGenerationManager) provider(request *v1beta.InfraGenerateRequest) (InfraGenerationProvider, error) {
+func (m *infraGenerationManager) provider(request *v1beta.InfraGenerateRequest) (BetaInfraGenerationProvider, error) {
 	if request == nil || request.Entry == nil || request.Options == nil {
 		return nil, fmt.Errorf("generation requires an entry and a non-nil options message")
 	}

@@ -67,7 +67,7 @@ for compatibility and the deprecated beta route.
 
 For infrastructure generation, declare `infra-generation-provider` in both
 `capabilities` and the corresponding `providers[].type`, and register an
-`azdext.InfraGenerationProvider` with `ExtensionHost.WithInfraGenerationProvider`.
+`azdext.BetaInfraGenerationProvider` with `ExtensionHost.WithBetaInfraGenerationProvider`.
 Write source files inside `Generate`, honoring `InfraGenerateOptions.force`,
 and return the replacement provider entry after all writes succeed. Leave
 project configuration unchanged: core validates and saves the returned provider,

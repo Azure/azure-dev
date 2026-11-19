@@ -161,7 +161,7 @@ func TestInfraGenerationServiceRoutesThroughBetaSDK(t *testing.T) {
 	provider := &recordingInfrastructureGenerator{
 		requests: make(chan *v1beta.InfraGenerateRequest, 1),
 	}
-	host := azdext.NewExtensionHost(client).WithInfraGenerationProvider("resources", provider)
+	host := azdext.NewExtensionHost(client).WithBetaInfraGenerationProvider("resources", provider)
 	hostCtx, stopHost := context.WithCancel(azdext.WithAccessToken(ctx, token))
 	done := make(chan error, 1)
 	go func() { done <- host.Run(hostCtx) }()

@@ -989,8 +989,8 @@ A provisioning provider implements the full lifecycle (`Initialize`, `State`, `D
 
 Extensions can independently opt into `azd infra generate` by declaring the
 `infra-generation-provider` capability and a `providers` entry with the same
-type and provider name. Register an `azdext.InfraGenerationProvider` through
-`ExtensionHost.WithInfraGenerationProvider`.
+type and provider name. Register an `azdext.BetaInfraGenerationProvider` through
+`ExtensionHost.WithBetaInfraGenerationProvider`.
 
 For `azd infra generate`, core starts only installed extensions declaring a
 generation provider used by the project's infrastructure entries. Unrelated

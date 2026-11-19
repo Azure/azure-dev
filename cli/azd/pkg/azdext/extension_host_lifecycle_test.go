@@ -38,7 +38,7 @@ type mockHostGenerationRegistrar struct {
 }
 
 func (m *mockHostGenerationRegistrar) Register(
-	ctx context.Context, name string, provider InfraGenerationProvider,
+	ctx context.Context, name string, provider BetaInfraGenerationProvider,
 ) error {
 	return m.Called(ctx, name, provider).Error(0)
 }
@@ -128,16 +128,16 @@ func TestExtensionHost_GeneratorAndProvisioningLifecycle(t *testing.T) {
 	host := NewExtensionHost(&AzdClient{extensionClient: extension})
 	host.infraGenerationManager = generation
 	host.provisioningManager = provisioning
-	require.Same(t, host, host.WithInfraGenerationProvider("first", generator))
-	host.WithInfraGenerationProvider("second", generator)
+	require.Same(t, host, host.WithBetaInfraGenerationProvider("first", generator))
+	host.WithBetaInfraGenerationProvider("second", generator)
 	host.WithProvisioningProvider("resources", func() ProvisioningProvider {
 		t.Error("host registration must not invoke a provisioning factory")
 		return nil
 	})
-	registrationsSnapshot := host.InfraGenerationProviders()
+	registrationsSnapshot := host.BetaInfraGenerationProviders()
 	require.Len(t, registrationsSnapshot, 2)
 	registrationsSnapshot[0].Name = "modified"
-	require.Equal(t, "first", host.InfraGenerationProviders()[0].Name)
+	require.Equal(t, "first", host.BetaInfraGenerationProviders()[0].Name)
 
 	require.NoError(t, host.Run(ctx))
 	extension.AssertExpectations(t)
@@ -189,7 +189,7 @@ func TestExtensionHost_ReceiverReadinessErrorsPreventRegistration(t *testing.T) 
 	host := NewExtensionHost(&AzdClient{extensionClient: extension})
 	host.infraGenerationManager = generation
 	host.provisioningManager = provisioning
-	host.WithInfraGenerationProvider("resources", &hostTestGenerator{})
+	host.WithBetaInfraGenerationProvider("resources", &hostTestGenerator{})
 	host.WithProvisioningProvider("resources", func() ProvisioningProvider { return nil })
 
 	err := host.Run(ctx)
@@ -216,7 +216,7 @@ func TestExtensionHost_ProviderRegistrationErrorsCloseAllReceivers(t *testing.T)
 	host := NewExtensionHost(&AzdClient{extensionClient: extension})
 	host.infraGenerationManager = generation
 	host.provisioningManager = provisioning
-	host.WithInfraGenerationProvider("resources", &hostTestGenerator{})
+	host.WithBetaInfraGenerationProvider("resources", &hostTestGenerator{})
 	host.WithProvisioningProvider("resources", func() ProvisioningProvider { return nil })
 
 	err := host.Run(ctx)
@@ -350,7 +350,7 @@ func TestExtensionHost_HostReadinessFailureClosesReceivers(t *testing.T) {
 		Return((*ReadyResponse)(nil), readyErr).Once()
 	host := NewExtensionHost(&AzdClient{extensionClient: extension})
 	host.infraGenerationManager = generation
-	host.WithInfraGenerationProvider("resources", &hostTestGenerator{})
+	host.WithBetaInfraGenerationProvider("resources", &hostTestGenerator{})
 
 	require.ErrorIs(t, host.Run(ctx), readyErr)
 	extension.AssertExpectations(t)
@@ -379,7 +379,7 @@ func TestExtensionHost_ReceiverFailureClosesOtherManagers(t *testing.T) {
 	host.serviceTargetManager = target
 	host.infraGenerationManager = generation
 	host.WithServiceTarget("web", func() ServiceTargetProvider { return &MockServiceTargetProvider{} })
-	host.WithInfraGenerationProvider("resources", &hostTestGenerator{})
+	host.WithBetaInfraGenerationProvider("resources", &hostTestGenerator{})
 
 	require.ErrorIs(t, host.Run(ctx), receiverErr)
 	target.AssertExpectations(t)

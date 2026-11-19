@@ -122,7 +122,7 @@ type ExtensionHost struct {
 	serviceResponses      []serviceEventResponseRegistration
 	betaServiceHandlers   []betaServiceEventRegistration
 	provisioningProviders []ProvisioningProviderRegistration
-	infraGenerators       []InfraGenerationProviderRegistration
+	infraGenerators       []BetaInfraGenerationProviderRegistration
 	validationChecks      []ValidationCheckRegistration
 
 	serviceTargetManager            serviceTargetRegistrar
@@ -168,14 +168,14 @@ func (er *ExtensionHost) ProvisioningProviders() []ProvisioningProviderRegistrat
 	return slices.Clone(er.provisioningProviders)
 }
 
-// InfraGenerationProviders returns the registered beta infrastructure generators.
-func (er *ExtensionHost) InfraGenerationProviders() []InfraGenerationProviderRegistration {
+// BetaInfraGenerationProviders returns the registered beta infrastructure generators.
+func (er *ExtensionHost) BetaInfraGenerationProviders() []BetaInfraGenerationProviderRegistration {
 	return slices.Clone(er.infraGenerators)
 }
 
-// WithInfraGenerationProvider registers a beta source generator that writes its own files.
-func (er *ExtensionHost) WithInfraGenerationProvider(name string, provider InfraGenerationProvider) *ExtensionHost {
-	er.infraGenerators = append(er.infraGenerators, InfraGenerationProviderRegistration{Name: name, Provider: provider})
+// WithBetaInfraGenerationProvider registers a beta source generator that writes its own files.
+func (er *ExtensionHost) WithBetaInfraGenerationProvider(name string, provider BetaInfraGenerationProvider) *ExtensionHost {
+	er.infraGenerators = append(er.infraGenerators, BetaInfraGenerationProviderRegistration{Name: name, Provider: provider})
 	return er
 }
 

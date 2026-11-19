@@ -23,8 +23,8 @@ import (
 
 type AzdClientOption func(*AzdClient) error
 
-// InfraGeneration returns the beta-only infrastructure generation client.
-func (c *AzdClient) InfraGeneration() v1beta.InfraGenerationServiceClient {
+// InfraGenerationBeta returns the beta-only infrastructure generation client.
+func (c *AzdClient) InfraGenerationBeta() v1beta.InfraGenerationServiceClient {
 	return v1beta.NewInfraGenerationServiceClient(c.connection)
 }
 

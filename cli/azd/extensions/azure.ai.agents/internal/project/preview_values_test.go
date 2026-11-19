@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -312,4 +313,53 @@ services:
 	definition, _, _, _, err := AgentDefinitionFromService(service)
 	require.NoError(t, err)
 	require.True(t, previewDeclaredFields(service, definition)["definition.container_configuration.registry_connection_id"])
+}
+
+func TestPreviewDeclaredFieldsIgnorePropertyCase(t *testing.T) {
+	for name, tc := range map[string]struct {
+		key   string
+		value *structpb.Value
+		path  string
+	}{
+		"name":        {"Name", structpb.NewStringValue("example-agent"), "name"},
+		"description": {"DESCRIPTION", structpb.NewStringValue("A helpful agent."), "description"},
+		"protocols": {"Protocols", structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{
+			structpb.NewStructValue(&structpb.Struct{Fields: map[string]*structpb.Value{
+				"protocol": structpb.NewStringValue("responses"), "version": structpb.NewStringValue("v1"),
+			}}),
+		}}), "definition.protocol_versions"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			service := previewService(t)
+			delete(service.AdditionalProperties.Fields, "name")
+			require.False(t, previewDeclaredFields(service, agent_yaml.ContainerAgent{})[tc.path])
+
+			service.AdditionalProperties.Fields[tc.key] = tc.value
+			require.True(t, previewDeclaredFields(service, agent_yaml.ContainerAgent{})[tc.path])
+		})
+	}
+}
+
+func TestPreviewCapitalizedDescriptionIsCompared(t *testing.T) {
+	service := previewService(t)
+	service.AdditionalProperties.Fields["Description"] = structpb.NewStringValue("A helpful agent.")
+	request, inputs := preparePresencePreview(t, service, t.TempDir())
+	remote := remotePreviewAgent(request)
+	remote.Versions.Latest.Description = new("A basic agent.")
+
+	result, err := comparePreviewRequest(service.Name, request, remote, inputs)
+	require.NoError(t, err)
+	require.Equal(t, "update", result.Data.AsMap()["status"])
+	require.Contains(t, result.Message, `update: description: "A basic agent." -> "A helpful agent."`)
+}
+
+func TestPreviewCapitalizedProtocolsTrackVersionPresence(t *testing.T) {
+	service := previewService(t)
+	service.AdditionalProperties.Fields["Protocols"] = structpb.NewListValue(&structpb.ListValue{
+		Values: []*structpb.Value{structpb.NewStructValue(&structpb.Struct{Fields: map[string]*structpb.Value{
+			"protocol": structpb.NewStringValue("responses"), "version": structpb.NewStringValue(""),
+		}})},
+	})
+	_, inputs := preparePresencePreview(t, service, t.TempDir())
+	require.Equal(t, map[string]bool{"responses": true}, inputs.ProtocolVersions)
 }

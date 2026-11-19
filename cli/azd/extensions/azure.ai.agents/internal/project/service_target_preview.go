@@ -196,12 +196,17 @@ func preparePreviewRequest(
 		}
 		inputs.PublicEnvironment[name] = public
 	}
-	for _, protocol := range service.GetAdditionalProperties().GetFields()["protocols"].GetListValue().GetValues() {
-		fields := protocol.GetStructValue().GetFields()
-		if fields["version"].GetStringValue() == "" {
-			name := fields["protocol"].GetStringValue()
-			_, declared := fields["version"]
-			inputs.ProtocolVersions[name] = inputs.ProtocolVersions[name] || declared
+	for key, list := range service.GetAdditionalProperties().GetFields() {
+		if !strings.EqualFold(key, "protocols") {
+			continue
+		}
+		for _, protocol := range list.GetListValue().GetValues() {
+			fields := protocol.GetStructValue().GetFields()
+			if fields["version"].GetStringValue() == "" {
+				name := fields["protocol"].GetStringValue()
+				_, declared := fields["version"]
+				inputs.ProtocolVersions[name] = inputs.ProtocolVersions[name] || declared
+			}
 		}
 	}
 	prebuilt := definition.Image != "" && (service.GetDocker().GetImagePassthrough() ||
@@ -322,7 +327,7 @@ func previewDeclaredFields(service *azdext.ServiceConfig, definition agent_yaml.
 	props := service.GetAdditionalProperties().GetFields()
 	fields := map[string]bool{}
 	for _, path := range []string{"name", "description"} {
-		if _, declared := props[path]; declared {
+		if hasFoldedKey(props, path) {
 			fields[path] = true
 		}
 	}
@@ -331,7 +336,7 @@ func previewDeclaredFields(service *azdext.ServiceConfig, definition agent_yaml.
 			fields["metadata."+name] = true
 		}
 	}
-	if _, declared := props["protocols"]; declared {
+	if hasFoldedKey(props, "protocols") {
 		fields["definition.protocol_versions"] = true
 	}
 	resources := props["container"].GetStructValue().GetFields()["resources"].GetStructValue().GetFields()

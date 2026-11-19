@@ -22,7 +22,7 @@ don't already have one, and add your first resource:
 ```sh
 azd auth login
 azd env new dev
-azd resources add --layer data --environment dev
+azd resources add --environment dev
 ```
 
 Follow the prompts to choose and configure a resource or application host.
@@ -51,10 +51,11 @@ see [current limitations](#current-limitations) for restrictions.
 
 ```sh
 azd resources add
-azd resources add --layer application-resources
 ```
 
-Without `--layer`, you are prompted for a layer name (default `azureresources`).
+An existing layer that explicitly sets `provider: resources` is selected automatically.
+When no resources layer exists, you are prompted for a layer name, defaulting to
+`azureresources`. Layers do not inherit `infra.provider`.
 Updating an existing resources layer, or replacing a layer that uses another
 provider, requires confirmation; both confirmations default to No. Other layers
 and configuration are preserved.

@@ -195,8 +195,9 @@ func TestInitializationScopeFailureCleansUp(t *testing.T) {
 
 func TestInitializationRejectsMultipleResourcesLayersBeforeAzureCalls(t *testing.T) {
 	host := &initializationHost{values: map[string]string{}, project: map[string]any{
-		"infra": map[string]any{"provider": "resources", "layers": []any{
-			map[string]any{"name": "data"}, map[string]any{"name": "app"},
+		"infra": map[string]any{"layers": []any{
+			map[string]any{"name": "data", "provider": "resources"},
+			map[string]any{"name": "app", "provider": "resources"},
 		}},
 	}}
 	p := New(newInitializationClient(t, host))

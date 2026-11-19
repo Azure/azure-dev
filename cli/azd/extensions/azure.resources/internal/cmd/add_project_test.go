@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"fmt"
 	"testing"
 
 	"azure.resources/internal/add"
@@ -20,6 +21,84 @@ func readAddTestProject(t *testing.T, source, layer string) *addProject {
 	project, err := parseProject(raw, layer)
 	require.NoError(t, err)
 	return project
+}
+
+func TestParseProjectFindsResourcesDefaultWithoutChangingSelectedLayer(t *testing.T) {
+	// Exercise both [data, platform] and [platform, data] so discovery cannot depend on layer order.
+	for _, resourcesIndex := range []int{0, 1} {
+		t.Run(fmt.Sprintf("resources at index %d", resourcesIndex), func(t *testing.T) {
+			// data owns the resources config; platform is a separate Bicep layer.
+			data := map[string]any{
+				"name":     "data",
+				"provider": "resources",
+				"config": map[string]any{
+					"cache": map[string]any{"type": "db.redis"},
+				},
+			}
+			platform := map[string]any{"name": "platform", "provider": "bicep", "path": "infra/platform"}
+			layers := []any{data, platform}
+			if resourcesIndex == 1 {
+				layers = []any{platform, data}
+			}
+			project := map[string]any{
+				"infra": map[string]any{"layers": layers},
+			}
+
+			// Explicitly select platform, even though data is the existing resources layer.
+			parsed, err := parseProject(project, "platform")
+			require.NoError(t, err)
+
+			// Discover data for defaulting, but keep the selected target and provider on platform.
+			require.Equal(t, "data", parsed.resourcesLayer)
+			// With two layers, platform is at the index opposite resourcesIndex.
+			require.Equal(t, 1-resourcesIndex, parsed.index)
+			require.Equal(t, platform, parsed.target)
+			require.Equal(t, "bicep", parsed.provider)
+			// Do not load data's Redis config into the selected Bicep layer's state.
+			require.Empty(t, parsed.config)
+			require.Equal(t, layers, parsed.layers)
+		})
+	}
+}
+
+func TestParseProjectLoadsOnlySelectedResourcesConfig(t *testing.T) {
+	// Select data; the neighboring Bicep layer has config that is not a resources.Config.
+	parsed := readAddTestProject(t, `infra:
+  layers:
+    - name: data
+      provider: resources
+      config:
+        cache:
+          type: db.redis
+    - name: platform
+      provider: bicep
+      config:
+        unrelated: true
+`, "data")
+
+	// Only the selected resources layer's Redis config should be decoded.
+	require.Equal(t, "data", parsed.resourcesLayer)
+	require.Equal(t, 0, parsed.index)
+	require.Equal(t, "resources", parsed.provider)
+	require.Equal(t, resources.Config{"cache": {Type: resources.Redis}}, parsed.config)
+}
+
+func TestParseProjectDoesNotInheritProvider(t *testing.T) {
+	// The provider is on infra, not on data. Its unrelated config must not be decoded as resources.
+	parsed := readAddTestProject(t, `infra:
+  provider: resources
+  layers:
+    - name: data
+      config:
+        unrelated: true
+`, "data")
+
+	// data is still selected, but does not become a resources layer through inheritance.
+	require.Equal(t, 0, parsed.index)
+	require.Equal(t, "data", parsed.target["name"])
+	require.Empty(t, parsed.resourcesLayer)
+	require.Empty(t, parsed.provider)
+	require.Empty(t, parsed.config)
 }
 
 func TestAddSummaryIncludesOnlyChangedResourcesAndServices(t *testing.T) {
@@ -152,6 +231,7 @@ infra:
 }
 
 func TestAddRejectsUnsupportedProjectShapes(t *testing.T) {
+	// Each fixture is valid YAML but violates a project shape or layer-selection rule.
 	for _, test := range []struct {
 		name, source, layer string
 	}{
@@ -162,6 +242,9 @@ func TestAddRejectsUnsupportedProjectShapes(t *testing.T) {
 		{name: "project layers", source: "layers: []\n", layer: "data"},
 		{name: "bad infra", source: "infra: []\n", layer: "data"},
 		{name: "bad layers", source: "infra:\n  layers: {}\n", layer: "data"},
+		{name: "bad layer", source: "infra:\n  layers: [invalid]\n", layer: "data"},
+		{name: "missing layer name", source: "infra:\n  layers:\n    - provider: bicep\n", layer: "data"},
+		{name: "bad layer name", source: "infra:\n  layers:\n    - name: 123\n", layer: "data"},
 		{name: "bad services", source: "services: []\n", layer: "data"},
 		{name: "bad service", source: "services:\n  api: invalid\n", layer: "data"},
 		{name: "duplicate layers", source: "infra:\n  layers:\n    - name: data\n    - name: data\n", layer: "data"},
@@ -171,6 +254,7 @@ func TestAddRejectsUnsupportedProjectShapes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var raw map[string]any
 			require.NoError(t, yaml.Unmarshal([]byte(test.source), &raw))
+			// Reject during project parsing, before preparing any configuration changes.
 			_, err := parseProject(raw, test.layer)
 			require.Error(t, err)
 		})

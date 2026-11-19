@@ -26,6 +26,11 @@ import (
 )
 
 var (
+	// listenCapabilities makes ExtensionsMiddleware start an extension (via `listen`) before every
+	// top-level azd command, whether or not the command uses it. Only add a capability here if azd
+	// may call the extension from many commands, like lifecycle events. If a single command needs
+	// it, that command can start the extension with ExtensionActivator instead, which is how
+	// `azd infra generate` handles InfraGenerationProviderCapability.
 	listenCapabilities = []extensions.CapabilityType{
 		extensions.LifecycleEventsCapability,
 		extensions.ServiceTargetProviderCapability,

@@ -350,7 +350,7 @@ type extensionProcess struct {
 // startAndWaitExtension launches an extension's `listen` process against the gRPC server described
 // by serverInfo and blocks until the extension signals readiness or fails. It is the per-extension
 // startup shared by ExtensionsMiddleware (every listen-capable extension) and ExtensionActivator
-// (a targeted subset).
+// (a targeted subset). If the extension fails to become ready, its process is stopped before returning.
 func startAndWaitExtension(
 	readyParentCtx context.Context,
 	processCtx context.Context,
@@ -374,9 +374,14 @@ func startAndWaitExtension(
 		done:      make(chan struct{}),
 	}
 
+	// processCtx is shared by every extension and lives until the command exits, so a per-extension
+	// context lets us stop just this process if it never becomes ready.
+	extensionCtx, stopExtension := context.WithCancel(processCtx)
+
 	// Start the extension process in a separate goroutine
 	go func() {
 		defer close(process.done)
+		defer stopExtension()
 
 		allEnv := []string{
 			fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
@@ -388,7 +393,7 @@ func startAndWaitExtension(
 		}
 
 		// Propagate trace context to the extension process
-		if traceEnv := tracing.Environ(processCtx); len(traceEnv) > 0 {
+		if traceEnv := tracing.Environ(extensionCtx); len(traceEnv) > 0 {
 			allEnv = append(allEnv, traceEnv...)
 		}
 
@@ -409,7 +414,7 @@ func startAndWaitExtension(
 			Environment: opts.environment,
 		}
 
-		if _, err := runner.Invoke(processCtx, ext, invokeOptions); err != nil {
+		if _, err := runner.Invoke(extensionCtx, ext, invokeOptions); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				log.Printf("%v", err)
 			}
@@ -426,7 +431,18 @@ func startAndWaitExtension(
 	readyCtx, cancel := getReadyContext(readyParentCtx)
 	defer cancel()
 
-	return process, ext.WaitUntilReady(readyCtx)
+	if err := ext.WaitUntilReady(readyCtx); err != nil {
+		// The command continues without this extension, so it must not keep registering
+		// providers into the container while the command resolves from it.
+		stopExtension()
+		if !waitForExtensionProcesses([]*extensionProcess{process}, extensionListenerShutdownGracePeriod) {
+			log.Printf("extension '%s' did not stop after failing to become ready", ext.Id)
+		}
+
+		return process, err
+	}
+
+	return process, nil
 }
 
 func shutdownExtensionProcesses(

@@ -279,6 +279,121 @@ func (p *serviceHealthProber) probe(t *testing.T, ctx context.Context, url strin
 	})
 }
 
+// Test_CLI_Deploy_StorageStaticWebsite deploys static content to a storage account (host: storage). The first
+// deploy enables static website hosting (the infra leaves it disabled), and the redeploy verifies changed content
+// is served and stale blobs are removed.
+func Test_CLI_Deploy_StorageStaticWebsite(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+	defer cleanupRg(ctx, t, cli, session, "rg-"+envName)
+
+	err := copySample(dir, "storage-staticwebsite")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
+	require.NoError(t, err)
+
+	result, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	require.NoError(t, err)
+
+	var envValues map[string]any
+	require.NoError(t, json.Unmarshal([]byte(result.Stdout), &envValues))
+
+	if session != nil {
+		subID, ok := envValues["AZURE_SUBSCRIPTION_ID"].(string)
+		require.True(t, ok, "AZURE_SUBSCRIPTION_ID should be a string in env values")
+		session.Variables[recording.SubscriptionIdKey] = subID
+	}
+
+	websiteURL, ok := envValues["WEBSITE_URL"].(string)
+	require.True(t, ok, "WEBSITE_URL should be a string in env values")
+	websiteURL = strings.TrimSuffix(websiteURL, "/")
+
+	retryDelay := 15 * time.Second
+	httpClient := http.DefaultClient
+	if session != nil {
+		httpClient = session.ProxyClient
+		if session.Playback {
+			retryDelay = time.Millisecond
+		}
+	}
+
+	// The Storage Blob Data Contributor assignment created during provision can take a few minutes to propagate,
+	// so data-plane uploads may be denied right after provisioning.
+	deploy := func() {
+		err := retry.Do(ctx, retry.WithMaxRetries(20, retry.NewConstant(retryDelay)), func(ctx context.Context) error {
+			if _, err := cli.RunCommand(ctx, "deploy", "--cwd", dir); err != nil {
+				return retry.RetryableError(err)
+			}
+			return nil
+		})
+		require.NoError(t, err)
+	}
+
+	getStatus := func(url string) (int, error) {
+		/* #nosec G107 - Potential HTTP request made with variable url false positive */
+		res, err := httpClient.Get(url)
+		if err != nil {
+			return 0, err
+		}
+		defer res.Body.Close()
+		return res.StatusCode, nil
+	}
+
+	prober := newServiceHealthProber(httpClient, session)
+	indexPath := filepath.Join(dir, "src", "index.html")
+
+	t.Log("Deploying static website (enables static website hosting)")
+	deploy()
+
+	v1, err := os.ReadFile(indexPath)
+	require.NoError(t, err)
+	require.NoError(t, prober.probe(t, ctx, websiteURL+"/", string(v1)))
+	require.NoError(t, prober.probe(t, ctx, websiteURL+"/old.txt", "removed on redeploy\n"))
+
+	t.Log("Redeploying updated static website")
+	v2 := strings.Replace(string(v1), "v1", "v2", 1)
+	//nolint:gosec // G703: indexPath is inside the test temp dir
+	require.NoError(t, os.WriteFile(indexPath, []byte(v2), osutil.PermissionFile))
+	require.NoError(t, os.Remove(filepath.Join(dir, "src", "old.txt")))
+
+	deploy()
+
+	require.NoError(t, prober.probe(t, ctx, websiteURL+"/", v2))
+
+	// Blobs no longer present in the content folder are removed, so the site serves the 404 document.
+	err = retry.Do(ctx, retry.WithMaxRetries(20, retry.NewConstant(retryDelay)), func(ctx context.Context) error {
+		status, err := getStatus(websiteURL + "/old.txt")
+		if err != nil {
+			return retry.RetryableError(err)
+		}
+		if status != http.StatusNotFound {
+			return retry.RetryableError(fmt.Errorf("expected 404 for removed blob but got %d", status))
+		}
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 // Test_CLI_Deploy_StoppedWebApp tests that deploying to a stopped Linux web app
 // succeeds without hanging. This verifies the fix for https://github.com/Azure/azure-dev/issues/7708
 // where azd deploy would poll indefinitely when the web app had 0 running instances.

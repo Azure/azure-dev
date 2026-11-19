@@ -257,7 +257,7 @@ func (st *storageTarget) Deploy(
 		return nil, storageDataPlaneError(targetResource, err)
 	}
 
-	progress.SetProgress(NewServiceProgress(fmt.Sprintf("Uploading %d files", len(files))))
+	progress.SetProgress(NewServiceProgress(fmt.Sprintf("Uploading %d file(s)", len(files))))
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.SetLimit(storageUploadConcurrency)
 	for _, blobName := range slices.Sorted(maps.Keys(files)) {
@@ -275,7 +275,7 @@ func (st *storageTarget) Deploy(
 		return keep
 	})
 	if len(stale) > 0 {
-		progress.SetProgress(NewServiceProgress(fmt.Sprintf("Removing %d stale files", len(stale))))
+		progress.SetProgress(NewServiceProgress(fmt.Sprintf("Removing %d stale file(s)", len(stale))))
 		group, groupCtx := errgroup.WithContext(ctx)
 		group.SetLimit(storageUploadConcurrency)
 		for _, blobName := range stale {

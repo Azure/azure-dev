@@ -107,6 +107,37 @@ func TestAILocationPersistsAcrossProviderInstances(t *testing.T) {
 	}
 }
 
+func TestAILocationUsesResolvedAccessTenant(t *testing.T) {
+	for _, subscription := range []string{"sub", ""} {
+		t.Run("subscription "+subscription, func(t *testing.T) {
+			t.Setenv("AZURE_SUBSCRIPTION_ID", "")
+			t.Setenv("AZURE_TENANT_ID", "process-tenant")
+			prompts := &promptServer{aiLocation: "westus3"}
+			env := &environmentServer{values: map[string]string{
+				"AZURE_SUBSCRIPTION_ID": subscription, "AZURE_LOCATION": "eastus",
+				"AZURE_TENANT_ID": "resource-tenant",
+			}}
+			client := newHostClient(t, env, prompts)
+			p := newAIProvider(t, client, "models")
+			p.options.VirtualEnv = map[string]string{"AZURE_TENANT_ID": "virtual-tenant"}
+			p.scope = nil
+
+			require.NoError(t, p.EnsureEnv(t.Context()))
+			require.Equal(t, "user-access-tenant", p.scope.tenantID)
+			parameters, err := p.Parameters(t.Context())
+			require.NoError(t, err)
+			require.Len(t, parameters, 1)
+			require.Len(t, prompts.aiRequests, 1)
+			scope := prompts.aiRequests[0].GetAzureContext().GetScope()
+			require.Equal(t, "sub", scope.GetSubscriptionId())
+			require.Equal(t, "user-access-tenant", scope.GetTenantId())
+			require.Equal(t, "eastus", scope.GetLocation())
+			require.Equal(t, "eastus", prompts.aiRequests[0].GetDefaultValue())
+			require.Equal(t, "resource-tenant", env.values["AZURE_TENANT_ID"])
+		})
+	}
+}
+
 func TestAIStateDoesNotPromptForDeploymentLocation(t *testing.T) {
 	prompts := &promptServer{}
 	client := newHostClient(t, &environmentServer{values: map[string]string{}}, prompts)

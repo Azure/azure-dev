@@ -1,6 +1,6 @@
 # Release History
 
-## 1.39.0-beta.1 (Unreleased)
+## 1.40.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,16 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.39.1 (2026-11-18)
+
+### Bugs Fixed
+
+- [[#10803]](https://github.com/Azure/azure-dev/pull/10803) Fix provisioning output to distinguish Azure AI Hubs and AI Projects from other Machine Learning workspaces. Thanks @huong8373tt-beep for the contribution!
+
+### Other Changes
+
+- [[#10930]](https://github.com/Azure/azure-dev/pull/10930) Update the bundled Bicep CLI to v0.49.2.
 
 ## 1.38.0 (2026-11-11)
 

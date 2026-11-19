@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -115,6 +116,16 @@ func (m *MockExtensionEventManager) AddServiceEventHandler(
 	ctx context.Context,
 	eventName string,
 	handler ServiceEventHandler,
+	options *ServiceEventOptions,
+) error {
+	args := m.Called(ctx, eventName, handler, options)
+	return args.Error(0)
+}
+
+func (m *MockExtensionEventManager) AddServiceEventResponseHandler(
+	ctx context.Context,
+	eventName string,
+	handler ServiceEventResponseHandler,
 	options *ServiceEventOptions,
 ) error {
 	args := m.Called(ctx, eventName, handler, options)
@@ -510,6 +521,143 @@ func TestExtensionHost_ValidateBetaServiceEventRegistrations(t *testing.T) {
 			require.ErrorContains(t, host.Run(t.Context()), test.wantError)
 		})
 	}
+}
+
+func TestExtensionHost_ServiceEventResponseHandlers(t *testing.T) {
+	responseHandler := ServiceEventResponseHandler(func(
+		context.Context,
+		*ServiceEventArgs,
+	) (*ServiceEventResponse, error) {
+		return nil, nil
+	})
+	betaHandler := BetaServiceEventHandler(func(
+		context.Context,
+		*ServiceEventArgs,
+	) (*BetaServiceEventResponse, error) {
+		return nil, nil
+	})
+
+	tests := []struct {
+		name             string
+		stableHandlers   []ServiceEventRegistration
+		responseHandlers []serviceEventResponseRegistration
+		betaHandlers     []betaServiceEventRegistration
+		wantError        string
+	}{
+		{
+			name: "unsupported event",
+			responseHandlers: []serviceEventResponseRegistration{
+				{EventName: "postpackage", Handler: responseHandler},
+			},
+			wantError: "use predeploy or postdeploy",
+		},
+		{
+			name: "nil handler",
+			responseHandlers: []serviceEventResponseRegistration{
+				{EventName: "predeploy"},
+			},
+			wantError: "is nil",
+		},
+		{
+			name: "duplicate response handler",
+			responseHandlers: []serviceEventResponseRegistration{
+				{EventName: "predeploy", Handler: responseHandler},
+				{EventName: "predeploy", Handler: responseHandler},
+			},
+			wantError: "registered more than once",
+		},
+		{
+			name:           "conflicts with a service handler",
+			stableHandlers: []ServiceEventRegistration{{EventName: "postdeploy"}},
+			responseHandlers: []serviceEventResponseRegistration{
+				{EventName: "postdeploy", Handler: responseHandler},
+			},
+			wantError: "registered more than once",
+		},
+		{
+			name: "conflicts with a beta handler",
+			responseHandlers: []serviceEventResponseRegistration{
+				{EventName: "predeploy", Handler: responseHandler},
+			},
+			betaHandlers: []betaServiceEventRegistration{
+				{EventName: "predeploy", Handler: betaHandler},
+			},
+			wantError: "cannot have both stable and beta handlers",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			host := NewExtensionHost(nil)
+			host.serviceHandlers = test.stableHandlers
+			host.serviceResponses = test.responseHandlers
+			host.betaServiceHandlers = test.betaHandlers
+
+			require.ErrorContains(t, host.Run(t.Context()), test.wantError)
+		})
+	}
+
+	t.Run("registers response handlers", func(t *testing.T) {
+		registered := make(chan struct{})
+		receiveStarted := make(chan struct{})
+		options := &ServiceEventOptions{Host: "containerapp"}
+		mockEventManager := &MockExtensionEventManager{}
+		mockEventManager.On("AddServiceEventResponseHandler", mock.Anything, "predeploy", mock.Anything, options).
+			Run(func(mock.Arguments) {
+				close(registered)
+			}).
+			Return(nil)
+		mockEventManager.On("Ready", mock.Anything).Return(nil)
+		mockEventManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+			close(receiveStarted)
+			<-args.Get(0).(context.Context).Done()
+		}).Return(nil)
+		mockEventManager.On("Close").Return(nil)
+
+		host := NewExtensionHost(newTestAzdClient())
+		host.eventManager = mockEventManager
+		host.WithServiceEventResponseHandler("predeploy", responseHandler, options)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() {
+			done <- host.Run(ctx)
+		}()
+
+		<-registered
+		<-receiveStarted
+		cancel()
+		require.NoError(t, <-done)
+		mockEventManager.AssertExpectations(t)
+	})
+
+	t.Run("returns response handler registration errors", func(t *testing.T) {
+		mockEventManager := &MockExtensionEventManager{}
+		mockEventManager.On("AddServiceEventResponseHandler", mock.Anything, "predeploy", mock.Anything, mock.Anything).
+			Return(errors.New("subscription failed"))
+		mockEventManager.On("Ready", mock.Anything).Return(nil)
+		mockEventManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+			<-args.Get(0).(context.Context).Done()
+		}).Return(nil)
+		mockEventManager.On("Close").Return(nil)
+
+		host := NewExtensionHost(newTestAzdClient())
+		host.eventManager = mockEventManager
+		host.WithServiceEventResponseHandler("predeploy", responseHandler, nil)
+
+		done := make(chan error, 1)
+		go func() {
+			done <- host.Run(t.Context())
+		}()
+
+		select {
+		case err := <-done:
+			require.ErrorContains(t, err, "failed to add service event response handler 'predeploy': subscription failed")
+		case <-time.After(5 * time.Second):
+			t.Fatal("extension host did not return the registration error")
+		}
+	})
 }
 
 func TestExtensionHost_ServiceTargetRegistrationError(t *testing.T) {

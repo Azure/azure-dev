@@ -5,9 +5,14 @@ package azdext
 
 import (
 	"context"
+	"errors"
+	"io"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -532,6 +537,339 @@ func TestEventManager_onInvokeServiceHandler_NoHandler(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)          // Returns empty EventMessage, not nil
 	assert.Nil(t, resp.MessageType) // But the MessageType is nil (empty message)
+}
+
+func TestEventManager_onInvokeServiceHandler_ResponseHandlerMessages(t *testing.T) {
+	info := &ServiceEventMessage{
+		Kind:    ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO,
+		Message: "Deployment guidance.",
+	}
+	warning := &ServiceEventMessage{
+		Kind:       ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+		Message:    "Assign the required role.",
+		Suggestion: "Ask an owner to grant access.",
+		Links:      []*ErrorLink{{Title: "Role guide", Url: "https://aka.ms/role"}},
+	}
+
+	tests := []struct {
+		name       string
+		response   *ServiceEventResponse
+		handlerErr error
+		wantStatus string
+		wantErr    []string
+		// wantErrDetails checks that the structured error keeps its classification and the full diagnostics.
+		wantErrDetails bool
+		wantMessages   []*ServiceEventMessage
+	}{
+		{
+			name:         "valid messages are returned",
+			response:     &ServiceEventResponse{Messages: []*ServiceEventMessage{info, warning}},
+			wantStatus:   "completed",
+			wantMessages: []*ServiceEventMessage{info, warning},
+		},
+		{
+			name:       "nil response completes without messages",
+			wantStatus: "completed",
+		},
+		{
+			name:         "messages are kept when the handler fails",
+			response:     &ServiceEventResponse{Messages: []*ServiceEventMessage{warning}},
+			handlerErr:   errors.New("role check failed"),
+			wantStatus:   "failed",
+			wantErr:      []string{"role check failed"},
+			wantMessages: []*ServiceEventMessage{warning},
+		},
+		{
+			name: "invalid messages fail the handler and valid messages are kept",
+			response: &ServiceEventResponse{Messages: []*ServiceEventMessage{
+				nil,
+				{Message: "No kind"},
+				{Kind: ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_INFO, Message: " "},
+				{
+					Kind:    ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+					Message: "Missing link URL",
+					Links:   []*ErrorLink{{Title: "No URL"}},
+				},
+				warning,
+			}},
+			wantStatus: "failed",
+			wantErr: []string{
+				"message 1: message is nil",
+				"message 2: unsupported message kind",
+				"message 3: message text is required",
+				"message 4: link 1 URL is required",
+			},
+			wantMessages: []*ServiceEventMessage{warning},
+		},
+		{
+			name: "malformed link URLs drop only the invalid message",
+			response: &ServiceEventResponse{Messages: []*ServiceEventMessage{
+				{
+					Kind:    ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+					Message: "Malformed link",
+					Links:   []*ErrorLink{{Title: "Bad", Url: "https://example.com/%zz"}},
+				},
+				warning,
+			}},
+			wantStatus:   "failed",
+			wantErr:      []string{"message 1: link 1 URL is invalid"},
+			wantMessages: []*ServiceEventMessage{warning},
+		},
+		{
+			name: "opaque link URLs are rejected because their credentials cannot be redacted",
+			response: &ServiceEventResponse{Messages: []*ServiceEventMessage{
+				{
+					Kind:    ServiceEventMessageKind_SERVICE_EVENT_MESSAGE_KIND_WARNING,
+					Message: "Opaque link",
+					Links:   []*ErrorLink{{Title: "Opaque", Url: "https:user:password@example.com/docs"}},
+				},
+				warning,
+			}},
+			wantStatus:   "failed",
+			wantErr:      []string{"message 1: link 1 URL is invalid"},
+			wantMessages: []*ServiceEventMessage{warning},
+		},
+		{
+			name:     "typed handler errors keep validation diagnostics",
+			response: &ServiceEventResponse{Messages: []*ServiceEventMessage{nil, warning}},
+			handlerErr: &ServiceError{
+				Message:    "role check failed",
+				Suggestion: "Ask an owner to grant access.",
+			},
+			wantStatus:     "failed",
+			wantErr:        []string{"role check failed", "message 1: message is nil"},
+			wantErrDetails: true,
+			wantMessages:   []*ServiceEventMessage{warning},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+			eventManager.serviceResponseEvents["predeploy"] = func(
+				context.Context,
+				*ServiceEventArgs,
+			) (*ServiceEventResponse, error) {
+				return tt.response, tt.handlerErr
+			}
+
+			resp, err := eventManager.onInvokeServiceHandler(t.Context(), &InvokeServiceHandler{
+				EventName:      "predeploy",
+				Project:        createTestProjectConfigForEvents(),
+				Service:        createTestServiceConfigForEvents(),
+				ServiceContext: createTestServiceContextForEvents(),
+			})
+			require.NoError(t, err)
+
+			status := resp.GetServiceHandlerStatus()
+			require.NotNil(t, status)
+			require.Equal(t, "predeploy", status.GetEventName())
+			require.Equal(t, "test-service", status.GetServiceName())
+			require.Equal(t, tt.wantStatus, status.GetStatus())
+			for _, wantErr := range tt.wantErr {
+				require.Contains(t, status.GetMessage(), wantErr)
+				if tt.wantErrDetails {
+					require.Contains(t, status.GetError().GetMessage(), wantErr)
+				}
+			}
+			if tt.wantErrDetails {
+				require.Equal(t, ErrorOrigin_ERROR_ORIGIN_SERVICE, status.GetError().GetOrigin())
+				require.Equal(t, "Ask an owner to grant access.", status.GetError().GetSuggestion())
+			}
+			require.Equal(t, tt.wantMessages, status.GetMessages())
+		})
+	}
+}
+
+func TestEventManager_AddServiceEventResponseHandler_Validation(t *testing.T) {
+	handler := func(context.Context, *ServiceEventArgs) (*ServiceEventResponse, error) {
+		return nil, nil
+	}
+
+	tests := []struct {
+		name      string
+		eventName string
+		handler   ServiceEventResponseHandler
+		setup     func(*EventManager)
+		wantErr   string
+	}{
+		{
+			name:      "unsupported event",
+			eventName: "prepackage",
+			handler:   handler,
+			wantErr:   "use predeploy or postdeploy",
+		},
+		{
+			name:      "nil handler",
+			eventName: "predeploy",
+			wantErr:   "is nil",
+		},
+		{
+			name:      "existing service handler",
+			eventName: "predeploy",
+			handler:   handler,
+			setup: func(eventManager *EventManager) {
+				eventManager.serviceEvents["predeploy"] = func(context.Context, *ServiceEventArgs) error {
+					return nil
+				}
+			},
+			wantErr: "already registered",
+		},
+		{
+			name:      "existing response handler",
+			eventName: "postdeploy",
+			handler:   handler,
+			setup: func(eventManager *EventManager) {
+				eventManager.serviceResponseEvents["postdeploy"] = handler
+			},
+			wantErr: "already registered",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+			eventManager.broker = newRecordingEventBroker(&recordingEventStream{})
+			if tt.setup != nil {
+				tt.setup(eventManager)
+			}
+
+			err := eventManager.AddServiceEventResponseHandler(t.Context(), tt.eventName, tt.handler, nil)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+type recordingEventStream struct {
+	mu      sync.Mutex
+	sent    []*EventMessage
+	sendErr error
+}
+
+func (s *recordingEventStream) Send(msg *EventMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sendErr != nil {
+		return s.sendErr
+	}
+	s.sent = append(s.sent, msg)
+	return nil
+}
+
+func (s *recordingEventStream) Recv() (*EventMessage, error) {
+	return nil, io.EOF
+}
+
+func (s *recordingEventStream) sentCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.sent)
+}
+
+func newRecordingEventBroker(stream *recordingEventStream) *grpcbroker.MessageBroker[EventMessage] {
+	return grpcbroker.NewMessageBroker(
+		stream,
+		NewEventMessageEnvelopeWithExtensionId("microsoft.azd.demo"),
+		"microsoft.azd.demo",
+		nil,
+	)
+}
+
+func TestEventManager_ServiceEventRegistrationReservations(t *testing.T) {
+	responseHandler := func(context.Context, *ServiceEventArgs) (*ServiceEventResponse, error) {
+		return nil, nil
+	}
+	plainHandler := func(context.Context, *ServiceEventArgs) error {
+		return nil
+	}
+
+	t.Run("plain handler after response handler is rejected", func(t *testing.T) {
+		stream := &recordingEventStream{}
+		eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+		eventManager.broker = newRecordingEventBroker(stream)
+
+		require.NoError(t, eventManager.AddServiceEventResponseHandler(t.Context(), "predeploy", responseHandler, nil))
+		err := eventManager.AddServiceEventHandler(t.Context(), "predeploy", plainHandler, nil)
+		require.ErrorContains(t, err, "already registered")
+		require.Equal(t, 1, stream.sentCount())
+		require.NotContains(t, eventManager.serviceEvents, "predeploy")
+	})
+
+	t.Run("concurrent response handlers subscribe once", func(t *testing.T) {
+		stream := &recordingEventStream{}
+		eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+		eventManager.broker = newRecordingEventBroker(stream)
+
+		const attempts = 8
+		var wg sync.WaitGroup
+		errs := make(chan error, attempts)
+		for range attempts {
+			wg.Go(func() {
+				errs <- eventManager.AddServiceEventResponseHandler(t.Context(), "postdeploy", responseHandler, nil)
+			})
+		}
+		wg.Wait()
+		close(errs)
+
+		succeeded := 0
+		for err := range errs {
+			if err == nil {
+				succeeded++
+				continue
+			}
+			require.ErrorContains(t, err, "already registered")
+		}
+		require.Equal(t, 1, succeeded)
+		require.Equal(t, 1, stream.sentCount())
+	})
+
+	t.Run("failed subscriptions release the reservation", func(t *testing.T) {
+		stream := &recordingEventStream{sendErr: errors.New("stream closed")}
+		eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+		eventManager.broker = newRecordingEventBroker(stream)
+
+		require.ErrorContains(t,
+			eventManager.AddServiceEventResponseHandler(t.Context(), "predeploy", responseHandler, nil),
+			"stream closed")
+		require.ErrorContains(t,
+			eventManager.AddServiceEventHandler(t.Context(), "postdeploy", plainHandler, nil),
+			"stream closed")
+		require.Empty(t, eventManager.serviceResponseEvents)
+		require.Empty(t, eventManager.serviceEvents)
+
+		stream.mu.Lock()
+		stream.sendErr = nil
+		stream.mu.Unlock()
+		require.NoError(t, eventManager.AddServiceEventHandler(t.Context(), "predeploy", plainHandler, nil))
+	})
+}
+
+func TestEventManager_onInvokeServiceHandler_HandlerCanRemoveHandlers(t *testing.T) {
+	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+	eventManager.serviceResponseEvents["predeploy"] = func(
+		context.Context,
+		*ServiceEventArgs,
+	) (*ServiceEventResponse, error) {
+		eventManager.RemoveServiceEventHandler("predeploy")
+		return nil, nil
+	}
+
+	done := make(chan *EventMessage, 1)
+	go func() {
+		resp, _ := eventManager.onInvokeServiceHandler(t.Context(), &InvokeServiceHandler{
+			EventName: "predeploy",
+			Service:   createTestServiceConfigForEvents(),
+		})
+		done <- resp
+	}()
+
+	select {
+	case resp := <-done:
+		require.Equal(t, "completed", resp.GetServiceHandlerStatus().GetStatus())
+		require.NotContains(t, eventManager.serviceResponseEvents, "predeploy")
+	case <-time.After(5 * time.Second):
+		t.Fatal("service handler deadlocked while removing a handler")
+	}
 }
 
 // Test RemoveProjectEventHandler

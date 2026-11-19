@@ -14,6 +14,7 @@ import (
 	"azure.resources/internal/resources/scaffold"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/constants"
 )
 
 // ParameterResolver supplies resource-specific deployment parameter values.
@@ -51,8 +52,9 @@ func (r *ParameterResolver) Configure(options *azdext.ProvisioningOptions) error
 
 // ResolveParameter returns a resource-specific value and whether it required a local prompt,
 // recording its environment mappings. A nil value with no error leaves normal parameter resolution in effect.
+// The resolved Azure context supplies the scope for quota prompts without modifying it.
 func (r *ParameterResolver) ResolveParameter(
-	ctx context.Context, name string, values map[string]string, mapping *[]string,
+	ctx context.Context, azureContext *azdext.AzureContext, name string, values map[string]string, mapping *[]string,
 ) (any, bool, error) {
 	if name != "aiDeploymentsLocation" || r.requirements == nil {
 		return nil, false, nil
@@ -63,12 +65,12 @@ func (r *ParameterResolver) ResolveParameter(
 		return location, false, nil
 	}
 
-	location, err := r.promptAILocation(ctx, values)
+	location, err := r.promptAILocation(ctx, azureContext)
 	if err != nil {
 		return nil, true, err
 	}
 	_, err = r.client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: values["AZURE_ENV_NAME"], Key: r.locationKey, Value: location,
+		EnvName: values[constants.EnvNameEnvVarName], Key: r.locationKey, Value: location,
 	})
 	if err != nil {
 		return nil, true, fmt.Errorf("saving environment value %s: %w", r.locationKey, err)
@@ -77,10 +79,10 @@ func (r *ParameterResolver) ResolveParameter(
 	return location, true, nil
 }
 
-func (r *ParameterResolver) promptAILocation(ctx context.Context, values map[string]string) (string, error) {
+func (r *ParameterResolver) promptAILocation(ctx context.Context, azureContext *azdext.AzureContext) (string, error) {
 	response, err := r.client.Prompt().PromptAiLocationWithQuota(ctx, &azdext.PromptAiLocationWithQuotaRequest{
-		AzureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{SubscriptionId: values["AZURE_SUBSCRIPTION_ID"]}},
-		Requirements: r.requirements, DefaultValue: values["AZURE_LOCATION"],
+		AzureContext: azureContext,
+		Requirements: r.requirements, DefaultValue: azureContext.GetScope().GetLocation(),
 		SelectOptions: &azdext.SelectOptions{Message: "Select a location for AI models"},
 	})
 	if err != nil {

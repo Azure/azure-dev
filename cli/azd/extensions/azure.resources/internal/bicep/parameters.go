@@ -16,14 +16,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-)
-
-// Our generated main.parameters.jsont uses ${AZURE_PRINCIPAL_ID} and ${AZURE_PRINCIPAL_TYPE},
-// following core azd's Bicep convention. These placeholders need the signed-in principal
-// resolved by the provider, not authored environment values.
-const (
-	principalIDPlaceholder   = "AZURE_PRINCIPAL_ID"
-	principalTypePlaceholder = "AZURE_PRINCIPAL_TYPE"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/constants"
 )
 
 var envPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:?=)([^}]*))?\}`)
@@ -69,8 +62,9 @@ func (p *Provider) prepare(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	values[principalIDPlaceholder] = p.scope.principalID
-	values[principalTypePlaceholder] = p.scope.principalType
+	// Generated principal placeholders must use the signed-in principal, not authored environment values.
+	values[constants.PrincipalIdEnvVarName] = p.scope.principalID
+	values[constants.PrincipalTypeEnvVarName] = p.scope.principalType
 
 	parameters, definitions, err := p.loadParameterInputs()
 	if err != nil {
@@ -215,7 +209,8 @@ func (p *Provider) resolveParameterValue(
 	ctx context.Context, name string, value any, values map[string]string, mapping *[]string,
 ) (any, bool, error) {
 	if p.resolver != nil {
-		resolved, prompted, err := p.resolver.ResolveParameter(ctx, name, values, mapping)
+		azureContext := azureContext(p.scope.subscriptionID, p.scope.tenantID, p.scope.location)
+		resolved, prompted, err := p.resolver.ResolveParameter(ctx, azureContext, name, values, mapping)
 		if err != nil {
 			return nil, prompted, err
 		}
@@ -243,7 +238,7 @@ func (p *Provider) resolve(ctx context.Context, value any, values map[string]str
 	case string:
 		replaced := envPattern.ReplaceAllStringFunc(value, func(match string) string {
 			parts := envPattern.FindStringSubmatch(match)
-			if parts[1] != principalIDPlaceholder && parts[1] != principalTypePlaceholder {
+			if parts[1] != constants.PrincipalIdEnvVarName && parts[1] != constants.PrincipalTypeEnvVarName {
 				*mapping = append(*mapping, parts[1])
 			}
 			if resolved, exists := values[parts[1]]; exists && (resolved != "" || parts[2] != ":=") {

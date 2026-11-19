@@ -148,6 +148,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					if strings.TrimSpace(agent.Instructions) == "" {
 						errors = append(errors, "instructions is required for prompt agents")
 					}
+					if agent.MaxOutputTokens != nil && *agent.MaxOutputTokens < 1 {
+						errors = append(errors, "maxOutputTokens must be positive for prompt agents")
+					}
 					for i, policy := range agent.Policies {
 						switch policy.Type {
 						case PolicyTypeRai:

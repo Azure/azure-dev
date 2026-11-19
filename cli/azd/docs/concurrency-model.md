@@ -341,10 +341,11 @@ calling the gRPC `PromptService`). A redraw would overwrite that prompt.
   `AskerConsole` prompts do this in `doInteraction`/`DoInteraction`. The gRPC
   `PromptService` does it while holding its prompt lock, which AI model pickers acquire
   before their loading spinners start. Hooks marked `interactive: true` do it while the
-  hook runs. Prompts that call `pkg/ux` directly must do the same.
+  hook runs and while any error warnings print. Prompts that call `pkg/ux` directly must do the same.
 - While at least one interaction is active, every registered renderer is paused.
   `PauseRendering` must wait for in-flight output and erase dynamic content,
-  including rows created by terminal line wrapping.
+  including rows created by terminal line wrapping. The deploy progress table recounts
+  those rows at the current terminal width, so the count stays correct after a resize.
   Renderers resume when the last overlapping interaction ends.
 
 ---

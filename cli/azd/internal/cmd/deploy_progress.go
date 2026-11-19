@@ -73,9 +73,9 @@ type deployProgressTracker struct {
 	serviceIdx  map[string]int
 	writer      io.Writer
 	interactive bool
-	// lastLines is the number of physical terminal rows (including wrapped rows) occupied by the
-	// last render, used to move the cursor back over it.
-	lastLines int
+	// lastRendered holds the lines written by the last dynamic render. Their row count is
+	// recomputed at the current width (see renderedRows) to move the cursor back over them.
+	lastRendered []string
 	// termWidth returns the terminal width in columns, used to account for wrapped rows.
 	termWidth func() int
 	// paused is set while an interactive prompt owns the terminal; see PauseRendering.
@@ -123,20 +123,56 @@ func newDeployProgressTracker(
 // grapheme at a time because a double-width glyph that doesn't fit in the remaining
 // columns wraps early.
 func physicalRows(line string, width int) int {
+	rows, _ := layoutLine(line, width)
+	return rows
+}
+
+// layoutLine returns the number of terminal rows a line occupies and the column where its
+// last row ends. Explicit line breaks start a new row.
+func layoutLine(line string, width int) (rows, col int) {
 	if width <= 0 {
-		return 1
+		return 1, 0
 	}
 
 	line = ansiEscapeRe.ReplaceAllString(line, "")
-	rows, col, state := 1, 0, -1
+	rows, state := 1, -1
 	for len(line) > 0 {
+		var cluster string
 		var w int
-		_, line, w, state = uniseg.FirstGraphemeClusterInString(line, state)
+		cluster, line, w, state = uniseg.FirstGraphemeClusterInString(line, state)
+		if cluster == "\n" || cluster == "\r\n" {
+			rows++
+			col = 0
+			continue
+		}
 		if col+w > width {
 			rows++
 			col = 0
 		}
 		col += w
+	}
+	return rows, col
+}
+
+// fitLine makes a line's row count independent of the console's wrap mode. A line that
+// ends exactly at the right edge takes one row on terminals that defer wrapping but two
+// on consoles that wrap immediately (e.g. some Windows consoles). Appending a space makes
+// both wrap, so physicalRows matches what is on screen.
+func fitLine(line string, width int) string {
+	if _, col := layoutLine(line, width); width > 0 && col == width {
+		return line + " "
+	}
+	return line
+}
+
+// renderedRows returns how many terminal rows the last dynamic render occupies at the
+// current terminal width. Recomputing at erase time keeps the count correct on terminals
+// that reflow text after a resize. Callers must hold t.mu.
+func (t *deployProgressTracker) renderedRows() int {
+	width := t.termWidth()
+	rows := 0
+	for _, line := range t.lastRendered {
+		rows += physicalRows(line, width)
 	}
 	return rows
 }
@@ -216,8 +252,8 @@ func (t *deployProgressTracker) Render() {
 	var buf strings.Builder
 
 	// Move cursor up to overwrite previous render
-	if t.lastLines > 0 {
-		buf.WriteString(fmt.Sprintf("\033[%dA", t.lastLines))
+	if rows := t.renderedRows(); rows > 0 {
+		buf.WriteString(fmt.Sprintf("\033[%dA", rows))
 	}
 
 	// Compute column widths
@@ -241,12 +277,13 @@ func (t *deployProgressTracker) Render() {
 		strings.Repeat("─", detailColWidth))
 
 	width := t.termWidth()
-	lines := 0
+	var rendered []string
 	writeLine := func(line string) {
+		line = fitLine(line, width)
 		buf.WriteString("\033[2K") // clear line before writing
 		buf.WriteString(line)
 		buf.WriteString("\n")
-		lines += physicalRows(line, width)
+		rendered = append(rendered, line)
 	}
 
 	writeLine(header)
@@ -260,7 +297,9 @@ func (t *deployProgressTracker) Render() {
 			elapsed = e.String()
 		}
 
-		detail := svc.detail
+		// Keep each service on a single logical line; multiline details would break the
+		// row accounting used to redraw the table.
+		detail := strings.Join(strings.Fields(svc.detail), " ")
 		if len(detail) > maxDetailLen {
 			detail = detail[:maxDetailLen-3] + "..."
 		}
@@ -274,7 +313,7 @@ func (t *deployProgressTracker) Render() {
 		writeLine(line)
 	}
 
-	t.lastLines = lines
+	t.lastRendered = rendered
 	// Erase from cursor to end of screen so wrapped-line remnants
 	// from a previous render don't linger below the table.
 	buf.WriteString("\033[J")
@@ -294,12 +333,12 @@ func (t *deployProgressTracker) RenderFinal() {
 	var buf strings.Builder
 
 	// In interactive mode, overwrite the last dynamic render
-	if t.lastLines > 0 {
-		buf.WriteString(fmt.Sprintf("\033[%dA", t.lastLines))
-		for range t.lastLines {
+	if rows := t.renderedRows(); rows > 0 {
+		buf.WriteString(fmt.Sprintf("\033[%dA", rows))
+		for range rows {
 			buf.WriteString("\033[2K\n")
 		}
-		buf.WriteString(fmt.Sprintf("\033[%dA", t.lastLines))
+		buf.WriteString(fmt.Sprintf("\033[%dA", rows))
 	}
 
 	maxName := 7
@@ -328,7 +367,7 @@ func (t *deployProgressTracker) RenderFinal() {
 			icon, maxName, svc.name, statusColWidth, svc.phase, elapsed))
 	}
 
-	t.lastLines = 0
+	t.lastRendered = nil
 	// Erase from cursor to end of screen to clear any stale content
 	// left behind by long lines that wrapped in the terminal.
 	buf.WriteString("\033[J")
@@ -343,11 +382,11 @@ func (t *deployProgressTracker) PauseRendering() {
 	defer t.mu.Unlock()
 
 	t.paused = true
-	if t.interactive && t.lastLines > 0 {
+	if rows := t.renderedRows(); t.interactive && rows > 0 {
 		// Move to the top of the table and erase it, leaving the cursor where the prompt
 		// should render.
-		fmt.Fprintf(t.writer, "\033[%dA\033[J", t.lastLines)
-		t.lastLines = 0
+		fmt.Fprintf(t.writer, "\033[%dA\033[J", rows)
+		t.lastRendered = nil
 	}
 }
 

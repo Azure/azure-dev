@@ -214,6 +214,50 @@ func TestDeployProgressTracker_PauseErasesWrappedRows(t *testing.T) {
 	assert.Equal(t, "\033[8A\033[J", buf.String(), "pause must erase every wrapped row")
 }
 
+func TestDeployProgressTracker_PadsExactWidthRows(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+	// The 55-column divider ends exactly at the right edge. It is padded so it wraps onto a
+	// second row on every console, whether the console wraps immediately or defers the wrap.
+	tracker.termWidth = func() int { return 55 }
+
+	tracker.Render()
+	assert.Contains(t, buf.String(), "─ \n", "exact-width rows must be padded")
+	buf.Reset()
+
+	tracker.PauseRendering()
+	assert.Equal(t, "\033[4A\033[J", buf.String())
+}
+
+func TestDeployProgressTracker_RecountsRowsAfterResize(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+	width := 20
+	tracker.termWidth = func() int { return width }
+
+	tracker.Render() // 8 rows at 20 columns
+	buf.Reset()
+
+	// After widening, reflowing terminals show the table on 3 rows.
+	width = 120
+	tracker.PauseRendering()
+	assert.Equal(t, "\033[3A\033[J", buf.String(), "pause must erase only the reflowed rows")
+}
+
+func TestDeployProgressTracker_MultilineDetail(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+	tracker.termWidth = func() int { return 120 }
+
+	tracker.Update("web", phaseDeploying, "first\nsecond")
+	tracker.Render()
+	assert.Contains(t, buf.String(), "first second", "detail must render on one line")
+	buf.Reset()
+
+	tracker.PauseRendering()
+	assert.Equal(t, "\033[3A\033[J", buf.String())
+}
+
 func TestPhysicalRows(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -228,6 +272,7 @@ func TestPhysicalRows(t *testing.T) {
 		// The wide glyph doesn't fit in the last column, so it wraps early: 19 + (2+18) + 1.
 		{"WideGlyphWrapsEarly", strings.Repeat("a", 19) + "界" + strings.Repeat("a", 19), 20, 3},
 		{"UnknownWidth", strings.Repeat("a", 50), 0, 1},
+		{"LineBreaks", "first\nsecond", 20, 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

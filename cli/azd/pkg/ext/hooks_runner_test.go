@@ -5,6 +5,7 @@ package ext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1061,6 +1062,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 // can assert on it.
 type configCaptureExecutor struct {
 	onExecute func(tools.ExecutionContext)
+	err       error
 }
 
 func (e *configCaptureExecutor) Prepare(
@@ -1074,6 +1076,9 @@ func (e *configCaptureExecutor) Execute(
 ) (exec.RunResult, error) {
 	if e.onExecute != nil {
 		e.onExecute(execCtx)
+	}
+	if e.err != nil {
+		return exec.NewRunResult(1, "", ""), e.err
 	}
 	return exec.NewRunResult(0, "", ""), nil
 }
@@ -1469,11 +1474,17 @@ func hookSpanAttr(t *testing.T, span *mocktracing.Span, key attribute.Key) attri
 }
 
 type pauseTrackingRenderer struct {
-	paused bool
+	paused   bool
+	onResume func()
 }
 
-func (r *pauseTrackingRenderer) PauseRendering()  { r.paused = true }
-func (r *pauseTrackingRenderer) ResumeRendering() { r.paused = false }
+func (r *pauseTrackingRenderer) PauseRendering() { r.paused = true }
+func (r *pauseTrackingRenderer) ResumeRendering() {
+	r.paused = false
+	if r.onResume != nil {
+		r.onResume()
+	}
+}
 
 // Interactive hooks own the terminal, so live renderers such as the deploy progress table
 // must be paused while they run. See #10252.
@@ -1533,4 +1544,62 @@ func Test_ExecHook_InteractivePausesTerminalRenderers(t *testing.T) {
 			require.False(t, renderer.paused, "renderer must resume after the hook completes")
 		})
 	}
+}
+
+// A failed interactive hook with ContinueOnError prints warnings; renderers must resume only
+// after those warnings so the next redraw starts below them instead of overwriting them.
+func Test_ExecHook_InteractiveResumesRenderersAfterErrorDiagnostics(t *testing.T) {
+	cwd := t.TempDir()
+	ostest.Chdir(t, cwd)
+
+	env := environment.NewWithValues("test", map[string]string{})
+	require.NoError(t, os.MkdirAll(filepath.Join(cwd, "scripts"), osutil.PermissionDirectory))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(cwd, "scripts", "hook.sh"), nil, osutil.PermissionExecutableFile,
+	))
+
+	hooksMap := map[string][]*HookConfig{
+		"predeploy": {{
+			Name:            "predeploy",
+			Shell:           string(language.HookKindBash),
+			Run:             "scripts/hook.sh",
+			Interactive:     true,
+			ContinueOnError: true,
+		}},
+	}
+
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Reload", mock.Anything, env).Return(nil)
+
+	mockContext := mocks.NewMockContext(t.Context())
+	var outputAtResume []string
+	renderer := &pauseTrackingRenderer{
+		onResume: func() { outputAtResume = mockContext.Console.Output() },
+	}
+	unregister := input.RegisterTerminalRenderer(renderer)
+	defer unregister()
+
+	mockContext.Container.MustRegisterNamedTransient(
+		string(language.HookKindBash),
+		func() tools.HookExecutor {
+			return &configCaptureExecutor{err: errors.New("hook failed")}
+		},
+	)
+
+	runner := NewHooksRunner(
+		NewHooksManager(HooksManagerOptions{Cwd: cwd}, mockContext.CommandRunner),
+		mockContext.CommandRunner,
+		envManager,
+		mockContext.Console,
+		cwd,
+		hooksMap,
+		env,
+		mockContext.Container,
+	)
+
+	err := runner.RunHooks(*mockContext.Context, HookTypePre, "project", nil, "deploy")
+	require.NoError(t, err)
+	require.False(t, renderer.paused, "renderer must resume after the hook completes")
+	require.Contains(t, strings.Join(outputAtResume, "\n"), "ContinueOnError",
+		"warnings must be printed before renderers resume")
 }

@@ -178,6 +178,7 @@ func TestDeployProgressTracker_StartTicker(t *testing.T) {
 func TestDeployProgressTracker_PauseErasesTableAndSuppressesRender(t *testing.T) {
 	var buf bytes.Buffer
 	tracker := newDeployProgressTracker(&buf, true, []string{"web"})
+	tracker.termWidth = func() int { return 120 }
 
 	tracker.Render()
 	buf.Reset()
@@ -193,6 +194,8 @@ func TestDeployProgressTracker_PauseErasesTableAndSuppressesRender(t *testing.T)
 
 	tracker.ResumeRendering()
 	output := buf.String()
+	// Resume first moves to a fresh row if the prompt left the cursor mid-line.
+	assert.True(t, strings.HasPrefix(output, strings.Repeat(" ", 120)+"\r"), "resume must start on a fresh row")
 	assert.Contains(t, output, "Deploying")
 	assert.NotContains(t, output, "\033[3A", "resume must draw below the prompt, not over it")
 }
@@ -209,6 +212,28 @@ func TestDeployProgressTracker_PauseErasesWrappedRows(t *testing.T) {
 
 	tracker.PauseRendering()
 	assert.Equal(t, "\033[8A\033[J", buf.String(), "pause must erase every wrapped row")
+}
+
+func TestPhysicalRows(t *testing.T) {
+	tests := []struct {
+		name  string
+		line  string
+		width int
+		want  int
+	}{
+		{"Empty", "", 20, 1},
+		{"FitsExactly", strings.Repeat("a", 20), 20, 1},
+		{"Wraps", strings.Repeat("a", 21), 20, 2},
+		{"IgnoresAnsi", "\033[2K" + strings.Repeat("a", 20), 20, 1},
+		// The wide glyph doesn't fit in the last column, so it wraps early: 19 + (2+18) + 1.
+		{"WideGlyphWrapsEarly", strings.Repeat("a", 19) + "界" + strings.Repeat("a", 19), 20, 3},
+		{"UnknownWidth", strings.Repeat("a", 50), 0, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, physicalRows(tt.line, tt.width))
+		})
+	}
 }
 
 // Regression test for https://github.com/Azure/azure-dev/issues/10252: an interactive

@@ -13,6 +13,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/rivo/uniseg"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 )
@@ -116,14 +118,27 @@ func newDeployProgressTracker(
 	}
 }
 
-// physicalRows returns how many terminal rows a line of plain text occupies when it is
-// printed followed by a newline on a terminal that is width columns wide.
+// physicalRows returns how many terminal rows a line of text occupies when it is printed
+// followed by a newline on a terminal that is width columns wide. Wrapping is counted one
+// grapheme at a time because a double-width glyph that doesn't fit in the remaining
+// columns wraps early.
 func physicalRows(line string, width int) int {
-	visible := ux.VisibleLength(line)
-	if width <= 0 || visible <= width {
+	if width <= 0 {
 		return 1
 	}
-	return (visible + width - 1) / width
+
+	line = ansiEscapeRe.ReplaceAllString(line, "")
+	rows, col, state := 1, 0, -1
+	for len(line) > 0 {
+		var w int
+		_, line, w, state = uniseg.FirstGraphemeClusterInString(line, state)
+		if col+w > width {
+			rows++
+			col = 0
+		}
+		col += w
+	}
+	return rows
 }
 
 // Update sets a service's phase and optional detail message.
@@ -341,6 +356,13 @@ func (t *deployProgressTracker) PauseRendering() {
 func (t *deployProgressTracker) ResumeRendering() {
 	t.mu.Lock()
 	t.paused = false
+	if t.interactive {
+		// The interaction may have left the cursor mid-line (e.g. a hook printing "Done"
+		// without a trailing newline). Writing a full row of spaces wraps to a new row only
+		// in that case; at column 0 the terminal defers the wrap and "\r" returns to the
+		// start of the same row. The table then renders without erasing that output.
+		fmt.Fprint(t.writer, strings.Repeat(" ", max(t.termWidth(), 1))+"\r")
+	}
 	t.mu.Unlock()
 
 	t.Render()

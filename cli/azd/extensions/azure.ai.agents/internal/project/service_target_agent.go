@@ -3909,8 +3909,8 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serv
 
 // zipSourceDir creates a ZIP archive of srcDir honoring .agentignore, writes it to a
 // temp file, and computes its SHA-256. It returns the temp file path and SHA-256 hex
-// string. When keepPythonBytecode is true, __pycache__/ directories and .pyc files are
-// included even if .agentignore excludes them.
+// string. When keepPythonBytecode is true, .pyc files are included even
+// if the generic __pycache__/ and *.pyc rules in .agentignore exclude them.
 func zipSourceDir(ctx context.Context, srcDir string, keepPythonBytecode bool) (string, string, error) {
 	// Load .agentignore (or use defaults if no file exists)
 	ignoreMatcher, err := newAgentIgnoreMatcher(ctx, srcDir)
@@ -3921,7 +3921,9 @@ func zipSourceDir(ctx context.Context, srcDir string, keepPythonBytecode bool) (
 			"check that .agentignore is a valid file with gitignore syntax",
 		)
 	}
-	ignoreMatcher.keepPythonBytecode = keepPythonBytecode
+	if keepPythonBytecode {
+		ignoreMatcher.keepPythonBytecode()
+	}
 
 	// Create temp file and write ZIP directly to it while computing SHA-256
 	tmpFile, err := os.CreateTemp("", "azd-code-deploy-*.zip")

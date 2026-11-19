@@ -111,7 +111,7 @@ func TestAgentIgnore_KeepPythonBytecode(t *testing.T) {
 
 	m, err := newAgentIgnoreMatcher(t.Context(), dir)
 	require.NoError(t, err)
-	m.keepPythonBytecode = true
+	m.keepPythonBytecode()
 
 	require.False(t, m.ShouldExclude("__pycache__", true))
 	require.False(t, m.ShouldExclude("pkg/__pycache__", true))
@@ -123,4 +123,63 @@ func TestAgentIgnore_KeepPythonBytecode(t *testing.T) {
 	require.True(t, m.ShouldExclude("legacy.pyo", false))
 	require.True(t, m.ShouldExclude(".env", false))
 	require.True(t, m.ShouldExclude("agent.yaml", false))
+}
+
+func TestAgentIgnore_KeepPythonBytecodeHonorsOtherRules(t *testing.T) {
+	dir := t.TempDir()
+	content := DefaultAgentIgnoreContent() + "local_settings.py\nsecrets/__pycache__/\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".agentignore"), []byte(content), 0o600))
+
+	m, err := newAgentIgnoreMatcher(t.Context(), dir)
+	require.NoError(t, err)
+	m.keepPythonBytecode()
+
+	// Other rules still match bytecode files directly.
+	require.True(t, m.ShouldExclude(".env.local.pyc", false))
+	require.True(t, m.ShouldExclude("secrets/__pycache__", true))
+
+	// Bytecode of an excluded source module is excluded with it.
+	require.True(t, m.ShouldExclude("__pycache__/local_settings.cpython-313.pyc", false))
+	require.True(t, m.ShouldExclude("__pycache__/local_settings.cpython-313.opt-1.pyc", false))
+	require.True(t, m.ShouldExclude("local_settings.pyc", false))
+	require.False(t, m.ShouldExclude("__pycache__/settings.cpython-313.pyc", false))
+
+	// Only .pyc files are let through __pycache__/.
+	require.True(t, m.ShouldExclude("__pycache__/credentials.json", false))
+	require.True(t, m.ShouldExclude("pkg/__pycache__/notes.txt", false))
+	require.False(t, m.ShouldExclude("pkg/__pycache__/mod.cpython-313.pyc", false))
+}
+
+func TestPackageCodeDeploy_PythonBundledSkipsBytecodeOfExcludedFiles(t *testing.T) {
+	root := t.TempDir()
+	srcDir := filepath.Join(root, "src", "agent")
+	files := map[string]string{
+		"main.py":                                    "import settings\n",
+		"local_settings.py":                          "API_KEY = 'secret'\n",
+		"__pycache__/main.cpython-313.pyc":           "bytecode",
+		"__pycache__/local_settings.cpython-313.pyc": "bytecode with secret",
+		"__pycache__/credentials.json":               "{}",
+		".env.local.pyc":                             "bytecode",
+		".agentignore":                               DefaultAgentIgnoreContent() + "local_settings.py\n",
+	}
+	for name, content := range files {
+		path := filepath.Join(srcDir, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	}
+
+	service := validationTestService(t, root, "inline", map[string]any{
+		"kind": "hosted",
+		"name": "bundled-agent",
+		"codeConfiguration": map[string]any{
+			"runtime": "python_3_13", "entryPoint": "main.py", "dependencyResolution": "bundled",
+		},
+	})
+	provider := &AgentServiceTargetProvider{projectPath: root, servicePath: srcDir, serviceConfig: service}
+
+	zipPath, _, err := provider.packageCodeDeploy(t.Context(), service)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(zipPath) })
+
+	require.Equal(t, []string{"__pycache__/main.cpython-313.pyc", "main.py"}, zipEntryNames(t, zipPath))
 }

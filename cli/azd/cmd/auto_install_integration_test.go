@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -298,9 +299,16 @@ func TestExecuteWithAutoInstall_InteractiveRequirementBeforeExtensions(t *testin
 				require.Contains(t, stderr.String(), tt.flagError)
 			default:
 				require.ErrorIs(t, result.Err, internal.ErrInteractiveRequired)
+				suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](result.Err)
+				require.True(t, ok)
+				require.Equal(t, "Run 'azd pipeline config --no-prompt=false' in an interactive terminal.",
+					suggestionErr.Suggestion)
+
 				require.Empty(t, stdout.String())
-				require.Equal(t, "Error: interactive mode required: azd pipeline config was invoked with prompts disabled. "+
-					"Run 'azd pipeline config --no-prompt=false' in an interactive terminal.\n", stderr.String())
+				require.Equal(t, "ERROR: interactive mode required: azd pipeline config can't run with prompts disabled. "+
+					"Prompts are disabled by --no-prompt, and automatically in CI/CD and AI-agent environments.\n\n"+
+					"Suggestion: Run 'azd pipeline config --no-prompt=false' in an interactive terminal.\n",
+					stderr.String())
 			}
 		})
 	}

@@ -993,9 +993,10 @@ type and provider name. Register an `azdext.BetaInfraGenerationProvider` through
 `ExtensionHost.WithBetaInfraGenerationProvider`.
 
 For `azd infra generate`, core starts only installed extensions declaring a
-generation provider used by the project's infrastructure entries. Unrelated
-listener extensions are not started. Already registered generators are reused,
-and listeners started by generation remain running until generation finishes.
+generation provider used by the project's infrastructure entries. This capability
+alone does not start an extension for other commands. Already registered
+generators are reused, and listeners started by generation remain running until
+generation finishes.
 
 The native beta-only `InfraGenerationService.Stream` carries registration,
 and generation requests/results. Generation takes an explicitly present

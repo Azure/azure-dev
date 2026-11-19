@@ -123,13 +123,21 @@ func storageDeployContext(t *testing.T, contentDir string) *ServiceContext {
 	return serviceContext
 }
 
+// resolvedTempDir returns a temp dir with symbolic links resolved (for example /var -> /private/var on macOS), since
+// Package returns resolved paths.
+func resolvedTempDir(t *testing.T) string {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	return dir
+}
+
 func storageTargetResource() *environment.TargetResource {
 	return environment.NewTargetResource("SUB", "RG", "acct", string(azapi.AzureResourceTypeStorageAccount))
 }
 
 func TestStorageTargetPackage(t *testing.T) {
 	t.Run("UsesFrameworkOutput", func(t *testing.T) {
-		root := t.TempDir()
+		root := resolvedTempDir(t)
 		dist := filepath.Join(root, "web", "dist")
 		writeStaticSite(t, dist, "index.html")
 
@@ -145,7 +153,7 @@ func TestStorageTargetPackage(t *testing.T) {
 	})
 
 	t.Run("FallsBackToDist", func(t *testing.T) {
-		root := t.TempDir()
+		root := resolvedTempDir(t)
 		writeStaticSite(t, filepath.Join(root, "web", "public"), "index.html")
 
 		serviceConfig := createTestServiceConfig("web", StorageTarget, ServiceLanguageNone)
@@ -236,7 +244,7 @@ func TestStorageTargetPackage(t *testing.T) {
 	})
 
 	t.Run("AllowsServiceFolderWithoutLanguage", func(t *testing.T) {
-		root := t.TempDir()
+		root := resolvedTempDir(t)
 		writeStaticSite(t, filepath.Join(root, "web"), "index.html")
 
 		serviceConfig := createTestServiceConfig("web", StorageTarget, ServiceLanguageNone)

@@ -460,7 +460,7 @@ func (sm *serviceManager) Package(
 
 		if hasPackageFile && packageInfo.IsDir() && options.OutputPath != "" {
 			destDirectory, err := copyPackageDirectory(
-				packageArtifact.Location, filepath.Join(options.OutputPath, serviceConfig.Name))
+				packageArtifact.Location, options.OutputPath, serviceConfig.Name)
 			if err != nil {
 				return nil, err
 			}
@@ -1075,18 +1075,31 @@ func (sm *serviceManager) GetTargetResource(
 	return sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
 }
 
-// copyPackageDirectory exports a directory package to destPath, replacing any previous export there so removed files
-// do not linger. The source is left intact because directory packages usually point at build output folders.
-func copyPackageDirectory(sourcePath string, destPath string) (string, error) {
+// packageExportMarkerSuffix names the marker file written next to each directory export. It records that azd owns
+// the export folder, so later exports only replace folders azd created. The marker is a sibling rather than a child
+// so it is never published as part of the package content.
+const packageExportMarkerSuffix = ".azd-package"
+
+// copyPackageDirectory exports a directory package to <outputPath>/<name>, replacing a previous azd export there so
+// removed files do not linger. The source is left intact because directory packages usually point at build output
+// folders. Existing folders that azd did not create are never deleted.
+func copyPackageDirectory(sourcePath string, outputPath string, name string) (string, error) {
+	if name == "" || name == "." || name == ".." || filepath.IsAbs(name) || filepath.Base(name) != name ||
+		strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("service name '%s' cannot be used as a package output folder name", name)
+	}
+
 	sourceDirectory, err := resolvePathAliases(sourcePath)
 	if err != nil {
 		return "", fmt.Errorf("resolving package directory '%s': %w", sourcePath, err)
 	}
 
-	destDirectory, err := resolvePathAliases(destPath)
+	outputDirectory, err := resolvePathAliases(outputPath)
 	if err != nil {
-		return "", fmt.Errorf("resolving output path '%s': %w", destPath, err)
+		return "", fmt.Errorf("resolving output path '%s': %w", outputPath, err)
 	}
+	destDirectory := filepath.Join(outputDirectory, name)
+	markerPath := filepath.Join(outputDirectory, "."+name+packageExportMarkerSuffix)
 
 	// Symbolic links, bind mounts, or case-insensitive file systems can make two different paths the same folder.
 	sourceInfo, err := os.Stat(sourceDirectory)
@@ -1102,8 +1115,21 @@ func copyPackageDirectory(sourcePath string, destPath string) (string, error) {
 			"output path '%s' and package directory '%s' cannot contain one another", destDirectory, sourceDirectory)
 	}
 
+	if err := ensureReplaceablePackageExport(destDirectory, markerPath); err != nil {
+		return "", err
+	}
+
 	if err := os.RemoveAll(destDirectory); err != nil {
 		return "", fmt.Errorf("removing previous package export '%s': %w", destDirectory, err)
+	}
+
+	if err := os.MkdirAll(outputDirectory, osutil.PermissionDirectory); err != nil {
+		return "", fmt.Errorf("failed creating output directory '%s': %w", outputDirectory, err)
+	}
+
+	// Write the marker before copying so a partially copied export can still be replaced by the next run.
+	if err := os.WriteFile(markerPath, nil, osutil.PermissionFile); err != nil {
+		return "", fmt.Errorf("writing package export marker '%s': %w", markerPath, err)
 	}
 
 	if err := copy.Copy(sourceDirectory, destDirectory); err != nil {
@@ -1112,6 +1138,37 @@ func copyPackageDirectory(sourcePath string, destPath string) (string, error) {
 	}
 
 	return destDirectory, nil
+}
+
+// ensureReplaceablePackageExport returns an error unless destDirectory is missing, an empty folder, or a folder that
+// an earlier azd export created (recorded by markerPath).
+func ensureReplaceablePackageExport(destDirectory string, markerPath string) error {
+	destInfo, err := os.Lstat(destDirectory)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading output folder '%s': %w", destDirectory, err)
+	}
+
+	if destInfo.Mode()&os.ModeSymlink == 0 && destInfo.IsDir() {
+		if _, err := os.Stat(markerPath); err == nil {
+			return nil
+		}
+
+		entries, err := os.ReadDir(destDirectory)
+		if err != nil {
+			return fmt.Errorf("reading output folder '%s': %w", destDirectory, err)
+		}
+		if len(entries) == 0 {
+			return nil
+		}
+	}
+
+	return &internal.ErrorWithSuggestion{
+		Err:        fmt.Errorf("output folder '%s' already exists and was not created by azd package", destDirectory),
+		Suggestion: "Choose a different --output-path, or remove the existing folder if it is no longer needed.",
+	}
 }
 
 // resolvePathAliases returns the absolute path with symbolic links resolved for the longest existing prefix, so

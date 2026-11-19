@@ -225,8 +225,10 @@ During `azd deploy`, azd:
    document when that file exists. This happens after the upload succeeds, so existing `$web` content is not exposed
    by a failed deployment. An existing static website configuration is left unchanged.
 
-`azd package <service> --output-path <path>` copies the content folder to `<path>/<service>`, replacing any previous
-export there. Deploy that folder later with `azd deploy <service> --from-package <path>/<service>`.
+`azd package <service> --output-path <path>` copies the content folder to `<path>/<service>` and records ownership
+with a `<path>/.<service>.azd-package` marker file. A later export replaces that folder only when azd created it (or
+it is empty); otherwise the command fails instead of deleting existing files. Deploy the folder later with
+`azd deploy <service> --from-package <path>/<service>`.
 
 Infrastructure requirements:
 

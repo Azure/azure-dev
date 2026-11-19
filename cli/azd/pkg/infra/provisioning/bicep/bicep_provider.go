@@ -2153,6 +2153,38 @@ type envSubstResult struct {
 	parametersMappedToAzureLocation []string
 }
 
+// merge accumulates the results of another substitution into r.
+func (r *envSubstResult) merge(other envSubstResult) {
+	r.hasUnsetEnvVar = r.hasUnsetEnvVar || other.hasUnsetEnvVar
+	r.hasVirtualEnvVar = r.hasVirtualEnvVar || other.hasVirtualEnvVar
+	r.mappedEnvVars = append(r.mappedEnvVars, other.mappedEnvVars...)
+	r.parametersMappedToAzureLocation = append(
+		r.parametersMappedToAzureLocation, other.parametersMappedToAzureLocation...)
+}
+
+// substituteParameter applies fn to every string in a parameter (the strings of its value, including object keys, and
+// the fields of a key vault reference) and returns the resulting parameter. Non-string values are returned unchanged.
+func substituteParameter(
+	param azure.ArmParameter, fn func(string) (string, error),
+) (azure.ArmParameter, error) {
+	value, err := provisioning.SubstituteJSONStrings(param.Value, fn)
+	if err != nil {
+		return azure.ArmParameter{}, err
+	}
+	result := azure.ArmParameter{Value: value}
+
+	if ref := param.KeyVaultReference; ref != nil {
+		resolved := *ref
+		for _, field := range []*string{&resolved.KeyVault.ID, &resolved.SecretName, &resolved.SecretVersion} {
+			if *field, err = fn(*field); err != nil {
+				return azure.ArmParameter{}, err
+			}
+		}
+		result.KeyVaultReference = &resolved
+	}
+	return result, nil
+}
+
 // evalParamEnvSubst evaluates environment variable substitution on a single parameter string value.
 // It returns the substituted string, env var mapping information, and any error.
 func evalParamEnvSubst(
@@ -2322,22 +2354,44 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 			}
 		}
 
-		// Path B: Handle all other cases: non-complex types, complex types with non-string values, keyvault refs
-		paramBytes, err := json.Marshal(param)
-		if err != nil {
-			return loadParametersResult{}, fmt.Errorf("error decoding deployment parameter %s: %w", paramName, err)
+		// Path B: Handle all other cases: non-complex types, complex types with non-string values, keyvault refs.
+		//
+		// Substitution runs on the decoded string values (never on the serialized JSON text), so replacement text is
+		// always treated as literal string content. Quotes, backslashes and newlines in an env var value can't
+		// change the structure of the parameter, and values authored as objects, arrays, numbers or booleans in
+		// the parameters file keep their structure and type.
+		var substResult envSubstResult
+		substituteString := func(value string) (string, error) {
+			replaced, strResult, err := evalParamEnvSubst(
+				value,
+				principalId,
+				string(principalType),
+				paramName,
+				p.env,
+				p.options.VirtualEnv,
+			)
+			if err != nil {
+				return "", err
+			}
+			substResult.merge(strResult)
+			return replaced, nil
 		}
 
-		replaced, substResult, err := evalParamEnvSubst(
-			string(paramBytes),
-			principalId,
-			string(principalType),
-			paramName,
-			p.env,
-			p.options.VirtualEnv,
-		)
+		resolvedParam, err := substituteParameter(param, substituteString)
 		if err != nil {
 			return loadParametersResult{}, fmt.Errorf("substituting environment variables for %s: %w", paramName, err)
+		}
+
+		// Command substitutions like `secretOrRandomPassword` are resolved only when no string in the parameter
+		// references a virtual env var. A parameter with a virtual value is deferred to runtime as a whole, and must
+		// not trigger side effects such as a key vault lookup.
+		if !substResult.hasVirtualEnvVar {
+			resolvedParam, err = substituteParameter(resolvedParam, func(value string) (string, error) {
+				return p.evalCommandSubstitution(ctx, value)
+			})
+			if err != nil {
+				return loadParametersResult{}, err
+			}
 		}
 
 		envMapping[paramName] = substResult.mappedEnvVars
@@ -2350,15 +2404,6 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 			continue
 		}
 
-		// resolve command substitutions like `secretOrRandomPassword`
-		replaced, err = p.evalCommandSubstitution(ctx, replaced)
-		if err != nil {
-			return loadParametersResult{}, err
-		}
-		var resolvedParam azure.ArmParameter
-		if err := json.Unmarshal([]byte(replaced), &resolvedParam); err != nil {
-			return loadParametersResult{}, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
-		}
 		if resolvedParam.Value == nil && resolvedParam.KeyVaultReference == nil {
 			// ignore parameters that are not set
 			continue

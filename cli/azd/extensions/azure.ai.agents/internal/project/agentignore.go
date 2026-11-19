@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -44,6 +45,12 @@ var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 type agentIgnoreMatcher struct {
 	ignore        gitignore.GitIgnore // from .agentignore file or defaults
 	hasUserIgnore bool
+
+	// keepPythonBytecode keeps __pycache__/ directories and .pyc files even when
+	// .agentignore (or the defaults) exclude them. Python bundled mode sets it: the
+	// hosted runtime cannot write bytecode into the read-only package, so stripping
+	// prebuilt .pyc files makes every cold start recompile each imported module.
+	keepPythonBytecode bool
 }
 
 // newAgentIgnoreMatcher creates a matcher by reading .agentignore from srcDir.
@@ -77,11 +84,22 @@ func newAgentIgnoreMatcher(ctx context.Context, srcDir string) (*agentIgnoreMatc
 // relPath is the path relative to srcDir using forward slashes.
 // isDir indicates whether the path is a directory.
 func (m *agentIgnoreMatcher) ShouldExclude(relPath string, isDir bool) bool {
+	if m.keepPythonBytecode && isPythonBytecode(relPath, isDir) {
+		return false
+	}
 	match := m.ignore.Relative(relPath, isDir)
 	if match != nil && match.Ignore() {
 		return true
 	}
 	return false
+}
+
+// isPythonBytecode reports whether relPath is a __pycache__ directory or a .pyc file.
+func isPythonBytecode(relPath string, isDir bool) bool {
+	if isDir {
+		return path.Base(relPath) == "__pycache__"
+	}
+	return strings.HasSuffix(relPath, ".pyc")
 }
 
 // loadAgentIgnore reads an .agentignore file from srcDir.

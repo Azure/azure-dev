@@ -30,6 +30,9 @@ words:
   # Terms
   - Reprompt
   - MMDDH
+  # Python bytecode (bundled mode)
+  - compileall
+  - cpython
   # Voice (prompt-voice) agents
   - BYOM
   - Nanami

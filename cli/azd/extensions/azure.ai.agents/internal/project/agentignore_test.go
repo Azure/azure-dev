@@ -147,7 +147,7 @@ func TestZipSourceDirExcludesResourceDefinitionsWithExistingIgnore(t *testing.T)
 		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0600))
 	}
 
-	zipPath, _, err := zipSourceDir(t.Context(), dir)
+	zipPath, _, err := zipSourceDir(t.Context(), dir, false)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.Remove(zipPath) })
 

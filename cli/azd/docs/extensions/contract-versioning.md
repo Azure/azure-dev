@@ -14,7 +14,7 @@ stable v1 channel. It forwards its generated contract types, clients, and
 server interfaces from `pkg/azdext/contracts/v1`; protobuf-generated files do
 not share the facade package with handwritten SDK functionality. Go clients
 that intentionally target beta import `pkg/azdext/contracts/v1beta` directly.
-`CommandResultService`, `ComposeService`, and `CopilotService`
+`InputService`, `CommandResultService`, `ComposeService`, and `CopilotService`
 are beta-only and therefore do not have stable `v1`
 generated types or facade aliases. The corresponding `AzdClient` convenience
 accessors return generated `v1beta` clients, and their request and response
@@ -45,6 +45,13 @@ when a change cannot preserve `v1` compatibility. A beta client continues to
 use the beta package until it deliberately moves to the corresponding stable
 API.
 
+`InputService.Stream` is a beta-only input-provider capability, targeting
+azd 1.38.0. It uses native beta request and response types, not a stable adapter
+or legacy bridge. Go extensions opt in with `WithBetaInputProvider` and use
+`InputsBeta()` for direct stream access. See
+[input providers](extension-framework.md#input-providers-beta) for the initial
+string-option protocol, required-set intersection, core selection, and supported consumers.
+
 The original `azdext` wire package is retained only through a temporary frozen
 runtime bridge for already-built extensions. New development must use `v1` or
 `v1beta`. Compatibility checks use the first merged versioned-contract commit
@@ -60,7 +67,7 @@ descriptors.
 
 A service that exists only in beta is implemented directly with the generated
 `v1beta` server interface and registered without a stable adapter.
-`CommandResultService`, `ComposeService`, and `CopilotService`
+`InputService`, `CommandResultService`, `ComposeService`, and `CopilotService`
 currently use this model. Focused beta overrides apply
 only to beta additions on services that also exist in stable; registration
 rejects an override for a beta-only service because its native implementation

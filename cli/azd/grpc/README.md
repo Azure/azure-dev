@@ -12,7 +12,7 @@ The extension wire contracts have two public channels:
 The beta channel is a superset of stable. New additive contract fields,
 methods, and beta-only services can incubate there and graduate additively
 into stable after they have been validated. `ComposeService`,
-`CommandResultService` and `CopilotService` are currently
+`CommandResultService`, `CopilotService`, and `InputService` are currently
 beta-only. Removing or renumbering fields, changing field types, and reusing
 reserved names or numbers remain breaking changes in either channel.
 
@@ -43,6 +43,13 @@ include a `request_id`, and each service status carrying messages must echo
 the invocation's ID. Legacy beta streams retain their existing behavior but
 cannot send structured messages. See the extension contract versioning guide
 for host routing and compatibility behavior.
+
+Input providers use the native beta `InputService.Stream`, with correlated
+registration and resolution messages. Providers return string options with
+recommendations, rationales, and optional required sets for core-defined needs.
+The service has no stable or unversioned route.
+See [input providers](../docs/extensions/extension-framework.md#input-providers-beta)
+for registration, matching, constraints, and decline semantics.
 
 ## Generate contracts
 

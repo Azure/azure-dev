@@ -372,14 +372,14 @@ func TestBetaServiceEventErrors(t *testing.T) {
 		Message: "invalid config", Code: "invalid_config", Category: LocalErrorCategoryUser,
 		CauseTypes: []string{" *ConfigError ", "*ConfigError"},
 	}
-	wrapped := wrapBetaServiceEventError(localErr)
+	wrapped := wrapBetaExtensionError(localErr)
 	require.Equal(t, "invalid_config", wrapped.GetLocalError().GetCode())
 	require.NotEmpty(t, wrapped.GetLocalError().GetCauseTypes())
 	for _, exitCode := range []*int{nil, new(2)} {
 		toolErr := &ToolError{
 			Message: "build failed", ToolName: "docker", Kind: ToolErrorKindFailed, ExitCode: exitCode,
 		}
-		wrapped = wrapBetaServiceEventError(toolErr)
+		wrapped = wrapBetaExtensionError(toolErr)
 		require.Equal(t, "docker", wrapped.GetToolError().GetToolName())
 		require.Equal(t, "failed", wrapped.GetToolError().GetFailureKind())
 		if exitCode == nil {
@@ -388,7 +388,7 @@ func TestBetaServiceEventErrors(t *testing.T) {
 			require.EqualValues(t, *exitCode, wrapped.GetToolError().GetExitCode())
 		}
 	}
-	require.Nil(t, wrapBetaServiceEventError(nil))
+	require.Nil(t, wrapBetaExtensionError(nil))
 	envelope := &betaSDKEventMessageEnvelope{}
 	require.NoError(t, envelope.GetError(nil))
 	require.NoError(t, envelope.GetError(&v1beta.EventMessage{}))

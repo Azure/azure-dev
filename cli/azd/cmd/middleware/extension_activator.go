@@ -25,7 +25,7 @@ import (
 
 // ExtensionActivator starts installed extensions on demand so the capabilities they provide
 // (currently provisioning providers) become resolvable in commands that do not run the full
-// ExtensionsMiddleware, such as `azd env refresh`. Unlike the middleware, it starts only the
+// ExtensionsMiddleware, such as `azd env refresh`. Without shared input-provider activation, it starts only the
 // extensions declaring a requested capability, and only when that capability is not already
 // resolvable (for example when a parent command's middleware already started every extension).
 type ExtensionActivator struct {
@@ -60,8 +60,8 @@ func NewExtensionActivator(
 // provisioning provider names, so those providers can be resolved from the IoC container. Names no
 // installed extension declares are left to native resolution, and already-resolvable providers are
 // left alone, making activation idempotent. The returned cleanup (always non-nil, safe to defer)
-// stops the extension host when one was started. A required extension failing to start is an
-// error, since the caller cannot make progress without the provider it declares.
+// stops a host it owns; shared listeners remain owned by the parent command. A required extension
+// failing to start is an error, since the caller cannot make progress without the provider it declares.
 func (a *ExtensionActivator) EnsureProvisioningProviders(
 	ctx context.Context,
 	providerNames []string,
@@ -91,6 +91,27 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 
 	if len(toStart) == 0 {
 		return noop, nil
+	}
+
+	if activation, ok := ctx.Value(inputProviderActivationKey{}).(*inputProviderActivation); ok {
+		started, startErr := activation.ensureStarted()
+		if _, inputFailure := errors.AsType[*inputProviderStartupError](startErr); startErr != nil && !inputFailure {
+			return noop, startErr
+		}
+		if started {
+			for _, ext := range toStart {
+				for _, name := range declaredProviders(ext, names) {
+					if !a.providerResolvable(name) {
+						var cause error = errors.New("provisioning provider was not registered")
+						if startErr != nil {
+							cause = fmt.Errorf("%w (shared extension startup: %w)", cause, startErr)
+						}
+						return noop, provisioningExtensionStartupError(ext, []string{name}, cause)
+					}
+				}
+			}
+			return noop, nil
+		}
 	}
 
 	var grpcServer *grpcserver.Server
@@ -147,25 +168,29 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 			continue
 		}
 
-		// Fail fast with the actual startup error rather than an opaque resolution failure later.
-		ext := toStart[i]
-		if reported := ext.GetReportedError(); reported != nil {
-			startErr = fmt.Errorf("%w: %w", startErr, reported)
-		}
-
 		cleanup()
-		return noop, &internal.ErrorWithSuggestion{
-			Err: fmt.Errorf("extension '%s', which provides provisioning provider '%s', failed to start: %w",
-				ext.Id, strings.Join(declaredProviders(ext, names), "', '"), startErr),
-			Suggestion: fmt.Sprintf(
-				"Run with %s for details, or check for an update with %s",
-				output.WithHighLightFormat("--debug"),
-				output.WithHighLightFormat("azd extension update %s", ext.Id),
-			),
-		}
+		return noop, provisioningExtensionStartupError(toStart[i], declaredProviders(toStart[i], names), startErr)
 	}
 
 	return cleanup, nil
+}
+
+func provisioningExtensionStartupError(
+	extension *extensions.Extension, providerNames []string, cause error,
+) *internal.ErrorWithSuggestion {
+	if reported := extension.GetReportedError(); reported != nil {
+		cause = fmt.Errorf("%w: %w", reported, cause)
+	}
+	return &internal.ErrorWithSuggestion{
+		Err: fmt.Errorf("extension '%s', which provides provisioning provider '%s', failed to start: %w",
+			extension.Id, strings.Join(providerNames, "', '"), cause),
+		Message: "The required provisioning provider is unavailable because its extension did not finish starting.",
+		Suggestion: fmt.Sprintf(
+			"Run with %s for details, or check for an update with %s",
+			output.WithHighLightFormat("--debug"),
+			output.WithHighLightFormat("azd extension update %s", extension.Id),
+		),
+	}
 }
 
 // ExtensionsForProvisioningProviders returns the installed extension IDs that declare any of the

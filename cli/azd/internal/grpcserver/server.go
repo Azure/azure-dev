@@ -50,6 +50,7 @@ type Server struct {
 	provisioningService  azdext.ProvisioningServiceServer
 	validationService    azdext.ValidationServiceServer
 	telemetryService     azdext.TelemetryServiceServer
+	inputService         v1beta.InputServiceServer
 	betaServiceOverrides map[BetaService]any
 }
 
@@ -73,6 +74,7 @@ func NewServer(
 	validationService azdext.ValidationServiceServer,
 	telemetryService azdext.TelemetryServiceServer,
 	commandResultService v1beta.CommandResultServiceServer,
+	inputService v1beta.InputServiceServer,
 ) *Server {
 	server := &Server{
 		projectService:       projectService,
@@ -94,6 +96,7 @@ func NewServer(
 		provisioningService:  provisioningService,
 		validationService:    validationService,
 		telemetryService:     telemetryService,
+		inputService:         inputService,
 		betaServiceOverrides: map[BetaService]any{},
 	}
 	if events, ok := eventServiceImpl.(*eventService); ok {

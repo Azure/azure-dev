@@ -257,7 +257,7 @@ func (m *betaServiceEventManager) onInvokeServiceHandler(
 	if handlerErr != nil {
 		status = "failed"
 		message = handlerErr.Error()
-		extensionErr = wrapBetaServiceEventError(handlerErr)
+		extensionErr = wrapBetaExtensionError(handlerErr)
 		log.Printf(
 			"invokeBetaServiceHandler error for event %s: %v",
 			request.GetEventName(),
@@ -294,23 +294,23 @@ func betaServiceEventArgs(request *v1beta.InvokeServiceHandler) (*ServiceEventAr
 	}
 	if request.GetServiceContext() != nil {
 		args.ServiceContext = &ServiceContext{}
-		if err := transcodeBetaServiceEventMessage(
+		if err := transcodeBetaMessage(
 			request.GetServiceContext(),
 			args.ServiceContext,
 		); err != nil {
 			return nil, fmt.Errorf("convert beta service context: %w", err)
 		}
 	}
-	if err := transcodeBetaServiceEventMessage(request.GetProject(), args.Project); err != nil {
+	if err := transcodeBetaMessage(request.GetProject(), args.Project); err != nil {
 		return nil, fmt.Errorf("convert beta project config: %w", err)
 	}
-	if err := transcodeBetaServiceEventMessage(request.GetService(), args.Service); err != nil {
+	if err := transcodeBetaMessage(request.GetService(), args.Service); err != nil {
 		return nil, fmt.Errorf("convert beta service config: %w", err)
 	}
 	return args, nil
 }
 
-func transcodeBetaServiceEventMessage(source, destination proto.Message) error {
+func transcodeBetaMessage(source, destination proto.Message) error {
 	wire, err := proto.Marshal(source)
 	if err != nil {
 		return err
@@ -363,7 +363,7 @@ func wrapBetaServiceEventMessage(
 	return result
 }
 
-func wrapBetaServiceEventError(err error) *v1beta.ExtensionError {
+func wrapBetaExtensionError(err error) *v1beta.ExtensionError {
 	if err == nil {
 		return nil
 	}
@@ -441,7 +441,7 @@ func (*betaSDKEventMessageEnvelope) SetError(
 	message *v1beta.EventMessage,
 	err error,
 ) {
-	betaError := wrapBetaServiceEventError(err)
+	betaError := wrapBetaExtensionError(err)
 	switch status := message.MessageType.(type) {
 	case *v1beta.EventMessage_ProjectHandlerStatus:
 		if status.ProjectHandlerStatus != nil {

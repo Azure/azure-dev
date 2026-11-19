@@ -581,7 +581,8 @@ func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 				current = current.Parent()
 			}
 			return false
-		})
+		}).
+		UseMiddleware("inputProviders", middleware.NewInputProvidersMiddleware)
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {

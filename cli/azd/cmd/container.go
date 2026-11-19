@@ -38,6 +38,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -55,6 +56,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/inputs"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
@@ -1050,6 +1052,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
 	container.MustRegisterSingleton(grpcserver.NewProvisioningService)
 	container.MustRegisterSingleton(grpcserver.NewValidationService)
+	container.MustRegisterSingleton(grpcserver.NewInputService)
+	container.MustRegisterSingleton(func(service *grpcserver.InputService) v1beta.InputServiceServer {
+		return service
+	})
+	container.MustRegisterSingleton(func(service *grpcserver.InputService) inputs.Resolver {
+		return service
+	})
 	// Bind the concrete ValidationService to both the gRPC interface and
 	// the dispatcher interface so DI resolves both from the same instance.
 	container.MustRegisterSingleton(

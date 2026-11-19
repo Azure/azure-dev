@@ -23,6 +23,11 @@ import (
 
 type AzdClientOption func(*AzdClient) error
 
+// InputsBeta returns the preview input provider client.
+func (c *AzdClient) InputsBeta() v1beta.InputServiceClient {
+	return v1beta.NewInputServiceClient(c.connection)
+}
+
 // BetaServiceTarget returns the v1beta service target client.
 //
 // Deprecated: deployment preview is available through ServiceTarget in azd 1.37.0 or later.

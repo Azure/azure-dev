@@ -84,12 +84,14 @@ Extensions declare their capabilities in `extension.yaml`:
 | `framework-service-provider` | Add build/restore support for new languages |
 | `service-target-provider` | Add deployment support for new hosting targets |
 | `provisioning-provider` | Add custom infrastructure provisioning support |
+| `input-provider` | Resolve missing semantic inputs before prompts (beta) |
 | `metadata` | Provide metadata about commands and capabilities |
 
 ## Available gRPC Services
 
 Extensions can access these azd services via gRPC:
 
+- **Input (beta)** — Register semantic kinds and contribute string options, recommendations, rationales, and required sets through the native beta stream. Core defines environment-name and infrastructure-location needs; definitions never name a resolver. Required sets intersect, native constraints filter options, and core selects a sole option or unique recommendation, otherwise prompting (or failing under `--no-prompt`). Existing values win, and consumers persist accepted values. See [input providers](../../cli/azd/docs/extensions/extension-framework.md#input-providers-beta).
 - **Project** — Read project configuration
 - **Environment** — Read/write environment values and secrets
 - **User Config** — Read user-level azd configuration

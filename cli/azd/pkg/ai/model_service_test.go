@@ -4,12 +4,61 @@
 package ai
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/stretchr/testify/require"
 )
+
+func TestLocationQuotaUsageErrors(t *testing.T) {
+	for _, strict := range []bool{false, true} {
+		t.Run(map[bool]string{false: "existing best effort", true: "strict input selection"}[strict], func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			mockContext.HttpClient.When(func(req *http.Request) bool {
+				return strings.HasSuffix(req.URL.Path, "/skus")
+			}).RespondFn(func(req *http.Request) (*http.Response, error) {
+				return mocks.CreateHttpResponseWithBody(req, http.StatusOK, json.RawMessage(
+					`{"value":[{"kind":"AIServices","name":"S0","tier":"Standard",`+
+						`"resourceType":"accounts","locations":["eastus2","westus3"]}]}`))
+			})
+			mockContext.HttpClient.When(func(req *http.Request) bool {
+				return strings.HasSuffix(req.URL.Path, "/usages")
+			}).RespondFn(func(req *http.Request) (*http.Response, error) {
+				if strings.Contains(req.URL.Path, "/locations/eastus2/") {
+					return mocks.CreateHttpResponseWithBody(req, http.StatusBadRequest, json.RawMessage(
+						`{"error":{"code":"BadRequest","message":"usage unavailable"}}`))
+				}
+				return mocks.CreateHttpResponseWithBody(req, http.StatusOK, json.RawMessage(`{"value":[]}`))
+			})
+			client := azapi.NewAzureClient(mockaccount.SubscriptionCredentialProviderFunc(
+				func(context.Context, string) (azcore.TokenCredential, error) {
+					return mockContext.Credentials, nil
+				}), mockContext.ArmClientOptions)
+			service := NewAiModelService(client, nil)
+			query := service.ListLocationsWithQuota
+			if strict {
+				query = service.ListLocationsWithQuotaStrict
+			}
+			locations, err := query(t.Context(), "subscription", []string{"eastus2", "westus3"}, nil)
+			if strict {
+				require.ErrorContains(t, err, "usage unavailable")
+				require.Nil(t, locations)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, []string{"westus3"}, locations)
+			}
+		})
+	}
+}
 
 func TestFilterModels(t *testing.T) {
 	models := []AiModel{

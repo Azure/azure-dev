@@ -6,6 +6,7 @@ package bicep
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -79,12 +80,14 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 	return genValue, nil
 }
 
+var errNoLocationQuota = errors.New("no location found with enough quota")
+
 // locationsWithQuotaFor finds locations that have sufficient quota for the given usage requirements.
 //
 // The quotaFor parameter uses the Bicep metadata format: "UsageName" or "UsageName, Capacity".
 // An implicit requirement for "OpenAI.S0.AccountCount" with capacity 1 is always included.
 func (a *BicepProvider) locationsWithQuotaFor(
-	ctx context.Context, subId string, locations []string, quotaFor []string) ([]string, error) {
+	ctx context.Context, subId string, locations []string, quotaFor []string, strict bool) ([]string, error) {
 	if a.aiModelService == nil {
 		return nil, fmt.Errorf("AI model service is not configured")
 	}
@@ -107,7 +110,11 @@ func (a *BicepProvider) locationsWithQuotaFor(
 		})
 	}
 
-	results, err := a.aiModelService.ListLocationsWithQuota(ctx, subId, locations, requirements)
+	query := a.aiModelService.ListLocationsWithQuota
+	if strict {
+		query = a.aiModelService.ListLocationsWithQuotaStrict
+	}
+	results, err := query(ctx, subId, locations, requirements)
 	if err != nil {
 		return nil, fmt.Errorf("getting locations with quota: %w", err)
 	}
@@ -122,8 +129,8 @@ func (a *BicepProvider) locationsWithQuotaFor(
 			formattedQuota[i] = fmt.Sprintf("%s ( Cap: %.0f )", f.UsageName, f.Capacity)
 		}
 		return nil, fmt.Errorf(
-			"no location found with enough quota for %s",
-			ux.ListAsText(formattedQuota))
+			"%w for %s",
+			errNoLocationQuota, ux.ListAsText(formattedQuota))
 	}
 	return results, nil
 }
@@ -162,18 +169,22 @@ func usageNameDetailsFromString(usageName string) (usageNameDetails, error) {
 	}, nil
 }
 
+func parameterPromptMessage(key string, param azure.ArmTemplateParameterDefinition) string {
+	kind := "parameter"
+	if param.Secure() {
+		kind = "secured parameter"
+	}
+	return fmt.Sprintf("Enter a value for the '%s' infrastructure %s:", key, kind)
+}
+
 func (p *BicepProvider) promptForParameter(
 	ctx context.Context,
 	key string,
 	param azure.ArmTemplateParameterDefinition,
 	mappedToAzureLocationParams []string,
 ) (any, error) {
-	securedParam := "parameter"
 	isSecuredParam := param.Secure()
-	if isSecuredParam {
-		securedParam = "secured parameter"
-	}
-	msg := fmt.Sprintf("Enter a value for the '%s' infrastructure %s:", key, securedParam)
+	msg := parameterPromptMessage(key, param)
 	help, _ := param.Description()
 	azdMetadata, _ := param.AzdMetadata()
 	paramType := provisioning.ParameterTypeFromArmType(param.Type)
@@ -206,7 +217,7 @@ func (p *BicepProvider) promptForParameter(
 		}
 		if len(azdMetadata.UsageName) > 0 {
 			withQuotaLocations, err := p.locationsWithQuotaFor(
-				ctx, p.env.GetSubscriptionId(), allowedLocations, azdMetadata.UsageName)
+				ctx, p.env.GetSubscriptionId(), allowedLocations, azdMetadata.UsageName, false)
 			if err != nil {
 				return nil, fmt.Errorf("getting locations with quota: %w", err)
 			}

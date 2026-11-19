@@ -135,6 +135,37 @@ return structured info and warning messages that azd displays after the
 deployment table and includes in deploy/up JSON results. Other demo lifecycle
 handlers continue to use the stable extension host.
 
+### Input provider (beta)
+
+The demo also declares `input-provider` and registers
+`ExtensionHost.WithBetaInputProvider`. Build it with this branch's azd SDK and
+use azd 1.38.0-beta.1 or later (`requiredAzdVersion: ">=1.38.0-0"`).
+This sample shares the core Go module; it has no separate SDK dependency.
+
+With the locally built demo installed, run `azd up` in an existing template:
+
+- If no environment name or default environment is selected, the demo offers
+  `demo` and `demo-dev`, recommending `demo`. Core creates and selects the environment
+  through its normal lifecycle.
+- If the Bicep infrastructure needs a missing location input, the demo offers
+  `eastus2` and `westus3`, recommending `eastus2`, or offers the descriptor's allowed
+  list and recommends its first entry. Core filters options against subscription locations and parameter
+  constraints. Parameters mapped to `AZURE_LOCATION` persist the accepted value
+  in the environment.
+
+No `azure.yaml` input declarations are needed. Explicit flags, existing environment
+values, parameter-file values, saved parameters, and native parameter defaults
+remain authoritative. A template with no location requirement does not query
+the demo for a location. Authentication and subscription selection are unchanged.
+The same resolution runs before missing-input errors in `--no-prompt` mode.
+Core accepts a sole valid option or unique recommendation automatically; if several
+options remain without a unique recommendation, it prompts or fails under `--no-prompt`.
+Providers can mark their list `required` to intersect it with other providers' required
+sets; the demo's lists are suggestions, not hard constraints.
+
+This is deliberately a static-options sample, not a quota-aware recommendation service.
+It does not create resources or generate infrastructure.
+
 ### `telemetry`
 
 The `telemetry` command demonstrates the telemetry service, which lets an extension report its own usage events into `azd`'s telemetry pipeline.

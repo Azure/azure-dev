@@ -39,7 +39,7 @@ type infraGenerationManager struct {
 	logger *log.Logger
 	mu     sync.Mutex // protects stream initialization and closure
 	broker *grpcbroker.MessageBroker[v1beta.InfraGenerationMessage]
-	// providers routes generation and completion requests by entry.provider.
+	// providers routes generation requests by entry.provider.
 	providers *providerRegistry[BetaInfraGenerationProvider]
 }
 

@@ -165,7 +165,7 @@
             "type": "string",
             "const": "infra-generation-provider",
             "title": "Infrastructure Generation Provider (Beta)",
-            "description": "Generate infrastructure source files and update configuration after the host writes them."
+            "description": "Write infrastructure source files and return a replacement entry for azd to validate and save in azure.yaml."
           },
           {
             "type": "string",

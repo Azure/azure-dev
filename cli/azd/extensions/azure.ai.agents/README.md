@@ -576,6 +576,52 @@ Deploy Agents through the normal azd project lifecycle:
 - `azd deploy --all` deploys all services, with ordering defined by `uses`.
 - `azd up` provisions and deploys the project.
 
+### Code deployment packaging and `.agentignore`
+
+A hosted agent deployed from source code (`codeConfiguration`) is uploaded to
+the Foundry project as a ZIP archive of its service directory. A `.agentignore`
+file in that directory controls which files the archive leaves out. It uses
+`.gitignore` syntax, and only the file at the service root is read. .NET agents
+with `dependencyResolution: bundled` upload `dotnet publish` output instead, so
+`.agentignore` does not apply to them.
+
+Without a `.agentignore`, azd leaves out a built-in default set: azd tooling
+files, secrets and local state, language caches and dependency folders (such as
+`__pycache__/`, `.venv/`, `bin/`, `obj/`, and `node_modules/`), and Docker
+files. `azd ai agent init` writes the same defaults to a new `.agentignore` so
+you can edit them.
+
+When a `.agentignore` exists, its patterns replace the built-in defaults, except
+for two sets that azd always applies before your patterns:
+
+- Paths that commonly hold secrets or local state: `.env`, `.env.*`, `.azure/`
+  (which holds azd environment values), and `.git/`.
+- azd-managed resource definitions and generated Teams app files:
+  `connection.yaml`, `connection.yml`, `toolbox.yaml`, `toolbox.yml`,
+  `appPackage.zip`, `.appPackage.zip.azd-generated`, and `TEAMS_APP_SETUP.md`.
+
+Because later patterns win, a negation in `.agentignore` can still re-include
+one of these paths, for example `!.env`. Do this only when the agent must deploy
+the file. If a negation re-includes `.env` files, `.azure/`, or `.git/`,
+the beta `predeploy` check returns a warning listing the paths in the package.
+When retained warnings are enabled, azd displays it after the deployment graph
+finishes, so it may appear after the package has been uploaded. Otherwise, it is
+available only in hook output, which the host may discard. See the
+[retained developer RBAC warnings](#retained-developer-rbac-warnings) for details.
+
+To ship files that the defaults leave out, edit the generated `.agentignore`
+rather than starting an empty one. For example, to keep Python bytecode in a
+`bundled` package, delete the `__pycache__/` and `*.pyc` lines, or append:
+
+```gitignore
+!__pycache__/
+!*.pyc
+```
+
+A `.agentignore` that contains only those two lines also ships bytecode, but it
+drops the other built-in defaults, such as `.venv/` and `node_modules/`. Only
+the two always-applied sets above still apply.
+
 ### Retained developer RBAC warnings
 
 With azd 1.37.0 or later, enable `AZD_ALPHA_ENABLE_AGENTS_RBAC_WARNINGS=true`

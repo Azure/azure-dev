@@ -72,9 +72,12 @@ func TestAgentIgnore_UserFileOverridesDefaults(t *testing.T) {
 	require.False(t, m.ShouldExclude("node_modules", true))
 	require.False(t, m.ShouldExclude("foo.pyc", false))
 
-	// Security files are also user-configurable now — not excluded unless user lists them
-	require.False(t, m.ShouldExclude(".env", false))
-	require.False(t, m.ShouldExclude(".git", true))
+	// Paths that commonly hold secrets stay excluded even though the user's file
+	// doesn't list them.
+	require.True(t, m.ShouldExclude(".env", false))
+	require.True(t, m.ShouldExclude("config/.env.local", false))
+	require.True(t, m.ShouldExclude(".azure", true))
+	require.True(t, m.ShouldExclude(".git", true))
 
 	// Canonical resource definitions are azd-managed defaults so existing
 	// .agentignore files do not accidentally package Connection credentials.
@@ -214,12 +217,79 @@ func TestAgentIgnore_EmptyFile(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m.hasUserIgnore)
 
-	// Defaults no longer apply, but azd-generated Teams artifacts are prepended
-	// to avoid bundling them into code deploy packages.
+	// Defaults no longer apply, but the always-applied secret and azd-generated
+	// exclusions are prepended to the user's file.
 	require.False(t, m.ShouldExclude("main.py", false))
 	require.False(t, m.ShouldExclude("__pycache__", true))
-	require.False(t, m.ShouldExclude(".env", false))
+	require.True(t, m.ShouldExclude(".env", false))
 	require.True(t, m.ShouldExclude("appPackage.zip", false))
+}
+
+// An .agentignore written only to keep Python bytecode must not stop the package from
+// leaving out credentials, azd environment values, and git history.
+func TestZipSourceDirExcludesSecretsWithUserIgnore(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFiles(t, dir, map[string]string{
+		".agentignore":         "!__pycache__/\n!*.pyc\n",
+		"main.py":              "print('ready')\n",
+		"__pycache__/main.pyc": "bytecode",
+		".env":                 "API_KEY=secret\n",
+		".env.local":           "API_KEY=secret\n",
+		"config/.env":          "API_KEY=secret\n",
+		".azure/dev/.env":      "AZURE_ENV_NAME=dev\n",
+		".git/HEAD":            "ref: refs/heads/main\n",
+	})
+
+	zipPath, _, err := zipSourceDir(t.Context(), dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(zipPath) })
+
+	archive, err := zip.OpenReader(zipPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = archive.Close() })
+	names := make([]string, len(archive.File))
+	for i, file := range archive.File {
+		names[i] = file.Name
+	}
+	require.ElementsMatch(t, []string{".agentignore", "__pycache__/main.pyc", "main.py"}, names)
+
+	sensitive, err := codePackageSensitivePathsFromZip(t.Context(), zipPath)
+	require.NoError(t, err)
+	require.Empty(t, sensitive)
+}
+
+func TestCodePackageSensitivePathsReportsNegatedSecrets(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFiles(t, dir, map[string]string{
+		".agentignore":         "!.env\n!.git/\n",
+		"main.py":              "print('ready')\n",
+		".env":                 "API_KEY=secret\n",
+		".env.local":           "API_KEY=secret\n",
+		"config/.env":          "API_KEY=secret\n",
+		".azure/dev/.env":      "AZURE_ENV_NAME=dev\n",
+		".git/HEAD":            "ref: refs/heads/main\n",
+		".git/refs/heads/main": "0123abcd\n",
+	})
+
+	zipPath, _, err := zipSourceDir(t.Context(), dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(zipPath) })
+
+	// Only the negated patterns are re-included, and a re-included directory is
+	// reported once rather than file by file.
+	sensitive, err := codePackageSensitivePathsFromZip(t.Context(), zipPath)
+	require.NoError(t, err)
+	require.Equal(t, []string{".env", ".git/", "config/.env"}, sensitive)
+}
+
+// writeTestFiles writes files, keyed by slash-separated path relative to dir.
+func writeTestFiles(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	}
 }
 
 func TestDefaultAgentIgnoreContent(t *testing.T) {

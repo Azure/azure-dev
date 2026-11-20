@@ -1014,6 +1014,20 @@ callback is sent.
 See [Infrastructure generation](extension-sdk-reference.md#infrastructure-generation-beta)
 for the SDK interface and host/version requirements.
 
+##### Add Providers (`add-provider`, beta)
+
+Installed extensions declare `add-provider` in `capabilities` to contribute
+choices to `azd add`. No `providers` entry is needed. The beta-only
+`AddProviderService.Stream` registers each choice by ID and display name.
+Core displays the registered choices and sends the selected ID back over
+the owning extension's stream. The extension handles prompts and project
+changes. Core forwards the selected listener's stdout and stderr to the
+corresponding CLI streams from invocation through listener shutdown. If no
+provider contributes choices, `azd add` uses the legacy resource flow for
+compatible projects.
+
+See [Add providers](extension-sdk-reference.md#add-providers-beta) for the Go SDK interface.
+
 ##### Model Context Protocol Server (`mcp-server`)
 
 > Extensions must declare the `mcp-server` capability in their `extension.yaml` file.
@@ -1171,6 +1185,7 @@ Extensions can declare the following capabilities in their manifest:
 - **`framework-service-provider`**: Provide custom language frameworks and build systems
 - **`provisioning-provider`**: Provide a custom infrastructure provisioning experience (alternative to Bicep / Terraform)
 - **`infra-generation-provider` (beta)**: Export infrastructure sources and update configuration after successful file writes
+- **`add-provider` (beta)**: Contribute menu items and handle the selection in `azd add`
 - **`validation-provider`**: Contribute validation checks to azd's provision validation and future validation pipelines
 - **`metadata`**: Provide comprehensive metadata about commands and configuration schemas
 

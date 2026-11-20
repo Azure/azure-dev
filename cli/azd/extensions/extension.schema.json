@@ -114,7 +114,7 @@
     "capabilities": {
       "type": "array",
       "title": "Capabilities",
-      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server, service-target-provider, framework-service-provider, provisioning-provider, infra-generation-provider, validation-provider, metadata. Select one or more from the allowed list. Each value must be unique. Not required for extension packs, which declare dependencies instead and have no executable.",
+      "description": "List of capabilities provided by the extension. Select one or more from the allowed list. Each value must be unique. Not required for extension packs, which declare dependencies instead and have no executable.",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
@@ -166,6 +166,12 @@
             "const": "infra-generation-provider",
             "title": "Infrastructure Generation Provider (Beta)",
             "description": "Write infrastructure source files and return a replacement entry for azd to validate and save in azure.yaml."
+          },
+          {
+            "type": "string",
+            "const": "add-provider",
+            "title": "Add Provider (Beta)",
+            "description": "Contribute items and run interactive flows in azd add. No providers entry is required."
           },
           {
             "type": "string",

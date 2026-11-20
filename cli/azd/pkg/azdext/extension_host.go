@@ -15,6 +15,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 )
 
 type serviceReceiver interface {
@@ -123,6 +125,7 @@ type ExtensionHost struct {
 	betaServiceHandlers   []betaServiceEventRegistration
 	provisioningProviders []ProvisioningProviderRegistration
 	infraGenerators       []BetaInfraGenerationProviderRegistration
+	addProvider           *addProviderRegistration
 	validationChecks      []ValidationCheckRegistration
 
 	serviceTargetManager            serviceTargetRegistrar
@@ -362,6 +365,24 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	}
 	er.initManagers(extensionId, brokerLogger)
 
+	// The Add stream is optional when this listener runs for another capability or on an older host.
+	var addReceiver serviceReceiver
+	if er.addProvider != nil {
+		addCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		broker, err := er.addProvider.connect(
+			addCtx, v1beta.NewAddProviderServiceClient(er.client.connection), extensionId, brokerLogger,
+		)
+		if err != nil {
+			if status.Code(err) != codes.Unimplemented {
+				return fmt.Errorf("registering add provider: %w", err)
+			}
+		} else {
+			defer broker.Close()
+			addReceiver = addProviderReceiver{MessageBroker: broker}
+		}
+	}
+
 	// Determine which managers will be active
 	hasServiceTargets := len(er.serviceTargets) > 0
 	var hasPreviewServiceTargets, hasBetaPreviewServiceTargets bool
@@ -413,6 +434,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// Collect active receivers and start them BEFORE registration
 	// This ensures broker.Run() is active to receive registration responses
 	receivers := []serviceReceiver{}
+	if addReceiver != nil {
+		receivers = append(receivers, addReceiver)
+	}
 	if hasServiceTargets {
 		receivers = append(receivers, er.serviceTargetManager)
 	}

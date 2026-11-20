@@ -80,6 +80,33 @@ func (a *ExtensionActivator) EnsureInfraGenerationProviders(
 	return a.ensureProviders(ctx, providerNames, environmentName, extensions.InfraGenerationProviderCapability)
 }
 
+// StartAddProviders starts installed extensions that contribute to azd add.
+// The caller must defer cleanup until it no longer needs the providers' streams.
+func (a *ExtensionActivator) StartAddProviders(
+	ctx context.Context,
+	environmentName string,
+	registry *grpcserver.AddProviderRegistry,
+) (func(), error) {
+	installed, err := a.extensionManager.ListInstalled()
+	if err != nil {
+		return func() {}, fmt.Errorf("listing installed extensions: %w", err)
+	}
+
+	var toStart []*extensions.Extension
+	for _, id := range slices.Sorted(maps.Keys(installed)) {
+		if ext := installed[id]; ext.HasCapability(extensions.AddProviderCapability) {
+			toStart = append(toStart, ext)
+		}
+	}
+
+	return a.startExtensions(ctx, toStart, environmentName, func(ext *extensions.Extension, startErr error) error {
+		if startErr == nil && !registry.HasProvider(ext.Id) {
+			return errors.New("no active add provider registration")
+		}
+		return startErr
+	})
+}
+
 func (a *ExtensionActivator) ensureProviders(
 	ctx context.Context,
 	providerNames []string,
@@ -108,6 +135,23 @@ func (a *ExtensionActivator) ensureProviders(
 		})
 	})
 
+	return a.startExtensions(ctx, toStart, environmentName, func(ext *extensions.Extension, startErr error) error {
+		if startErr == nil {
+			return nil
+		}
+		return fmt.Errorf("providing %s '%s': %w",
+			strings.ReplaceAll(string(capability), "-", " "),
+			strings.Join(declaredProviders(ext, names, capability), "', '"), startErr)
+	})
+}
+
+func (a *ExtensionActivator) startExtensions(
+	ctx context.Context,
+	toStart []*extensions.Extension,
+	environmentName string,
+	checkStartup func(*extensions.Extension, error) error,
+) (func(), error) {
+	noop := func() {}
 	if len(toStart) == 0 {
 		return noop, nil
 	}
@@ -125,7 +169,7 @@ func (a *ExtensionActivator) ensureProviders(
 	processCtx, cancelProcesses := context.WithCancel(context.WithoutCancel(ctx))
 	processes := make([]*extensionProcess, len(toStart))
 	var cleanupOnce sync.Once
-	cleanup = func() {
+	cleanup := func() {
 		cleanupOnce.Do(func() {
 			shutdownExtensionProcesses(grpcServer, cancelProcesses, processes)
 		})
@@ -161,22 +205,20 @@ func (a *ExtensionActivator) ensureProviders(
 		return noop, ctxErr
 	}
 
-	for i, startErr := range startErrs {
+	for i, ext := range toStart {
+		startErr := checkStartup(ext, startErrs[i])
 		if startErr == nil {
 			continue
 		}
 
 		// Fail fast with the actual startup error rather than an opaque resolution failure later.
-		ext := toStart[i]
 		if reported := ext.GetReportedError(); reported != nil {
 			startErr = fmt.Errorf("%w: %w", startErr, reported)
 		}
 
 		cleanup()
 		return noop, &internal.ErrorWithSuggestion{
-			Err: fmt.Errorf("extension '%s', which provides %s '%s', failed to start: %w",
-				ext.Id, strings.ReplaceAll(string(capability), "-", " "),
-				strings.Join(declaredProviders(ext, names, capability), "', '"), startErr),
+			Err: fmt.Errorf("extension '%s' failed to start: %w", ext.Id, startErr),
 			Suggestion: fmt.Sprintf(
 				"Run with %s for details, or check for an update with %s",
 				output.WithHighLightFormat("--debug"),

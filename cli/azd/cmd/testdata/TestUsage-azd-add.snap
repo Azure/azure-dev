@@ -1,6 +1,9 @@
 
 Add a component to your project.
 
+Choose from items supplied by installed extensions.
+If none are available, use the built-in menu for compatible projects.
+
 Usage
   azd add [flags]
 

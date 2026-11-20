@@ -63,6 +63,12 @@ Go extensions can return structured messages from service
 [contract versioning](../../cli/azd/docs/extensions/contract-versioning.md)
 for compatibility and the deprecated beta route.
 
+To contribute choices to `azd add`, declare the `add-provider` capability and
+register item IDs, labels, and a selection handler with `ExtensionHost.WithBetaAddProvider`.
+The handler owns the experience after selection. See the
+[SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#add-providers-beta)
+for an example and host version requirements.
+
 ### 4. Build
 
 For infrastructure generation, declare `infra-generation-provider` in both

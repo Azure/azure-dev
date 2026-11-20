@@ -45,6 +45,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
   - [NewExtensionHost](#newextensionhost)
   - [ExtensionHost Methods](#extensionhost-methods)
 - [Infrastructure generation (beta)](#infrastructure-generation-beta)
+- [Add providers (beta)](#add-providers-beta)
 - [Client & Utilities](#client--utilities)
   - [AzdClient](#azdclient)
   - [ConfigHelper](#confighelper)
@@ -697,6 +698,7 @@ down the connection.
 | `WithBetaServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Deprecated beta preview registration; retained with the `preview.ServiceTargetPreviewProvider` interface. |
 | `WithFrameworkService` | `(language string, factory FrameworkServiceFactory) *ExtensionHost` | Register a custom language/framework build service. |
 | `WithBetaInfraGenerationProvider` | `(name string, provider BetaInfraGenerationProvider) *ExtensionHost` | Register a beta source generator that writes files and returns a replacement infrastructure entry. |
+| `WithBetaAddProvider` | `(items []*v1beta.AddItem, handler func(context.Context, string) error) *ExtensionHost` | Register choices and a selection handler for `azd add`. |
 | `WithProjectEventHandler` | `(eventName string, handler ProjectEventHandler) *ExtensionHost` | Register a project-level lifecycle event handler. |
 | `WithServiceEventHandler` | `(eventName string, handler ServiceEventHandler, options *ServiceEventOptions) *ExtensionHost` | Register a service-level lifecycle event handler (with optional filtering). |
 | `Run` | `(ctx context.Context) error` | Start the host and block until shutdown. |
@@ -756,6 +758,28 @@ waits for registration acknowledgment before signaling readiness. Core enforces
 the installed extension's capability and declared provider ownership.
 This API targets azd 1.38.0; consumers must require a host containing it and pin
 a published SDK containing these helpers before releasing.
+
+## Add providers (beta)
+
+Declare `add-provider` in `capabilities` in `extension.yaml`. In the extension
+listener, register the items and handler before calling `host.Run`:
+
+```go
+host.WithBetaAddProvider([]*v1beta.AddItem{
+    {Id: "resource", DisplayName: "Azure resource"},
+}, addResource)
+```
+
+`v1beta` is `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta`.
+Each `Id` is nonempty and unique within the extension. `DisplayName` is the
+label shown in the menu. The handler (`func(context.Context, string) error`)
+receives the selected ID. It owns any further prompts, project updates, and
+output. Registration should not prompt or make changes. The host surfaces
+errors returned by the handler. `azd add` requires interactive selection when
+extension choices are available.
+
+This API targets azd 1.39.0. Before publishing, require a host and pin a
+released SDK that both contain `AddProviderService`.
 
 ## Client & Utilities
 

@@ -1,0 +1,46 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azd.extensions.v1beta;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta";
+
+import "azd/extensions/v1beta/errors.proto";
+
+// AddProviderService discovers and invokes add items on an extension's stream.
+service AddProviderService {
+  rpc Stream(stream AddProviderMessage) returns (stream AddProviderMessage);
+}
+
+message AddProviderMessage {
+  string request_id = 1;
+  ExtensionError error = 99;
+  oneof message_type {
+    RegisterAddProviderRequest register_request = 2;
+    RegisterAddProviderResponse register_response = 3;
+    AddItemRequest add_request = 4;
+    AddItemResponse add_response = 5;
+    AddItemCancel cancel = 6;
+  }
+}
+
+message RegisterAddProviderRequest {
+  repeated AddItem items = 1;
+}
+
+message RegisterAddProviderResponse {}
+
+message AddItem {
+  string id = 1;
+  string display_name = 2;
+}
+
+message AddItemRequest {
+  string id = 1;
+}
+
+message AddItemResponse {}
+
+// Cancels the invocation with the same request_id.
+message AddItemCancel {}

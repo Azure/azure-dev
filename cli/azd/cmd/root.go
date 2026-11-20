@@ -471,7 +471,8 @@ func newRootCmd(
 	root.
 		Add("add", &actions.ActionDescriptorOptions{
 			Command:        add.NewAddCmd(),
-			ActionResolver: add.NewAddAction,
+			ActionResolver: newAddAction,
+			HelpOptions:    actions.ActionHelpOptions{Description: getCmdAddHelpDescription},
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupBeta,
 			},

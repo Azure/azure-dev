@@ -500,6 +500,61 @@ infra:
 	require.Contains(t, output, "azd provision "+defaultResourcesLayer)
 }
 
+func TestAddProviderSelectionRunsWizard(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", t.TempDir())
+	prompts := &addPromptServer{
+		followUp:           "No",
+		existingResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/shared",
+	}
+	host := startAddTestHost(t, prompts)
+	client, err := azdext.NewAzdClient()
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+	var output bytes.Buffer
+	handler := newAddProviderHandler(client, &azdext.ExtensionContext{Environment: "staging"}, &output)
+
+	require.NoError(t, handler(t.Context(), azureResourceAddItemID))
+	require.Equal(t, 1, prompts.layerPrompts)
+	require.Len(t, host.project.layerRequests, 1)
+	require.Equal(t, "infra.layers", host.project.layerRequests[0].Path)
+	require.Zero(t, host.currentCalls)
+	require.NotEmpty(t, host.reads)
+	for _, read := range host.reads {
+		require.Equal(t, "staging", read.Name)
+	}
+	require.NotEmpty(t, host.saved)
+	for _, write := range host.saved {
+		require.Equal(t, "staging", write.EnvName)
+	}
+	require.Contains(t, output.String(), "azure.yaml updated:")
+	require.Contains(t, output.String(), `azd provision azureresources --environment "staging"`)
+	require.Empty(t, prompts.commands)
+}
+
+func TestAddProviderRejectsInvalidRequestsWithoutHost(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		itemID   string
+		noPrompt bool
+		want     string
+	}{
+		{name: "empty ID", want: invalidAddItemCode},
+		{name: "unknown ID", itemID: "unknown", want: invalidAddItemCode},
+		{name: "no prompt", itemID: azureResourceAddItemID, noPrompt: true, want: addRequiresPromptCode},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			handler := newAddProviderHandler(nil, &azdext.ExtensionContext{NoPrompt: test.noPrompt}, &output)
+			err := handler(t.Context(), test.itemID)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected a local validation error, got %v", err)
+			require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+			require.Equal(t, test.want, localErr.Code)
+			require.Empty(t, output.String())
+		})
+	}
+}
+
 func TestAddWizardReplacesOnlyExplicitlyAcceptedLayer(t *testing.T) {
 	original := `name: example
 infra:

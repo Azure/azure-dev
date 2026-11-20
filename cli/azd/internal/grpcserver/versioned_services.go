@@ -22,6 +22,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 )
 
 const stableContractMessagePrefix = "azd.extensions.v1."
@@ -137,9 +138,21 @@ func (s *Server) registerServices() error {
 		return fmt.Errorf("register legacy extension services: %w", err)
 	}
 
+	var addService v1beta.AddProviderServiceServer = v1beta.UnimplementedAddProviderServiceServer{}
+	if s.addProviderRegistry != nil {
+		extensionService, ok := s.extensionService.(*ExtensionService)
+		if !ok {
+			return fmt.Errorf("add providers require the native extension service")
+		}
+		addService = &addProviderService{
+			registry:     s.addProviderRegistry,
+			getInstalled: extensionService.extensionManager.GetInstalled,
+		}
+	}
 	return registerBetaServices(
 		s.grpcServer,
 		map[BetaService]any{
+			BetaAddProviderService:     addService,
 			BetaProjectService:         s.projectService,
 			BetaEnvironmentService:     s.environmentService,
 			BetaPromptService:          s.promptService,

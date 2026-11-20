@@ -5,7 +5,7 @@ or declare them in `azure.yaml`.
 
 ## Get started
 
-You need azd 1.38.0 or later, an Azure subscription, and Bicep. Install Bicep
+You need azd 1.39.0 or later, an Azure subscription, and Bicep. Install Bicep
 and make `bicep` available on your `PATH`, or set `AZD_BICEP_TOOL_PATH` to its
 executable. The extension does not install Bicep for you.
 
@@ -22,10 +22,11 @@ don't already have one, and add your first resource:
 ```sh
 azd auth login
 azd env new dev
-azd resources add --environment dev
+azd add --environment dev
 ```
 
-Follow the prompts to choose and configure a resource or application host.
+Select **Azure resource or service**, then follow the prompts to configure a
+resource or application host.
 
 ## Supported resources
 
@@ -48,6 +49,9 @@ You can also select existing Azure resources instead of creating new ones;
 see [current limitations](#current-limitations) for restrictions.
 
 ## Add resources interactively
+
+Select **Azure resource or service** from `azd add`, or launch the same wizard
+directly:
 
 ```sh
 azd resources add
@@ -140,10 +144,10 @@ write failure prevents configuration conversion. If configuration conversion fai
 writing, the command reports the failure and retains the generated files.
 Changes to the selected entry during generation are rejected rather than overwritten.
 
-Generation uses the beta-only `infra-generation-provider` capability and requires
-an azd host and SDK containing `InfraGenerationService` (target azd 1.38.0).
-This extension's local SDK replacement supports development before that release.
-Pin a published SDK containing the API before publishing the extension.
+Infrastructure generation and the `azd add` menu use the beta
+`infra-generation-provider` and `add-provider` capabilities. For local
+development, the extension uses the SDK from this checkout. Before publishing
+the extension, remove the local replacement and pin a published SDK with both APIs.
 
 ## Delete resources safely
 
@@ -192,12 +196,12 @@ references before provisioning, then provision each layer again. See the
   applies to anything in a resource group being deleted.
 - Resource options are type-specific; unsupported or unknown properties are
   rejected. Use the interactive command to configure supported options.
-- `azd resources add` requires interactive input and does not support
-  `--no-prompt`. Use saved configuration with `azd provision` for automation.
-- Use `azd resources add`, not `azd add`, for these declarations.
+- The wizard requires interactive input and does not support `--no-prompt`,
+  whether launched from `azd add` or `azd resources add`. Use saved configuration
+  with `azd provision` for automation.
 - Infrastructure generation supports flat `infra` declarations as well as
   named `infra.layers` and `layers[].infra` entries.
-- Before using `azd resources add`, move flat `infra` settings into named
+- Before using the wizard, move flat `infra` settings into named
   `infra.layers` entries. Top-level project `layers` are not supported by this
   command. Existing top-level `resources` declarations remain supported by
   azd separately; see the [migration guide](./migration.md) before moving them.

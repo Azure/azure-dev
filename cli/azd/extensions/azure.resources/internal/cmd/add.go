@@ -43,96 +43,96 @@ func newAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				return err
 			}
 			defer client.Close()
-			ctx := cmd.Context()
-			current, err := loadProject(ctx, client.Project())
-			if err != nil {
-				return err
-			}
-
-			// Validate the existing project before prompting for a layer name.
-			initialProject, err := parseProject(current, defaultResourcesLayer)
-			if err != nil {
-				return err
-			}
-			layerName := initialProject.resourcesLayer
-			if layerName == "" {
-				answer, err := client.Prompt().Prompt(ctx, &azdext.PromptRequest{Options: &azdext.PromptOptions{
-					Message: "Enter the Azure Resources layer name", DefaultValue: defaultResourcesLayer, Required: true,
-				}})
-				if err != nil {
-					return fmt.Errorf("selecting infrastructure layer: %w", err)
-				}
-				layerName = answer.GetValue()
-			}
-			project, err := parseProject(current, layerName)
-			if err != nil {
-				return err
-			}
-			if err := resources.ValidateProjectLayers(current, layerName); err != nil {
-				return err
-			}
-			if project.target != nil {
-				message := fmt.Sprintf("Add resources to existing layer %q?", layerName)
-				if project.provider != resources.ProviderName {
-					message = fmt.Sprintf("Replace infrastructure layer %q (provider %q) with a resources layer?",
-						layerName, project.provider)
-				}
-				accepted, err := confirmAdd(ctx, client, message, false)
-				if err != nil || !accepted {
-					return err
-				}
-			}
-			wizard := &add.Wizard{
-				Client: client, Writer: cmd.OutOrStdout(), ProjectDir: projectDir,
-				Resources: project.config, Services: project.services, EntryName: layerName,
-				Environment: extCtx.Environment,
-			}
-			result, err := wizard.Run(ctx)
-			if err != nil {
-				return err
-			}
-			layer, err := project.layerChange(layerName, result)
-			if err != nil {
-				return err
-			}
-			services, err := project.serviceChanges(result)
-			if err != nil {
-				return err
-			}
-			// Resolve the environment before touching azure.yaml so a missing environment
-			// can't leave the project saved without its resource values.
-			envName := extCtx.Environment
-			if len(result.Environment) > 0 {
-				envName, err = environment.ResolveName(ctx, client.Environment(), extCtx.Environment)
-				if err != nil {
-					return fmt.Errorf("getting the environment: %w", err)
-				}
-			}
-
-			if _, err := client.Project().SetConfigValue(ctx, layer); err != nil {
-				return fmt.Errorf("saving infrastructure layer %q: %w", layerName, err)
-			}
-			if err := saveAddServices(ctx, client.Project(), current, services); err != nil {
-				return err
-			}
-			if len(result.Environment) > 0 {
-				for _, key := range slices.Sorted(maps.Keys(result.Environment)) {
-					_, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-						EnvName: envName, Key: key, Value: result.Environment[key],
-					})
-					if err != nil {
-						return fmt.Errorf("azure.yaml saved, but saving environment value %s failed: %w", key, err)
-					}
-				}
-			}
-			if _, err := fmt.Fprintln(cmd.OutOrStdout(), project.summary(layerName, result)); err != nil {
-				return fmt.Errorf("displaying project changes: %w", err)
-			}
-			return followUpAdd(ctx, client, result.HasService, layerName, envName, cmd.OutOrStdout())
+			return runAddWizard(cmd.Context(), client, cmd.OutOrStdout(), projectDir, extCtx.Environment)
 		},
 	}
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{Name: "output", AllowedValues: []string{"default"}})
 	return cmd
+}
+
+func runAddWizard(
+	ctx context.Context, client *azdext.AzdClient, writer io.Writer, projectDir, envName string,
+) error {
+	current, err := loadProject(ctx, client.Project())
+	if err != nil {
+		return err
+	}
+	initialProject, err := parseProject(current, defaultResourcesLayer)
+	if err != nil {
+		return err
+	}
+	layerName := initialProject.resourcesLayer
+	if layerName == "" {
+		answer, err := client.Prompt().Prompt(ctx, &azdext.PromptRequest{Options: &azdext.PromptOptions{
+			Message: "Enter the Azure Resources layer name", DefaultValue: defaultResourcesLayer, Required: true,
+		}})
+		if err != nil {
+			return fmt.Errorf("selecting infrastructure layer: %w", err)
+		}
+		layerName = answer.GetValue()
+	}
+	project, err := parseProject(current, layerName)
+	if err != nil {
+		return err
+	}
+	if err := resources.ValidateProjectLayers(current, layerName); err != nil {
+		return err
+	}
+	if project.target != nil {
+		message := fmt.Sprintf("Add resources to existing layer %q?", layerName)
+		if project.provider != resources.ProviderName {
+			message = fmt.Sprintf("Replace infrastructure layer %q (provider %q) with a resources layer?",
+				layerName, project.provider)
+		}
+		accepted, err := confirmAdd(ctx, client, message, false)
+		if err != nil || !accepted {
+			return err
+		}
+	}
+	wizard := &add.Wizard{
+		Client: client, Writer: writer, ProjectDir: projectDir,
+		Resources: project.config, Services: project.services, EntryName: layerName,
+		Environment: envName,
+	}
+	result, err := wizard.Run(ctx)
+	if err != nil {
+		return err
+	}
+	layer, err := project.layerChange(layerName, result)
+	if err != nil {
+		return err
+	}
+	services, err := project.serviceChanges(result)
+	if err != nil {
+		return err
+	}
+	// Resolve the environment before touching azure.yaml so a missing environment
+	// can't leave the project saved without its resource values.
+	if len(result.Environment) > 0 {
+		envName, err = environment.ResolveName(ctx, client.Environment(), envName)
+		if err != nil {
+			return fmt.Errorf("getting the environment: %w", err)
+		}
+	}
+
+	if _, err := client.Project().SetConfigValue(ctx, layer); err != nil {
+		return fmt.Errorf("saving infrastructure layer %q: %w", layerName, err)
+	}
+	if err := saveAddServices(ctx, client.Project(), current, services); err != nil {
+		return err
+	}
+	for _, key := range slices.Sorted(maps.Keys(result.Environment)) {
+		_, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envName, Key: key, Value: result.Environment[key],
+		})
+		if err != nil {
+			return fmt.Errorf("azure.yaml saved, but saving environment value %s failed: %w", key, err)
+		}
+	}
+	if _, err := fmt.Fprintln(writer, project.summary(layerName, result)); err != nil {
+		return fmt.Errorf("displaying project changes: %w", err)
+	}
+	return followUpAdd(ctx, client, result.HasService, layerName, envName, writer)
 }
 
 func confirmAdd(ctx context.Context, client *azdext.AzdClient, message string, defaultValue bool) (bool, error) {

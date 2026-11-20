@@ -21,8 +21,10 @@ func NewRootCommand() *cobra.Command {
 	})
 	root.AddCommand(newAddCommand(extCtx))
 	var resourcesProvider *provider.Provider
-	listen := azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
+	var listen *cobra.Command
+	listen = azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
 		resourcesProvider = configureResourcesProvider(host)
+		configureAddProvider(host, extCtx, listen.OutOrStdout())
 	})
 	runListen := listen.RunE
 	listen.RunE = func(cmd *cobra.Command, args []string) (err error) {

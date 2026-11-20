@@ -31,14 +31,11 @@ func (m *InteractiveGuardMiddleware) Run(ctx context.Context, next NextFn) (*act
 	if m.console.IsNoPromptMode() {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
-				"%s requires interactive input and cannot be run with --no-prompt: %w",
-				m.options.CommandPath,
-				internal.ErrInteractiveRequired,
+				"%w: %s can't run with prompts disabled. Prompts are disabled by --no-prompt, "+
+					"and automatically in CI/CD and AI-agent environments.",
+				internal.ErrInteractiveRequired, m.options.CommandPath,
 			),
-			Message: fmt.Sprintf(
-				"%s requires interactive input and cannot be run with --no-prompt. No changes were made.",
-				m.options.CommandPath,
-			),
+			Suggestion: fmt.Sprintf("Run '%s --no-prompt=false' in an interactive terminal.", m.options.CommandPath),
 		}
 	}
 

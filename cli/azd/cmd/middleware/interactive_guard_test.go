@@ -31,14 +31,9 @@ func TestInteractiveGuard_RejectsNoPrompt(t *testing.T) {
 	require.Nil(t, result)
 	require.False(t, nextCalled, "later middleware and the action must not run in no-prompt mode")
 	require.ErrorIs(t, err, internal.ErrInteractiveRequired)
-	require.EqualError(t, err,
-		"azd pipeline config requires interactive input and cannot be run with --no-prompt: "+
-			"interactive mode required")
-
 	suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
 	require.True(t, ok)
-	require.Contains(t, suggestionErr.Message, "No changes were made")
-	require.Empty(t, suggestionErr.Suggestion)
+	require.Equal(t, "Run 'azd pipeline config --no-prompt=false' in an interactive terminal.", suggestionErr.Suggestion)
 }
 
 func TestInteractiveGuard_AllowsInteractive(t *testing.T) {

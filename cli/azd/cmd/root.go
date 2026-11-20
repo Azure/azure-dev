@@ -29,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/cmd/show"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	outputux "github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 )
@@ -89,27 +88,6 @@ func newRootCmd(
 		Use:   "azd",
 		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your project on Azure", productName),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			if blockedByNoPrompt(cmd, opts) {
-				err := &internal.ErrorWithSuggestion{
-					Err: fmt.Errorf(
-						"%w: %s can't run with prompts disabled. Prompts are disabled by --no-prompt, "+
-							"and automatically in CI/CD and AI-agent environments.",
-						internal.ErrInteractiveRequired, cmd.CommandPath(),
-					),
-					Suggestion: fmt.Sprintf("Run '%s --no-prompt=false' in an interactive terminal.", cmd.CommandPath()),
-				}
-
-				// This runs before the UX middleware, which normally renders suggestions, so render it here
-				// and keep Cobra from printing the bare message a second time.
-				cmd.SilenceErrors = true
-				fmt.Fprint(cmd.ErrOrStderr(), (&outputux.ErrorWithSuggestion{
-					Err:        err.Err,
-					Suggestion: err.Suggestion,
-				}).ToString(""))
-
-				return err
-			}
-
 			// If there was a platform configuration error report it to the user until it is resolved
 			// Using fmt.Printf directly here since we can't leverage our IoC container to resolve a console instance
 			if errors.Is(platform.Error, platform.ErrPlatformNotSupported) {
@@ -581,10 +559,6 @@ func newRootCmd(
 	return cmd
 }
 
-func blockedByNoPrompt(cmd *cobra.Command, opts *internal.GlobalCommandOptions) bool {
-	return opts.NoPrompt && cmd.Annotations[actions.AnnotationRequireInteractive] == "true"
-}
-
 func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 	root.
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
@@ -596,6 +570,15 @@ func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 			return !descriptor.Options.DisableTroubleshooting
 		}).
 		UseMiddleware("cancellation", middleware.NewCancellationMiddleware).
+		// Runs before loginGuard so commands that require interactive input fail before
+		// attempting login or resolving actions with side effects.
+		UseMiddlewareWhen(
+			"interactiveGuard",
+			middleware.NewInteractiveGuardMiddleware,
+			func(descriptor *actions.ActionDescriptor) bool {
+				return descriptor.Options.RequireInteractive
+			},
+		).
 		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			// Check if the command or any of its parents require login
 			current := descriptor

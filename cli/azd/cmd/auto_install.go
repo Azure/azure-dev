@@ -676,8 +676,10 @@ func executeWithAutoInstallCommand(
 		// Detect lightspeed commands from the cobra annotation set by CobraBuilder.
 		result.IsLightspeed = foundCmd.Annotations[actions.AnnotationLightspeed] == "true"
 
-		// Let Cobra handle help and flag errors without starting update or extension work.
-		if blockedByNoPrompt(foundCmd, globalOpts) {
+		// Update checks and extension auto-install run before action middleware.
+		// Bypass that work when interactiveGuard would reject the command, but still
+		// go through Cobra so help and flag errors take precedence.
+		if globalOpts.NoPrompt && foundCmd.Annotations[actions.AnnotationRequireInteractive] == "true" {
 			result.Err = rootCmd.ExecuteContext(ctx)
 			return result
 		}

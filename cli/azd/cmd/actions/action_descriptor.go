@@ -205,7 +205,7 @@ type ActionDescriptorOptions struct {
 	// Whether or not the command requires a principal login
 	RequireLogin bool
 	// Whether the command requires interactive input. When set, the command fails before
-	// command preparation and execution if prompts are disabled (for example, with --no-prompt).
+	// login or action resolution if prompts are disabled (for example, with --no-prompt).
 	// Use this when the command's prompts make decisions that azd can't safely infer, so
 	// automatically accepting their defaults could produce the wrong result.
 	RequireInteractive bool

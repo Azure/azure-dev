@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -211,33 +212,46 @@ func TestExecuteWithAutoInstall_RejectsNoPromptBeforePreparingPipeline(t *testin
 	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
 	t.Chdir(t.TempDir())
 
-	// Point --cwd at a missing directory to verify that rejection leaves it uncreated.
-	cwd := filepath.Join(t.TempDir(), "not-created")
 	originalArgs := os.Args
 	t.Cleanup(func() { os.Args = originalArgs })
-	os.Args = []string{"azd", "pipeline", "config", "--no-prompt", "--cwd", cwd}
+	os.Args = []string{"azd", "pipeline", "config", "--no-prompt"}
 	container := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(container, t.Context())
+	_, recorder := recordCommandSpans(t)
 
 	// Use the CLI entry point to cover global flag parsing and root construction as well as execution.
 	result := ExecuteWithAutoInstall(t.Context(), container)
 
 	require.ErrorIs(t, result.Err, internal.ErrInteractiveRequired)
-	require.NoDirExists(t, cwd)
 	// Even a skipped update check returns a closed channel if the check was reached.
 	require.Nil(t, result.LatestVersion, "the update check must not be started")
+
+	// The rejection happens inside the telemetry middleware, so it's recorded on the command span. Errors with
+	// suggestions report the "error.suggestion" result code, with the underlying classification in error.type.
+	var errorTypes []string
+	for _, span := range recorder.Ended() {
+		if span.Name() != "cmd.pipeline.config" {
+			continue
+		}
+
+		require.Equal(t, "error.suggestion", span.Status().Description)
+		for _, attr := range span.Attributes() {
+			if attr.Key == fields.ErrType.Key {
+				errorTypes = append(errorTypes, attr.Value.AsString())
+			}
+		}
+	}
+	require.Equal(t, []string{"internal.interactive_required"}, errorTypes)
 }
 
 func TestExecuteWithAutoInstall_InteractiveRequirementBeforeExtensions(t *testing.T) {
 	tests := []struct {
-		name       string
-		args       []string
-		help       bool
-		missingCwd bool
-		flagError  string
+		name      string
+		args      []string
+		help      bool
+		flagError string
 	}{
 		{name: "missing project extension"},
-		{name: "missing cwd", missingCwd: true},
 		{name: "help", args: []string{"--help"}, help: true},
 		{
 			name:      "invalid flag",
@@ -268,10 +282,6 @@ func TestExecuteWithAutoInstall_InteractiveRequirementBeforeExtensions(t *testin
 			originalArgs := os.Args
 			t.Cleanup(func() { os.Args = originalArgs })
 			os.Args = append([]string{"azd", "pipeline", "config", "--no-prompt"}, tt.args...)
-			cwd := filepath.Join(t.TempDir(), "not-created")
-			if tt.missingCwd {
-				os.Args = append(os.Args, "--cwd", cwd)
-			}
 			opts := &internal.GlobalCommandOptions{}
 			require.NoError(t, ParseGlobalFlags(os.Args[1:], opts))
 			container := ioc.NewNestedContainer(nil)
@@ -285,9 +295,6 @@ func TestExecuteWithAutoInstall_InteractiveRequirementBeforeExtensions(t *testin
 			root.SetErr(&stderr)
 			root.SetArgs(os.Args[1:])
 			result := executeWithAutoInstallCommand(t.Context(), container, root, opts, &ExecuteResult{})
-			if tt.missingCwd {
-				require.NoDirExists(t, cwd)
-			}
 
 			// Help and flag errors take precedence over the interactive-mode error.
 			switch {
@@ -304,11 +311,12 @@ func TestExecuteWithAutoInstall_InteractiveRequirementBeforeExtensions(t *testin
 				require.Equal(t, "Run 'azd pipeline config --no-prompt=false' in an interactive terminal.",
 					suggestionErr.Suggestion)
 
-				require.Empty(t, stdout.String())
-				require.Equal(t, "ERROR: interactive mode required: azd pipeline config can't run with prompts disabled. "+
+				// The UX middleware renders the error through the console, like any other command error.
+				require.Empty(t, stderr.String())
+				require.Equal(t, "\nERROR: interactive mode required: azd pipeline config can't run with prompts disabled. "+
 					"Prompts are disabled by --no-prompt, and automatically in CI/CD and AI-agent environments.\n\n"+
-					"Suggestion: Run 'azd pipeline config --no-prompt=false' in an interactive terminal.\n",
-					stderr.String())
+					"Suggestion: Run 'azd pipeline config --no-prompt=false' in an interactive terminal.\n\n",
+					stdout.String())
 			}
 		})
 	}

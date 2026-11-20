@@ -131,3 +131,25 @@ func TestPromptHarness_RejectsListForm(t *testing.T) {
 		strings.Contains(err.Error(), "harness must be a block"),
 		"unexpected error: %v", err)
 }
+
+func TestValidateInlinePromptAgent_PropertyNamesIgnoreCase(t *testing.T) {
+	for name, tc := range map[string]struct {
+		props map[string]any
+		want  string
+	}{
+		"harness string":        {map[string]any{"Harness": "x"}, "harness must be a block"},
+		"harness collision":     {map[string]any{"harness": nil, "Harness": "x"}, "harness must be a block"},
+		"harness unknown key":   {map[string]any{"HARNESS": map[string]any{"bogus": 1}}, "harness:"},
+		"image":                 {map[string]any{"Image": "registry/x:1"}, `field "image"`},
+		"agent endpoint":        {map[string]any{"AGENTENDPOINT": map[string]any{}}, `field "agentEndpoint"`},
+		"toolbox":               {map[string]any{"Toolbox": "x"}, "no longer supported"},
+		"toolbox and toolboxes": {map[string]any{"toolbox": "x", "Toolboxes": []any{"y"}}, "cannot specify both"},
+		"memory string":         {map[string]any{"Memory": "x"}, "memory must be a block"},
+		"memory collision":      {map[string]any{"memory": nil, "MEMORY": "x"}, "memory must be a block"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.ErrorContains(t, ValidateInlinePromptAgent(tc.props), tc.want)
+		})
+	}
+	require.NoError(t, ValidateInlinePromptAgent(map[string]any{"Harness": nil, "Toolboxes": []any{"y"}}))
+}

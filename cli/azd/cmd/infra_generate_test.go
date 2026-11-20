@@ -54,7 +54,7 @@ func Test_NewInfraGenerateAction_Constructor(t *testing.T) {
 func Test_ConfirmExtensionOverwrite(t *testing.T) {
 	t.Parallel()
 
-	// newAction returns an action for an extension project whose output folder optionally contains a file.
+	// newAction returns an action whose output folder optionally contains a file.
 	newAction := func(t *testing.T, existing bool) (*infraGenerateAction, *mockinput.MockConsole) {
 		dir := t.TempDir()
 		if existing {
@@ -63,27 +63,19 @@ func Test_ConfirmExtensionOverwrite(t *testing.T) {
 		}
 
 		console := mockinput.NewMockConsole()
-		azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
 		return &infraGenerateAction{
-			projectConfig: &project.ProjectConfig{
-				Path: dir,
-				Infra: provisioning.Options{
-					Provider: provisioning.ProviderKind("resources"),
-					Name:     "data",
-					Path:     "infra",
-				},
-			},
-			generationManager: project.NewInfraGenerationManager(project.NewImportManager(nil), nil, azdCtx),
-			azdCtx:            azdCtx,
-			console:           console,
+			azdCtx:  azdcontext.NewAzdContextWithDirectory(dir),
+			console: console,
 		}, console
 	}
+
+	outputPaths := []string{"infra"}
 
 	t.Run("empty_folder_does_not_prompt", func(t *testing.T) {
 		t.Parallel()
 		// No Confirm expectation is registered, so a prompt would fail the test.
 		a, _ := newAction(t, false)
-		overwrite, err := a.confirmExtensionOverwrite(t.Context())
+		overwrite, err := a.confirmExtensionOverwrite(t.Context(), outputPaths)
 		require.NoError(t, err)
 		require.False(t, overwrite)
 	})
@@ -92,7 +84,7 @@ func Test_ConfirmExtensionOverwrite(t *testing.T) {
 		t.Parallel()
 		a, console := newAction(t, true)
 		console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
-		overwrite, err := a.confirmExtensionOverwrite(t.Context())
+		overwrite, err := a.confirmExtensionOverwrite(t.Context(), outputPaths)
 		require.NoError(t, err)
 		require.True(t, overwrite)
 	})
@@ -101,7 +93,7 @@ func Test_ConfirmExtensionOverwrite(t *testing.T) {
 		t.Parallel()
 		a, console := newAction(t, true)
 		console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(false)
-		_, err := a.confirmExtensionOverwrite(t.Context())
+		_, err := a.confirmExtensionOverwrite(t.Context(), outputPaths)
 		require.ErrorIs(t, err, internal.ErrAbortedByUser)
 	})
 
@@ -110,7 +102,7 @@ func Test_ConfirmExtensionOverwrite(t *testing.T) {
 		a, console := newAction(t, true)
 		console.SetNoPromptMode(true)
 
-		_, err := a.confirmExtensionOverwrite(t.Context())
+		_, err := a.confirmExtensionOverwrite(t.Context(), outputPaths)
 		suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
 		require.True(t, ok, "expected ErrorWithSuggestion, got %v", err)
 		require.Contains(t, suggestion.Suggestion, "--force")

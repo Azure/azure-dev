@@ -171,16 +171,6 @@ func (a *infraGenerateAction) runLegacyGeneration(ctx context.Context) error {
 }
 
 func (a *infraGenerateAction) runExtensionGeneration(ctx context.Context, providerNames []string) error {
-	force := a.flags.force
-	if !force {
-		// Extensions write their own files, so check for existing output before running them.
-		var err error
-		force, err = a.confirmExtensionOverwrite(ctx)
-		if err != nil {
-			return err
-		}
-	}
-
 	//nolint:lll
 	cleanupActivatedProviders, err := a.extensionActivator.EnsureInfraGenerationProviders(
 		ctx, providerNames, a.flags.EnvironmentName)
@@ -189,11 +179,23 @@ func (a *infraGenerateAction) runExtensionGeneration(ctx context.Context, provid
 	}
 	defer cleanupActivatedProviders()
 
+	prepared, err := a.generationManager.PrepareExtensions(a.projectConfig)
+	if err != nil {
+		return err
+	}
+
+	force := a.flags.force
+	if !force {
+		force, err = a.confirmExtensionOverwrite(ctx, prepared.OutputPaths())
+		if err != nil {
+			return err
+		}
+	}
+
 	const spinnerMessage = "Generating infrastructure"
 
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-	err = a.generationManager.GenerateExtensions(
-		ctx, a.projectConfig, &v1beta.InfraGenerateOptions{Force: force})
+	err = prepared.Generate(ctx, &v1beta.InfraGenerateOptions{Force: force})
 	if err != nil {
 		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return err
@@ -205,17 +207,13 @@ func (a *infraGenerateAction) runExtensionGeneration(ctx context.Context, provid
 // confirmExtensionOverwrite checks whether any extension output folder already contains files and, if so, asks whether
 // to overwrite. It returns false when every folder is empty or missing, and [internal.ErrAbortedByUser] when declined.
 // In --no-prompt mode, a non-empty folder is an error.
-func (a *infraGenerateAction) confirmExtensionOverwrite(ctx context.Context) (bool, error) {
+func (a *infraGenerateAction) confirmExtensionOverwrite(ctx context.Context, outputPaths []string) (bool, error) {
 	projectDir := a.azdCtx.ProjectDirectory()
 
 	var nonEmpty []string
 
-	for _, folder := range a.generationManager.ExtensionOutputPaths(a.projectConfig) {
-		full := folder
-		if !filepath.IsAbs(full) {
-			full = filepath.Join(projectDir, full)
-		}
-
+	for _, folder := range outputPaths {
+		full := filepath.Join(projectDir, folder)
 		empty, err := folderEmpty(full)
 		if err != nil {
 			return false, fmt.Errorf("checking for existing infrastructure: %w", err)

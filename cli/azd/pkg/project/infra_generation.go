@@ -104,22 +104,39 @@ func (m *InfraGenerationManager) GenerateExtensions(
 		return fmt.Errorf("infrastructure generation requires a non-nil options message")
 	}
 
+	prepared, err := m.PrepareExtensions(config)
+	if err != nil {
+		return err
+	}
+
+	return prepared.Generate(ctx, options)
+}
+
+// PreparedInfraGeneration holds the validated entries and resolved extension generators for a project.
+type PreparedInfraGeneration struct {
+	config      *ProjectConfig
+	projectFile string
+	entries     []generatedInfraEntry
+}
+
+// PrepareExtensions resolves and validates all extension entries without invoking their generators.
+func (m *InfraGenerationManager) PrepareExtensions(config *ProjectConfig) (*PreparedInfraGeneration, error) {
 	// TODO: this first pass just assumes we want to convert _everything_, but I'd like to change
 	// it to allow you to select specific layers to convert.
 	entries := config.InfrastructureConfigs()
 	if !slices.ContainsFunc(entries, isExtensionInfraEntry) {
-		return fmt.Errorf("extension infrastructure generation requires at least one extension provider")
+		return nil, fmt.Errorf("extension infrastructure generation requires at least one extension provider")
 	}
 
 	if len(config.Resources) > 0 {
-		return fmt.Errorf("generation cannot combine a resources section with extension infrastructure entries")
+		return nil, fmt.Errorf("generation cannot combine a resources section with extension infrastructure entries")
 	}
 
 	projectFile := m.azdContext.ProjectPath()
 
 	document, err := readGenerationDocument(projectFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var pending []generatedInfraEntry
@@ -130,14 +147,14 @@ func (m *InfraGenerationManager) GenerateExtensions(
 			continue
 		}
 
-		prepared, err := m.prepareEntry(config, document, entry, options)
+		prepared, err := m.prepareEntry(config, document, entry)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		outputPath := prepared.request.OutputPath
 		if previous, exists := outputPaths[outputPath]; exists {
-			return fmt.Errorf(
+			return nil, fmt.Errorf(
 				"infrastructure entries %q and %q share output path %q; configure a distinct path for each entry",
 				previous, entry.Name, outputPath)
 		}
@@ -146,11 +163,31 @@ func (m *InfraGenerationManager) GenerateExtensions(
 		pending = append(pending, prepared)
 	}
 
-	if err := runGenerators(ctx, pending); err != nil {
+	return &PreparedInfraGeneration{config: config, projectFile: projectFile, entries: pending}, nil
+}
+
+// OutputPaths returns the validated project-relative directories for the prepared entries.
+func (p *PreparedInfraGeneration) OutputPaths() []string {
+	paths := make([]string, 0, len(p.entries))
+	for _, entry := range p.entries {
+		paths = append(paths, entry.request.OutputPath)
+	}
+	return paths
+}
+
+// Generate runs the prepared generators and saves their replacement entries to the project file.
+func (p *PreparedInfraGeneration) Generate(ctx context.Context, options *v1beta.InfraGenerateOptions) error {
+	if options == nil {
+		return fmt.Errorf("infrastructure generation requires a non-nil options message")
+	}
+
+	pending := slices.Clone(p.entries)
+
+	if err := runGenerators(ctx, pending, options); err != nil {
 		return err
 	}
 
-	if err := saveGeneratedEntries(ctx, config, projectFile, pending); err != nil {
+	if err := saveGeneratedEntries(ctx, p.config, p.projectFile, pending); err != nil {
 		return fmt.Errorf("infrastructure files were generated, but updating project configuration failed: %w", err)
 	}
 
@@ -215,7 +252,7 @@ func isExtensionInfraEntry(entry provisioning.Options) bool {
 // prepareEntry resolves the generator for entry, verifies that the project file still matches the loaded project,
 // and builds the generation request.
 func (m *InfraGenerationManager) prepareEntry(
-	config *ProjectConfig, document *yaml.Node, entry provisioning.Options, options *v1beta.InfraGenerateOptions,
+	config *ProjectConfig, document *yaml.Node, entry provisioning.Options,
 ) (generatedInfraEntry, error) {
 	provider, err := m.resolveGenerator(entry.Provider)
 	if err != nil {
@@ -255,7 +292,6 @@ func (m *InfraGenerationManager) prepareEntry(
 		request: &v1beta.InfraGenerateRequest{
 			ProjectPath: config.Path,
 			OutputPath:  outputPath,
-			Options:     proto.Clone(options).(*v1beta.InfraGenerateOptions),
 			Entry: &v1beta.ProvisioningOptions{
 				Provider:              string(entry.Provider),
 				Name:                  entry.Name,
@@ -337,7 +373,7 @@ func captureUnchangedEntry(
 }
 
 // runGenerators invokes each entry's generator and stores the validated replacement entry on it.
-func runGenerators(ctx context.Context, pending []generatedInfraEntry) error {
+func runGenerators(ctx context.Context, pending []generatedInfraEntry, options *v1beta.InfraGenerateOptions) error {
 	for i := range pending {
 		entry := &pending[i]
 		name := entry.request.Entry.Name
@@ -347,7 +383,9 @@ func runGenerators(ctx context.Context, pending []generatedInfraEntry) error {
 		}
 
 		// Clone so a generator can't mutate the request we use later for error messages.
-		response, err := entry.provider.Generate(ctx, proto.Clone(entry.request).(*v1beta.InfraGenerateRequest))
+		request := proto.CloneOf(entry.request)
+		request.Options = proto.CloneOf(options)
+		response, err := entry.provider.Generate(ctx, request)
 		if err != nil {
 			return fmt.Errorf("generating infrastructure entry %q: %w", name, err)
 		}

@@ -64,8 +64,15 @@ func generationExtensionAction(
 	t *testing.T, generator *actionInfrastructureGenerator,
 ) (*infraGenerateAction, string) {
 	t.Helper()
+	const source = "name: example\ninfra:\n  layers:\n    - name: data\n      provider: resources\n"
+	return generationExtensionActionWithSource(t, generator, source)
+}
+
+func generationExtensionActionWithSource(
+	t *testing.T, generator *actionInfrastructureGenerator, source string,
+) (*infraGenerateAction, string) {
+	t.Helper()
 	dir := t.TempDir()
-	source := "name: example\ninfra:\n  layers:\n    - name: data\n      provider: resources\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte(source), 0o600))
 	config, err := project.Parse(t.Context(), source)
 	require.NoError(t, err)
@@ -190,27 +197,108 @@ func TestInfraGenerateActivatesOnlyConfiguredGenerators(t *testing.T) {
 	require.False(t, active)
 }
 
-func TestInfraGenerateNonEmptyExtensionFolderPromptsAndForces(t *testing.T) {
-	generator := &actionInfrastructureGenerator{}
-	action, dir := generationExtensionAction(t, generator)
-	action.flags.force = false
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "data"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "infra", "data", "notes.txt"), []byte("x"), 0o600))
-
-	console := mockinput.NewMockConsole()
-	console.WhenConfirm(func(input.ConsoleOptions) bool { return true }).Respond(true)
-	action.console = console
-
-	generator.generate = func(
-		_ context.Context, request *v1beta.InfraGenerateRequest,
-	) (*v1beta.InfraGenerateResponse, error) {
-		require.True(t, request.Options.Force, "accepting the prompt must allow the extension to overwrite")
-		return &v1beta.InfraGenerateResponse{Entry: &v1beta.ProvisioningOptions{
-			Provider: "bicep", Path: request.OutputPath, Module: "main",
-		}}, nil
+func TestInfraGenerateExtensionPreflightErrorsBeforeOverwrite(t *testing.T) {
+	tests := []struct {
+		name        string
+		entry       string
+		expectedErr string
+	}{
+		{
+			name:        "unsupported provider",
+			entry:       "      provider: unsupported\n      path: infra/data\n",
+			expectedErr: `infrastructure provider "unsupported" does not have an available infra-generation-provider`,
+		},
+		{
+			name:        "invalid output path",
+			entry:       "      provider: resources\n      path: .\n",
+			expectedErr: `output path "." must be project-relative`,
+		},
 	}
-	_, err := action.Run(t.Context())
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// A generator call would panic, as would an unexpected confirmation.
+			const header = "name: example\ninfra:\n  layers:\n    - name: valid\n      provider: resources\n" +
+				"    - name: data\n"
+			action, dir := generationExtensionActionWithSource(t, &actionInfrastructureGenerator{}, header+tt.entry)
+			action.flags.force = false
+			console := mockinput.NewMockConsole()
+			console.SetNoPromptMode(true)
+			action.console = console
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "data"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "infra", "data", "notes.txt"), []byte("x"), 0o600))
+
+			_, err := action.Run(t.Context())
+			require.ErrorContains(t, err, tt.expectedErr)
+			_, overwriteSuggestion := errors.AsType[*internal.ErrorWithSuggestion](err)
+			require.False(t, overwriteSuggestion)
+		})
+	}
+}
+
+func TestInfraGenerateNonEmptyExtensionFolder(t *testing.T) {
+	tests := []struct {
+		name     string
+		noPrompt bool
+		accept   bool
+	}{
+		{name: "accept", accept: true},
+		{name: "decline"},
+		{name: "no prompt", noPrompt: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			generator := &actionInfrastructureGenerator{}
+			action, dir := generationExtensionAction(t, generator)
+			action.flags.force = false
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "data"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "infra", "data", "notes.txt"), []byte("x"), 0o600))
+
+			active, cleaned := false, false
+			action.extensionActivator = &actionGenerationActivator{
+				ensure: func(context.Context, []string, string) (func(), error) {
+					active = true
+					return func() { active, cleaned = false, true }, nil
+				},
+			}
+
+			confirmed := false
+			console := mockinput.NewMockConsole()
+			console.SetNoPromptMode(tt.noPrompt)
+			if !tt.noPrompt {
+				console.WhenConfirm(func(input.ConsoleOptions) bool {
+					require.True(t, active, "extension must be activated before confirmation")
+					confirmed = tt.accept
+					return true
+				}).Respond(tt.accept)
+			}
+			action.console = console
+
+			generated := false
+			generator.generate = func(
+				_ context.Context, request *v1beta.InfraGenerateRequest,
+			) (*v1beta.InfraGenerateResponse, error) {
+				require.True(t, confirmed, "generator must not run without overwrite confirmation")
+				require.True(t, request.Options.Force, "accepting the prompt must allow the extension to overwrite")
+				generated = true
+				return &v1beta.InfraGenerateResponse{Entry: &v1beta.ProvisioningOptions{
+					Provider: "bicep", Path: request.OutputPath, Module: "main",
+				}}, nil
+			}
+			_, err := action.Run(t.Context())
+			switch {
+			case tt.accept:
+				require.NoError(t, err)
+			case tt.noPrompt:
+				suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+				require.True(t, ok, "expected overwrite error, got %v", err)
+				require.Contains(t, suggestion.Suggestion, "--force")
+			default:
+				require.ErrorIs(t, err, internal.ErrAbortedByUser)
+			}
+			require.Equal(t, tt.accept, generated)
+			require.True(t, cleaned)
+		})
+	}
 }
 
 func TestInfraGenerateBuiltInDoesNotActivateExtensions(t *testing.T) {

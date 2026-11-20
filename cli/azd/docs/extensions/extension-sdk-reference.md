@@ -725,9 +725,13 @@ entry). The directory name replaces control characters and `<>:"/\|?*` with
 underscores and removes trailing periods and spaces. On Windows, reserved device
 names are prefixed with `_` using Go's `filepath.IsLocal` check.
 A name reduced to empty becomes `_`. The YAML entry name is unchanged.
-Options are required, and the SDK rejects `nil`. `options.force` carries the
-command's `--force` flag. Extensions own file writes, path safety, and overwrite
-handling. They must not silently overwrite existing files when `force` is false.
+Options are required, and the SDK rejects `nil`. Before invoking generators,
+`azd infra generate` resolves providers and validates all extension entries.
+For non-empty planned output folders, it then asks before overwriting. With
+`--no-prompt`, those folders cause an error unless `--force` is set.
+`options.force` is true if the user passed `--force` or approved the overwrite.
+Extensions own file writes, path safety, and overwrite handling. They must not
+silently overwrite existing files when `force` is false.
 The resources extension refuses existing destinations with guidance to use
 `--force`; it does not prompt. Built-in generation retains core's overwrite prompts.
 

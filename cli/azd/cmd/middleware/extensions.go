@@ -432,8 +432,8 @@ func startAndWaitExtension(
 	defer cancel()
 
 	if err := ext.WaitUntilReady(readyCtx); err != nil {
-		// The command continues without this extension, so it must not keep registering
-		// providers into the container while the command resolves from it.
+		// The command reports this extension as failed and continues without it, so stop it now rather
+		// than let it register providers or handle requests partway through the command.
 		stopExtension()
 		if !waitForExtensionProcesses([]*extensionProcess{process}, extensionListenerShutdownGracePeriod) {
 			log.Printf("extension '%s' did not stop after failing to become ready", ext.Id)

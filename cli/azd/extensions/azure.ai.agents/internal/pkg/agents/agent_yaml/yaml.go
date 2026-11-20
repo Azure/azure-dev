@@ -792,6 +792,9 @@ type PromptAgent struct {
 	// Temperature. The API accepts both; setting both is usually a mistake.
 	TopP *float64 `json:"topP,omitempty" yaml:"topP,omitempty"`
 
+	// MaxOutputTokens caps the tokens the model may generate for a response.
+	MaxOutputTokens *int `json:"maxOutputTokens,omitempty" yaml:"maxOutputTokens,omitempty"`
+
 	// Text configures the model's text response, most commonly the structured
 	// output format (e.g. text.format.type: json_schema). Passed through
 	// verbatim rather than modeled, since the shape is the API's to define.

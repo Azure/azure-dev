@@ -247,7 +247,7 @@
         { "type": "integer", "minimum": 1, "maximum": 2147483647 },
         { "type": "string", "enum": ["inf"] }
       ],
-      "description": "Voice agent (kind: prompt-voice) maximum output tokens. Use an integer from 1 to 2147483647 or the string inf."
+      "description": "Maximum output tokens. Use an integer from 1 to 2147483647. Voice agents (kind: prompt-voice) also accept the string inf."
     },
     "include": {
       "type": "array",
@@ -502,7 +502,8 @@
         "required": ["model", "instructions"],
         "properties": {
           "model": { "type": "string", "minLength": 1, "pattern": "\\S" },
-          "instructions": { "type": "string", "minLength": 1, "pattern": "\\S" }
+          "instructions": { "type": "string", "minLength": 1, "pattern": "\\S" },
+          "maxOutputTokens": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
         }
       },
       "else": {

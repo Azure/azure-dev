@@ -306,3 +306,61 @@ reasoning:
 	require.Contains(t, body, `"top_p":0.95`)
 	require.NotContains(t, body, `"topP"`)
 }
+
+// TestPromptAgent_MaxOutputTokensReachesTheAPI covers #10924, where a prompt
+// agent's maxOutputTokens was dropped and the deployed version had none.
+func TestPromptAgent_MaxOutputTokensReachesTheAPI(t *testing.T) {
+	t.Parallel()
+
+	base := `
+kind: prompt
+name: capped-agent
+model: gpt-4.1-mini
+instructions: You are helpful.
+`
+
+	for _, tc := range []struct {
+		name     string
+		extra    string
+		wantBody string
+		notBody  string
+	}{
+		{name: "set", extra: "maxOutputTokens: 4000\n", wantBody: `"max_output_tokens":4000`, notBody: `"maxOutputTokens"`},
+		{name: "unset", extra: "", notBody: `max_output_tokens`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			content := []byte(base + tc.extra)
+			require.NoError(t, ValidateAgentDefinition(content))
+
+			var agent PromptAgent
+			require.NoError(t, yaml.Unmarshal(content, &agent))
+			request, err := CreatePromptAgentAPIRequest(agent, nil)
+			require.NoError(t, err)
+
+			data, err := json.Marshal(request)
+			require.NoError(t, err)
+			body := string(data)
+			if tc.wantBody != "" {
+				require.Contains(t, body, tc.wantBody)
+			}
+			require.NotContains(t, body, tc.notBody)
+		})
+	}
+}
+
+func TestPromptAgent_MaxOutputTokensMustBePositive(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"0", "-1", "2147483648"} {
+		err := ValidateAgentDefinition([]byte(`
+kind: prompt
+name: capped-agent
+model: gpt-4.1-mini
+instructions: You are helpful.
+maxOutputTokens: ` + value + `
+`))
+		require.ErrorContains(t, err, promptMaxOutputTokensError, value)
+	}
+}

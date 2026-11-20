@@ -423,6 +423,7 @@ type ManagedAgentDefinition struct {
 	ToolChoice       any                  `json:"tool_choice,omitempty"`
 	Temperature      *float64             `json:"temperature,omitempty"`
 	TopP             *float64             `json:"top_p,omitempty"`
+	MaxOutputTokens  *int                 `json:"max_output_tokens,omitempty"`
 	Text             any                  `json:"text,omitempty"`
 	Reasoning        any                  `json:"reasoning,omitempty"`
 	Skills           []SkillReference     `json:"skills,omitempty"`

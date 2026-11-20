@@ -17,6 +17,11 @@ installation before running azd project commands.
 This command **must** be executed by someone who has a `Contributor` role, in order to create the service principal with the given role.
 The next steps can be used to manually configure a pipeline without a `Contributor` role, for example, by using an existing service principal.
 
+`azd pipeline config` requires interactive input, so it fails in no-prompt mode (`--no-prompt`, `--non-interactive`,
+`AZD_NON_INTERACTIVE=true`, or automatic CI/CD or AI-agent detection). Run `azd pipeline config --no-prompt=false` manually in an interactive terminal to review and answer its prompts.
+
+If you can't run the command interactively, configure the pipeline with the manual steps below.
+
 ## Setting up the local repository
 
 There a few ways to get the initial project, even before thinking about the pipeline and how to set it up. For example:

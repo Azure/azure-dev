@@ -568,7 +568,7 @@ type ExecuteResult struct {
 	// for lightspeed commands so the process can exit quickly.
 	IsLightspeed bool
 	// LatestVersion receives the result of the background update check.
-	// Nil when the update check was not started (lightspeed commands).
+	// Nil when the update check was not started (such as for lightspeed commands).
 	// When the check is skipped via AZD_SKIP_UPDATE_CHECK, the returned channel
 	// is closed without a value.
 	LatestVersion <-chan *update.VersionInfo
@@ -675,6 +675,14 @@ func executeWithAutoInstallCommand(
 	if err == nil {
 		// Detect lightspeed commands from the cobra annotation set by CobraBuilder.
 		result.IsLightspeed = foundCmd.Annotations[actions.AnnotationLightspeed] == "true"
+
+		// Update checks and extension auto-install run before action middleware.
+		// Bypass that work when interactiveGuard would reject the command, but still
+		// go through Cobra so help and flag errors take precedence.
+		if globalOpts.NoPrompt && foundCmd.Annotations[actions.AnnotationRequireInteractive] == "true" {
+			result.Err = rootCmd.ExecuteContext(ctx)
+			return result
+		}
 
 		// Start the background update check AFTER command identification.
 		// Lightspeed commands (e.g., auth token) skip the update check entirely

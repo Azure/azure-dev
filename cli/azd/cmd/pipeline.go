@@ -103,6 +103,13 @@ func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			Description: getCmdPipelineConfigHelpDescription,
 			Footer:      getCmdPipelineConfigHelpFooter,
 		},
+		// In no-prompt mode, prompts silently return their default values. That's only safe when the default
+		// came from something the user already provided (ex: azd's subscription prompt defaults
+		// to AZURE_SUBSCRIPTION_ID).
+		//
+		// This command has flags values that can't be inferred, like whether we push the repo, etc... so
+		// we require an interactive setup.
+		RequireInteractive: true,
 	})
 
 	return group
@@ -377,6 +384,10 @@ func getCmdPipelineConfigHelpDescription(*cobra.Command) string {
 				output.WithHighLightFormat("pipeline config") +
 				" will set deployment pipeline variables and secrets using the current environment. " +
 				"To configure for a new or an existing environment, provide a value for the '-e' flag."),
+			formatHelpNote(
+				output.WithHighLightFormat("pipeline config") +
+					" requires interactive input and cannot be run with --no-prompt, including when azd " +
+					"enables no-prompt mode automatically in CI/CD or AI-agent environments."),
 		})
 }
 

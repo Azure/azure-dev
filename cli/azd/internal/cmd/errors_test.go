@@ -2242,10 +2242,9 @@ func isErrorConstructorCall(call *ast.CallExpr) bool {
 		(ident.Name == "fmt" && sel.Sel.Name == "Errorf")
 }
 
-// Test_RunMethodsNoBareErrors walks all action Run() methods and flags inline bare errors
-// (errors.New or fmt.Errorf without %w) that would produce opaque errors_errorString in telemetry.
-// These errors reach MapError via the telemetry middleware and must use typed sentinels or wrap
-// an existing error with %w for proper classification.
+// Test_RunMethodsNoBareErrors checks inline error returns from action and middleware Run methods.
+// It reads source instead of executing commands so it can catch errors on paths that tests don't
+// exercise. It does not resolve variables or verify the wrapped error's telemetry classification.
 func Test_RunMethodsNoBareErrors(t *testing.T) {
 	t.Parallel()
 	azdRoot, err := filepath.Abs(filepath.Join("..", ".."))
@@ -2340,9 +2339,18 @@ func Test_RunMethodsNoBareErrors(t *testing.T) {
 	if len(violations) > 0 {
 		t.Errorf(
 			"Found %d NEW bare error(s) in action Run() methods that would produce opaque telemetry.\n"+
-				"Use typed sentinel errors (internal.ErrXxx) with %%w wrapping, or wrap with an existing\n"+
-				"typed error from a dependency. Bare errors.New()/fmt.Errorf() without %%w produce\n"+
-				"'internal.errors_errorString' in telemetry.\n\n"+
+				"For inline fmt.Errorf calls, this source check expects %%w in a single string literal.\n"+
+				"It does not evaluate concatenation or named format strings.\n"+
+				"Expected: fmt.Errorf(\"loading project: %%w\", err)\n"+
+				"For a longer message, pass the extra text as an argument instead of concatenating the format:\n\n"+
+				"    return nil, &internal.ErrorWithSuggestion{\n"+
+				"        Err: fmt.Errorf(\n"+
+				"            \"%%w: %%s\",\n"+
+				"            internal.ErrInteractiveRequired,\n"+
+				"            \"This command can't run with prompts disabled.\",\n"+
+				"        ),\n"+
+				"        Suggestion: \"Run the command in an interactive terminal.\",\n"+
+				"    }\n\n"+
 				"Violations:\n%s",
 			len(violations),
 			strings.Join(violations, "\n"),
@@ -2444,11 +2452,12 @@ func isBareErrorCall(call *ast.CallExpr) bool {
 	return false
 }
 
-// fmtErrorfHasWrap checks if a fmt.Errorf call contains %w in the format string.
+// fmtErrorfHasWrap reports whether a fmt.Errorf call has %w in a single literal format string.
 func fmtErrorfHasWrap(call *ast.CallExpr) bool {
 	if len(call.Args) == 0 {
 		return false
 	}
+
 	lit, ok := call.Args[0].(*ast.BasicLit)
 	if !ok {
 		return false

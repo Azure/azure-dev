@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -173,7 +175,10 @@ func TestExecuteWithAutoInstall_InvalidProjectYamlReturnsParseError(t *testing.T
 
 	projectDir := t.TempDir()
 	t.Chdir(projectDir)
-	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"),
+		[]byte(`{"extension":{"sources":{}}}`), 0o600))
 	t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
 	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
 	t.Setenv("NO_COLOR", "1")
@@ -194,6 +199,127 @@ func TestExecuteWithAutoInstall_InvalidProjectYamlReturnsParseError(t *testing.T
 	})
 
 	require.ErrorContains(t, result.Err, "unable to parse azure.yaml file")
+}
+
+func TestExecuteWithAutoInstall_RejectsNoPromptBeforePreparingPipeline(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"),
+		[]byte(`{"extension":{"sources":{}}}`), 0o600))
+
+	// Keep the test offline even if a regression reaches the update check.
+	t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+	t.Chdir(t.TempDir())
+
+	originalArgs := os.Args
+	t.Cleanup(func() { os.Args = originalArgs })
+	os.Args = []string{"azd", "pipeline", "config", "--no-prompt"}
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(container, t.Context())
+	_, recorder := recordCommandSpans(t)
+
+	// Use the CLI entry point to cover global flag parsing and root construction as well as execution.
+	result := ExecuteWithAutoInstall(t.Context(), container)
+
+	require.ErrorIs(t, result.Err, internal.ErrInteractiveRequired)
+	// Even a skipped update check returns a closed channel if the check was reached.
+	require.Nil(t, result.LatestVersion, "the update check must not be started")
+
+	// The rejection happens inside the telemetry middleware, so it's recorded on the command span. Errors with
+	// suggestions report the "error.suggestion" result code, with the underlying classification in error.type.
+	var errorTypes []string
+	for _, span := range recorder.Ended() {
+		if span.Name() != "cmd.pipeline.config" {
+			continue
+		}
+
+		require.Equal(t, "error.suggestion", span.Status().Description)
+		for _, attr := range span.Attributes() {
+			if attr.Key == fields.ErrType.Key {
+				errorTypes = append(errorTypes, attr.Value.AsString())
+			}
+		}
+	}
+	require.Equal(t, []string{"internal.interactive_required"}, errorTypes)
+}
+
+func TestExecuteWithAutoInstall_InteractiveRequirementBeforeExtensions(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		help      bool
+		flagError string
+	}{
+		{name: "missing project extension"},
+		{name: "help", args: []string{"--help"}, help: true},
+		{
+			name:      "invalid flag",
+			args:      []string{"--unknown-flag"},
+			flagError: "unknown flag: --unknown-flag",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configDir := t.TempDir()
+			t.Setenv("AZD_CONFIG_DIR", configDir)
+			require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"),
+				[]byte(`{"extension":{"sources":{}}}`), 0o600))
+			t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
+			t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+			t.Setenv("NO_COLOR", "1")
+			t.Chdir(t.TempDir())
+
+			// A missing required extension would fail first if auto-install ran before the guard.
+			require.NoError(t, project.Save(t.Context(), &project.ProjectConfig{
+				Name: "interactive-guard",
+				RequiredVersions: &project.RequiredVersions{
+					Extensions: map[string]*string{"test.missing": nil},
+				},
+			}, "azure.yaml"))
+
+			originalArgs := os.Args
+			t.Cleanup(func() { os.Args = originalArgs })
+			os.Args = append([]string{"azd", "pipeline", "config", "--no-prompt"}, tt.args...)
+			opts := &internal.GlobalCommandOptions{}
+			require.NoError(t, ParseGlobalFlags(os.Args[1:], opts))
+			container := ioc.NewNestedContainer(nil)
+			ioc.RegisterInstance(container, t.Context())
+			ioc.RegisterInstance(container, opts)
+
+			// Build the root here to capture Cobra's stdout and stderr separately.
+			root := NewRootCmd(false, nil, container)
+			var stdout, stderr bytes.Buffer
+			root.SetOut(&stdout)
+			root.SetErr(&stderr)
+			root.SetArgs(os.Args[1:])
+			result := executeWithAutoInstallCommand(t.Context(), container, root, opts, &ExecuteResult{})
+
+			// Help and flag errors take precedence over the interactive-mode error.
+			switch {
+			case tt.help:
+				require.NoError(t, result.Err)
+				require.Contains(t, stdout.String(), "requires interactive input")
+			case tt.flagError != "":
+				require.ErrorContains(t, result.Err, tt.flagError)
+				require.Contains(t, stderr.String(), tt.flagError)
+			default:
+				require.ErrorIs(t, result.Err, internal.ErrInteractiveRequired)
+				suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](result.Err)
+				require.True(t, ok)
+				require.Equal(t, "Run 'azd pipeline config --no-prompt=false' in an interactive terminal.",
+					suggestionErr.Suggestion)
+
+				// The UX middleware renders the error through the console, like any other command error.
+				require.Empty(t, stderr.String())
+				require.Equal(t, "\nERROR: interactive mode required: azd pipeline config can't run with prompts disabled. "+
+					"Prompts are disabled by --no-prompt, and automatically in CI/CD and AI-agent environments.\n\n"+
+					"Suggestion: Run 'azd pipeline config --no-prompt=false' in an interactive terminal.\n\n",
+					stdout.String())
+			}
+		})
+	}
 }
 
 // TestExecuteWithAutoInstallIntegration tests the integration between

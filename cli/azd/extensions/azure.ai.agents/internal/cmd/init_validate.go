@@ -155,4 +155,7 @@ func validateBundledHint(srcDir string, codeConfig *agent_yaml.CodeConfiguration
 	fmt.Printf("      --python-version %s --implementation cp --only-binary=:all: --upgrade\n\n", pythonVersion)
 	fmt.Printf("  If some packages lack pre-built wheels, you may need to remove --only-binary=:all:\n")
 	fmt.Printf("  and build on a matching Linux environment instead.\n\n")
+	fmt.Printf("  Optional: precompile bytecode with Python %s to speed up cold starts.\n", pythonVersion)
+	fmt.Printf("  Bundled deploys keep __pycache__ directories:\n\n")
+	fmt.Printf("    python -m compileall -q -f --invalidation-mode checked-hash .\n\n")
 }

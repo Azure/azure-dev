@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -415,7 +416,8 @@ func TestPrintSessionListJSON(t *testing.T) {
 		PaginationToken: &nextToken,
 	}
 
-	err := printSessionListJSON(result)
+	var out bytes.Buffer
+	err := printSessionListJSON(result, &out)
 	require.NoError(t, err)
 }
 
@@ -434,17 +436,60 @@ func TestPrintSessionListTable(t *testing.T) {
 		},
 	}
 
-	err := printSessionListTable(result)
+	var out bytes.Buffer
+	err := printSessionListTable(result, &out)
 	require.NoError(t, err)
+	assert.Contains(t, out.String(), "session-1")
 }
 
-func TestPrintSessionListTable_Empty(t *testing.T) {
-	result := &agent_api.SessionListResult{
-		Data: []agent_api.AgentSessionResource{},
-	}
+func TestPrintSessionList_Empty(t *testing.T) {
+	for _, format := range []string{"", "json", "table"} {
+		t.Run("format="+format, func(t *testing.T) {
+			for _, paginated := range []bool{false, true} {
+				t.Run(fmt.Sprintf("paginated=%t", paginated), func(t *testing.T) {
+					result := &agent_api.SessionListResult{Data: []agent_api.AgentSessionResource{}}
+					if paginated {
+						result.PaginationToken = new("next-page")
+					}
+					var out, errOut bytes.Buffer
+					require.NoError(t, printSessionList(result, format, &out, &errOut))
 
-	err := printSessionListTable(result)
-	require.NoError(t, err)
+					message := "No sessions found."
+					if paginated {
+						message = "No sessions found on this page."
+					}
+					if format == "table" {
+						assert.Contains(t, out.String(), message+"\n")
+						assert.NotContains(t, out.String(), "SESSION ID")
+						assert.Empty(t, errOut.String())
+						if paginated {
+							assert.Contains(t, out.String(), `--pagination-token "next-page"`)
+						}
+					} else {
+						expected, err := json.Marshal(result)
+						require.NoError(t, err)
+						assert.JSONEq(t, string(expected), out.String())
+						assert.Equal(t, message+"\n", errOut.String())
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestPrintSessionList_NonEmpty(t *testing.T) {
+	result := &agent_api.SessionListResult{
+		Data: []agent_api.AgentSessionResource{{AgentSessionID: "session-1"}},
+	}
+	for _, format := range []string{"json", "table"} {
+		t.Run(format, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			require.NoError(t, printSessionList(result, format, &out, &errOut))
+			assert.Contains(t, out.String(), "session-1")
+			assert.NotContains(t, out.String(), "No sessions found")
+			assert.Empty(t, errOut.String())
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------

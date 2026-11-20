@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -76,6 +77,9 @@ type sessionContext struct {
 	endpoint  string // project endpoint (for API calls)
 	agentName string
 	version   string // from AGENT_{SERVICE}_VERSION env var
+	direct    bool   // selected with --agent-endpoint or --project-endpoint
+	// sessionsListCommand is the direct-mode `sessions list` hint; empty in project mode.
+	sessionsListCommand string
 }
 
 // resolveSessionContext resolves the agent name, version, and project endpoint.
@@ -131,6 +135,64 @@ func resolveSessionContext(
 		agentName: name,
 		version:   version,
 	}, nil
+}
+
+// addDirectSessionFlags registers the read-only direct target flags on a sessions
+// subcommand and explains how --agent-name changes meaning in direct mode.
+func addDirectSessionFlags(cmd *cobra.Command, direct *directAgentTargetFlags) {
+	addDirectAgentTargetFlags(cmd, direct, "--agent-name")
+	cmd.Flags().Lookup("agent-name").Usage = "Agent name: the azure.yaml service name, " +
+		"or the deployed agent name with --project-endpoint"
+}
+
+// resolveDirectSessionContext returns a session context for an explicit remote
+// target, or nil when no direct target flag is set.
+func resolveDirectSessionContext(
+	cmd *cobra.Command, direct *directAgentTargetFlags, agentName string,
+) (*sessionContext, error) {
+	target, err := resolveDirectAgentTarget(
+		cmd, direct, agentName, cmd.Flags().Changed("agent-name"), "--agent-name")
+	if err != nil || target == nil {
+		return nil, err
+	}
+	return &sessionContext{
+		endpoint:            target.ProjectEndpoint,
+		agentName:           target.Name,
+		direct:              true,
+		sessionsListCommand: directSessionsListCommand(direct, target),
+	}, nil
+}
+
+// checkDirectSessionTarget rejects directly targeted agents whose kind has no
+// sessions, matching the files commands. Project mode keeps its existing behavior.
+func checkDirectSessionTarget(ctx context.Context, client remoteAgentReader, sc *sessionContext) error {
+	if !sc.direct {
+		return nil
+	}
+	return requireDirectSessionSupport(ctx, client,
+		&AgentContext{ProjectEndpoint: sc.endpoint, Name: sc.agentName}, featureSessions)
+}
+
+// classifyDirectSessionListError maps list failures for an explicitly targeted
+// agent. The sessions collection exists for every agent, so 404 means the agent.
+func classifyDirectSessionListError(err error, sc *sessionContext) error {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+		switch respErr.StatusCode {
+		case http.StatusNotFound:
+			return exterrors.Validation(
+				exterrors.CodeAgentNotFound,
+				fmt.Sprintf("no sessions collection found for agent %q in project %s", sc.agentName, sc.endpoint),
+				"check the deployed agent name and project endpoint; "+
+					"the name is the Foundry agent name, not an azure.yaml service name, "+
+					"and sessions are available only for hosted agents",
+			)
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return withServiceSuggestion(exterrors.ServiceFromAzure(err, exterrors.OpListSessions),
+				"confirm your account can access this agent's sessions; "+
+					"for agents with header-based isolation, pass --user-identity")
+		}
+	}
+	return exterrors.ServiceFromAzure(err, exterrors.OpListSessions)
 }
 
 // ---------------------------------------------------------------------------
@@ -292,6 +354,7 @@ func (a *SessionCreateAction) Run(ctx context.Context) error {
 
 type sessionShowFlags struct {
 	sessionFlags
+	direct directAgentTargetFlags
 }
 
 func newSessionShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -305,12 +368,19 @@ func newSessionShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Show details of a hosted agent session.
 
 Retrieves the current status, version indicator, and timestamps for the
-specified session.`,
+specified session.
+
+To inspect a session without an azd project, supply --agent-endpoint, or
+--project-endpoint with the deployed agent name in --agent-name.`,
 		Example: `  # Show session details
   azd ai agent sessions show my-session
 
   # Show in table format
-  azd ai agent sessions show my-session --output table`,
+  azd ai agent sessions show my-session --output table
+
+  # Show a session of a deployed agent without an azd project
+  azd ai agent sessions show my-session --agent-name support \
+    --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt
@@ -318,12 +388,23 @@ specified session.`,
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
+			sc, err := resolveDirectSessionContext(cmd, &flags.direct, flags.agentName)
+			if err != nil {
+				return err
+			}
+			if sc != nil {
+				if err := validateDirectSessionID(args[0], sc.sessionsListCommand); err != nil {
+					return err
+				}
+			}
+			action.direct = sc
 			action.sessionID = args[0]
 			return action.Run(ctx)
 		},
 	}
 
 	addSessionFlags(cmd, &flags.sessionFlags)
+	addDirectSessionFlags(cmd, &flags.direct)
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"json", "table"},
@@ -337,12 +418,18 @@ specified session.`,
 type SessionShowAction struct {
 	flags     *sessionShowFlags
 	sessionID string
+	// direct is the explicitly targeted remote agent, or nil for project mode.
+	direct *sessionContext
 }
 
 func (a *SessionShowAction) Run(ctx context.Context) error {
-	sc, err := resolveSessionContext(ctx, a.flags.agentName, a.flags.noPrompt)
-	if err != nil {
-		return err
+	sc := a.direct
+	if sc == nil {
+		var err error
+		sc, err = resolveSessionContext(ctx, a.flags.agentName, a.flags.noPrompt)
+		if err != nil {
+			return err
+		}
 	}
 
 	credential, err := newAgentCredential()
@@ -351,6 +438,9 @@ func (a *SessionShowAction) Run(ctx context.Context) error {
 	}
 
 	client := agent_api.NewAgentClient(sc.endpoint, credential)
+	if err := checkDirectSessionTarget(ctx, client, sc); err != nil {
+		return err
+	}
 
 	session, err := client.GetSession(
 		ctx,
@@ -360,6 +450,10 @@ func (a *SessionShowAction) Run(ctx context.Context) error {
 		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
+		if sc.direct {
+			return classifySessionFileError(
+				err, exterrors.OpGetSession, sc.agentName, a.sessionID, "", sc.sessionsListCommand)
+		}
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
 			respErr.StatusCode == http.StatusNotFound {
 			return exterrors.Validation(
@@ -612,6 +706,7 @@ func clearSavedSession(ctx context.Context, sc *sessionContext, sessionID string
 
 type sessionListFlags struct {
 	sessionFlags
+	direct          directAgentTargetFlags
 	limit           int32
 	paginationToken string
 }
@@ -626,7 +721,10 @@ func newSessionListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "List sessions for a hosted agent.",
 		Long: `List sessions for a hosted agent endpoint.
 
-Returns a paged list of sessions with their status, version, and timestamps.`,
+Returns a paged list of sessions with their status, version, and timestamps.
+
+To list sessions without an azd project, supply --agent-endpoint, or
+--project-endpoint with the deployed agent name in --agent-name.`,
 		Example: `  # List all sessions
   azd ai agent sessions list
 
@@ -634,19 +732,29 @@ Returns a paged list of sessions with their status, version, and timestamps.`,
   azd ai agent sessions list --limit 10
 
   # List in table format
-  azd ai agent sessions list --output table`,
+  azd ai agent sessions list --output table
+
+  # List sessions of a deployed agent without an azd project
+  azd ai agent sessions list --agent-name support \
+    --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt = extCtx.NoPrompt
 			flags.output = extCtx.OutputFormat
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
+			sc, err := resolveDirectSessionContext(cmd, &flags.direct, flags.agentName)
+			if err != nil {
+				return err
+			}
+			action.direct = sc
 			action.limitChanged = cmd.Flags().Changed("limit")
 			return action.Run(ctx)
 		},
 	}
 
 	addSessionFlags(cmd, &flags.sessionFlags)
+	addDirectSessionFlags(cmd, &flags.direct)
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"json", "table"},
@@ -668,12 +776,18 @@ Returns a paged list of sessions with their status, version, and timestamps.`,
 type SessionListAction struct {
 	flags        *sessionListFlags
 	limitChanged bool
+	// direct is the explicitly targeted remote agent, or nil for project mode.
+	direct *sessionContext
 }
 
 func (a *SessionListAction) Run(ctx context.Context) error {
-	sc, err := resolveSessionContext(ctx, a.flags.agentName, a.flags.noPrompt)
-	if err != nil {
-		return err
+	sc := a.direct
+	if sc == nil {
+		var err error
+		sc, err = resolveSessionContext(ctx, a.flags.agentName, a.flags.noPrompt)
+		if err != nil {
+			return err
+		}
 	}
 
 	credential, err := newAgentCredential()
@@ -682,6 +796,9 @@ func (a *SessionListAction) Run(ctx context.Context) error {
 	}
 
 	client := agent_api.NewAgentClient(sc.endpoint, credential)
+	if err := checkDirectSessionTarget(ctx, client, sc); err != nil {
+		return err
+	}
 
 	var limit *int32
 	if a.limitChanged {
@@ -702,12 +819,15 @@ func (a *SessionListAction) Run(ctx context.Context) error {
 		a.flags.sessionRequestOptions(),
 	)
 	if err != nil {
+		if sc.direct {
+			return classifyDirectSessionListError(err, sc)
+		}
 		return exterrors.ServiceFromAzure(
 			err, exterrors.OpListSessions,
 		)
 	}
 
-	return printSessionList(result, a.flags.output)
+	return printSessionList(result, a.flags.output, os.Stdout, os.Stderr)
 }
 
 // ---------------------------------------------------------------------------
@@ -761,37 +881,53 @@ func printSessionTable(session *agent_api.AgentSessionResource) error {
 }
 
 func printSessionList(
-	result *agent_api.SessionListResult, format string,
+	result *agent_api.SessionListResult, format string, out, errOut io.Writer,
 ) error {
+	if len(result.Data) == 0 {
+		message := "No sessions found."
+		if result.PaginationToken != nil && *result.PaginationToken != "" {
+			message = "No sessions found on this page."
+		}
+		messageOut := errOut
+		if format == "table" {
+			messageOut = out
+		}
+		if _, err := fmt.Fprintln(messageOut, message); err != nil {
+			return err
+		}
+	}
+
 	switch format {
 	case "table":
-		return printSessionListTable(result)
+		return printSessionListTable(result, out)
 	default:
-		return printSessionListJSON(result)
+		return printSessionListJSON(result, out)
 	}
 }
 
-func printSessionListJSON(result *agent_api.SessionListResult) error {
+func printSessionListJSON(result *agent_api.SessionListResult, out io.Writer) error {
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return fmt.Errorf(
 			"failed to marshal session list to JSON: %w", err,
 		)
 	}
-	fmt.Println(string(data))
-	return nil
+	_, err = fmt.Fprintln(out, string(data))
+	return err
 }
 
-func printSessionListTable(result *agent_api.SessionListResult) error {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(
-		w,
-		"SESSION ID\tSTATUS\tVERSION\tCREATED\tLAST ACCESSED\tEXPIRES",
-	)
-	fmt.Fprintln(
-		w,
-		"----------\t------\t-------\t-------\t-------------\t-------",
-	)
+func printSessionListTable(result *agent_api.SessionListResult, out io.Writer) error {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	if len(result.Data) > 0 {
+		fmt.Fprintln(
+			w,
+			"SESSION ID\tSTATUS\tVERSION\tCREATED\tLAST ACCESSED\tEXPIRES",
+		)
+		fmt.Fprintln(
+			w,
+			"----------\t------\t-------\t-------\t-------------\t-------",
+		)
+	}
 
 	for _, s := range result.Data {
 		fmt.Fprintf(
@@ -810,11 +946,13 @@ func printSessionListTable(result *agent_api.SessionListResult) error {
 	}
 
 	if result.PaginationToken != nil && *result.PaginationToken != "" {
-		fmt.Printf(
+		_, err := fmt.Fprintf(
+			out,
 			"\nMore results available. "+
 				"Use --pagination-token %q to fetch the next page.\n",
 			*result.PaginationToken,
 		)
+		return err
 	}
 
 	return nil

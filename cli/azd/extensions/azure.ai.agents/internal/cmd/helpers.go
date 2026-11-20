@@ -565,6 +565,17 @@ type AgentServiceInfo struct {
 	ServiceDir string
 }
 
+func resolveServiceAgentContext(ctx context.Context, info *AgentServiceInfo) (*AgentContext, error) {
+	if info.ProjectEndpoint != "" {
+		endpoint, _, err := validateProjectEndpoint(info.ProjectEndpoint)
+		if err != nil {
+			return nil, err
+		}
+		return &AgentContext{ProjectEndpoint: endpoint, Name: info.AgentName, Version: info.Version}, nil
+	}
+	return newAgentContext(ctx, "", "", info.AgentName, info.Version)
+}
+
 func withDeployedProtocolEndpoints() agentServiceResolutionOption {
 	return func(options *agentServiceResolutionOptions) {
 		options.includeProtocolEndpoints = true

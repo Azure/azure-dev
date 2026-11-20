@@ -3,12 +3,17 @@ Show details of a hosted agent session.
 Retrieves the current status, version indicator, and timestamps for the
 specified session.
 
+To inspect a session without an azd project, supply --agent-endpoint, or
+--project-endpoint with the deployed agent name in --agent-name.
+
 Usage
   azd ai agent sessions show <session-id> [flags]
 
 Flags
-  -n, --agent-name string    : Agent name (matches azure.yaml service name; auto-detected when only one exists)
-      --user-identity string : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+      --agent-endpoint string   : Full protocol endpoint URL of a deployed agent (no azd project required)
+  -n, --agent-name string       : Agent name: the azure.yaml service name, or the deployed agent name with --project-endpoint
+      --project-endpoint string : Foundry project endpoint URL; requires the deployed agent name via --agent-name (no azd project required)
+      --user-identity string    : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
 
 Global Flags
   -C, --cwd string         : Sets the current working directory
@@ -24,3 +29,7 @@ Examples
 
   Show in table format
     azd ai agent sessions show my-session --output table
+
+  Show a session of a deployed agent without an azd project
+    azd ai agent sessions show my-session --agent-name support \
+      --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>

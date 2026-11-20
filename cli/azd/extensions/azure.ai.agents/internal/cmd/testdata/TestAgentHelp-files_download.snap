@@ -4,17 +4,22 @@ Downloads a file from the specified remote path in the session's
 filesystem and saves it locally. If --target-path is not provided,
 the local path defaults to the basename of the remote file.
 
-Agent details are automatically resolved from the azd environment.
+Agent details are automatically resolved from the azd environment. To read from
+a deployed hosted agent without an azd project, supply --agent-endpoint, or
+--project-endpoint with the deployed agent name in --agent-name, together with
+--session-id. Direct mode does not read or save local session state.
 
 Usage
   azd ai agent files download [file] [flags]
 
 Flags
-  -n, --agent-name string    : Agent name (matches azure.yaml service name; auto-detected when only one exists)
-  -f, --file string          : Remote file path to download
-  -s, --session-id string    : Session ID override (defaults to last invoke session)
-  -t, --target-path string   : Local destination path (defaults to remote filename)
-      --user-identity string : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+      --agent-endpoint string   : Full protocol endpoint URL of a deployed agent (no azd project required)
+  -n, --agent-name string       : Agent name: the azure.yaml service name, or the deployed agent name with --project-endpoint
+  -f, --file string             : Remote file path to download
+      --project-endpoint string : Foundry project endpoint URL; requires the deployed agent name via --agent-name (no azd project required)
+  -s, --session-id string       : Session ID override (defaults to last invoke session; required with --agent-endpoint or --project-endpoint)
+  -t, --target-path string      : Local destination path (defaults to remote filename)
+      --user-identity string    : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
 
 Global Flags
   -C, --cwd string         : Sets the current working directory
@@ -33,3 +38,7 @@ Examples
 
   Download with flags
     azd ai agent files download --file /data/output.csv --session-id <session-id>
+
+  Download from a deployed agent without an azd project
+    azd ai agent files download /data/output.csv --agent-name support --session-id <session-id> \
+      --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>

@@ -3,7 +3,10 @@ List files in a hosted agent session.
 Lists files and directories at the specified path in the session's filesystem.
 When no path is provided, lists the root directory.
 
-Agent details are automatically resolved from the azd environment.
+Agent details are automatically resolved from the azd environment. To read from
+a deployed hosted agent without an azd project, supply --agent-endpoint, or
+--project-endpoint with the deployed agent name in --agent-name, together with
+--session-id. Direct mode does not read or save local session state.
 
 Usage
   azd ai agent files list [remote-path] [flags]
@@ -12,9 +15,11 @@ Aliases
   list, ls
 
 Flags
-  -n, --agent-name string    : Agent name (matches azure.yaml service name; auto-detected when only one exists)
-  -s, --session-id string    : Session ID override (defaults to last invoke session)
-      --user-identity string : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+      --agent-endpoint string   : Full protocol endpoint URL of a deployed agent (no azd project required)
+  -n, --agent-name string       : Agent name: the azure.yaml service name, or the deployed agent name with --project-endpoint
+      --project-endpoint string : Foundry project endpoint URL; requires the deployed agent name via --agent-name (no azd project required)
+  -s, --session-id string       : Session ID override (defaults to last invoke session; required with --agent-endpoint or --project-endpoint)
+      --user-identity string    : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
 
 Global Flags
   -C, --cwd string         : Sets the current working directory
@@ -36,3 +41,11 @@ Examples
 
   List with explicit session
     azd ai agent files list --session-id <session-id>
+
+  List files of a deployed agent without an azd project
+    azd ai agent files list /data --agent-name support --session-id <session-id> --no-prompt \
+      --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>
+
+  List files using the agent's protocol endpoint URL
+    azd ai agent files list /data --session-id <session-id> --agent-endpoint \
+      "https://<account>.services.ai.azure.com/api/projects/<project>/agents/support/endpoint/protocols/invocations"

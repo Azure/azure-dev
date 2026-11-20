@@ -47,6 +47,7 @@ const (
 // Error codes for malformed locally saved protocol resource state.
 const (
 	CodeInvalidResponseState   = "invalid_response_state"
+	CodeInvalidServiceResponse = "invalid_service_response"
 	CodeInvalidInvocationState = "invalid_invocation_state"
 )
 
@@ -132,6 +133,17 @@ const (
 // Error codes for session errors.
 const (
 	CodeSessionNotFound = "session_not_found"
+)
+
+// Error codes for agent trace errors.
+const (
+	CodeTracingNotConfigured        = "tracing_not_configured"
+	CodeAmbiguousTracingConnection  = "ambiguous_tracing_connection"
+	CodeTelemetryResourceNotFound   = "telemetry_resource_not_found"
+	CodeTraceNotFound               = "trace_not_found"
+	CodeTraceAgentMismatch          = "trace_agent_mismatch"
+	CodeInvalidTelemetryQueryResult = "invalid_telemetry_query_result"
+	CodeUnsupportedLogSource        = "unsupported_log_source"
 )
 
 // Error codes for agent delete errors.
@@ -230,6 +242,11 @@ const (
 	OpCreateConversation      = "create_conversation"
 	OpCreateTelephonyBinding  = "create_telephony_binding"
 	OpGetAgent                = "get_agent"
+	OpListAgents              = "list_agents"
+	OpListAgentVersions       = "list_agent_versions"
+	OpListConnections         = "list_connections"
+	OpQueryTraces             = "query_traces"
+	OpQueryLogs               = "query_logs"
 	OpGetTelephonyBinding     = "get_telephony_binding"
 	OpUpdateAgent             = "update_agent"
 	OpGetActivityBot          = "get_activity_bot"
@@ -243,6 +260,8 @@ const (
 	OpDeleteSession           = "delete_session"
 	OpStopSession             = "stop_session"
 	OpListSessions            = "list_sessions"
+	OpListSessionFiles        = "list_session_files"
+	OpDownloadSessionFile     = "download_session_file"
 	OpCreateToolboxVersion    = "create_toolbox_version"
 	OpGetToolbox              = "get_toolbox"
 	OpEnsureToolboxConnection = "ensure_toolbox_connection"

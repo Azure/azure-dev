@@ -18,7 +18,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -164,10 +165,10 @@ var mockSubDeploymentOperationsEmpty string = `
 }
 `
 
-func createDeploymentOperationResponse(t *testing.T, operations ...*armresources.DeploymentOperation) string {
+func createDeploymentOperationResponse(t *testing.T, operations ...*armdeployments.DeploymentOperation) string {
 	t.Helper()
 
-	response := armresources.DeploymentOperationsListResult{
+	response := armdeployments.DeploymentOperationsListResult{
 		Value: operations,
 	}
 
@@ -182,17 +183,17 @@ func createDeploymentOperationResponse(t *testing.T, operations ...*armresources
 func createNestedDeploymentOperation(
 	id string,
 	deploymentName string,
-	state armresources.ProvisioningState,
-) *armresources.DeploymentOperation {
+	state armdeployments.ProvisioningState,
+) *armdeployments.DeploymentOperation {
 	resourceID := fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name/providers/"+
 		"Microsoft.Resources/deployments/%s", deploymentName)
 
-	return &armresources.DeploymentOperation{
+	return &armdeployments.DeploymentOperation{
 		ID: new(id),
-		Properties: &armresources.DeploymentOperationProperties{
-			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperationCreate),
+		Properties: &armdeployments.DeploymentOperationProperties{
+			ProvisioningOperation: to.Ptr(armdeployments.ProvisioningOperationCreate),
 			ProvisioningState:     new(string(state)),
-			TargetResource: &armresources.TargetResource{
+			TargetResource: &armdeployments.TargetResource{
 				ResourceType: to.Ptr(string(azapi.AzureResourceTypeDeployment)),
 				ID:           &resourceID,
 				ResourceName: new(deploymentName),
@@ -202,19 +203,19 @@ func createNestedDeploymentOperation(
 	}
 }
 
-func createLeafOperation(id string, resourceType string, resourceName string) *armresources.DeploymentOperation {
+func createLeafOperation(id string, resourceType string, resourceName string) *armdeployments.DeploymentOperation {
 	resourceID := fmt.Sprintf(
 		"/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name/providers/%s/%s",
 		resourceType,
 		resourceName,
 	)
 
-	return &armresources.DeploymentOperation{
+	return &armdeployments.DeploymentOperation{
 		ID: new(id),
-		Properties: &armresources.DeploymentOperationProperties{
-			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperationCreate),
-			ProvisioningState:     to.Ptr(string(armresources.ProvisioningStateSucceeded)),
-			TargetResource: &armresources.TargetResource{
+		Properties: &armdeployments.DeploymentOperationProperties{
+			ProvisioningOperation: to.Ptr(armdeployments.ProvisioningOperationCreate),
+			ProvisioningState:     to.Ptr(string(armdeployments.ProvisioningStateSucceeded)),
+			TargetResource: &armdeployments.TargetResource{
 				ResourceType: new(resourceType),
 				ID:           &resourceID,
 				ResourceName: new(resourceName),
@@ -227,7 +228,7 @@ func createLeafOperation(id string, resourceType string, resourceName string) *a
 func mockDeploymentOperationsByName(
 	t *testing.T,
 	m mocks.MockContext,
-	operationsByName map[string][]*armresources.DeploymentOperation,
+	operationsByName map[string][]*armdeployments.DeploymentOperation,
 ) map[string]int {
 	t.Helper()
 
@@ -250,7 +251,7 @@ func mockDeploymentOperationsByName(
 
 		operations, exists := operationsByName[deploymentName]
 		if !exists {
-			operations = []*armresources.DeploymentOperation{}
+			operations = []*armdeployments.DeploymentOperation{}
 		}
 
 		body := createDeploymentOperationResponse(t, operations...)
@@ -270,7 +271,7 @@ func mockDeploymentOperationsByName(
 func mockDeploymentOperationsByNameWithGate(
 	t *testing.T,
 	m mocks.MockContext,
-	operationsByName map[string][]*armresources.DeploymentOperation,
+	operationsByName map[string][]*armdeployments.DeploymentOperation,
 	release <-chan struct{},
 ) {
 	t.Helper()
@@ -293,7 +294,7 @@ func mockDeploymentOperationsByNameWithGate(
 
 		operations, exists := operationsByName[deploymentName]
 		if !exists {
-			operations = []*armresources.DeploymentOperation{}
+			operations = []*armdeployments.DeploymentOperation{}
 		}
 
 		body := createDeploymentOperationResponse(t, operations...)
@@ -358,7 +359,7 @@ func TestWalkDeploymentOperationsSuccess(t *testing.T) {
 	arm := NewAzureResourceManager(resourceService, deploymentService)
 	operationCount := 0
 	err := arm.WalkDeploymentOperations(*mockContext.Context, deployment,
-		func(ctx context.Context, operation *armresources.DeploymentOperation) error {
+		func(ctx context.Context, operation *armdeployments.DeploymentOperation) error {
 			operationCount++
 			return nil
 		})
@@ -418,7 +419,7 @@ func TestWalkDeploymentOperationsSkipExpand(t *testing.T) {
 
 	arm := NewAzureResourceManager(resourceService, deploymentService)
 	err := arm.WalkDeploymentOperations(*mockContext.Context, deployment,
-		func(ctx context.Context, operation *armresources.DeploymentOperation) error {
+		func(ctx context.Context, operation *armdeployments.DeploymentOperation) error {
 			if operation.ID != nil && *operation.ID == "deployment-id" {
 				return SkipExpand()
 			}
@@ -433,21 +434,21 @@ func TestWalkDeploymentOperationsSkipExpand(t *testing.T) {
 func TestWalkDeploymentOperationsTreeShapes(t *testing.T) {
 	tests := []struct {
 		name                string
-		operationsByName    map[string][]*armresources.DeploymentOperation
+		operationsByName    map[string][]*armdeployments.DeploymentOperation
 		expectedNestedCalls []string
 	}{
 		{
 			name: "deep-chain",
-			operationsByName: map[string][]*armresources.DeploymentOperation{
+			operationsByName: map[string][]*armdeployments.DeploymentOperation{
 				"deployment_name": {
-					createNestedDeploymentOperation("nested-1", "dep1", armresources.ProvisioningStateRunning),
+					createNestedDeploymentOperation("nested-1", "dep1", armdeployments.ProvisioningStateRunning),
 				},
 				"dep1": {
-					createNestedDeploymentOperation("nested-2", "dep2", armresources.ProvisioningStateRunning),
+					createNestedDeploymentOperation("nested-2", "dep2", armdeployments.ProvisioningStateRunning),
 					createLeafOperation("leaf-dep1", "Microsoft.Storage/storageAccounts", "storage-dep1"),
 				},
 				"dep2": {
-					createNestedDeploymentOperation("nested-3", "dep3", armresources.ProvisioningStateRunning),
+					createNestedDeploymentOperation("nested-3", "dep3", armdeployments.ProvisioningStateRunning),
 				},
 				"dep3": {
 					createLeafOperation("leaf-dep3", "Microsoft.KeyVault/vaults", "vault-dep3"),
@@ -457,14 +458,14 @@ func TestWalkDeploymentOperationsTreeShapes(t *testing.T) {
 		},
 		{
 			name: "mixed-tree",
-			operationsByName: map[string][]*armresources.DeploymentOperation{
+			operationsByName: map[string][]*armdeployments.DeploymentOperation{
 				"deployment_name": {
-					createNestedDeploymentOperation("nested-a", "depa", armresources.ProvisioningStateRunning),
-					createNestedDeploymentOperation("nested-b", "depb", armresources.ProvisioningStateRunning),
+					createNestedDeploymentOperation("nested-a", "depa", armdeployments.ProvisioningStateRunning),
+					createNestedDeploymentOperation("nested-b", "depb", armdeployments.ProvisioningStateRunning),
 					createLeafOperation("root-leaf", "Microsoft.Web/sites", "root-web"),
 				},
 				"depa": {
-					createNestedDeploymentOperation("nested-a1", "depa1", armresources.ProvisioningStateRunning),
+					createNestedDeploymentOperation("nested-a1", "depa1", armdeployments.ProvisioningStateRunning),
 					createLeafOperation("depa-leaf", "Microsoft.Storage/storageAccounts", "depa-storage"),
 				},
 				"depa1": {
@@ -478,8 +479,8 @@ func TestWalkDeploymentOperationsTreeShapes(t *testing.T) {
 		},
 		{
 			name: "wide-fan-out",
-			operationsByName: func() map[string][]*armresources.DeploymentOperation {
-				operationsByName := map[string][]*armresources.DeploymentOperation{
+			operationsByName: func() map[string][]*armdeployments.DeploymentOperation {
+				operationsByName := map[string][]*armdeployments.DeploymentOperation{
 					"deployment_name": {},
 				}
 
@@ -490,10 +491,10 @@ func TestWalkDeploymentOperationsTreeShapes(t *testing.T) {
 						createNestedDeploymentOperation(
 							fmt.Sprintf("nested-%s", name),
 							name,
-							armresources.ProvisioningStateRunning,
+							armdeployments.ProvisioningStateRunning,
 						),
 					)
-					operationsByName[name] = []*armresources.DeploymentOperation{
+					operationsByName[name] = []*armdeployments.DeploymentOperation{
 						createLeafOperation(
 							fmt.Sprintf("leaf-%s", name),
 							"Microsoft.Web/sites",
@@ -527,7 +528,7 @@ func TestWalkDeploymentOperationsTreeShapes(t *testing.T) {
 			arm := NewAzureResourceManager(resourceService, deploymentService)
 			walkCount := 0
 			err := arm.WalkDeploymentOperations(*mockContext.Context, deployment,
-				func(ctx context.Context, operation *armresources.DeploymentOperation) error {
+				func(ctx context.Context, operation *armdeployments.DeploymentOperation) error {
 					walkCount++
 					return nil
 				})
@@ -559,7 +560,7 @@ func TestWalkDeploymentOperationsContextCancelledDuringTraversal(t *testing.T) {
 		)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		body := createDeploymentOperationResponse(t,
-			createNestedDeploymentOperation("nested-cancel", "dep-cancel", armresources.ProvisioningStateRunning),
+			createNestedDeploymentOperation("nested-cancel", "dep-cancel", armdeployments.ProvisioningStateRunning),
 		)
 
 		return &http.Response{
@@ -605,7 +606,7 @@ func TestWalkDeploymentOperationsContextCancelledDuringTraversal(t *testing.T) {
 
 	go func() {
 		err := arm.WalkDeploymentOperations(ctx, deployment,
-			func(ctx context.Context, operation *armresources.DeploymentOperation) error {
+			func(ctx context.Context, operation *armdeployments.DeploymentOperation) error {
 				return nil
 			})
 		resultCh <- err
@@ -637,10 +638,10 @@ func TestWalkDeploymentOperationsCallbackErrorNoDeadlock(t *testing.T) {
 
 	// Root has two nested deployments so both workers will be busy.
 	// Each nested deployment returns a leaf operation, giving the callback a chance to error.
-	operationsByName := map[string][]*armresources.DeploymentOperation{
+	operationsByName := map[string][]*armdeployments.DeploymentOperation{
 		"deployment_name": {
-			createNestedDeploymentOperation("nested-a", "dep-a", armresources.ProvisioningStateRunning),
-			createNestedDeploymentOperation("nested-b", "dep-b", armresources.ProvisioningStateRunning),
+			createNestedDeploymentOperation("nested-a", "dep-a", armdeployments.ProvisioningStateRunning),
+			createNestedDeploymentOperation("nested-b", "dep-b", armdeployments.ProvisioningStateRunning),
 		},
 		"dep-a": {
 			createLeafOperation("leaf-a", "Microsoft.Web/sites", "site-a"),
@@ -661,7 +662,7 @@ func TestWalkDeploymentOperationsCallbackErrorNoDeadlock(t *testing.T) {
 	go func() {
 		callCount := 0
 		err := arm.WalkDeploymentOperations(*mockContext.Context, deployment,
-			func(ctx context.Context, operation *armresources.DeploymentOperation) error {
+			func(ctx context.Context, operation *armdeployments.DeploymentOperation) error {
 				// Error on the first nested leaf operation received, while the other worker
 				// may be trying to send on the results channel.
 				if operation.Properties != nil && operation.Properties.TargetResource != nil &&
@@ -741,7 +742,7 @@ func TestWalkDeploymentOperationsFail(t *testing.T) {
 
 	arm := NewAzureResourceManager(resourceService, deploymentService)
 	err := arm.WalkDeploymentOperations(*mockContext.Context, deployment,
-		func(ctx context.Context, operation *armresources.DeploymentOperation) error {
+		func(ctx context.Context, operation *armdeployments.DeploymentOperation) error {
 			return nil
 		})
 	require.NotNil(t, err)
@@ -798,7 +799,7 @@ func TestWalkDeploymentOperationsNoResourceGroup(t *testing.T) {
 
 	arm := NewAzureResourceManager(resourceService, deploymentService)
 	err := arm.WalkDeploymentOperations(*mockContext.Context, deployment,
-		func(ctx context.Context, operation *armresources.DeploymentOperation) error {
+		func(ctx context.Context, operation *armdeployments.DeploymentOperation) error {
 			return nil
 		})
 	require.NoError(t, err)
@@ -872,7 +873,7 @@ func TestWalkDeploymentOperationsWithNestedDeployments(t *testing.T) {
 	arm := NewAzureResourceManager(resourceService, deploymentService)
 	operationCount := 0
 	err := arm.WalkDeploymentOperations(*mockContext.Context, deployment,
-		func(ctx context.Context, operation *armresources.DeploymentOperation) error {
+		func(ctx context.Context, operation *armdeployments.DeploymentOperation) error {
 			operationCount++
 			return nil
 		})

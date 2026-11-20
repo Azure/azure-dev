@@ -15,7 +15,8 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
+	resources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/stretchr/testify/require"
@@ -27,7 +28,7 @@ const linkedID = "/subscriptions/sub/resourceGroups/existing/providers/Microsoft
 type fakeBackend struct {
 	deployment    armresources.DeploymentExtended
 	getErr        error
-	groupValue    armresources.ResourceGroup
+	groupValue    resources.ResourceGroup
 	groupErr      error
 	contents      []string
 	changes       []*armresources.WhatIfChange
@@ -70,7 +71,7 @@ func (f *fakeBackend) preview(
 	return f.changes, f.previewErr
 }
 
-func (f *fakeBackend) group(context.Context, string) (armresources.ResourceGroup, error) {
+func (f *fakeBackend) group(context.Context, string) (resources.ResourceGroup, error) {
 	return f.groupValue, f.groupErr
 }
 
@@ -382,7 +383,7 @@ func TestDeployRefusesUntaggedGroupWithMatchingEnvironment(t *testing.T) {
 	azure := &fakeBackend{
 		deployment: deployedFixture(),
 		changes:    []*armresources.WhatIfChange{{ResourceID: new(groupID), ChangeType: new(armresources.ChangeTypeModify)}},
-		groupValue: armresources.ResourceGroup{Tags: map[string]*string{"azd-env-name": new("dev")}},
+		groupValue: resources.ResourceGroup{Tags: map[string]*string{"azd-env-name": new("dev")}},
 	}
 	p := readyProvider(t, azure)
 	_, err := p.Deploy(t.Context(), nil)

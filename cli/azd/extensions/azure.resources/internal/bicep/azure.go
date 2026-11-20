@@ -16,7 +16,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
+	resources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
@@ -29,7 +30,7 @@ type backend interface {
 	preview(
 		context.Context, string, armresources.DeploymentWhatIf, grpcbroker.ProgressFunc,
 	) ([]*armresources.WhatIfChange, error)
-	group(context.Context, string) (armresources.ResourceGroup, error)
+	group(context.Context, string) (resources.ResourceGroup, error)
 	deleteGroup(context.Context, string, grpcbroker.ProgressFunc) error
 	deleteDeployment(context.Context, string, grpcbroker.ProgressFunc) error
 }
@@ -38,7 +39,7 @@ type azureBackend struct {
 	subscription string
 	deployments  *armresources.DeploymentsClient
 	operations   *armresources.DeploymentOperationsClient
-	groups       *armresources.ResourceGroupsClient
+	groups       *resources.ResourceGroupsClient
 }
 
 func newBackend(subscription string, credential azcore.TokenCredential, options *arm.ClientOptions) (backend, error) {
@@ -46,7 +47,7 @@ func newBackend(subscription string, credential azcore.TokenCredential, options 
 	if err != nil {
 		return nil, fmt.Errorf("creating Azure deployments client: %w", err)
 	}
-	groups, err := armresources.NewResourceGroupsClient(subscription, credential, options)
+	groups, err := resources.NewResourceGroupsClient(subscription, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Azure resource groups client: %w", err)
 	}
@@ -154,7 +155,7 @@ func (a *azureBackend) preview(
 	return result.Properties.Changes, nil
 }
 
-func (a *azureBackend) group(ctx context.Context, name string) (armresources.ResourceGroup, error) {
+func (a *azureBackend) group(ctx context.Context, name string) (resources.ResourceGroup, error) {
 	result, err := a.groups.Get(ctx, name, nil)
 	return result.ResourceGroup, err
 }
@@ -262,10 +263,14 @@ func (p *Provider) request(ctx context.Context) (armresources.Deployment, error)
 	if groups == 0 {
 		return armresources.Deployment{}, errors.New("generated template does not declare a resource group")
 	}
+	parameters, err := deploymentParameters(p.params)
+	if err != nil {
+		return armresources.Deployment{}, err
+	}
 	return armresources.Deployment{
 		Location: new(p.scope.location),
 		Properties: &armresources.DeploymentProperties{
-			Mode: new(armresources.DeploymentModeIncremental), Template: template, Parameters: p.params,
+			Mode: new(armresources.DeploymentModeIncremental), Template: template, Parameters: parameters,
 		},
 		Tags: map[string]*string{
 			ownerTag: new(p.name), "azd-project-name": new(p.projectName),

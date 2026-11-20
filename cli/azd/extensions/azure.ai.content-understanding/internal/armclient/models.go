@@ -19,10 +19,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v3"
 )
 
-// Management uses the official Go management SDK (2025-06-01), not a custom LRO protocol.
+// Management uses the official Go management SDK (2025-09-01), not a custom LRO protocol.
 type Management struct {
 	accounts    *armcognitiveservices.AccountsClient
 	deployments *armcognitiveservices.DeploymentsClient

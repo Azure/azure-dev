@@ -116,8 +116,6 @@ type FoundryProvisioningProvider struct {
 	acrDeferPromptedEnv       bool
 	acrPromptedEnv            map[string]string
 	acrRequest                func(context.Context, string, string, string, any) error
-	preflightReport           strings.Builder
-	reportProvisioned         func(string)
 	modelPolicyCheck          func(
 		ctx context.Context,
 		cred azcore.TokenCredential,
@@ -147,11 +145,10 @@ func readProjectFile(projectRoot string) ([]byte, string, error) {
 
 // NewFoundryProvisioningProvider constructs the provider with a live
 // AzdClient. The host calls Initialize before any other method.
-func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient, report func(string)) azdext.ProvisioningProvider {
+func NewFoundryProvisioningProvider(azdClient *azdext.AzdClient) azdext.ProvisioningProvider {
 	return &FoundryProvisioningProvider{
-		azdClient:         azdClient,
-		reportProvisioned: report,
-		modelPolicyCheck:  CheckProjectModelDeploymentsPolicy,
+		azdClient:        azdClient,
+		modelPolicyCheck: CheckProjectModelDeploymentsPolicy,
 	}
 }
 
@@ -1533,7 +1530,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err := p.validateACRRemoteBuild(ctx, src); err != nil {
 		return nil, err
 	}
-	if err := p.prepareBYO(ctx, src, progress); err != nil {
+	if err := p.prepareBYO(ctx, src); err != nil {
 		return nil, err
 	}
 	if err := p.recoverDeployedACRBinding(ctx); err != nil {
@@ -1641,9 +1638,6 @@ func (p *FoundryProvisioningProvider) Deploy(
 	}
 	if err := p.verifyDeployedACRAccess(ctx, src); err != nil {
 		return nil, err
-	}
-	if p.reportProvisioned != nil && p.preflightReport.Len() > 0 {
-		p.reportProvisioned(p.preflightReport.String())
 	}
 	progress("Foundry deployment complete")
 	return &azdext.ProvisioningDeployResult{
@@ -1899,7 +1893,7 @@ func (p *FoundryProvisioningProvider) Preview(
 	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {
 		return nil, err
 	}
-	if err := p.prepareBYO(ctx, src, progress); err != nil {
+	if err := p.prepareBYO(ctx, src); err != nil {
 		return nil, err
 	}
 	if p.greenfieldAcrMode == "reuse-connect" {

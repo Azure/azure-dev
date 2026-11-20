@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"azure.ai.projects/internal/onboarding"
 	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -211,6 +212,8 @@ func TestBYOSuppliedResourcesDeployIndependently(t *testing.T) {
 						assert.Equal(t, expected, result.Deployment.Outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"].Value)
 						assert.Equal(t, 1, fake.base.writes)
 					}
+					assert.NotContains(t, progress.String(), "preflight")
+					assert.NotContains(t, progress.String(), "resource-refs")
 					assert.Equal(t, "2.0.0.0", fake.base.template["contentVersion"])
 					if registry {
 						assert.Equal(t, map[string]any{"value": offlineKubeletObjectID},
@@ -300,6 +303,8 @@ func TestBYOSuppliedPreflightBlocksDeployAndWhatIfBeforeMutations(t *testing.T) 
 					_, err = p.Deploy(t.Context(), func(string) {})
 				}
 				require.ErrorContains(t, err, "preflight blocked")
+				assert.NotContains(t, err.Error(), "BYO-AKS preflight report:")
+				assert.NotContains(t, err.Error(), "resource-refs PASS")
 				if failure == "Automatic cluster" || failure == "missing cluster SKU name" {
 					assert.Contains(t, err.Error(), "aks-type")
 					assert.Contains(t, err.Error(), offlineClusterID)
@@ -388,7 +393,7 @@ func TestBYOConditionalGrantRetainsExitDiagnostic(t *testing.T) {
 	}
 }
 
-func TestBYOReadFailureCauseRetainsExitDiagnostic(t *testing.T) {
+func TestBYOReadFailuresPreserveCausesWithoutReport(t *testing.T) {
 	//nolint:gosec // G101: synthetic URL credentials exercise final error redaction.
 	const endpoint = "https://cause-user:cause-password@example.test/resource?sig=cause-secret#cause-fragment"
 	for _, failure := range []string{"transport", "authentication", "decoding"} {
@@ -396,12 +401,6 @@ func TestBYOReadFailureCauseRetainsExitDiagnostic(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/preview=%t", failure, preview), func(t *testing.T) {
 				p, fake, _ := suppliedProvider(t, 7)
 				cause := errors.New("connection reset while reading " + endpoint)
-				expected := "connection reset while reading https://example.test/resource"
-				if failure == "authentication" {
-					expected = "authentication challenge failed for https://example.test/resource"
-				} else if failure == "decoding" {
-					expected = "cannot unmarshal"
-				}
 				p.armClientOptions.Transport = acrTestTransport(func(request *http.Request) (*http.Response, error) {
 					if request.Method != http.MethodGet || request.URL.Path != offlineClusterID {
 						return fake.Do(request)
@@ -428,13 +427,18 @@ func TestBYOReadFailureCauseRetainsExitDiagnostic(t *testing.T) {
 					_, err = p.Deploy(t.Context(), writeProgress)
 				}
 				require.ErrorContains(t, err, "BYO-AKS preflight blocked")
-				if failure == "transport" {
+				blocked, ok := errors.AsType[*onboarding.BlockedError](err)
+				require.True(t, ok)
+				switch failure {
+				case "transport":
 					require.ErrorIs(t, err, cause)
-				} else if failure == "authentication" {
+				case "authentication":
 					service, ok := errors.AsType[*azcore.ResponseError](err)
 					require.True(t, ok)
 					assert.Equal(t, http.StatusForbidden, service.StatusCode)
 					assert.Equal(t, "AuthorizationFailed", service.ErrorCode)
+				case "decoding":
+					require.ErrorContains(t, errors.Join(blocked.Unwrap()...), "cannot unmarshal")
 				}
 				envelope := azdext.NewProvisioningEnvelope()
 				message := new(azdext.ProvisioningMessage)
@@ -444,13 +448,21 @@ func TestBYOReadFailureCauseRetainsExitDiagnostic(t *testing.T) {
 				received := new(azdext.ProvisioningMessage)
 				require.NoError(t, proto.Unmarshal(wire, received))
 				exitErr := fmt.Errorf("provisioning failed: %w", envelope.GetError(received))
+				if failure == "authentication" {
+					service, ok := errors.AsType[*azdext.ServiceError](exitErr)
+					require.True(t, ok)
+					assert.Equal(t, http.StatusForbidden, service.StatusCode)
+					assert.Equal(t, "AuthorizationFailed", service.ErrorCode)
+				}
 				exitOutput := (&ux.ActionResult{Err: exitErr}).ToString("")
 				assert.Contains(t, exitOutput, "ERROR:")
-				assert.Contains(t, progress.String(), "BYO AKS preflight checks failed")
-				assert.NotContains(t, progress.String(), "Cause:")
-				for _, output := range []string{p.preflightReport.String(), exitOutput} {
-					assert.Contains(t, output, "Cause:")
-					assert.Contains(t, output, expected)
+				assert.Contains(t, exitOutput, "BYO-AKS preflight blocked")
+				assert.NotContains(t, progress.String(), "preflight")
+				for _, output := range []string{err.Error(), exitOutput, progress.String()} {
+					assert.NotContains(t, output, "BYO-AKS preflight report:")
+					assert.NotContains(t, output, "resource-refs PASS")
+					assert.NotContains(t, output, "  Expected:")
+					assert.NotContains(t, output, "  Cause:")
 					for _, secret := range []string{"cause-user", "cause-password", "sig=", "cause-secret", "cause-fragment"} {
 						assert.NotContains(t, output, secret)
 					}
@@ -475,14 +487,10 @@ func TestBYOSuppliedPreviewUsesNormalWhatIfAfterReadOnlyChecks(t *testing.T) {
 
 func TestBYODefaultStorageRetainsOrdinaryARMUpdate(t *testing.T) {
 	p, fake, _ := suppliedProvider(t, 2)
-	var progress strings.Builder
-	_, err := p.Deploy(t.Context(), func(message string) { progress.WriteString(message) })
+	_, err := p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
 	hosting := fake.base.parameters["agentHosting"].(map[string]any)["value"].(map[string]any)
 	assert.Equal(t, "", hosting["storageAccountResourceId"])
-	assert.Contains(t, progress.String(), "BYO AKS preflight checks completed")
-	assert.NotContains(t, progress.String(), "storage-type NOT_APPLICABLE")
-	assert.Contains(t, p.preflightReport.String(), "storage-type NOT_APPLICABLE")
 	assert.Equal(t, 1, fake.base.writes)
 }
 
@@ -540,7 +548,7 @@ func TestBYODisabledSupportingSelectionsRetainARMPrecedence(t *testing.T) {
 			"enabled": false, "storageAccountResourceId": suppliedStorageID,
 		}},
 	}}
-	require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
+	require.NoError(t, p.prepareBYO(t.Context(), source))
 	assert.Equal(t, map[string]any{"value": map[string]any{
 		"enabled": false, "storageAccountResourceId": suppliedStorageID,
 	}}, source.parameters["agentHosting"])

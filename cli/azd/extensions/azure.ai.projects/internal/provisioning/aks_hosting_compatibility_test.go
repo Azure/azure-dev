@@ -75,7 +75,7 @@ func TestBYOPrepareValidatesSuppliedKubeletForACR(t *testing.T) {
 				if test.duplicate {
 					source.parameters["kubeletObjectId"] = test.parameter
 				}
-				err = p.prepareBYO(t.Context(), source, func(string) {})
+				err = p.prepareBYO(t.Context(), source)
 				if includeAcr && !test.valid {
 					require.ErrorContains(t, err, "kubeletObjectId")
 					if test.name == "different" {
@@ -238,7 +238,7 @@ func TestBYOSuppliedUsesEffectiveDeploymentInputs(t *testing.T) {
 				delete(definitions, "agentHosting")
 				source.parameters["AGENTHOSTING"] = map[string]any{"value": "leave undeclared parameters to ARM"}
 			}
-			require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
+			require.NoError(t, p.prepareBYO(t.Context(), source))
 			assert.NotContains(t, source.parameters, "agentHosting")
 			if name == "disabled" || name == "undeclared" {
 				assert.Empty(t, fake.requests)

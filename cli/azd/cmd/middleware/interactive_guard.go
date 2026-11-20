@@ -31,9 +31,9 @@ func (m *InteractiveGuardMiddleware) Run(ctx context.Context, next NextFn) (*act
 	if m.console.IsNoPromptMode() {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
-				"%w: %s can't run with prompts disabled. Prompts are disabled by --no-prompt, "+
-					"and automatically in CI/CD and AI-agent environments.",
+				"%w: %s can't run with prompts disabled. %s",
 				internal.ErrInteractiveRequired, m.options.CommandPath,
+				"Prompts are disabled by --no-prompt, and automatically in CI/CD and AI-agent environments.",
 			),
 			Suggestion: fmt.Sprintf("Run '%s --no-prompt=false' in an interactive terminal.", m.options.CommandPath),
 		}

@@ -529,6 +529,7 @@ func TestConfigure_HostTypes_EmptyResources(t *testing.T) {
 	}{
 		{"container app", project.ResourceTypeHostContainerApp},
 		{"app service", project.ResourceTypeHostAppService},
+		{"function app", project.ResourceTypeHostFunctionApp},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -757,7 +758,7 @@ func TestAddServiceAsResource_UnsupportedTarget(t *testing.T) {
 		Name: "svc",
 		Host: project.ServiceTargetKind("unsupported"),
 	}
-	_, err := addServiceAsResource(t.Context(), nil, svc, appdetect.Project{})
+	_, err := addServiceAsResource(t.Context(), nil, svc, appdetect.Project{}, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported service target")
 }
@@ -772,7 +773,7 @@ func TestAddServiceAsResource_ContainerApp_NoDockerfile(t *testing.T) {
 		RelativePath: tempDir,
 	}
 	prj := appdetect.Project{Language: appdetect.Python}
-	r, err := addServiceAsResource(t.Context(), nil, svc, prj)
+	r, err := addServiceAsResource(t.Context(), nil, svc, prj, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "test-svc", r.Name)
 	assert.Equal(t, project.ResourceTypeHostContainerApp, r.Type)
@@ -791,7 +792,7 @@ func TestAddServiceAsResource_ContainerApp_JavaPort(t *testing.T) {
 		RelativePath: tempDir,
 	}
 	prj := appdetect.Project{Language: appdetect.Java}
-	r, err := addServiceAsResource(t.Context(), nil, svc, prj)
+	r, err := addServiceAsResource(t.Context(), nil, svc, prj, nil)
 	require.NoError(t, err)
 	props, ok := r.Props.(project.ContainerAppProps)
 	require.True(t, ok)
@@ -808,7 +809,7 @@ func TestAddServiceAsResource_ContainerApp_DotNetPort(t *testing.T) {
 		RelativePath: tempDir,
 	}
 	prj := appdetect.Project{Language: appdetect.DotNet}
-	r, err := addServiceAsResource(t.Context(), nil, svc, prj)
+	r, err := addServiceAsResource(t.Context(), nil, svc, prj, nil)
 	require.NoError(t, err)
 	props, ok := r.Props.(project.ContainerAppProps)
 	require.True(t, ok)
@@ -825,7 +826,7 @@ func TestAddServiceAsResource_AppService_UnsupportedLanguage(t *testing.T) {
 		RelativePath: tempDir,
 	}
 	prj := appdetect.Project{Language: appdetect.Java}
-	_, err := addServiceAsResource(t.Context(), nil, svc, prj)
+	_, err := addServiceAsResource(t.Context(), nil, svc, prj, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported language")
 }
@@ -1243,7 +1244,7 @@ func TestNewAddAction_Constructs(t *testing.T) {
 	t.Parallel()
 	// Pass nils for all deps — this is a no-op constructor that only
 	// assigns fields; no methods are invoked.
-	a := NewAddAction(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	a := NewAddAction(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NotNil(t, a)
 }
 

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/otiai10/copy"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -454,10 +455,18 @@ func (sm *serviceManager) Package(
 	// Package path can be a file path or a container image name
 	// We only move to desired output path for file based packages
 	if packageArtifact, has := serviceContext.Package.FindLast(); has {
-		_, err = os.Stat(packageArtifact.Location)
+		packageInfo, err := os.Stat(packageArtifact.Location)
 		hasPackageFile := err == nil
 
-		if hasPackageFile && options.OutputPath != "" {
+		if hasPackageFile && packageInfo.IsDir() && options.OutputPath != "" {
+			destDirectory, err := copyPackageDirectory(
+				packageArtifact.Location, options.OutputPath, serviceConfig.Name)
+			if err != nil {
+				return nil, err
+			}
+
+			packageArtifact.Location = destDirectory
+		} else if hasPackageFile && options.OutputPath != "" {
 			var destFilePath string
 			var destDirectory string
 
@@ -1064,6 +1073,140 @@ func (sm *serviceManager) GetTargetResource(
 	}
 
 	return sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
+}
+
+// packageExportMarkerSuffix names the marker file written next to each directory export. It records that azd owns
+// the export folder, so later exports only replace folders azd created. The marker is a sibling rather than a child
+// so it is never published as part of the package content.
+const packageExportMarkerSuffix = ".azd-package"
+
+// copyPackageDirectory exports a directory package to <outputPath>/<name>, replacing a previous azd export there so
+// removed files do not linger. The source is left intact because directory packages usually point at build output
+// folders. Existing folders that azd did not create are never deleted.
+func copyPackageDirectory(sourcePath string, outputPath string, name string) (string, error) {
+	if name == "" || name == "." || name == ".." || filepath.IsAbs(name) || filepath.Base(name) != name ||
+		strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("service name '%s' cannot be used as a package output folder name", name)
+	}
+
+	sourceDirectory, err := resolvePathAliases(sourcePath)
+	if err != nil {
+		return "", fmt.Errorf("resolving package directory '%s': %w", sourcePath, err)
+	}
+
+	outputDirectory, err := resolvePathAliases(outputPath)
+	if err != nil {
+		return "", fmt.Errorf("resolving output path '%s': %w", outputPath, err)
+	}
+	destDirectory := filepath.Join(outputDirectory, name)
+	markerPath := filepath.Join(outputDirectory, "."+name+packageExportMarkerSuffix)
+
+	// Symbolic links, bind mounts, or case-insensitive file systems can make two different paths the same folder.
+	sourceInfo, err := os.Stat(sourceDirectory)
+	if err != nil {
+		return "", fmt.Errorf("reading package directory '%s': %w", sourceDirectory, err)
+	}
+	if destInfo, err := os.Stat(destDirectory); err == nil && os.SameFile(sourceInfo, destInfo) {
+		return destDirectory, nil
+	}
+
+	if isSubPath(destDirectory, sourceDirectory) || isSubPath(sourceDirectory, destDirectory) {
+		return "", fmt.Errorf(
+			"output path '%s' and package directory '%s' cannot contain one another", destDirectory, sourceDirectory)
+	}
+
+	if err := ensureReplaceablePackageExport(destDirectory, markerPath); err != nil {
+		return "", err
+	}
+
+	if err := os.RemoveAll(destDirectory); err != nil {
+		return "", fmt.Errorf("removing previous package export '%s': %w", destDirectory, err)
+	}
+
+	if err := os.MkdirAll(outputDirectory, osutil.PermissionDirectory); err != nil {
+		return "", fmt.Errorf("failed creating output directory '%s': %w", outputDirectory, err)
+	}
+
+	// Write the marker before copying so a partially copied export can still be replaced by the next run.
+	if err := os.WriteFile(markerPath, nil, osutil.PermissionFile); err != nil {
+		return "", fmt.Errorf("writing package export marker '%s': %w", markerPath, err)
+	}
+
+	if err := copy.Copy(sourceDirectory, destDirectory); err != nil {
+		return "", fmt.Errorf(
+			"failed copying package directory '%s' to '%s': %w", sourceDirectory, destDirectory, err)
+	}
+
+	return destDirectory, nil
+}
+
+// ensureReplaceablePackageExport returns an error unless destDirectory is missing, an empty folder, or a folder that
+// an earlier azd export created (recorded by markerPath).
+func ensureReplaceablePackageExport(destDirectory string, markerPath string) error {
+	destInfo, err := os.Lstat(destDirectory)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading output folder '%s': %w", destDirectory, err)
+	}
+
+	if destInfo.Mode()&os.ModeSymlink == 0 && destInfo.IsDir() {
+		if _, err := os.Stat(markerPath); err == nil {
+			return nil
+		}
+
+		entries, err := os.ReadDir(destDirectory)
+		if err != nil {
+			return fmt.Errorf("reading output folder '%s': %w", destDirectory, err)
+		}
+		if len(entries) == 0 {
+			return nil
+		}
+	}
+
+	return &internal.ErrorWithSuggestion{
+		Err:        fmt.Errorf("output folder '%s' already exists and was not created by azd package", destDirectory),
+		Suggestion: "Choose a different --output-path, or remove the existing folder if it is no longer needed.",
+	}
+}
+
+// resolvePathAliases returns the absolute path with symbolic links resolved for the longest existing prefix, so
+// paths that do not exist yet can still be compared with existing ones.
+func resolvePathAliases(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+
+	missing := []string{}
+	current := absPath
+	for {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			return filepath.Join(append([]string{resolved}, missing...)...), nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return absPath, nil
+		}
+		missing = append([]string{filepath.Base(current)}, missing...)
+		current = parent
+	}
+}
+
+// isSubPath reports whether path is dir or one of its descendants.
+func isSubPath(path string, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // Copies a file from the source path to the destination path

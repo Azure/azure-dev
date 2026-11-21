@@ -6,6 +6,8 @@ package project
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -1466,4 +1468,119 @@ func (f *fakeSimpleServiceLocator) Resolve(_ any) error {
 
 func (f *fakeSimpleServiceLocator) Invoke(_ any) error {
 	return nil
+}
+
+func Test_copyPackageDirectory(t *testing.T) {
+	t.Run("CopiesAndKeepsSource", func(t *testing.T) {
+		source := filepath.Join(t.TempDir(), "dist")
+		writeStaticSite(t, source, "index.html", "assets/app.js")
+		output := filepath.Join(t.TempDir(), "out")
+
+		location, err := copyPackageDirectory(source, output, "web")
+		require.NoError(t, err)
+		require.FileExists(t, filepath.Join(location, "assets", "app.js"))
+		require.FileExists(t, filepath.Join(source, "index.html"))
+		require.NoFileExists(t, filepath.Join(location, ".web"+packageExportMarkerSuffix))
+	})
+
+	t.Run("ReplacesPreviousExport", func(t *testing.T) {
+		source := filepath.Join(t.TempDir(), "dist")
+		writeStaticSite(t, source, "index.html")
+		output := t.TempDir()
+
+		_, err := copyPackageDirectory(source, output, "web")
+		require.NoError(t, err)
+		writeStaticSite(t, filepath.Join(output, "web"), "removed.js")
+
+		location, err := copyPackageDirectory(source, output, "web")
+		require.NoError(t, err)
+		require.FileExists(t, filepath.Join(location, "index.html"))
+		require.NoFileExists(t, filepath.Join(location, "removed.js"))
+	})
+
+	t.Run("KeepsFolderNotCreatedByAzd", func(t *testing.T) {
+		// For example a .NET service at ./web packaged with --output-path "." must not delete the source tree.
+		source := filepath.Join(t.TempDir(), "publish")
+		writeStaticSite(t, source, "index.html")
+		output := t.TempDir()
+		writeStaticSite(t, filepath.Join(output, "web"), "Program.cs")
+
+		_, err := copyPackageDirectory(source, output, "web")
+		require.ErrorContains(t, err, "was not created by azd package")
+		require.FileExists(t, filepath.Join(output, "web", "Program.cs"))
+	})
+
+	t.Run("RejectsSymlinkedExportFolder", func(t *testing.T) {
+		source := filepath.Join(t.TempDir(), "dist")
+		writeStaticSite(t, source, "index.html")
+		unrelated := t.TempDir()
+		writeStaticSite(t, unrelated, "keep.txt")
+		output := t.TempDir()
+		if err := os.Symlink(unrelated, filepath.Join(output, "web")); err != nil {
+			t.Skipf("symbolic links are not supported: %v", err)
+		}
+
+		_, err := copyPackageDirectory(source, output, "web")
+		require.ErrorContains(t, err, "was not created by azd package")
+		require.FileExists(t, filepath.Join(unrelated, "keep.txt"))
+	})
+
+	t.Run("RejectsUnsafeServiceNames", func(t *testing.T) {
+		source := filepath.Join(t.TempDir(), "dist")
+		writeStaticSite(t, source, "index.html")
+		parent := t.TempDir()
+		writeStaticSite(t, filepath.Join(parent, "unrelated"), "keep.txt")
+		output := filepath.Join(parent, "artifacts")
+
+		for _, name := range []string{"", ".", "..", "../unrelated", "a/b", `a\b`, filepath.Join(parent, "unrelated")} {
+			_, err := copyPackageDirectory(source, output, name)
+			require.ErrorContains(t, err, "cannot be used as a package output folder name", "name %q", name)
+		}
+		require.FileExists(t, filepath.Join(parent, "unrelated", "keep.txt"))
+	})
+
+	t.Run("RejectsOutputInsideSource", func(t *testing.T) {
+		source := t.TempDir()
+		writeStaticSite(t, source, "index.html")
+
+		_, err := copyPackageDirectory(source, filepath.Join(source, "out"), "web")
+		require.ErrorContains(t, err, "cannot contain one another")
+	})
+
+	t.Run("RejectsOutputContainingSource", func(t *testing.T) {
+		parent := t.TempDir()
+		source := filepath.Join(parent, "web", "dist")
+		writeStaticSite(t, source, "index.html")
+
+		_, err := copyPackageDirectory(source, parent, "web")
+		require.ErrorContains(t, err, "cannot contain one another")
+		require.FileExists(t, filepath.Join(source, "index.html"))
+	})
+
+	t.Run("SymlinkedOutputToSourceIsNoOp", func(t *testing.T) {
+		source := filepath.Join(t.TempDir(), "dist")
+		writeStaticSite(t, source, "index.html")
+		output := t.TempDir()
+		if err := os.Symlink(source, filepath.Join(output, "web")); err != nil {
+			t.Skipf("symbolic links are not supported: %v", err)
+		}
+
+		_, err := copyPackageDirectory(source, output, "web")
+		require.NoError(t, err)
+		content, err := os.ReadFile(filepath.Join(source, "index.html"))
+		require.NoError(t, err)
+		require.Equal(t, "index.html", string(content))
+	})
+
+	t.Run("RejectsOutputUnderSymlinkedSource", func(t *testing.T) {
+		source := filepath.Join(t.TempDir(), "dist")
+		writeStaticSite(t, source, "index.html")
+		alias := filepath.Join(t.TempDir(), "export")
+		if err := os.Symlink(source, alias); err != nil {
+			t.Skipf("symbolic links are not supported: %v", err)
+		}
+
+		_, err := copyPackageDirectory(source, alias, "web")
+		require.ErrorContains(t, err, "cannot contain one another")
+	})
 }

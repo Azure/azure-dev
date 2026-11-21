@@ -178,6 +178,13 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: pkg/azsdk/storage/static_website_client.go
+    words:
+      - bloberror
+  - filename: pkg/project/service_target_storage.go
+    words:
+      - webp
+      - wwwroot
   - filename: pkg/output/colors.go
     words:
       - termenv

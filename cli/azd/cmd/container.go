@@ -804,6 +804,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.SpringAppTarget:          project.NewSpringAppTarget,
 		project.DotNetContainerAppTarget: project.NewDotNetContainerAppTarget,
 		project.AiEndpointTarget:         project.NewAiEndpointTarget,
+		project.StorageTarget:            project.NewStorageTarget,
 	}
 
 	for target, constructor := range serviceTargetMap {

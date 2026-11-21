@@ -362,7 +362,7 @@ Beyond the explicit `requiredVersions.extensions` list, project commands infer r
 - Each `services.<name>.host` value must be supplied by an extension declaring the `service-target-provider` capability for that host.
 - Each `infra.provider` value (including entries under `infra.layers`) must be supplied by an extension declaring the `provisioning-provider` capability for that provider.
 
-Providers that `azd` implements itself are never resolved through an extension and never contact a registry: the built-in hosts (`appservice`, `containerapp`, `function`, `staticwebapp`, `aks`, `ai.endpoint`) and the built-in provisioning providers (`bicep`, `terraform`).
+Providers that `azd` implements itself are never resolved through an extension and never contact a registry: the built-in hosts (`appservice`, `containerapp`, `function`, `staticwebapp`, `storage`, `aks`, `ai.endpoint`) and the built-in provisioning providers (`bicep`, `terraform`).
 
 When several extensions publish the same provider, `azd` prompts for the one to install. When an extension is already selected by `requiredVersions.extensions`, or is pulled in as a dependency of one, that version is used instead of installing another extension. If a version selected that way cannot supply the provider, `azd` reports the conflicting constraint rather than installing a second extension that the first would override.
 

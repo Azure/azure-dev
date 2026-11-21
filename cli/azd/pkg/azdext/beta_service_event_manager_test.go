@@ -258,6 +258,11 @@ func TestExtensionHostBetaServiceEvents(t *testing.T) {
 		t.Fatal("host did not stop")
 	}
 	require.Equal(t, []string{"predeploy"}, (<-remote.registrations).GetEventNames())
+	manager, ok := host.betaServiceEventManager.(*betaServiceEventManager)
+	require.True(t, ok)
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	require.Nil(t, manager.broker, "host shutdown must close the beta event stream")
 }
 
 func TestBetaServiceEventManagerInvalidInvocations(t *testing.T) {

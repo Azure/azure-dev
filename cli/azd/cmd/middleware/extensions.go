@@ -26,6 +26,11 @@ import (
 )
 
 var (
+	// listenCapabilities makes [ExtensionsMiddleware] start an extension (via `listen`) before every
+	// top-level azd command, whether or not the command uses it. Only add a capability here if azd
+	// may call the extension from many commands, like lifecycle events. If a single command needs
+	// it, that command can start the extension with ExtensionActivator instead, which is how
+	// `azd infra generate` handles InfraGenerationProviderCapability.
 	listenCapabilities = []extensions.CapabilityType{
 		extensions.LifecycleEventsCapability,
 		extensions.ServiceTargetProviderCapability,
@@ -345,7 +350,7 @@ type extensionProcess struct {
 // startAndWaitExtension launches an extension's `listen` process against the gRPC server described
 // by serverInfo and blocks until the extension signals readiness or fails. It is the per-extension
 // startup shared by ExtensionsMiddleware (every listen-capable extension) and ExtensionActivator
-// (a targeted subset).
+// (a targeted subset). If the extension fails to become ready, its process is stopped before returning.
 func startAndWaitExtension(
 	readyParentCtx context.Context,
 	processCtx context.Context,
@@ -369,9 +374,14 @@ func startAndWaitExtension(
 		done:      make(chan struct{}),
 	}
 
+	// processCtx is shared by every extension and lives until the command exits, so a per-extension
+	// context lets us stop just this process if it never becomes ready.
+	extensionCtx, stopExtension := context.WithCancel(processCtx)
+
 	// Start the extension process in a separate goroutine
 	go func() {
 		defer close(process.done)
+		defer stopExtension()
 
 		allEnv := []string{
 			fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
@@ -383,7 +393,7 @@ func startAndWaitExtension(
 		}
 
 		// Propagate trace context to the extension process
-		if traceEnv := tracing.Environ(processCtx); len(traceEnv) > 0 {
+		if traceEnv := tracing.Environ(extensionCtx); len(traceEnv) > 0 {
 			allEnv = append(allEnv, traceEnv...)
 		}
 
@@ -404,7 +414,7 @@ func startAndWaitExtension(
 			Environment: opts.environment,
 		}
 
-		if _, err := runner.Invoke(processCtx, ext, invokeOptions); err != nil {
+		if _, err := runner.Invoke(extensionCtx, ext, invokeOptions); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				log.Printf("%v", err)
 			}
@@ -421,7 +431,18 @@ func startAndWaitExtension(
 	readyCtx, cancel := getReadyContext(readyParentCtx)
 	defer cancel()
 
-	return process, ext.WaitUntilReady(readyCtx)
+	if err := ext.WaitUntilReady(readyCtx); err != nil {
+		// The command reports this extension as failed and continues without it, so stop it now rather
+		// than let it register providers or handle requests partway through the command.
+		stopExtension()
+		if !waitForExtensionProcesses([]*extensionProcess{process}, extensionListenerShutdownGracePeriod) {
+			log.Printf("extension '%s' did not stop after failing to become ready", ext.Id)
+		}
+
+		return process, err
+	}
+
+	return process, nil
 }
 
 func shutdownExtensionProcesses(

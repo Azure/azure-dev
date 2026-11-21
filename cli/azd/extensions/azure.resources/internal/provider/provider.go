@@ -28,18 +28,17 @@ type executionProvider interface {
 // Provider owns generated infrastructure for the extension's provisioning session.
 type Provider struct {
 	executionProvider
-	generator *resources.Generator
-	resolver  *resources.ParameterResolver
-	client    *azdext.AzdClient
-	tempDir   string
+	resolver *resources.ParameterResolver
+	client   *azdext.AzdClient
+	tempDir  string
 }
 
-// New creates a resources provider with its own generator and Bicep executor.
+// New creates a resources provider with its own Bicep executor.
 func New(client *azdext.AzdClient) *Provider {
 	resolver := resources.NewParameterResolver(client)
 	return &Provider{
-		executionProvider: bicep.New(client, resolver), generator: &resources.Generator{},
-		resolver: resolver, client: client,
+		executionProvider: bicep.New(client, resolver),
+		resolver:          resolver, client: client,
 	}
 }
 
@@ -86,7 +85,9 @@ func (p *Provider) Initialize(
 // materializeInfrastructure generates Bicep and parameter files in a temporary directory owned
 // by this provider. On failure, it closes the executor and removes any files it created.
 func (p *Provider) materializeInfrastructure(ctx context.Context, options *azdext.ProvisioningOptions) error {
-	files, err := p.generator.Generate(ctx, resources.GenerateRequest{Name: options.Name, Config: options.Config.AsMap()})
+	files, err := resources.GenerateFromConfig(ctx, resources.GenerateRequest{
+		Name: options.Name, Config: options.Config.AsMap(),
+	})
 	if err != nil {
 		return err
 	}

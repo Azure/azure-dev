@@ -479,6 +479,12 @@ func TestExtensionsMiddleware_Run_NoListenCapabilities(t *testing.T) {
 			Version:      "1.0.0",
 			Capabilities: []extensions.CapabilityType{"some-other-capability"},
 		},
+		"test.generator": {
+			Id:           "test.generator",
+			DisplayName:  "Test Generator",
+			Version:      "1.0.0",
+			Capabilities: []extensions.CapabilityType{extensions.InfraGenerationProviderCapability},
+		},
 	}
 
 	mockCtx := mocks.NewMockContext(t.Context())

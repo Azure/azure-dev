@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -65,9 +66,6 @@ func (s *addPromptServer) Prompt(_ context.Context, req *v1.PromptRequest) (*v1.
 	}
 	if strings.Contains(req.Options.Message, "layer") {
 		s.layerPrompts++
-		if s.layerName != "" {
-			value = s.layerName
-		}
 	}
 	if value == "" {
 		value = "cache"
@@ -633,7 +631,8 @@ func TestAddUsesSelectedEnvironmentForDiscoverySavingAndNextCommand(t *testing.T
 			for _, write := range host.saved {
 				require.Equal(t, "staging", write.EnvName)
 			}
-			require.Contains(t, output, "Run 'azd provision data --environment \"staging\"' to apply these changes.\n")
+			require.Contains(t, output,
+				"Run 'azd provision "+defaultResourcesLayer+" --environment \"staging\"' to apply these changes.\n")
 		})
 	}
 }

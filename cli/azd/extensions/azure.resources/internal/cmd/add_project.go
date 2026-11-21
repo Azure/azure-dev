@@ -164,6 +164,9 @@ func (p *addProject) readLayers(autoSelect bool) error {
 		}
 	}
 
+	if err := resources.ValidateEntryName(p.layerName); err != nil {
+		return fmt.Errorf("invalid infrastructure layer name: %w", err)
+	}
 	if p.provider == resources.ProviderName {
 		config, err := unmarshalResourceConfig(p.target, p.layerName)
 		if err != nil {

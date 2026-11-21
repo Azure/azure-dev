@@ -187,7 +187,7 @@ func TestAddProviderDispatch(t *testing.T) {
 			if tt.noItems {
 				suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
 				require.True(t, ok)
-				require.Contains(t, suggestion.Suggestion, "No extensions that support azd add were found")
+				require.Contains(t, suggestion.Suggestion, `No extensions that support "azd add" were found`)
 			}
 			require.Equal(t, tt.wantInvoked, prompted)
 			if tt.wantInvoked {

@@ -69,6 +69,8 @@ The handler owns the experience after selection. See the
 [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#add-providers-beta)
 for an example and host version requirements.
 
+For an example that declares infrastructure through an add provider and starts it through a provisioning provider, see the alpha [Azure Emulators extension](../../cli/azd/extensions/microsoft.azd.emulators/README.md).
+
 ### 4. Build
 
 For infrastructure generation, declare `infra-generation-provider` in both

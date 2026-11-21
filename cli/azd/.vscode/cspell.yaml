@@ -187,6 +187,28 @@ overrides:
   - filename: "**/internal/agent/types.go"
     words:
       - billionized
+  - filename: extensions/microsoft.azd.emulators/**
+    words:
+      - AMQP
+      - appconfig
+      - asrs
+      - awps
+      - azuredataexplorer
+      - devstoreaccount
+      - durabletask
+      - kustainer
+      - kustodata
+      - OPTOUT
+      - SASL
+      - sbemulatorns
+      - signalr
+      - SQLCMDPASSWORD
+      - sqlcmd
+      - staticwebapps
+      - TASKHUB
+      - trimpath
+      - vnext
+      - webpubsub
   - filename: internal/appdetect/aspire_polyglot.go
     words:
       - pylock

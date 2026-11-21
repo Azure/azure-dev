@@ -233,7 +233,7 @@ func Test_Server_Start(t *testing.T) {
 		}
 
 		services := server.grpcServer.GetServiceInfo()
-		require.Len(t, services, 3*len(serviceNames)+6)
+		require.Len(t, services, 3*len(serviceNames)+7)
 		for _, serviceName := range serviceNames {
 			require.Contains(t, services, "azd.extensions.v1."+serviceName)
 			require.Contains(t, services, "azd.extensions.v1beta."+serviceName)
@@ -250,6 +250,9 @@ func Test_Server_Start(t *testing.T) {
 		require.Contains(t, services, "azd.extensions.v1beta.InfraGenerationService")
 		require.NotContains(t, services, "azd.extensions.v1.InfraGenerationService")
 		require.NotContains(t, services, "azdext.InfraGenerationService")
+		require.Contains(t, services, "azd.extensions.v1beta.AddProviderService")
+		require.NotContains(t, services, "azd.extensions.v1.AddProviderService")
+		require.NotContains(t, services, "azdext.AddProviderService")
 		for _, serviceName := range []string{
 			"azd.extensions.v1.FollowUpService",
 			"azd.extensions.v1beta.FollowUpService",

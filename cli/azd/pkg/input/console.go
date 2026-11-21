@@ -197,9 +197,13 @@ type ConsoleOptions struct {
 
 	// OptionDetails is an optional field that can be used to provide additional information about the options.
 	OptionDetails []string
-	DefaultValue  any
+	// DisabledReasons marks select options with a nonempty reason as unavailable.
+	DisabledReasons []string
+	DefaultValue    any
 	// EnableFiltering controls whether select prompts allow filtering. Nil uses the component default.
 	EnableFiltering *bool
+	// FitToTerminal sizes an interactive select to the terminal height when the prompt opens.
+	FitToTerminal bool
 	// AllowEmptySelection controls whether multi-select prompts can be submitted without a selection.
 	// Nil preserves the historical behavior of allowing empty selections.
 	AllowEmptySelection *bool
@@ -782,6 +786,9 @@ func choicesFromOptions(options ConsoleOptions) []promptChoice {
 
 		if i < len(options.OptionDetails) && options.OptionDetails[i] != "" {
 			choices[i].Detail = &options.OptionDetails[i]
+		}
+		if i < len(options.DisabledReasons) && options.DisabledReasons[i] != "" {
+			choices[i].Detail = new("Unavailable: " + options.DisabledReasons[i])
 		}
 	}
 	return choices

@@ -56,6 +56,8 @@ const (
 	ProvisioningProviderCapability CapabilityType = "provisioning-provider"
 	// InfraGenerationProviderCapability enables beta infrastructure source generation.
 	InfraGenerationProviderCapability CapabilityType = "infra-generation-provider"
+	// AddProviderCapability enables extensions to contribute interactive items to azd add.
+	AddProviderCapability CapabilityType = "add-provider"
 	// Validation provider enables extensions to contribute validation checks
 	// to azd's validation pipeline (e.g. provision checks during provisioning)
 	ValidationProviderCapability CapabilityType = "validation-provider"

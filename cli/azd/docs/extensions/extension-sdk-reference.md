@@ -45,6 +45,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
   - [NewExtensionHost](#newextensionhost)
   - [ExtensionHost Methods](#extensionhost-methods)
 - [Infrastructure generation (beta)](#infrastructure-generation-beta)
+- [Add providers (beta)](#add-providers-beta)
 - [Client & Utilities](#client--utilities)
   - [AzdClient](#azdclient)
   - [ConfigHelper](#confighelper)
@@ -697,6 +698,7 @@ down the connection.
 | `WithBetaServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Deprecated beta preview registration; retained with the `preview.ServiceTargetPreviewProvider` interface. |
 | `WithFrameworkService` | `(language string, factory FrameworkServiceFactory) *ExtensionHost` | Register a custom language/framework build service. |
 | `WithBetaInfraGenerationProvider` | `(name string, provider BetaInfraGenerationProvider) *ExtensionHost` | Register a beta source generator that writes files and returns a replacement infrastructure entry. |
+| `WithBetaAddProvider` | `(items []*v1beta.AddItem, handler func(context.Context, string) error) *ExtensionHost` | Register choices and a selection handler for `azd add`. |
 | `WithProjectEventHandler` | `(eventName string, handler ProjectEventHandler) *ExtensionHost` | Register a project-level lifecycle event handler. |
 | `WithServiceEventHandler` | `(eventName string, handler ServiceEventHandler, options *ServiceEventOptions) *ExtensionHost` | Register a service-level lifecycle event handler (with optional filtering). |
 | `Run` | `(ctx context.Context) error` | Start the host and block until shutdown. |
@@ -757,6 +759,41 @@ the installed extension's capability and declared provider ownership.
 This API targets azd 1.38.0; consumers must require a host containing it and pin
 a published SDK containing these helpers before releasing.
 
+## Add providers (beta)
+
+`AzdClient.AddProviderBeta()` exposes the beta-only `AddProviderService.Stream`
+RPC. Declare `add-provider` in `capabilities` in `extension.yaml`. In the
+extension listener, register the items and handler before calling `host.Run`:
+
+```go
+host.WithBetaAddProvider("Resources", []*v1beta.AddItem{
+    {Id: "resource", DisplayName: "Azure resource"},
+}, addResource)
+```
+
+`v1beta` is `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta`.
+Each `Id` is nonempty and unique within the extension. `DisplayName` is the
+item label. Do not include a category prefix in `DisplayName`. The host
+prefixes every item with the registration's category. Use the same category
+name across extensions to group their items together. Registrations without a
+category appear under `Other`. Set `DisabledReason` to a short
+explanation when an item cannot be added in the current project. The item stays searchable and
+visible, but the host does not invoke it. Leave the field empty to enable the
+item. Older hosts that don't recognize the field ignore it, so handlers should
+still check whether an item can be added.
+
+The handler (`func(context.Context, string) error`)
+receives the selected ID. It owns any further prompts, project updates, and
+output. Registration should not prompt or make changes. The host surfaces
+errors returned by the handler. To let the user return to the menu after
+acknowledging a validation error, return a validation `LocalError` with
+`azdext.AddItemUnavailableCode`. Only use this code if the selection made
+no changes. `azd add` requires interactive selection when extension choices
+are available.
+
+This API targets azd 1.39.0. Before publishing, require a host and pin a
+released SDK that both contain `AddProviderService`.
+
 ## Client & Utilities
 
 ### AzdClient
@@ -781,6 +818,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `CommandResult()` | `v1beta.CommandResultServiceClient` (preview) |
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `InfraGenerationBeta()` | `v1beta.InfraGenerationServiceClient` (preview) |
+| `AddProviderBeta()` | `v1beta.AddProviderServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
 | `BetaServiceTarget()` | `v1beta.ServiceTargetServiceClient` (deprecated for deployment preview; use `ServiceTarget()`) |

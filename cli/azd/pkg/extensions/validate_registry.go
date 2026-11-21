@@ -32,6 +32,7 @@ var ValidCapabilities = []CapabilityType{
 	MetadataCapability,
 	ProvisioningProviderCapability,
 	InfraGenerationProviderCapability,
+	AddProviderCapability,
 	ValidationProviderCapability,
 }
 

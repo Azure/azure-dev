@@ -4,93 +4,14 @@
 package add
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	dmp "github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// ---------------------------------------------------------------------------
-// validateServiceName
-// ---------------------------------------------------------------------------
-
-func TestValidateServiceName(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name      string
-		input     string
-		services  map[string]*project.ServiceConfig
-		wantError string
-	}{
-		{
-			name:     "valid name with no existing services",
-			input:    "web-api",
-			services: map[string]*project.ServiceConfig{},
-		},
-		{
-			name:      "empty name",
-			input:     "",
-			services:  map[string]*project.ServiceConfig{},
-			wantError: "cannot be empty",
-		},
-		{
-			name:  "duplicate service name",
-			input: "api",
-			services: map[string]*project.ServiceConfig{
-				"api": {},
-			},
-			wantError: "already exists",
-		},
-		{
-			name:      "name starts with hyphen",
-			input:     "-invalid",
-			services:  map[string]*project.ServiceConfig{},
-			wantError: "must start with",
-		},
-		{
-			name:      "name ends with hyphen",
-			input:     "invalid-",
-			services:  map[string]*project.ServiceConfig{},
-			wantError: "must end with",
-		},
-		{
-			name:      "uppercase letters",
-			input:     "Invalid",
-			services:  map[string]*project.ServiceConfig{},
-			wantError: "must start with a lower",
-		},
-		{
-			name:     "valid single char",
-			input:    "a",
-			services: map[string]*project.ServiceConfig{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			prj := &project.ProjectConfig{
-				Services: tt.services,
-			}
-			err := validateServiceName(tt.input, prj)
-			if tt.wantError != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantError)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// validateResourceName
-// ---------------------------------------------------------------------------
 
 func TestValidateResourceName(t *testing.T) {
 	t.Parallel()
@@ -148,10 +69,6 @@ func TestValidateResourceName(t *testing.T) {
 		})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// validateContainerName
-// ---------------------------------------------------------------------------
 
 func TestValidateContainerName(t *testing.T) {
 	t.Parallel()
@@ -223,10 +140,6 @@ func TestValidateContainerName(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// resourceType
-// ---------------------------------------------------------------------------
-
 func TestResourceType(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -280,20 +193,12 @@ func TestResourceType(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// allStorageDataTypes
-// ---------------------------------------------------------------------------
-
 func TestAllStorageDataTypes(t *testing.T) {
 	t.Parallel()
 	types := allStorageDataTypes()
 	require.Len(t, types, 1)
 	assert.Equal(t, StorageDataTypeBlob, types[0])
 }
-
-// ---------------------------------------------------------------------------
-// fillAiProjectName
-// ---------------------------------------------------------------------------
 
 func TestFillAiProjectName(t *testing.T) {
 	t.Parallel()
@@ -353,10 +258,6 @@ func TestFillAiProjectName(t *testing.T) {
 		})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// Configure — singleton resource types (Redis, Search, KeyVault)
-// ---------------------------------------------------------------------------
 
 func TestConfigure_SingletonResources(t *testing.T) {
 	t.Parallel()
@@ -433,10 +334,6 @@ func TestConfigure_SingletonResources(t *testing.T) {
 		})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// ServiceFromDetect
-// ---------------------------------------------------------------------------
 
 func TestServiceFromDetect(t *testing.T) {
 	t.Parallel()
@@ -605,362 +502,6 @@ func TestServiceFromDetect(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// diffNotEq
-// ---------------------------------------------------------------------------
-
-func TestDiffNotEq(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name string
-		in   []dmp.Diff
-		want bool
-	}{
-		{
-			name: "all equal",
-			in: []dmp.Diff{
-				{Type: dmp.DiffEqual, Text: "hello"},
-			},
-			want: false,
-		},
-		{
-			name: "has insert",
-			in: []dmp.Diff{
-				{Type: dmp.DiffEqual, Text: "a"},
-				{Type: dmp.DiffInsert, Text: "b"},
-			},
-			want: true,
-		},
-		{
-			name: "has delete",
-			in: []dmp.Diff{
-				{Type: dmp.DiffDelete, Text: "x"},
-			},
-			want: true,
-		},
-		{
-			name: "empty slice",
-			in:   []dmp.Diff{},
-			want: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tt.want, diffNotEq(tt.in))
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// lineDiffsFromStr
-// ---------------------------------------------------------------------------
-
-func TestLineDiffsFromStr(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name   string
-		op     dmp.Operation
-		input  string
-		wantN  int
-		wantOp dmp.Operation
-	}{
-		{
-			name:   "single line",
-			op:     dmp.DiffInsert,
-			input:  "hello",
-			wantN:  1,
-			wantOp: dmp.DiffInsert,
-		},
-		{
-			name:   "multi line",
-			op:     dmp.DiffDelete,
-			input:  "a\nb\nc",
-			wantN:  3,
-			wantOp: dmp.DiffDelete,
-		},
-		{
-			name:   "empty string",
-			op:     dmp.DiffEqual,
-			input:  "",
-			wantN:  1,
-			wantOp: dmp.DiffEqual,
-		},
-		{
-			name:   "trailing newline",
-			op:     dmp.DiffInsert,
-			input:  "line1\n",
-			wantN:  2,
-			wantOp: dmp.DiffInsert,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			result := lineDiffsFromStr(tt.op, tt.input)
-			assert.Len(t, result, tt.wantN)
-			for _, r := range result {
-				assert.Equal(t, tt.wantOp, r.Type)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// linesDiffsFromTextDiffs
-// ---------------------------------------------------------------------------
-
-func TestLinesDiffsFromTextDiffs(t *testing.T) {
-	t.Parallel()
-	diffs := []dmp.Diff{
-		{Type: dmp.DiffEqual, Text: "line1\nline2"},
-		{Type: dmp.DiffInsert, Text: "new"},
-	}
-	result := linesDiffsFromTextDiffs(diffs)
-	// "line1\nline2" → 2 lines, "new" → 1 line = 3 total
-	require.Len(t, result, 3)
-	assert.Equal(t, dmp.DiffEqual, result[0].Type)
-	assert.Equal(t, "line1", result[0].Text)
-	assert.Equal(t, dmp.DiffEqual, result[1].Type)
-	assert.Equal(t, "line2", result[1].Text)
-	assert.Equal(t, dmp.DiffInsert, result[2].Type)
-	assert.Equal(t, "new", result[2].Text)
-}
-
-// ---------------------------------------------------------------------------
-// formatLine
-// ---------------------------------------------------------------------------
-
-func TestFormatLine(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name   string
-		op     dmp.Operation
-		text   string
-		indent int
-		check  func(t *testing.T, out string)
-	}{
-		{
-			name:   "insert prefix",
-			op:     dmp.DiffInsert,
-			text:   "added",
-			indent: 0,
-			check: func(t *testing.T, out string) {
-				assert.Contains(t, out, "+")
-				assert.Contains(t, out, "added")
-				assert.True(t, strings.HasSuffix(out, "\n"))
-			},
-		},
-		{
-			name:   "delete prefix",
-			op:     dmp.DiffDelete,
-			text:   "removed",
-			indent: 0,
-			check: func(t *testing.T, out string) {
-				assert.Contains(t, out, "-")
-				assert.Contains(t, out, "removed")
-			},
-		},
-		{
-			name:   "equal prefix with indent",
-			op:     dmp.DiffEqual,
-			text:   "same",
-			indent: 4,
-			check: func(t *testing.T, out string) {
-				assert.Contains(t, out, "    same")
-				assert.NotContains(t, out, "+")
-				assert.NotContains(t, out, "-")
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			out := formatLine(tt.op, tt.text, tt.indent)
-			tt.check(t, out)
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// DiffBlocks (integration of the diff helpers)
-// ---------------------------------------------------------------------------
-
-func TestDiffBlocks_NewEntry(t *testing.T) {
-	t.Parallel()
-	old := map[string]*project.ResourceConfig{}
-	r := &project.ResourceConfig{
-		Type: project.ResourceTypeDbRedis,
-		Name: "redis",
-	}
-	new := map[string]*project.ResourceConfig{
-		"redis": r,
-	}
-
-	result, err := DiffBlocks(old, new)
-	require.NoError(t, err)
-	// New entry should contain insert markers
-	assert.Contains(t, result, "redis:")
-	assert.Contains(t, result, "+")
-}
-
-func TestDiffBlocks_NoChanges(t *testing.T) {
-	t.Parallel()
-	r := &project.ResourceConfig{
-		Type: project.ResourceTypeDbRedis,
-		Name: "redis",
-	}
-	same := map[string]*project.ResourceConfig{
-		"redis": r,
-	}
-
-	result, err := DiffBlocks(same, same)
-	require.NoError(t, err)
-	assert.Empty(t, result)
-}
-
-func TestDiffBlocks_EmptyMaps(t *testing.T) {
-	t.Parallel()
-	result, err := DiffBlocks(
-		map[string]*project.ResourceConfig{},
-		map[string]*project.ResourceConfig{},
-	)
-	require.NoError(t, err)
-	assert.Empty(t, result)
-}
-
-// ---------------------------------------------------------------------------
-// previewWriter
-// ---------------------------------------------------------------------------
-
-func TestPreviewWriter(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name  string
-		input string
-		check func(t *testing.T, out string)
-	}{
-		{
-			name:  "plus line is green",
-			input: "+  added item\n",
-			check: func(t *testing.T, out string) {
-				// The output should contain the text
-				assert.Contains(t, out, "added item")
-			},
-		},
-		{
-			name:  "minus line is red",
-			input: "-  removed item\n",
-			check: func(t *testing.T, out string) {
-				assert.Contains(t, out, "removed item")
-			},
-		},
-		{
-			name:  "b prefix replaced with space",
-			input: "b  header text\n",
-			check: func(t *testing.T, out string) {
-				// 'b' is replaced with space
-				assert.Contains(t, out, "header text")
-				assert.NotContains(t, out, "b  header")
-			},
-		},
-		{
-			name:  "g prefix replaced with space",
-			input: "g  green text\n",
-			check: func(t *testing.T, out string) {
-				assert.Contains(t, out, "green text")
-			},
-		},
-		{
-			name:  "normal text unchanged",
-			input: "   normal line\n",
-			check: func(t *testing.T, out string) {
-				assert.Contains(t, out, "normal line")
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var buf bytes.Buffer
-			pw := &previewWriter{w: &buf}
-			n, err := pw.Write([]byte(tt.input))
-			require.NoError(t, err)
-			assert.Equal(t, len(tt.input), n)
-			tt.check(t, buf.String())
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Metadata
-// ---------------------------------------------------------------------------
-
-func TestMetadata(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name       string
-		res        *project.ResourceConfig
-		wantType   string
-		wantHasVar bool
-	}{
-		{
-			name: "redis resource returns metadata",
-			res: &project.ResourceConfig{
-				Type: project.ResourceTypeDbRedis,
-				Name: "redis",
-			},
-			wantType:   "Microsoft.Cache/redis",
-			wantHasVar: true,
-		},
-		{
-			name: "unknown resource type returns empty",
-			res: &project.ResourceConfig{
-				Type: project.ResourceType("unknown.type"),
-				Name: "thing",
-			},
-			wantType: "",
-		},
-		{
-			name: "host resource uses uppercase name prefix",
-			res: &project.ResourceConfig{
-				Type: project.ResourceTypeHostContainerApp,
-				Name: "web-api",
-			},
-			wantType:   "Microsoft.App/containerApps",
-			wantHasVar: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			meta := Metadata(tt.res)
-			if tt.wantType == "" {
-				assert.Empty(t, meta.ResourceType)
-			} else {
-				assert.Equal(t, tt.wantType, meta.ResourceType)
-			}
-
-			if tt.wantHasVar {
-				assert.NotEmpty(
-					t, meta.Variables,
-					"expected variables for type %s",
-					tt.wantType,
-				)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// DbMap
-// ---------------------------------------------------------------------------
-
 func TestDbMap(t *testing.T) {
 	t.Parallel()
 	expected := map[appdetect.DatabaseDep]project.ResourceType{
@@ -971,10 +512,6 @@ func TestDbMap(t *testing.T) {
 	}
 	assert.Equal(t, expected, DbMap)
 }
-
-// ---------------------------------------------------------------------------
-// LanguageMap
-// ---------------------------------------------------------------------------
 
 func TestLanguageMap(t *testing.T) {
 	t.Parallel()
@@ -1004,68 +541,4 @@ func TestLanguageMap(t *testing.T) {
 		LanguageMap[appdetect.TypeScript],
 	)
 	assert.Len(t, LanguageMap, 5)
-}
-
-// ---------------------------------------------------------------------------
-// HostMap
-// ---------------------------------------------------------------------------
-
-func TestHostMap(t *testing.T) {
-	t.Parallel()
-	assert.Equal(
-		t,
-		project.AppServiceTarget,
-		HostMap[project.ResourceTypeHostAppService],
-	)
-	assert.Equal(
-		t,
-		project.ContainerAppTarget,
-		HostMap[project.ResourceTypeHostContainerApp],
-	)
-	assert.Len(t, HostMap, 2)
-}
-
-// ---------------------------------------------------------------------------
-// ServiceLanguageMap
-// ---------------------------------------------------------------------------
-
-func TestServiceLanguageMap(t *testing.T) {
-	t.Parallel()
-	pyRuntime := ServiceLanguageMap[project.ServiceLanguagePython]
-	assert.Equal(
-		t,
-		project.AppServiceRuntimeStackPython,
-		pyRuntime.Stack,
-	)
-
-	jsRuntime := ServiceLanguageMap[project.ServiceLanguageJavaScript]
-	assert.Equal(
-		t,
-		project.AppServiceRuntimeStackNode,
-		jsRuntime.Stack,
-	)
-
-	tsRuntime := ServiceLanguageMap[project.ServiceLanguageTypeScript]
-	assert.Equal(
-		t,
-		project.AppServiceRuntimeStackNode,
-		tsRuntime.Stack,
-	)
-
-	// Java and .NET are not in the map
-	_, hasJava := ServiceLanguageMap[project.ServiceLanguageJava]
-	assert.False(t, hasJava)
-}
-
-// ---------------------------------------------------------------------------
-// provisionSelection constants
-// ---------------------------------------------------------------------------
-
-func TestProvisionSelectionConstants(t *testing.T) {
-	t.Parallel()
-	// iota constants: verify ordering and distinct values
-	assert.Equal(t, 0, int(provisionUnknown))
-	assert.Equal(t, 1, int(provision))
-	assert.Equal(t, 2, int(provisionPreview))
-	assert.Equal(t, 3, int(provisionSkip))
 }

@@ -23,6 +23,11 @@ import (
 
 type AzdClientOption func(*AzdClient) error
 
+// AddProviderBeta returns the beta-only add provider client.
+func (c *AzdClient) AddProviderBeta() v1beta.AddProviderServiceClient {
+	return v1beta.NewAddProviderServiceClient(c.connection)
+}
+
 // InfraGenerationBeta returns the beta-only infrastructure generation client.
 func (c *AzdClient) InfraGenerationBeta() v1beta.InfraGenerationServiceClient {
 	return v1beta.NewInfraGenerationServiceClient(c.connection)

@@ -82,6 +82,7 @@
                             "framework-service-provider",
                             "provisioning-provider",
                             "infra-generation-provider",
+                            "add-provider",
                             "validation-provider",
                             "metadata"
                         ]

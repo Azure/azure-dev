@@ -85,6 +85,7 @@ Extensions declare their capabilities in `extension.yaml`:
 | `service-target-provider` | Add deployment support for new hosting targets |
 | `provisioning-provider` | Add custom infrastructure provisioning support |
 | `infra-generation-provider` (beta) | Write infrastructure sources and return a replacement provider entry for core to validate and save |
+| `add-provider` (beta) | Contribute choices to `azd add` and handle the selected choice |
 | `metadata` | Provide metadata about commands and capabilities |
 
 ## Available gRPC Services
@@ -104,6 +105,7 @@ Extensions can access these azd services via gRPC:
 - **Container** — Container registry operations
 - **Framework** — Framework service operations
 - **Infrastructure Generation (beta)** — Generate sources without provisioning initialization, then acknowledge successful writes so the extension can convert its configuration. See [the SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#infrastructure-generation-beta).
+- **Add Provider (beta)** — Register menu items for `azd add` and receive the selected item ID on the same stream. See [the SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#add-providers-beta).
 - **Service Target** — Deployment target operations
 
 Structured deploy messages use the stable event stream in azd 1.39.0 or

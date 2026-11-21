@@ -55,6 +55,10 @@ func TestRegisterBetaServicesUsesGeneratedBetaDescriptorsAndServers(t *testing.T
 	require.Same(t, &v1beta.InfraGenerationService_ServiceDesc, registrar.services[generationService])
 	require.IsType(t, v1beta.UnimplementedInfraGenerationServiceServer{}, registrar.implementations[generationService])
 
+	const addProviderServiceName = "azd.extensions.v1beta.AddProviderService"
+	require.Same(t, &v1beta.AddProviderService_ServiceDesc, registrar.services[addProviderServiceName])
+	require.IsType(t, &addProviderService{}, registrar.implementations[addProviderServiceName])
+
 	const telemetryService = "azd.extensions.v1beta.TelemetryService"
 	require.Same(t, &v1beta.TelemetryService_ServiceDesc, registrar.services[telemetryService])
 	require.IsType(t, &betaTelemetryServiceAdapter{}, registrar.implementations[telemetryService])
@@ -372,6 +376,7 @@ func detailTypeURLs(st *status.Status) []string {
 
 func stableServiceImplementations() map[BetaService]any {
 	return map[BetaService]any{
+		BetaAddProviderService:     &addProviderService{},
 		BetaAccountService:         v1.UnimplementedAccountServiceServer{},
 		BetaAiModelService:         v1.UnimplementedAiModelServiceServer{},
 		BetaComposeService:         v1beta.UnimplementedComposeServiceServer{},

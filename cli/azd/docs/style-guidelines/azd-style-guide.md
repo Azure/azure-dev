@@ -315,8 +315,8 @@ The prompt is displayed with a `Filter:` line showing ghost-text ("Type to filte
 
 **Display rules:**
 
-- The list should display no more than 7 items at a time.
-- When a list contains more than 7 items, ellipses (`...`) should be used to help users understand there are more items available up or down the list.
+- Keep the default list window to no more than 7 items. Long discovery lists such as `azd add` can use more rows when they fit the terminal height at prompt open.
+- Use ellipses (`...`) when more items are available above or below the visible window.
 - If possible, the most commonly selected item (or the item we want to guide the user into selecting) should be highlighted by default.
 - The active selection in the list should be bold and in blue text, prefixed with `>`.
 

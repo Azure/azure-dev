@@ -267,6 +267,9 @@ func TestNewSelectOptions(t *testing.T) {
 		Options:         []string{"alpha", "beta", "gamma"},
 		DefaultValue:    "gamma",
 		EnableFiltering: new(false),
+	}, func() (int, int) {
+		t.Fatal("terminal size should not be read unless requested")
+		return 0, 0
 	})
 
 	require.Equal(t, buf, opts.Writer)
@@ -276,6 +279,28 @@ func TestNewSelectOptions(t *testing.T) {
 	require.Equal(t, 2, *opts.SelectedIndex)
 	require.NotNil(t, opts.EnableFiltering)
 	require.False(t, *opts.EnableFiltering)
+}
+
+func TestNewSelectOptionsFitsTerminal(t *testing.T) {
+	tests := []struct {
+		name        string
+		rows        int
+		choiceCount int
+		want        int
+	}{
+		{name: "all choices fit", rows: 20, choiceCount: 13, want: 13},
+		{name: "room for both ellipses", rows: 16, choiceCount: 13, want: 7},
+		{name: "shrinks below the default", rows: 12, choiceCount: 13, want: 3},
+		{name: "tiny terminal keeps one choice visible", rows: 8, choiceCount: 13, want: 1},
+		{name: "unknown height keeps the component default", choiceCount: 13, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			options := ConsoleOptions{Options: make([]string, tt.choiceCount), FitToTerminal: true}
+			opts := newSelectOptions(io.Discard, options, func() (int, int) { return 80, tt.rows })
+			require.Equal(t, tt.want, opts.DisplayCount)
+		})
+	}
 }
 
 func TestNewConfirmOptions(t *testing.T) {

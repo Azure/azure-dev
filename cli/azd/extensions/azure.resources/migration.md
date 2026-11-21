@@ -11,9 +11,8 @@ Move top-level `resources` into a named `infra.layers` entry's `config`.
 Resource-to-resource `uses` references must stay within the same entry.
 Core service `uses` references do not resolve extension-owned resources; review
 those dependencies and use infrastructure layer dependencies where appropriate.
-Core `azd add` and `azd infra gen` do not support the extension's configuration.
-After migrating, use `azd resources add` to add resources interactively.
-The migrated resources layer is selected automatically, with confirmation before updating it.
+After migrating, select an item in the **Resources** category in `azd add`. The
+command automatically uses the existing resources layer.
 
 Before:
 

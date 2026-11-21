@@ -13,6 +13,7 @@ import (
 	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/nathan-fiscaletti/consolesize-go"
 )
 
 // The interactive prompts below are rendered with the in-repo ux package instead
@@ -54,6 +55,9 @@ func selectChoices(options ConsoleOptions) ([]*uxlib.SelectChoice, int) {
 		choices[i] = &uxlib.SelectChoice{
 			Value: option,
 			Label: optionLabel(options, i),
+		}
+		if i < len(options.DisabledReasons) {
+			choices[i].DisabledReason = options.DisabledReasons[i]
 		}
 	}
 
@@ -111,10 +115,9 @@ func newPromptOptions(writer io.Writer, options ConsoleOptions) *uxlib.PromptOpt
 }
 
 // newSelectOptions builds the ux select options from the console options.
-func newSelectOptions(writer io.Writer, options ConsoleOptions) *uxlib.SelectOptions {
+func newSelectOptions(writer io.Writer, options ConsoleOptions, consoleSize func() (int, int)) *uxlib.SelectOptions {
 	choices, selectedIndex := selectChoices(options)
-
-	return &uxlib.SelectOptions{
+	selectOptions := &uxlib.SelectOptions{
 		Writer:          writer,
 		Message:         options.Message,
 		HelpMessage:     options.Help,
@@ -122,6 +125,21 @@ func newSelectOptions(writer io.Writer, options ConsoleOptions) *uxlib.SelectOpt
 		SelectedIndex:   new(selectedIndex),
 		EnableFiltering: options.EnableFiltering,
 	}
+	if options.FitToTerminal {
+		_, rows := consoleSize()
+		if rows > 0 {
+			// Leave room for the prompt, filter, footer, and their blank lines.
+			reserved := 7
+			if options.EnableFiltering != nil && !*options.EnableFiltering {
+				reserved -= 2
+			}
+			if len(choices) > rows-reserved {
+				reserved += 2 // The scrolling window may have an ellipsis at both ends.
+			}
+			selectOptions.DisplayCount = max(1, rows-reserved)
+		}
+	}
+	return selectOptions
 }
 
 // newConfirmOptions builds the ux confirm options from the console options.
@@ -223,7 +241,8 @@ func (c *AskerConsole) promptUx(ctx context.Context, options ConsoleOptions) (st
 }
 
 func (c *AskerConsole) selectUx(ctx context.Context, options ConsoleOptions) (int, error) {
-	return selectResult(runComponent(ctx, c, uxlib.NewSelect(newSelectOptions(c.writer, options))))
+	selectOptions := newSelectOptions(c.writer, options, consolesize.GetConsoleSize)
+	return selectResult(runComponent(ctx, c, uxlib.NewSelect(selectOptions)))
 }
 
 func (c *AskerConsole) confirmUx(ctx context.Context, options ConsoleOptions) (bool, error) {

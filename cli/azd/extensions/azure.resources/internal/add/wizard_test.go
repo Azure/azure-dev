@@ -320,6 +320,34 @@ func TestWizardResourceCatalog(t *testing.T) {
 	}
 }
 
+func TestWizardRejectsDuplicateManagedResourceBeforePrompting(t *testing.T) {
+	tests := []struct {
+		resourceType string
+		name         string
+		want         string
+	}{
+		{resources.EventHubs, "event-hubs", "an Event Hubs namespace. To add another hub, update its hubs list"},
+		{resources.ServiceBus, "service-bus", "a Service Bus namespace. To add another queue, update its queues list"},
+		{resources.Storage, "storage", "a storage account. To add another blob container, update its containers list"},
+		{resources.Mongo, "custom-mongo", "a Cosmos DB for MongoDB resource"},
+		{resources.Cosmos, "custom-cosmos", "a Cosmos DB for NoSQL resource"},
+		{resources.Redis, "redis", "a Redis resource"},
+		{resources.AISearch, "search", "an AI Search service"},
+		{resources.KeyVault, "vault", "a Key Vault"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.resourceType, func(t *testing.T) {
+			wizard := &Wizard{Resources: resources.Config{tt.name: {Type: tt.resourceType}}}
+			// A nil client ensures no prompts can run before the duplicate is reported.
+			_, _, err := wizard.configureResource(t.Context(), tt.resourceType, nil)
+			require.ErrorContains(t, err, "this layer already manages "+tt.want)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, azdext.AddItemUnavailableCode, localErr.Code)
+		})
+	}
+}
+
 func wizardAIPrompts() *wizardPromptServer {
 	return &wizardPromptServer{
 		subscription: &azdext.Subscription{Id: "subscription", TenantId: "resource-tenant", UserTenantId: "guest-tenant"},

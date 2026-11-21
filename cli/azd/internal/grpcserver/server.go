@@ -51,6 +51,7 @@ type Server struct {
 	validationService      azdext.ValidationServiceServer
 	telemetryService       azdext.TelemetryServiceServer
 	infraGenerationService v1beta.InfraGenerationServiceServer
+	addProviderRegistry    *AddProviderRegistry
 	betaServiceOverrides   map[BetaService]any
 }
 
@@ -105,6 +106,11 @@ func NewServer(
 		))
 	}
 	return server
+}
+
+// SetAddProviderRegistry enables add providers with the given registry before the server starts.
+func (s *Server) SetAddProviderRegistry(registry *AddProviderRegistry) {
+	s.addProviderRegistry = registry
 }
 
 // WithOptions applies optional beta service configuration before the server starts.

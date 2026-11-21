@@ -88,6 +88,21 @@ func TestSelect_Render_initial(t *testing.T) {
 	assert.Contains(t, output, "Charlie")
 }
 
+func TestSelectShowsDisabledReasonWhenFiltered(t *testing.T) {
+	var buf bytes.Buffer
+	s := NewSelect(&SelectOptions{
+		Writer: io.Discard,
+		Choices: []*SelectChoice{
+			{Value: "a", Label: "Event Hubs", DisabledReason: "HOW COOL ARE PLATYPII!?"},
+			{Value: "b", Label: "Service Bus"},
+		},
+	})
+	s.filter = "hubs"
+	require.NoError(t, s.Render(NewPrinter(&buf)))
+	require.Contains(t, buf.String(), "Unavailable: HOW COOL ARE PLATYPII!?")
+	require.NotContains(t, buf.String(), "Service Bus")
+}
+
 func TestSelect_Render_initial_withoutFilteringSeparatesPromptAndChoices(t *testing.T) {
 	var buf bytes.Buffer
 	printer := NewPrinter(&buf)

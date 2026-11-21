@@ -12,6 +12,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
+// ExistingResource identifies the wizard option to link an existing Azure resource.
+const ExistingResource = "existing-resource"
+
 // Wizard holds the entry-local configuration used by the interactive add flow.
 type Wizard struct {
 	// Client connects to the azd host for prompts, environment values, and Azure resource selection.
@@ -28,6 +31,9 @@ type Wizard struct {
 
 	// Environment selects the azd environment; empty uses the project's default.
 	Environment string
+
+	// ItemType is a preselected resource type or ExistingResource. Empty prompts for a choice.
+	ItemType string
 
 	// Resources contains the selected layer's resource definitions to extend.
 	Resources resources.Config

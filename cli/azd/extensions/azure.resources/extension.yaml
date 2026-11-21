@@ -6,12 +6,13 @@ namespace: resources
 usage: azd resources <command> [options]
 language: go
 version: 0.1.0-beta.1
-requiredAzdVersion: ">=1.38.0"
+requiredAzdVersion: ">=1.39.0"
 capabilities:
     - custom-commands
     - metadata
     - provisioning-provider
     - infra-generation-provider
+    - add-provider
 providers:
     - name: resources
       type: provisioning-provider

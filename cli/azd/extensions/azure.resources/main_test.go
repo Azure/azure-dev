@@ -53,12 +53,14 @@ func TestManifestMatchesExtensionSchema(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(manifestBytes, &manifest))
 	require.NoError(t, compiled.Validate(manifest))
 	var metadata struct {
-		Providers []struct {
+		Capabilities []string `yaml:"capabilities"`
+		Providers    []struct {
 			Name string `yaml:"name"`
 			Type string `yaml:"type"`
 		} `yaml:"providers"`
 	}
 	require.NoError(t, yaml.Unmarshal(manifestBytes, &metadata))
+	require.Contains(t, metadata.Capabilities, "add-provider")
 	require.Len(t, metadata.Providers, 2)
 	require.Equal(t, "resources", metadata.Providers[0].Name)
 	require.Equal(t, "provisioning-provider", metadata.Providers[0].Type)

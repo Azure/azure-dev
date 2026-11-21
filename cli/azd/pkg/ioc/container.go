@@ -13,6 +13,9 @@ import (
 	"maps"
 	"reflect"
 	"regexp"
+	"slices"
+	"sync"
+	"sync/atomic"
 
 	"github.com/golobby/container/v3"
 )
@@ -27,9 +30,15 @@ var (
 
 // NestedContainer is an IoC container that support nested containers
 // Used for more complex registration scenarios such as scop based registration/resolution.
+// Registration and resolution are safe for concurrent use, except that concurrent first resolutions
+// of the same singleton are not synchronized.
 type NestedContainer struct {
-	inner          container.Container
+	// inner holds the current bindings. Registration publishes a modified copy, so a loaded map is never written.
+	inner          atomic.Pointer[container.Container]
 	scopedBindings []*binding
+
+	// registerMu serializes publishing inner and writes to scopedBindings. It is never held while a resolver runs.
+	registerMu sync.Mutex
 }
 
 // Creates a new nested container from the specified parent container
@@ -37,16 +46,15 @@ func NewNestedContainer(parent *NestedContainer) *NestedContainer {
 	current := container.New()
 
 	if parent != nil {
-		for registeredType, bindings := range parent.inner {
+		for registeredType, bindings := range parent.bindings() {
 			// Clone each binding map so registering in a child cannot overwrite
 			// the parent's or a sibling's registration for the same type.
 			current[registeredType] = maps.Clone(bindings)
 		}
 	}
 
-	instance := &NestedContainer{
-		inner: current,
-	}
+	instance := &NestedContainer{}
+	instance.inner.Store(&current)
 
 	RegisterInstance[ServiceLocator](instance, instance)
 
@@ -60,7 +68,7 @@ func NewRegistrationsOnly(from *NestedContainer) *NestedContainer {
 	if from != nil {
 		// Reset all concrete instances by copying 'resolver' and 'isSingleton' fields
 		// Reflection is necessary since *container.binding is unexported
-		for key, value := range from.inner {
+		for key, value := range from.bindings() {
 			valueReflect := reflect.ValueOf(value)
 			newValue := reflect.MakeMapWithSize(valueReflect.Type(), len(value))
 
@@ -83,13 +91,38 @@ func NewRegistrationsOnly(from *NestedContainer) *NestedContainer {
 		}
 	}
 
-	instance := &NestedContainer{
-		inner: current,
-	}
+	instance := &NestedContainer{}
+	instance.inner.Store(&current)
 
 	RegisterInstance[ServiceLocator](instance, instance)
 
 	return instance
+}
+
+// bindings returns the current bindings. The returned map must not be modified.
+func (c *NestedContainer) bindings() container.Container {
+	return *c.inner.Load()
+}
+
+// bindLocked runs bind against a copy of the current bindings and publishes the copy if bind succeeds.
+// The caller must hold registerMu.
+func (c *NestedContainer) bindLocked(resolveFn any, bind func(container.Container) error) error {
+	next := maps.Clone(c.bindings())
+
+	// golobby writes into the inner map for the resolver's return type, which is shared with published copies.
+	if resolveType := reflect.TypeOf(resolveFn); resolveType != nil &&
+		resolveType.Kind() == reflect.Func && resolveType.NumOut() > 0 {
+		if existing, ok := next[resolveType.Out(0)]; ok {
+			next[resolveType.Out(0)] = maps.Clone(existing)
+		}
+	}
+
+	if err := bind(next); err != nil {
+		return err
+	}
+
+	c.inner.Store(&next)
+	return nil
 }
 
 func getUnexportedField(field reflect.Value) any {
@@ -104,62 +137,96 @@ func setUnexportedField(field reflect.Value, value any) {
 
 // Fill takes a structure and resolves fields with the tag `container:"type" or `container:"name"`.
 func (c *NestedContainer) Fill(structure any) error {
-	return c.inner.Fill(structure)
+	return c.bindings().Fill(structure)
 }
 
 // Registers a resolver with a singleton lifetime
 // Returns an error if the resolver is not valid
 func (c *NestedContainer) RegisterSingleton(resolveFn any) error {
-	return c.inner.SingletonLazy(resolveFn)
+	c.registerMu.Lock()
+	defer c.registerMu.Unlock()
+
+	return c.bindLocked(resolveFn, func(bindings container.Container) error {
+		return bindings.SingletonLazy(resolveFn)
+	})
 }
 
 // Registers a resolver with a singleton lifetime
 // Panics if the resolver is not valid
 func (c *NestedContainer) MustRegisterSingleton(resolveFn any) {
-	container.MustSingletonLazy(c.inner, resolveFn)
+	if err := c.RegisterSingleton(resolveFn); err != nil {
+		panic(err)
+	}
 }
 
 // Registers a resolver with a singleton lifetime and instantiates the instance
 // Instance is stored in container cache is used for future resolutions
 // Returns an error if the resolver cannot instantiate the type
 func (c *NestedContainer) RegisterSingletonAndInvoke(resolveFn any) error {
-	return c.inner.Singleton(resolveFn)
+	if err := c.RegisterSingleton(resolveFn); err != nil {
+		return err
+	}
+
+	// Resolve after RegisterSingleton releases registerMu, since the resolver may register into this container.
+	instance := reflect.New(reflect.TypeOf(resolveFn).Out(0))
+	return c.bindings().Resolve(instance.Interface())
 }
 
 // Registers a named resolver with a singleton lifetime
 // Returns an error if the resolver is not valid
 func (c *NestedContainer) RegisterNamedSingleton(name string, resolveFn any) error {
-	return c.inner.NamedSingletonLazy(name, resolveFn)
+	c.registerMu.Lock()
+	defer c.registerMu.Unlock()
+
+	return c.bindLocked(resolveFn, func(bindings container.Container) error {
+		return bindings.NamedSingletonLazy(name, resolveFn)
+	})
 }
 
 // Registers a named resolver with a singleton lifetime
 // Panics if the resolver is not valid
 func (c *NestedContainer) MustRegisterNamedSingleton(name string, resolveFn any) {
-	container.MustNamedSingletonLazy(c.inner, name, resolveFn)
+	if err := c.RegisterNamedSingleton(name, resolveFn); err != nil {
+		panic(err)
+	}
 }
 
 // Registers a resolver with a transient lifetime (instance per resolution)
 // Returns an error if the resolver is not valid
 func (c *NestedContainer) RegisterTransient(resolveFn any) error {
-	return c.inner.TransientLazy(resolveFn)
+	c.registerMu.Lock()
+	defer c.registerMu.Unlock()
+
+	return c.bindLocked(resolveFn, func(bindings container.Container) error {
+		return bindings.TransientLazy(resolveFn)
+	})
 }
 
 // Registers a named resolver with a singleton lifetime and instantiates the instance
 // Panics if the resolver is not valid
 func (c *NestedContainer) MustRegisterTransient(resolveFn any) {
-	container.MustTransientLazy(c.inner, resolveFn)
+	if err := c.RegisterTransient(resolveFn); err != nil {
+		panic(err)
+	}
 }
 
 // Registers a named resolver with a transient lifetime (instance per resolution)
 // Returns an error if the resolver is not valid
 func (c *NestedContainer) RegisterNamedTransient(name string, resolveFn any) error {
-	return c.inner.NamedTransientLazy(name, resolveFn)
+	c.registerMu.Lock()
+	defer c.registerMu.Unlock()
+
+	return c.bindLocked(resolveFn, func(bindings container.Container) error {
+		return bindings.NamedTransientLazy(name, resolveFn)
+	})
 }
 
 // Registers a named resolver with a transient lifetime (instance per resolution)
 // Panics if the resolver is not valid
 func (c *NestedContainer) MustRegisterNamedTransient(name string, resolveFn any) {
-	container.MustNamedTransientLazy(c.inner, name, resolveFn)
+	if err := c.RegisterNamedTransient(name, resolveFn); err != nil {
+		panic(err)
+	}
 }
 
 // Registers a resolver with a scoped lifetime (instance per scope)
@@ -167,7 +234,12 @@ func (c *NestedContainer) MustRegisterNamedTransient(name string, resolveFn any)
 // Scoped registrations are added as singletons in the current container then are reset in any new child containers
 // Returns an error if the resolver is not valid
 func (c *NestedContainer) RegisterScoped(resolveFn any) error {
-	if err := c.inner.SingletonLazy(resolveFn); err != nil {
+	c.registerMu.Lock()
+	defer c.registerMu.Unlock()
+
+	if err := c.bindLocked(resolveFn, func(bindings container.Container) error {
+		return bindings.SingletonLazy(resolveFn)
+	}); err != nil {
 		return err
 	}
 
@@ -192,7 +264,12 @@ func (c *NestedContainer) MustRegisterScoped(resolveFn any) {
 // Ex: Each new cobra command will create a new scope
 // Scoped registrations are added as singletons in the current container then are reset in any new child containers
 func (c *NestedContainer) RegisterNamedScoped(name string, resolveFn any) error {
-	if err := c.inner.NamedSingletonLazy(name, resolveFn); err != nil {
+	c.registerMu.Lock()
+	defer c.registerMu.Unlock()
+
+	if err := c.bindLocked(resolveFn, func(bindings container.Container) error {
+		return bindings.NamedSingletonLazy(name, resolveFn)
+	}); err != nil {
 		return err
 	}
 
@@ -217,7 +294,7 @@ func (c *NestedContainer) MustRegisterNamedScoped(name string, resolveFn any) {
 // Resolves an instance for the specified type
 // Returns an error if the resolution fails
 func (c *NestedContainer) Resolve(instance any) error {
-	if err := c.inner.Resolve(instance); err != nil {
+	if err := c.bindings().Resolve(instance); err != nil {
 		return inspectResolveError(err)
 	}
 
@@ -227,7 +304,7 @@ func (c *NestedContainer) Resolve(instance any) error {
 // Resolves a named instance for the specified type
 // Returns an error if the resolution fails
 func (c *NestedContainer) ResolveNamed(name string, instance any) error {
-	if err := c.inner.NamedResolve(instance, name); err != nil {
+	if err := c.bindings().NamedResolve(instance, name); err != nil {
 		return inspectResolveError(err)
 	}
 
@@ -237,13 +314,13 @@ func (c *NestedContainer) ResolveNamed(name string, instance any) error {
 // Invokes the specified function and resolves any arguments specified
 // from the container resolver registrations
 func (c *NestedContainer) Invoke(resolver any) error {
-	return c.inner.Call(resolver)
+	return c.bindings().Call(resolver)
 }
 
 // Registers a constructed instance of the specified type
 // Panics if the registration fails
 func RegisterInstance[F any](c *NestedContainer, instance F) {
-	container.MustSingletonLazy(c.inner, func() F {
+	c.MustRegisterSingleton(func() F {
 		return instance
 	})
 }
@@ -251,7 +328,7 @@ func RegisterInstance[F any](c *NestedContainer, instance F) {
 // Registers a named constructed instance of the specified type
 // Panics if the registration fails
 func RegisterNamedInstance[F any](c *NestedContainer, name string, instance F) {
-	container.MustNamedSingletonLazy(c.inner, name, func() F {
+	c.MustRegisterNamedSingleton(name, func() F {
 		return instance
 	})
 }
@@ -261,7 +338,7 @@ func RegisterNamedInstance[F any](c *NestedContainer, name string, instance F) {
 func (c *NestedContainer) NewScope() (*NestedContainer, error) {
 	childContainer := NewNestedContainer(c)
 
-	for _, binding := range c.scopedBindings {
+	for _, binding := range c.scopedBindingsSnapshot() {
 		if binding.name == "" {
 			if err := childContainer.RegisterSingleton(binding.resolver); err != nil {
 				return nil, err
@@ -282,7 +359,7 @@ func (c *NestedContainer) NewScope() (*NestedContainer, error) {
 func (c *NestedContainer) NewScopeRegistrationsOnly() (*NestedContainer, error) {
 	childContainer := NewRegistrationsOnly(c)
 
-	for _, binding := range c.scopedBindings {
+	for _, binding := range c.scopedBindingsSnapshot() {
 		if binding.name == "" {
 			if err := childContainer.RegisterSingleton(binding.resolver); err != nil {
 				return nil, err
@@ -296,6 +373,14 @@ func (c *NestedContainer) NewScopeRegistrationsOnly() (*NestedContainer, error) 
 	}
 
 	return childContainer, nil
+}
+
+// scopedBindingsSnapshot returns a copy of the scoped bindings, which can be appended to concurrently.
+func (c *NestedContainer) scopedBindingsSnapshot() []*binding {
+	c.registerMu.Lock()
+	defer c.registerMu.Unlock()
+
+	return slices.Clone(c.scopedBindings)
 }
 
 // Inspects the specified error to determine whether the error is a

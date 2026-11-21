@@ -154,6 +154,24 @@ endpoint URL.
 
 ---
 
+## `pkg/ioc.NestedContainer`
+
+| Lock                    | Protects                                     | Acquired by                                                |
+|-------------------------|----------------------------------------------|------------------------------------------------------------|
+| `registerMu sync.Mutex` | Publishing `inner`, writes to `scopedBindings` | All `Register*` / `MustRegister*` methods, `NewScope`, `NewScopeRegistrationsOnly` |
+
+**Contract**: Registration and resolution can run concurrently, for example
+extension gRPC services registering providers while another extension's request
+resolves services. Each registration copies the bindings, changes the copy, and
+publishes it atomically, so a resolve always reads a map that is never written
+again. The lock is never held while a resolver runs, so a resolver can register
+into or resolve from the same container.
+
+**Not covered**: two goroutines resolving the same singleton for the first time
+can both construct it. Use `lazy.Lazy` when shared initialization must run once.
+
+---
+
 ## `pkg/environment.Environment`
 
 | Lock                     | Protects                                          | Acquired by                                                                |

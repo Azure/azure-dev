@@ -20,6 +20,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/pkg/useragent"
 )
@@ -155,12 +156,12 @@ func (c *FoundryMemoryStoreClient) CreateMemoryStore(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var result MemoryStoreObject
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &result, nil
@@ -194,12 +195,12 @@ func (c *FoundryMemoryStoreClient) GetMemoryStore(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var result MemoryStoreObject
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &result, nil

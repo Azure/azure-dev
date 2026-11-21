@@ -24,6 +24,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/recordproxy"
 	"azureaiagent/internal/pkg/useragent"
 )
@@ -197,12 +198,12 @@ func (c *AgentClient) getAgent(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var agent AgentObject
 	if err := json.Unmarshal(body, &agent); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &agent, nil
@@ -254,12 +255,12 @@ func (c *AgentClient) CreateAgentWithHeaders(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var agent AgentObject
 	if err := json.Unmarshal(body, &agent); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &agent, nil
@@ -311,12 +312,12 @@ func (c *AgentClient) doVoiceJSONAgentRequest(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var agent AgentObject
 	if err := json.Unmarshal(body, &agent); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &agent, nil
@@ -352,12 +353,12 @@ func (c *AgentClient) GetVoiceAgent(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var agent AgentObject
 	if err := json.Unmarshal(body, &agent); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &agent, nil
@@ -422,11 +423,11 @@ func (c *AgentClient) GetTelephonyBinding(
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 	var binding TelephonyBinding
 	if err := json.Unmarshal(body, &binding); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 	return &binding, nil
 }
@@ -469,11 +470,11 @@ func (c *AgentClient) CreateTelephonyBinding(
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 	var binding TelephonyBinding
 	if err := json.Unmarshal(body, &binding); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 	return &binding, nil
 }
@@ -522,12 +523,12 @@ func (c *AgentClient) UpdateAgentWithHeaders(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var agent AgentObject
 	if err := json.Unmarshal(body, &agent); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &agent, nil
@@ -569,12 +570,12 @@ func (c *AgentClient) PatchAgent(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var agent AgentObject
 	if err := json.Unmarshal(body, &agent); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &agent, nil
@@ -602,13 +603,13 @@ func (c *AgentClient) DeleteAgent(ctx context.Context, agentName, apiVersion str
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var deleteResponse DeleteAgentResponse
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &deleteResponse); err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
+			return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 		}
 	} else {
 		deleteResponse = DeleteAgentResponse{Deleted: true, Name: agentName}
@@ -666,12 +667,12 @@ func (c *AgentClient) ListAgents(ctx context.Context, params *ListAgentQueryPara
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var agentList AgentList
 	if err := json.Unmarshal(body, &agentList); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &agentList, nil
@@ -715,12 +716,12 @@ func (c *AgentClient) CreateAgentVersion(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var agentVersion AgentVersionObject
 	if err := json.Unmarshal(body, &agentVersion); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &agentVersion, nil
@@ -835,12 +836,12 @@ func (c *AgentClient) zipDeployRequest(
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var agentObj AgentObject
 	if err := json.Unmarshal(respBody, &agentObj); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &agentObj, nil
@@ -894,12 +895,12 @@ func (c *AgentClient) getAgentVersion(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var version AgentVersionObject
 	if err := json.Unmarshal(body, &version); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	// Capture request ID from response header for diagnostics.
@@ -931,13 +932,13 @@ func (c *AgentClient) DeleteAgentVersion(ctx context.Context, agentName, agentVe
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var deleteResponse DeleteAgentVersionResponse
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &deleteResponse); err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
+			return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 		}
 	} else {
 		deleteResponse = DeleteAgentVersionResponse{Deleted: true, Name: agentName, Version: agentVersion}
@@ -1000,12 +1001,12 @@ func (c *AgentClient) ListAgentVersions(ctx context.Context, agentName string, p
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var versionList AgentVersionList
 	if err := json.Unmarshal(body, &versionList); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &versionList, nil
@@ -1043,12 +1044,12 @@ func (c *AgentClient) CreateOrUpdateAgentEventHandler(ctx context.Context, agent
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var eventHandler AgentEventHandlerObject
 	if err := json.Unmarshal(body, &eventHandler); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &eventHandler, nil
@@ -1075,12 +1076,12 @@ func (c *AgentClient) GetAgentEventHandler(ctx context.Context, agentName, event
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var eventHandler AgentEventHandlerObject
 	if err := json.Unmarshal(body, &eventHandler); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &eventHandler, nil
@@ -1107,12 +1108,12 @@ func (c *AgentClient) DeleteAgentEventHandler(ctx context.Context, agentName, ev
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var deleteResponse DeleteAgentEventHandlerResponse
 	if err := json.Unmarshal(body, &deleteResponse); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &deleteResponse, nil
@@ -1399,12 +1400,12 @@ func (c *AgentClient) ListSessionFiles(
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var fileList SessionFileList
 	if err := json.Unmarshal(respBody, &fileList); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &fileList, nil
@@ -1547,12 +1548,12 @@ func (c *AgentClient) StatSessionFile(
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var fileInfo SessionFileInfo
 	if err := json.Unmarshal(respBody, &fileInfo); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &fileInfo, nil
@@ -1616,12 +1617,12 @@ func (c *AgentClient) CreateSession(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var session AgentSessionResource
 	if err := json.Unmarshal(body, &session); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &session, nil
@@ -1666,12 +1667,12 @@ func (c *AgentClient) GetSession(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var session AgentSessionResource
 	if err := json.Unmarshal(body, &session); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &session, nil
@@ -1808,12 +1809,12 @@ func (c *AgentClient) ListSessions(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var result SessionListResult
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to parse response")
 	}
 
 	return &result, nil

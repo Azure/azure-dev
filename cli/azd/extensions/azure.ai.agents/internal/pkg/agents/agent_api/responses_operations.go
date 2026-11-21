@@ -16,6 +16,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
+
+	"azureaiagent/internal/exterrors"
 )
 
 // CreateConversationAt creates a conversation at an agent-specific protocol endpoint.
@@ -40,7 +42,7 @@ func (c *AgentClient) CreateConversationAt(
 		ID string `json:"id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&conversation); err != nil {
-		return "", fmt.Errorf("failed to parse conversation response: %w", err)
+		return "", exterrors.WrapResponseParse(err, "failed to parse conversation response")
 	}
 	if strings.TrimSpace(conversation.ID) == "" {
 		return "", fmt.Errorf("conversation response missing id")
@@ -77,7 +79,7 @@ func (c *AgentClient) CreateResponse(
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 	return body, resp.Header.Clone(), nil
 }
@@ -174,7 +176,7 @@ func (c *AgentClient) doResponseRequest(
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 	return body, resp.Header.Clone(), nil
 }

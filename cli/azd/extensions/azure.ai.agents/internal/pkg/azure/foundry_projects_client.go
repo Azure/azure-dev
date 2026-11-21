@@ -19,6 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/useragent"
 )
 
@@ -146,12 +147,12 @@ func (c *FoundryProjectsClient) GetPagedConnections(ctx context.Context) (*Paged
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var pagedConnections PagedConnection
 	if err := json.Unmarshal(body, &pagedConnections); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal connections response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to unmarshal connections response")
 	}
 
 	return &pagedConnections, nil
@@ -180,12 +181,12 @@ func (c *FoundryProjectsClient) GetConnectionWithCredentials(ctx context.Context
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var connection Connection
 	if err := json.Unmarshal(body, &connection); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal connection response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to unmarshal connection response")
 	}
 
 	return &connection, nil
@@ -276,12 +277,12 @@ func (c *FoundryProjectsClient) getNextPage(ctx context.Context, url string) (*P
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, exterrors.WrapResponseRead(err, "failed to read response body")
 	}
 
 	var pagedConnections PagedConnection
 	if err := json.Unmarshal(body, &pagedConnections); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal connections response: %w", err)
+		return nil, exterrors.WrapResponseParse(err, "failed to unmarshal connections response")
 	}
 
 	return &pagedConnections, nil

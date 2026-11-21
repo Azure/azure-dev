@@ -206,6 +206,15 @@ var (
 		Endpoint:       "N/A",
 	}
 
+	// AgentHostingMode records the bounded agent hosting compute
+	// mode resolved by azure.ai.projects.
+	AgentHostingMode = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.hosting.mode"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.FeatureInsight,
+		Endpoint:       "N/A",
+	}
+
 	// LocalClientRoute records the bounded local-client route selected by azure.ai.agents.
 	LocalClientRoute = fields.AttributeKey{
 		Key:            attribute.Key("ext.route"),

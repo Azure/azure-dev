@@ -1507,6 +1507,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	p.reportAgentHosting(ctx, src)
 	if err := p.validateExistingProjectTemplateIdentity(ctx, src); err != nil {
 		return nil, err
 	}
